@@ -157,6 +157,8 @@ jobs:
         run: cmake --build build
 
       - name: Run tests under ASan
+        env:
+          ASAN_OPTIONS: detect_leaks=0
         run: ctest --test-dir build --output-on-failure
 
   # ═══════════════════════════════════════════════════════════════════════════

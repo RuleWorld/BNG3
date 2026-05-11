@@ -5,7 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional, Union
 
-import _bionetgen_cpp as _cpp
+try:
+    from . import _bionetgen_cpp as _cpp
+except ImportError:
+    try:
+        import _bionetgen_cpp as _cpp
+    except ImportError:
+        _cpp = None
 
 from bionetgen.result import SimResult
 

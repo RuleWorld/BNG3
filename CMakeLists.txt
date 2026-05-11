@@ -47,7 +47,7 @@ set(ANTLR4_SHARED OFF CACHE INTERNAL "")
 FetchContent_MakeAvailable(antlr4_runtime)
 
 if(MSVC AND TARGET antlr4_static)
-    target_compile_options(antlr4_static PRIVATE /FI"chrono")
+    target_compile_options(antlr4_static PRIVATE /FIchrono)
 endif()
 
 # --- SUNDIALS (CVODE solver) ---

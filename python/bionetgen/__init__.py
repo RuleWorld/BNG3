@@ -13,7 +13,11 @@ if _USE_LEGACY:
     from bionetgen.compat.legacy_runner import load, run
     from bionetgen.compat.legacy_runner import LegacyModel as BioNetGenModel
 else:
-    from bionetgen.model import BioNetGenModel, load, run
+    try:
+        from bionetgen.model import BioNetGenModel, load, run
+    except ImportError:
+        from bionetgen.compat.legacy_runner import load, run
+        from bionetgen.compat.legacy_runner import LegacyModel as BioNetGenModel
 
 from bionetgen.result import SimResult
 

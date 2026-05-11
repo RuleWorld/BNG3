@@ -32,7 +32,7 @@ def main():
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output.")
 def run(model, method, t_end, n_steps, output, verbose):
     """Run a BNGL model simulation."""
-    import _bionetgen_cpp as _cpp
+    from bionetgen import _bionetgen_cpp as _cpp
 
     path = str(Path(model).resolve())
     cpp_model = _cpp.parse_file(path)
@@ -69,7 +69,7 @@ def run(model, method, t_end, n_steps, output, verbose):
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output.")
 def execute(model, verbose):
     """Execute all actions in a BNGL model file."""
-    import _bionetgen_cpp as _cpp
+    from bionetgen import _bionetgen_cpp as _cpp
 
     path = str(Path(model).resolve())
     cpp_model = _cpp.parse_file(path)
@@ -81,7 +81,7 @@ def execute(model, verbose):
 @click.argument("model", type=click.Path(exists=True))
 def check(model):
     """Parse a BNGL file and report any syntax errors."""
-    import _bionetgen_cpp as _cpp
+    from bionetgen import _bionetgen_cpp as _cpp
 
     path = str(Path(model).resolve())
     try:
@@ -113,7 +113,7 @@ def check(model):
 )
 def export(model, fmt, output):
     """Export a model to another format."""
-    import _bionetgen_cpp as _cpp
+    from bionetgen import _bionetgen_cpp as _cpp
 
     path = str(Path(model).resolve())
     cpp_model = _cpp.parse_file(path)

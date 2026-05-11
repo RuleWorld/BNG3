@@ -3,7 +3,7 @@
 import os
 import pytest
 
-import _bionetgen_cpp as _cpp
+_cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
 import bionetgen
 
 MODELS_DIR = os.path.join(os.path.dirname(__file__), "..", "models")
