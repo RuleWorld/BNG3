@@ -102,12 +102,13 @@ jobs:
 
       - name: Configure CMake (Windows)
         if: startsWith(matrix.os, 'windows')
+        shell: bash
         run: |
-          cmake -B build -G Ninja `
-            -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} `
-            -DBUILD_PYTHON_BINDINGS=OFF `
-            -DBUILD_CLI=ON `
-            -DBUILD_NFSIM_CLI=ON `
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+            -DBUILD_PYTHON_BINDINGS=OFF \
+            -DBUILD_CLI=ON \
+            -DBUILD_NFSIM_CLI=ON \
             -DBUILD_TESTS=ON
 
       - name: Build
@@ -284,7 +285,7 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Install Python build dependencies
-        run: pip install scikit-build-core pybind11 numpy pytest pytest-cov python-libsbml pyyaml lxml networkx sympy seaborn xmltodict
+        run: pip install scikit-build-core pybind11 numpy pytest pytest-cov cement colorlog pyparsing pylru pandas matplotlib python-libsbml pyyaml lxml networkx sympy seaborn xmltodict
 
       - name: Build and install package
         run: pip install -e . -v

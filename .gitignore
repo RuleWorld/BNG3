@@ -25,7 +25,6 @@ venv/
 Thumbs.db
 
 # Generated simulation output
-*.gdat
 *.cdat
 *.log
 *.stats

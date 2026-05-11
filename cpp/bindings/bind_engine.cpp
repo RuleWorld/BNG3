@@ -8,6 +8,8 @@
 #include "ast/Model.hpp"
 #include "engine/NetworkGenerator.hpp"
 #include "engine/OdeIntegrator.hpp"
+#include "engine/PlaSimulator.hpp"
+#include "engine/PsaSimulator.hpp"
 #include "actions/ActionDispatch.hpp"
 
 namespace py = pybind11;
@@ -73,6 +75,20 @@ void bind_engine(py::module_& m) {
         })
         .def_property_readonly("num_reactions", [](const GeneratedNetwork& gn) {
             return gn.reactions.size();
+        })
+        .def_property_readonly("species_names", [](const GeneratedNetwork& gn) {
+            std::vector<std::string> names;
+            for (const auto& sp : gn.species.all()) {
+                names.push_back(sp.getSpeciesGraph().toString());
+            }
+            return names;
+        })
+        .def_property_readonly("reaction_strings", [](const GeneratedNetwork& gn) {
+            std::vector<std::string> strs;
+            for (const auto& rxn : gn.reactions.all()) {
+                strs.push_back(rxn.getLabel());
+            }
+            return strs;
         })
         .def("__repr__", [](const GeneratedNetwork& gn) {
             return "<GeneratedNetwork species=" + std::to_string(gn.species.size()) +
@@ -151,6 +167,53 @@ void bind_engine(py::module_& m) {
         py::arg("t_start") = 0.0,
         py::arg("seed") = 0,
         "Run SSA simulation on a generated network");
+
+    m.def("simulate_pla", [](Model& model, GeneratedNetwork& network,
+                             double t_end, int n_steps, const std::string& config_str) {
+        py::gil_scoped_release release;
+
+        OdeOptions opts;
+        opts.tEnd = t_end;
+        opts.nSteps = n_steps;
+
+        PlaConfig config;
+        if (!config_str.empty()) {
+            config = PlaConfig::parse(config_str);
+        }
+
+        PlaSimulator simulator(model, network);
+        OdeResult result = simulator.simulate(opts, config);
+
+        py::gil_scoped_acquire acquire;
+        return result_to_dict(result, model);
+    },
+        py::arg("model"),
+        py::arg("network"),
+        py::arg("t_end") = 100.0,
+        py::arg("n_steps") = 100,
+        py::arg("config_str") = "",
+        "Run PLA simulation on a generated network");
+
+    m.def("simulate_psa", [](Model& model, GeneratedNetwork& network,
+                             double t_end, int n_steps, double poplevel) {
+        py::gil_scoped_release release;
+
+        OdeOptions opts;
+        opts.tEnd = t_end;
+        opts.nSteps = n_steps;
+
+        PsaSimulator simulator(model, network);
+        OdeResult result = simulator.simulate(opts, poplevel);
+
+        py::gil_scoped_acquire acquire;
+        return result_to_dict(result, model);
+    },
+        py::arg("model"),
+        py::arg("network"),
+        py::arg("t_end") = 100.0,
+        py::arg("n_steps") = 100,
+        py::arg("poplevel") = 100,
+        "Run PSA simulation on a generated network");
 
     m.def("execute", [](Model& model, const std::string& source_path, bool verbose) {
         py::gil_scoped_release release;

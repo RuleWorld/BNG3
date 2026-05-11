@@ -1,6 +1,6 @@
 # BioNetGen 3
 
-Unified rule-based modeling platform combining BioNetGen (C++ engine), NFSim (network-free simulator), and PyBioNetGen (Python interface) into a single package.
+BioNetGen 3 is a unified rule-based modeling platform for biochemical reaction networks. It combines the BioNetGen language (BNGL) parser, a high-performance C++ simulation engine, the NFSim network-free simulator, and a Python interface (PyBioNetGen) into a single installable package. The platform supports deterministic (ODE), stochastic (SSA), and network-free simulation of rule-based models without requiring external Perl or subprocess dependencies.
 
 ## Installation
 
@@ -8,7 +8,7 @@ Unified rule-based modeling platform combining BioNetGen (C++ engine), NFSim (ne
 pip install bionetgen
 ```
 
-### From source
+### From source (requires CMake)
 
 ```bash
 git clone <repo-url>
@@ -16,19 +16,31 @@ cd BNG3
 pip install -e .
 ```
 
+This will invoke scikit-build-core to compile the C++ backend automatically.
+
+### Building the C++ engine only
+
+```bash
+cmake -B build -DBUILD_PYTHON_BINDINGS=OFF -DBUILD_CLI=ON
+cmake --build build
+./build/cpp/bng_cpp model.bngl
+```
+
 ## Quick Start
 
 ```python
 import bionetgen
 
-# Load and simulate a model
+# Load a model from a BNGL file
 model = bionetgen.load("model.bngl")
+
+# Simulate using ODE integration
 result = model.simulate(method="ode", t_end=100, n_steps=200)
 
-# Plot results
+# Plot the results
 result.plot()
 
-# Access raw data
+# Access raw data as NumPy arrays
 print(result.time)
 print(result.observables)
 df = result.to_dataframe()
@@ -55,18 +67,39 @@ bionetgen export model.bngl --format sbml --output model.xml
 
 ## Simulation Methods
 
-- `"ode"` — Deterministic ODE integration (CVODE/SUNDIALS)
-- `"ssa"` — Stochastic simulation algorithm
-- `"nf"` — Network-free simulation (NFSim engine)
+- `"ode"` -- Deterministic ODE integration (CVODE/SUNDIALS)
+- `"ssa"` -- Stochastic simulation algorithm
+- `"nf"` -- Network-free simulation (NFSim engine)
 
-## Building C++ Only
+## Development Setup
 
 ```bash
-cmake -B build -DBUILD_PYTHON_BINDINGS=OFF -DBUILD_CLI=ON
+# Clone the repository
+git clone <repo-url>
+cd BNG3
+
+# Create a virtual environment
+python -m venv .venv
+source .venv/bin/activate  # or .venv\Scripts\activate on Windows
+
+# Install in editable mode with dev dependencies
+pip install -e ".[dev]"
+
+# Run tests
+pytest tests/
+
+# Build C++ with debug symbols
+cmake -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build
-./build/cpp/bng_cpp model.bngl
+ctest --test-dir build
 ```
+
+## Documentation
+
+See [docs/](docs/) for detailed documentation, including:
+
+- [Migration Guide](docs/migration_guide.md) -- upgrading from PyBioNetGen 1.x/2.x
 
 ## License
 
-MIT
+MIT -- see [LICENSE](LICENSE) for details.

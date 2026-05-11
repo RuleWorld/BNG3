@@ -1,5 +1,11 @@
 import os, glob
+import pytest
 from bionetgen.main import BioNetGenTest
+
+pytestmark = pytest.mark.skipif(
+    not os.environ.get("BNGPATH"),
+    reason="Legacy tests require BNG2.pl (Perl) installation",
+)
 
 tfold = os.path.dirname(__file__)
 

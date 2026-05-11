@@ -115,7 +115,6 @@ file(GLOB NFSIM_CORE_MOLLISTS "${NFSIM_DIR}/NFcore/moleculeLists/*.cpp")
 file(GLOB NFSIM_CORE_RXNSEL "${NFSIM_DIR}/NFcore/reactionSelector/*.cpp")
 file(GLOB NFSIM_INPUT_SRC "${NFSIM_DIR}/NFinput/*.cpp")
 file(GLOB NFSIM_INPUT_XML "${NFSIM_DIR}/NFinput/TinyXML/*.cpp")
-file(GLOB NFSIM_INPUT_JSON "${NFSIM_DIR}/NFinput/json/*.cpp")
 file(GLOB NFSIM_RXN_SRC "${NFSIM_DIR}/NFreactions/*.cpp")
 file(GLOB NFSIM_RXN_TRANS "${NFSIM_DIR}/NFreactions/transformations/*.cpp")
 file(GLOB NFSIM_RXN_RXN "${NFSIM_DIR}/NFreactions/reactions/*.cpp")
@@ -136,7 +135,6 @@ set(NFSIM_LIB_SOURCES
     ${NFSIM_CORE_RXNSEL}
     ${NFSIM_INPUT_SRC}
     ${NFSIM_INPUT_XML}
-    ${NFSIM_INPUT_JSON}
     ${NFSIM_RXN_SRC}
     ${NFSIM_RXN_TRANS}
     ${NFSIM_RXN_RXN}

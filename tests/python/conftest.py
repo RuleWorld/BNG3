@@ -1,11 +1,28 @@
 """
-PyTest Fixtures.
+PyTest Fixtures and markers.
 """
 
+import os
 import tempfile
 import shutil
 
 import pytest
+
+
+def _has_perl_bng():
+    """Check if BNG2.pl is available via the legacy path."""
+    try:
+        from bionetgen.compat.legacy_runner import _find_perl_bng
+
+        return _find_perl_bng() is not None
+    except Exception:
+        return False
+
+
+requires_perl = pytest.mark.skipif(
+    not _has_perl_bng(),
+    reason="BNG2.pl (Perl) not available",
+)
 
 
 @pytest.fixture(scope="function")

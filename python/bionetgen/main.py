@@ -1,3 +1,8 @@
+"""Legacy module: bionetgen.main is maintained for backward compatibility.
+
+New code should use bionetgen.cli instead.
+"""
+
 import bionetgen as bng
 
 try:

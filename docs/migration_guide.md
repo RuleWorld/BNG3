@@ -90,9 +90,29 @@ This activates the legacy subprocess path. Set this while migrating scripts that
 
 ### What's New
 
-- **In-process parsing** — no file I/O for model loading
+- **C++ backend** — all simulation runs in-process via compiled C++ engine (no Perl, no subprocess)
+- **Direct simulation** — call `model.simulate()` to run ODE/SSA/NF without writing intermediate files
+- **Network generation API** — `model.generate_network()` expands rules into a reaction network programmatically
+- **In-process parsing** — ANTLR4-based BNGL parser, no file I/O for model loading
 - **Type-safe model access** — proper Python objects, not dicts
 - **Network-free simulation** — `method="nf"` without subprocess
 - **NumPy-native results** — arrays instead of file parsing
 - **Syntax checking** — `bionetgen check` validates without running
 - **Format export** — direct SBML/MATLAB/LaTeX export from Python
+
+### Network Generation API
+
+```python
+import bionetgen
+
+model = bionetgen.load("model.bngl")
+
+# Generate the reaction network (expand rules into species/reactions)
+network = model.generate_network(max_iter=100, max_stoich={"A": 10})
+
+print(network.species)     # List of generated species
+print(network.reactions)   # List of generated reactions
+
+# Simulate on the generated network
+result = network.simulate(method="ode", t_end=50)
+```

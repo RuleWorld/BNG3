@@ -26,7 +26,16 @@ def run(inp, out=None, suppress=False, timeout=None):
         (optional) this points to a folder to put the results
         into. If it doesn't exist, it will be created.
     """
-    # if out is None we make a temp directory
+    # Try C++ backend first
+    try:
+        from bionetgen import _bionetgen_cpp as _cpp
+
+        _cpp.parse_file(inp)
+        return _cpp.execute()
+    except (ImportError, AttributeError, Exception):
+        pass
+
+    # Fall back to the existing BNGCLI subprocess approach
     cur_dir = os.getcwd()
     if out is None:
         with TemporaryDirectory() as out:

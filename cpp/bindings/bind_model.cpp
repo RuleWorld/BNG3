@@ -80,6 +80,29 @@ void bind_model(py::module_& m) {
     py::class_<ReactionRule>(m, "ReactionRule")
         .def_property_readonly("label", &ReactionRule::getLabel)
         .def_property_readonly("is_bidirectional", &ReactionRule::isBidirectional)
+        .def_property_readonly("rule_name", &ReactionRule::getRuleName)
+        .def_property_readonly("reactant_patterns", [](const ReactionRule& rr) {
+            std::vector<std::string> result;
+            for (const auto& sg : rr.getReactantPatterns()) {
+                result.push_back(sg.toString());
+            }
+            return result;
+        })
+        .def_property_readonly("product_patterns", [](const ReactionRule& rr) {
+            std::vector<std::string> result;
+            for (const auto& sg : rr.getProductPatterns()) {
+                result.push_back(sg.toString());
+            }
+            return result;
+        })
+        .def_property_readonly("rates", [](const ReactionRule& rr) {
+            std::vector<std::string> result;
+            for (const auto& expr : rr.getRates()) {
+                result.push_back(expr.toString());
+            }
+            return result;
+        })
+        .def_property_readonly("modifiers", &ReactionRule::getModifiers)
         .def("__repr__", [](const ReactionRule& rr) {
             std::string label = rr.getLabel();
             if (label.empty()) label = "(unnamed)";
@@ -88,6 +111,9 @@ void bind_model(py::module_& m) {
 
     py::class_<Function>(m, "Function")
         .def_property_readonly("name", &Function::getName)
+        .def_property_readonly("args", &Function::getArgs)
+        .def_property_readonly("expression", &Function::getExpression,
+                               py::return_value_policy::reference_internal)
         .def("__repr__", [](const Function& f) {
             return "<Function '" + f.getName() + "'>";
         });
@@ -144,6 +170,9 @@ void bind_model(py::module_& m) {
             }
             throw py::key_error("Parameter '" + name + "' not found");
         })
+        .def("get_parameter", [](const Model& m, const std::string& name) -> const Parameter& {
+            return m.getParameters().get(name);
+        }, py::return_value_policy::reference_internal)
         .def("__repr__", [](const Model& model) {
             std::string name = model.getModelName();
             if (name.empty()) name = "(unnamed)";

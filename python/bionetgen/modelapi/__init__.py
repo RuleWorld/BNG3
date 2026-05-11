@@ -1,4 +1,7 @@
-from .model import bngmodel
+try:
+    from .model import bngmodel
+except ImportError:
+    bngmodel = None
 
 __all__ = ["bngmodel", "SympyOdes", "export_sympy_odes", "extract_odes_from_mexfile"]
 
