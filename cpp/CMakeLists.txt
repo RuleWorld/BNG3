@@ -29,6 +29,9 @@ target_include_directories(bng_ast PUBLIC
     ${antlr4_runtime_SOURCE_DIR}/runtime/Cpp/runtime/src
 )
 target_link_libraries(bng_ast PUBLIC bng_core antlr4_static)
+if(MSVC)
+    target_compile_definitions(bng_ast PRIVATE _USE_MATH_DEFINES)
+endif()
 
 # =============================================================================
 # bng_parser (ANTLR4 BNGL parser)
@@ -101,9 +104,6 @@ target_link_libraries(bng_engine PUBLIC
     sundials_sunmatrixdense_static
 )
 target_compile_definitions(bng_engine PUBLIC BNG_CPP_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
-if(MSVC)
-    target_compile_definitions(bng_engine PUBLIC _USE_MATH_DEFINES)
-endif()
 
 # =============================================================================
 # nfsim_core (Network-free stochastic simulator)

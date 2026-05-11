@@ -284,7 +284,7 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Install Python build dependencies
-        run: pip install scikit-build-core pybind11 numpy pytest pytest-cov cement python-libsbml pyyaml lxml networkx sympy pyparsing
+        run: pip install scikit-build-core pybind11 numpy pytest pytest-cov cement python-libsbml pyyaml lxml networkx sympy pyparsing colorlog
 
       - name: Build and install package
         run: pip install -e . -v
