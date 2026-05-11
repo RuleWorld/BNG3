@@ -34,7 +34,7 @@ endif()
 FetchContent_Declare(
     antlr4_runtime
     GIT_REPOSITORY https://github.com/antlr/antlr4.git
-    GIT_TAG        4.13.1
+    GIT_TAG        4.13.2
     SOURCE_SUBDIR  runtime/Cpp
 )
 

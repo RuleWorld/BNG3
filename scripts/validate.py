@@ -29,21 +29,21 @@ def parse_net_file(path):
     if not os.path.exists(path):
         return None
 
-    with open(path, 'r') as f:
+    with open(path, "r") as f:
         for line in f:
-            line = line.rstrip('\n')
+            line = line.rstrip("\n")
 
             # Section headers
-            if line.startswith('begin '):
+            if line.startswith("begin "):
                 current_section = line.strip()
                 current_lines = []
-            elif line.startswith('end '):
+            elif line.startswith("end "):
                 if current_section:
                     sections[current_section] = sorted(current_lines)
                 current_section = None
             elif current_section and line.strip():
                 # Normalize whitespace in content lines
-                normalized = re.sub(r'\s+', ' ', line.strip())
+                normalized = re.sub(r"\s+", " ", line.strip())
                 current_lines.append(normalized)
 
     return sections
@@ -108,6 +108,7 @@ def run_validation(bng_cpp, validate_dir, verbose=False):
         with tempfile.TemporaryDirectory() as tmpdir:
             # Copy bngl to tmpdir (some models use relative includes)
             import shutil
+
             tmp_bngl = Path(tmpdir) / bngl.name
             shutil.copy(bngl, tmp_bngl)
 
@@ -140,8 +141,12 @@ def run_validation(bng_cpp, validate_dir, verbose=False):
                 # Check if it errored
                 if result.returncode != 0:
                     results["error"] += 1
-                    err_msg = result.stderr[:200] if result.stderr else result.stdout[:200]
-                    details.append(f"ERROR {model_name} (exit {result.returncode}): {err_msg}")
+                    err_msg = (
+                        result.stderr[:200] if result.stderr else result.stdout[:200]
+                    )
+                    details.append(
+                        f"ERROR {model_name} (exit {result.returncode}): {err_msg}"
+                    )
                 else:
                     results["error"] += 1
                     details.append(f"ERROR {model_name} (no .net generated)")
@@ -158,7 +163,9 @@ def run_validation(bng_cpp, validate_dir, verbose=False):
 
             # Compare species and reactions counts
             sp_ok, sp_detail = compare_sections(ref_sections, test_sections, "species")
-            rx_ok, rx_detail = compare_sections(ref_sections, test_sections, "reactions")
+            rx_ok, rx_detail = compare_sections(
+                ref_sections, test_sections, "reactions"
+            )
 
             if sp_ok and rx_ok:
                 results["pass"] += 1
@@ -176,7 +183,9 @@ def run_validation(bng_cpp, validate_dir, verbose=False):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Validate bng_cpp against reference .net files")
+    parser = argparse.ArgumentParser(
+        description="Validate bng_cpp against reference .net files"
+    )
     parser.add_argument("--bng-cpp", default=None, help="Path to bng_cpp executable")
     parser.add_argument("--verbose", "-v", action="store_true", help="Show all results")
     args = parser.parse_args()

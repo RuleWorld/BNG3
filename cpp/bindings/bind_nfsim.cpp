@@ -78,7 +78,7 @@ void bind_nfsim(py::module_& m) {
         std::vector<std::string> obs_names;
         std::vector<double> obs_values;
 
-        for (auto* obs : system->obsToOutput) {
+        for (auto* obs : system->getObsToOutput()) {
             if (obs) {
                 obs_names.push_back(obs->getName());
                 obs_values.push_back(static_cast<double>(obs->getCount()));

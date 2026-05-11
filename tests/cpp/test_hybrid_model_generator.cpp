@@ -1,7 +1,7 @@
 #include <catch2/catch_all.hpp>
-#include "../src/engine/HybridModelGenerator.hpp"
-#include "../src/ast/Model.hpp"
-#include "../src/engine/NetworkGenerator.hpp"
+#include "../../cpp/engine/HybridModelGenerator.hpp"
+#include "../../cpp/ast/Model.hpp"
+#include "../../cpp/engine/NetworkGenerator.hpp"
 #include <fstream>
 #include <iostream>
 

@@ -1,10 +1,10 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
-#include "../src/engine/PlaSimulator.hpp"
-#include "../src/ast/Model.hpp"
-#include "../src/engine/NetworkGenerator.hpp"
+#include "../../cpp/engine/PlaSimulator.hpp"
+#include "../../cpp/ast/Model.hpp"
+#include "../../cpp/engine/NetworkGenerator.hpp"
 // Include implementation to exercise evaluateRateString in anonymous namespace.
-#include "../src/engine/PlaSimulator.cpp"
+#include "../../cpp/engine/PlaSimulator.cpp"
 
 using namespace bng::engine;
 using namespace bng::ast;

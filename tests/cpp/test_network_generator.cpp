@@ -1,7 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
-#include "../src/engine/NetworkGenerator.hpp"
+#include "../../cpp/engine/NetworkGenerator.hpp"
 // Include implementation to exercise evaluateRateString in anonymous namespace.
-#include "../src/engine/NetworkGenerator.cpp"
+#include "../../cpp/engine/NetworkGenerator.cpp"
 
 using namespace bng::engine;
 

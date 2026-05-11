@@ -528,7 +528,9 @@ namespace NFcore
 			// AS2023 - Species log helper functions
 			void setSpeciesLog(string logstr) { this->speciesLog = logstr; };
 			string getSpeciesLog() { return this->speciesLog; };
-			
+
+			const vector<Observable *>& getObsToOutput() const { return obsToOutput; }
+
 		protected:
 
 			///////////////////////////////////////////////////////////////////////////

@@ -119,8 +119,9 @@ void bind_model(py::module_& m) {
                                py::return_value_policy::reference_internal)
         .def_property_readonly("observables", &Model::getObservables,
                                py::return_value_policy::reference_internal)
-        .def_property_readonly("reaction_rules", &Model::getReactionRules,
-                               py::return_value_policy::reference_internal)
+        .def_property_readonly("reaction_rules",
+            py::overload_cast<>(&Model::getReactionRules, py::const_),
+            py::return_value_policy::reference_internal)
         .def_property_readonly("functions", &Model::getFunctions,
                                py::return_value_policy::reference_internal)
         .def_property_readonly("compartments",
