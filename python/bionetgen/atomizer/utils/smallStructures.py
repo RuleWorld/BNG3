@@ -612,7 +612,7 @@ class Molecule:
                 s1 = graph.subgraph(
                     name="cluster%s_%s" % (identifier, self.idx),
                     label=self.name,
-                    **options
+                    **options,
                 )
             else:
                 s1 = graph.subgraph(name=identifier, label=self.name, **options)

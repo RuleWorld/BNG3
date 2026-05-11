@@ -133,7 +133,9 @@ class BioNetGenModel:
                     seed=seed,
                 )
             else:
-                raise ValueError(f"Unknown simulation method: {method!r}. Use 'ode', 'ssa', or 'nf'.")
+                raise ValueError(
+                    f"Unknown simulation method: {method!r}. Use 'ode', 'ssa', or 'nf'."
+                )
 
         return SimResult(raw)
 

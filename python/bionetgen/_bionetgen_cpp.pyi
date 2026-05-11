@@ -6,17 +6,20 @@ import numpy.typing as npt
 
 class ParseError(Exception):
     """Raised when BNGL parsing fails."""
+
     ...
 
 # ─── AST Types ────────────────────────────────────────────────────────────────
 
 class Expression:
     """A mathematical expression in the model (parameter value, rate law, etc.)."""
+
     def __str__(self) -> str: ...
     def to_string(self) -> str: ...
 
 class Parameter:
     """A model parameter with a name and expression/value."""
+
     @property
     def name(self) -> str: ...
     @property
@@ -29,6 +32,7 @@ class Parameter:
 
 class ParameterList:
     """Dict-like container of Parameters."""
+
     def __len__(self) -> int: ...
     def __contains__(self, name: str) -> bool: ...
     def __getitem__(self, name: str) -> Parameter: ...
@@ -37,11 +41,13 @@ class ParameterList:
 
 class ComponentType:
     """A component type definition within a MoleculeType."""
+
     name: str
     allowed_states: List[str]
 
 class MoleculeType:
     """A molecule type definition."""
+
     @property
     def name(self) -> str: ...
     @property
@@ -52,6 +58,7 @@ class MoleculeType:
 
 class Observable:
     """An observable definition (monitors species matching patterns)."""
+
     @property
     def name(self) -> str: ...
     @property
@@ -62,6 +69,7 @@ class Observable:
 
 class SeedSpecies:
     """A seed species (initial condition)."""
+
     @property
     def pattern(self) -> str: ...
     @property
@@ -74,6 +82,7 @@ class SeedSpecies:
 
 class ReactionRule:
     """A reaction rule definition."""
+
     @property
     def label(self) -> str: ...
     @property
@@ -82,12 +91,14 @@ class ReactionRule:
 
 class Function:
     """A user-defined function."""
+
     @property
     def name(self) -> str: ...
     def __repr__(self) -> str: ...
 
 class Compartment:
     """A compartment definition."""
+
     @property
     def name(self) -> str: ...
     @property
@@ -96,12 +107,14 @@ class Compartment:
 
 class Action:
     """An action from the actions block."""
+
     name: str
     arguments: Dict[str, str]
     def __repr__(self) -> str: ...
 
 class Model:
     """The C++ AST model object. Created by parse_file() or parse_string()."""
+
     @property
     def parameters(self) -> List[Parameter]: ...
     @property
@@ -131,6 +144,7 @@ class Model:
 
 class GeneratedNetwork:
     """A generated reaction network (species + reactions)."""
+
     @property
     def num_species(self) -> int: ...
     @property
@@ -139,6 +153,7 @@ class GeneratedNetwork:
 
 class OdeOptions:
     """Configuration options for ODE/SSA integration."""
+
     t_start: float
     t_end: float
     n_steps: int
@@ -160,6 +175,7 @@ class SimResultDict:
         observables: dict mapping observable name to numpy array
         concentrations: numpy array of shape (n_steps, n_species) [ODE/SSA only]
     """
+
     ...
 
 # ─── Top-level Functions ──────────────────────────────────────────────────────

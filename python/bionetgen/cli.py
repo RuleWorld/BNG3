@@ -17,11 +17,18 @@ def main():
 
 @main.command()
 @click.argument("model", type=click.Path(exists=True))
-@click.option("--method", "-m", default="ode", type=click.Choice(["ode", "ssa", "nf"]),
-              help="Simulation method.")
+@click.option(
+    "--method",
+    "-m",
+    default="ode",
+    type=click.Choice(["ode", "ssa", "nf"]),
+    help="Simulation method.",
+)
 @click.option("--t-end", "-t", default=100.0, type=float, help="End time.")
 @click.option("--n-steps", "-n", default=100, type=int, help="Number of output steps.")
-@click.option("--output", "-o", default=None, type=click.Path(), help="Output file path.")
+@click.option(
+    "--output", "-o", default=None, type=click.Path(), help="Output file path."
+)
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output.")
 def run(model, method, t_end, n_steps, output, verbose):
     """Run a BNGL model simulation."""
@@ -31,7 +38,9 @@ def run(model, method, t_end, n_steps, output, verbose):
     cpp_model = _cpp.parse_file(path)
 
     if method == "nf":
-        result = _cpp.simulate_nf(cpp_model, t_end=t_end, n_steps=n_steps, verbose=verbose)
+        result = _cpp.simulate_nf(
+            cpp_model, t_end=t_end, n_steps=n_steps, verbose=verbose
+        )
     else:
         network = _cpp.generate_network(cpp_model)
         if method == "ode":
@@ -41,11 +50,14 @@ def run(model, method, t_end, n_steps, output, verbose):
 
     if output:
         import numpy as np
+
         time = result["time"]
         obs = result.get("observables", {})
         header = "time\t" + "\t".join(obs.keys()) if obs else "time"
         data = [time] + list(obs.values())
-        np.savetxt(output, np.column_stack(data), header=header, delimiter="\t", comments="#")
+        np.savetxt(
+            output, np.column_stack(data), header=header, delimiter="\t", comments="#"
+        )
         if verbose:
             click.echo(f"Results written to {output}")
     else:
@@ -88,10 +100,17 @@ def check(model):
 
 @main.command()
 @click.argument("model", type=click.Path(exists=True))
-@click.option("--format", "-f", "fmt", default="xml",
-              type=click.Choice(["xml", "net", "bngl", "sbml", "matlab", "latex"]),
-              help="Output format.")
-@click.option("--output", "-o", required=True, type=click.Path(), help="Output file path.")
+@click.option(
+    "--format",
+    "-f",
+    "fmt",
+    default="xml",
+    type=click.Choice(["xml", "net", "bngl", "sbml", "matlab", "latex"]),
+    help="Output format.",
+)
+@click.option(
+    "--output", "-o", required=True, type=click.Path(), help="Output file path."
+)
 def export(model, fmt, output):
     """Export a model to another format."""
     import _bionetgen_cpp as _cpp

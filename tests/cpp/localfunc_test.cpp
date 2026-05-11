@@ -62,7 +62,7 @@ static SUNContext _global_ctx = nullptr;
 
 // Include the source directly
 extern "C" {
-    #include "../bng2/Validate/DAT_validate/localfunc_mex_cvode.c"
+    #include "../validation/Validate/DAT_validate/localfunc_mex_cvode.c"
 }
 
 #pragma GCC diagnostic pop

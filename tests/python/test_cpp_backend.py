@@ -7,7 +7,6 @@ import numpy as np
 import _bionetgen_cpp as _cpp
 import bionetgen
 
-
 MODELS_DIR = os.path.join(os.path.dirname(__file__), "..", "models")
 VALIDATION_DIR = os.path.join(os.path.dirname(__file__), "..", "validation")
 

@@ -71,6 +71,5 @@ class SimResult:
 
     def __repr__(self) -> str:
         return (
-            f"<SimResult steps={self.n_steps} "
-            f"observables={len(self.observables)}>"
+            f"<SimResult steps={self.n_steps} " f"observables={len(self.observables)}>"
         )
