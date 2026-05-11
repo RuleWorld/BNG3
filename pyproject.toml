@@ -67,5 +67,22 @@ BUILD_PYTHON_BINDINGS = "ON"
 BUILD_CLI = "OFF"
 BUILD_TESTS = "OFF"
 
+[tool.ruff]
+target-version = "py39"
+extend-exclude = [
+    "python/bionetgen/assets/",
+    "python/bionetgen/atomizer/",
+]
+
+[tool.ruff.lint]
+select = ["F401", "F841"]
+ignore = []
+
+[tool.ruff.lint.per-file-ignores]
+"**/__init__.py" = ["F401"]
+"tests/**" = ["F841", "F401"]
+"python/bionetgen/core/**" = ["F841"]
+"python/bionetgen/modelapi/**" = ["F841"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests/python"]

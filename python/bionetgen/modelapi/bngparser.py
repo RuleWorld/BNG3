@@ -123,7 +123,7 @@ class BNGParser:
                 # use pyparsing for parsing the action into a list
                 try:
                     action_list = self.alist.action_parser.parseString(action)
-                except Exception as e:
+                except Exception:
                     raise BNGParseError(
                         self.bngfile.path, f"Failed to parse action {action}"
                     )

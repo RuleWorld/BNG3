@@ -1,5 +1,5 @@
 import urllib.error
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from bionetgen.atomizer.utils.pathwaycommons import queryBioGridByName
 
 

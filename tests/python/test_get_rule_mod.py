@@ -1,4 +1,3 @@
-import pytest
 from bionetgen.modelapi.xmlparsers import RuleBlockXML
 
 

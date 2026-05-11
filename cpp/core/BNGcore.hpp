@@ -108,10 +108,6 @@ namespace BNGcore
     ////
 
 
-    // template for negation of equality operator
-    template < class T >
-    bool  operator!= ( const T & x1, const T & x2 )
-    {   return !( x1 == x2 );   };
 
 
     ////
@@ -139,6 +135,8 @@ namespace BNGcore
             // state type equivalence operator
             bool  operator== ( const StateType & type2 ) const
             {   return get_label() == type2.get_label();   };
+            bool  operator!= ( const StateType & type2 ) const
+            {   return !(*this == type2);   };
 
             // partial ordering operator (is this node a subtype of node2?)
             bool  operator< ( const StateType & type2 ) const;
@@ -245,9 +243,10 @@ namespace BNGcore
             virtual bool decrement ( ) {  return false;  };
             // get labels, BNG2 string
             virtual std::string  get_label ( ) const;
-            virtual std::string  get_BNG2_string ( ) const;         
+            virtual std::string  get_BNG2_string ( ) const;
             // test equality, compare for sorting
             virtual bool  operator== ( const State & state2 ) const;
+            bool  operator!= ( const State & state2 ) const { return !(*this == state2); };
             virtual bool  less ( const State & state2 ) const;
             virtual bool  is_wildcard ( ) const { return false; };
 
@@ -343,6 +342,7 @@ namespace BNGcore
             
             // equivalent operator
             bool  operator== ( const NodeType & type2 ) const;
+            bool  operator!= ( const NodeType & type2 ) const { return !(*this == type2); };
             // less than comparator for sorting
             bool  less ( const NodeType & type2 ) const;
             // partial ordering operator (not same as sorting less than!)
@@ -453,6 +453,7 @@ namespace BNGcore
             
             // check two nodes for local equivalence (checks type and state)
             bool  operator== ( const Node & node2 ) const;
+            bool  operator!= ( const Node & node2 ) const { return !(*this == node2); };
             // less-than comparison for canonical sorting (compares type, state, and index)
             bool  operator< ( const Node & node2 ) const;
 

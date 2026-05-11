@@ -178,7 +178,7 @@ class PatternXML(XMLObj):
                 f = float(quantity)
                 if n == f:
                     pattern.quantity = quantity
-            except ValueError as e:
+            except ValueError:
                 print("Quantity needs to be an integer")
         # check for either list of molecules or single molecule, add if exist
         mols = xml["ListOfMolecules"]["Molecule"]

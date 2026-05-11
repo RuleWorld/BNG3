@@ -5,7 +5,6 @@ from bionetgen.core.tools import BNGVisualize
 from bionetgen.core.tools import BNGCLI
 from bionetgen.core.tools import BNGGdiff
 from bionetgen.core.notebook import BNGNotebook
-from bionetgen.core.utils.utils import run_command
 
 
 def runCLI(app):

@@ -8,9 +8,8 @@ from __future__ import annotations
 
 import os
 import subprocess
-import sys
 from pathlib import Path
-from typing import Optional, Union
+from typing import Union
 
 
 def _find_perl_bng() -> str:

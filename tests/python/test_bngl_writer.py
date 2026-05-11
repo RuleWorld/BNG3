@@ -1,4 +1,3 @@
-import pytest
 from bionetgen.atomizer.writer.bnglWriter import bnglReaction
 
 

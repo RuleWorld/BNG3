@@ -1,6 +1,4 @@
 import os, glob
-from pytest import raises
-import bionetgen as bng
 from bionetgen.main import BioNetGenTest
 
 tfold = os.path.dirname(__file__)

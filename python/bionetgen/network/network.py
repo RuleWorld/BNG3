@@ -7,10 +7,6 @@ from bionetgen.network.blocks import (
     NetworkParameterBlock,
     NetworkReactionBlock,
     NetworkSpeciesBlock,
-    NetworkCompartmentBlock,
-    NetworkFunctionBlock,
-    NetworkEnergyPatternBlock,
-    NetworkPopulationMapBlock,
 )
 
 # This allows access to the CLIs config setup

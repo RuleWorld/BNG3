@@ -1,6 +1,4 @@
 from bionetgen.atomizer.atomizer.analyzeSBML import get_close_matches
-import bionetgen.atomizer.atomizer.analyzeSBML as analyzeSBML
-import pytest
 from unittest.mock import patch
 
 

@@ -18,7 +18,7 @@ VERSION_BANNER = bng.defaults.banner
 
 
 # require version argparse action
-import argparse, sys, os
+import argparse, sys
 from packaging import version as packaging_version
 
 

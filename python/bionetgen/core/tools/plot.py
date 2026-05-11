@@ -1,5 +1,3 @@
-import os
-import numpy as np
 from bionetgen.core.exc import BNGError, BNGFileError
 from bionetgen.core.tools import BNGResult
 from bionetgen.core.utils.logging import BNGLogger

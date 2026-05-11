@@ -152,6 +152,8 @@ jobs:
             -DBUILD_TESTS=ON
 
       - name: Build
+        env:
+          ASAN_OPTIONS: detect_leaks=0
         run: cmake --build build
 
       - name: Run tests under ASan

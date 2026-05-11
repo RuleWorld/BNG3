@@ -1,4 +1,3 @@
-import pytest
 from bionetgen.atomizer.sbml2json import comb
 
 

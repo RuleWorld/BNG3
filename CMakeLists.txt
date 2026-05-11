@@ -46,6 +46,10 @@ set(ANTLR4_SHARED OFF CACHE INTERNAL "")
 
 FetchContent_MakeAvailable(antlr4_runtime)
 
+if(MSVC AND TARGET antlr4_static)
+    target_compile_options(antlr4_static PRIVATE /FI"chrono")
+endif()
+
 # --- SUNDIALS (CVODE solver) ---
 if(EXISTS "${CMAKE_SOURCE_DIR}/build/_deps/sundials-src/CMakeLists.txt")
     set(FETCHCONTENT_SOURCE_DIR_SUNDIALS "${CMAKE_SOURCE_DIR}/build/_deps/sundials-src")

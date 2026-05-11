@@ -1,4 +1,3 @@
-import pytest
 from bionetgen.atomizer.atomizer.detectOntology import levenshtein
 
 

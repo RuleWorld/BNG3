@@ -24,27 +24,21 @@ venv/
 .DS_Store
 Thumbs.db
 
-# Generated
+# Generated simulation output
 *.gdat
 *.cdat
-*.net
-*.xml
-!tests/**/*.xml
-!models/**/*.xml
-!cpp/nfsim/NFinput/TinyXML/
 *.log
-*.json
-*.m
 *.stats
-*.txt
-!CmakeLists.txt
-*.ka
-*.graphml
-*.gml
-*.xml
-*.dat
+
+# Temporary simulation artifacts (not reference data)
+*.o
+*.a
+*.lib
 
 # Legacy bundled binaries (not needed in new architecture)
 python/bionetgen/bng-linux/
 python/bionetgen/bng-mac/
 python/bionetgen/bng-win/
+
+# Legacy Perl files
+legacy/perl/Perl2/Boolean2BNGL/*.txt

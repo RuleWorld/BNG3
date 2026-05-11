@@ -1,8 +1,6 @@
 """Type stubs for the _bionetgen_cpp C++ extension module."""
 
-from typing import Dict, List, Optional, overload
-import numpy as np
-import numpy.typing as npt
+from typing import Dict, List, Optional
 
 class ParseError(Exception):
     """Raised when BNGL parsing fails."""

@@ -2,7 +2,6 @@
 
 import os
 import pytest
-import numpy as np
 
 import _bionetgen_cpp as _cpp
 import bionetgen
