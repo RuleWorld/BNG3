@@ -41,13 +41,18 @@ FetchContent_Declare(
 set(ANTLR4_INSTALL ON CACHE INTERNAL "")
 set(ANTLR4_WITH_LIBCXX OFF CACHE INTERNAL "")
 set(ANTLR_BUILD_CPP_TESTS OFF CACHE INTERNAL "")
-set(ANTLR4_STATIC ON CACHE INTERNAL "")
-set(ANTLR4_SHARED OFF CACHE INTERNAL "")
+set(ANTLR_BUILD_STATIC ON CACHE INTERNAL "")
+set(ANTLR_BUILD_SHARED OFF CACHE INTERNAL "")
 
 FetchContent_MakeAvailable(antlr4_runtime)
 
-if(MSVC AND TARGET antlr4_static)
-    target_compile_options(antlr4_static PRIVATE /FIchrono)
+if(MSVC)
+    if(TARGET antlr4_static)
+        target_compile_options(antlr4_static PRIVATE /FIchrono)
+    endif()
+    if(TARGET antlr4_shared)
+        target_compile_options(antlr4_shared PRIVATE /FIchrono)
+    endif()
 endif()
 
 # --- SUNDIALS (CVODE solver) ---
