@@ -287,7 +287,15 @@ jobs:
       - name: Install Python build dependencies
         run: pip install scikit-build-core pybind11 numpy pytest pytest-cov cement colorlog pyparsing pylru pandas matplotlib python-libsbml pyyaml lxml networkx sympy seaborn xmltodict
 
-      - name: Build and install package
+      - name: Build and install package (Windows)
+        if: startsWith(matrix.os, 'windows')
+        run: pip install . -v
+        env:
+          CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=OFF -DCMAKE_VERBOSE_MAKEFILE=ON"
+          SKBUILD_VERBOSE: "1"
+
+      - name: Build and install package (Unix)
+        if: "!startsWith(matrix.os, 'windows')"
         run: pip install -e . -v
         env:
           CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=OFF"
