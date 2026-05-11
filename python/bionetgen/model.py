@@ -80,6 +80,8 @@ class BioNetGenModel:
         rtol: float = 1e-8,
         atol: float = 1e-8,
         seed: int = 0,
+        pla_config: str = "",
+        psa_poplevel: float = 100.0,
         verbose: bool = False,
     ) -> SimResult:
         """Run a simulation using the specified method.
@@ -87,7 +89,7 @@ class BioNetGenModel:
         Parameters
         ----------
         method : str
-            One of "ode", "ssa", or "nf" (network-free).
+            One of "ode", "ssa", "nf" (network-free), "pla", or "psa".
         t_end : float
             End time for simulation.
         n_steps : int
@@ -98,6 +100,10 @@ class BioNetGenModel:
             Relative and absolute tolerances (ODE only).
         seed : int
             Random seed (SSA/NF only; 0 = system default).
+        pla_config : str
+            PLA configuration string (PLA only).
+        psa_poplevel : float
+            Population level threshold for PSA (PSA only).
         verbose : bool
             Print progress information.
 
@@ -137,9 +143,26 @@ class BioNetGenModel:
                     t_start=t_start,
                     seed=seed,
                 )
+            elif method == "pla":
+                raw = _cpp.simulate_pla(
+                    self._model,
+                    self._network,
+                    t_end=t_end,
+                    n_steps=n_steps,
+                    config_str=pla_config,
+                )
+            elif method == "psa":
+                raw = _cpp.simulate_psa(
+                    self._model,
+                    self._network,
+                    t_end=t_end,
+                    n_steps=n_steps,
+                    poplevel=psa_poplevel,
+                )
             else:
                 raise ValueError(
-                    f"Unknown simulation method: {method!r}. Use 'ode', 'ssa', or 'nf'."
+                    "Unknown simulation method: "
+                    f"{method!r}. Use 'ode', 'ssa', 'nf', 'pla', or 'psa'."
                 )
 
         return SimResult(raw)

@@ -189,6 +189,38 @@ end model
         result = _cpp.simulate_ssa(model, network, t_end=10.0, n_steps=50, seed=42)
         assert "time" in result
 
+    def test_nf_simulation(self, tmp_path):
+        bngl = tmp_path / "nf.bngl"
+        bngl.write_text("""
+begin model
+begin parameters
+    k 0.1
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 100
+end seed species
+begin observables
+    Molecules Xtot X()
+end observables
+begin reaction rules
+    X() -> 0 k
+end reaction rules
+end model
+""")
+        model = _cpp.parse_file(str(bngl))
+        result = _cpp.simulate_nf(model, t_end=5.0, n_steps=10, seed=1)
+
+        assert "time" in result
+        assert "observables" in result
+        assert len(result["time"]) == 11
+        assert result["time"][0] == 0.0
+        assert result["time"][-1] == pytest.approx(5.0)
+        obs_values = next(iter(result["observables"].values()))
+        assert len(obs_values) == 11
+
 
 class TestHighLevelAPI:
     def test_load_and_simulate(self, tmp_path):

@@ -160,7 +160,6 @@ target_include_directories(nfsim_core PUBLIC
     ${NFSIM_DIR}/NFcore/reactionSelector
     ${NFSIM_DIR}/NFinput
     ${NFSIM_DIR}/NFinput/TinyXML
-    ${NFSIM_DIR}/NFinput/json
     ${NFSIM_DIR}/NFreactions
     ${NFSIM_DIR}/NFreactions/transformations
     ${NFSIM_DIR}/NFreactions/reactions

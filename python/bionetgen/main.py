@@ -9,8 +9,30 @@ try:
     import cement
     from cement.core.exc import CaughtSignal
 except ImportError:
-    cement = None
     CaughtSignal = Exception
+
+    class _CementStub:
+        class Controller:
+            pass
+
+        class App:
+            def __init__(self, *args, **kwargs):
+                raise ImportError(
+                    "Cement is required for the legacy BioNetGen CLI. "
+                    "Install 'cement' to use bionetgen.main."
+                )
+
+        class TestApp(App):
+            pass
+
+        @staticmethod
+        def ex(*args, **kwargs):
+            def decorator(func):
+                return func
+
+            return decorator
+
+    cement = _CementStub()
 
 from .core.exc import BNGError
 from .core.exc import BNGVersionError

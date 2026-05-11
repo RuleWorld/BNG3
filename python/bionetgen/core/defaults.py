@@ -1,6 +1,13 @@
 import platform, os, subprocess
-from cement import init_defaults
-from cement.utils.version import get_version_banner
+
+try:
+    from cement import init_defaults
+    from cement.utils.version import get_version_banner
+except Exception:
+    init_defaults = None
+
+    def get_version_banner():
+        return ""
 from .version import get_version
 
 
@@ -80,7 +87,10 @@ class BNGDefaults:
         self.bng_name = bng_name
         self.has_cpp_backend = _has_cpp_backend()
         # configuration defaults
-        CONFIG = init_defaults("bionetgen")
+        if init_defaults is None:
+            CONFIG = {"bionetgen": {}}
+        else:
+            CONFIG = init_defaults("bionetgen")
         lib_path = os.path.dirname(__file__)
         lib_path = os.path.split(lib_path)[0]
         # Only set bng_path if the directory actually exists

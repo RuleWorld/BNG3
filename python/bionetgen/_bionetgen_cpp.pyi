@@ -85,6 +85,14 @@ class ReactionRule:
     def label(self) -> str: ...
     @property
     def is_bidirectional(self) -> bool: ...
+    @property
+    def reactant_patterns(self) -> List[str]: ...
+    @property
+    def product_patterns(self) -> List[str]: ...
+    @property
+    def rates(self) -> List[str]: ...
+    @property
+    def modifiers(self) -> List[str]: ...
     def __repr__(self) -> str: ...
 
 class Function:
@@ -92,6 +100,10 @@ class Function:
 
     @property
     def name(self) -> str: ...
+    @property
+    def args(self) -> List[str]: ...
+    @property
+    def expression(self) -> Expression: ...
     def __repr__(self) -> str: ...
 
 class Compartment:
@@ -136,6 +148,7 @@ class Model:
     @property
     def version(self) -> str: ...
     def set_parameter(self, name: str, value: float) -> None: ...
+    def get_parameter(self, name: str) -> Parameter: ...
     def __repr__(self) -> str: ...
 
 # ─── Engine Types ─────────────────────────────────────────────────────────────
@@ -147,6 +160,10 @@ class GeneratedNetwork:
     def num_species(self) -> int: ...
     @property
     def num_reactions(self) -> int: ...
+    @property
+    def species_names(self) -> List[str]: ...
+    @property
+    def reaction_strings(self) -> List[str]: ...
     def __repr__(self) -> str: ...
 
 class OdeOptions:
@@ -301,6 +318,66 @@ def simulate_ssa(
         Start time.
     seed : int
         Random seed (0 = system default).
+
+    Returns
+    -------
+    dict
+        Keys: "time" (ndarray), "observables" (dict[str, ndarray]),
+        "concentrations" (ndarray).
+    """
+    ...
+
+def simulate_pla(
+    model: Model,
+    network: GeneratedNetwork,
+    t_end: float = 100.0,
+    n_steps: int = 100,
+    config_str: str = "",
+) -> Dict[str, object]:
+    """Run PLA simulation on a generated network.
+
+    Parameters
+    ----------
+    model : Model
+        The parsed model.
+    network : GeneratedNetwork
+        The generated reaction network.
+    t_end : float
+        End time.
+    n_steps : int
+        Number of output time steps.
+    config_str : str
+        PLA configuration string.
+
+    Returns
+    -------
+    dict
+        Keys: "time" (ndarray), "observables" (dict[str, ndarray]),
+        "concentrations" (ndarray).
+    """
+    ...
+
+def simulate_psa(
+    model: Model,
+    network: GeneratedNetwork,
+    t_end: float = 100.0,
+    n_steps: int = 100,
+    poplevel: float = 100,
+) -> Dict[str, object]:
+    """Run PSA simulation on a generated network.
+
+    Parameters
+    ----------
+    model : Model
+        The parsed model.
+    network : GeneratedNetwork
+        The generated reaction network.
+    t_end : float
+        End time.
+    n_steps : int
+        Number of output time steps.
+    poplevel : float
+        Population level threshold for PSA.
 
     Returns
     -------

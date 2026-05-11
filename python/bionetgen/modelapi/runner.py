@@ -30,8 +30,8 @@ def run(inp, out=None, suppress=False, timeout=None):
     try:
         from bionetgen import _bionetgen_cpp as _cpp
 
-        _cpp.parse_file(inp)
-        return _cpp.execute()
+        model = _cpp.parse_file(inp)
+        return _cpp.execute(model, inp)
     except (ImportError, AttributeError, Exception):
         pass
 

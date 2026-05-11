@@ -1,5 +1,4 @@
 from .librrsimulator import libRRSimulator
-from .csimulator import CSimulator
 
 
 def sim_getter(model_file=None, model_str=None, sim_type="libRR"):
@@ -19,8 +18,7 @@ def sim_getter(model_file=None, model_str=None, sim_type="libRR"):
         string instead.
     sim_type : str, optional
         The name of the type of simulator object to get. At the moment only
-        libRoadRunner and CPY type simulators are allowed, allowed values are
-        "libRR" and "cpy".
+        libRoadRunner is allowed, allowed value is "libRR".
 
     Returns
     -------
@@ -39,13 +37,13 @@ def sim_getter(model_file=None, model_str=None, sim_type="libRR"):
                 model_file_obj.seek(0)
                 return libRRSimulator(model_file=model_file)
             elif sim_type == "cpy":
-                return CSimulator(model_file=model_file, generate_network=True)
+                raise ValueError("Simulator type 'cpy' is no longer supported")
             else:
                 print("simulator type {} not supported".format(sim_type))
     if model_file is not None:
         if sim_type == "libRR":
             return libRRSimulator(model_file=model_file)
         elif sim_type == "cpy":
-            return CSimulator(model_file=model_file, generate_network=True)
+            raise ValueError("Simulator type 'cpy' is no longer supported")
         else:
             print("simulator type {} not supported".format(sim_type))
