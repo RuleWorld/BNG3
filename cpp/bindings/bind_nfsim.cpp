@@ -44,6 +44,12 @@ void bind_nfsim(py::module_& m) {
 
     m.def("simulate_nf", [](Model& model, double t_end, int n_steps,
                             int seed, int equilibrate, bool verbose) -> py::dict {
+        if (t_end < 0.0) {
+            throw std::invalid_argument("t_end must be non-negative");
+        }
+        if (n_steps <= 0) {
+            throw std::invalid_argument("n_steps must be positive");
+        }
 
         // Step 1: Serialize model to XML string
         std::string xml_content = bng::io::XmlWriter::write(model);
@@ -83,20 +89,26 @@ void bind_nfsim(py::module_& m) {
             throw std::runtime_error("Failed to initialize NFSim system from model XML");
         }
 
-        // Step 5: Run equilibration if requested
+        // Step 5: Prepare the system before any equilibration or simulation.
+        {
+            py::gil_scoped_release release;
+            system->prepareForSimulation();
+        }
+
+        // Step 6: Run equilibration if requested
         if (equilibrate > 0) {
             py::gil_scoped_release release;
             system->equilibrate(static_cast<double>(equilibrate));
         }
 
-        // Step 6: Collect observable names
+        // Step 7: Collect observable names
         std::vector<std::string> obs_names;
         for (auto* obs : system->getObsToOutput()) {
             if (obs) obs_names.push_back(obs->getName());
         }
         int n_obs = static_cast<int>(obs_names.size());
 
-        // Step 7: Run simulation in steps, collecting time-series data
+        // Step 8: Run simulation in steps, collecting time-series data
         double dt = t_end / static_cast<double>(n_steps);
         std::vector<double> time_points;
         std::vector<std::vector<double>> obs_series(n_obs);
@@ -118,7 +130,7 @@ void bind_nfsim(py::module_& m) {
             py::gil_scoped_release release;
             for (int step = 1; step <= n_steps; ++step) {
                 double t_current = step * dt;
-                system->sim(t_current, 1, verbose);
+                system->stepTo(t_current);
 
                 time_points.push_back(t_current);
                 int idx = 0;
@@ -131,7 +143,7 @@ void bind_nfsim(py::module_& m) {
             }
         }
 
-        // Step 8: Build result dict matching ODE/SSA format
+        // Step 9: Build result dict matching ODE/SSA format
         int total_points = static_cast<int>(time_points.size());
         py::dict result;
 
