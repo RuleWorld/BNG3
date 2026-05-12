@@ -4,6 +4,7 @@ _build/
 *.egg-info/
 dist/
 wheelhouse/
+benchmarks/results/
 
 # Python
 __pycache__/
@@ -41,3 +42,5 @@ python/bionetgen/bng-win/
 
 # Legacy Perl files
 legacy/perl/Perl2/Boolean2BNGL/*.txt
+
+.venv-1/

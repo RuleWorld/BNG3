@@ -1,19 +1,28 @@
 # User Guide
 
-## Loading Models
+This guide walks through the new BNG3 workflow from loading a BNGL file to scanning parameters, importing SBML, and building models programmatically.
 
-The primary entry point is `bionetgen.load()`, which parses a BNGL file and returns a model object:
+## 1. Install
+
+```bash
+pip install bionetgen
+```
+
+If you are working from source, use `pip install -e .` in the repository root.
+
+## 2. Load Models
 
 ```python
 import bionetgen
 
 model = bionetgen.load("path/to/model.bngl")
+print(model.name)
 ```
 
-You can also parse BNGL from a string:
+You can also parse BNGL text directly with the C++ extension:
 
 ```python
-import _bionetgen_cpp as _cpp
+import bionetgen._bionetgen_cpp as _cpp
 
 model_obj = _cpp.parse_string("""
 begin model
@@ -36,200 +45,183 @@ end model
 """)
 ```
 
-## Inspecting Model Components
+## 3. Inspect Model Components
+
+The model object exposes the BNGL AST as Python objects:
 
 ```python
-model = bionetgen.load("model.bngl")
+for parameter in model.parameters:
+    print(parameter.name, parameter.value, parameter.expression)
 
-# Parameters
-for p in model.parameters:
-    print(f"{p.name} = {p.expression}")
+for molecule_type in model.molecule_types:
+    print(molecule_type.name)
+    for component in molecule_type.components:
+        print("  ", component.name, component.allowed_states)
 
-# Molecule types
-for mt in model.molecule_types:
-    print(f"{mt.name}({', '.join(c.name for c in mt.components)})")
-
-# Reaction rules
 for rule in model.reaction_rules:
-    print(f"  {rule.label} (bidirectional={rule.is_bidirectional})")
+    print(rule.label, rule.reactant_patterns, rule.product_patterns, rule.rates)
 
-# Observables
-for obs in model.observables:
-    print(f"  {obs.name} [{obs.type}]: {obs.patterns}")
+for observable in model.observables:
+    print(observable.name, observable.type, observable.patterns)
 
-# Seed species
-for sp in model.seed_species:
-    print(f"  {sp.pattern} = {sp.amount}")
+for seed in model.seed_species:
+    print(seed.pattern, seed.amount)
 ```
 
-## Modifying Parameters
+## 4. Simulate
+
+### ODE
 
 ```python
-model = bionetgen.load("model.bngl")
-model.set_parameter("k_on", 2.0)
-model.set_parameter("k_off", 0.05)
+result = model.simulate(method="ode", t_end=100.0, n_steps=200)
 ```
 
-## Network Generation
-
-Before running ODE or SSA simulations, the reaction network must be generated (enumerating all reachable species and reactions):
+### SSA
 
 ```python
-network = model.generate_network(max_iter=100)
-print(f"Generated {network.num_species} species, {network.num_reactions} reactions")
+result = model.simulate(method="ssa", t_end=100.0, n_steps=200, seed=42)
 ```
 
-This step is automatic when you call `model.simulate()` with `method="ode"` or `method="ssa"`.
-
-## Simulation
-
-### ODE (Deterministic)
+### NFSim
 
 ```python
-result = model.simulate(
-    method="ode",
-    t_end=100.0,
-    n_steps=200,
-    rtol=1e-8,
-    atol=1e-8,
-)
+result = model.simulate(method="nf", t_end=100.0, n_steps=200, seed=42)
 ```
 
-### SSA (Stochastic)
+Network-based methods (`ode`, `ssa`, `pla`, `psa`) automatically generate the network if needed.
 
-```python
-result = model.simulate(
-    method="ssa",
-    t_end=100.0,
-    n_steps=200,
-    seed=42,
-)
-```
-
-### Network-Free (NFSim)
-
-For models with large or infinite state spaces where network enumeration is infeasible:
-
-```python
-result = model.simulate(
-    method="nf",
-    t_end=100.0,
-    n_steps=200,
-    seed=42,
-)
-```
-
-Network-free simulation does not require `generate_network()` — it operates directly on the rule definitions.
-
-## Working with Results
-
-### SimResult Object
+## 5. Work With Results
 
 ```python
 result = model.simulate(method="ode", t_end=100)
 
-# Time array
-print(result.time)          # numpy array, shape (n_steps+1,)
-
-# Observable values
-print(result.observables)   # dict: name → numpy array
-
-# Species concentrations (ODE/SSA only)
-print(result.concentrations)  # numpy array, shape (n_steps+1, n_species)
-
-# Number of time points
-print(result.n_steps)
-
-# Observable names
+print(result.time)
 print(result.observable_names)
-```
+print(result.observables["AB"])
 
-### Plotting
-
-```python
-# Plot all observables
-fig, ax = result.plot()
-
-# Plot specific observables
-fig, ax = result.plot(observables=["A_free", "AB_complex"])
-```
-
-### Export to DataFrame
-
-```python
 df = result.to_dataframe()
-print(df.head())
-#    time     Afree        AB
-# 0   0.0  100.000  0.000000
-# 1   0.5   95.123  4.876543
-# ...
+fig, ax = result.plot()
 ```
 
-## Executing Model Actions
+In notebooks, `model` and `result` render as HTML automatically via `_repr_html_()`.
 
-If your BNGL file has an `actions` block (e.g., `generate_network`, `simulate`, `writeXML`), you can execute all actions:
+## 6. Scan Parameters
+
+### One-dimensional scan
 
 ```python
-model = bionetgen.load("model.bngl")
-model.execute(verbose=True)
+import numpy as np
+
+scan = model.parameter_scan(
+    parameter="k_on",
+    values=np.logspace(-2, 2, 20),
+    method="ode",
+    t_end=100,
+)
+
+print(scan.final("AB"))
+print(scan.at_time(50, "AB"))
+frame = scan.to_dataframe()
 ```
 
-This is equivalent to running `bng_cpp model.bngl` from the command line.
-
-## Exporting Models
+### Two-dimensional scan
 
 ```python
-model = bionetgen.load("model.bngl")
+scan2d = model.parameter_scan_2d(
+    parameter1="k_on",
+    values1=np.logspace(-2, 2, 10),
+    parameter2="k_off",
+    values2=np.logspace(-3, 1, 10),
+    method="ode",
+    t_end=100,
+)
 
-# Export to various formats
+scan2d.plot_heatmap("AB")
+```
+
+## 7. Sensitivity Analysis
+
+```python
+sens = model.sensitivity_analysis(
+    parameters=["k_on", "k_off"],
+    observables=["AB"],
+    method="ode",
+    t_end=100,
+    delta=0.01,
+)
+
+print(sens.matrix)
+print(sens.rank("AB"))
+```
+
+## 8. Export Models
+
+```python
 model.write_xml("model.xml")
 model.write_bngl("model_copy.bngl")
-
-# These require network generation first:
 model.write_net("model.net")
 model.write_sbml("model.sbml")
 model.write_matlab("model.m")
 model.write_latex("model.tex")
+model.contact_map("contact_map.graphml")
 ```
 
-## Parameter Scans
+Graph exports are also available as string-returning methods when no path is supplied:
 
 ```python
-import numpy as np
+graphml = model.contact_map()
+```
+
+## 9. Import SBML
+
+```python
 import bionetgen
 
-model = bionetgen.load("model.bngl")
-k_values = np.logspace(-2, 2, 20)
-final_obs = []
-
-for k in k_values:
-    model.set_parameter("k_on", k)
-    model._network = None  # force re-generation
-    result = model.simulate(method="ode", t_end=100)
-    final_obs.append(result.observables["AB"][-1])
-
-import matplotlib.pyplot as plt
-plt.semilogx(k_values, final_obs)
-plt.xlabel("k_on")
-plt.ylabel("Final [AB]")
-plt.show()
+model = bionetgen.from_sbml("tests/python/test/test_sbml.xml")
+bngl_text = bionetgen.sbml_to_bngl("tests/python/test/test_sbml.xml")
 ```
 
-## One-Line Simulation
+If atomization is needed, pass `atomize=True`.
 
-For quick simulations without needing the model object:
+## 10. Build Models Programmatically
 
 ```python
-result = bionetgen.run("model.bngl", method="ode", t_end=100, n_steps=200)
-result.plot()
+from bionetgen.builder import ModelBuilder
+
+builder = ModelBuilder("MyModel")
+builder.add_parameter("k_on", 1.0)
+builder.add_parameter("k_off", 0.1)
+builder.add_molecule_type("A(b)")
+builder.add_molecule_type("B(a)")
+builder.add_seed_species("A(b)", 100)
+builder.add_seed_species("B(a)", 200)
+builder.add_observable("Molecules", "AB", "A(b!1).B(a!1)")
+builder.add_rule("A(b) + B(a) -> A(b!1).B(a!1)", "k_on")
+builder.add_rule("A(b!1).B(a!1) -> A(b) + B(a)", "k_off")
+
+model = builder.build()
+print(builder.to_bngl())
 ```
 
-## Legacy Compatibility
+## 11. CLI
 
-To fall back to the Perl-based BNG2.pl engine (requires Perl installed):
+```bash
+bionetgen run model.bngl --method ode --t-end 100
+bionetgen scan model.bngl --parameter k_on --min 0.01 --max 100 --n-points 50
+bionetgen sensitivity model.bngl --parameter k_on --observable AB
+bionetgen visualize model.bngl --type contact_map -o contact_map.graphml
+bionetgen check model.bngl
+bionetgen export model.bngl --format sbml --output model.xml
+```
+
+See [docs/cli_reference.md](cli_reference.md) for the full command reference.
+
+## 12. Legacy Mode
+
+If you need the old Perl-based behavior temporarily, set:
 
 ```bash
 export BIONETGEN_USE_PERL=1
 ```
 
-This is only needed if you encounter a model that the C++ engine doesn't yet handle correctly.
+This is only for compatibility with old scripts.

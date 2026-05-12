@@ -136,5 +136,118 @@ def export(model, fmt, output):
     click.echo(f"Exported to {output}")
 
 
+@main.command()
+@click.argument("model", type=click.Path(exists=True))
+@click.option("--parameter", "parameter_name", required=True, help="Parameter to scan.")
+@click.option("--min", "min_value", required=True, type=float, help="Minimum parameter value.")
+@click.option("--max", "max_value", required=True, type=float, help="Maximum parameter value.")
+@click.option("--n-points", default=20, type=int, show_default=True, help="Number of scan points.")
+@click.option("--log-scale", is_flag=True, help="Use logarithmic spacing.")
+@click.option(
+    "--method",
+    default="ode",
+    type=click.Choice(["ode", "ssa", "nf", "pla", "psa"]),
+    show_default=True,
+    help="Simulation method.",
+)
+@click.option("--t-end", default=100.0, type=float, show_default=True, help="End time.")
+@click.option("--n-steps", default=100, type=int, show_default=True, help="Number of output steps.")
+@click.option("--parallel", default=0, type=int, show_default=True, help="Worker process count.")
+@click.option("--output", "-o", default=None, type=click.Path(), help="Optional CSV output path.")
+def scan(model, parameter_name, min_value, max_value, n_points, log_scale, method, t_end, n_steps, parallel, output):
+    """Run a one-dimensional parameter scan."""
+
+    from bionetgen import load
+
+    bng_model = load(model)
+    scan_result = bng_model.parameter_scan(
+        parameter=parameter_name,
+        min=min_value,
+        max=max_value,
+        n_points=n_points,
+        log_scale=log_scale,
+        method=method,
+        t_end=t_end,
+        n_steps=n_steps,
+        parallel=parallel,
+    )
+
+    frame = scan_result.to_dataframe()
+    if output:
+        frame.to_csv(output, index=False)
+        click.echo(f"Scan results written to {output}")
+    else:
+        click.echo(frame.to_string(index=False))
+
+
+@main.command()
+@click.argument("model", type=click.Path(exists=True))
+@click.option("--parameter", "parameter_names", multiple=True, help="Parameter to include; repeat for multiple parameters.")
+@click.option("--observable", "observable_names", multiple=True, help="Observable to include; repeat for multiple observables.")
+@click.option("--method", default="ode", type=click.Choice(["ode", "ssa", "nf", "pla", "psa"]), show_default=True)
+@click.option("--t-end", default=100.0, type=float, show_default=True)
+@click.option("--n-steps", default=100, type=int, show_default=True)
+@click.option("--delta", default=0.01, type=float, show_default=True, help="Relative perturbation size.")
+@click.option("--parallel", default=0, type=int, show_default=True, help="Worker process count.")
+@click.option("--output", "-o", default=None, type=click.Path(), help="Optional CSV output path.")
+def sensitivity(model, parameter_names, observable_names, method, t_end, n_steps, delta, parallel, output):
+    """Run local sensitivity analysis."""
+
+    from bionetgen import load
+
+    bng_model = load(model)
+    result = bng_model.sensitivity_analysis(
+        parameters=list(parameter_names) or None,
+        observables=list(observable_names) or None,
+        method=method,
+        t_end=t_end,
+        n_steps=n_steps,
+        delta=delta,
+        parallel=parallel,
+    )
+
+    frame = result.to_dataframe()
+    if output:
+        frame.to_csv(output, index=False)
+        click.echo(f"Sensitivity matrix written to {output}")
+    else:
+        click.echo(frame.to_string(index=False))
+
+
+@main.command()
+@click.argument("model", type=click.Path(exists=True))
+@click.option(
+    "--type",
+    "viz_type",
+    default="contact_map",
+    type=click.Choice(
+        [
+            "contact_map",
+            "regulatory_graph",
+            "rule_influence_graph",
+            "reaction_network_graph",
+            "ruleviz_pattern",
+            "ruleviz_operation",
+            "process_graph",
+            "sbml_multi",
+        ]
+    ),
+    show_default=True,
+    help="Visualization to export.",
+)
+@click.option("--output", "-o", default=None, type=click.Path(), help="Output GraphML path.")
+def visualize(model, viz_type, output):
+    """Generate a model visualization graph."""
+
+    from bionetgen import load
+
+    bng_model = load(model)
+    graph_text = getattr(bng_model, viz_type)(output)
+    if output is None:
+        click.echo(graph_text)
+    else:
+        click.echo(f"Wrote {viz_type} to {output}")
+
+
 if __name__ == "__main__":
     main()

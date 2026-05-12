@@ -29,160 +29,308 @@ Load a model and run simulation in one call.
 **Returns:** `SimResult`
 
 ---
+# API Reference
+
+This reference covers the high-level public API. For low-level extension details, see [python/bionetgen/_bionetgen_cpp.pyi](../python/bionetgen/_bionetgen_cpp.pyi).
+
+## Module: `bionetgen`
+
+### `load(path) -> BioNetGenModel`
+
+Parse a BNGL file and return a model object.
+
+### `run(path, method="ode", t_end=100.0, n_steps=100, **kwargs) -> SimResult`
+
+Load a BNGL file and run a simulation in one call.
+
+### `parameter_scan(model_or_path, parameter, *, values=None, min=None, max=None, n_points=None, log_scale=False, **kwargs) -> ScanResult`
+
+Run a 1D parameter scan and return time-series results for each sampled value.
+
+### `parameter_scan_2d(model_or_path, parameter1, values1, parameter2, values2, *, **kwargs) -> ScanResult2D`
+
+Run a 2D parameter grid scan.
+
+### `from_sbml(path, atomize=False, **options) -> BioNetGenModel`
+
+Import SBML through the atomizer bridge and return a model.
+
+### `sbml_to_bngl(path, atomize=False, **options) -> str`
+
+Translate SBML to BNGL text.
+
+### `ModelBuilder`
+
+Build BNGL programmatically.
+
+### `BioNetGenError`
+
+Raised when SBML import fails or produces no usable BNGL output.
 
 ## Class: `BioNetGenModel`
 
-Created by `bionetgen.load()`. Wraps the C++ model and provides simulation methods.
+High-level wrapper around the parsed C++ model.
 
 ### Properties
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `parameters` | `list[Parameter]` | Model parameters |
-| `molecule_types` | `list[MoleculeType]` | Molecule type definitions |
-| `seed_species` | `list[SeedSpecies]` | Initial species and concentrations |
-| `observables` | `list[Observable]` | Observable definitions |
-| `reaction_rules` | `list[ReactionRule]` | Reaction rule definitions |
-| `functions` | `list[Function]` | User-defined functions |
-| `compartments` | `list[Compartment]` | Compartment definitions |
-| `actions` | `list[Action]` | Action block entries |
-| `name` | `str` | Model name |
+| Property | Description |
+| --- | --- |
+| `parameters` | Model parameters as `Parameter` objects |
+| `molecule_types` | Molecule type definitions |
+| `seed_species` | Seed species definitions |
+| `observables` | Observable definitions |
+| `reaction_rules` | Reaction rules |
+| `functions` | User-defined functions |
+| `compartments` | Compartment definitions |
+| `actions` | Action block entries |
+| `name` | Model name |
+| `source_path` | Original BNGL file path when available |
 
 ### Methods
 
-#### `set_parameter(name: str, value: float) → None`
+#### `get_parameter(name)`
 
-Set a parameter value by name.
+Return a single parameter object by name.
 
-**Raises:** `KeyError` if parameter not found.
+#### `set_parameter(name, value)`
 
----
+Set the numeric value of a parameter.
 
-#### `generate_network(max_iter: int = 100) → GeneratedNetwork`
+#### `generate_network(max_iter=100)`
 
-Generate the reaction network by iterative rule application.
+Generate the reaction network, caching it on the model.
 
-**Parameters:**
-- `max_iter` — Maximum iterations for network generation.
+#### `simulate(method="ode", t_end=100.0, n_steps=100, ...) -> SimResult`
 
-**Returns:** `GeneratedNetwork` with `.num_species` and `.num_reactions`.
+Run a simulation using one of the bundled engines.
 
----
+#### `execute(verbose=False)`
 
-#### `simulate(method="ode", t_end=100.0, n_steps=100, ...) → SimResult`
+Execute actions in the BNGL action block.
 
-Run a simulation.
+#### `parameter_scan(...) -> ScanResult`
 
-**Parameters:**
-- `method` (str) — `"ode"`, `"ssa"`, or `"nf"`.
-- `t_end` (float) — End time.
-- `n_steps` (int) — Number of output time steps.
-- `t_start` (float) — Start time (default 0.0).
-- `rtol` (float) — Relative tolerance, ODE only (default 1e-8).
-- `atol` (float) — Absolute tolerance, ODE only (default 1e-8).
-- `seed` (int) — Random seed for SSA/NF (default 0 = system).
-- `verbose` (bool) — Print progress (default False).
+Run a 1D scan.
 
-**Returns:** `SimResult`
+#### `parameter_scan_2d(...) -> ScanResult2D`
 
----
+Run a 2D scan.
 
-#### `execute(verbose: bool = False) → None`
+#### `sensitivity_analysis(...) -> SensitivityResult`
 
-Execute all actions defined in the model's action block.
+Compute local normalized sensitivities.
 
----
+#### `contact_map(path=None)`
 
-#### `write_xml(path: str) → None`
+Export a contact map graph.
 
-Export model to BioNetGen XML format.
+#### `regulatory_graph(path=None)`
 
-#### `write_bngl(path: str) → None`
+Export a regulatory graph.
 
-Export model back to BNGL format.
+#### `rule_influence_graph(path=None)`
 
-#### `write_net(path: str) → None`
+Export a rule influence graph.
 
-Export generated network to `.net` format. Generates network if needed.
+#### `reaction_network_graph(path=None)`
 
-#### `write_sbml(path: str) → None`
+Export a reaction network graph.
 
-Export to SBML Level 2 Version 3. Generates network if needed.
+#### `ruleviz_pattern(path=None)`
 
-#### `write_matlab(path: str) → None`
+Export a rule pattern graph.
 
-Export to MATLAB ODE script. Generates network if needed.
+#### `ruleviz_operation(path=None)`
 
-#### `write_latex(path: str) → None`
+Export a rule operation graph.
 
-Export to LaTeX document. Generates network if needed.
+#### `process_graph(path=None)`
 
----
+Export a process graph.
+
+#### `sbml_multi(path=None)`
+
+Export SBML Multi.
+
+#### `write_xml(path)` / `write_bngl(path)` / `write_net(path)` / `write_sbml(path)` / `write_matlab(path)` / `write_latex(path)`
+
+Export the model to the requested format.
+
+#### `_repr_html_()`
+
+Return HTML for notebook rendering.
 
 ## Class: `SimResult`
 
-Container for simulation output.
+Simulation output container.
 
-### Properties
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `time` | `np.ndarray` | 1D array of time points |
-| `observables` | `dict[str, np.ndarray]` | Observable name → values array |
-| `concentrations` | `np.ndarray \| None` | 2D array (steps × species), ODE/SSA only |
-| `n_steps` | `int` | Number of time points |
-| `observable_names` | `list[str]` | List of observable names |
+| Property | Description |
+| --- | --- |
+| `time` | Time points as a NumPy array |
+| `observables` | Observable arrays keyed by name |
+| `concentrations` | Species concentrations, when available |
+| `n_steps` | Number of time points |
+| `observable_names` | Observable name list |
 
 ### Methods
 
-#### `to_dataframe() → pandas.DataFrame`
+#### `to_dataframe() -> pandas.DataFrame`
 
-Convert to DataFrame with time and observable columns. Requires pandas.
+Convert the result to a wide DataFrame.
 
----
+#### `plot(observables=None, show=True, **kwargs)`
 
-#### `plot(observables=None, **kwargs) → tuple[Figure, Axes]`
+Plot observable time courses with matplotlib.
 
-Plot observable time courses.
+#### `_repr_html_()`
 
-**Parameters:**
-- `observables` (list[str] | None) — Subset to plot; None = all.
-- `**kwargs` — Passed to `matplotlib.pyplot.plot()`.
+Return notebook HTML with an embedded plot.
 
----
+## Class: `ScanResult`
 
-## Low-Level C++ Bindings: `_bionetgen_cpp`
+1D scan output.
 
-For advanced usage, the C++ bindings can be used directly:
+| Property | Description |
+| --- | --- |
+| `parameter_name` | Scanned parameter name |
+| `parameter_values` | Scan grid values |
+| `results` | List of `SimResult` objects |
+| `observable_names` | Observable names |
 
-```python
-import _bionetgen_cpp as _cpp
+### Methods
 
-model = _cpp.parse_file("model.bngl")
-network = _cpp.generate_network(model, max_iter=100)
-result = _cpp.simulate_ode(model, network, t_end=100, n_steps=200)
+#### `final(observable)`
 
-# result is a dict with numpy arrays
-print(result["time"])
-print(result["observables"])
-```
+Return final values for one observable across the scan grid.
 
-See `_bionetgen_cpp.pyi` for full type annotations.
+#### `at_time(t, observable)`
 
----
+Return interpolated values at a given time point.
 
-## Exceptions
+#### `to_dataframe()`
 
-### `_bionetgen_cpp.ParseError`
+Convert to a long-form DataFrame.
 
-Raised when:
-- A BNGL file cannot be opened
-- The file contains syntax errors
-- AST construction fails
+#### `plot(observable, show=True, **kwargs)`
 
-```python
-try:
-    model = bionetgen.load("bad_model.bngl")
-except _bionetgen_cpp.ParseError as e:
-    print(f"Parse failed: {e}")
-```
+Plot final values versus the scanned parameter.
+
+#### `_repr_html_()`
+
+Return notebook HTML with an embedded scan plot.
+
+## Class: `ScanResult2D`
+
+2D scan output with the same shape conventions as `values1 x values2`.
+
+### Methods
+
+#### `final(observable)`
+
+Return the final-value heatmap.
+
+#### `at_time(t, observable)`
+
+Return the time-slice heatmap.
+
+#### `to_dataframe()`
+
+Convert the grid to a long-form DataFrame.
+
+#### `plot_heatmap(observable, show=True, **kwargs)`
+
+Plot a heatmap with matplotlib.
+
+#### `_repr_html_()`
+
+Return notebook HTML with an embedded heatmap.
+
+## Class: `SensitivityResult`
+
+Sensitivity matrix container.
+
+| Property | Description |
+| --- | --- |
+| `parameter_names` | Parameters in row order |
+| `observable_names` | Observables in column order |
+| `matrix` | Normalized sensitivity matrix |
+| `baseline` | Baseline `SimResult` |
+
+### Methods
+
+#### `rank(observable)`
+
+Rank parameters by absolute sensitivity for one observable.
+
+#### `to_dataframe()`
+
+Return the matrix as a DataFrame.
+
+#### `plot(show=True, **kwargs)`
+
+Plot the matrix as a heatmap.
+
+## Class: `ModelBuilder`
+
+Build BNGL programmatically.
+
+### Methods
+
+#### `add_parameter(name, value)`
+
+Append a parameter definition.
+
+#### `add_molecule_type(pattern)`
+
+Append a molecule type definition.
+
+#### `add_seed_species(pattern, amount, compartment=None)`
+
+Append a seed species definition.
+
+#### `add_observable(observable_type, name, pattern)`
+
+Append an observable definition.
+
+#### `add_rule(reaction, rate, label=None)`
+
+Append a reaction rule.
+
+#### `add_function(name, expression, args=None)`
+
+Append a function definition.
+
+#### `add_compartment(line)`
+
+Append a raw compartment line.
+
+#### `add_action(action)`
+
+Append a raw action line.
+
+#### `to_bngl()`
+
+Return the assembled BNGL text.
+
+#### `build()`
+
+Parse the BNGL text with the C++ backend and return a `BioNetGenModel`.
+
+## Module: `bionetgen.viz`
+
+These functions return the serialized graph text and optionally write it to disk.
+
+| Function | Description |
+| --- | --- |
+| `write_contact_map(model, path=None)` | Contact map graph export |
+| `write_regulatory_graph(model, path=None)` | Regulatory graph export |
+| `write_rule_influence_graph(model, path=None)` | Rule influence graph export |
+| `write_reaction_network_graph(model, path=None)` | Reaction network graph export |
+| `write_ruleviz_pattern(model, path=None)` | Rule pattern graph export |
+| `write_ruleviz_operation(model, path=None)` | Rule operation graph export |
+| `write_process_graph(model, path=None)` | Process graph export |
+| `write_sbml_multi(model, path=None)` | SBML Multi export |
+
+## Low-Level C++ Bindings
+
+The `_bionetgen_cpp` module still exposes `parse_file`, `parse_string`, `generate_network`, `simulate_ode`, `simulate_ssa`, `simulate_nf`, and `io.*` helpers. The new `viz` submodule mirrors the graph exports used by the Python wrappers.
