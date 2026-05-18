@@ -56,23 +56,35 @@ class ModelBuilder:
         compartment: Optional[str] = None,
     ) -> "ModelBuilder":
         prefix = f"@{compartment}:" if compartment else ""
-        self.seed_species.append(f"{prefix}{_normalize_line(pattern)} {_normalize_line(amount)}")
+        self.seed_species.append(
+            f"{prefix}{_normalize_line(pattern)} {_normalize_line(amount)}"
+        )
         return self
 
-    def add_observable(self, observable_type: str, name: str, pattern: str) -> "ModelBuilder":
+    def add_observable(
+        self, observable_type: str, name: str, pattern: str
+    ) -> "ModelBuilder":
         self.observables.append(
             f"{_normalize_line(observable_type)} {_normalize_line(name)} {_normalize_line(pattern)}"
         )
         return self
 
-    def add_rule(self, reaction: str, rate: object, label: Optional[str] = None) -> "ModelBuilder":
+    def add_rule(
+        self, reaction: str, rate: object, label: Optional[str] = None
+    ) -> "ModelBuilder":
         prefix = f"{_normalize_line(label)}: " if label else ""
-        self.reaction_rules.append(f"{prefix}{_normalize_line(reaction)} {_normalize_line(rate)}")
+        self.reaction_rules.append(
+            f"{prefix}{_normalize_line(reaction)} {_normalize_line(rate)}"
+        )
         return self
 
-    def add_function(self, name: str, expression: object, args: Optional[Sequence[str]] = None) -> "ModelBuilder":
+    def add_function(
+        self, name: str, expression: object, args: Optional[Sequence[str]] = None
+    ) -> "ModelBuilder":
         argument_text = ",".join(args or [])
-        self.functions.append(f"{_normalize_line(name)}({argument_text}) = {_normalize_line(expression)}")
+        self.functions.append(
+            f"{_normalize_line(name)}({argument_text}) = {_normalize_line(expression)}"
+        )
         return self
 
     def add_compartment(self, line: str) -> "ModelBuilder":
@@ -106,7 +118,9 @@ class ModelBuilder:
 
     def build(self) -> BioNetGenModel:
         if _cpp is None:
-            raise ImportError("The compiled _bionetgen_cpp extension is required to build models")
+            raise ImportError(
+                "The compiled _bionetgen_cpp extension is required to build models"
+            )
         return BioNetGenModel(_cpp.parse_string(self.to_bngl()))
 
 

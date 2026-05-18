@@ -7,8 +7,7 @@ import bionetgen
 
 
 def _write_decay_model(path):
-    path.write_text(
-        """
+    path.write_text("""
 begin model
 begin parameters
     k 0.1
@@ -27,8 +26,7 @@ begin reaction rules
     X() -> 0 k
 end reaction rules
 end model
-"""
-    )
+""")
 
 
 def test_parameter_scan_1d_and_dataframe(tmp_path):
@@ -60,10 +58,14 @@ def test_parameter_scan_log_and_linear_spacing(tmp_path):
     _write_decay_model(model_path)
     model = bionetgen.load(str(model_path))
 
-    log_scan = model.parameter_scan(parameter="k", min=1e-2, max=1e2, n_points=4, log_scale=True)
+    log_scan = model.parameter_scan(
+        parameter="k", min=1e-2, max=1e2, n_points=4, log_scale=True
+    )
     assert np.allclose(log_scan.parameter_values, np.logspace(-2, 2, 4))
 
-    lin_scan = model.parameter_scan(parameter="k", min=0.0, max=1.0, n_points=5, log_scale=False)
+    lin_scan = model.parameter_scan(
+        parameter="k", min=0.0, max=1.0, n_points=5, log_scale=False
+    )
     assert np.allclose(lin_scan.parameter_values, np.linspace(0.0, 1.0, 5))
 
 

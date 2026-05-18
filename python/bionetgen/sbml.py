@@ -29,7 +29,9 @@ def _translate_sbml(sbml_path: str, atomize: bool = False, **options) -> str:
         raise BioNetGenError(f"SBML import is unavailable: {exc}") from exc
 
     sbml_path = str(Path(sbml_path).resolve())
-    reaction_definitions, use_id, naming_conventions = translator.selectReactionDefinitions(sbml_path)
+    reaction_definitions, use_id, naming_conventions = (
+        translator.selectReactionDefinitions(sbml_path)
+    )
 
     with TemporaryDirectory() as temp_dir:
         output_path = str(Path(temp_dir) / (Path(sbml_path).stem + ".bngl"))
@@ -61,7 +63,9 @@ def _translate_sbml(sbml_path: str, atomize: bool = False, **options) -> str:
                 bngl_text = handle.read()
 
         if not bngl_text:
-            raise BioNetGenError(f"SBML translation produced no BNGL output for {sbml_path}")
+            raise BioNetGenError(
+                f"SBML translation produced no BNGL output for {sbml_path}"
+            )
 
         return bngl_text
 
@@ -76,8 +80,12 @@ def from_sbml(sbml_path: str, atomize: bool = False, **options) -> BioNetGenMode
     """Load SBML and return a BioNetGenModel."""
 
     if _cpp is None:
-        raise ImportError("The compiled _bionetgen_cpp extension is required to import SBML")
-    return BioNetGenModel(_cpp.parse_string(sbml_to_bngl(sbml_path, atomize=atomize, **options)))
+        raise ImportError(
+            "The compiled _bionetgen_cpp extension is required to import SBML"
+        )
+    return BioNetGenModel(
+        _cpp.parse_string(sbml_to_bngl(sbml_path, atomize=atomize, **options))
+    )
 
 
 __all__ = ["BioNetGenError", "from_sbml", "sbml_to_bngl"]

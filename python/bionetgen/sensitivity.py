@@ -11,7 +11,12 @@ import numpy as np
 
 from bionetgen.model import BioNetGenModel
 from bionetgen.result import SimResult
-from bionetgen.scan import _coerce_model, _simulation_kwargs, _simulate_serial, _worker_scan_single
+from bionetgen.scan import (
+    _coerce_model,
+    _simulation_kwargs,
+    _simulate_serial,
+    _worker_scan_single,
+)
 
 
 def _default_parameter_names(model: BioNetGenModel) -> list[str]:
@@ -23,7 +28,9 @@ def _default_observable_names(model: BioNetGenModel) -> list[str]:
 
 
 def _final_values(result: SimResult, observable_names: Sequence[str]) -> np.ndarray:
-    return np.asarray([result.observables[name][-1] for name in observable_names], dtype=float)
+    return np.asarray(
+        [result.observables[name][-1] for name in observable_names], dtype=float
+    )
 
 
 @dataclass
@@ -44,7 +51,9 @@ class SensitivityResult:
     def to_dataframe(self):
         import pandas as pd
 
-        frame = pd.DataFrame(self.matrix, index=self.parameter_names, columns=self.observable_names)
+        frame = pd.DataFrame(
+            self.matrix, index=self.parameter_names, columns=self.observable_names
+        )
         frame.index.name = "parameter"
         return frame.reset_index()
 
@@ -109,7 +118,9 @@ def sensitivity_analysis(
     if parallel and parallel > 1:
         source_path = model.source_path
         if not source_path:
-            raise ValueError("parallel sensitivity analysis requires a model loaded from a BNGL file")
+            raise ValueError(
+                "parallel sensitivity analysis requires a model loaded from a BNGL file"
+            )
     else:
         source_path = None
 
@@ -122,7 +133,9 @@ def sensitivity_analysis(
         for parameter_name in parameter_names:
             nominal = model.get_parameter(parameter_name).value
             if nominal is None:
-                raise ValueError(f"Parameter {parameter_name!r} does not have a numeric value")
+                raise ValueError(
+                    f"Parameter {parameter_name!r} does not have a numeric value"
+                )
             plus_value = float(nominal) * (1.0 + delta)
             minus_value = float(nominal) * (1.0 - delta)
             payloads.append((source_path, {parameter_name: plus_value}, sim_kwargs))
@@ -134,7 +147,9 @@ def sensitivity_analysis(
         for parameter_index, parameter_name in enumerate(parameter_names):
             nominal = model.get_parameter(parameter_name).value
             if nominal is None:
-                raise ValueError(f"Parameter {parameter_name!r} does not have a numeric value")
+                raise ValueError(
+                    f"Parameter {parameter_name!r} does not have a numeric value"
+                )
             plus_result = perturbed_results[2 * parameter_index]
             minus_result = perturbed_results[2 * parameter_index + 1]
             plus_values = _final_values(plus_result, observable_names)
@@ -153,9 +168,15 @@ def sensitivity_analysis(
     for parameter_index, parameter_name in enumerate(parameter_names):
         nominal = model.get_parameter(parameter_name).value
         if nominal is None:
-            raise ValueError(f"Parameter {parameter_name!r} does not have a numeric value")
-        plus_result = _simulate_serial(model, {parameter_name: float(nominal) * (1.0 + delta)}, sim_kwargs)
-        minus_result = _simulate_serial(model, {parameter_name: float(nominal) * (1.0 - delta)}, sim_kwargs)
+            raise ValueError(
+                f"Parameter {parameter_name!r} does not have a numeric value"
+            )
+        plus_result = _simulate_serial(
+            model, {parameter_name: float(nominal) * (1.0 + delta)}, sim_kwargs
+        )
+        minus_result = _simulate_serial(
+            model, {parameter_name: float(nominal) * (1.0 - delta)}, sim_kwargs
+        )
         plus_values = _final_values(plus_result, observable_names)
         minus_values = _final_values(minus_result, observable_names)
         for observable_index, nominal_value in enumerate(baseline_values):

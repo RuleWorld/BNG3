@@ -27,7 +27,12 @@ def test_visualization_exports(tmp_path):
         content = export(str(path))
         assert path.exists()
         assert len(content.strip()) > 0
-        assert content.lstrip().startswith("graph [") or "<sbml" in content or content.lstrip().startswith("<?xml")
+        assert (
+            content.lstrip().startswith("graph [")
+            or "<sbml" in content
+            or content.lstrip().startswith("<?xml")
+        )
+
 
 def test_contact_map_string_export():
     model_path = Path(__file__).parent / "viz" / "test.bngl"

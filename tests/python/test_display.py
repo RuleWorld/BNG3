@@ -6,8 +6,7 @@ import bionetgen
 
 
 def _write_decay_model(path):
-    path.write_text(
-        """
+    path.write_text("""
 begin model
 begin parameters
     k 0.1
@@ -26,8 +25,7 @@ begin reaction rules
     X() -> 0 k
 end reaction rules
 end model
-"""
-    )
+""")
 
 
 def test_model_and_result_html(tmp_path):
@@ -51,7 +49,9 @@ def test_scan_html(tmp_path):
     _write_decay_model(model_path)
 
     model = bionetgen.load(str(model_path))
-    scan = model.parameter_scan(parameter="k", values=[0.01, 0.1, 0.2], method="ode", t_end=5, n_steps=10)
+    scan = model.parameter_scan(
+        parameter="k", values=[0.01, 0.1, 0.2], method="ode", t_end=5, n_steps=10
+    )
     scan_html = scan._repr_html_()
     assert "<img" in scan_html
     assert "k" in scan_html

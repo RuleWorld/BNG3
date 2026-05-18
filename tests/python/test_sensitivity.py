@@ -15,7 +15,9 @@ def test_sensitivity_decay_model():
     builder.add_rule("X() -> 0", "k")
 
     model = builder.build()
-    result = model.sensitivity_analysis(parameters=["k"], observables=["Xtot"], t_end=10, n_steps=50, delta=0.01)
+    result = model.sensitivity_analysis(
+        parameters=["k"], observables=["Xtot"], t_end=10, n_steps=50, delta=0.01
+    )
 
     assert result.matrix.shape == (1, 1)
     assert result.matrix[0, 0] == pytest.approx(-1.0, abs=0.2)
@@ -37,7 +39,13 @@ def test_sensitivity_binding_signs():
     builder.add_rule("A(b!1).B(a!1) -> A(b) + B(a)", "k_off")
 
     model = builder.build()
-    result = model.sensitivity_analysis(parameters=["k_on", "k_off"], observables=["AB"], t_end=50, n_steps=100, delta=0.01)
+    result = model.sensitivity_analysis(
+        parameters=["k_on", "k_off"],
+        observables=["AB"],
+        t_end=50,
+        n_steps=100,
+        delta=0.01,
+    )
 
     assert result.matrix[0, 0] > 0
     assert result.matrix[1, 0] < 0

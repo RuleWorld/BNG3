@@ -23,7 +23,9 @@ def _table(headers: Sequence[str], rows: Iterable[Sequence[object]]) -> str:
     return f"<table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>"
 
 
-def _details(title: str, headers: Sequence[str], rows: Iterable[Sequence[object]]) -> str:
+def _details(
+    title: str, headers: Sequence[str], rows: Iterable[Sequence[object]]
+) -> str:
     return (
         "<details open>"
         f"<summary>{_escape(title)}</summary>"
@@ -76,7 +78,11 @@ def _line_chart_svg(
         return margin_left + (float(value) - x_min) / (x_max - x_min) * plot_width
 
     def y_map(value: float) -> float:
-        return margin_top + plot_height - (float(value) - y_min) / (y_max - y_min) * plot_height
+        return (
+            margin_top
+            + plot_height
+            - (float(value) - y_min) / (y_max - y_min) * plot_height
+        )
 
     colors = ["#1f77b4", "#d62728", "#2ca02c", "#ff7f0e", "#9467bd", "#17becf"]
     parts = [
@@ -116,7 +122,9 @@ def _line_chart_svg(
     legend_y = margin_top + 10
     for index, (values, label) in enumerate(zip(y_series, labels)):
         color = colors[index % len(colors)]
-        coords = " ".join(f"{x_map(xv):.2f},{y_map(yv):.2f}" for xv, yv in zip(x, values))
+        coords = " ".join(
+            f"{x_map(xv):.2f},{y_map(yv):.2f}" for xv, yv in zip(x, values)
+        )
         parts.append(
             f'<polyline fill="none" stroke="{color}" stroke-width="2" points="{coords}" />'
         )
@@ -171,7 +179,11 @@ def _heatmap_svg(
         return margin_left + (float(value) - x_min) / (x_max - x_min) * plot_width
 
     def y_map(value: float) -> float:
-        return margin_top + plot_height - (float(value) - y_min) / (y_max - y_min) * plot_height
+        return (
+            margin_top
+            + plot_height
+            - (float(value) - y_min) / (y_max - y_min) * plot_height
+        )
 
     min_value = float(np.min(values))
     max_value = float(np.max(values))
@@ -234,22 +246,43 @@ def render_model_html(model) -> str:
         value = getattr(parameter, "value", None)
         expression = getattr(parameter, "expression", None)
         parameter_rows.append((parameter.name, value, expression))
-    sections.append(_details("Parameters", ["Name", "Value", "Expression"], parameter_rows))
+    sections.append(
+        _details("Parameters", ["Name", "Value", "Expression"], parameter_rows)
+    )
 
     molecule_rows = []
     for molecule in getattr(model, "molecule_types", []):
         components = ", ".join(
-            f"{component.name}[{','.join(component.allowed_states)}]" if getattr(component, "allowed_states", []) else component.name
+            (
+                f"{component.name}[{','.join(component.allowed_states)}]"
+                if getattr(component, "allowed_states", [])
+                else component.name
+            )
             for component in getattr(molecule, "components", [])
         )
-        molecule_rows.append((molecule.name, components, getattr(molecule, "is_population", False)))
-    sections.append(_details("Molecule Types", ["Name", "Components", "Population"], molecule_rows))
+        molecule_rows.append(
+            (molecule.name, components, getattr(molecule, "is_population", False))
+        )
+    sections.append(
+        _details("Molecule Types", ["Name", "Components", "Population"], molecule_rows)
+    )
 
     seed_rows = []
     for seed in getattr(model, "seed_species", []):
         amount = getattr(seed, "amount", None)
-        seed_rows.append((seed.pattern, amount, getattr(seed, "is_constant", False), getattr(seed, "compartment", "")))
-    sections.append(_details("Seed Species", ["Pattern", "Amount", "Constant", "Compartment"], seed_rows))
+        seed_rows.append(
+            (
+                seed.pattern,
+                amount,
+                getattr(seed, "is_constant", False),
+                getattr(seed, "compartment", ""),
+            )
+        )
+    sections.append(
+        _details(
+            "Seed Species", ["Pattern", "Amount", "Constant", "Compartment"], seed_rows
+        )
+    )
 
     rule_rows = []
     for rule in getattr(model, "reaction_rules", []):
@@ -257,27 +290,55 @@ def render_model_html(model) -> str:
         products = " + ".join(getattr(rule, "product_patterns", []))
         rates = ", ".join(getattr(rule, "rates", []))
         modifiers = ", ".join(getattr(rule, "modifiers", []))
-        rule_rows.append((getattr(rule, "label", ""), reactants, products, rates, modifiers))
-    sections.append(_details("Reaction Rules", ["Label", "Reactants", "Products", "Rates", "Modifiers"], rule_rows))
+        rule_rows.append(
+            (getattr(rule, "label", ""), reactants, products, rates, modifiers)
+        )
+    sections.append(
+        _details(
+            "Reaction Rules",
+            ["Label", "Reactants", "Products", "Rates", "Modifiers"],
+            rule_rows,
+        )
+    )
 
     observable_rows = []
     for observable in getattr(model, "observables", []):
-        observable_rows.append((observable.name, getattr(observable, "type", ""), ", ".join(getattr(observable, "patterns", []))))
-    sections.append(_details("Observables", ["Name", "Type", "Patterns"], observable_rows))
+        observable_rows.append(
+            (
+                observable.name,
+                getattr(observable, "type", ""),
+                ", ".join(getattr(observable, "patterns", [])),
+            )
+        )
+    sections.append(
+        _details("Observables", ["Name", "Type", "Patterns"], observable_rows)
+    )
 
     function_rows = []
     for function in getattr(model, "functions", []):
-        function_rows.append((function.name, ", ".join(getattr(function, "args", [])), getattr(function, "expression", "")))
-    sections.append(_details("Functions", ["Name", "Arguments", "Expression"], function_rows))
+        function_rows.append(
+            (
+                function.name,
+                ", ".join(getattr(function, "args", [])),
+                getattr(function, "expression", ""),
+            )
+        )
+    sections.append(
+        _details("Functions", ["Name", "Arguments", "Expression"], function_rows)
+    )
 
     compartment_rows = []
     for compartment in getattr(model, "compartments", []):
-        compartment_rows.append((compartment.name, getattr(compartment, "dimension", "")))
+        compartment_rows.append(
+            (compartment.name, getattr(compartment, "dimension", ""))
+        )
     sections.append(_details("Compartments", ["Name", "Dimension"], compartment_rows))
 
     action_rows = []
     for action in getattr(model, "actions", []):
-        action_rows.append((getattr(action, "name", ""), getattr(action, "arguments", {})))
+        action_rows.append(
+            (getattr(action, "name", ""), getattr(action, "arguments", {}))
+        )
     sections.append(_details("Actions", ["Name", "Arguments"], action_rows))
 
     meta = []
@@ -292,10 +353,7 @@ def render_model_html(model) -> str:
     )
     return (
         "<div class='bng-model'>"
-        f"<h2>{_escape(name)}</h2>"
-        + "".join(meta)
-        + "".join(sections)
-        + "</div>"
+        f"<h2>{_escape(name)}</h2>" + "".join(meta) + "".join(sections) + "</div>"
     )
 
 
@@ -304,7 +362,9 @@ def render_sim_result_html(result) -> str:
     if not observable_names:
         return "<div class='bng-result'><p>No observable data available.</p></div>"
 
-    series = [np.asarray(result.observables[name], dtype=float) for name in observable_names]
+    series = [
+        np.asarray(result.observables[name], dtype=float) for name in observable_names
+    ]
     svg = _line_chart_svg(
         getattr(result, "time", np.array([])),
         series,

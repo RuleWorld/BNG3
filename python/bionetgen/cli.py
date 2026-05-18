@@ -139,9 +139,15 @@ def export(model, fmt, output):
 @main.command()
 @click.argument("model", type=click.Path(exists=True))
 @click.option("--parameter", "parameter_name", required=True, help="Parameter to scan.")
-@click.option("--min", "min_value", required=True, type=float, help="Minimum parameter value.")
-@click.option("--max", "max_value", required=True, type=float, help="Maximum parameter value.")
-@click.option("--n-points", default=20, type=int, show_default=True, help="Number of scan points.")
+@click.option(
+    "--min", "min_value", required=True, type=float, help="Minimum parameter value."
+)
+@click.option(
+    "--max", "max_value", required=True, type=float, help="Maximum parameter value."
+)
+@click.option(
+    "--n-points", default=20, type=int, show_default=True, help="Number of scan points."
+)
 @click.option("--log-scale", is_flag=True, help="Use logarithmic spacing.")
 @click.option(
     "--method",
@@ -151,10 +157,32 @@ def export(model, fmt, output):
     help="Simulation method.",
 )
 @click.option("--t-end", default=100.0, type=float, show_default=True, help="End time.")
-@click.option("--n-steps", default=100, type=int, show_default=True, help="Number of output steps.")
-@click.option("--parallel", default=0, type=int, show_default=True, help="Worker process count.")
-@click.option("--output", "-o", default=None, type=click.Path(), help="Optional CSV output path.")
-def scan(model, parameter_name, min_value, max_value, n_points, log_scale, method, t_end, n_steps, parallel, output):
+@click.option(
+    "--n-steps",
+    default=100,
+    type=int,
+    show_default=True,
+    help="Number of output steps.",
+)
+@click.option(
+    "--parallel", default=0, type=int, show_default=True, help="Worker process count."
+)
+@click.option(
+    "--output", "-o", default=None, type=click.Path(), help="Optional CSV output path."
+)
+def scan(
+    model,
+    parameter_name,
+    min_value,
+    max_value,
+    n_points,
+    log_scale,
+    method,
+    t_end,
+    n_steps,
+    parallel,
+    output,
+):
     """Run a one-dimensional parameter scan."""
 
     from bionetgen import load
@@ -182,15 +210,50 @@ def scan(model, parameter_name, min_value, max_value, n_points, log_scale, metho
 
 @main.command()
 @click.argument("model", type=click.Path(exists=True))
-@click.option("--parameter", "parameter_names", multiple=True, help="Parameter to include; repeat for multiple parameters.")
-@click.option("--observable", "observable_names", multiple=True, help="Observable to include; repeat for multiple observables.")
-@click.option("--method", default="ode", type=click.Choice(["ode", "ssa", "nf", "pla", "psa"]), show_default=True)
+@click.option(
+    "--parameter",
+    "parameter_names",
+    multiple=True,
+    help="Parameter to include; repeat for multiple parameters.",
+)
+@click.option(
+    "--observable",
+    "observable_names",
+    multiple=True,
+    help="Observable to include; repeat for multiple observables.",
+)
+@click.option(
+    "--method",
+    default="ode",
+    type=click.Choice(["ode", "ssa", "nf", "pla", "psa"]),
+    show_default=True,
+)
 @click.option("--t-end", default=100.0, type=float, show_default=True)
 @click.option("--n-steps", default=100, type=int, show_default=True)
-@click.option("--delta", default=0.01, type=float, show_default=True, help="Relative perturbation size.")
-@click.option("--parallel", default=0, type=int, show_default=True, help="Worker process count.")
-@click.option("--output", "-o", default=None, type=click.Path(), help="Optional CSV output path.")
-def sensitivity(model, parameter_names, observable_names, method, t_end, n_steps, delta, parallel, output):
+@click.option(
+    "--delta",
+    default=0.01,
+    type=float,
+    show_default=True,
+    help="Relative perturbation size.",
+)
+@click.option(
+    "--parallel", default=0, type=int, show_default=True, help="Worker process count."
+)
+@click.option(
+    "--output", "-o", default=None, type=click.Path(), help="Optional CSV output path."
+)
+def sensitivity(
+    model,
+    parameter_names,
+    observable_names,
+    method,
+    t_end,
+    n_steps,
+    delta,
+    parallel,
+    output,
+):
     """Run local sensitivity analysis."""
 
     from bionetgen import load
@@ -235,7 +298,9 @@ def sensitivity(model, parameter_names, observable_names, method, t_end, n_steps
     show_default=True,
     help="Visualization to export.",
 )
-@click.option("--output", "-o", default=None, type=click.Path(), help="Output GraphML path.")
+@click.option(
+    "--output", "-o", default=None, type=click.Path(), help="Output GraphML path."
+)
 def visualize(model, viz_type, output):
     """Generate a model visualization graph."""
 

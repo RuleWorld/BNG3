@@ -72,7 +72,9 @@ def _worker_scan_single(payload):
     return model.simulate(**sim_kwargs)
 
 
-def _simulate_serial(model: BioNetGenModel, updates: Mapping[str, float], sim_kwargs: dict[str, Any]) -> SimResult:
+def _simulate_serial(
+    model: BioNetGenModel, updates: Mapping[str, float], sim_kwargs: dict[str, Any]
+) -> SimResult:
     original_network = getattr(model, "_network", None)
     original_values = {}
     for name in updates:
@@ -106,11 +108,16 @@ class ScanResult:
         return self.results[0].observable_names if self.results else []
 
     def final(self, observable: str) -> np.ndarray:
-        return np.asarray([result.observables[observable][-1] for result in self.results], dtype=float)
+        return np.asarray(
+            [result.observables[observable][-1] for result in self.results], dtype=float
+        )
 
     def at_time(self, t: float, observable: str) -> np.ndarray:
         return np.asarray(
-            [np.interp(float(t), result.time, result.observables[observable]) for result in self.results],
+            [
+                np.interp(float(t), result.time, result.observables[observable])
+                for result in self.results
+            ],
             dtype=float,
         )
 
@@ -122,7 +129,9 @@ class ScanResult:
             for time_index, time_value in enumerate(result.time):
                 row = {self.parameter_name: float(value), "time": float(time_value)}
                 for observable in self.observable_names:
-                    row[observable] = float(np.asarray(result.observables[observable])[time_index])
+                    row[observable] = float(
+                        np.asarray(result.observables[observable])[time_index]
+                    )
                 rows.append(row)
         return pd.DataFrame(rows)
 
@@ -156,22 +165,36 @@ class ScanResult2D:
 
     @property
     def observable_names(self) -> list[str]:
-        return self.results[0][0].observable_names if self.results and self.results[0] else []
+        return (
+            self.results[0][0].observable_names
+            if self.results and self.results[0]
+            else []
+        )
 
     @property
     def time(self) -> np.ndarray:
-        return self.results[0][0].time if self.results and self.results[0] else np.array([])
+        return (
+            self.results[0][0].time
+            if self.results and self.results[0]
+            else np.array([])
+        )
 
     def final(self, observable: str) -> np.ndarray:
         return np.asarray(
-            [[result.observables[observable][-1] for result in row] for row in self.results],
+            [
+                [result.observables[observable][-1] for result in row]
+                for row in self.results
+            ],
             dtype=float,
         )
 
     def at_time(self, t: float, observable: str) -> np.ndarray:
         return np.asarray(
             [
-                [np.interp(float(t), result.time, result.observables[observable]) for result in row]
+                [
+                    np.interp(float(t), result.time, result.observables[observable])
+                    for result in row
+                ]
                 for row in self.results
             ],
             dtype=float,
@@ -190,7 +213,9 @@ class ScanResult2D:
                         "time": float(time_value),
                     }
                     for observable in self.observable_names:
-                        record[observable] = float(np.asarray(result.observables[observable])[time_index])
+                        record[observable] = float(
+                            np.asarray(result.observables[observable])[time_index]
+                        )
                     rows.append(record)
         return pd.DataFrame(rows)
 
@@ -210,7 +235,9 @@ class ScanResult2D:
         ax.set_title(f"Parameter scan: {observable}")
         fig.colorbar(image, ax=ax)
         ax.set_xticks(range(len(self.values2)))
-        ax.set_xticklabels([f"{value:.3g}" for value in self.values2], rotation=45, ha="right")
+        ax.set_xticklabels(
+            [f"{value:.3g}" for value in self.values2], rotation=45, ha="right"
+        )
         ax.set_yticks(range(len(self.values1)))
         ax.set_yticklabels([f"{value:.3g}" for value in self.values1])
         fig.tight_layout()
@@ -246,7 +273,9 @@ def parameter_scan(
     parallel: int = 0,
 ) -> ScanResult:
     model = _coerce_model(model_or_path)
-    scan_values = _scan_values(values=values, min=min, max=max, n_points=n_points, log_scale=log_scale)
+    scan_values = _scan_values(
+        values=values, min=min, max=max, n_points=n_points, log_scale=log_scale
+    )
     sim_kwargs = _simulation_kwargs(
         method=method,
         t_end=t_end,
@@ -328,7 +357,11 @@ def parameter_scan_2d(
         if not source_path:
             raise ValueError("parallel scans require a model loaded from a BNGL file")
         payloads = [
-            (source_path, {parameter1: float(value1), parameter2: float(value2)}, sim_kwargs)
+            (
+                source_path,
+                {parameter1: float(value1), parameter2: float(value2)},
+                sim_kwargs,
+            )
             for value1 in values1
             for value2 in values2
         ]
