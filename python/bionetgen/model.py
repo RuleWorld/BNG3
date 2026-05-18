@@ -64,8 +64,70 @@ class BioNetGenModel:
     def name(self) -> str:
         return self._model.model_name
 
+    @property
+    def source_path(self) -> Optional[str]:
+        return self._source_path
+
+    def get_parameter(self, name: str):
+        return self._model.get_parameter(name)
+
     def set_parameter(self, name: str, value: float) -> None:
         self._model.set_parameter(name, value)
+
+    def parameter_scan(self, *args, **kwargs):
+        from bionetgen.scan import parameter_scan as _parameter_scan
+
+        return _parameter_scan(self, *args, **kwargs)
+
+    def parameter_scan_2d(self, *args, **kwargs):
+        from bionetgen.scan import parameter_scan_2d as _parameter_scan_2d
+
+        return _parameter_scan_2d(self, *args, **kwargs)
+
+    def sensitivity_analysis(self, *args, **kwargs):
+        from bionetgen.sensitivity import sensitivity_analysis as _sensitivity
+
+        return _sensitivity(self, *args, **kwargs)
+
+    def contact_map(self, path: Optional[str] = None):
+        from bionetgen.viz import write_contact_map
+
+        return write_contact_map(self, path)
+
+    def regulatory_graph(self, path: Optional[str] = None):
+        from bionetgen.viz import write_regulatory_graph
+
+        return write_regulatory_graph(self, path)
+
+    def rule_influence_graph(self, path: Optional[str] = None):
+        from bionetgen.viz import write_rule_influence_graph
+
+        return write_rule_influence_graph(self, path)
+
+    def reaction_network_graph(self, path: Optional[str] = None):
+        from bionetgen.viz import write_reaction_network_graph
+
+        return write_reaction_network_graph(self, path)
+
+    def ruleviz_pattern(self, path: Optional[str] = None):
+        from bionetgen.viz import write_ruleviz_pattern
+
+        return write_ruleviz_pattern(self, path)
+
+    def ruleviz_operation(self, path: Optional[str] = None):
+        from bionetgen.viz import write_ruleviz_operation
+
+        return write_ruleviz_operation(self, path)
+
+    def process_graph(self, path: Optional[str] = None):
+        from bionetgen.viz import write_process_graph
+
+        return write_process_graph(self, path)
+
+    def sbml_multi(self, path: Optional[str] = None):
+        from bionetgen.viz import write_sbml_multi
+
+        return write_sbml_multi(self, path)
 
     def generate_network(self, max_iter: int = 100) -> _cpp.GeneratedNetwork:
         self._network = _cpp.generate_network(self._model, max_iter=max_iter)
@@ -205,6 +267,11 @@ class BioNetGenModel:
             f"rules={len(self.reaction_rules)} "
             f"species={len(self.seed_species)}>"
         )
+
+    def _repr_html_(self) -> str:
+        from bionetgen.display import render_model_html
+
+        return render_model_html(self)
 
 
 def load(path: Union[str, Path]) -> BioNetGenModel:

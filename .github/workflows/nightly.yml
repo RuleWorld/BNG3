@@ -159,51 +159,35 @@ jobs:
       - name: Run full test suite
         run: pytest tests/python/ -v --tb=long
 
-      - name: Run performance benchmarks
-        timeout-minutes: 30
+  benchmarks:
+    name: Performance Benchmarks
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build deps
         run: |
-          python -c "
-          import time
-          import signal
-          import bionetgen
+          sudo apt-get update && sudo apt-get install -y cmake ninja-build
+          pip install scikit-build-core pybind11
 
-          def timeout_handler(signum, frame):
-              raise TimeoutError('Operation timed out')
+      - name: Install package
+        run: pip install -e .[full,dev]
+        env:
+          CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=OFF"
 
-          # Benchmark: parse + generate + simulate (with individual timeouts)
-          models = [
-              'tests/validation/Validate/egfr_net.bngl',
-              'tests/validation/Validate/fceri_ji.bngl',
-          ]
-          for m in models:
-              try:
-                  signal.signal(signal.SIGALRM, timeout_handler)
-                  signal.alarm(600)  # 10 minute timeout per model
+      - name: Run benchmarks
+        timeout-minutes: 60
+        run: python benchmarks/run_benchmarks.py --json benchmarks/results/latest.json --markdown benchmarks/results/latest.md
 
-                  start = time.perf_counter()
-                  model = bionetgen.load(m)
-                  parse_time = time.perf_counter() - start
-
-                  start = time.perf_counter()
-                  model.generate_network()
-                  gen_time = time.perf_counter() - start
-
-                  start = time.perf_counter()
-                  result = model.simulate(method='ode', t_end=100, n_steps=100)
-                  sim_time = time.perf_counter() - start
-
-                  signal.alarm(0)  # Cancel alarm
-
-                  print(f'{m}:')
-                  print(f'  Parse: {parse_time*1000:.1f} ms')
-                  print(f'  Generate: {gen_time*1000:.1f} ms')
-                  print(f'  Simulate: {sim_time*1000:.1f} ms')
-                  print(f'  Total: {(parse_time+gen_time+sim_time)*1000:.1f} ms')
-                  print()
-              except Exception as e:
-                  signal.alarm(0)  # Cancel alarm
-                  print(f'{m}: SKIP ({e})')
-          "
+      - name: Upload benchmark artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmarks/results/latest.json
 
   # ═══════════════════════════════════════════════════════════════════════════
   # Cross-validation: C++ vs Perl (requires Perl)

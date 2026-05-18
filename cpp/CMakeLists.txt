@@ -236,6 +236,7 @@ if(BUILD_PYTHON_BINDINGS)
         bindings/bind_engine.cpp
         bindings/bind_nfsim.cpp
         bindings/bind_io.cpp
+        bindings/bind_viz.cpp
     )
     target_link_libraries(_bionetgen_cpp PRIVATE bionetgen_core)
     target_include_directories(_bionetgen_cpp PRIVATE

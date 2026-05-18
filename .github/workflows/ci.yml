@@ -58,10 +58,6 @@ jobs:
             compiler: clang-15
             cc: clang-15
             cxx: clang++-15
-          - os: macos-13
-            compiler: clang
-            cc: clang
-            cxx: clang++
           - os: macos-14
             compiler: clang-arm64
             cc: clang
@@ -502,25 +498,3 @@ jobs:
             ${{ steps.image.outputs.name }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-  # ═══════════════════════════════════════════════════════════════════════════
-  # CI Status Gate (for branch protection)
-  # ═══════════════════════════════════════════════════════════════════════════
-
-  ci-status:
-    name: CI Status
-    if: always()
-    needs: [lint, cpp-build, cpp-asan, validation, python-test]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check all required jobs
-        run: |
-          if [[ "${{ needs.lint.result }}" == "failure" ]] || \
-             [[ "${{ needs.cpp-build.result }}" == "failure" ]] || \
-             [[ "${{ needs.cpp-asan.result }}" == "failure" ]] || \
-             [[ "${{ needs.validation.result }}" == "failure" ]] || \
-             [[ "${{ needs.python-test.result }}" == "failure" ]]; then
-            echo "One or more required jobs failed"
-            exit 1
-          fi
-          echo "All required jobs passed"

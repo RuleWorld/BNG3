@@ -159,16 +159,14 @@ void bind_model(py::module_& m) {
         .def_property_readonly("model_name", &Model::getModelName)
         .def_property_readonly("version", &Model::getVersion)
         .def("set_parameter", [](Model& model, const std::string& name, double value) {
-            if (model.getParameters().contains(name)) {
-                auto& params = model.getParameters().all();
-                for (auto& p : params) {
-                    if (p.getName() == name) {
-                        p.setValue(value);
-                        return;
-                    }
-                }
+            auto& params = model.getParameters();
+            if (!params.contains(name)) {
+                throw py::key_error("Parameter '" + name + "' not found");
             }
-            throw py::key_error("Parameter '" + name + "' not found");
+            // Replace the parameter with a literal-value expression so that
+            // evaluateAll() picks up the new value instead of re-evaluating
+            // the original parsed expression.
+            params.add(Parameter(name, Expression::number(value)));
         })
         .def("get_parameter", [](const Model& m, const std::string& name) -> const Parameter& {
             return m.getParameters().get(name);

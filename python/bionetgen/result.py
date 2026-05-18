@@ -79,3 +79,8 @@ class SimResult:
         return (
             f"<SimResult steps={self.n_steps} " f"observables={len(self.observables)}>"
         )
+
+    def _repr_html_(self) -> str:
+        from bionetgen.display import render_sim_result_html
+
+        return render_sim_result_html(self)

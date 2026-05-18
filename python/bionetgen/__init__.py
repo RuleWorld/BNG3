@@ -20,6 +20,20 @@ else:
         from bionetgen.compat.legacy_runner import LegacyModel as BioNetGenModel
 
 from bionetgen.result import SimResult
+from bionetgen.scan import ScanResult, ScanResult2D, parameter_scan, parameter_scan_2d
+from bionetgen.core.exc import BNGError
+
+try:
+    from bionetgen.sbml import BioNetGenError, from_sbml, sbml_to_bngl
+except ImportError:
+    BioNetGenError = BNGError
+    from_sbml = None
+    sbml_to_bngl = None
+
+try:
+    from bionetgen.builder import ModelBuilder
+except ImportError:
+    ModelBuilder = None
 
 try:
     from bionetgen.core.defaults import BNGDefaults
@@ -35,5 +49,13 @@ __all__ = [
     "run",
     "BioNetGenModel",
     "SimResult",
+    "ScanResult",
+    "ScanResult2D",
+    "parameter_scan",
+    "parameter_scan_2d",
+    "from_sbml",
+    "sbml_to_bngl",
+    "ModelBuilder",
+    "BioNetGenError",
     "__version__",
 ]

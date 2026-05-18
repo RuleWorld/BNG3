@@ -480,3 +480,46 @@ class io:
     def write_latex(model: Model, network: GeneratedNetwork, path: str) -> None:
         """Write model to LaTeX format."""
         ...
+
+class viz:
+    """Visualization graph writers exposed through the C++ extension."""
+
+    @staticmethod
+    def write_contact_map(model: Model, path: Optional[str] = None) -> str:
+        """Write a contact map graph and return the serialized content."""
+        ...
+
+    @staticmethod
+    def write_regulatory_graph(model: Model, path: Optional[str] = None) -> str:
+        """Write a regulatory graph and return the serialized content."""
+        ...
+
+    @staticmethod
+    def write_rule_influence_graph(model: Model, path: Optional[str] = None) -> str:
+        """Write a rule influence graph and return the serialized content."""
+        ...
+
+    @staticmethod
+    def write_reaction_network_graph(model: Model, path: Optional[str] = None) -> str:
+        """Write a reaction network graph and return the serialized content."""
+        ...
+
+    @staticmethod
+    def write_ruleviz_pattern(model: Model, path: Optional[str] = None) -> str:
+        """Write a ruleviz pattern graph and return the serialized content."""
+        ...
+
+    @staticmethod
+    def write_ruleviz_operation(model: Model, path: Optional[str] = None) -> str:
+        """Write a ruleviz operation graph and return the serialized content."""
+        ...
+
+    @staticmethod
+    def write_process_graph(model: Model, path: Optional[str] = None) -> str:
+        """Write a process graph and return the serialized content."""
+        ...
+
+    @staticmethod
+    def write_sbml_multi(model: Model, path: Optional[str] = None) -> str:
+        """Write an SBML Multi document and return the serialized content."""
+        ...
