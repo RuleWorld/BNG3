@@ -6,7 +6,7 @@
  */
 
 #include "NFfunction.hh"
-
+#include <stdexcept>
 
 
 using namespace std;
@@ -52,6 +52,14 @@ CompositeFunction::CompositeFunction(System *s,
 
 	// AS-2021
 	this->fileFunc = false;
+	this->interpolationMethod = "linear";
+	this->currInd = 0;
+	this->dataLen = 0;
+	this->counter = NULL;
+	this->funcPtr = NULL;
+	this->ctrType = "";
+	this->ctrName = "";
+	this->counterParamName = "";
 	// AS-2021
 }
 CompositeFunction::~CompositeFunction()
@@ -337,6 +345,10 @@ void CompositeFunction::prepareForSimulation(System *s)
 			p->DefineVar(reactantStr,&reactantCount[r]);
 		}
 
+		if (this->fileFunc && !this->ctrName.empty()) {
+			p->DefineConst(this->ctrName, 0.0);
+		}
+
 		p->SetExpr(this->parsedExpression);
 	}
 	catch (mu::Parser::exception_type &e)
@@ -514,13 +526,40 @@ void CompositeFunction::loadParamFile(string filePath)
 
 void CompositeFunction::addFunctionPointer(GlobalFunction *fPtr) {
 	this->ctrType = "Function";
-	// this->setCtrName(fPtr->getName());
-	this->setCtrName("__TFUN__VAL__");
 	this->funcPtr = fPtr;
+}
+
+void CompositeFunction::addCounterPointer(double *count) {
+	this->ctrType = "Observable";
+	this->counter = count;
 }
 
 void CompositeFunction::setCtrName(string name) {
 	this->ctrName = name;
+}
+
+void CompositeFunction::setInterpolationMethod(string method) {
+	string normalized = method;
+	std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+		[](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+	if (normalized.empty()) normalized = "linear";
+	if (normalized != "linear" && normalized != "step") {
+		cerr<<"Error preparing function "<<name<<" in class CompositeFunction!!"<<endl;
+		cerr<<"Unsupported TFUN interpolation method '"<<method<<"'."<<endl;
+		cerr<<"Quitting."<<endl;
+		exit(1);
+	}
+	this->interpolationMethod = normalized;
+}
+
+void CompositeFunction::setCounterFromTime(System *s) {
+	this->addSystemPointer(s);
+}
+
+void CompositeFunction::setCounterFromParameter(System *s, string paramName) {
+	this->ctrType = "Parameter";
+	this->sysPtr = s;
+	this->counterParamName = paramName;
 }
 
 void CompositeFunction::addSystemPointer(System *s) {
@@ -528,17 +567,11 @@ void CompositeFunction::addSystemPointer(System *s) {
 	this->sysPtr = s;
 }
 
-void CompositeFunction::enableFileDependency(string filePath) {
-	// load file
-	// cout<<"file dependency of function: "<<name<<endl;
-	// cout<<"file: "<<filePath<<endl;
-	// TODO: Err out if this fails
+void CompositeFunction::enableFileDependency(string filePath, string method) {
 	try {
 		this->loadParamFile(filePath);
 	} catch (exception const & e) {
-		cout<<"Error preparing function "<<name<<" in class GlobalFunction!!"<<endl;
-		cout<<"Quitting."<<endl;
-		exit(1);
+			throw std::runtime_error("Error preparing function " + name + " in class CompositeFunction!!\n" + std::string(e.what()));
 	};
 	// we just want to keep a record of this
 	this->filePath = filePath;
@@ -549,82 +582,80 @@ void CompositeFunction::enableFileDependency(string filePath) {
 	this->currInd = 0;
 	// pull data lenght so we can reuse it
 	this->dataLen = data[0].size();
+	// set interpolation method if specified
+	if (!method.empty()) {
+		this->setInterpolationMethod(method);
+	}
+}
+
+void CompositeFunction::enableInlineDependency(
+	const vector<double> &xs,
+	const vector<double> &ys,
+	string method)
+{
+	this->data.clear();
+	this->data.push_back(xs);
+	this->data.push_back(ys);
+	this->filePath = "<inline>";
+	this->fileFunc = true;
+	this->setInterpolationMethod(method);
+	this->currInd = 0;
+	this->dataLen = static_cast<int>(xs.size());
 }
 
 double CompositeFunction::getCounterValue() {
-	// depending on the type of the observable counter
-	// get the actual value
-	double ctrVal;
+	double ctrVal = 0.0;
 	if (ctrType == "Function") {
+		if (this->funcPtr == NULL) {
+			cerr<<"Error preparing function "<<name<<" in class CompositeFunction!!"<<endl;
+			cerr<<"Function TFUN counter pointer is null."<<endl;
+			cerr<<"Quitting."<<endl;
+			exit(1);
+		}
 		ctrVal = FuncFactory::Eval(this->funcPtr->p);
+	} else if (ctrType == "Observable") {
+		if (this->counter == NULL) {
+			cerr<<"Error preparing function "<<name<<" in class CompositeFunction!!"<<endl;
+			cerr<<"Observable TFUN counter pointer is null."<<endl;
+			cerr<<"Quitting."<<endl;
+			exit(1);
+		}
+		ctrVal = (*counter);
 	} else if (ctrType == "System") {
+		if (this->sysPtr == NULL) {
+			cerr<<"Error preparing function "<<name<<" in class CompositeFunction!!"<<endl;
+			cerr<<"System TFUN counter pointer is null."<<endl;
+			cerr<<"Quitting."<<endl;
+			exit(1);
+		}
 		ctrVal = this->sysPtr->getCurrentTime();
+	} else if (ctrType == "Parameter") {
+		if (this->sysPtr == NULL || this->counterParamName.empty()) {
+			cerr<<"Error preparing function "<<name<<" in class CompositeFunction!!"<<endl;
+			cerr<<"Parameter TFUN counter is not configured."<<endl;
+			cerr<<"Quitting."<<endl;
+			exit(1);
+		}
+		ctrVal = this->sysPtr->getParameter(counterParamName);
+	} else {
+		cerr<<"Error preparing function "<<name<<" in class CompositeFunction!!"<<endl;
+		cerr<<"TFUN counter type '"<<ctrType<<"' is not supported."<<endl;
+		cerr<<"Quitting."<<endl;
+		exit(1);
 	}
 	return ctrVal;
 }
 void CompositeFunction::fileUpdate() {
-	// TODO: Error checking and reporting
-	
-	// get counter val
-	double ctrVal = this->getCounterValue();
-
-	// basic step function implementation
-	// if we got past the last point, keep returning
-	// the last point
-	if (currInd>dataLen-1) {
-		currInd = dataLen-1;
-		p->DefineConst(ctrName,data[1][currInd]);
-		return;
-	} else if (currInd==dataLen-1) {
-		p->DefineConst(ctrName,data[1][currInd]);
-		return;
-	}
-	// a simple way to do interval locating 
-	if (data[0][currInd] < data[0][currInd+1]) {
-		// next point is higher than the current point, we
-		// are waiting for the counter value to be higher 
-		// than our current point
-		
-		// return 0 if we don't have data yet
-		if(data[0][0]>=ctrVal) {
-			// we haven't gotten to the point where
-			// we can get a value out, return 0
-			// cout<<"not there yet, returning 0"<<endl;
-			p->DefineConst(ctrName,0);
-			return;
-		} 
-		// go up by one if the counter value got past 
-		// the next value in the array
-		if (ctrVal>=data[0][currInd+1]) {
-			currInd += 1;
-		}
-	} else if (data[0][currInd] > data[0][currInd+1]) {
-		// next point is lower than the current point, we
-		// are waiting for the counter value to be lower 
-		// than our current point
-
-		// return 0 if we don't have data yet
-		if(data[0][0]<=ctrVal) {
-			// we haven't gotten to the point where
-			// we can get a value out, return 0
-			// cout<<"not there yet, returning 0"<<endl;
-			p->DefineConst(ctrName,0);
-			return;
-		}
-		// go up by one if the counter value got past 
-		// the next value in the array
-		if (ctrVal<=data[0][currInd+1]) {
-			currInd += 1;
-		}
-	} else {
-		// Defensive: should never reach here if loadParamFile validated correctly
-		cerr<<"Error in function "<<this->name<<" in class CompositeFunction!!"<<endl;
-		cerr<<"Time values in data file must be strictly monotonic. Found duplicate time: "<<data[0][currInd]<<endl;
-		cerr<<"Quitting."<<endl;
+	if (data.size() < 2 || data[0].size() == 0) {
+		cerr << "Error in function " << this->name << " in class CompositeFunction!!" << endl;
+		cerr << "Data for file update is empty or malformed." << endl;
+		cerr << "Quitting." << endl;
 		exit(1);
 	}
-	// // return value from the value array
-	p->DefineConst(ctrName,data[1][currInd]);
+
+	double ctrVal = this->getCounterValue();
+	double y = tfun_interpolate_value(data[0], data[1], interpolationMethod, ctrVal);
+	p->DefineConst(ctrName, y);
 	return;
 }
 // AS-2021

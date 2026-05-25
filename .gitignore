@@ -27,8 +27,15 @@ Thumbs.db
 
 # Generated simulation output
 *.cdat
+*.gdat
+*.net
 *.log
 *.stats
+*.species
+*.xml
+
+# Test reference data (large binary files from BNG2 Validate)
+tests/reference_data/
 
 # Temporary simulation artifacts (not reference data)
 *.o

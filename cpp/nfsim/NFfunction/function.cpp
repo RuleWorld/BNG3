@@ -1,10 +1,45 @@
 #include "NFfunction.hh"
-
+#include <stdexcept>
 
 
 using namespace std;
 using namespace NFcore;
 using namespace mu;
+
+double tfun_interpolate_value(
+	const vector<double> &xs,
+	const vector<double> &ys,
+	const string &method,
+	double x)
+{
+	if (xs.empty()) return 0.0;
+	if (xs.size() == 1) return ys.front();
+
+	const bool increasing = xs[1] > xs[0];
+	if (increasing) {
+		if (x <= xs.front()) return ys.front();
+		if (x >= xs.back()) return ys.back();
+	} else {
+		if (x >= xs.front()) return ys.front();
+		if (x <= xs.back()) return ys.back();
+	}
+
+	size_t i = 0;
+	while ((i + 1) < (xs.size() - 1) &&
+		(increasing ? (x >= xs[i + 1]) : (x <= xs[i + 1]))) {
+		++i;
+	}
+
+	if (method == "step") {
+		return ys[i];
+	}
+
+	double x0 = xs[i];
+	double x1 = xs[i + 1];
+	double y0 = ys[i];
+	double y1 = ys[i + 1];
+	return y0 + (y1 - y0) * (x - x0) / (x1 - x0);
+}
 
 
 GlobalFunction::GlobalFunction(string name,
@@ -41,6 +76,13 @@ GlobalFunction::GlobalFunction(string name,
 
 	// AS-2021
 	this->fileFunc = false;
+	this->interpolationMethod = "linear";
+	this->currInd = 0;
+	this->dataLen = 0;
+	this->counter = NULL;
+	this->ctrType = "";
+	this->ctrName = "";
+	this->counterParamName = "";
 	// AS-2021
 }
 
@@ -83,6 +125,10 @@ void GlobalFunction::prepareForSimulation(System *s)
 
 		for(unsigned int i=0; i<n_params; i++) {
 			p->DefineConst(paramNames[i],s->getParameter(paramNames[i]));
+		}
+
+		if (this->fileFunc && !this->ctrName.empty()) {
+			p->DefineConst(this->ctrName, 0.0);
 		}
 		p->SetExpr(this->funcExpression);
 
@@ -174,20 +220,40 @@ void GlobalFunction::setCtrName(string name) {
 	this->ctrName = name;
 }
 
+void GlobalFunction::setInterpolationMethod(string method) {
+	string normalized = method;
+	std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+		[](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+	if (normalized.empty()) normalized = "linear";
+	if (normalized != "linear" && normalized != "step") {
+		cerr<<"Error preparing function "<<name<<" in class GlobalFunction!!"<<endl;
+		cerr<<"Unsupported TFUN interpolation method '"<<method<<"'."<<endl;
+		cerr<<"Quitting."<<endl;
+		exit(1);
+	}
+	this->interpolationMethod = normalized;
+}
+
+void GlobalFunction::setCounterFromTime(System *s) {
+	this->addSystemPointer(s);
+}
+
+void GlobalFunction::setCounterFromParameter(System *s, string paramName) {
+	this->ctrType = "Parameter";
+	this->sysPtr = s;
+	this->counterParamName = paramName;
+}
+
 void GlobalFunction::addSystemPointer(System *s) {
 	this->ctrType = "System";
 	this->sysPtr = s;
 }
 
-void GlobalFunction::enableFileDependency(string filePath) {
-	// load file
-	// TODO: Err out if this fails
+void GlobalFunction::enableFileDependency(string filePath, string method) {
 	try {
 		this->loadParamFile(filePath);
 	} catch (exception const & e) {
-		cout<<"Error preparing function "<<name<<" in class GlobalFunction!!"<<endl;
-		cout<<"Quitting."<<endl;
-		exit(1);
+			throw std::runtime_error("Error preparing function " + name + " in class GlobalFunction!!\n" + std::string(e.what()));
 	};
 	// we just want to keep a record of this
 	this->filePath = filePath;
@@ -198,80 +264,74 @@ void GlobalFunction::enableFileDependency(string filePath) {
 	this->currInd = 0;
 	// pull data lenght so we can reuse it
 	this->dataLen = data[0].size();
+	// set interpolation method if specified
+	if (!method.empty()) {
+		this->setInterpolationMethod(method);
+	}
+}
+
+void GlobalFunction::enableInlineDependency(
+	const vector<double> &xs,
+	const vector<double> &ys,
+	string method)
+{
+	this->data.clear();
+	this->data.push_back(xs);
+	this->data.push_back(ys);
+	this->filePath = "<inline>";
+	this->fileFunc = true;
+	this->setInterpolationMethod(method);
+	this->currInd = 0;
+	this->dataLen = static_cast<int>(xs.size());
 }
 
 double GlobalFunction::getCounterValue() {
-	// depending on the type of the observable counter
-	// get the actual value
-	double ctrVal;
+	double ctrVal = 0.0;
 	if (ctrType == "Observable") {
+		if (counter == NULL) {
+			cerr<<"Error preparing function "<<name<<" in class GlobalFunction!!"<<endl;
+			cerr<<"Observable TFUN counter pointer is null."<<endl;
+			cerr<<"Quitting."<<endl;
+			exit(1);
+		}
 		ctrVal = (*counter);
 	} else if (ctrType == "System") {
+		if (this->sysPtr == NULL) {
+			cerr<<"Error preparing function "<<name<<" in class GlobalFunction!!"<<endl;
+			cerr<<"System TFUN counter pointer is null."<<endl;
+			cerr<<"Quitting."<<endl;
+			exit(1);
+		}
 		ctrVal = this->sysPtr->getCurrentTime();
+	} else if (ctrType == "Parameter") {
+		if (this->sysPtr == NULL || this->counterParamName.empty()) {
+			cerr<<"Error preparing function "<<name<<" in class GlobalFunction!!"<<endl;
+			cerr<<"Parameter TFUN counter is not configured."<<endl;
+			cerr<<"Quitting."<<endl;
+			exit(1);
+		}
+		ctrVal = this->sysPtr->getParameter(counterParamName);
+	} else {
+		cerr<<"Error preparing function "<<name<<" in class GlobalFunction!!"<<endl;
+		cerr<<"TFUN counter type '"<<ctrType<<"' is not supported."<<endl;
+		cerr<<"Quitting."<<endl;
+		exit(1);
 	}
 	return ctrVal;
 }
 void GlobalFunction::fileUpdate() {
-	// TODO: Error checking and reporting
-	// get counter val
-	double ctrVal = this->getCounterValue();
-	// basic step function implementation
-	// if we got past the last point, keep returning
-	// the last point
-	if (currInd>dataLen-1) {
-		currInd = dataLen-1;
-		p->DefineConst(ctrName,data[1][currInd]);
-		return;
-	} else if (currInd==dataLen-1) {
-		p->DefineConst(ctrName,data[1][currInd]);
-		return;
-	}
-	// a simple way to do interval locating 
-	if (data[0][currInd] < data[0][currInd+1]) {
-		// next point is higher than the current point, we
-		// are waiting for the counter value to be higher 
-		// than our current point
-		
-		// return 0 if we don't have data yet
-		if(data[0][0]>=ctrVal) {
-			// we haven't gotten to the point where
-			// we can get a value out, return 0
-			// cout<<"not there yet, returning 0"<<endl;
-			p->DefineConst(ctrName,0);
-			return;
-		} 
-		// go up by one if the counter value got past 
-		// the next value in the array
-		if (ctrVal>=data[0][currInd+1]) {
-			currInd += 1;
-		}
-	} else if (data[0][currInd] > data[0][currInd+1]) {
-		// next point is lower than the current point, we
-		// are waiting for the counter value to be lower 
-		// than our current point
+	this->fileUpdate(this->getCounterValue());
+}
 
-		// return 0 if we don't have data yet
-		if(data[0][0]<=ctrVal) {
-			// we haven't gotten to the point where
-			// we can get a value out, return 0
-			// cout<<"not there yet, returning 0"<<endl;
-			p->DefineConst(ctrName,0);
-			return;
-		}
-		// go up by one if the counter value got past 
-		// the next value in the array
-		if (ctrVal<=data[0][currInd+1]) {
-			currInd += 1;
-		}
-	} else {
-		// Defensive: should never reach here if loadParamFile validated correctly
-		cerr<<"Error in function "<<this->name<<" in class GlobalFunction!!"<<endl;
-		cerr<<"Time values in data file must be strictly monotonic. Found duplicate time: "<<data[0][currInd]<<endl;
-		cerr<<"Quitting."<<endl;
+void GlobalFunction::fileUpdate(double ctrVal) {
+	if (data.size() < 2 || data[0].size() == 0) {
+		cerr << "Error in function " << this->name << " in class GlobalFunction!!" << endl;
+		cerr << "Data for file update is empty or malformed." << endl;
+		cerr << "Quitting." << endl;
 		exit(1);
 	}
-	// // return value from the value array
-	p->DefineConst(ctrName,data[1][currInd]);
+	double y = tfun_interpolate_value(data[0], data[1], interpolationMethod, ctrVal);
+	p->DefineConst(ctrName, y);
 	return;
 }
 // AS-2021

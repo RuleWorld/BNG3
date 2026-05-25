@@ -6,7 +6,6 @@
 #endif
 
 #include "NFstream.h"
-#include "../NFsim.hh"
 
 #include <vector>
 #include <string>
@@ -68,11 +67,11 @@ const char* dtoa(double inNum);
 
 string getFileLine(ifstream &input);
 
-vector<string>* stringToStrings(string fullString, const char* delim, bool treatConsecutiveDelimAsOne = true);
+vector<string>* stringToStrings(const string& fullString, const char* delim, bool treatConsecutiveDelimAsOne = true);
 
 vector<string>* getStringsFileline(ifstream &input, const char* delim, bool treatConsecutiveDelimAsOne);
 
-void findandreplace(string &source, string find, string replace);
+void findandreplace(string &source, const string& find, const string& replace);
 
 void printFileLineOutput();
 

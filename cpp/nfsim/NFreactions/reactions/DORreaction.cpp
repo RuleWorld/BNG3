@@ -169,11 +169,8 @@ DORRxnClass::DORRxnClass(
 	this->cf = function;
 
 	//Add type I molecule dependencies, so that when this function
-	//is reevaluated on a molecule, the molecule knows to update this reaction
-	//for(unsigned int r=0; r<n_reactants; r++) {
-	//	cf->addTypeIMoleculeDependency(this->reactantTemplates[r]->getMoleculeType());
-	//}
-	// TODO: determine if it's sufficient to only add the DORreactantIndex
+	//is reevaluated on a molecule, the molecule knows to update this reaction.
+	//This is only necessary for the DOR reactant.
 	cf->addTypeIMoleculeDependency( reactantTemplates[DORreactantIndex]->getMoleculeType() );
 
 }
@@ -278,7 +275,7 @@ bool DORRxnClass::tryToAdd(Molecule *m, unsigned int reactantPos) {
 			*/
 			
 			if(DEBUG_MESSAGE)cout<<"was in the tree, so checking if we should remove"<<endl;
-			ms=reactantTree->pushNextAvailableMappingSet();
+			MappingSet *ms = reactantTree->pushNextAvailableMappingSet();
 
 			comparisonResult = reactantTemplates[reactantPos]->compare(m,reactantTree,ms,false,&symmetricMappingSet);
 
@@ -355,7 +352,7 @@ bool DORRxnClass::tryToAdd(Molecule *m, unsigned int reactantPos) {
 
 		} else {
 			if(DEBUG_MESSAGE)cout<<"wasn't in the tree, so trying to push and compare"<<endl;
-			ms=reactantTree->pushNextAvailableMappingSet();
+			MappingSet *ms = reactantTree->pushNextAvailableMappingSet();
 			if(DEBUG_MESSAGE)cout<<"calling comparsion method"<<endl;
 			if(DEBUG_MESSAGE)m->printDetails();
 
@@ -442,7 +439,7 @@ bool DORRxnClass::tryToAdd(Molecule *m, unsigned int reactantPos) {
 
 		} else {
 			//Try to map it!
-			ms = rl->pushNextAvailableMappingSet();
+			MappingSet *ms = rl->pushNextAvailableMappingSet();
 			comparisonResult = reactantTemplates[reactantPos]->compare(m,rl,ms);
 			//if(!reactantTemplates[reactantPos]->compare(m,rl,ms)) {
 			if(!comparisonResult){
@@ -467,7 +464,7 @@ bool DORRxnClass::tryToAdd(Molecule *m, unsigned int reactantPos) {
 //			}
 //		} else {
 //			//try to map it.
-//			ms = rl->pushNextAvailableMappingSet();
+//			MappingSet *ms = rl->pushNextAvailableMappingSet();
 //			if(!reactantTemplates[reactantPos]->compare(m,rl,ms)) {
 //				rl->popLastMappingSet();
 //				//we just pushed, then popped, so molecule has not changed...
@@ -709,7 +706,7 @@ void DORRxnClass::pickRuleMonkeyMappingSets(double random_A_number) const
 			}
 		}
 
-		if(random_A_number<0) random_A_number = NFutil::RANDOM(this->a);
+		if(random_A_number<0) random_A_number = system->getRNG().random(this->a);
 		reactantTree->pickReactantFromValue(mappingSet[DORreactantIndex],random_A_number,rateFactorMultiplier);
 		return;
 	}
@@ -756,13 +753,13 @@ void DORRxnClass::pickRuleMonkeyMappingSets(double random_A_number) const
 			}
 		}
 
-		if(random_A_number<0) random_A_number = NFutil::RANDOM(this->a);
+		if(random_A_number<0) random_A_number = system->getRNG().random(this->a);
 		reactantTree->pickReactantFromValue(mappingSet[DORreactantIndex],random_A_number,rateFactorMultiplier);
 		return;
 	}
 	
 	// Select a valid pair weighted by the DOR tree factors
-	double randNum = NFutil::RANDOM(totalWeight);
+	double randNum = system->getRNG().random(totalWeight);
 	double cumulative = 0;
 	int selectedIndex = validPairsBuffer.size() - 1;
 	for (size_t k = 0; k < validPairsBuffer.size(); ++k) {
@@ -801,7 +798,7 @@ void DORRxnClass::pickMappingSets(double randNumber) const
 		}
 	}
 
-	if(randNumber<0) randNumber = NFutil::RANDOM(this->a);
+	if(randNumber<0) randNumber = system->getRNG().random(this->a);
 	reactantTree->pickReactantFromValue(mappingSet[DORreactantIndex],randNumber,rateFactorMultiplier);
 
 	//cout<<"tree size:        "<<reactantTree->size()<<endl;
@@ -868,10 +865,6 @@ DOR2RxnClass::DOR2RxnClass(
 		System *s
 	) : ReactionClass(name,baseRate,baseRateName,transformationSet,s)
 {
-	// TODO: figure out if there are used for anything
-	//vector <TemplateMolecule *> dorMolecules1;
-	//vector <TemplateMolecule *> dorMolecules2;
-
 	//////////////////////////////////////////////////////////////////////////////////////////
 	//Step 1: Find the DOR reactants, and make sure there are exactly 2.  DOR reactants
 	//can be found because they have a LocalFunctionPointer Transformation that keeps
@@ -1089,15 +1082,9 @@ DOR2RxnClass::DOR2RxnClass(
 	this->cf1 = function1;
 	this->cf2 = function2;
 
-	// TODO: figure out if we really need to add all these molecules as TypeI dependencies.
-	//  It seems like we really only need to do this for the DOR reactant
-
 	//Add type I molecule dependencies, so that when this function
-	//is reevaluated on a molecule, the molecule knows to update this reaction
-	//for (unsigned int r=0; r<n_reactants; r++) {
-	//	cf1->addTypeIMoleculeDependency( reactantTemplates[r]->getMoleculeType() );
-	//	cf2->addTypeIMoleculeDependency( reactantTemplates[r]->getMoleculeType() );
-	//}
+	//is reevaluated on a molecule, the molecule knows to update this reaction.
+	//This is only necessary for the DOR reactants.
 	cf1->addTypeIMoleculeDependency( reactantTemplates[DORreactantIndex1]->getMoleculeType() );
 	cf2->addTypeIMoleculeDependency( reactantTemplates[DORreactantIndex2]->getMoleculeType() );
 
@@ -1196,7 +1183,7 @@ bool DOR2RxnClass::tryToAdd(Molecule *m, unsigned int reactantPos) {
 			} else {}
 		} else {
 			// wasn't in the tree, so trying to push and compare
-			ms=reactantTree1->pushNextAvailableMappingSet();
+			MappingSet *ms = reactantTree1->pushNextAvailableMappingSet();
 			comparisonResult = reactantTemplates[reactantPos]->compare(m,reactantTree1,ms);
 			if(!comparisonResult) {
 			//if(!reactantTemplates[reactantPos]->compare(m,reactantTree1,ms)) {
@@ -1232,7 +1219,7 @@ bool DOR2RxnClass::tryToAdd(Molecule *m, unsigned int reactantPos) {
 			} else {}
 		} else {
 			// wasn't in the tree, so trying to push and compare
-			ms=reactantTree2->pushNextAvailableMappingSet();
+			MappingSet *ms = reactantTree2->pushNextAvailableMappingSet();
 			comparisonResult = reactantTemplates[reactantPos]->compare(m,reactantTree2,ms);
 			if(!comparisonResult){
 			//if(!reactantTemplates[reactantPos]->compare(m,reactantTree2,ms)) {
@@ -1270,7 +1257,7 @@ bool DOR2RxnClass::tryToAdd(Molecule *m, unsigned int reactantPos) {
 
 		} else {
 			//Try to map it!
-			ms = rl->pushNextAvailableMappingSet();
+			MappingSet *ms = rl->pushNextAvailableMappingSet();
 			comparisonResult = reactantTemplates[reactantPos]->compare(m,rl,ms);
 			if(!comparisonResult) {
 				//we must remove, if we did not match.  This will also remove
@@ -1516,10 +1503,10 @@ void DOR2RxnClass::pickRuleMonkeyMappingSets(double random_A_number) const
 			}
 		}
 
-		double randNumber1 = NFutil::RANDOM( reactantTree1->getRateFactorSum() );
+		double randNumber1 = system->getRNG().random( reactantTree1->getRateFactorSum() );
 		reactantTree1->pickReactantFromValue( mappingSet[DORreactantIndex1], randNumber1, 1.0);
 
-		double randNumber2 = NFutil::RANDOM( reactantTree2->getRateFactorSum() );
+		double randNumber2 = system->getRNG().random( reactantTree2->getRateFactorSum() );
 		reactantTree2->pickReactantFromValue( mappingSet[DORreactantIndex2], randNumber2, 1.0);
 		return;
 	}
@@ -1563,15 +1550,15 @@ void DOR2RxnClass::pickRuleMonkeyMappingSets(double random_A_number) const
 			}
 		}
 
-		double randNumber1 = NFutil::RANDOM( reactantTree1->getRateFactorSum() );
+		double randNumber1 = system->getRNG().random( reactantTree1->getRateFactorSum() );
 		reactantTree1->pickReactantFromValue( mappingSet[DORreactantIndex1], randNumber1, 1.0);
 
-		double randNumber2 = NFutil::RANDOM( reactantTree2->getRateFactorSum() );
+		double randNumber2 = system->getRNG().random( reactantTree2->getRateFactorSum() );
 		reactantTree2->pickReactantFromValue( mappingSet[DORreactantIndex2], randNumber2, 1.0);
 		return;
 	}
 	
-	double randNum = NFutil::RANDOM(totalWeight);
+	double randNum = system->getRNG().random(totalWeight);
 	double cumulative = 0;
 	int selectedIndex = validPairsBuffer.size() - 1;
 	for (size_t k = 0; k < validPairsBuffer.size(); ++k) {
@@ -1609,10 +1596,10 @@ void DOR2RxnClass::pickMappingSets(double randNumber) const
 		}
 	}
 
-	double randNumber1 = NFutil::RANDOM( reactantTree1->getRateFactorSum() );
+	double randNumber1 = system->getRNG().random( reactantTree1->getRateFactorSum() );
 	reactantTree1->pickReactantFromValue( mappingSet[DORreactantIndex1], randNumber1, 1.0);
 
-	double randNumber2 = NFutil::RANDOM( reactantTree2->getRateFactorSum() );
+	double randNumber2 = system->getRNG().random( reactantTree2->getRateFactorSum() );
 	reactantTree2->pickReactantFromValue( mappingSet[DORreactantIndex2], randNumber2, 1.0);
 
 }

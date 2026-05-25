@@ -104,6 +104,8 @@ void Complex::refactorToNewComplex(int new_ID_complex)
 /* for binding, we want to merge a new complex, c, with our complex, this */
 void Complex::mergeWithList(Complex * c)
 {
+    if(c==this) return;
+
 	// turn off canonical flag
 	this->unsetCanonical();
 	c->unsetCanonical();
@@ -128,9 +130,6 @@ class IsInWrongComplex
 		int ID;
 };
 
-//int counter=0;
-//int totalSizeSum=0;
-//int avgTraversalSize = 0;
 /* for unbinding, we have to figure out the elements of the new complex,
  * put those elements in the new complex, renumber the complex_id for those
  * molecules, and delete those molecules from this complex.  wheh! */

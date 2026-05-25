@@ -438,14 +438,12 @@ bool NFinput::initMoleculeTypes(
 					if(verbose) {
 						if(compLabels.size()!=0) cout<<","+compName; else cout<<compName;
 					}
-					//cout<<"\n analyzing: "<<compName<<endl;
 
 					//First check if the component Name already exists, if so, we gotta do more!
 					//This means that one of the sites are symmetric, so we must handle it correctly
 					int pos=0;
-					for(vector<string>::iterator it = compLabels.begin(); it != compLabels.end(); it++,pos++ ) {
+					for(vector<string>::iterator it = compLabels.begin(); it != compLabels.end(); ++it,++pos ) {
 
-						//cout<<"comparing: "<<(*it)<<" to "<<compName<<endl;
 						if((*it)==compName) {
 							bool shouldAdd = true;
 							for(unsigned int k=0; k<firstSymSiteToAppend.size(); k++) {
@@ -631,7 +629,9 @@ bool NFinput::initMoleculeTypes(
 			//Go back and set the first symmetric component label to be 'compName1' so we know
 			//immediately that they are symmetric sites (have to add in the possible binding site
 			//names as well!
-			for(unsigned int k=0; k<firstSymSiteToAppend.size(); k++) {
+			// Optimization: Cache size of firstSymSiteToAppend to avoid calling .size() within the loop
+			unsigned int firstSymSiteToAppendSize = firstSymSiteToAppend.size();
+			for(unsigned int k=0; k<firstSymSiteToAppendSize; k++) {
 				string originalCompLabel = compLabels.at(firstSymSiteToAppend.at(k));
 				compLabels.at(firstSymSiteToAppend.at(k)) = compLabels.at(firstSymSiteToAppend.at(k))+"1";
 
@@ -1119,9 +1119,11 @@ string NFinput::initStartSpecies(
 
 					//Get the information on this bond that tells us which molecules to connect
 					try {
-						string bSiteName1 = bSiteSiteMapping.find(bSite1)->second;
+						auto it_site1 = bSiteSiteMapping.find(bSite1);
+						string bSiteName1 = it_site1->second;
 						int bSiteMolIndex1 = bSiteMolMapping.find(bSite1)->second;
-						string bSiteName2 = bSiteSiteMapping.find(bSite2)->second;
+						auto it_site2 = bSiteSiteMapping.find(bSite2);
+						string bSiteName2 = it_site2->second;
 						int bSiteMolIndex2 = bSiteMolMapping.find(bSite2)->second;
 
 						for(int j=0;j<specCountInteger;j++) {
@@ -1196,13 +1198,15 @@ string NFinput::initStartSpecies(
 			for(unsigned int isi=0; isi<molec_size; isi++) {
 				molec_vec.push_back(-1);
 			}
-			for(unsigned int img=0; img<mgids.size(); img++) {
+			unsigned int mgidsSize = mgids.size();
+			for(unsigned int img=0; img<mgidsSize; img++) {
 				molec_vec[mgids[img]] = mids[img];
 			}
 			// AS2023 - now we use it to compress the initial state vector
 			int last_val = molec_vec[0];
 			int val_ctr = 1;
-			for(unsigned int ici=1; ici<molec_vec.size(); ici++) {
+			unsigned int molecVecSize = molec_vec.size();
+			for(unsigned int ici=1; ici<molecVecSize; ici++) {
 				if (molec_vec[ici]!=last_val) {
 					logstr += "        [" + to_string(last_val) + "," + to_string(val_ctr) + "],\n";
 					last_val = molec_vec[ici];
@@ -1220,17 +1224,19 @@ string NFinput::initStartSpecies(
 
 		// AS2023
 		logstr += "      \"ops\": [\n ";
-		for(int k=0;k<operations.size();k++) {
+		int operationsSize = operations.size();
+		for(int k=0;k<operationsSize;k++) {
 			logstr += "        " + operations[k] + ",\n";
 		}
 		// AS2023
 		// finalize the ops list
-		if (operations.size() > 0) {
-			logstr.erase(logstr.end()-2, logstr.end());
+		if (operationsSize > 0) {
+			logstr.pop_back();
+			logstr.pop_back();
 			logstr += "\n      ]\n";
 		} else {
 			// just trim the trailing space if we didn't add any operations
-			logstr.erase(logstr.end()-1, logstr.end());
+			logstr.pop_back();
 			logstr += "]\n";
 		}
 		logstr += "    },\n";
@@ -1622,8 +1628,8 @@ bool NFinput::initReactionRules(
 				string reactantId, productId;
 				for ( pMap = pListOfMaps->FirstChildElement("MapItem"); pMap != 0; pMap = pMap->NextSiblingElement("MapItem"))
 				{
-					// TODO: these don't have to exist
-					if ( !pMap->Attribute("sourceID") | !pMap->Attribute("targetID") ) {
+					// sourceID and targetID might be absent for molecules being created or degraded
+					if ( !pMap->Attribute("sourceID") || !pMap->Attribute("targetID") ) {
 						continue;
 					}
 					reactantId = pMap->Attribute("sourceID");
@@ -1862,9 +1868,12 @@ bool NFinput::initReactionRules(
 					} else {
 						site1 = pDeleteBond->Attribute("site1");
 						site2 = pDeleteBond->Attribute("site2");
-						//Skip this if we are messing with a bond in the product pattern....
-						// @TODO:  FIX THIS!  should reject adds in molecule species that are newly added!
-						//if(site1.find("RP")>=0 || site2.find("RP")>=0) continue;
+						// Reject operations on newly added molecule species (Product Patterns)
+						if (site1.find("_PP") != string::npos || site2.find("_PP") != string::npos) {
+							cerr << "A specified DeleteBond operation in ReactionClass: '" << rxnName << "' involves " << endl;
+							cerr << "a newly added molecule species, which is invalid.  Quitting." << endl;
+							return false;
+						}
 					}
 
 
@@ -1977,33 +1986,6 @@ bool NFinput::initReactionRules(
 
 					// Handling inter- and intra-complex binding is now part of a general procedure
 					//  for handling reaction molecularity  --Justin, 4Mar2011
-					/*if ( reactantNum1.compare(reactantNum2)==0 )
-					{
-						//this means that they were on the same reactant, so we should always add
-						//this as a normal binding reaction...
-						if ( !ts->addBindingTransform( c1->t, c1->symPermutationName, c2->t, c2->symPermutationName) )
-							return false;
-					}
-					else
-					{
-						//Otherwise, we should check how we should add this reaction, depending on the input flags
-						if ( !blockSameComplexBinding )
-						{
-							if ( !ts->addBindingTransform( c1->t, c1->symPermutationName, c2->t, c2->symPermutationName) )
-								return false;
-						}
-						else
-						{
-							if ( !ts->addBindingSeparateComplexTransform( c1->t, c1->symPermutationName, c2->t, c2->symPermutationName) )
-								return false;
-						}
-						if (verbose)
-						{
-							cout << "\t\t\t***Identified binding of site: " << c1->t->getMoleculeTypeName()
-							     << "(" << c1->symPermutationName << ")" << " to site " << c2->t->getMoleculeTypeName()
-							     << "(" << c2->symPermutationName << ")" << endl;
-						}
-					}*/
 
 					// Add binding transform
 					if(isNewMoleculeBond) {
@@ -2215,7 +2197,6 @@ bool NFinput::initReactionRules(
 				//ts->finalize();
 				ReactionClass *r = 0;
 				bool totalRateFlag=false;
-				bool tagFlag=false;
 
 				double volumeConversion = 1.0;
 				if (ts->getNreactants() == 0) {
@@ -2266,21 +2247,6 @@ bool NFinput::initReactionRules(
 						exit(1);
 					}
 				}
-
-				// if( !pRateLaw->Attribute("tag") ) {
-				// 	cerr<<"\n!!Error! This XML file was generated using an older version of BioNetGen that does not support the 'TotalRate' convention!"<<endl;
-				// 	cerr<<"You should upgrade your BioNetGen distribution now, or download the latest NFsim package, and regenerate this XML file."<<endl;
-				// } else {
-				// 	try {
-				// 		int rf = NFutil::convertToInt(pRateLaw->Attribute("tag"));
-				// 		if(rf>0) tagFlag=true;
-				// 		if(verbose) cout<<"\t\t\t= "<<tagFlag<<endl;
-				// 	} catch (std::runtime_error &e1) {
-				// 		//cerr<<e1.what()<<endl;
-				// 		cerr<<"Error!! tag flag for ReactionRule "<<rxnName<<" was not set properly.  quitting."<<endl;
-				// 		exit(1);
-				// 	}
-				// }
 
 				if(!pRateLaw->Attribute("id") || !pRateLaw->Attribute("type")) {
 					cerr<<"!!Error:: ReactionRule "<<rxnName<<" rate law specification: cannot read 'id' or 'type' attribute!"<<endl;
@@ -2372,9 +2338,6 @@ bool NFinput::initReactionRules(
 							return false;
 						}
 
-						// TODO: wire blockSameComplexBinding once addBindingSeparateComplexTransform
-						// is re-enabled in transformationSet.cpp.
-						//
 						// Skip normal reaction creation -- expansion already registered all rules.
 						// Deleting ts does NOT free the TemplateMolecules from the 'comps' map;
 						// TransformationSet stores non-owning pointers to them.
@@ -2782,7 +2745,8 @@ bool NFinput::initReactionRules(
 				} else {
             // Check and apply matchOnce
             bool hasMatchOnce = false;
-            for (unsigned int i = 0; i < matchOnceList.size(); i++) {
+            unsigned int matchOnceSize = matchOnceList.size();
+            for (unsigned int i = 0; i < matchOnceSize; i++) {
                 if (matchOnceList[i]) hasMatchOnce = true;
             }
 
@@ -2791,19 +2755,22 @@ bool NFinput::initReactionRules(
                     cerr << "Warning: MatchOnce is not yet supported for DOR/functional reactions. "
                          << "Ignoring matchOnce on reaction: " << rxnName << endl;
                 } else {
-                    for (unsigned int i = 0; i < r->getNumOfReactants(); i++) {
-                        if (i < matchOnceList.size()) {
+                    unsigned int nReactants = r->getNumOfReactants();
+                    for (unsigned int i = 0; i < nReactants; i++) {
+                        if (i < matchOnceSize) {
                             r->setMatchOnce(i, matchOnceList[i]);
                         }
                     }
                 }
             }
 
-            // Apply zero-order volume conversion
-            if (ts->getNreactants() == 0) {
-                r->volumeConversionFactor = volumeConversion;
-                r->setBaseRate(r->getBaseRate() * volumeConversion, "");
-            }
+						// Apply zero-order volume conversion
+						if (ts->getNreactants() == 0) {
+							r->volumeConversionFactor = volumeConversion;
+							if (r->getRxnType() != ReactionClass::OBS_DEPENDENT_RXN) {
+								r->setBaseRate(r->getBaseRate() * volumeConversion, "");
+							}
+						}
 
 					//Finally, add the completed rxn rule to the system only
 					//base rate is non-zero.
@@ -2820,10 +2787,8 @@ bool NFinput::initReactionRules(
 					// Add the reactant and product templates to the reaction class
 					r->setAllReactantAndProductTemplates(reactants, products);
 					r->setTotalRateFlag(totalRateFlag);
-					// if (tagFlag) {
 					r->tag();
 					s->turnOnTagRxnOutput();
-					// }
 					// Use reaction connectivity flag
 					// Set to true if given on the command line
 					r->setConnectivityFlag(s->getConnectivityFlag());
@@ -3457,24 +3422,28 @@ TemplateMolecule *NFinput::readPattern(
 
 
 					//First look up the info from the component maps
-					if(		bSiteSiteMapping.find(bSite1)!=bSiteSiteMapping.end() &&
-							bSiteMolMapping.find(bSite1)!=bSiteMolMapping.end() &&
-							bSiteSiteMapping.find(bSite2)!=bSiteSiteMapping.end() &&
-							bSiteMolMapping.find(bSite2)!=bSiteMolMapping.end()
+					auto it_site1 = bSiteSiteMapping.find(bSite1);
+					auto it_site1_mol = bSiteMolMapping.find(bSite1);
+					auto it_site2 = bSiteSiteMapping.find(bSite2);
+					auto it_site2_mol = bSiteMolMapping.find(bSite2);
+					if(		it_site1!=bSiteSiteMapping.end() &&
+							it_site1_mol!=bSiteMolMapping.end() &&
+							it_site2!=bSiteSiteMapping.end() &&
+							it_site2_mol!=bSiteMolMapping.end()
 							) {
 
-						string bSiteName1 = bSiteSiteMapping.find(bSite1)->second;
-						int bSiteMolIndex1 = bSiteMolMapping.find(bSite1)->second;
-						string bSiteName2 = bSiteSiteMapping.find(bSite2)->second;
-						int bSiteMolIndex2 = bSiteMolMapping.find(bSite2)->second;
+						string bSiteName1 = it_site1->second;
+						int bSiteMolIndex1 = it_site1_mol->second;
+						string bSiteName2 = it_site2->second;
+						int bSiteMolIndex2 = it_site2_mol->second;
 						TemplateMolecule::bind(tMolecules.at(bSiteMolIndex1),bSiteName1.c_str(),bSite1,
 								tMolecules.at(bSiteMolIndex2),bSiteName2.c_str(),bSite2);
 
 						//Erase the bonds to make sure we don't add them again
-						bSiteSiteMapping.erase(bSite1);
-						bSiteMolMapping.erase(bSite1);
-						bSiteSiteMapping.erase(bSite2);
-						bSiteMolMapping.erase(bSite2);
+						bSiteSiteMapping.erase(it_site1);
+						bSiteMolMapping.erase(it_site1_mol);
+						bSiteSiteMapping.erase(it_site2);
+						bSiteMolMapping.erase(it_site2_mol);
 					} else {
 
 						cerr<<"here"<<endl;
@@ -3543,13 +3512,11 @@ TemplateMolecule *NFinput::readPattern(
 
 
 		if(setCount>1) {
-			// Possibly, we might want to enforce complex bookkeeping for such reactions....
-			//if(!s->isUsingComplex()) {
-			//	cout.flush();
-			//	cerr<<"Disjoint pattern found, but complex bookkeeping is turned off!"<<endl;
-			//	cerr<<"Rerun with the -cb flag"<<endl;
-			//	exit(1);
-			//}
+			// Auto-enable complex bookkeeping for disjoint patterns
+			if(!s->isUsingComplex()) {
+				cout<<"Auto-enabling complex bookkeeping for disjoint pattern support."<<endl;
+				s->setUsingComplex(true);
+			}
 
 			cout<<"\nFound disjoint sets in a pattern. (As in A().B(), with no explicit connection through components)\n";
 			cout<<"Warning!  These type of patterns can be dangerous!!  They also make NFsim run slower!\n";
@@ -3816,10 +3783,14 @@ bool NFinput::readProductPattern(
 				try {
 
 					//First look up the info and add the bond
-					string bSiteName1 = bSiteSiteMapping.find(bSite1)->second;
-					int bSiteMolTypeIndex1 = bSiteMolMapping.find(bSite1)->second;
-					string bSiteName2 = bSiteSiteMapping.find(bSite2)->second;
-					int bSiteMolIndex2 = bSiteMolMapping.find(bSite2)->second;
+					auto it_site1 = bSiteSiteMapping.find(bSite1);
+					auto it_site1_mol = bSiteMolMapping.find(bSite1);
+					auto it_site2 = bSiteSiteMapping.find(bSite2);
+					auto it_site2_mol = bSiteMolMapping.find(bSite2);
+					string bSiteName1 = it_site1->second;
+					int bSiteMolTypeIndex1 = it_site1_mol->second;
+					string bSiteName2 = it_site2->second;
+					int bSiteMolIndex2 = it_site2_mol->second;
 
 					//Add the information to the list
 					bindingSiteInformation.at(proMolTypeIndex).push_back(bSiteMolTypeIndex1);
@@ -3830,10 +3801,10 @@ bool NFinput::readProductPattern(
 					bindingSiteInformation.at(partnerBsiteIndex).push_back(bSiteIndex2);
 
 					//Erase the bonds to make sure we don't add them again
-					bSiteSiteMapping.erase(bSite1);
-					bSiteMolMapping.erase(bSite1);
-					bSiteSiteMapping.erase(bSite2);
-					bSiteMolMapping.erase(bSite2);
+					bSiteSiteMapping.erase(it_site1);
+					bSiteMolMapping.erase(it_site1_mol);
+					bSiteSiteMapping.erase(it_site2);
+					bSiteMolMapping.erase(it_site2_mol);
 				} catch (exception& e) {
 					cerr<<"here we are"<<endl;
 
@@ -4437,24 +4408,28 @@ int NFinput::readTemplatePattern(
 
 
 					//First look up the info from the component maps
-					if(		bSiteSiteMapping.find(bSite1)!=bSiteSiteMapping.end() &&
-							bSiteMolMapping.find(bSite1)!=bSiteMolMapping.end() &&
-							bSiteSiteMapping.find(bSite2)!=bSiteSiteMapping.end() &&
-							bSiteMolMapping.find(bSite2)!=bSiteMolMapping.end()
+					auto it_site1 = bSiteSiteMapping.find(bSite1);
+					auto it_site1_mol = bSiteMolMapping.find(bSite1);
+					auto it_site2 = bSiteSiteMapping.find(bSite2);
+					auto it_site2_mol = bSiteMolMapping.find(bSite2);
+					if(		it_site1!=bSiteSiteMapping.end() &&
+							it_site1_mol!=bSiteMolMapping.end() &&
+							it_site2!=bSiteSiteMapping.end() &&
+							it_site2_mol!=bSiteMolMapping.end()
 							) {
 
-						string bSiteName1 = bSiteSiteMapping.find(bSite1)->second;
-						int bSiteMolIndex1 = bSiteMolMapping.find(bSite1)->second;
-						string bSiteName2 = bSiteSiteMapping.find(bSite2)->second;
-						int bSiteMolIndex2 = bSiteMolMapping.find(bSite2)->second;
+						string bSiteName1 = it_site1->second;
+						int bSiteMolIndex1 = it_site1_mol->second;
+						string bSiteName2 = it_site2->second;
+						int bSiteMolIndex2 = it_site2_mol->second;
 						TemplateMolecule::bind(tMolecules.at(bSiteMolIndex1),bSiteName1.c_str(),bSite1,
 								tMolecules.at(bSiteMolIndex2),bSiteName2.c_str(),bSite2);
 
 						//Erase the bonds to make sure we don't add them again
-						bSiteSiteMapping.erase(bSite1);
-						bSiteMolMapping.erase(bSite1);
-						bSiteSiteMapping.erase(bSite2);
-						bSiteMolMapping.erase(bSite2);
+						bSiteSiteMapping.erase(it_site1);
+						bSiteMolMapping.erase(it_site1_mol);
+						bSiteSiteMapping.erase(it_site2);
+						bSiteMolMapping.erase(it_site2_mol);
 					} else {
 
 						cerr<<"here"<<endl;
@@ -4521,13 +4496,11 @@ int NFinput::readTemplatePattern(
 //		}
 
 		if(setCount>1) {
-			// Possibly, we might want to enforce complex bookkeeping for such reactions....
-			//if(!s->isUsingComplex()) {
-			//	cout.flush();
-			//	cerr<<"Disjoint pattern found, but complex bookkeeping is turned off!"<<endl;
-			//	cerr<<"Rerun with the -cb flag"<<endl;
-			//	exit(1);
-			//}
+			// Auto-enable complex bookkeeping for disjoint patterns
+			if(!s->isUsingComplex()) {
+				cout<<"Auto-enabling complex bookkeeping for disjoint pattern support."<<endl;
+				s->setUsingComplex(true);
+			}
 
 			cout<<"\nFound disjoint sets in a pattern. (As in A().B(), with no explicit connection through components)\n";
 			cout<<"Warning!  These type of patterns can be dangerous!!  They also make NFsim run slower!\n";
@@ -4571,8 +4544,7 @@ int NFinput::readTemplatePattern(
 		//Grab the first template molecule from the list, and arbitrarily set this as the root
 		if(tMolecules.empty()){			
 			if(foundTrash) {
-				// if(verbose) cout<<"\t\t\t\tWarning: You have an add molecule rule, but only a Trash or Null pattern listed..."<<endl;
-				// TODO: Write useful warning here, we have no template mols but we have trash/null
+				if(verbose) cout<<"\t\t\t\tWarning: Pattern '"<<patternName<<"' contains only Trash or Null molecules and will be ignored."<<endl;
 				return 1;
 			}
 			cerr<<"You have a pattern named "<<patternName<<" that doesn't include any actual patterns!  (Or I just couldn't find any)"<<endl;
@@ -4592,4 +4564,3 @@ int NFinput::readTemplatePattern(
 
 	return 1;
 }
-

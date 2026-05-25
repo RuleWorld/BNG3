@@ -1,15 +1,37 @@
 #include "Scheduler.h"
-
 #include "../NFsim.hh"
 
 #include <iostream>
 #include <map>
+#include <stdexcept>
 
 using namespace std;
 
-msgtype msg;
+static int safe_stoi(const std::string& str, int default_val = 0) {
+	try {
+		return std::stoi(str);
+	} catch (const std::invalid_argument& e) {
+		std::cerr << "Warning: invalid argument to stoi for: " << str << ", defaulting to " << default_val << std::endl;
+		return default_val;
+	} catch (const std::out_of_range& e) {
+		std::cerr << "Warning: out of range value for stoi for: " << str << ", defaulting to " << default_val << std::endl;
+		return default_val;
+	}
+}
 
-job job1, job2, jobs[10];
+static double safe_stod(const std::string& str, double default_val = 0.0) {
+	try {
+		return std::stod(str);
+	} catch (const std::invalid_argument& e) {
+		std::cerr << "Warning: invalid argument to stod for: " << str << ", defaulting to " << default_val << std::endl;
+		return default_val;
+	} catch (const std::out_of_range& e) {
+		std::cerr << "Warning: out of range value for stod for: " << str << ", defaulting to " << default_val << std::endl;
+		return default_val;
+	}
+}
+
+msgtype msg;
 
 // globals for slave
 vector<string> slave_filenames;
@@ -23,50 +45,7 @@ vector<job*> slave_assignment;
 map<job*, string> filenames;
 map<job*, string> buffers;
 
-vector<job*> getTestJobs() {
-	vector<job*> joblist;
-
-	job1.filename = "motor.xml";
-	job1.processors = 2;
-	job1.argument.push_back("eqTime");
-	job1.argval.push_back("0");
-	job1.argument.push_back("sTime");
-	job1.argval.push_back("10");
-	job1.argument.push_back("oSteps");
-	job1.argval.push_back("10");
-	job1.parameters.push_back("motorCount");
-	job1.values.push_back(12);
-	job1.parameters.push_back("cellVolume");
-	job1.values.push_back(1.72e-15);
-
-	job2.filename = "simple_system.xml";
-	job2.processors = 3;
-	job2.argument.push_back("eqTime");
-	job2.argval.push_back("10");
-	job2.argument.push_back("sTime");
-	job2.argval.push_back("20");
-	job2.argument.push_back("oSteps");
-	job2.argval.push_back("25");
-	job2.parameters.push_back("kcat");
-	job2.values.push_back(0.3);
-
-	for (int i = 0; i < 5; ++i) {
-	jobs[2*i] = job1;
-	jobs[2*i+1] = job2;
-	joblist.push_back(&jobs[2*i]);
-	joblist.push_back(&jobs[2*i+1]);
-	}
-
-	joblist.push_back(&job1);
-	joblist.push_back(&job2);
-	
-	return joblist;
-}
-
 vector<job*> parseJobsFile (string buffer) {
-	//for test
-	//return getTestJobs();
-
 	vector<job*> joblist;
 	vector<string>* lines = stringToStrings(buffer,"\n",true);
 
@@ -121,18 +100,18 @@ vector<job*> parseJobsFile (string buffer) {
 						if ((*subStrings)[0].compare("param") == 0 && (*subStrings)[1].length() >= 3) {
 							currentScan->parameter.push_back((*subStrings)[1].substr(1,(*subStrings)[1].length()-2));
 						} else if ((*subStrings)[0].compare("min") == 0 && (*subStrings)[1].length() >= 3) {
-							currentScan->min.push_back(atof((*subStrings)[1].substr(1,(*subStrings)[1].length()-2).data()));
+							currentScan->min.push_back(safe_stod((*subStrings)[1].substr(1,(*subStrings)[1].length()-2)));
 						} else if ((*subStrings)[0].compare("max") == 0 && (*subStrings)[1].length() >= 3) {
-							currentScan->max.push_back(atof((*subStrings)[1].substr(1,(*subStrings)[1].length()-2).data()));
+							currentScan->max.push_back(safe_stod((*subStrings)[1].substr(1,(*subStrings)[1].length()-2)));
 						} else if ((*subStrings)[0].compare("steps") == 0 && (*subStrings)[1].length() >= 3) {
-							int steps = atoi((*subStrings)[1].substr(1,(*subStrings)[1].length()-2).data());
+							int steps = safe_stoi((*subStrings)[1].substr(1,(*subStrings)[1].length()-2), 2);
 							if (steps <= 2) {
 							steps = 2;
 							}
 							currentScan->steps.push_back(steps);
 						} else if ((*subStrings)[0].compare("stepsize") == 0 && (*subStrings)[1].length() >= 3) {
 							int steps = 2;
-							double stepsize = atof((*subStrings)[1].substr(1,(*subStrings)[1].length()-2).data());
+							double stepsize = safe_stod((*subStrings)[1].substr(1,(*subStrings)[1].length()-2));
 							if (stepsize > 0) {
 							steps = 1+int((currentScan->max[currentScan->max.size()-1] - currentScan->min[currentScan->min.size()-1])/stepsize);
 							if (steps < 2) {
@@ -145,16 +124,16 @@ vector<job*> parseJobsFile (string buffer) {
 						if ((*subStrings)[0].compare("file") == 0 && (*subStrings)[1].length() >= 3) {
 							currentModel->filename = (*subStrings)[1].substr(1,(*subStrings)[1].length()-2);
 						} else if ((*subStrings)[0].compare("procs") == 0 && (*subStrings)[1].length() >= 3) {
-							currentModel->processors = atoi((*subStrings)[1].substr(1,(*subStrings)[1].length()-2).data());
+							currentModel->processors = safe_stoi((*subStrings)[1].substr(1,(*subStrings)[1].length()-2), 1);
 						} else if ((*subStrings)[0].compare("replicates") == 0 && (*subStrings)[1].length() >= 3) {
-							currentModel->replicates = atoi((*subStrings)[1].substr(1,(*subStrings)[1].length()-2).data());
+							currentModel->replicates = safe_stoi((*subStrings)[1].substr(1,(*subStrings)[1].length()-2), 1);
 						} else {
 							currentModel->argument.push_back((*subStrings)[0]);
 							currentModel->argval.push_back((*subStrings)[1].substr(1,(*subStrings)[1].length()-2));
 						}
 					} else if (currentJobID != -1) {
 						if ((*subStrings)[0].compare("id") == 0 && (*subStrings)[1].length() >= 3) {
-							currentJobID = atoi((*subStrings)[1].substr(1,(*subStrings)[1].length()-2).data());
+							currentJobID = safe_stoi((*subStrings)[1].substr(1,(*subStrings)[1].length()-2), -1);
 						}
 					}
 				}
@@ -232,7 +211,7 @@ vector<string>* getStringsFileline(ifstream &input, const char* delim, bool trea
 	return stringToStrings(buff, delim, treatConsecutiveDelimAsOne);
 }
 
-vector<string>* stringToStrings(string fullString, const char* delim, bool treatConsecutiveDelimAsOne) {
+vector<string>* stringToStrings(const string& fullString, const char* delim, bool treatConsecutiveDelimAsOne) {
 	vector<string>* newVect = new vector<string>;
 	string buff(fullString);
 
@@ -261,10 +240,11 @@ vector<string>* stringToStrings(string fullString, const char* delim, bool treat
 	return newVect;
 }
 
-void findandreplace(string &source, string find, string replace) {
-	size_t j;
-	for (;(j = source.find( find )) != source.npos;) {
+void findandreplace(string &source, const string& find, const string& replace) {
+	size_t j = 0;
+	for (;(j = source.find( find, j )) != source.npos;) {
 	source.replace( j, find.length(), replace );
+	j += replace.length();
 	}
 }
 
@@ -289,8 +269,13 @@ void send_to_slave(int slave, int tag, int datalen, char *data) {
 	msg.src = MASTER;
 	msg.tag = tag;
 	msg.len = datalen;
-	if (datalen > 0 && data != 0) memcpy(msg.data, data, datalen);
-	int actlen = sizeof(msg.src) + sizeof(msg.tag) + sizeof(msg.len) + datalen;
+	// 🛡️ Sentinel check: prevent buffer overflow and handle negative lengths
+	int copy_len = (datalen < 0) ? 0 : (datalen < MSG_DATA_SIZE ? datalen : (MSG_DATA_SIZE - 1));
+	if (copy_len > 0 && data != 0) {
+		memcpy(msg.data, data, copy_len);
+		msg.data[copy_len] = '\0';
+	}
+	int actlen = sizeof(msg.src) + sizeof(msg.tag) + sizeof(msg.len) + copy_len;
 #ifdef NF_MPI
 	MPI_Send(&msg, actlen, MPI_CHAR, slave, TAG_MSG, MPI_COMM_WORLD);	
 #endif
@@ -305,8 +290,13 @@ void send_to_master(int myid, int tag, int datalen, char *data) {
 	msg.src = myid;
 	msg.tag = tag;
 	msg.len = datalen;
-	if (datalen > 0 && data != 0) memcpy(msg.data, data, datalen);
-	int actlen = sizeof(msg.src) + sizeof(msg.tag) + sizeof(msg.len) + datalen;
+	// 🛡️ Sentinel check: prevent buffer overflow and handle negative lengths
+	int copy_len = (datalen < 0) ? 0 : (datalen < MSG_DATA_SIZE ? datalen : (MSG_DATA_SIZE - 1));
+	if (copy_len > 0 && data != 0) {
+		memcpy(msg.data, data, copy_len);
+		msg.data[copy_len] = '\0';
+	}
+	int actlen = sizeof(msg.src) + sizeof(msg.tag) + sizeof(msg.len) + copy_len;
 #ifdef NF_MPI
 	MPI_Send(&msg, actlen, MPI_CHAR, MASTER, TAG_MSG, MPI_COMM_WORLD);	
 #endif
@@ -385,17 +375,31 @@ void job2str(job& j, char* p, size_t max_len) {
 void str2job(char* str, job& jnow) {
 	char *p = str;
 	char *ch = strtok(str, ",");
-	ch = strtok(0, ","); jnow.filename = string(p);    p = ch; 
-	ch = strtok(0, ","); jnow.processors = atoi(p);    p = ch; 
-	ch = strtok(0, ","); int argc        = atoi(p);    p = ch;
+	if (!ch) return; // 🛡️ Sentinel check: null pointer check
+
+	jnow.filename = string(p);
+	ch = strtok(0, ","); if (!ch) return; p = ch;
+
+	jnow.processors = safe_stoi(p, 1);
+	ch = strtok(0, ","); if (!ch) return; p = ch;
+
+	int argc = safe_stoi(p, 0);
 	for (int i = 0; i < argc; ++i) { 
-	ch = strtok(0, ","); jnow.argument.push_back(string(p)); p = ch; 
-	ch = strtok(0, ","); jnow.argval.push_back(string(p));   p = ch; 
+		ch = strtok(0, ","); if (!ch) return; p = ch;
+		jnow.argument.push_back(string(p));
+
+		ch = strtok(0, ","); if (!ch) return; p = ch;
+		jnow.argval.push_back(string(p));
 	}
-	ch = strtok(0, ","); int n = atoi(p); p = ch;
+
+	ch = strtok(0, ","); if (!ch) return; p = ch;
+	int n = safe_stoi(p, 0);
 	for (int i = 0; i < n; ++i) { 
-	ch = strtok(0, ","); jnow.parameters.push_back(string(p));        p = ch; 
-	ch = strtok(0, ","); jnow.values.push_back(atof((const char*)p)); p = ch; 
+		ch = strtok(0, ","); if (!ch) return; p = ch;
+		jnow.parameters.push_back(string(p));
+
+		ch = strtok(0, ","); if (!ch) return; p = ch;
+		jnow.values.push_back(safe_stod(p, 0.0));
 	}
 }
 
@@ -483,11 +487,12 @@ int schedulerInterpreter(int* argc, char*** argv) {
 
 void printParallelJobOutput(vector<job*> jobQueue) {
 	//First organizing all output buffers from all jobs by filename
-	map<string, map<job*, string> > FileMap;
-	for (vector<job*>::iterator it = jobQueue.begin(); it != jobQueue.end(); ++it) {
-		FileMap[filenames[*it]][*it] = buffers[*it];
+	map<string, map<int, string> > FileMap;
+	for (int i = 0; i < int(jobQueue.size()); i++) {
+		job* currentJob = jobQueue[i];
+		FileMap[filenames[currentJob]][i] = buffers[currentJob];
 	}
-	
+	PrintFileBuffer(FileMap, jobQueue);
 }
 
 void FinalizeMPI() {
@@ -508,21 +513,16 @@ void InitializeMPI(int* argc, char*** argv,int& Size,int& Rank) {
 }
 
 string load_to_buffer(string filename) {
-	string buffer;
 	ifstream Input;
 	Input.open(filename.data());
 	if (!Input.is_open()) {
 		cout << "Could not open " << filename << endl;
 		return "";
 	}
-	while(!Input.eof()) {
-	    if (buffer.length() > 0) {
-			buffer.append("\n");
-	    }
-	    buffer.append(getFileLine(Input));
-	}
+	stringstream bufferStream;
+	bufferStream << Input.rdbuf();
 	Input.close();
-	return buffer;
+	return bufferStream.str();
 }
 
 void DynamicParallel (map<string, string> argMap,int rank,int size) {
@@ -568,13 +568,21 @@ void DynamicParallel (map<string, string> argMap,int rank,int size) {
 				}
 				} else if (msg.tag == rpt_pre_data) { // msg.data = "data_size,filename"
 				char *p = strchr(msg.data, ','); 
-				*(p++) = 0; 
-				job *j = slave_assignment[msg.src];
-				filenames[j] = p;
-				int data_size = atoi(msg.data);
-				raw_buffers[msg.src] = (char*)malloc(data_size);
-				incoming_sizes[msg.src] = data_size;
-				send_to_slave(msg.src, cmd_pre_data_ack, 0, 0);
+					if (p) { // 🛡️ Sentinel check: null pointer check
+						*(p++) = 0;
+						job *j = slave_assignment[msg.src];
+						filenames[j] = p;
+						int data_size = safe_stoi(msg.data, 0);
+						if (data_size > 0 && data_size < 1024*1024*1024) { // 🛡️ Sentinel check: sensible allocation limit (1GB) and positive
+							raw_buffers[msg.src] = (char*)malloc(data_size);
+							incoming_sizes[msg.src] = data_size;
+							send_to_slave(msg.src, cmd_pre_data_ack, 0, 0);
+						} else {
+							perr("Error: invalid data size requested by slave.");
+						}
+					} else {
+						perr("Error: malformed rpt_pre_data message.");
+					}
 				} else if (msg.tag == rpt_data) {
 				job* j = slave_assignment[msg.src];
 				buffers[j] = raw_buffers[msg.src];
@@ -583,8 +591,6 @@ void DynamicParallel (map<string, string> argMap,int rank,int size) {
 			}
 		}
 		// filenames & buffers ready to be processed
-		// code for parsing output goes here
-		cout << endl << "---------------- output (process me)---------------" << endl << endl;
 		printParallelJobOutput(jobQueue);
 	} else {
 		// slave 
@@ -597,7 +603,12 @@ void DynamicParallel (map<string, string> argMap,int rank,int size) {
 			}			
 			job jnow;
 			char str[MSG_DATA_SIZE];
-			memcpy(str, msg.data, msg.len);	
+				// 🛡️ Sentinel check: prevent buffer overflow and handle negative lengths
+				int copy_len = (msg.len < 0) ? 0 : (msg.len < MSG_DATA_SIZE ? msg.len : (MSG_DATA_SIZE - 1));
+				if (copy_len > 0) {
+					memcpy(str, msg.data, copy_len);
+				}
+				str[copy_len] = '\0';
 			printf("slave #%d : got work (%s)\n", rank, str);
 			str2job(str, jnow);
 			slave_work(rank, jnow);
@@ -708,9 +719,9 @@ string BroadcastString(int Rank,int From,string InBuffer) {
 string ConvertBufferMapToString(map<string, map<int, string> >& FileMap) {
 	stringstream Result;
 	Result << FileMap.size();
-	for (map<string, map<int, string> >::iterator MapIT = FileMap.begin(); MapIT != FileMap.end(); MapIT++) {
+	for (map<string, map<int, string> >::iterator MapIT = FileMap.begin(); MapIT != FileMap.end(); ++MapIT) {
 		Result << "`" << MapIT->first << "`" << MapIT->second.size();
-		for (map<int, string>::iterator MapITT = FileMap[MapIT->first].begin(); MapITT != FileMap[MapIT->first].end(); MapITT++) {
+		for (map<int, string>::iterator MapITT = MapIT->second.begin(); MapITT != MapIT->second.end(); ++MapITT) {
 			Result << "`" << MapITT->first << "`" << MapITT->second;
 		}
 	}
@@ -785,15 +796,15 @@ void ConvertStringToBufferMap(map<string, map<int, string> >& FileMap,string Rep
 	vector<string>* Strings = stringToStrings(ReportBuffer,"`",false);
 	int CurrentIndex = 0;
 	while (CurrentIndex <= int(Strings->size()-5)) {
-		int NumFiles = atoi((*Strings)[CurrentIndex].data());
+		int NumFiles = safe_stoi((*Strings)[CurrentIndex], 0);
 		CurrentIndex++;
 		for (int i=0;i < NumFiles; i++) {
 			string CurrentFile = (*Strings)[CurrentIndex];
 			CurrentIndex++;
-			int Jobs = atoi((*Strings)[CurrentIndex].data());
+			int Jobs = safe_stoi((*Strings)[CurrentIndex], 0);
 			CurrentIndex++;
 			for (int j=0; j < Jobs; j++) {
-				int CurrentJob = atoi((*Strings)[CurrentIndex].data());
+				int CurrentJob = safe_stoi((*Strings)[CurrentIndex], 0);
 				FileMap[CurrentFile][CurrentJob] = (*Strings)[CurrentIndex+1];
 				CurrentIndex += 2;
 			}
@@ -814,11 +825,11 @@ char* ConvertStringToCString(string Buffer) {
 
 void PrintFileBuffer(map<string, map<int, string> > FileMap,vector<job*> JobQueue) {
 	//Now going through each distinct filename and printing output in a variety of formats
+	ofstream Output;
 	for (map<string, map<int, string> >::iterator it = FileMap.begin(); it != FileMap.end(); ++it) {
 		string Filename = getPath(JobQueue[it->second.begin()->first]->filename)+it->first;
 		//if (Filename.length() <= 4 || Filename.substr(Filename.length()-4).compare(".gdat") != 0) {
 			//Appending the output buffer from each job 
-			ofstream Output;
 			Output.open(Filename.data());
 			for (map<int, string>::iterator itt = it->second.begin(); itt != it->second.end(); ++itt) {
 				//Printing job data
@@ -840,6 +851,7 @@ void PrintFileBuffer(map<string, map<int, string> > FileMap,vector<job*> JobQueu
 				Output << itt->second << endl << endl;
 			}
 			Output.close();
+			Output.clear();
 		//}
 	}
 }

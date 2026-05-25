@@ -67,71 +67,6 @@ bool NFinput::FindReactionRuleSymmetry(
 			return true;
 		}
 
-
-//		//First extract out the state changes
-//						TiXmlElement *pStateChange;
-//						for ( pStateChange = pListOfOperations->FirstChildElement("StateChange"); pStateChange != 0; pStateChange = pStateChange->NextSiblingElement("StateChange"))
-//						{
-//							//Make sure all the information about the state change is here
-//							string site, finalState;
-//							if(!pStateChange->Attribute("site") || !pStateChange->Attribute("finalState")) {
-//								cerr<<"A specified state change operation in ReactionClass: '"+rxnName+"' does not "<<endl;
-//								cerr<<"have a valid site or finalState attribute.  Quitting."<<endl;
-//								return false;
-//							} else {
-//								site = pStateChange->Attribute("site");
-//								finalState = pStateChange->Attribute("finalState");
-//							}
-//
-//							//First grab the component that is going to change...
-//							component *c;
-//							int finalStateInt = 0;
-//							if(!lookup(c, site, comps, symMap)) return false;
-//
-//							//handle both increment and decrement states first...
-//							if(finalState=="PLUS") {
-//								if(!ts->addIncrementStateTransform(c->t,c->symPermutationName)) return false;
-//
-//								if(verbose) {
-//									cout<<"\t\t\t***Identified increment state of site: "+c->t->getMoleculeTypeName()+"("+c->symPermutationName;
-//									cout<<") to new state value: oldStateValue+1"<<endl;
-//								}
-//							}
-//							else if(finalState=="MINUS") {
-//								if(!ts->addDecrementStateTransform(c->t,c->symPermutationName)) return false;
-//
-//
-//								if(verbose) {
-//									cout<<"\t\t\t***Identified decrement state of site: "+c->t->getMoleculeTypeName()+"("+c->symPermutationName;
-//									cout<<") to new state value: oldStateValue-1"<<endl;
-//								}
-//
-//							}
-//							else {
-//
-//								//Here, we handle your typical state change operation
-//								try {
-//									if(allowedStates.find(c->t->getMoleculeTypeName()+"_"+c->symPermutationName+"_"+finalState)==allowedStates.end()) {
-//										cout<<"Error! in NFinput, when looking up state: "<<c->t->getMoleculeTypeName()+"_"+c->symPermutationName+"_"+finalState<<endl;
-//										cout<<"Could not find this in the list of allowed states!  exiting!"<<endl;
-//										exit(1);
-//									}
-//									finalStateInt = allowedStates.find(c->t->getMoleculeTypeName()+"_"+c->symPermutationName+"_"+finalState)->second;
-//									//cout<<"found:"<<finalStateInt<<endl;
-//								} catch (exception& e) {
-//									cerr<<"Error in adding a state change operation in ReactionClass: '"+rxnName+"'."<<endl;
-//									cerr<<"It seems that the final state is not valid."<<endl;
-//									return false;
-//								}
-//								if(!ts->addStateChangeTransform(c->t,c->symPermutationName,finalStateInt)) return false;
-//								if(verbose) {
-//									cout<<"\t\t\t***Identified state change of site: "+c->t->getMoleculeTypeName()+"("+c->symPermutationName;
-//									cout<<") to new state value: " + finalState<<endl;
-//								}
-//							}
-//						}
-
-
 		//First extract out the state changes
 		TiXmlElement *pStateChange;
 		for ( pStateChange = pListOfOperations->FirstChildElement("StateChange"); pStateChange != 0; pStateChange = pStateChange->NextSiblingElement("StateChange"))
@@ -179,17 +114,13 @@ bool NFinput::FindReactionRuleSymmetry(
 				site1 = pAddBond->Attribute("site1");
 				site2 = pAddBond->Attribute("site2");
 
-				//Skip this if we are adding a bond in the product pattern....
-				// @TODO:  FIX THIS!  should reject adds in molecule species that are newly added!
-				//if(site1.find("RP")>=0 || site2.find("RP")>=0) continue;
-
 			}
 
 			// Handle site1 and site2 separately!
-			//  If we can't find a site, look to see if it's on a product molecule.
-			//  If so, then we'll move on and assume the missing site won't affect symmetry
-			// TODO: think carefully w.r.t. symmetry and new Molecules.
-			// --Justin
+			// If we can't find a site, look to see if it's on a product molecule.
+			// Newly created product molecules do not affect reactant symmetry matching.
+			// Handling site1 and site2 independently correctly adds any reactant-side
+			// site to the reaction center while safely ignoring the product-side site.
 			if(comps.find(site1)!=comps.end() )
 			{
 				component c1 = comps.find(site1)->second;
@@ -266,10 +197,6 @@ bool NFinput::FindReactionRuleSymmetry(
 				site1 = pDeleteBond->Attribute("site1");
 				site2 = pDeleteBond->Attribute("site2");
 
-				//Skip this if we are messing with a bond in the product pattern....
-				// @TODO:  FIX THIS!  should reject adds in molecule species that are newly added!
-				//if(site1.find("RP")>=0 || site2.find("RP")>=0) continue;
-
 			}
 
 			if(comps.find(site1)!=comps.end() && comps.find(site2)!=comps.end()) {
@@ -328,24 +255,6 @@ bool NFinput::FindReactionRuleSymmetry(
 }
 
 
-
-//////  DEPRECATED
-//makes sure the component hasn't been used yet
-//bool isValid(vector <vector <component> > &symRxnCenterComp, vector <int> &currentPos) {
-//	for(unsigned int i=0; i<symRxnCenterComp.size(); i++) {
-//		for(unsigned int j=i+1; j<symRxnCenterComp.size(); j++) {
-//			if(symRxnCenterComp.at(i).at(currentPos.at(i)).symPermutationName
-//					== symRxnCenterComp.at(j).at(currentPos.at(j)).symPermutationName) return false;
-//		}
-//	}
-//	return true;
-//}
-//void dumpState(vector <vector <component> > &symRxnCenterComp, vector <int> &currentPos) {
-//	cout<<"( ";
-//	for(unsigned int s=0; s<symRxnCenterComp.size(); s++)
-//		cout<<symRxnCenterComp.at(s).at(currentPos.at(s)).symPermutationName<<" ";
-//	cout<<")"<<endl;
-//}
 
 void createSymMap(map<string,component> & symMap,
 		vector <string> &uniqueId,

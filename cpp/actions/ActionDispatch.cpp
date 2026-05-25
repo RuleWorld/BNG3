@@ -42,6 +42,10 @@
 #include "io/RuleInfluenceGraphWriter.hpp"
 #include "parser/BNGAstVisitor.hpp"
 
+// NFsim in-process invocation
+#include "nfsim/NFinput/NFinput.hh"
+#include "nfsim/NFcore/NFcore.hh"
+
 #if defined(_WIN32) || defined(__WIN32__) || defined(__CYGWIN__)
 #include <process.h>
 #else
@@ -1219,8 +1223,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         }
 
         if (actionName == "simulate_nf") {
-            // NFSim simulation: write XML, invoke NFsim binary, read results
-            // Write XML model
+            // NFSim simulation: write XML, invoke nfsim_core in-process
             const auto xmlContent = io::XmlWriter::write(model, network.has_value() ? &(*network) : nullptr);
             const auto prefix = simulationPrefix(action, sourcePath);
             const auto xmlPath = sourcePath.parent_path() / (prefix + ".xml");
@@ -1230,124 +1233,78 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 xmlOut << xmlContent;
             }
 
-            // Find NFSim executable
-            std::string nfsimExec = stripQuotes(readArgument(action, "nfsim_exec", ""));
-            if (nfsimExec.empty()) {
-                // Search standard locations
-                std::vector<std::filesystem::path> searchPaths;
-                // Check BNG_PATH environment variable
-                const char* bngPath = std::getenv("BNG_PATH");
-                if (bngPath) {
-                    searchPaths.push_back(std::filesystem::path(bngPath) / "bin");
-                }
-                // Check relative to source
-                searchPaths.push_back(sourcePath.parent_path() / "bin");
-                // Check BNG_CPP_SOURCE_DIR macro
-#ifdef BNG_CPP_SOURCE_DIR
-                searchPaths.push_back(std::filesystem::path(BNG_CPP_SOURCE_DIR) / "bng2" / "bin");
-#endif
-
-                std::vector<std::string> nfsimNames = {"NFsim", "NFsim.exe"};
-                for (const auto& dir : searchPaths) {
-                    for (const auto& name : nfsimNames) {
-                        auto candidate = dir / name;
-                        if (std::filesystem::exists(candidate)) {
-                            nfsimExec = candidate.string();
-                            break;
-                        }
-                    }
-                    if (!nfsimExec.empty()) break;
-                }
-
-                if (nfsimExec.empty()) {
-                    throw std::runtime_error(
-                        "NFsim executable not found. Set nfsim_exec parameter or BNG_PATH environment variable.");
-                }
-            }
-
-            // Build NFSim command
+            // Parse simulation parameters
             const auto tEnd = stripQuotes(readArgument(action, "t_end", "10"));
             const auto nSteps = stripQuotes(readArgument(action, "n_steps", "20"));
             const auto gdatPath = sourcePath.parent_path() / (prefix + ".gdat");
-
-            std::string cmd = "\"" + nfsimExec + "\""
-                + " -xml \"" + xmlPath.string() + "\""
-                + " -o \"" + gdatPath.string() + "\""
-                + " -sim " + tEnd
-                + " -oSteps " + nSteps;
-
-            // Map BNG parameters to NFSim flags
-            const auto seedText = readArgument(action, "seed", "");
-            if (!seedText.empty()) cmd += " -seed " + stripQuotes(seedText);
-
-            const auto utlText = readArgument(action, "utl", "");
-            if (!utlText.empty()) cmd += " -utl " + stripQuotes(utlText);
-
+            const auto seedText = stripQuotes(readArgument(action, "seed", ""));
+            const auto utlText = stripQuotes(readArgument(action, "utl", "3"));
             const auto verboseFlag = lowercase(stripQuotes(readArgument(action, "verbose", "0")));
-            if (verboseFlag == "1" || verboseFlag == "true") cmd += " -v";
-
             const auto complexFlag = lowercase(stripQuotes(readArgument(action, "complex", "1")));
-            if (complexFlag == "1" || complexFlag == "true") cmd += " -cb";
-
             const auto getFinalState = lowercase(stripQuotes(readArgument(action, "get_final_state", "1")));
-            if (getFinalState == "1" || getFinalState == "true") {
-                const auto speciesPath = sourcePath.parent_path() / (prefix + ".species");
-                cmd += " -ss \"" + speciesPath.string() + "\"";
-            }
+            bool nfVerbose = (verboseFlag == "1" || verboseFlag == "true");
+            bool useComplex = (complexFlag == "1" || complexFlag == "true");
+            bool evalCSLF = lowercase(stripQuotes(readArgument(action, "nocslf", "0"))) != "1";
+            bool connectivityFlag = lowercase(stripQuotes(readArgument(action, "pcg", "0"))) == "1";
+
+            int globalMoleculeLimit = 200000;
+            const auto gmlText = stripQuotes(readArgument(action, "gml", ""));
+            if (!gmlText.empty()) globalMoleculeLimit = std::stoi(gmlText);
+
+            int suggestedTraversalLimit = utlText.empty() ? 3 : std::stoi(utlText);
 
             if (verbose) {
-                std::cerr << "[bng_cpp] Running NFSim: " << cmd << "\n";
+                std::cerr << "[bng_cpp] Running NFSim in-process: " << xmlPath << "\n";
             }
 
-            // Execute NFSim
-            std::vector<std::string> args = {nfsimExec, "-xml", xmlPath.string(), "-o", gdatPath.string(), "-sim", stripQuotes(tEnd), "-oSteps", stripQuotes(nSteps)};
+            // Initialize NFsim System from the XML file
+            NFcore::System *nfSystem = NFinput::initializeFromXML(
+                xmlPath.string(),
+                useComplex,
+                globalMoleculeLimit,
+                nfVerbose,
+                suggestedTraversalLimit,
+                evalCSLF,
+                connectivityFlag);
 
-            if (!seedText.empty()) { args.push_back("-seed"); args.push_back(stripQuotes(seedText)); }
-            if (!utlText.empty()) { args.push_back("-utl"); args.push_back(stripQuotes(utlText)); }
-            if (verboseFlag == "1" || verboseFlag == "true") { args.push_back("-v"); }
-            if (complexFlag == "1" || complexFlag == "true") { args.push_back("-cb"); }
+            if (!nfSystem) {
+                throw std::runtime_error("NFSim: Failed to initialize system from XML: " + xmlPath.string());
+            }
+
+            // Seed the RNG if requested
+            if (!seedText.empty()) {
+                unsigned long seed = std::stoul(seedText);
+                nfSystem->seedRNG(seed);
+                NFutil::SEED_RANDOM(seed);
+            }
+
+            // Register output file
+            nfSystem->registerOutputFileLocation(gdatPath.string());
+
+            // Handle species output
+            if (getFinalState == "1" || getFinalState == "true") {
+                // Will save species after simulation
+            }
+
+            // Prepare and run simulation
+            nfSystem->prepareForSimulation();
+
+            double simTime = std::stod(tEnd);
+            long int sampleTimes = std::stol(nSteps);
+
+            nfSystem->sim(simTime, sampleTimes, nfVerbose);
+
+            // Save final species state if requested
             if (getFinalState == "1" || getFinalState == "true") {
                 const auto speciesPath = sourcePath.parent_path() / (prefix + ".species");
-                args.push_back("-ss");
-                args.push_back(speciesPath.string());
-            }
-
-            std::vector<char*> c_args;
-            for (auto& arg : args) {
-                c_args.push_back(const_cast<char*>(arg.c_str()));
-            }
-            c_args.push_back(nullptr);
-
-            int exitCode = -1;
-#if defined(_WIN32) || defined(__WIN32__) || defined(__CYGWIN__)
-            exitCode = _spawnvp(_P_WAIT, c_args[0], c_args.data());
-#else
-            pid_t pid = fork();
-            if (pid == -1) {
-                std::cerr << "[bng_cpp] Error: Failed to fork process for NFSim\n";
-            } else if (pid == 0) {
-                execvp(c_args[0], c_args.data());
-                std::cerr << "[bng_cpp] Error: Failed to execute NFSim\n";
-                _exit(1);
-            } else {
-                int status;
-                if (waitpid(pid, &status, 0) != -1) {
-                    if (WIFEXITED(status)) {
-                        exitCode = WEXITSTATUS(status);
-                    } else if (WIFSIGNALED(status)) {
-                        std::cerr << "[bng_cpp] Warning: NFSim terminated by signal " << WTERMSIG(status) << "\n";
-                    }
-                }
-            }
-#endif
-
-            if (exitCode != 0) {
-                std::cerr << "[bng_cpp] Warning: NFSim returned exit code " << exitCode << "\n";
+                nfSystem->saveSpecies(speciesPath.string());
             }
 
             if (verbose) {
                 std::cerr << "[bng_cpp] NFSim completed. Output: " << gdatPath << "\n";
             }
+
+            delete nfSystem;
             continue;
         }
 
@@ -2135,6 +2092,51 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             outFile << sscContent;
             if (verbose) {
                 std::cerr << "[bng_cpp] Wrote SSC to " << outputPath << "\n";
+            }
+            continue;
+        }
+
+        // simulate_protocol: BNG3 already processes actions sequentially,
+        // so simulate_protocol is a no-op (the protocol IS the action list)
+        if (actionName == "simulate_protocol") {
+            if (verbose) {
+                std::cerr << "[bng_cpp] simulate_protocol: actions are already executed sequentially\n";
+            }
+            continue;
+        }
+
+        // Action aliases for BNG2 compatibility
+        if (actionName == "readnetwork") {
+            // Alias for include_network / readFile with .net
+            const auto netFile = stripQuotes(readArgument(action, "file", ""));
+            if (!netFile.empty()) {
+                auto netPath = sourcePath.parent_path() / netFile;
+                if (std::filesystem::exists(netPath)) {
+                    auto parseResult = io::NetReader::parse(netPath);
+                    if (verbose) std::cerr << "[bng_cpp] readNetwork: loaded " << netPath << "\n";
+                }
+            }
+            continue;
+        }
+
+        if (actionName == "writenetwork" || actionName == "writenet") {
+            ensureNetwork();
+            writeCurrentNetwork();
+            continue;
+        }
+
+        if (actionName == "readmodel") {
+            // readModel: re-read a BNGL file — delegate to include_model semantics
+            const auto modelFile = stripQuotes(readArgument(action, "file", ""));
+            if (!modelFile.empty()) {
+                auto modelPath = sourcePath.parent_path() / modelFile;
+                if (std::filesystem::exists(modelPath)) {
+                    auto newModel = bng::parser::parseModelFromFile(modelPath.string());
+                    model.merge(*newModel);
+                    model.getParameters().evaluateAll();
+                    network.reset();
+                    if (verbose) std::cerr << "[bng_cpp] readModel: loaded " << modelPath << "\n";
+                }
             }
             continue;
         }

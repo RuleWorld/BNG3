@@ -14,6 +14,7 @@ using namespace NFcore;
 FunctionalRxnClass::FunctionalRxnClass(string name, GlobalFunction *gf, TransformationSet *transformationSet, System *s) :
 	BasicRxnClass(name,1,"",transformationSet,s)
 {
+	this->reactionType = ReactionClass::OBS_DEPENDENT_RXN;
 	this->cf=0;
 	this->gf=gf;
 	for(int vr=0; vr<gf->getNumOfVarRefs(); vr++) {
@@ -32,6 +33,7 @@ FunctionalRxnClass::FunctionalRxnClass(string name, GlobalFunction *gf, Transfor
 FunctionalRxnClass::FunctionalRxnClass(string name, CompositeFunction *cf, TransformationSet *transformationSet, System *s) :
 	BasicRxnClass(name,1, "", transformationSet,s)
 {
+	this->reactionType = ReactionClass::OBS_DEPENDENT_RXN;
 	this->gf=0;
 	this->cf=cf;
 	this->cf->setGlobalObservableDependency(this,s);
@@ -74,6 +76,8 @@ double FunctionalRxnClass::update_a() {
 		cout<<"Error!  Functional rxn is not properly initialized, but is being used!"<<endl;
 		exit(1);
 	}
+
+	a *= this->volumeConversionFactor;
 
 	if(a<0) {
 		cout<<"Warning!!  The function you provided for functional rxn: '"<<name<<"' evaluates\n";
@@ -312,7 +316,7 @@ bool BasicRxnClass::tryToAdd(Molecule *m, unsigned int reactantPos)
 	//	}
 
 	//Get the specified reactantList
-	rl = reactantLists[reactantPos];
+	ReactantList *rl = reactantLists[reactantPos];
 
 	//Check if the molecule is in this list
 	int rxnIndex = m->getMoleculeType()->getRxnIndex(this,reactantPos);
@@ -345,7 +349,7 @@ bool BasicRxnClass::tryToAdd(Molecule *m, unsigned int reactantPos)
 	// } else {
 	// 	// Get a clean mappingSet from the reactantList
 	// 	// typically from the end: see the code for pusNextAvailableMappingSet()
-	// 	ms = rl->pushNextAvailableMappingSet();
+	// 	MappingSet *ms = rl->pushNextAvailableMappingSet();
 	// 	if(!reactantTemplates[reactantPos]->compare(m,rl,ms)) {
 	// 		//we must remove, if we did not match.  This will also remove
 	// 		//everything that was cloned off of the mapping set
@@ -380,7 +384,7 @@ bool BasicRxnClass::tryToAdd(Molecule *m, unsigned int reactantPos)
 	// 	} else {
 	// 		// Get a clean mappingSet from the reactantList
 	// 		// typically from the end: see the code for pusNextAvailableMappingSet()
-	// 		ms = rl->pushNextAvailableMappingSet();
+	// 		MappingSet *ms = rl->pushNextAvailableMappingSet();
 	// 		if(!reactantTemplates[reactantPos]->compare(m,rl,ms)) {
 	// 			//we must remove, if we did not match.  This will also remove
 	// 			//everything that was cloned off of the mapping set
@@ -392,14 +396,10 @@ bool BasicRxnClass::tryToAdd(Molecule *m, unsigned int reactantPos)
 	// }
 
 	//Here we get the standard update...
-	while(m->getRxnListMappingId(rxnIndex)>=0) {
-		rl->removeMappingSet(m->getRxnListMappingId(rxnIndex));
-		m->deleteRxnListMappingId(rxnIndex,m->getRxnListMappingId(rxnIndex));
-		//m->setRxnListMappingId(rxnIndex,Molecule::NOT_IN_RXN);
-	}
+	set<int> deleteMs = m->getRxnListMappingSet(rxnIndex);
 
 	//Try to map it!
-	ms = rl->pushNextAvailableMappingSet();
+	MappingSet *ms = rl->pushNextAvailableMappingSet();
 	symmetricMappingSet.clear();
 	comparisonResult = reactantTemplates[reactantPos]->compare(m,rl,ms,false,&symmetricMappingSet);
 	if(!comparisonResult) {
@@ -415,16 +415,12 @@ bool BasicRxnClass::tryToAdd(Molecule *m, unsigned int reactantPos)
 		//cout << "should be in normal reaction, confirm push"<<endl;
 		//ms->printDetails();
 		
-		//TODO: it is necessary to remove elements that are not used anymore from the rl as well as from the m
-		//for that
-		//m->setRxnListMappingId(rxnIndex,-1);
-
 		if (symmetricMappingSet.size() > 0){
             rl->removeMappingSet(ms->getId());
 			for(vector<MappingSet *>::iterator it=symmetricMappingSet.begin();it!=symmetricMappingSet.end();++it){
-					//XXX: JJT this is a band-aid, symmetricMappingSet should not have repeated elements in the first place
 					int mapIndex = checkForEquality(m,*it,rxnIndex,rl);
 					if(mapIndex >= 0){
+						deleteMs.erase(mapIndex);
 						rl->removeMappingSet((*it)->getId());
 					}
 					else{
@@ -433,9 +429,21 @@ bool BasicRxnClass::tryToAdd(Molecule *m, unsigned int reactantPos)
             }
 		}
 		else{
-			m->setRxnListMappingId(rxnIndex,ms->getId());
+			int mapIndex = checkForEquality(m,ms,rxnIndex,rl);
+			if(mapIndex >= 0){
+				deleteMs.erase(mapIndex);
+				rl->removeMappingSet(ms->getId());
+			}
+			else{
+				m->setRxnListMappingId(rxnIndex,ms->getId());
+			}
 		}
 		
+	}
+
+	for (set<int>::iterator it = deleteMs.begin(); it != deleteMs.end(); ++it) {
+		rl->removeMappingSet(*it);
+		m->deleteRxnListMappingId(rxnIndex, *it);
 	}
 
 	return true;
@@ -675,7 +683,6 @@ void BasicRxnClass::pickMappingSets(double random_A_number) const
 		}
 	}
 }
-
 
 
 

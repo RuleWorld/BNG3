@@ -3,18 +3,20 @@
 #include <math.h>
 
 using namespace NFcore;
+#ifndef NFSIM_USE_EXPRTK
 using namespace mu;
+#endif
 
 
 
 
-Parser * FuncFactory::create(string functionString, vector <string> & variableNames, vector <double *> & variablePtrs)
+mu::Parser * FuncFactory::create(string functionString, vector <string> & variableNames, vector <double *> & variablePtrs)
 {
 	double PI = 3.14159265358979323846;
 	double NA= 6.02214179e23;
 	double E = 2.718281828459;
 
-	Parser *p = new Parser();
+	mu::Parser *p = new mu::Parser();
 	try
 	{
 		p->DefineConst("_PI",PI);
@@ -26,7 +28,8 @@ Parser * FuncFactory::create(string functionString, vector <string> & variableNa
 			cout<<"you variablePtrs vector do not appear to match up!"<<endl;
 			cout<<"The function you gave me was: "<<functionString<<endl;
 			cout<<"For that, I will quit"<<endl;
-			exit(1);
+			delete p;
+			throw std::runtime_error("FuncFactory::create: mismatched variableNames and variablePtrs");
 		} else {
 			for(unsigned int v=0;v<variableNames.size(); v++) {
 				p->DefineVar(variableNames.at(v), variablePtrs.at(v));
@@ -35,35 +38,40 @@ Parser * FuncFactory::create(string functionString, vector <string> & variableNa
 
 		p->SetExpr(functionString);
 	}
-	catch (Parser::exception_type &e)
+	catch (mu::Parser::exception_type &e)
 	{
 		cout<<"Error parsing function in FuncFactory!!  This is what happened:"<<endl;
 		cout<< "  "<<e.GetMsg() << endl;
 		cout<<"Quitting."<<endl;
-		exit(1);
+		delete p;
+		throw std::runtime_error("FuncFactory::create: " + e.GetMsg());
 	}
 
 	return p;
 }
 
-Parser * FuncFactory::create()
+mu::Parser * FuncFactory::create(bool throw_mock_exception)
 {
 	double PI = 3.14159265358979323846;
 	double NA= 6.02214179e23;
 	double E = 2.718281828459;
-	Parser *p = new Parser();
+	mu::Parser *p = new mu::Parser();
 	try
 	{
 		p->DefineConst("_PI",PI);
 		p->DefineConst("_e",E);
 		p->DefineConst("_Na",NA);
+		if (throw_mock_exception) {
+			throw mu::Parser::exception_type("Mock exception");
+		}
 	}
-	catch (Parser::exception_type &e)
+	catch (mu::Parser::exception_type &e)
 	{
 		cout<<"Error creating function in FuncFactory!!  This is what happened:"<<endl;
 		cout<< "  "<<e.GetMsg() << endl;
 		cout<<"Quitting."<<endl;
-		exit(1);
+		delete p;
+		throw std::runtime_error("FuncFactory::create: " + e.GetMsg());
 	}
 	return p;
 }
@@ -78,17 +86,17 @@ double FuncFactory::Eval(mu::Parser *p)
 		cout<<"to use a GlobalFunction before it has been prepared! Preparing a GlobalFunction\n";
 		cout<<"connects it to Observables, so it must be done before you can use it!\n";
 		cout<<"  we've all made this mistake before, but now I'm exiting..."<<endl;
-		exit(1);
+		throw std::runtime_error("FuncFactory::Eval: p is NULL");
 	}
 	try {
 		return p->Eval();
-	} catch (Parser::exception_type &e) {
+	} catch (mu::Parser::exception_type &e) {
 		cout<<"Error evaluating function in FuncFactory!!  "<<endl;
 		cout<<"The function was: "<<p->GetExpr()<<endl;
 		cout<<"And this is what went wrong:"<<endl;
 		cout<< "  "<<e.GetMsg() << endl;
 		cout<<"Terminating your simulation. Better luck next time."<<endl;
-		exit(1);
+		throw std::runtime_error("FuncFactory::Eval: " + e.GetMsg());
 	}
 	return 0;
 }
@@ -108,7 +116,7 @@ void FuncFactory::test()
 	vector <string> variableNames;
 	vector <double *> variablePtrs;
 
-	Parser *p = FuncFactory::create(functionString,variableNames,variablePtrs);
+	mu::Parser *p = FuncFactory::create(functionString,variableNames,variablePtrs);
 	double result = sin(E*cos(3.2/PI))+log(NA*1.14e-11);
 	double funcResult = p->Eval();
 	if(abs(funcResult - result)<0.0001)
@@ -137,7 +145,7 @@ void FuncFactory::test()
 	variablePtrs.push_back(&d1);
 	variablePtrs.push_back(&d2);
 
-	Parser *p = FuncFactory::create(functionString,variableNames,variablePtrs);
+	mu::Parser *p = FuncFactory::create(functionString,variableNames,variablePtrs);
 	double result = 1-(d1/d2)*sin(d1*d2)+1.3*pow(d1,2.0);
 	double funcResult = FuncFactory::Eval(p);
 	if(abs(funcResult - result)<0.0001)
@@ -158,6 +166,82 @@ void FuncFactory::test()
 		cout<<"fail! p->Eval() = "<<funcResult<<"  but should be: "<<result<<endl;
 
 	delete p;
+	}
+
+	{
+	//Test 3: Check error path for parameterless create
+	cout<<" 3) test parameterless create() error path: ";
+	bool threw = false;
+	try {
+		FuncFactory::create(true);
+	} catch(const std::runtime_error& e) {
+		threw = true;
+	}
+	if(threw)
+		cout<<"pass."<<endl;
+	else {
+		cout<<"fail! Exception not thrown."<<endl;
+		exit(1);
+	}
+	}
+
+	{
+	//Test 4: Check error path for mismatched vectors in create
+	cout<<" 4) test create() error path with mismatched vectors: ";
+	string functionString("sin(d1)");
+	vector <string> variableNames;
+	variableNames.push_back("d1");
+	vector <double *> variablePtrs; // Empty, so mismatch
+	bool threw = false;
+	try {
+		FuncFactory::create(functionString, variableNames, variablePtrs);
+	} catch(const std::runtime_error& e) {
+		threw = true;
+	}
+	if(threw)
+		cout<<"pass."<<endl;
+	else {
+		cout<<"fail! Exception not thrown."<<endl;
+		exit(1);
+	}
+	}
+
+	{
+	//Test 5: Check error path for bad function string evaluation
+	cout<<" 5) test Eval() error path with bad function string: ";
+	string functionString("sin(d1"); // missing parenthesis
+	vector <string> variableNames;
+	vector <double *> variablePtrs;
+	bool threw = false;
+	try {
+		mu::Parser* bad_p = FuncFactory::create(functionString, variableNames, variablePtrs);
+		FuncFactory::Eval(bad_p);
+	} catch(const std::runtime_error& e) {
+		threw = true;
+	}
+	if(threw)
+		cout<<"pass."<<endl;
+	else {
+		cout<<"fail! Exception not thrown."<<endl;
+		exit(1);
+	}
+	}
+
+	{
+	//Test 6: Check error path for Eval with NULL
+	cout<<" 6) test Eval() error path with NULL: ";
+	bool threw = false;
+	try {
+		FuncFactory::Eval(NULL);
+	} catch(const std::runtime_error& e) {
+		threw = true;
+	}
+	if(threw)
+		cout<<"pass."<<endl;
+	else {
+		cout<<"fail! Exception not thrown."<<endl;
+		exit(1);
+	}
 	}
 
 	//Thats all the test I can think of!

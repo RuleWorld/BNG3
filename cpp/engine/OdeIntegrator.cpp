@@ -853,6 +853,14 @@ void OdeIntegrator::derivs(double t, const double* y, double* dydt) const {
         resolver = [&](const std::string& name) -> double {
             if (name == "time") return t;
 
+            // TFUN resolution: __tfun_NAME__ → interpolate at current time
+            if (name.rfind("__tfun_", 0) == 0 && name.size() > 9 && name.substr(name.size() - 2) == "__") {
+                std::string tfunName = name.substr(7, name.size() - 9);
+                if (tfunRegistry_.has(tfunName)) {
+                    return tfunRegistry_.evaluate(tfunName, t);
+                }
+            }
+
             // Sat/MM/Hill substrate references: __substrate_N → y[N]
             if (name.rfind("__substrate_", 0) == 0) {
                 std::size_t idx = std::stoul(name.substr(12));

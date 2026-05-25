@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "ast/Model.hpp"
+#include "io/TfunReader.hpp"
 #include "NetworkGenerator.hpp"
 
 namespace bng::engine {
@@ -79,6 +80,7 @@ private:
     std::unordered_map<std::string, std::size_t> observableIndex_; // O(1) observable lookup
     std::vector<std::size_t> constantRxnIndices_;              // Indices of constant-rate reactions
     std::vector<std::size_t> functionalRxnIndices_;            // Indices of functional-rate reactions
+    io::TfunRegistry tfunRegistry_;                            // Time-function tables for TFUN expressions
 
     void compile();
     void compileGroups();

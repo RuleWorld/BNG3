@@ -251,10 +251,25 @@ double Expression::evaluate(const std::function<double(const std::string&)>& res
             requireArity(text_, children_, 2);
             return evalArg(0) * evalArg(1);
         }
-        // TFUN(obsValue, ...) -> returns first argument (stub for ODE mode)
+        // TFUN(indexValue, tfunName) -> piecewise-linear interpolation
+        // If only 1 arg: TFUN(tfunName) uses current time t as index
         if (text_ == "TFUN" || text_ == "tfun") {
             if (children_.empty()) throw std::runtime_error("Function 'TFUN' expects at least 1 argument");
-            return evalArg(0);
+            if (children_.size() == 1) {
+                // TFUN(tfunName) - interpolate at current time
+                std::string tfunKey = "__tfun_" + children_[0].name() + "__";
+                try { return resolveIdentifier(tfunKey); } catch (...) {}
+                return evalArg(0);
+            }
+            // TFUN(indexValue, tfunName) - indexValue is the lookup key
+            // The resolver should handle __tfun_NAME_AT_value__ or we pass through
+            double indexVal = evalArg(0);
+            // Try to resolve via special key that the ODE integrator sets up
+            if (children_[1].kind() == ExpressionKind::Identifier) {
+                std::string tfunKey = "__tfun_" + children_[1].name() + "__";
+                try { return resolveIdentifier(tfunKey); } catch (...) {}
+            }
+            return indexVal;
         }
         // Constants
         if (text_ == "_pi") { requireArity(text_, children_, 0); return M_PI; }
