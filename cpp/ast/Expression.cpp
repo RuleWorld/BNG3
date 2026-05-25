@@ -84,7 +84,7 @@ double Expression::evaluate(const std::function<double(const std::string&)>& res
     case ExpressionKind::Number:
         return numberValue_;
     case ExpressionKind::Identifier:
-        if (text_ == "time") {
+        if (text_ == "time" || text_ == "t") {
             return t;
         }
         return resolveIdentifier(text_);
@@ -313,7 +313,7 @@ bool Expression::checkLocalDependency(const std::set<std::string>& localNames) c
 
 std::set<std::string> Expression::getDependencies() const {
     std::set<std::string> deps;
-    if (kind_ == ExpressionKind::Identifier && text_ != "time") {
+    if (kind_ == ExpressionKind::Identifier && text_ != "time" && text_ != "t") {
         deps.insert(text_);
     }
     for (const auto& child : children_) {
