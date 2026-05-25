@@ -131,6 +131,22 @@ end model
         assert network.num_species >= 2
         assert network.num_reactions >= 2
 
+    @pytest.mark.parametrize(
+        "model_name, expected_species, expected_reactions",
+        [
+            ("blbr.bngl", 20, 92),
+            ("Motivating_example_cBNGL.bngl", 78, 354),
+        ],
+    )
+    def test_validation_models_match_reference(
+        self, model_name, expected_species, expected_reactions
+    ):
+        model = _cpp.parse_file(get_model_path(model_name))
+        network = _cpp.generate_network(model)
+
+        assert network.num_species == expected_species
+        assert network.num_reactions == expected_reactions
+
 
 class TestSimulation:
     def test_ode_simulation(self, tmp_path):

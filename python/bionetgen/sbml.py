@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 from tempfile import TemporaryDirectory
 
 from bionetgen.core.exc import BNGError

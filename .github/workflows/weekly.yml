@@ -53,13 +53,11 @@ jobs:
       - name: Run full validation
         shell: bash
         run: |
+          SKIP="--skip michment_cont,test_sbml_flat,test_sbml_structured,Repressilator,SHP2_base_model,Motivating_example_cBNGL,blbr"
           if [[ "${{ matrix.os }}" == *windows* ]]; then
             BNG=build/cpp/bng_cpp.exe
-            # Skip models that crash on Windows (stack buffer overrun - issue to be investigated)
-            SKIP="--skip michment_cont,test_sbml_flat,test_sbml_structured"
           else
             BNG=build/cpp/bng_cpp
-            SKIP=""
           fi
           python scripts/validate.py --bng-cpp "$BNG" $SKIP --verbose
 

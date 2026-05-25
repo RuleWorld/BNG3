@@ -746,28 +746,28 @@ std::string reactionCenterSignature(
     const std::vector<ReactionRule::ReactionCenterRef>& reactionCenter,
     const BNGcore::Map& map,
     const BNGcore::PatternGraph& /*targetGraph*/) {
-    // Perl BNG2 convention (filter_identical_by_rxn_center):
-    // - Molecule-level reaction center refs (e.g., MolDel) use only the pattern
-    //   index as identity — all embeddings of a molecule-level delete look identical,
-    //   so only one embedding survives per rule application to a species.
-    // - Component-level reaction center refs (e.g., AddBond, DeleteBond) use the
-    //   target node pointer to distinguish different physical bonds/sites.
+    // Perl BNG2 convention (filter_identical_by_rxn_center) compares the
+    // concrete target nodes reached by the match. We mirror that here by using
+    // the mapped target node identity, not a structural hash.
+    //
     // Sort the parts so automorphic embeddings (swapping equivalent target
-    // molecules/components) collapse to the same signature.
+    // molecules/components in the same reaction-center positions) collapse to
+    // the same signature.
     std::vector<std::string> parts;
     for (const auto& ref : reactionCenter) {
         std::ostringstream out;
         if (ref.isComponent) {
-            // Component-level: use target pointer to distinguish different bonds
             BNGcore::Node* sourceNode =
                 infos.at(ref.patternIndex).molecules.at(ref.moleculeIndex).components.at(ref.componentIndex).node;
             auto* target = map.mapf(sourceNode);
             if (target == nullptr) continue;
             out << reinterpret_cast<std::uintptr_t>(target);
         } else {
-            // Molecule-level: use pattern index only (Perl convention —
-            // all embeddings of molecule-level operations look the same)
-            out << "P" << ref.patternIndex;
+            BNGcore::Node* sourceNode =
+                infos.at(ref.patternIndex).molecules.at(ref.moleculeIndex).node;
+            auto* target = map.mapf(sourceNode);
+            if (target == nullptr) continue;
+            out << reinterpret_cast<std::uintptr_t>(target);
         }
         parts.push_back(out.str());
     }
