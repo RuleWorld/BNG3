@@ -5,6 +5,9 @@ build-backend = "scikit_build_core.build"
 [project]
 name = "bionetgen"
 version = "3.0.0a1"
+# Package naming: BNG3 uses the same "bionetgen" pip package as PyBioNetGen,
+# with a major version bump (3.0). During alpha/beta transition, users can
+# pin bionetgen<3.0 to stay on PyBioNetGen or >=3.0a1 to use BNG3.
 description = "Rule-based modeling platform for biochemical reaction systems"
 readme = "README.md"
 license = "MIT"
