@@ -34,7 +34,7 @@ jobs:
         run: pip install black ruff
 
       - name: Check Python formatting (Black)
-        run: black --check --diff python/ tests/python/ scripts/
+        run: black --check --diff --target-version py312 python/ tests/python/ scripts/
 
       - name: Run ruff linter
         run: ruff check python/ tests/python/ scripts/

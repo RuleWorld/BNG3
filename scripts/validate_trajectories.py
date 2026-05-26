@@ -15,7 +15,6 @@ import tempfile
 from pathlib import Path
 import numpy as np
 
-
 # Models suitable for ODE trajectory comparison (deterministic, no stochastic)
 TRAJECTORY_MODELS = [
     "Motivating_example",
@@ -91,7 +90,9 @@ def compare_trajectories(ref_data, test_data, ref_cols, test_cols, tolerance=1e-
         test_values = test_data[:, test_idx]
 
         # If different number of time points, interpolate test onto ref time grid
-        if len(ref_times) != len(test_times) or not np.allclose(ref_times, test_times, rtol=1e-6):
+        if len(ref_times) != len(test_times) or not np.allclose(
+            ref_times, test_times, rtol=1e-6
+        ):
             test_values = np.interp(ref_times, test_times, test_values)
 
         # Compute relative error (with floor to avoid division by near-zero)
@@ -122,6 +123,7 @@ def run_model(bng_cpp, bngl_path, work_dir):
 
     # Copy bngl to work_dir so output goes there
     import shutil
+
     local_bngl = Path(work_dir) / Path(bngl_path).name
     shutil.copy2(str(bngl_path), str(local_bngl))
 
@@ -144,13 +146,23 @@ def run_model(bng_cpp, bngl_path, work_dir):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Validate BNG3 simulation trajectories")
+    parser = argparse.ArgumentParser(
+        description="Validate BNG3 simulation trajectories"
+    )
     parser.add_argument("--bng-cpp", default=None, help="Path to bng_cpp binary")
-    parser.add_argument("--ref-dir", default=None, help="Path to reference DAT_validate directory")
-    parser.add_argument("--model-dir", default=None, help="Path to validation BNGL models")
-    parser.add_argument("--tolerance", type=float, default=1e-3, help="Relative error tolerance")
+    parser.add_argument(
+        "--ref-dir", default=None, help="Path to reference DAT_validate directory"
+    )
+    parser.add_argument(
+        "--model-dir", default=None, help="Path to validation BNGL models"
+    )
+    parser.add_argument(
+        "--tolerance", type=float, default=1e-3, help="Relative error tolerance"
+    )
     parser.add_argument("--verbose", action="store_true")
-    parser.add_argument("--models", nargs="*", default=None, help="Specific models to test")
+    parser.add_argument(
+        "--models", nargs="*", default=None, help="Specific models to test"
+    )
     args = parser.parse_args()
 
     # Find bng_cpp binary
@@ -179,7 +191,14 @@ def main():
     if args.ref_dir:
         ref_dir = Path(args.ref_dir)
     else:
-        ref_dir = project_root.parent.parent / "temp" / "bionetgen" / "bng2" / "Validate" / "DAT_validate"
+        ref_dir = (
+            project_root.parent.parent
+            / "temp"
+            / "bionetgen"
+            / "bng2"
+            / "Validate"
+            / "DAT_validate"
+        )
         if not ref_dir.exists():
             # Try relative to script
             ref_dir = project_root / "tests" / "reference_data"
@@ -187,7 +206,9 @@ def main():
     if args.model_dir:
         model_dir = Path(args.model_dir)
     else:
-        model_dir = project_root.parent.parent / "temp" / "bionetgen" / "bng2" / "Validate"
+        model_dir = (
+            project_root.parent.parent / "temp" / "bionetgen" / "bng2" / "Validate"
+        )
         if not model_dir.exists():
             model_dir = project_root / "models" / "validate"
 
@@ -226,7 +247,9 @@ def main():
             gdat_path, error = run_model(bng_cpp, bngl_path, tmpdir)
 
             if gdat_path is None:
-                print(f"  FAIL {model_name}: execution failed — {error[:100] if error else 'unknown'}")
+                print(
+                    f"  FAIL {model_name}: execution failed — {error[:100] if error else 'unknown'}"
+                )
                 failed += 1
                 continue
 
