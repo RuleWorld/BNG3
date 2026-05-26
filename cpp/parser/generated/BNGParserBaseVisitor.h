@@ -295,7 +295,15 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitProtocol_block(BNGParser::Protocol_blockContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitAction_command(BNGParser::Action_commandContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitSimulate_protocol_cmd(BNGParser::Simulate_protocol_cmdContext *ctx) override {
     return visitChildren(ctx);
   }
 

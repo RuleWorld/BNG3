@@ -159,7 +159,11 @@ public:
 
     virtual std::any visitBegin_actions_block(BNGParser::Begin_actions_blockContext *context) = 0;
 
+    virtual std::any visitProtocol_block(BNGParser::Protocol_blockContext *context) = 0;
+
     virtual std::any visitAction_command(BNGParser::Action_commandContext *context) = 0;
+
+    virtual std::any visitSimulate_protocol_cmd(BNGParser::Simulate_protocol_cmdContext *context) = 0;
 
     virtual std::any visitGenerate_network_cmd(BNGParser::Generate_network_cmdContext *context) = 0;
 

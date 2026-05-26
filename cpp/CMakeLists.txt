@@ -121,7 +121,7 @@ file(GLOB NFSIM_RXN_RXN "${NFSIM_DIR}/NFreactions/reactions/*.cpp")
 file(GLOB NFSIM_RXN_RLISTS "${NFSIM_DIR}/NFreactions/reactantLists/*.cpp")
 file(GLOB NFSIM_RXN_MAPS "${NFSIM_DIR}/NFreactions/mappings/*.cpp")
 file(GLOB NFSIM_FUNC_SRC "${NFSIM_DIR}/NFfunction/*.cpp")
-file(GLOB NFSIM_FUNC_MUPARSER "${NFSIM_DIR}/NFfunction/muParser/*.cpp")
+# muParser removed: ExprTk (nfsim_funcparser.h shim) is the only parser (NFSIM_USE_EXPRTK defined).
 file(GLOB NFSIM_OUTPUT_SRC "${NFSIM_DIR}/NFoutput/*.cpp")
 file(GLOB NFSIM_SCHED_SRC "${NFSIM_DIR}/NFscheduler/*.cpp")
 file(GLOB NFSIM_UTIL_SRC "${NFSIM_DIR}/NFutil/*.cpp")
@@ -141,7 +141,6 @@ set(NFSIM_LIB_SOURCES
     ${NFSIM_RXN_RLISTS}
     ${NFSIM_RXN_MAPS}
     ${NFSIM_FUNC_SRC}
-    ${NFSIM_FUNC_MUPARSER}
     ${NFSIM_OUTPUT_SRC}
     ${NFSIM_SCHED_SRC}
     ${NFSIM_UTIL_SRC}
@@ -166,17 +165,18 @@ target_include_directories(nfsim_core PUBLIC
     ${NFSIM_DIR}/NFreactions/reactantLists
     ${NFSIM_DIR}/NFreactions/mappings
     ${NFSIM_DIR}/NFfunction
-    ${NFSIM_DIR}/NFfunction/muParser
     ${NFSIM_DIR}/NFoutput
     ${NFSIM_DIR}/NFscheduler
     ${NFSIM_DIR}/NFutil
     ${NFSIM_DIR}/NFutil/MTrand
     ${NFSIM_DIR}/nauty24
 )
-target_compile_definitions(nfsim_core PRIVATE TIXML_USE_STL NFSIM_USE_EXPRTK)
+target_compile_definitions(nfsim_core PUBLIC TIXML_USE_STL NFSIM_USE_EXPRTK)
 target_include_directories(nfsim_core PRIVATE ${exprtk_SOURCE_DIR})
 if(NOT MSVC)
-    target_compile_options(nfsim_core PRIVATE -Wno-deprecated-declarations)
+    target_compile_options(nfsim_core PRIVATE -Wno-deprecated-declarations -Wa,-mbig-obj)
+else()
+    target_compile_options(nfsim_core PRIVATE /bigobj)
 endif()
 
 # =============================================================================

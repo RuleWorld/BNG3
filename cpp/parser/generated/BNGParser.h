@@ -45,23 +45,24 @@ public:
     MAX_NUM_STEPS = 141, MAX_ERR_TEST_FAILS = 142, MAX_CONV_FAILS = 143, 
     STIFF = 144, SETCONCENTRATION = 145, ADDCONCENTRATION = 146, SAVECONCENTRATIONS = 147, 
     RESETCONCENTRATIONS = 148, SETPARAMETER = 149, SAVEPARAMETERS = 150, 
-    RESETPARAMETERS = 151, SETVOLUME = 152, SIMULATE_PSA = 153, POPLEVEL = 154, 
-    MOL_THRESHOLD = 155, NFSIM_EXEC = 156, QUIT = 157, TRUE = 158, FALSE = 159, 
-    SAT = 160, MM = 161, HILL = 162, ARRHENIUS = 163, MRATIO = 164, TFUN = 165, 
-    FUNCTIONPRODUCT = 166, PRIORITY = 167, IF = 168, EXP = 169, LN = 170, 
-    LOG10 = 171, LOG2 = 172, SQRT = 173, RINT = 174, ABS = 175, SIN = 176, 
-    COS = 177, TAN = 178, ASIN = 179, ACOS = 180, ATAN = 181, SINH = 182, 
-    COSH = 183, TANH = 184, ASINH = 185, ACOSH = 186, ATANH = 187, PI = 188, 
-    EULERIAN = 189, MIN = 190, MAX = 191, SUM = 192, AVG = 193, TIME = 194, 
-    FLOAT = 195, INT = 196, STRING = 197, QUOTED_STRING = 198, SINGLE_QUOTED_STRING = 199, 
-    SEMI = 200, COLON = 201, LSBRACKET = 202, RSBRACKET = 203, LBRACKET = 204, 
-    RBRACKET = 205, COMMA = 206, DOT = 207, LPAREN = 208, RPAREN = 209, 
-    UNI_REACTION_SIGN = 210, BI_REACTION_SIGN = 211, DOLLAR = 212, TILDE = 213, 
-    AT = 214, GTE = 215, GT = 216, LTE = 217, LT = 218, ASSIGNS = 219, EQUALS = 220, 
-    NOT_EQUALS = 221, BECOMES = 222, LOGICAL_AND = 223, LOGICAL_OR = 224, 
-    LOGICAL_XOR = 225, DIV = 226, TIMES = 227, MINUS = 228, PLUS = 229, 
-    POWER = 230, MOLECULE_TAG_TOKEN = 231, MOD = 232, PIPE = 233, QMARK = 234, 
-    EMARK = 235, AMPERSAND = 236, VERSION_NUMBER = 237, ULB = 238
+    RESETPARAMETERS = 151, SETVOLUME = 152, SIMULATE_PSA = 153, SIMULATE_PROTOCOL = 154, 
+    PROTOCOL = 155, POPLEVEL = 156, MOL_THRESHOLD = 157, NFSIM_EXEC = 158, 
+    QUIT = 159, TRUE = 160, FALSE = 161, SAT = 162, MM = 163, HILL = 164, 
+    ARRHENIUS = 165, MRATIO = 166, TFUN = 167, FUNCTIONPRODUCT = 168, PRIORITY = 169, 
+    IF = 170, EXP = 171, LN = 172, LOG10 = 173, LOG2 = 174, SQRT = 175, 
+    RINT = 176, ABS = 177, SIN = 178, COS = 179, TAN = 180, ASIN = 181, 
+    ACOS = 182, ATAN = 183, SINH = 184, COSH = 185, TANH = 186, ASINH = 187, 
+    ACOSH = 188, ATANH = 189, PI = 190, EULERIAN = 191, MIN = 192, MAX = 193, 
+    SUM = 194, AVG = 195, TIME = 196, FLOAT = 197, INT = 198, STRING = 199, 
+    QUOTED_STRING = 200, SINGLE_QUOTED_STRING = 201, SEMI = 202, COLON = 203, 
+    LSBRACKET = 204, RSBRACKET = 205, LBRACKET = 206, RBRACKET = 207, COMMA = 208, 
+    DOT = 209, LPAREN = 210, RPAREN = 211, UNI_REACTION_SIGN = 212, BI_REACTION_SIGN = 213, 
+    DOLLAR = 214, TILDE = 215, AT = 216, GTE = 217, GT = 218, LTE = 219, 
+    LT = 220, ASSIGNS = 221, EQUALS = 222, NOT_EQUALS = 223, BECOMES = 224, 
+    LOGICAL_AND = 225, LOGICAL_OR = 226, LOGICAL_XOR = 227, DIV = 228, TIMES = 229, 
+    MINUS = 230, PLUS = 231, POWER = 232, MOLECULE_TAG_TOKEN = 233, MOD = 234, 
+    PIPE = 235, QMARK = 236, EMARK = 237, AMPERSAND = 238, VERSION_NUMBER = 239, 
+    ULB = 240
   };
 
   enum {
@@ -87,16 +88,17 @@ public:
     RuleParam_list = 60, RuleCompartments_block = 61, RuleCompartment_def = 62, 
     RuleEnergy_patterns_block = 63, RuleEnergy_pattern_def = 64, RulePopulation_maps_block = 65, 
     RulePopulation_map_def = 66, RuleActions_block = 67, RuleWrapped_actions_block = 68, 
-    RuleBegin_actions_block = 69, RuleAction_command = 70, RuleGenerate_network_cmd = 71, 
-    RuleSimulate_cmd = 72, RuleWrite_cmd = 73, RuleSet_cmd = 74, RuleOther_action_cmd = 75, 
-    RuleAction_args = 76, RuleAction_arg_list = 77, RuleAction_arg = 78, 
-    RuleAction_arg_value = 79, RuleQuoted_string = 80, RuleKeyword_as_value = 81, 
-    RuleNested_hash_list = 82, RuleNested_hash_item = 83, RuleArg_name = 84, 
-    RuleExpression_list = 85, RuleExpression = 86, RuleConditional_expr = 87, 
-    RuleOr_expr = 88, RuleXor_expr = 89, RuleAnd_expr = 90, RuleEquality_expr = 91, 
-    RuleRelational_expr = 92, RuleAdditive_expr = 93, RuleMultiplicative_expr = 94, 
-    RulePower_expr = 95, RuleUnary_expr = 96, RulePrimary_expr = 97, RuleFunction_call = 98, 
-    RuleObservable_ref = 99, RuleLiteral = 100
+    RuleBegin_actions_block = 69, RuleProtocol_block = 70, RuleAction_command = 71, 
+    RuleSimulate_protocol_cmd = 72, RuleGenerate_network_cmd = 73, RuleSimulate_cmd = 74, 
+    RuleWrite_cmd = 75, RuleSet_cmd = 76, RuleOther_action_cmd = 77, RuleAction_args = 78, 
+    RuleAction_arg_list = 79, RuleAction_arg = 80, RuleAction_arg_value = 81, 
+    RuleQuoted_string = 82, RuleKeyword_as_value = 83, RuleNested_hash_list = 84, 
+    RuleNested_hash_item = 85, RuleArg_name = 86, RuleExpression_list = 87, 
+    RuleExpression = 88, RuleConditional_expr = 89, RuleOr_expr = 90, RuleXor_expr = 91, 
+    RuleAnd_expr = 92, RuleEquality_expr = 93, RuleRelational_expr = 94, 
+    RuleAdditive_expr = 95, RuleMultiplicative_expr = 96, RulePower_expr = 97, 
+    RuleUnary_expr = 98, RulePrimary_expr = 99, RuleFunction_call = 100, 
+    RuleObservable_ref = 101, RuleLiteral = 102
   };
 
   explicit BNGParser(antlr4::TokenStream *input);
@@ -186,7 +188,9 @@ public:
   class Actions_blockContext;
   class Wrapped_actions_blockContext;
   class Begin_actions_blockContext;
+  class Protocol_blockContext;
   class Action_commandContext;
+  class Simulate_protocol_cmdContext;
   class Generate_network_cmdContext;
   class Simulate_cmdContext;
   class Write_cmdContext;
@@ -355,6 +359,7 @@ public:
     Compartments_blockContext *compartments_block();
     Energy_patterns_blockContext *energy_patterns_block();
     Population_maps_blockContext *population_maps_block();
+    Protocol_blockContext *protocol_block();
     Wrapped_actions_blockContext *wrapped_actions_block();
     Begin_actions_blockContext *begin_actions_block();
     Set_optionContext *set_option();
@@ -1549,12 +1554,33 @@ public:
 
   Begin_actions_blockContext* begin_actions_block();
 
+  class  Protocol_blockContext : public antlr4::ParserRuleContext {
+  public:
+    Protocol_blockContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *BEGIN();
+    std::vector<antlr4::tree::TerminalNode *> PROTOCOL();
+    antlr4::tree::TerminalNode* PROTOCOL(size_t i);
+    antlr4::tree::TerminalNode *END();
+    std::vector<antlr4::tree::TerminalNode *> LB();
+    antlr4::tree::TerminalNode* LB(size_t i);
+    std::vector<Action_commandContext *> action_command();
+    Action_commandContext* action_command(size_t i);
+
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  Protocol_blockContext* protocol_block();
+
   class  Action_commandContext : public antlr4::ParserRuleContext {
   public:
     Action_commandContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     Generate_network_cmdContext *generate_network_cmd();
     Simulate_cmdContext *simulate_cmd();
+    Simulate_protocol_cmdContext *simulate_protocol_cmd();
     Write_cmdContext *write_cmd();
     Set_cmdContext *set_cmd();
     Other_action_cmdContext *other_action_cmd();
@@ -1565,6 +1591,25 @@ public:
   };
 
   Action_commandContext* action_command();
+
+  class  Simulate_protocol_cmdContext : public antlr4::ParserRuleContext {
+  public:
+    Simulate_protocol_cmdContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *SIMULATE_PROTOCOL();
+    antlr4::tree::TerminalNode *LPAREN();
+    antlr4::tree::TerminalNode *RPAREN();
+    Action_argsContext *action_args();
+    antlr4::tree::TerminalNode *SEMI();
+    std::vector<antlr4::tree::TerminalNode *> LB();
+    antlr4::tree::TerminalNode* LB(size_t i);
+
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  Simulate_protocol_cmdContext* simulate_protocol_cmd();
 
   class  Generate_network_cmdContext : public antlr4::ParserRuleContext {
   public:

@@ -16,7 +16,6 @@
 #include "io/XmlWriter.hpp"
 
 #include "NFcore/NFcore.hh"
-#include "NFutil/NFutil.hh"
 #include "NFinput/NFinput.hh"
 
 namespace py = pybind11;
@@ -63,12 +62,7 @@ void bind_nfsim(py::module_& m) {
             out << xml_content;
         }
 
-        // Step 3: Seed RNG
-        if (seed > 0) {
-            NFutil::SEED_RANDOM(seed);
-        }
-
-        // Step 4: Initialize NFSim system from XML with RAII
+        // Step 3: Initialize NFSim system from XML with RAII
         int suggestedTraversalLimit = -1;
         std::unique_ptr<NFcore::System> system;
 
@@ -89,7 +83,12 @@ void bind_nfsim(py::module_& m) {
             throw std::runtime_error("Failed to initialize NFSim system from model XML");
         }
 
-        // Step 5: Prepare the system before any equilibration or simulation.
+        // Step 5: Seed per-instance RNG (after system creation, before prepareForSimulation)
+        if (seed > 0) {
+            system->seedRNG(static_cast<unsigned long>(seed));
+        }
+
+        // Step 6: Prepare the system before any equilibration or simulation.
         {
             py::gil_scoped_release release;
             system->prepareForSimulation();

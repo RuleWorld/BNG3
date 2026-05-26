@@ -1,8 +1,11 @@
 #pragma once
 
 #include <string>
+#include <vector>
+#include <map>
 
 #include "core/BNGcore.hpp"
+#include "Compartment.hpp"
 
 namespace bng::ast {
 
@@ -21,6 +24,13 @@ public:
     void setCompartment(std::string compartment);
     bool isCompartmentPrefix() const { return compartmentIsPrefix_; }
     void setCompartmentIsPrefix(bool v) { compartmentIsPrefix_ = v; }
+
+    // Graph Operations (Tasks 5 & 6)
+    bool isConnected() const;
+    size_t numComponents() const;
+    std::vector<SpeciesGraph> splitConnectedComponents() const;
+    std::map<std::string, size_t> stoichiometry() const;
+    std::string inferCompartment(const std::vector<Compartment>& hierarchy) const;
 
 private:
     BNGcore::PatternGraph graph_;

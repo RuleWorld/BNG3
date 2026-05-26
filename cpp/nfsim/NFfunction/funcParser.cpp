@@ -3,9 +3,8 @@
 #include <math.h>
 
 using namespace NFcore;
-#ifndef NFSIM_USE_EXPRTK
-using namespace mu;
-#endif
+// ExprTk-backed mu::Parser shim is used via NFfunction.hh -> nfsim_funcparser.h.
+// NFSIM_USE_EXPRTK is always defined; muParser is not linked.
 
 
 
