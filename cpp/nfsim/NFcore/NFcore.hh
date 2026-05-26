@@ -255,6 +255,7 @@ namespace NFcore
 
 			int getMolObsCount(int moleculeTypeIndex, int observableIndex) const;
 			Observable * getObservableByName(const string& obsName);
+			const vector<Observable *>& getObsToOutput() const { return obsToOutput; }
 			double getAverageGroupValue(string groupName, int valIndex);
 			
 			/* Compartment management for cBNGL */
