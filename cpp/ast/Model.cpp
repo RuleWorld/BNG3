@@ -52,6 +52,10 @@ void Model::addPopulationMap(PopulationMap populationMap) {
     populationMaps_.push_back(std::move(populationMap));
 }
 
+void Model::addProtocolAction(Action action) {
+    simulationProtocol_.push_back(std::move(action));
+}
+
 void Model::setVersion(std::string version) {
     version_ = std::move(version);
 }
@@ -182,6 +186,10 @@ std::vector<ReactionRule>& Model::getReactionRules() {
 
 const std::vector<PopulationMap>& Model::getPopulationMaps() const {
     return populationMaps_;
+}
+
+const std::vector<Action>& Model::getSimulationProtocol() const {
+    return simulationProtocol_;
 }
 
 const std::string& Model::getVersion() const {

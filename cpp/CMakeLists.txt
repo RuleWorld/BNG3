@@ -173,7 +173,8 @@ target_include_directories(nfsim_core PUBLIC
     ${NFSIM_DIR}/NFutil/MTrand
     ${NFSIM_DIR}/nauty24
 )
-target_compile_definitions(nfsim_core PRIVATE TIXML_USE_STL)
+target_compile_definitions(nfsim_core PRIVATE TIXML_USE_STL NFSIM_USE_EXPRTK)
+target_include_directories(nfsim_core PRIVATE ${exprtk_SOURCE_DIR})
 if(NOT MSVC)
     target_compile_options(nfsim_core PRIVATE -Wno-deprecated-declarations)
 endif()

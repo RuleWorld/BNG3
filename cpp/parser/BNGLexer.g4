@@ -185,6 +185,8 @@ SAVEPARAMETERS: 'saveParameters';
 RESETPARAMETERS: 'resetParameters';
 SETVOLUME: 'setVolume';
 SIMULATE_PSA: 'simulate_psa';
+SIMULATE_PROTOCOL: 'simulate_protocol';
+PROTOCOL: 'protocol';
 POPLEVEL: 'poplevel';
 MOL_THRESHOLD: 'mol_threshold';
 NFSIM_EXEC: 'nfsim_exec';

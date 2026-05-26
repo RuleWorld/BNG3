@@ -1253,6 +1253,36 @@ void OdeIntegrator::writeOutputFiles(const std::string& prefix, const OdeResult&
     }
 }
 
+void OdeIntegrator::writeBinaryOutputFiles(const std::string& prefix, const OdeResult& result, bool printCDAT) const {
+    if (printCDAT) {
+        std::ofstream cdat(prefix + ".cdat", std::ios::binary | std::ios::trunc);
+        if (!cdat) {
+            throw std::runtime_error("Failed to open " + prefix + ".cdat for binary writing");
+        }
+        for (std::size_t step = 0; step < result.timePoints.size(); ++step) {
+            float t = static_cast<float>(result.timePoints[step]);
+            cdat.write(reinterpret_cast<const char*>(&t), sizeof(float));
+            for (const auto& c : result.concentrations[step]) {
+                float val = static_cast<float>(c);
+                cdat.write(reinterpret_cast<const char*>(&val), sizeof(float));
+            }
+        }
+    }
+
+    std::ofstream gdat(prefix + ".gdat", std::ios::binary | std::ios::trunc);
+    if (!gdat) {
+        throw std::runtime_error("Failed to open " + prefix + ".gdat for binary writing");
+    }
+    for (std::size_t step = 0; step < result.timePoints.size(); ++step) {
+        float t = static_cast<float>(result.timePoints[step]);
+        gdat.write(reinterpret_cast<const char*>(&t), sizeof(float));
+        for (const auto& obs : result.observables[step]) {
+            float val = static_cast<float>(obs);
+            gdat.write(reinterpret_cast<const char*>(&val), sizeof(float));
+        }
+    }
+}
+
 // Static C-style callback for CVODE (v7: sunrealtype instead of realtype)
 static int cvodeCallbackWrapper(sunrealtype t, N_Vector y, N_Vector ydot, void* user_data) {
     auto* self = static_cast<OdeIntegrator*>(user_data);
@@ -1329,9 +1359,9 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
     SUNMatrix A = nullptr;
     SUNLinearSolver LS = nullptr;
 
-    // Choose solver based on network size (matches BNG2 behavior)
-    // Dense for small networks (<200 species), GMRES for large networks
-    if (nSpecies_ < 200) {
+    // Choose solver based on network size and sparse option
+    // Dense for small networks, GMRES for large/sparse networks
+    if (!opts.sparse && nSpecies_ < 500) {
         // Dense direct solver
         A = SUNDenseMatrix(static_cast<sunindextype>(nSpecies_),
                            static_cast<sunindextype>(nSpecies_), sunctx);
@@ -1395,6 +1425,19 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
             conc[i] = NV_Ith_S(y, i);
         }
         result.concentrations.push_back(conc);
+
+        // Check product concentration scale (warn if exceeded)
+        if (opts.checkProductScale > 0.0 && step > 0) {
+            for (std::size_t i = 0; i < nSpecies_; ++i) {
+                if (conc[i] > opts.checkProductScale) {
+                    std::cerr << "[bng_cpp] WARNING: species " << (i + 1)
+                              << " concentration (" << conc[i]
+                              << ") exceeds check_product_scale threshold ("
+                              << opts.checkProductScale << ") at t=" << tOut << "\n";
+                    break;
+                }
+            }
+        }
 
         // Check stop_if condition after each output point (BNG2 parity)
         if (stopIfExpr.has_value() && step > 0 && step < opts.nSteps) {

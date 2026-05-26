@@ -26,9 +26,14 @@ struct DerivedRateInfo {
     std::unordered_map<std::size_t, std::pair<std::string, double>> perReactionRates;
 };
 
+struct NetWriterOptions {
+    bool evaluateExpressions = true;
+};
+
 class NetWriter {
 public:
     static void write(const std::filesystem::path& outputPath, ast::Model& model, const engine::GeneratedNetwork& network);
+    static void write(const std::filesystem::path& outputPath, ast::Model& model, const engine::GeneratedNetwork& network, const NetWriterOptions& opts);
     static std::unordered_map<std::string, DerivedRateInfo> buildDerivedRateParams(
         const ast::Model& model,
         const engine::GeneratedNetwork& network);

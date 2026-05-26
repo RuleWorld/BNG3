@@ -38,6 +38,7 @@ public:
     void addSeedSpecies(SeedSpecies seedSpecies);
     void addReactionRule(ReactionRule reactionRule);
     void addPopulationMap(PopulationMap populationMap);
+    void addProtocolAction(Action action);
     void setVersion(std::string version);
     void setSubstanceUnits(std::string units);
     void setModelName(std::string modelName);
@@ -64,6 +65,7 @@ public:
     const std::vector<ReactionRule>& getReactionRules() const;
     std::vector<ReactionRule>& getReactionRules();
     const std::vector<PopulationMap>& getPopulationMaps() const;
+    const std::vector<Action>& getSimulationProtocol() const;
     const std::string& getVersion() const;
     const std::string& getSubstanceUnits() const;
     const std::string& getModelName() const;
@@ -82,6 +84,7 @@ private:
     std::vector<SeedSpecies> seedSpecies_;
     std::vector<ReactionRule> reactionRules_;
     std::vector<PopulationMap> populationMaps_;
+    std::vector<Action> simulationProtocol_;
     GraphTypeRegistry graphTypeRegistry_;
     std::string version_;
     std::string substanceUnits_;

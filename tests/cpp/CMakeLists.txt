@@ -63,3 +63,60 @@ target_include_directories(test_node_operator PRIVATE
 target_link_libraries(test_node_operator PRIVATE
     Catch2::Catch2WithMain Catch2::Catch2 bng_core)
 catch_discover_tests(test_node_operator)
+
+# test_expression_evaluator
+add_executable(test_expression_evaluator test_expression_evaluator.cpp)
+target_include_directories(test_expression_evaluator PRIVATE
+    ${CMAKE_SOURCE_DIR}/cpp
+)
+target_link_libraries(test_expression_evaluator PRIVATE
+    Catch2::Catch2WithMain Catch2::Catch2 bng_ast)
+catch_discover_tests(test_expression_evaluator)
+
+# test_reaction_rule_expansion
+add_executable(test_reaction_rule_expansion test_reaction_rule_expansion.cpp)
+target_include_directories(test_reaction_rule_expansion PRIVATE
+    ${CMAKE_SOURCE_DIR}/cpp
+    ${CMAKE_SOURCE_DIR}/cpp/parser
+    ${CMAKE_SOURCE_DIR}/cpp/parser/generated
+    ${antlr4_runtime_SOURCE_DIR}/runtime/Cpp/runtime/src
+)
+target_link_libraries(test_reaction_rule_expansion PRIVATE
+    Catch2::Catch2WithMain Catch2::Catch2 bng_engine bng_ast)
+catch_discover_tests(test_reaction_rule_expansion)
+
+# test_hnauty
+add_executable(test_hnauty test_hnauty.cpp)
+target_include_directories(test_hnauty PRIVATE
+    ${CMAKE_SOURCE_DIR}/cpp
+    ${CMAKE_SOURCE_DIR}/cpp/parser
+    ${CMAKE_SOURCE_DIR}/cpp/parser/generated
+    ${antlr4_runtime_SOURCE_DIR}/runtime/Cpp/runtime/src
+)
+target_link_libraries(test_hnauty PRIVATE
+    Catch2::Catch2WithMain Catch2::Catch2 bng_engine bng_ast)
+catch_discover_tests(test_hnauty)
+
+# test_ullmann
+add_executable(test_ullmann test_ullmann.cpp)
+target_include_directories(test_ullmann PRIVATE
+    ${CMAKE_SOURCE_DIR}/cpp
+    ${CMAKE_SOURCE_DIR}/cpp/parser
+    ${CMAKE_SOURCE_DIR}/cpp/parser/generated
+    ${antlr4_runtime_SOURCE_DIR}/runtime/Cpp/runtime/src
+)
+target_link_libraries(test_ullmann PRIVATE
+    Catch2::Catch2WithMain Catch2::Catch2 bng_engine bng_ast)
+catch_discover_tests(test_ullmann)
+
+# test_compartment_transport
+add_executable(test_compartment_transport test_compartment_transport.cpp)
+target_include_directories(test_compartment_transport PRIVATE
+    ${CMAKE_SOURCE_DIR}/cpp
+    ${CMAKE_SOURCE_DIR}/cpp/parser
+    ${CMAKE_SOURCE_DIR}/cpp/parser/generated
+    ${antlr4_runtime_SOURCE_DIR}/runtime/Cpp/runtime/src
+)
+target_link_libraries(test_compartment_transport PRIVATE
+    Catch2::Catch2WithMain Catch2::Catch2 bng_engine bng_ast)
+catch_discover_tests(test_compartment_transport)

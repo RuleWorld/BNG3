@@ -614,12 +614,13 @@ void BasicRxnClass::printFullDetails() const
 
 void BasicRxnClass::pickRuleMonkeyMappingSets(double random_A_number) const
 {
+	NfsimRNG& rng = system->getRNG();
 	if (n_reactants != 2 || totalRateFlag) {
 		for(unsigned int i=0; i<n_reactants; i++) {
 			if ( isPopulationType[i] ) {
-				reactantLists[i]->pickRandomFromPopulation(mappingSet[i]);
+				reactantLists[i]->pickRandomFromPopulation(mappingSet[i], rng);
 			} else {
-				reactantLists[i]->pickRandom(mappingSet[i]);
+				reactantLists[i]->pickRandom(mappingSet[i], rng);
 			}
 		}
 		return;
@@ -628,37 +629,35 @@ void BasicRxnClass::pickRuleMonkeyMappingSets(double random_A_number) const
 	// For molecularity=2, we have to find a valid pair (no null events)
 	int size0 = getReactantCount(0);
 	int size1 = getReactantCount(1);
-	
+
 	validPairsBuffer.clear();
 	for (int i = 0; i < size0; ++i) {
 		msPairBuffer[0] = reactantLists[0]->getMappingSet(i);
 		for (int j = 0; j < size1; ++j) {
 			msPairBuffer[1] = reactantLists[1]->getMappingSet(j);
-			
+
 			if (transformationSet->checkMolecularity(msPairBuffer)) {
 				validPairsBuffer.push_back(make_pair(i, j));
 			}
 		}
 	}
-	
+
 	if (validPairsBuffer.empty()) {
-		// Safety fallback: this should be unreachable when exactRuleMonkey_a() > 0.
-		// If reached, preserve legacy behavior by allowing the standard chooser path.
 		for(unsigned int i=0; i<n_reactants; i++) {
 			if ( isPopulationType[i] ) {
-				reactantLists[i]->pickRandomFromPopulation(mappingSet[i]);
+				reactantLists[i]->pickRandomFromPopulation(mappingSet[i], rng);
 			} else {
-				reactantLists[i]->pickRandom(mappingSet[i]);
+				reactantLists[i]->pickRandom(mappingSet[i], rng);
 			}
 		}
 		return;
 	}
-	
+
 	// Select a valid pair
-	int selectedIndex = NFutil::RANDOM_INT(0, validPairsBuffer.size());
+	int selectedIndex = rng.random_int(0, validPairsBuffer.size());
 	int i = validPairsBuffer[selectedIndex].first;
 	int j = validPairsBuffer[selectedIndex].second;
-	
+
 	mappingSet[0] = reactantLists[0]->getMappingSet(i);
 	mappingSet[1] = reactantLists[1]->getMappingSet(j);
 }
@@ -670,16 +669,14 @@ void BasicRxnClass::pickMappingSets(double random_A_number) const
 		pickRuleMonkeyMappingSets(random_A_number);
 		return;
 	}
-	//Note here that we completely ignore the argument.  The argument is only
-	//used for DOR reactions because we need that number to select the reactant to fire
 
-	//Select a reactant from each list
+	NfsimRNG& rng = system->getRNG();
 	for(unsigned int i=0; i<n_reactants; i++)
 	{
 		if ( isPopulationType[i] ) {
-			reactantLists[i]->pickRandomFromPopulation(mappingSet[i]);
+			reactantLists[i]->pickRandomFromPopulation(mappingSet[i], rng);
 		} else {
-			reactantLists[i]->pickRandom(mappingSet[i]);
+			reactantLists[i]->pickRandom(mappingSet[i], rng);
 		}
 	}
 }

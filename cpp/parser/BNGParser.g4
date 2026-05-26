@@ -49,6 +49,7 @@ program_block
     | compartments_block
     | energy_patterns_block
     | population_maps_block
+    | protocol_block
     | wrapped_actions_block
     | begin_actions_block  // NEW: Support "begin actions ... end actions"
     | set_option           // setOption() can appear inside model block
@@ -391,12 +392,22 @@ begin_actions_block
     : BEGIN ACTIONS LB+ action_command* END ACTIONS LB*
     ;
 
+// Protocol block: stores a sequence of actions for simulate_protocol dispatch
+protocol_block
+    : BEGIN PROTOCOL LB+ action_command* END PROTOCOL LB*
+    ;
+
 action_command
     : generate_network_cmd
     | simulate_cmd
+    | simulate_protocol_cmd
     | write_cmd
     | set_cmd
     | other_action_cmd
+    ;
+
+simulate_protocol_cmd
+    : SIMULATE_PROTOCOL LPAREN action_args? RPAREN SEMI? LB*
     ;
 
 generate_network_cmd

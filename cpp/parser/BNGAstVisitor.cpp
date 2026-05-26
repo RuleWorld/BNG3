@@ -612,6 +612,24 @@ std::any BNGAstVisitor::visitOther_action_cmd(BNGParser::Other_action_cmdContext
     return {};
 }
 
+std::any BNGAstVisitor::visitSimulate_protocol_cmd(BNGParser::Simulate_protocol_cmdContext* ctx) {
+    addAction("simulate_protocol", ctx->action_args());
+    return {};
+}
+
+std::any BNGAstVisitor::visitProtocol_block(BNGParser::Protocol_blockContext* ctx) {
+    for (auto* actionCmd : ctx->action_command()) {
+        visit(actionCmd);
+        // Move the last added action from actions_ to simulationProtocol_
+        auto& actions = currentModel_->getActions();
+        if (!actions.empty()) {
+            currentModel_->addProtocolAction(std::move(actions.back()));
+            actions.pop_back();
+        }
+    }
+    return {};
+}
+
 std::any BNGAstVisitor::visitPopulation_map_def(BNGParser::Population_map_defContext* ctx) {
     if (ctx->species_def() == nullptr) {
         return {};

@@ -83,6 +83,19 @@ set(SUNDIALS_INDEX_SIZE 64 CACHE INTERNAL "")
 
 FetchContent_MakeAvailable(sundials)
 
+# --- ExprTk (header-only expression parser for NFsim) ---
+FetchContent_Declare(
+    exprtk
+    GIT_REPOSITORY https://github.com/ArashPartow/exprtk.git
+    GIT_TAG        0.0.3
+    CONFIGURE_COMMAND ""
+    BUILD_COMMAND ""
+)
+FetchContent_GetProperties(exprtk)
+if(NOT exprtk_POPULATED)
+    FetchContent_Populate(exprtk)
+endif()
+
 # --- pybind11 ---
 if(BUILD_PYTHON_BINDINGS)
     if(EXISTS "${CMAKE_SOURCE_DIR}/build/_deps/pybind11-src/CMakeLists.txt")

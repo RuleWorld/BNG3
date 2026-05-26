@@ -36,6 +36,7 @@ struct OdeOptions {
     bool sparse = false;           // Use sparse Jacobian (for large networks >1000 species)
     bool evaluateExpressions = true; // Evaluate symbolic expressions in .net output
     double checkProductScale = 0.0;  // Warn if product concentrations exceed this (0 = disabled)
+    bool binaryOutput = false;     // Write .cdat/.gdat in binary format (4-byte floats, row-major)
 };
 
 struct OdeResult {
@@ -50,7 +51,11 @@ public:
 
     OdeResult integrate(const OdeOptions& options);
     void writeOutputFiles(const std::string& prefix, const OdeResult& result, bool printCDAT = true, bool printFunctions = false, bool append = false) const;
+    void writeBinaryOutputFiles(const std::string& prefix, const OdeResult& result, bool printCDAT = true) const;
     void derivs(double t, const double* y, double* dydt) const;
+
+    void loadTfun(const std::string& name, const std::string& filePath) { tfunRegistry_.load(name, filePath); }
+    io::TfunRegistry& getTfunRegistry() { return tfunRegistry_; }
 
 private:
     const ast::Model& model_;

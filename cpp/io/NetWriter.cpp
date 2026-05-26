@@ -1158,6 +1158,10 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
 }
 
 void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model, const engine::GeneratedNetwork& network) {
+    write(outputPath, model, network, NetWriterOptions{});
+}
+
+void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model, const engine::GeneratedNetwork& network, const NetWriterOptions& writerOpts) {
     std::ofstream out(outputPath);
     if (!out) {
         throw std::runtime_error("Could not open output file: " + outputPath.string());
@@ -1224,8 +1228,10 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
         if (derivedParamNames.count(parameter.getName()) > 0) {
             continue;
         }
-        // Write parameter value with enough precision for %.8g comparison (Perl compatibility)
-        {
+        if (!writerOpts.evaluateExpressions) {
+            out << "    " << parameterIndex++ << " " << parameter.getName() << " "
+                << parameter.getExpression().toString() << '\n';
+        } else {
             std::ostringstream valStr;
             valStr << std::setprecision(15) << parameter.getValue();
             out << "    " << parameterIndex++ << " " << parameter.getName() << " " << valStr.str() << '\n';

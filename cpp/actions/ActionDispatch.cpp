@@ -9,6 +9,7 @@
 #include <iostream>
 #include <optional>
 #include <iomanip>
+#include <set>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -228,6 +229,45 @@ void restoreConcentrations(engine::GeneratedNetwork& network, const std::vector<
     }
 }
 
+void collectTfunNames(const ast::Expression& expr, std::set<std::string>& names) {
+    if (expr.kind() == ast::ExpressionKind::Function &&
+        (expr.name() == "TFUN" || expr.name() == "tfun")) {
+        if (expr.args().size() == 1) {
+            if (expr.args()[0].kind() == ast::ExpressionKind::Identifier) {
+                names.insert(expr.args()[0].name());
+            }
+        } else if (expr.args().size() >= 2) {
+            if (expr.args()[1].kind() == ast::ExpressionKind::Identifier) {
+                names.insert(expr.args()[1].name());
+            }
+        }
+    }
+    for (const auto& child : expr.args()) {
+        collectTfunNames(child, names);
+    }
+}
+
+std::set<std::string> findTfunReferences(const ast::Model& model) {
+    std::set<std::string> names;
+    for (const auto& fn : model.getFunctions()) {
+        collectTfunNames(fn.getExpression(), names);
+    }
+    for (const auto& param : model.getParameters().all()) {
+        collectTfunNames(param.getExpression(), names);
+    }
+    return names;
+}
+
+void loadTfunFiles(engine::OdeIntegrator& integrator, const ast::Model& model, const std::filesystem::path& sourcePath) {
+    auto tfunNames = findTfunReferences(model);
+    for (const auto& name : tfunNames) {
+        auto tfunPath = sourcePath.parent_path() / (name + ".tfun");
+        if (std::filesystem::exists(tfunPath)) {
+            integrator.loadTfun(name, tfunPath.string());
+        }
+    }
+}
+
 std::string simulationPrefix(const ast::Action& action, const std::filesystem::path& sourcePath, std::optional<std::size_t> scanIndex = std::nullopt) {
     std::string prefix = stripQuotes(readArgument(action, "prefix", sourcePath.stem().string()));
     const auto suffix = stripQuotes(readArgument(action, "suffix", ""));
@@ -358,6 +398,10 @@ void runSimulation(
     const auto printFunctionsText = lowercase(stripQuotes(readArgument(action, "print_functions", "0")));
     opts.printFunctions = (printFunctionsText == "1" || printFunctionsText == "true");
 
+    // Parse binary_output flag (BNG2 parity: write .cdat/.gdat in binary format)
+    const auto binaryOutputText = lowercase(stripQuotes(readArgument(action, "binary_output", "0")));
+    opts.binaryOutput = (binaryOutputText == "1" || binaryOutputText == "true");
+
     // Parse continue flag (BNG2 parity)
     const auto continueText = lowercase(stripQuotes(readArgument(action, "continue", "0")));
     bool continueSimulation = (continueText == "1" || continueText == "true");
@@ -451,6 +495,7 @@ void runSimulation(
     } else {
         // ODE/SSA integration
         engine::OdeIntegrator integrator(model, network);
+        loadTfunFiles(integrator, model, sourcePath);
         result = integrator.integrate(opts);
     }
 
@@ -471,7 +516,11 @@ void runSimulation(
     const auto prefix = simulationPrefix(action, sourcePath);
     const auto outputPrefix = sourcePath.parent_path() / prefix;
     engine::OdeIntegrator integrator(model, network);
-    integrator.writeOutputFiles(outputPrefix.string(), result, opts.printCDAT, opts.printFunctions, continueSimulation);
+    if (opts.binaryOutput) {
+        integrator.writeBinaryOutputFiles(outputPrefix.string(), result, opts.printCDAT);
+    } else {
+        integrator.writeOutputFiles(outputPrefix.string(), result, opts.printCDAT, opts.printFunctions, continueSimulation);
+    }
 
     if (verbose) {
         if (opts.printCDAT) {
@@ -1289,7 +1338,6 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             if (!seedText.empty()) {
                 unsigned long seed = std::stoul(seedText);
                 nfSystem->seedRNG(seed);
-                NFutil::SEED_RANDOM(seed);
             }
 
             // Register output file
@@ -1727,6 +1775,42 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             continue;
         }
 
+        if (actionName == "writefile") {
+            ensureNetwork();
+            auto format = lowercase(stripQuotes(readArgument(action, "format", "")));
+            auto suffix = stripQuotes(readArgument(action, "suffix", ""));
+            if (format.empty()) format = suffix;
+            if (format == "net") {
+                writeCurrentNetwork();
+            } else if (format == "xml") {
+                const auto xmlContent = io::XmlWriter::write(model, &(*network));
+                const auto outputPath = sourcePath.parent_path() / (sourcePath.stem().string() + ".xml");
+                std::ofstream outFile(outputPath);
+                if (outFile) outFile << xmlContent;
+            } else if (format == "sbml") {
+                const auto sbmlContent = io::SbmlWriter::write(model, &(*network));
+                const auto outputPath = sourcePath.parent_path() / (sourcePath.stem().string() + ".xml");
+                std::ofstream outFile(outputPath);
+                if (outFile) outFile << sbmlContent;
+            } else if (format == "m" || format == "matlab") {
+                const auto mContent = io::MatlabWriter::write(model, *network);
+                const auto outputPath = sourcePath.parent_path() / (sourcePath.stem().string() + "_cvode.m");
+                std::ofstream outFile(outputPath);
+                if (outFile) outFile << mContent;
+            } else if (format == "bngl") {
+                const auto bnglContent = io::BnglWriter::write(model);
+                const auto outputPath = sourcePath.parent_path() / (sourcePath.stem().string() + ".bngl");
+                std::ofstream outFile(outputPath);
+                if (outFile) outFile << bnglContent;
+            } else {
+                throw std::runtime_error("writeFile: unknown format '" + format + "'");
+            }
+            if (verbose) {
+                std::cerr << "[bng_cpp] writeFile format=" << format << "\n";
+            }
+            continue;
+        }
+
         if (actionName == "writexml") {
             // Write XML without network (NFsim XML format doesn't require generated network)
             const auto xmlContent = io::XmlWriter::write(model, network.has_value() ? &(*network) : nullptr);
@@ -2110,11 +2194,53 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             continue;
         }
 
-        // simulate_protocol: BNG3 already processes actions sequentially,
-        // so simulate_protocol is a no-op (the protocol IS the action list)
         if (actionName == "simulate_protocol") {
+            const auto& protocol = model.getSimulationProtocol();
+            if (protocol.empty()) {
+                if (verbose) {
+                    std::cerr << "[bng_cpp] simulate_protocol: no protocol block defined, skipping\n";
+                }
+                continue;
+            }
             if (verbose) {
-                std::cerr << "[bng_cpp] simulate_protocol: actions are already executed sequentially\n";
+                std::cerr << "[bng_cpp] simulate_protocol: dispatching " << protocol.size() << " protocol actions\n";
+            }
+            for (const auto& protoAction : protocol) {
+                std::string protoName = lowercase(protoAction.name);
+                if (protoName == "simulate" || protoName == "simulate_ode" || protoName == "simulate_ssa" ||
+                    protoName == "simulate_pla" || protoName == "simulate_nf") {
+                    ensureNetwork();
+                    runSimulation(model, protoAction, sourcePath, *network, verbose, lastSimulationState, lastSimulationEndTime);
+                } else if (protoName == "setparameter") {
+                    auto target = stripQuotes(readArgument(protoAction, "target", ""));
+                    auto valueText = stripQuotes(readArgument(protoAction, "value", ""));
+                    if (!target.empty() && !valueText.empty()) {
+                        double val = parseScalarValue(valueText, model);
+                        model.getParameters().add(ast::Parameter(target, ast::Expression::number(val)));
+                        model.getParameters().evaluateAll();
+                        if (network.has_value()) {
+                            std::vector<double> savedAmounts = lastSimulationState;
+                            network = generator.generate(sourcePath);
+                            if (!savedAmounts.empty()) {
+                                for (std::size_t i = 0; i < network->species.size() && i < savedAmounts.size(); ++i) {
+                                    network->species.get(i).setAmount(savedAmounts[i]);
+                                }
+                            }
+                        }
+                    }
+                } else if (protoName == "setconcentration") {
+                    auto target = stripQuotes(readArgument(protoAction, "target", ""));
+                    auto valueText = stripQuotes(readArgument(protoAction, "value", ""));
+                    if (!target.empty() && !valueText.empty() && network.has_value()) {
+                        double val = parseScalarValue(valueText, model);
+                        for (std::size_t i = 0; i < network->species.size(); ++i) {
+                            if (network->species.get(i).getSpeciesGraph().toString() == target) {
+                                network->species.get(i).setAmount(val);
+                                break;
+                            }
+                        }
+                    }
+                }
             }
             continue;
         }
