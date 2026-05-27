@@ -96,12 +96,12 @@ class BNGCLI:
 
     def run(self):
         self.logger.debug("Running", loc=f"{__file__} : BNGCLI.run()")
-        
+
         # C++ fast path
         try:
             from bionetgen import _bionetgen_cpp as _cpp
             import shutil
-            
+
             # Determine path to run on
             if self.is_bngmodel:
                 write_to = os.path.join(self.output, self.inp_file.model_name + ".bngl")
@@ -114,13 +114,16 @@ class BNGCLI:
                 if os.path.abspath(self.inp_path) != os.path.abspath(copied_inp):
                     shutil.copy2(self.inp_path, copied_inp)
                 inp_run_path = copied_inp
-            
-            self.logger.debug("Executing via C++ backend", loc=f"{__file__} : BNGCLI.run()")
+
+            self.logger.debug(
+                "Executing via C++ backend", loc=f"{__file__} : BNGCLI.run()"
+            )
             model = _cpp.parse_file(inp_run_path)
             _cpp.execute(model, inp_run_path, verbose=not self.suppress)
-            
+
             # Load in the result
             from bionetgen.core.tools import BNGResult
+
             self.result = BNGResult(self.output)
             self.result.process_return = 0
             self.result.output = ["Ran successfully via C++ backend"]
