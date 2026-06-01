@@ -17,7 +17,6 @@ from tests.validation import compare, corpus, oracle_perl, runner
 # Removed by WO-1. The +N is the observed reaction surplus vs the Perl oracle.
 KNOWN_OVERCOUNT = {
     "blbr": "WO-1: +26 reactions; symmetric complexes not canonicalized to a single label",
-    "Motivating_example_cBNGL": "WO-1: +2 reactions; compartmental symmetry merge gap",
 }
 
 
@@ -29,6 +28,12 @@ def _net_parity(model_name: str, bng_cpp, work_dir):
     test_net, _, err = runner.run_cli(bng_cpp, model_name, work_dir / "cpp")
     assert test_net is not None, f"engine produced no .net: {err}"
 
+    # parse_net defaults to rate_mode="value": auto-generated rate-parameter
+    # NAMES (rateLaw4 vs _rateLaw4 vs __R1_local1) are resolved to their
+    # value/expression before comparison, so they don't cause spurious
+    # mismatches. A real difference in rate value or expression is still caught,
+    # and the over-count (a reaction COUNT difference) is independent of rates.
+    # For byte-identical name checking, pass rate_mode="string".
     ref = compare.parse_net(ref_path)
     test = compare.parse_net(test_net)
     assert ref is not None, f"could not parse reference .net ({ref_src})"
