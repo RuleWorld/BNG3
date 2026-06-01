@@ -52,3 +52,4 @@ python/bionetgen/bng-win/
 legacy/perl/Perl2/Boolean2BNGL/*.txt
 
 .venv-1/
+legacy/perl/bin/

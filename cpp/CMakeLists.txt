@@ -248,6 +248,9 @@ if(BUILD_PYTHON_BINDINGS)
         bindings/bind_viz.cpp
     )
     target_link_libraries(_bionetgen_cpp PRIVATE bionetgen_core)
+    if(MINGW OR CMAKE_COMPILER_IS_GNUCXX)
+        target_link_options(_bionetgen_cpp PRIVATE -static-libgcc -static-libstdc++ -static)
+    endif()
     target_include_directories(_bionetgen_cpp PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/ast
