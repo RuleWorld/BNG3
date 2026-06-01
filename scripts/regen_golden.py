@@ -45,8 +45,10 @@ def regen(models: list[str], ensemble: int) -> int:
                 shutil.copy2(net, GOLDEN / f"{stem}.net")
             if gdat is not None:
                 shutil.copy2(gdat, GOLDEN / f"{stem}.gdat")
-            print(f"  OK   {stem}  "
-                  f"({'net ' if net else ''}{'gdat' if gdat else ''})".rstrip())
+            print(
+                f"  OK   {stem}  "
+                f"({'net ' if net else ''}{'gdat' if gdat else ''})".rstrip()
+            )
             n_ok += 1
         # Ensemble goldens for stochastic comparison are intentionally NOT
         # generated here yet: a faithful Perl SSA ensemble needs a fixed-seed
@@ -60,8 +62,12 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--tier", choices=["s", "p", "nf", "expr"], default=None)
     ap.add_argument("--models", nargs="*", default=None)
-    ap.add_argument("--ensemble", type=int, default=0,
-                    help="(reserved) number of SSA runs per ensemble golden")
+    ap.add_argument(
+        "--ensemble",
+        type=int,
+        default=0,
+        help="(reserved) number of SSA runs per ensemble golden",
+    )
     args = ap.parse_args()
 
     if args.models:
