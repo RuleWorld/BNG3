@@ -303,6 +303,8 @@ jobs:
 
       - name: Run Python tests
         run: pytest tests/python/ -v --tb=short --cov=bionetgen --cov-report=xml
+        env:
+          SYMPY_USE_GMPY: "0"
 
       - name: Upload coverage
         if: matrix.os == 'ubuntu-22.04' && matrix.python-version == '3.12'
@@ -336,9 +338,13 @@ jobs:
 
       - name: Run atomizer tests
         run: pytest tests/python/ -v -k "atomizer" --tb=short || true
+        env:
+          SYMPY_USE_GMPY: "0"
 
       - name: Run model loading tests
         run: pytest tests/python/ -v -k "model" --tb=short
+        env:
+          SYMPY_USE_GMPY: "0"
 
       - name: Test CLI commands
         run: |
@@ -362,6 +368,8 @@ jobs:
           end model' > /tmp/test.bngl
           bionetgen check /tmp/test.bngl
           bionetgen run /tmp/test.bngl --method ode --t-end 10
+        env:
+          SYMPY_USE_GMPY: "0"
 
   # ═══════════════════════════════════════════════════════════════════════════
   # Wheel Building (binary distribution)
