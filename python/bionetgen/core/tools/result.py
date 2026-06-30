@@ -1,7 +1,6 @@
 import os
 import numpy as np
 
-from bionetgen.core.exc import BNGFileError
 from bionetgen.core.utils.logging import BNGLogger
 
 
@@ -158,16 +157,18 @@ class BNGResult:
         # we gotta open the file and pull that line in
         with open(path, "r") as f:
             header = f.readline()
-        # Ensure the header info is actually there
-        if not header.startswith("#"):
-            self.logger.error(
-                "No header line that starts with # in file {}".format(path),
+        # Now turn it into a list of names for our struct array
+        if header.startswith("#"):
+            header = header.replace("#", "")
+            headers = header.split()
+        else:
+            # No header line, auto-generate column names
+            headers = [f"col_{i}" for i in range(len(header.split()))]
+            self.logger.warning(
+                "No header line starting with # in file {}, "
+                "auto-generated column names: {}".format(path, headers),
                 loc=f"{__file__} : BNGResult._load_dat()",
             )
-            raise BNGFileError(path, "No header line that starts with #")
-        # Now turn it into a list of names for our struct array
-        header = header.replace("#", "")
-        headers = header.split()
         # For a magical reason this is how numpy.loadtxt wants it,
         # in tuples passed as a dictionary with names/formats as keys
         names = tuple(headers)

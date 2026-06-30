@@ -470,7 +470,8 @@ void OdeIntegrator::compile() {
             std::string rateLawLower = rawRateLaw;
             std::transform(rateLawLower.begin(), rateLawLower.end(), rateLawLower.begin(), ::tolower);
 
-            if (rateLawLower.find("time") != std::string::npos) {
+            if (rateLawLower.find("time") != std::string::npos ||
+                hasWordBoundaryMatch(rateLawLower, "t")) {
                 isFunctional = true;
             } else {
                 // Check for observable dependencies
@@ -1194,6 +1195,17 @@ void OdeIntegrator::writeOutputFiles(const std::string& prefix, const OdeResult&
         std::ofstream cdat(prefix + ".cdat", append ? std::ios::app : std::ios::trunc);
         if (!cdat) {
             throw std::runtime_error("Failed to open " + prefix + ".cdat for writing");
+        }
+
+        // Header line - only write if not appending
+        if (!append) {
+            cdat << "#";
+            cdat << std::setw(17) << "time";
+            for (std::size_t i = 0; i < network_.species.size(); ++i) {
+                cdat << " " << std::setw(18)
+                     << network_.species.get(i).getSpeciesGraph().toString();
+            }
+            cdat << "\n";
         }
 
         for (std::size_t step = startStep; step < result.timePoints.size(); ++step) {
