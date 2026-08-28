@@ -14,12 +14,13 @@ pytest tests/validation -m smoke                     # Tier-S, every commit
 pytest tests/validation -m "parity and not slow"     # full corpus
 pytest tests/validation -m nf      --bng-cpp build/bng_cpp
 pytest tests/validation -m export
+python -m tests.validation.exception_ledger --max-exceptions 1
 python scripts/regen_golden.py --tier p              # (re)build golden, reviewed
 ```
 Engine discovery: `--bng-cpp PATH` / `BNG_CPP` for the CLI; `import bionetgen` for the API.
 
 ## What each gate proves
-- `test_parity_net` — WO-1. `blbr` + `Motivating_example_cBNGL` are `xfail(strict)` until canonical labeling is unified; remove them from `KNOWN_OVERCOUNT` when WO-1 lands.
+- `test_parity_net` — WO-1a. Active expected failures come only from `exceptions.json`; each is signature-checked and an unexpected pass fails. The current ledger contains `blbr` (+26 reactions). `Motivating_example_cBNGL` was removed from the exception set when rate normalization eliminated its prior mismatch.
 - `test_parity_ode` — ODE rel-err <= 1e-6 vs Perl.
 - `test_parity_stochastic` — seeded determinism + ensemble within mean +/- 3 SE.
 - `test_parity_nfsim` — WO-2. ast-direct vs native binary, and ast-direct vs in-memory-XML (`BNG_NFSIM_FORCE_XML=1`).
@@ -28,3 +29,6 @@ Engine discovery: `--bng-cpp PATH` / `BNG_CPP` for the CLI; `import bionetgen` f
 
 ## Comparator notes
 `.net` reactions are keyed by **species strings**, not indices, so networks equal up to ordering compare equal and a failed merge (the over-count) compares unequal. Verified: a duplicated reaction is detected and named.
+
+## Exceptions
+`exceptions.json` is the only expected-failure ledger. Every entry names exact tests, model, method/platform scope, tracking URL, technical reason, owner, introduction/review dates, and expected assertion signature. `exception_ledger.py` rejects incomplete, duplicate, expired, or stale references and exposes `--max-exceptions` for a non-increasing budget gate.

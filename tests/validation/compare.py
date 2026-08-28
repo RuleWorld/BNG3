@@ -6,8 +6,8 @@ scattered across scripts/validate_*.py.
 Key correctness fix over the old scripts: the .net comparator keys reactions by
 their *species strings*, not by species indices. Two networks that are identical
 up to species ordering must compare equal; an extra or unmerged reaction must
-compare unequal. This is what detects the over-count (blbr +26, cBNGL +2):
-the test network carries reaction tuples that the reference (Perl) merged.
+compare unequal. This detects the active blbr over-count (+26): the test network
+carries reaction tuples that the reference (Perl) merged.
 """
 
 from __future__ import annotations

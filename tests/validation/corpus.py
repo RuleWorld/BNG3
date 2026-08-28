@@ -26,8 +26,8 @@ MODEL_DIRS = [
     REPO / "tests" / "validation" / "Validate",
 ]
 
-# Smoke set. Small, fast, and deliberately includes the two known over-count
-# models so the harness proves it detects the bug WO-1 fixes.
+# Smoke set. Small, fast, and deliberately includes the symmetry-heavy models
+# used to investigate WO-1a; active expected failures live only in exceptions.json.
 TIER_S = [
     "simple_system",
     "gene_expr",
@@ -129,5 +129,7 @@ if __name__ == "__main__":
     print(f"repo: {REPO}")
     print(f"tier-S  ({len(tier_s())}): {tier_s()}")
     print(f"tier-NF ({len(tier_nf())}): {tier_nf()}")
-    print(f"tier-P  ({len(tier_p())}) models on disk"
-          f"{' (allowlist-filtered)' if _allowlist() else ''}")
+    print(
+        f"tier-P  ({len(tier_p())}) models on disk"
+        f"{' (allowlist-filtered)' if _allowlist() else ''}"
+    )
