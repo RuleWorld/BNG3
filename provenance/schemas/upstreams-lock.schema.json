@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/RuleWorld/BNG3/provenance/schemas/upstreams-lock.schema.json",
+  "title": "BNG3 upstream source lock",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "baseline", "sources", "oracles", "dependencies"],
+  "properties": {
+    "$schema": {"type": "string"},
+    "schema_version": {"const": 1},
+    "baseline": {"$ref": "#/$defs/baseline"},
+    "sources": {
+      "type": "object",
+      "required": ["bng3", "bionetgen", "nfsim", "pybionetgen", "rulehub"],
+      "additionalProperties": {"$ref": "#/$defs/source"},
+      "properties": {
+        "bng3": {"$ref": "#/$defs/source"},
+        "bionetgen": {"$ref": "#/$defs/source"},
+        "nfsim": {"$ref": "#/$defs/source"},
+        "pybionetgen": {"$ref": "#/$defs/source"},
+        "rulehub": {"$ref": "#/$defs/source"}
+      }
+    },
+    "oracles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bng2", "nfsim"],
+      "properties": {
+        "bng2": {"$ref": "#/$defs/oracle"},
+        "nfsim": {"$ref": "#/$defs/oracle"}
+      }
+    },
+    "dependencies": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["compiler_images", "python_lock"],
+      "properties": {
+        "compiler_images": {"$ref": "#/$defs/compiler_images"},
+        "python_lock": {"$ref": "#/$defs/python_lock"}
+      }
+    }
+  },
+  "$defs": {
+    "sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "baseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["date", "status", "approved_by", "approved_at", "notes"],
+      "properties": {
+        "date": {"type": "string", "format": "date"},
+        "status": {"enum": ["pending-maintainer-approval", "approved"]},
+        "approved_by": {"type": ["string", "null"]},
+        "approved_at": {"type": ["string", "null"], "format": "date-time"},
+        "notes": {"type": "array", "items": {"type": "string"}}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "approved"}}},
+          "then": {
+            "properties": {
+              "approved_by": {"type": "string", "minLength": 1},
+              "approved_at": {"type": "string", "format": "date-time"}
+            }
+          }
+        }
+      ]
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "branch", "revision", "role", "status", "evidence"],
+      "properties": {
+        "repository": {"type": "string", "pattern": "^https://github\\.com/.+\\.git$"},
+        "branch": {"type": "string", "minLength": 1},
+        "revision": {"$ref": "#/$defs/sha"},
+        "role": {"type": "string", "minLength": 1},
+        "status": {"enum": ["observed", "accepted", "retired"]},
+        "evidence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "checked_at"],
+          "properties": {
+            "kind": {"enum": ["planning-snapshot", "local-checkout", "remote-head"]},
+            "checked_at": {"type": "string", "format": "date"}
+          }
+        }
+      }
+    },
+    "oracle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "status", "build_recipe", "artifact_digest"],
+      "properties": {
+        "source": {"type": "string", "minLength": 1},
+        "status": {"enum": ["pending", "locked"]},
+        "build_recipe": {"type": ["string", "null"]},
+        "artifact_digest": {"anyOf": [{"$ref": "#/$defs/digest"}, {"type": "null"}]}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "locked"}}},
+          "then": {
+            "properties": {
+              "build_recipe": {"type": "string", "minLength": 1},
+              "artifact_digest": {"$ref": "#/$defs/digest"}
+            }
+          }
+        }
+      ]
+    },
+    "compiler_images": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "images"],
+      "properties": {
+        "status": {"enum": ["pending", "locked"]},
+        "images": {
+          "type": "array",
+          "items": {"type": "string", "pattern": "@sha256:[0-9a-f]{64}$"}
+        }
+      }
+    },
+    "python_lock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "path", "digest"],
+      "properties": {
+        "status": {"enum": ["pending", "locked"]},
+        "path": {"type": ["string", "null"]},
+        "digest": {"anyOf": [{"$ref": "#/$defs/digest"}, {"type": "null"}]}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "locked"}}},
+          "then": {
+            "properties": {
+              "path": {"type": "string", "minLength": 1},
+              "digest": {"$ref": "#/$defs/digest"}
+            }
+          }
+        }
+      ]
+    }
+  }
+}

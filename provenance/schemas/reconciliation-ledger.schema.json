@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/RuleWorld/BNG3/provenance/schemas/reconciliation-ledger.schema.json",
+  "title": "BNG3 upstream commit reconciliation ledger",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "source", "represented_revision", "cutoff_revision", "owner", "entries"],
+  "properties": {
+    "$schema": {"type": "string"},
+    "schema_version": {"const": 1},
+    "source": {"enum": ["bionetgen", "nfsim", "pybionetgen"]},
+    "represented_revision": {"$ref": "#/$defs/sha"},
+    "cutoff_revision": {"$ref": "#/$defs/sha"},
+    "owner": {"type": "string", "minLength": 1},
+    "entries": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/entry"}
+    }
+  },
+  "$defs": {
+    "sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_revision",
+        "capability",
+        "classification",
+        "bng3_reference",
+        "tests",
+        "reviewer",
+        "rationale"
+      ],
+      "properties": {
+        "source_revision": {"$ref": "#/$defs/sha"},
+        "capability": {"type": "string", "minLength": 1},
+        "classification": {
+          "enum": [
+            "incorporated-identically",
+            "incorporated-equivalently",
+            "superseded-by-bng3",
+            "not-applicable",
+            "pending-port",
+            "blocked-on-design"
+          ]
+        },
+        "bng3_reference": {"type": ["string", "null"]},
+        "tests": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "uniqueItems": true
+        },
+        "reviewer": {"type": "string", "minLength": 1},
+        "rationale": {"type": "string", "minLength": 1},
+        "issue": {"type": ["string", "null"]}
+      }
+    }
+  }
+}
