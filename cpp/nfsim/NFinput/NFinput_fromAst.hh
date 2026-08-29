@@ -59,7 +59,13 @@ NFcore::System* buildSystemFromAst(
 bool addParametersFromAst(const bng::ast::Model& model, NFcore::System* s,
                           std::map<std::string, double>& parameters, bool verbose);
 
+/// Add AST compartments, preserving the XML loader's two-pass parent wiring.
+bool addCompartmentsFromAst(const bng::ast::Model& model, NFcore::System* s,
+                            bool verbose);
+
+/// Add molecule types and populate the state lookup consumed by later stages.
 bool addMoleculeTypesFromAst(const bng::ast::Model& model, NFcore::System* s,
+                             std::map<std::string, int>& allowedStates,
                              bool verbose);
 
 bool addFunctionsFromAst(const bng::ast::Model& model, NFcore::System* s,

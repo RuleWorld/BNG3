@@ -12,20 +12,33 @@
 ///   from `return false` to a real implementation at a time, each gated by
 ///   test_parity_nfsim (ast-direct must equal in-memory-XML under one seed).
 ///
-/// IMPLEMENTED here: parameters (the section whose ast API is unambiguous).
-/// STUBBED here:     molecule types, functions, observables, species, rules —
-///                   each cites the TiXml init* function that is its behavioral
+/// IMPLEMENTED here: parameters, compartments, and molecule types.
+/// STUBBED here:     functions, observables, species, and rules — each cites
+///                   the TiXml init* function that is its behavioral
 ///                   specification. Port those, do not reinvent them.
 
 #include "NFinput_fromAst.hh"
 #include "NFinput.hh"
 
+#include "ast/Compartment.hpp"
 #include "ast/Model.hpp"
+#include "ast/MoleculeType.hpp"
 #include "ast/Parameter.hpp"
 #include "ast/ParameterList.hpp"
+#include "../NFcore/compartment.hh"
+#include "../NFutil/NFutil.hh"
 
+#include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <iostream>
+#include <map>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <unordered_set>
+#include <utility>
+#include <vector>
 
 using namespace NFcore;
 
@@ -53,18 +66,247 @@ bool addParametersFromAst(const bng::ast::Model& model, System* s,
 }
 
 // --------------------------------------------------------------------------- //
-// The following sections are not yet ported to the direct path. Each returns
-// false, which makes buildSystemFromAst fall back to the in-memory-XML path.
-// Behavioral specification = the cited TiXml init function; port it field for
-// field, then return true and let the gate confirm parity.
+// Compartments — mirror NFinput::initCompartments (NFinput.cpp:230).  The
+// parent links are intentionally installed in a second pass because BNGL
+// permits a child to appear before its outside compartment in source order.
+// --------------------------------------------------------------------------- //
+bool addCompartmentsFromAst(const bng::ast::Model& model, System* s, bool verbose) {
+    const auto& compartments = model.getCompartments();
+    if (compartments.empty()) return true;
+
+    std::unordered_set<std::string> seen;
+    std::map<std::string, std::string> parentByChild;
+    for (const auto& compartment : compartments) {
+        const std::string name = compartment.getName();
+        if (name.empty()) {
+            std::cerr << "[nfsim/ast] compartment is missing a name\n";
+            return false;
+        }
+        if (!seen.insert(name).second || s->getCompartment(name) != nullptr) {
+            std::cerr << "[nfsim/ast] duplicate compartment '" << name << "'\n";
+            return false;
+        }
+
+        auto* nfCompartment = new Compartment(
+            name, compartment.getDimension(), compartment.getVolume());
+        s->addCompartment(nfCompartment);
+        if (!compartment.getParent().empty()) {
+            parentByChild.emplace(name, compartment.getParent());
+        }
+        if (verbose) {
+            std::cerr << "[nfsim/ast] compartment " << name
+                      << " (dimension=" << compartment.getDimension()
+                      << ", size=" << compartment.getVolume() << ")\n";
+        }
+    }
+
+    for (const auto& [childName, parentName] : parentByChild) {
+        auto* child = s->getCompartment(childName);
+        auto* parent = s->getCompartment(parentName);
+        if (parent != nullptr) {
+            child->setParent(parent);
+        } else {
+            // Preserve the XML adapter's permissive behavior for an unknown
+            // outside compartment, while making the direct-path diagnostic
+            // explicit.  Seed species/rules will reject unusable references.
+            std::cerr << "[nfsim/ast] warning: compartment '" << childName
+                      << "' refers to unknown outside compartment '" << parentName
+                      << "'\n";
+        }
+    }
+    return true;
+}
+
+namespace {
+
+std::string lowerCase(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return value;
+}
+
+bool parseIntegerState(const std::string& text, int& value) {
+    std::istringstream input(text);
+    char trailing = '\0';
+    if (!(input >> value) || (input >> trailing)) return false;
+    return true;
+}
+
+} // namespace
+
+// --------------------------------------------------------------------------- //
+// Molecule types — mirror NFinput::initMoleculeTypes (NFinput.cpp:365).  The
+// AST already contains the normalized component/state tokens, so this port
+// only has to reproduce NFsim's integer-state expansion and symmetric-site
+// renaming.  `allowedStates` is carried forward for the species/observable/
+// rule builders that will consume it in later migration slices.
 // --------------------------------------------------------------------------- //
 
-bool addMoleculeTypesFromAst(const bng::ast::Model& model, System* s, bool verbose) {
-    (void)model; (void)s; (void)verbose;
-    // SPEC: the molecule-type loop inside NFinput::initializeFromXML
-    //       (NFcore::MoleculeType construction; component names; allowed states).
-    // ast source: model.getMoleculeTypes() -> vector<MoleculeType>.
-    return false;  // not yet implemented -> fall back
+bool addMoleculeTypesFromAst(const bng::ast::Model& model, System* s,
+                             std::map<std::string, int>& allowedStates,
+                             bool verbose) {
+    try {
+        for (const auto& moleculeType : model.getMoleculeTypes()) {
+            const std::string& typeName = moleculeType.getName();
+            if (typeName.empty()) {
+                std::cerr << "[nfsim/ast] molecule type is missing a name\n";
+                return false;
+            }
+            const std::string normalizedName = lowerCase(typeName);
+            if (normalizedName == "null" || normalizedName == "trash") {
+                if (verbose) {
+                    std::cerr << "[nfsim/ast] skipping molecule type '" << typeName
+                              << "'\n";
+                }
+                continue;
+            }
+            for (int index = 0; index < s->getNumOfMoleculeTypes(); ++index) {
+                if (s->getMoleculeType(index)->getName() == typeName) {
+                    std::cerr << "[nfsim/ast] duplicate molecule type '" << typeName
+                              << "'\n";
+                    return false;
+                }
+            }
+            if (moleculeType.isPopulation() && !moleculeType.getComponents().empty()) {
+                std::cerr << "[nfsim/ast] population type '" << typeName
+                          << "' cannot have components\n";
+                return false;
+            }
+
+            std::vector<std::string> componentNames;
+            std::vector<std::string> defaultStates;
+            std::vector<std::vector<std::string>> possibleStates;
+            std::vector<std::vector<std::string>> equivalentComponents;
+            std::vector<bool> integerComponents;
+            std::vector<std::size_t> firstSymmetricSites;
+
+            for (const auto& component : moleculeType.getComponents()) {
+                if (component.name.empty()) {
+                    std::cerr << "[nfsim/ast] component in molecule type '"
+                              << typeName << "' is missing a name\n";
+                    return false;
+                }
+
+                std::string componentName = component.name;
+                auto duplicate = std::find(componentNames.begin(), componentNames.end(),
+                                            componentName);
+                if (duplicate != componentNames.end()) {
+                    const auto duplicateIndex = static_cast<std::size_t>(
+                        std::distance(componentNames.begin(), duplicate));
+                    if (std::find(firstSymmetricSites.begin(), firstSymmetricSites.end(),
+                                  duplicateIndex) == firstSymmetricSites.end()) {
+                        firstSymmetricSites.push_back(duplicateIndex);
+                    }
+
+                    std::string renamed = componentName + "2";
+                    auto equivalent = std::find_if(
+                        equivalentComponents.begin(), equivalentComponents.end(),
+                        [&](const auto& group) {
+                            return !group.empty() && group.front() == componentName + "1";
+                        });
+                    if (equivalent != equivalentComponents.end()) {
+                        renamed = componentName +
+                                  std::to_string(equivalent->size() + 1);
+                        equivalent->push_back(renamed);
+                    } else {
+                        equivalentComponents.push_back(
+                            {componentName + "1", renamed});
+                    }
+                    componentName = std::move(renamed);
+                }
+                componentNames.push_back(componentName);
+
+                std::vector<std::string> states;
+                bool hasStringState = false;
+                bool hasIntegerState = false;
+                bool hasPlusMinusState = false;
+                bool hasNegativeInteger = false;
+                int maximumState = -1;
+                for (const auto& state : component.allowedStates) {
+                    int integerValue = 0;
+                    if (parseIntegerState(state, integerValue)) {
+                        hasIntegerState = true;
+                        hasNegativeInteger = hasNegativeInteger || integerValue < 0;
+                        maximumState = std::max(maximumState, integerValue);
+                    } else {
+                        hasStringState = true;
+                        if (state == "PLUS" || state == "MINUS") {
+                            hasPlusMinusState = true;
+                        }
+                    }
+                }
+
+                bool integerComponent = false;
+                if (hasIntegerState && !hasStringState) {
+                    if (hasNegativeInteger || maximumState < 0 || maximumState > 10000) {
+                        std::cerr << "[nfsim/ast] integer states for '" << typeName
+                                  << "." << componentName
+                                  << "' must be in [0,10000]\n";
+                        return false;
+                    }
+                    integerComponent = true;
+                    states.reserve(static_cast<std::size_t>(maximumState + 1));
+                    for (int value = 0; value <= maximumState; ++value) {
+                        states.push_back(std::to_string(value));
+                    }
+                } else if (hasStringState) {
+                    if (hasPlusMinusState) {
+                        std::cerr << "[nfsim/ast] warning: PLUS/MINUS in string states "
+                                     "for '" << typeName << "." << componentName
+                                  << "' are labels, not integer increments\n";
+                    }
+                    for (const auto& state : component.allowedStates) {
+                        if (std::find(states.begin(), states.end(), state) == states.end()) {
+                            states.push_back(state);
+                        }
+                    }
+                }
+
+                integerComponents.push_back(integerComponent);
+                defaultStates.push_back(states.empty() ? std::string {} : states.front());
+                possibleStates.push_back(std::move(states));
+            }
+
+            // The first member of each symmetric class gets the `1` suffix
+            // only after all components have been read, matching NFsim's XML
+            // loader and preserving the generic site name for pattern input.
+            for (const auto index : firstSymmetricSites) {
+                const std::string original = componentNames.at(index);
+                const std::string renamed = original + "1";
+                componentNames[index] = renamed;
+            }
+
+            // Populate the state lookup using final NFsim component names.
+            for (std::size_t index = 0; index < componentNames.size(); ++index) {
+                for (std::size_t stateIndex = 0;
+                     stateIndex < possibleStates[index].size(); ++stateIndex) {
+                    allowedStates[typeName + "_" + componentNames[index] + "_" +
+                                  possibleStates[index][stateIndex]] =
+                        static_cast<int>(stateIndex);
+                }
+            }
+
+            if (verbose) {
+                std::cerr << "[nfsim/ast] molecule type " << typeName << " (";
+                for (std::size_t i = 0; i < componentNames.size(); ++i) {
+                    if (i != 0) std::cerr << ",";
+                    std::cerr << componentNames[i];
+                }
+                std::cerr << ")\n";
+            }
+
+            auto* nfType = new MoleculeType(typeName, componentNames, defaultStates,
+                                            possibleStates, integerComponents,
+                                            moleculeType.isPopulation(), s);
+            nfType->addEquivalentComponents(equivalentComponents);
+        }
+        return true;
+    } catch (const std::exception& error) {
+        std::cerr << "[nfsim/ast] molecule type construction failed: "
+                  << error.what() << "\n";
+        return false;
+    }
 }
 
 bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
@@ -128,16 +370,27 @@ System* buildSystemFromAst(const bng::ast::Model& model,
                            blockSameComplexBinding, globalMoleculeLimit);
 
     std::map<std::string, double> parameters;
+    std::map<std::string, int> allowedStates;
     suggestedTraversalLimit = 0;
 
-    const bool ok =
-        addParametersFromAst(model, s, parameters, verbose) &&
-        addMoleculeTypesFromAst(model, s, verbose) &&
-        addFunctionsFromAst(model, s, parameters, verbose) &&
-        addObservablesFromAst(model, s, parameters, verbose, suggestedTraversalLimit) &&
-        addSpeciesFromAst(model, s, parameters, verbose) &&
-        addReactionRulesFromAst(model, s, parameters, blockSameComplexBinding,
-                                verbose, suggestedTraversalLimit);
+    bool ok = false;
+    try {
+        // Keep this order aligned with initializeFromModel(): molecule types
+        // and compartments must exist before species, observables, and rules.
+        ok = addParametersFromAst(model, s, parameters, verbose) &&
+             addMoleculeTypesFromAst(model, s, allowedStates, verbose) &&
+             addCompartmentsFromAst(model, s, verbose) &&
+             addFunctionsFromAst(model, s, parameters, verbose) &&
+             addObservablesFromAst(model, s, parameters, verbose, suggestedTraversalLimit) &&
+             addSpeciesFromAst(model, s, parameters, verbose) &&
+             addReactionRulesFromAst(model, s, parameters, blockSameComplexBinding,
+                                     verbose, suggestedTraversalLimit);
+    } catch (const std::exception& error) {
+        if (verbose) {
+            std::cerr << "[nfsim/ast] direct construction failed: "
+                      << error.what() << "\n";
+        }
+    }
 
     if (!ok) {
         // Some section is not yet ported. Discard the partial System and let the
