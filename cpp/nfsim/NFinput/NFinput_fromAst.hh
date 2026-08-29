@@ -28,6 +28,7 @@
 
 #pragma once
 
+#include <filesystem>
 #include <map>
 #include <string>
 
@@ -44,13 +45,15 @@ namespace NFinput {
 /// @param globalMoleculeLimit      max molecules per type.
 /// @param verbose                  progress messages.
 /// @param suggestedTraversalLimit  out: recommended traversal depth.
+/// @param sourcePath               optional BNGL source path for relative TFUN files.
 /// @return owned System, or nullptr on error (caller may fall back to XML).
 NFcore::System* buildSystemFromAst(
         const bng::ast::Model& model,
         bool   blockSameComplexBinding,
         int    globalMoleculeLimit,
         bool   verbose,
-        int&   suggestedTraversalLimit);
+        int&   suggestedTraversalLimit,
+        const std::filesystem::path& sourcePath = {});
 
 // --- Per-section direct builders (mirror the TiXml-based init* functions) ---
 // Each returns false on error. Implement incrementally; until a builder is
@@ -73,7 +76,8 @@ bool addMoleculeTypesFromAst(const bng::ast::Model& model, NFcore::System* s,
                              bool verbose);
 
 bool addFunctionsFromAst(const bng::ast::Model& model, NFcore::System* s,
-                         const std::map<std::string, double>& parameters, bool verbose);
+                         const std::map<std::string, double>& parameters, bool verbose,
+                         const std::filesystem::path& sourcePath = {});
 
 bool addObservablesFromAst(const bng::ast::Model& model, NFcore::System* s,
                            const std::map<std::string, double>& parameters,

@@ -1,4 +1,7 @@
 #include <cmath>
+#include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <map>
 #include <string>
 #include <vector>
@@ -110,6 +113,53 @@ end reaction rules
     function->fileUpdate(1.5);
     CHECK(NFcore::FuncFactory::Eval(function->p) == Catch::Approx(15.0));
     delete system;
+}
+
+TEST_CASE("NFsim AST adapter resolves file-backed TFUN beside the BNGL source") {
+    const auto token = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto tablePath = std::filesystem::temp_directory_path() /
+                           ("bng3-direct-tfun-" + std::to_string(token) + ".dat");
+    std::ofstream tableFile(tablePath);
+    REQUIRE(tableFile.good());
+    tableFile << "0 1\n"
+              << "1 2\n"
+              << "2 4\n";
+    tableFile.close();
+
+    auto model = bng::parser::parseModel(
+        "begin molecule types\n"
+        "    X()\n"
+        "end molecule types\n"
+        "begin seed species\n"
+        "    X() 0\n"
+        "end seed species\n"
+        "begin observables\n"
+        "    Molecules X_total X()\n"
+        "end observables\n"
+        "begin functions\n"
+        "    rate() = tfun('" + tablePath.filename().string() + "', time)\n"
+        "end functions\n"
+        "begin reaction rules\n"
+        "    0 -> X() rate\n"
+        "end reaction rules\n");
+
+    const auto sourcePath = tablePath.parent_path() / "model.bngl";
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(
+        *model, false, 100, false, suggestedTraversalLimit, sourcePath);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getHasTimeDependentFunctions());
+    auto* function = system->getGlobalFunctionByName("rate");
+    REQUIRE(function != nullptr);
+    CHECK(function->fileFunc);
+    CHECK(function->getCtrType() == "System");
+    system->prepareForSimulation();
+    function->fileUpdate(1.5);
+    CHECK(NFcore::FuncFactory::Eval(function->p) == Catch::Approx(3.0));
+    delete system;
+
+    std::error_code error;
+    std::filesystem::remove(tablePath, error);
 }
 
 TEST_CASE("NFsim XML bridge preserves inline TFUN metadata") {

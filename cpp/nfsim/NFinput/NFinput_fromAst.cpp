@@ -18,8 +18,8 @@
 ///                    functions, zero-argument composites, one-argument
 ///                    molecule/species-scoped local functions, FunctionProduct,
 ///                    reactant include/exclude filters.
-/// GATED here:       nested/complex local functions, file-backed TFUN and
-///                   other rate-law forms, product filters, and reaction
+/// GATED here:       nested/complex local functions, other rate-law forms,
+///                   product filters, and reaction
 ///                   centers not yet represented by the direct mapping. They
 ///                   fail closed and cite the TiXml init* function that
 ///                   remains their compatibility oracle.
@@ -52,6 +52,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <limits>
 #include <map>
@@ -200,6 +201,13 @@ std::string lowerCase(std::string value) {
     return value;
 }
 
+std::string resolveTfunPath(const std::string& filePath,
+                            const std::filesystem::path& sourcePath) {
+    const std::filesystem::path path(filePath);
+    if (path.is_absolute() || sourcePath.empty()) return path.string();
+    return (sourcePath.parent_path() / path).lexically_normal().string();
+}
+
 bool parseIntegerState(const std::string& text, int& value) {
     std::istringstream input(text);
     char trailing = '\0';
@@ -339,6 +347,7 @@ bool configureDirectTableFunction(
     const bng::ast::Expression& table,
     const bng::ast::Model& model,
     const std::map<std::string, double>& parameters,
+    const std::filesystem::path& sourcePath,
     System* system,
     GlobalFunction* global,
     CompositeFunction* composite,
@@ -348,15 +357,53 @@ bool configureDirectTableFunction(
         diagnostic = "malformed TFUN metadata";
         return false;
     }
-    if (!table.tableFilePath().empty()) {
-        diagnostic = "file-backed TFUN requires source-path-aware compatibility loading";
-        return false;
-    }
-    if (table.tableXValues().empty() ||
-        table.tableXValues().size() != table.tableYValues().size()) {
+    const bool fileBacked = !table.tableFilePath().empty();
+    if (!fileBacked && (table.tableXValues().empty() ||
+                        table.tableXValues().size() != table.tableYValues().size())) {
         diagnostic = "inline TFUN has empty or mismatched data columns";
         return false;
     }
+    if (fileBacked && (!table.tableXValues().empty() || !table.tableYValues().empty())) {
+        diagnostic = "file-backed TFUN cannot also contain inline data";
+        return false;
+    }
+
+    const auto configureTarget = [&]() {
+        try {
+            if (global != nullptr) {
+                if (fileBacked) {
+                    global->enableFileDependency(
+                        resolveTfunPath(table.tableFilePath(), sourcePath),
+                        table.tableMethod());
+                } else {
+                    global->enableInlineDependency(
+                        table.tableXValues(), table.tableYValues(), table.tableMethod());
+                }
+                global->setCtrName("__TFUN_VAL__");
+            } else if (composite != nullptr) {
+                if (fileBacked) {
+                    composite->enableFileDependency(
+                        resolveTfunPath(table.tableFilePath(), sourcePath),
+                        table.tableMethod());
+                } else {
+                    composite->enableInlineDependency(
+                        table.tableXValues(), table.tableYValues(), table.tableMethod());
+                }
+                composite->setCtrName("__TFUN_VAL__");
+            } else {
+                diagnostic = "TFUN has no target function object";
+                return false;
+            }
+        } catch (const std::exception& error) {
+            diagnostic = "could not load TFUN table";
+            if (fileBacked) {
+                diagnostic += " '" + resolveTfunPath(table.tableFilePath(), sourcePath) + "'";
+            }
+            diagnostic += ": " + std::string(error.what());
+            return false;
+        }
+        return true;
+    };
 
     const auto& counter = table.args().front();
     const auto attachObservable = [&](const std::string& name) {
@@ -401,33 +448,17 @@ bool configureDirectTableFunction(
             diagnostic = "TFUN time counter cannot take arguments";
             return false;
         }
-        if (global != nullptr) {
-            global->enableInlineDependency(
-                table.tableXValues(), table.tableYValues(), table.tableMethod());
-            global->setCtrName("__TFUN_VAL__");
-            global->setCounterFromTime(system);
-        } else {
-            composite->enableInlineDependency(
-                table.tableXValues(), table.tableYValues(), table.tableMethod());
-            composite->setCtrName("__TFUN_VAL__");
-            composite->setCounterFromTime(system);
-        }
+        if (!configureTarget()) return false;
+        if (global != nullptr) global->setCounterFromTime(system);
+        else composite->setCounterFromTime(system);
         return true;
     }
 
     if (counter.kind() == bng::ast::ExpressionKind::Identifier &&
         parameters.count(counterName) != 0) {
-        if (global != nullptr) {
-            global->enableInlineDependency(
-                table.tableXValues(), table.tableYValues(), table.tableMethod());
-            global->setCtrName("__TFUN_VAL__");
-            global->setCounterFromParameter(system, counterName);
-        } else {
-            composite->enableInlineDependency(
-                table.tableXValues(), table.tableYValues(), table.tableMethod());
-            composite->setCtrName("__TFUN_VAL__");
-            composite->setCounterFromParameter(system, counterName);
-        }
+        if (!configureTarget()) return false;
+        if (global != nullptr) global->setCounterFromParameter(system, counterName);
+        else composite->setCounterFromParameter(system, counterName);
         return true;
     }
 
@@ -437,15 +468,7 @@ bool configureDirectTableFunction(
         counter.args().empty() && hasModelObservable(model, counterName);
     if (namedObservable) {
         if (!attachObservable(counterName)) return false;
-        if (global != nullptr) {
-            global->enableInlineDependency(
-                table.tableXValues(), table.tableYValues(), table.tableMethod());
-            global->setCtrName("__TFUN_VAL__");
-        } else {
-            composite->enableInlineDependency(
-                table.tableXValues(), table.tableYValues(), table.tableMethod());
-            composite->setCtrName("__TFUN_VAL__");
-        }
+        if (!configureTarget()) return false;
         return true;
     }
 
@@ -456,9 +479,7 @@ bool configureDirectTableFunction(
         counter.args().empty() && hasModelFunction(model, counterName);
     if (namedFunction) {
         if (!attachFunction(counterName)) return false;
-        composite->enableInlineDependency(
-            table.tableXValues(), table.tableYValues(), table.tableMethod());
-        composite->setCtrName("__TFUN_VAL__");
+        if (!configureTarget()) return false;
         return true;
     }
 
@@ -513,13 +534,13 @@ bool collectGlobalFunctionReferences(
         }
         return true;
     case ExpressionKind::TableFunction:
-        if (!expression.tableFilePath().empty()) {
-            diagnostic = "file-backed TFUN requires source-path-aware compatibility loading";
-            return false;
-        }
-        if (expression.args().size() != 1 || expression.tableXValues().empty() ||
-            expression.tableXValues().size() != expression.tableYValues().size()) {
-            diagnostic = "malformed inline TFUN metadata";
+        if (expression.args().size() != 1 ||
+            (expression.tableFilePath().empty() &&
+             (expression.tableXValues().empty() ||
+              expression.tableXValues().size() != expression.tableYValues().size())) ||
+            (!expression.tableFilePath().empty() &&
+             (!expression.tableXValues().empty() || !expression.tableYValues().empty()))) {
+            diagnostic = "malformed TFUN metadata";
             return false;
         }
         return collectGlobalFunctionReferences(
@@ -875,14 +896,15 @@ bool addMoleculeTypesFromAst(const bng::ast::Model& model, System* s,
 }
 
 bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
-                         const std::map<std::string, double>& parameters, bool verbose) {
+                         const std::map<std::string, double>& parameters, bool verbose,
+                         const std::filesystem::path& sourcePath) {
     // SPEC: NFinput::initFunctions (parseFuncXML.cpp:488).
     // This slice handles parameter/observable/time-backed global functions,
     // composites whose dependencies are all zero-argument global functions,
-    // and the bounded one-argument local-function mapping below. Inline TFUN
-    // is represented by NFsim's existing file-function machinery; file-backed
-    // TFUN remains fail-closed until the source path is carried through this
-    // boundary.
+    // and the bounded one-argument local-function mapping below. Both inline
+    // and file-backed TFUN are represented by NFsim's existing file-function
+    // machinery; relative table paths resolve beside the BNGL source when the
+    // caller supplies it.
     if (s == nullptr) return false;
 
     std::unordered_set<std::string> names;
@@ -1031,8 +1053,8 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
                                            referenceNames, referenceTypes, parameterNames, s);
         if (function.tableFunction != nullptr) {
             std::string diagnostic;
-            if (!configureDirectTableFunction(*function.tableFunction, model, parameters, s,
-                                              global, nullptr, diagnostic)) {
+            if (!configureDirectTableFunction(*function.tableFunction, model, parameters,
+                                              sourcePath, s, global, nullptr, diagnostic)) {
                 delete global;
                 std::cerr << "[nfsim/ast] cannot map TFUN function '" << function.name
                           << "': " << diagnostic << "\n";
@@ -1045,7 +1067,7 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
                       << function.name << "'\n";
             return false;
         }
-        if (function.tableFunction == nullptr && function.usesTime) {
+        if (function.usesTime) {
             global->setCounterFromTime(s);
             s->setHasTimeDependentFunctions(true);
         }
@@ -1087,8 +1109,8 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
             argumentNames, parameterNames);
         if (function.tableFunction != nullptr) {
             std::string diagnostic;
-            if (!configureDirectTableFunction(*function.tableFunction, model, parameters, s,
-                                              nullptr, composite, diagnostic)) {
+            if (!configureDirectTableFunction(*function.tableFunction, model, parameters,
+                                              sourcePath, s, nullptr, composite, diagnostic)) {
                 delete composite;
                 std::cerr << "[nfsim/ast] cannot map TFUN composite '" << function.name
                           << "': " << diagnostic << "\n";
@@ -1101,7 +1123,7 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
                       << function.name << "'\n";
             return false;
         }
-        if (function.tableFunction == nullptr && function.usesTime) {
+        if (function.usesTime) {
             composite->setCounterFromTime(s);
             s->setHasTimeDependentFunctions(true);
         }
@@ -3607,7 +3629,8 @@ System* buildSystemFromAst(const bng::ast::Model& model,
                            bool blockSameComplexBinding,
                            int globalMoleculeLimit,
                            bool verbose,
-                           int& suggestedTraversalLimit) {
+                           int& suggestedTraversalLimit,
+                           const std::filesystem::path& sourcePath) {
     // Migration escape hatch used by the parity gate: force the XML path.
     if (std::getenv("BNG_NFSIM_FORCE_XML")) {
         if (verbose) std::cerr << "[nfsim/ast] BNG_NFSIM_FORCE_XML set -> XML path\n";
@@ -3647,7 +3670,7 @@ System* buildSystemFromAst(const bng::ast::Model& model,
              addMoleculeTypesFromAst(model, s, allowedStates, verbose) &&
              addCompartmentsFromAst(model, s, verbose) &&
              addObservablesFromAst(model, s, parameters, verbose, suggestedTraversalLimit) &&
-             addFunctionsFromAst(model, s, parameters, verbose) &&
+             addFunctionsFromAst(model, s, parameters, verbose, sourcePath) &&
              addEnergyPatternsFromAst(model, s, parameters, verbose) &&
              addSpeciesFromAst(model, s, parameters, verbose) &&
              addReactionRulesFromAst(model, s, parameters, blockSameComplexBinding,

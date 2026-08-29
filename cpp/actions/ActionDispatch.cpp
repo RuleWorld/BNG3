@@ -1348,7 +1348,8 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 useComplex,
                 globalMoleculeLimit,
                 nfVerbose,
-                suggestedTraversalLimit);
+                suggestedTraversalLimit,
+                sourcePath);
 
             if (!nfSystem) {
                 if (verbose) {
