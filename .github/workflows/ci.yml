@@ -48,6 +48,19 @@ jobs:
       - name: Check corpus selection is generated
         run: python scripts/generate_corpus_manifest.py --check
 
+      - name: Validate committed golden manifests
+        shell: bash
+        run: |
+          set -eu
+          found=0
+          while IFS= read -r -d '' manifest; do
+            found=1
+            python scripts/validate_golden_manifest.py --manifest "$manifest"
+          done < <(find provenance/golden -type f -name manifest.json -print0)
+          if [ "$found" -eq 0 ]; then
+            echo "No golden bundle manifests committed; source/oracle lock approval is still pending."
+          fi
+
       - name: Enforce validation exception budget
         run: python -m tests.validation.exception_ledger --max-exceptions 1
 
