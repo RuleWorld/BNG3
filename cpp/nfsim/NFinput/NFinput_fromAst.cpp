@@ -21,9 +21,10 @@
 ///                    Sat/Hill rate laws, reactant include/exclude filters,
 ///                    and dynamic reaction rates over parameters, observables,
 ///                    time, and one TFUN expression.
-///                   Bounded function-counter local TFUNs whose counter is a
-///                   zero-argument base global are also direct composites.
-/// GATED here:       nested/complex local functions, unbounded function-counter
+///                   Bounded nested local functions and function-counter local
+///                   TFUNs whose counter is a zero-argument base global are
+///                   also direct composites.
+/// GATED here:       deeper/complex local functions, unbounded function-counter
 ///                   composites, dynamic rates combining direct observables
 ///                   with model functions or referencing composite functions,
 ///                   other rate-law forms, product filters, and reaction
@@ -760,6 +761,136 @@ bool collectLocalFunctionReferences(
     return false;
 }
 
+void collectModelFunctionCalls(
+    const bng::ast::Expression& expression,
+    const bng::ast::Model& model,
+    std::vector<const bng::ast::Expression*>& calls) {
+    using bng::ast::ExpressionKind;
+    if ((expression.kind() == ExpressionKind::Identifier ||
+         expression.kind() == ExpressionKind::Function ||
+         expression.kind() == ExpressionKind::ObservableRef) &&
+        hasModelFunction(model, expression.name())) {
+        calls.push_back(&expression);
+    }
+    for (const auto& child : expression.args()) {
+        collectModelFunctionCalls(child, model, calls);
+    }
+}
+
+bool validateNestedLocalCompositeExpression(
+    const bng::ast::Expression& expression,
+    const bng::ast::Model& model,
+    const std::map<std::string, double>& parameters,
+    const std::string& argumentName,
+    std::string& diagnostic) {
+    using bng::ast::ExpressionKind;
+
+    switch (expression.kind()) {
+    case ExpressionKind::Number:
+        return true;
+    case ExpressionKind::Identifier:
+        if (hasModelFunction(model, expression.name())) {
+            const auto* target = getModelFunction(model, expression.name());
+            if (target == nullptr || !target->getArgs().empty()) {
+                diagnostic = "nested local composite uses an argument-bearing function "
+                             "without the local argument";
+                return false;
+            }
+            return true;
+        }
+        if (expression.name() == argumentName) {
+            diagnostic = "nested local composite cannot use a bare local argument";
+            return false;
+        }
+        if (expression.name() == "time" || expression.name() == "t" ||
+            parameters.count(expression.name()) != 0 || expression.name() == "_PI" ||
+            expression.name() == "_e" || expression.name() == "_Na") {
+            return true;
+        }
+        diagnostic = "nested local composite has unsupported identifier '" +
+                     expression.name() + "'";
+        return false;
+    case ExpressionKind::Unary:
+    case ExpressionKind::Binary:
+        for (const auto& child : expression.args()) {
+            if (!validateNestedLocalCompositeExpression(
+                    child, model, parameters, argumentName, diagnostic)) {
+                return false;
+            }
+        }
+        return true;
+    case ExpressionKind::Function:
+        if (hasModelFunction(model, expression.name())) {
+            const auto* target = getModelFunction(model, expression.name());
+            if (target == nullptr) {
+                diagnostic = "nested local composite references an unknown model function";
+                return false;
+            }
+            if (target->getArgs().empty()) {
+                if (!expression.args().empty()) {
+                    diagnostic = "zero-argument model function '" + expression.name() +
+                                 "' was called with arguments";
+                    return false;
+                }
+                return true;
+            }
+            if (target->getArgs().size() != 1 || expression.args().size() != 1 ||
+                expression.args().front().kind() != ExpressionKind::Identifier ||
+                expression.args().front().name() != argumentName) {
+                diagnostic = "nested local composite calls '" + expression.name() +
+                             "' with an unsupported argument";
+                return false;
+            }
+            return true;
+        }
+        if (lowerCase(expression.name()) == "time" ||
+            lowerCase(expression.name()) == "t") {
+            if (!expression.args().empty()) {
+                diagnostic = "nested local composite time/t references take no arguments";
+                return false;
+            }
+            return true;
+        }
+        if (!isSupportedGlobalBuiltin(expression.name())) {
+            diagnostic = "nested local composite uses unsupported builtin '" +
+                         expression.name() + "'";
+            return false;
+        }
+        for (const auto& child : expression.args()) {
+            if (!validateNestedLocalCompositeExpression(
+                    child, model, parameters, argumentName, diagnostic)) {
+                return false;
+            }
+        }
+        return true;
+    case ExpressionKind::ObservableRef:
+        if (hasModelFunction(model, expression.name())) {
+            const auto* target = getModelFunction(model, expression.name());
+            if (target == nullptr) {
+                diagnostic = "nested local composite references an unknown model function";
+                return false;
+            }
+            if (target->getArgs().empty() && expression.args().empty()) return true;
+            if (target->getArgs().size() == 1 && expression.args().size() == 1 &&
+                expression.args().front().kind() == ExpressionKind::Identifier &&
+                expression.args().front().name() == argumentName) {
+                return true;
+            }
+            diagnostic = "nested local composite calls model function '" +
+                         expression.name() + "' with an unsupported argument";
+            return false;
+        }
+        diagnostic = "nested local composite cannot reference observables directly";
+        return false;
+    case ExpressionKind::TableFunction:
+        diagnostic = "nested local composites do not combine with TFUN expressions";
+        return false;
+    }
+
+    diagnostic = "unrecognized nested local composite expression node";
+    return false;
+}
+
 } // namespace
 
 // --------------------------------------------------------------------------- //
@@ -942,7 +1073,8 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
     // SPEC: NFinput::initFunctions (parseFuncXML.cpp:488).
     // This slice handles parameter/observable/time-backed global functions,
     // composites whose dependencies are all zero-argument global functions,
-    // and the bounded one-argument local-function mapping below. Both inline
+    // bounded one-level nested local composites, and the bounded one-argument
+    // local-function mapping below. Both inline
     // and file-backed TFUN are represented by NFsim's existing file-function
     // machinery; relative table paths resolve beside the BNGL source when the
     // caller supplies it.
@@ -971,6 +1103,7 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
     std::map<std::string, double> legacyParameters(parameters);
     std::map<std::string, int> legacyAllowedStates;
     std::vector<const bng::ast::Function*> pendingFunctionCounterTfun;
+    std::vector<const bng::ast::Function*> pendingNestedLocalComposites;
     const auto isFunctionCounterTfun = [&](const bng::ast::Function& function) {
         std::vector<const bng::ast::Expression*> tables;
         collectTableFunctions(function.getExpression(), tables);
@@ -985,6 +1118,44 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
         const auto* counterFunction = getModelFunction(model, counter.name());
         return counterFunction != nullptr && counterFunction->getArgs().empty();
     };
+    const auto isBoundedNestedLocalComposite = [&](const bng::ast::Function& function,
+                                                    std::string& diagnostic) {
+        if (function.getArgs().size() != 1) return false;
+
+        std::vector<const bng::ast::Expression*> calls;
+        collectModelFunctionCalls(function.getExpression(), model, calls);
+        if (calls.empty()) return false;
+
+        for (const auto* call : calls) {
+            const auto* target = getModelFunction(model, call->name());
+            if (target == nullptr || target->getName() == function.getName()) return false;
+            if (target->getArgs().empty()) {
+                if (!call->args().empty()) return false;
+                std::vector<const bng::ast::Expression*> targetCalls;
+                collectModelFunctionCalls(target->getExpression(), model, targetCalls);
+                if (!targetCalls.empty()) return false;
+                continue;
+            }
+            if (target->getArgs().size() != 1 || isFunctionCounterTfun(*target)) return false;
+
+            std::vector<const bng::ast::Expression*> targetCalls;
+            collectModelFunctionCalls(target->getExpression(), model, targetCalls);
+            if (!targetCalls.empty()) return false;
+
+            std::vector<std::pair<std::string, std::string>> targetReferences{
+                {target->getArgs().front(), "Local"}};
+            std::string targetDiagnostic;
+            if (!collectLocalFunctionReferences(
+                    target->getExpression(), model, parameters,
+                    target->getArgs().front(), targetReferences, targetDiagnostic)) {
+                return false;
+            }
+        }
+
+        return validateNestedLocalCompositeExpression(
+            function.getExpression(), model, parameters,
+            function.getArgs().front(), diagnostic);
+    };
     for (const auto& function : model.getFunctions()) {
         if (function.getArgs().empty()) continue;
 
@@ -998,6 +1169,11 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
                 references, diagnostic)) {
             if (isFunctionCounterTfun(function)) {
                 pendingFunctionCounterTfun.push_back(&function);
+                continue;
+            }
+            std::string compositeDiagnostic;
+            if (isBoundedNestedLocalComposite(function, compositeDiagnostic)) {
+                pendingNestedLocalComposites.push_back(&function);
                 continue;
             }
             std::cerr << "[nfsim/ast] cannot map local function '" << function.getName()
@@ -1166,6 +1342,64 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
         if (verbose) {
             std::cerr << "[nfsim/ast] global function " << function.name << "() = "
                       << function.expression << "\n";
+        }
+    }
+
+    // A bounded nested local function is also represented as a composite in
+    // NFsim.  Its dependencies may be one plain local function with the same
+    // argument plus zero-argument base globals; deeper composite chains remain
+    // fail-closed above.
+    for (const auto* function : pendingNestedLocalComposites) {
+        std::set<std::string> functionReferences;
+        std::vector<const bng::ast::Expression*> calls;
+        collectModelFunctionCalls(function->getExpression(), model, calls);
+        for (const auto* call : calls) functionReferences.insert(call->name());
+
+        for (const auto& dependency : functionReferences) {
+            const auto* target = getModelFunction(model, dependency);
+            if (target == nullptr) {
+                std::cerr << "[nfsim/ast] nested local function '" << function->getName()
+                          << "' references an unknown model function '" << dependency
+                          << "'\n";
+                return false;
+            }
+            if (target->getArgs().empty()) {
+                if (s->getGlobalFunctionByName(dependency) == nullptr) {
+                    std::cerr << "[nfsim/ast] nested local function '" << function->getName()
+                              << "' requires base global '" << dependency << "'\n";
+                    return false;
+                }
+            } else if (s->getLocalFunctionByName(dependency) == nullptr) {
+                std::cerr << "[nfsim/ast] nested local function '" << function->getName()
+                          << "' requires plain local dependency '" << dependency << "'\n";
+                return false;
+            }
+        }
+
+        std::vector<std::string> functionsCalled(
+            functionReferences.begin(), functionReferences.end());
+        std::vector<std::string> argumentNames = function->getArgs();
+        std::vector<std::string> parameterNames;
+        for (const auto& dependency : function->getExpression().getDependencies()) {
+            if (parameters.count(dependency) != 0) parameterNames.push_back(dependency);
+        }
+        auto* composite = new CompositeFunction(
+            s, function->getName(), expressionForNfsim(function->getExpression()),
+            functionsCalled, argumentNames, parameterNames);
+        if (!s->addCompositeFunction(composite)) {
+            delete composite;
+            std::cerr << "[nfsim/ast] failed to register nested local function '"
+                      << function->getName() << "'\n";
+            return false;
+        }
+        if (expressionUsesTime(function->getExpression())) {
+            composite->setCounterFromTime(s);
+            s->setHasTimeDependentFunctions(true);
+        }
+        if (verbose) {
+            std::cerr << "[nfsim/ast] nested local composite " << function->getName()
+                      << "(" << (argumentNames.empty() ? "" : argumentNames.front())
+                      << ") = " << function->getExpression().toString() << "\n";
         }
     }
 

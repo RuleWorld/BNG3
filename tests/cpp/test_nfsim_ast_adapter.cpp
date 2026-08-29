@@ -1222,6 +1222,60 @@ end reaction rules
     delete system;
 }
 
+TEST_CASE("NFsim AST adapter maps a bounded nested local function rate") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 2.0
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin observables
+    Molecules atotal A()
+end observables
+begin functions
+    g(x) = k * atotal(x)
+    f(x) = g(x) + 1
+end functions
+begin reaction rules
+    %x::A() -> %x::A() + B() f(x)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    const auto xml = bng::io::XmlWriter::write(*model);
+    CHECK(xml.find("<Reference name=\"g\" type=\"Function\"/>") !=
+          std::string::npos);
+
+    int suggestedTraversalLimit = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(direct != nullptr);
+    REQUIRE(direct->getLocalFunctionByName("g") != nullptr);
+    CHECK(direct->getLocalFunctionByName("f") == nullptr);
+    REQUIRE(direct->getCompositeFunctionByName("f") != nullptr);
+    REQUIRE(direct->getAllReactions().size() == 1);
+    direct->prepareForSimulation();
+    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(3.0));
+    delete direct;
+
+    suggestedTraversalLimit = 0;
+    auto* xmlSystem = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, suggestedTraversalLimit);
+    REQUIRE(xmlSystem != nullptr);
+    REQUIRE(xmlSystem->getLocalFunctionByName("g") != nullptr);
+    CHECK(xmlSystem->getLocalFunctionByName("f") == nullptr);
+    REQUIRE(xmlSystem->getCompositeFunctionByName("f") != nullptr);
+    REQUIRE(xmlSystem->getAllReactions().size() == 1);
+    xmlSystem->prepareForSimulation();
+    CHECK(xmlSystem->getReaction(0)->get_a() == Catch::Approx(3.0));
+    delete xmlSystem;
+}
+
 TEST_CASE("NFsim AST adapter updates time-dependent local rates") {
     auto model = bng::parser::parseModel(R"(
 begin parameters
