@@ -1,6 +1,7 @@
 #include "NFfunction.hh"
 #include <stdexcept>
 #include <cctype>
+#include <set>
 
 
 using namespace std;
@@ -9,11 +10,12 @@ using namespace mu;
 
 namespace {
 
-// ExprTk receives `time` as a variable bound to System::current_time.  The
-// AST also accepts the equivalent zero-argument `time()` spelling, which
-// muParser historically accepted as a builtin.  Normalize only exact
-// zero-argument calls so identifiers such as `tanh` remain untouched.
-std::string normalizeTimeCalls(const std::string& expression) {
+// ExprTk receives references as variables.  BNG-XML and the AST retain the
+// source spelling `observable()`/`time()`, so normalize only exact
+// zero-argument calls.  Token-aware scanning keeps names such as `tanh`
+// untouched and avoids rewriting calls that have real arguments.
+std::string normalizeZeroArgumentCalls(
+	const std::string& expression, const std::set<std::string>& callNames) {
 	std::string normalized;
 	normalized.reserve(expression.size());
 	std::size_t index = 0;
@@ -32,7 +34,7 @@ std::string normalizeTimeCalls(const std::string& expression) {
 				   std::isspace(static_cast<unsigned char>(expression[lookahead]))) {
 				++lookahead;
 			}
-			if ((token == "time" || token == "t") && lookahead < expression.size() &&
+			if (callNames.count(token) != 0 && lookahead < expression.size() &&
 				expression[lookahead] == '(') {
 				std::size_t close = lookahead + 1;
 				while (close < expression.size() &&
@@ -180,20 +182,27 @@ void GlobalFunction::prepareForSimulation(System *s)
 			p->DefineConst(paramNames[i],s->getParameter(paramNames[i]));
 		}
 
+		std::set<std::string> zeroArgumentCalls;
+		for (unsigned int vr = 0; vr < n_varRefs; ++vr) {
+			if (varRefTypes[vr] == "Observable") {
+				zeroArgumentCalls.insert(varRefNames[vr]);
+			}
+		}
+
 		if (this->ctrType == "System") {
 			// Keep both spellings live throughout NFsim's event loop.  The
 			// pointer is stable while the System advances current_time.
 			double *currentTime = s->getCurrentTimePtr();
 			p->DefineVar("time", currentTime);
 			p->DefineVar("t", currentTime);
+			zeroArgumentCalls.insert("time");
+			zeroArgumentCalls.insert("t");
 		}
 
 		if (this->fileFunc && !this->ctrName.empty()) {
 			p->DefineConst(this->ctrName, 0.0);
 		}
-		p->SetExpr(this->ctrType == "System"
-					  ? normalizeTimeCalls(this->funcExpression)
-					  : this->funcExpression);
+		p->SetExpr(normalizeZeroArgumentCalls(this->funcExpression, zeroArgumentCalls));
 
 	}
 	catch (mu::Parser::exception_type &e)

@@ -720,6 +720,91 @@ end reaction rules
     delete system;
 }
 
+TEST_CASE("NFsim AST adapter maps zero-argument composite function rates") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 2.0
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin observables
+    Molecules A_total A()
+    Molecules B_total B()
+end observables
+begin functions
+    base k
+    rate base() + 1
+end functions
+begin reaction rules
+    A() -> B() rate
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    const auto xml = bng::io::XmlWriter::write(*model);
+    CHECK(xml.find("<Reference name=\"base\" type=\"Function\"/>") !=
+          std::string::npos);
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getGlobalFunctionByName("base") != nullptr);
+    REQUIRE(system->getCompositeFunctionByName("rate") != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    CHECK(system->getReaction(0)->getRxnType() ==
+          NFcore::ReactionClass::OBS_DEPENDENT_RXN);
+    system->prepareForSimulation();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(3.0));
+    system->singleStep();
+    CHECK(system->getObservableByName("A_total")->getCount() == 0);
+    CHECK(system->getObservableByName("B_total")->getCount() == 1);
+    delete system;
+}
+
+TEST_CASE("NFsim AST adapter maps a scoped local function rate") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 2.0
+end parameters
+begin molecule types
+    A()
+    C()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin observables
+    Molecules atotal A()
+    Molecules ctotal C()
+end observables
+begin functions
+    f(x) = k*atotal(x)
+end functions
+begin reaction rules
+    %x::A() -> %x::A() + C() f(x)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getLocalFunctionByName("f") != nullptr);
+    REQUIRE(system->getCompositeFunctionByName("f") != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    CHECK(system->getReaction(0)->getRxnType() == NFcore::ReactionClass::DOR_RXN);
+    system->prepareForSimulation();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(2.0));
+    delete system;
+}
+
 TEST_CASE("NFsim AST adapter expands direct Arrhenius binding with energy patterns") {
     auto model = bng::parser::parseModel(R"(
 begin parameters

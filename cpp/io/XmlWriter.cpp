@@ -362,7 +362,11 @@ void collectFunctionReferences(const ast::Expression& expression,
         }
         return;
     case ExpressionKind::ObservableRef:
-        addFunctionReference(references, expression.name(), "Observable");
+        if (modelHasFunction(model, expression.name())) {
+            addFunctionReference(references, expression.name(), "Function");
+        } else {
+            addFunctionReference(references, expression.name(), "Observable");
+        }
         for (const auto& child : expression.args()) {
             collectFunctionReferences(child, model, localNames, references);
         }

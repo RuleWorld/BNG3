@@ -154,7 +154,7 @@ std::string canonicalLabel(const SpeciesGraph& g);
 
 **Deletes (after gate green):** XML-bridge call in `bind_nfsim.cpp`; tempfile machinery (`make_temp_xml_path`); XML re-parse on the simulate path.
 
-**Gate:** Tier-NF trajectory parity, **two ways**: (a) in-memory adapter vs Oracle-NFsim (seeded + distributional); (b) in-memory adapter vs the old XML-bridge path (must be statistically identical). Function-bearing NF models (`localFunction`, `motor`, `TQSSA` from `nfsim-master/test/`) included.
+**Gate:** Tier-NF trajectory parity, **two ways**: (a) in-memory adapter vs Oracle-NFsim (seeded + distributional); (b) in-memory adapter vs the old XML-bridge path (must be statistically identical). Function-bearing NF models (`localFunction`, `motor`, `TQSSA` from `nfsim-master/test/`) included. The current direct slice covers zero-argument composites and one-argument `%name::` molecule-scoped local rates; the full gate remains open until the remaining local-function, TFUN, and rate-law forms are mapped or explicitly governed.
 
 **Done:** `method="nf"` runs with no XML serialization; parity holds both ways.
 

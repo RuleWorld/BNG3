@@ -14,11 +14,13 @@
 ///
 /// IMPLEMENTED here: parameters, compartments, molecule types, observables,
 ///                    seed species, bounded direct reaction rules, direct
-///                    Arrhenius energy expansion, and time-backed global
-///                    functions.
-/// STUBBED here:     local/composite functions and other rate-law forms that
-///                   still fail closed and cite the TiXml init* function that
-///                   is their specification.
+///                    Arrhenius energy expansion, time-backed global
+///                    functions, zero-argument composites, and one-argument
+///                    molecule-scoped local functions.
+/// GATED here:       nested/complex local functions, TFUN and other rate-law
+///                   forms, and reaction centers not yet represented by the
+///                   direct mapping. They fail closed and cite the TiXml
+///                   init* function that remains their compatibility oracle.
 
 #include "NFinput_fromAst.hh"
 #include "NFinput.hh"
@@ -61,6 +63,21 @@
 #include <vector>
 
 using namespace NFcore;
+
+// The legacy function constructor is still the behavioral specification for
+// NFsim local functions.  It is link-visible from parseFuncXML.cpp; calling it
+// with AST-derived references avoids constructing an intermediate XML node.
+bool createLocalFunction(
+    std::string name,
+    std::string expression,
+    std::vector<std::string>& argNames,
+    std::vector<std::string>& refNames,
+    std::vector<std::string>& refTypes,
+    NFcore::System* s,
+    std::map<std::string, double>& parameter,
+    TiXmlElement* pListOfObservables,
+    std::map<std::string, int>& allowedStates,
+    bool verbose);
 
 namespace NFinput {
 
@@ -193,6 +210,22 @@ bool hasModelFunction(const bng::ast::Model& model, const std::string& name) {
                        [&](const auto& function) { return function.getName() == name; });
 }
 
+const bng::ast::Function* getModelFunction(const bng::ast::Model& model,
+                                            const std::string& name) {
+    const auto iter = std::find_if(
+        model.getFunctions().begin(), model.getFunctions().end(),
+        [&](const auto& function) { return function.getName() == name; });
+    return iter == model.getFunctions().end() ? nullptr : &*iter;
+}
+
+std::string scopedArgumentName(const std::string& pattern) {
+    const auto percent = pattern.find('%');
+    if (percent == std::string::npos) return {};
+    const auto separator = pattern.find("::", percent + 1);
+    if (separator == std::string::npos || separator == percent + 1) return {};
+    return pattern.substr(percent + 1, separator - percent - 1);
+}
+
 bool hasModelObservable(const bng::ast::Model& model, const std::string& name) {
     return std::any_of(model.getObservables().begin(), model.getObservables().end(),
                        [&](const auto& observable) { return observable.getName() == name; });
@@ -214,7 +247,7 @@ bool isSupportedGlobalBuiltin(const std::string& name) {
 bool collectGlobalFunctionReferences(
     const bng::ast::Expression& expression, const bng::ast::Model& model,
     const std::map<std::string, double>& parameters, std::set<std::string>&
-        observableReferences,
+        observableReferences, std::set<std::string>& functionReferences,
     std::string& diagnostic) {
     using bng::ast::ExpressionKind;
 
@@ -237,7 +270,8 @@ bool collectGlobalFunctionReferences(
     case ExpressionKind::Binary:
         for (const auto& child : expression.args()) {
             if (!collectGlobalFunctionReferences(child, model, parameters,
-                                                  observableReferences, diagnostic)) {
+                                                  observableReferences, functionReferences,
+                                                  diagnostic)) {
                 return false;
             }
         }
@@ -252,9 +286,15 @@ bool collectGlobalFunctionReferences(
             return true;
         }
         if (hasModelFunction(model, expression.name())) {
-            diagnostic = "global function calls model function '" + expression.name() +
-                         "' (composite/local mapping is not yet direct)";
-            return false;
+            const auto* target = getModelFunction(model, expression.name());
+            if (target == nullptr || !target->getArgs().empty() ||
+                !expression.args().empty()) {
+                diagnostic = "global function calls argument-bearing model function '" +
+                             expression.name() + "' (local mapping is not yet direct)";
+                return false;
+            }
+            functionReferences.insert(expression.name());
+            return true;
         }
         if (!isSupportedGlobalBuiltin(expression.name())) {
             diagnostic = "unsupported NFsim global-function builtin '" +
@@ -263,16 +303,23 @@ bool collectGlobalFunctionReferences(
         }
         for (const auto& child : expression.args()) {
             if (!collectGlobalFunctionReferences(child, model, parameters,
-                                                  observableReferences, diagnostic)) {
+                                                  observableReferences, functionReferences,
+                                                  diagnostic)) {
                 return false;
             }
         }
         return true;
     case ExpressionKind::ObservableRef:
         if (hasModelFunction(model, expression.name())) {
-            diagnostic = "global function calls model function '" + expression.name() +
-                         "' (composite/local mapping is not yet direct)";
-            return false;
+            const auto* target = getModelFunction(model, expression.name());
+            if (target == nullptr || !target->getArgs().empty() ||
+                !expression.args().empty()) {
+                diagnostic = "global function calls argument-bearing model function '" +
+                             expression.name() + "' (local mapping is not yet direct)";
+                return false;
+            }
+            functionReferences.insert(expression.name());
+            return true;
         }
         if (!hasModelObservable(model, expression.name()) || !expression.args().empty()) {
             diagnostic = "observable reference '" + expression.name() +
@@ -299,6 +346,104 @@ bool expressionUsesTime(const bng::ast::Expression& expression) {
     }
     return std::any_of(expression.args().begin(), expression.args().end(),
                        [](const auto& child) { return expressionUsesTime(child); });
+}
+
+bool collectLocalFunctionReferences(
+    const bng::ast::Expression& expression, const bng::ast::Model& model,
+    const std::map<std::string, double>& parameters, const std::string& argumentName,
+    std::vector<std::pair<std::string, std::string>>& references,
+    std::string& diagnostic) {
+    using bng::ast::ExpressionKind;
+
+    const auto addReference = [&](const std::string& name, const std::string& type) {
+        const auto reference = std::make_pair(name, type);
+        if (std::find(references.begin(), references.end(), reference) == references.end()) {
+            references.push_back(reference);
+        }
+    };
+
+    switch (expression.kind()) {
+    case ExpressionKind::Number:
+        return true;
+    case ExpressionKind::Identifier:
+        if (expression.name() == argumentName) {
+            diagnostic = "local argument '" + argumentName +
+                         "' must scope an observable reference";
+            return false;
+        }
+        if (expression.name() == "time" || expression.name() == "t") {
+            diagnostic = "local functions with time references are not direct yet";
+            return false;
+        }
+        if (parameters.count(expression.name()) != 0 || expression.name() == "_PI" ||
+            expression.name() == "_e" || expression.name() == "_Na") {
+            if (parameters.count(expression.name()) != 0) {
+                addReference(expression.name(), "Constant");
+            }
+            return true;
+        }
+        diagnostic = "unknown local-function identifier '" + expression.name() + "'";
+        return false;
+    case ExpressionKind::Unary:
+    case ExpressionKind::Binary:
+        for (const auto& child : expression.args()) {
+            if (!collectLocalFunctionReferences(child, model, parameters, argumentName,
+                                                 references, diagnostic)) {
+                return false;
+            }
+        }
+        return true;
+    case ExpressionKind::Function:
+        if (lowerCase(expression.name()) == "time" ||
+            lowerCase(expression.name()) == "t") {
+            diagnostic = "local functions with time references are not direct yet";
+            return false;
+        }
+        if (hasModelFunction(model, expression.name())) {
+            diagnostic = "local function calls model function '" + expression.name() +
+                         "' (nested local/composite mapping is not direct yet)";
+            return false;
+        }
+        if (!isSupportedGlobalBuiltin(expression.name())) {
+            diagnostic = "unsupported NFsim local-function builtin '" +
+                         expression.name() + "'";
+            return false;
+        }
+        for (const auto& child : expression.args()) {
+            if (!collectLocalFunctionReferences(child, model, parameters, argumentName,
+                                                 references, diagnostic)) {
+                return false;
+            }
+        }
+        return true;
+    case ExpressionKind::ObservableRef:
+        if (hasModelFunction(model, expression.name())) {
+            diagnostic = "local function calls model function '" + expression.name() +
+                         "' (nested local/composite mapping is not direct yet)";
+            return false;
+        }
+        if (!hasModelObservable(model, expression.name())) {
+            diagnostic = "local function references unknown observable '" +
+                         expression.name() + "'";
+            return false;
+        }
+        if (expression.args().empty()) {
+            addReference(expression.name(), "Observable");
+            return true;
+        }
+        if (expression.args().size() == 1 &&
+            expression.args().front().kind() == ExpressionKind::Identifier &&
+            expression.args().front().name() == argumentName) {
+            addReference(expression.name(), "Observable");
+            return true;
+        }
+        diagnostic = "local observable '" + expression.name() +
+                     "' must use exactly the local argument '" + argumentName + "'";
+        return false;
+    }
+
+    diagnostic = "unrecognized local-function expression node";
+    return false;
 }
 
 } // namespace
@@ -480,25 +625,90 @@ bool addMoleculeTypesFromAst(const bng::ast::Model& model, System* s,
 bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
                          const std::map<std::string, double>& parameters, bool verbose) {
     // SPEC: NFinput::initFunctions (parseFuncXML.cpp:488).
-    // This slice handles parameter/observable/time-backed global functions.
-    // Local functions, composite functions, TFUN functions, and rate-law
-    // helpers deliberately return false so the caller can use the compatibility
-    // XML path rather than constructing a subtly different simulation.
+    // This slice handles parameter/observable/time-backed global functions,
+    // composites whose dependencies are all zero-argument global functions,
+    // and the bounded one-argument local-function mapping below. TFUN and
+    // rate-law helpers still return false so the caller can use the
+    // compatibility XML path rather than constructing a subtly different
+    // simulation.
     if (s == nullptr) return false;
 
     std::unordered_set<std::string> names;
     for (const auto& function : model.getFunctions()) {
         const std::string& name = function.getName();
         if (name.empty() || !names.insert(name).second ||
-            s->getGlobalFunctionByName(name) != nullptr) {
+            s->getGlobalFunctionByName(name) != nullptr ||
+            s->getCompositeFunctionByName(name) != nullptr ||
+            s->getLocalFunctionByName(name) != nullptr) {
             std::cerr << "[nfsim/ast] duplicate or missing global function '" << name
                       << "'\n";
             return false;
         }
-        if (!function.getArgs().empty()) {
+        if (function.getArgs().size() > 1) {
             std::cerr << "[nfsim/ast] function '" << name
-                      << "' has arguments; direct local-function mapping is pending\n";
+                      << "' has more than one argument; NFsim local functions support one\n";
             return false;
+        }
+    }
+
+    // Keep the legacy local-function constructor as the semantic oracle, but
+    // feed it references collected from the AST instead of XML attributes.
+    std::map<std::string, double> legacyParameters(parameters);
+    std::map<std::string, int> legacyAllowedStates;
+    for (const auto& function : model.getFunctions()) {
+        if (function.getArgs().empty()) continue;
+
+        std::vector<std::pair<std::string, std::string>> references;
+        for (const auto& argument : function.getArgs()) {
+            references.emplace_back(argument, "Local");
+        }
+        std::string diagnostic;
+        if (!collectLocalFunctionReferences(
+                function.getExpression(), model, parameters, function.getArgs().front(),
+                references, diagnostic)) {
+            std::cerr << "[nfsim/ast] cannot map local function '" << function.getName()
+                      << "': " << diagnostic << "\n";
+            return false;
+        }
+
+        std::stable_sort(
+            references.begin(), references.end(),
+            [](const auto& lhs, const auto& rhs) { return lhs.first.size() > rhs.first.size(); });
+        std::vector<std::string> referenceNames;
+        std::vector<std::string> referenceTypes;
+        for (const auto& [name, type] : references) {
+            referenceNames.push_back(name);
+            referenceTypes.push_back(type);
+        }
+        auto argumentNames = function.getArgs();
+        if (!::createLocalFunction(
+                function.getName(), function.getExpression().toString(), argumentNames,
+                referenceNames, referenceTypes, s, legacyParameters, nullptr,
+                legacyAllowedStates, verbose)) {
+            std::cerr << "[nfsim/ast] legacy local-function construction failed for '"
+                      << function.getName() << "'\n";
+            return false;
+        }
+
+        // NFsim's DOR reaction expects a composite wrapper even when its body
+        // is just a single local function call.  The wrapper is also how the
+        // XML loader represents local rate functions.
+        std::vector<std::string> functionsCalled{function.getName()};
+        std::vector<std::string> parameterNames;
+        auto* composite = new CompositeFunction(
+            s, function.getName(),
+            function.getName() + "(" + function.getArgs().front() + ")",
+            functionsCalled, argumentNames, parameterNames);
+        if (!s->addCompositeFunction(composite)) {
+            delete composite;
+            std::cerr << "[nfsim/ast] failed to register local-function wrapper '"
+                      << function.getName() << "'\n";
+            return false;
+        }
+        if (verbose) {
+            std::cerr << "[nfsim/ast] local function " << function.getName() << "("
+                      << function.getArgs().front() << ") = "
+                      << function.getExpression().toString() << "\n";
         }
     }
 
@@ -506,6 +716,7 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
         std::string name;
         std::string expression;
         std::vector<std::string> observableReferences;
+        std::vector<std::string> functionReferences;
         std::vector<std::string> parameterReferences;
         bool usesTime = false;
     };
@@ -513,10 +724,13 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
     pending.reserve(model.getFunctions().size());
 
     for (const auto& function : model.getFunctions()) {
+        if (!function.getArgs().empty()) continue;
         std::set<std::string> observableReferences;
+        std::set<std::string> functionReferences;
         std::string diagnostic;
         if (!collectGlobalFunctionReferences(function.getExpression(), model, parameters,
-                                              observableReferences, diagnostic)) {
+                                              observableReferences, functionReferences,
+                                              diagnostic)) {
             std::cerr << "[nfsim/ast] cannot map function '" << function.getName()
                       << "': " << diagnostic << "\n";
             return false;
@@ -533,12 +747,17 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
             function.getName(),
             function.getExpression().toString(),
             {observableReferences.begin(), observableReferences.end()},
+            {functionReferences.begin(), functionReferences.end()},
             {parameterReferences.begin(), parameterReferences.end()},
             expressionUsesTime(function.getExpression())};
         pending.push_back(std::move(next));
     }
 
+    // Base globals must exist before composites are finalized.  This mirrors
+    // the XML loader, which resolves composite references after all function
+    // declarations have been created.
     for (const auto& function : pending) {
+        if (!function.functionReferences.empty()) continue;
         // GlobalFunction predates const-correctness and takes mutable vector
         // references; keep the staged metadata immutable until this boundary,
         // then pass local copies to its legacy constructor.
@@ -562,6 +781,54 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
                       << function.expression << "\n";
         }
     }
+
+    for (const auto& function : pending) {
+        if (function.functionReferences.empty()) continue;
+        if (!function.observableReferences.empty()) {
+            std::cerr << "[nfsim/ast] cannot map composite function '" << function.name
+                      << "': composite functions cannot reference observables\n";
+            return false;
+        }
+
+        std::vector<std::string> functionsCalled;
+        for (const auto& dependency : function.functionReferences) {
+            const auto* target = getModelFunction(model, dependency);
+            const auto targetPending = std::find_if(
+                pending.begin(), pending.end(),
+                [&](const PendingFunction& candidate) { return candidate.name == dependency; });
+            if (target == nullptr || !target->getArgs().empty() ||
+                targetPending == pending.end() ||
+                !targetPending->functionReferences.empty()) {
+                std::cerr << "[nfsim/ast] cannot map composite function '" << function.name
+                          << "': dependency '" << dependency
+                          << "' is not a base global function\n";
+                return false;
+            }
+            functionsCalled.push_back(dependency);
+        }
+
+        auto argumentNames = std::vector<std::string> {};
+        auto parameterNames = function.parameterReferences;
+        auto* composite = new CompositeFunction(
+            s, function.name, function.expression, functionsCalled,
+            argumentNames, parameterNames);
+        if (!s->addCompositeFunction(composite)) {
+            delete composite;
+            std::cerr << "[nfsim/ast] failed to register composite function '"
+                      << function.name << "'\n";
+            return false;
+        }
+        if (function.usesTime) {
+            composite->setCounterFromTime(s);
+            s->setHasTimeDependentFunctions(true);
+        }
+        if (verbose) {
+            std::cerr << "[nfsim/ast] composite function " << function.name << "() = "
+                      << function.expression << "\n";
+        }
+    }
+
+    s->finalizeCompositeFunctions();
     return true;
 }
 
@@ -1872,6 +2139,14 @@ bool addSpeciesFromAst(const bng::ast::Model& model, System* s,
                       << "' contains no molecule graph\n";
             return false;
         }
+        // NFsim treats $Trash() (and the corresponding Trash molecule type) as
+        // a discard seed.  The molecule-type builder omits this sentinel, so
+        // consume an all-trash seed here instead of reporting an unknown type.
+        if (std::all_of(molecules.begin(), molecules.end(), [](const auto& molecule) {
+                return lowerCase(molecule.name) == "trash";
+            })) {
+            continue;
+        }
         std::string diagnostic;
         int count = 0;
         if (!parseSeedAmount(seed, parameters, count, diagnostic)) {
@@ -2083,7 +2358,14 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
             const auto& reactantPatterns = rule.getReactantPatterns();
             const auto& productPatterns = rule.getProductPatterns();
             const auto& rates = rule.getRates();
-            if (rule.hasScopePrefix() || rates.empty() ||
+            const bng::ast::Function* rateFunction =
+                rates.empty() ? nullptr : getModelFunction(model, rates.front().name());
+            const bool localFunctionRate =
+                !rates.empty() && rateFunction != nullptr && !rateFunction->getArgs().empty() &&
+                (rates.front().kind() == bng::ast::ExpressionKind::ObservableRef ||
+                 rates.front().kind() == bng::ast::ExpressionKind::Function) &&
+                rates.front().args().size() == rateFunction->getArgs().size();
+            if ((rule.hasScopePrefix() && !localFunctionRate) || rates.empty() ||
                 (reactantPatterns.empty() && productPatterns.empty())) {
                 std::cerr << "[nfsim/ast] reaction '" << rule.getRuleName()
                           << "' requires unsupported scope, empty reaction, or missing-rate handling\n";
@@ -2514,6 +2796,66 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
             return false;
         }
 
+        std::vector<std::string> localFunctionArgumentNames;
+        if (localFunctionRate) {
+            if (!rule.hasScopePrefix()) {
+                diagnostic = "local-function rate requires a %name:: scoped reactant";
+                ok = false;
+            } else {
+                const auto& rate = rates.front();
+                for (const auto& argument : rate.args()) {
+                    if (argument.kind() != bng::ast::ExpressionKind::Identifier) {
+                        diagnostic = "local-function rate arguments must be scope identifiers";
+                        ok = false;
+                        break;
+                    }
+                    std::size_t matchingPattern = reactantRoots.size();
+                    for (std::size_t patternIndex = 0;
+                         patternIndex < reactantRoots.size(); ++patternIndex) {
+                        if (patternIndex >= rule.getReactants().size()) continue;
+                        if (scopedArgumentName(rule.getReactants()[patternIndex]) !=
+                            argument.name()) {
+                            continue;
+                        }
+                        if (matchingPattern != reactantRoots.size()) {
+                            diagnostic = "a local-function scope identifier refers to multiple reactants";
+                            ok = false;
+                            break;
+                        }
+                        matchingPattern = patternIndex;
+                    }
+                    if (!ok) break;
+                    if (matchingPattern == reactantRoots.size()) {
+                        diagnostic = "local-function scope identifier '" + argument.name() +
+                                     "' has no matching reactant";
+                        ok = false;
+                        break;
+                    }
+                    if (reactantRoots[matchingPattern]->getMoleculeType()->isPopulationType()) {
+                        diagnostic = "local functions cannot scope population reactants";
+                        ok = false;
+                        break;
+                    }
+                    if (!transformationSet->addLocalFunctionReference(
+                            reactantRoots[matchingPattern], argument.name(),
+                            LocalFunction::MOLECULE)) {
+                        diagnostic = "could not add local-function scope reference";
+                        ok = false;
+                        break;
+                    }
+                    localFunctionArgumentNames.push_back(argument.name());
+                }
+            }
+        }
+        if (!ok) {
+            std::cerr << "[nfsim/ast] cannot map reaction '" << rule.getRuleName()
+                      << "': " << diagnostic << "\n";
+            delete transformationSet;
+            transformationSet = nullptr;
+            cleanupDirectProducts();
+            return false;
+        }
+
         transformationSet->finalize();
 
         const auto& rate = rates.front();
@@ -2524,7 +2866,8 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
             (lowerCase(rate.name()) == "mm") && rate.args().size() == 2;
         const bool namedFunction =
             (rate.kind() == bng::ast::ExpressionKind::Identifier ||
-             rate.kind() == bng::ast::ExpressionKind::Function) &&
+             rate.kind() == bng::ast::ExpressionKind::Function ||
+             rate.kind() == bng::ast::ExpressionKind::ObservableRef) &&
             hasModelFunction(model, rate.name());
         if (michaelisMenten) {
             if (reactantRoots.size() != 2) {
@@ -2545,16 +2888,40 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 return false;
             }
             reaction = new MMRxnClass(rule.getRuleName(), kcat, km, transformationSet, s);
+        } else if (localFunctionRate) {
+            auto* composite = s->getCompositeFunctionByName(rate.name());
+            if (composite == nullptr || localFunctionArgumentNames.empty()) {
+                std::cerr << "[nfsim/ast] reaction '" << rule.getRuleName()
+                          << "' has an unregistered local-function rate\n";
+                delete transformationSet;
+                return false;
+            }
+            reaction = new DORRxnClass(
+                rule.getRuleName(), 1.0, "", transformationSet, composite,
+                localFunctionArgumentNames, s);
         } else if (namedFunction) {
             auto* global = s->getGlobalFunctionByName(rate.name());
-            if (global == nullptr ||
-                (rate.kind() == bng::ast::ExpressionKind::Function && !rate.args().empty())) {
+            auto* composite = s->getCompositeFunctionByName(rate.name());
+            if ((rate.kind() == bng::ast::ExpressionKind::Function ||
+                 rate.kind() == bng::ast::ExpressionKind::ObservableRef) &&
+                !rate.args().empty()) {
                 std::cerr << "[nfsim/ast] reaction '" << rule.getRuleName()
                           << "' has an unsupported rate function\n";
                 delete transformationSet;
                 return false;
             }
-            reaction = new FunctionalRxnClass(rule.getRuleName(), global, transformationSet, s);
+            if (global != nullptr) {
+                reaction = new FunctionalRxnClass(
+                    rule.getRuleName(), global, transformationSet, s);
+            } else if (composite != nullptr) {
+                reaction = new FunctionalRxnClass(
+                    rule.getRuleName(), composite, transformationSet, s);
+            } else {
+                std::cerr << "[nfsim/ast] reaction '" << rule.getRuleName()
+                          << "' has an unregistered rate function\n";
+                delete transformationSet;
+                return false;
+            }
         } else {
             double rateValue = 0.0;
             if (!evaluateStaticReactionRate(rate, parameters, rateValue, diagnostic)) {

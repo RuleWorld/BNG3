@@ -344,9 +344,6 @@ std::string Expression::toString() const {
     case ExpressionKind::Function:
         return text_ + "(" + joinArgs(children_) + ")";
     case ExpressionKind::ObservableRef:
-        if (children_.empty()) {
-            return text_;
-        }
         return text_ + "(" + joinArgs(children_) + ")";
     }
 
