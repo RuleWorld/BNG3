@@ -116,7 +116,10 @@ def validate_lock(
             if source.get("status") not in {"observed", "accepted", "retired"}:
                 errors.append(f"{where}.status is invalid")
             evidence = source.get("evidence")
-            if _required(evidence, {"kind", "checked_at"}, f"{where}.evidence", errors):
+            evidence_is_object = _required(
+                evidence, {"kind", "checked_at"}, f"{where}.evidence", errors
+            )
+            if evidence_is_object:
                 if evidence.get("kind") not in {
                     "planning-snapshot",
                     "local-checkout",
@@ -128,6 +131,7 @@ def validate_lock(
                 )
             if (
                 source.get("status") == "accepted"
+                and evidence_is_object
                 and evidence.get("kind") == "planning-snapshot"
             ):
                 errors.append(

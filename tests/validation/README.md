@@ -7,6 +7,19 @@ Differential testing against the originals. Nothing merges until it matches.
 - **NFsim** — native binary from the CMake `NFsim` target. Truth for network-free. Set `NFSIM_BIN`.
 - **Golden** — committed under `golden/`. Regenerated only by `scripts/regen_golden.py`, reviewed, committed. Never auto-regenerated.
 
+The exact model IDs used by each tier are frozen in
+`provenance/corpus/selection.json`. The manifest is linked to
+`provenance/upstreams.lock.yml` and records a SHA-256 digest for every model
+fixture. Validate it and check that it was generated from the current tree with:
+
+```bash
+python scripts/validate_corpus_manifest.py
+python scripts/generate_corpus_manifest.py --check
+```
+
+The RuleHub revision is recorded but external selectors remain pending
+maintainer approval; CI does not infer an unpinned RuleHub corpus.
+
 ## Run
 ```bash
 # build first: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build && pip install -e .

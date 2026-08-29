@@ -54,6 +54,17 @@ def test_malformed_revision_is_rejected(tmp_path):
     assert "sources.nfsim.revision" in result.stderr
 
 
+def test_malformed_evidence_is_rejected_without_traceback(tmp_path):
+    lock = json.loads(LOCK.read_text(encoding="utf-8"))
+    lock["sources"]["nfsim"]["evidence"] = None
+    candidate = tmp_path / "upstreams.lock.yml"
+    candidate.write_text(json.dumps(lock), encoding="utf-8")
+    result = _run("--lock", str(candidate))
+    assert result.returncode == 1
+    assert "sources.nfsim.evidence must be an object" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
 def test_approval_cannot_hide_pending_components(tmp_path):
     lock = json.loads(LOCK.read_text(encoding="utf-8"))
     lock["baseline"].update(

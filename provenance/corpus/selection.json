@@ -1,0 +1,1072 @@
+{
+  "$schema": "provenance/schemas/corpus-selection.schema.json",
+  "schema_version": 1,
+  "selection_status": "pending-maintainer-approval",
+  "source_lock": {
+    "path": "provenance/upstreams.lock.yml",
+    "sha256": "sha256:cda5c6e216086a932e487b5455dde37f918ba3e18feba6be186aa6f1cd136445"
+  },
+  "rulehub": {
+    "repository": "https://github.com/RuleWorld/RuleHub.git",
+    "revision": "b84f0a72ad21dc70cb99d4880b49a40f17046357",
+    "status": "pending-maintainer-approval",
+    "policy": "Repository fixtures are frozen; RuleHub selectors and external tier membership require maintainer approval."
+  },
+  "tiers": {
+    "s": [
+      "CaOscillate_Func",
+      "Motivating_example",
+      "Motivating_example_cBNGL",
+      "Repressilator",
+      "blbr",
+      "egfr_net",
+      "gene_expr",
+      "localfunc",
+      "michment",
+      "simple_system"
+    ],
+    "p": [
+      "AN",
+      "ANx",
+      "ANx_noActivity",
+      "CaOscillate_Func",
+      "CaOscillate_Sat",
+      "Haugh2b",
+      "Motivating_example",
+      "Motivating_example_cBNGL",
+      "PushPull",
+      "Repressilator",
+      "SHP2_base_model",
+      "actin_branch",
+      "actin_branch_forFitToData",
+      "actin_simple",
+      "blbr",
+      "continue",
+      "deleteMolecules",
+      "e1",
+      "e2",
+      "e3",
+      "e4",
+      "e5",
+      "e6",
+      "e7",
+      "e8",
+      "e9",
+      "egfr_net",
+      "empty_compartments_block",
+      "fceri_fyn",
+      "fceri_fyn_lig",
+      "fceri_fyn_trimer",
+      "fceri_gamma2",
+      "fceri_ji",
+      "fceri_ji_red",
+      "fceri_lyn_745",
+      "fceri_trimer",
+      "gene_expr",
+      "gene_expr_func",
+      "gene_expr_simple",
+      "heise",
+      "hybrid_test",
+      "hybrid_test_hpp",
+      "isingspin_energy",
+      "isingspin_localfcn",
+      "isomerization",
+      "issue_198_short",
+      "localfunc",
+      "michment",
+      "michment_cont",
+      "motor",
+      "nfkb_illustrating_protocols",
+      "oscSystem",
+      "poly",
+      "push_pull",
+      "simple_system",
+      "statfactor",
+      "test_ANG_SSA_synthesis_simple",
+      "test_ANG_parscan_synthesis_simple",
+      "test_ANG_synthesis_simple",
+      "test_MM",
+      "test_assignment",
+      "test_compartment_XML",
+      "test_expression_xml_escaping",
+      "test_fixed",
+      "test_mratio",
+      "test_network_gen",
+      "test_paramname",
+      "test_partial_dynamical_scaling",
+      "test_sat",
+      "test_sat_cont",
+      "test_sbml_flat",
+      "test_sbml_flat_SBML",
+      "test_sbml_structured",
+      "test_sbml_structured_SBML",
+      "test_setconc",
+      "test_synthesis_cBNGL_simple",
+      "test_synthesis_complex",
+      "test_synthesis_complex_0_cBNGL",
+      "test_synthesis_complex_source_cBNGL",
+      "test_synthesis_simple",
+      "test_tfun",
+      "test_tfun_expr",
+      "test_tfun_expr2",
+      "test_tfun_file",
+      "test_tfun_net_full",
+      "test_tfun_observable",
+      "test_tfun_ode_simple",
+      "test_tfun_ode_step",
+      "test_tfun_parse",
+      "test_tfun_step_sbml",
+      "test_tfun_validation",
+      "test_tfun_xml",
+      "test_time",
+      "test_write_sbml_multi",
+      "tlbr",
+      "tlbr_performance",
+      "tlmr",
+      "toy-jim",
+      "univ_synth",
+      "visualize"
+    ],
+    "nf": [
+      "localfunc",
+      "motor",
+      "simple_system",
+      "tlbr"
+    ],
+    "expr": [
+      "CaOscillate_Func",
+      "isingspin_energy",
+      "isingspin_localfcn",
+      "localfunc",
+      "michment"
+    ],
+    "x": [],
+    "b": []
+  },
+  "records": [
+    {
+      "id": "AN",
+      "path": "models/chemotaxisAdaptation/AN.bngl",
+      "sha256": "sha256:4b2e87e8909885fa6e15c566a2de532ecf03b9b750390840ac3e598f7493345c",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "ANx",
+      "path": "models/ANx.bngl",
+      "sha256": "sha256:724e8692a29670c4ede9e53b1df0fdd44792ef36cef9f92de07afb31b6fcc164",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "ANx_noActivity",
+      "path": "models/performance_test_models/ANx_noActivity.bngl",
+      "sha256": "sha256:80b58ca8363093bea2f5cda7534cdfadb678a9731f8ef48a55a9fafd318f54d2",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "CaOscillate_Func",
+      "path": "models/CaOscillate_Func.bngl",
+      "sha256": "sha256:d89d0d8c4b9a1747a1ac0e7c154fbb4aa1dff79487e88abab1918f68730e3755",
+      "origin": "repository-fixture",
+      "tiers": [
+        "s",
+        "p",
+        "expr"
+      ]
+    },
+    {
+      "id": "CaOscillate_Sat",
+      "path": "models/CaOscillate_Sat.bngl",
+      "sha256": "sha256:808598763087e34f48ee3c86153fe16e0cc0b2ebdd882f33b1b4993ff9bb5955",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "Haugh2b",
+      "path": "models/Haugh2b.bngl",
+      "sha256": "sha256:9087f8d43877ef3ac51c0ed2d083b5604abd1bbe55bacf54dece310243f5b467",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "Motivating_example",
+      "path": "models/Motivating_example.bngl",
+      "sha256": "sha256:4f9fd1ae1fad36210050a9717a7d22da1a17b198d1e7d934b22f18e6c5257c06",
+      "origin": "repository-fixture",
+      "tiers": [
+        "s",
+        "p"
+      ]
+    },
+    {
+      "id": "Motivating_example_cBNGL",
+      "path": "models/Motivating_example_cBNGL.bngl",
+      "sha256": "sha256:76e09be5ae0c130d453fe256d2ea228c2ccd8d8bc90502c14f4843929e82ecb9",
+      "origin": "repository-fixture",
+      "tiers": [
+        "s",
+        "p"
+      ]
+    },
+    {
+      "id": "PushPull",
+      "path": "models/simple_PushPull/PushPull.bngl",
+      "sha256": "sha256:5763e480205458337d570815914972e8a1a3ac22180c64f350b420103e2ae586",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "Repressilator",
+      "path": "models/Repressilator.bngl",
+      "sha256": "sha256:b274c794dd9faad535a5daf2cc203df2d48638875419109fa5a8c37e070b70ac",
+      "origin": "repository-fixture",
+      "tiers": [
+        "s",
+        "p"
+      ]
+    },
+    {
+      "id": "SHP2_base_model",
+      "path": "models/SHP2_base_model.bngl",
+      "sha256": "sha256:6f319704f8495b2b2a92d102c2913de1c9e0c0fc33ec5cfc1ed1c8e89823c9c1",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "actin_branch",
+      "path": "models/actin/actin_branch.bngl",
+      "sha256": "sha256:41d6b60867d4acc27fe17a1fef01cc264d09bc7bea75672aacbc57748a38faba",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "actin_branch_forFitToData",
+      "path": "models/actin/actin_branch_forFitToData.bngl",
+      "sha256": "sha256:8ffd5f2efbecc225fc72d7bb3e23a8ab828be47c21ec915b289885fc40fdb8f4",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "actin_simple",
+      "path": "models/actin/actin_simple.bngl",
+      "sha256": "sha256:5fa73a90b32106ee15339cc186eb31575349b42690a989196f7e59e45494b34a",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "blbr",
+      "path": "models/blbr.bngl",
+      "sha256": "sha256:8fe594ef0de3e7ceb4a8aeba9a49f163ca58232b6cbc9a2162459e395b98a959",
+      "origin": "repository-fixture",
+      "tiers": [
+        "s",
+        "p"
+      ]
+    },
+    {
+      "id": "continue",
+      "path": "models/continue.bngl",
+      "sha256": "sha256:452e2138ce01ef9fbc4bd2690762ade765c7371b73dd274ae7b1e94532f1c3bc",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "deleteMolecules",
+      "path": "models/deleteMolecules.bngl",
+      "sha256": "sha256:c5e51d0ee1667ed15183155a63e56c3fb5c3f25ac3b288b54311959629e12297",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "e1",
+      "path": "models/multisite_phos/e1.bngl",
+      "sha256": "sha256:31cf5571590da82add28ee97c028972ab914945a7b190f8c51f7dcccc57e501b",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "e2",
+      "path": "models/multisite_phos/e2.bngl",
+      "sha256": "sha256:7646dfdaa6a2e1f03c5b98ee12309ec0476908660d2fc7909b8cd4cdefde141f",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "e3",
+      "path": "models/multisite_phos/e3.bngl",
+      "sha256": "sha256:25bd4f3941d727b2a4c18aa430638bd0414a29bde2cec07e09d951e6a7e0ddc4",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "e4",
+      "path": "models/multisite_phos/e4.bngl",
+      "sha256": "sha256:1a27fc9f21f061dbce5d742e79a1c78f4ff83e8157e0009826819ae1757b61af",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "e5",
+      "path": "models/multisite_phos/e5.bngl",
+      "sha256": "sha256:1eb680fda30d2e4b787967a21d39746d9ff8dbe7ec87c84b11ba8c2403021ae0",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "e6",
+      "path": "models/multisite_phos/e6.bngl",
+      "sha256": "sha256:8c94c7864aed9dd7fc39c6c56f1c1473c2b321adaeaa91823c48f5928b3958bf",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "e7",
+      "path": "models/multisite_phos/e7.bngl",
+      "sha256": "sha256:bb2c0defaa96c12dcedcc4d6ad46a34a05ac4062de39a852bcf6edd8b0d4a270",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "e8",
+      "path": "models/multisite_phos/e8.bngl",
+      "sha256": "sha256:d3b7c9c4e687503c1ca4107867acb46dd2d7c3459f16d0e6f176ec8df1e71cd3",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "e9",
+      "path": "models/multisite_phos/e9.bngl",
+      "sha256": "sha256:e7ce1b45a6b2322834d32a1ed5913da3f03208a813809bccc4a5cde23269dfba",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "egfr_net",
+      "path": "models/egfr_net.bngl",
+      "sha256": "sha256:e3f3547959d21da108415e6196fd66fe2746737e5c26e21895f532f0b94a386d",
+      "origin": "repository-fixture",
+      "tiers": [
+        "s",
+        "p"
+      ]
+    },
+    {
+      "id": "empty_compartments_block",
+      "path": "models/empty_compartments_block.bngl",
+      "sha256": "sha256:bcb353e5f47708c82fa406c5cb3e16cc1999301e073cfc16427704267943783a",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "fceri_fyn",
+      "path": "models/fceRI_compendium/fceri_fyn.bngl",
+      "sha256": "sha256:50186ca57b4aa4c942548538579c241e50174073dbe6da3fdabd546266eb5095",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "fceri_fyn_lig",
+      "path": "models/fceRI_compendium/fceri_fyn_lig.bngl",
+      "sha256": "sha256:5a6e38c07b6a76422b7020d29e69f82cac93933b1aa43f1a9e736f8eb04dbbb6",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "fceri_fyn_trimer",
+      "path": "models/fceRI_compendium/fceri_fyn_trimer.bngl",
+      "sha256": "sha256:26f6dac35ac9c94183bf6f02ae7cccffe6b0e9cbeabbe4441d67334aec9e9fcb",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "fceri_gamma2",
+      "path": "models/fceRI_compendium/fceri_gamma2.bngl",
+      "sha256": "sha256:9ba32e5c539e904e821c6c8f42538ed15c47954e07fabacb1fe1bd9fe8577385",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "fceri_ji",
+      "path": "models/fceRI_compendium/fceri_ji.bngl",
+      "sha256": "sha256:765968f7d457657809ab9448149c6583eb3509eeb84b5a59d2d6bfbcde4d8776",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "fceri_ji_red",
+      "path": "models/fceRI_compendium/fceri_ji_red.bngl",
+      "sha256": "sha256:94b99159e404443171b8c28969636836f2abaa1f97071e6ce26b74294d5ad8db",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "fceri_lyn_745",
+      "path": "models/fceRI_compendium/fceri_lyn_745.bngl",
+      "sha256": "sha256:f90ef0a3dbfcd0b62c4ce920cd94e748cb5cfc8fe1c86c51967bb09ad7c3221a",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "fceri_trimer",
+      "path": "models/fceRI_compendium/fceri_trimer.bngl",
+      "sha256": "sha256:9aea708cd31715bc017bf806d2f99b26a2770b51ae9aca09056c5dfaa334bb35",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "gene_expr",
+      "path": "models/gene_expr.bngl",
+      "sha256": "sha256:e7b66ec5e57fa02d9c26c091e6bee2037bec9e9fca5f35d44b72caea5afd8f26",
+      "origin": "repository-fixture",
+      "tiers": [
+        "s",
+        "p"
+      ]
+    },
+    {
+      "id": "gene_expr_func",
+      "path": "models/gene_expr_func.bngl",
+      "sha256": "sha256:0ab85278e6fced0bdc129848a1a81ae9537bd0bae5142656827177ccb5974e75",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "gene_expr_simple",
+      "path": "models/gene_expr_simple.bngl",
+      "sha256": "sha256:6fc64dc44c46189127f39704f847aeb8571b5b00b11ae655e373c7ef2bba5f4f",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "heise",
+      "path": "models/heise.bngl",
+      "sha256": "sha256:61acf5798cfa37b75dd54129e5122f27e23313f4300a50dff4febf09073d7977",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "hybrid_test",
+      "path": "models/hybrid_test.bngl",
+      "sha256": "sha256:cf517aa864254bc6ba31380ff76a62f64f8b2493160a4492f65d47a681b83cf9",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "hybrid_test_hpp",
+      "path": "tests/validation/Validate/DAT_validate/hybrid_test_hpp.bngl",
+      "sha256": "sha256:5ee0d81f81aa9ead0b12b1d72c6f0fd20ebafd02be46377dcb102f9f678e8422",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "isingspin_energy",
+      "path": "models/isingspin_energy.bngl",
+      "sha256": "sha256:247de6e7ef7bcb1e5ca29d80555ca164183576d4d8fb8cf3f9537ca1810c1d0d",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p",
+        "expr"
+      ]
+    },
+    {
+      "id": "isingspin_localfcn",
+      "path": "models/isingspin_localfcn.bngl",
+      "sha256": "sha256:00908853cc35e8b6cb9a5c921390b7a64b53fb20f33235f09281a4a0faaa853d",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p",
+        "expr"
+      ]
+    },
+    {
+      "id": "isomerization",
+      "path": "models/isomerization.bngl",
+      "sha256": "sha256:98da79720d49acc88894858020daf0117bfbb954d0a7f88cba49ca229bdbb40f",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "issue_198_short",
+      "path": "models/issue_198_short.bngl",
+      "sha256": "sha256:dabbb42d2b862e7093a07797c3376f78a999c22b2e5314f2e77f3b8c1f8ec11e",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "localfunc",
+      "path": "models/localfunc.bngl",
+      "sha256": "sha256:14c480d2ebd83db148daad2e760848e9dbc2ec0fd70801437a3c24f73e17124e",
+      "origin": "repository-fixture",
+      "tiers": [
+        "s",
+        "p",
+        "nf",
+        "expr"
+      ]
+    },
+    {
+      "id": "michment",
+      "path": "models/michment.bngl",
+      "sha256": "sha256:9e1e8103324d49032b682ecb24e640258c82cd7cf988fba86f2a2cc09df203a2",
+      "origin": "repository-fixture",
+      "tiers": [
+        "s",
+        "p",
+        "expr"
+      ]
+    },
+    {
+      "id": "michment_cont",
+      "path": "models/michment_cont.bngl",
+      "sha256": "sha256:d719395232fa047925f371e9c7e9a7fd5f0be242bd47ba27942eb7a850f49b69",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "motor",
+      "path": "models/flagellar_motor/motor.bngl",
+      "sha256": "sha256:d92bc666e796912f2d12b6ac30b448a1817d81f6ae505ba68f30fb4487794627",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p",
+        "nf"
+      ]
+    },
+    {
+      "id": "nfkb_illustrating_protocols",
+      "path": "models/nfkb_illustrating_protocols.bngl",
+      "sha256": "sha256:f6414618e084d90bd21738f9218a2e0e0a84789a8683eb9f20c510d5f649c765",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "oscSystem",
+      "path": "models/oscillatory_system/oscSystem.bngl",
+      "sha256": "sha256:a86ce0ba68c0d4ccfda65d5b03bc29ed4ac1694dcc25028f2042a31a8698bb67",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "poly",
+      "path": "models/performance_test_models/poly.bngl",
+      "sha256": "sha256:de970f30d740d4b2099e55124e6d4c8a0c1d61afc3f340cf019f680d814b657b",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "push_pull",
+      "path": "models/performance_test_models/push_pull.bngl",
+      "sha256": "sha256:62627ab2ec734e0c81a91f6e59f49914812beeab3d7db15082c1e86ddf16f27d",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "simple_system",
+      "path": "models/simple_system.bngl",
+      "sha256": "sha256:32214b937a79ea491e668a5795f28f2be45cdce8dff43cc7c3ccbbf10c821453",
+      "origin": "repository-fixture",
+      "tiers": [
+        "s",
+        "p",
+        "nf"
+      ]
+    },
+    {
+      "id": "statfactor",
+      "path": "models/statfactor.bngl",
+      "sha256": "sha256:cbba03bac6b309bf973109b8880dce5f9b5ef4d4a7953e4f95d0e6eed20dcc6b",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_ANG_SSA_synthesis_simple",
+      "path": "models/test_ANG_SSA_synthesis_simple.bngl",
+      "sha256": "sha256:f4c93cf78158335e2312a24f189315303c8d0790f7d6cd17c8066dd52dfa5039",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_ANG_parscan_synthesis_simple",
+      "path": "models/test_ANG_parscan_synthesis_simple.bngl",
+      "sha256": "sha256:60a21157836120e0e54d44f0a5bbfc9220d054485a0e297eb697c9b65b213f44",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_ANG_synthesis_simple",
+      "path": "models/test_ANG_synthesis_simple.bngl",
+      "sha256": "sha256:8e2bbdcaa9b573b91716fd5e7765199413536b37bfda6a7ae689d7727c917cf6",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_MM",
+      "path": "models/test_MM.bngl",
+      "sha256": "sha256:fcbbc4cb7a727c2ea3ec86a3cedc2d0bf5efadf5434b4be23a64db4b9869843a",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_assignment",
+      "path": "models/test_assignment.bngl",
+      "sha256": "sha256:9996f97298fe1e5f883a217547aa1b20b0c7f2141069ffb447c74dfbb6a0867e",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_compartment_XML",
+      "path": "models/test_compartment_XML.bngl",
+      "sha256": "sha256:675ed00b87337c8506c44030abdad4173760f11e54fe861a6cf16bcb043e0543",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_expression_xml_escaping",
+      "path": "models/test_expression_xml_escaping.bngl",
+      "sha256": "sha256:b9a5beca4c2f8fb222390ae2f80b361eafbb2124767a540c253c68bf3fa4c827",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_fixed",
+      "path": "models/test_fixed.bngl",
+      "sha256": "sha256:c85278c5d09cd06d6833cecc15d4a53785093b9af2c64656293888f842352254",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_mratio",
+      "path": "models/test_mratio.bngl",
+      "sha256": "sha256:0ca6fc3fc7310acb16dca595f8e6cf398c0f6ca94d73b13c682a119498f0b853",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_network_gen",
+      "path": "models/test_network_gen.bngl",
+      "sha256": "sha256:386da1b3f99cdafe152332a9a4c0c00f659036b6e6c3abdb4ec78214b2984387",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_paramname",
+      "path": "models/test_paramname.bngl",
+      "sha256": "sha256:c5f4646a394ef718fcc4f4378001d6766b3944469a4349def78b5934f8337ef6",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_partial_dynamical_scaling",
+      "path": "models/test_partial_dynamical_scaling.bngl",
+      "sha256": "sha256:ffe329fe2a9b74bcbd5eb4b1ff74a34147c5744f7ce818853e0eaafad988a387",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_sat",
+      "path": "models/test_sat.bngl",
+      "sha256": "sha256:7eb69d4ea5678292d189049ab195d0b509c83d8d8b0c43de344aaf32a4432e68",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_sat_cont",
+      "path": "models/test_sat_cont.bngl",
+      "sha256": "sha256:40568b74c49d84f2174ecdf0f399e963ff8aa30a5fd2d41506e7f8a4e32ff5e2",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_sbml_flat",
+      "path": "models/test_sbml_flat.bngl",
+      "sha256": "sha256:8ad1d39c62ed825314a4c5d672e634ad3aa745d431298943c7df5f1068cda34c",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_sbml_flat_SBML",
+      "path": "tests/validation/Validate/DAT_validate/test_sbml_flat_SBML.bngl",
+      "sha256": "sha256:e5fcf1cc2ee75e40aa31014f61483de6259dbbdc50e733168505ef4fc8f31046",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_sbml_structured",
+      "path": "models/test_sbml_structured.bngl",
+      "sha256": "sha256:5677fe96c924fcbe68dfd5b3d62eb488af56e41b0e5057c3edd7ec2572f00ec5",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_sbml_structured_SBML",
+      "path": "tests/validation/Validate/DAT_validate/test_sbml_structured_SBML.bngl",
+      "sha256": "sha256:6f2595a81d44e6c529d21c2ffc842fc77fc984dd3926190171e64444579fee3c",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_setconc",
+      "path": "models/test_setconc.bngl",
+      "sha256": "sha256:3198659df4ef1161639dfe0876c7a7339248beb806e53eec994be26633c60001",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_synthesis_cBNGL_simple",
+      "path": "models/test_synthesis_cBNGL_simple.bngl",
+      "sha256": "sha256:312a7991e36add075a32912dc50641838ee3b6d6c183c0d4db75d77611759eea",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_synthesis_complex",
+      "path": "models/test_synthesis_complex.bngl",
+      "sha256": "sha256:9e5128fde133eaea0fc57242706eaab88db9ab3adcfc6454ace22560be36498b",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_synthesis_complex_0_cBNGL",
+      "path": "models/test_synthesis_complex_0_cBNGL.bngl",
+      "sha256": "sha256:de5462a1a0757d7022f07d561aa7d6f7e7f291211a7f3d6f9add5f6f20c1e553",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_synthesis_complex_source_cBNGL",
+      "path": "models/test_synthesis_complex_source_cBNGL.bngl",
+      "sha256": "sha256:ba05a1bc0142a26c36244e5246621efbd72a9821e789948521a4d0b42095050e",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_synthesis_simple",
+      "path": "models/test_synthesis_simple.bngl",
+      "sha256": "sha256:526d6ca010510b93277a3b4d60493313fa433916dc40d86107b9749c21caf484",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_tfun",
+      "path": "models/test_tfun.bngl",
+      "sha256": "sha256:1ddb6866600b4526e36498beaed4f2010771e1115100ba5b32890b98ff13f7bc",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_tfun_expr",
+      "path": "models/test_tfun_expr.bngl",
+      "sha256": "sha256:2065a2b20038d96acfaff483d5e31de12ff50b03272693da8fd5c08f89722545",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_tfun_expr2",
+      "path": "models/test_tfun_expr2.bngl",
+      "sha256": "sha256:37527b89c4f726af0d7fe6146933325e3d16594ec4a79fcf87891c6655dd8db7",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_tfun_file",
+      "path": "models/test_tfun_file.bngl",
+      "sha256": "sha256:5cd4374ee0ae1496e6234eed1c10c7110c3faaefa0be784b97c682cf5722cf91",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_tfun_net_full",
+      "path": "models/test_tfun_net_full.bngl",
+      "sha256": "sha256:d89e93bff173d3802b6dfcf0f4627e322d2c8984740ed9d06eeb407f9cf1c548",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_tfun_observable",
+      "path": "models/test_tfun_observable.bngl",
+      "sha256": "sha256:570d9d19b4b5dc2526d967370331663d11a68c6ad0e7d2a31b72d7ed2871b4f7",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_tfun_ode_simple",
+      "path": "models/test_tfun_ode_simple.bngl",
+      "sha256": "sha256:c71388efacc10905076a29968f613f38c7a0d1082c86ac81fae9bfd3706f9ade",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_tfun_ode_step",
+      "path": "models/test_tfun_ode_step.bngl",
+      "sha256": "sha256:af72d9e8bf4c4c9c2868c42fb87f40aa5881caf17a83901b3e1b68b62fe8c1b4",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_tfun_parse",
+      "path": "models/test_tfun_parse.bngl",
+      "sha256": "sha256:b9d9749cd51e55e1587906710e579e20e42e8e33dee7b72d5b925cb8ee51b4ee",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_tfun_step_sbml",
+      "path": "models/test_tfun_step_sbml.bngl",
+      "sha256": "sha256:22ccb2919ba9815073e0568a9d3d2ef69c81796ef1336d09419948bbf12357ab",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_tfun_validation",
+      "path": "models/test_tfun_validation.bngl",
+      "sha256": "sha256:e4c9db729ab0b42a233aa95dc838ea9e0f954bf82e02ae8d85bd0d24cf2d111e",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_tfun_xml",
+      "path": "models/test_tfun_xml.bngl",
+      "sha256": "sha256:c29dd938c64b73ca30d273b6ef53e974f3aa340fc7f20573bb6af63bb17edfd1",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_time",
+      "path": "models/test_time.bngl",
+      "sha256": "sha256:d6a94086954bef91541a328260fcd247ab2035150481fc4ddbe3f64b1719d19a",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "test_write_sbml_multi",
+      "path": "models/test_write_sbml_multi.bngl",
+      "sha256": "sha256:cff3da31ae446f00fe199b95c74e01897cff770dfe9166ba65ea47a9eb172ba7",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "tlbr",
+      "path": "models/tlbr/tlbr.bngl",
+      "sha256": "sha256:2d4b3e936e123e0b28e70564996085c08e9d1cea4b17d0782246d19a55f26196",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p",
+        "nf"
+      ]
+    },
+    {
+      "id": "tlbr_performance",
+      "path": "models/performance_test_models/tlbr_performance.bngl",
+      "sha256": "sha256:895ed781cc6c866ef2bc3ed0e8ad1fe0867d7f1382e3818ebc27b0514800819a",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "tlmr",
+      "path": "models/tlmr.bngl",
+      "sha256": "sha256:c444441d2ef187ee3511ae35fc1949b9143691e5a981da73a5532197b5bc51a2",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "toy-jim",
+      "path": "models/toy-jim.bngl",
+      "sha256": "sha256:70dc8143abbef33af495d21926b6a79d0d0a8db516975adce333673a14f13b64",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "univ_synth",
+      "path": "models/univ_synth.bngl",
+      "sha256": "sha256:714ba7f1fe2bb338ba2321e1e82f492cf7c1a37ffc5f11e64bbf5ed3f10e63eb",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "visualize",
+      "path": "models/visualize.bngl",
+      "sha256": "sha256:e7d0754b22016ec3ad6009047842844f160bc27c2e208e13d8a760a2ab3fde8e",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    }
+  ],
+  "notes": [
+    "Generated from tests/validation/corpus.py and the checked-in model tree.",
+    "RuleHub revision is recorded but not expanded until selectors are approved.",
+    "Run this generator and review the diff whenever a fixture or tier changes."
+  ]
+}

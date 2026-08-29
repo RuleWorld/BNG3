@@ -1,24 +1,28 @@
 """Model corpus, tiered.
 
 Tier-S  smoke    ~10 models, every commit (< 60s)
-Tier-P  parity   every .bngl that physically exists in the repo, filtered to the
-                 BNG2-compatible allowlist when that list is provided; nightly + WO completion
+Tier-P  parity   the exact model IDs committed in the corpus selection manifest
+                 (generated from the on-disk tree until a RuleHub selector is approved)
 Tier-NF network-free models, compared against the native NFsim oracle
 
-Discovery is filesystem-based: a model is only in a tier if its .bngl exists on
-disk. The BNG2-compatible list is an *allowlist*, not the source of paths —
-those names come from a different repo tree and need not exist here.
+The committed selection manifest is authoritative when present. A model is only
+usable when its .bngl still exists on disk; the dedicated manifest validator
+also checks every recorded digest. The BNG2-compatible list is an *allowlist*,
+not the source of paths — those names come from a different repo tree and need
+not exist here.
 """
 
 from __future__ import annotations
 
 import os
+import json
 import re
 from functools import lru_cache
 from pathlib import Path
 
 # Repo root: tests/validation/corpus.py -> repo/
 REPO = Path(__file__).resolve().parents[2]
+SELECTION_MANIFEST = REPO / "provenance" / "corpus" / "selection.json"
 
 # Directories searched for .bngl models, in priority order.
 MODEL_DIRS = [
@@ -85,16 +89,54 @@ def _exists(names: list[str]) -> list[str]:
     return [n for n in names if resolve(n) is not None]
 
 
+@lru_cache(maxsize=1)
+def _selection_manifest() -> dict | None:
+    """Load the committed tier selection, if present.
+
+    A malformed or incomplete committed manifest is an integration error, not
+    permission to silently fall back to live filesystem discovery.  The
+    dedicated manifest validator provides the detailed diagnostics; this
+    loader keeps test selection deterministic in the meantime.
+    """
+    if not SELECTION_MANIFEST.is_file():
+        return None
+    try:
+        value = json.loads(SELECTION_MANIFEST.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"cannot read corpus selection manifest: {exc}") from exc
+    if not isinstance(value, dict) or not isinstance(value.get("tiers"), dict):
+        raise RuntimeError("corpus selection manifest must contain a tiers object")
+    return value
+
+
+def _selected_tier(tier: str, fallback: list[str]) -> list[str]:
+    manifest = _selection_manifest()
+    if manifest is None:
+        return _exists(fallback)
+    selected = manifest["tiers"].get(tier)
+    if not isinstance(selected, list) or any(
+        not isinstance(name, str) for name in selected
+    ):
+        raise RuntimeError(f"corpus selection manifest has invalid tiers.{tier}")
+    missing = [name for name in selected if resolve(name) is None]
+    if missing:
+        raise RuntimeError(
+            f"corpus selection manifest references missing {tier} model(s): "
+            + ", ".join(missing)
+        )
+    return list(selected)
+
+
 def tier_s() -> list[str]:
-    return _exists(TIER_S)
+    return _selected_tier("s", TIER_S)
 
 
 def tier_nf() -> list[str]:
-    return _exists(TIER_NF)
+    return _selected_tier("nf", TIER_NF)
 
 
 def tier_expr() -> list[str]:
-    return _exists(TIER_EXPR)
+    return _selected_tier("expr", TIER_EXPR)
 
 
 @lru_cache(maxsize=1)
@@ -117,12 +159,25 @@ def _allowlist() -> set[str] | None:
 
 def tier_p() -> list[str]:
     """All on-disk models, filtered to the BNG2-compatible allowlist if present."""
+    manifest = _selection_manifest()
+    if manifest is not None:
+        return _selected_tier("p", [])
     idx = _index()
     allow = _allowlist()
     names = sorted(idx)
     if allow:
         names = [n for n in names if n in allow]
     return names
+
+
+def tier_x() -> list[str]:
+    """Format-conversion tier from the committed selection manifest."""
+    return _selected_tier("x", [])
+
+
+def tier_b() -> list[str]:
+    """Benchmark/stress tier from the committed selection manifest."""
+    return _selected_tier("b", [])
 
 
 if __name__ == "__main__":

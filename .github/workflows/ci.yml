@@ -42,6 +42,12 @@ jobs:
       - name: Validate integration provenance structure
         run: python scripts/validate_provenance.py
 
+      - name: Validate frozen corpus selection
+        run: python scripts/validate_corpus_manifest.py
+
+      - name: Check corpus selection is generated
+        run: python scripts/generate_corpus_manifest.py --check
+
       - name: Enforce validation exception budget
         run: python -m tests.validation.exception_ledger --max-exceptions 1
 
