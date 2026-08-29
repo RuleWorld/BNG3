@@ -48,3 +48,32 @@ def test_cli_export_bngl(runner, simple_model, tmp_path):
     )
     assert result.exit_code == 0
     assert os.path.exists(out)
+
+
+@pytest.mark.parametrize("method", ["pla", "psa"])
+def test_cli_approximate_simulation_start_time(runner, simple_model, method):
+    result = runner.invoke(
+        main,
+        [
+            "run",
+            simple_model,
+            "--method",
+            method,
+            "--t-start",
+            "2",
+            "--t-end",
+            "4",
+            "--n-steps",
+            "2",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+
+
+def test_cli_nf_rejects_nonzero_start_time(runner, simple_model):
+    result = runner.invoke(
+        main,
+        ["run", simple_model, "--method", "nf", "--t-start", "1"],
+    )
+    assert result.exit_code != 0
+    assert "t-start" in result.output

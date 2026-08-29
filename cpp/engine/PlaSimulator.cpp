@@ -416,8 +416,9 @@ void PlaSimulator::updateObservables(const std::vector<double>& state,
 OdeResult PlaSimulator::simulate(const OdeOptions& opts, const PlaConfig& config) {
     OdeResult result;
     const std::size_t nSteps = opts.nSteps;
+    const double tStart = opts.tStart;
     const double tEnd = opts.tEnd;
-    const double dtOutput = tEnd / static_cast<double>(nSteps);
+    const double dtOutput = (tEnd - tStart) / static_cast<double>(nSteps);
 
     // Initialize state
     std::vector<double> state(nSpecies_);
@@ -429,18 +430,18 @@ OdeResult PlaSimulator::simulate(const OdeOptions& opts, const PlaConfig& config
     std::mt19937 rng(opts.seed > 0 ? opts.seed : std::random_device{}());
 
     // Record initial state
-    result.timePoints.push_back(0.0);
+    result.timePoints.push_back(tStart);
     result.concentrations.push_back(state);
     std::vector<double> obsValues;
     updateObservables(state, obsValues);
     result.observables.push_back(obsValues);
 
-    double t = 0.0;
+    double t = tStart;
     std::size_t outputStep = 1;
 
     // Main simulation loop
     while (t < tEnd && outputStep <= nSteps) {
-        double nextOutputTime = outputStep * dtOutput;
+        double nextOutputTime = tStart + outputStep * dtOutput;
 
         while (t < nextOutputTime) {
             // Compute propensities

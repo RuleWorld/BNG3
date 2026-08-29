@@ -12,11 +12,11 @@
 ///   from `return false` to a real implementation at a time, each gated by
 ///   test_parity_nfsim (ast-direct must equal in-memory-XML under one seed).
 ///
-/// IMPLEMENTED here: parameters, compartments, molecule types, and the safe
-///                    parameter/observable-backed global-function subset.
-/// STUBBED here:     observables, species, and rules; local/composite/time
-///                   functions still fail closed and cite the TiXml init*
-///                   function that is their behavioral specification.
+/// IMPLEMENTED here: parameters, compartments, molecule types, observables,
+///                    seed species, and a bounded direct reaction-rule slice.
+/// STUBBED here:     local/composite/time functions and energy/rate-law forms
+///                   that still fail closed and cite the TiXml init* function
+///                   that is their specification.
 
 #include "NFinput_fromAst.hh"
 #include "NFinput.hh"
@@ -31,13 +31,23 @@
 #include "../NFcore/compartment.hh"
 #include "../NFfunction/NFfunction.hh"
 #include "../NFutil/NFutil.hh"
+#include "PatternGraphBuilder.hpp"
+#include "BNGLexer.h"
+#include "BNGParser.h"
+#include "../NFreactions/transformations/moleculeCreator.hh"
+#include "../NFreactions/transformations/transformation.hh"
+#include "../NFreactions/transformations/transformationSet.hh"
+
+#include <antlr4-runtime.h>
 
 #include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <map>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -528,36 +538,1630 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
     return true;
 }
 
+namespace {
+
+struct GraphComponent {
+    BNGcore::Node* node = nullptr;
+    std::string name;
+    std::vector<BNGcore::Node*> bonds;
+};
+
+struct GraphMolecule {
+    BNGcore::Node* node = nullptr;
+    std::string name;
+    std::vector<GraphComponent> components;
+};
+
+struct ParsedObservablePattern {
+    BNGcore::PatternGraph graph;
+    std::string compartment;
+    std::string relation;
+    int quantity = -1;
+};
+
+bool isBondNode(const BNGcore::Node& node) {
+    return node.get_type().get_type_name() == BNGcore::BOND_NODE_TYPE.get_type_name();
+}
+
+bool isComponentNode(const BNGcore::Node& node) {
+    if (isBondNode(node)) return false;
+    for (auto edge = node.edges_in_begin(); edge != node.edges_in_end(); ++edge) {
+        if (!isBondNode(**edge)) return true;
+    }
+    return false;
+}
+
+bool isMoleculeNode(const BNGcore::Node& node) {
+    return !isBondNode(node) && !isComponentNode(node);
+}
+
+std::vector<GraphMolecule> collectGraphMolecules(const BNGcore::PatternGraph& graph) {
+    std::vector<GraphMolecule> result;
+    for (auto node = graph.begin(); node != graph.end(); ++node) {
+        if (!isMoleculeNode(**node)) continue;
+
+        GraphMolecule molecule;
+        molecule.node = *node;
+        molecule.name = (*node)->get_type().get_type_name();
+        for (auto edge = (*node)->edges_out_begin(); edge != (*node)->edges_out_end(); ++edge) {
+            if (!isComponentNode(**edge)) continue;
+            GraphComponent component;
+            component.node = *edge;
+            component.name = (*edge)->get_type().get_type_name();
+            for (auto bond = (*edge)->edges_out_begin(); bond != (*edge)->edges_out_end(); ++bond) {
+                if (isBondNode(**bond)) component.bonds.push_back(*bond);
+            }
+            molecule.components.push_back(std::move(component));
+        }
+        result.push_back(std::move(molecule));
+    }
+    return result;
+}
+
+std::string graphStateToken(const BNGcore::Node& node) {
+    const std::string state = node.get_state().get_BNG2_string();
+    if (state.empty()) return {};
+    return state.front() == '~' ? state.substr(1) : state;
+}
+
+std::string graphBondToken(const BNGcore::Node& node) {
+    return node.get_state().get_BNG2_string();
+}
+
+bool parseObservablePattern(const std::string& text,
+                            const bng::ast::Model& model,
+                            ParsedObservablePattern& result,
+                            std::string& diagnostic) {
+    antlr4::ANTLRInputStream input(text);
+    BNGLexer lexer(&input);
+    antlr4::CommonTokenStream tokens(&lexer);
+    BNGParser parser(&tokens);
+    auto* pattern = parser.observable_pattern();
+    if (pattern == nullptr || parser.getNumberOfSyntaxErrors() != 0) {
+        diagnostic = "could not parse observable pattern '" + text + "'";
+        return false;
+    }
+
+    auto& mutableModel = const_cast<bng::ast::Model&>(model);
+    if (pattern->species_def() != nullptr) {
+        result.graph = bng::parser::buildPatternGraph(
+            pattern->species_def(), mutableModel, true);
+        result.compartment = bng::parser::extractSpeciesCompartment(
+            pattern->species_def());
+    } else {
+        // The legacy observable grammar also accepts a bare molecule type in
+        // a stoichiometric comparison, for example `R==2`.  Parse a synthetic
+        // empty-site pattern so it enters the same template construction path
+        // as `R()` while retaining the relation from the original text.
+        if (pattern->STRING() == nullptr || pattern->INT() == nullptr) {
+            diagnostic = "invalid stoichiometric observable pattern '" + text + "'";
+            return false;
+        }
+        const std::string moleculeName = pattern->STRING()->getText();
+        const bool knownMolecule = std::any_of(
+            model.getMoleculeTypes().begin(), model.getMoleculeTypes().end(),
+            [&](const auto& moleculeType) {
+                return moleculeType.getName() == moleculeName;
+            });
+        if (!knownMolecule) {
+            diagnostic = "stoichiometric observable names unknown molecule type '" +
+                         moleculeName + "'";
+            return false;
+        }
+
+        antlr4::ANTLRInputStream syntheticInput(moleculeName + "()");
+        BNGLexer syntheticLexer(&syntheticInput);
+        antlr4::CommonTokenStream syntheticTokens(&syntheticLexer);
+        BNGParser syntheticParser(&syntheticTokens);
+        auto* syntheticSpecies = syntheticParser.species_def();
+        if (syntheticSpecies == nullptr ||
+            syntheticParser.getNumberOfSyntaxErrors() != 0) {
+            diagnostic = "could not construct stoichiometric molecule pattern '" +
+                         text + "'";
+            return false;
+        }
+        result.graph = bng::parser::buildPatternGraph(
+            syntheticSpecies, mutableModel, true);
+        if (pattern->EQUALS() != nullptr) result.relation = "==";
+        else if (pattern->GTE() != nullptr) result.relation = ">=";
+        else if (pattern->GT() != nullptr) result.relation = ">";
+        else if (pattern->LTE() != nullptr) result.relation = "<=";
+        else if (pattern->LT() != nullptr) result.relation = "<";
+    }
+    if (result.graph.empty()) {
+        diagnostic = "observable pattern '" + text + "' contains no molecule graph";
+        return false;
+    }
+    if (pattern->GT() != nullptr && pattern->INT() != nullptr) {
+        result.relation = pattern->GT()->getText();
+    }
+    if (!result.relation.empty() && pattern->INT() != nullptr) {
+        try {
+            result.quantity = std::stoi(pattern->INT()->getText());
+        } catch (const std::exception&) {
+            diagnostic = "invalid stoichiometric quantity in observable pattern '" + text + "'";
+            return false;
+        }
+    }
+    return true;
+}
+
+bool parseSeedAmount(const bng::ast::SeedSpecies& seed,
+                     const std::map<std::string, double>& parameters,
+                     int& count,
+                     std::string& diagnostic) {
+    try {
+        const double amount = seed.getAmount().evaluate(
+            [&](const std::string& name) -> double {
+                if (name == "_PI") return 3.14159265358979323846;
+                if (name == "_e") return 2.71828182845904523536;
+                if (name == "_Na") return 6.02214076e23;
+                const auto iter = parameters.find(name);
+                if (iter == parameters.end()) {
+                    throw std::runtime_error("unknown seed amount symbol '" + name + "'");
+                }
+                return iter->second;
+            },
+            0.0);
+        if (!std::isfinite(amount) || amount < 0.0 ||
+            amount > static_cast<double>(std::numeric_limits<int>::max())) {
+            diagnostic = "seed amount is outside NFsim's nonnegative integer range";
+            return false;
+        }
+        count = static_cast<int>(amount);
+        return true;
+    } catch (const std::exception& error) {
+        diagnostic = error.what();
+        return false;
+    }
+}
+
+bool getEquivalentNames(MoleculeType* moleculeType,
+                        const std::string& genericName,
+                        std::vector<std::string>& names) {
+    if (!moleculeType->isEquivalentComponent(genericName)) return false;
+    int* indices = nullptr;
+    int count = 0;
+    moleculeType->getEquivalencyClass(indices, count, genericName);
+    if (indices == nullptr || count <= 0) return false;
+    names.reserve(static_cast<std::size_t>(count));
+    for (int index = 0; index < count; ++index) {
+        names.push_back(moleculeType->getComponentName(indices[index]));
+    }
+    return true;
+}
+
+using RuntimeNames = std::vector<std::vector<std::string>>;
+
+bool makeRuntimeNameAssignments(const std::vector<GraphMolecule>& molecules,
+                                System* system,
+                                bool expandSymmetry,
+                                std::vector<RuntimeNames>& assignments,
+                                std::string& diagnostic) {
+    RuntimeNames initial;
+    initial.reserve(molecules.size());
+    for (const auto& molecule : molecules) {
+        auto* moleculeType = system->getMoleculeTypeByName(molecule.name);
+        if (moleculeType == nullptr) {
+            diagnostic = "unknown molecule type '" + molecule.name + "'";
+            return false;
+        }
+        std::vector<std::string> names;
+        names.reserve(molecule.components.size());
+        for (const auto& component : molecule.components) names.push_back(component.name);
+        initial.push_back(std::move(names));
+    }
+    assignments.push_back(std::move(initial));
+    if (!expandSymmetry) return true;
+
+    for (std::size_t moleculeIndex = 0; moleculeIndex < molecules.size(); ++moleculeIndex) {
+        auto* moleculeType = system->getMoleculeTypeByName(molecules[moleculeIndex].name);
+        std::map<std::string, std::vector<std::size_t>> occurrences;
+        for (std::size_t componentIndex = 0;
+             componentIndex < molecules[moleculeIndex].components.size(); ++componentIndex) {
+            const auto& component = molecules[moleculeIndex].components[componentIndex];
+            if (moleculeType->isEquivalentComponent(component.name)) {
+                occurrences[component.name].push_back(componentIndex);
+            }
+        }
+
+        for (const auto& occurrence : occurrences) {
+            const auto& genericName = occurrence.first;
+            const auto& componentIndices = occurrence.second;
+            std::vector<std::string> equivalentNames;
+            if (!getEquivalentNames(moleculeType, genericName, equivalentNames) ||
+                componentIndices.size() > equivalentNames.size()) {
+                diagnostic = "too many symmetric components named '" + genericName +
+                             "' in molecule type '" + molecules[moleculeIndex].name + "'";
+                return false;
+            }
+
+            std::vector<std::vector<std::string>> choices;
+            std::vector<std::string> choice(componentIndices.size());
+            std::vector<bool> used(equivalentNames.size(), false);
+            std::function<void(std::size_t)> enumerate = [&](std::size_t position) {
+                if (position == componentIndices.size()) {
+                    choices.push_back(choice);
+                    return;
+                }
+                for (std::size_t nameIndex = 0; nameIndex < equivalentNames.size(); ++nameIndex) {
+                    if (used[nameIndex]) continue;
+                    used[nameIndex] = true;
+                    choice[position] = equivalentNames[nameIndex];
+                    enumerate(position + 1);
+                    used[nameIndex] = false;
+                }
+            };
+            enumerate(0);
+
+            std::vector<RuntimeNames> next;
+            for (const auto& base : assignments) {
+                for (const auto& choiceNames : choices) {
+                    RuntimeNames variant = base;
+                    for (std::size_t position = 0; position < componentIndices.size(); ++position) {
+                        variant[moleculeIndex][componentIndices[position]] = choiceNames[position];
+                    }
+                    next.push_back(std::move(variant));
+                }
+            }
+            assignments = std::move(next);
+        }
+    }
+    return true;
+}
+
+bool resolveCompartment(System* system, const std::string& name,
+                        Compartment*& compartment, std::string& diagnostic) {
+    compartment = nullptr;
+    if (name.empty()) return true;
+    compartment = system->getCompartment(name);
+    if (compartment == nullptr) {
+        diagnostic = "unknown compartment '" + name + "'";
+        return false;
+    }
+    return true;
+}
+
+int componentStateValue(MoleculeType* moleculeType, const std::string& componentName,
+                        const std::string& state, std::string& diagnostic) {
+    if (state.empty() || state == "?" || state == "*") return -1;
+    try {
+        const int componentIndex = moleculeType->getCompIndexFromName(componentName);
+        return moleculeType->getStateValueFromName(componentIndex, state);
+    } catch (const std::exception& error) {
+        diagnostic = error.what();
+        return -2;
+    }
+}
+
+bool buildTemplatePatterns(const BNGcore::PatternGraph& graph,
+                           const std::string& patternCompartment,
+                           System* system,
+                           bool expandSymmetry,
+                           std::vector<std::vector<TemplateMolecule*>>& builds,
+                           bool& hasDisjointSets,
+                           int& suggestedTraversalLimit,
+                           std::string& diagnostic) {
+    const auto molecules = collectGraphMolecules(graph);
+    if (molecules.empty()) {
+        diagnostic = "pattern contains no molecule nodes";
+        return false;
+    }
+
+    std::vector<RuntimeNames> assignments;
+    if (!makeRuntimeNameAssignments(molecules, system, expandSymmetry, assignments, diagnostic)) {
+        return false;
+    }
+
+    for (const auto& runtimeNames : assignments) {
+        std::vector<TemplateMolecule*> templates;
+        templates.reserve(molecules.size());
+        for (std::size_t moleculeIndex = 0; moleculeIndex < molecules.size(); ++moleculeIndex) {
+            const auto& molecule = molecules[moleculeIndex];
+            auto* moleculeType = system->getMoleculeTypeByName(molecule.name);
+            if (moleculeType == nullptr) {
+                diagnostic = "unknown molecule type '" + molecule.name + "'";
+                return false;
+            }
+            auto* templateMolecule = new TemplateMolecule(moleculeType);
+            const std::string compartmentName = molecule.node->get_compartment().empty()
+                                                    ? patternCompartment
+                                                    : molecule.node->get_compartment();
+            Compartment* compartment = nullptr;
+            if (!resolveCompartment(system, compartmentName, compartment, diagnostic)) return false;
+            templateMolecule->setCompartment(compartment);
+            templates.push_back(templateMolecule);
+        }
+
+        for (std::size_t moleculeIndex = 0; moleculeIndex < molecules.size(); ++moleculeIndex) {
+            const auto& molecule = molecules[moleculeIndex];
+            auto* moleculeType = system->getMoleculeTypeByName(molecule.name);
+            auto* templateMolecule = templates[moleculeIndex];
+            for (std::size_t componentIndex = 0;
+                 componentIndex < molecule.components.size(); ++componentIndex) {
+                const auto& component = molecule.components[componentIndex];
+                const std::string runtimeName = runtimeNames[moleculeIndex][componentIndex];
+                const std::string state = graphStateToken(*component.node);
+                const bool symmetric = moleculeType->isEquivalentComponent(component.name);
+                std::string stateLookupName = runtimeName;
+                if (!expandSymmetry && symmetric) {
+                    std::vector<std::string> equivalentNames;
+                    if (!getEquivalentNames(moleculeType, component.name, equivalentNames)) {
+                        diagnostic = "could not resolve symmetric component '" + component.name + "'";
+                        return false;
+                    }
+                    stateLookupName = equivalentNames.front();
+                }
+                const int stateValue = componentStateValue(
+                    moleculeType, stateLookupName, state, diagnostic);
+                if (stateValue == -2) return false;
+
+                std::string bondState;
+                std::size_t bondEndpointCount = 0;
+                if (!component.bonds.empty()) {
+                    if (component.bonds.size() != 1) {
+                        diagnostic = "component '" + component.name +
+                                     "' has multiple bond constraints";
+                        return false;
+                    }
+                    bondState = graphBondToken(*component.bonds.front());
+                    for (auto edge = component.bonds.front()->edges_in_begin();
+                         edge != component.bonds.front()->edges_in_end(); ++edge) {
+                        if (isComponentNode(**edge)) ++bondEndpointCount;
+                    }
+                    if (bondEndpointCount > 2) {
+                        diagnostic = "bond constraint has more than two endpoints";
+                        return false;
+                    }
+                }
+
+                if (!expandSymmetry && symmetric) {
+                    int bondConstraint = TemplateMolecule::NO_CONSTRAINT;
+                    if (bondState == "!-") bondConstraint = TemplateMolecule::EMPTY;
+                    else if (bondState == "!+") bondConstraint = TemplateMolecule::OCCUPIED;
+                    templateMolecule->addSymCompConstraint(
+                        component.name,
+                        "m" + std::to_string(moleculeIndex) + "c" +
+                            std::to_string(componentIndex),
+                        bondConstraint,
+                        stateValue < 0 ? TemplateMolecule::NO_CONSTRAINT : stateValue);
+                } else {
+                    if (stateValue >= 0) {
+                        templateMolecule->addComponentConstraint(runtimeName, stateValue);
+                    }
+                    if (bondState == "!-") {
+                        templateMolecule->addEmptyComponent(runtimeName);
+                    } else if (bondState == "!+" && bondEndpointCount == 1) {
+                        templateMolecule->addBoundComponent(runtimeName);
+                    } else if (!bondState.empty() && bondState != "!?" && bondState != "!+" ) {
+                        diagnostic = "unsupported bond state '" + bondState + "'";
+                        return false;
+                    }
+                }
+            }
+        }
+
+        std::unordered_set<BNGcore::Node*> processedBonds;
+        for (std::size_t moleculeIndex = 0; moleculeIndex < molecules.size(); ++moleculeIndex) {
+            const auto& molecule = molecules[moleculeIndex];
+            for (std::size_t componentIndex = 0;
+                 componentIndex < molecule.components.size(); ++componentIndex) {
+                const auto& component = molecule.components[componentIndex];
+                for (auto* bond : component.bonds) {
+                    if (!processedBonds.insert(bond).second) continue;
+                    if (graphBondToken(*bond) != "!+") continue;
+
+                    std::vector<std::pair<std::size_t, std::size_t>> endpoints;
+                    for (std::size_t otherMolecule = 0; otherMolecule < molecules.size(); ++otherMolecule) {
+                        for (std::size_t otherComponent = 0;
+                             otherComponent < molecules[otherMolecule].components.size(); ++otherComponent) {
+                            const auto& other = molecules[otherMolecule].components[otherComponent];
+                            if (std::find(other.bonds.begin(), other.bonds.end(), bond) != other.bonds.end()) {
+                                endpoints.emplace_back(otherMolecule, otherComponent);
+                            }
+                        }
+                    }
+                    if (endpoints.size() != 2) {
+                        diagnostic = "a bound bond must connect exactly two component sites";
+                        return false;
+                    }
+
+                    const auto [firstMolecule, firstComponent] = endpoints[0];
+                    const auto [secondMolecule, secondComponent] = endpoints[1];
+                    const auto firstName = runtimeNames[firstMolecule][firstComponent];
+                    const auto secondName = runtimeNames[secondMolecule][secondComponent];
+                    const auto firstRaw = molecules[firstMolecule].components[firstComponent].name;
+                    const auto secondRaw = molecules[secondMolecule].components[secondComponent].name;
+                    const auto firstId = "m" + std::to_string(firstMolecule) + "c" +
+                                         std::to_string(firstComponent);
+                    const auto secondId = "m" + std::to_string(secondMolecule) + "c" +
+                                          std::to_string(secondComponent);
+                    TemplateMolecule::bind(
+                        templates[firstMolecule],
+                        (!expandSymmetry && templates[firstMolecule]->getMoleculeType()->isEquivalentComponent(firstRaw))
+                            ? firstRaw : firstName,
+                        firstId,
+                        templates[secondMolecule],
+                        (!expandSymmetry && templates[secondMolecule]->getMoleculeType()->isEquivalentComponent(secondRaw))
+                            ? secondRaw : secondName,
+                        secondId);
+                }
+            }
+        }
+
+        std::vector<std::vector<TemplateMolecule*>> sets;
+        std::vector<int> uniqueSetId;
+        const int setCount = TemplateMolecule::getNumDisjointSets(templates, sets, uniqueSetId);
+        if (setCount > 1) {
+            hasDisjointSets = true;
+            system->setUsingComplex(true);
+            for (int set = 0; set < setCount - 1; ++set) {
+                auto first = std::find(uniqueSetId.begin(), uniqueSetId.end(), set);
+                auto second = std::find(uniqueSetId.begin(), uniqueSetId.end(), set + 1);
+                if (first == uniqueSetId.end() || second == uniqueSetId.end()) {
+                    diagnostic = "could not connect disjoint template sets";
+                    return false;
+                }
+                const int firstIndex = static_cast<int>(std::distance(uniqueSetId.begin(), first));
+                const int secondIndex = static_cast<int>(std::distance(uniqueSetId.begin(), second));
+                const int firstConnection = templates[firstIndex]->getN_connectedTo();
+                const int secondConnection = templates[secondIndex]->getN_connectedTo();
+                templates[firstIndex]->addConnectedTo(templates[secondIndex], secondConnection);
+                templates[secondIndex]->addConnectedTo(templates[firstIndex], firstConnection);
+            }
+        }
+
+        suggestedTraversalLimit = std::max(
+            suggestedTraversalLimit, static_cast<int>(templates.size()) + 1);
+        builds.push_back(std::move(templates));
+    }
+    return !builds.empty();
+}
+
+bool hasReactionModifier(const bng::ast::ReactionRule& rule, const std::string& wanted) {
+    const std::string needle = lowerCase(wanted);
+    for (const auto& modifier : rule.getModifiers()) {
+        if (lowerCase(modifier) == needle) return true;
+    }
+    return false;
+}
+
+bool hasReactionModifierPrefix(const bng::ast::ReactionRule& rule,
+                               const std::string& prefix) {
+    const std::string needle = lowerCase(prefix);
+    for (const auto& modifier : rule.getModifiers()) {
+        if (lowerCase(modifier).rfind(needle, 0) == 0) return true;
+    }
+    return false;
+}
+
+bool componentNameForReactionRef(const bng::ast::ReactionRule& rule,
+                                  const bng::ast::ReactionRule::ComponentRef& ref,
+                                  std::string& name,
+                                  std::string& diagnostic) {
+    const auto& patterns = rule.getReactantPatterns();
+    if (ref.patternIndex >= patterns.size()) {
+        diagnostic = "operation refers to an unknown reactant pattern";
+        return false;
+    }
+    const auto molecules = collectGraphMolecules(patterns[ref.patternIndex].getGraph());
+    if (ref.moleculeIndex >= molecules.size() ||
+        ref.componentIndex >= molecules[ref.moleculeIndex].components.size()) {
+        diagnostic = "operation refers to an unknown reactant component";
+        return false;
+    }
+    name = molecules[ref.moleculeIndex].components[ref.componentIndex].name;
+    return true;
+}
+
+bool templateForReactionRef(
+    const bng::ast::ReactionRule::ComponentRef& ref,
+    const std::vector<std::vector<TemplateMolecule*>>& patternTemplates,
+    TemplateMolecule*& result,
+    std::string& diagnostic) {
+    if (ref.patternIndex >= patternTemplates.size() ||
+        ref.moleculeIndex >= patternTemplates[ref.patternIndex].size()) {
+        diagnostic = "operation refers to an unknown reactant template";
+        return false;
+    }
+    result = patternTemplates[ref.patternIndex][ref.moleculeIndex];
+    return result != nullptr;
+}
+
+bool evaluateStaticReactionRate(const bng::ast::Expression& expression,
+                                const std::map<std::string, double>& parameters,
+                                double& value,
+                                std::string& diagnostic) {
+    try {
+        value = expression.evaluate([&](const std::string& name) -> double {
+            if (name == "_PI" || name == "_pi") return 3.14159265358979323846;
+            if (name == "_e") return 2.71828182845904523536;
+            if (name == "_Na") return 6.02214076e23;
+            const auto iter = parameters.find(name);
+            if (iter == parameters.end()) {
+                throw std::runtime_error("unknown reaction-rate symbol '" + name + "'");
+            }
+            return iter->second;
+        }, 0.0);
+        if (!std::isfinite(value) || value < 0.0) {
+            diagnostic = "reaction rate is not a finite nonnegative value";
+            return false;
+        }
+        return true;
+    } catch (const std::exception& error) {
+        diagnostic = error.what();
+        return false;
+    }
+}
+
+std::string graphMoleculeCompartment(const bng::ast::SpeciesGraph& pattern,
+                                     const GraphMolecule& molecule) {
+    if (!molecule.node->get_compartment().empty()) {
+        return molecule.node->get_compartment();
+    }
+    return pattern.getCompartment();
+}
+
+struct DirectProductMolecule {
+    TemplateMolecule* templateMolecule = nullptr;
+    MoleculeCreator* creator = nullptr;
+};
+
+bool buildDirectProductMolecule(const bng::ast::SpeciesGraph& pattern,
+                                std::size_t moleculeIndex,
+                                System* system,
+                                DirectProductMolecule& result,
+                                std::string& diagnostic) {
+    const auto molecules = collectGraphMolecules(pattern.getGraph());
+    if (moleculeIndex >= molecules.size()) {
+        diagnostic = "AddMolecule refers to an unknown product molecule";
+        return false;
+    }
+
+    const auto& molecule = molecules[moleculeIndex];
+    auto* moleculeType = system->getMoleculeTypeByName(molecule.name);
+    if (moleculeType == nullptr) {
+        diagnostic = "unknown product molecule type '" + molecule.name + "'";
+        return false;
+    }
+    if (moleculeType->isPopulationType()) {
+        diagnostic = "population product molecules require population mapping";
+        return false;
+    }
+
+    auto* templateMolecule = new TemplateMolecule(moleculeType);
+    const std::string compartmentName = molecule.node->get_compartment().empty()
+                                            ? pattern.getCompartment()
+                                            : molecule.node->get_compartment();
+    Compartment* compartment = nullptr;
+    if (!resolveCompartment(system, compartmentName, compartment, diagnostic)) {
+        delete templateMolecule;
+        return false;
+    }
+    templateMolecule->setCompartment(compartment);
+
+    // MoleculeCreator creates a default molecule, so the creator template must
+    // constrain every site to be empty.  This is the same invariant enforced by
+    // NFinput::readProductMolecule for XML-created product molecules.
+    for (int componentIndex = 0;
+         componentIndex < moleculeType->getNumOfComponents(); ++componentIndex) {
+        templateMolecule->addEmptyComponent(moleculeType->getComponentName(componentIndex));
+    }
+
+    std::vector<std::pair<int, int>> componentStates;
+    std::set<int> specifiedComponents;
+    for (const auto& component : molecule.components) {
+        if (component.bonds.size() > 1) {
+            diagnostic = "product component has multiple bond constraints";
+            delete templateMolecule;
+            return false;
+        }
+        if (component.bonds.size() == 1) {
+            const std::string bond = graphBondToken(*component.bonds.front());
+            if (bond != "!-" && bond != "!?" && bond != "!+") {
+                diagnostic = "unsupported product bond constraint '" + bond + "'";
+                delete templateMolecule;
+                return false;
+            }
+            if (bond == "!+") {
+                std::vector<std::pair<std::size_t, std::size_t>> endpoints;
+                for (std::size_t candidateMolecule = 0;
+                     candidateMolecule < molecules.size(); ++candidateMolecule) {
+                    for (std::size_t candidateComponent = 0;
+                         candidateComponent < molecules[candidateMolecule].components.size();
+                         ++candidateComponent) {
+                        const auto& candidate = molecules[candidateMolecule]
+                                                     .components[candidateComponent];
+                        if (std::find(candidate.bonds.begin(), candidate.bonds.end(),
+                                      component.bonds.front()) != candidate.bonds.end()) {
+                            endpoints.emplace_back(candidateMolecule, candidateComponent);
+                        }
+                    }
+                }
+                if (endpoints.size() != 2) {
+                    diagnostic = "product bond must connect exactly two components";
+                    delete templateMolecule;
+                    return false;
+                }
+                if (endpoints[0].first == endpoints[1].first) {
+                    diagnostic = "intra-molecule product bonds are not yet supported";
+                    delete templateMolecule;
+                    return false;
+                }
+            }
+        }
+        if (moleculeType->isEquivalentComponent(component.name)) {
+            diagnostic = "symmetric product components require permutation expansion";
+            delete templateMolecule;
+            return false;
+        }
+
+        int componentIndex = -1;
+        try {
+            componentIndex = moleculeType->getCompIndexFromName(component.name);
+        } catch (const std::exception& error) {
+            diagnostic = error.what();
+            delete templateMolecule;
+            return false;
+        }
+        if (!specifiedComponents.insert(componentIndex).second) {
+            diagnostic = "product molecule specifies a component more than once";
+            delete templateMolecule;
+            return false;
+        }
+
+        const std::string state = graphStateToken(*component.node);
+        const int stateValue = componentStateValue(
+            moleculeType, component.name, state, diagnostic);
+        if (stateValue == -2) {
+            delete templateMolecule;
+            return false;
+        }
+        if (stateValue >= 0) {
+            componentStates.emplace_back(componentIndex, stateValue);
+            try {
+                templateMolecule->addComponentConstraint(component.name, stateValue);
+            } catch (const std::exception& error) {
+                diagnostic = error.what();
+                delete templateMolecule;
+                return false;
+            }
+        }
+    }
+
+    result.templateMolecule = templateMolecule;
+    result.creator = new MoleculeCreator(
+        templateMolecule, moleculeType, componentStates, compartment);
+    return true;
+}
+
+struct RuleGraphMolecule {
+    std::size_t patternIndex = 0;
+    std::size_t moleculeIndex = 0;
+    GraphMolecule molecule;
+};
+
+std::vector<RuleGraphMolecule> collectRuleGraphMolecules(
+    const std::vector<bng::ast::SpeciesGraph>& patterns) {
+    std::vector<RuleGraphMolecule> result;
+    for (std::size_t patternIndex = 0; patternIndex < patterns.size(); ++patternIndex) {
+        const auto molecules = collectGraphMolecules(patterns[patternIndex].getGraph());
+        for (std::size_t moleculeIndex = 0; moleculeIndex < molecules.size(); ++moleculeIndex) {
+            result.push_back(RuleGraphMolecule{patternIndex, moleculeIndex, molecules[moleculeIndex]});
+        }
+    }
+    return result;
+}
+
+std::string graphMoleculeKey(const GraphMolecule& molecule) {
+    std::vector<std::string> componentNames;
+    componentNames.reserve(molecule.components.size());
+    for (const auto& component : molecule.components) {
+        componentNames.push_back(component.name);
+    }
+    std::sort(componentNames.begin(), componentNames.end());
+    std::ostringstream key;
+    key << molecule.name << ":";
+    for (const auto& componentName : componentNames) key << componentName << ";";
+    return key.str();
+}
+
+bool buildProductComponentMapping(
+    const bng::ast::ReactionRule& rule,
+    std::map<bng::ast::ReactionRule::ComponentRef,
+             bng::ast::ReactionRule::ComponentRef>& productToReactant,
+    std::map<bng::ast::ReactionRule::ComponentRef,
+             bng::ast::ReactionRule::ComponentRef>& productMoleculeToReactant,
+    std::string& diagnostic) {
+    const auto reactants = collectRuleGraphMolecules(rule.getReactantPatterns());
+    const auto products = collectRuleGraphMolecules(rule.getProductPatterns());
+    productMoleculeToReactant.clear();
+    std::unordered_map<std::string, std::vector<std::size_t>> reactantsByKey;
+    for (std::size_t index = 0; index < reactants.size(); ++index) {
+        reactantsByKey[graphMoleculeKey(reactants[index].molecule)].push_back(index);
+    }
+
+    std::vector<bool> usedReactants(reactants.size(), false);
+    for (const auto& product : products) {
+        const auto key = graphMoleculeKey(product.molecule);
+        auto keyIt = reactantsByKey.find(key);
+        if (keyIt == reactantsByKey.end()) continue;
+
+        std::size_t matchedIndex = reactants.size();
+        for (const auto candidate : keyIt->second) {
+            if (!usedReactants[candidate]) {
+                matchedIndex = candidate;
+                break;
+            }
+        }
+        if (matchedIndex == reactants.size()) continue;
+        usedReactants[matchedIndex] = true;
+        const auto& reactant = reactants[matchedIndex];
+        productMoleculeToReactant.emplace(
+            bng::ast::ReactionRule::ComponentRef{
+                product.patternIndex, product.moleculeIndex, 0},
+            bng::ast::ReactionRule::ComponentRef{
+                reactant.patternIndex, reactant.moleculeIndex, 0});
+
+        std::map<std::string, std::vector<std::size_t>> reactantComponents;
+        for (std::size_t componentIndex = 0;
+             componentIndex < reactant.molecule.components.size(); ++componentIndex) {
+            reactantComponents[reactant.molecule.components[componentIndex].name].push_back(
+                componentIndex);
+        }
+        std::map<std::string, std::size_t> componentOffsets;
+        for (std::size_t componentIndex = 0;
+             componentIndex < product.molecule.components.size(); ++componentIndex) {
+            const auto& productComponent = product.molecule.components[componentIndex];
+            auto componentIt = reactantComponents.find(productComponent.name);
+            if (componentIt == reactantComponents.end()) {
+                diagnostic = "product component has no matching reactant component";
+                return false;
+            }
+            const auto offset = componentOffsets[productComponent.name]++;
+            if (offset >= componentIt->second.size()) {
+                diagnostic = "product contains more components than its reactant molecule";
+                return false;
+            }
+            productToReactant.emplace(
+                bng::ast::ReactionRule::ComponentRef{
+                    product.patternIndex, product.moleculeIndex, componentIndex},
+                bng::ast::ReactionRule::ComponentRef{
+                    reactant.patternIndex, reactant.moleculeIndex,
+                    componentIt->second[offset]});
+        }
+    }
+    return true;
+}
+
+bool componentNameForGraphRef(
+    const std::vector<bng::ast::SpeciesGraph>& patterns,
+    const bng::ast::ReactionRule::ComponentRef& ref,
+    std::string& name,
+    std::string& diagnostic) {
+    if (ref.patternIndex >= patterns.size()) {
+        diagnostic = "component reference points outside the pattern list";
+        return false;
+    }
+    const auto molecules = collectGraphMolecules(patterns[ref.patternIndex].getGraph());
+    if (ref.moleculeIndex >= molecules.size() ||
+        ref.componentIndex >= molecules[ref.moleculeIndex].components.size()) {
+        diagnostic = "component reference points outside its molecule";
+        return false;
+    }
+    name = molecules[ref.moleculeIndex].components[ref.componentIndex].name;
+    return true;
+}
+
+} // namespace
+
 bool addObservablesFromAst(const bng::ast::Model& model, System* s,
                            const std::map<std::string, double>& parameters,
                            bool verbose, int& suggestedTraversalLimit) {
-    (void)model; (void)s; (void)parameters; (void)verbose; (void)suggestedTraversalLimit;
-    // SPEC: NFinput::initObservables (NFinput.cpp:2935) +
-    //       readObservableForTemplateMolecules (NFinput.cpp:2814).
-    // ast source: model.getObservables() -> vector<Observable>.
-    return false;
+    (void)parameters;
+    if (s == nullptr) return false;
+
+    std::unordered_set<std::string> names;
+    for (const auto& observable : model.getObservables()) {
+        if (observable.getName().empty() || !names.insert(observable.getName()).second) {
+            std::cerr << "[nfsim/ast] duplicate or missing observable '"
+                      << observable.getName() << "'\n";
+            return false;
+        }
+        if (observable.getPatterns().empty()) {
+            std::cerr << "[nfsim/ast] observable '" << observable.getName()
+                      << "' contains no patterns\n";
+            return false;
+        }
+
+        const std::string type = observable.getType();
+        if (type != "Molecules" && type != "Species") {
+            std::cerr << "[nfsim/ast] unsupported observable type '" << type
+                      << "'\n";
+            return false;
+        }
+        const bool moleculesObservable = type == "Molecules";
+        if (!moleculesObservable) s->setUsingComplex(true);
+
+        std::vector<TemplateMolecule*> templates;
+        std::vector<std::string> relations;
+        std::vector<int> quantities;
+        bool hasDisjointSets = false;
+        for (const auto& patternText : observable.getPatterns()) {
+            ParsedObservablePattern parsed;
+            std::string diagnostic;
+            if (!parseObservablePattern(patternText, model, parsed, diagnostic)) {
+                std::cerr << "[nfsim/ast] cannot map observable '" << observable.getName()
+                          << "': " << diagnostic << "\n";
+                return false;
+            }
+
+            std::vector<std::vector<TemplateMolecule*>> builds;
+            if (!buildTemplatePatterns(parsed.graph, parsed.compartment, s,
+                                        moleculesObservable, builds, hasDisjointSets,
+                                        suggestedTraversalLimit, diagnostic)) {
+                std::cerr << "[nfsim/ast] cannot map observable '" << observable.getName()
+                          << "': " << diagnostic << "\n";
+                return false;
+            }
+            for (auto& build : builds) {
+                // One observable template represents one whole pattern.  The
+                // first template is the root; buildTemplatePatterns wires the
+                // remaining molecules to it with explicit bonds or
+                // connected-to edges.  Adding every molecule here would count
+                // a connected pattern once per member rather than once per
+                // matching pattern.
+                if (build.empty()) {
+                    diagnostic = "observable pattern produced no template";
+                    return false;
+                }
+                templates.push_back(build.front());
+                relations.push_back(parsed.relation);
+                quantities.push_back(parsed.quantity);
+            }
+        }
+        if (templates.empty()) return false;
+
+        bool hasStoichiometricConstraints = false;
+        for (const auto& relation : relations) {
+            if (!relation.empty()) {
+                hasStoichiometricConstraints = true;
+                break;
+            }
+        }
+        if (hasStoichiometricConstraints) s->setUsingComplex(true);
+
+        Observable* created = nullptr;
+        if (moleculesObservable) {
+            if (hasStoichiometricConstraints) {
+                created = new MoleculesObservable(observable.getName(), templates,
+                                                  relations, quantities);
+            } else {
+                created = new MoleculesObservable(observable.getName(), templates);
+            }
+            std::unordered_set<MoleculeType*> addedTypes;
+            for (auto* templateMolecule : templates) {
+                if (addedTypes.insert(templateMolecule->getMoleculeType()).second) {
+                    templateMolecule->getMoleculeType()->addMolObs(
+                        static_cast<MoleculesObservable*>(created));
+                }
+            }
+        } else {
+            created = new SpeciesObservable(observable.getName(), templates,
+                                            relations, quantities);
+        }
+        s->addObservableForOutput(created);
+        if (verbose) {
+            std::cerr << "[nfsim/ast] " << type << " observable "
+                      << observable.getName() << "\n";
+        }
+    }
+    return true;
 }
 
 bool addSpeciesFromAst(const bng::ast::Model& model, System* s,
                        const std::map<std::string, double>& parameters, bool verbose) {
-    (void)model; (void)s; (void)parameters; (void)verbose;
-    // SPEC: the seed-species/ListOfSpecies loop in NFinput::initializeFromXML
-    //       (instantiates initial Molecule populations into the System).
-    // ast source: model.getSeedSpecies() -> vector<SeedSpecies>.
-    return false;
+    if (s == nullptr) return false;
+
+    for (const auto& seed : model.getSeedSpecies()) {
+        const auto molecules = collectGraphMolecules(seed.getGraph());
+        if (molecules.empty()) {
+            std::cerr << "[nfsim/ast] seed species '" << seed.getPattern()
+                      << "' contains no molecule graph\n";
+            return false;
+        }
+        std::string diagnostic;
+        int count = 0;
+        if (!parseSeedAmount(seed, parameters, count, diagnostic)) {
+            std::cerr << "[nfsim/ast] cannot map seed species '" << seed.getPattern()
+                      << "': " << diagnostic << "\n";
+            return false;
+        }
+
+        std::vector<RuntimeNames> assignments;
+        if (!makeRuntimeNameAssignments(molecules, s, true, assignments, diagnostic) ||
+            assignments.empty()) {
+            std::cerr << "[nfsim/ast] cannot map seed species '" << seed.getPattern()
+                      << "': " << diagnostic << "\n";
+            return false;
+        }
+        const auto& runtimeNames = assignments.front();
+
+        bool foundPopulation = false;
+        bool foundParticle = false;
+        std::vector<Compartment*> compartments;
+        for (const auto& molecule : molecules) {
+            auto* moleculeType = s->getMoleculeTypeByName(molecule.name);
+            if (moleculeType == nullptr) {
+                std::cerr << "[nfsim/ast] unknown seed molecule type '" << molecule.name
+                          << "'\n";
+                return false;
+            }
+            foundPopulation = foundPopulation || moleculeType->isPopulationType();
+            foundParticle = foundParticle || !moleculeType->isPopulationType();
+            const std::string compartmentName = molecule.node->get_compartment().empty()
+                                                    ? seed.getCompartment()
+                                                    : molecule.node->get_compartment();
+            Compartment* compartment = nullptr;
+            if (!resolveCompartment(s, compartmentName, compartment, diagnostic)) {
+                std::cerr << "[nfsim/ast] cannot map seed species '" << seed.getPattern()
+                          << "': " << diagnostic << "\n";
+                return false;
+            }
+            compartments.push_back(compartment);
+        }
+        if (foundPopulation && foundParticle) {
+            std::cerr << "[nfsim/ast] seed species mixes population and particle molecules\n";
+            return false;
+        }
+        if (foundPopulation && molecules.size() != 1) {
+            std::cerr << "[nfsim/ast] population seed species must contain one molecule\n";
+            return false;
+        }
+
+        const int copies = foundPopulation ? 1 : count;
+        std::vector<std::vector<Molecule*>> generated(
+            molecules.size(), std::vector<Molecule*>());
+        for (int copy = 0; copy < copies; ++copy) {
+            for (std::size_t moleculeIndex = 0; moleculeIndex < molecules.size(); ++moleculeIndex) {
+                auto* moleculeType = s->getMoleculeTypeByName(molecules[moleculeIndex].name);
+                auto* molecule = moleculeType->genDefaultMolecule(compartments[moleculeIndex]);
+                generated[moleculeIndex].push_back(molecule);
+                for (std::size_t componentIndex = 0;
+                     componentIndex < molecules[moleculeIndex].components.size(); ++componentIndex) {
+                    const auto& component = molecules[moleculeIndex].components[componentIndex];
+                    const std::string state = graphStateToken(*component.node);
+                    if (state.empty() || state == "?" || state == "*") continue;
+                    const int stateValue = componentStateValue(
+                        moleculeType, runtimeNames[moleculeIndex][componentIndex], state,
+                        diagnostic);
+                    if (stateValue < 0) {
+                        std::cerr << "[nfsim/ast] cannot map seed species '"
+                                  << seed.getPattern() << "': " << diagnostic << "\n";
+                        return false;
+                    }
+                    molecule->setComponentState(
+                        runtimeNames[moleculeIndex][componentIndex], stateValue);
+                }
+            }
+
+            std::unordered_set<BNGcore::Node*> processedBonds;
+            for (std::size_t moleculeIndex = 0; moleculeIndex < molecules.size(); ++moleculeIndex) {
+                for (std::size_t componentIndex = 0;
+                     componentIndex < molecules[moleculeIndex].components.size(); ++componentIndex) {
+                    for (auto* bond : molecules[moleculeIndex].components[componentIndex].bonds) {
+                        if (!processedBonds.insert(bond).second) continue;
+                        if (graphBondToken(*bond) != "!+") continue;
+                        std::vector<std::pair<std::size_t, std::size_t>> endpoints;
+                        for (std::size_t otherMolecule = 0; otherMolecule < molecules.size(); ++otherMolecule) {
+                            for (std::size_t otherComponent = 0;
+                                 otherComponent < molecules[otherMolecule].components.size(); ++otherComponent) {
+                                const auto& other = molecules[otherMolecule].components[otherComponent];
+                                if (std::find(other.bonds.begin(), other.bonds.end(), bond) != other.bonds.end()) {
+                                    endpoints.emplace_back(otherMolecule, otherComponent);
+                                }
+                            }
+                        }
+                        if (endpoints.size() != 2) {
+                            std::cerr << "[nfsim/ast] seed species has an incomplete bound bond\n";
+                            return false;
+                        }
+                        const auto [firstMolecule, firstComponent] = endpoints[0];
+                        const auto [secondMolecule, secondComponent] = endpoints[1];
+                        Molecule::bind(
+                            generated[firstMolecule].back(),
+                            runtimeNames[firstMolecule][firstComponent],
+                            generated[secondMolecule].back(),
+                            runtimeNames[secondMolecule][secondComponent]);
+                    }
+                }
+            }
+        }
+
+        if (foundPopulation) {
+            if (!generated[0].front()->setPopulation(count)) {
+                std::cerr << "[nfsim/ast] failed to set population seed count\n";
+                return false;
+            }
+        }
+
+        if (seed.isConstant()) {
+            if (molecules.size() != 1 || foundPopulation) {
+                std::cerr << "[nfsim/ast] fixed seed species must be one particle molecule\n";
+                return false;
+            }
+            auto* moleculeType = s->getMoleculeTypeByName(molecules.front().name);
+            moleculeType->setFixed(true, count, compartments.front());
+        }
+        if (verbose) {
+            std::cerr << "[nfsim/ast] seed " << seed.getPattern()
+                      << " count=" << count << "\n";
+        }
+    }
+    return true;
 }
 
 bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                              const std::map<std::string, double>& parameters,
                              bool blockSameComplexBinding, bool verbose,
                              int& suggestedTraversalLimit) {
-    (void)model; (void)s; (void)parameters; (void)blockSameComplexBinding;
-    (void)verbose; (void)suggestedTraversalLimit;
-    // SPEC: NFinput::initReactionRules (NFinput.cpp:1266) — the largest section;
-    //       TransformationSet construction, reactant template molecules, rate
-    //       laws (incl. Arrhenius via NFinput_energy). Port last.
-    // ast source: model.getReactionRules() -> vector<ReactionRule>.
-    return false;
+    if (s == nullptr) return false;
+
+    // SPEC: NFinput::initReactionRules (NFinput.cpp:1266). This direct slice
+    // covers elementary state changes, binding/unbinding, identity rules,
+    // standalone product-molecule creation, explicit degradation, and the
+    // two-direction expansion of reversible rules. Scoped / local rates,
+    // filters, and energy-based rules remain fail-closed until their NFcore
+    // representations have differential tests.
+    if (!model.getEnergyPatterns().empty()) {
+        std::cerr << "[nfsim/ast] energy patterns require the compatibility XML path\n";
+        return false;
+    }
+
+    for (const auto& originalRule : model.getReactionRules()) {
+        const auto& originalRates = originalRule.getRates();
+        if ((!originalRule.isBidirectional() && originalRates.size() != 1) ||
+            (originalRule.isBidirectional() && originalRates.size() != 2)) {
+            std::cerr << "[nfsim/ast] reaction '" << originalRule.getRuleName()
+                      << "' has an invalid number of rate expressions for its directionality\n";
+            return false;
+        }
+
+        // The AST stores a reversible rule as one pair of patterns and two
+        // rates.  Construct the reverse direction through the same
+        // ReactionRule initializer so its component/bond/product mappings are
+        // recomputed with the reversed pattern indices instead of being
+        // guessed in this adapter.
+        std::unique_ptr<bng::ast::ReactionRule> reverseRule;
+        if (originalRule.isBidirectional()) {
+            reverseRule = std::make_unique<bng::ast::ReactionRule>(
+                originalRule.getRuleName() + "_reverse",
+                originalRule.getLabel(),
+                originalRule.getProducts(),
+                originalRule.getReactants(),
+                std::vector<bng::ast::Expression>{originalRates[1]},
+                originalRule.getModifiers(),
+                false,
+                originalRule.getProductPatterns(),
+                originalRule.getReactantPatterns());
+        }
+
+        std::vector<const bng::ast::ReactionRule*> directions{&originalRule};
+        if (reverseRule != nullptr) directions.push_back(reverseRule.get());
+        for (const auto* rulePtr : directions) {
+            const auto& rule = *rulePtr;
+        const auto& reactantPatterns = rule.getReactantPatterns();
+        const auto& productPatterns = rule.getProductPatterns();
+        const auto& rates = rule.getRates();
+        if (rule.hasScopePrefix() || rates.empty() ||
+            (reactantPatterns.empty() && productPatterns.empty())) {
+            std::cerr << "[nfsim/ast] reaction '" << rule.getRuleName()
+                      << "' requires unsupported scope, empty reaction, or missing-rate handling\n";
+            return false;
+        }
+        if (hasReactionModifierPrefix(rule, "include_") ||
+            hasReactionModifierPrefix(rule, "exclude_") ||
+            hasReactionModifier(rule, "moveconnected")) {
+            std::cerr << "[nfsim/ast] reaction '" << rule.getRuleName()
+                      << "' uses an unsupported reaction modifier\n";
+            return false;
+        }
+        if (reactantPatterns.size() != rule.getReactants().size() &&
+            !rule.getReactants().empty()) {
+            std::cerr << "[nfsim/ast] reaction '" << rule.getRuleName()
+                      << "' has an unsupported non-species reactant\n";
+            return false;
+        }
+
+        std::vector<std::vector<TemplateMolecule*>> patternTemplates;
+        std::vector<TemplateMolecule*> reactantRoots;
+        bool hasDisjointSets = false;
+        for (std::size_t patternIndex = 0; patternIndex < reactantPatterns.size(); ++patternIndex) {
+            std::vector<std::vector<TemplateMolecule*>> builds;
+            std::string diagnostic;
+            if (!buildTemplatePatterns(
+                    reactantPatterns[patternIndex].getGraph(),
+                    reactantPatterns[patternIndex].getCompartment(),
+                    s, false, builds, hasDisjointSets, suggestedTraversalLimit, diagnostic) ||
+                builds.size() != 1 || builds.front().empty()) {
+                std::cerr << "[nfsim/ast] cannot map reaction '" << rule.getRuleName()
+                          << "': " << (diagnostic.empty() ? "invalid reactant pattern" : diagnostic)
+                          << "\n";
+                return false;
+            }
+            reactantRoots.push_back(builds.front().front());
+            patternTemplates.push_back(std::move(builds.front()));
+        }
+
+        bool ok = true;
+        std::string diagnostic;
+        const auto& operations = rule.getOperations();
+
+        // AddMolecule transforms need their extra mapping sets allocated before
+        // the TransformationSet is finalized.  Product-side bond operations are
+        // installed after these templates exist, so a newly created molecule can
+        // bind to a reactant or to another newly created molecule.
+        std::vector<DirectProductMolecule> directProducts;
+        std::vector<TemplateMolecule*> addMoleculeTemplates;
+        std::vector<MoleculeCreator*> moleculeCreators;
+        std::map<bng::ast::ReactionRule::ComponentRef, std::size_t> addedProductIndexes;
+        auto addDirectProduct = [&](const bng::ast::ReactionRule::ComponentRef& productRef) {
+            if (productRef.patternIndex >= productPatterns.size()) {
+                diagnostic = "AddMolecule refers to an unknown product pattern";
+                return false;
+            }
+            if (!addedProductIndexes.emplace(productRef, directProducts.size()).second) {
+                diagnostic = "duplicate AddMolecule operation for a product molecule";
+                return false;
+            }
+            DirectProductMolecule product;
+            if (!buildDirectProductMolecule(
+                    productPatterns[productRef.patternIndex], productRef.moleculeIndex,
+                    s, product, diagnostic)) {
+                return false;
+            }
+            directProducts.push_back(product);
+            addMoleculeTemplates.push_back(product.templateMolecule);
+            moleculeCreators.push_back(product.creator);
+            return true;
+        };
+        for (const auto& operation : operations) {
+            if (operation.type == bng::ast::ReactionRule::TransformOp::Type::AddMolecule) {
+                const bng::ast::ReactionRule::ComponentRef productRef{
+                    operation.patternIndex, operation.moleculeIndex, 0};
+                if (!addDirectProduct(productRef)) {
+                    ok = false;
+                    break;
+                }
+            }
+        }
+        if (ok && reactantPatterns.empty()) {
+            for (std::size_t patternIndex = 0;
+                 patternIndex < productPatterns.size() && ok; ++patternIndex) {
+                const auto molecules = collectGraphMolecules(
+                    productPatterns[patternIndex].getGraph());
+                for (std::size_t moleculeIndex = 0;
+                     moleculeIndex < molecules.size(); ++moleculeIndex) {
+                    if (!addDirectProduct({patternIndex, moleculeIndex, 0})) {
+                        ok = false;
+                        break;
+                    }
+                }
+            }
+        }
+
+        auto cleanupDirectProducts = [&]() {
+            for (auto& product : directProducts) {
+                delete product.creator;
+                delete product.templateMolecule;
+                product.creator = nullptr;
+                product.templateMolecule = nullptr;
+            }
+            directProducts.clear();
+            addMoleculeTemplates.clear();
+            moleculeCreators.clear();
+        };
+
+        TransformationSet* transformationSet = nullptr;
+        if (ok) {
+            if (addMoleculeTemplates.empty()) {
+                transformationSet = new TransformationSet(reactantRoots);
+            } else {
+                transformationSet = new TransformationSet(reactantRoots, addMoleculeTemplates);
+            }
+            transformationSet->setComplexBookkeeping(blockSameComplexBinding || hasDisjointSets);
+            transformationSet->setNumProductPatterns(
+                static_cast<unsigned int>(productPatterns.size()));
+            for (auto* creator : moleculeCreators) {
+                if (!transformationSet->addAddMolecule(creator)) {
+                    diagnostic = "could not add product-molecule creator";
+                    ok = false;
+                    break;
+                }
+            }
+        }
+
+        // Reconstruct the AST-side product mapping used by ReactionRule's
+        // cross-bond bookkeeping.  The public ReactionRule API exposes the
+        // elementary operations but not its private cross-bond tables.
+        std::map<bng::ast::ReactionRule::ComponentRef,
+                 bng::ast::ReactionRule::ComponentRef> productToReactant;
+        std::map<bng::ast::ReactionRule::ComponentRef,
+                 bng::ast::ReactionRule::ComponentRef> productMoleculeToReactant;
+        if (ok && !buildProductComponentMapping(
+                      rule, productToReactant, productMoleculeToReactant, diagnostic)) {
+            ok = false;
+        }
+
+        if (ok) {
+            const auto reactantMolecules = collectRuleGraphMolecules(reactantPatterns);
+            const auto productMolecules = collectRuleGraphMolecules(productPatterns);
+            for (const auto& moleculeMapping : productMoleculeToReactant) {
+                const auto& productRef = moleculeMapping.first;
+                const auto& reactantRef = moleculeMapping.second;
+                const auto productPatternIndex = productRef.patternIndex;
+                const auto productMoleculeIndex = productRef.moleculeIndex;
+                const auto reactantPatternIndex = reactantRef.patternIndex;
+                const auto reactantMoleculeIndex = reactantRef.moleculeIndex;
+                const auto productIt = std::find_if(
+                    productMolecules.begin(), productMolecules.end(),
+                    [productPatternIndex, productMoleculeIndex](const auto& molecule) {
+                        return molecule.patternIndex == productPatternIndex &&
+                               molecule.moleculeIndex == productMoleculeIndex;
+                    });
+                const auto reactantIt = std::find_if(
+                    reactantMolecules.begin(), reactantMolecules.end(),
+                    [reactantPatternIndex, reactantMoleculeIndex](const auto& molecule) {
+                        return molecule.patternIndex == reactantPatternIndex &&
+                               molecule.moleculeIndex == reactantMoleculeIndex;
+                    });
+                if (productIt == productMolecules.end() ||
+                    reactantIt == reactantMolecules.end()) {
+                    diagnostic = "compartment transport refers to an unknown molecule";
+                    ok = false;
+                    break;
+                }
+
+                const std::string productCompartment = graphMoleculeCompartment(
+                    productPatterns[productIt->patternIndex], productIt->molecule);
+                const std::string reactantCompartment = graphMoleculeCompartment(
+                    reactantPatterns[reactantIt->patternIndex], reactantIt->molecule);
+                if (productCompartment.empty() ||
+                    productCompartment == reactantCompartment) {
+                    continue;
+                }
+
+                // MoveTransformation invalidates the affected complex's
+                // canonical label.  NFsim's legacy implementation therefore
+                // expects complex bookkeeping even for an otherwise
+                // molecule-only model.
+                s->setUsingComplex(true);
+                Compartment* destination = nullptr;
+                if (!resolveCompartment(
+                        s, productCompartment, destination, diagnostic)) {
+                    ok = false;
+                    break;
+                }
+                TemplateMolecule* templateMolecule = nullptr;
+                if (!templateForReactionRef(
+                        reactantRef, patternTemplates, templateMolecule, diagnostic) ||
+                    !transformationSet->addMoveTransform(templateMolecule, destination, false)) {
+                    if (diagnostic.empty()) {
+                        diagnostic = "could not add direct compartment transport";
+                    }
+                    ok = false;
+                    break;
+                }
+            }
+        }
+
+        std::map<bng::ast::ReactionRule::ComponentRef,
+                 std::pair<TemplateMolecule*, std::string>> addedProductComponents;
+        if (ok) {
+            for (const auto& [productRef, productIndex] : addedProductIndexes) {
+                const auto& operationProduct = directProducts.at(productIndex);
+                const auto molecules = collectGraphMolecules(
+                    productPatterns[productRef.patternIndex].getGraph());
+                if (productRef.moleculeIndex >= molecules.size()) {
+                    diagnostic = "AddMolecule refers to an unknown product molecule";
+                    ok = false;
+                    break;
+                }
+                const auto& graphMolecule = molecules[productRef.moleculeIndex];
+                for (std::size_t componentIndex = 0;
+                     componentIndex < graphMolecule.components.size(); ++componentIndex) {
+                    addedProductComponents.emplace(
+                        bng::ast::ReactionRule::ComponentRef{
+                            productRef.patternIndex, productRef.moleculeIndex, componentIndex},
+                        std::make_pair(operationProduct.templateMolecule,
+                                       graphMolecule.components[componentIndex].name));
+                }
+            }
+        }
+
+        auto mapComponent = [&](const bng::ast::ReactionRule::ComponentRef& ref,
+                                TemplateMolecule*& templateMolecule,
+                                std::string& componentName) -> bool {
+            if (!templateForReactionRef(ref, patternTemplates, templateMolecule, diagnostic) ||
+                !componentNameForReactionRef(rule, ref, componentName, diagnostic)) {
+                return false;
+            }
+            if (templateMolecule->getMoleculeType()->isEquivalentComponent(componentName)) {
+                diagnostic = "symmetric reaction-center components require permutation expansion";
+                return false;
+            }
+            return true;
+        };
+
+        // NFsim requires unbinding before binding when a rule does both.
+        if (ok) {
+            for (const auto& operation : operations) {
+                if (operation.type != bng::ast::ReactionRule::TransformOp::Type::DeleteBond) continue;
+                TemplateMolecule* lhs = nullptr;
+                TemplateMolecule* rhs = nullptr;
+                std::string lhsName;
+                std::string rhsName;
+                if (!mapComponent(operation.source, lhs, lhsName) ||
+                    !mapComponent(operation.partner, rhs, rhsName) ||
+                    !transformationSet->addUnbindingTransform(lhs, lhsName, rhs, rhsName)) {
+                    ok = false;
+                    break;
+                }
+            }
+        }
+        if (ok) {
+            for (const auto& operation : operations) {
+                if (operation.type != bng::ast::ReactionRule::TransformOp::Type::AddBond) continue;
+                TemplateMolecule* lhs = nullptr;
+                TemplateMolecule* rhs = nullptr;
+                std::string lhsName;
+                std::string rhsName;
+                if (!mapComponent(operation.source, lhs, lhsName) ||
+                    !mapComponent(operation.partner, rhs, rhsName) ||
+                    !transformationSet->addBindingTransform(lhs, lhsName, rhs, rhsName)) {
+                    ok = false;
+                    break;
+                }
+            }
+        }
+        if (ok && !addedProductComponents.empty()) {
+            // AddBond operations only contain two reactant-mapped components.
+            // Bonds involving an AddMolecule are represented by the product
+            // graph, so inspect those edges and use the special transform that
+            // skips pre-creation null-condition checks.
+            std::unordered_map<BNGcore::Node*,
+                               std::vector<bng::ast::ReactionRule::ComponentRef>> productBondEndpoints;
+            for (std::size_t patternIndex = 0;
+                 patternIndex < productPatterns.size(); ++patternIndex) {
+                const auto molecules = collectGraphMolecules(
+                    productPatterns[patternIndex].getGraph());
+                for (std::size_t moleculeIndex = 0;
+                     moleculeIndex < molecules.size(); ++moleculeIndex) {
+                    const auto& molecule = molecules[moleculeIndex];
+                    for (std::size_t componentIndex = 0;
+                         componentIndex < molecule.components.size(); ++componentIndex) {
+                        const auto& component = molecule.components[componentIndex];
+                        for (auto* bond : component.bonds) {
+                            if (graphBondToken(*bond) != "!+") continue;
+                            productBondEndpoints[bond].push_back(
+                                bng::ast::ReactionRule::ComponentRef{
+                                    patternIndex, moleculeIndex, componentIndex});
+                        }
+                    }
+                }
+            }
+
+            for (const auto& [bond, endpoints] : productBondEndpoints) {
+                (void)bond;
+                if (endpoints.size() != 2) {
+                    diagnostic = "product bond does not connect exactly two components";
+                    ok = false;
+                    break;
+                }
+                const auto firstAdded = addedProductComponents.find(endpoints[0]);
+                const auto secondAdded = addedProductComponents.find(endpoints[1]);
+                if (firstAdded == addedProductComponents.end() &&
+                    secondAdded == addedProductComponents.end()) {
+                    continue;
+                }
+                if (firstAdded != addedProductComponents.end() &&
+                    secondAdded != addedProductComponents.end()) {
+                    if (!transformationSet->addNewMoleculeBindingTransform(
+                            firstAdded->second.first, firstAdded->second.second,
+                            secondAdded->second.first, secondAdded->second.second)) {
+                        diagnostic = "could not add binding between product molecules";
+                        ok = false;
+                        break;
+                    }
+                    continue;
+                }
+
+                const auto added = firstAdded != addedProductComponents.end()
+                                       ? firstAdded : secondAdded;
+                const auto existingRef = firstAdded != addedProductComponents.end()
+                                             ? endpoints[1] : endpoints[0];
+                const auto mapped = productToReactant.find(existingRef);
+                if (mapped == productToReactant.end()) {
+                    diagnostic = "product bond refers to an unmapped existing component";
+                    ok = false;
+                    break;
+                }
+                TemplateMolecule* existingTemplate = nullptr;
+                std::string existingName;
+                if (!templateForReactionRef(
+                        mapped->second, patternTemplates, existingTemplate, diagnostic) ||
+                    !componentNameForReactionRef(
+                        rule, mapped->second, existingName, diagnostic) ||
+                    existingTemplate->getMoleculeType()->isEquivalentComponent(existingName)) {
+                    if (diagnostic.empty()) {
+                        diagnostic = "symmetric existing component in product bond is unsupported";
+                    }
+                    ok = false;
+                    break;
+                }
+                if (!transformationSet->addNewMoleculeBindingTransform(
+                        existingTemplate, existingName,
+                        added->second.first, added->second.second)) {
+                    diagnostic = "could not add binding between reactant and product molecule";
+                    ok = false;
+                    break;
+                }
+            }
+        }
+        if (ok) {
+            for (const auto& operation : operations) {
+                if (operation.type != bng::ast::ReactionRule::TransformOp::Type::ChangeState) continue;
+                TemplateMolecule* target = nullptr;
+                std::string componentName;
+                if (!mapComponent(operation.source, target, componentName)) {
+                    ok = false;
+                    break;
+                }
+                bool applied = false;
+                if (operation.newState == "PLUS") {
+                    applied = transformationSet->addIncrementStateTransform(target, componentName);
+                } else if (operation.newState == "MINUS") {
+                    applied = transformationSet->addDecrementStateTransform(target, componentName);
+                } else {
+                    applied = transformationSet->addStateChangeTransform(
+                        target, componentName, operation.newState);
+                }
+                if (!applied) {
+                    diagnostic = "could not add state-change transformation";
+                    ok = false;
+                    break;
+                }
+            }
+        }
+
+        const bool deleteMolecules = hasReactionModifier(rule, "deletemolecules");
+        if (ok) {
+            if (productPatterns.empty() && operations.empty()) {
+                // `A(...) -> 0` has no product graph for ReactionRule to diff.
+                // Match the XML loader's complete-species versus
+                // DeleteMolecules distinction explicitly.
+                for (auto* root : reactantRoots) {
+                    if (root->getMoleculeType()->isPopulationType()) {
+                        ok = transformationSet->addDecrementPopulation(root);
+                    } else {
+                        ok = transformationSet->addDeleteMolecule(
+                            root, deleteMolecules
+                                      ? TransformationFactory::DELETE_MOLECULES
+                                      : TransformationFactory::COMPLETE_SPECIES_REMOVAL);
+                    }
+                    if (!ok) break;
+                }
+            } else {
+                for (const auto& operation : operations) {
+                    if (operation.type != bng::ast::ReactionRule::TransformOp::Type::DeleteMolecule) continue;
+                    TemplateMolecule* target = nullptr;
+                    if (!templateForReactionRef(
+                            {operation.patternIndex, operation.moleculeIndex, 0},
+                            patternTemplates, target, diagnostic)) {
+                        ok = false;
+                        break;
+                    }
+                    if (target->getMoleculeType()->isPopulationType()) {
+                        ok = transformationSet->addDecrementPopulation(target);
+                    } else {
+                        ok = transformationSet->addDeleteMolecule(
+                            target, deleteMolecules
+                                      ? TransformationFactory::DELETE_MOLECULES
+                                      : TransformationFactory::COMPLETE_SPECIES_REMOVAL);
+                    }
+                    if (!ok) break;
+                }
+            }
+        }
+
+        if (!ok) {
+            std::cerr << "[nfsim/ast] cannot map reaction '" << rule.getRuleName()
+                      << "': " << (diagnostic.empty() ? "NFsim transformation rejected" : diagnostic)
+                      << "\n";
+            delete transformationSet;
+            if (!transformationSet) cleanupDirectProducts();
+            return false;
+        }
+
+        transformationSet->finalize();
+
+        const auto& rate = rates.front();
+        ReactionClass* reaction = nullptr;
+        std::string rateParameterName;
+        const bool michaelisMenten =
+            rate.kind() == bng::ast::ExpressionKind::Function &&
+            (lowerCase(rate.name()) == "mm") && rate.args().size() == 2;
+        const bool namedFunction =
+            (rate.kind() == bng::ast::ExpressionKind::Identifier ||
+             rate.kind() == bng::ast::ExpressionKind::Function) &&
+            hasModelFunction(model, rate.name());
+        if (michaelisMenten) {
+            if (reactantRoots.size() != 2) {
+                std::cerr << "[nfsim/ast] reaction '" << rule.getRuleName()
+                          << "' uses MM but does not have exactly two reactants\n";
+                delete transformationSet;
+                return false;
+            }
+            double kcat = 0.0;
+            double km = 0.0;
+            if (!evaluateStaticReactionRate(rate.args()[0], parameters, kcat, diagnostic) ||
+                !evaluateStaticReactionRate(rate.args()[1], parameters, km, diagnostic) ||
+                km < 0.0) {
+                if (diagnostic.empty()) diagnostic = "MM constants must be nonnegative";
+                std::cerr << "[nfsim/ast] cannot map reaction '" << rule.getRuleName()
+                          << "': " << diagnostic << "\n";
+                delete transformationSet;
+                return false;
+            }
+            reaction = new MMRxnClass(rule.getRuleName(), kcat, km, transformationSet, s);
+        } else if (namedFunction) {
+            auto* global = s->getGlobalFunctionByName(rate.name());
+            if (global == nullptr ||
+                (rate.kind() == bng::ast::ExpressionKind::Function && !rate.args().empty())) {
+                std::cerr << "[nfsim/ast] reaction '" << rule.getRuleName()
+                          << "' has an unsupported rate function\n";
+                delete transformationSet;
+                return false;
+            }
+            reaction = new FunctionalRxnClass(rule.getRuleName(), global, transformationSet, s);
+        } else {
+            double rateValue = 0.0;
+            if (!evaluateStaticReactionRate(rate, parameters, rateValue, diagnostic)) {
+                std::cerr << "[nfsim/ast] cannot map reaction '" << rule.getRuleName()
+                          << "': " << diagnostic << "\n";
+                delete transformationSet;
+                return false;
+            }
+            if (rate.kind() == bng::ast::ExpressionKind::Identifier &&
+                parameters.count(rate.name()) != 0) {
+                rateParameterName = rate.name();
+            }
+            reaction = new BasicRxnClass(
+                rule.getRuleName(), 0.0, "", transformationSet, s);
+            reaction->setBaseRate(rateValue, rateParameterName);
+        }
+
+        reaction->setTotalRateFlag(hasReactionModifier(rule, "totalrate"));
+        if (hasReactionModifier(rule, "matchonce")) {
+            for (std::size_t index = 0; index < reactantRoots.size(); ++index) {
+                reaction->setMatchOnce(static_cast<unsigned int>(index), true);
+            }
+        }
+
+        // Keep zero-rate elementary rules out of the live reaction list, as the
+        // XML loader does. Functional reactions retain their dynamic function.
+        if (reaction->getRxnType() == ReactionClass::BASIC_RXN &&
+            reaction->getBaseRate() <= 0.0) {
+            delete reaction;
+            continue;
+        }
+        s->addReaction(reaction);
+        if (verbose) {
+            std::cerr << "[nfsim/ast] reaction " << rule.getRuleName() << " (direct)\n";
+        }
+        }
+    }
+    return true;
 }
 
 // --------------------------------------------------------------------------- //
@@ -582,16 +2186,28 @@ System* buildSystemFromAst(const bng::ast::Model& model,
     std::map<std::string, int> allowedStates;
     suggestedTraversalLimit = 0;
 
+    // MoleculeList preallocates instances while molecule types are created.
+    // Enable complex bookkeeping before that pool is constructed whenever the
+    // model has Species observables; enabling it later leaves those instances
+    // without complex IDs.
+    for (const auto& observable : model.getObservables()) {
+        if (observable.getType() == "Species") {
+            s->setUsingComplex(true);
+            break;
+        }
+    }
+
     bool ok = false;
     try {
-        // Keep this order aligned with initializeFromModel(): molecule types
-        // and compartments must exist before species, observables, and rules.
+        // Keep dependencies explicit: observables must exist before global
+        // functions are prepared, while molecule types and compartments must
+        // exist before any pattern is materialized.
         ok = addOptionsFromAst(model, s, verbose) &&
              addParametersFromAst(model, s, parameters, verbose) &&
              addMoleculeTypesFromAst(model, s, allowedStates, verbose) &&
              addCompartmentsFromAst(model, s, verbose) &&
-             addFunctionsFromAst(model, s, parameters, verbose) &&
              addObservablesFromAst(model, s, parameters, verbose, suggestedTraversalLimit) &&
+             addFunctionsFromAst(model, s, parameters, verbose) &&
              addSpeciesFromAst(model, s, parameters, verbose) &&
              addReactionRulesFromAst(model, s, parameters, blockSameComplexBinding,
                                      verbose, suggestedTraversalLimit);

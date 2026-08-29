@@ -205,6 +205,42 @@ end model
         result = _cpp.simulate_ssa(model, network, t_end=10.0, n_steps=50, seed=42)
         assert "time" in result
 
+    @pytest.mark.parametrize("method", ["pla", "psa"])
+    def test_approximate_simulation_respects_start_time(self, tmp_path, method):
+        bngl = tmp_path / f"{method}.bngl"
+        bngl.write_text("""
+begin model
+begin parameters
+    k 0.1
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 100
+end seed species
+begin observables
+    Molecules Xtot X()
+end observables
+begin reaction rules
+    X() -> 0 k
+end reaction rules
+end model
+""")
+        model = _cpp.parse_file(str(bngl))
+        network = _cpp.generate_network(model)
+        if method == "pla":
+            result = _cpp.simulate_pla(
+                model, network, t_start=2.0, t_end=4.0, n_steps=2
+            )
+        else:
+            result = _cpp.simulate_psa(
+                model, network, t_start=2.0, t_end=4.0, n_steps=2
+            )
+
+        assert result["time"][0] == pytest.approx(2.0)
+        assert result["time"][-1] == pytest.approx(4.0)
+
     def test_nf_simulation(self, tmp_path):
         bngl = tmp_path / "nf.bngl"
         bngl.write_text("""
@@ -267,6 +303,14 @@ end model
         result = model.simulate(method="ode", t_end=10.0, n_steps=50)
         assert result.n_steps == 51
         assert len(result.observable_names) >= 1
+
+        for method in ["pla", "psa"]:
+            result = model.simulate(method=method, t_start=2.0, t_end=4.0, n_steps=2)
+            assert result.time[0] == pytest.approx(2.0)
+            assert result.time[-1] == pytest.approx(4.0)
+
+        with pytest.raises(ValueError, match="t_start=0.0"):
+            model.simulate(method="nf", t_start=1.0, t_end=2.0, n_steps=1)
 
     def test_set_parameter(self, tmp_path):
         bngl = tmp_path / "param.bngl"

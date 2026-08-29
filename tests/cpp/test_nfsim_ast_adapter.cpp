@@ -13,7 +13,27 @@
 #include "ast/MoleculeType.hpp"
 #include "ast/Observable.hpp"
 #include "ast/Parameter.hpp"
+#include "ast/SeedSpecies.hpp"
+#include "PatternGraphBuilder.hpp"
+#include "BNGLexer.h"
+#include "BNGParser.h"
+#include <antlr4-runtime.h>
 #include "io/XmlWriter.hpp"
+#include "parser/BNGAstVisitor.hpp"
+
+namespace {
+
+BNGcore::PatternGraph parseSpeciesGraph(const std::string& text, bng::ast::Model& model) {
+    antlr4::ANTLRInputStream input(text);
+    BNGLexer lexer(&input);
+    antlr4::CommonTokenStream tokens(&lexer);
+    BNGParser parser(&tokens);
+    auto* species = parser.species_def();
+    REQUIRE(parser.getNumberOfSyntaxErrors() == 0);
+    return bng::parser::buildPatternGraph(species, model, false);
+}
+
+} // namespace
 
 TEST_CASE("NFsim AST adapter preserves molecule-type state and symmetry metadata") {
     bng::ast::Model model;
@@ -145,4 +165,473 @@ TEST_CASE("NFsim AST adapter keeps local functions on the compatibility path") {
     std::map<std::string, double> parameters;
     CHECK_FALSE(NFinput::addFunctionsFromAst(model, &system, parameters, false));
     CHECK(system.getGlobalFunctionByName("local") == nullptr);
+}
+
+TEST_CASE("NFsim AST adapter builds a direct no-rule system") {
+    bng::ast::Model model;
+    model.setModelName("direct");
+    model.addMoleculeType(bng::ast::MoleculeType("A", {{"conf", {"R", "T"}}}));
+    model.addSeedSpecies(bng::ast::SeedSpecies(
+        "A(conf~R)", bng::ast::Expression::number(2.0), false, {},
+        parseSpeciesGraph("A(conf~R)", model)));
+    model.addObservable(bng::ast::Observable("A_R", "Molecules", {"A(conf~R)"}));
+    model.addObservable(bng::ast::Observable("A_total", "Molecules", {"A()"}));
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getNumOfMolecules() == 2);
+    REQUIRE(system->getObservableByName("A_R") != nullptr);
+    REQUIRE(system->getObservableByName("A_total") != nullptr);
+    system->prepareForSimulation();
+    CHECK(system->getObservableByName("A_R")->getCount() == 2);
+    CHECK(system->getObservableByName("A_total")->getCount() == 2);
+    CHECK(suggestedTraversalLimit >= 2);
+    delete system;
+}
+
+TEST_CASE("NFsim AST adapter counts a connected observable pattern once") {
+    bng::ast::Model model;
+    model.setModelName("connected-observable");
+    model.addMoleculeType(bng::ast::MoleculeType("A", {{"x", {}}}));
+    model.addMoleculeType(bng::ast::MoleculeType("B", {{"y", {}}}));
+    model.addSeedSpecies(bng::ast::SeedSpecies(
+        "A(x!1).B(y!1)", bng::ast::Expression::number(1.0), false, {},
+        parseSpeciesGraph("A(x!1).B(y!1)", model)));
+    model.addObservable(
+        bng::ast::Observable("AB", "Molecules", {"A(x!1).B(y!1)"}));
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getNumOfMolecules() == 2);
+    system->prepareForSimulation();
+    CHECK(system->getObservableByName("AB")->getCount() == 1);
+    CHECK(suggestedTraversalLimit >= 2);
+    delete system;
+}
+
+TEST_CASE("NFsim AST adapter maps bare molecule stoichiometric observables") {
+    auto model = bng::parser::parseModel(R"(
+begin molecule types
+    R(site)
+end molecule types
+begin seed species
+    R(site!1).R(site!1) 1
+end seed species
+begin observables
+    Species R2 R==2
+    Species R3 R>=3
+end observables
+)");
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    system->prepareForSimulation();
+    CHECK(system->getObservableByName("R2")->getCount() == 1);
+    CHECK(system->getObservableByName("R3")->getCount() == 0);
+    delete system;
+}
+
+TEST_CASE("NFsim AST adapter maps direct state-change reaction rules") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    A(conf~R~T)
+end molecule types
+begin seed species
+    A(conf~R) 20
+end seed species
+begin observables
+    Molecules A_R A(conf~R)
+    Molecules A_T A(conf~T)
+end observables
+begin reaction rules
+    A(conf~R) -> A(conf~T) k
+end reaction rules
+)");
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    CHECK(system->getReaction(0)->getBaseRate() == Catch::Approx(1.0));
+    system->prepareForSimulation();
+    REQUIRE(system->getObservableByName("A_R") != nullptr);
+    REQUIRE(system->getObservableByName("A_T") != nullptr);
+    CHECK(system->getObservableByName("A_R")->getCount() == 20);
+    CHECK(system->getObservableByName("A_T")->getCount() == 0);
+
+    system->seedRNG(1);
+    system->stepTo(100.0);
+    CHECK(system->getObservableByName("A_R")->getCount() == 0);
+    CHECK(system->getObservableByName("A_T")->getCount() == 20);
+    delete system;
+}
+
+TEST_CASE("NFsim AST adapter maps direct compartment transport") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 1.0
+end parameters
+begin compartments
+    c1 3 1.0
+    c2 3 1.0
+end compartments
+begin molecule types
+    A(site)
+end molecule types
+begin seed species
+    @c1:A(site) 1
+end seed species
+begin observables
+    Molecules in_c1 @c1:A(site)
+    Molecules in_c2 @c2:A(site)
+end observables
+begin reaction rules
+    @c1:A(site) -> @c2:A(site) k
+    end reaction rules
+)");
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    system->prepareForSimulation();
+    CHECK(system->getObservableByName("in_c1")->getCount() == 1);
+    CHECK(system->getObservableByName("in_c2")->getCount() == 0);
+    system->seedRNG(5);
+    system->stepTo(100.0);
+    CHECK(system->getObservableByName("in_c1")->getCount() == 0);
+    CHECK(system->getObservableByName("in_c2")->getCount() == 1);
+    delete system;
+}
+
+TEST_CASE("NFsim AST adapter maps direct binding reaction rules") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    A(b)
+    B(a)
+end molecule types
+begin seed species
+    A(b) 1
+    B(a) 1
+end seed species
+begin observables
+    Species AB A(b!1).B(a!1)
+end observables
+begin reaction rules
+    A(b) + B(a) -> A(b!1).B(a!1) k
+end reaction rules
+)");
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    system->prepareForSimulation();
+    CHECK(system->getObservableByName("AB")->getCount() == 0);
+    system->seedRNG(2);
+    system->stepTo(100.0);
+    CHECK(system->getObservableByName("AB")->getCount() == 1);
+    delete system;
+}
+
+TEST_CASE("NFsim AST adapter maps a product molecule bound to a reactant") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    A(b)
+    B(a)
+end molecule types
+begin seed species
+    A(b) 1
+end seed species
+begin observables
+    Species AB A(b!1).B(a!1)
+end observables
+begin reaction rules
+    A(b) -> A(b!1).B(a!1) k
+end reaction rules
+)");
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    system->prepareForSimulation();
+    CHECK(system->getObservableByName("AB")->getCount() == 0);
+    system->seedRNG(4);
+    system->stepTo(100.0);
+    CHECK(system->getObservableByName("AB")->getCount() == 1);
+    CHECK(system->getNumOfMolecules() == 2);
+    delete system;
+}
+
+TEST_CASE("NFsim AST adapter maps direct unbinding reaction rules") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    A(b)
+    B(a)
+end molecule types
+begin seed species
+    A(b!1).B(a!1) 1
+end seed species
+begin observables
+    Species AB A(b!1).B(a!1)
+    Species FreeA A(b)
+    Species FreeB B(a)
+end observables
+begin reaction rules
+    A(b!1).B(a!1) -> A(b) + B(a) k
+end reaction rules
+)");
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    system->prepareForSimulation();
+    CHECK(system->getObservableByName("AB")->getCount() == 1);
+    system->seedRNG(3);
+    system->stepTo(100.0);
+    CHECK(system->getObservableByName("AB")->getCount() == 0);
+    CHECK(system->getObservableByName("FreeA")->getCount() == 1);
+    CHECK(system->getObservableByName("FreeB")->getCount() == 1);
+    delete system;
+}
+
+TEST_CASE("NFsim AST adapter creates direct standalone product molecules") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    Source()
+    Product(site~U~P)
+end molecule types
+begin seed species
+    Source() 1
+end seed species
+begin observables
+    Molecules source_total Source()
+    Molecules product_P Product(site~P)
+end observables
+begin reaction rules
+    Source() -> Source() + Product(site~P) k
+end reaction rules
+)");
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    system->prepareForSimulation();
+    REQUIRE(system->getObservableByName("source_total") != nullptr);
+    REQUIRE(system->getObservableByName("product_P") != nullptr);
+    CHECK(system->getObservableByName("source_total")->getCount() == 1);
+    CHECK(system->getObservableByName("product_P")->getCount() == 0);
+
+    system->seedRNG(4);
+    system->stepTo(100.0);
+    CHECK(system->getObservableByName("source_total")->getCount() == 1);
+    CHECK(system->getObservableByName("product_P")->getCount() > 0);
+    delete system;
+}
+
+TEST_CASE("NFsim AST adapter binds direct product molecules to each other") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    Source()
+    B(site)
+    C(site)
+end molecule types
+begin seed species
+    Source() 1
+end seed species
+begin observables
+    Species BC B(site!1).C(site!1)
+end observables
+begin reaction rules
+    Source() -> B(site!1).C(site!1) k
+end reaction rules
+)");
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    system->prepareForSimulation();
+    CHECK(system->getObservableByName("BC")->getCount() == 0);
+    system->seedRNG(6);
+    system->stepTo(100.0);
+    CHECK(system->getObservableByName("BC")->getCount() == 1);
+    delete system;
+}
+
+TEST_CASE("NFsim AST adapter expands direct reversible reaction rules") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k_forward 1.0
+    k_reverse 1.0
+end parameters
+begin molecule types
+    A(conf~R~T)
+end molecule types
+begin seed species
+    A(conf~T) 1
+end seed species
+begin observables
+    Molecules A_R A(conf~R)
+    Molecules A_T A(conf~T)
+end observables
+begin reaction rules
+    A(conf~R) <-> A(conf~T) k_forward, k_reverse
+end reaction rules
+)");
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 2);
+    CHECK(system->getReaction(0)->getBaseRate() == Catch::Approx(1.0));
+    CHECK(system->getReaction(1)->getBaseRate() == Catch::Approx(1.0));
+    system->prepareForSimulation();
+    CHECK(system->getObservableByName("A_R")->getCount() == 0);
+    CHECK(system->getObservableByName("A_T")->getCount() == 1);
+    system->singleStep();
+    CHECK(system->getObservableByName("A_R")->getCount() == 1);
+    CHECK(system->getObservableByName("A_T")->getCount() == 0);
+    delete system;
+}
+
+TEST_CASE("NFsim AST adapter maps static Michaelis-Menten rate constants") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    kcat 1.0
+    Km 1.0
+end parameters
+begin molecule types
+    S()
+    E()
+    P()
+end molecule types
+begin seed species
+    S() 100
+    E() 100
+end seed species
+begin observables
+    Molecules S_total S()
+    Molecules P_total P()
+end observables
+begin reaction rules
+    S() + E() -> P() + E() MM(kcat,Km)
+end reaction rules
+)");
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    system->prepareForSimulation();
+    REQUIRE(system->getReaction(0)->get_a() > 0.0);
+    CHECK(system->getObservableByName("S_total")->getCount() == 100);
+    CHECK(system->getObservableByName("P_total")->getCount() == 0);
+    system->singleStep();
+    CHECK(system->getObservableByName("S_total")->getCount() == 99);
+    CHECK(system->getObservableByName("P_total")->getCount() == 1);
+    delete system;
+}
+
+TEST_CASE("NFsim AST adapter maps zero-order product synthesis") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 2.0
+end parameters
+begin molecule types
+    Product(site~U~P)
+end molecule types
+begin observables
+    Molecules product_P Product(site~P)
+end observables
+begin reaction rules
+    0 -> Product(site~P) k
+end reaction rules
+)");
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    system->prepareForSimulation();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(2.0));
+    CHECK(system->getObservableByName("product_P")->getCount() == 0);
+    system->singleStep();
+    CHECK(system->getObservableByName("product_P")->getCount() == 1);
+    delete system;
+}
+
+TEST_CASE("NFsim AST adapter maps zero-argument functional reaction rates") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin observables
+    Molecules A_total A()
+    Molecules B_total B()
+end observables
+begin functions
+    rate k
+end functions
+begin reaction rules
+    A() -> B() rate
+end reaction rules
+)");
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    CHECK(system->getReaction(0)->getRxnType() == NFcore::ReactionClass::OBS_DEPENDENT_RXN);
+    system->prepareForSimulation();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(1.0));
+    system->singleStep();
+    CHECK(system->getObservableByName("A_total")->getCount() == 0);
+    CHECK(system->getObservableByName("B_total")->getCount() == 1);
+    delete system;
 }

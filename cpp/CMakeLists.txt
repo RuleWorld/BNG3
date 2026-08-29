@@ -178,9 +178,12 @@ target_include_directories(nfsim_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/ast
     ${CMAKE_CURRENT_SOURCE_DIR}/core
+    ${CMAKE_CURRENT_SOURCE_DIR}/parser
+    ${CMAKE_CURRENT_SOURCE_DIR}/parser/generated
 )
 target_compile_definitions(nfsim_core PUBLIC TIXML_USE_STL NFSIM_USE_EXPRTK)
 target_include_directories(nfsim_core PRIVATE ${exprtk_SOURCE_DIR})
+target_link_libraries(nfsim_core PUBLIC bng_parser)
 if(MSVC)
     target_compile_options(nfsim_core PRIVATE /bigobj)
 else()
@@ -247,7 +250,10 @@ if(BUILD_PYTHON_BINDINGS)
     )
     target_link_libraries(_bionetgen_cpp PRIVATE bionetgen_core)
     if(MINGW OR CMAKE_COMPILER_IS_GNUCXX)
-        target_link_options(_bionetgen_cpp PRIVATE -static-libgcc -static-libstdc++ -static)
+        # A shared Python extension cannot be linked with -static. Static
+        # compiler runtimes remain supported, but the module itself must stay
+        # dynamically loadable on Linux.
+        target_link_options(_bionetgen_cpp PRIVATE -static-libgcc -static-libstdc++)
     endif()
     target_include_directories(_bionetgen_cpp PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}

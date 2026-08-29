@@ -257,6 +257,7 @@ void System::setUsingComplex(bool val)
 			int numMols = molType->getMoleculeCount();
 			for (int m = 0; m < numMols; ++m) {
 				Molecule * mol = molType->getMolecule(m);
+				mol->setUseComplex(true);
 				// If molecule doesn't have a complex ID assigned yet, assign one
 				if (mol->getComplexID() == -1) {
 					int complexID = allComplexes.createComplex(mol);

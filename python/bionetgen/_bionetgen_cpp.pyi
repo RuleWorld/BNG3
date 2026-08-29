@@ -333,6 +333,7 @@ def simulate_pla(
     t_end: float = 100.0,
     n_steps: int = 100,
     config_str: str = "",
+    t_start: float = 0.0,
 ) -> Dict[str, object]:
     """Run PLA simulation on a generated network.
 
@@ -348,6 +349,8 @@ def simulate_pla(
         Number of output time steps.
     config_str : str
         PLA configuration string.
+    t_start : float
+        Start time.
 
     Returns
     -------
@@ -363,6 +366,7 @@ def simulate_psa(
     t_end: float = 100.0,
     n_steps: int = 100,
     poplevel: float = 100,
+    t_start: float = 0.0,
 ) -> Dict[str, object]:
     """Run PSA simulation on a generated network.
 
@@ -378,6 +382,8 @@ def simulate_psa(
         Number of output time steps.
     poplevel : float
         Population level threshold for PSA.
+    t_start : float
+        Start time.
 
     Returns
     -------

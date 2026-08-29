@@ -1001,6 +1001,7 @@ namespace NFcore
 			void setAlive(bool isAlive) { isAliveInSim = isAlive; };
 
 			void setComplexID(int currentComplex) { this->ID_complex=currentComplex; }
+			void setUseComplex(bool value) { this->useComplex = value; }
 
 			int getComplexID() const { return ID_complex; };
 			Complex * getComplex() const { return (parentMoleculeType->getSystem()->getAllComplexes()).getComplex(ID_complex); };

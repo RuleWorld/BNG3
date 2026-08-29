@@ -21,16 +21,45 @@ def main():
     "--method",
     "-m",
     default="ode",
-    type=click.Choice(["ode", "ssa", "nf"]),
+    type=click.Choice(["ode", "ssa", "nf", "pla", "psa"]),
     help="Simulation method.",
+)
+@click.option(
+    "--t-start",
+    default=0.0,
+    type=float,
+    help="Start time (ODE/SSA/PLA/PSA; NF requires zero).",
 )
 @click.option("--t-end", "-t", default=100.0, type=float, help="End time.")
 @click.option("--n-steps", "-n", default=100, type=int, help="Number of output steps.")
+@click.option("--rtol", default=1e-8, type=float, help="Relative ODE tolerance.")
+@click.option("--atol", default=1e-8, type=float, help="Absolute ODE tolerance.")
+@click.option("--seed", default=0, type=int, help="Random seed for stochastic methods.")
+@click.option("--pla-config", default="", help="PLA configuration string.")
+@click.option(
+    "--psa-poplevel",
+    default=100.0,
+    type=float,
+    help="Population threshold for PSA.",
+)
 @click.option(
     "--output", "-o", default=None, type=click.Path(), help="Output file path."
 )
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output.")
-def run(model, method, t_end, n_steps, output, verbose):
+def run(
+    model,
+    method,
+    t_start,
+    t_end,
+    n_steps,
+    rtol,
+    atol,
+    seed,
+    pla_config,
+    psa_poplevel,
+    output,
+    verbose,
+):
     """Run a BNGL model simulation."""
     from bionetgen import _bionetgen_cpp as _cpp
 
@@ -38,15 +67,56 @@ def run(model, method, t_end, n_steps, output, verbose):
     cpp_model = _cpp.parse_file(path)
 
     if method == "nf":
+        if t_start != 0.0:
+            raise click.BadParameter(
+                "NF simulation currently supports only --t-start 0"
+            )
         result = _cpp.simulate_nf(
-            cpp_model, t_end=t_end, n_steps=n_steps, verbose=verbose
+            cpp_model,
+            t_end=t_end,
+            n_steps=n_steps,
+            seed=seed,
+            verbose=verbose,
         )
     else:
         network = _cpp.generate_network(cpp_model)
         if method == "ode":
-            result = _cpp.simulate_ode(cpp_model, network, t_end=t_end, n_steps=n_steps)
+            result = _cpp.simulate_ode(
+                cpp_model,
+                network,
+                t_start=t_start,
+                t_end=t_end,
+                n_steps=n_steps,
+                rtol=rtol,
+                atol=atol,
+            )
+        elif method == "ssa":
+            result = _cpp.simulate_ssa(
+                cpp_model,
+                network,
+                t_start=t_start,
+                t_end=t_end,
+                n_steps=n_steps,
+                seed=seed,
+            )
+        elif method == "pla":
+            result = _cpp.simulate_pla(
+                cpp_model,
+                network,
+                t_start=t_start,
+                t_end=t_end,
+                n_steps=n_steps,
+                config_str=pla_config,
+            )
         else:
-            result = _cpp.simulate_ssa(cpp_model, network, t_end=t_end, n_steps=n_steps)
+            result = _cpp.simulate_psa(
+                cpp_model,
+                network,
+                t_start=t_start,
+                t_end=t_end,
+                n_steps=n_steps,
+                poplevel=psa_poplevel,
+            )
 
     if output:
         import numpy as np

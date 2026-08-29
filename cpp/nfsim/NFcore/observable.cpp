@@ -532,4 +532,3 @@ int SpeciesObservable::isObservable(Complex *c) const
 
 
 
-

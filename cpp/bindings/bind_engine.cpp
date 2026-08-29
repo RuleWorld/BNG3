@@ -169,10 +169,12 @@ void bind_engine(py::module_& m) {
         "Run SSA simulation on a generated network");
 
     m.def("simulate_pla", [](Model& model, GeneratedNetwork& network,
-                             double t_end, int n_steps, const std::string& config_str) {
+                             double t_end, int n_steps, const std::string& config_str,
+                             double t_start) {
         py::gil_scoped_release release;
 
         OdeOptions opts;
+        opts.tStart = t_start;
         opts.tEnd = t_end;
         opts.nSteps = n_steps;
 
@@ -192,13 +194,16 @@ void bind_engine(py::module_& m) {
         py::arg("t_end") = 100.0,
         py::arg("n_steps") = 100,
         py::arg("config_str") = "",
+        py::arg("t_start") = 0.0,
         "Run PLA simulation on a generated network");
 
     m.def("simulate_psa", [](Model& model, GeneratedNetwork& network,
-                             double t_end, int n_steps, double poplevel) {
+                             double t_end, int n_steps, double poplevel,
+                             double t_start) {
         py::gil_scoped_release release;
 
         OdeOptions opts;
+        opts.tStart = t_start;
         opts.tEnd = t_end;
         opts.nSteps = n_steps;
 
@@ -213,6 +218,7 @@ void bind_engine(py::module_& m) {
         py::arg("t_end") = 100.0,
         py::arg("n_steps") = 100,
         py::arg("poplevel") = 100,
+        py::arg("t_start") = 0.0,
         "Run PSA simulation on a generated network");
 
     m.def("execute", [](Model& model, const std::string& source_path, bool verbose) {
