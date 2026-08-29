@@ -23,13 +23,14 @@ REPO = corpus.REPO
 
 
 def _nfsim_bin() -> Path | None:
-    for cand in (
-        Path(os.environ.get("NFSIM_BIN", "")),
+    configured = os.environ.get("NFSIM_BIN")
+    candidates = ((Path(configured),) if configured else ()) + (
         REPO / "build" / "NFsim",
         REPO / "build" / "NFsim.exe",
         REPO / "build" / "cpp" / "NFsim",
-    ):
-        if cand and cand.exists():
+    )
+    for cand in candidates:
+        if cand.exists():
             return cand
     return None
 
@@ -45,6 +46,7 @@ def write_model_xml(model_name: str, out_xml: Path) -> Path | None:
     src = corpus.resolve(model_name)
     if src is None:
         return None
+    out_xml.parent.mkdir(parents=True, exist_ok=True)
     bionetgen.load(str(src)).write_xml(str(out_xml))
     return out_xml if out_xml.exists() else None
 
@@ -66,11 +68,16 @@ def run_nfsim(
     out_prefix = work_dir / xml_path.stem
     cmd = [
         str(nfsim),
-        "-xml", str(xml_path),
-        "-o", f"{out_prefix}.gdat",
-        "-sim", str(t_end),
-        "-oSteps", str(n_steps),
-        "-seed", str(seed),
+        "-xml",
+        str(xml_path),
+        "-o",
+        f"{out_prefix}.gdat",
+        "-sim",
+        str(t_end),
+        "-oSteps",
+        str(n_steps),
+        "-seed",
+        str(seed),
     ]
     try:
         proc = subprocess.run(

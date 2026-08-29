@@ -22,6 +22,12 @@ bool TemplateMolecule::s_inDisjointMatch = false;
 std::unordered_set<std::pair<TemplateMolecule*, Molecule*>, PairHasher> TemplateMolecule::s_failedMatchCache;
 const int TemplateMolecule::MAX_DISJOINT_ITER;
 
+void TemplateMolecule::clearMatchCache() {
+	s_failedMatchCache.clear();
+	s_inDisjointMatch = false;
+	s_disjointIterCount = 0;
+}
+
 
 /*! Only constructor for TemplateMolecules */
 TemplateMolecule::TemplateMolecule(MoleculeType * moleculeType){

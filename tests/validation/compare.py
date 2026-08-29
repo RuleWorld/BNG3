@@ -217,8 +217,8 @@ def _canon_expr(expr: str) -> str:
 
 def split_species(s: str) -> list[str]:
     """Split a species string into a list of molecules separated by '.' (outside parens)."""
-    parts = []
-    curr = []
+    parts: list[str] = []
+    curr: list[str] = []
     depth = 0
     for char in s:
         if char == "(":
@@ -452,6 +452,7 @@ def canonicalize_species(s: str) -> str:
         candidate = _serialize_from_root(root)
         if best is None or candidate < best:
             best = candidate
+    assert best is not None
     return best
 
 
@@ -779,7 +780,7 @@ class EnsembleDiff:
     def summary(self) -> str:
         summary = (
             f"ensemble: {self.n_violations}/{self.n_points_checked} points outside "
-            f"mean +/- 3 SE; worst |z|={self.worst_z:.2f} at '{self.worst_col}'"
+            f"mean +/- 3 pooled SE; worst |z|={self.worst_z:.2f} at '{self.worst_col}'"
         )
         return summary if not self.note else f"{summary} ({self.note})"
 
@@ -795,10 +796,11 @@ def compare_stochastic(
 ) -> EnsembleDiff:
     """Distributional comparison of two stochastic ensembles.
 
-    For each shared observable at each shared time point, check that the test
-    ensemble mean lies within ref_mean +/- n_sigma * SE(ref). Pass if the
-    fraction of violating points is <= max_violation_frac (allows for the few
-    tail points expected at 3 sigma over many checks).
+    For each shared observable at each shared time point, compare the two
+    independent ensemble means using the pooled standard error
+    sqrt(SE(ref)^2 + SE(test)^2). Pass if the fraction of violating points is
+    <= max_violation_frac (allows for the few tail points expected at 3 sigma
+    over many checks).
     """
     if len(ref_runs) < min_ref_runs or len(test_runs) < min_test_runs:
         return EnsembleDiff(
@@ -814,7 +816,7 @@ def compare_stochastic(
         )
 
     rmean, rse, rcols, rt = _ensemble_stats(ref_runs)
-    tmean, _, tcols, tt = _ensemble_stats(test_runs)
+    tmean, tse, tcols, tt = _ensemble_stats(test_runs)
     if rmean is None or tmean is None:
         return EnsembleDiff(False, 0, 0, np.inf, "", note="empty ensemble")
 
@@ -830,8 +832,13 @@ def compare_stochastic(
     for c in common:
         rm = rmean[ridx, rcols.index(c)]
         rs = rse[ridx, rcols.index(c)]
+        ts = tse[tidx, tcols.index(c)]
+        # The ensembles are independent samples.  Using only the reference
+        # SE makes a zero-variance rare observable fail whenever the test
+        # ensemble contains one or two events, even when the two distributions
+        # are compatible.  Pool both mean uncertainties instead.
         tm = tmean[tidx, tcols.index(c)]
-        se = np.maximum(rs, 1e-12)
+        se = np.maximum(np.hypot(rs, ts), 1e-12)
         z = np.abs(tm - rm) / se
         cz = float(np.max(z))
         if cz > worst_z:

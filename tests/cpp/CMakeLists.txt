@@ -131,5 +131,10 @@ target_include_directories(test_nfsim_ast_adapter PRIVATE
     ${exprtk_SOURCE_DIR}
 )
 target_link_libraries(test_nfsim_ast_adapter PRIVATE
-    Catch2::Catch2WithMain Catch2::Catch2 bionetgen_core)
+    Catch2::Catch2WithMain Catch2::Catch2
+    bionetgen_core
+    # ReactionRule's local-observable fingerprinting reaches parser symbols
+    # through bng_ast. Repeat the parser archive after the aggregate target so
+    # GNU ld resolves the static-archive cycle on this test target.
+    bng_parser)
 catch_discover_tests(test_nfsim_ast_adapter)

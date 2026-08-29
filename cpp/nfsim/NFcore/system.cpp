@@ -50,6 +50,12 @@ System::System(string name)
 	selector = 0;
 	csvFormat = false;
 	anyRxnTagged = false;
+	evaluateComplexScopedLocalFunctions = false;
+	connectivityFlag = false;
+	trackConnected = false;
+	printConnected = false;
+	trackRxnNumber = false;
+	lastRxnTime = 0.0;
 	max_cpu_time = -1;
 	savedSnapshot = 0;
 	hasTimeDependentFunctions = false;
@@ -88,6 +94,12 @@ System::System(string name, bool useComplex)
 	selector = 0;
 	csvFormat = false;
 	anyRxnTagged = false;
+	evaluateComplexScopedLocalFunctions = false;
+	connectivityFlag = false;
+	trackConnected = false;
+	printConnected = false;
+	trackRxnNumber = false;
+	lastRxnTime = 0.0;
 	max_cpu_time = -1;
 	savedSnapshot = 0;
 	hasTimeDependentFunctions = false;
@@ -124,6 +136,12 @@ System::System(string name, bool useComplex, int globalMoleculeLimit)
 	selector = 0;
 	csvFormat = false;
 	anyRxnTagged = false;
+	evaluateComplexScopedLocalFunctions = false;
+	connectivityFlag = false;
+	trackConnected = false;
+	printConnected = false;
+	trackRxnNumber = false;
+	lastRxnTime = 0.0;
 	max_cpu_time = -1;
 	savedSnapshot = 0;
 	hasTimeDependentFunctions = false;
@@ -134,6 +152,11 @@ System::System(string name, bool useComplex, int globalMoleculeLimit)
 
 System::~System()
 {
+	// TemplateMolecule's failed-match cache is process-global and keyed by raw
+	// pointers.  Clear it before teardown so a later System cannot reuse stale
+	// entries after allocator address reuse.
+	TemplateMolecule::clearMatchCache();
+
 	if(ds!=0) delete ds;
 
 	if(selector!=0) delete selector;

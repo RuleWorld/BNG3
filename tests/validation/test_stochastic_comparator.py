@@ -37,3 +37,14 @@ def test_matching_fixed_seed_ensembles_pass():
     diff = compare_stochastic(reference, test, min_ref_runs=2, min_test_runs=2)
     assert diff.ok
     assert diff.n_points_checked == 2
+
+
+def test_independent_ensemble_errors_are_pooled():
+    reference = [_run(0.0), _run(0.0)]
+    test = [_run(0.0), _run(1.0)]
+
+    diff = compare_stochastic(reference, test, min_ref_runs=2, min_test_runs=2)
+
+    # The reference ensemble has zero variance, but the independent test
+    # ensemble supplies the uncertainty for its nonzero sample mean.
+    assert diff.ok

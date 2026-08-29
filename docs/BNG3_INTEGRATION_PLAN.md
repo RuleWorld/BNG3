@@ -1,14 +1,73 @@
 # BNG3 Integration and Convergence Plan
 
-**Status:** Proposed architecture; active implementation handoff
+**Status:** Active implementation; convergence foundation and direct NFsim migration in progress
 **Plan date:** 2026-08-28
 **Scope:** BioNetGen, NFsim, and PyBioNetGen convergence into one maintained BNG3 codebase
-**Implementation:** The next execution session owns the complete port; this document is its authoritative backlog and completion contract.
+**Last progress update:** 2026-08-29
+**Implementation:** The current branch owns the active port; this document remains the authoritative backlog and completion contract. Section 11 is not yet satisfied.
 
-## Next-session execution charter — port everything
+## Implementation progress checkpoint — 2026-08-29
 
-This is a no-partial-completion handoff. Start a persistent goal task whose
-objective is:
+The branch `codex/bng3-integration-foundations` has advanced from the initial
+foundation into source-led semantic porting. The individual BioNetGen and
+NFsim codebases remain the behavioral authority for this work; the comparator
+is evidence and diagnosis, not a substitute for the real implementation.
+
+Completed slices now present in BNG3 include:
+
+- Typed AST-to-NFsim construction for options, parameters, compartments,
+  molecule types, seed species, observables, reaction rules, transformations,
+  functions, bounded dynamic rate forms, filters, product creation,
+  compartments, `MoveConnected`, Arrhenius forms, and symmetric state/bond
+  reaction centers. Unsupported direct forms remain fail-closed.
+- BNG2-derived reaction semantics for whole-species deletion, reaction-center
+  embedding deduplication, bond-cardinality matching, product molecularity,
+  reversible rules, and bounded compartment transport. The source checks were
+  made against `bng2/Perl2/RxnRule.pm` and `bng2/Perl2/SpeciesGraph.pm`, not
+  inferred from output text alone.
+- NFsim lifecycle and seed fixes, including direct-system initialization,
+  match-cache cleanup, native CLI seed propagation, explicit bond ID zero
+  preservation, and direct observable graph construction. The NFsim-side
+  authority remains the individual `src/NFinput` and `src/NFcore` code paths.
+- Canonical parser normalization for legacy block headers and signed TFUN
+  values, in-memory `to_xml()`/`to_bngl()` APIs, SBML writer ordering, and the
+  Linux static-library link correction required by shared Python extensions.
+- Validation improvements that key network reactions by species content and
+  pool independent stochastic-ensemble standard errors. This does not relax
+  scientific thresholds or replace structural parity with string matching.
+
+Local evidence at this checkpoint:
+
+- CTest: 105/105 tests passed.
+- Python suite: 101 passed, 27 skipped.
+- Black check: 150 files unchanged; Ruff passed.
+- Targeted mypy over the validation comparator/oracle modules: no issues.
+- Native NFsim/API seeded ensemble smoke tests passed for `simple_system` and
+  `localfunc` at 200 runs. The larger `motor` diagnostic was not completed
+  within the local runtime budget and is not counted as evidence.
+
+The exact validation command currently reports 71 models, 32 passes, 4
+failures, and 35 skips. The remaining failures are deliberately visible:
+
+- `Motivating_example_cBNGL`: two cross-compartment binding reactions still
+  need source-faithful rejection or product-compartment handling.
+- `blbr`: reaction count is now the BNG2 value of 92; remaining text differs
+  in canonical bond-label orientation and needs structural comparison aligned
+  with BNG2 `SpeciesList::lookup(check_iso)` semantics.
+- `test_network_gen` and `tlbr`: reaction counts match; canonical species
+  labels still differ and require an explicit graph-equivalence audit rather
+  than ad hoc string normalization.
+
+Hosted CI has not been rerun for this checkpoint because the branch has not
+been pushed after these changes. Earlier PR results predate the current link,
+engine, and adapter fixes and must not be reported as current evidence. No
+CodeQL workflow is configured in the checked tree; adding it to the required
+CI contract remains open.
+
+## Completion charter — port everything
+
+This is a no-partial-completion charter for the current and subsequent
+execution sessions. The active objective is:
 
 > Port every supported BioNetGen, NFsim, and PyBioNetGen capability into BNG3,
 > preserve or explicitly govern compatibility, and continue until the full
@@ -84,22 +143,24 @@ trail in the repository.
    decision is genuinely required, record the exact blocker, finish independent
    work, and request only that missing input.
 
-### Starting checkpoint
+### Initial starting checkpoint
 
 The public branch `codex/bng3-integration-foundations` and PR
 `RuleWorld/BNG3#1` contain the initial provenance, CI, validation, expression,
 and bounded direct-NFsim foundation. Before changing code, verify their live
 heads with `gh`; do not assume the PR description is current.
 
-Known unfinished slices at this handoff are intentional and must be carried
-forward, not treated as completion:
+The initial handoff was intentionally incomplete. The remaining items below
+must be carried forward, not treated as completion; the dated progress
+checkpoint above records what has changed since then:
 
 - maintainer-approved source cutoffs, oracle recipes/digests, and support
   matrix decisions;
 - complete source-reconciliation ledger and reviewed provenance-complete
   golden bundle;
-- direct NFsim observables, seed species, rules/transformations, and remaining
-  function forms, followed by shadow comparison and XML-path retirement;
+- complete direct NFsim observables, seed species, rules/transformations, and
+  remaining function forms, followed by independent shadow comparison and
+  XML-path retirement;
 - complete BNG2/NFsim/PyBioNetGen behavioral parity, installed-wheel/CLI gates,
   Atomizer/format round trips, and final redundancy deletion.
 
@@ -203,17 +264,17 @@ The work therefore starts from an incomplete convergence, not from four empty re
 | Area | Current condition | Planning consequence |
 |---|---|---|
 | Source provenance | No single lock file records all imported source revisions and reconciliation status. | Freeze and record the common ground before further convergence. |
-| Direct NFsim bridge | `NFinput_fromAst.cpp` maps parameters, but molecule types, functions, observables, species, and rules are incomplete. | Treat direct construction as a staged migration with shadow comparison. |
-| Active NFsim path | The binding still serializes `ast::Model` to XML and reparses it. | Keep the XML path as a temporary comparator, then remove it from runtime after parity. |
-| Graph identity | BioNetGen network canonicalization and NFsim complex identity are different scientific contracts. | Share the low-level Nauty dependency, but do not force both through one unproven high-level labeling algorithm. |
-| Expression evaluation | BioNetGen and NFsim still carry different expression paths, including exprtk-related build logic. | Define one expression contract and migrate consumers incrementally. |
+| Direct NFsim bridge | `NFinput_fromAst.cpp` now maps a substantial typed subset: options, parameters, compartments, molecule types, functions, observables, seed species, rules, transformations, filters, dynamic rates, and symmetry. | Keep unsupported forms explicit and finish independent BNG2/NFsim differential coverage before declaring the adapter complete. |
+| Active NFsim path | The direct adapter and XML bridge both exist; XML remains needed for shadow comparison and compatibility while direct parity is incomplete. | Keep the XML path as a temporary comparator, then remove it from the default runtime only after the Tier-NF gate passes. |
+| Graph identity | BioNetGen network canonicalization and NFsim complex identity remain different scientific contracts; several current `.net` failures are label-orientation differences. | Use the individual BNG2/NFsim implementations as authority and compare graph identity structurally, without forcing one unproven high-level labeling algorithm onto both engines. |
+| Expression evaluation | Several dynamic global, local, TFUN, composite, and bounded rate forms are direct; the full shared expression contract is not complete. | Preserve fail-closed behavior for unsupported forms and define one expression contract before removing specialized evaluators. |
 | Python convergence | Legacy `core`, `modelapi`, `network`, and `simulator` trees remain. | Inventory public compatibility before deletion; use contract tests to govern removal. |
-| Golden references | `tests/validation/golden/` does not yet contain a frozen reference bundle. | Build provenance-aware oracle generation before using parity as a release claim. |
-| Stochastic parity | Distributional validation is not yet a completed gate. | Define fixed ensembles and statistical acceptance rules; execution success is insufficient. |
+| Golden references | The validation corpus and BNG2 `.net` references are present, but a reviewed provenance-complete release golden bundle is not frozen. | Build provenance-aware oracle generation before using parity as a release claim. |
+| Stochastic parity | Seeded determinism and 200-run local smoke comparisons are covered for selected NFsim models; the full distributional gate is not complete. | Keep fixed ensembles and pooled independent-ensemble error rules; execution success is insufficient. |
 | RuleHub integration | The local corpus loader does not use a pinned RuleHub snapshot. | Add an exact RuleHub revision and generated selection manifest. |
-| CI truthfulness | Some jobs suppress failures, label parse checks as NFsim validation, or push autofixes; hosted builds are not currently a reliable green baseline. | Make CI honest and green before expanding it. |
+| CI truthfulness | Local C++/Python/lint/type gates pass, but exact network validation still has four visible failures and hosted CI has not been rerun on the current unpushed branch. No CodeQL workflow is present. | Make required CI honest and green, add security coverage, and rerun it on the exact pushed SHA before claiming completion. |
 | Documentation | The architecture document, unification spec, analysis notes, and live implementation disagree in places. | Add documentation consistency checks and name one governing decision record. |
-| Packaging | Project metadata and supported-platform behavior need reconciliation with the unified repository. | Make wheel, CLI, import, and embedded-data tests release gates. |
+| Packaging | Shared-extension static linking was corrected locally and the Python/CLI smoke paths pass; current hosted wheel evidence is stale. | Re-run clean wheel, CLI, import, and embedded-data gates on the current SHA. |
 
 ### 2.3 Source revisions observed on 2026-08-28
 
@@ -383,6 +444,29 @@ A scheduled read-only job should compare the pinned source SHAs with the current
 
 Each reported commit follows the reconciliation process above. Once an upstream component is formally retired, remove it from drift monitoring and record the retirement revision.
 
+### 4.4 Semantic authority for the active port
+
+Current parity work must start from the individual source implementations, then
+add BNG3 regression coverage for the behavior being ported. In particular:
+
+- BNG2 `bng2/Perl2/RxnRule.pm` is authoritative for rule mapping,
+  reaction-center filtering, deletion/product molecularity, symmetry factors,
+  and compartment changes. `bng2/Perl2/SpeciesGraph.pm` is authoritative for
+  subgraph matching, bond-cardinality constraints, graph isomorphism, and
+  compartment inference/topology.
+- NFsim `src/NFinput` and `src/NFcore` are authoritative for input-to-runtime
+  construction, deletion modes, symmetry expansion, template-molecule state,
+  complex identity, and seeded runtime behavior.
+- A BNG3 comparator may expose a mismatch, but it must not be used to redefine
+  the behavior being ported. When labels disagree, compare the underlying
+  graph and consult the source implementation before changing an acceptance
+  rule or tolerance.
+
+Every source-led slice should leave a short path-level provenance note in its
+implementation or test, identify the smallest discriminating fixture, and
+state whether the evidence is a unit test, an independent-oracle comparison,
+or a diagnostic only.
+
 ## 5. Validation architecture
 
 ### 5.1 Evidence roles
@@ -439,7 +523,13 @@ CI should consume a content-addressed golden artifact and verify its manifest be
 - Parse NET output into typed species, reactions, rate laws, stoichiometry, and observables.
 - Compare canonical structural sets or multisets, not raw line order.
 - Require equal species and reaction multiplicities and equivalent kinetic expressions.
-- Keep model-specific normalization explicit and reviewed.
+- Treat BNG2 `SpeciesList::lookup(..., check_iso)` graph isomorphism as the
+  reference when canonical labels differ; use textual labels only as a
+  diagnostic. This is required for symmetric networks such as `blbr`,
+  `test_network_gen`, and `tlbr`.
+- Keep model-specific normalization explicit and reviewed. A comparator change
+  cannot conceal a source-semantic difference in reaction count, topology, or
+  rate law.
 - Make known overcount regressions first-class tests, not permanent broad exclusions.
 
 #### Deterministic trajectories
@@ -455,6 +545,10 @@ CI should consume a content-addressed golden artifact and verify its manifest be
 - Verify same-engine repeatability for fixed seeds where the engine promises it.
 - Compare fixed, predeclared seed ensembles; never retry until a run passes.
 - Start with at least 200 runs for designated small models, then calibrate sample size through power and variance analysis.
+- For independent ensemble means, use the predeclared pooled standard error
+  (the quadrature of reference and test standard errors) before applying the
+  threshold; do not treat one ensemble's standard error as the uncertainty of
+  their difference.
 - Compare means, variances, selected quantiles, zero-inflation/extinction probabilities where relevant, and time-correlated summaries.
 - Correct for multiple comparisons or use a predeclared aggregate acceptance statistic.
 - Version and review statistical thresholds; do not weaken them in an implementation PR.
@@ -568,6 +662,17 @@ Use Jules Playground as a valuable independently implemented differential target
 ## 7. Phased roadmap
 
 Each phase has deliverables and an exit gate. Later phases may prepare in parallel, but deletion and authority changes follow the stated dependencies.
+
+### Current phase status — 2026-08-29
+
+| Phase | Status | Evidence and next gate |
+|---|---|---|
+| 0 — authority/common ground | In progress | Individual BNG2/NFsim source paths are being used for semantic decisions; the accepted source lock, complete reconciliation ledger, owners, and RuleHub selection manifest remain open. |
+| 1 — honest green CI | In progress | Local CTest, Python, formatting, Ruff, and targeted mypy pass; exact network validation has 4 visible failures, hosted CI is stale for this branch, and CodeQL is not yet configured. |
+| 2 — independent validation | In progress | BNG2 `.net` corpus comparison, native NFsim seeded smoke ensembles, pooled-error comparator coverage, and provenance scaffolding exist; the reviewed golden bundle and complete independent-oracle gate remain open. |
+| 4 — semantic core | In progress | BNG2-derived deletion, bond-cardinality, product-molecularity, symmetry, compartment, and dynamic-rate slices are implemented; canonical graph-label parity and remaining cBNGL behavior are open. |
+| 5 — direct NFsim | In progress | Typed AST-to-NFsim construction and direct-vs-XML tests cover a substantial subset; full Tier-NF coverage, native-oracle parity, and XML-path retirement remain open. |
+| 6–8 — consolidation/release | Not started | Dependent on the authority, parity, packaging, CI, and provenance exit gates above. |
 
 ### Phase 0 — Establish authority and freeze the common ground
 

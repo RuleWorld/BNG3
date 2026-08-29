@@ -348,7 +348,10 @@ ParsedPattern parsePattern(const std::string& text) {
                     int molIdx = static_cast<int>(pattern.molecules.size());
                     int compIdx = static_cast<int>(mol.components.size());
                     for (int bondId : comp.bonds) {
-                        if (bondId > 0) {
+                        // BNGL bond identifiers are zero-based.  Preserve
+                        // bond 0; it is the first explicit bond in most
+                        // two-molecule patterns.
+                        if (bondId >= 0) {
                             bondEndpoints[bondId].push_back({molIdx, compIdx});
                         }
                     }

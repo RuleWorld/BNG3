@@ -1,7 +1,6 @@
 #include <cmath>
 #include <chrono>
 #include <filesystem>
-#include <fstream>
 #include <map>
 #include <string>
 #include <vector>
@@ -78,6 +77,40 @@ TEST_CASE("BNGL parser preserves inline and file TFUN metadata") {
     CHECK(product.args()[1].name() == "right");
     CHECK(product.args()[1].args().size() == 1);
     CHECK(product.args()[1].args()[0].name() == "y");
+}
+
+TEST_CASE("BNGL parser accepts singular molecule type blocks") {
+    auto model = bng::parser::parseModel(R"(
+begin molecule type
+    A(site~0~1)
+end molecule type
+begin seed species
+    A(site~0) 1
+end seed species
+)");
+
+    REQUIRE(model != nullptr);
+    REQUIRE(model->getMoleculeTypes().size() == 1);
+    CHECK(model->getMoleculeTypes().front().getName() == "A");
+    REQUIRE(model->getSeedSpecies().size() == 1);
+}
+
+TEST_CASE("XML writer preserves the first explicit bond") {
+    auto model = bng::parser::parseModel(R"(
+begin molecule types
+    A(b)
+    B(a)
+end molecule types
+begin seed species
+    A(b!1).B(a!1) 1
+end seed species
+)");
+
+    REQUIRE(model != nullptr);
+    const auto xml = bng::io::XmlWriter::write(*model);
+    CHECK(xml.find("<ListOfBonds>") != std::string::npos);
+    CHECK(xml.find("site1=") != std::string::npos);
+    CHECK(xml.find("site2=") != std::string::npos);
 }
 
 TEST_CASE("NFsim AST adapter maps an inline time-backed TFUN directly") {

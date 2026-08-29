@@ -8,6 +8,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -40,6 +41,65 @@ std::string trimCopy(const std::string& value) {
     if (first == std::string::npos) return {};
     const auto last = value.find_last_not_of(" \t\r\n");
     return value.substr(first, last - first + 1);
+}
+
+std::string normalizeLegacyBlockHeaders(const std::string& source) {
+    std::string result;
+    result.reserve(source.size());
+
+    const auto isSpace = [](char value) {
+        return std::isspace(static_cast<unsigned char>(value)) != 0;
+    };
+    const auto appendNormalizedLine = [&](const std::string& line) {
+        std::size_t position = 0;
+        while (position < line.size() && (line[position] == ' ' || line[position] == '\t')) {
+            ++position;
+        }
+        const auto matchWord = [&](std::string_view word) {
+            if (position + word.size() > line.size()) return false;
+            for (std::size_t index = 0; index < word.size(); ++index) {
+                if (static_cast<char>(std::tolower(static_cast<unsigned char>(
+                        line[position + index]))) != word[index]) {
+                    return false;
+                }
+            }
+            position += word.size();
+            return true;
+        };
+        const auto skipSpace = [&]() {
+            while (position < line.size() && isSpace(line[position])) ++position;
+        };
+        const auto hasBoundary = [&]() {
+            return position == line.size() || isSpace(line[position]) || line[position] == '#';
+        };
+
+        if (matchWord("begin") || matchWord("end")) {
+            skipSpace();
+            if (matchWord("molecule")) {
+                skipSpace();
+                if (matchWord("type") && hasBoundary()) {
+                    result.append(line, 0, position);
+                    result.push_back('s');
+                    result.append(line, position, std::string::npos);
+                    return;
+                }
+            }
+        }
+        result.append(line);
+    };
+
+    std::size_t lineStart = 0;
+    while (lineStart < source.size()) {
+        const auto lineEnd = source.find('\n', lineStart);
+        const auto lineLength = lineEnd == std::string::npos
+                                     ? source.size() - lineStart
+                                     : lineEnd - lineStart;
+        appendNormalizedLine(source.substr(lineStart, lineLength));
+        if (lineEnd == std::string::npos) break;
+        result.push_back('\n');
+        lineStart = lineEnd + 1;
+    }
+    return result;
 }
 
 bool isIdentifierStart(char value) {
@@ -436,11 +496,23 @@ bool decodeTfunArray(const ast::Expression& expression,
         return false;
     }
     for (std::size_t index = 1; index < expression.args().size(); ++index) {
-        if (expression.args()[index].kind() != ast::ExpressionKind::Number ||
-            !std::isfinite(expression.args()[index].numberValue())) {
+        const auto& valueExpression = expression.args()[index];
+        double value = 0.0;
+        if (valueExpression.kind() == ast::ExpressionKind::Number) {
+            value = valueExpression.numberValue();
+        } else if (valueExpression.kind() == ast::ExpressionKind::Unary &&
+                   valueExpression.args().size() == 1 &&
+                   valueExpression.args().front().kind() == ast::ExpressionKind::Number &&
+                   (valueExpression.name() == "+" || valueExpression.name() == "-")) {
+            value = valueExpression.args().front().numberValue();
+            if (valueExpression.name() == "-") value = -value;
+        } else {
             throw std::runtime_error("TFUN arrays must contain finite numeric values");
         }
-        values.push_back(expression.args()[index].numberValue());
+        if (!std::isfinite(value)) {
+            throw std::runtime_error("TFUN arrays must contain finite numeric values");
+        }
+        values.push_back(value);
     }
     return !values.empty();
 }
@@ -718,6 +790,10 @@ ast::Expression parseExpressionImpl(const std::string& exprText) {
 }
 
 } // namespace
+
+std::string normalizeBNGLSource(const std::string& sourceText) {
+    return normalizeLegacyBlockHeaders(normalizeTfunSyntax(sourceText));
+}
 
 BNGAstVisitor::BNGAstVisitor()
     : currentModel_(std::make_unique<ast::Model>()) {}
@@ -1045,7 +1121,7 @@ std::any BNGAstVisitor::visitPopulation_map_def(BNGParser::Population_map_defCon
 }
 
 std::unique_ptr<ast::Model> parseModel(const std::string& sourceText) {
-    antlr4::ANTLRInputStream input(normalizeTfunSyntax(sourceText));
+    antlr4::ANTLRInputStream input(normalizeBNGLSource(sourceText));
     BNGLexer lexer(&input);
     antlr4::CommonTokenStream tokens(&lexer);
     BNGParser parser(&tokens);

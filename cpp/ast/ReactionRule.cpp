@@ -561,6 +561,44 @@ bool embeddingRespectsNodeStates(const BNGcore::PatternGraph& pattern, const BNG
                 }
             }
         }
+
+        // Ullmann intentionally checks only that target degrees are at least
+        // the pattern degrees.  BNG2's SpeciesGraph matcher adds the bond
+        // cardinality rule on top: an ordinary bond identifier (and an
+        // explicitly unbound site) requires the exact number of edges, !+
+        // requires at least one edge, and !? accepts any number.  Without
+        // this check a reverse ring rule can delete one bond from a bridge,
+        // yielding extra products that BNG2 rejects (SpeciesGraph.pm:
+        // 3230-3262).
+        if (isComponentNode(**nodeIter)) {
+            std::vector<BNGcore::Node*> patternBonds;
+            std::vector<BNGcore::Node*> targetBonds;
+            for (auto edge = (*nodeIter)->edges_out_begin();
+                 edge != (*nodeIter)->edges_out_end(); ++edge) {
+                if (isBondNode(**edge)) patternBonds.push_back(*edge);
+            }
+            for (auto edge = target->edges_out_begin();
+                 edge != target->edges_out_end(); ++edge) {
+                if (isBondNode(**edge)) targetBonds.push_back(*edge);
+            }
+            if (patternBonds.size() == 1) {
+                const auto patternBondState =
+                    patternBonds.front()->get_state().get_BNG2_string();
+                if (patternBondState == "!?" ) {
+                    // Any target bond cardinality is valid.
+                } else if (patternBondState == "!+") {
+                    if (targetBonds.empty()) return false;
+                } else if (targetBonds.size() != patternBonds.size()) {
+                    // Explicit bond IDs and !- both use exact edge counts.
+                    return false;
+                }
+            } else if (patternBonds.size() != targetBonds.size()) {
+                // The parser normally materializes one marker per specified
+                // component.  Keep the general exact-count rule for any
+                // multi-edge pattern as well.
+                return false;
+            }
+        }
     }
     return true;
 }
@@ -1347,18 +1385,45 @@ std::vector<ReactionRule::EmbeddingResult> ReactionRule::findEmbeddingsForSpecie
         // For species-level transport rules (prefix compartment like @EM:R → @PM:R),
         // Perl treats the rule as applying to the entire species, not individual molecules.
         // Only keep one embedding per species (first valid one).
-        // For pure degradation rules (-> 0 without DeleteMolecules), all embeddings of
-        // a pattern into the same species produce the same reaction (species → trash),
-        // so only one embedding per species is needed. Perl generates one reaction.
+        // BNG2 also treats a default (no DeleteMolecules modifier) deletion of every
+        // molecule in a reactant pattern as a whole-species deletion. In RxnRule.pm
+        // findMap(), the all-molecules-deleted case stores the pattern pointer in
+        // MolDel rather than individual molecule pointers (the branch at lines
+        // 2085-2112). This includes rules written as `D() -> Trash()`: Trash is an
+        // added product, while the matched D pattern is still removed as one species.
+        // Preserve that rule-level matching semantics here, so symmetric embeddings
+        // of the same species do not create duplicate reaction pathways.
         const bool speciesLevelTransport = reactantPatterns_.at(patternIndex).isCompartmentPrefix();
-        const bool pureDegradation = operations_.empty() && productPatterns_.empty()
-            && !reactantPatterns_.empty() && !hasModifier(modifiers_, "deletemolecules");
+        const bool defaultDeletion = !hasModifier(modifiers_, "deletemolecules");
+        const auto deletesWholeReactantPattern = [&]() {
+            if (!defaultDeletion) return false;
+
+            std::size_t moleculeCount = 0;
+            for (auto nodeIter = pattern.begin(); nodeIter != pattern.end(); ++nodeIter) {
+                if (isMoleculeNode(**nodeIter)) ++moleculeCount;
+            }
+            if (moleculeCount == 0) return false;
+
+            // `A(...) -> 0` has no product graph and initialize() returns before
+            // constructing explicit DeleteMolecule operations.
+            if (operations_.empty() && productPatterns_.empty()) return true;
+
+            std::unordered_set<std::size_t> deletedMolecules;
+            for (const auto& operation : operations_) {
+                if (operation.type == TransformOp::Type::DeleteMolecule &&
+                    operation.patternIndex == patternIndex) {
+                    deletedMolecules.insert(operation.moleculeIndex);
+                }
+            }
+            return deletedMolecules.size() == moleculeCount;
+        }();
+        const bool speciesLevelDeletion = deletesWholeReactantPattern;
         bool foundEmbeddingForSpecies = false;
 
         // Track signature → index in results for multiplicity counting
         std::unordered_map<std::string, std::size_t> signatureToResultIndex;
         for (auto mapIter = maps.begin(); mapIter != maps.end(); ++mapIter) {
-            if ((speciesLevelTransport || pureDegradation) && foundEmbeddingForSpecies) break;
+            if ((speciesLevelTransport || speciesLevelDeletion) && foundEmbeddingForSpecies) break;
             if (!embeddingRespectsNodeStates(pattern, *mapIter)) {
                 continue;
             }
@@ -1416,7 +1481,7 @@ std::vector<ReactionRule::EmbeddingResult> ReactionRule::findEmbeddingsForSpecie
             }
             signatureToResultIndex[signature] = results.size();
             results.push_back(EmbeddingResult {speciesIndex, *mapIter, 1});
-            if (speciesLevelTransport || pureDegradation) foundEmbeddingForSpecies = true;
+            if (speciesLevelTransport || speciesLevelDeletion) foundEmbeddingForSpecies = true;
         }
         if (debug && mapsBeforeDedup > 0) {
             std::cerr << "[DEBUG] Rule " << ruleName_ << " pattern " << patternIndex
@@ -1547,17 +1612,6 @@ std::size_t ReactionRule::expandRule(
     const bool debug = std::getenv("BNG_DEBUG_RULES") != nullptr;
     const bool isBimolecular = reactantPatterns_.size() >= 2;
 
-    // First pass: identify truly new species (never processed by ANY rule yet)
-    // Only consider species that existed at the start of this iteration (index < speciesBoundary).
-    // Species created by earlier rules in the same iteration are deferred to the next iteration.
-    bool hasTrulyNewSpecies = false;
-    for (std::size_t i = 0; i < std::min(speciesList.size(), speciesBoundary); ++i) {
-        if (!speciesList.get(i).rulesApplied()) {
-            hasTrulyNewSpecies = true;
-            break;
-        }
-    }
-
     std::vector<std::size_t> newSpecies;
 
     // Ensure the vector is sized appropriately
@@ -1577,19 +1631,21 @@ std::size_t ReactionRule::expandRule(
         // Using neverProcessedByThisRule (not just notProcessedInCurrentIteration)
         // prevents re-processing species across iterations, which would cause
         // duplicate reactions and doubled stat factors.
-        // Bimolecular: process new species OR (if truly new species exist) old
-        // species for cross-matching (old × new combinations).
+        // Bimolecular rules retain matches for species already processed.  A
+        // new match is combined with those retained matches during the
+        // trigger pass below, so old species must not be searched and
+        // appended again.
         if (!isBimolecular) {
             // Unimolecular: process only never-before-seen species
             if (neverProcessedByThisRule && notYetProcessed) {
                 newSpecies.push_back(i);
             }
         } else {
-            // Bimolecular: process new species or old species for cross-matching
+            // Search only species not yet marked RulesApplied.  This mirrors
+            // BNG2's expand_rule/RuleInstances flow: find_embeddings searches
+            // only the new species while RuleInstances retains old matches
+            // (BNG2/Perl2/RxnRule.pm:2958-2984).
             if (notYetProcessed && notProcessedByThisRuleInCurrentIteration) {
-                newSpecies.push_back(i);
-            } else if (hasTrulyNewSpecies && speciesList.get(i).rulesApplied() &&
-                       notProcessedByThisRuleInCurrentIteration) {
                 newSpecies.push_back(i);
             }
         }
@@ -2475,6 +2531,16 @@ bool ReactionRule::buildReaction(
         }
 
         if (productGraphs.size() > productPatterns_.size()) {
+            // BNG2 rejects a bond-only transformation when applying the
+            // deletion splits one matched species into more connected
+            // products than the rule declares (RxnRule.pm:3112-3129).
+            // Extra fragments are permitted only for explicit
+            // DeleteMolecules/deletion semantics, not for an ordinary
+            // reversible bond rule.
+            if (isPureBondRule) {
+                return false;
+            }
+
             // More product components than product patterns.  Match each product
             // pattern to a product graph; unmatched graphs are orphan fragments.
             //
@@ -2864,4 +2930,3 @@ bool ReactionRule::passesProductFilters(const std::vector<SpeciesGraph>& product
 }
 
 } // namespace bng::ast
-

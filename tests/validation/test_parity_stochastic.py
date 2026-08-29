@@ -2,7 +2,7 @@
 
 SSA/PLA/PSA are not bit-comparable. Two independent checks:
   (a) determinism  same seed twice -> identical arrays
-  (b) ensemble     test mean within Perl mean +/- 3 SE on >= 98% of points;
+  (b) ensemble     means agree within 3 pooled SE on >= 98% of points;
                    both sides must have at least 200 fixed-seed members
 """
 
@@ -14,7 +14,9 @@ import pytest
 from tests.validation import compare, corpus, runner
 
 STOCH_MODELS = [
-    m for m in ("gene_expr", "michment", "simple_system") if corpus.resolve(m) is not None
+    m
+    for m in ("gene_expr", "michment", "simple_system")
+    if corpus.resolve(m) is not None
 ]
 
 
@@ -24,8 +26,9 @@ def test_ssa_determinism(model_name, api):
     a = runner.run_api(model_name, method="ssa", seed=12345, t_end=10, n_steps=50)
     b = runner.run_api(model_name, method="ssa", seed=12345, t_end=10, n_steps=50)
     assert a.columns == b.columns
-    np.testing.assert_array_equal(a.data, b.data,
-                                  err_msg=f"SSA not deterministic under fixed seed [{model_name}]")
+    np.testing.assert_array_equal(
+        a.data, b.data, err_msg=f"SSA not deterministic under fixed seed [{model_name}]"
+    )
 
 
 @pytest.mark.stochastic

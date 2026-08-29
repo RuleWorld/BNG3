@@ -578,6 +578,14 @@ System *initSystemFromFlags(map<string,string> argMap, bool verbose)
 
 			if(s!=NULL)
 			{
+				// System owns the RNG used by reaction selection and timing.  Keep
+				// the command-line seed aligned with that per-instance generator;
+				// seeding NFutil's legacy global RNG alone is insufficient.
+				if (argMap.find("seed") != argMap.end()) {
+					int seed = abs(NFinput::parseAsInt(argMap, "seed", 0));
+					s->seedRNG(static_cast<unsigned long>(seed));
+				}
+
 				if(verbose) {cout<<endl;}
 
 				//If requested, be sure to output the values of global functions
@@ -1054,7 +1062,6 @@ void printHelp(const string& version)
 	cout<<""<<endl;
 	cout<<""<<endl;
 }
-
 
 
 
