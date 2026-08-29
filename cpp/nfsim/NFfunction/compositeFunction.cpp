@@ -499,6 +499,15 @@ void CompositeFunction::addTypeIMoleculeDependency(MoleculeType *mt) {
 	}
 }
 
+bool CompositeFunction::hasTimeDependentLocalFunction() const {
+	for (int i = 0; i < n_lfs; ++i) {
+		if (lfs[i] != nullptr && lfs[i]->getTimeDependent() && lfs[i]->p != nullptr) {
+			return true;
+		}
+	}
+	return false;
+}
+
 
 double CompositeFunction::evaluateOn(Molecule **molList, int *scope, int *curReactantCounts, int n_reactants) {
 	//cout << "CompositeFunction::evaluateOn()" << endl;

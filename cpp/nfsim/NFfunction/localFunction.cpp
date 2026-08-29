@@ -7,6 +7,7 @@
 
 
 #include "NFfunction.hh"
+#include <cctype>
 
 
 
@@ -18,6 +19,50 @@ using namespace NFcore;
 #ifndef NFSIM_USE_EXPRTK
 using namespace mu;
 #endif
+
+namespace {
+
+std::string normalizeTimeCalls(const std::string& expression) {
+	std::string normalized;
+	normalized.reserve(expression.size());
+	std::size_t index = 0;
+	while (index < expression.size()) {
+		const unsigned char first = static_cast<unsigned char>(expression[index]);
+		if (std::isalpha(first) || expression[index] == '_') {
+			const std::size_t start = index++;
+			while (index < expression.size()) {
+				const unsigned char current = static_cast<unsigned char>(expression[index]);
+				if (!std::isalnum(current) && expression[index] != '_') break;
+				++index;
+			}
+			const std::string token = expression.substr(start, index - start);
+			std::size_t lookahead = index;
+			while (lookahead < expression.size() &&
+				   std::isspace(static_cast<unsigned char>(expression[lookahead]))) {
+				++lookahead;
+			}
+			if ((token == "time" || token == "t") && lookahead < expression.size() &&
+				expression[lookahead] == '(') {
+				std::size_t close = lookahead + 1;
+				while (close < expression.size() &&
+					   std::isspace(static_cast<unsigned char>(expression[close]))) {
+					++close;
+				}
+				if (close < expression.size() && expression[close] == ')') {
+					normalized += token;
+					index = close + 1;
+					continue;
+				}
+			}
+			normalized.append(expression, start, index - start);
+			continue;
+		}
+		normalized.push_back(expression[index++]);
+	}
+	return normalized;
+}
+
+} // namespace
 
 
 
@@ -71,6 +116,7 @@ LocalFunction::LocalFunction(System *s,
 	this->parsedExpression=parsedExpression;
 	// default to false
 	this->isEverEvaluatedOnSpeciesScope=false;
+	this->isTimeDependent=false;
 	// remember the system
 	this->system = s;
 
@@ -185,6 +231,7 @@ void LocalFunction::prepareForSimulation(System *s) {
 
 	//Finally, we can create the local function
 	try {
+		this->system = s;
 		p=FuncFactory::create();
 
 		//Give the local observable to the function so it can be used
@@ -201,8 +248,16 @@ void LocalFunction::prepareForSimulation(System *s) {
 			p->DefineConst(this->paramNames[i],s->getParameter(paramNames[i]));
 		}
 
+		std::string expression = this->parsedExpression;
+		if (this->isTimeDependent) {
+			double *currentTime = s->getCurrentTimePtr();
+			p->DefineVar("time", currentTime);
+			p->DefineVar("t", currentTime);
+			expression = normalizeTimeCalls(expression);
+		}
+
 		//Finally, we can set the expression
-		p->SetExpr(this->parsedExpression);
+		p->SetExpr(expression);
 
 	//Catch anything that goes astray
 	} catch (mu::Parser::exception_type &e) {
@@ -214,8 +269,63 @@ void LocalFunction::prepareForSimulation(System *s) {
 }
 
 
+double LocalFunction::evaluateWithoutUpdating(Molecule *m, int scope)
+{
+	if (scope == LocalFunction::SPECIES) {
+		if (!isEverEvaluatedOnSpeciesScope) {
+			return this->evaluateWithoutUpdating(m, LocalFunction::MOLECULE);
+		}
+		if (!system->getEvaluateComplexScopedLocalFunctions()) {
+			return 0;
+		}
+
+		std::list<Molecule *> speciesMolecules;
+		m->traverseBondedNeighborhood(speciesMolecules, ReactionClass::NO_LIMIT);
+		for (unsigned int i = 0; i < n_varRefs; ++i) {
+			if (varLocalObservables[i] != 0) varLocalObservables[i]->clear();
+		}
+		for (Molecule *speciesMolecule : speciesMolecules) {
+			for (unsigned int i = 0; i < n_varRefs; ++i) {
+				if (varLocalObservables[i] == 0) continue;
+				if (varLocalObservables[i]->getType() != Observable::MOLECULES) {
+					cerr << "Error in LocalFunction::evaluateOn()! cannot handle Species observable when" << endl;
+					cerr << "evaluating on a single molecule." << endl;
+					exit(1);
+				}
+				varLocalObservables[i]->straightAdd(
+					varLocalObservables[i]->isObservable(speciesMolecule));
+			}
+		}
+		double value = FuncFactory::Eval(p);
+		return value;
+	}
+
+	if (scope == LocalFunction::MOLECULE) {
+		for (unsigned int i = 0; i < n_varRefs; ++i) {
+			if (varLocalObservables[i] == 0) continue;
+			if (varLocalObservables[i]->getType() != Observable::MOLECULES) {
+				cerr << "Error in LocalFunction::evaluateOn()! cannot handle Species observable when" << endl;
+				cerr << "evaluating on a single molecule." << endl;
+				exit(1);
+			}
+			varLocalObservables[i]->clear();
+			const int matches = varLocalObservables[i]->isObservable(m);
+			for (int k = 0; k < matches; ++k) varLocalObservables[i]->straightAdd();
+		}
+		double value = FuncFactory::Eval(p);
+		return value;
+	}
+
+	cerr << "Internal error in LocalFunction::evaluateWithoutUpdating()! unknown scope." << endl;
+	exit(1);
+}
+
+
 double LocalFunction::getValue(Molecule *m, int scope)
 {
+	if (isTimeDependent) {
+		return this->evaluateWithoutUpdating(m, scope);
+	}
 	//cout<<"getting local function value: "<<this->nicename<<endl;
 	//cout<<"using molecule: "<<m->getUniqueID()<<" with scope: "<<scope<<endl;
 

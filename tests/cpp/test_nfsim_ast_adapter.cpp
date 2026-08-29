@@ -966,6 +966,55 @@ end reaction rules
     delete system;
 }
 
+TEST_CASE("NFsim AST adapter updates time-dependent local rates") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin observables
+    Molecules atotal A()
+end observables
+begin functions
+    f(x) = k + atotal(x) + time()
+end functions
+begin reaction rules
+    %x::A() -> %x::A() + B() f(x)
+end reaction rules
+)");
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getLocalFunctionByName("f") != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    REQUIRE(system->getHasTimeDependentFunctions());
+    system->prepareForSimulation();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(2.0));
+
+    *system->getCurrentTimePtr() = 2.5;
+    CHECK(system->getReaction(0)->update_a() == Catch::Approx(4.5));
+    delete system;
+
+    suggestedTraversalLimit = 0;
+    auto* xmlSystem = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, suggestedTraversalLimit);
+    REQUIRE(xmlSystem != nullptr);
+    REQUIRE(xmlSystem->getLocalFunctionByName("f") != nullptr);
+    xmlSystem->prepareForSimulation();
+    CHECK(xmlSystem->getReaction(0)->get_a() == Catch::Approx(2.0));
+    *xmlSystem->getCurrentTimePtr() = 2.5;
+    CHECK(xmlSystem->getReaction(0)->update_a() == Catch::Approx(4.5));
+    delete xmlSystem;
+}
+
 TEST_CASE("NFsim AST adapter maps a legacy molecule-label local scope") {
     auto model = bng::parser::parseModel(R"(
 begin molecule types

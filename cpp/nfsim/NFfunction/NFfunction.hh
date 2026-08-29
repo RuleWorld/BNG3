@@ -309,6 +309,8 @@ namespace NFcore {
 			void printDetails(System *s);
 
 			void prepareForSimulation(System *s);
+			void setTimeDependent(bool value) { isTimeDependent = value; }
+			bool getTimeDependent() const { return isTimeDependent; }
 
 
 			double getValue(Molecule *m, int scope);
@@ -332,6 +334,7 @@ namespace NFcore {
 			// function molecule requests to be evaluated over the species scope, because,
 			// by golly, that is never needed.  Is that clear?
 			bool isEverEvaluatedOnSpeciesScope;
+			bool isTimeDependent;
 
 			string name;
 			string nicename;
@@ -356,6 +359,8 @@ namespace NFcore {
 
 			static list <Molecule *> molList;
 			static list <Molecule *>::iterator molIter;
+
+			double evaluateWithoutUpdating(Molecule *m, int scope);
 
 			//Here we store back pointers into both type I and type II molecules
 			//Remember that type I molecules must store the value of this function
@@ -407,6 +412,7 @@ namespace NFcore {
 				string getArgName(int aIndex) const;
 
 				void addTypeIMoleculeDependency(MoleculeType *mt);
+				bool hasTimeDependentLocalFunction() const;
 
 				// AS-2021
 				void fileUpdate();

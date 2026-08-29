@@ -16,10 +16,10 @@
 ///                    seed species, bounded direct reaction rules, direct
 ///                    Arrhenius energy expansion, time-backed global
 ///                    functions, zero-argument composites, one-argument
-///                    molecule/species-scoped local functions, FunctionProduct,
-///                    reactant include/exclude filters.
-/// GATED here:       nested/complex local functions, other rate-law forms,
-///                   product filters, and reaction
+///                    molecule/species-scoped and time-bearing local functions,
+///                    FunctionProduct, reactant include/exclude filters.
+/// GATED here:       nested/complex local functions, local TFUNs, other rate-law
+///                   forms, product filters, and reaction
 ///                   centers not yet represented by the direct mapping. They
 ///                   fail closed and cite the TiXml init* function that
 ///                   remains their compatibility oracle.
@@ -642,8 +642,7 @@ bool collectLocalFunctionReferences(
             return false;
         }
         if (expression.name() == "time" || expression.name() == "t") {
-            diagnostic = "local functions with time references are not direct yet";
-            return false;
+            return true;
         }
         if (parameters.count(expression.name()) != 0 || expression.name() == "_PI" ||
             expression.name() == "_e" || expression.name() == "_Na") {
@@ -669,8 +668,11 @@ bool collectLocalFunctionReferences(
     case ExpressionKind::Function:
         if (lowerCase(expression.name()) == "time" ||
             lowerCase(expression.name()) == "t") {
-            diagnostic = "local functions with time references are not direct yet";
-            return false;
+            if (!expression.args().empty()) {
+                diagnostic = "local function time/t references must have no arguments";
+                return false;
+            }
+            return true;
         }
         if (hasModelFunction(model, expression.name())) {
             diagnostic = "local function calls model function '" + expression.name() +
@@ -962,6 +964,17 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
             std::cerr << "[nfsim/ast] legacy local-function construction failed for '"
                       << function.getName() << "'\n";
             return false;
+        }
+
+        if (expressionUsesTime(function.getExpression())) {
+            auto* local = s->getLocalFunctionByName(function.getName());
+            if (local == nullptr) {
+                std::cerr << "[nfsim/ast] failed to resolve time-dependent local function '"
+                          << function.getName() << "'\n";
+                return false;
+            }
+            local->setTimeDependent(true);
+            s->setHasTimeDependentFunctions(true);
         }
 
         // NFsim's DOR reaction expects a composite wrapper even when its body

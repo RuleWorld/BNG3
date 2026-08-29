@@ -648,6 +648,9 @@ bool NFinput::initFunctions(
 					CompositeFunction *cf = system->getCompositeFunctionByName(funcName);
 					if (cf) {
 						cf->addSystemPointer(system);
+					} else {
+						LocalFunction *lf = system->getLocalFunctionByName(funcName);
+						if (lf) lf->setTimeDependent(true);
 					}
 				}
 				system->setHasTimeDependentFunctions(true);

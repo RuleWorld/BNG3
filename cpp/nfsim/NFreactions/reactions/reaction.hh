@@ -131,6 +131,7 @@ namespace NFcore
 			mutable vector<pair<int, int> > validPairsBuffer;
 
 			virtual double evaluateLocalFunctions(MappingSet *ms);
+			void refreshTimeDependentLocalFunctions();
 
 			virtual void pickMappingSets(double randNumber) const;
 
@@ -144,6 +145,8 @@ namespace NFcore
 
 
 			CompositeFunction *cf;
+			bool hasRefreshedTimeDependentLocalFunctions;
+			double lastTimeDependentLocalFunctionRefresh;
 
 			//Parameters to keep track of local functions
 			int DORreactantIndex;
@@ -212,6 +215,7 @@ namespace NFcore
 
 			virtual double evaluateLocalFunctions1(MappingSet *ms);
 			virtual double evaluateLocalFunctions2(MappingSet *ms);
+			void refreshTimeDependentLocalFunctions();
 
 			virtual void pickMappingSets(double randNumber) const;
 
@@ -224,6 +228,8 @@ namespace NFcore
 
 			CompositeFunction *cf1;
 			CompositeFunction *cf2;
+			bool hasRefreshedTimeDependentLocalFunctions;
+			double lastTimeDependentLocalFunctionRefresh;
 
 			//Parameters to keep track of local functions
 			int DORreactantIndex1;

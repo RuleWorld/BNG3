@@ -167,6 +167,8 @@ DORRxnClass::DORRxnClass(
 
 	//Set the actual function
 	this->cf = function;
+	this->hasRefreshedTimeDependentLocalFunctions = false;
+	this->lastTimeDependentLocalFunctionRefresh = 0.0;
 
 	//Add type I molecule dependencies, so that when this function
 	//is reevaluated on a molecule, the molecule knows to update this reaction.
@@ -611,6 +613,7 @@ double DORRxnClass::evaluateLocalFunctions(MappingSet *ms)
 
 
 double DORRxnClass::update_a() {
+	refreshTimeDependentLocalFunctions();
 	if (useRuleMonkey) {
 		a = exactRuleMonkey_a();
 		return a;
@@ -624,6 +627,22 @@ double DORRxnClass::update_a() {
 		}
 	}
 	return a;
+}
+
+void DORRxnClass::refreshTimeDependentLocalFunctions() {
+	if (cf == nullptr || !cf->hasTimeDependentLocalFunction()) return;
+	const double currentTime = system->getCurrentTime();
+	if (hasRefreshedTimeDependentLocalFunctions &&
+		lastTimeDependentLocalFunctionRefresh == currentTime) {
+		return;
+	}
+	hasRefreshedTimeDependentLocalFunctions = true;
+	lastTimeDependentLocalFunctionRefresh = currentTime;
+	for (int i = 0; i < reactantTree->size(); ++i) {
+		MappingSet *ms = reactantTree->getMappingSetByIndex(static_cast<unsigned int>(i));
+		if (ms == nullptr) continue;
+		reactantTree->updateValue(ms->getId(), evaluateLocalFunctions(ms));
+	}
 }
 
 double DORRxnClass::exactRuleMonkey_a()
@@ -842,6 +861,7 @@ void DORRxnClass::printDetails() const
 	if(n_reactants==0)
 		cout<<"      >No Reactants: so this rule either creates new species or does nothing."<<endl;
 }
+
 
 
 
@@ -1081,6 +1101,8 @@ DOR2RxnClass::DOR2RxnClass(
 	//Set the actual functions
 	this->cf1 = function1;
 	this->cf2 = function2;
+	this->hasRefreshedTimeDependentLocalFunctions = false;
+	this->lastTimeDependentLocalFunctionRefresh = 0.0;
 
 	//Add type I molecule dependencies, so that when this function
 	//is reevaluated on a molecule, the molecule knows to update this reaction.
@@ -1394,6 +1416,7 @@ double DOR2RxnClass::evaluateLocalFunctions2(MappingSet *ms)
 
 
 double DOR2RxnClass::update_a() {
+	refreshTimeDependentLocalFunctions();
 	if (useRuleMonkey) {
 		a = exactRuleMonkey_a();
 		return a;
@@ -1419,6 +1442,34 @@ double DOR2RxnClass::update_a() {
 	return a;
 }
 
+
+void DOR2RxnClass::refreshTimeDependentLocalFunctions() {
+	const bool hasTimeDependentLocalFunction =
+		(cf1 != nullptr && cf1->hasTimeDependentLocalFunction()) ||
+		(cf2 != nullptr && cf2->hasTimeDependentLocalFunction());
+	if (!hasTimeDependentLocalFunction) return;
+	const double currentTime = system->getCurrentTime();
+	if (hasRefreshedTimeDependentLocalFunctions &&
+		lastTimeDependentLocalFunctionRefresh == currentTime) {
+		return;
+	}
+	hasRefreshedTimeDependentLocalFunctions = true;
+	lastTimeDependentLocalFunctionRefresh = currentTime;
+	if (cf1 != nullptr && cf1->hasTimeDependentLocalFunction()) {
+		for (int i = 0; i < reactantTree1->size(); ++i) {
+			MappingSet *ms = reactantTree1->getMappingSetByIndex(static_cast<unsigned int>(i));
+			if (ms == nullptr) continue;
+			reactantTree1->updateValue(ms->getId(), evaluateLocalFunctions1(ms));
+		}
+	}
+	if (cf2 != nullptr && cf2->hasTimeDependentLocalFunction()) {
+		for (int i = 0; i < reactantTree2->size(); ++i) {
+			MappingSet *ms = reactantTree2->getMappingSetByIndex(static_cast<unsigned int>(i));
+			if (ms == nullptr) continue;
+			reactantTree2->updateValue(ms->getId(), evaluateLocalFunctions2(ms));
+		}
+	}
+}
 
 double DOR2RxnClass::exactRuleMonkey_a()
 {
@@ -1648,8 +1699,6 @@ void DOR2RxnClass::printDetails() const
 	if (n_reactants==0)
 		cout << "      >No Reactants: so this rule either creates new species or does nothing."<<endl;
 }
-
-
 
 
 
