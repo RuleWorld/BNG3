@@ -30,8 +30,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install linters
-        run: pip install black ruff
+      - name: Install linters and policy dependencies
+        run: pip install black ruff pytest
 
       - name: Check Python formatting (Black)
         run: black --check --diff --target-version py312 python/ tests/python/ scripts/
@@ -39,8 +39,14 @@ jobs:
       - name: Run ruff linter
         run: ruff check python/ tests/python/ scripts/
 
+      - name: Validate integration provenance structure
+        run: python scripts/validate_provenance.py
+
+      - name: Enforce validation exception budget
+        run: python -m tests.validation.exception_ledger --max-exceptions 1
+
   # ═══════════════════════════════════════════════════════════════════════════
-  # C++ Build & Test (BNG engine + NFSim)
+  # C++ Build & Test (BNG engine with embedded NFsim library)
   # ═══════════════════════════════════════════════════════════════════════════
 
   cpp-build:
@@ -120,7 +126,6 @@ jobs:
           name: bng_cpp-${{ matrix.os }}-${{ matrix.compiler }}
           path: |
             build/cpp/bng_cpp*
-            build/cpp/NFsim*
 
   # ═══════════════════════════════════════════════════════════════════════════
   # C++ with AddressSanitizer (catch memory bugs)
@@ -203,11 +208,11 @@ jobs:
           python scripts/validate.py --bng-cpp "$BNG" $SKIP --verbose
 
   # ═══════════════════════════════════════════════════════════════════════════
-  # NFSim Validation (stochastic comparison)
+  # BNGL corpus parse inventory (not an NFsim simulation check)
   # ═══════════════════════════════════════════════════════════════════════════
 
-  nfsim-validation:
-    name: NFSim Validation
+  corpus-parse:
+    name: BNGL Corpus Parse Inventory
     needs: cpp-build
     runs-on: ubuntu-22.04
     steps:
@@ -217,41 +222,47 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Download NFSim artifact
+      - name: Download bng_cpp artifact
         uses: actions/download-artifact@v4
         with:
           name: bng_cpp-ubuntu-22.04-gcc-12
           path: build/cpp/
 
       - name: Make executable
-        run: chmod +x build/cpp/NFsim build/cpp/bng_cpp
+        run: chmod +x build/cpp/bng_cpp
 
-      - name: Install validation dependencies
-        run: pip install numpy scipy
-
-      - name: Run NFSim models
+      - name: Inventory parser coverage
         run: |
-          set -e
-          NFSIM=build/cpp/NFsim
+          set -eu
           PASS=0
-          FAIL=0
-          for model_dir in models/*/; do
-            for bngl in "$model_dir"*.bngl; do
-              [ -f "$bngl" ] || continue
-              model_name=$(basename "$bngl" .bngl)
-              echo -n "  $model_name... "
+          UNSUPPORTED=0
+          TOTAL=0
+          while IFS= read -r -d '' bngl; do
+            TOTAL=$((TOTAL + 1))
+            model_name=$(basename "$bngl" .bngl)
+            echo -n "  $model_name... "
 
-              # Generate XML from BNGL using bng_cpp
-              if build/cpp/bng_cpp --check "$bngl" > /dev/null 2>&1; then
-                echo "PASS (parse)"
-                PASS=$((PASS + 1))
-              else
-                echo "SKIP (parse error)"
-              fi
-            done
-          done
-          echo ""
-          echo "NFSim parse check: $PASS passed"
+            if build/cpp/bng_cpp --check "$bngl" > /dev/null 2>&1; then
+              echo "PASS (parse)"
+              PASS=$((PASS + 1))
+            else
+              echo "UNSUPPORTED (parse error)"
+              UNSUPPORTED=$((UNSUPPORTED + 1))
+            fi
+          done < <(find models -type f -name '*.bngl' -print0)
+          if [ "$TOTAL" -eq 0 ]; then
+            echo "ERROR: no BNGL models were discovered"
+            exit 1
+          fi
+          {
+            echo "### BNGL Corpus Parse Inventory"
+            echo ""
+            echo "This check inventories parser acceptance only; it does not run NFsim."
+            echo ""
+            echo "| Total | Parsed | Unsupported |"
+            echo "| ---: | ---: | ---: |"
+            echo "| $TOTAL | $PASS | $UNSUPPORTED |"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
   # ═══════════════════════════════════════════════════════════════════════════
   # Python Package Build & Test (full matrix)
@@ -337,7 +348,7 @@ jobs:
           CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=OFF"
 
       - name: Run atomizer tests
-        run: pytest tests/python/ -v -k "atomizer" --tb=short || true
+        run: pytest tests/python/ -v -k "atomizer" --tb=short
         env:
           SYMPY_USE_GMPY: "0"
 

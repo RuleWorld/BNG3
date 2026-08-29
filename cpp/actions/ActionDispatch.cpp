@@ -976,7 +976,9 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 std::string ee = lowercase(trim(stripQuotes(evalExprText)));
                 evalExpr = (ee == "1" || ee == "true" || ee == "yes" || ee == "on");
             }
-            writeCurrentNetwork(io::NetWriterOptions{.evaluateExpressions = evalExpr});  // Triggers NetWriter::buildDerivedRateParams
+            io::NetWriterOptions writerOptions;
+            writerOptions.evaluateExpressions = evalExpr;
+            writeCurrentNetwork(writerOptions);  // Triggers NetWriter::buildDerivedRateParams
             continue;
         }
 

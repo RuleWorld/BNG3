@@ -181,10 +181,13 @@ target_include_directories(nfsim_core PUBLIC
 )
 target_compile_definitions(nfsim_core PUBLIC TIXML_USE_STL NFSIM_USE_EXPRTK)
 target_include_directories(nfsim_core PRIVATE ${exprtk_SOURCE_DIR})
-if(NOT MSVC)
-    target_compile_options(nfsim_core PRIVATE -Wno-deprecated-declarations -Wa,-mbig-obj)
-else()
+if(MSVC)
     target_compile_options(nfsim_core PRIVATE /bigobj)
+else()
+    target_compile_options(nfsim_core PRIVATE -Wno-deprecated-declarations)
+    if(MINGW)
+        target_compile_options(nfsim_core PRIVATE -Wa,-mbig-obj)
+    endif()
 endif()
 
 # =============================================================================
@@ -213,13 +216,8 @@ endif()
 # NFsim executable (optional, for backward compatibility)
 # =============================================================================
 if(BUILD_NFSIM_CLI)
-    file(GLOB NFSIM_TEST_SRC
+    file(GLOB_RECURSE NFSIM_TEST_SRC CONFIGURE_DEPENDS
         "${NFSIM_DIR}/NFtest/*.cpp"
-        "${NFSIM_DIR}/NFtest/simple_system/*.cpp"
-        "${NFSIM_DIR}/NFtest/transcription/*.cpp"
-        "${NFSIM_DIR}/NFtest/tlbr/*.cpp"
-        "${NFSIM_DIR}/NFtest/agentcell/*.cpp"
-        "${NFSIM_DIR}/NFtest/agentcell/cell/*.cpp"
     )
     add_executable(NFsim ${NFSIM_DIR}/NFsim.cpp ${NFSIM_TEST_SRC})
     target_link_libraries(NFsim PRIVATE nfsim_core)

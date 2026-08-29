@@ -62,11 +62,11 @@ jobs:
           python scripts/validate.py --bng-cpp "$BNG" $SKIP --verbose
 
   # ═══════════════════════════════════════════════════════════════════════════
-  # NFSim Stochastic Validation (with retries for statistical tests)
+  # NFsim execution smoke test (not a statistical parity check)
   # ═══════════════════════════════════════════════════════════════════════════
 
-  nfsim-stochastic:
-    name: NFSim Stochastic Validation
+  nfsim-execution-smoke:
+    name: NFsim Execution Smoke
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -90,45 +90,38 @@ jobs:
             -DBUILD_TESTS=OFF
           cmake --build build --config Release
 
-      - name: Run NFSim stochastic validation (with retry)
+      - name: Run NFsim once per XML model with a fixed seed
         run: |
+          set -u
           NFSIM=build/cpp/NFsim
           PASS=0
           FAIL=0
           TOTAL=0
 
-          for xml in models/**/*.xml; do
-            [ -f "$xml" ] || continue
+          while IFS= read -r -d '' xml; do
             TOTAL=$((TOTAL + 1))
             model_name=$(basename "$xml" .xml)
 
-            # Retry up to 3 times (stochastic tests may have variance)
-            success=false
-            for attempt in 1 2 3; do
-              if timeout 60 "$NFSIM" -xml "$xml" -sim 10 -oSteps 10 > /dev/null 2>&1; then
-                success=true
-                break
-              fi
-            done
-
-            if [ "$success" = true ]; then
+            if timeout 60 "$NFSIM" -xml "$xml" -sim 10 -oSteps 10 -seed 1 > /dev/null 2>&1; then
               echo "PASS  $model_name"
               PASS=$((PASS + 1))
             else
-              echo "FAIL  $model_name (3 attempts)"
+              echo "FAIL  $model_name"
               FAIL=$((FAIL + 1))
             fi
-          done
+          done < <(find models -type f -name '*.xml' -print0)
 
-          echo ""
-          echo "================================"
-          echo "NFSim Stochastic Validation"
-          echo "  Total: $TOTAL"
-          echo "  Pass:  $PASS"
-          echo "  Fail:  $FAIL"
-          echo "================================"
+          {
+            echo "### NFsim Execution Smoke"
+            echo ""
+            echo "This check verifies fixed-seed execution only; it is not statistical parity evidence."
+            echo ""
+            echo "| Total | Passed | Failed |"
+            echo "| ---: | ---: | ---: |"
+            echo "| $TOTAL | $PASS | $FAIL |"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
-          if [ $FAIL -gt 0 ]; then
+          if [ "$TOTAL" -eq 0 ] || [ "$FAIL" -gt 0 ]; then
             exit 1
           fi
 
@@ -224,8 +217,8 @@ jobs:
           MODELS_DIR=tests/validation/Validate
 
           if [ ! -f "$BNG_PERL" ]; then
-            echo "BNG2.pl not found, skipping cross-validation"
-            exit 0
+            echo "ERROR: required BNG2.pl oracle not found at $BNG_PERL"
+            exit 1
           fi
 
           PASS=0
@@ -273,10 +266,14 @@ jobs:
             rm -rf "$tmpdir" "$perl_tmpdir"
           done
 
-          echo ""
-          echo "================================"
-          echo "Cross-Validation: C++ vs Perl"
-          echo "  Pass:  $PASS"
-          echo "  Fail:  $FAIL"
-          echo "  Skip:  $SKIP"
-          echo "================================"
+          {
+            echo "### C++ vs Perl Cross-Validation"
+            echo ""
+            echo "| Passed | Failed | Skipped |"
+            echo "| ---: | ---: | ---: |"
+            echo "| $PASS | $FAIL | $SKIP |"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+          if [ "$PASS" -eq 0 ] || [ "$FAIL" -gt 0 ]; then
+            exit 1
+          fi
