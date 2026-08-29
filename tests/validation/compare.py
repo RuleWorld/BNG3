@@ -64,7 +64,8 @@ import math
 
 _SAFE_NAMES = {
     "ln": math.log,
-    "log": math.log,
+    # Perl's legacy ``log`` spelling is base-10; ``ln`` is natural log.
+    "log": math.log10,
     "log10": math.log10,
     "log2": math.log2,
     "exp": math.exp,
@@ -181,7 +182,7 @@ def _safe_arith(expr: str) -> float:
             raise ValueError(f"unknown function or symbol {word!r}")
 
     ns = {
-        "log": math.log,
+        "log": math.log10,
         "log10": math.log10,
         "log2": math.log2,
         "exp": math.exp,
