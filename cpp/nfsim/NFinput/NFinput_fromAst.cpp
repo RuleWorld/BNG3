@@ -244,6 +244,175 @@ bool isSupportedGlobalBuiltin(const std::string& name) {
     return supported.count(lowerCase(name)) != 0;
 }
 
+void collectTableFunctions(const bng::ast::Expression& expression,
+                           std::vector<const bng::ast::Expression*>& tables) {
+    if (expression.kind() == bng::ast::ExpressionKind::TableFunction) {
+        tables.push_back(&expression);
+    }
+    for (const auto& child : expression.args()) {
+        collectTableFunctions(child, tables);
+    }
+}
+
+std::string expressionForNfsim(const bng::ast::Expression& expression) {
+    using bng::ast::ExpressionKind;
+    switch (expression.kind()) {
+    case ExpressionKind::Number:
+    case ExpressionKind::Identifier:
+        return expression.toString();
+    case ExpressionKind::Unary:
+        return expression.name() + expressionForNfsim(expression.args().front());
+    case ExpressionKind::Binary:
+        return "(" + expressionForNfsim(expression.args()[0]) + " " + expression.name() +
+               " " + expressionForNfsim(expression.args()[1]) + ")";
+    case ExpressionKind::Function:
+    case ExpressionKind::ObservableRef: {
+        std::ostringstream output;
+        output << expression.name() << '(';
+        for (std::size_t index = 0; index < expression.args().size(); ++index) {
+            if (index != 0) output << ',';
+            output << expressionForNfsim(expression.args()[index]);
+        }
+        output << ')';
+        return output.str();
+    }
+    case ExpressionKind::TableFunction:
+        return "__TFUN_VAL__";
+    }
+    return {};
+}
+
+bool configureDirectTableFunction(
+    const bng::ast::Expression& table,
+    const bng::ast::Model& model,
+    const std::map<std::string, double>& parameters,
+    System* system,
+    GlobalFunction* global,
+    CompositeFunction* composite,
+    std::string& diagnostic) {
+    if (table.kind() != bng::ast::ExpressionKind::TableFunction ||
+        table.args().size() != 1) {
+        diagnostic = "malformed TFUN metadata";
+        return false;
+    }
+    if (!table.tableFilePath().empty()) {
+        diagnostic = "file-backed TFUN requires source-path-aware compatibility loading";
+        return false;
+    }
+    if (table.tableXValues().empty() ||
+        table.tableXValues().size() != table.tableYValues().size()) {
+        diagnostic = "inline TFUN has empty or mismatched data columns";
+        return false;
+    }
+
+    const auto& counter = table.args().front();
+    const auto attachObservable = [&](const std::string& name) {
+        auto* observable = system->getObservableByName(name);
+        if (observable == nullptr) {
+            diagnostic = "TFUN observable counter '" + name + "' is not registered";
+            return false;
+        }
+        if (global != nullptr) observable->addReferenceToGlobalFunction(global);
+        if (composite != nullptr) observable->addReferenceToCompositeFunction(composite);
+        return true;
+    };
+    const auto attachFunction = [&](const std::string& name) {
+        if (composite == nullptr) {
+            diagnostic = "global TFUN cannot use a function counter";
+            return false;
+        }
+        auto* counterFunction = system->getGlobalFunctionByName(name);
+        if (counterFunction == nullptr) {
+            diagnostic = "TFUN counter function '" + name + "' is not a base global";
+            return false;
+        }
+        composite->addFunctionPointer(counterFunction);
+        return true;
+    };
+
+    std::string counterName;
+    if (counter.kind() == bng::ast::ExpressionKind::Identifier ||
+        counter.kind() == bng::ast::ExpressionKind::ObservableRef ||
+        counter.kind() == bng::ast::ExpressionKind::Function) {
+        counterName = counter.name();
+    }
+    if (counterName.empty()) {
+        diagnostic = "TFUN counter must be time, a parameter, observable, or function name";
+        return false;
+    }
+
+    if (lowerCase(counterName) == "time" || lowerCase(counterName) == "t") {
+        if ((counter.kind() == bng::ast::ExpressionKind::ObservableRef ||
+             counter.kind() == bng::ast::ExpressionKind::Function) &&
+            !counter.args().empty()) {
+            diagnostic = "TFUN time counter cannot take arguments";
+            return false;
+        }
+        if (global != nullptr) {
+            global->enableInlineDependency(
+                table.tableXValues(), table.tableYValues(), table.tableMethod());
+            global->setCtrName("__TFUN_VAL__");
+            global->setCounterFromTime(system);
+        } else {
+            composite->enableInlineDependency(
+                table.tableXValues(), table.tableYValues(), table.tableMethod());
+            composite->setCtrName("__TFUN_VAL__");
+            composite->setCounterFromTime(system);
+        }
+        return true;
+    }
+
+    if (counter.kind() == bng::ast::ExpressionKind::Identifier &&
+        parameters.count(counterName) != 0) {
+        if (global != nullptr) {
+            global->enableInlineDependency(
+                table.tableXValues(), table.tableYValues(), table.tableMethod());
+            global->setCtrName("__TFUN_VAL__");
+            global->setCounterFromParameter(system, counterName);
+        } else {
+            composite->enableInlineDependency(
+                table.tableXValues(), table.tableYValues(), table.tableMethod());
+            composite->setCtrName("__TFUN_VAL__");
+            composite->setCounterFromParameter(system, counterName);
+        }
+        return true;
+    }
+
+    const bool namedObservable =
+        (counter.kind() == bng::ast::ExpressionKind::Identifier ||
+         counter.kind() == bng::ast::ExpressionKind::ObservableRef) &&
+        counter.args().empty() && hasModelObservable(model, counterName);
+    if (namedObservable) {
+        if (!attachObservable(counterName)) return false;
+        if (global != nullptr) {
+            global->enableInlineDependency(
+                table.tableXValues(), table.tableYValues(), table.tableMethod());
+            global->setCtrName("__TFUN_VAL__");
+        } else {
+            composite->enableInlineDependency(
+                table.tableXValues(), table.tableYValues(), table.tableMethod());
+            composite->setCtrName("__TFUN_VAL__");
+        }
+        return true;
+    }
+
+    const bool namedFunction =
+        (counter.kind() == bng::ast::ExpressionKind::Identifier ||
+         counter.kind() == bng::ast::ExpressionKind::ObservableRef ||
+         counter.kind() == bng::ast::ExpressionKind::Function) &&
+        counter.args().empty() && hasModelFunction(model, counterName);
+    if (namedFunction) {
+        if (!attachFunction(counterName)) return false;
+        composite->enableInlineDependency(
+            table.tableXValues(), table.tableYValues(), table.tableMethod());
+        composite->setCtrName("__TFUN_VAL__");
+        return true;
+    }
+
+    diagnostic = "unsupported TFUN counter '" + counterName + "'";
+    return false;
+}
+
 bool collectGlobalFunctionReferences(
     const bng::ast::Expression& expression, const bng::ast::Model& model,
     const std::map<std::string, double>& parameters, std::set<std::string>&
@@ -263,6 +432,20 @@ bool collectGlobalFunctionReferences(
             name == "_Na") {
             return true;
         }
+        if (hasModelObservable(model, name)) {
+            observableReferences.insert(name);
+            return true;
+        }
+        if (hasModelFunction(model, name)) {
+            const auto* target = getModelFunction(model, name);
+            if (target == nullptr || !target->getArgs().empty()) {
+                diagnostic = "global function references argument-bearing model function '" +
+                             name + "'";
+                return false;
+            }
+            functionReferences.insert(name);
+            return true;
+        }
         diagnostic = "unknown identifier '" + name + "'";
         return false;
     }
@@ -276,6 +459,19 @@ bool collectGlobalFunctionReferences(
             }
         }
         return true;
+    case ExpressionKind::TableFunction:
+        if (!expression.tableFilePath().empty()) {
+            diagnostic = "file-backed TFUN requires source-path-aware compatibility loading";
+            return false;
+        }
+        if (expression.args().size() != 1 || expression.tableXValues().empty() ||
+            expression.tableXValues().size() != expression.tableYValues().size()) {
+            diagnostic = "malformed inline TFUN metadata";
+            return false;
+        }
+        return collectGlobalFunctionReferences(
+            expression.args().front(), model, parameters, observableReferences,
+            functionReferences, diagnostic);
     case ExpressionKind::Function:
         if (lowerCase(expression.name()) == "time" ||
             lowerCase(expression.name()) == "t") {
@@ -393,6 +589,9 @@ bool collectLocalFunctionReferences(
             }
         }
         return true;
+    case ExpressionKind::TableFunction:
+        diagnostic = "TFUN in local functions is not direct yet";
+        return false;
     case ExpressionKind::Function:
         if (lowerCase(expression.name()) == "time" ||
             lowerCase(expression.name()) == "t") {
@@ -627,10 +826,10 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
     // SPEC: NFinput::initFunctions (parseFuncXML.cpp:488).
     // This slice handles parameter/observable/time-backed global functions,
     // composites whose dependencies are all zero-argument global functions,
-    // and the bounded one-argument local-function mapping below. TFUN and
-    // rate-law helpers still return false so the caller can use the
-    // compatibility XML path rather than constructing a subtly different
-    // simulation.
+    // and the bounded one-argument local-function mapping below. Inline TFUN
+    // is represented by NFsim's existing file-function machinery; file-backed
+    // TFUN remains fail-closed until the source path is carried through this
+    // boundary.
     if (s == nullptr) return false;
 
     std::unordered_set<std::string> names;
@@ -719,6 +918,7 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
         std::vector<std::string> functionReferences;
         std::vector<std::string> parameterReferences;
         bool usesTime = false;
+        const bng::ast::Expression* tableFunction = nullptr;
     };
     std::vector<PendingFunction> pending;
     pending.reserve(model.getFunctions().size());
@@ -743,13 +943,23 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
             }
         }
 
+        std::vector<const bng::ast::Expression*> tableFunctions;
+        collectTableFunctions(function.getExpression(), tableFunctions);
+        if (tableFunctions.size() > 1) {
+            std::cerr << "[nfsim/ast] function '" << function.getName()
+                      << "' has more than one TFUN expression; direct NFsim supports one"
+                      << " table per function\n";
+            return false;
+        }
+
         PendingFunction next {
             function.getName(),
-            function.getExpression().toString(),
+            expressionForNfsim(function.getExpression()),
             {observableReferences.begin(), observableReferences.end()},
             {functionReferences.begin(), functionReferences.end()},
             {parameterReferences.begin(), parameterReferences.end()},
-            expressionUsesTime(function.getExpression())};
+            expressionUsesTime(function.getExpression()),
+            tableFunctions.empty() ? nullptr : tableFunctions.front()};
         pending.push_back(std::move(next));
     }
 
@@ -766,13 +976,23 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
         auto parameterNames = function.parameterReferences;
         auto* global = new GlobalFunction(function.name, function.expression,
                                            referenceNames, referenceTypes, parameterNames, s);
+        if (function.tableFunction != nullptr) {
+            std::string diagnostic;
+            if (!configureDirectTableFunction(*function.tableFunction, model, parameters, s,
+                                              global, nullptr, diagnostic)) {
+                delete global;
+                std::cerr << "[nfsim/ast] cannot map TFUN function '" << function.name
+                          << "': " << diagnostic << "\n";
+                return false;
+            }
+        }
         if (!s->addGlobalFunction(global)) {
             delete global;
             std::cerr << "[nfsim/ast] failed to register global function '"
                       << function.name << "'\n";
             return false;
         }
-        if (function.usesTime) {
+        if (function.tableFunction == nullptr && function.usesTime) {
             global->setCounterFromTime(s);
             s->setHasTimeDependentFunctions(true);
         }
@@ -784,7 +1004,7 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
 
     for (const auto& function : pending) {
         if (function.functionReferences.empty()) continue;
-        if (!function.observableReferences.empty()) {
+        if (!function.observableReferences.empty() && function.tableFunction == nullptr) {
             std::cerr << "[nfsim/ast] cannot map composite function '" << function.name
                       << "': composite functions cannot reference observables\n";
             return false;
@@ -812,13 +1032,23 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
         auto* composite = new CompositeFunction(
             s, function.name, function.expression, functionsCalled,
             argumentNames, parameterNames);
+        if (function.tableFunction != nullptr) {
+            std::string diagnostic;
+            if (!configureDirectTableFunction(*function.tableFunction, model, parameters, s,
+                                              nullptr, composite, diagnostic)) {
+                delete composite;
+                std::cerr << "[nfsim/ast] cannot map TFUN composite '" << function.name
+                          << "': " << diagnostic << "\n";
+                return false;
+            }
+        }
         if (!s->addCompositeFunction(composite)) {
             delete composite;
             std::cerr << "[nfsim/ast] failed to register composite function '"
                       << function.name << "'\n";
             return false;
         }
-        if (function.usesTime) {
+        if (function.tableFunction == nullptr && function.usesTime) {
             composite->setCounterFromTime(s);
             s->setHasTimeDependentFunctions(true);
         }

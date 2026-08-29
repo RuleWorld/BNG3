@@ -1,7 +1,9 @@
 #include "Expression.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
+#include <iomanip>
 #include <sstream>
 #include <stdexcept>
 
@@ -25,6 +27,37 @@ std::string joinArgs(const std::vector<Expression>& args) {
         out << args[i].toString();
     }
     return out.str();
+}
+
+std::string encodeHex(const std::string& value) {
+    static constexpr char digits[] = "0123456789abcdef";
+    std::string encoded;
+    encoded.reserve(value.size() * 2);
+    for (const unsigned char byte : value) {
+        encoded.push_back(digits[byte >> 4]);
+        encoded.push_back(digits[byte & 0x0f]);
+    }
+    return encoded;
+}
+
+double interpolateTable(const std::vector<double>& xs,
+                        const std::vector<double>& ys,
+                        const std::string& method,
+                        double x) {
+    if (xs.empty() || xs.size() != ys.size()) {
+        throw std::runtime_error("TFUN table is empty or has mismatched columns");
+    }
+    if (xs.size() == 1) return ys.front();
+    if (x <= xs.front()) return ys.front();
+    if (x >= xs.back()) return ys.back();
+
+    const auto upper = std::upper_bound(xs.begin(), xs.end(), x);
+    const std::size_t right = static_cast<std::size_t>(upper - xs.begin());
+    const std::size_t left = right - 1;
+    if (method == "step") return ys[left];
+
+    const double fraction = (x - xs[left]) / (xs[right] - xs[left]);
+    return ys[left] + fraction * (ys[right] - ys[left]);
 }
 
 } // namespace
@@ -77,6 +110,29 @@ Expression Expression::observableRef(std::string name, std::vector<Expression> a
     expr.text_ = std::move(name);
     expr.children_ = std::move(args);
     return expr;
+}
+
+Expression Expression::tableFunction(std::vector<double> xValues,
+                                     std::vector<double> yValues,
+                                     std::string filePath,
+                                     Expression counter,
+                                     std::string method) {
+    Expression expr;
+    expr.kind_ = ExpressionKind::TableFunction;
+    expr.text_ = "tfun";
+    expr.children_.push_back(std::move(counter));
+    expr.tableXValues_ = std::move(xValues);
+    expr.tableYValues_ = std::move(yValues);
+    expr.tableFilePath_ = std::move(filePath);
+    std::transform(method.begin(), method.end(), method.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    expr.tableMethod_ = method.empty() ? "linear" : std::move(method);
+    return expr;
+}
+
+std::string Expression::tableFileKey() const {
+    return "file_hex_" + encodeHex(tableFilePath_);
 }
 
 double Expression::evaluate(const std::function<double(const std::string&)>& resolveIdentifier, double t) const {
@@ -292,6 +348,18 @@ double Expression::evaluate(const std::function<double(const std::string&)>& res
         // are present they are ignored — BNG2 observable refs are always
         // resolved by name alone.
         return resolveIdentifier(text_);
+    case ExpressionKind::TableFunction: {
+        if (children_.size() != 1) {
+            throw std::runtime_error("TFUN expression must have one counter expression");
+        }
+        const double counter = children_.front().evaluate(resolveIdentifier, t);
+        if (!tableFilePath_.empty()) {
+            std::ostringstream value;
+            value << std::scientific << std::setprecision(17) << counter;
+            return resolveIdentifier("__tfun_" + tableFileKey() + "_AT_" + value.str() + "__");
+        }
+        return interpolateTable(tableXValues_, tableYValues_, tableMethod_, counter);
+    }
     }
 
     throw std::runtime_error("Unsupported expression kind");
@@ -345,6 +413,29 @@ std::string Expression::toString() const {
         return text_ + "(" + joinArgs(children_) + ")";
     case ExpressionKind::ObservableRef:
         return text_ + "(" + joinArgs(children_) + ")";
+    case ExpressionKind::TableFunction: {
+        std::ostringstream out;
+        out << "tfun(";
+        if (!tableFilePath_.empty()) {
+            out << '\'' << tableFilePath_ << '\'';
+        } else {
+            const auto writeValues = [&](const std::vector<double>& values) {
+                out << '[';
+                for (std::size_t i = 0; i < values.size(); ++i) {
+                    if (i > 0) out << ", ";
+                    out << std::setprecision(17) << values[i];
+                }
+                out << ']';
+            };
+            writeValues(tableXValues_);
+            out << ", ";
+            writeValues(tableYValues_);
+        }
+        if (!children_.empty()) out << ", " << children_.front().toString();
+        if (tableMethod_ != "linear") out << ", method=>\"" << tableMethod_ << "\"";
+        out << ')';
+        return out.str();
+    }
     }
 
     return {};

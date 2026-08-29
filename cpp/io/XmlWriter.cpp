@@ -347,6 +347,13 @@ void collectFunctionReferences(const ast::Expression& expression,
             addFunctionReference(references, name, "Time");
         } else if (model.getParameters().contains(name)) {
             addFunctionReference(references, name, "Constant");
+        } else if (modelHasFunction(model, name)) {
+            addFunctionReference(references, name, "Function");
+        } else {
+            const auto isObservable = std::any_of(
+                model.getObservables().begin(), model.getObservables().end(),
+                [&](const auto& observable) { return observable.getName() == name; });
+            if (isObservable) addFunctionReference(references, name, "Observable");
         }
         return;
     }
@@ -371,6 +378,12 @@ void collectFunctionReferences(const ast::Expression& expression,
             collectFunctionReferences(child, model, localNames, references);
         }
         return;
+    case ExpressionKind::TableFunction:
+        if (!expression.args().empty()) {
+            collectFunctionReferences(expression.args().front(), model, localNames,
+                                      references);
+        }
+        return;
     case ExpressionKind::Unary:
     case ExpressionKind::Binary:
         for (const auto& child : expression.args()) {
@@ -378,6 +391,65 @@ void collectFunctionReferences(const ast::Expression& expression,
         }
         return;
     }
+}
+
+void collectTableFunctions(const ast::Expression& expression,
+                           std::vector<const ast::Expression*>& tables) {
+    if (expression.kind() == ast::ExpressionKind::TableFunction) {
+        tables.push_back(&expression);
+    }
+    for (const auto& child : expression.args()) {
+        collectTableFunctions(child, tables);
+    }
+}
+
+std::string expressionForXml(const ast::Expression& expression) {
+    using ast::ExpressionKind;
+    switch (expression.kind()) {
+    case ExpressionKind::Number:
+    case ExpressionKind::Identifier:
+        return expression.toString();
+    case ExpressionKind::Unary:
+        return expression.name() + expressionForXml(expression.args().front());
+    case ExpressionKind::Binary:
+        return "(" + expressionForXml(expression.args()[0]) + " " + expression.name() +
+               " " + expressionForXml(expression.args()[1]) + ")";
+    case ExpressionKind::Function:
+    case ExpressionKind::ObservableRef: {
+        std::ostringstream output;
+        output << expression.name() << '(';
+        for (std::size_t index = 0; index < expression.args().size(); ++index) {
+            if (index != 0) output << ',';
+            output << expressionForXml(expression.args()[index]);
+        }
+        output << ')';
+        return output.str();
+    }
+    case ExpressionKind::TableFunction:
+        return "__TFUN_VAL__";
+    }
+    return {};
+}
+
+std::string tableCounterName(const ast::Expression& table) {
+    if (table.args().empty()) return {};
+    const auto& counter = table.args().front();
+    if (counter.kind() == ast::ExpressionKind::Identifier ||
+        counter.kind() == ast::ExpressionKind::Function ||
+        counter.kind() == ast::ExpressionKind::ObservableRef) {
+        return counter.name();
+    }
+    return {};
+}
+
+std::string tableDataCsv(const std::vector<double>& values) {
+    std::ostringstream output;
+    output << std::setprecision(17);
+    for (std::size_t index = 0; index < values.size(); ++index) {
+        if (index != 0) output << ',';
+        output << values[index];
+    }
+    return output.str();
 }
 
 } // anonymous namespace
@@ -878,7 +950,26 @@ std::string XmlWriter::writeFunctions(const ast::Model& model) {
     xml << "    <ListOfFunctions>\n";
 
     for (const auto& func : model.getFunctions()) {
+        std::vector<const ast::Expression*> tableFunctions;
+        collectTableFunctions(func.getExpression(), tableFunctions);
+        const auto* table = tableFunctions.empty() ? nullptr : tableFunctions.front();
         xml << "      <Function id=\"" << escapeXml(func.getName()) << "\"";
+        if (table != nullptr) {
+            xml << " type=\"TFUN\" mode=\""
+                << (table->tableFilePath().empty() ? "inline" : "file")
+                << "\" method=\"" << escapeXml(table->tableMethod()) << "\"";
+            const auto counterName = tableCounterName(*table);
+            if (!counterName.empty()) {
+                xml << " ctrName=\"" << escapeXml(counterName) << "\"";
+            }
+            if (table->tableFilePath().empty()) {
+                xml << " xData=\"" << escapeXml(tableDataCsv(table->tableXValues()))
+                    << "\" yData=\"" << escapeXml(tableDataCsv(table->tableYValues()))
+                    << "\"";
+            } else {
+                xml << " file=\"" << escapeXml(table->tableFilePath()) << "\"";
+            }
+        }
         if (!func.getArgs().empty()) {
             xml << " args=\"";
             for (std::size_t a = 0; a < func.getArgs().size(); ++a) {
@@ -908,7 +999,8 @@ std::string XmlWriter::writeFunctions(const ast::Model& model) {
                 << "\" type=\"" << escapeXml(type) << "\"/>\n";
         }
         xml << "        </ListOfReferences>\n";
-        xml << "        <Expression>" << escapeXml(func.getExpression().toString()) << "</Expression>\n";
+        xml << "        <Expression>" << escapeXml(expressionForXml(func.getExpression()))
+            << "</Expression>\n";
         xml << "      </Function>\n";
     }
 

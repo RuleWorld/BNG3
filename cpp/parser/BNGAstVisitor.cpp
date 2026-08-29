@@ -4,6 +4,8 @@
 #include <cctype>
 #include <cmath>
 #include <fstream>
+#include <iomanip>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -31,6 +33,275 @@ std::string stripQuotes(const std::string& value) {
         return value.substr(1, value.size() - 2);
     }
     return value;
+}
+
+std::string trimCopy(const std::string& value) {
+    const auto first = value.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) return {};
+    const auto last = value.find_last_not_of(" \t\r\n");
+    return value.substr(first, last - first + 1);
+}
+
+bool isIdentifierStart(char value) {
+    return std::isalpha(static_cast<unsigned char>(value)) || value == '_';
+}
+
+bool isIdentifierPart(char value) {
+    return std::isalnum(static_cast<unsigned char>(value)) || value == '_';
+}
+
+std::string encodeHex(const std::string& value) {
+    static constexpr char digits[] = "0123456789abcdef";
+    std::string encoded;
+    encoded.reserve(value.size() * 2);
+    for (const unsigned char byte : value) {
+        encoded.push_back(digits[byte >> 4]);
+        encoded.push_back(digits[byte & 0x0f]);
+    }
+    return encoded;
+}
+
+std::string decodeHex(const std::string& value) {
+    if (value.size() % 2 != 0) throw std::runtime_error("TFUN file marker has odd-length hex");
+    std::string decoded;
+    decoded.reserve(value.size() / 2);
+    for (std::size_t index = 0; index < value.size(); index += 2) {
+        const auto high = value[index];
+        const auto low = value[index + 1];
+        const auto digit = [](char value) -> int {
+            if (value >= '0' && value <= '9') return value - '0';
+            if (value >= 'a' && value <= 'f') return value - 'a' + 10;
+            if (value >= 'A' && value <= 'F') return value - 'A' + 10;
+            return -1;
+        };
+        const int highValue = digit(high);
+        const int lowValue = digit(low);
+        if (highValue < 0 || lowValue < 0) {
+            throw std::runtime_error("TFUN file marker contains invalid hex");
+        }
+        decoded.push_back(static_cast<char>((highValue << 4) | lowValue));
+    }
+    return decoded;
+}
+
+std::size_t findMatchingParen(const std::string& text, std::size_t open) {
+    int depth = 0;
+    char quote = '\0';
+    for (std::size_t index = open; index < text.size(); ++index) {
+        const char current = text[index];
+        if (quote != '\0') {
+            if (current == quote && (index == 0 || text[index - 1] != '\\')) quote = '\0';
+            continue;
+        }
+        if (current == '\'' || current == '"') {
+            quote = current;
+        } else if (current == '(') {
+            ++depth;
+        } else if (current == ')' && --depth == 0) {
+            return index;
+        }
+    }
+    return std::string::npos;
+}
+
+std::vector<std::string> splitTopLevel(const std::string& text) {
+    std::vector<std::string> parts;
+    std::size_t start = 0;
+    int parenDepth = 0;
+    int bracketDepth = 0;
+    int braceDepth = 0;
+    char quote = '\0';
+    for (std::size_t index = 0; index < text.size(); ++index) {
+        const char current = text[index];
+        if (quote != '\0') {
+            if (current == quote && (index == 0 || text[index - 1] != '\\')) quote = '\0';
+            continue;
+        }
+        if (current == '\'' || current == '"') {
+            quote = current;
+        } else if (current == '(') {
+            ++parenDepth;
+        } else if (current == ')') {
+            --parenDepth;
+        } else if (current == '[') {
+            ++bracketDepth;
+        } else if (current == ']') {
+            --bracketDepth;
+        } else if (current == '{') {
+            ++braceDepth;
+        } else if (current == '}') {
+            --braceDepth;
+        } else if (current == ',' && parenDepth == 0 && bracketDepth == 0 && braceDepth == 0) {
+            parts.push_back(trimCopy(text.substr(start, index - start)));
+            start = index + 1;
+        }
+    }
+    parts.push_back(trimCopy(text.substr(start)));
+    return parts;
+}
+
+bool isWholeArray(const std::string& value) {
+    const auto trimmed = trimCopy(value);
+    if (trimmed.size() < 2 || trimmed.front() != '[' || trimmed.back() != ']') return false;
+    int depth = 0;
+    char quote = '\0';
+    for (std::size_t index = 0; index < trimmed.size(); ++index) {
+        const char current = trimmed[index];
+        if (quote != '\0') {
+            if (current == quote && (index == 0 || trimmed[index - 1] != '\\')) quote = '\0';
+            continue;
+        }
+        if (current == '\'' || current == '"') quote = current;
+        else if (current == '[') ++depth;
+        else if (current == ']' && --depth == 0) return index == trimmed.size() - 1;
+    }
+    return false;
+}
+
+std::string normalizeTfunSyntax(const std::string& source);
+
+std::string normalizeTfunArray(const std::string& source, int marker) {
+    const auto trimmed = trimCopy(source);
+    if (!isWholeArray(trimmed)) return {};
+    const auto body = trimmed.substr(1, trimmed.size() - 2);
+    const auto values = splitTopLevel(body);
+    std::ostringstream result;
+    result << "FunctionProduct(" << marker;
+    if (!(values.size() == 1 && values.front().empty())) {
+        for (const auto& value : values) {
+            if (value.empty()) throw std::runtime_error("TFUN array contains an empty value");
+            result << "," << normalizeTfunSyntax(value);
+        }
+    }
+    result << ")";
+    return result.str();
+}
+
+bool isMethodOption(const std::string& source, std::string& method) {
+    const auto trimmed = trimCopy(source);
+    const auto arrow = trimmed.find("=>");
+    if (arrow == std::string::npos) return false;
+    std::string name = trimmed.substr(0, arrow);
+    std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    if (trimCopy(name) != "method") return false;
+    method = stripQuotes(trimCopy(trimmed.substr(arrow + 2)));
+    std::transform(method.begin(), method.end(), method.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    if (method != "linear" && method != "step") {
+        throw std::runtime_error("TFUN method must be linear or step");
+    }
+    return true;
+}
+
+std::string normalizeTfunCall(const std::string& body) {
+    const auto rawParts = splitTopLevel(body);
+    std::vector<std::string> parts;
+    std::string method = "linear";
+    for (const auto& rawPart : rawParts) {
+        if (rawPart.empty()) throw std::runtime_error("TFUN contains an empty argument");
+        std::string optionMethod;
+        if (isMethodOption(rawPart, optionMethod)) {
+            method = optionMethod;
+        } else {
+            parts.push_back(rawPart);
+        }
+    }
+    if (parts.empty()) throw std::runtime_error("TFUN requires a table and counter");
+
+    const auto isQuoted = [](const std::string& value) {
+        const auto trimmed = trimCopy(value);
+        return trimmed.size() >= 2 &&
+               ((trimmed.front() == '\'' && trimmed.back() == '\'') ||
+                (trimmed.front() == '"' && trimmed.back() == '"'));
+    };
+    const auto fileMarker = [&](const std::string& value) {
+        const auto trimmed = trimCopy(value);
+        return "__bng_tfun_file_hex_" + encodeHex(stripQuotes(trimmed)) + "__";
+    };
+
+    std::ostringstream result;
+    if (isWholeArray(parts.front())) {
+        if (parts.size() != 3) {
+            throw std::runtime_error("inline TFUN requires x data, y data, and a counter");
+        }
+        result << "TFUN(" << normalizeTfunArray(parts[0], 0) << ","
+               << normalizeTfunArray(parts[1], 1) << ","
+               << normalizeTfunSyntax(parts[2]);
+    } else {
+        std::string file;
+        std::string counter;
+        if (isQuoted(parts.front())) {
+            file = parts.front();
+            counter = parts.size() >= 2 ? parts[1] : "time";
+        } else if (parts.size() >= 2 && isQuoted(parts[1])) {
+            // Legacy uppercase spelling: TFUN(counter,file).
+            counter = parts.front();
+            file = parts[1];
+        } else {
+            throw std::runtime_error(
+                "TFUN requires a quoted file, inline arrays, and a counter");
+        }
+        if (parts.size() > (isQuoted(parts.front()) ? 2u : 2u)) {
+            throw std::runtime_error("TFUN has too many non-option arguments");
+        }
+        result << "TFUN(" << fileMarker(file) << "," << normalizeTfunSyntax(counter);
+    }
+    if (method != "linear") result << ",__bng_tfun_method_" << method << "__";
+    result << ")";
+    return result.str();
+}
+
+std::string normalizeTfunSyntax(const std::string& source) {
+    std::string result;
+    result.reserve(source.size());
+    std::size_t index = 0;
+    while (index < source.size()) {
+        if (source[index] == '#') {
+            const auto end = source.find('\n', index);
+            result.append(source, index,
+                          end == std::string::npos ? source.size() - index : end - index);
+            if (end == std::string::npos) break;
+            index = end;
+            continue;
+        }
+        if (source[index] == '\'' || source[index] == '"') {
+            const char quote = source[index++];
+            result.push_back(quote);
+            while (index < source.size()) {
+                const char current = source[index++];
+                result.push_back(current);
+                if (current == quote && source[index - 2] != '\\') break;
+            }
+            continue;
+        }
+        if (!isIdentifierStart(source[index])) {
+            result.push_back(source[index++]);
+            continue;
+        }
+
+        const auto start = index++;
+        while (index < source.size() && isIdentifierPart(source[index])) ++index;
+        const auto name = source.substr(start, index - start);
+        std::string lowerName = name;
+        std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+        std::size_t open = index;
+        while (open < source.size() &&
+               std::isspace(static_cast<unsigned char>(source[open]))) ++open;
+        if (lowerName != "tfun" || open >= source.size() || source[open] != '(') {
+            result.append(name);
+            continue;
+        }
+        const auto close = findMatchingParen(source, open);
+        if (close == std::string::npos) throw std::runtime_error("unbalanced TFUN call");
+        result += normalizeTfunCall(source.substr(open + 1, close - open - 1));
+        index = close + 1;
+    }
+    return result;
 }
 
 std::string extractTrailingCompartment(BNGParser::Species_defContext* ctx) {
@@ -126,12 +397,95 @@ ast::Expression buildRateLawExpression(BNGParser::Rate_law_exprContext* ctx);
 
 ast::Expression buildPrimary(BNGParser::Primary_exprContext* ctx);
 
+bool decodeTfunArray(const ast::Expression& expression,
+                     double marker,
+                     std::vector<double>& values) {
+    if (expression.kind() != ast::ExpressionKind::Function ||
+        toLower(expression.name()) != "functionproduct" || expression.args().empty() ||
+        expression.args().front().kind() != ast::ExpressionKind::Number ||
+        expression.args().front().numberValue() != marker) {
+        return false;
+    }
+    for (std::size_t index = 1; index < expression.args().size(); ++index) {
+        if (expression.args()[index].kind() != ast::ExpressionKind::Number ||
+            !std::isfinite(expression.args()[index].numberValue())) {
+            throw std::runtime_error("TFUN arrays must contain finite numeric values");
+        }
+        values.push_back(expression.args()[index].numberValue());
+    }
+    return !values.empty();
+}
+
+bool decodeTfunFileMarker(const ast::Expression& expression, std::string& path) {
+    if (expression.kind() != ast::ExpressionKind::Identifier) return false;
+    static constexpr std::string_view prefix = "__bng_tfun_file_hex_";
+    static constexpr std::string_view suffix = "__";
+    const auto& name = expression.name();
+    if (name.size() <= prefix.size() + suffix.size() ||
+        name.compare(0, prefix.size(), prefix) != 0 ||
+        name.compare(name.size() - suffix.size(), suffix.size(), suffix) != 0) {
+        return false;
+    }
+    path = decodeHex(name.substr(prefix.size(), name.size() - prefix.size() - suffix.size()));
+    if (path.empty()) throw std::runtime_error("TFUN file path cannot be empty");
+    return true;
+}
+
+bool decodeTfunMethodMarker(const ast::Expression& expression, std::string& method) {
+    if (expression.kind() != ast::ExpressionKind::Identifier) return false;
+    static constexpr std::string_view prefix = "__bng_tfun_method_";
+    static constexpr std::string_view suffix = "__";
+    const auto& name = expression.name();
+    if (name.size() <= prefix.size() + suffix.size() ||
+        name.compare(0, prefix.size(), prefix) != 0 ||
+        name.compare(name.size() - suffix.size(), suffix.size(), suffix) != 0) {
+        return false;
+    }
+    method = toLower(name.substr(prefix.size(), name.size() - prefix.size() - suffix.size()));
+    if (method != "linear" && method != "step") {
+        throw std::runtime_error("TFUN method must be linear or step");
+    }
+    return true;
+}
+
+ast::Expression buildTableFunction(std::vector<ast::Expression> args) {
+    if (args.size() < 2) {
+        throw std::runtime_error("TFUN requires a table and counter");
+    }
+
+    std::string method = "linear";
+    if (decodeTfunMethodMarker(args.back(), method)) args.pop_back();
+
+    std::vector<double> xValues;
+    std::vector<double> yValues;
+    if (args.size() == 3 && decodeTfunArray(args[0], 0.0, xValues) &&
+        decodeTfunArray(args[1], 1.0, yValues)) {
+        if (xValues.size() != yValues.size() || xValues.empty()) {
+            throw std::runtime_error("TFUN arrays must have equal, non-zero lengths");
+        }
+        return ast::Expression::tableFunction(
+            std::move(xValues), std::move(yValues), {}, std::move(args[2]), std::move(method));
+    }
+
+    std::string filePath;
+    if (args.size() == 2 && decodeTfunFileMarker(args[0], filePath)) {
+        return ast::Expression::tableFunction(
+            {}, {}, std::move(filePath), std::move(args[1]), std::move(method));
+    }
+
+    throw std::runtime_error(
+        "TFUN requires inline numeric arrays or a quoted file path, plus a counter");
+}
+
 ast::Expression buildFunction(BNGParser::Function_callContext* ctx) {
     std::vector<ast::Expression> args;
     if (auto* list = ctx->expression_list()) {
         for (auto* expr : list->expression()) {
             args.push_back(buildExpression(expr));
         }
+    }
+    if (toLower(ctx->children.front()->getText()) == "tfun") {
+        return buildTableFunction(std::move(args));
     }
     return ast::Expression::function(toLower(ctx->children.front()->getText()), std::move(args));
 }
@@ -321,7 +675,7 @@ ast::Action buildActionFromArgs(const std::string& name, BNGParser::Action_argsC
 }
 
 ast::Expression parseExpressionImpl(const std::string& exprText) {
-    antlr4::ANTLRInputStream input(exprText);
+    antlr4::ANTLRInputStream input(normalizeTfunSyntax(exprText));
     BNGLexer lexer(&input);
     antlr4::CommonTokenStream tokens(&lexer);
     BNGParser parser(&tokens);
@@ -662,7 +1016,7 @@ std::any BNGAstVisitor::visitPopulation_map_def(BNGParser::Population_map_defCon
 }
 
 std::unique_ptr<ast::Model> parseModel(const std::string& sourceText) {
-    antlr4::ANTLRInputStream input(sourceText);
+    antlr4::ANTLRInputStream input(normalizeTfunSyntax(sourceText));
     BNGLexer lexer(&input);
     antlr4::CommonTokenStream tokens(&lexer);
     BNGParser parser(&tokens);

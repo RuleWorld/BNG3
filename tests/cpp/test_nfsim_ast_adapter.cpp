@@ -1,6 +1,7 @@
 #include <cmath>
 #include <map>
 #include <string>
+#include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -37,6 +38,102 @@ BNGcore::PatternGraph parseSpeciesGraph(const std::string& text, bng::ast::Model
 }
 
 } // namespace
+
+TEST_CASE("BNGL parser preserves inline and file TFUN metadata") {
+    const auto linear = bng::parser::parseExpression(
+        "TFUN([0, 1, 2], [0, 10, 20], time)");
+    REQUIRE(linear.kind() == bng::ast::ExpressionKind::TableFunction);
+    CHECK(linear.tableXValues() == std::vector<double> {0.0, 1.0, 2.0});
+    CHECK(linear.tableYValues() == std::vector<double> {0.0, 10.0, 20.0});
+    CHECK(linear.tableMethod() == "linear");
+    CHECK(linear.evaluate([](const std::string&) { return 0.0; }, 0.5) ==
+          Catch::Approx(5.0));
+
+    const auto step = bng::parser::parseExpression(
+        "tfun([0, 1, 2], [0, 10, 20], time, method=>\"step\")");
+    REQUIRE(step.kind() == bng::ast::ExpressionKind::TableFunction);
+    CHECK(step.tableMethod() == "step");
+    CHECK(step.evaluate([](const std::string&) { return 0.0; }, 1.5) ==
+          Catch::Approx(10.0));
+
+    const auto file = bng::parser::parseExpression(
+        "tfun('data file.tfun', time)");
+    REQUIRE(file.kind() == bng::ast::ExpressionKind::TableFunction);
+    CHECK(file.tableFilePath() == "data file.tfun");
+    CHECK(file.tableFileKey() == "file_hex_646174612066696c652e7466756e");
+}
+
+TEST_CASE("NFsim AST adapter maps an inline time-backed TFUN directly") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 0
+end seed species
+begin observables
+    Molecules X_total X()
+end observables
+begin functions
+    rate() = tfun([0, 1, 2], [0, 10, 20], time)
+end functions
+begin reaction rules
+    0 -> X() rate
+end reaction rules
+)");
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    auto* function = system->getGlobalFunctionByName("rate");
+    REQUIRE(function != nullptr);
+    CHECK(function->fileFunc);
+    CHECK(function->getCtrType() == "System");
+    system->prepareForSimulation();
+    function->fileUpdate(1.5);
+    CHECK(NFcore::FuncFactory::Eval(function->p) == Catch::Approx(15.0));
+    delete system;
+}
+
+TEST_CASE("NFsim XML bridge preserves inline TFUN metadata") {
+    auto model = bng::parser::parseModel(R"(
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 0
+end seed species
+begin observables
+    Molecules X_total X()
+end observables
+begin functions
+    rate() = tfun([0, 1, 2], [0, 10, 20], time, method=>"step")
+end functions
+begin reaction rules
+    0 -> X() rate
+end reaction rules
+)");
+
+    const auto xml = bng::io::XmlWriter::write(*model);
+    CHECK(xml.find("type=\"TFUN\"") != std::string::npos);
+    CHECK(xml.find("mode=\"inline\"") != std::string::npos);
+    CHECK(xml.find("method=\"step\"") != std::string::npos);
+    CHECK(xml.find("<Expression>__TFUN_VAL__</Expression>") != std::string::npos);
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    auto* function = system->getGlobalFunctionByName("rate");
+    REQUIRE(function != nullptr);
+    system->prepareForSimulation();
+    function->fileUpdate(1.5);
+    CHECK(NFcore::FuncFactory::Eval(function->p) == Catch::Approx(10.0));
+    delete system;
+}
 
 TEST_CASE("NFsim AST adapter preserves molecule-type state and symmetry metadata") {
     bng::ast::Model model;

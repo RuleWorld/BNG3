@@ -230,41 +230,56 @@ void restoreConcentrations(engine::GeneratedNetwork& network, const std::vector<
     }
 }
 
-void collectTfunNames(const ast::Expression& expr, std::set<std::string>& names) {
-    if (expr.kind() == ast::ExpressionKind::Function &&
-        (expr.name() == "TFUN" || expr.name() == "tfun")) {
-        if (expr.args().size() == 1) {
-            if (expr.args()[0].kind() == ast::ExpressionKind::Identifier) {
-                names.insert(expr.args()[0].name());
-            }
-        } else if (expr.args().size() >= 2) {
-            if (expr.args()[1].kind() == ast::ExpressionKind::Identifier) {
-                names.insert(expr.args()[1].name());
-            }
+struct TfunFileReference {
+    std::string key;
+    std::string path;
+    std::string method;
+};
+
+void collectTfunFiles(const ast::Expression& expr,
+                      std::vector<TfunFileReference>& references) {
+    if (expr.kind() == ast::ExpressionKind::TableFunction &&
+        !expr.tableFilePath().empty()) {
+        references.push_back({expr.tableFileKey(), expr.tableFilePath(), expr.tableMethod()});
+    } else if (expr.kind() == ast::ExpressionKind::Function &&
+               lowercase(expr.name()) == "tfun") {
+        // Preserve support for hand-built legacy AST nodes while parsed BNGL
+        // now uses the explicit TableFunction node.
+        std::string name;
+        if (expr.args().size() == 1 &&
+            expr.args()[0].kind() == ast::ExpressionKind::Identifier) {
+            name = expr.args()[0].name();
+        } else if (expr.args().size() >= 2 &&
+                   expr.args()[1].kind() == ast::ExpressionKind::Identifier) {
+            name = expr.args()[1].name();
         }
+        if (!name.empty()) references.push_back({name, name + ".tfun", "linear"});
     }
     for (const auto& child : expr.args()) {
-        collectTfunNames(child, names);
+        collectTfunFiles(child, references);
     }
 }
 
-std::set<std::string> findTfunReferences(const ast::Model& model) {
-    std::set<std::string> names;
+std::vector<TfunFileReference> findTfunReferences(const ast::Model& model) {
+    std::vector<TfunFileReference> references;
     for (const auto& fn : model.getFunctions()) {
-        collectTfunNames(fn.getExpression(), names);
+        collectTfunFiles(fn.getExpression(), references);
     }
     for (const auto& param : model.getParameters().all()) {
-        collectTfunNames(param.getExpression(), names);
+        collectTfunFiles(param.getExpression(), references);
     }
-    return names;
+    return references;
 }
 
 void loadTfunFiles(engine::OdeIntegrator& integrator, const ast::Model& model, const std::filesystem::path& sourcePath) {
-    auto tfunNames = findTfunReferences(model);
-    for (const auto& name : tfunNames) {
-        auto tfunPath = sourcePath.parent_path() / (name + ".tfun");
+    const auto references = findTfunReferences(model);
+    std::set<std::string> loaded;
+    for (const auto& reference : references) {
+        const std::filesystem::path source(reference.path);
+        const auto tfunPath = source.is_absolute() ? source : sourcePath.parent_path() / source;
+        if (!loaded.insert(reference.key).second) continue;
         if (std::filesystem::exists(tfunPath)) {
-            integrator.loadTfun(name, tfunPath.string());
+            integrator.loadTfun(reference.key, tfunPath.string(), reference.method);
         }
     }
 }

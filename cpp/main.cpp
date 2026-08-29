@@ -4,10 +4,6 @@
 #include <string>
 #include <vector>
 
-#include <antlr4-runtime.h>
-
-#include "BNGLexer.h"
-#include "BNGParser.h"
 #include "actions/ActionDispatch.hpp"
 #include "console/Console.hpp"
 #include "parser/BNGAstVisitor.hpp"
@@ -29,24 +25,10 @@ ParseResult parseFile(const std::string& path) {
         return result;
     }
 
-    antlr4::ANTLRInputStream input(inputStream);
-    BNGLexer lexer(&input);
-    antlr4::CommonTokenStream tokens(&lexer);
-    BNGParser parser(&tokens);
-    auto* tree = parser.prog();
-
     ParseResult result;
-    result.syntaxErrors = static_cast<int>(parser.getNumberOfSyntaxErrors());
     result.opened = true;
-
-    if (result.syntaxErrors != 0) {
-        return result;
-    }
-
     try {
-        bng::parser::BNGAstVisitor visitor;
-        visitor.visit(tree);
-        result.model = visitor.takeModel();
+        result.model = bng::parser::parseModelFromFile(path);
     } catch (const std::exception& ex) {
         result.error = ex.what();
     }
