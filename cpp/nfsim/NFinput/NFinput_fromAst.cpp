@@ -3063,21 +3063,17 @@ SymmetricReactionExpansionResult addSymmetricBondReactionRulesFromAst(
                 return false;
             }
 
-            auto* transformationSet = new TransformationSet(
-                [&]() {
-                    std::vector<TemplateMolecule*> roots;
-                    roots.reserve(expandedPatterns.size());
-                    for (std::size_t index = 0; index < expandedPatterns.size(); ++index) {
-                        const auto& build =
-                            expandedPatterns[index].builds[selectedBuild[index]];
-                        if (build.empty()) {
-                            diagnostic = "symmetric reactant pattern produced no template";
-                            return roots;
-                        }
-                        roots.push_back(build.front());
-                    }
-                    return roots;
-                }());
+            std::vector<TemplateMolecule*> roots;
+            roots.reserve(expandedPatterns.size());
+            for (std::size_t index = 0; index < expandedPatterns.size(); ++index) {
+                const auto& build = expandedPatterns[index].builds[selectedBuild[index]];
+                if (build.empty()) {
+                    diagnostic = "symmetric reactant pattern produced no template";
+                    return false;
+                }
+                roots.push_back(build.front());
+            }
+            auto* transformationSet = new TransformationSet(roots);
             bool applied = false;
             try {
                 if (bondChange.type ==

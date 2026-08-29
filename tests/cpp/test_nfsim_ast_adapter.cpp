@@ -673,6 +673,14 @@ end reaction rules
     REQUIRE(direct->getAllReactions().size() == 2);
     CHECK(direct->getAllReactions()[0]->getName() == "R1_sym1");
     CHECK(direct->getAllReactions()[1]->getName() == "R1_sym2");
+    direct->prepareForSimulation();
+    direct->seedRNG(7);
+    direct->stepTo(100.0);
+    auto* directA = direct->getMoleculeTypeByName("A")->getMolecule(0);
+    const auto directB1 = directA->getMoleculeType()->getCompIndexFromName("b1");
+    const auto directB2 = directA->getMoleculeType()->getCompIndexFromName("b2");
+    CHECK((directA->getComponentState(directB1) == 1 ||
+           directA->getComponentState(directB2) == 1));
     const auto directReactionCount = direct->getAllReactions().size();
     delete direct;
 
@@ -709,6 +717,14 @@ end reaction rules
     REQUIRE(direct->getAllReactions().size() == 2);
     CHECK(direct->getAllReactions()[0]->getName() == "R1_sym1");
     CHECK(direct->getAllReactions()[1]->getName() == "R1_sym2");
+    direct->prepareForSimulation();
+    direct->seedRNG(7);
+    direct->stepTo(100.0);
+    auto* directA = direct->getMoleculeTypeByName("A")->getMolecule(0);
+    const auto directB1 = directA->getMoleculeType()->getCompIndexFromName("b1");
+    const auto directB2 = directA->getMoleculeType()->getCompIndexFromName("b2");
+    CHECK((directA->isBindingSiteBonded(directB1) ||
+           directA->isBindingSiteBonded(directB2)));
     const auto directReactionCount = direct->getAllReactions().size();
     delete direct;
 
@@ -744,6 +760,14 @@ end reaction rules
     REQUIRE(direct->getAllReactions().size() == 2);
     CHECK(direct->getAllReactions()[0]->getName() == "R1_sym1");
     CHECK(direct->getAllReactions()[1]->getName() == "R1_sym2");
+    direct->prepareForSimulation();
+    direct->seedRNG(7);
+    direct->stepTo(100.0);
+    auto* directA = direct->getMoleculeTypeByName("A")->getMolecule(0);
+    const auto directB1 = directA->getMoleculeType()->getCompIndexFromName("b1");
+    const auto directB2 = directA->getMoleculeType()->getCompIndexFromName("b2");
+    CHECK_FALSE(directA->isBindingSiteBonded(directB1));
+    CHECK_FALSE(directA->isBindingSiteBonded(directB2));
     const auto directReactionCount = direct->getAllReactions().size();
     delete direct;
 
