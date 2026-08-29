@@ -947,6 +947,89 @@ end reaction rules
     delete system;
 }
 
+TEST_CASE("NFsim AST adapter enforces reactant include and exclude filters") {
+    const auto makeModel = [](const std::string& modifier) {
+        std::string source = R"BNG(
+begin molecule types
+    A(b)
+    I(i)
+    B()
+end molecule types
+begin seed species
+    A(b!1).I(i!1) 1
+end seed species
+begin observables
+    Molecules B_total B()
+end observables
+begin reaction rules
+    A(b!+) -> A(b!+) + B() 1 __MODIFIER__
+end reaction rules
+)BNG";
+        const auto marker = source.find("__MODIFIER__");
+        source.replace(marker, std::string("__MODIFIER__").size(), modifier);
+        return bng::parser::parseModel(source);
+    };
+
+    auto excludedModel = makeModel("exclude_reactants(1,I())");
+    REQUIRE(excludedModel != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* excludedSystem = NFinput::buildSystemFromAst(
+        *excludedModel, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(excludedSystem != nullptr);
+    excludedSystem->prepareForSimulation();
+    CHECK(excludedSystem->getObservableByName("B_total")->getCount() == 0);
+    excludedSystem->singleStep();
+    CHECK(excludedSystem->getObservableByName("B_total")->getCount() == 0);
+    delete excludedSystem;
+
+    auto includedModel = makeModel("include_reactants(1,I())");
+    REQUIRE(includedModel != nullptr);
+    suggestedTraversalLimit = 0;
+    auto* includedSystem = NFinput::buildSystemFromAst(
+        *includedModel, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(includedSystem != nullptr);
+    includedSystem->prepareForSimulation();
+    CHECK(includedSystem->getObservableByName("B_total")->getCount() == 0);
+    includedSystem->singleStep();
+    CHECK(includedSystem->getObservableByName("B_total")->getCount() == 1);
+    delete includedSystem;
+}
+
+TEST_CASE("NFsim XML bridge preserves reactant filters") {
+    auto model = bng::parser::parseModel(R"BNG(
+begin molecule types
+    A(b)
+    I(i)
+    B()
+end molecule types
+begin seed species
+    A(b!1).I(i!1) 1
+end seed species
+begin observables
+    Molecules B_total B()
+end observables
+begin reaction rules
+    A(b!+) -> A(b!+) + B() 1 exclude_reactants(1,I())
+end reaction rules
+)BNG");
+    REQUIRE(model != nullptr);
+
+    const auto xml = bng::io::XmlWriter::write(*model);
+    CHECK(xml.find("<ListOfExcludeReactants id=\"RR1_RP1\">") != std::string::npos);
+    CHECK(xml.find("<Pattern id=\"RR1_RP1_P1\">") != std::string::npos);
+    CHECK(xml.find("name=\"I\"") != std::string::npos);
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    system->prepareForSimulation();
+    CHECK(system->getObservableByName("B_total")->getCount() == 0);
+    system->singleStep();
+    CHECK(system->getObservableByName("B_total")->getCount() == 0);
+    delete system;
+}
+
 TEST_CASE("NFsim AST adapter maps a bounded FunctionProduct rate") {
     auto model = bng::parser::parseModel(R"BNG(
 begin molecule types

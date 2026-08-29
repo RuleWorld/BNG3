@@ -16,12 +16,13 @@
 ///                    seed species, bounded direct reaction rules, direct
 ///                    Arrhenius energy expansion, time-backed global
 ///                    functions, zero-argument composites, one-argument
-///                    molecule-scoped local functions, and FunctionProduct.
+///                    molecule-scoped local functions, FunctionProduct, and
+///                    reactant include/exclude filters.
 /// GATED here:       nested/complex local functions, file-backed TFUN and
-///                   other rate-law forms, and reaction centers not yet
-///                   represented by the direct mapping. They fail closed and
-///                   cite the TiXml init* function that remains their
-///                   compatibility oracle.
+///                   other rate-law forms, product filters, and reaction
+///                   centers not yet represented by the direct mapping. They
+///                   fail closed and cite the TiXml init* function that
+///                   remains their compatibility oracle.
 
 #include "NFinput_fromAst.hh"
 #include "NFinput.hh"
@@ -1119,6 +1120,13 @@ struct ParsedObservablePattern {
     int quantity = -1;
 };
 
+struct ParsedReactionFilter {
+    bool include = false;
+    bool products = false;
+    std::size_t patternIndex = 0;
+    std::vector<std::string> patterns;
+};
+
 bool isBondNode(const BNGcore::Node& node) {
     return node.get_type().get_type_name() == BNGcore::BOND_NODE_TYPE.get_type_name();
 }
@@ -1242,6 +1250,140 @@ bool parseObservablePattern(const std::string& text,
             diagnostic = "invalid stoichiometric quantity in observable pattern '" + text + "'";
             return false;
         }
+    }
+    return true;
+}
+
+std::string trimText(std::string value) {
+    const auto first = value.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) return {};
+    const auto last = value.find_last_not_of(" \t\r\n");
+    return value.substr(first, last - first + 1);
+}
+
+std::vector<std::string> splitTopLevelComma(const std::string& text) {
+    std::vector<std::string> parts;
+    std::size_t start = 0;
+    int parentheses = 0;
+    int brackets = 0;
+    int braces = 0;
+    char quote = '\0';
+    bool escaped = false;
+    for (std::size_t index = 0; index < text.size(); ++index) {
+        const char c = text[index];
+        if (quote != '\0') {
+            if (escaped) {
+                escaped = false;
+            } else if (c == '\\') {
+                escaped = true;
+            } else if (c == quote) {
+                quote = '\0';
+            }
+            continue;
+        }
+        if (c == '\'' || c == '"') {
+            quote = c;
+            continue;
+        }
+        if (c == '(') ++parentheses;
+        else if (c == ')') --parentheses;
+        else if (c == '[') ++brackets;
+        else if (c == ']') --brackets;
+        else if (c == '{') ++braces;
+        else if (c == '}') --braces;
+        else if (c == ',' && parentheses == 0 && brackets == 0 && braces == 0) {
+            parts.push_back(trimText(text.substr(start, index - start)));
+            start = index + 1;
+        }
+    }
+    parts.push_back(trimText(text.substr(start)));
+    return parts;
+}
+
+bool isReactionFilterModifier(const std::string& modifier) {
+    const auto open = modifier.find('(');
+    const auto name = lowerCase(trimText(
+        modifier.substr(0, open == std::string::npos ? modifier.size() : open)));
+    return name == "include_reactants" || name == "exclude_reactants" ||
+           name == "include_products" || name == "exclude_products";
+}
+
+bool parseReactionFilterModifier(const std::string& modifier,
+                                 ParsedReactionFilter& result,
+                                 std::string& diagnostic) {
+    const auto open = modifier.find('(');
+    const auto close = modifier.rfind(')');
+    if (open == std::string::npos || close <= open || close != modifier.size() - 1) {
+        diagnostic = "malformed reaction filter modifier '" + modifier + "'";
+        return false;
+    }
+
+    const auto name = lowerCase(trimText(modifier.substr(0, open)));
+    if (name != "include_reactants" && name != "exclude_reactants" &&
+        name != "include_products" && name != "exclude_products") {
+        diagnostic = "unknown reaction filter modifier '" + modifier + "'";
+        return false;
+    }
+    result.include = name.rfind("include_", 0) == 0;
+    result.products = name.rfind("include_products", 0) == 0 ||
+                      name.rfind("exclude_products", 0) == 0;
+
+    const auto parts = splitTopLevelComma(
+        modifier.substr(open + 1, close - open - 1));
+    if (parts.size() < 2 || parts.front().empty()) {
+        diagnostic = "reaction filter modifier needs a pattern index and pattern: '" +
+                     modifier + "'";
+        return false;
+    }
+    try {
+        std::size_t consumed = 0;
+        const auto rawIndex = std::stoul(parts.front(), &consumed);
+        if (consumed != parts.front().size() || rawIndex == 0) {
+            diagnostic = "reaction filter index must be a positive integer: '" +
+                         modifier + "'";
+            return false;
+        }
+        result.patternIndex = rawIndex - 1;
+    } catch (const std::exception&) {
+        diagnostic = "reaction filter index must be a positive integer: '" +
+                     modifier + "'";
+        return false;
+    }
+
+    result.patterns.clear();
+    for (std::size_t index = 1; index < parts.size(); ++index) {
+        if (parts[index].empty()) {
+            diagnostic = "reaction filter contains an empty pattern: '" + modifier + "'";
+            return false;
+        }
+        result.patterns.push_back(parts[index]);
+    }
+    return true;
+}
+
+bool parseSpeciesFilterPattern(const std::string& text,
+                               const bng::ast::Model& model,
+                               bng::ast::SpeciesGraph& result,
+                               std::string& diagnostic) {
+    antlr4::ANTLRInputStream input(text);
+    BNGLexer lexer(&input);
+    antlr4::CommonTokenStream tokens(&lexer);
+    BNGParser parser(&tokens);
+    auto* species = parser.species_def();
+    if (species == nullptr || parser.getNumberOfSyntaxErrors() != 0 ||
+        tokens.LA(1) != antlr4::Token::EOF) {
+        diagnostic = "could not parse reaction filter pattern '" + text + "'";
+        return false;
+    }
+
+    auto& mutableModel = const_cast<bng::ast::Model&>(model);
+    result = bng::ast::SpeciesGraph(
+        bng::parser::buildPatternGraph(species, mutableModel, true),
+        bng::parser::extractSpeciesCompartment(species));
+    result.setCompartmentIsPrefix(bng::parser::isSpeciesCompartmentPrefix(species));
+    if (result.getGraph().empty()) {
+        diagnostic = "reaction filter pattern '" + text + "' contains no molecule graph";
+        return false;
     }
     return true;
 }
@@ -1521,6 +1663,11 @@ bool buildTemplatePatterns(const BNGcore::PatternGraph& graph,
                             }
                         }
                     }
+                    // `!+` on one component is an occupancy constraint, not
+                    // an explicit bond edge.  The component-constraint pass
+                    // above already installed it; there is nothing to bind
+                    // here.  Explicit bond IDs still require two endpoints.
+                    if (endpoints.size() == 1) continue;
                     if (endpoints.size() != 2) {
                         diagnostic = "a bound bond must connect exactly two component sites";
                         return false;
@@ -1593,6 +1740,89 @@ bool hasReactionModifierPrefix(const bng::ast::ReactionRule& rule,
         if (lowerCase(modifier).rfind(needle, 0) == 0) return true;
     }
     return false;
+}
+
+bool hasUnsupportedReactionFilterModifier(const bng::ast::ReactionRule& rule) {
+    for (const auto& modifier : rule.getModifiers()) {
+        const auto open = modifier.find('(');
+        const auto name = lowerCase(trimText(
+            modifier.substr(0, open == std::string::npos ? modifier.size() : open)));
+        if ((name.rfind("include_", 0) == 0 || name.rfind("exclude_", 0) == 0) &&
+            name != "include_reactants" && name != "exclude_reactants" &&
+            name != "include_products" && name != "exclude_products") {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool addReactantFiltersFromAst(
+    const bng::ast::ReactionRule& rule,
+    const bng::ast::Model& model,
+    System* system,
+    TransformationSet* transformationSet,
+    const std::vector<TemplateMolecule*>& reactantRoots,
+    bool& hasDisjointSets,
+    int& suggestedTraversalLimit,
+    std::string& diagnostic) {
+    std::size_t filterOrdinal = 0;
+    for (const auto& modifier : rule.getModifiers()) {
+        if (!isReactionFilterModifier(modifier)) continue;
+
+        ParsedReactionFilter parsedModifier;
+        if (!parseReactionFilterModifier(modifier, parsedModifier, diagnostic)) {
+            return false;
+        }
+        if (parsedModifier.products) {
+            diagnostic = "product include/exclude filters are not yet enforced in direct NFsim";
+            return false;
+        }
+        if (parsedModifier.patternIndex >= reactantRoots.size()) {
+            diagnostic = "reaction filter refers to an unknown reactant pattern index";
+            return false;
+        }
+
+        for (const auto& patternText : parsedModifier.patterns) {
+            bng::ast::SpeciesGraph filterPattern;
+            if (!parseSpeciesFilterPattern(patternText, model, filterPattern, diagnostic)) {
+                return false;
+            }
+
+            std::vector<std::vector<TemplateMolecule*>> builds;
+            bool filterHasDisjointSets = false;
+            if (!buildTemplatePatterns(
+                    filterPattern.getGraph(), filterPattern.getCompartment(), system, false,
+                    builds, filterHasDisjointSets, suggestedTraversalLimit, diagnostic) ||
+                builds.size() != 1 || builds.front().empty()) {
+                for (auto& build : builds) {
+                    for (auto* templateMolecule : build) delete templateMolecule;
+                }
+                diagnostic = diagnostic.empty()
+                                 ? "reaction filter pattern requires unsupported symmetry expansion"
+                                 : diagnostic;
+                return false;
+            }
+
+            std::map<std::string, TemplateMolecule*> parsedTemplates;
+            for (std::size_t index = 0; index < builds.front().size(); ++index) {
+                parsedTemplates.emplace(
+                    "filter_" + std::to_string(filterOrdinal) + "_M" +
+                        std::to_string(index + 1),
+                    builds.front()[index]);
+            }
+            auto* root = builds.front().front();
+            if (parsedModifier.include) {
+                transformationSet->addIncludeReactant(
+                    static_cast<int>(parsedModifier.patternIndex), root, parsedTemplates);
+            } else {
+                transformationSet->addExcludeReactant(
+                    static_cast<int>(parsedModifier.patternIndex), root, parsedTemplates);
+            }
+            hasDisjointSets = hasDisjointSets || filterHasDisjointSets;
+            ++filterOrdinal;
+        }
+    }
+    return true;
 }
 
 bool componentNameForReactionRef(const bng::ast::ReactionRule& rule,
@@ -2554,8 +2784,10 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
     // covers elementary state changes, binding/unbinding, identity rules,
     // standalone product-molecule creation, explicit degradation, and the
     // two-direction expansion of reversible rules. Scoped / local rates and
-    // filters remain fail-closed. A bounded direct Arrhenius binding slice
-    // uses NFsim's existing energy-pattern expansion implementation.
+    // reactant filters are mapped within their bounded direct slices. Product
+    // filters and unsupported modifiers remain fail-closed. A bounded direct
+    // Arrhenius binding slice uses NFsim's existing energy-pattern expansion
+    // implementation.
 
     for (const auto& originalRule : model.getReactionRules()) {
         const auto& originalRates = originalRule.getRates();
@@ -2596,6 +2828,15 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 return false;
             }
             continue;
+        }
+
+        const bool hasReactionFilter = std::any_of(
+            originalRule.getModifiers().begin(), originalRule.getModifiers().end(),
+            [](const auto& modifier) { return isReactionFilterModifier(modifier); });
+        if (originalRule.isBidirectional() && hasReactionFilter) {
+            std::cerr << "[nfsim/ast] reversible reaction filters are not yet supported "
+                         "by the direct adapter\n";
+            return false;
         }
 
         // The AST stores a reversible rule as one pair of patterns and two
@@ -2676,8 +2917,9 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                           << "' requires unsupported scope, empty reaction, or missing-rate handling\n";
                 return false;
             }
-            if (hasReactionModifierPrefix(rule, "include_") ||
-                hasReactionModifierPrefix(rule, "exclude_") ||
+            if (hasUnsupportedReactionFilterModifier(rule) ||
+                hasReactionModifierPrefix(rule, "include_products") ||
+                hasReactionModifierPrefix(rule, "exclude_products") ||
                 hasReactionModifier(rule, "moveconnected")) {
                 std::cerr << "[nfsim/ast] reaction '" << rule.getRuleName()
                           << "' uses an unsupported reaction modifier\n";
@@ -2796,6 +3038,14 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                     break;
                 }
             }
+        }
+        if (ok && !addReactantFiltersFromAst(
+                      rule, model, s, transformationSet, reactantRoots, hasDisjointSets,
+                      suggestedTraversalLimit, diagnostic)) {
+            ok = false;
+        }
+        if (ok) {
+            transformationSet->setComplexBookkeeping(blockSameComplexBinding || hasDisjointSets);
         }
 
         // Reconstruct the AST-side product mapping used by ReactionRule's

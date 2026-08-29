@@ -62,6 +62,127 @@ struct ParsedPattern {
     std::vector<ParsedBond> bonds;
 };
 
+struct ParsedReactionFilter {
+    bool include = false;
+    bool products = false;
+    std::size_t patternIndex = 0;
+    std::vector<std::string> patterns;
+};
+
+std::string trimText(std::string value) {
+    const auto first = value.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) return {};
+    const auto last = value.find_last_not_of(" \t\r\n");
+    return value.substr(first, last - first + 1);
+}
+
+std::vector<std::string> splitTopLevelComma(const std::string& text) {
+    std::vector<std::string> parts;
+    std::size_t start = 0;
+    int parentheses = 0;
+    int brackets = 0;
+    int braces = 0;
+    char quote = '\0';
+    bool escaped = false;
+    for (std::size_t index = 0; index < text.size(); ++index) {
+        const char c = text[index];
+        if (quote != '\0') {
+            if (escaped) {
+                escaped = false;
+            } else if (c == '\\') {
+                escaped = true;
+            } else if (c == quote) {
+                quote = '\0';
+            }
+            continue;
+        }
+        if (c == '\'' || c == '"') {
+            quote = c;
+            continue;
+        }
+        if (c == '(') ++parentheses;
+        else if (c == ')') --parentheses;
+        else if (c == '[') ++brackets;
+        else if (c == ']') --brackets;
+        else if (c == '{') ++braces;
+        else if (c == '}') --braces;
+        else if (c == ',' && parentheses == 0 && brackets == 0 && braces == 0) {
+            parts.push_back(trimText(text.substr(start, index - start)));
+            start = index + 1;
+        }
+    }
+    parts.push_back(trimText(text.substr(start)));
+    return parts;
+}
+
+bool isReactionFilterModifier(const std::string& modifier) {
+    const auto open = modifier.find('(');
+    const auto name = trimText(
+        modifier.substr(0, open == std::string::npos ? modifier.size() : open));
+    std::string lowerName = name;
+    std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return lowerName == "include_reactants" || lowerName == "exclude_reactants" ||
+           lowerName == "include_products" || lowerName == "exclude_products";
+}
+
+bool parseReactionFilterModifier(const std::string& modifier,
+                                 ParsedReactionFilter& result,
+                                 std::string& diagnostic) {
+    const auto open = modifier.find('(');
+    const auto close = modifier.rfind(')');
+    if (open == std::string::npos || close <= open || close != modifier.size() - 1) {
+        diagnostic = "malformed reaction filter modifier '" + modifier + "'";
+        return false;
+    }
+
+    std::string name = trimText(modifier.substr(0, open));
+    std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    if (name != "include_reactants" && name != "exclude_reactants" &&
+        name != "include_products" && name != "exclude_products") {
+        diagnostic = "unknown reaction filter modifier '" + modifier + "'";
+        return false;
+    }
+    result.include = name.rfind("include_", 0) == 0;
+    result.products = name.rfind("include_products", 0) == 0 ||
+                      name.rfind("exclude_products", 0) == 0;
+
+    const auto parts = splitTopLevelComma(
+        modifier.substr(open + 1, close - open - 1));
+    if (parts.size() < 2 || parts.front().empty()) {
+        diagnostic = "reaction filter modifier needs a pattern index and pattern: '" +
+                     modifier + "'";
+        return false;
+    }
+    try {
+        std::size_t consumed = 0;
+        const auto rawIndex = std::stoul(parts.front(), &consumed);
+        if (consumed != parts.front().size() || rawIndex == 0) {
+            diagnostic = "reaction filter index must be a positive integer: '" +
+                         modifier + "'";
+            return false;
+        }
+        result.patternIndex = rawIndex - 1;
+    } catch (const std::exception&) {
+        diagnostic = "reaction filter index must be a positive integer: '" +
+                     modifier + "'";
+        return false;
+    }
+
+    result.patterns.clear();
+    for (std::size_t index = 1; index < parts.size(); ++index) {
+        if (parts[index].empty()) {
+            diagnostic = "reaction filter contains an empty pattern: '" + modifier + "'";
+            return false;
+        }
+        result.patterns.push_back(parts[index]);
+    }
+    return true;
+}
+
 // Minimal BNGL pattern parser
 ParsedPattern parsePattern(const std::string& text) {
     ParsedPattern pattern;
@@ -842,6 +963,48 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
                 << "          </ProductPattern>\n";
         }
         xml << "        </ListOfProductPatterns>\n";
+
+        const auto writeFilters = [&](const ParsedReactionFilter& filter,
+                                      const std::string& listId) {
+            const char* listName = filter.include
+                                       ? (filter.products ? "ListOfIncludeProducts"
+                                                           : "ListOfIncludeReactants")
+                                       : (filter.products ? "ListOfExcludeProducts"
+                                                           : "ListOfExcludeReactants");
+            xml << "        <" << listName << " id=\"" << escapeXml(listId) << "\">\n";
+            for (std::size_t index = 0; index < filter.patterns.size(); ++index) {
+                const auto parsed = parsePattern(filter.patterns[index]);
+                if (parsed.molecules.empty()) {
+                    throw std::runtime_error(
+                        "reaction filter pattern contains no molecule: '" +
+                        filter.patterns[index] + "'");
+                }
+                const auto patternId = listId + "_P" + std::to_string(index + 1);
+                xml << "          <Pattern id=\"" << escapeXml(patternId) << "\">\n"
+                    << patternToXml(parsed, patternId, "            ")
+                    << "          </Pattern>\n";
+            }
+            xml << "        </" << listName << ">\n";
+        };
+
+        for (const auto& modifier : rule.getModifiers()) {
+            if (!isReactionFilterModifier(modifier)) continue;
+            ParsedReactionFilter filter;
+            std::string diagnostic;
+            if (!parseReactionFilterModifier(modifier, filter, diagnostic)) {
+                throw std::runtime_error(diagnostic);
+            }
+            const std::size_t patternCount = filter.products
+                                                 ? rule.getProducts().size()
+                                                 : rule.getReactants().size();
+            if (filter.patternIndex >= patternCount) {
+                throw std::runtime_error(
+                    "reaction filter refers to an unknown pattern index: '" + modifier + "'");
+            }
+            const auto prefix = filter.products ? "_PP" : "_RP";
+            const auto listId = rrId + prefix + std::to_string(filter.patternIndex + 1);
+            writeFilters(filter, listId);
+        }
 
         if (rate != nullptr) writeRateLaw(rule, rrId, *rate);
 
