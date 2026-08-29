@@ -650,6 +650,62 @@ end reaction rules
     delete system;
 }
 
+TEST_CASE("NFsim AST adapter preserves multi-rule propensities") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    kon 10.0
+    koff 5.0
+    kcat 0.7
+    dephos 0.5
+end parameters
+begin molecule types
+    X(y,p~0~1)
+    Y(x)
+end molecule types
+begin seed species
+    X(y,p~0) 5000
+    X(y,p~1) 0
+    Y(x) 500
+end seed species
+begin observables
+    Molecules X_free X(p~0,y)
+    Molecules X_p_total X(p~1)
+    Molecules Xp_free X(p~1,y)
+    Molecules XY X(y!1).Y(x!1)
+    Molecules Ytotal Y()
+    Molecules Xtotal X()
+end observables
+begin reaction rules
+    X(y,p~0) + Y(x) -> X(y!1,p~0).Y(x!1) kon
+    X(y!1,p~0).Y(x!1) -> X(y,p~0) + Y(x) koff
+    X(y!1,p~0).Y(x!1) -> X(y,p~1) + Y(x) kcat
+    X(p~1) -> X(p~0) dephos
+end reaction rules
+)");
+
+    int suggestedTraversalLimit = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 10000, false, suggestedTraversalLimit);
+    REQUIRE(direct != nullptr);
+    REQUIRE(direct->getAllReactions().size() == 4);
+    direct->prepareForSimulation();
+
+    suggestedTraversalLimit = 0;
+    auto* xmlSystem = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 10000, false, suggestedTraversalLimit);
+    REQUIRE(xmlSystem != nullptr);
+    REQUIRE(xmlSystem->getAllReactions().size() == direct->getAllReactions().size());
+    xmlSystem->prepareForSimulation();
+    for (std::size_t index = 0; index < direct->getAllReactions().size(); ++index) {
+        CHECK(direct->getAllReactions()[index]->getName() ==
+              xmlSystem->getAllReactions()[index]->getName());
+        CHECK(direct->getAllReactions()[index]->get_a() ==
+              Catch::Approx(xmlSystem->getAllReactions()[index]->get_a()));
+    }
+    delete direct;
+    delete xmlSystem;
+}
+
 TEST_CASE("NFsim AST adapter expands symmetric state-change reaction centers") {
     auto model = bng::parser::parseModel(R"(
 begin parameters
@@ -742,6 +798,86 @@ end reaction rules
     CHECK(xmlSystem->getHasTimeDependentFunctions());
     xmlSystem->prepareForSimulation();
     CHECK(xmlSystem->getReaction(0)->get_a() == Catch::Approx(2.0));
+    delete xmlSystem;
+}
+
+TEST_CASE("NFsim AST adapter expands multiple symmetric state centers") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    A(b~0~1,b~0~1)
+end molecule types
+begin seed species
+    A(b~0,b~0) 1
+end seed species
+begin reaction rules
+    A(b~0,b~0) -> A(b~1,b~1) k
+end reaction rules
+)");
+
+    int suggestedTraversalLimit = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(direct != nullptr);
+    REQUIRE(direct->getAllReactions().size() == 2);
+    direct->prepareForSimulation();
+    direct->seedRNG(17);
+    direct->stepTo(100.0);
+    auto* directA = direct->getMoleculeTypeByName("A")->getMolecule(0);
+    const auto directB1 = directA->getMoleculeType()->getCompIndexFromName("b1");
+    const auto directB2 = directA->getMoleculeType()->getCompIndexFromName("b2");
+    CHECK(directA->getComponentState(directB1) == 1);
+    CHECK(directA->getComponentState(directB2) == 1);
+    const auto directReactionCount = direct->getAllReactions().size();
+    delete direct;
+
+    suggestedTraversalLimit = 0;
+    auto* xmlSystem = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, suggestedTraversalLimit);
+    REQUIRE(xmlSystem != nullptr);
+    CHECK(xmlSystem->getAllReactions().size() == directReactionCount);
+    delete xmlSystem;
+}
+
+TEST_CASE("NFsim AST adapter expands symmetric state context with a center") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    A(b~0~1,b~0~1)
+end molecule types
+begin seed species
+    A(b~0,b~0) 1
+end seed species
+begin reaction rules
+    A(b~0,b~0) -> A(b~1,b~0) k
+end reaction rules
+)");
+
+    int suggestedTraversalLimit = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(direct != nullptr);
+    REQUIRE(direct->getAllReactions().size() == 2);
+    direct->prepareForSimulation();
+    direct->seedRNG(19);
+    direct->stepTo(100.0);
+    auto* directA = direct->getMoleculeTypeByName("A")->getMolecule(0);
+    const auto directB1 = directA->getMoleculeType()->getCompIndexFromName("b1");
+    const auto directB2 = directA->getMoleculeType()->getCompIndexFromName("b2");
+    CHECK((directA->getComponentState(directB1) == 1) !=
+          (directA->getComponentState(directB2) == 1));
+    const auto directReactionCount = direct->getAllReactions().size();
+    delete direct;
+
+    suggestedTraversalLimit = 0;
+    auto* xmlSystem = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, suggestedTraversalLimit);
+    REQUIRE(xmlSystem != nullptr);
+    CHECK(xmlSystem->getAllReactions().size() == directReactionCount);
     delete xmlSystem;
 }
 
@@ -840,6 +976,48 @@ end reaction rules
     CHECK(xmlSystem->getHasTimeDependentFunctions());
     xmlSystem->prepareForSimulation();
     CHECK(xmlSystem->getReaction(0)->get_a() == Catch::Approx(2.0));
+    delete xmlSystem;
+}
+
+TEST_CASE("NFsim AST adapter expands symmetric bond context with a center") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    A(b~0~1,b~0~1)
+    B(a)
+end molecule types
+begin seed species
+    A(b~0,b~0) 1
+    B(a) 1
+end seed species
+begin reaction rules
+    A(b~0,b~0) + B(a) -> A(b~0,b~0!1).B(a!1) k
+end reaction rules
+)");
+
+    int suggestedTraversalLimit = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(direct != nullptr);
+    REQUIRE(direct->getAllReactions().size() == 2);
+    direct->prepareForSimulation();
+    direct->seedRNG(23);
+    direct->stepTo(100.0);
+    auto* directA = direct->getMoleculeTypeByName("A")->getMolecule(0);
+    const auto directB1 = directA->getMoleculeType()->getCompIndexFromName("b1");
+    const auto directB2 = directA->getMoleculeType()->getCompIndexFromName("b2");
+    CHECK((directA->isBindingSiteBonded(directB1) !=
+           directA->isBindingSiteBonded(directB2)));
+    const auto directReactionCount = direct->getAllReactions().size();
+    delete direct;
+
+    suggestedTraversalLimit = 0;
+    auto* xmlSystem = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, suggestedTraversalLimit);
+    REQUIRE(xmlSystem != nullptr);
+    CHECK(xmlSystem->getAllReactions().size() == directReactionCount);
     delete xmlSystem;
 }
 

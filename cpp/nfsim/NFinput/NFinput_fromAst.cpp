@@ -2820,9 +2820,12 @@ SymmetricReactionExpansionResult addSymmetricStateChangeReactionRulesFromAst(
     std::size_t rateOrdinal,
     std::string& diagnostic) {
     const auto& operations = rule.getOperations();
-    if (operations.size() != 1 ||
-        operations.front().type !=
-            bng::ast::ReactionRule::TransformOp::Type::ChangeState ||
+    if (operations.empty() ||
+        std::any_of(
+            operations.begin(), operations.end(), [](const auto& operation) {
+                return operation.type !=
+                       bng::ast::ReactionRule::TransformOp::Type::ChangeState;
+            }) ||
         rule.getRates().size() != 1 || rule.getReactantPatterns().empty() ||
         rule.getProductPatterns().empty() || !hasOnlySymmetricPermutationModifiers(rule)) {
         return SymmetricReactionExpansionResult::NotApplicable;
@@ -2849,11 +2852,21 @@ SymmetricReactionExpansionResult addSymmetricStateChangeReactionRulesFromAst(
         return SymmetricReactionExpansionResult::NotApplicable;
     }
 
-    const auto& stateChange = operations.front();
-    if (symmetricComponents.size() != 1 ||
-        symmetricComponents.find(stateChange.source) == symmetricComponents.end()) {
-        // Generic symmetric constraints remain correct for context-only sites,
-        // but a fixed-index transformation cannot safely target them.
+    std::set<bng::ast::ReactionRule::ComponentRef> reactionCenter;
+    for (const auto& operation : operations) {
+        if (!reactionCenter.insert(operation.source).second) {
+            // Two operations on the same component need an explicit sequential
+            // semantics that the permutation slice does not define.
+            return SymmetricReactionExpansionResult::NotApplicable;
+        }
+    }
+    const bool hasSymmetricReactionCenter = std::any_of(
+        symmetricComponents.begin(), symmetricComponents.end(),
+        [&](const auto& component) { return reactionCenter.count(component) != 0; });
+    if (!hasSymmetricReactionCenter) {
+        // Context-only symmetry has no reaction-center site to select.  Keep
+        // that case on the generic compatibility path until its full matching
+        // semantics are represented.
         return SymmetricReactionExpansionResult::NotApplicable;
     }
 
@@ -2899,28 +2912,6 @@ SymmetricReactionExpansionResult addSymmetricStateChangeReactionRulesFromAst(
                 roots.push_back(build.front());
             }
 
-            const auto& sourcePattern = expandedPatterns[stateChange.source.patternIndex];
-            const auto& sourceAssignment =
-                sourcePattern.assignments[selectedBuild[stateChange.source.patternIndex]];
-            if (stateChange.source.moleculeIndex >= sourceAssignment.size() ||
-                stateChange.source.componentIndex >=
-                    sourceAssignment[stateChange.source.moleculeIndex].size()) {
-                diagnostic = "state-change source is outside the expanded reactant pattern";
-                return false;
-            }
-            const std::string& runtimeComponentName =
-                sourceAssignment[stateChange.source.moleculeIndex]
-                    [stateChange.source.componentIndex];
-            if (stateChange.source.moleculeIndex >=
-                    expandedPatterns[stateChange.source.patternIndex]
-                        .builds[selectedBuild[stateChange.source.patternIndex]].size()) {
-                diagnostic = "state-change target is outside the expanded reactant pattern";
-                return false;
-            }
-            auto* target = expandedPatterns[stateChange.source.patternIndex]
-                               .builds[selectedBuild[stateChange.source.patternIndex]]
-                                   [stateChange.source.moleculeIndex];
-
             auto* transformationSet = new TransformationSet(roots);
             transformationSet->setComplexBookkeeping(
                 blockSameComplexBinding || hasDisjointSets);
@@ -2928,19 +2919,48 @@ SymmetricReactionExpansionResult addSymmetricStateChangeReactionRulesFromAst(
                 static_cast<unsigned int>(rule.getProductPatterns().size()));
 
             bool applied = false;
-            try {
-                if (stateChange.newState == "PLUS") {
-                    applied = transformationSet->addIncrementStateTransform(
-                        target, runtimeComponentName);
-                } else if (stateChange.newState == "MINUS") {
-                    applied = transformationSet->addDecrementStateTransform(
-                        target, runtimeComponentName);
-                } else {
-                    applied = transformationSet->addStateChangeTransform(
-                        target, runtimeComponentName, stateChange.newState);
+            for (const auto& stateChange : operations) {
+                if (stateChange.source.patternIndex >= expandedPatterns.size()) {
+                    diagnostic = "state-change source is outside the expanded reactant pattern";
+                    applied = false;
+                    break;
                 }
-            } catch (const std::exception& error) {
-                diagnostic = error.what();
+                const auto& sourcePattern =
+                    expandedPatterns[stateChange.source.patternIndex];
+                const auto& sourceAssignment =
+                    sourcePattern.assignments[selectedBuild[stateChange.source.patternIndex]];
+                if (stateChange.source.moleculeIndex >= sourceAssignment.size() ||
+                    stateChange.source.componentIndex >=
+                        sourceAssignment[stateChange.source.moleculeIndex].size() ||
+                    stateChange.source.moleculeIndex >=
+                        sourcePattern.builds[selectedBuild[stateChange.source.patternIndex]]
+                            .size()) {
+                    diagnostic = "state-change target is outside the expanded reactant pattern";
+                    applied = false;
+                    break;
+                }
+                const std::string& runtimeComponentName =
+                    sourceAssignment[stateChange.source.moleculeIndex]
+                        [stateChange.source.componentIndex];
+                auto* target = sourcePattern.builds[
+                    selectedBuild[stateChange.source.patternIndex]][
+                    stateChange.source.moleculeIndex];
+                try {
+                    if (stateChange.newState == "PLUS") {
+                        applied = transformationSet->addIncrementStateTransform(
+                            target, runtimeComponentName);
+                    } else if (stateChange.newState == "MINUS") {
+                        applied = transformationSet->addDecrementStateTransform(
+                            target, runtimeComponentName);
+                    } else {
+                        applied = transformationSet->addStateChangeTransform(
+                            target, runtimeComponentName, stateChange.newState);
+                    }
+                } catch (const std::exception& error) {
+                    diagnostic = error.what();
+                    applied = false;
+                }
+                if (!applied) break;
             }
             if (!applied) {
                 if (diagnostic.empty()) diagnostic = "could not add symmetric state-change transformation";
@@ -3044,12 +3064,9 @@ SymmetricReactionExpansionResult addSymmetricBondReactionRulesFromAst(
     }
     bool hasSymmetricReactionCenter = false;
     for (const auto& component : symmetricComponents) {
-        if (reactionCenter.find(component) == reactionCenter.end()) {
-            // Leave context-only symmetry on the compatibility path.  A
-            // fixed-index bond transformation must not choose its site.
-            return SymmetricReactionExpansionResult::NotApplicable;
+        if (reactionCenter.find(component) != reactionCenter.end()) {
+            hasSymmetricReactionCenter = true;
         }
-        hasSymmetricReactionCenter = true;
     }
     if (!hasSymmetricReactionCenter) {
         return SymmetricReactionExpansionResult::NotApplicable;
@@ -4399,8 +4416,29 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
             }
 
             std::string symmetricDiagnostic;
+            // The AST keeps both rates on a bidirectional rule.  Symmetry
+            // expansion creates one NFcore reaction per direction, so present
+            // the forward helper with the same single-rate view used by the
+            // synthetic reverse rule below.  Leave the original rule intact
+            // for the ordinary direct path when this helper is not applicable.
+            std::unique_ptr<bng::ast::ReactionRule> singleDirectionRule;
+            const auto* symmetryRule = &rule;
+            if (rule.isBidirectional()) {
+                if (rule.getRates().size() != 2) {
+                    std::cerr << "[nfsim/ast] reaction '" << rule.getRuleName()
+                              << "' has an invalid bidirectional rate list\n";
+                    return false;
+                }
+                singleDirectionRule = std::make_unique<bng::ast::ReactionRule>(
+                    rule.getRuleName(), rule.getLabel(), rule.getReactants(),
+                    rule.getProducts(),
+                    std::vector<bng::ast::Expression>{rule.getRates().front()},
+                    rule.getModifiers(), false, rule.getProductPatterns(),
+                    rule.getReactantPatterns());
+                symmetryRule = singleDirectionRule.get();
+            }
             const auto symmetricResult = addSymmetricStateChangeReactionRulesFromAst(
-                rule, model, s, parameters, blockSameComplexBinding, verbose,
+                *symmetryRule, model, s, parameters, blockSameComplexBinding, verbose,
                 suggestedTraversalLimit, sourcePath,
                 originalRuleOrdinal * 2 + directionOrdinal, symmetricDiagnostic);
             if (symmetricResult == SymmetricReactionExpansionResult::Added) continue;
@@ -4415,7 +4453,7 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
             }
             symmetricDiagnostic.clear();
             const auto symmetricBondResult = addSymmetricBondReactionRulesFromAst(
-                rule, model, s, parameters, blockSameComplexBinding, verbose,
+                *symmetryRule, model, s, parameters, blockSameComplexBinding, verbose,
                 suggestedTraversalLimit, sourcePath,
                 originalRuleOrdinal * 2 + directionOrdinal, symmetricDiagnostic);
             if (symmetricBondResult == SymmetricReactionExpansionResult::Added) continue;
