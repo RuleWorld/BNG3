@@ -24,9 +24,12 @@
 ///                    and dynamic reaction rates over parameters, observables,
 ///                    time, one TFUN expression, or bounded zero-argument
 ///                    model-function chains.
-///                    Static symmetric state-change and bond reaction centers
+///                    Bounded symmetric state-change and bond reaction centers
 ///                    are expanded into explicit NFcore reaction classes when
 ///                    all stated symmetric sites are reaction-center sites.
+///                    The same permutations retain live generated
+///                    global/composite rate functions for supported dynamic
+///                    rates.
 ///                   Bounded nested local functions and function-counter local
 ///                   TFUNs whose counter is a zero-argument base global are
 ///                   also direct composites.
@@ -2712,6 +2715,21 @@ bool evaluateStaticReactionRate(const bng::ast::Expression& expression,
     return true;
 }
 
+// Defined below the symmetry helpers.  Symmetric reaction-center expansion
+// uses the same generated live function objects as the ordinary direct path;
+// keeping this boundary explicit prevents it from inventing a second rate
+// evaluator.
+bool addDynamicReactionRateFunction(
+    const bng::ast::Expression& expression,
+    const bng::ast::Model& model,
+    const std::map<std::string, double>& parameters,
+    System* system,
+    const std::filesystem::path& sourcePath,
+    std::size_t ordinal,
+    GlobalFunction*& global,
+    CompositeFunction*& composite,
+    std::string& diagnostic);
+
 enum class SymmetricReactionExpansionResult {
     NotApplicable,
     Added,
@@ -2792,11 +2810,14 @@ bool hasOnlySymmetricPermutationModifiers(const bng::ast::ReactionRule& rule) {
 
 SymmetricReactionExpansionResult addSymmetricStateChangeReactionRulesFromAst(
     const bng::ast::ReactionRule& rule,
+    const bng::ast::Model& model,
     System* system,
     const std::map<std::string, double>& parameters,
     bool blockSameComplexBinding,
     bool verbose,
     int& suggestedTraversalLimit,
+    const std::filesystem::path& sourcePath,
+    std::size_t rateOrdinal,
     std::string& diagnostic) {
     const auto& operations = rule.getOperations();
     if (operations.size() != 1 ||
@@ -2809,10 +2830,12 @@ SymmetricReactionExpansionResult addSymmetricStateChangeReactionRulesFromAst(
 
     double rateValue = 0.0;
     std::string rateDiagnostic;
-    if (!evaluateStaticReactionRate(
-            rule.getRates().front(), parameters, rateValue, rateDiagnostic)) {
-        // Dynamic and time-dependent rates remain on the existing fail-closed
-        // path until their permutation-aware function plumbing is available.
+    const bool staticRate = evaluateStaticReactionRate(
+        rule.getRates().front(), parameters, rateValue, rateDiagnostic);
+    if (!staticRate && evaluateStaticExpression(
+                           rule.getRates().front(), parameters, rateValue, rateDiagnostic)) {
+        // Preserve the ordinary direct-path rejection for a statically invalid
+        // (for example negative) rate instead of treating it as dynamic.
         return SymmetricReactionExpansionResult::NotApplicable;
     }
 
@@ -2831,6 +2854,14 @@ SymmetricReactionExpansionResult addSymmetricStateChangeReactionRulesFromAst(
         symmetricComponents.find(stateChange.source) == symmetricComponents.end()) {
         // Generic symmetric constraints remain correct for context-only sites,
         // but a fixed-index transformation cannot safely target them.
+        return SymmetricReactionExpansionResult::NotApplicable;
+    }
+
+    GlobalFunction* dynamicGlobal = nullptr;
+    CompositeFunction* dynamicComposite = nullptr;
+    if (!staticRate && !addDynamicReactionRateFunction(
+                           rule.getRates().front(), model, parameters, system, sourcePath,
+                           rateOrdinal, dynamicGlobal, dynamicComposite, rateDiagnostic)) {
         return SymmetricReactionExpansionResult::NotApplicable;
     }
 
@@ -2918,14 +2949,24 @@ SymmetricReactionExpansionResult addSymmetricStateChangeReactionRulesFromAst(
             }
             transformationSet->finalize();
 
-            std::string rateParameterName;
-            if (rule.getRates().front().kind() == bng::ast::ExpressionKind::Identifier &&
-                parameters.count(rule.getRates().front().name()) != 0) {
-                rateParameterName = rule.getRates().front().name();
+            const auto reactionName =
+                rule.getRuleName() + "_sym" + std::to_string(reactionOrdinal + 1);
+            ReactionClass* reaction = nullptr;
+            if (dynamicGlobal != nullptr) {
+                reaction = new FunctionalRxnClass(
+                    reactionName, dynamicGlobal, transformationSet, system);
+            } else if (dynamicComposite != nullptr) {
+                reaction = new FunctionalRxnClass(
+                    reactionName, dynamicComposite, transformationSet, system);
+            } else {
+                std::string rateParameterName;
+                if (rule.getRates().front().kind() == bng::ast::ExpressionKind::Identifier &&
+                    parameters.count(rule.getRates().front().name()) != 0) {
+                    rateParameterName = rule.getRates().front().name();
+                }
+                reaction = new BasicRxnClass(
+                    reactionName, rateValue, rateParameterName, transformationSet, system);
             }
-            auto* reaction = new BasicRxnClass(
-                rule.getRuleName() + "_sym" + std::to_string(reactionOrdinal + 1),
-                rateValue, rateParameterName, transformationSet, system);
             reaction->setTotalRateFlag(hasReactionModifier(rule, "totalrate"));
             if (hasReactionModifier(rule, "matchonce")) {
                 for (std::size_t index = 0; index < expandedPatterns.size(); ++index) {
@@ -2933,7 +2974,7 @@ SymmetricReactionExpansionResult addSymmetricStateChangeReactionRulesFromAst(
                 }
             }
             ++reactionOrdinal;
-            if (rateValue > 0.0) {
+            if (dynamicGlobal != nullptr || dynamicComposite != nullptr || rateValue > 0.0) {
                 system->addReaction(reaction);
                 if (verbose) {
                     std::cerr << "[nfsim/ast] reaction " << rule.getRuleName()
@@ -2953,11 +2994,14 @@ SymmetricReactionExpansionResult addSymmetricStateChangeReactionRulesFromAst(
 
 SymmetricReactionExpansionResult addSymmetricBondReactionRulesFromAst(
     const bng::ast::ReactionRule& rule,
+    const bng::ast::Model& model,
     System* system,
     const std::map<std::string, double>& parameters,
     bool blockSameComplexBinding,
     bool verbose,
     int& suggestedTraversalLimit,
+    const std::filesystem::path& sourcePath,
+    std::size_t rateOrdinal,
     std::string& diagnostic) {
     const auto& operations = rule.getOperations();
     if (operations.size() != 1 ||
@@ -2972,8 +3016,10 @@ SymmetricReactionExpansionResult addSymmetricBondReactionRulesFromAst(
 
     double rateValue = 0.0;
     std::string rateDiagnostic;
-    if (!evaluateStaticReactionRate(
-            rule.getRates().front(), parameters, rateValue, rateDiagnostic)) {
+    const bool staticRate = evaluateStaticReactionRate(
+        rule.getRates().front(), parameters, rateValue, rateDiagnostic);
+    if (!staticRate && evaluateStaticExpression(
+                           rule.getRates().front(), parameters, rateValue, rateDiagnostic)) {
         return SymmetricReactionExpansionResult::NotApplicable;
     }
 
@@ -3006,6 +3052,14 @@ SymmetricReactionExpansionResult addSymmetricBondReactionRulesFromAst(
         hasSymmetricReactionCenter = true;
     }
     if (!hasSymmetricReactionCenter) {
+        return SymmetricReactionExpansionResult::NotApplicable;
+    }
+
+    GlobalFunction* dynamicGlobal = nullptr;
+    CompositeFunction* dynamicComposite = nullptr;
+    if (!staticRate && !addDynamicReactionRateFunction(
+                           rule.getRates().front(), model, parameters, system, sourcePath,
+                           rateOrdinal, dynamicGlobal, dynamicComposite, rateDiagnostic)) {
         return SymmetricReactionExpansionResult::NotApplicable;
     }
 
@@ -3098,14 +3152,24 @@ SymmetricReactionExpansionResult addSymmetricBondReactionRulesFromAst(
                 static_cast<unsigned int>(rule.getProductPatterns().size()));
             transformationSet->finalize();
 
-            std::string rateParameterName;
-            if (rule.getRates().front().kind() == bng::ast::ExpressionKind::Identifier &&
-                parameters.count(rule.getRates().front().name()) != 0) {
-                rateParameterName = rule.getRates().front().name();
+            const auto reactionName =
+                rule.getRuleName() + "_sym" + std::to_string(reactionOrdinal + 1);
+            ReactionClass* reaction = nullptr;
+            if (dynamicGlobal != nullptr) {
+                reaction = new FunctionalRxnClass(
+                    reactionName, dynamicGlobal, transformationSet, system);
+            } else if (dynamicComposite != nullptr) {
+                reaction = new FunctionalRxnClass(
+                    reactionName, dynamicComposite, transformationSet, system);
+            } else {
+                std::string rateParameterName;
+                if (rule.getRates().front().kind() == bng::ast::ExpressionKind::Identifier &&
+                    parameters.count(rule.getRates().front().name()) != 0) {
+                    rateParameterName = rule.getRates().front().name();
+                }
+                reaction = new BasicRxnClass(
+                    reactionName, rateValue, rateParameterName, transformationSet, system);
             }
-            auto* reaction = new BasicRxnClass(
-                rule.getRuleName() + "_sym" + std::to_string(reactionOrdinal + 1),
-                rateValue, rateParameterName, transformationSet, system);
             reaction->setTotalRateFlag(hasReactionModifier(rule, "totalrate"));
             if (hasReactionModifier(rule, "matchonce")) {
                 for (std::size_t index = 0; index < expandedPatterns.size(); ++index) {
@@ -3113,7 +3177,7 @@ SymmetricReactionExpansionResult addSymmetricBondReactionRulesFromAst(
                 }
             }
             ++reactionOrdinal;
-            if (rateValue > 0.0) {
+            if (dynamicGlobal != nullptr || dynamicComposite != nullptr || rateValue > 0.0) {
                 system->addReaction(reaction);
                 if (verbose) {
                     std::cerr << "[nfsim/ast] reaction " << rule.getRuleName()
@@ -4336,8 +4400,9 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
 
             std::string symmetricDiagnostic;
             const auto symmetricResult = addSymmetricStateChangeReactionRulesFromAst(
-                rule, s, parameters, blockSameComplexBinding, verbose,
-                suggestedTraversalLimit, symmetricDiagnostic);
+                rule, model, s, parameters, blockSameComplexBinding, verbose,
+                suggestedTraversalLimit, sourcePath,
+                originalRuleOrdinal * 2 + directionOrdinal, symmetricDiagnostic);
             if (symmetricResult == SymmetricReactionExpansionResult::Added) continue;
             if (symmetricResult == SymmetricReactionExpansionResult::Error) {
                 std::cerr << "[nfsim/ast] cannot map reaction '" << rule.getRuleName()
@@ -4350,8 +4415,9 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
             }
             symmetricDiagnostic.clear();
             const auto symmetricBondResult = addSymmetricBondReactionRulesFromAst(
-                rule, s, parameters, blockSameComplexBinding, verbose,
-                suggestedTraversalLimit, symmetricDiagnostic);
+                rule, model, s, parameters, blockSameComplexBinding, verbose,
+                suggestedTraversalLimit, sourcePath,
+                originalRuleOrdinal * 2 + directionOrdinal, symmetricDiagnostic);
             if (symmetricBondResult == SymmetricReactionExpansionResult::Added) continue;
             if (symmetricBondResult == SymmetricReactionExpansionResult::Error) {
                 std::cerr << "[nfsim/ast] cannot map reaction '" << rule.getRuleName()
