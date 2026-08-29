@@ -35,7 +35,9 @@ Engine discovery: `--bng-cpp PATH` / `BNG_CPP` for the CLI; `import bionetgen` f
 ## What each gate proves
 - `test_parity_net` — WO-1a. Active expected failures come only from `exceptions.json`; each is signature-checked and an unexpected pass fails. The current ledger contains `blbr` (+26 reactions). `Motivating_example_cBNGL` was removed from the exception set when rate normalization eliminated its prior mismatch.
 - `test_parity_ode` — ODE rel-err <= 1e-6 vs Perl.
-- `test_parity_stochastic` — seeded determinism + ensemble within mean +/- 3 SE.
+- `test_parity_stochastic` — seeded determinism + fixed-seed ensembles (at least
+  200 members per side) within mean +/- 3 SE. A single `.gdat` is never treated
+  as an ensemble reference.
 - `test_parity_nfsim` — WO-2. ast-direct vs native binary, and ast-direct vs in-memory-XML (`BNG_NFSIM_FORCE_XML=1`).
 - `test_parity_expressions` — WO-3. function-driven RHS to 1e-9.
 - `test_export_formats` — WO-5. BNG-XML/SBML valid, `.net` idempotent.

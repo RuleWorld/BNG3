@@ -725,10 +725,14 @@ class EnsembleDiff:
     n_points_checked: int
     worst_z: float
     worst_col: str
+    note: str = ""
 
     def summary(self) -> str:
-        return (f"ensemble: {self.n_violations}/{self.n_points_checked} points outside "
-                f"mean +/- 3 SE; worst |z|={self.worst_z:.2f} at '{self.worst_col}'")
+        summary = (
+            f"ensemble: {self.n_violations}/{self.n_points_checked} points outside "
+            f"mean +/- 3 SE; worst |z|={self.worst_z:.2f} at '{self.worst_col}'"
+        )
+        return summary if not self.note else f"{summary} ({self.note})"
 
 
 def compare_stochastic(
@@ -737,6 +741,8 @@ def compare_stochastic(
     *,
     n_sigma: float = 3.0,
     max_violation_frac: float = 0.02,
+    min_ref_runs: int = 2,
+    min_test_runs: int = 2,
 ) -> EnsembleDiff:
     """Distributional comparison of two stochastic ensembles.
 
@@ -745,15 +751,28 @@ def compare_stochastic(
     fraction of violating points is <= max_violation_frac (allows for the few
     tail points expected at 3 sigma over many checks).
     """
+    if len(ref_runs) < min_ref_runs or len(test_runs) < min_test_runs:
+        return EnsembleDiff(
+            False,
+            0,
+            0,
+            np.inf,
+            "",
+            note=(
+                f"insufficient ensemble members (ref={len(ref_runs)}, "
+                f"test={len(test_runs)}, required={min_ref_runs}/{min_test_runs})"
+            ),
+        )
+
     rmean, rse, rcols, rt = _ensemble_stats(ref_runs)
     tmean, _, tcols, tt = _ensemble_stats(test_runs)
     if rmean is None or tmean is None:
-        return EnsembleDiff(False, 0, 0, np.inf, "")
+        return EnsembleDiff(False, 0, 0, np.inf, "", note="empty ensemble")
 
     common = [c for c in rcols if c in tcols and c.lower() != "time"]
     ridx, tidx = _align_times(rt, tt)
     if not common or len(ridx) < 2:
-        return EnsembleDiff(False, 0, 0, np.inf, "")
+        return EnsembleDiff(False, 0, 0, np.inf, "", note="no shared trajectory")
 
     violations = 0
     checked = 0
@@ -784,8 +803,19 @@ def compare_stochastic(
 def _ensemble_stats(runs: list[tuple[np.ndarray, list[str]]]):
     if not runs:
         return None, None, None, None
-    cols = runs[0][1]
-    time = runs[0][0][:, cols.index("time")] if "time" in cols else runs[0][0][:, 0]
+    first_data, first_cols = runs[0]
+    if first_data.ndim != 2 or first_data.shape[1] != len(first_cols):
+        return None, None, None, None
+    cols = list(first_cols)
+    for data, run_cols in runs:
+        if (
+            data.ndim != 2
+            or data.shape != first_data.shape
+            or list(run_cols) != cols
+            or not np.all(np.isfinite(data))
+        ):
+            return None, None, None, None
+    time = first_data[:, cols.index("time")] if "time" in cols else first_data[:, 0]
     stack = np.stack([r[0] for r in runs], axis=0)  # (n_runs, n_t, n_col)
     mean = stack.mean(axis=0)
     se = stack.std(axis=0, ddof=1) / np.sqrt(stack.shape[0]) if stack.shape[0] > 1 else np.zeros_like(mean)

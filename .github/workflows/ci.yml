@@ -314,7 +314,9 @@ jobs:
 
       - name: Build and install package (Unix)
         if: "!startsWith(matrix.os, 'windows')"
-        run: pip install -e . -v
+        run: |
+          python -m pip wheel . --no-deps --wheel-dir wheelhouse -v
+          python -m pip install --force-reinstall --no-deps wheelhouse/*.whl
         env:
           CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=OFF"
 
