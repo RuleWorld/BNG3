@@ -1897,6 +1897,64 @@ end reaction rules
     delete excludedXmlSystem;
 }
 
+TEST_CASE("NFsim AST adapter swaps bounded filters for reversible rules") {
+    auto model = bng::parser::parseModel(R"BNG(
+begin parameters
+    k_forward 1.0
+    k_reverse 1.0
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin observables
+    Molecules A_total A()
+    Molecules B_total B()
+end observables
+begin reaction rules
+    A() <-> B() k_forward, k_reverse include_reactants(1,A())
+end reaction rules
+)BNG");
+
+    REQUIRE(model != nullptr);
+    const auto xml = bng::io::XmlWriter::write(*model);
+    CHECK(xml.find("<ListOfIncludeReactants id=\"RR1_RP1\">") !=
+          std::string::npos);
+    CHECK(xml.find("<ListOfIncludeProducts id=\"RR1r_PP1\">") !=
+          std::string::npos);
+
+    int suggestedTraversalLimit = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(direct != nullptr);
+    REQUIRE(direct->getAllReactions().size() == 2);
+    direct->prepareForSimulation();
+    direct->singleStep();
+    CHECK(direct->getObservableByName("A_total")->getCount() == 0);
+    CHECK(direct->getObservableByName("B_total")->getCount() == 1);
+    direct->singleStep();
+    CHECK(direct->getObservableByName("A_total")->getCount() == 1);
+    CHECK(direct->getObservableByName("B_total")->getCount() == 0);
+    delete direct;
+
+    suggestedTraversalLimit = 0;
+    auto* xmlSystem = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, suggestedTraversalLimit);
+    REQUIRE(xmlSystem != nullptr);
+    REQUIRE(xmlSystem->getAllReactions().size() == 2);
+    xmlSystem->prepareForSimulation();
+    xmlSystem->singleStep();
+    CHECK(xmlSystem->getObservableByName("A_total")->getCount() == 0);
+    CHECK(xmlSystem->getObservableByName("B_total")->getCount() == 1);
+    xmlSystem->singleStep();
+    CHECK(xmlSystem->getObservableByName("A_total")->getCount() == 1);
+    CHECK(xmlSystem->getObservableByName("B_total")->getCount() == 0);
+    delete xmlSystem;
+}
+
 TEST_CASE("NFsim AST adapter maps a bounded FunctionProduct rate") {
     auto model = bng::parser::parseModel(R"BNG(
 begin molecule types

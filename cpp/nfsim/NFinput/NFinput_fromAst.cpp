@@ -20,6 +20,7 @@
 ///                    time/parameter-backed local TFUNs, FunctionProduct,
 ///                    Sat/Hill rate laws, bounded reactant/product
 ///                    include/exclude filters,
+///                    and bounded reversible filter swapping,
 ///                    and dynamic reaction rates over parameters, observables,
 ///                    time, one TFUN expression, or bounded zero-argument
 ///                    model-function chains.
@@ -2522,6 +2523,31 @@ bool hasReactionModifierPrefix(const bng::ast::ReactionRule& rule,
     return false;
 }
 
+std::vector<std::string> reverseReactionFilterModifiers(
+    const std::vector<std::string>& modifiers) {
+    std::vector<std::string> reversed;
+    reversed.reserve(modifiers.size());
+    for (const auto& modifier : modifiers) {
+        std::string transformed = modifier;
+        const auto normalized = lowerCase(transformed);
+        const auto replacePrefix = [&](const std::string& from,
+                                       const std::string& to) {
+            if (normalized.rfind(from, 0) == 0) {
+                transformed.replace(0, from.size(), to);
+                return true;
+            }
+            return false;
+        };
+        if (!replacePrefix("exclude_reactants", "exclude_products") &&
+            !replacePrefix("include_reactants", "include_products") &&
+            !replacePrefix("exclude_products", "exclude_reactants")) {
+            replacePrefix("include_products", "include_reactants");
+        }
+        reversed.push_back(std::move(transformed));
+    }
+    return reversed;
+}
+
 bool hasUnsupportedReactionFilterModifier(const bng::ast::ReactionRule& rule) {
     for (const auto& modifier : rule.getModifiers()) {
         const auto open = modifier.find('(');
@@ -3725,8 +3751,8 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
     // standalone product-molecule creation, explicit degradation, compartment
     // transport including MoveConnected, and the two-direction expansion of
     // reversible rules. Scoped / local rates and
-    // reactant filters and bare-molecule product filters are mapped within
-    // their bounded direct slices. Complex product filters and unsupported
+    // reactant filters, bare-molecule product filters, and reversible filter
+    // swapping are mapped within their bounded direct slices. Complex product filters and unsupported
     // modifiers remain fail-closed. Dynamic rates may inline zero-argument
     // model-function chains; unsupported composite/local forms remain gated.
     // A bounded direct Arrhenius binding slice uses NFsim's existing
@@ -3777,15 +3803,6 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
             continue;
         }
 
-        const bool hasReactionFilter = std::any_of(
-            originalRule.getModifiers().begin(), originalRule.getModifiers().end(),
-            [](const auto& modifier) { return isReactionFilterModifier(modifier); });
-        if (originalRule.isBidirectional() && hasReactionFilter) {
-            std::cerr << "[nfsim/ast] reversible reaction filters are not yet supported "
-                         "by the direct adapter\n";
-            return false;
-        }
-
         // The AST stores a reversible rule as one pair of patterns and two
         // rates.  Construct the reverse direction through the same
         // ReactionRule initializer so its component/bond/product mappings are
@@ -3799,7 +3816,7 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 originalRule.getProducts(),
                 originalRule.getReactants(),
                 std::vector<bng::ast::Expression>{originalRates[1]},
-                originalRule.getModifiers(),
+                reverseReactionFilterModifiers(originalRule.getModifiers()),
                 false,
                 originalRule.getProductPatterns(),
                 originalRule.getReactantPatterns());
