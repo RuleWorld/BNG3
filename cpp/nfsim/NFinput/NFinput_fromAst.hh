@@ -59,6 +59,10 @@ NFcore::System* buildSystemFromAst(
 bool addParametersFromAst(const bng::ast::Model& model, NFcore::System* s,
                           std::map<std::string, double>& parameters, bool verbose);
 
+/// Apply model options that have an NFsim System representation.  Options
+/// owned by other backends remain in the AST and are intentionally ignored.
+bool addOptionsFromAst(const bng::ast::Model& model, NFcore::System* s, bool verbose);
+
 /// Add AST compartments, preserving the XML loader's two-pass parent wiring.
 bool addCompartmentsFromAst(const bng::ast::Model& model, NFcore::System* s,
                             bool verbose);

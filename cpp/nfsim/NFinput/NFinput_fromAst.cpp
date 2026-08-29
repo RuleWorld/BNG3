@@ -34,6 +34,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdlib>
 #include <iostream>
 #include <map>
@@ -67,6 +68,41 @@ bool addParametersFromAst(const bng::ast::Model& model, System* s,
             std::cerr << "[nfsim/ast] parameter " << name << " = " << value << "\n";
         }
     }
+    return true;
+}
+
+bool addOptionsFromAst(const bng::ast::Model& model, System* s, bool verbose) {
+    if (s == nullptr) return false;
+
+    // NFinput reads this as a model attribute and applies it to concentration
+    // conversion.  Keep parsing strict here so malformed AST options take the
+    // compatibility path instead of silently changing molecule counts.
+    const auto& options = model.getOptions();
+    const auto numberPerQuantity = options.find("NumberPerQuantityUnit");
+    if (numberPerQuantity != options.end()) {
+        try {
+            std::size_t consumed = 0;
+            const double value = std::stod(numberPerQuantity->second, &consumed);
+            if (consumed != numberPerQuantity->second.size() || !std::isfinite(value) ||
+                value < 0.0) {
+                std::cerr << "[nfsim/ast] invalid NumberPerQuantityUnit value '"
+                          << numberPerQuantity->second << "'\n";
+                return false;
+            }
+            s->setNumberPerQuantityUnit(value);
+            if (verbose) {
+                std::cerr << "[nfsim/ast] NumberPerQuantityUnit = " << value << "\n";
+            }
+        } catch (const std::exception&) {
+            std::cerr << "[nfsim/ast] invalid NumberPerQuantityUnit value '"
+                      << numberPerQuantity->second << "'\n";
+            return false;
+        }
+    }
+
+    // The remaining setOption values configure BioNetGen writers or other
+    // backends; NFsim has no corresponding System state.  Retain them in the
+    // AST for those consumers rather than rejecting an otherwise valid model.
     return true;
 }
 
@@ -550,7 +586,8 @@ System* buildSystemFromAst(const bng::ast::Model& model,
     try {
         // Keep this order aligned with initializeFromModel(): molecule types
         // and compartments must exist before species, observables, and rules.
-        ok = addParametersFromAst(model, s, parameters, verbose) &&
+        ok = addOptionsFromAst(model, s, verbose) &&
+             addParametersFromAst(model, s, parameters, verbose) &&
              addMoleculeTypesFromAst(model, s, allowedStates, verbose) &&
              addCompartmentsFromAst(model, s, verbose) &&
              addFunctionsFromAst(model, s, parameters, verbose) &&

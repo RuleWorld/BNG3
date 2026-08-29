@@ -1,4 +1,5 @@
 #include <map>
+#include <string>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -12,6 +13,7 @@
 #include "ast/MoleculeType.hpp"
 #include "ast/Observable.hpp"
 #include "ast/Parameter.hpp"
+#include "io/XmlWriter.hpp"
 
 TEST_CASE("NFsim AST adapter preserves molecule-type state and symmetry metadata") {
     bng::ast::Model model;
@@ -36,6 +38,25 @@ TEST_CASE("NFsim AST adapter preserves molecule-type state and symmetry metadata
     CHECK(allowedStates.at("A_site2_0") == 0);
     CHECK(allowedStates.at("A_site2_1") == 1);
     CHECK(allowedStates.at("A_site2_2") == 2);
+}
+
+TEST_CASE("NFsim AST adapter applies the concentration conversion option") {
+    bng::ast::Model model;
+    model.setOption("NumberPerQuantityUnit", "6.022e23");
+
+    NFcore::System system("adapter", false, 100);
+    REQUIRE(NFinput::addOptionsFromAst(model, &system, false));
+    CHECK(system.getNumberPerQuantityUnit() == Catch::Approx(6.022e23));
+    CHECK(bng::io::XmlWriter::write(model).find(
+              "NumberPerQuantityUnit=\"6.022e23\"") != std::string::npos);
+}
+
+TEST_CASE("NFsim AST adapter rejects malformed concentration conversion options") {
+    bng::ast::Model model;
+    model.setOption("NumberPerQuantityUnit", "not-a-number");
+
+    NFcore::System system("adapter", false, 100);
+    CHECK_FALSE(NFinput::addOptionsFromAst(model, &system, false));
 }
 
 TEST_CASE("NFsim AST adapter installs compartment parents in a second pass") {

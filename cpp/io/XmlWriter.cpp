@@ -315,7 +315,12 @@ std::string XmlWriter::write(const ast::Model& model, const engine::GeneratedNet
     xml << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
     xml << "<!-- Created by BioNetGen C++ -->\n";
     xml << "<sbml xmlns=\"http://www.sbml.org/sbml/level3\" level=\"3\" version=\"1\">\n";
-    xml << "  <model id=\"" << escapeXml(model.getModelName()) << "\">\n";
+    xml << "  <model id=\"" << escapeXml(model.getModelName()) << "\"";
+    const auto numberPerQuantity = model.getOptions().find("NumberPerQuantityUnit");
+    if (numberPerQuantity != model.getOptions().end()) {
+        xml << " NumberPerQuantityUnit=\"" << escapeXml(numberPerQuantity->second) << "\"";
+    }
+    xml << ">\n";
 
     xml << writeParameters(model);
     xml << writeMoleculeTypes(model);
