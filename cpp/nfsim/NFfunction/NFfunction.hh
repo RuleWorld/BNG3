@@ -325,6 +325,8 @@ namespace NFcore {
 			void setCtrName(string name);
 			void setCounterFromTime(System *s);
 			void setCounterFromParameter(System *s, string paramName);
+			void setCounterFromObservable(Observable *observable);
+			void refreshObservableCounter();
 			void addSystemPointer(System *s);
 			bool fileFunc;
 
@@ -362,6 +364,7 @@ namespace NFcore {
 			string filePath;
 			string counterParamName;
 			string interpolationMethod;
+			Observable *counterObservable;
 			// AS-2021
 
 			string name;

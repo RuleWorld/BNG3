@@ -166,6 +166,7 @@ LocalFunction::LocalFunction(System *s,
 	this->ctrType = "";
 	this->ctrName = "";
 	this->counterParamName = "";
+	this->counterObservable = NULL;
 
 
 	//Identify the type II molecules - those molecules that when changed
@@ -656,12 +657,29 @@ void LocalFunction::setCounterFromParameter(System *s, string paramName)
 	this->ctrType = "Parameter";
 	this->sysPtr = s;
 	this->counterParamName = paramName;
+	this->counterObservable = NULL;
+}
+
+void LocalFunction::setCounterFromObservable(Observable *observable)
+{
+	if (observable == NULL) {
+		cerr << "Error preparing function " << name << " in class LocalFunction!!" << endl;
+		cerr << "Observable TFUN counter is null." << endl;
+		cerr << "Quitting." << endl;
+		exit(1);
+	}
+	this->ctrType = "Observable";
+	this->counterObservable = observable;
+	this->sysPtr = NULL;
+	this->counterParamName = "";
+	observable->addReferenceToLocalFunction(this);
 }
 
 void LocalFunction::addSystemPointer(System *s)
 {
 	this->ctrType = "System";
 	this->sysPtr = s;
+	this->counterObservable = NULL;
 }
 
 void LocalFunction::enableFileDependency(string filePath, string method)
@@ -705,6 +723,14 @@ double LocalFunction::getCounterValue()
 			exit(1);
 		}
 		ctrVal = this->sysPtr->getCurrentTime();
+	} else if (ctrType == "Observable") {
+		if (this->counterObservable == NULL) {
+			cerr << "Error preparing function " << name << " in class LocalFunction!!" << endl;
+			cerr << "Observable TFUN counter is null." << endl;
+			cerr << "Quitting." << endl;
+			exit(1);
+		}
+		ctrVal = this->counterObservable->getCount();
 	} else if (ctrType == "Parameter") {
 		if (this->sysPtr == NULL || this->counterParamName.empty()) {
 			cerr << "Error preparing function " << name << " in class LocalFunction!!" << endl;
@@ -720,6 +746,28 @@ double LocalFunction::getCounterValue()
 		exit(1);
 	}
 	return ctrVal;
+}
+
+void LocalFunction::refreshObservableCounter()
+{
+	if (!fileFunc || p == NULL || counterObservable == NULL || system == NULL) return;
+
+	std::set<int> refreshedComplexes;
+	for (MoleculeType *moleculeType : typeI_mol) {
+		for (int index = 0; index < moleculeType->getMoleculeCount(); ++index) {
+			Molecule *molecule = moleculeType->getMolecule(index);
+			if (molecule == NULL || !molecule->isAlive()) continue;
+
+			if (isEverEvaluatedOnSpeciesScope && system->isUsingComplex()) {
+				const int complexId = molecule->getComplexID();
+				if (complexId >= 0 && !refreshedComplexes.insert(complexId).second) continue;
+				evaluateOn(molecule, LocalFunction::SPECIES);
+			} else {
+				evaluateOn(molecule, isEverEvaluatedOnSpeciesScope ?
+					LocalFunction::SPECIES : LocalFunction::MOLECULE);
+			}
+		}
+	}
 }
 
 void LocalFunction::fileUpdate()

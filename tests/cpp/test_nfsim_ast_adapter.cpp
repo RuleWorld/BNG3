@@ -1168,6 +1168,62 @@ end reaction rules
     delete xmlSystem;
 }
 
+TEST_CASE("NFsim AST adapter maps observable-backed local TFUN rates") {
+    auto model = bng::parser::parseModel(R"(
+begin molecule types
+    A()
+    X()
+    B()
+end molecule types
+begin seed species
+    A() 1
+    X() 1
+end seed species
+begin observables
+    Molecules atotal A()
+end observables
+begin functions
+    f(x) = TFUN([0, 1, 2], [2, 4, 6], atotal)
+end functions
+begin reaction rules
+    %x::X() -> %x::X() + B() f(x)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    const auto xml = bng::io::XmlWriter::write(*model);
+    CHECK(xml.find("type=\"TFUN\"") != std::string::npos);
+    CHECK(xml.find("ctrName=\"atotal\"") != std::string::npos);
+
+    int suggestedTraversalLimit = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(direct != nullptr);
+    auto* directLocal = direct->getLocalFunctionByName("f");
+    REQUIRE(directLocal != nullptr);
+    direct->prepareForSimulation();
+    CHECK(directLocal->getCounterValue() == Catch::Approx(1.0));
+    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(4.0));
+    direct->addConcentration("A()", 1);
+    CHECK(direct->getObservableByName("atotal")->getCount() == 2);
+    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(6.0));
+    delete direct;
+
+    suggestedTraversalLimit = 0;
+    auto* xmlSystem = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, suggestedTraversalLimit);
+    REQUIRE(xmlSystem != nullptr);
+    auto* xmlLocal = xmlSystem->getLocalFunctionByName("f");
+    REQUIRE(xmlLocal != nullptr);
+    xmlSystem->prepareForSimulation();
+    CHECK(xmlLocal->getCounterValue() == Catch::Approx(1.0));
+    CHECK(xmlSystem->getReaction(0)->get_a() == Catch::Approx(4.0));
+    xmlSystem->addConcentration("A()", 1);
+    CHECK(xmlSystem->getObservableByName("atotal")->getCount() == 2);
+    CHECK(xmlSystem->getReaction(0)->get_a() == Catch::Approx(6.0));
+    delete xmlSystem;
+}
+
 TEST_CASE("NFsim AST adapter maps a legacy molecule-label local scope") {
     auto model = bng::parser::parseModel(R"(
 begin molecule types

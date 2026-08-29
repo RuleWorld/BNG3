@@ -850,9 +850,7 @@ bool NFinput::initFunctions(
 						if (gf) obs->addReferenceToGlobalFunction(gf);
 						if (cf) obs->addReferenceToCompositeFunction(cf);
 						if (lf) {
-							cerr<<"!!!Error:  TFUN function "<<funcName
-							    <<" with an observable counter is not supported for local functions.  Quitting."<<endl;
-							return false;
+							lf->setCounterFromObservable(obs);
 						}
 					} else if (ctrType == "Time") {
 						if (gf) gf->setCounterFromTime(system);

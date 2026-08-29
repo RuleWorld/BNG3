@@ -19,8 +19,8 @@
 ///                    molecule/species-scoped and time-bearing local functions,
 ///                    time/parameter-backed local TFUNs, FunctionProduct,
 ///                    Sat/Hill rate laws, and reactant include/exclude filters.
-/// GATED here:       nested/complex local functions, observable/function-counter
-///                   local TFUNs, other rate-law
+/// GATED here:       nested/complex local functions, function-counter local
+///                   TFUNs, other rate-law
 ///                   forms, product filters, and reaction
 ///                   centers not yet represented by the direct mapping. They
 ///                   fail closed and cite the TiXml init* function that
@@ -428,8 +428,7 @@ bool configureDirectTableFunction(
         if (global != nullptr) observable->addReferenceToGlobalFunction(global);
         if (composite != nullptr) observable->addReferenceToCompositeFunction(composite);
         if (local != nullptr) {
-            diagnostic = "local TFUN observable counters are not direct yet";
-            return false;
+            local->setCounterFromObservable(observable);
         }
         return true;
     };
@@ -690,6 +689,12 @@ bool collectLocalFunctionReferences(
              (!expression.tableXValues().empty() || !expression.tableYValues().empty()))) {
             diagnostic = "malformed local TFUN metadata";
             return false;
+        }
+        if ((expression.args().front().kind() == ExpressionKind::Identifier ||
+             expression.args().front().kind() == ExpressionKind::ObservableRef) &&
+            expression.args().front().args().empty() &&
+            hasModelObservable(model, expression.args().front().name())) {
+            return true;
         }
         return collectLocalFunctionReferences(
             expression.args().front(), model, parameters, argumentName, references,
