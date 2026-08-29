@@ -219,12 +219,20 @@ const bng::ast::Function* getModelFunction(const bng::ast::Model& model,
     return iter == model.getFunctions().end() ? nullptr : &*iter;
 }
 
-std::string scopedArgumentName(const std::string& pattern) {
-    const auto percent = pattern.find('%');
-    if (percent == std::string::npos) return {};
-    const auto separator = pattern.find("::", percent + 1);
-    if (separator == std::string::npos || separator == percent + 1) return {};
-    return pattern.substr(percent + 1, separator - percent - 1);
+bool hasScopedArgument(const std::string& pattern, const std::string& argument) {
+    if (argument.empty()) return false;
+    const std::string needle = "%" + argument;
+    std::size_t position = pattern.find(needle);
+    while (position != std::string::npos) {
+        const std::size_t end = position + needle.size();
+        if (end == pattern.size() || pattern.compare(end, 2, "::") == 0 ||
+            !std::isalnum(static_cast<unsigned char>(pattern[end])) &&
+                pattern[end] != '_') {
+            return true;
+        }
+        position = pattern.find(needle, position + 1);
+    }
+    return false;
 }
 
 struct FunctionProductOperand {
@@ -2644,8 +2652,25 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                     return false;
                 }
             }
+            const auto hasRateScope = [&](const std::string& argument) {
+                return std::any_of(
+                    rule.getReactants().begin(), rule.getReactants().end(),
+                    [&](const auto& reactant) { return hasScopedArgument(reactant, argument); });
+            };
+            const bool localFunctionScopeAvailable =
+                !localFunctionRate || std::all_of(
+                    rates.front().args().begin(), rates.front().args().end(),
+                    [&](const auto& argument) {
+                        return argument.kind() == bng::ast::ExpressionKind::Identifier &&
+                               hasRateScope(argument.name());
+                    });
+            const bool functionProductScopeAvailable =
+                !functionProductRate ||
+                (hasRateScope(functionProductOperand1.argument) &&
+                 hasRateScope(functionProductOperand2.argument));
             if ((rule.hasScopePrefix() && !localFunctionRate && !functionProductRate) ||
-                (functionProductRate && !rule.hasScopePrefix()) || rates.empty() ||
+                (localFunctionRate && !localFunctionScopeAvailable) ||
+                (functionProductRate && !functionProductScopeAvailable) || rates.empty() ||
                 (reactantPatterns.empty() && productPatterns.empty())) {
                 std::cerr << "[nfsim/ast] reaction '" << rule.getRuleName()
                           << "' requires unsupported scope, empty reaction, or missing-rate handling\n";
@@ -3089,8 +3114,8 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 for (std::size_t patternIndex = 0;
                      patternIndex < reactantRoots.size(); ++patternIndex) {
                     if (patternIndex >= rule.getReactants().size()) continue;
-                    if (scopedArgumentName(rule.getReactants()[patternIndex]) !=
-                        operand.argument) {
+                    if (!hasScopedArgument(
+                            rule.getReactants()[patternIndex], operand.argument)) {
                         continue;
                     }
                     if (matchingPattern != reactantRoots.size()) {
@@ -3130,53 +3155,48 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
             }
         }
         if (localFunctionRate) {
-            if (!rule.hasScopePrefix()) {
-                diagnostic = "local-function rate requires a %name:: scoped reactant";
-                ok = false;
-            } else {
-                const auto& rate = rates.front();
-                for (const auto& argument : rate.args()) {
-                    if (argument.kind() != bng::ast::ExpressionKind::Identifier) {
-                        diagnostic = "local-function rate arguments must be scope identifiers";
-                        ok = false;
-                        break;
-                    }
-                    std::size_t matchingPattern = reactantRoots.size();
-                    for (std::size_t patternIndex = 0;
-                         patternIndex < reactantRoots.size(); ++patternIndex) {
-                        if (patternIndex >= rule.getReactants().size()) continue;
-                        if (scopedArgumentName(rule.getReactants()[patternIndex]) !=
-                            argument.name()) {
-                            continue;
-                        }
-                        if (matchingPattern != reactantRoots.size()) {
-                            diagnostic = "a local-function scope identifier refers to multiple reactants";
-                            ok = false;
-                            break;
-                        }
-                        matchingPattern = patternIndex;
-                    }
-                    if (!ok) break;
-                    if (matchingPattern == reactantRoots.size()) {
-                        diagnostic = "local-function scope identifier '" + argument.name() +
-                                     "' has no matching reactant";
-                        ok = false;
-                        break;
-                    }
-                    if (reactantRoots[matchingPattern]->getMoleculeType()->isPopulationType()) {
-                        diagnostic = "local functions cannot scope population reactants";
-                        ok = false;
-                        break;
-                    }
-                    if (!transformationSet->addLocalFunctionReference(
-                            reactantRoots[matchingPattern], argument.name(),
-                            LocalFunction::MOLECULE)) {
-                        diagnostic = "could not add local-function scope reference";
-                        ok = false;
-                        break;
-                    }
-                    localFunctionArgumentNames.push_back(argument.name());
+            const auto& rate = rates.front();
+            for (const auto& argument : rate.args()) {
+                if (argument.kind() != bng::ast::ExpressionKind::Identifier) {
+                    diagnostic = "local-function rate arguments must be scope identifiers";
+                    ok = false;
+                    break;
                 }
+                std::size_t matchingPattern = reactantRoots.size();
+                for (std::size_t patternIndex = 0;
+                     patternIndex < reactantRoots.size(); ++patternIndex) {
+                    if (patternIndex >= rule.getReactants().size()) continue;
+                    if (!hasScopedArgument(
+                            rule.getReactants()[patternIndex], argument.name())) {
+                        continue;
+                    }
+                    if (matchingPattern != reactantRoots.size()) {
+                        diagnostic = "a local-function scope identifier refers to multiple reactants";
+                        ok = false;
+                        break;
+                    }
+                    matchingPattern = patternIndex;
+                }
+                if (!ok) break;
+                if (matchingPattern == reactantRoots.size()) {
+                    diagnostic = "local-function scope identifier '" + argument.name() +
+                                 "' has no matching reactant";
+                    ok = false;
+                    break;
+                }
+                if (reactantRoots[matchingPattern]->getMoleculeType()->isPopulationType()) {
+                    diagnostic = "local functions cannot scope population reactants";
+                    ok = false;
+                    break;
+                }
+                if (!transformationSet->addLocalFunctionReference(
+                        reactantRoots[matchingPattern], argument.name(),
+                        LocalFunction::MOLECULE)) {
+                    diagnostic = "could not add local-function scope reference";
+                    ok = false;
+                    break;
+                }
+                localFunctionArgumentNames.push_back(argument.name());
             }
         }
         if (!ok) {

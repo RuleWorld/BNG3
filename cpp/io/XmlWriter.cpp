@@ -231,6 +231,23 @@ ParsedPattern parsePattern(const std::string& text) {
 
                     mol.components.push_back(std::move(comp));
                 }
+
+                // Legacy molecule labels may follow the component list:
+                // X()%scope.  They carry the same molecule-local scope as
+                // the prefix spelling %scope::X().
+                const auto trailingPercent = remaining.find('%', closePos + 1);
+                if (trailingPercent != std::string::npos && mol.label.empty()) {
+                    std::size_t labelEnd = trailingPercent + 1;
+                    while (labelEnd < remaining.size() &&
+                           (std::isalnum(static_cast<unsigned char>(remaining[labelEnd])) ||
+                            remaining[labelEnd] == '_')) {
+                        ++labelEnd;
+                    }
+                    if (labelEnd > trailingPercent + 1) {
+                        mol.label = remaining.substr(
+                            trailingPercent + 1, labelEnd - trailingPercent - 1);
+                    }
+                }
             }
         }
 

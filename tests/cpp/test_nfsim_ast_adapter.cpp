@@ -916,6 +916,37 @@ end reaction rules
     delete system;
 }
 
+TEST_CASE("NFsim AST adapter maps a legacy molecule-label local scope") {
+    auto model = bng::parser::parseModel(R"(
+begin molecule types
+    A()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin observables
+    Molecules atotal A()
+end observables
+begin functions
+    f(x) = atotal(x)
+end functions
+begin reaction rules
+    A()%x -> A()%x f(x)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    CHECK(system->getReaction(0)->getRxnType() == NFcore::ReactionClass::DOR_RXN);
+    system->prepareForSimulation();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(1.0));
+    delete system;
+}
+
 TEST_CASE("NFsim AST adapter maps a bounded FunctionProduct rate") {
     auto model = bng::parser::parseModel(R"BNG(
 begin molecule types
@@ -977,7 +1008,7 @@ begin functions
     fB(y) = btotal(y)
 end functions
 begin reaction rules
-    %x::A() + %y::B() -> %x::A() + %y::B() FunctionProduct("fA(x)", "fB(y)")
+    A()%x + B()%y -> A()%x + B()%y FunctionProduct("fA(x)", "fB(y)")
 end reaction rules
 )BNG");
 
