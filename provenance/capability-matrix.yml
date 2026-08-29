@@ -51,7 +51,7 @@ rows:
     tests: tests/cpp/test_nfsim_ast_adapter.cpp
     oracle: pending
     owner: pending-maintainer
-    notes: Parameter, zero-argument observable/time references, zero-argument composites over base globals, inline and file-backed TFUN (linear/step with time, parameter, or observable counters; relative files resolve beside the supplied BNGL source), and one-argument local functions with molecule- or species-scoped observable and time references are direct; time/parameter/observable-backed local TFUNs are also direct, while nested composites, function-counter local TFUNs, other rate-law forms, and non-percent scopes remain gated.
+    notes: Parameter, zero-argument observable/time references, zero-argument composites over base globals, inline and file-backed TFUN (linear/step with time, parameter, or observable counters; relative files resolve beside the supplied BNGL source), and one-argument local functions with molecule- or species-scoped observable and time references are direct; time/parameter/observable-backed local TFUNs and bounded function-counter TFUNs over one zero-argument base global are also direct, while nested composites, unbounded function-counter composites, other rate-law forms, and non-percent scopes remain gated.
   - id: nfsim.seed-species
     source: legacy NFinput::initStartSpecies
     bng3_reference: cpp/nfsim/NFinput/NFinput_fromAst.cpp:addSpeciesFromAst
@@ -78,7 +78,7 @@ rows:
     tests: tests/cpp/test_nfsim_ast_adapter.cpp
     oracle: pending
     owner: pending-maintainer
-    notes: Elementary state, bond, degradation, product-creation, and compartment-transport rules are direct; bidirectional, zero-order, static MM, Sat, Hill, zero-argument functional, bounded molecule- or species-scoped local-function, bounded two-factor FunctionProduct rates, bounded unidirectional reactant include/exclude filters, and dynamic rates over parameters, observables, time, or one TFUN are covered. Dynamic rates referencing model functions, reversible or product-filtered rules, symmetric reaction centers, and other non-static forms remain fail-closed.
+    notes: Elementary state, bond, degradation, product-creation, and compartment-transport rules are direct; bidirectional, zero-order, static MM, Sat, Hill, zero-argument functional, bounded molecule- or species-scoped local-function, bounded function-counter TFUN, bounded two-factor FunctionProduct rates, bounded unidirectional reactant include/exclude filters, and dynamic rates over parameters, observables, time, or one TFUN are covered. Dynamic rates referencing model functions, reversible or product-filtered rules, symmetric reaction centers, and other non-static forms remain fail-closed.
   - id: nfsim.energy-and-time-functions
     source: legacy NFinput::initEnergyFunctions and initFunctions
     bng3_reference: cpp/nfsim/NFinput/NFinput_fromAst.cpp
@@ -87,7 +87,7 @@ rows:
     tests: tests/cpp/test_nfsim_ast_adapter.cpp
     oracle: pending
     owner: pending-maintainer
-    notes: Energy patterns plus bounded Arrhenius binding/state-change expansion, time-dependent global functions, file-backed/inline TFUN, time-bearing local functions, and bounded composites are direct; context variants use NFsim EnergyFunction. Local TFUN inside energy/rate-law forms and other energy/rate-law forms remain fail-closed on the direct path.
+    notes: Energy patterns plus bounded Arrhenius binding/state-change expansion, time-dependent global functions, file-backed/inline TFUN, time-bearing local functions, bounded function-counter TFUN composites, and bounded composites are direct; context variants use NFsim EnergyFunction. Local TFUN inside energy/rate-law forms and other energy/rate-law forms remain fail-closed on the direct path.
   - id: pybionetgen.api-cli-atomizer
     source: python/bionetgen and legacy/PyBioNetGen
     bng3_reference: python/bionetgen

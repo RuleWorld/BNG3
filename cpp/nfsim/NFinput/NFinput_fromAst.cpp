@@ -21,9 +21,11 @@
 ///                    Sat/Hill rate laws, reactant include/exclude filters,
 ///                    and dynamic reaction rates over parameters, observables,
 ///                    time, and one TFUN expression.
-/// GATED here:       nested/complex local functions, function-counter local
-///                   TFUNs, dynamic rates that reference model functions, other rate-law
-///                   forms, product filters, and reaction
+///                   Bounded function-counter local TFUNs whose counter is a
+///                   zero-argument base global are also direct composites.
+/// GATED here:       nested/complex local functions, unbounded function-counter
+///                   composites, dynamic rates that reference model functions,
+///                   other rate-law forms, product filters, and reaction
 ///                   centers not yet represented by the direct mapping. They
 ///                   fail closed and cite the TiXml init* function that
 ///                   remains their compatibility oracle.
@@ -967,6 +969,21 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
     // feed it references collected from the AST instead of XML attributes.
     std::map<std::string, double> legacyParameters(parameters);
     std::map<std::string, int> legacyAllowedStates;
+    std::vector<const bng::ast::Function*> pendingFunctionCounterTfun;
+    const auto isFunctionCounterTfun = [&](const bng::ast::Function& function) {
+        std::vector<const bng::ast::Expression*> tables;
+        collectTableFunctions(function.getExpression(), tables);
+        if (tables.size() != 1 || tables.front()->args().size() != 1) return false;
+        const auto& counter = tables.front()->args().front();
+        if ((counter.kind() != bng::ast::ExpressionKind::Identifier &&
+             counter.kind() != bng::ast::ExpressionKind::Function &&
+             counter.kind() != bng::ast::ExpressionKind::ObservableRef) ||
+            !counter.args().empty()) {
+            return false;
+        }
+        const auto* counterFunction = getModelFunction(model, counter.name());
+        return counterFunction != nullptr && counterFunction->getArgs().empty();
+    };
     for (const auto& function : model.getFunctions()) {
         if (function.getArgs().empty()) continue;
 
@@ -978,6 +995,10 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
         if (!collectLocalFunctionReferences(
                 function.getExpression(), model, parameters, function.getArgs().front(),
                 references, diagnostic)) {
+            if (isFunctionCounterTfun(function)) {
+                pendingFunctionCounterTfun.push_back(&function);
+                continue;
+            }
             std::cerr << "[nfsim/ast] cannot map local function '" << function.getName()
                       << "': " << diagnostic << "\n";
             return false;
@@ -1144,6 +1165,79 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
         if (verbose) {
             std::cerr << "[nfsim/ast] global function " << function.name << "() = "
                       << function.expression << "\n";
+        }
+    }
+
+    // A function-counter TFUN with an argument is a composite function in
+    // NFsim's XML loader, not a LocalFunction.  Build that same object after
+    // all zero-argument base globals have been registered.
+    for (const auto* function : pendingFunctionCounterTfun) {
+        std::set<std::string> observableReferences;
+        std::set<std::string> functionReferences;
+        std::string diagnostic;
+        if (!collectGlobalFunctionReferences(
+                function->getExpression(), model, parameters,
+                observableReferences, functionReferences, diagnostic)) {
+            std::cerr << "[nfsim/ast] cannot map function-counter TFUN '"
+                      << function->getName() << "': " << diagnostic << "\n";
+            return false;
+        }
+        if (!observableReferences.empty()) {
+            std::cerr << "[nfsim/ast] function-counter TFUN '" << function->getName()
+                      << "' cannot reference observables in its composite body\n";
+            return false;
+        }
+
+        std::vector<const bng::ast::Expression*> tableFunctions;
+        collectTableFunctions(function->getExpression(), tableFunctions);
+        const auto& counter = tableFunctions.front()->args().front();
+        const auto counterName = counter.name();
+        const auto counterFunction = getModelFunction(model, counterName);
+        if (counterFunction == nullptr || !counterFunction->getArgs().empty() ||
+            s->getGlobalFunctionByName(counterName) == nullptr) {
+            std::cerr << "[nfsim/ast] function-counter TFUN '" << function->getName()
+                      << "' requires a base global counter '" << counterName << "'\n";
+            return false;
+        }
+        if (expressionUsesTime(function->getExpression()) &&
+            lowerCase(counterName) != "time" && lowerCase(counterName) != "t") {
+            std::cerr << "[nfsim/ast] function-counter TFUN '" << function->getName()
+                      << "' cannot combine a function counter with a time-dependent body\n";
+            return false;
+        }
+
+        std::vector<std::string> functionsCalled(
+            functionReferences.begin(), functionReferences.end());
+        std::vector<std::string> argumentNames = function->getArgs();
+        std::vector<std::string> parameterNames;
+        for (const auto& dependency : function->getExpression().getDependencies()) {
+            if (parameters.count(dependency) != 0) parameterNames.push_back(dependency);
+        }
+        auto* composite = new CompositeFunction(
+            s, function->getName(), expressionForNfsim(function->getExpression()),
+            functionsCalled, argumentNames, parameterNames);
+        if (!configureDirectTableFunction(
+                *tableFunctions.front(), model, parameters, sourcePath, s,
+                nullptr, composite, nullptr, diagnostic)) {
+            delete composite;
+            std::cerr << "[nfsim/ast] cannot map function-counter TFUN '"
+                      << function->getName() << "': " << diagnostic << "\n";
+            return false;
+        }
+        if (!s->addCompositeFunction(composite)) {
+            delete composite;
+            std::cerr << "[nfsim/ast] failed to register function-counter TFUN '"
+                      << function->getName() << "'\n";
+            return false;
+        }
+        if (expressionUsesTime(function->getExpression())) {
+            composite->setCounterFromTime(s);
+            s->setHasTimeDependentFunctions(true);
+        }
+        if (verbose) {
+            std::cerr << "[nfsim/ast] function-counter TFUN " << function->getName()
+                      << "(" << (argumentNames.empty() ? "" : argumentNames.front())
+                      << ") = " << function->getExpression().toString() << "\n";
         }
     }
 

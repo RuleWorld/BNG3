@@ -1320,6 +1320,67 @@ end reaction rules
     delete xmlSystem;
 }
 
+TEST_CASE("NFsim AST adapter maps function-counter TFUN rates") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin functions
+    base k
+    f(x) = TFUN([0, 1, 2], [2, 4, 6], base)
+end functions
+begin reaction rules
+    %x::A() -> %x::A() + B() f(x)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    const auto xml = bng::io::XmlWriter::write(*model);
+    CHECK(xml.find("type=\"TFUN\"") != std::string::npos);
+    CHECK(xml.find("ctrName=\"base\"") != std::string::npos);
+
+    int suggestedTraversalLimit = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(direct != nullptr);
+    CHECK(direct->getLocalFunctionByName("f") == nullptr);
+    auto* directComposite = direct->getCompositeFunctionByName("f");
+    REQUIRE(directComposite != nullptr);
+    REQUIRE(direct->getGlobalFunctionByName("base") != nullptr);
+    REQUIRE(direct->getAllReactions().size() == 1);
+    direct->prepareForSimulation();
+    CHECK(directComposite->getCounterValue() == Catch::Approx(1.0));
+    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(4.0));
+    direct->setParameter("k", 2.0);
+    direct->updateSystemWithNewParameters();
+    CHECK(directComposite->getCounterValue() == Catch::Approx(2.0));
+    delete direct;
+
+    suggestedTraversalLimit = 0;
+    auto* xmlSystem = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, suggestedTraversalLimit);
+    REQUIRE(xmlSystem != nullptr);
+    CHECK(xmlSystem->getLocalFunctionByName("f") == nullptr);
+    auto* xmlComposite = xmlSystem->getCompositeFunctionByName("f");
+    REQUIRE(xmlComposite != nullptr);
+    REQUIRE(xmlSystem->getGlobalFunctionByName("base") != nullptr);
+    REQUIRE(xmlSystem->getAllReactions().size() == 1);
+    xmlSystem->prepareForSimulation();
+    CHECK(xmlComposite->getCounterValue() == Catch::Approx(1.0));
+    CHECK(xmlSystem->getReaction(0)->get_a() == Catch::Approx(4.0));
+    xmlSystem->setParameter("k", 2.0);
+    xmlSystem->updateSystemWithNewParameters();
+    CHECK(xmlComposite->getCounterValue() == Catch::Approx(2.0));
+    delete xmlSystem;
+}
+
 TEST_CASE("NFsim AST adapter maps a legacy molecule-label local scope") {
     auto model = bng::parser::parseModel(R"(
 begin molecule types
