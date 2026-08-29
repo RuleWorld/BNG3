@@ -6,6 +6,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "NFinput_fromAst.hh"
+#include "NFinput.hh"
 #include "NFcore.hh"
 #include "NFcore/energyPattern.hh"
 #include "compartment.hh"
@@ -126,6 +127,87 @@ TEST_CASE("NFsim AST adapter maps parameter-backed global functions") {
     CHECK(function->getNumOfVarRefs() == 0);
     function->prepareForSimulation(&system);
     CHECK(NFcore::FuncFactory::Eval(function->p) == Catch::Approx(7.0));
+}
+
+TEST_CASE("NFsim AST adapter maps time-dependent global functions") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin observables
+    Molecules A_total A()
+    Molecules B_total B()
+end observables
+begin functions
+    rate() = 1.0 + time()
+end functions
+begin reaction rules
+    A() -> B() rate
+end reaction rules
+)");
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getHasTimeDependentFunctions());
+    auto* function = system->getGlobalFunctionByName("rate");
+    REQUIRE(function != nullptr);
+    system->prepareForSimulation();
+    CHECK(NFcore::FuncFactory::Eval(function->p) == Catch::Approx(1.0));
+    system->singleStep();
+    CHECK(NFcore::FuncFactory::Eval(function->p) ==
+          Catch::Approx(1.0 + system->getCurrentTime()));
+    delete system;
+}
+
+TEST_CASE("NFsim XML bridge preserves time and parameter function references") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 2.0
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin observables
+    Molecules A_total A()
+    Molecules B_total B()
+end observables
+begin functions
+    rate() = k + time()
+end functions
+begin reaction rules
+    A() -> B() rate
+end reaction rules
+)");
+
+    const auto xml = bng::io::XmlWriter::write(*model);
+    CHECK(xml.find("<Reference name=\"k\" type=\"Constant\"/>") != std::string::npos);
+    CHECK(xml.find("<Reference name=\"time\" type=\"Time\"/>") != std::string::npos);
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getHasTimeDependentFunctions());
+    auto* function = system->getGlobalFunctionByName("rate");
+    REQUIRE(function != nullptr);
+    system->prepareForSimulation();
+    CHECK(NFcore::FuncFactory::Eval(function->p) == Catch::Approx(2.0));
+    system->singleStep();
+    CHECK(NFcore::FuncFactory::Eval(function->p) ==
+          Catch::Approx(2.0 + system->getCurrentTime()));
+    delete system;
 }
 
 TEST_CASE("NFsim AST adapter maps observable-backed global functions") {

@@ -6,6 +6,7 @@
 #include <cctype>
 #include <map>
 #include <regex>
+#include <set>
 #include <vector>
 
 namespace bng::io {
@@ -307,6 +308,74 @@ std::string patternToXml(const ParsedPattern& pattern, const std::string& idPref
     return xml.str();
 }
 
+bool modelHasFunction(const ast::Model& model, const std::string& name) {
+    return std::any_of(model.getFunctions().begin(), model.getFunctions().end(),
+                       [&](const auto& function) { return function.getName() == name; });
+}
+
+void addFunctionReference(std::map<std::string, std::string>& references,
+                          const std::string& name, const std::string& type) {
+    if (name.empty()) return;
+
+    const auto existing = references.find(name);
+    if (existing == references.end()) {
+        references.emplace(name, type);
+        return;
+    }
+
+    // Function arguments shadow parameters with the same spelling.  Keep the
+    // most local semantic type if malformed/ambiguous input reaches the writer.
+    if (type == "Local" || (type == "Time" && existing->second != "Local")) {
+        existing->second = type;
+    }
+}
+
+void collectFunctionReferences(const ast::Expression& expression,
+                               const ast::Model& model,
+                               const std::set<std::string>& localNames,
+                               std::map<std::string, std::string>& references) {
+    using ast::ExpressionKind;
+
+    switch (expression.kind()) {
+    case ExpressionKind::Number:
+        return;
+    case ExpressionKind::Identifier: {
+        const auto& name = expression.name();
+        if (localNames.count(name) != 0) {
+            addFunctionReference(references, name, "Local");
+        } else if (name == "time" || name == "t") {
+            addFunctionReference(references, name, "Time");
+        } else if (model.getParameters().contains(name)) {
+            addFunctionReference(references, name, "Constant");
+        }
+        return;
+    }
+    case ExpressionKind::Function:
+        if ((expression.name() == "time" || expression.name() == "t") &&
+            expression.args().empty()) {
+            addFunctionReference(references, expression.name(), "Time");
+        } else if (modelHasFunction(model, expression.name())) {
+            addFunctionReference(references, expression.name(), "Function");
+        }
+        for (const auto& child : expression.args()) {
+            collectFunctionReferences(child, model, localNames, references);
+        }
+        return;
+    case ExpressionKind::ObservableRef:
+        addFunctionReference(references, expression.name(), "Observable");
+        for (const auto& child : expression.args()) {
+            collectFunctionReferences(child, model, localNames, references);
+        }
+        return;
+    case ExpressionKind::Unary:
+    case ExpressionKind::Binary:
+        for (const auto& child : expression.args()) {
+            collectFunctionReferences(child, model, localNames, references);
+        }
+        return;
+    }
+}
+
 } // anonymous namespace
 
 std::string XmlWriter::write(const ast::Model& model, const engine::GeneratedNetwork* network) {
@@ -597,6 +666,26 @@ std::string XmlWriter::writeFunctions(const ast::Model& model) {
             xml << "\"";
         }
         xml << ">\n";
+        if (!func.getArgs().empty()) {
+            xml << "        <ListOfArguments>\n";
+            for (const auto& arg : func.getArgs()) {
+                xml << "          <Argument id=\"" << escapeXml(arg) << "\"/>\n";
+            }
+            xml << "        </ListOfArguments>\n";
+        }
+
+        std::set<std::string> localNames(func.getArgs().begin(), func.getArgs().end());
+        std::map<std::string, std::string> references;
+        for (const auto& arg : func.getArgs()) {
+            addFunctionReference(references, arg, "Local");
+        }
+        collectFunctionReferences(func.getExpression(), model, localNames, references);
+        xml << "        <ListOfReferences>\n";
+        for (const auto& [name, type] : references) {
+            xml << "          <Reference name=\"" << escapeXml(name)
+                << "\" type=\"" << escapeXml(type) << "\"/>\n";
+        }
+        xml << "        </ListOfReferences>\n";
         xml << "        <Expression>" << escapeXml(func.getExpression().toString()) << "</Expression>\n";
         xml << "      </Function>\n";
     }

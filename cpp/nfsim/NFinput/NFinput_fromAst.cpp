@@ -13,11 +13,12 @@
 ///   test_parity_nfsim (ast-direct must equal in-memory-XML under one seed).
 ///
 /// IMPLEMENTED here: parameters, compartments, molecule types, observables,
-///                    seed species, bounded direct reaction rules, and the
-///                    direct Arrhenius energy expansion slice.
-/// STUBBED here:     local/composite/time functions and other rate-law forms
-///                   that still fail closed and cite the TiXml init* function
-///                   that is their specification.
+///                    seed species, bounded direct reaction rules, direct
+///                    Arrhenius energy expansion, and time-backed global
+///                    functions.
+/// STUBBED here:     local/composite functions and other rate-law forms that
+///                   still fail closed and cite the TiXml init* function that
+///                   is their specification.
 
 #include "NFinput_fromAst.hh"
 #include "NFinput.hh"
@@ -223,8 +224,7 @@ bool collectGlobalFunctionReferences(
     case ExpressionKind::Identifier: {
         const auto& name = expression.name();
         if (name == "time" || name == "t") {
-            diagnostic = "time-dependent global functions require the NFsim time adapter";
-            return false;
+            return true;
         }
         if (parameters.count(name) != 0 || name == "_PI" || name == "_e" ||
             name == "_Na") {
@@ -243,13 +243,17 @@ bool collectGlobalFunctionReferences(
         }
         return true;
     case ExpressionKind::Function:
+        if (lowerCase(expression.name()) == "time" ||
+            lowerCase(expression.name()) == "t") {
+            if (!expression.args().empty()) {
+                diagnostic = expression.name() + "() takes no arguments";
+                return false;
+            }
+            return true;
+        }
         if (hasModelFunction(model, expression.name())) {
             diagnostic = "global function calls model function '" + expression.name() +
                          "' (composite/local mapping is not yet direct)";
-            return false;
-        }
-        if (lowerCase(expression.name()) == "time") {
-            diagnostic = "time-dependent global functions require the NFsim time adapter";
             return false;
         }
         if (!isSupportedGlobalBuiltin(expression.name())) {
@@ -281,6 +285,20 @@ bool collectGlobalFunctionReferences(
 
     diagnostic = "unrecognized expression node";
     return false;
+}
+
+bool expressionUsesTime(const bng::ast::Expression& expression) {
+    if (expression.kind() == bng::ast::ExpressionKind::Identifier &&
+        (expression.name() == "time" || expression.name() == "t")) {
+        return true;
+    }
+    if (expression.kind() == bng::ast::ExpressionKind::Function &&
+        (lowerCase(expression.name()) == "time" ||
+         lowerCase(expression.name()) == "t")) {
+        return true;
+    }
+    return std::any_of(expression.args().begin(), expression.args().end(),
+                       [](const auto& child) { return expressionUsesTime(child); });
 }
 
 } // namespace
@@ -462,8 +480,8 @@ bool addMoleculeTypesFromAst(const bng::ast::Model& model, System* s,
 bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
                          const std::map<std::string, double>& parameters, bool verbose) {
     // SPEC: NFinput::initFunctions (parseFuncXML.cpp:488).
-    // This slice handles only parameter/observable-backed global functions.
-    // Local functions, composite functions, time/TFUN functions, and rate-law
+    // This slice handles parameter/observable/time-backed global functions.
+    // Local functions, composite functions, TFUN functions, and rate-law
     // helpers deliberately return false so the caller can use the compatibility
     // XML path rather than constructing a subtly different simulation.
     if (s == nullptr) return false;
@@ -489,6 +507,7 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
         std::string expression;
         std::vector<std::string> observableReferences;
         std::vector<std::string> parameterReferences;
+        bool usesTime = false;
     };
     std::vector<PendingFunction> pending;
     pending.reserve(model.getFunctions().size());
@@ -514,7 +533,8 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
             function.getName(),
             function.getExpression().toString(),
             {observableReferences.begin(), observableReferences.end()},
-            {parameterReferences.begin(), parameterReferences.end()}};
+            {parameterReferences.begin(), parameterReferences.end()},
+            expressionUsesTime(function.getExpression())};
         pending.push_back(std::move(next));
     }
 
@@ -532,6 +552,10 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
             std::cerr << "[nfsim/ast] failed to register global function '"
                       << function.name << "'\n";
             return false;
+        }
+        if (function.usesTime) {
+            global->setCounterFromTime(s);
+            s->setHasTimeDependentFunctions(true);
         }
         if (verbose) {
             std::cerr << "[nfsim/ast] global function " << function.name << "() = "

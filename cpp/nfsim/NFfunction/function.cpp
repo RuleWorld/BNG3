@@ -1,10 +1,59 @@
 #include "NFfunction.hh"
 #include <stdexcept>
+#include <cctype>
 
 
 using namespace std;
 using namespace NFcore;
 using namespace mu;
+
+namespace {
+
+// ExprTk receives `time` as a variable bound to System::current_time.  The
+// AST also accepts the equivalent zero-argument `time()` spelling, which
+// muParser historically accepted as a builtin.  Normalize only exact
+// zero-argument calls so identifiers such as `tanh` remain untouched.
+std::string normalizeTimeCalls(const std::string& expression) {
+	std::string normalized;
+	normalized.reserve(expression.size());
+	std::size_t index = 0;
+	while (index < expression.size()) {
+		const unsigned char first = static_cast<unsigned char>(expression[index]);
+		if (std::isalpha(first) || expression[index] == '_') {
+			const std::size_t start = index++;
+			while (index < expression.size()) {
+				const unsigned char current = static_cast<unsigned char>(expression[index]);
+				if (!std::isalnum(current) && expression[index] != '_') break;
+				++index;
+			}
+			const std::string token = expression.substr(start, index - start);
+			std::size_t lookahead = index;
+			while (lookahead < expression.size() &&
+				   std::isspace(static_cast<unsigned char>(expression[lookahead]))) {
+				++lookahead;
+			}
+			if ((token == "time" || token == "t") && lookahead < expression.size() &&
+				expression[lookahead] == '(') {
+				std::size_t close = lookahead + 1;
+				while (close < expression.size() &&
+					   std::isspace(static_cast<unsigned char>(expression[close]))) {
+					++close;
+				}
+				if (close < expression.size() && expression[close] == ')') {
+					normalized += token;
+					index = close + 1;
+					continue;
+				}
+			}
+			normalized.append(expression, start, index - start);
+			continue;
+		}
+		normalized.push_back(expression[index++]);
+	}
+	return normalized;
+}
+
+} // namespace
 
 double tfun_interpolate_value(
 	const vector<double> &xs,
@@ -114,8 +163,12 @@ void GlobalFunction::prepareForSimulation(System *s)
 					exit(1);
 				}
 				obs->addReferenceToMyself(p);
+			} else if(varRefTypes[vr]=="Time") {
+				// Time references are represented by the live System pointer below.
+				// The XML loader keeps the schema reference in varRefTypes, while
+				// direct AST construction uses setCounterFromTime().
+				continue;
 			} else {
-				cout<<"here"<<endl;
 				cout<<"Uh oh, an unrecognized argType ("<<varRefTypes[vr]<<") for a function! "<<varRefNames[vr]<<endl;
 				cout<<"Try using the type: \"MoleculeObservable\""<<endl;
 				cout<<"Quitting because this will give unpredicatable results, or just crash."<<endl;
@@ -127,10 +180,20 @@ void GlobalFunction::prepareForSimulation(System *s)
 			p->DefineConst(paramNames[i],s->getParameter(paramNames[i]));
 		}
 
+		if (this->ctrType == "System") {
+			// Keep both spellings live throughout NFsim's event loop.  The
+			// pointer is stable while the System advances current_time.
+			double *currentTime = s->getCurrentTimePtr();
+			p->DefineVar("time", currentTime);
+			p->DefineVar("t", currentTime);
+		}
+
 		if (this->fileFunc && !this->ctrName.empty()) {
 			p->DefineConst(this->ctrName, 0.0);
 		}
-		p->SetExpr(this->funcExpression);
+		p->SetExpr(this->ctrType == "System"
+					  ? normalizeTimeCalls(this->funcExpression)
+					  : this->funcExpression);
 
 	}
 	catch (mu::Parser::exception_type &e)

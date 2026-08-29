@@ -248,6 +248,7 @@ namespace NFcore
 			void setUsingComplex(bool val);  // Added to enable auto-enabling complex bookkeeping for Species observables
 			bool isOutputtingBinary() { return useBinaryOutput; };
 			double getCurrentTime() const { return current_time; };
+			double * getCurrentTimePtr() { return &current_time; };
 			int getGlobalMoleculeLimit() const { return globalMoleculeLimit; };
 
 			void setHasTimeDependentFunctions(bool val) { hasTimeDependentFunctions = val; }

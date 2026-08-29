@@ -51,7 +51,7 @@ rows:
     tests: tests/cpp/test_nfsim_ast_adapter.cpp
     oracle: pending
     owner: pending-maintainer
-    notes: Parameter and zero-argument observable references only; local/composite/time/TFUN/rate-law forms remain gated.
+    notes: Parameter, zero-argument observable, and time-dependent global references are direct; local/composite/TFUN/rate-law forms remain gated.
   - id: nfsim.seed-species
     source: legacy NFinput::initStartSpecies
     bng3_reference: cpp/nfsim/NFinput/NFinput_fromAst.cpp:addSpeciesFromAst
@@ -87,7 +87,7 @@ rows:
     tests: tests/cpp/test_nfsim_ast_adapter.cpp
     oracle: pending
     owner: pending-maintainer
-    notes: Energy patterns plus bounded Arrhenius binding/state-change expansion are direct; context variants use NFsim EnergyFunction. Time functions, TFUN, and other energy/rate-law forms remain fail-closed.
+    notes: Energy patterns plus bounded Arrhenius binding/state-change expansion and time-dependent global functions are direct; context variants use NFsim EnergyFunction. TFUN and other energy/rate-law forms remain fail-closed.
   - id: pybionetgen.api-cli-atomizer
     source: python/bionetgen and legacy/PyBioNetGen
     bng3_reference: python/bionetgen

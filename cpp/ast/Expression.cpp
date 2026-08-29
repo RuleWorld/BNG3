@@ -125,7 +125,7 @@ double Expression::evaluate(const std::function<double(const std::string&)>& res
     case ExpressionKind::Function: {
         const auto evalArg = [&](std::size_t index) { return children_[index].evaluate(resolveIdentifier, t); };
 
-        if (text_ == "time") {
+        if (text_ == "time" || text_ == "t") {
             requireArity(text_, children_, 0);
             return t;
         }
@@ -342,7 +342,11 @@ std::string Expression::toString() const {
     case ExpressionKind::Binary:
         return "(" + children_[0].toString() + " " + text_ + " " + children_[1].toString() + ")";
     case ExpressionKind::Function:
+        return text_ + "(" + joinArgs(children_) + ")";
     case ExpressionKind::ObservableRef:
+        if (children_.empty()) {
+            return text_;
+        }
         return text_ + "(" + joinArgs(children_) + ")";
     }
 
