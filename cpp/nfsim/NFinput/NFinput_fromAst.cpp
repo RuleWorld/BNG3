@@ -21,16 +21,16 @@
 ///                    Sat/Hill rate laws, bounded reactant/product
 ///                    include/exclude filters,
 ///                    and dynamic reaction rates over parameters, observables,
-///                    time, and one TFUN expression.
+///                    time, one TFUN expression, or bounded zero-argument
+///                    model-function chains.
 ///                   Bounded nested local functions and function-counter local
 ///                   TFUNs whose counter is a zero-argument base global are
 ///                   also direct composites.
 /// GATED here:       deeper/complex local functions, unbounded function-counter
-///                   composites, dynamic rates referencing composite functions,
-///                   other rate-law forms, complex product filters, and reaction
-///                   centers not yet represented by the direct mapping. They
-///                   fail closed and cite the TiXml init* function that
-///                   remains their compatibility oracle.
+///                   composites, other rate-law forms, complex product filters,
+///                   and reaction centers not yet represented by the direct
+///                   mapping. They fail closed and cite the TiXml init* function
+///                   that remains their compatibility oracle.
 
 #include "NFinput_fromAst.hh"
 #include "NFinput.hh"
@@ -349,6 +349,250 @@ std::string expressionForNfsim(const bng::ast::Expression& expression) {
         return "__TFUN_VAL__";
     }
     return {};
+}
+
+bool expandDynamicRateExpression(
+    const bng::ast::Expression& expression,
+    const bng::ast::Model& model,
+    const std::map<std::string, double>& parameters,
+    std::set<std::string>& observableReferences,
+    std::set<std::string>& functionCounterReferences,
+    std::set<std::string>& parameterReferences,
+    std::vector<const bng::ast::Expression*>& tableFunctions,
+    bool& usesTime,
+    std::set<std::string>& activeFunctions,
+    std::string& expanded,
+    std::string& diagnostic) {
+    using bng::ast::ExpressionKind;
+
+    const auto expandModelFunction = [&](const bng::ast::Function& function,
+                                         std::string& result) {
+        if (!function.getArgs().empty()) {
+            diagnostic = "dynamic rates cannot call argument-bearing model function '" +
+                         function.getName() + "' without a local scope";
+            return false;
+        }
+        if (!activeFunctions.insert(function.getName()).second) {
+            diagnostic = "dynamic rate references recursive model function '" +
+                         function.getName() + "'";
+            return false;
+        }
+        std::string body;
+        const bool ok = expandDynamicRateExpression(
+            function.getExpression(), model, parameters, observableReferences,
+            functionCounterReferences, parameterReferences, tableFunctions, usesTime,
+            activeFunctions, body, diagnostic);
+        activeFunctions.erase(function.getName());
+        if (ok) result = "(" + body + ")";
+        return ok;
+    };
+    const auto expressionHasModelFunctionReference =
+        [&](const auto& node, const auto& self) -> bool {
+        if ((node.kind() == ExpressionKind::Identifier ||
+             node.kind() == ExpressionKind::Function ||
+             node.kind() == ExpressionKind::ObservableRef) &&
+            getModelFunction(model, node.name()) != nullptr) {
+            return true;
+        }
+        return std::any_of(node.args().begin(), node.args().end(),
+                           [&](const auto& child) { return self(child, self); });
+    };
+
+    switch (expression.kind()) {
+    case ExpressionKind::Number:
+        expanded = expression.toString();
+        return true;
+    case ExpressionKind::Identifier: {
+        const auto& name = expression.name();
+        if (name == "time" || name == "t") {
+            usesTime = true;
+            expanded = name;
+            return true;
+        }
+        if (parameters.count(name) != 0) {
+            parameterReferences.insert(name);
+            expanded = name;
+            return true;
+        }
+        if (const auto* function = getModelFunction(model, name)) {
+            if (!expressionHasModelFunctionReference(
+                    function->getExpression(), expressionHasModelFunctionReference)) {
+                functionCounterReferences.insert(name);
+                expanded = name;
+                return true;
+            }
+            return expandModelFunction(*function, expanded);
+        }
+        if (hasModelObservable(model, name)) {
+            observableReferences.insert(name);
+            expanded = name;
+            return true;
+        }
+        diagnostic = "unknown identifier '" + name + "' in dynamic reaction rate";
+        return false;
+    }
+    case ExpressionKind::Unary: {
+        if (expression.args().size() != 1) {
+            diagnostic = "malformed unary dynamic reaction rate expression";
+            return false;
+        }
+        std::string operand;
+        if (!expandDynamicRateExpression(
+                expression.args().front(), model, parameters, observableReferences,
+                functionCounterReferences, parameterReferences, tableFunctions, usesTime,
+                activeFunctions, operand, diagnostic)) {
+            return false;
+        }
+        expanded = expression.name() + operand;
+        return true;
+    }
+    case ExpressionKind::Binary: {
+        if (expression.args().size() != 2) {
+            diagnostic = "malformed binary dynamic reaction rate expression";
+            return false;
+        }
+        std::string lhs;
+        std::string rhs;
+        if (!expandDynamicRateExpression(
+                expression.args()[0], model, parameters, observableReferences,
+                functionCounterReferences, parameterReferences, tableFunctions, usesTime,
+                activeFunctions, lhs, diagnostic) ||
+            !expandDynamicRateExpression(
+                expression.args()[1], model, parameters, observableReferences,
+                functionCounterReferences, parameterReferences, tableFunctions, usesTime,
+                activeFunctions, rhs, diagnostic)) {
+            return false;
+        }
+        expanded = "(" + lhs + " " + expression.name() + " " + rhs + ")";
+        return true;
+    }
+    case ExpressionKind::Function: {
+        const auto name = expression.name();
+        const auto lowerName = lowerCase(name);
+        if (lowerName == "time" || lowerName == "t") {
+            if (!expression.args().empty()) {
+                diagnostic = name + "() takes no arguments";
+                return false;
+            }
+            usesTime = true;
+            expanded = lowerName;
+            return true;
+        }
+        if (const auto* function = getModelFunction(model, name)) {
+            if (!expression.args().empty()) {
+                diagnostic = "dynamic rates cannot call zero-argument model function '" +
+                             name + "' with arguments";
+                return false;
+            }
+            if (!expressionHasModelFunctionReference(
+                    function->getExpression(), expressionHasModelFunctionReference)) {
+                functionCounterReferences.insert(name);
+                expanded = name + "()";
+                return true;
+            }
+            return expandModelFunction(*function, expanded);
+        }
+        if (expression.args().empty() && hasModelObservable(model, name)) {
+            observableReferences.insert(name);
+            expanded = name + "()";
+            return true;
+        }
+        if (!isSupportedGlobalBuiltin(name)) {
+            diagnostic = "unsupported NFsim global-function builtin '" + name + "'";
+            return false;
+        }
+        std::ostringstream output;
+        output << name << '(';
+        for (std::size_t index = 0; index < expression.args().size(); ++index) {
+            if (index != 0) output << ',';
+            std::string argument;
+            if (!expandDynamicRateExpression(
+                    expression.args()[index], model, parameters, observableReferences,
+                    functionCounterReferences, parameterReferences, tableFunctions,
+                    usesTime, activeFunctions, argument, diagnostic)) {
+                return false;
+            }
+            output << argument;
+        }
+        output << ')';
+        expanded = output.str();
+        return true;
+    }
+    case ExpressionKind::ObservableRef: {
+        const auto& name = expression.name();
+        if (const auto* function = getModelFunction(model, name)) {
+            if (!expression.args().empty()) {
+                diagnostic = "dynamic rates cannot call zero-argument model function '" +
+                             name + "' with arguments";
+                return false;
+            }
+            if (!expressionHasModelFunctionReference(
+                    function->getExpression(), expressionHasModelFunctionReference)) {
+                functionCounterReferences.insert(name);
+                expanded = name + "()";
+                return true;
+            }
+            return expandModelFunction(*function, expanded);
+        }
+        if (!expression.args().empty() || !hasModelObservable(model, name)) {
+            diagnostic = "observable reference '" + name +
+                         "' is missing or has unsupported arguments";
+            return false;
+        }
+        observableReferences.insert(name);
+        expanded = name + "()";
+        return true;
+    }
+    case ExpressionKind::TableFunction: {
+        if (expression.args().size() != 1 ||
+            (expression.tableFilePath().empty() &&
+             (expression.tableXValues().empty() ||
+              expression.tableXValues().size() != expression.tableYValues().size())) ||
+            (!expression.tableFilePath().empty() &&
+             (!expression.tableXValues().empty() || !expression.tableYValues().empty()))) {
+            diagnostic = "malformed TFUN metadata";
+            return false;
+        }
+
+        const auto& counter = expression.args().front();
+        const auto counterName = counter.name();
+        if (counter.kind() != ExpressionKind::Identifier &&
+            counter.kind() != ExpressionKind::Function &&
+            counter.kind() != ExpressionKind::ObservableRef) {
+            diagnostic = "TFUN counter must be time, a parameter, observable, or function name";
+            return false;
+        }
+        const auto lowerCounterName = lowerCase(counterName);
+        if (lowerCounterName == "time" || lowerCounterName == "t") {
+            if (!counter.args().empty()) {
+                diagnostic = "TFUN time counter cannot take arguments";
+                return false;
+            }
+            usesTime = true;
+        } else if (counter.kind() == ExpressionKind::Identifier &&
+                   parameters.count(counterName) != 0) {
+            parameterReferences.insert(counterName);
+        } else if (counter.args().empty() && hasModelObservable(model, counterName)) {
+            observableReferences.insert(counterName);
+        } else if (counter.args().empty()) {
+            const auto* counterFunction = getModelFunction(model, counterName);
+            if (counterFunction == nullptr || !counterFunction->getArgs().empty()) {
+                diagnostic = "unsupported TFUN counter '" + counterName + "'";
+                return false;
+            }
+            functionCounterReferences.insert(counterName);
+        } else {
+            diagnostic = "unsupported TFUN counter '" + counterName + "'";
+            return false;
+        }
+        tableFunctions.push_back(&expression);
+        expanded = "__TFUN_VAL__";
+        return true;
+    }
+    }
+
+    diagnostic = "unrecognized dynamic reaction rate expression";
+    return false;
 }
 
 std::string replaceNamedReferences(
@@ -2448,19 +2692,22 @@ bool addDynamicReactionRateFunction(
 
     std::set<std::string> observableReferences;
     std::set<std::string> functionReferences;
-    if (!collectGlobalFunctionReferences(
+    std::set<std::string> parameterReferences;
+    std::vector<const bng::ast::Expression*> tableFunctions;
+    bool usesTime = false;
+    std::set<std::string> activeFunctions;
+    std::string expandedExpression;
+    if (!expandDynamicRateExpression(
             expression, model, parameters, observableReferences,
-            functionReferences, diagnostic)) {
+            functionReferences, parameterReferences, tableFunctions, usesTime,
+            activeFunctions, expandedExpression, diagnostic)) {
         return false;
     }
-    std::vector<const bng::ast::Expression*> tableFunctions;
-    collectTableFunctions(expression, tableFunctions);
     if (tableFunctions.size() > 1) {
         diagnostic = "dynamic reaction rates support at most one TFUN expression";
         return false;
     }
 
-    const bool usesTime = expressionUsesTime(expression);
     if (!usesTime && observableReferences.empty() && functionReferences.empty() &&
         tableFunctions.empty()) {
         diagnostic = "rate expression is not a supported dynamic function";
@@ -2473,13 +2720,6 @@ bool addDynamicReactionRateFunction(
             diagnostic = "dynamic reaction rates cannot combine a non-time TFUN counter "
                          "with a time-dependent expression";
             return false;
-        }
-    }
-
-    std::set<std::string> parameterReferences;
-    for (const auto& dependency : expression.getDependencies()) {
-        if (parameters.count(dependency) != 0) {
-            parameterReferences.insert(dependency);
         }
     }
 
@@ -2546,7 +2786,7 @@ bool addDynamicReactionRateFunction(
         }
         std::vector<std::string> argumentNames;
         const auto compositeExpression = replaceNamedReferences(
-            expressionForNfsim(expression), observableAliases);
+            expandedExpression, observableAliases);
         auto candidate = std::make_unique<CompositeFunction>(
             system, name, compositeExpression, functionsCalled,
             argumentNames, parameterNames);
@@ -2573,7 +2813,7 @@ bool addDynamicReactionRateFunction(
         observableReferences.begin(), observableReferences.end());
     std::vector<std::string> referenceTypes(referenceNames.size(), "Observable");
     auto candidate = std::make_unique<GlobalFunction>(
-        name, expressionForNfsim(expression), referenceNames, referenceTypes,
+        name, expandedExpression, referenceNames, referenceTypes,
         parameterNames, system);
 
     if (!tableFunctions.empty() &&
@@ -3486,8 +3726,11 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
     // transport including MoveConnected, and the two-direction expansion of
     // reversible rules. Scoped / local rates and
     // reactant filters and bare-molecule product filters are mapped within
-    // their bounded direct slices. Complex product filters and unsupported modifiers remain fail-closed. A bounded direct
-    // Arrhenius binding slice uses NFsim's existing energy-pattern expansion
+    // their bounded direct slices. Complex product filters and unsupported
+    // modifiers remain fail-closed. Dynamic rates may inline zero-argument
+    // model-function chains; unsupported composite/local forms remain gated.
+    // A bounded direct Arrhenius binding slice uses NFsim's existing
+    // energy-pattern expansion
     // implementation.
 
     for (std::size_t originalRuleOrdinal = 0;
