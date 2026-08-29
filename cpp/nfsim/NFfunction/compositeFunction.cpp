@@ -142,6 +142,10 @@ void CompositeFunction::setGlobalObservableDependency(ReactionClass *r, System *
 			if(gf->getVarRefType(vr)=="Observable" || gf->getVarRefType(vr)=="MoleculeObservable" || gf->getVarRefType(vr)=="SpeciesObservable") {
 				Observable *obs = s->getObservableByName(gf->getVarRefName(vr));
 				obs->addDependentRxn(r);
+			} else if (gf->getVarRefType(vr)=="Time") {
+				// Time is a live System value, not an observable whose cached
+				// count can trigger dependency invalidation.
+				continue;
 			} else {
 				cerr<<"When creating a FunctionalRxnClass of name: "+r->getName()+" you provided a function that\n";
 				cerr<<"depends on an observable type that I can't yet handle! (which is "+gf->getVarRefType(vr)+"\n";

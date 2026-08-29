@@ -21,6 +21,11 @@ FunctionalRxnClass::FunctionalRxnClass(string name, GlobalFunction *gf, Transfor
 		if(gf->getVarRefType(vr)=="Observable") {
 			Observable *obs = s->getObservableByName(gf->getVarRefName(vr));
 			obs->addDependentRxn(this);
+		} else if(gf->getVarRefType(vr)=="Time") {
+			// Time is read through GlobalFunction's live System pointer and
+			// changes on every NFsim step; it has no observable dependency to
+			// register for propensity invalidation.
+			continue;
 		} else {
 			cerr<<"When creating a FunctionalRxnClass of name: "+name+" you provided a function that\n";
 			cerr<<"depends on an observable type that I can't yet handle! (which is "+gf->getVarRefType(vr)+"\n";
@@ -680,6 +685,5 @@ void BasicRxnClass::pickMappingSets(double random_A_number) const
 		}
 	}
 }
-
 
 

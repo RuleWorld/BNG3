@@ -45,6 +45,7 @@
 
 // NFsim in-process invocation
 #include "nfsim/NFinput/NFinput.hh"
+#include "nfsim/NFinput/NFinput_fromAst.hh"
 #include "nfsim/NFcore/NFcore.hh"
 
 #if defined(_WIN32) || defined(__WIN32__) || defined(__CYGWIN__)
@@ -1298,15 +1299,8 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         }
 
         if (actionName == "simulate_nf") {
-            // NFSim simulation: write XML, invoke nfsim_core in-process
-            const auto xmlContent = io::XmlWriter::write(model, network.has_value() ? &(*network) : nullptr);
             const auto prefix = simulationPrefix(action, sourcePath);
             const auto xmlPath = sourcePath.parent_path() / (prefix + ".xml");
-            {
-                std::ofstream xmlOut(xmlPath);
-                if (!xmlOut) throw std::runtime_error("Failed to write XML for NFSim: " + xmlPath.string());
-                xmlOut << xmlContent;
-            }
 
             // Parse simulation parameters
             const auto tEnd = stripQuotes(readArgument(action, "t_end", "10"));
@@ -1329,12 +1323,13 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             int suggestedTraversalLimit = utlText.empty() ? 3 : std::stoi(utlText);
 
             if (verbose) {
-                std::cerr << "[bng_cpp] Running NFSim in-process: " << xmlPath << "\n";
+                std::cerr << "[bng_cpp] Running NFSim in-process from AST model\n";
             }
 
-            // Try in-process direct initialization from AST model first
-            NFcore::System *nfSystem = NFinput::initializeFromModel(
-                &model,
+            // Try the direct AST adapter first.  The compatibility XML paths
+            // remain available for sections that are still explicitly gated.
+            NFcore::System *nfSystem = NFinput::buildSystemFromAst(
+                model,
                 useComplex,
                 globalMoleculeLimit,
                 nfVerbose,
@@ -1342,22 +1337,44 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
             if (!nfSystem) {
                 if (verbose) {
-                    std::cerr << "[bng_cpp] Direct initialization returned nullptr; using XML fallback...\n";
+                    std::cerr << "[bng_cpp] AST adapter returned nullptr; using in-memory XML fallback...\n";
                 }
-                // Initialize NFsim System from the XML file
-                nfSystem = NFinput::initializeFromXML(
-                    xmlPath.string(),
+                nfSystem = NFinput::initializeFromModel(
+                    &model,
                     useComplex,
                     globalMoleculeLimit,
                     nfVerbose,
-                    suggestedTraversalLimit,
-                    evalCSLF,
-                    connectivityFlag);
+                    suggestedTraversalLimit);
+            }
+
+            if (!nfSystem) {
+                if (verbose) {
+                    std::cerr << "[bng_cpp] In-memory XML fallback failed; writing XML fallback...\n";
+                }
+                const auto xmlContent = io::XmlWriter::write(
+                    model, network.has_value() ? &(*network) : nullptr);
+                std::ofstream xmlOut(xmlPath);
+                if (!xmlOut) {
+                    throw std::runtime_error("Failed to write XML for NFSim: " + xmlPath.string());
+                }
+                xmlOut << xmlContent;
+                if (!xmlOut) {
+                    throw std::runtime_error("Failed to write XML for NFSim: " + xmlPath.string());
+                }
+                nfSystem = NFinput::initializeFromXML(
+                    xmlPath.string(), useComplex, globalMoleculeLimit, nfVerbose,
+                    suggestedTraversalLimit, evalCSLF, connectivityFlag);
             }
 
             if (!nfSystem) {
                 throw std::runtime_error("NFSim: Failed to initialize system from XML: " + xmlPath.string());
             }
+
+            // The legacy initializer applies these switches while reading XML.
+            // Apply the same runtime policy to a directly-built System.
+            nfSystem->setEvaluateComplexScopedLocalFunctions(evalCSLF);
+            nfSystem->useConnectivityFlag(connectivityFlag);
+            nfSystem->setUniversalTraversalLimit(suggestedTraversalLimit);
 
             // Seed the RNG if requested
             if (!seedText.empty()) {

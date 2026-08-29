@@ -523,98 +523,316 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
     std::ostringstream xml;
     xml << "    <ListOfReactionRules>\n";
 
-    for (std::size_t i = 0; i < model.getReactionRules().size(); ++i) {
-        const auto& rule = model.getReactionRules()[i];
-        std::string rrId = "RR" + std::to_string(i + 1);
+    const auto lowercase = [](std::string value) {
+        std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+        return value;
+    };
+    const auto hasModifier = [&](const std::vector<std::string>& modifiers,
+                                 const std::string& wanted) {
+        const auto needle = lowercase(wanted);
+        return std::any_of(modifiers.begin(), modifiers.end(), [&](const auto& modifier) {
+            return lowercase(modifier) == needle;
+        });
+    };
+    const auto modelFunction = [&](const std::string& name) -> const ast::Function* {
+        const auto found = std::find_if(
+            model.getFunctions().begin(), model.getFunctions().end(),
+            [&](const auto& function) { return function.getName() == name; });
+        return found == model.getFunctions().end() ? nullptr : &*found;
+    };
+    const auto moleculeId = [](const std::string& rrId, bool product,
+                               const ast::ReactionRule::ComponentRef& ref) {
+        return rrId + (product ? "_PP" : "_RP") +
+               std::to_string(ref.patternIndex + 1) + "_M" +
+               std::to_string(ref.moleculeIndex + 1);
+    };
+    const auto componentId = [&](const std::string& rrId, bool product,
+                                 const ast::ReactionRule::ComponentRef& ref) {
+        return moleculeId(rrId, product, ref) + "_C" +
+               std::to_string(ref.componentIndex + 1);
+    };
+    const auto canEvaluateStatically = [&](const ast::Expression& expression,
+                                            double& value) {
+        for (const auto& dependency : expression.getDependencies()) {
+            if (!model.getParameters().contains(dependency)) return false;
+        }
+        try {
+            value = expression.evaluate([&](const std::string& name) {
+                return model.getParameters().evaluate(name);
+            });
+        } catch (...) {
+            return false;
+        }
+        return std::isfinite(value);
+    };
 
+    // Find the molecule referenced by a local-function argument.  BNG-XML
+    // stores an object reference, while the AST retains either `%x::A()` or
+    // the older `M%x(...)` label spelling.
+    const auto scopedMoleculeId = [&](const ast::ReactionRule& rule,
+                                      const std::string& rrId,
+                                      const std::string& argument) {
+        const std::string token = "%" + argument + "::";
+        for (std::size_t patternIndex = 0; patternIndex < rule.getReactants().size();
+             ++patternIndex) {
+            const auto parsed = parsePattern(rule.getReactants()[patternIndex]);
+            for (std::size_t moleculeIndex = 0; moleculeIndex < parsed.molecules.size();
+                 ++moleculeIndex) {
+                if (parsed.molecules[moleculeIndex].label == argument) {
+                    return rrId + "_RP" + std::to_string(patternIndex + 1) + "_M" +
+                           std::to_string(moleculeIndex + 1);
+                }
+            }
+
+            const auto scopePosition = rule.getReactants()[patternIndex].find(token);
+            if (scopePosition == std::string::npos) continue;
+            std::size_t moleculeIndex = 0;
+            int depth = 0;
+            for (std::size_t i = 0; i < scopePosition; ++i) {
+                if (rule.getReactants()[patternIndex][i] == '(') ++depth;
+                else if (rule.getReactants()[patternIndex][i] == ')') --depth;
+                else if (rule.getReactants()[patternIndex][i] == '.' && depth == 0) {
+                    ++moleculeIndex;
+                }
+            }
+            if (moleculeIndex < parsed.molecules.size()) {
+                return rrId + "_RP" + std::to_string(patternIndex + 1) + "_M" +
+                       std::to_string(moleculeIndex + 1);
+            }
+        }
+        return std::string();
+    };
+
+    const auto writeRateLaw = [&](const ast::ReactionRule& rule,
+                                  const std::string& rrId,
+                                  const ast::Expression& rate) {
+        const bool isCall = rate.kind() == ast::ExpressionKind::Function ||
+                            rate.kind() == ast::ExpressionKind::ObservableRef;
+        const auto* declaredFunction = modelFunction(rate.name());
+        std::string type = "Ele";
+        if (declaredFunction != nullptr) {
+            type = "Function";
+        } else if (isCall && lowercase(rate.name()) == "mm" && rate.args().size() == 2) {
+            type = "MM";
+        } else if (isCall && lowercase(rate.name()) == "arrhenius" &&
+                   rate.args().size() >= 2) {
+            type = "Arrhenius";
+        } else if (isCall && lowercase(rate.name()) == "sat" && rate.args().size() == 2) {
+            type = "Sat";
+        }
+
+        xml << "        <RateLaw id=\"" << rrId << "_RateLaw\" type=\"" << type
+            << "\" totalrate=\"0\"";
+        if (type == "Function") {
+            xml << " name=\"" << escapeXml(rate.name()) << "\">\n";
+            xml << "          <ListOfArguments>\n";
+            if (declaredFunction != nullptr) {
+                for (std::size_t index = 0; index < declaredFunction->getArgs().size(); ++index) {
+                    const auto& argument = declaredFunction->getArgs()[index];
+                    const auto value = scopedMoleculeId(rule, rrId, argument);
+                    xml << "            <Argument id=\"" << escapeXml(argument)
+                        << "\" type=\"ObjectReference\" value=\""
+                        << escapeXml(value) << "\"/>\n";
+                }
+            }
+            xml << "          </ListOfArguments>\n";
+            xml << "        </RateLaw>\n";
+            return;
+        }
+
+        xml << ">\n";
+        xml << "          <ListOfRateConstants>\n";
+        if (type == "MM" || type == "Arrhenius" || type == "Sat") {
+            for (const auto& argument : rate.args()) {
+                xml << "            <RateConstant value=\""
+                    << escapeXml(argument.toString()) << "\"/>\n";
+            }
+        } else {
+            double staticValue = 0.0;
+            std::string value = rate.toString();
+            if (rate.kind() != ast::ExpressionKind::Identifier &&
+                canEvaluateStatically(rate, staticValue)) {
+                std::ostringstream numeric;
+                numeric << std::setprecision(17) << staticValue;
+                value = numeric.str();
+            }
+            xml << "            <RateConstant value=\"" << escapeXml(value) << "\"/>\n";
+        }
+        xml << "          </ListOfRateConstants>\n";
+        xml << "        </RateLaw>\n";
+    };
+
+    const auto writeRule = [&](const ast::ReactionRule& rule,
+                               const std::string& rrId,
+                               const ast::Expression* rate) {
         xml << "      <ReactionRule id=\"" << rrId
             << "\" name=\"" << escapeXml(rule.getRuleName()) << "\">\n";
 
-        // Reactant patterns
         xml << "        <ListOfReactantPatterns>\n";
-        for (std::size_t r = 0; r < rule.getReactants().size(); ++r) {
-            std::string rpId = rrId + "_RP" + std::to_string(r + 1);
-            auto parsed = parsePattern(rule.getReactants()[r]);
-
-            xml << "          <ReactantPattern id=\"" << rpId << "\"";
+        for (std::size_t index = 0; index < rule.getReactants().size(); ++index) {
+            const auto patternId = rrId + "_RP" + std::to_string(index + 1);
+            const auto parsed = parsePattern(rule.getReactants()[index]);
+            xml << "          <ReactantPattern id=\"" << patternId << "\"";
             if (!parsed.compartment.empty()) {
-                xml << " compartment=\"" << parsed.compartment << "\"";
+                xml << " compartment=\"" << escapeXml(parsed.compartment) << "\"";
             }
-            xml << ">\n";
-            xml << patternToXml(parsed, rpId, "            ");
-            xml << "          </ReactantPattern>\n";
+            xml << ">\n" << patternToXml(parsed, patternId, "            ")
+                << "          </ReactantPattern>\n";
         }
         xml << "        </ListOfReactantPatterns>\n";
 
-        // Product patterns
         xml << "        <ListOfProductPatterns>\n";
-        for (std::size_t p = 0; p < rule.getProducts().size(); ++p) {
-            std::string ppId = rrId + "_PP" + std::to_string(p + 1);
-            auto parsed = parsePattern(rule.getProducts()[p]);
-
-            xml << "          <ProductPattern id=\"" << ppId << "\"";
+        for (std::size_t index = 0; index < rule.getProducts().size(); ++index) {
+            const auto patternId = rrId + "_PP" + std::to_string(index + 1);
+            const auto parsed = parsePattern(rule.getProducts()[index]);
+            xml << "          <ProductPattern id=\"" << patternId << "\"";
             if (!parsed.compartment.empty()) {
-                xml << " compartment=\"" << parsed.compartment << "\"";
+                xml << " compartment=\"" << escapeXml(parsed.compartment) << "\"";
             }
-            xml << ">\n";
-            xml << patternToXml(parsed, ppId, "            ");
-            xml << "          </ProductPattern>\n";
+            xml << ">\n" << patternToXml(parsed, patternId, "            ")
+                << "          </ProductPattern>\n";
         }
         xml << "        </ListOfProductPatterns>\n";
 
-        // Rate law
-        if (!rule.getRates().empty()) {
-            xml << "        <RateLaw id=\"" << rrId << "_RateLaw\" type=\"Ele\" totalrate=\"0\">\n";
-            xml << "          <ListOfRateConstants>\n";
-            xml << "            <RateConstant value=\"" << escapeXml(rule.getRates()[0].toString()) << "\"/>\n";
-            xml << "          </ListOfRateConstants>\n";
-            xml << "        </RateLaw>\n";
+        if (rate != nullptr) writeRateLaw(rule, rrId, *rate);
+
+        xml << "        <Map>\n";
+        for (const auto& [product, reactant] : rule.getMoleculeMappings()) {
+            xml << "          <MapItem sourceID=\"" << moleculeId(rrId, false, reactant)
+                << "\" targetID=\"" << moleculeId(rrId, true, product) << "\"/>\n";
+        }
+        for (const auto& [product, reactant] : rule.getComponentMappings()) {
+            xml << "          <MapItem sourceID=\"" << componentId(rrId, false, reactant)
+                << "\" targetID=\"" << componentId(rrId, true, product) << "\"/>\n";
+        }
+        xml << "        </Map>\n";
+
+        xml << "        <ListOfOperations>\n";
+        for (const auto& operation : rule.getOperations()) {
+            using Type = ast::ReactionRule::TransformOp::Type;
+            switch (operation.type) {
+            case Type::ChangeState:
+                xml << "          <StateChange site=\""
+                    << componentId(rrId, false, operation.source)
+                    << "\" finalState=\"" << escapeXml(operation.newState) << "\"/>\n";
+                break;
+            case Type::AddBond:
+                xml << "          <AddBond site1=\""
+                    << componentId(rrId, false, operation.source)
+                    << "\" site2=\"" << componentId(rrId, false, operation.partner)
+                    << "\"/>\n";
+                break;
+            case Type::DeleteBond:
+                xml << "          <DeleteBond site1=\""
+                    << componentId(rrId, false, operation.source)
+                    << "\" site2=\"" << componentId(rrId, false, operation.partner)
+                    << "\"/>\n";
+                break;
+            case Type::AddMolecule:
+                xml << "          <Add id=\""
+                    << moleculeId(rrId, true, {operation.patternIndex, operation.moleculeIndex, 0})
+                    << "\"/>\n";
+                break;
+            case Type::DeleteMolecule:
+                if (hasModifier(rule.getModifiers(), "DeleteMolecules")) {
+                    xml << "          <Delete id=\""
+                        << moleculeId(rrId, false,
+                                      {operation.patternIndex, operation.moleculeIndex, 0})
+                        << "\" DeleteMolecules=\"1\"/>\n";
+                } else {
+                    // NFsim rejects a single-molecule Delete without the
+                    // DeleteMolecules modifier.  BNG2 represents this case as
+                    // removal of the complete reactant pattern.
+                    xml << "          <Delete id=\"" << rrId << "_RP"
+                        << (operation.patternIndex + 1)
+                        << "\" DeleteMolecules=\"0\"/>\n";
+                }
+                break;
+            }
         }
 
+        // Cross-bonds and bonds between newly-created molecules are not
+        // represented as TransformOp entries because their product endpoints
+        // have no reactant mapping.  They still belong in BNG-XML operations.
+        for (const auto& [reactant, product] : rule.getCrossBonds()) {
+            xml << "          <AddBond site1=\"" << componentId(rrId, false, reactant)
+                << "\" site2=\"" << componentId(rrId, true, product) << "\"/>\n";
+        }
+        for (const auto& [product1, product2] : rule.getNewMoleculeBonds()) {
+            xml << "          <AddBond site1=\"" << componentId(rrId, true, product1)
+                << "\" site2=\"" << componentId(rrId, true, product2) << "\"/>\n";
+        }
+
+        // Pure degradation has no product graph and therefore no TransformOp
+        // from ReactionRule::initialize().  Preserve its species-removal
+        // operation for the XML compatibility loader.
+        if (rule.getProducts().empty() && rule.getOperations().empty()) {
+            for (std::size_t index = 0; index < rule.getReactants().size(); ++index) {
+                xml << "          <Delete id=\"" << rrId << "_RP" << (index + 1)
+                    << "\" DeleteMolecules=\"0\"/>\n";
+            }
+        }
+
+        // Preserve explicit compartment transport for mapped molecules.  The
+        // pattern-level compartment is the fallback when no molecule suffix is
+        // present in the source spelling.
+        for (const auto& [product, reactant] : rule.getMoleculeMappings()) {
+            const auto reactantPattern = parsePattern(rule.getReactants()[reactant.patternIndex]);
+            const auto productPattern = parsePattern(rule.getProducts()[product.patternIndex]);
+            const auto compartment = [&](const auto& parsed,
+                                         const ast::ReactionRule::ComponentRef& ref) {
+                if (ref.moleculeIndex < parsed.molecules.size() &&
+                    !parsed.molecules[ref.moleculeIndex].compartment.empty()) {
+                    return parsed.molecules[ref.moleculeIndex].compartment;
+                }
+                return parsed.compartment;
+            };
+            const auto from = compartment(reactantPattern, reactant);
+            const auto to = compartment(productPattern, product);
+            if (!to.empty() && from != to) {
+                xml << "          <ChangeCompartment id=\""
+                    << moleculeId(rrId, false, reactant) << "\" destination=\""
+                    << escapeXml(to) << "\" moveConnected=\""
+                    << (hasModifier(rule.getModifiers(), "MoveConnected") ? "1" : "0")
+                    << "\"/>\n";
+            }
+        }
+
+        xml << "        </ListOfOperations>\n";
         xml << "      </ReactionRule>\n";
+    };
 
-        // If bidirectional, emit reverse rule
+    for (std::size_t i = 0; i < model.getReactionRules().size(); ++i) {
+        const auto& rule = model.getReactionRules()[i];
+        const auto rrId = "RR" + std::to_string(i + 1);
+        const auto* forwardRate = rule.getRates().empty() ? nullptr : &rule.getRates().front();
+        writeRule(rule, rrId, forwardRate);
+
         if (rule.isBidirectional() && rule.getRates().size() >= 2) {
-            std::string revId = rrId + "r";
-            xml << "      <ReactionRule id=\"" << revId
-                << "\" name=\"" << escapeXml(rule.getRuleName()) << "(reverse)\">\n";
-
-            // Reverse: products become reactants
-            xml << "        <ListOfReactantPatterns>\n";
-            for (std::size_t p = 0; p < rule.getProducts().size(); ++p) {
-                std::string rpId = revId + "_RP" + std::to_string(p + 1);
-                auto parsed = parsePattern(rule.getProducts()[p]);
-                xml << "          <ReactantPattern id=\"" << rpId << "\"";
-                if (!parsed.compartment.empty()) {
-                    xml << " compartment=\"" << parsed.compartment << "\"";
+            std::vector<std::string> reverseModifiers;
+            for (const auto& modifier : rule.getModifiers()) {
+                std::string transformed = modifier;
+                if (transformed.find("exclude_reactants") == 0) {
+                    transformed.replace(0, 17, "exclude_products");
+                } else if (transformed.find("include_reactants") == 0) {
+                    transformed.replace(0, 17, "include_products");
+                } else if (transformed.find("exclude_products") == 0) {
+                    transformed.replace(0, 16, "exclude_reactants");
+                } else if (transformed.find("include_products") == 0) {
+                    transformed.replace(0, 16, "include_reactants");
                 }
-                xml << ">\n";
-                xml << patternToXml(parsed, rpId, "            ");
-                xml << "          </ReactantPattern>\n";
+                reverseModifiers.push_back(std::move(transformed));
             }
-            xml << "        </ListOfReactantPatterns>\n";
-
-            xml << "        <ListOfProductPatterns>\n";
-            for (std::size_t r = 0; r < rule.getReactants().size(); ++r) {
-                std::string ppId = revId + "_PP" + std::to_string(r + 1);
-                auto parsed = parsePattern(rule.getReactants()[r]);
-                xml << "          <ProductPattern id=\"" << ppId << "\"";
-                if (!parsed.compartment.empty()) {
-                    xml << " compartment=\"" << parsed.compartment << "\"";
-                }
-                xml << ">\n";
-                xml << patternToXml(parsed, ppId, "            ");
-                xml << "          </ProductPattern>\n";
-            }
-            xml << "        </ListOfProductPatterns>\n";
-
-            xml << "        <RateLaw id=\"" << revId << "_RateLaw\" type=\"Ele\" totalrate=\"0\">\n";
-            xml << "          <ListOfRateConstants>\n";
-            xml << "            <RateConstant value=\"" << escapeXml(rule.getRates()[1].toString()) << "\"/>\n";
-            xml << "          </ListOfRateConstants>\n";
-            xml << "        </RateLaw>\n";
-
-            xml << "      </ReactionRule>\n";
+            ast::ReactionRule reverse(
+                "_reverse__" + rule.getRuleName(),
+                rule.getLabel().empty() ? "_reverse" : "_reverse__" + rule.getLabel(),
+                rule.getProducts(), rule.getReactants(),
+                std::vector<ast::Expression>{rule.getRates()[1]},
+                std::move(reverseModifiers), false,
+                rule.getProductPatterns(), rule.getReactantPatterns());
+            writeRule(reverse, rrId + "r", &reverse.getRates().front());
         }
     }
 

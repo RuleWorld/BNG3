@@ -894,8 +894,40 @@ const std::vector<ReactionRule::TransformOp>& ReactionRule::getOperations() cons
     return operations_;
 }
 
+const std::vector<std::pair<ReactionRule::ComponentRef, ReactionRule::ComponentRef>>&
+ReactionRule::getMoleculeMappings() const {
+    return moleculeMappings_;
+}
+
+const std::map<ReactionRule::ComponentRef, ReactionRule::ComponentRef>&
+ReactionRule::getComponentMappings() const {
+    return componentMappings_;
+}
+
+std::vector<std::pair<ReactionRule::ComponentRef, ReactionRule::ComponentRef>>
+ReactionRule::getCrossBonds() const {
+    std::vector<std::pair<ComponentRef, ComponentRef>> result;
+    result.reserve(crossBonds_.size());
+    for (const auto& bond : crossBonds_) {
+        result.emplace_back(bond.reactantComponent, bond.productComponent);
+    }
+    return result;
+}
+
+std::vector<std::pair<ReactionRule::ComponentRef, ReactionRule::ComponentRef>>
+ReactionRule::getNewMoleculeBonds() const {
+    std::vector<std::pair<ComponentRef, ComponentRef>> result;
+    result.reserve(newMoleculeBonds_.size());
+    for (const auto& bond : newMoleculeBonds_) {
+        result.emplace_back(bond.productComponent1, bond.productComponent2);
+    }
+    return result;
+}
+
 void ReactionRule::initialize() {
     operations_.clear();
+    moleculeMappings_.clear();
+    componentMappings_.clear();
     productOnlyStateChanges_.clear();
     hasMoleculeTypeMismatch_ = false;
     reactionCenter_.assign(reactantPatterns_.size(), {});
@@ -927,6 +959,14 @@ void ReactionRule::initialize() {
             productToReactant[i] = matchedIndex;
             reactantMatched[matchedIndex] = true;
         }
+    }
+
+    for (std::size_t productIndex = 0; productIndex < productMolecules.size();
+         ++productIndex) {
+        if (!productToReactant[productIndex].has_value()) continue;
+        moleculeMappings_.emplace_back(
+            productMolecules[productIndex].base,
+            reactantMolecules[*productToReactant[productIndex]].base);
     }
 
     // NOTE: Perl BNG's findMaps uses labels that include all component names.
@@ -1089,6 +1129,7 @@ void ReactionRule::initialize() {
             }
 
             productToReactantComponent[productRef] = reactantRef;
+            componentMappings_[productRef] = reactantRef;
 
             // Determine reactant component state
             const auto& reactantComponent = reactantInfo[reactantRef.patternIndex].molecules[reactantRef.moleculeIndex].components[reactantRef.componentIndex];
@@ -2823,6 +2864,4 @@ bool ReactionRule::passesProductFilters(const std::vector<SpeciesGraph>& product
 }
 
 } // namespace bng::ast
-
-
 

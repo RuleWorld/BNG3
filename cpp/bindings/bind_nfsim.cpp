@@ -97,13 +97,15 @@ void bind_nfsim(py::module_& m) {
                 }
                 const std::string xml_content = bng::io::XmlWriter::write(model);
                 tmp_guard.path = make_temp_xml_path();
-                std::ofstream out(tmp_guard.path);
-                if (!out) {
-                    throw std::runtime_error("Failed to create temp file for NFSim XML");
-                }
-                out << xml_content;
-                if (!out) {
-                    throw std::runtime_error("Failed to write temp file for NFSim XML");
+                {
+                    std::ofstream out(tmp_guard.path);
+                    if (!out) {
+                        throw std::runtime_error("Failed to create temp file for NFSim XML");
+                    }
+                    out << xml_content;
+                    if (!out) {
+                        throw std::runtime_error("Failed to write temp file for NFSim XML");
+                    }
                 }
                 system.reset(NFinput::initializeFromXML(
                     tmp_guard.path,
