@@ -18,9 +18,11 @@
 ///                    functions, zero-argument composites, one-argument
 ///                    molecule/species-scoped and time-bearing local functions,
 ///                    time/parameter-backed local TFUNs, FunctionProduct,
-///                    Sat/Hill rate laws, and reactant include/exclude filters.
+///                    Sat/Hill rate laws, reactant include/exclude filters,
+///                    and dynamic reaction rates over parameters, observables,
+///                    time, and one TFUN expression.
 /// GATED here:       nested/complex local functions, function-counter local
-///                   TFUNs, other rate-law
+///                   TFUNs, dynamic rates that reference model functions, other rate-law
 ///                   forms, product filters, and reaction
 ///                   centers not yet represented by the direct mapping. They
 ///                   fail closed and cite the TiXml init* function that
@@ -1969,6 +1971,10 @@ bool evaluateStaticExpression(const bng::ast::Expression& expression,
                               const std::map<std::string, double>& parameters,
                               double& value,
                               std::string& diagnostic) {
+    if (expressionUsesTime(expression)) {
+        diagnostic = "expression depends on simulation time";
+        return false;
+    }
     try {
         value = expression.evaluate([&](const std::string& name) -> double {
             if (name == "_PI" || name == "_pi") return 3.14159265358979323846;
@@ -1999,6 +2005,88 @@ bool evaluateStaticReactionRate(const bng::ast::Expression& expression,
     if (value < 0.0) {
         diagnostic = "reaction rate is not a finite nonnegative value";
         return false;
+    }
+    return true;
+}
+
+bool addDynamicReactionRateFunction(
+    const bng::ast::Expression& expression,
+    const bng::ast::Model& model,
+    const std::map<std::string, double>& parameters,
+    System* system,
+    const std::filesystem::path& sourcePath,
+    std::size_t ordinal,
+    GlobalFunction*& global,
+    std::string& diagnostic) {
+    global = nullptr;
+
+    std::set<std::string> observableReferences;
+    std::set<std::string> functionReferences;
+    if (!collectGlobalFunctionReferences(
+            expression, model, parameters, observableReferences,
+            functionReferences, diagnostic)) {
+        return false;
+    }
+    if (!functionReferences.empty()) {
+        diagnostic = "dynamic reaction rates cannot yet reference model functions; "
+                     "use a standalone global function rate";
+        return false;
+    }
+
+    std::vector<const bng::ast::Expression*> tableFunctions;
+    collectTableFunctions(expression, tableFunctions);
+    if (tableFunctions.size() > 1) {
+        diagnostic = "dynamic reaction rates support at most one TFUN expression";
+        return false;
+    }
+
+    const bool usesTime = expressionUsesTime(expression);
+    if (!usesTime && observableReferences.empty() && tableFunctions.empty()) {
+        diagnostic = "rate expression is not a supported dynamic function";
+        return false;
+    }
+
+    std::set<std::string> parameterReferences;
+    for (const auto& dependency : expression.getDependencies()) {
+        if (parameters.count(dependency) != 0) {
+            parameterReferences.insert(dependency);
+        }
+    }
+
+    std::string name = "__bng3_reaction_rate_" + std::to_string(ordinal + 1);
+    std::size_t suffix = 1;
+    while (system->getGlobalFunctionByName(name) != nullptr ||
+           system->getCompositeFunctionByName(name) != nullptr ||
+           system->getLocalFunctionByName(name) != nullptr) {
+        name = "__bng3_reaction_rate_" + std::to_string(ordinal + 1) +
+               "_" + std::to_string(suffix++);
+    }
+
+    std::vector<std::string> referenceNames(
+        observableReferences.begin(), observableReferences.end());
+    std::vector<std::string> referenceTypes(referenceNames.size(), "Observable");
+    std::vector<std::string> parameterNames(
+        parameterReferences.begin(), parameterReferences.end());
+    auto candidate = std::make_unique<GlobalFunction>(
+        name, expressionForNfsim(expression), referenceNames, referenceTypes,
+        parameterNames, system);
+
+    if (!tableFunctions.empty()) {
+        if (!configureDirectTableFunction(
+                *tableFunctions.front(), model, parameters, sourcePath, system,
+                candidate.get(), nullptr, nullptr, diagnostic)) {
+            return false;
+        }
+    }
+
+    if (!system->addGlobalFunction(candidate.get())) {
+        diagnostic = "failed to register generated dynamic reaction rate function";
+        return false;
+    }
+    global = candidate.release();
+    if (usesTime) {
+        global->setCounterFromTime(system);
+        system->setHasTimeDependentFunctions(true);
     }
     return true;
 }
@@ -2884,7 +2972,8 @@ bool addSpeciesFromAst(const bng::ast::Model& model, System* s,
 bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                              const std::map<std::string, double>& parameters,
                              bool blockSameComplexBinding, bool verbose,
-                             int& suggestedTraversalLimit) {
+                             int& suggestedTraversalLimit,
+                             const std::filesystem::path& sourcePath) {
     if (s == nullptr) return false;
 
     // SPEC: NFinput::initReactionRules (NFinput.cpp:1266). This direct slice
@@ -2896,7 +2985,10 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
     // Arrhenius binding slice uses NFsim's existing energy-pattern expansion
     // implementation.
 
-    for (const auto& originalRule : model.getReactionRules()) {
+    for (std::size_t originalRuleOrdinal = 0;
+         originalRuleOrdinal < model.getReactionRules().size();
+         ++originalRuleOrdinal) {
+        const auto& originalRule = model.getReactionRules()[originalRuleOrdinal];
         const auto& originalRates = originalRule.getRates();
         const bool directArrhenius =
             originalRule.isBidirectional() && originalRates.size() == 1 &&
@@ -2967,7 +3059,9 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
 
         std::vector<const bng::ast::ReactionRule*> directions{&originalRule};
         if (reverseRule != nullptr) directions.push_back(reverseRule.get());
-        for (const auto* rulePtr : directions) {
+        for (std::size_t directionOrdinal = 0;
+             directionOrdinal < directions.size(); ++directionOrdinal) {
+            const auto* rulePtr = directions[directionOrdinal];
             const auto& rule = *rulePtr;
             const auto& reactantPatterns = rule.getReactantPatterns();
             const auto& productPatterns = rule.getProductPatterns();
@@ -3703,19 +3797,35 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
             }
         } else {
             double rateValue = 0.0;
-            if (!evaluateStaticReactionRate(rate, parameters, rateValue, diagnostic)) {
-                std::cerr << "[nfsim/ast] cannot map reaction '" << rule.getRuleName()
-                          << "': " << diagnostic << "\n";
-                delete transformationSet;
-                return false;
+            if (evaluateStaticExpression(rate, parameters, rateValue, diagnostic)) {
+                if (rateValue < 0.0) {
+                    diagnostic = "reaction rate is not a finite nonnegative value";
+                    std::cerr << "[nfsim/ast] cannot map reaction '" << rule.getRuleName()
+                              << "': " << diagnostic << "\n";
+                    delete transformationSet;
+                    return false;
+                }
+                if (rate.kind() == bng::ast::ExpressionKind::Identifier &&
+                    parameters.count(rate.name()) != 0) {
+                    rateParameterName = rate.name();
+                }
+                reaction = new BasicRxnClass(
+                    rule.getRuleName(), 0.0, "", transformationSet, s);
+                reaction->setBaseRate(rateValue, rateParameterName);
+            } else {
+                GlobalFunction* dynamicGlobal = nullptr;
+                if (!addDynamicReactionRateFunction(
+                        rate, model, parameters, s, sourcePath,
+                        originalRuleOrdinal * 2 + directionOrdinal,
+                        dynamicGlobal, diagnostic)) {
+                    std::cerr << "[nfsim/ast] cannot map reaction '" << rule.getRuleName()
+                              << "': " << diagnostic << "\n";
+                    delete transformationSet;
+                    return false;
+                }
+                reaction = new FunctionalRxnClass(
+                    rule.getRuleName(), dynamicGlobal, transformationSet, s);
             }
-            if (rate.kind() == bng::ast::ExpressionKind::Identifier &&
-                parameters.count(rate.name()) != 0) {
-                rateParameterName = rate.name();
-            }
-            reaction = new BasicRxnClass(
-                rule.getRuleName(), 0.0, "", transformationSet, s);
-            reaction->setBaseRate(rateValue, rateParameterName);
         }
 
         reaction->setTotalRateFlag(hasReactionModifier(rule, "totalrate"));
@@ -3793,7 +3903,7 @@ System* buildSystemFromAst(const bng::ast::Model& model,
              addEnergyPatternsFromAst(model, s, parameters, verbose) &&
              addSpeciesFromAst(model, s, parameters, verbose) &&
              addReactionRulesFromAst(model, s, parameters, blockSameComplexBinding,
-                                     verbose, suggestedTraversalLimit);
+                                     verbose, suggestedTraversalLimit, sourcePath);
     } catch (const std::exception& error) {
         if (verbose) {
             std::cerr << "[nfsim/ast] direct construction failed: "

@@ -89,6 +89,7 @@ bool addSpeciesFromAst(const bng::ast::Model& model, NFcore::System* s,
 bool addReactionRulesFromAst(const bng::ast::Model& model, NFcore::System* s,
                              const std::map<std::string, double>& parameters,
                              bool blockSameComplexBinding, bool verbose,
-                             int& suggestedTraversalLimit);
+                             int& suggestedTraversalLimit,
+                             const std::filesystem::path& sourcePath = {});
 
 } // namespace NFinput

@@ -4,6 +4,7 @@
 #include <iomanip>
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <map>
 #include <regex>
 #include <set>
@@ -517,6 +518,12 @@ void collectFunctionReferences(const ast::Expression& expression,
             addFunctionReference(references, expression.name(), "Time");
         } else if (modelHasFunction(model, expression.name())) {
             addFunctionReference(references, expression.name(), "Function");
+        } else if (expression.args().empty() &&
+                   std::any_of(model.getObservables().begin(), model.getObservables().end(),
+                               [&](const auto& observable) {
+                                   return observable.getName() == expression.name();
+                               })) {
+            addFunctionReference(references, expression.name(), "Observable");
         }
         for (const auto& child : expression.args()) {
             collectFunctionReferences(child, model, localNames, references);
@@ -604,6 +611,73 @@ std::string tableDataCsv(const std::vector<double>& values) {
         output << values[index];
     }
     return output.str();
+}
+
+std::string lowercaseName(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return value;
+}
+
+bool expressionUsesTimeReference(const ast::Expression& expression) {
+    if (expression.kind() == ast::ExpressionKind::Identifier &&
+        (lowercaseName(expression.name()) == "time" ||
+         lowercaseName(expression.name()) == "t")) {
+        return true;
+    }
+    if (expression.kind() == ast::ExpressionKind::Function &&
+        (lowercaseName(expression.name()) == "time" ||
+         lowercaseName(expression.name()) == "t")) {
+        return true;
+    }
+    return std::any_of(expression.args().begin(), expression.args().end(),
+                       [](const auto& child) { return expressionUsesTimeReference(child); });
+}
+
+bool expressionCanEvaluateStatically(const ast::Expression& expression,
+                                      const ast::Model& model,
+                                      double& value) {
+    if (expressionUsesTimeReference(expression)) return false;
+    for (const auto& dependency : expression.getDependencies()) {
+        if (!model.getParameters().contains(dependency)) return false;
+    }
+    try {
+        value = expression.evaluate([&](const std::string& name) {
+            return model.getParameters().evaluate(name);
+        });
+    } catch (...) {
+        return false;
+    }
+    return std::isfinite(value);
+}
+
+bool modelContainsFunction(const ast::Model& model, const std::string& name) {
+    return std::any_of(model.getFunctions().begin(), model.getFunctions().end(),
+                       [&](const auto& function) { return function.getName() == name; });
+}
+
+bool needsGeneratedDynamicRateFunction(const ast::Model& model,
+                                       const ast::Expression& rate) {
+    const bool isCall = rate.kind() == ast::ExpressionKind::Function ||
+                        rate.kind() == ast::ExpressionKind::ObservableRef;
+    if (isCall && modelContainsFunction(model, rate.name())) return false;
+    if (isCall) {
+        const auto name = lowercaseName(rate.name());
+        if ((name == "functionproduct" && rate.args().size() == 2) ||
+            (name == "mm" && rate.args().size() == 2) ||
+            (name == "arrhenius" && rate.args().size() >= 2) ||
+            (name == "sat" && rate.args().size() == 2) ||
+            (name == "hill" && rate.args().size() == 3)) {
+            return false;
+        }
+    }
+    double unused = 0.0;
+    return !expressionCanEvaluateStatically(rate, model, unused);
+}
+
+std::string generatedDynamicRateFunctionName(const std::string& reactionId) {
+    return "__bng3_reaction_rate_" + reactionId;
 }
 
 } // anonymous namespace
@@ -779,21 +853,6 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
         return moleculeId(rrId, product, ref) + "_C" +
                std::to_string(ref.componentIndex + 1);
     };
-    const auto canEvaluateStatically = [&](const ast::Expression& expression,
-                                            double& value) {
-        for (const auto& dependency : expression.getDependencies()) {
-            if (!model.getParameters().contains(dependency)) return false;
-        }
-        try {
-            value = expression.evaluate([&](const std::string& name) {
-                return model.getParameters().evaluate(name);
-            });
-        } catch (...) {
-            return false;
-        }
-        return std::isfinite(value);
-    };
-
     // Find the molecule referenced by a local-function argument.  BNG-XML
     // stores an object reference, while the AST retains either `%x::A()` or
     // the older `M%x(...)` label spelling.
@@ -842,8 +901,12 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
         const bool isFunctionProduct =
             isCall && lowercase(rate.name()) == "functionproduct" && rate.args().size() == 2;
         const auto* declaredFunction = modelFunction(rate.name());
+        const bool generatedRateFunction =
+            needsGeneratedDynamicRateFunction(model, rate);
         std::string type = "Ele";
-        if (isFunctionProduct) {
+        if (generatedRateFunction) {
+            type = "Function";
+        } else if (isFunctionProduct) {
             type = "FunctionProduct";
         } else if (declaredFunction != nullptr) {
             type = "Function";
@@ -901,7 +964,10 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
             return;
         }
         if (type == "Function") {
-            xml << " name=\"" << escapeXml(rate.name()) << "\">\n";
+            const auto functionName = generatedRateFunction
+                                           ? generatedDynamicRateFunctionName(rrId)
+                                           : rate.name();
+            xml << " name=\"" << escapeXml(functionName) << "\">\n";
             xml << "          <ListOfArguments>\n";
             if (declaredFunction != nullptr) {
                 for (std::size_t index = 0; index < declaredFunction->getArgs().size(); ++index) {
@@ -928,7 +994,7 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
             double staticValue = 0.0;
             std::string value = rate.toString();
             if (rate.kind() != ast::ExpressionKind::Identifier &&
-                canEvaluateStatically(rate, staticValue)) {
+                expressionCanEvaluateStatically(rate, model, staticValue)) {
                 std::ostringstream numeric;
                 numeric << std::setprecision(17) << staticValue;
                 value = numeric.str();
@@ -1190,7 +1256,22 @@ std::string XmlWriter::writeObservables(const ast::Model& model) {
 
 std::string XmlWriter::writeFunctions(const ast::Model& model) {
     std::ostringstream xml;
-    if (model.getFunctions().empty()) return {};
+    std::vector<std::pair<std::string, const ast::Expression*>> generatedRateFunctions;
+    for (std::size_t index = 0; index < model.getReactionRules().size(); ++index) {
+        const auto& rule = model.getReactionRules()[index];
+        const auto& rates = rule.getRates();
+        const auto forwardId = "RR" + std::to_string(index + 1);
+        if (!rates.empty() && needsGeneratedDynamicRateFunction(model, rates.front())) {
+            generatedRateFunctions.emplace_back(
+                generatedDynamicRateFunctionName(forwardId), &rates.front());
+        }
+        if (rule.isBidirectional() && rates.size() >= 2 &&
+            needsGeneratedDynamicRateFunction(model, rates[1])) {
+            generatedRateFunctions.emplace_back(
+                generatedDynamicRateFunctionName(forwardId + "r"), &rates[1]);
+        }
+    }
+    if (model.getFunctions().empty() && generatedRateFunctions.empty()) return {};
 
     xml << "    <ListOfFunctions>\n";
 
@@ -1245,6 +1326,46 @@ std::string XmlWriter::writeFunctions(const ast::Model& model) {
         }
         xml << "        </ListOfReferences>\n";
         xml << "        <Expression>" << escapeXml(expressionForXml(func.getExpression()))
+            << "</Expression>\n";
+        xml << "      </Function>\n";
+    }
+
+    // NFsim's legacy XML schema represents an arbitrary dynamic reaction rate
+    // as a zero-argument global function.  Keep the reaction rule readable,
+    // but emit the generated function here so the XML compatibility path has
+    // the same live observable/time dependencies as the direct adapter.
+    for (const auto& [name, expression] : generatedRateFunctions) {
+        std::vector<const ast::Expression*> tableFunctions;
+        collectTableFunctions(*expression, tableFunctions);
+        const auto* table = tableFunctions.empty() ? nullptr : tableFunctions.front();
+        xml << "      <Function id=\"" << escapeXml(name) << "\"";
+        if (table != nullptr) {
+            xml << " type=\"TFUN\" mode=\""
+                << (table->tableFilePath().empty() ? "inline" : "file")
+                << "\" method=\"" << escapeXml(table->tableMethod()) << "\"";
+            const auto counterName = tableCounterName(*table);
+            if (!counterName.empty()) {
+                xml << " ctrName=\"" << escapeXml(counterName) << "\"";
+            }
+            if (table->tableFilePath().empty()) {
+                xml << " xData=\"" << escapeXml(tableDataCsv(table->tableXValues()))
+                    << "\" yData=\"" << escapeXml(tableDataCsv(table->tableYValues()))
+                    << "\"";
+            } else {
+                xml << " file=\"" << escapeXml(table->tableFilePath()) << "\"";
+            }
+        }
+        xml << ">\n";
+        std::map<std::string, std::string> references;
+        const std::set<std::string> noLocalNames;
+        collectFunctionReferences(*expression, model, noLocalNames, references);
+        xml << "        <ListOfReferences>\n";
+        for (const auto& [referenceName, referenceType] : references) {
+            xml << "          <Reference name=\"" << escapeXml(referenceName)
+                << "\" type=\"" << escapeXml(referenceType) << "\"/>\n";
+        }
+        xml << "        </ListOfReferences>\n";
+        xml << "        <Expression>" << escapeXml(expressionForXml(*expression))
             << "</Expression>\n";
         xml << "      </Function>\n";
     }

@@ -981,6 +981,102 @@ end reaction rules
     delete system;
 }
 
+TEST_CASE("NFsim AST adapter maps dynamic observable reaction rates directly and through XML") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 2.0
+end parameters
+begin molecule types
+    A()
+    X()
+    B()
+end molecule types
+begin seed species
+    A() 1
+    X() 1
+end seed species
+begin observables
+    Molecules atotal A()
+end observables
+begin reaction rules
+    X() -> X() + B() k*atotal()
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    const auto xml = bng::io::XmlWriter::write(*model);
+    CHECK(xml.find("__bng3_reaction_rate_RR1") != std::string::npos);
+    CHECK(xml.find("<Reference name=\"atotal\" type=\"Observable\"/>") !=
+          std::string::npos);
+
+    int suggestedTraversalLimit = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(direct != nullptr);
+    REQUIRE(direct->getAllReactions().size() == 1);
+    CHECK(direct->getReaction(0)->getRxnType() ==
+          NFcore::ReactionClass::OBS_DEPENDENT_RXN);
+    direct->prepareForSimulation();
+    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(2.0));
+    direct->addConcentration("A()", 1);
+    CHECK(direct->getObservableByName("atotal")->getCount() == 2);
+    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(4.0));
+    delete direct;
+
+    suggestedTraversalLimit = 0;
+    auto* xmlSystem = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, suggestedTraversalLimit);
+    REQUIRE(xmlSystem != nullptr);
+    REQUIRE(xmlSystem->getAllReactions().size() == 1);
+    CHECK(xmlSystem->getReaction(0)->getRxnType() ==
+          NFcore::ReactionClass::OBS_DEPENDENT_RXN);
+    xmlSystem->prepareForSimulation();
+    CHECK(xmlSystem->getReaction(0)->get_a() == Catch::Approx(2.0));
+    xmlSystem->addConcentration("A()", 1);
+    CHECK(xmlSystem->getObservableByName("atotal")->getCount() == 2);
+    CHECK(xmlSystem->getReaction(0)->get_a() == Catch::Approx(4.0));
+    delete xmlSystem;
+}
+
+TEST_CASE("NFsim AST adapter keeps time-dependent reaction rates live") {
+    auto model = bng::parser::parseModel(R"(
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 0
+end seed species
+begin reaction rules
+    0 -> X() 1 + time()
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(direct != nullptr);
+    REQUIRE(direct->getAllReactions().size() == 1);
+    REQUIRE(direct->getHasTimeDependentFunctions());
+    direct->prepareForSimulation();
+    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(1.0));
+    *direct->getCurrentTimePtr() = 2.5;
+    CHECK(direct->getReaction(0)->update_a() == Catch::Approx(3.5));
+    delete direct;
+
+    suggestedTraversalLimit = 0;
+    auto* xmlSystem = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, suggestedTraversalLimit);
+    REQUIRE(xmlSystem != nullptr);
+    REQUIRE(xmlSystem->getAllReactions().size() == 1);
+    REQUIRE(xmlSystem->getHasTimeDependentFunctions());
+    xmlSystem->prepareForSimulation();
+    CHECK(xmlSystem->getReaction(0)->get_a() == Catch::Approx(1.0));
+    *xmlSystem->getCurrentTimePtr() = 2.5;
+    CHECK(xmlSystem->getReaction(0)->update_a() == Catch::Approx(3.5));
+    delete xmlSystem;
+}
+
 TEST_CASE("NFsim AST adapter maps zero-argument composite function rates") {
     auto model = bng::parser::parseModel(R"(
 begin parameters
