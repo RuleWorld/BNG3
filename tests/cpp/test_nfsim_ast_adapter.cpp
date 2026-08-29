@@ -1115,6 +1115,59 @@ end reaction rules
     delete xmlSystem;
 }
 
+TEST_CASE("NFsim AST adapter maps time-backed local TFUN rates") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin observables
+    Molecules atotal A()
+end observables
+begin functions
+    f(x) = TFUN([0, 1], [2, 4], time) + atotal(x)
+end functions
+begin reaction rules
+    %x::A() -> %x::A() + B() f(x)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    const auto xml = bng::io::XmlWriter::write(*model);
+    CHECK(xml.find("type=\"TFUN\"") != std::string::npos);
+    CHECK(xml.find("__TFUN_VAL__") != std::string::npos);
+
+    int suggestedTraversalLimit = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(direct != nullptr);
+    REQUIRE(direct->getLocalFunctionByName("f") != nullptr);
+    REQUIRE(direct->getAllReactions().size() == 1);
+    REQUIRE(direct->getHasTimeDependentFunctions());
+    direct->prepareForSimulation();
+    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(3.0));
+    *direct->getCurrentTimePtr() = 0.5;
+    CHECK(direct->getReaction(0)->update_a() == Catch::Approx(4.0));
+    delete direct;
+
+    suggestedTraversalLimit = 0;
+    auto* xmlSystem = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, suggestedTraversalLimit);
+    REQUIRE(xmlSystem != nullptr);
+    REQUIRE(xmlSystem->getLocalFunctionByName("f") != nullptr);
+    xmlSystem->prepareForSimulation();
+    CHECK(xmlSystem->getReaction(0)->get_a() == Catch::Approx(3.0));
+    *xmlSystem->getCurrentTimePtr() = 0.5;
+    CHECK(xmlSystem->getReaction(0)->update_a() == Catch::Approx(4.0));
+    delete xmlSystem;
+}
+
 TEST_CASE("NFsim AST adapter maps a legacy molecule-label local scope") {
     auto model = bng::parser::parseModel(R"(
 begin molecule types

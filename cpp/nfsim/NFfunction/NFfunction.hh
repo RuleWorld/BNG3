@@ -312,6 +312,22 @@ namespace NFcore {
 			void setTimeDependent(bool value) { isTimeDependent = value; }
 			bool getTimeDependent() const { return isTimeDependent; }
 
+			// AS-2021: bounded TFUN support for local functions.  The direct
+			// adapter currently wires time- and parameter-backed counters; the
+			// legacy object keeps the same interpolation semantics as globals.
+			void fileUpdate();
+			void fileUpdate(double counterOverride);
+			double getCounterValue();
+			void loadParamFile(string filePath);
+			void enableFileDependency(string FilePath, string method="linear");
+			void enableInlineDependency(const vector<double> &xs, const vector<double> &ys, string method="linear");
+			void setInterpolationMethod(string method);
+			void setCtrName(string name);
+			void setCounterFromTime(System *s);
+			void setCounterFromParameter(System *s, string paramName);
+			void addSystemPointer(System *s);
+			bool fileFunc;
+
 
 			double getValue(Molecule *m, int scope);
 			double evaluateOn(Molecule *m, int scope);
@@ -335,6 +351,18 @@ namespace NFcore {
 			// by golly, that is never needed.  Is that clear?
 			bool isEverEvaluatedOnSpeciesScope;
 			bool isTimeDependent;
+
+			// AS-2021
+			string ctrType;
+			string ctrName;
+			System *sysPtr;
+			int currInd;
+			int dataLen;
+			vector <vector <double> > data;
+			string filePath;
+			string counterParamName;
+			string interpolationMethod;
+			// AS-2021
 
 			string name;
 			string nicename;

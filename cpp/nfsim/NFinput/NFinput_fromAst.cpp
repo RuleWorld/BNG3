@@ -17,9 +17,10 @@
 ///                    Arrhenius energy expansion, time-backed global
 ///                    functions, zero-argument composites, one-argument
 ///                    molecule/species-scoped and time-bearing local functions,
-///                    FunctionProduct, Sat/Hill rate laws, and reactant
-///                    include/exclude filters.
-/// GATED here:       nested/complex local functions, local TFUNs, other rate-law
+///                    time/parameter-backed local TFUNs, FunctionProduct,
+///                    Sat/Hill rate laws, and reactant include/exclude filters.
+/// GATED here:       nested/complex local functions, observable/function-counter
+///                   local TFUNs, other rate-law
 ///                   forms, product filters, and reaction
 ///                   centers not yet represented by the direct mapping. They
 ///                   fail closed and cite the TiXml init* function that
@@ -352,6 +353,7 @@ bool configureDirectTableFunction(
     System* system,
     GlobalFunction* global,
     CompositeFunction* composite,
+    LocalFunction* local,
     std::string& diagnostic) {
     if (table.kind() != bng::ast::ExpressionKind::TableFunction ||
         table.args().size() != 1) {
@@ -391,6 +393,16 @@ bool configureDirectTableFunction(
                         table.tableXValues(), table.tableYValues(), table.tableMethod());
                 }
                 composite->setCtrName("__TFUN_VAL__");
+            } else if (local != nullptr) {
+                if (fileBacked) {
+                    local->enableFileDependency(
+                        resolveTfunPath(table.tableFilePath(), sourcePath),
+                        table.tableMethod());
+                } else {
+                    local->enableInlineDependency(
+                        table.tableXValues(), table.tableYValues(), table.tableMethod());
+                }
+                local->setCtrName("__TFUN_VAL__");
             } else {
                 diagnostic = "TFUN has no target function object";
                 return false;
@@ -415,11 +427,15 @@ bool configureDirectTableFunction(
         }
         if (global != nullptr) observable->addReferenceToGlobalFunction(global);
         if (composite != nullptr) observable->addReferenceToCompositeFunction(composite);
+        if (local != nullptr) {
+            diagnostic = "local TFUN observable counters are not direct yet";
+            return false;
+        }
         return true;
     };
     const auto attachFunction = [&](const std::string& name) {
         if (composite == nullptr) {
-            diagnostic = "global TFUN cannot use a function counter";
+            diagnostic = "local/global TFUN cannot use a function counter";
             return false;
         }
         auto* counterFunction = system->getGlobalFunctionByName(name);
@@ -451,7 +467,8 @@ bool configureDirectTableFunction(
         }
         if (!configureTarget()) return false;
         if (global != nullptr) global->setCounterFromTime(system);
-        else composite->setCounterFromTime(system);
+        else if (composite != nullptr) composite->setCounterFromTime(system);
+        else local->setCounterFromTime(system);
         return true;
     }
 
@@ -459,7 +476,8 @@ bool configureDirectTableFunction(
         parameters.count(counterName) != 0) {
         if (!configureTarget()) return false;
         if (global != nullptr) global->setCounterFromParameter(system, counterName);
-        else composite->setCounterFromParameter(system, counterName);
+        else if (composite != nullptr) composite->setCounterFromParameter(system, counterName);
+        else local->setCounterFromParameter(system, counterName);
         return true;
     }
 
@@ -664,8 +682,18 @@ bool collectLocalFunctionReferences(
         }
         return true;
     case ExpressionKind::TableFunction:
-        diagnostic = "TFUN in local functions is not direct yet";
-        return false;
+        if (expression.args().size() != 1 ||
+            (expression.tableFilePath().empty() &&
+             (expression.tableXValues().empty() ||
+              expression.tableXValues().size() != expression.tableYValues().size())) ||
+            (!expression.tableFilePath().empty() &&
+             (!expression.tableXValues().empty() || !expression.tableYValues().empty()))) {
+            diagnostic = "malformed local TFUN metadata";
+            return false;
+        }
+        return collectLocalFunctionReferences(
+            expression.args().front(), model, parameters, argumentName, references,
+            diagnostic);
     case ExpressionKind::Function:
         if (lowerCase(expression.name()) == "time" ||
             lowerCase(expression.name()) == "t") {
@@ -948,6 +976,15 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
             return false;
         }
 
+        std::vector<const bng::ast::Expression*> tableFunctions;
+        collectTableFunctions(function.getExpression(), tableFunctions);
+        if (tableFunctions.size() > 1) {
+            std::cerr << "[nfsim/ast] local function '" << function.getName()
+                      << "' has more than one TFUN expression; direct NFsim supports one"
+                      << " table per function\n";
+            return false;
+        }
+
         std::stable_sort(
             references.begin(), references.end(),
             [](const auto& lhs, const auto& rhs) { return lhs.first.size() > rhs.first.size(); });
@@ -959,7 +996,7 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
         }
         auto argumentNames = function.getArgs();
         if (!::createLocalFunction(
-                function.getName(), function.getExpression().toString(), argumentNames,
+                function.getName(), expressionForNfsim(function.getExpression()), argumentNames,
                 referenceNames, referenceTypes, s, legacyParameters, nullptr,
                 legacyAllowedStates, verbose)) {
             std::cerr << "[nfsim/ast] legacy local-function construction failed for '"
@@ -967,13 +1004,24 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
             return false;
         }
 
-        if (expressionUsesTime(function.getExpression())) {
-            auto* local = s->getLocalFunctionByName(function.getName());
-            if (local == nullptr) {
-                std::cerr << "[nfsim/ast] failed to resolve time-dependent local function '"
-                          << function.getName() << "'\n";
+        auto* local = s->getLocalFunctionByName(function.getName());
+        if (local == nullptr) {
+            std::cerr << "[nfsim/ast] failed to resolve local function '"
+                      << function.getName() << "'\n";
+            return false;
+        }
+        if (!tableFunctions.empty()) {
+            std::string tableDiagnostic;
+            if (!configureDirectTableFunction(
+                    *tableFunctions.front(), model, parameters, sourcePath, s,
+                    nullptr, nullptr, local, tableDiagnostic)) {
+                std::cerr << "[nfsim/ast] cannot map TFUN local function '"
+                          << function.getName() << "': " << tableDiagnostic << "\n";
                 return false;
             }
+        }
+
+        if (expressionUsesTime(function.getExpression())) {
             local->setTimeDependent(true);
             s->setHasTimeDependentFunctions(true);
         }
@@ -1068,7 +1116,8 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
         if (function.tableFunction != nullptr) {
             std::string diagnostic;
             if (!configureDirectTableFunction(*function.tableFunction, model, parameters,
-                                              sourcePath, s, global, nullptr, diagnostic)) {
+                                              sourcePath, s, global, nullptr, nullptr,
+                                              diagnostic)) {
                 delete global;
                 std::cerr << "[nfsim/ast] cannot map TFUN function '" << function.name
                           << "': " << diagnostic << "\n";
@@ -1124,7 +1173,8 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
         if (function.tableFunction != nullptr) {
             std::string diagnostic;
             if (!configureDirectTableFunction(*function.tableFunction, model, parameters,
-                                              sourcePath, s, nullptr, composite, diagnostic)) {
+                                              sourcePath, s, nullptr, composite, nullptr,
+                                              diagnostic)) {
                 delete composite;
                 std::cerr << "[nfsim/ast] cannot map TFUN composite '" << function.name
                           << "': " << diagnostic << "\n";
