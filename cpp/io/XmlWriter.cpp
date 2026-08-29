@@ -47,6 +47,7 @@ struct ParsedMolecule {
     std::string name;
     std::string compartment;   // per-molecule compartment
     std::string label;
+    bool scopePrefix = false;  // true for the species-scoped %x:: spelling
     std::vector<ParsedComponent> components;
 };
 
@@ -235,6 +236,7 @@ ParsedPattern parsePattern(const std::string& text) {
         if (percentPos != std::string::npos) {
             const auto scopePos = namepart.find("::", percentPos + 1);
             if (scopePos != std::string::npos && scopePos > percentPos + 1) {
+                mol.scopePrefix = true;
                 mol.label = namepart.substr(percentPos + 1, scopePos - percentPos - 1);
                 namepart = namepart.substr(0, percentPos) +
                            namepart.substr(scopePos + 2);
@@ -805,6 +807,9 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
             for (std::size_t moleculeIndex = 0; moleculeIndex < parsed.molecules.size();
                  ++moleculeIndex) {
                 if (parsed.molecules[moleculeIndex].label == argument) {
+                    if (parsed.molecules[moleculeIndex].scopePrefix) {
+                        return rrId + "_RP" + std::to_string(patternIndex + 1);
+                    }
                     return rrId + "_RP" + std::to_string(patternIndex + 1) + "_M" +
                            std::to_string(moleculeIndex + 1);
                 }

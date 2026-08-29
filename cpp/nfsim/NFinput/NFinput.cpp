@@ -2503,18 +2503,37 @@ bool NFinput::initReactionRules(
 
 							string functionName = pRateLaw->Attribute("name");
 							LocalFunction *lf = s->getLocalFunctionByName(functionName);
-							if(lf!=NULL) {
-								cout<<"Error!! call a local function through a composite function always!"<<endl;
-								cout<<"DOR rxn should never directly call a local function."<<endl;
-								exit(1);
-							} else {
+			if(lf!=NULL) {
+				// The XML writer may retain the source-level local
+				// function name. DOR reactions consume a composite
+				// pointer, so create the same thin wrapper used by the
+				// direct adapter and the FunctionProduct loader path.
+				if (funcArgs.size() != 1) {
+					cerr<<"Error: local function '"<<functionName
+					    <<"' must have exactly one reaction argument."<<endl;
+					return false;
+				}
+				if (s->getCompositeFunctionByName(functionName) == NULL) {
+					vector <string> calledFunctions(1, functionName);
+					vector <string> wrapperArgs(1, funcArgs.front());
+					vector <string> wrapperParams;
+					CompositeFunction *wrapper = new CompositeFunction(
+						s, functionName,
+						functionName+"("+funcArgs.front()+")",
+						calledFunctions, wrapperArgs, wrapperParams);
+					s->addCompositeFunction(wrapper);
+					wrapper->finalizeInitialization(s);
+				}
+			}
 
-								ts->finalize();
-
-								CompositeFunction *cf = s->getCompositeFunctionByName(functionName);
-
-								r=new DORRxnClass(rxnName,1,"",ts,cf,funcArgs,s);
-							}
+			ts->finalize();
+			CompositeFunction *cf = s->getCompositeFunctionByName(functionName);
+			if (cf == NULL) {
+				cerr<<"Error: could not resolve local-function wrapper '"
+				    <<functionName<<"'."<<endl;
+				return false;
+			}
+			r=new DORRxnClass(rxnName,1,"",ts,cf,funcArgs,s);
 						}
 					}
 					else if(rateLawType=="FunctionProduct") {

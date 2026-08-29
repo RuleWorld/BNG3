@@ -51,7 +51,7 @@ rows:
     tests: tests/cpp/test_nfsim_ast_adapter.cpp
     oracle: pending
     owner: pending-maintainer
-    notes: Parameter, zero-argument observable/time references, zero-argument composites over base globals, inline TFUN (linear/step with time, parameter, or observable counters), and one-argument local functions with molecule-scoped observable references are direct; file-backed TFUN in direct NFsim, nested composites, time-bearing locals, other rate-law forms, and non-percent scopes remain gated.
+    notes: Parameter, zero-argument observable/time references, zero-argument composites over base globals, inline TFUN (linear/step with time, parameter, or observable counters), and one-argument local functions with molecule- or species-scoped observable references are direct; file-backed TFUN in direct NFsim, nested composites, time-bearing locals, other rate-law forms, and non-percent scopes remain gated.
   - id: nfsim.seed-species
     source: legacy NFinput::initStartSpecies
     bng3_reference: cpp/nfsim/NFinput/NFinput_fromAst.cpp:addSpeciesFromAst
@@ -78,7 +78,7 @@ rows:
     tests: tests/cpp/test_nfsim_ast_adapter.cpp
     oracle: pending
     owner: pending-maintainer
-    notes: Elementary state, bond, degradation, product-creation, and compartment-transport rules are direct; bidirectional, zero-order, static MM, zero-argument functional, bounded molecule-scoped local-function, bounded two-factor FunctionProduct rates, and bounded unidirectional reactant include/exclude filters are covered. Reversible or product-filtered rules, symmetric reaction centers, and other non-static forms remain fail-closed.
+    notes: Elementary state, bond, degradation, product-creation, and compartment-transport rules are direct; bidirectional, zero-order, static MM, zero-argument functional, bounded molecule- or species-scoped local-function, bounded two-factor FunctionProduct rates, and bounded unidirectional reactant include/exclude filters are covered. Reversible or product-filtered rules, symmetric reaction centers, and other non-static forms remain fail-closed.
   - id: nfsim.energy-and-time-functions
     source: legacy NFinput::initEnergyFunctions and initFunctions
     bng3_reference: cpp/nfsim/NFinput/NFinput_fromAst.cpp

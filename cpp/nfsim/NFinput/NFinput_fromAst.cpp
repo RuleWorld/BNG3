@@ -16,7 +16,7 @@
 ///                    seed species, bounded direct reaction rules, direct
 ///                    Arrhenius energy expansion, time-backed global
 ///                    functions, zero-argument composites, one-argument
-///                    molecule-scoped local functions, FunctionProduct, and
+///                    molecule/species-scoped local functions, FunctionProduct,
 ///                    reactant include/exclude filters.
 /// GATED here:       nested/complex local functions, file-backed TFUN and
 ///                   other rate-law forms, product filters, and reaction
@@ -229,6 +229,22 @@ bool hasScopedArgument(const std::string& pattern, const std::string& argument) 
         if (end == pattern.size() || pattern.compare(end, 2, "::") == 0 ||
             !std::isalnum(static_cast<unsigned char>(pattern[end])) &&
                 pattern[end] != '_') {
+            return true;
+        }
+        position = pattern.find(needle, position + 1);
+    }
+    return false;
+}
+
+bool hasSpeciesScopedArgument(const std::string& pattern, const std::string& argument) {
+    if (argument.empty()) return false;
+    const std::string needle = "%" + argument + "::";
+    std::size_t position = pattern.find(needle);
+    while (position != std::string::npos) {
+        // A scope prefix belongs to a molecule-pattern boundary. Accept the
+        // start of the species, a species-level compartment prefix, or a
+        // dot-connected molecule; reject labels embedded in names.
+        if (position == 0 || pattern[position - 1] == '.' || pattern[position - 1] == ':') {
             return true;
         }
         position = pattern.find(needle, position + 1);
@@ -3383,9 +3399,12 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                     diagnostic = "FunctionProduct cannot scope population reactants";
                     return false;
                 }
+                const int matchingScope = hasSpeciesScopedArgument(
+                    rule.getReactants()[matchingPattern], operand.argument)
+                    ? LocalFunction::SPECIES
+                    : LocalFunction::MOLECULE;
                 if (!transformationSet->addLocalFunctionReference(
-                        reactantRoots[matchingPattern], operand.argument,
-                        LocalFunction::MOLECULE)) {
+                        reactantRoots[matchingPattern], operand.argument, matchingScope)) {
                     diagnostic = "could not add FunctionProduct scope reference";
                     return false;
                 }
@@ -3413,6 +3432,7 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                     break;
                 }
                 std::size_t matchingPattern = reactantRoots.size();
+                int matchingScope = LocalFunction::MOLECULE;
                 for (std::size_t patternIndex = 0;
                      patternIndex < reactantRoots.size(); ++patternIndex) {
                     if (patternIndex >= rule.getReactants().size()) continue;
@@ -3426,6 +3446,10 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                         break;
                     }
                     matchingPattern = patternIndex;
+                    if (hasSpeciesScopedArgument(
+                            rule.getReactants()[patternIndex], argument.name())) {
+                        matchingScope = LocalFunction::SPECIES;
+                    }
                 }
                 if (!ok) break;
                 if (matchingPattern == reactantRoots.size()) {
@@ -3440,8 +3464,7 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                     break;
                 }
                 if (!transformationSet->addLocalFunctionReference(
-                        reactantRoots[matchingPattern], argument.name(),
-                        LocalFunction::MOLECULE)) {
+                        reactantRoots[matchingPattern], argument.name(), matchingScope)) {
                     diagnostic = "could not add local-function scope reference";
                     ok = false;
                     break;
@@ -3594,6 +3617,10 @@ System* buildSystemFromAst(const bng::ast::Model& model,
     const std::string& name = model.getModelName();
     System* s = new System(name.empty() ? "model" : name,
                            blockSameComplexBinding, globalMoleculeLimit);
+    // The CLI enables complex-scoped local functions by default.  The direct
+    // AST entry point has no separate -nocslf argument, so preserve that
+    // default explicitly instead of leaving the legacy System flag unset.
+    s->setEvaluateComplexScopedLocalFunctions(true);
 
     std::map<std::string, double> parameters;
     std::map<std::string, int> allowedStates;

@@ -947,6 +947,54 @@ end reaction rules
     delete system;
 }
 
+TEST_CASE("NFsim AST adapter maps species-scoped local rates") {
+    auto model = bng::parser::parseModel(R"(
+begin molecule types
+    A(b~u~p)
+    I(i)
+end molecule types
+begin seed species
+    A(b~u!1).I(i!1) 1
+end seed species
+begin observables
+    Molecules I_total I()
+    Molecules A_phosphorylated A(b~p!?)
+end observables
+begin functions
+    f(x) = I_total(x)
+end functions
+begin reaction rules
+    %x::A(b~u!1).I(i!1) -> %x::A(b~p!1).I(i!1) f(x)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    const auto xml = bng::io::XmlWriter::write(*model);
+    CHECK(xml.find("<Argument id=\"x\" type=\"ObjectReference\" value=\"RR1_RP1\"/>") !=
+          std::string::npos);
+
+    int suggestedTraversalLimit = 0;
+    auto* directSystem = NFinput::buildSystemFromAst(
+        *model, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(directSystem != nullptr);
+    REQUIRE(directSystem->getAllReactions().size() == 1);
+    directSystem->prepareForSimulation();
+    CHECK(directSystem->getReaction(0)->get_a() == Catch::Approx(1.0));
+    directSystem->singleStep();
+    CHECK(directSystem->getObservableByName("A_phosphorylated")->getCount() == 1);
+    delete directSystem;
+
+    suggestedTraversalLimit = 0;
+    auto* xmlSystem = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, suggestedTraversalLimit);
+    REQUIRE(xmlSystem != nullptr);
+    xmlSystem->prepareForSimulation();
+    CHECK(xmlSystem->getReaction(0)->get_a() == Catch::Approx(1.0));
+    xmlSystem->singleStep();
+    CHECK(xmlSystem->getObservableByName("A_phosphorylated")->getCount() == 1);
+    delete xmlSystem;
+}
+
 TEST_CASE("NFsim AST adapter enforces reactant include and exclude filters") {
     const auto makeModel = [](const std::string& modifier) {
         std::string source = R"BNG(
