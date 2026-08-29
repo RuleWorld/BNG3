@@ -1,9 +1,115 @@
 # BNG3 Integration and Convergence Plan
 
-**Status:** Proposed
+**Status:** Proposed architecture; active implementation handoff
 **Plan date:** 2026-08-28
 **Scope:** BioNetGen, NFsim, and PyBioNetGen convergence into one maintained BNG3 codebase
-**Implementation:** Out of scope for this document
+**Implementation:** The next execution session owns the complete port; this document is its authoritative backlog and completion contract.
+
+## Next-session execution charter — port everything
+
+This is a no-partial-completion handoff. Start a persistent goal task whose
+objective is:
+
+> Port every supported BioNetGen, NFsim, and PyBioNetGen capability into BNG3,
+> preserve or explicitly govern compatibility, and continue until the full
+> Definition of Done in Section 11 is satisfied.
+
+“Port everything” means behaviorally porting the complete capability union, not
+copying files or stopping at the current integration foundation. The scope
+includes:
+
+- BNGL parsing, diagnostics, actions, AST/model construction, symbol and source
+  semantics;
+- network generation, graph identity, ODE, SSA, PLA, PSA, and NF simulation;
+- all NFsim semantics: molecule types, states, symmetry, populations, seed
+  species, observables, local/global/composite/TFUN/time functions, rate laws,
+  compartments, options, energy patterns, transformations, reaction rules, and
+  fixed species;
+- Python `ModelBuilder`, public API/result objects, scans, sensitivity,
+  plotting/helpers, serialization, CLI, compatibility imports, and installed
+  packaging;
+- Atomizer and supported BNGL, BNG-XML, NET, SBML, SBML-Multi,
+  MATLAB/MEX, LaTeX, SSC, MDL, and graph writers/converters;
+- CI, platform support, reproducibility, provenance, oracle/golden validation,
+  documentation, migration, deprecation, and release governance.
+
+Every item must be either implemented and tested in BNG3 or removed only through
+a reviewed compatibility decision with an owner, rationale, migration path, and
+release note. Unsupported constructs must fail explicitly; they must not be
+dropped or silently routed to a weaker implementation.
+
+### Required specialist roles
+
+Use one or two specialist subagents in addition to the orchestrator:
+
+1. **SWE / systems-porting specialist.** Own the file-level inventory,
+   C++/Python/adaptor implementation, build and packaging work, regression
+   tests, CI, and incremental commits. For each slice, report the source
+   capability, BNG3 implementation, exact test commands/results, and remaining
+   semantic gaps.
+2. **Core biologist / domain-validation specialist.** Own biological and
+   modeling semantics: molecule/site/state meaning, complexes and symmetry,
+   observables, compartments, stoichiometry, reaction transformations, rate
+   laws, deterministic/stochastic interpretation, and oracle/golden review.
+   Reject behavior that is syntactically valid but biologically or
+   scientifically changed, and identify the smallest discriminating fixture.
+
+The orchestrator owns sequencing, conflict resolution, provenance, acceptance
+thresholds, and the final integration. Specialists must not declare completion
+from unit tests alone; each result needs a capability mapping and an evidence
+trail in the repository.
+
+### Execution protocol
+
+1. Read this document, `AGENTS.md`, the live branch/PR state, and all existing
+   provenance and exception records. Pull before starting, preserving unrelated
+   work and uncommitted changes.
+2. Build a capability matrix from the scope above and Section 11. Assign every
+   row to an owner, source revision, implementation path, oracle, regression
+   fixture, and acceptance gate. Keep the matrix current in the PR or a linked
+   repository artifact.
+3. Work in small semantic slices: inventory the source behavior, port the
+   implementation, add the failing-before regression/differential test, run
+   targeted and dependent gates, update reconciliation/provenance/docs, then
+   integrate.
+4. Use `gh` and the Git remote for public branch/PR state; do not use the
+   GitHub connector. Push after each robust checkpoint and keep the PR body and
+   check evidence current.
+5. Commit periodically once a coherent slice is tested. Commits must be
+   reviewable and attributable; do not hide failures with broad skips,
+   tolerance changes, generated goldens, or `|| true`.
+6. Continue automatically across turns/compaction until all unblocked work is
+   complete. A difficult test, a partial adapter, or a green unit suite is not
+   a stopping condition. If external authority, credentials, or a maintainer
+   decision is genuinely required, record the exact blocker, finish independent
+   work, and request only that missing input.
+
+### Starting checkpoint
+
+The public branch `codex/bng3-integration-foundations` and PR
+`RuleWorld/BNG3#1` contain the initial provenance, CI, validation, expression,
+and bounded direct-NFsim foundation. Before changing code, verify their live
+heads with `gh`; do not assume the PR description is current.
+
+Known unfinished slices at this handoff are intentional and must be carried
+forward, not treated as completion:
+
+- maintainer-approved source cutoffs, oracle recipes/digests, and support
+  matrix decisions;
+- complete source-reconciliation ledger and reviewed provenance-complete
+  golden bundle;
+- direct NFsim observables, seed species, rules/transformations, and remaining
+  function forms, followed by shadow comparison and XML-path retirement;
+- complete BNG2/NFsim/PyBioNetGen behavioral parity, installed-wheel/CLI gates,
+  Atomizer/format round trips, and final redundancy deletion.
+
+### No-stop completion gate
+
+The next session may close its goal only when Section 11 is true on the exact
+release candidate SHA, all capability-matrix rows are `done` or have an
+approved compatibility disposition, all expected failures/skips are owned and
+expiring, and the public PR has reproducible CI/oracle evidence. “Mostly ported,”
+“passes local tests,” or “blocked by a known mismatch” is not done.
 
 ## Executive decision
 
