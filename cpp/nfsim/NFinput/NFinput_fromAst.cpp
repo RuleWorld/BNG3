@@ -24,7 +24,8 @@
 ///                   Bounded function-counter local TFUNs whose counter is a
 ///                   zero-argument base global are also direct composites.
 /// GATED here:       nested/complex local functions, unbounded function-counter
-///                   composites, dynamic rates that reference model functions,
+///                   composites, dynamic rates combining direct observables
+///                   with model functions or referencing composite functions,
 ///                   other rate-law forms, product filters, and reaction
 ///                   centers not yet represented by the direct mapping. They
 ///                   fail closed and cite the TiXml init* function that
@@ -2111,8 +2112,10 @@ bool addDynamicReactionRateFunction(
     const std::filesystem::path& sourcePath,
     std::size_t ordinal,
     GlobalFunction*& global,
+    CompositeFunction*& composite,
     std::string& diagnostic) {
     global = nullptr;
+    composite = nullptr;
 
     std::set<std::string> observableReferences;
     std::set<std::string> functionReferences;
@@ -2121,12 +2124,6 @@ bool addDynamicReactionRateFunction(
             functionReferences, diagnostic)) {
         return false;
     }
-    if (!functionReferences.empty()) {
-        diagnostic = "dynamic reaction rates cannot yet reference model functions; "
-                     "use a standalone global function rate";
-        return false;
-    }
-
     std::vector<const bng::ast::Expression*> tableFunctions;
     collectTableFunctions(expression, tableFunctions);
     if (tableFunctions.size() > 1) {
@@ -2135,9 +2132,24 @@ bool addDynamicReactionRateFunction(
     }
 
     const bool usesTime = expressionUsesTime(expression);
-    if (!usesTime && observableReferences.empty() && tableFunctions.empty()) {
+    if (!usesTime && observableReferences.empty() && functionReferences.empty() &&
+        tableFunctions.empty()) {
         diagnostic = "rate expression is not a supported dynamic function";
         return false;
+    }
+    if (!functionReferences.empty() && !observableReferences.empty()) {
+        diagnostic = "dynamic reaction rates cannot combine direct observables with "
+                     "model-function references in one composite";
+        return false;
+    }
+    if (usesTime && !tableFunctions.empty()) {
+        const auto& counter = tableFunctions.front()->args().front();
+        const auto counterName = counter.name();
+        if (lowerCase(counterName) != "time" && lowerCase(counterName) != "t") {
+            diagnostic = "dynamic reaction rates cannot combine a non-time TFUN counter "
+                         "with a time-dependent expression";
+            return false;
+        }
     }
 
     std::set<std::string> parameterReferences;
@@ -2156,21 +2168,53 @@ bool addDynamicReactionRateFunction(
                "_" + std::to_string(suffix++);
     }
 
+    std::vector<std::string> parameterNames(
+        parameterReferences.begin(), parameterReferences.end());
+    if (!functionReferences.empty()) {
+        for (const auto& dependency : functionReferences) {
+            if (system->getGlobalFunctionByName(dependency) == nullptr) {
+                diagnostic = "dynamic reaction rates only support references to base global "
+                             "functions; '" + dependency + "' is composite or unavailable";
+                return false;
+            }
+        }
+        std::vector<std::string> functionsCalled(
+            functionReferences.begin(), functionReferences.end());
+        std::vector<std::string> argumentNames;
+        auto candidate = std::make_unique<CompositeFunction>(
+            system, name, expressionForNfsim(expression), functionsCalled,
+            argumentNames, parameterNames);
+        if (!tableFunctions.empty() &&
+            !configureDirectTableFunction(
+                *tableFunctions.front(), model, parameters, sourcePath, system,
+                nullptr, candidate.get(), nullptr, diagnostic)) {
+            return false;
+        }
+        if (!system->addCompositeFunction(candidate.get())) {
+            diagnostic = "failed to register generated dynamic reaction-rate composite";
+            return false;
+        }
+        composite = candidate.release();
+        composite->finalizeInitialization(system);
+        if (usesTime) {
+            composite->setCounterFromTime(system);
+            system->setHasTimeDependentFunctions(true);
+        }
+        return true;
+    }
+
     std::vector<std::string> referenceNames(
         observableReferences.begin(), observableReferences.end());
     std::vector<std::string> referenceTypes(referenceNames.size(), "Observable");
-    std::vector<std::string> parameterNames(
-        parameterReferences.begin(), parameterReferences.end());
     auto candidate = std::make_unique<GlobalFunction>(
         name, expressionForNfsim(expression), referenceNames, referenceTypes,
         parameterNames, system);
 
-    if (!tableFunctions.empty()) {
-        if (!configureDirectTableFunction(
-                *tableFunctions.front(), model, parameters, sourcePath, system,
-                candidate.get(), nullptr, nullptr, diagnostic)) {
-            return false;
-        }
+    if (!tableFunctions.empty() &&
+        !configureDirectTableFunction(
+            *tableFunctions.front(), model, parameters, sourcePath, system,
+            candidate.get(), nullptr, nullptr, diagnostic)) {
+        return false;
     }
 
     if (!system->addGlobalFunction(candidate.get())) {
@@ -3908,17 +3952,27 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 reaction->setBaseRate(rateValue, rateParameterName);
             } else {
                 GlobalFunction* dynamicGlobal = nullptr;
+                CompositeFunction* dynamicComposite = nullptr;
                 if (!addDynamicReactionRateFunction(
                         rate, model, parameters, s, sourcePath,
                         originalRuleOrdinal * 2 + directionOrdinal,
-                        dynamicGlobal, diagnostic)) {
+                        dynamicGlobal, dynamicComposite, diagnostic)) {
                     std::cerr << "[nfsim/ast] cannot map reaction '" << rule.getRuleName()
                               << "': " << diagnostic << "\n";
                     delete transformationSet;
                     return false;
                 }
-                reaction = new FunctionalRxnClass(
-                    rule.getRuleName(), dynamicGlobal, transformationSet, s);
+                if (dynamicGlobal != nullptr) {
+                    reaction = new FunctionalRxnClass(
+                        rule.getRuleName(), dynamicGlobal, transformationSet, s);
+                } else if (dynamicComposite != nullptr) {
+                    reaction = new FunctionalRxnClass(
+                        rule.getRuleName(), dynamicComposite, transformationSet, s);
+                } else {
+                    std::cerr << "[nfsim/ast] dynamic reaction rate produced no function\n";
+                    delete transformationSet;
+                    return false;
+                }
             }
         }
 
