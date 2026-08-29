@@ -814,6 +814,106 @@ end reaction rules
     delete system;
 }
 
+TEST_CASE("NFsim AST adapter maps Sat rates directly and through XML") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    kcat 1.0
+    Km 10.0
+end parameters
+begin molecule types
+    S()
+    E()
+    P()
+end molecule types
+begin seed species
+    S() 100
+    E() 100
+end seed species
+begin observables
+    Molecules S_total S()
+    Molecules P_total P()
+end observables
+begin reaction rules
+    S() + E() -> P() + E() Sat(kcat,Km)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    const auto xml = bng::io::XmlWriter::write(*model);
+    CHECK(xml.find("type=\"Sat\"") != std::string::npos);
+
+    int suggestedTraversalLimit = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(direct != nullptr);
+    REQUIRE(direct->getAllReactions().size() == 1);
+    direct->prepareForSimulation();
+    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(100.0 * 100.0 / 110.0));
+    direct->singleStep();
+    CHECK(direct->getObservableByName("S_total")->getCount() == 99);
+    CHECK(direct->getObservableByName("P_total")->getCount() == 1);
+    delete direct;
+
+    suggestedTraversalLimit = 0;
+    auto* xmlSystem = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, suggestedTraversalLimit);
+    REQUIRE(xmlSystem != nullptr);
+    REQUIRE(xmlSystem->getAllReactions().size() == 1);
+    xmlSystem->prepareForSimulation();
+    CHECK(xmlSystem->getReaction(0)->get_a() == Catch::Approx(100.0 * 100.0 / 110.0));
+    delete xmlSystem;
+}
+
+TEST_CASE("NFsim AST adapter maps Hill rates directly and through XML") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    Vmax 2.0
+    Kh 10.0
+    n 2.0
+end parameters
+begin molecule types
+    S()
+    P()
+end molecule types
+begin seed species
+    S() 100
+end seed species
+begin observables
+    Molecules S_total S()
+    Molecules P_total P()
+end observables
+begin reaction rules
+    S() -> P() Hill(Vmax,Kh,n)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    const auto xml = bng::io::XmlWriter::write(*model);
+    CHECK(xml.find("type=\"Hill\"") != std::string::npos);
+
+    int suggestedTraversalLimit = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(direct != nullptr);
+    REQUIRE(direct->getAllReactions().size() == 1);
+    direct->prepareForSimulation();
+    const double expected = 2.0 * 100.0 * 100.0 / (10.0 * 10.0 + 100.0 * 100.0);
+    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(expected));
+    direct->singleStep();
+    CHECK(direct->getObservableByName("S_total")->getCount() == 99);
+    CHECK(direct->getObservableByName("P_total")->getCount() == 1);
+    delete direct;
+
+    suggestedTraversalLimit = 0;
+    auto* xmlSystem = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, suggestedTraversalLimit);
+    REQUIRE(xmlSystem != nullptr);
+    REQUIRE(xmlSystem->getAllReactions().size() == 1);
+    xmlSystem->prepareForSimulation();
+    CHECK(xmlSystem->getReaction(0)->get_a() == Catch::Approx(expected));
+    delete xmlSystem;
+}
+
 TEST_CASE("NFsim AST adapter maps zero-order product synthesis") {
     auto model = bng::parser::parseModel(R"(
 begin parameters

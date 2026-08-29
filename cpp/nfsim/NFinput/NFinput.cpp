@@ -4,6 +4,7 @@
 
 
 #include <algorithm>
+#include <cmath>
 
 
 using namespace NFinput;
@@ -2772,12 +2773,84 @@ bool NFinput::initReactionRules(
 							
 						}
 					}
-					else if(rateLawType=="Sat") {
-						cerr<<"!! Nfsim cannot, and will not, interpret a Rate Law of 'type': 'Sat' as BioNetGen.\n";
-						cerr<<"  once could.  You should instead use a Michaelis-Menten rate law (use type 'MM')\n";
-						cerr<<"  that also takes the parameters (kcat, Km) but is more accurate.\n"<<endl;
-						cerr<<"  But for now, I'm aborting..."<<endl;
-						return false;
+					else if(rateLawType=="Sat" || rateLawType=="Hill") {
+						// Sat(k0,K1,...,KN) and Hill(Vmax,Kh,n) are total-rate
+						// laws.  Keep the constants symbolic in XML, but resolve them
+						// once here just as the existing MM loader does.
+						if (totalRateFlag) {
+							cerr << "Rate Law " << rateLawType << " is not compatible with "
+							     << "the TotalRate convention for reaction " << rxnName << "." << endl;
+							delete ts;
+							return false;
+						}
+						if (ts->getNreactants() == 0) {
+							cerr << "Rate Law " << rateLawType << " requires at least one reactant "
+							     << "for reaction " << rxnName << "." << endl;
+							delete ts;
+							return false;
+						}
+
+						TiXmlElement *pListOfRateConstants =
+							pRateLaw->FirstChildElement("ListOfRateConstants");
+						if (!pListOfRateConstants) {
+							cerr << "Rate Law " << rateLawType << " definition for " << rxnName
+							     << " does not have a ListOfRateConstants tag!  Quitting" << endl;
+							delete ts;
+							return false;
+						}
+
+						vector<double> constants;
+						for (TiXmlElement *pRateConstant =
+							 pListOfRateConstants->FirstChildElement("RateConstant");
+							 pRateConstant != 0;
+							 pRateConstant = pRateConstant->NextSiblingElement("RateConstant")) {
+							if (!pRateConstant->Attribute("value")) {
+								cerr << "Rate Law " << rateLawType << " definition for " << rxnName
+								     << " has a RateConstant without a value!  Quitting" << endl;
+								delete ts;
+								return false;
+							}
+							const string valueName = pRateConstant->Attribute("value");
+							double value = 0.0;
+							try {
+								value = NFutil::convertToDouble(valueName);
+							} catch (std::runtime_error &) {
+								const auto parameterIt = parameter.find(valueName);
+								if (parameterIt == parameter.end()) {
+									cerr << "Could not find parameter: " << valueName
+									     << " when reading " << rateLawType << " rate for rxn "
+									     << rxnName << ". Quitting" << endl;
+									delete ts;
+									return false;
+								}
+								value = parameterIt->second;
+							}
+							if (!std::isfinite(value) || value < 0.0) {
+								cerr << "Rate Law " << rateLawType << " constants must be finite "
+								     << "and nonnegative for reaction " << rxnName << "." << endl;
+								delete ts;
+								return false;
+							}
+							constants.push_back(value);
+						}
+
+						if ((rateLawType == "Sat" &&
+							 (constants.size() < 2 ||
+							  constants.size() > static_cast<std::size_t>(ts->getNreactants()) + 1)) ||
+							(rateLawType == "Hill" && constants.size() != 3)) {
+							cerr << "Rate Law " << rateLawType << " has an invalid number of "
+							     << "constants for reaction " << rxnName << "." << endl;
+							delete ts;
+							return false;
+						}
+
+						ts->finalize();
+						if (rateLawType == "Sat") {
+							r = new SatRxnClass(rxnName, constants, ts, s);
+						} else {
+							r = new HillRxnClass(
+								rxnName, constants[0], constants[1], constants[2], ts, s);
+						}
 					}
 
 					////  To extend NFsim to parse more rate law types, add an extra else if clause here to catch the rate law

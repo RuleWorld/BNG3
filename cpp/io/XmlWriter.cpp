@@ -854,6 +854,8 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
             type = "Arrhenius";
         } else if (isCall && lowercase(rate.name()) == "sat" && rate.args().size() == 2) {
             type = "Sat";
+        } else if (isCall && lowercase(rate.name()) == "hill" && rate.args().size() == 3) {
+            type = "Hill";
         }
 
         xml << "        <RateLaw id=\"" << rrId << "_RateLaw\" type=\"" << type
@@ -917,7 +919,7 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
 
         xml << ">\n";
         xml << "          <ListOfRateConstants>\n";
-        if (type == "MM" || type == "Arrhenius" || type == "Sat") {
+        if (type == "MM" || type == "Arrhenius" || type == "Sat" || type == "Hill") {
             for (const auto& argument : rate.args()) {
                 xml << "            <RateConstant value=\""
                     << escapeXml(argument.toString()) << "\"/>\n";

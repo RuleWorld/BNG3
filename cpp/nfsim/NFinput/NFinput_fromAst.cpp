@@ -17,7 +17,8 @@
 ///                    Arrhenius energy expansion, time-backed global
 ///                    functions, zero-argument composites, one-argument
 ///                    molecule/species-scoped and time-bearing local functions,
-///                    FunctionProduct, reactant include/exclude filters.
+///                    FunctionProduct, Sat/Hill rate laws, and reactant
+///                    include/exclude filters.
 /// GATED here:       nested/complex local functions, local TFUNs, other rate-law
 ///                   forms, product filters, and reaction
 ///                   centers not yet represented by the direct mapping. They
@@ -3524,6 +3525,19 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
         const bool michaelisMenten =
             rate.kind() == bng::ast::ExpressionKind::Function &&
             (lowerCase(rate.name()) == "mm") && rate.args().size() == 2;
+        const bool saturationRate =
+            rate.kind() == bng::ast::ExpressionKind::Function &&
+            lowerCase(rate.name()) == "sat";
+        const bool hillRate =
+            rate.kind() == bng::ast::ExpressionKind::Function &&
+            lowerCase(rate.name()) == "hill";
+        if ((michaelisMenten || saturationRate || hillRate) &&
+            hasReactionModifier(rule, "totalrate")) {
+            std::cerr << "[nfsim/ast] reaction '" << rule.getRuleName()
+                      << "' uses a built-in saturating rate with unsupported TotalRate\n";
+            delete transformationSet;
+            return false;
+        }
         const bool namedFunction =
             (rate.kind() == bng::ast::ExpressionKind::Identifier ||
              rate.kind() == bng::ast::ExpressionKind::Function ||
@@ -3548,6 +3562,43 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 return false;
             }
             reaction = new MMRxnClass(rule.getRuleName(), kcat, km, transformationSet, s);
+        } else if (saturationRate || hillRate) {
+            if (reactantRoots.empty()) {
+                std::cerr << "[nfsim/ast] reaction '" << rule.getRuleName()
+                          << "' uses a saturating rate without reactants\n";
+                delete transformationSet;
+                return false;
+            }
+            if ((saturationRate &&
+                 (rate.args().size() < 2 ||
+                  rate.args().size() > reactantRoots.size() + 1)) ||
+                (hillRate && rate.args().size() != 3)) {
+                std::cerr << "[nfsim/ast] reaction '" << rule.getRuleName()
+                          << "' has invalid " << (saturationRate ? "Sat" : "Hill")
+                          << " constants for its reactants\n";
+                delete transformationSet;
+                return false;
+            }
+            std::vector<double> constants;
+            constants.reserve(rate.args().size());
+            for (const auto& argument : rate.args()) {
+                double value = 0.0;
+                if (!evaluateStaticReactionRate(argument, parameters, value, diagnostic)) {
+                    std::cerr << "[nfsim/ast] cannot map reaction '" << rule.getRuleName()
+                              << "': " << diagnostic << "\n";
+                    delete transformationSet;
+                    return false;
+                }
+                constants.push_back(value);
+            }
+            if (saturationRate) {
+                reaction = new SatRxnClass(
+                    rule.getRuleName(), std::move(constants), transformationSet, s);
+            } else {
+                reaction = new HillRxnClass(
+                    rule.getRuleName(), constants[0], constants[1], constants[2],
+                    transformationSet, s);
+            }
         } else if (functionProductRate) {
             auto* composite1 = s->getCompositeFunctionByName(functionProductOperand1.name);
             auto* composite2 = s->getCompositeFunctionByName(functionProductOperand2.name);
