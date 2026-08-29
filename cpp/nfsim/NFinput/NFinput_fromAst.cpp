@@ -12,20 +12,24 @@
 ///   from `return false` to a real implementation at a time, each gated by
 ///   test_parity_nfsim (ast-direct must equal in-memory-XML under one seed).
 ///
-/// IMPLEMENTED here: parameters, compartments, and molecule types.
-/// STUBBED here:     functions, observables, species, and rules — each cites
-///                   the TiXml init* function that is its behavioral
-///                   specification. Port those, do not reinvent them.
+/// IMPLEMENTED here: parameters, compartments, molecule types, and the safe
+///                    parameter/observable-backed global-function subset.
+/// STUBBED here:     observables, species, and rules; local/composite/time
+///                   functions still fail closed and cite the TiXml init*
+///                   function that is their behavioral specification.
 
 #include "NFinput_fromAst.hh"
 #include "NFinput.hh"
 
 #include "ast/Compartment.hpp"
+#include "ast/Function.hpp"
 #include "ast/Model.hpp"
 #include "ast/MoleculeType.hpp"
+#include "ast/Expression.hpp"
 #include "ast/Parameter.hpp"
 #include "ast/ParameterList.hpp"
 #include "../NFcore/compartment.hh"
+#include "../NFfunction/NFfunction.hh"
 #include "../NFutil/NFutil.hh"
 
 #include <algorithm>
@@ -36,6 +40,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <set>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -131,6 +136,102 @@ bool parseIntegerState(const std::string& text, int& value) {
     char trailing = '\0';
     if (!(input >> value) || (input >> trailing)) return false;
     return true;
+}
+
+bool hasModelFunction(const bng::ast::Model& model, const std::string& name) {
+    return std::any_of(model.getFunctions().begin(), model.getFunctions().end(),
+                       [&](const auto& function) { return function.getName() == name; });
+}
+
+bool hasModelObservable(const bng::ast::Model& model, const std::string& name) {
+    return std::any_of(model.getObservables().begin(), model.getObservables().end(),
+                       [&](const auto& observable) { return observable.getName() == name; });
+}
+
+bool isSupportedGlobalBuiltin(const std::string& name) {
+    // Keep this list aligned with the functions registered by the NFsim
+    // ExprTk-backed parser.  Rate-law helpers and TFUN need their own
+    // adapters; accepting them here would make the direct path fail later in
+    // GlobalFunction::prepareForSimulation().
+    static const std::unordered_set<std::string> supported = {
+        "abs",  "acos", "acosh", "asin", "asinh", "atan", "atanh", "ceil",
+        "cos",  "cosh", "exp",   "floor", "if",    "ln",    "log",   "log10",
+        "log2", "max",  "min",   "rint",  "sign",  "sin",   "sinh",  "sqrt",
+        "sum",  "tan",  "tanh"};
+    return supported.count(lowerCase(name)) != 0;
+}
+
+bool collectGlobalFunctionReferences(
+    const bng::ast::Expression& expression, const bng::ast::Model& model,
+    const std::map<std::string, double>& parameters, std::set<std::string>&
+        observableReferences,
+    std::string& diagnostic) {
+    using bng::ast::ExpressionKind;
+
+    switch (expression.kind()) {
+    case ExpressionKind::Number:
+        return true;
+    case ExpressionKind::Identifier: {
+        const auto& name = expression.name();
+        if (name == "time" || name == "t") {
+            diagnostic = "time-dependent global functions require the NFsim time adapter";
+            return false;
+        }
+        if (parameters.count(name) != 0 || name == "_PI" || name == "_e" ||
+            name == "_Na") {
+            return true;
+        }
+        diagnostic = "unknown identifier '" + name + "'";
+        return false;
+    }
+    case ExpressionKind::Unary:
+    case ExpressionKind::Binary:
+        for (const auto& child : expression.args()) {
+            if (!collectGlobalFunctionReferences(child, model, parameters,
+                                                  observableReferences, diagnostic)) {
+                return false;
+            }
+        }
+        return true;
+    case ExpressionKind::Function:
+        if (hasModelFunction(model, expression.name())) {
+            diagnostic = "global function calls model function '" + expression.name() +
+                         "' (composite/local mapping is not yet direct)";
+            return false;
+        }
+        if (lowerCase(expression.name()) == "time") {
+            diagnostic = "time-dependent global functions require the NFsim time adapter";
+            return false;
+        }
+        if (!isSupportedGlobalBuiltin(expression.name())) {
+            diagnostic = "unsupported NFsim global-function builtin '" +
+                         expression.name() + "'";
+            return false;
+        }
+        for (const auto& child : expression.args()) {
+            if (!collectGlobalFunctionReferences(child, model, parameters,
+                                                  observableReferences, diagnostic)) {
+                return false;
+            }
+        }
+        return true;
+    case ExpressionKind::ObservableRef:
+        if (hasModelFunction(model, expression.name())) {
+            diagnostic = "global function calls model function '" + expression.name() +
+                         "' (composite/local mapping is not yet direct)";
+            return false;
+        }
+        if (!hasModelObservable(model, expression.name()) || !expression.args().empty()) {
+            diagnostic = "observable reference '" + expression.name() +
+                         "' is missing or has unsupported arguments";
+            return false;
+        }
+        observableReferences.insert(expression.name());
+        return true;
+    }
+
+    diagnostic = "unrecognized expression node";
+    return false;
 }
 
 } // namespace
@@ -311,12 +412,84 @@ bool addMoleculeTypesFromAst(const bng::ast::Model& model, System* s,
 
 bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
                          const std::map<std::string, double>& parameters, bool verbose) {
-    (void)model; (void)s; (void)parameters; (void)verbose;
     // SPEC: NFinput::initFunctions (parseFuncXML.cpp:488).
-    // WO-3 INTERSECTION: build the function bodies through the shared evaluator
-    //       (see ast/ExpressionEval.hpp), NOT exprtk. ast source:
-    //       model.getFunctions() -> vector<Function>.
-    return false;
+    // This slice handles only parameter/observable-backed global functions.
+    // Local functions, composite functions, time/TFUN functions, and rate-law
+    // helpers deliberately return false so the caller can use the compatibility
+    // XML path rather than constructing a subtly different simulation.
+    if (s == nullptr) return false;
+
+    std::unordered_set<std::string> names;
+    for (const auto& function : model.getFunctions()) {
+        const std::string& name = function.getName();
+        if (name.empty() || !names.insert(name).second ||
+            s->getGlobalFunctionByName(name) != nullptr) {
+            std::cerr << "[nfsim/ast] duplicate or missing global function '" << name
+                      << "'\n";
+            return false;
+        }
+        if (!function.getArgs().empty()) {
+            std::cerr << "[nfsim/ast] function '" << name
+                      << "' has arguments; direct local-function mapping is pending\n";
+            return false;
+        }
+    }
+
+    struct PendingFunction {
+        std::string name;
+        std::string expression;
+        std::vector<std::string> observableReferences;
+        std::vector<std::string> parameterReferences;
+    };
+    std::vector<PendingFunction> pending;
+    pending.reserve(model.getFunctions().size());
+
+    for (const auto& function : model.getFunctions()) {
+        std::set<std::string> observableReferences;
+        std::string diagnostic;
+        if (!collectGlobalFunctionReferences(function.getExpression(), model, parameters,
+                                              observableReferences, diagnostic)) {
+            std::cerr << "[nfsim/ast] cannot map function '" << function.getName()
+                      << "': " << diagnostic << "\n";
+            return false;
+        }
+
+        std::set<std::string> parameterReferences;
+        for (const auto& dependency : function.getExpression().getDependencies()) {
+            if (parameters.count(dependency) != 0) {
+                parameterReferences.insert(dependency);
+            }
+        }
+
+        PendingFunction next {
+            function.getName(),
+            function.getExpression().toString(),
+            {observableReferences.begin(), observableReferences.end()},
+            {parameterReferences.begin(), parameterReferences.end()}};
+        pending.push_back(std::move(next));
+    }
+
+    for (const auto& function : pending) {
+        // GlobalFunction predates const-correctness and takes mutable vector
+        // references; keep the staged metadata immutable until this boundary,
+        // then pass local copies to its legacy constructor.
+        auto referenceNames = function.observableReferences;
+        std::vector<std::string> referenceTypes(referenceNames.size(), "Observable");
+        auto parameterNames = function.parameterReferences;
+        auto* global = new GlobalFunction(function.name, function.expression,
+                                           referenceNames, referenceTypes, parameterNames, s);
+        if (!s->addGlobalFunction(global)) {
+            delete global;
+            std::cerr << "[nfsim/ast] failed to register global function '"
+                      << function.name << "'\n";
+            return false;
+        }
+        if (verbose) {
+            std::cerr << "[nfsim/ast] global function " << function.name << "() = "
+                      << function.expression << "\n";
+        }
+    }
+    return true;
 }
 
 bool addObservablesFromAst(const bng::ast::Model& model, System* s,

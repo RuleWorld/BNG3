@@ -1,12 +1,17 @@
 #include <map>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "NFinput_fromAst.hh"
 #include "NFcore.hh"
 #include "compartment.hh"
+#include "NFfunction/NFfunction.hh"
+#include "ast/Function.hpp"
 #include "ast/Model.hpp"
 #include "ast/MoleculeType.hpp"
+#include "ast/Observable.hpp"
+#include "ast/Parameter.hpp"
 
 TEST_CASE("NFsim AST adapter preserves molecule-type state and symmetry metadata") {
     bng::ast::Model model;
@@ -55,4 +60,68 @@ TEST_CASE("NFsim AST adapter rejects population molecule types with components")
     NFcore::System system("adapter", false, 100);
     std::map<std::string, int> allowedStates;
     CHECK_FALSE(NFinput::addMoleculeTypesFromAst(model, &system, allowedStates, false));
+}
+
+TEST_CASE("NFsim AST adapter maps parameter-backed global functions") {
+    bng::ast::Model model;
+    model.addParameter(bng::ast::Parameter("k", bng::ast::Expression::number(3.0)));
+    model.addFunction(bng::ast::Function(
+        "rate", {},
+        bng::ast::Expression::binary(
+            "+", bng::ast::Expression::binary(
+                     "*", bng::ast::Expression::identifier("k"),
+                     bng::ast::Expression::number(2.0)),
+            bng::ast::Expression::number(1.0))));
+
+    NFcore::System system("adapter", false, 100);
+    std::map<std::string, double> parameters;
+    REQUIRE(NFinput::addParametersFromAst(model, &system, parameters, false));
+    REQUIRE(NFinput::addFunctionsFromAst(model, &system, parameters, false));
+
+    auto* function = system.getGlobalFunctionByName("rate");
+    REQUIRE(function != nullptr);
+    CHECK(function->getNumOfVarRefs() == 0);
+    function->prepareForSimulation(&system);
+    CHECK(NFcore::FuncFactory::Eval(function->p) == Catch::Approx(7.0));
+}
+
+TEST_CASE("NFsim AST adapter maps observable-backed global functions") {
+    bng::ast::Model model;
+    model.addObservable(bng::ast::Observable("A_total", "Molecules", {"A()"}));
+    model.addFunction(bng::ast::Function(
+        "scaled", {},
+        bng::ast::Expression::binary(
+            "*", bng::ast::Expression::observableRef("A_total", {}),
+            bng::ast::Expression::number(2.0))));
+
+    NFcore::System system("adapter", false, 100);
+    std::map<std::string, double> parameters;
+    REQUIRE(NFinput::addFunctionsFromAst(model, &system, parameters, false));
+    auto* function = system.getGlobalFunctionByName("scaled");
+    REQUIRE(function != nullptr);
+    REQUIRE(function->getNumOfVarRefs() == 1);
+    CHECK(function->getVarRefName(0) == "A_total");
+    CHECK(function->getVarRefType(0) == "Observable");
+}
+
+TEST_CASE("NFsim AST adapter rejects incomplete global-function references") {
+    bng::ast::Model model;
+    model.addFunction(bng::ast::Function(
+        "bad", {}, bng::ast::Expression::observableRef("missing", {})));
+
+    NFcore::System system("adapter", false, 100);
+    std::map<std::string, double> parameters;
+    CHECK_FALSE(NFinput::addFunctionsFromAst(model, &system, parameters, false));
+    CHECK(system.getGlobalFunctionByName("bad") == nullptr);
+}
+
+TEST_CASE("NFsim AST adapter keeps local functions on the compatibility path") {
+    bng::ast::Model model;
+    model.addFunction(bng::ast::Function(
+        "local", {"x"}, bng::ast::Expression::identifier("x")));
+
+    NFcore::System system("adapter", false, 100);
+    std::map<std::string, double> parameters;
+    CHECK_FALSE(NFinput::addFunctionsFromAst(model, &system, parameters, false));
+    CHECK(system.getGlobalFunctionByName("local") == nullptr);
 }
