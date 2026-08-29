@@ -738,6 +738,10 @@ bool expandDynamicRateExpression(
             expanded = name;
             return true;
         }
+        if (name == "_PI" || name == "_e" || name == "_Na") {
+            expanded = name;
+            return true;
+        }
         if (const auto* function = findFunction(name)) {
             if (!expressionHasModelFunctionReference(
                     function->getExpression(), expressionHasModelFunctionReference)) {
@@ -1642,7 +1646,30 @@ std::string XmlWriter::writeFunctions(const ast::Model& model) {
 
     for (const auto& func : model.getFunctions()) {
         std::vector<const ast::Expression*> tableFunctions;
-        collectTableFunctions(func.getExpression(), tableFunctions);
+        std::map<std::string, std::string> references;
+        std::string functionExpression;
+        if (func.getArgs().empty()) {
+            std::set<std::string> activeFunctions;
+            std::string diagnostic;
+            if (!expandDynamicRateExpression(
+                    func.getExpression(), model, references, tableFunctions,
+                    activeFunctions, functionExpression, diagnostic)) {
+                throw std::runtime_error(diagnostic);
+            }
+        } else {
+            collectTableFunctions(func.getExpression(), tableFunctions);
+            const std::set<std::string> localNames(func.getArgs().begin(), func.getArgs().end());
+            for (const auto& argument : func.getArgs()) {
+                addFunctionReference(references, argument, "Local");
+            }
+            collectFunctionReferences(func.getExpression(), model, localNames, references);
+            functionExpression = expressionForXml(func.getExpression());
+        }
+        if (tableFunctions.size() > 1) {
+            throw std::runtime_error(
+                "function '" + func.getName() +
+                "' has more than one TFUN expression; XML supports one table per function");
+        }
         const auto* table = tableFunctions.empty() ? nullptr : tableFunctions.front();
         xml << "      <Function id=\"" << escapeXml(func.getName()) << "\"";
         if (table != nullptr) {
@@ -1678,19 +1705,13 @@ std::string XmlWriter::writeFunctions(const ast::Model& model) {
             xml << "        </ListOfArguments>\n";
         }
 
-        std::set<std::string> localNames(func.getArgs().begin(), func.getArgs().end());
-        std::map<std::string, std::string> references;
-        for (const auto& arg : func.getArgs()) {
-            addFunctionReference(references, arg, "Local");
-        }
-        collectFunctionReferences(func.getExpression(), model, localNames, references);
         xml << "        <ListOfReferences>\n";
         for (const auto& [name, type] : references) {
             xml << "          <Reference name=\"" << escapeXml(name)
                 << "\" type=\"" << escapeXml(type) << "\"/>\n";
         }
         xml << "        </ListOfReferences>\n";
-        xml << "        <Expression>" << escapeXml(expressionForXml(func.getExpression()))
+        xml << "        <Expression>" << escapeXml(functionExpression)
             << "</Expression>\n";
         xml << "      </Function>\n";
     }

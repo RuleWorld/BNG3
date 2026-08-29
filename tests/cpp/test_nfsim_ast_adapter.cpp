@@ -1211,9 +1211,10 @@ end observables
 begin functions
     base k + atotal
     composite base() + 1
+    top composite() + 1
 end functions
 begin reaction rules
-    A() -> B() k * composite()
+    A() -> B() k * top()
 end reaction rules
 )");
 
@@ -1227,26 +1228,28 @@ end reaction rules
     auto* direct = NFinput::buildSystemFromAst(
         *model, false, 100, false, suggestedTraversalLimit);
     REQUIRE(direct != nullptr);
+    REQUIRE(direct->getCompositeFunctionByName("top") != nullptr);
     REQUIRE(direct->getCompositeFunctionByName("__bng3_reaction_rate_1") != nullptr);
     REQUIRE(direct->getAllReactions().size() == 1);
     direct->prepareForSimulation();
-    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(8.0));
+    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(10.0));
     direct->addConcentration("A()", 1);
     CHECK(direct->getObservableByName("atotal")->getCount() == 2);
-    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(20.0));
+    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(24.0));
     delete direct;
 
     suggestedTraversalLimit = 0;
     auto* xmlSystem = NFinput::initializeFromModel(
         static_cast<void*>(model.get()), false, 100, false, suggestedTraversalLimit);
     REQUIRE(xmlSystem != nullptr);
+    REQUIRE(xmlSystem->getCompositeFunctionByName("top") != nullptr);
     REQUIRE(xmlSystem->getCompositeFunctionByName("__bng3_reaction_rate_RR1") != nullptr);
     REQUIRE(xmlSystem->getAllReactions().size() == 1);
     xmlSystem->prepareForSimulation();
-    CHECK(xmlSystem->getReaction(0)->get_a() == Catch::Approx(8.0));
+    CHECK(xmlSystem->getReaction(0)->get_a() == Catch::Approx(10.0));
     xmlSystem->addConcentration("A()", 1);
     CHECK(xmlSystem->getObservableByName("atotal")->getCount() == 2);
-    CHECK(xmlSystem->getReaction(0)->get_a() == Catch::Approx(20.0));
+    CHECK(xmlSystem->getReaction(0)->get_a() == Catch::Approx(24.0));
     delete xmlSystem;
 }
 

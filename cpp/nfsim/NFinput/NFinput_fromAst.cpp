@@ -414,6 +414,10 @@ bool expandDynamicRateExpression(
             expanded = name;
             return true;
         }
+        if (name == "_PI" || name == "_e" || name == "_Na") {
+            expanded = name;
+            return true;
+        }
         if (const auto* function = getModelFunction(model, name)) {
             if (!expressionHasModelFunctionReference(
                     function->getExpression(), expressionHasModelFunctionReference)) {
@@ -1564,24 +1568,20 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
         if (!function.getArgs().empty()) continue;
         std::set<std::string> observableReferences;
         std::set<std::string> functionReferences;
+        std::set<std::string> parameterReferences;
+        std::vector<const bng::ast::Expression*> tableFunctions;
+        bool usesTime = false;
+        std::set<std::string> activeFunctions;
+        std::string expandedExpression;
         std::string diagnostic;
-        if (!collectGlobalFunctionReferences(function.getExpression(), model, parameters,
-                                              observableReferences, functionReferences,
-                                              diagnostic)) {
+        if (!expandDynamicRateExpression(
+                function.getExpression(), model, parameters, observableReferences,
+                functionReferences, parameterReferences, tableFunctions, usesTime,
+                activeFunctions, expandedExpression, diagnostic)) {
             std::cerr << "[nfsim/ast] cannot map function '" << function.getName()
                       << "': " << diagnostic << "\n";
             return false;
         }
-
-        std::set<std::string> parameterReferences;
-        for (const auto& dependency : function.getExpression().getDependencies()) {
-            if (parameters.count(dependency) != 0) {
-                parameterReferences.insert(dependency);
-            }
-        }
-
-        std::vector<const bng::ast::Expression*> tableFunctions;
-        collectTableFunctions(function.getExpression(), tableFunctions);
         if (tableFunctions.size() > 1) {
             std::cerr << "[nfsim/ast] function '" << function.getName()
                       << "' has more than one TFUN expression; direct NFsim supports one"
@@ -1591,11 +1591,11 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
 
         PendingFunction next {
             function.getName(),
-            expressionForNfsim(function.getExpression()),
+            expandedExpression,
             {observableReferences.begin(), observableReferences.end()},
             {functionReferences.begin(), functionReferences.end()},
             {parameterReferences.begin(), parameterReferences.end()},
-            expressionUsesTime(function.getExpression()),
+            usesTime,
             tableFunctions.empty() ? nullptr : tableFunctions.front()};
         pending.push_back(std::move(next));
     }
