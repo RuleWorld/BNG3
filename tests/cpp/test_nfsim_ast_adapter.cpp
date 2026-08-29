@@ -560,6 +560,62 @@ begin reaction rules
     delete system;
 }
 
+TEST_CASE("NFsim AST adapter maps MoveConnected compartment transport") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 1.0
+end parameters
+begin compartments
+    c1 3 1.0
+    c2 3 1.0
+end compartments
+begin molecule types
+    A(site)
+    B(site)
+end molecule types
+begin seed species
+    A(site!1)@c1.B(site!1)@c1 1
+end seed species
+begin reaction rules
+    A(site!1)@c1.B(site!1)@c1 -> A(site!1)@c2.B(site!1)@c1 k MoveConnected
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    const auto xml = bng::io::XmlWriter::write(*model);
+    CHECK(xml.find("moveConnected=\"1\"") != std::string::npos);
+
+    int suggestedTraversalLimit = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(direct != nullptr);
+    REQUIRE(direct->getAllReactions().size() == 1);
+    direct->prepareForSimulation();
+    direct->seedRNG(17);
+    direct->stepTo(100.0);
+    CHECK(direct->getMoleculeTypeByName("A")->getMolecule(0)->getCompartmentId() == "c2");
+    CHECK(direct->getMoleculeTypeByName("B")->getMolecule(0)->getCompartmentId() == "c2");
+    delete direct;
+
+    suggestedTraversalLimit = 0;
+    auto* xmlSystem = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, suggestedTraversalLimit);
+    REQUIRE(xmlSystem != nullptr);
+    REQUIRE(xmlSystem->getAllReactions().size() == 1);
+    REQUIRE(xmlSystem->getMoleculeTypeByName("A")->getMoleculeCount() == 1);
+    REQUIRE(xmlSystem->getMoleculeTypeByName("B")->getMoleculeCount() == 1);
+    CHECK(xmlSystem->getMoleculeTypeByName("A")->getMolecule(0)->getCompartmentId() == "c1");
+    CHECK(xmlSystem->getMoleculeTypeByName("B")->getMolecule(0)->getCompartmentId() == "c1");
+    xmlSystem->prepareForSimulation();
+    xmlSystem->seedRNG(17);
+    xmlSystem->stepTo(100.0);
+    REQUIRE(xmlSystem->getMoleculeTypeByName("A")->getMoleculeCount() == 1);
+    REQUIRE(xmlSystem->getMoleculeTypeByName("B")->getMoleculeCount() == 1);
+    CHECK(xmlSystem->getMoleculeTypeByName("A")->getMolecule(0)->getCompartmentId() == "c2");
+    CHECK(xmlSystem->getMoleculeTypeByName("B")->getMolecule(0)->getCompartmentId() == "c2");
+    delete xmlSystem;
+}
+
 TEST_CASE("NFsim AST adapter maps direct binding reaction rules") {
     auto model = bng::parser::parseModel(R"(
 begin parameters
@@ -1134,6 +1190,64 @@ end reaction rules
     xmlSystem->addConcentration("A()", 1);
     CHECK(xmlSystem->getObservableByName("atotal")->getCount() == 2);
     CHECK(xmlSystem->getReaction(0)->get_a() == Catch::Approx(16.0));
+    delete xmlSystem;
+}
+
+TEST_CASE("NFsim AST adapter mixes direct observables with base global reaction rates") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 2.0
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin observables
+    Molecules atotal A()
+end observables
+begin functions
+    base k
+end functions
+begin reaction rules
+    A() -> B() k * base() + atotal()
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    const auto xml = bng::io::XmlWriter::write(*model);
+    CHECK(xml.find("__bng3_reaction_observable_RR1_1") != std::string::npos);
+    CHECK(xml.find("<Reference name=\"__bng3_reaction_observable_RR1_1\" type=\"Function\"/>") !=
+          std::string::npos);
+
+    int suggestedTraversalLimit = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(direct != nullptr);
+    REQUIRE(direct->getCompositeFunctionByName("__bng3_reaction_rate_1") != nullptr);
+    REQUIRE(direct->getGlobalFunctionByName("__bng3_reaction_observable_1_1") != nullptr);
+    REQUIRE(direct->getAllReactions().size() == 1);
+    direct->prepareForSimulation();
+    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(5.0));
+    direct->addConcentration("A()", 1);
+    CHECK(direct->getObservableByName("atotal")->getCount() == 2);
+    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(12.0));
+    delete direct;
+
+    suggestedTraversalLimit = 0;
+    auto* xmlSystem = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, suggestedTraversalLimit);
+    REQUIRE(xmlSystem != nullptr);
+    REQUIRE(xmlSystem->getCompositeFunctionByName("__bng3_reaction_rate_RR1") != nullptr);
+    REQUIRE(xmlSystem->getGlobalFunctionByName("__bng3_reaction_observable_RR1_1") != nullptr);
+    REQUIRE(xmlSystem->getAllReactions().size() == 1);
+    xmlSystem->prepareForSimulation();
+    CHECK(xmlSystem->getReaction(0)->get_a() == Catch::Approx(5.0));
+    xmlSystem->addConcentration("A()", 1);
+    CHECK(xmlSystem->getObservableByName("atotal")->getCount() == 2);
+    CHECK(xmlSystem->getReaction(0)->get_a() == Catch::Approx(12.0));
     delete xmlSystem;
 }
 

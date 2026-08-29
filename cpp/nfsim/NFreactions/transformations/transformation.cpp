@@ -583,7 +583,8 @@ void MoveTransformation::apply(Mapping *m, MappingSet **ms)
     primaryMol->setCompartment(newCompartment);
 
     if (!moveConnected) {
-        if (primaryMol->getComplex()) {
+        if (primaryMol->getMoleculeType()->getSystem()->isUsingComplex() &&
+            primaryMol->getComplex()) {
             primaryMol->getComplex()->unsetCanonical();
         }
         return;
@@ -599,7 +600,8 @@ void MoveTransformation::apply(Mapping *m, MappingSet **ms)
     }
 
     // All moved molecules share the same complex, so one call suffices
-    if (primaryMol->getComplex()) {
+    if (primaryMol->getMoleculeType()->getSystem()->isUsingComplex() &&
+        primaryMol->getComplex()) {
         primaryMol->getComplex()->unsetCanonical();
     }
 }
@@ -610,7 +612,8 @@ void MoveTransformation::apply(Mapping *m, MappingSet **ms, string &logstr)
     primaryMol->setCompartment(newCompartment);
 
     if (!moveConnected) {
-        if (primaryMol->getComplex()) {
+        if (primaryMol->getMoleculeType()->getSystem()->isUsingComplex() &&
+            primaryMol->getComplex()) {
             primaryMol->getComplex()->unsetCanonical();
         }
     } else {
@@ -623,7 +626,8 @@ void MoveTransformation::apply(Mapping *m, MappingSet **ms, string &logstr)
             }
         }
 
-        if (primaryMol->getComplex()) {
+        if (primaryMol->getMoleculeType()->getSystem()->isUsingComplex() &&
+            primaryMol->getComplex()) {
             primaryMol->getComplex()->unsetCanonical();
         }
     }

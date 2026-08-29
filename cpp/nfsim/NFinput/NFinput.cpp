@@ -859,6 +859,21 @@ string NFinput::initStartSpecies(
 					molUid = pMol->Attribute("id");
 				}
 
+				// A molecule may override the species-level compartment.  The XML
+				// writer emits this for multi-compartment complexes, and preserving
+				// it is required for transport rules such as MoveConnected.
+				Compartment *moleculeCompartment = speciesCompartment;
+				if (pMol->Attribute("compartment")) {
+					string compartmentId = pMol->Attribute("compartment");
+					moleculeCompartment = s->getCompartment(compartmentId);
+					if (!moleculeCompartment) {
+						cerr << "!!!Error. Molecule '" << molUid << "' in species '"
+						     << speciesName << "' refers to unknown compartment '"
+						     << compartmentId << "'. Quitting" << endl;
+						return "";
+					}
+				}
+
 				//Skip anything that is null or trash molecule
 				if(molName=="Null" || molName=="NULL" || molName=="null") {
 					if(verbose) cout<<"\t\t\tSkipping a null molecule in species declaration"<<endl;
@@ -1024,7 +1039,7 @@ string NFinput::initStartSpecies(
 				{
 					for(int m=0; m<specCountInteger; m++)
 					{
-						Molecule *mol = mt->genDefaultMolecule(speciesCompartment);
+						Molecule *mol = mt->genDefaultMolecule(moleculeCompartment);
 						// AS2023 - storing what has been generated, we need both the ID of the 
 						// molecule type as well as the global ID that's assigned to the instance
 						mids.push_back(mol->getMoleculeType()->getTypeID());
@@ -1065,7 +1080,7 @@ string NFinput::initStartSpecies(
 				// handle population case (only create one instance of this molecule type) --Justin
 				else
 				{
-					Molecule *mol = mt->genDefaultMolecule(speciesCompartment);
+					Molecule *mol = mt->genDefaultMolecule(moleculeCompartment);
 					// set population
 					mol->setPopulation( specCountInteger );
 

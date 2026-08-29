@@ -25,8 +25,7 @@
 ///                   TFUNs whose counter is a zero-argument base global are
 ///                   also direct composites.
 /// GATED here:       deeper/complex local functions, unbounded function-counter
-///                   composites, dynamic rates combining direct observables
-///                   with model functions or referencing composite functions,
+///                   composites, dynamic rates referencing composite functions,
 ///                   other rate-law forms, product filters, and reaction
 ///                   centers not yet represented by the direct mapping. They
 ///                   fail closed and cite the TiXml init* function that
@@ -349,6 +348,57 @@ std::string expressionForNfsim(const bng::ast::Expression& expression) {
         return "__TFUN_VAL__";
     }
     return {};
+}
+
+std::string replaceNamedReferences(
+    const std::string& expression,
+    const std::map<std::string, std::string>& replacements) {
+    if (replacements.empty()) return expression;
+
+    std::string result;
+    result.reserve(expression.size());
+    std::size_t index = 0;
+    while (index < expression.size()) {
+        const unsigned char first = static_cast<unsigned char>(expression[index]);
+        if (!std::isalpha(first) && expression[index] != '_') {
+            result.push_back(expression[index++]);
+            continue;
+        }
+
+        const std::size_t start = index++;
+        while (index < expression.size()) {
+            const unsigned char current = static_cast<unsigned char>(expression[index]);
+            if (!std::isalnum(current) && expression[index] != '_') break;
+            ++index;
+        }
+        const std::string token = expression.substr(start, index - start);
+        const auto replacement = replacements.find(token);
+        if (replacement == replacements.end()) {
+            result.append(expression, start, index - start);
+            continue;
+        }
+
+        std::size_t lookahead = index;
+        while (lookahead < expression.size() &&
+               std::isspace(static_cast<unsigned char>(expression[lookahead]))) {
+            ++lookahead;
+        }
+        if (lookahead < expression.size() && expression[lookahead] == '(') {
+            std::size_t close = lookahead + 1;
+            while (close < expression.size() &&
+                   std::isspace(static_cast<unsigned char>(expression[close]))) {
+                ++close;
+            }
+            if (close < expression.size() && expression[close] == ')') {
+                result += replacement->second;
+                result += "()";
+                index = close + 1;
+                continue;
+            }
+        }
+        result += replacement->second;
+    }
+    return result;
 }
 
 bool configureDirectTableFunction(
@@ -2371,11 +2421,6 @@ bool addDynamicReactionRateFunction(
         diagnostic = "rate expression is not a supported dynamic function";
         return false;
     }
-    if (!functionReferences.empty() && !observableReferences.empty()) {
-        diagnostic = "dynamic reaction rates cannot combine direct observables with "
-                     "model-function references in one composite";
-        return false;
-    }
     if (usesTime && !tableFunctions.empty()) {
         const auto& counter = tableFunctions.front()->args().front();
         const auto counterName = counter.name();
@@ -2405,6 +2450,42 @@ bool addDynamicReactionRateFunction(
     std::vector<std::string> parameterNames(
         parameterReferences.begin(), parameterReferences.end());
     if (!functionReferences.empty()) {
+        // CompositeFunction can depend on live observable values only through
+        // GlobalFunction objects.  Materialize a zero-argument alias for each
+        // direct observable, then rewrite the generated expression to refer to
+        // those aliases.  This preserves dependency invalidation while keeping
+        // the legacy composite-function parser's observable restriction intact.
+        std::map<std::string, std::string> observableAliases;
+        std::size_t aliasIndex = 1;
+        for (const auto& observableName : observableReferences) {
+            std::string aliasName = "__bng3_reaction_observable_" +
+                                    std::to_string(ordinal + 1) + "_" +
+                                    std::to_string(aliasIndex++);
+            std::size_t aliasSuffix = 1;
+            while (system->getGlobalFunctionByName(aliasName) != nullptr ||
+                   system->getCompositeFunctionByName(aliasName) != nullptr ||
+                   system->getLocalFunctionByName(aliasName) != nullptr) {
+                aliasName = "__bng3_reaction_observable_" +
+                            std::to_string(ordinal + 1) + "_" +
+                            std::to_string(aliasIndex - 1) + "_" +
+                            std::to_string(aliasSuffix++);
+            }
+
+            std::vector<std::string> aliasReferences {observableName};
+            std::vector<std::string> aliasTypes {"Observable"};
+            std::vector<std::string> aliasParameters;
+            auto* alias = new GlobalFunction(
+                aliasName, observableName, aliasReferences, aliasTypes,
+                aliasParameters, system);
+            if (!system->addGlobalFunction(alias)) {
+                delete alias;
+                diagnostic = "failed to register generated reaction observable alias '" +
+                             aliasName + "'";
+                return false;
+            }
+            observableAliases.emplace(observableName, std::move(aliasName));
+        }
+
         for (const auto& dependency : functionReferences) {
             if (system->getGlobalFunctionByName(dependency) == nullptr) {
                 diagnostic = "dynamic reaction rates only support references to base global "
@@ -2414,9 +2495,15 @@ bool addDynamicReactionRateFunction(
         }
         std::vector<std::string> functionsCalled(
             functionReferences.begin(), functionReferences.end());
+        for (const auto& [observableName, aliasName] : observableAliases) {
+            (void)observableName;
+            functionsCalled.push_back(aliasName);
+        }
         std::vector<std::string> argumentNames;
+        const auto compositeExpression = replaceNamedReferences(
+            expressionForNfsim(expression), observableAliases);
         auto candidate = std::make_unique<CompositeFunction>(
-            system, name, expressionForNfsim(expression), functionsCalled,
+            system, name, compositeExpression, functionsCalled,
             argumentNames, parameterNames);
         if (!tableFunctions.empty() &&
             !configureDirectTableFunction(
@@ -3350,8 +3437,9 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
 
     // SPEC: NFinput::initReactionRules (NFinput.cpp:1266). This direct slice
     // covers elementary state changes, binding/unbinding, identity rules,
-    // standalone product-molecule creation, explicit degradation, and the
-    // two-direction expansion of reversible rules. Scoped / local rates and
+    // standalone product-molecule creation, explicit degradation, compartment
+    // transport including MoveConnected, and the two-direction expansion of
+    // reversible rules. Scoped / local rates and
     // reactant filters are mapped within their bounded direct slices. Product
     // filters and unsupported modifiers remain fail-closed. A bounded direct
     // Arrhenius binding slice uses NFsim's existing energy-pattern expansion
@@ -3492,8 +3580,7 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
             }
             if (hasUnsupportedReactionFilterModifier(rule) ||
                 hasReactionModifierPrefix(rule, "include_products") ||
-                hasReactionModifierPrefix(rule, "exclude_products") ||
-                hasReactionModifier(rule, "moveconnected")) {
+                hasReactionModifierPrefix(rule, "exclude_products")) {
                 std::cerr << "[nfsim/ast] reaction '" << rule.getRuleName()
                           << "' uses an unsupported reaction modifier\n";
                 return false;
@@ -3685,7 +3772,9 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 TemplateMolecule* templateMolecule = nullptr;
                 if (!templateForReactionRef(
                         reactantRef, patternTemplates, templateMolecule, diagnostic) ||
-                    !transformationSet->addMoveTransform(templateMolecule, destination, false)) {
+                    !transformationSet->addMoveTransform(
+                        templateMolecule, destination,
+                        hasReactionModifier(rule, "moveconnected"))) {
                     if (diagnostic.empty()) {
                         diagnostic = "could not add direct compartment transport";
                     }

@@ -78,7 +78,7 @@ rows:
     tests: tests/cpp/test_nfsim_ast_adapter.cpp
     oracle: pending
     owner: pending-maintainer
-    notes: Elementary state, bond, degradation, product-creation, and compartment-transport rules are direct; bidirectional, zero-order, static MM, Sat, Hill, zero-argument functional, bounded molecule- or species-scoped local-function, bounded nested local, bounded function-counter TFUN, bounded two-factor FunctionProduct rates, bounded unidirectional reactant include/exclude filters, and dynamic rates over parameters, observables, time, one TFUN, or base global functions are covered. Dynamic rates combining direct observables with model functions, referencing composite functions, reversible or product-filtered rules, symmetric reaction centers, and other non-static forms remain fail-closed.
+    notes: Elementary state, bond, degradation, product-creation, compartment-transport, and MoveConnected rules are direct; bidirectional, zero-order, static MM, Sat, Hill, zero-argument functional, bounded molecule- or species-scoped local-function, bounded nested local, bounded function-counter TFUN, bounded two-factor FunctionProduct rates, bounded unidirectional reactant include/exclude filters, and dynamic rates over parameters, observables, time, one TFUN, or base global functions are covered. Dynamic rates mixing direct observables with base global functions use generated observable aliases; rates referencing composite functions, reversible or product-filtered rules, symmetric reaction centers, and other non-static forms remain fail-closed.
   - id: nfsim.energy-and-time-functions
     source: legacy NFinput::initEnergyFunctions and initFunctions
     bng3_reference: cpp/nfsim/NFinput/NFinput_fromAst.cpp

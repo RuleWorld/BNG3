@@ -359,6 +359,18 @@ ParsedPattern parsePattern(const std::string& text) {
                 // Legacy molecule labels may follow the component list:
                 // X()%scope.  They carry the same molecule-local scope as
                 // the prefix spelling %scope::X().
+                const auto trailingAt = remaining.find('@', closePos + 1);
+                if (trailingAt != std::string::npos && mol.compartment.empty()) {
+                    const auto compartmentEnd = remaining.find('%', trailingAt + 1);
+                    const auto end = compartmentEnd == std::string::npos
+                                         ? remaining.size()
+                                         : compartmentEnd;
+                    if (end > trailingAt + 1) {
+                        mol.compartment = remaining.substr(
+                            trailingAt + 1, end - trailingAt - 1);
+                    }
+                }
+
                 const auto trailingPercent = remaining.find('%', closePos + 1);
                 if (trailingPercent != std::string::npos && mol.label.empty()) {
                     std::size_t labelEnd = trailingPercent + 1;
@@ -466,6 +478,63 @@ std::string patternToXml(const ParsedPattern& pattern, const std::string& idPref
 bool modelHasFunction(const ast::Model& model, const std::string& name) {
     return std::any_of(model.getFunctions().begin(), model.getFunctions().end(),
                        [&](const auto& function) { return function.getName() == name; });
+}
+
+struct GeneratedRateFunction {
+    std::string name;
+    const ast::Expression* expression = nullptr;
+    std::map<std::string, std::string> observableAliases;
+};
+
+std::string replaceNamedReferences(
+    const std::string& expression,
+    const std::map<std::string, std::string>& replacements) {
+    if (replacements.empty()) return expression;
+
+    std::string result;
+    result.reserve(expression.size());
+    std::size_t index = 0;
+    while (index < expression.size()) {
+        const unsigned char first = static_cast<unsigned char>(expression[index]);
+        if (!std::isalpha(first) && expression[index] != '_') {
+            result.push_back(expression[index++]);
+            continue;
+        }
+
+        const std::size_t start = index++;
+        while (index < expression.size()) {
+            const unsigned char current = static_cast<unsigned char>(expression[index]);
+            if (!std::isalnum(current) && expression[index] != '_') break;
+            ++index;
+        }
+        const std::string token = expression.substr(start, index - start);
+        const auto replacement = replacements.find(token);
+        if (replacement == replacements.end()) {
+            result.append(expression, start, index - start);
+            continue;
+        }
+
+        std::size_t lookahead = index;
+        while (lookahead < expression.size() &&
+               std::isspace(static_cast<unsigned char>(expression[lookahead]))) {
+            ++lookahead;
+        }
+        if (lookahead < expression.size() && expression[lookahead] == '(') {
+            std::size_t close = lookahead + 1;
+            while (close < expression.size() &&
+                   std::isspace(static_cast<unsigned char>(expression[close]))) {
+                ++close;
+            }
+            if (close < expression.size() && expression[close] == ')') {
+                result += replacement->second;
+                result += "()";
+                index = close + 1;
+                continue;
+            }
+        }
+        result += replacement->second;
+    }
+    return result;
 }
 
 void addFunctionReference(std::map<std::string, std::string>& references,
@@ -1256,19 +1325,59 @@ std::string XmlWriter::writeObservables(const ast::Model& model) {
 
 std::string XmlWriter::writeFunctions(const ast::Model& model) {
     std::ostringstream xml;
-    std::vector<std::pair<std::string, const ast::Expression*>> generatedRateFunctions;
+    std::vector<GeneratedRateFunction> generatedRateFunctions;
+    std::set<std::string> reservedFunctionNames;
+    for (const auto& function : model.getFunctions()) {
+        reservedFunctionNames.insert(function.getName());
+    }
+
+    const auto addGeneratedRateFunction = [&](const std::string& name,
+                                               const ast::Expression& expression) {
+        GeneratedRateFunction generated {name, &expression, {}};
+        const std::string generatedPrefix = "__bng3_reaction_rate_";
+        const std::string rateId = name.rfind(generatedPrefix, 0) == 0
+                                       ? name.substr(generatedPrefix.size())
+                                       : name;
+        std::map<std::string, std::string> references;
+        const std::set<std::string> noLocalNames;
+        collectFunctionReferences(expression, model, noLocalNames, references);
+        const bool hasModelFunctionReference = std::any_of(
+            references.begin(), references.end(),
+            [](const auto& reference) { return reference.second == "Function"; });
+        if (hasModelFunctionReference) {
+            std::size_t aliasIndex = 1;
+            for (const auto& [referenceName, referenceType] : references) {
+                if (referenceType != "Observable") continue;
+
+                const std::string aliasBase =
+                    "__bng3_reaction_observable_" + rateId + "_" +
+                    std::to_string(aliasIndex++);
+                std::string aliasName = aliasBase;
+                std::size_t aliasSuffix = 1;
+                while (reservedFunctionNames.count(aliasName) != 0) {
+                    aliasName = aliasBase + "_" + std::to_string(aliasSuffix++);
+                }
+                reservedFunctionNames.insert(aliasName);
+                generated.observableAliases.emplace(referenceName, aliasName);
+            }
+        }
+
+        reservedFunctionNames.insert(name);
+        generatedRateFunctions.push_back(std::move(generated));
+    };
+
     for (std::size_t index = 0; index < model.getReactionRules().size(); ++index) {
         const auto& rule = model.getReactionRules()[index];
         const auto& rates = rule.getRates();
         const auto forwardId = "RR" + std::to_string(index + 1);
         if (!rates.empty() && needsGeneratedDynamicRateFunction(model, rates.front())) {
-            generatedRateFunctions.emplace_back(
-                generatedDynamicRateFunctionName(forwardId), &rates.front());
+            addGeneratedRateFunction(
+                generatedDynamicRateFunctionName(forwardId), rates.front());
         }
         if (rule.isBidirectional() && rates.size() >= 2 &&
             needsGeneratedDynamicRateFunction(model, rates[1])) {
-            generatedRateFunctions.emplace_back(
-                generatedDynamicRateFunctionName(forwardId + "r"), &rates[1]);
+            addGeneratedRateFunction(
+                generatedDynamicRateFunctionName(forwardId + "r"), rates[1]);
         }
     }
     if (model.getFunctions().empty() && generatedRateFunctions.empty()) return {};
@@ -1330,11 +1439,29 @@ std::string XmlWriter::writeFunctions(const ast::Model& model) {
         xml << "      </Function>\n";
     }
 
+    // CompositeFunction cannot directly reference observables in the legacy
+    // XML loader.  Emit zero-argument global aliases first when a generated
+    // dynamic rate mixes an observable with a model function.
+    for (const auto& generated : generatedRateFunctions) {
+        for (const auto& [observableName, aliasName] : generated.observableAliases) {
+            xml << "      <Function id=\"" << escapeXml(aliasName) << "\">\n";
+            xml << "        <ListOfReferences>\n"
+                << "          <Reference name=\"" << escapeXml(observableName)
+                << "\" type=\"Observable\"/>\n"
+                << "        </ListOfReferences>\n";
+            xml << "        <Expression>" << escapeXml(observableName)
+                << "</Expression>\n";
+            xml << "      </Function>\n";
+        }
+    }
+
     // NFsim's legacy XML schema represents an arbitrary dynamic reaction rate
     // as a zero-argument global function.  Keep the reaction rule readable,
     // but emit the generated function here so the XML compatibility path has
     // the same live observable/time dependencies as the direct adapter.
-    for (const auto& [name, expression] : generatedRateFunctions) {
+    for (const auto& generated : generatedRateFunctions) {
+        const auto& name = generated.name;
+        const auto* expression = generated.expression;
         std::vector<const ast::Expression*> tableFunctions;
         collectTableFunctions(*expression, tableFunctions);
         const auto* table = tableFunctions.empty() ? nullptr : tableFunctions.front();
@@ -1359,13 +1486,19 @@ std::string XmlWriter::writeFunctions(const ast::Model& model) {
         std::map<std::string, std::string> references;
         const std::set<std::string> noLocalNames;
         collectFunctionReferences(*expression, model, noLocalNames, references);
+        for (const auto& [observableName, aliasName] : generated.observableAliases) {
+            references.erase(observableName);
+            addFunctionReference(references, aliasName, "Function");
+        }
         xml << "        <ListOfReferences>\n";
         for (const auto& [referenceName, referenceType] : references) {
             xml << "          <Reference name=\"" << escapeXml(referenceName)
                 << "\" type=\"" << escapeXml(referenceType) << "\"/>\n";
         }
         xml << "        </ListOfReferences>\n";
-        xml << "        <Expression>" << escapeXml(expressionForXml(*expression))
+        const auto expressionWithAliases = replaceNamedReferences(
+            expressionForXml(*expression), generated.observableAliases);
+        xml << "        <Expression>" << escapeXml(expressionWithAliases)
             << "</Expression>\n";
         xml << "      </Function>\n";
     }
