@@ -21,6 +21,7 @@ else:
 
 from bionetgen.result import SimResult
 from bionetgen.scan import ScanResult, ScanResult2D, parameter_scan, parameter_scan_2d
+from bionetgen.sensitivity import SensitivityResult, sensitivity_analysis
 from bionetgen.core.exc import BNGError
 
 try:
@@ -53,6 +54,8 @@ __all__ = [
     "ScanResult2D",
     "parameter_scan",
     "parameter_scan_2d",
+    "SensitivityResult",
+    "sensitivity_analysis",
     "from_sbml",
     "sbml_to_bngl",
     "ModelBuilder",

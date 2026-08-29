@@ -42,8 +42,13 @@ Options:
 - `--n-points INT` number of scan points.
 - `--log-scale` use logarithmic spacing.
 - `--method [ode|ssa|nf|pla|psa]` simulation method.
+- `--t-start FLOAT` start time (NF requires zero).
 - `--t-end FLOAT` end time.
 - `--n-steps INT` number of output steps.
+- `--rtol FLOAT`, `--atol FLOAT` ODE tolerances.
+- `--seed INT` random seed for stochastic methods.
+- `--pla-config TEXT` PLA configuration string.
+- `--psa-poplevel FLOAT` PSA population threshold.
 - `--parallel INT` worker process count.
 - `-o, --output PATH` write a CSV file.
 
@@ -67,8 +72,13 @@ Options:
 - `--parameter NAME` repeatable; if omitted, all parameters are used.
 - `--observable NAME` repeatable; if omitted, all observables are used.
 - `--method [ode|ssa|nf|pla|psa]` simulation method.
+- `--t-start FLOAT` start time (NF requires zero).
 - `--t-end FLOAT` end time.
 - `--n-steps INT` number of output steps.
+- `--rtol FLOAT`, `--atol FLOAT` ODE tolerances.
+- `--seed INT` random seed for stochastic methods.
+- `--pla-config TEXT` PLA configuration string.
+- `--psa-poplevel FLOAT` PSA population threshold.
 - `--delta FLOAT` relative perturbation size.
 - `--parallel INT` worker process count.
 - `-o, --output PATH` write a CSV file.

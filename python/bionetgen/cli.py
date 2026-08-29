@@ -61,68 +61,30 @@ def run(
     verbose,
 ):
     """Run a BNGL model simulation."""
-    from bionetgen import _bionetgen_cpp as _cpp
+    from bionetgen import load
 
     path = str(Path(model).resolve())
-    cpp_model = _cpp.parse_file(path)
-
-    if method == "nf":
-        if t_start != 0.0:
-            raise click.BadParameter(
-                "NF simulation currently supports only --t-start 0"
-            )
-        result = _cpp.simulate_nf(
-            cpp_model,
+    try:
+        result = load(path).simulate(
+            method=method,
+            t_start=t_start,
             t_end=t_end,
             n_steps=n_steps,
+            rtol=rtol,
+            atol=atol,
             seed=seed,
+            pla_config=pla_config,
+            psa_poplevel=psa_poplevel,
             verbose=verbose,
         )
-    else:
-        network = _cpp.generate_network(cpp_model)
-        if method == "ode":
-            result = _cpp.simulate_ode(
-                cpp_model,
-                network,
-                t_start=t_start,
-                t_end=t_end,
-                n_steps=n_steps,
-                rtol=rtol,
-                atol=atol,
-            )
-        elif method == "ssa":
-            result = _cpp.simulate_ssa(
-                cpp_model,
-                network,
-                t_start=t_start,
-                t_end=t_end,
-                n_steps=n_steps,
-                seed=seed,
-            )
-        elif method == "pla":
-            result = _cpp.simulate_pla(
-                cpp_model,
-                network,
-                t_start=t_start,
-                t_end=t_end,
-                n_steps=n_steps,
-                config_str=pla_config,
-            )
-        else:
-            result = _cpp.simulate_psa(
-                cpp_model,
-                network,
-                t_start=t_start,
-                t_end=t_end,
-                n_steps=n_steps,
-                poplevel=psa_poplevel,
-            )
+    except (TypeError, ValueError) as exc:
+        raise click.ClickException(str(exc).replace("t_start", "t-start")) from exc
 
     if output:
         import numpy as np
 
-        time = result["time"]
-        obs = result.get("observables", {})
+        time = result.time
+        obs = result.observables
         header = "time\t" + "\t".join(obs.keys()) if obs else "time"
         data = [time] + list(obs.values())
         np.savetxt(
@@ -131,7 +93,7 @@ def run(
         if verbose:
             click.echo(f"Results written to {output}")
     else:
-        click.echo(f"Simulation complete: {len(result['time'])} time points")
+        click.echo(f"Simulation complete: {len(result.time)} time points")
 
 
 @main.command()
@@ -235,11 +197,20 @@ def export(model, fmt, output):
     help="Number of output steps.",
 )
 @click.option(
+    "--t-start", default=0.0, type=float, show_default=True, help="Start time."
+)
+@click.option("--rtol", default=1e-8, type=float, show_default=True)
+@click.option("--atol", default=1e-8, type=float, show_default=True)
+@click.option("--seed", default=0, type=int, show_default=True)
+@click.option("--pla-config", default="", show_default=False)
+@click.option("--psa-poplevel", default=100.0, type=float, show_default=True)
+@click.option(
     "--parallel", default=0, type=int, show_default=True, help="Worker process count."
 )
 @click.option(
     "--output", "-o", default=None, type=click.Path(), help="Optional CSV output path."
 )
+@click.option("--verbose", "-v", is_flag=True, help="Show progress.")
 def scan(
     model,
     parameter_name,
@@ -250,8 +221,15 @@ def scan(
     method,
     t_end,
     n_steps,
+    t_start,
+    rtol,
+    atol,
+    seed,
+    pla_config,
+    psa_poplevel,
     parallel,
     output,
+    verbose,
 ):
     """Run a one-dimensional parameter scan."""
 
@@ -265,8 +243,15 @@ def scan(
         n_points=n_points,
         log_scale=log_scale,
         method=method,
+        t_start=t_start,
         t_end=t_end,
         n_steps=n_steps,
+        rtol=rtol,
+        atol=atol,
+        seed=seed,
+        pla_config=pla_config,
+        psa_poplevel=psa_poplevel,
+        verbose=verbose,
         parallel=parallel,
     )
 
@@ -300,6 +285,12 @@ def scan(
 )
 @click.option("--t-end", default=100.0, type=float, show_default=True)
 @click.option("--n-steps", default=100, type=int, show_default=True)
+@click.option("--t-start", default=0.0, type=float, show_default=True)
+@click.option("--rtol", default=1e-8, type=float, show_default=True)
+@click.option("--atol", default=1e-8, type=float, show_default=True)
+@click.option("--seed", default=0, type=int, show_default=True)
+@click.option("--pla-config", default="", show_default=False)
+@click.option("--psa-poplevel", default=100.0, type=float, show_default=True)
 @click.option(
     "--delta",
     default=0.01,
@@ -313,6 +304,7 @@ def scan(
 @click.option(
     "--output", "-o", default=None, type=click.Path(), help="Optional CSV output path."
 )
+@click.option("--verbose", "-v", is_flag=True, help="Show progress.")
 def sensitivity(
     model,
     parameter_names,
@@ -320,9 +312,16 @@ def sensitivity(
     method,
     t_end,
     n_steps,
+    t_start,
+    rtol,
+    atol,
+    seed,
+    pla_config,
+    psa_poplevel,
     delta,
     parallel,
     output,
+    verbose,
 ):
     """Run local sensitivity analysis."""
 
@@ -333,8 +332,15 @@ def sensitivity(
         parameters=list(parameter_names) or None,
         observables=list(observable_names) or None,
         method=method,
+        t_start=t_start,
         t_end=t_end,
         n_steps=n_steps,
+        rtol=rtol,
+        atol=atol,
+        seed=seed,
+        pla_config=pla_config,
+        psa_poplevel=psa_poplevel,
+        verbose=verbose,
         delta=delta,
         parallel=parallel,
     )

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
+import sys
 from typing import Optional, Union
 
 try:
@@ -12,6 +14,16 @@ except ImportError:
         import _bionetgen_cpp as _cpp
     except ImportError:
         _cpp = None
+    else:
+        # CMake's development build places the extension in build/cpp rather
+        # than inside the source package.  Register that fallback under the
+        # package name so ``import bionetgen._bionetgen_cpp`` works exactly as
+        # it does from an installed wheel.
+        _module_name = f"{__package__}._bionetgen_cpp"
+        sys.modules.setdefault(_module_name, _cpp)
+        _package = sys.modules.get(__package__)
+        if _package is not None:
+            setattr(_package, "_bionetgen_cpp", _cpp)
 
 from bionetgen.result import SimResult
 
@@ -175,6 +187,29 @@ class BioNetGenModel:
         SimResult
             Object containing time, observable, and concentration arrays.
         """
+        if not isinstance(method, str):
+            raise TypeError("method must be a string")
+        method = method.lower()
+        if method not in {"ode", "ssa", "nf", "pla", "psa"}:
+            raise ValueError(
+                "Unknown simulation method: "
+                f"{method!r}. Use 'ode', 'ssa', 'nf', 'pla', or 'psa'."
+            )
+        if not math.isfinite(float(t_start)) or not math.isfinite(float(t_end)):
+            raise ValueError("t_start and t_end must be finite")
+        if t_end < t_start:
+            raise ValueError("t_end must be greater than or equal to t_start")
+        if isinstance(n_steps, bool) or not isinstance(n_steps, int):
+            raise TypeError("n_steps must be a positive integer")
+        if n_steps <= 0:
+            raise ValueError("n_steps must be a positive integer")
+        if not math.isfinite(float(rtol)) or rtol <= 0.0:
+            raise ValueError("rtol must be finite and positive")
+        if not math.isfinite(float(atol)) or atol <= 0.0:
+            raise ValueError("atol must be finite and positive")
+        if not math.isfinite(float(psa_poplevel)):
+            raise ValueError("psa_poplevel must be finite")
+
         if method == "nf":
             if t_start != 0.0:
                 raise ValueError("NF simulation currently supports only t_start=0.0")
@@ -227,10 +262,7 @@ class BioNetGenModel:
                     t_start=t_start,
                 )
             else:
-                raise ValueError(
-                    "Unknown simulation method: "
-                    f"{method!r}. Use 'ode', 'ssa', 'nf', 'pla', or 'psa'."
-                )
+                raise AssertionError("validated method dispatch is incomplete")
 
         return SimResult(raw)
 

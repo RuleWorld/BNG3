@@ -9,7 +9,7 @@ try:
 except ImportError:
     pytest.skip("CLI not available", allow_module_level=True)
 
-MODELS_DIR = os.path.join(os.path.dirname(__file__), "..", "models")
+MODELS_DIR = os.path.join(os.path.dirname(__file__), "models")
 
 
 @pytest.fixture
@@ -77,3 +77,79 @@ def test_cli_nf_rejects_nonzero_start_time(runner, simple_model):
     )
     assert result.exit_code != 0
     assert "t-start" in result.output
+
+
+def test_cli_scan_and_sensitivity_forward_simulation_options(runner, tmp_path):
+    model = tmp_path / "decay.bngl"
+    model.write_text("""
+begin model
+begin parameters
+    k 0.1
+    X0 100
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() X0
+end seed species
+begin observables
+    Molecules Xtot X()
+end observables
+begin reaction rules
+    X() -> 0 k
+end reaction rules
+end model
+""")
+
+    scan_output = tmp_path / "scan.csv"
+    result = runner.invoke(
+        main,
+        [
+            "scan",
+            str(model),
+            "--parameter",
+            "k",
+            "--min",
+            "0.05",
+            "--max",
+            "0.1",
+            "--n-points",
+            "2",
+            "--t-start",
+            "2",
+            "--t-end",
+            "4",
+            "--n-steps",
+            "2",
+            "--output",
+            str(scan_output),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert scan_output.exists()
+    assert "time" in scan_output.read_text()
+
+    sensitivity_output = tmp_path / "sensitivity.csv"
+    result = runner.invoke(
+        main,
+        [
+            "sensitivity",
+            str(model),
+            "--parameter",
+            "k",
+            "--observable",
+            "Xtot",
+            "--t-start",
+            "2",
+            "--t-end",
+            "4",
+            "--n-steps",
+            "2",
+            "--output",
+            str(sensitivity_output),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert sensitivity_output.exists()
+    assert "parameter" in sensitivity_output.read_text()
