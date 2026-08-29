@@ -7,6 +7,7 @@
 #include <map>
 #include <regex>
 #include <set>
+#include <stdexcept>
 #include <vector>
 
 namespace bng::io {
@@ -105,6 +106,19 @@ ParsedPattern parsePattern(const std::string& text) {
         auto parenPos = remaining.find('(');
         std::string namepart = (parenPos != std::string::npos)
             ? remaining.substr(0, parenPos) : remaining;
+
+        // A scoped reaction molecule is written as %scope::Molecule(...).
+        // Keep the scope as the XML label while exposing the actual molecule
+        // type in the name attribute.
+        const auto percentPos = namepart.find('%');
+        if (percentPos != std::string::npos) {
+            const auto scopePos = namepart.find("::", percentPos + 1);
+            if (scopePos != std::string::npos && scopePos > percentPos + 1) {
+                mol.label = namepart.substr(percentPos + 1, scopePos - percentPos - 1);
+                namepart = namepart.substr(0, percentPos) +
+                           namepart.substr(scopePos + 2);
+            }
+        }
 
         // Check for @compartment suffix on molecule name
         auto atPos = namepart.find('@');
@@ -682,9 +696,13 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
                                   const ast::Expression& rate) {
         const bool isCall = rate.kind() == ast::ExpressionKind::Function ||
                             rate.kind() == ast::ExpressionKind::ObservableRef;
+        const bool isFunctionProduct =
+            isCall && lowercase(rate.name()) == "functionproduct" && rate.args().size() == 2;
         const auto* declaredFunction = modelFunction(rate.name());
         std::string type = "Ele";
-        if (declaredFunction != nullptr) {
+        if (isFunctionProduct) {
+            type = "FunctionProduct";
+        } else if (declaredFunction != nullptr) {
             type = "Function";
         } else if (isCall && lowercase(rate.name()) == "mm" && rate.args().size() == 2) {
             type = "MM";
@@ -697,6 +715,46 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
 
         xml << "        <RateLaw id=\"" << rrId << "_RateLaw\" type=\"" << type
             << "\" totalrate=\"0\"";
+        if (type == "FunctionProduct") {
+            const auto writeOperand = [&](const ast::Expression& operand,
+                                           const char* functionAttribute,
+                                           const char* argumentListName) {
+                if (operand.kind() != ast::ExpressionKind::Function &&
+                    operand.kind() != ast::ExpressionKind::ObservableRef) {
+                    throw std::runtime_error(
+                        "FunctionProduct XML operands must be function calls");
+                }
+                const auto* function = modelFunction(operand.name());
+                if (function == nullptr || function->getArgs().size() != 1 ||
+                    operand.args().size() != 1 ||
+                    operand.args().front().kind() != ast::ExpressionKind::Identifier) {
+                    throw std::runtime_error(
+                        "FunctionProduct XML operands must call one-argument local functions");
+                }
+                xml << " " << functionAttribute << "=\""
+                    << escapeXml(operand.name()) << "\"";
+                return std::make_pair(operand.args().front().name(), argumentListName);
+            };
+            const auto argument1 = writeOperand(rate.args()[0], "name1", "ListOfArguments1");
+            const auto argument2 = writeOperand(rate.args()[1], "name2", "ListOfArguments2");
+            xml << ">\n";
+            const auto writeArguments = [&](const std::pair<std::string, const char*>& argument) {
+                const auto value = scopedMoleculeId(rule, rrId, argument.first);
+                if (value.empty()) {
+                    throw std::runtime_error(
+                        "FunctionProduct XML argument has no scoped reactant");
+                }
+                xml << "          <" << argument.second << ">\n"
+                    << "            <Argument id=\"" << escapeXml(argument.first)
+                    << "\" type=\"ObjectReference\" value=\""
+                    << escapeXml(value) << "\"/>\n"
+                    << "          </" << argument.second << ">\n";
+            };
+            writeArguments(argument1);
+            writeArguments(argument2);
+            xml << "        </RateLaw>\n";
+            return;
+        }
         if (type == "Function") {
             xml << " name=\"" << escapeXml(rate.name()) << "\">\n";
             xml << "          <ListOfArguments>\n";

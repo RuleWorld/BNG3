@@ -160,6 +160,30 @@ bool isWholeArray(const std::string& value) {
 
 std::string normalizeTfunSyntax(const std::string& source);
 
+std::string normalizeFunctionProductCall(const std::string& body) {
+    const auto parts = splitTopLevel(body);
+    if (parts.size() != 2) {
+        throw std::runtime_error("FunctionProduct requires exactly two operands");
+    }
+
+    std::ostringstream result;
+    result << "FunctionProduct(";
+    for (std::size_t index = 0; index < parts.size(); ++index) {
+        const auto operand = trimCopy(parts[index]);
+        if (operand.empty()) {
+            throw std::runtime_error("FunctionProduct contains an empty operand");
+        }
+        if (index != 0) result << ",";
+
+        const bool quoted = operand.size() >= 2 &&
+                            ((operand.front() == '\'' && operand.back() == '\'') ||
+                             (operand.front() == '"' && operand.back() == '"'));
+        result << normalizeTfunSyntax(quoted ? stripQuotes(operand) : operand);
+    }
+    result << ")";
+    return result.str();
+}
+
 std::string normalizeTfunArray(const std::string& source, int marker) {
     const auto trimmed = trimCopy(source);
     if (!isWholeArray(trimmed)) return {};
@@ -292,13 +316,18 @@ std::string normalizeTfunSyntax(const std::string& source) {
         std::size_t open = index;
         while (open < source.size() &&
                std::isspace(static_cast<unsigned char>(source[open]))) ++open;
-        if (lowerName != "tfun" || open >= source.size() || source[open] != '(') {
+        if ((lowerName != "tfun" && lowerName != "functionproduct") ||
+            open >= source.size() || source[open] != '(') {
             result.append(name);
             continue;
         }
         const auto close = findMatchingParen(source, open);
-        if (close == std::string::npos) throw std::runtime_error("unbalanced TFUN call");
-        result += normalizeTfunCall(source.substr(open + 1, close - open - 1));
+        if (close == std::string::npos) {
+            throw std::runtime_error("unbalanced rate-law function call");
+        }
+        result += lowerName == "tfun"
+                      ? normalizeTfunCall(source.substr(open + 1, close - open - 1))
+                      : normalizeFunctionProductCall(source.substr(open + 1, close - open - 1));
         index = close + 1;
     }
     return result;

@@ -61,6 +61,20 @@ TEST_CASE("BNGL parser preserves inline and file TFUN metadata") {
     REQUIRE(file.kind() == bng::ast::ExpressionKind::TableFunction);
     CHECK(file.tableFilePath() == "data file.tfun");
     CHECK(file.tableFileKey() == "file_hex_646174612066696c652e7466756e");
+
+    const auto product = bng::parser::parseExpression(
+        R"BNG(FunctionProduct("left(x)", "right(y)"))BNG");
+    REQUIRE(product.kind() == bng::ast::ExpressionKind::Function);
+    REQUIRE(product.name() == "functionproduct");
+    REQUIRE(product.args().size() == 2);
+    CHECK(product.args()[0].kind() == bng::ast::ExpressionKind::ObservableRef);
+    CHECK(product.args()[0].name() == "left");
+    CHECK(product.args()[0].args().size() == 1);
+    CHECK(product.args()[0].args()[0].name() == "x");
+    CHECK(product.args()[1].kind() == bng::ast::ExpressionKind::ObservableRef);
+    CHECK(product.args()[1].name() == "right");
+    CHECK(product.args()[1].args().size() == 1);
+    CHECK(product.args()[1].args()[0].name() == "y");
 }
 
 TEST_CASE("NFsim AST adapter maps an inline time-backed TFUN directly") {
@@ -899,6 +913,90 @@ end reaction rules
     CHECK(system->getReaction(0)->getRxnType() == NFcore::ReactionClass::DOR_RXN);
     system->prepareForSimulation();
     CHECK(system->getReaction(0)->get_a() == Catch::Approx(2.0));
+    delete system;
+}
+
+TEST_CASE("NFsim AST adapter maps a bounded FunctionProduct rate") {
+    auto model = bng::parser::parseModel(R"BNG(
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+    B() 1
+end seed species
+begin observables
+    Molecules atotal A()
+    Molecules btotal B()
+end observables
+begin functions
+    fA(x) = atotal(x)
+    fB(y) = btotal(y)
+end functions
+begin reaction rules
+    %x::A() + %y::B() -> %x::A() + %y::B() FunctionProduct("fA(x)", "fB(y)")
+end reaction rules
+)BNG");
+
+    REQUIRE(model != nullptr);
+    REQUIRE(model->getReactionRules().size() == 1);
+    const auto& rate = model->getReactionRules().front().getRates().front();
+    REQUIRE(rate.name() == "functionproduct");
+    REQUIRE(rate.args().size() == 2);
+    CHECK(rate.args()[0].name() == "fA");
+    CHECK(rate.args()[1].name() == "fB");
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    CHECK(system->getReaction(0)->getRxnType() == NFcore::ReactionClass::DOR2_RXN);
+    system->prepareForSimulation();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(1.0));
+    delete system;
+}
+
+TEST_CASE("NFsim XML bridge preserves bounded FunctionProduct rates") {
+    auto model = bng::parser::parseModel(R"BNG(
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+    B() 1
+end seed species
+begin observables
+    Molecules atotal A()
+    Molecules btotal B()
+end observables
+begin functions
+    fA(x) = atotal(x)
+    fB(y) = btotal(y)
+end functions
+begin reaction rules
+    %x::A() + %y::B() -> %x::A() + %y::B() FunctionProduct("fA(x)", "fB(y)")
+end reaction rules
+)BNG");
+
+    REQUIRE(model != nullptr);
+    const auto xml = bng::io::XmlWriter::write(*model);
+    CHECK(xml.find("type=\"FunctionProduct\"") != std::string::npos);
+    CHECK(xml.find("name1=\"fA\"") != std::string::npos);
+    CHECK(xml.find("name2=\"fB\"") != std::string::npos);
+    CHECK(xml.find("<ListOfArguments1>") != std::string::npos);
+    CHECK(xml.find("<ListOfArguments2>") != std::string::npos);
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    CHECK(system->getReaction(0)->getRxnType() == NFcore::ReactionClass::DOR2_RXN);
+    system->prepareForSimulation();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(1.0));
     delete system;
 }
 

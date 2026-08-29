@@ -2619,22 +2619,56 @@ bool NFinput::initReactionRules(
 						string functionName1 = pRateLaw->Attribute("name1");
 						LocalFunction *lf1 = s->getLocalFunctionByName(functionName1);
 						if(lf1 != NULL) {
-							cout<<"Error!! call a local function through a composite function always!"<<endl;
-							cout<<"DOR rxn should never directly call a local function."<<endl;
-							exit(1);
+							// FunctionProduct stores its factors as composite-function
+							// pointers, but a source-level one-argument local function is
+							// also a valid factor.  Create the same thin wrapper used by
+							// the direct AST adapter instead of aborting the XML path.
+							if (funcArgs1.size() != 1) {
+								cerr<<"!!Error: FunctionProduct local function '"<<functionName1
+								    <<"' must have exactly one argument."<<endl;
+								return false;
+							}
+							if (s->getCompositeFunctionByName(functionName1) == NULL) {
+								vector <string> calledFunctions1(1, functionName1);
+								vector <string> wrapperArgs1(1, funcArgs1.front());
+								vector <string> wrapperParams1;
+								CompositeFunction *wrapper1 = new CompositeFunction(
+									s, functionName1,
+									functionName1+"("+funcArgs1.front()+")",
+									calledFunctions1, wrapperArgs1, wrapperParams1);
+								s->addCompositeFunction(wrapper1);
+								wrapper1->finalizeInitialization(s);
+							}
 						}
 
 						string functionName2 = pRateLaw->Attribute("name2");
 						LocalFunction *lf2 = s->getLocalFunctionByName(functionName2);
 						if(lf2 != NULL) {
-							cout<<"Error!! call a local function through a composite function always!"<<endl;
-							cout<<"DOR rxn should never directly call a local function."<<endl;
-							exit(1);
+							if (funcArgs2.size() != 1) {
+								cerr<<"!!Error: FunctionProduct local function '"<<functionName2
+								    <<"' must have exactly one argument."<<endl;
+								return false;
+							}
+							if (s->getCompositeFunctionByName(functionName2) == NULL) {
+								vector <string> calledFunctions2(1, functionName2);
+								vector <string> wrapperArgs2(1, funcArgs2.front());
+								vector <string> wrapperParams2;
+								CompositeFunction *wrapper2 = new CompositeFunction(
+									s, functionName2,
+									functionName2+"("+funcArgs2.front()+")",
+									calledFunctions2, wrapperArgs2, wrapperParams2);
+								s->addCompositeFunction(wrapper2);
+								wrapper2->finalizeInitialization(s);
+							}
 						}
 
 						ts->finalize();
 						CompositeFunction *cf1 = s->getCompositeFunctionByName(functionName1);
 						CompositeFunction *cf2 = s->getCompositeFunctionByName(functionName2);
+						if (cf1 == NULL || cf2 == NULL) {
+							cerr<<"!!Error: FunctionProduct could not resolve both composite factors."<<endl;
+							return false;
+						}
 
 						r=new DOR2RxnClass(rxnName,1,"",ts,cf1,cf2,funcArgs1,funcArgs2,s);
 

@@ -15,12 +15,13 @@
 /// IMPLEMENTED here: parameters, compartments, molecule types, observables,
 ///                    seed species, bounded direct reaction rules, direct
 ///                    Arrhenius energy expansion, time-backed global
-///                    functions, zero-argument composites, and one-argument
-///                    molecule-scoped local functions.
-/// GATED here:       nested/complex local functions, TFUN and other rate-law
-///                   forms, and reaction centers not yet represented by the
-///                   direct mapping. They fail closed and cite the TiXml
-///                   init* function that remains their compatibility oracle.
+///                    functions, zero-argument composites, one-argument
+///                    molecule-scoped local functions, and FunctionProduct.
+/// GATED here:       nested/complex local functions, file-backed TFUN and
+///                   other rate-law forms, and reaction centers not yet
+///                   represented by the direct mapping. They fail closed and
+///                   cite the TiXml init* function that remains their
+///                   compatibility oracle.
 
 #include "NFinput_fromAst.hh"
 #include "NFinput.hh"
@@ -224,6 +225,33 @@ std::string scopedArgumentName(const std::string& pattern) {
     const auto separator = pattern.find("::", percent + 1);
     if (separator == std::string::npos || separator == percent + 1) return {};
     return pattern.substr(percent + 1, separator - percent - 1);
+}
+
+struct FunctionProductOperand {
+    std::string name;
+    std::string argument;
+};
+
+bool parseFunctionProductOperand(const bng::ast::Model& model,
+                                 const bng::ast::Expression& expression,
+                                 FunctionProductOperand& operand,
+                                 std::string& diagnostic) {
+    using bng::ast::ExpressionKind;
+    if (expression.kind() != ExpressionKind::Function &&
+        expression.kind() != ExpressionKind::ObservableRef) {
+        diagnostic = "FunctionProduct operands must be function calls";
+        return false;
+    }
+    const auto* function = getModelFunction(model, expression.name());
+    if (function == nullptr || function->getArgs().size() != 1 ||
+        expression.args().size() != 1 ||
+        expression.args().front().kind() != ExpressionKind::Identifier) {
+        diagnostic = "FunctionProduct operands must call one-argument local functions";
+        return false;
+    }
+    operand.name = expression.name();
+    operand.argument = expression.args().front().name();
+    return true;
 }
 
 bool hasModelObservable(const bng::ast::Model& model, const std::string& name) {
@@ -2595,7 +2623,29 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 (rates.front().kind() == bng::ast::ExpressionKind::ObservableRef ||
                  rates.front().kind() == bng::ast::ExpressionKind::Function) &&
                 rates.front().args().size() == rateFunction->getArgs().size();
-            if ((rule.hasScopePrefix() && !localFunctionRate) || rates.empty() ||
+            const bool functionProductRate =
+                !rates.empty() &&
+                rates.front().kind() == bng::ast::ExpressionKind::Function &&
+                lowerCase(rates.front().name()) == "functionproduct" &&
+                rates.front().args().size() == 2;
+            FunctionProductOperand functionProductOperand1;
+            FunctionProductOperand functionProductOperand2;
+            if (functionProductRate) {
+                std::string productDiagnostic;
+                if (!parseFunctionProductOperand(
+                        model, rates.front().args()[0], functionProductOperand1,
+                        productDiagnostic) ||
+                    !parseFunctionProductOperand(
+                        model, rates.front().args()[1], functionProductOperand2,
+                        productDiagnostic)) {
+                    std::cerr << "[nfsim/ast] reaction '" << rule.getRuleName()
+                              << "' cannot use FunctionProduct: " << productDiagnostic
+                              << "\n";
+                    return false;
+                }
+            }
+            if ((rule.hasScopePrefix() && !localFunctionRate && !functionProductRate) ||
+                (functionProductRate && !rule.hasScopePrefix()) || rates.empty() ||
                 (reactantPatterns.empty() && productPatterns.empty())) {
                 std::cerr << "[nfsim/ast] reaction '" << rule.getRuleName()
                           << "' requires unsupported scope, empty reaction, or missing-rate handling\n";
@@ -3027,6 +3077,58 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
         }
 
         std::vector<std::string> localFunctionArgumentNames;
+        std::vector<std::string> functionProductArguments1;
+        std::vector<std::string> functionProductArguments2;
+        std::size_t functionProductPattern1 = reactantRoots.size();
+        std::size_t functionProductPattern2 = reactantRoots.size();
+        const auto mapFunctionProductArgument =
+            [&](const FunctionProductOperand& operand,
+                std::vector<std::string>& argumentNames,
+                std::size_t& matchingPattern) {
+                matchingPattern = reactantRoots.size();
+                for (std::size_t patternIndex = 0;
+                     patternIndex < reactantRoots.size(); ++patternIndex) {
+                    if (patternIndex >= rule.getReactants().size()) continue;
+                    if (scopedArgumentName(rule.getReactants()[patternIndex]) !=
+                        operand.argument) {
+                        continue;
+                    }
+                    if (matchingPattern != reactantRoots.size()) {
+                        diagnostic = "a FunctionProduct scope identifier refers to multiple reactants";
+                        return false;
+                    }
+                    matchingPattern = patternIndex;
+                }
+                if (matchingPattern == reactantRoots.size()) {
+                    diagnostic = "FunctionProduct scope identifier '" + operand.argument +
+                                 "' has no matching reactant";
+                    return false;
+                }
+                if (reactantRoots[matchingPattern]->getMoleculeType()->isPopulationType()) {
+                    diagnostic = "FunctionProduct cannot scope population reactants";
+                    return false;
+                }
+                if (!transformationSet->addLocalFunctionReference(
+                        reactantRoots[matchingPattern], operand.argument,
+                        LocalFunction::MOLECULE)) {
+                    diagnostic = "could not add FunctionProduct scope reference";
+                    return false;
+                }
+                argumentNames.push_back(operand.argument);
+                return true;
+            };
+        if (functionProductRate) {
+            ok = mapFunctionProductArgument(
+                     functionProductOperand1, functionProductArguments1,
+                     functionProductPattern1) &&
+                 mapFunctionProductArgument(
+                     functionProductOperand2, functionProductArguments2,
+                     functionProductPattern2);
+            if (ok && functionProductPattern1 == functionProductPattern2) {
+                diagnostic = "FunctionProduct requires two different scoped reactants";
+                ok = false;
+            }
+        }
         if (localFunctionRate) {
             if (!rule.hasScopePrefix()) {
                 diagnostic = "local-function rate requires a %name:: scoped reactant";
@@ -3118,6 +3220,19 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 return false;
             }
             reaction = new MMRxnClass(rule.getRuleName(), kcat, km, transformationSet, s);
+        } else if (functionProductRate) {
+            auto* composite1 = s->getCompositeFunctionByName(functionProductOperand1.name);
+            auto* composite2 = s->getCompositeFunctionByName(functionProductOperand2.name);
+            if (composite1 == nullptr || composite2 == nullptr ||
+                functionProductArguments1.empty() || functionProductArguments2.empty()) {
+                std::cerr << "[nfsim/ast] reaction '" << rule.getRuleName()
+                          << "' has an unregistered FunctionProduct operand\n";
+                delete transformationSet;
+                return false;
+            }
+            reaction = new DOR2RxnClass(
+                rule.getRuleName(), 1.0, "", transformationSet, composite1, composite2,
+                functionProductArguments1, functionProductArguments2, s);
         } else if (localFunctionRate) {
             auto* composite = s->getCompositeFunctionByName(rate.name());
             if (composite == nullptr || localFunctionArgumentNames.empty()) {

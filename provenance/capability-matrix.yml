@@ -78,7 +78,7 @@ rows:
     tests: tests/cpp/test_nfsim_ast_adapter.cpp
     oracle: pending
     owner: pending-maintainer
-    notes: Elementary state, bond, degradation, product-creation, and compartment-transport rules are direct; bidirectional, zero-order, static MM, zero-argument functional, and bounded molecule-scoped local-function rates are covered. Symmetric reaction centers, filtered, energy-dependent, and other non-static forms remain fail-closed.
+    notes: Elementary state, bond, degradation, product-creation, and compartment-transport rules are direct; bidirectional, zero-order, static MM, zero-argument functional, bounded molecule-scoped local-function, and bounded two-factor FunctionProduct rates are covered. Symmetric reaction centers, filtered, energy-dependent, and other non-static forms remain fail-closed.
   - id: nfsim.energy-and-time-functions
     source: legacy NFinput::initEnergyFunctions and initFunctions
     bng3_reference: cpp/nfsim/NFinput/NFinput_fromAst.cpp
