@@ -51,6 +51,10 @@ Run a 1D parameter scan and return time-series results for each sampled value.
 
 Run a 2D parameter grid scan.
 
+### `sensitivity_analysis(model_or_path, parameters=None, observables=None, *, **kwargs) -> SensitivityResult`
+
+Compute local normalized sensitivities using central finite differences.
+
 ### `from_sbml(path, atomize=False, **options) -> BioNetGenModel`
 
 Import SBML through the atomizer bridge and return a model.

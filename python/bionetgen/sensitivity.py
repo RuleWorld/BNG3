@@ -14,6 +14,7 @@ from bionetgen.scan import (
     _coerce_model,
     _simulation_kwargs,
     _simulate_serial,
+    _validate_parameter,
     _worker_scan_single,
 )
 
@@ -101,6 +102,14 @@ def sensitivity_analysis(
     model = _coerce_model(model_or_path)
     parameter_names = list(parameters or _default_parameter_names(model))
     observable_names = list(observables or _default_observable_names(model))
+    if not parameter_names:
+        raise ValueError("At least one parameter is required")
+    if not observable_names:
+        raise ValueError("At least one observable is required")
+    for parameter_name in parameter_names:
+        _validate_parameter(model, parameter_name)
+    if not np.isfinite(float(delta)) or delta <= 0.0:
+        raise ValueError("delta must be finite and positive")
     sim_kwargs = _simulation_kwargs(
         method=method,
         t_end=t_end,

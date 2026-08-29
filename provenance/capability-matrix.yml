@@ -91,12 +91,12 @@ rows:
   - id: pybionetgen.api-cli-atomizer
     source: python/bionetgen and legacy/PyBioNetGen
     bng3_reference: python/bionetgen
-    status: pending
-    direct_path: planned
-    tests: pending
+    status: implemented-subset
+    direct_path: in-process
+    tests: tests/python/test_cpp_backend.py, tests/python/test_cli.py, tests/python/test_parameter_scan.py, tests/python/test_sensitivity.py
     oracle: pending
     owner: pending-maintainer
-    notes: Core API already exposes multiple simulation methods; CLI method and solver options are now wired, but installed-package, compatibility-import, Atomizer, serialization, scans, sensitivity, plotting, and format-roundtrip coverage remains.
+    notes: Core API and CLI share the in-process backend; source-build and wheel imports, solver controls, scans, and sensitivity have smoke coverage. Atomizer, serialization, plotting, and format-roundtrip parity remain.
   - id: validation.oracles-goldens-release
     source: provenance/upstreams.lock.yml and provenance/golden
     bng3_reference: provenance/

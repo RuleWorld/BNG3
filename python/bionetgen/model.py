@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import operator
 from pathlib import Path
 import sys
 from typing import Optional, Union
@@ -199,8 +200,12 @@ class BioNetGenModel:
             raise ValueError("t_start and t_end must be finite")
         if t_end < t_start:
             raise ValueError("t_end must be greater than or equal to t_start")
-        if isinstance(n_steps, bool) or not isinstance(n_steps, int):
+        if isinstance(n_steps, bool):
             raise TypeError("n_steps must be a positive integer")
+        try:
+            n_steps = operator.index(n_steps)
+        except TypeError as exc:
+            raise TypeError("n_steps must be a positive integer") from exc
         if n_steps <= 0:
             raise ValueError("n_steps must be a positive integer")
         if not math.isfinite(float(rtol)) or rtol <= 0.0:

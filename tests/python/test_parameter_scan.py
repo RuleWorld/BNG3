@@ -101,3 +101,20 @@ def test_parameter_scan_2d_shape_and_standalone(tmp_path):
     frame = scan2d.to_dataframe()
     assert isinstance(frame, pandas.DataFrame)
     assert set(["k", "X0", "time", "Xtot"]).issubset(frame.columns)
+
+
+def test_parameter_scan_rejects_invalid_inputs(tmp_path):
+    model_path = tmp_path / "decay.bngl"
+    _write_decay_model(model_path)
+    model = bionetgen.load(str(model_path))
+
+    with pytest.raises(ValueError, match="Unknown parameter"):
+        model.parameter_scan(parameter="missing", values=[1.0])
+    with pytest.raises(ValueError, match="positive"):
+        model.parameter_scan(parameter="k", min=0.0, max=1.0, n_points=0)
+    with pytest.raises(ValueError, match="positive"):
+        model.parameter_scan(
+            parameter="k", min=0.0, max=1.0, n_points=3, log_scale=True
+        )
+    with pytest.raises(ValueError, match="must not be empty"):
+        model.parameter_scan(parameter="k", values=[])

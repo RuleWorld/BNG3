@@ -13,8 +13,13 @@ bionetgen run MODEL [OPTIONS]
 Options:
 
 - `-m, --method [ode|ssa|nf|pla|psa]` simulation method.
+- `--t-start FLOAT` start time (NF requires zero).
 - `-t, --t-end FLOAT` end time.
 - `-n, --n-steps INT` number of output steps.
+- `--rtol FLOAT`, `--atol FLOAT` ODE tolerances.
+- `--seed INT` random seed for stochastic methods.
+- `--pla-config TEXT` PLA configuration string.
+- `--psa-poplevel FLOAT` PSA population threshold.
 - `-o, --output PATH` write tabular output to a file.
 - `-v, --verbose` show progress.
 
@@ -51,6 +56,7 @@ Options:
 - `--psa-poplevel FLOAT` PSA population threshold.
 - `--parallel INT` worker process count.
 - `-o, --output PATH` write a CSV file.
+- `-v, --verbose` show progress.
 
 Examples:
 
@@ -82,6 +88,7 @@ Options:
 - `--delta FLOAT` relative perturbation size.
 - `--parallel INT` worker process count.
 - `-o, --output PATH` write a CSV file.
+- `-v, --verbose` show progress.
 
 Example:
 

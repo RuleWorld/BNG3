@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
+import operator
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
@@ -21,19 +22,47 @@ def _coerce_model(model_or_path) -> BioNetGenModel:
     raise TypeError("Expected a BioNetGenModel or a BNGL file path")
 
 
+def _validate_parameter(model: BioNetGenModel, name: str) -> None:
+    if not isinstance(name, str) or not name:
+        raise ValueError("Parameter name must be a non-empty string")
+    try:
+        parameter = model.get_parameter(name)
+    except (KeyError, RuntimeError) as exc:
+        raise ValueError(f"Unknown parameter {name!r}") from exc
+    if parameter.value is None:
+        raise ValueError(f"Parameter {name!r} does not have a numeric value")
+
+
 def _scan_values(*, values=None, min=None, max=None, n_points=None, log_scale=False):
     if values is not None:
         resolved = np.asarray(values, dtype=float)
         if resolved.ndim != 1:
             raise ValueError("Scan values must be one-dimensional")
+        if resolved.size == 0:
+            raise ValueError("Scan values must not be empty")
+        if not np.all(np.isfinite(resolved)):
+            raise ValueError("Scan values must be finite")
         return resolved
 
     if min is None or max is None or n_points is None:
         raise ValueError("Provide either values or min/max/n_points")
 
+    try:
+        count = operator.index(n_points)
+    except TypeError as exc:
+        raise TypeError("n_points must be a positive integer") from exc
+    if isinstance(n_points, bool) or count <= 0:
+        raise ValueError("n_points must be a positive integer")
+
+    lower = float(min)
+    upper = float(max)
+    if not np.isfinite(lower) or not np.isfinite(upper):
+        raise ValueError("Scan bounds must be finite")
+    if log_scale and (lower <= 0.0 or upper <= 0.0):
+        raise ValueError("Log-scale scan bounds must be positive")
     if log_scale:
-        return np.logspace(np.log10(float(min)), np.log10(float(max)), int(n_points))
-    return np.linspace(float(min), float(max), int(n_points))
+        return np.logspace(np.log10(lower), np.log10(upper), count)
+    return np.linspace(lower, upper, count)
 
 
 def _simulation_kwargs(
@@ -273,6 +302,7 @@ def parameter_scan(
     parallel: int = 0,
 ) -> ScanResult:
     model = _coerce_model(model_or_path)
+    _validate_parameter(model, parameter)
     scan_values = _scan_values(
         values=values, min=min, max=max, n_points=n_points, log_scale=log_scale
     )
@@ -334,10 +364,18 @@ def parameter_scan_2d(
     parallel: int = 0,
 ) -> ScanResult2D:
     model = _coerce_model(model_or_path)
+    _validate_parameter(model, parameter1)
+    _validate_parameter(model, parameter2)
+    if parameter1 == parameter2:
+        raise ValueError("Two-dimensional scans require two distinct parameters")
     values1 = np.asarray(values1, dtype=float)
     values2 = np.asarray(values2, dtype=float)
     if values1.ndim != 1 or values2.ndim != 1:
         raise ValueError("Scan grids must be one-dimensional")
+    if values1.size == 0 or values2.size == 0:
+        raise ValueError("Scan grids must not be empty")
+    if not np.all(np.isfinite(values1)) or not np.all(np.isfinite(values2)):
+        raise ValueError("Scan grids must be finite")
 
     sim_kwargs = _simulation_kwargs(
         method=method,
