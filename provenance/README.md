@@ -25,6 +25,21 @@ The strict gate additionally requires accepted source revisions, locked oracle
 recipes and artifact digests, compiler image digests, and a Python lock-file
 digest.
 
+## Golden bundles
+
+Provenance-complete golden bundles use the schema in
+`schemas/golden-manifest.schema.json`. Validate a candidate or approved bundle
+with:
+
+```bash
+python scripts/validate_golden_manifest.py \
+  --manifest provenance/golden/<bundle>/manifest.json
+```
+
+The validator checks every referenced byte and rejects an `approved` bundle
+until the source lock, oracle artifacts, and immutable compiler images are
+actually locked.
+
 ## Reconciliation ledgers
 
 Create one ledger per reconciliation source under `provenance/reconciliation/`
