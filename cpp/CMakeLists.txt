@@ -23,7 +23,7 @@ target_link_libraries(bng_core PUBLIC nauty)
 # =============================================================================
 # bng_ast (model AST nodes)
 # =============================================================================
-file(GLOB BNG_AST_SOURCES "ast/*.cpp")
+file(GLOB BNG_AST_SOURCES CONFIGURE_DEPENDS "ast/*.cpp")
 add_library(bng_ast STATIC ${BNG_AST_SOURCES})
 target_include_directories(bng_ast PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}

@@ -2,6 +2,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include "ast/Expression.hpp"
+#include "ast/ExpressionEval.hpp"
 
 using namespace bng::ast;
 using Catch::Matchers::WithinRel;
@@ -126,4 +127,25 @@ TEST_CASE("Expression: time alias 't'", "[Expression]") {
     // 't' should be recognized as time alias
     auto deps = expr.getDependencies();
     REQUIRE(deps.empty());
+}
+
+TEST_CASE("ExpressionEval facade binds time and symbols", "[ExpressionEval]") {
+    auto expr = Expression::binary(
+        "+", Expression::identifier("k"),
+        Expression::function("sin", {Expression::identifier("time")}));
+    const std::unordered_map<std::string, double> symbols = {{"k", 2.0}};
+
+    REQUIRE_THAT(bng::eval::evaluate(expr, 0.0, symbols), WithinRel(2.0, 1e-10));
+    REQUIRE_THAT(bng::eval::evaluate(expr, 1.0, symbols),
+                 WithinRel(2.8414709848, 1e-10));
+}
+
+TEST_CASE("ExpressionEval facade reports missing symbols", "[ExpressionEval]") {
+    const auto expr = Expression::identifier("missing");
+    CHECK_THROWS_WITH(
+        bng::eval::evaluate(expr, 0.0, {}),
+        "Unknown expression symbol 'missing'");
+    CHECK_THROWS_WITH(
+        bng::eval::evaluate(expr, bng::eval::Context {}),
+        "Expression evaluation requires a symbol resolver");
 }
