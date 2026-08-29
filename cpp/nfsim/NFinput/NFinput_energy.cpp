@@ -220,4 +220,77 @@ bool createExpandedBindingReactions(
     return true;
 }
 
+/*
+ * Create expanded BasicRxnClass instances from an energy state-change rule.
+ */
+bool createExpandedStateChangeReactions(
+    const string &rxnName,
+    double phi_val,
+    double Ea0,
+    MoleculeType *molType,
+    const string &component,
+    const string &stateFrom,
+    const string &stateTo,
+    System *s,
+    bool blockSameComplexBinding,
+    bool verbose,
+    int &reaction_count)
+{
+    EnergyFunction *ef = s->getEnergyFunction();
+    if (!ef || !molType || stateFrom.empty() || stateTo.empty()) return false;
+
+    vector<ExpandedRuleInfo> expanded = ef->expandStateChangeRule(
+        rxnName, Ea0, phi_val, molType->getName(), component, stateFrom, stateTo);
+
+    for (const auto &rule : expanded) {
+        const string &fromState = rule.isForward ? stateFrom : stateTo;
+        const string &toState = rule.isForward ? stateTo : stateFrom;
+        if (molType->isEquivalentComponent(component)) return false;
+
+        TemplateMolecule *t = new TemplateMolecule(molType);
+        TransformationSet *ts = nullptr;
+        try {
+            t->addComponentConstraint(component, fromState);
+            for (const auto &constraint : rule.constraints) {
+                if (constraint.reactantIdx != 0 ||
+                    molType->isEquivalentComponent(constraint.compName)) {
+                    delete t;
+                    return false;
+                }
+                if (constraint.mustBeBound) t->addBoundComponent(constraint.compName);
+                else t->addEmptyComponent(constraint.compName);
+            }
+
+            vector<TemplateMolecule *> templates {t};
+            ts = new TransformationSet(templates);
+            if (!ts->addStateChangeTransform(t, component, toState)) {
+                delete ts;
+                delete t;
+                return false;
+            }
+            ts->setComplexBookkeeping(blockSameComplexBinding);
+            ts->finalize();
+        } catch (const std::exception &) {
+            delete ts;
+            delete t;
+            return false;
+        }
+
+        if (!std::isfinite(rule.rate) || rule.rate < 0.0) {
+            delete ts;
+            delete t;
+            return false;
+        }
+        auto *reaction = new BasicRxnClass(rule.name, rule.rate, "", ts, s);
+        s->addReaction(reaction);
+        ++reaction_count;
+
+        if (verbose) {
+            cout << "\t  Created " << (rule.isForward ? "forward" : "reverse")
+                 << " state-change rule: " << rule.name << "  rate=" << rule.rate << endl;
+        }
+    }
+    return !expanded.empty();
+}
+
 } // namespace NFinput

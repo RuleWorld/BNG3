@@ -82,12 +82,12 @@ rows:
   - id: nfsim.energy-and-time-functions
     source: legacy NFinput::initEnergyFunctions and initFunctions
     bng3_reference: cpp/nfsim/NFinput/NFinput_fromAst.cpp
-    status: pending
-    direct_path: planned-direct
-    tests: pending
+    status: implemented-subset
+    direct_path: direct-subset
+    tests: tests/cpp/test_nfsim_ast_adapter.cpp
     oracle: pending
     owner: pending-maintainer
-    notes: Energy patterns, Arrhenius rates, time functions, and TFUN provenance are not yet direct.
+    notes: Energy patterns plus bounded Arrhenius binding/state-change expansion are direct; context variants use NFsim EnergyFunction. Time functions, TFUN, and other energy/rate-law forms remain fail-closed.
   - id: pybionetgen.api-cli-atomizer
     source: python/bionetgen and legacy/PyBioNetGen
     bng3_reference: python/bionetgen

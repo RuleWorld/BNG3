@@ -1,3 +1,4 @@
+#include <cmath>
 #include <map>
 #include <string>
 
@@ -6,6 +7,7 @@
 
 #include "NFinput_fromAst.hh"
 #include "NFcore.hh"
+#include "NFcore/energyPattern.hh"
 #include "compartment.hh"
 #include "NFfunction/NFfunction.hh"
 #include "ast/Function.hpp"
@@ -633,5 +635,119 @@ end reaction rules
     system->singleStep();
     CHECK(system->getObservableByName("A_total")->getCount() == 0);
     CHECK(system->getObservableByName("B_total")->getCount() == 1);
+    delete system;
+}
+
+TEST_CASE("NFsim AST adapter expands direct Arrhenius binding with energy patterns") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    phi 0.5
+    Ea 0.0
+    Gbind 1.0
+    RT 1.0
+end parameters
+begin molecule types
+    A(b)
+    B(a)
+end molecule types
+begin seed species
+    A(b) 1
+    B(a) 1
+end seed species
+begin energy patterns
+    A(b!1).B(a!1) Gbind
+end energy patterns
+begin reaction rules
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,Ea)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getEnergyFunction() != nullptr);
+    CHECK(system->getEnergyFunction()->getNumPatterns() == 1);
+    REQUIRE(system->getAllReactions().size() == 2);
+    CHECK(system->getReaction(0)->getBaseRate() == Catch::Approx(std::exp(-0.5)));
+    CHECK(system->getReaction(1)->getBaseRate() == Catch::Approx(std::exp(0.5)));
+    CHECK(suggestedTraversalLimit >= 2);
+    delete system;
+}
+
+TEST_CASE("NFsim AST adapter expands direct Arrhenius state changes") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    phi 0.5
+    Ea 0.0
+    Gup 1.0
+    Gdn 0.0
+    RT 1.0
+end parameters
+begin molecule types
+    A(conf~dn~up)
+end molecule types
+begin seed species
+    A(conf~dn) 1
+end seed species
+begin energy patterns
+    A(conf~up) Gup
+    A(conf~dn) Gdn
+end energy patterns
+begin reaction rules
+    A(conf~dn) <-> A(conf~up) Arrhenius(phi,Ea)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getEnergyFunction() != nullptr);
+    CHECK(system->getEnergyFunction()->getNumPatterns() == 2);
+    REQUIRE(system->getAllReactions().size() == 2);
+    CHECK(system->getReaction(0)->getBaseRate() == Catch::Approx(std::exp(-0.5)));
+    CHECK(system->getReaction(1)->getBaseRate() == Catch::Approx(std::exp(0.5)));
+    CHECK(suggestedTraversalLimit >= 1);
+    delete system;
+}
+
+TEST_CASE("NFsim AST adapter expands Arrhenius binding context variants") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    phi 0.5
+    Ea 0.0
+    Gcontext 1.0
+    RT 1.0
+end parameters
+begin molecule types
+    A(b,c)
+    B(a)
+    C(x)
+end molecule types
+begin seed species
+    A(b,c!1).C(x!1) 1
+    B(a) 1
+end seed species
+begin energy patterns
+    A(b!1,c!2).B(a!1).C(x!2) Gcontext
+end energy patterns
+begin reaction rules
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 4);
+    CHECK(system->getReaction(0)->getBaseRate() == Catch::Approx(1.0));
+    CHECK(system->getReaction(1)->getBaseRate() == Catch::Approx(1.0));
+    CHECK(system->getReaction(2)->getBaseRate() == Catch::Approx(std::exp(-0.5)));
+    CHECK(system->getReaction(3)->getBaseRate() == Catch::Approx(std::exp(0.5)));
     delete system;
 }

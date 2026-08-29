@@ -13,8 +13,9 @@
 ///   test_parity_nfsim (ast-direct must equal in-memory-XML under one seed).
 ///
 /// IMPLEMENTED here: parameters, compartments, molecule types, observables,
-///                    seed species, and a bounded direct reaction-rule slice.
-/// STUBBED here:     local/composite/time functions and energy/rate-law forms
+///                    seed species, bounded direct reaction rules, and the
+///                    direct Arrhenius energy expansion slice.
+/// STUBBED here:     local/composite/time functions and other rate-law forms
 ///                   that still fail closed and cite the TiXml init* function
 ///                   that is their specification.
 
@@ -29,8 +30,10 @@
 #include "ast/Parameter.hpp"
 #include "ast/ParameterList.hpp"
 #include "../NFcore/compartment.hh"
+#include "../NFcore/energyPattern.hh"
 #include "../NFfunction/NFfunction.hh"
 #include "../NFutil/NFutil.hh"
+#include "NFinput_energy.hh"
 #include "PatternGraphBuilder.hpp"
 #include "BNGLexer.h"
 #include "BNGParser.h"
@@ -1068,10 +1071,10 @@ bool templateForReactionRef(
     return result != nullptr;
 }
 
-bool evaluateStaticReactionRate(const bng::ast::Expression& expression,
-                                const std::map<std::string, double>& parameters,
-                                double& value,
-                                std::string& diagnostic) {
+bool evaluateStaticExpression(const bng::ast::Expression& expression,
+                              const std::map<std::string, double>& parameters,
+                              double& value,
+                              std::string& diagnostic) {
     try {
         value = expression.evaluate([&](const std::string& name) -> double {
             if (name == "_PI" || name == "_pi") return 3.14159265358979323846;
@@ -1079,12 +1082,12 @@ bool evaluateStaticReactionRate(const bng::ast::Expression& expression,
             if (name == "_Na") return 6.02214076e23;
             const auto iter = parameters.find(name);
             if (iter == parameters.end()) {
-                throw std::runtime_error("unknown reaction-rate symbol '" + name + "'");
+                throw std::runtime_error("unknown static-expression symbol '" + name + "'");
             }
             return iter->second;
         }, 0.0);
-        if (!std::isfinite(value) || value < 0.0) {
-            diagnostic = "reaction rate is not a finite nonnegative value";
+        if (!std::isfinite(value)) {
+            diagnostic = "expression is not finite";
             return false;
         }
         return true;
@@ -1092,6 +1095,381 @@ bool evaluateStaticReactionRate(const bng::ast::Expression& expression,
         diagnostic = error.what();
         return false;
     }
+}
+
+bool evaluateStaticReactionRate(const bng::ast::Expression& expression,
+                                const std::map<std::string, double>& parameters,
+                                double& value,
+                                std::string& diagnostic) {
+    if (!evaluateStaticExpression(expression, parameters, value, diagnostic)) return false;
+    if (value < 0.0) {
+        diagnostic = "reaction rate is not a finite nonnegative value";
+        return false;
+    }
+    return true;
+}
+
+bool addEnergyPatternsFromAst(const bng::ast::Model& model, System* system,
+                              const std::map<std::string, double>& parameters,
+                              bool verbose) {
+    const auto& energyPatterns = model.getEnergyPatterns();
+    if (energyPatterns.empty()) return true;
+
+    double phi = 0.5;
+    double rt = 2.478;
+    if (const auto iter = parameters.find("phi"); iter != parameters.end()) phi = iter->second;
+    if (const auto iter = parameters.find("RT"); iter != parameters.end()) rt = iter->second;
+    if (!std::isfinite(phi) || !std::isfinite(rt) || rt == 0.0) {
+        std::cerr << "[nfsim/ast] energy expansion requires finite phi and nonzero RT\n";
+        return false;
+    }
+
+    auto* energyFunction = new EnergyFunction(phi, rt);
+    std::set<std::string> ids;
+    for (std::size_t patternIndex = 0; patternIndex < energyPatterns.size(); ++patternIndex) {
+        const auto& pattern = energyPatterns[patternIndex];
+        EnergyPatternInfo info;
+        info.id = pattern.getLabel().empty()
+                      ? "energy_" + std::to_string(patternIndex + 1)
+                      : pattern.getLabel();
+        if (!ids.insert(info.id).second) {
+            std::cerr << "[nfsim/ast] duplicate energy-pattern id '" << info.id << "'\n";
+            delete energyFunction;
+            return false;
+        }
+
+        std::string diagnostic;
+        if (!evaluateStaticExpression(
+                pattern.getExpression(), parameters, info.energyValue, diagnostic)) {
+            std::cerr << "[nfsim/ast] cannot evaluate energy pattern '" << info.id
+                      << "': " << diagnostic << "\n";
+            delete energyFunction;
+            return false;
+        }
+
+        const auto molecules = collectGraphMolecules(pattern.getGraph().getGraph());
+        if (molecules.empty()) {
+            std::cerr << "[nfsim/ast] energy pattern '" << info.id
+                      << "' contains no molecule graph\n";
+            delete energyFunction;
+            return false;
+        }
+
+        for (std::size_t moleculeIndex = 0; moleculeIndex < molecules.size(); ++moleculeIndex) {
+            const auto& molecule = molecules[moleculeIndex];
+            MoleculeType* moleculeType = nullptr;
+            try {
+                moleculeType = system->getMoleculeTypeByName(molecule.name);
+            } catch (const std::exception& error) {
+                diagnostic = error.what();
+            }
+            if (moleculeType == nullptr) {
+                std::cerr << "[nfsim/ast] cannot map energy pattern '" << info.id
+                          << "': " << diagnostic << "\n";
+                delete energyFunction;
+                return false;
+            }
+
+            EpMolecule energyMolecule;
+            energyMolecule.typeName = molecule.name;
+            energyMolecule.xmlId = "m" + std::to_string(moleculeIndex + 1);
+            for (std::size_t componentIndex = 0;
+                 componentIndex < molecule.components.size(); ++componentIndex) {
+                const auto& component = molecule.components[componentIndex];
+                try {
+                    moleculeType->getCompIndexFromName(component.name);
+                } catch (const std::exception& error) {
+                    std::cerr << "[nfsim/ast] cannot map energy pattern '" << info.id
+                              << "': " << error.what() << "\n";
+                    delete energyFunction;
+                    return false;
+                }
+                EpMolecule::CompInfo energyComponent;
+                energyComponent.name = component.name;
+                energyComponent.isBound = false;
+                energyComponent.stateConstraint = graphStateToken(*component.node);
+                if (energyComponent.stateConstraint == "?" ||
+                    energyComponent.stateConstraint == "*") {
+                    energyComponent.stateConstraint.clear();
+                }
+                energyMolecule.components.push_back(std::move(energyComponent));
+            }
+            info.molecules.push_back(std::move(energyMolecule));
+        }
+
+        std::set<BNGcore::Node*> processedBonds;
+        for (std::size_t moleculeIndex = 0; moleculeIndex < molecules.size(); ++moleculeIndex) {
+            for (std::size_t componentIndex = 0;
+                 componentIndex < molecules[moleculeIndex].components.size(); ++componentIndex) {
+                const auto& component = molecules[moleculeIndex].components[componentIndex];
+                for (auto* bond : component.bonds) {
+                    if (graphBondToken(*bond) != "!+") continue;
+                    if (!processedBonds.insert(bond).second) continue;
+
+                    std::vector<std::pair<int, int>> endpoints;
+                    for (std::size_t candidateMolecule = 0;
+                         candidateMolecule < molecules.size(); ++candidateMolecule) {
+                        for (std::size_t candidateComponent = 0;
+                             candidateComponent < molecules[candidateMolecule].components.size();
+                             ++candidateComponent) {
+                            const auto& candidate =
+                                molecules[candidateMolecule].components[candidateComponent];
+                            if (std::find(candidate.bonds.begin(), candidate.bonds.end(), bond) !=
+                                candidate.bonds.end()) {
+                                endpoints.emplace_back(
+                                    static_cast<int>(candidateMolecule),
+                                    static_cast<int>(candidateComponent));
+                            }
+                        }
+                    }
+                    if (endpoints.size() != 2) {
+                        std::cerr << "[nfsim/ast] energy pattern '" << info.id
+                                  << "' has a bound bond without exactly two endpoints\n";
+                        delete energyFunction;
+                        return false;
+                    }
+
+                    EnergyPatternInfo::Bond energyBond;
+                    energyBond.mol1 = endpoints[0].first;
+                    energyBond.comp1 = endpoints[0].second;
+                    energyBond.mol2 = endpoints[1].first;
+                    energyBond.comp2 = endpoints[1].second;
+                    info.bonds.push_back(energyBond);
+                    auto& first = info.molecules[energyBond.mol1].components[energyBond.comp1];
+                    auto& second = info.molecules[energyBond.mol2].components[energyBond.comp2];
+                    first.isBound = true;
+                    second.isBound = true;
+                    first.bondPartnerId = info.molecules[energyBond.mol2].xmlId;
+                    second.bondPartnerId = info.molecules[energyBond.mol1].xmlId;
+                }
+            }
+        }
+
+        energyFunction->addEnergyPattern(info);
+        if (verbose) {
+            std::cerr << "[nfsim/ast] energy pattern " << info.id
+                      << " = " << info.energyValue << "\n";
+        }
+    }
+
+    system->setEnergyFunction(energyFunction);
+    if (verbose) {
+        std::cerr << "[nfsim/ast] parsed " << energyFunction->getNumPatterns()
+                  << " energy pattern(s), RT=" << rt << "\n";
+    }
+    return true;
+}
+
+bool isArrheniusExpression(const bng::ast::Expression& expression) {
+    return expression.kind() == bng::ast::ExpressionKind::Function &&
+           lowerCase(expression.name()) == "arrhenius" && expression.args().size() == 2;
+}
+
+bool addDirectArrheniusBinding(const bng::ast::ReactionRule& rule, System* system,
+                               const std::map<std::string, double>& parameters,
+                               bool blockSameComplexBinding, bool verbose,
+                               int& suggestedTraversalLimit) {
+    if (!rule.isBidirectional() || rule.getRates().size() != 1 ||
+        !isArrheniusExpression(rule.getRates().front())) {
+        return false;
+    }
+
+    const auto* energyFunction = system->getEnergyFunction();
+    if (energyFunction == nullptr) {
+        std::cerr << "[nfsim/ast] Arrhenius reaction '" << rule.getRuleName()
+                  << "' requires energy patterns\n";
+        return false;
+    }
+
+    const auto& reactantPatterns = rule.getReactantPatterns();
+    if (reactantPatterns.size() != 2 || rule.getProducts().empty()) {
+        std::cerr << "[nfsim/ast] direct Arrhenius binding requires two reactant patterns\n";
+        return false;
+    }
+    const auto firstReactantMolecules = collectGraphMolecules(reactantPatterns[0].getGraph());
+    const auto secondReactantMolecules = collectGraphMolecules(reactantPatterns[1].getGraph());
+    if (firstReactantMolecules.size() != 1 || secondReactantMolecules.size() != 1) {
+        std::cerr << "[nfsim/ast] direct Arrhenius binding requires one molecule per reactant\n";
+        return false;
+    }
+
+    const bng::ast::ReactionRule::TransformOp* addBond = nullptr;
+    for (const auto& operation : rule.getOperations()) {
+        if (operation.type == bng::ast::ReactionRule::TransformOp::Type::AddBond) {
+            if (addBond != nullptr) {
+                std::cerr << "[nfsim/ast] direct Arrhenius binding supports one added bond\n";
+                return false;
+            }
+            addBond = &operation;
+        } else {
+            std::cerr << "[nfsim/ast] direct Arrhenius binding supports only AddBond\n";
+            return false;
+        }
+    }
+    if (addBond == nullptr || addBond->source.patternIndex == addBond->partner.patternIndex ||
+        addBond->source.moleculeIndex != 0 || addBond->partner.moleculeIndex != 0) {
+        std::cerr << "[nfsim/ast] direct Arrhenius binding has an invalid reaction center\n";
+        return false;
+    }
+
+    std::string site1;
+    std::string site2;
+    std::string diagnostic;
+    if (!componentNameForReactionRef(rule, addBond->source, site1, diagnostic) ||
+        !componentNameForReactionRef(rule, addBond->partner, site2, diagnostic)) {
+        std::cerr << "[nfsim/ast] cannot map Arrhenius reaction '" << rule.getRuleName()
+                  << "': " << diagnostic << "\n";
+        return false;
+    }
+
+    MoleculeType* moleculeType1 = nullptr;
+    MoleculeType* moleculeType2 = nullptr;
+    try {
+        moleculeType1 = system->getMoleculeTypeByName(firstReactantMolecules[0].name);
+        moleculeType2 = system->getMoleculeTypeByName(secondReactantMolecules[0].name);
+    } catch (const std::exception& error) {
+        std::cerr << "[nfsim/ast] cannot map Arrhenius reaction '" << rule.getRuleName()
+                  << "': " << error.what() << "\n";
+        return false;
+    }
+    if (addBond->source.patternIndex != 0) {
+        std::swap(moleculeType1, moleculeType2);
+        std::swap(site1, site2);
+    }
+
+    double phi = 0.0;
+    double activationEnergy = 0.0;
+    if (!evaluateStaticExpression(
+            rule.getRates().front().args()[0], parameters, phi, diagnostic) ||
+        !evaluateStaticExpression(
+            rule.getRates().front().args()[1], parameters, activationEnergy, diagnostic)) {
+        std::cerr << "[nfsim/ast] cannot map Arrhenius reaction '" << rule.getRuleName()
+                  << "': " << diagnostic << "\n";
+        return false;
+    }
+
+    std::map<std::string, double> unusedParameters;
+    std::map<std::string, int> unusedStates;
+    int reactionCount = 0;
+    const std::size_t firstNewReaction = system->getAllReactions().size();
+    if (!createExpandedBindingReactions(
+            rule.getRuleName(), phi, activationEnergy, moleculeType1, site1,
+            moleculeType2, site2, system, unusedParameters, unusedStates,
+            blockSameComplexBinding, verbose, reactionCount)) {
+        return false;
+    }
+
+    const auto reactions = system->getAllReactions();
+    for (std::size_t reactionIndex = firstNewReaction;
+         reactionIndex < reactions.size(); ++reactionIndex) {
+        auto* reaction = reactions[reactionIndex];
+        reaction->setTotalRateFlag(hasReactionModifier(rule, "totalrate"));
+        if (hasReactionModifier(rule, "matchonce")) {
+            for (std::size_t reactantIndex = 0;
+                 reactantIndex < reactantPatterns.size(); ++reactantIndex) {
+                reaction->setMatchOnce(static_cast<unsigned int>(reactantIndex), true);
+            }
+        }
+    }
+    suggestedTraversalLimit = std::max(suggestedTraversalLimit, 2);
+    return true;
+}
+
+bool addDirectArrheniusStateChange(const bng::ast::ReactionRule& rule, System* system,
+                                   const std::map<std::string, double>& parameters,
+                                   bool blockSameComplexBinding, bool verbose,
+                                   int& suggestedTraversalLimit) {
+    if (!rule.isBidirectional() || rule.getRates().size() != 1 ||
+        !isArrheniusExpression(rule.getRates().front())) {
+        return false;
+    }
+
+    const auto& reactantPatterns = rule.getReactantPatterns();
+    if (reactantPatterns.size() != 1) {
+        std::cerr << "[nfsim/ast] direct Arrhenius state change requires one reactant pattern\n";
+        return false;
+    }
+    const auto molecules = collectGraphMolecules(reactantPatterns.front().getGraph());
+    if (molecules.size() != 1) {
+        std::cerr << "[nfsim/ast] direct Arrhenius state change requires one reactant molecule\n";
+        return false;
+    }
+
+    const bng::ast::ReactionRule::TransformOp* stateChange = nullptr;
+    for (const auto& operation : rule.getOperations()) {
+        if (operation.type == bng::ast::ReactionRule::TransformOp::Type::ChangeState) {
+            if (stateChange != nullptr) {
+                std::cerr << "[nfsim/ast] direct Arrhenius state change supports one changed component\n";
+                return false;
+            }
+            stateChange = &operation;
+        } else {
+            std::cerr << "[nfsim/ast] direct Arrhenius state change supports only ChangeState\n";
+            return false;
+        }
+    }
+    if (stateChange == nullptr || stateChange->source.patternIndex != 0 ||
+        stateChange->source.moleculeIndex != 0 || stateChange->newState == "PLUS" ||
+        stateChange->newState == "MINUS" ||
+        stateChange->source.componentIndex >= molecules.front().components.size()) {
+        std::cerr << "[nfsim/ast] direct Arrhenius state change has an invalid reaction center\n";
+        return false;
+    }
+
+    std::string component;
+    std::string diagnostic;
+    if (!componentNameForReactionRef(rule, stateChange->source, component, diagnostic)) {
+        std::cerr << "[nfsim/ast] cannot map Arrhenius reaction '" << rule.getRuleName()
+                  << "': " << diagnostic << "\n";
+        return false;
+    }
+    const std::string stateFrom = graphStateToken(
+        *molecules.front().components[stateChange->source.componentIndex].node);
+    if (stateFrom.empty() || stateFrom == "?" || stateFrom == "*") {
+        std::cerr << "[nfsim/ast] Arrhenius state change needs an explicit source state\n";
+        return false;
+    }
+
+    MoleculeType* moleculeType = nullptr;
+    try {
+        moleculeType = system->getMoleculeTypeByName(molecules.front().name);
+    } catch (const std::exception& error) {
+        std::cerr << "[nfsim/ast] cannot map Arrhenius reaction '" << rule.getRuleName()
+                  << "': " << error.what() << "\n";
+        return false;
+    }
+
+    double phi = 0.0;
+    double activationEnergy = 0.0;
+    if (!evaluateStaticExpression(
+            rule.getRates().front().args()[0], parameters, phi, diagnostic) ||
+        !evaluateStaticExpression(
+            rule.getRates().front().args()[1], parameters, activationEnergy, diagnostic)) {
+        std::cerr << "[nfsim/ast] cannot map Arrhenius reaction '" << rule.getRuleName()
+                  << "': " << diagnostic << "\n";
+        return false;
+    }
+
+    const std::size_t firstNewReaction = system->getAllReactions().size();
+    int reactionCount = 0;
+    if (!createExpandedStateChangeReactions(
+            rule.getRuleName(), phi, activationEnergy, moleculeType, component,
+            stateFrom, stateChange->newState, system, blockSameComplexBinding,
+            verbose, reactionCount)) {
+        return false;
+    }
+
+    const auto reactions = system->getAllReactions();
+    for (std::size_t reactionIndex = firstNewReaction;
+         reactionIndex < reactions.size(); ++reactionIndex) {
+        auto* reaction = reactions[reactionIndex];
+        reaction->setTotalRateFlag(hasReactionModifier(rule, "totalrate"));
+        if (hasReactionModifier(rule, "matchonce")) {
+            reaction->setMatchOnce(0, true);
+        }
+    }
+    suggestedTraversalLimit = std::max(suggestedTraversalLimit, 1);
+    return true;
 }
 
 std::string graphMoleculeCompartment(const bng::ast::SpeciesGraph& pattern,
@@ -1610,21 +1988,49 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
     // SPEC: NFinput::initReactionRules (NFinput.cpp:1266). This direct slice
     // covers elementary state changes, binding/unbinding, identity rules,
     // standalone product-molecule creation, explicit degradation, and the
-    // two-direction expansion of reversible rules. Scoped / local rates,
-    // filters, and energy-based rules remain fail-closed until their NFcore
-    // representations have differential tests.
-    if (!model.getEnergyPatterns().empty()) {
-        std::cerr << "[nfsim/ast] energy patterns require the compatibility XML path\n";
-        return false;
-    }
+    // two-direction expansion of reversible rules. Scoped / local rates and
+    // filters remain fail-closed. A bounded direct Arrhenius binding slice
+    // uses NFsim's existing energy-pattern expansion implementation.
 
     for (const auto& originalRule : model.getReactionRules()) {
         const auto& originalRates = originalRule.getRates();
+        const bool directArrhenius =
+            originalRule.isBidirectional() && originalRates.size() == 1 &&
+            isArrheniusExpression(originalRates.front());
         if ((!originalRule.isBidirectional() && originalRates.size() != 1) ||
-            (originalRule.isBidirectional() && originalRates.size() != 2)) {
+            (originalRule.isBidirectional() && originalRates.size() != 2 &&
+             !directArrhenius)) {
             std::cerr << "[nfsim/ast] reaction '" << originalRule.getRuleName()
                       << "' has an invalid number of rate expressions for its directionality\n";
             return false;
+        }
+
+        if (directArrhenius) {
+            if (originalRule.hasScopePrefix() ||
+                hasReactionModifierPrefix(originalRule, "include_") ||
+                hasReactionModifierPrefix(originalRule, "exclude_") ||
+                hasReactionModifier(originalRule, "moveconnected")) {
+                std::cerr << "[nfsim/ast] direct Arrhenius binding uses an unsupported modifier\n";
+                return false;
+            }
+            const bool onlyStateChange =
+                !originalRule.getOperations().empty() && std::all_of(
+                    originalRule.getOperations().begin(), originalRule.getOperations().end(),
+                    [](const auto& operation) {
+                        return operation.type ==
+                               bng::ast::ReactionRule::TransformOp::Type::ChangeState;
+                    });
+            const bool added = onlyStateChange
+                                   ? addDirectArrheniusStateChange(
+                                         originalRule, s, parameters, blockSameComplexBinding,
+                                         verbose, suggestedTraversalLimit)
+                                   : addDirectArrheniusBinding(
+                                         originalRule, s, parameters, blockSameComplexBinding,
+                                         verbose, suggestedTraversalLimit);
+            if (!added) {
+                return false;
+            }
+            continue;
         }
 
         // The AST stores a reversible rule as one pair of patterns and two
@@ -1650,28 +2056,28 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
         if (reverseRule != nullptr) directions.push_back(reverseRule.get());
         for (const auto* rulePtr : directions) {
             const auto& rule = *rulePtr;
-        const auto& reactantPatterns = rule.getReactantPatterns();
-        const auto& productPatterns = rule.getProductPatterns();
-        const auto& rates = rule.getRates();
-        if (rule.hasScopePrefix() || rates.empty() ||
-            (reactantPatterns.empty() && productPatterns.empty())) {
-            std::cerr << "[nfsim/ast] reaction '" << rule.getRuleName()
-                      << "' requires unsupported scope, empty reaction, or missing-rate handling\n";
-            return false;
-        }
-        if (hasReactionModifierPrefix(rule, "include_") ||
-            hasReactionModifierPrefix(rule, "exclude_") ||
-            hasReactionModifier(rule, "moveconnected")) {
-            std::cerr << "[nfsim/ast] reaction '" << rule.getRuleName()
-                      << "' uses an unsupported reaction modifier\n";
-            return false;
-        }
-        if (reactantPatterns.size() != rule.getReactants().size() &&
-            !rule.getReactants().empty()) {
-            std::cerr << "[nfsim/ast] reaction '" << rule.getRuleName()
-                      << "' has an unsupported non-species reactant\n";
-            return false;
-        }
+            const auto& reactantPatterns = rule.getReactantPatterns();
+            const auto& productPatterns = rule.getProductPatterns();
+            const auto& rates = rule.getRates();
+            if (rule.hasScopePrefix() || rates.empty() ||
+                (reactantPatterns.empty() && productPatterns.empty())) {
+                std::cerr << "[nfsim/ast] reaction '" << rule.getRuleName()
+                          << "' requires unsupported scope, empty reaction, or missing-rate handling\n";
+                return false;
+            }
+            if (hasReactionModifierPrefix(rule, "include_") ||
+                hasReactionModifierPrefix(rule, "exclude_") ||
+                hasReactionModifier(rule, "moveconnected")) {
+                std::cerr << "[nfsim/ast] reaction '" << rule.getRuleName()
+                          << "' uses an unsupported reaction modifier\n";
+                return false;
+            }
+            if (reactantPatterns.size() != rule.getReactants().size() &&
+                !rule.getReactants().empty()) {
+                std::cerr << "[nfsim/ast] reaction '" << rule.getRuleName()
+                          << "' has an unsupported non-species reactant\n";
+                return false;
+            }
 
         std::vector<std::vector<TemplateMolecule*>> patternTemplates;
         std::vector<TemplateMolecule*> reactantRoots;
@@ -2079,7 +2485,8 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                       << "': " << (diagnostic.empty() ? "NFsim transformation rejected" : diagnostic)
                       << "\n";
             delete transformationSet;
-            if (!transformationSet) cleanupDirectProducts();
+            transformationSet = nullptr;
+            cleanupDirectProducts();
             return false;
         }
 
@@ -2208,6 +2615,7 @@ System* buildSystemFromAst(const bng::ast::Model& model,
              addCompartmentsFromAst(model, s, verbose) &&
              addObservablesFromAst(model, s, parameters, verbose, suggestedTraversalLimit) &&
              addFunctionsFromAst(model, s, parameters, verbose) &&
+             addEnergyPatternsFromAst(model, s, parameters, verbose) &&
              addSpeciesFromAst(model, s, parameters, verbose) &&
              addReactionRulesFromAst(model, s, parameters, blockSameComplexBinding,
                                      verbose, suggestedTraversalLimit);

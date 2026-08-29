@@ -45,6 +45,22 @@ namespace NFinput {
         bool verbose,
         int &reaction_count);
 
+    /*
+     * Create expanded BasicRxnClass instances for an energy state-change rule.
+     */
+    bool createExpandedStateChangeReactions(
+        const std::string &rxnName,
+        double phi_val,
+        double Ea0,
+        NFcore::MoleculeType *molType,
+        const std::string &component,
+        const std::string &stateFrom,
+        const std::string &stateTo,
+        NFcore::System *s,
+        bool blockSameComplexBinding,
+        bool verbose,
+        int &reaction_count);
+
 } // namespace NFinput
 
 #endif /* NFINPUT_ENERGY_HH_ */
