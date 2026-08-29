@@ -30,7 +30,9 @@
 /// GATED here:       deeper/complex local functions, unbounded function-counter
 ///                   composites, other rate-law forms, complex product filters,
 ///                   and reaction centers not yet represented by the direct
-///                   mapping. They fail closed and cite the TiXml init* function
+///                   mapping. A bounded static state-change permutation slice
+///                   handles symmetric reaction centers; the remaining cases
+///                   fail closed and cite the TiXml init* function
 ///                   that remains their compatibility oracle.
 
 #include "NFinput_fromAst.hh"
@@ -2324,12 +2326,15 @@ bool buildTemplatePatterns(const BNGcore::PatternGraph& graph,
                            std::vector<std::vector<TemplateMolecule*>>& builds,
                            bool& hasDisjointSets,
                            int& suggestedTraversalLimit,
-                           std::string& diagnostic) {
+                           std::string& diagnostic,
+                           std::vector<RuntimeNames>* runtimeAssignments = nullptr) {
     const auto molecules = collectGraphMolecules(graph);
     if (molecules.empty()) {
         diagnostic = "pattern contains no molecule nodes";
         return false;
     }
+
+    if (runtimeAssignments != nullptr) runtimeAssignments->clear();
 
     std::vector<RuntimeNames> assignments;
     if (!makeRuntimeNameAssignments(molecules, system, expandSymmetry, assignments, diagnostic)) {
@@ -2502,6 +2507,7 @@ bool buildTemplatePatterns(const BNGcore::PatternGraph& graph,
         suggestedTraversalLimit = std::max(
             suggestedTraversalLimit, static_cast<int>(templates.size()) + 1);
         builds.push_back(std::move(templates));
+        if (runtimeAssignments != nullptr) runtimeAssignments->push_back(runtimeNames);
     }
     return !builds.empty();
 }
@@ -2701,6 +2707,212 @@ bool evaluateStaticReactionRate(const bng::ast::Expression& expression,
         return false;
     }
     return true;
+}
+
+enum class SymmetricReactionExpansionResult {
+    NotApplicable,
+    Added,
+    Error,
+};
+
+bool hasOnlySymmetricStateChangeModifiers(const bng::ast::ReactionRule& rule) {
+    for (const auto& modifier : rule.getModifiers()) {
+        const auto normalized = lowerCase(trimText(modifier));
+        if (normalized != "totalrate" && normalized != "matchonce") return false;
+    }
+    return true;
+}
+
+SymmetricReactionExpansionResult addSymmetricStateChangeReactionRulesFromAst(
+    const bng::ast::ReactionRule& rule,
+    System* system,
+    const std::map<std::string, double>& parameters,
+    bool blockSameComplexBinding,
+    bool verbose,
+    int& suggestedTraversalLimit,
+    std::string& diagnostic) {
+    const auto& operations = rule.getOperations();
+    if (operations.size() != 1 ||
+        operations.front().type !=
+            bng::ast::ReactionRule::TransformOp::Type::ChangeState ||
+        rule.getRates().size() != 1 || rule.getReactantPatterns().empty() ||
+        rule.getProductPatterns().empty() || !hasOnlySymmetricStateChangeModifiers(rule)) {
+        return SymmetricReactionExpansionResult::NotApplicable;
+    }
+
+    double rateValue = 0.0;
+    std::string rateDiagnostic;
+    if (!evaluateStaticReactionRate(
+            rule.getRates().front(), parameters, rateValue, rateDiagnostic)) {
+        // Dynamic and time-dependent rates remain on the existing fail-closed
+        // path until their permutation-aware function plumbing is available.
+        return SymmetricReactionExpansionResult::NotApplicable;
+    }
+
+    std::set<bng::ast::ReactionRule::ComponentRef> symmetricComponents;
+    for (std::size_t patternIndex = 0;
+         patternIndex < rule.getReactantPatterns().size(); ++patternIndex) {
+        const auto molecules = collectGraphMolecules(
+            rule.getReactantPatterns()[patternIndex].getGraph());
+        for (std::size_t moleculeIndex = 0; moleculeIndex < molecules.size(); ++moleculeIndex) {
+            auto* moleculeType = system->getMoleculeTypeByName(molecules[moleculeIndex].name);
+            if (moleculeType == nullptr) {
+                diagnostic = "unknown molecule type '" + molecules[moleculeIndex].name + "'";
+                return SymmetricReactionExpansionResult::Error;
+            }
+            for (std::size_t componentIndex = 0;
+                 componentIndex < molecules[moleculeIndex].components.size();
+                 ++componentIndex) {
+                if (moleculeType->isEquivalentComponent(
+                        molecules[moleculeIndex].components[componentIndex].name)) {
+                    symmetricComponents.insert(
+                        bng::ast::ReactionRule::ComponentRef{
+                            patternIndex, moleculeIndex, componentIndex});
+                }
+            }
+        }
+    }
+
+    if (symmetricComponents.empty()) {
+        return SymmetricReactionExpansionResult::NotApplicable;
+    }
+
+    const auto& stateChange = operations.front();
+    if (symmetricComponents.size() != 1 ||
+        symmetricComponents.find(stateChange.source) == symmetricComponents.end()) {
+        // Generic symmetric constraints remain correct for context-only sites,
+        // but a fixed-index transformation cannot safely target them.
+        return SymmetricReactionExpansionResult::NotApplicable;
+    }
+
+    struct ExpandedPattern {
+        std::vector<std::vector<TemplateMolecule*>> builds;
+        std::vector<RuntimeNames> assignments;
+    };
+    std::vector<ExpandedPattern> expandedPatterns;
+    expandedPatterns.reserve(rule.getReactantPatterns().size());
+    bool hasDisjointSets = false;
+    for (const auto& pattern : rule.getReactantPatterns()) {
+        ExpandedPattern expanded;
+        if (!buildTemplatePatterns(
+                pattern.getGraph(), pattern.getCompartment(), system, true,
+                expanded.builds, hasDisjointSets, suggestedTraversalLimit,
+                diagnostic, &expanded.assignments) ||
+            expanded.builds.empty() ||
+            expanded.builds.size() != expanded.assignments.size()) {
+            if (diagnostic.empty()) diagnostic = "invalid symmetric reactant pattern";
+            return SymmetricReactionExpansionResult::Error;
+        }
+        expandedPatterns.push_back(std::move(expanded));
+    }
+
+    std::vector<std::size_t> selectedBuild(expandedPatterns.size(), 0);
+    std::size_t reactionOrdinal = 0;
+    std::function<bool(std::size_t)> addExpandedCombination =
+        [&](std::size_t patternIndex) {
+            if (patternIndex < expandedPatterns.size()) {
+                for (std::size_t buildIndex = 0;
+                     buildIndex < expandedPatterns[patternIndex].builds.size();
+                     ++buildIndex) {
+                    selectedBuild[patternIndex] = buildIndex;
+                    if (!addExpandedCombination(patternIndex + 1)) return false;
+                }
+                return true;
+            }
+
+            std::vector<TemplateMolecule*> roots;
+            roots.reserve(expandedPatterns.size());
+            for (std::size_t index = 0; index < expandedPatterns.size(); ++index) {
+                const auto& build =
+                    expandedPatterns[index].builds[selectedBuild[index]];
+                if (build.empty()) {
+                    diagnostic = "symmetric reactant pattern produced no template";
+                    return false;
+                }
+                roots.push_back(build.front());
+            }
+
+            const auto& sourcePattern = expandedPatterns[stateChange.source.patternIndex];
+            const auto& sourceAssignment =
+                sourcePattern.assignments[selectedBuild[stateChange.source.patternIndex]];
+            if (stateChange.source.moleculeIndex >= sourceAssignment.size() ||
+                stateChange.source.componentIndex >=
+                    sourceAssignment[stateChange.source.moleculeIndex].size()) {
+                diagnostic = "state-change source is outside the expanded reactant pattern";
+                return false;
+            }
+            const std::string& runtimeComponentName =
+                sourceAssignment[stateChange.source.moleculeIndex]
+                    [stateChange.source.componentIndex];
+            if (stateChange.source.moleculeIndex >=
+                    expandedPatterns[stateChange.source.patternIndex]
+                        .builds[selectedBuild[stateChange.source.patternIndex]].size()) {
+                diagnostic = "state-change target is outside the expanded reactant pattern";
+                return false;
+            }
+            auto* target = expandedPatterns[stateChange.source.patternIndex]
+                               .builds[selectedBuild[stateChange.source.patternIndex]]
+                                   [stateChange.source.moleculeIndex];
+
+            auto* transformationSet = new TransformationSet(roots);
+            transformationSet->setComplexBookkeeping(
+                blockSameComplexBinding || hasDisjointSets);
+            transformationSet->setNumProductPatterns(
+                static_cast<unsigned int>(rule.getProductPatterns().size()));
+
+            bool applied = false;
+            try {
+                if (stateChange.newState == "PLUS") {
+                    applied = transformationSet->addIncrementStateTransform(
+                        target, runtimeComponentName);
+                } else if (stateChange.newState == "MINUS") {
+                    applied = transformationSet->addDecrementStateTransform(
+                        target, runtimeComponentName);
+                } else {
+                    applied = transformationSet->addStateChangeTransform(
+                        target, runtimeComponentName, stateChange.newState);
+                }
+            } catch (const std::exception& error) {
+                diagnostic = error.what();
+            }
+            if (!applied) {
+                if (diagnostic.empty()) diagnostic = "could not add symmetric state-change transformation";
+                delete transformationSet;
+                return false;
+            }
+            transformationSet->finalize();
+
+            std::string rateParameterName;
+            if (rule.getRates().front().kind() == bng::ast::ExpressionKind::Identifier &&
+                parameters.count(rule.getRates().front().name()) != 0) {
+                rateParameterName = rule.getRates().front().name();
+            }
+            auto* reaction = new BasicRxnClass(
+                rule.getRuleName() + "_sym" + std::to_string(reactionOrdinal + 1),
+                rateValue, rateParameterName, transformationSet, system);
+            reaction->setTotalRateFlag(hasReactionModifier(rule, "totalrate"));
+            if (hasReactionModifier(rule, "matchonce")) {
+                for (std::size_t index = 0; index < expandedPatterns.size(); ++index) {
+                    reaction->setMatchOnce(static_cast<unsigned int>(index), true);
+                }
+            }
+            ++reactionOrdinal;
+            if (rateValue > 0.0) {
+                system->addReaction(reaction);
+                if (verbose) {
+                    std::cerr << "[nfsim/ast] reaction " << rule.getRuleName()
+                              << " (direct symmetric permutation)\n";
+                }
+            } else {
+                delete reaction;
+            }
+            return true;
+        };
+
+    if (!addExpandedCombination(0)) {
+        return SymmetricReactionExpansionResult::Error;
+    }
+    return SymmetricReactionExpansionResult::Added;
 }
 
 bool addDynamicReactionRateFunction(
@@ -3901,6 +4113,21 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 !rule.getReactants().empty()) {
                 std::cerr << "[nfsim/ast] reaction '" << rule.getRuleName()
                           << "' has an unsupported non-species reactant\n";
+                return false;
+            }
+
+            std::string symmetricDiagnostic;
+            const auto symmetricResult = addSymmetricStateChangeReactionRulesFromAst(
+                rule, s, parameters, blockSameComplexBinding, verbose,
+                suggestedTraversalLimit, symmetricDiagnostic);
+            if (symmetricResult == SymmetricReactionExpansionResult::Added) continue;
+            if (symmetricResult == SymmetricReactionExpansionResult::Error) {
+                std::cerr << "[nfsim/ast] cannot map reaction '" << rule.getRuleName()
+                          << "': "
+                          << (symmetricDiagnostic.empty()
+                                  ? "symmetric reaction-center expansion failed"
+                                  : symmetricDiagnostic)
+                          << "\n";
                 return false;
             }
 

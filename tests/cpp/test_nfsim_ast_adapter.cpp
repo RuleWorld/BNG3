@@ -650,6 +650,40 @@ end reaction rules
     delete system;
 }
 
+TEST_CASE("NFsim AST adapter expands symmetric state-change reaction centers") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    A(b~0~1,b~0~1)
+end molecule types
+begin seed species
+    A(b~0) 1
+end seed species
+begin reaction rules
+    A(b~0) -> A(b~1) k
+end reaction rules
+)");
+
+    int suggestedTraversalLimit = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(direct != nullptr);
+    REQUIRE(direct->getAllReactions().size() == 2);
+    CHECK(direct->getAllReactions()[0]->getName() == "R1_sym1");
+    CHECK(direct->getAllReactions()[1]->getName() == "R1_sym2");
+    const auto directReactionCount = direct->getAllReactions().size();
+    delete direct;
+
+    suggestedTraversalLimit = 0;
+    auto* xmlSystem = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, suggestedTraversalLimit);
+    REQUIRE(xmlSystem != nullptr);
+    CHECK(xmlSystem->getAllReactions().size() == directReactionCount);
+    delete xmlSystem;
+}
+
 TEST_CASE("NFsim AST adapter maps a product molecule bound to a reactant") {
     auto model = bng::parser::parseModel(R"(
 begin parameters
