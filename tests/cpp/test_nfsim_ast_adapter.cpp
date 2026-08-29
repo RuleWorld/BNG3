@@ -1771,6 +1771,72 @@ end reaction rules
     delete system;
 }
 
+TEST_CASE("NFsim AST adapter enforces bounded product filters") {
+    const auto makeModel = [](const std::string& modifier) {
+        std::string source = R"BNG(
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin observables
+    Molecules B_total B()
+end observables
+begin reaction rules
+    A() -> B() 1 __MODIFIER__
+end reaction rules
+)BNG";
+        const auto marker = source.find("__MODIFIER__");
+        source.replace(marker, std::string("__MODIFIER__").size(), modifier);
+        return bng::parser::parseModel(source);
+    };
+
+    auto includedModel = makeModel("include_products(1,B())");
+    REQUIRE(includedModel != nullptr);
+    const auto includedXml = bng::io::XmlWriter::write(*includedModel);
+    CHECK(includedXml.find("<ListOfIncludeProducts id=\"RR1_PP1\">") !=
+          std::string::npos);
+
+    int suggestedTraversalLimit = 0;
+    auto* includedDirect = NFinput::buildSystemFromAst(
+        *includedModel, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(includedDirect != nullptr);
+    REQUIRE(includedDirect->getAllReactions().size() == 1);
+    includedDirect->prepareForSimulation();
+    includedDirect->singleStep();
+    CHECK(includedDirect->getObservableByName("B_total")->getCount() == 1);
+    delete includedDirect;
+
+    suggestedTraversalLimit = 0;
+    auto* includedXmlSystem = NFinput::initializeFromModel(
+        static_cast<void*>(includedModel.get()), false, 100, false, suggestedTraversalLimit);
+    REQUIRE(includedXmlSystem != nullptr);
+    REQUIRE(includedXmlSystem->getAllReactions().size() == 1);
+    includedXmlSystem->prepareForSimulation();
+    includedXmlSystem->singleStep();
+    CHECK(includedXmlSystem->getObservableByName("B_total")->getCount() == 1);
+    delete includedXmlSystem;
+
+    auto excludedModel = makeModel("exclude_products(1,B())");
+    REQUIRE(excludedModel != nullptr);
+
+    suggestedTraversalLimit = 0;
+    auto* excludedDirect = NFinput::buildSystemFromAst(
+        *excludedModel, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(excludedDirect != nullptr);
+    CHECK(excludedDirect->getAllReactions().empty());
+    delete excludedDirect;
+
+    suggestedTraversalLimit = 0;
+    auto* excludedXmlSystem = NFinput::initializeFromModel(
+        static_cast<void*>(excludedModel.get()), false, 100, false, suggestedTraversalLimit);
+    REQUIRE(excludedXmlSystem != nullptr);
+    CHECK(excludedXmlSystem->getAllReactions().empty());
+    delete excludedXmlSystem;
+}
+
 TEST_CASE("NFsim AST adapter maps a bounded FunctionProduct rate") {
     auto model = bng::parser::parseModel(R"BNG(
 begin molecule types

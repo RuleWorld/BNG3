@@ -1279,6 +1279,113 @@ string NFinput::initStartSpecies(
 
 
 
+namespace {
+
+bool readBareProductFilterMolecule(
+		TiXmlElement *pPattern, string &moleculeName, string &diagnostic)
+{
+	if (!pPattern || pPattern->Attribute("compartment")) {
+		diagnostic = "NFsim product filters support only one bare molecule pattern";
+		return false;
+	}
+	TiXmlElement *pListOfMolecules = pPattern->FirstChildElement("ListOfMolecules");
+	TiXmlElement *pMolecule = pListOfMolecules
+			? pListOfMolecules->FirstChildElement("Molecule") : NULL;
+	if (!pMolecule || pMolecule->NextSiblingElement("Molecule") != NULL ||
+			!pMolecule->Attribute("name") || pMolecule->Attribute("compartment")) {
+		diagnostic = "NFsim product filters support only one bare molecule pattern";
+		return false;
+	}
+	TiXmlElement *pComponents = pMolecule->FirstChildElement("ListOfComponents");
+	if (pComponents && pComponents->FirstChildElement("Component") != NULL) {
+		diagnostic = "NFsim product filters support only one bare molecule pattern";
+		return false;
+	}
+	moleculeName = pMolecule->Attribute("name");
+	return true;
+}
+
+bool productPatternContainsMolecule(
+		TiXmlElement *pProductPattern, const string &moleculeName)
+{
+	if (!pProductPattern) return false;
+	TiXmlElement *pListOfMolecules = pProductPattern->FirstChildElement("ListOfMolecules");
+	if (!pListOfMolecules) return false;
+	for (TiXmlElement *pMolecule = pListOfMolecules->FirstChildElement("Molecule");
+		 pMolecule != NULL;
+		 pMolecule = pMolecule->NextSiblingElement("Molecule")) {
+		if (pMolecule->Attribute("name") &&
+				moleculeName == pMolecule->Attribute("name")) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool validateXmlProductFilters(
+		TiXmlElement *pRxnRule, bool &passes, string &diagnostic)
+{
+	passes = true;
+	TiXmlElement *pListOfProductPatterns =
+			pRxnRule->FirstChildElement("ListOfProductPatterns");
+	if (!pListOfProductPatterns) {
+		diagnostic = "product filter has no product patterns to inspect";
+		return false;
+	}
+
+	const char *filterLists[] = {
+			"ListOfIncludeProducts", "ListOfExcludeProducts"};
+	for (const char *filterListName : filterLists) {
+		const bool include = string(filterListName) == "ListOfIncludeProducts";
+		for (TiXmlElement *pFilterList = pRxnRule->FirstChildElement(filterListName);
+			 pFilterList != NULL;
+			 pFilterList = pFilterList->NextSiblingElement(filterListName)) {
+			if (!pFilterList->Attribute("id")) {
+				diagnostic = "product filter list has no product pattern id";
+				return false;
+			}
+			const string productPatternId = pFilterList->Attribute("id");
+			TiXmlElement *pProductPattern = NULL;
+			for (TiXmlElement *candidate =
+					pListOfProductPatterns->FirstChildElement("ProductPattern");
+				 candidate != NULL;
+				 candidate = candidate->NextSiblingElement("ProductPattern")) {
+				if (candidate->Attribute("id") &&
+						productPatternId == candidate->Attribute("id")) {
+					pProductPattern = candidate;
+					break;
+				}
+			}
+			if (!pProductPattern) {
+				diagnostic = "product filter refers to an unknown product pattern";
+				return false;
+			}
+
+			TiXmlElement *pFilterPattern = pFilterList->FirstChildElement("Pattern");
+			if (!pFilterPattern) {
+				diagnostic = "product filter list contains no pattern";
+				return false;
+			}
+			for (; pFilterPattern != NULL;
+				 pFilterPattern = pFilterPattern->NextSiblingElement("Pattern")) {
+				string moleculeName;
+				if (!readBareProductFilterMolecule(
+						pFilterPattern, moleculeName, diagnostic)) {
+					return false;
+				}
+				const bool contains = productPatternContainsMolecule(
+						pProductPattern, moleculeName);
+				if ((include && !contains) || (!include && contains)) {
+					passes = false;
+				}
+			}
+		}
+	}
+	return true;
+}
+
+} // namespace
+
 bool NFinput::initReactionRules(
 		TiXmlElement * pListOfReactionRules,
 		System * s,
@@ -1299,6 +1406,15 @@ bool NFinput::initReactionRules(
 		int reaction_count = 0;
 		for ( pRxnRule = pListOfReactionRules->FirstChildElement("ReactionRule"); pRxnRule != 0; pRxnRule = pRxnRule->NextSiblingElement("ReactionRule"))
 		{
+			bool productFiltersPass = true;
+			string productFilterDiagnostic;
+			if (!validateXmlProductFilters(
+					pRxnRule, productFiltersPass, productFilterDiagnostic)) {
+				cerr << "Error:: ReactionRule product filter is unsupported: "
+				     << productFilterDiagnostic << ". Quitting." << endl;
+				return false;
+			}
+			if (!productFiltersPass) continue;
 
 			//First, scan the reaction rule for possible symmetries!!!
 			map <string, component> symComps;
@@ -1776,16 +1892,6 @@ bool NFinput::initReactionRules(
 						}
 					}
 				}
-
-				if (pRxnRule->FirstChildElement("ListOfExcludeProducts") ||
-					pRxnRule->FirstChildElement("ListOfIncludeProducts"))
-				{
-					cerr << "Error:: ReactionRule " << rxnName
-					     << " uses include_products()/exclude_products(), which are not yet enforced in NFsim." << endl;
-					cerr << "Error:: Aborting to avoid silently incorrect results." << endl;
-					return false;
-				}
-
 
 				//Next extract out the state changes
 				TiXmlElement *pStateChange;

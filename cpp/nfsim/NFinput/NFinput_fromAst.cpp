@@ -18,7 +18,8 @@
 ///                    functions, zero-argument composites, one-argument
 ///                    molecule/species-scoped and time-bearing local functions,
 ///                    time/parameter-backed local TFUNs, FunctionProduct,
-///                    Sat/Hill rate laws, reactant include/exclude filters,
+///                    Sat/Hill rate laws, bounded reactant/product
+///                    include/exclude filters,
 ///                    and dynamic reaction rates over parameters, observables,
 ///                    time, and one TFUN expression.
 ///                   Bounded nested local functions and function-counter local
@@ -26,7 +27,7 @@
 ///                   also direct composites.
 /// GATED here:       deeper/complex local functions, unbounded function-counter
 ///                   composites, dynamic rates referencing composite functions,
-///                   other rate-law forms, product filters, and reaction
+///                   other rate-law forms, complex product filters, and reaction
 ///                   centers not yet represented by the direct mapping. They
 ///                   fail closed and cite the TiXml init* function that
 ///                   remains their compatibility oracle.
@@ -1876,6 +1877,53 @@ bool parseSpeciesFilterPattern(const std::string& text,
     return true;
 }
 
+bool validateProductFiltersFromAst(const bng::ast::ReactionRule& rule,
+                                   const bng::ast::Model& model,
+                                   bool& passes,
+                                   std::string& diagnostic) {
+    passes = true;
+    const auto& productPatterns = rule.getProductPatterns();
+    for (const auto& modifier : rule.getModifiers()) {
+        if (!isReactionFilterModifier(modifier)) continue;
+
+        ParsedReactionFilter parsedModifier;
+        if (!parseReactionFilterModifier(modifier, parsedModifier, diagnostic)) {
+            return false;
+        }
+        if (!parsedModifier.products) continue;
+        if (parsedModifier.patternIndex >= productPatterns.size()) {
+            diagnostic = "reaction product filter refers to an unknown product pattern index";
+            return false;
+        }
+
+        const auto productMolecules = collectGraphMolecules(
+            productPatterns[parsedModifier.patternIndex].getGraph());
+        for (const auto& patternText : parsedModifier.patterns) {
+            bng::ast::SpeciesGraph filterPattern;
+            if (!parseSpeciesFilterPattern(patternText, model, filterPattern, diagnostic)) {
+                return false;
+            }
+            const auto filterMolecules = collectGraphMolecules(filterPattern.getGraph());
+            if (filterMolecules.size() != 1 || !filterMolecules.front().components.empty()) {
+                diagnostic =
+                    "direct NFsim product filters support only one bare molecule pattern";
+                return false;
+            }
+
+            const bool contains = std::any_of(
+                productMolecules.begin(), productMolecules.end(),
+                [&](const auto& molecule) {
+                    return molecule.name == filterMolecules.front().name;
+                });
+            if ((parsedModifier.include && !contains) ||
+                (!parsedModifier.include && contains)) {
+                passes = false;
+            }
+        }
+    }
+    return true;
+}
+
 bool parseSeedAmount(const bng::ast::SeedSpecies& seed,
                      const std::map<std::string, double>& parameters,
                      int& count,
@@ -2261,10 +2309,7 @@ bool addReactantFiltersFromAst(
         if (!parseReactionFilterModifier(modifier, parsedModifier, diagnostic)) {
             return false;
         }
-        if (parsedModifier.products) {
-            diagnostic = "product include/exclude filters are not yet enforced in direct NFsim";
-            return false;
-        }
+        if (parsedModifier.products) continue;
         if (parsedModifier.patternIndex >= reactantRoots.size()) {
             diagnostic = "reaction filter refers to an unknown reactant pattern index";
             return false;
@@ -3440,8 +3485,8 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
     // standalone product-molecule creation, explicit degradation, compartment
     // transport including MoveConnected, and the two-direction expansion of
     // reversible rules. Scoped / local rates and
-    // reactant filters are mapped within their bounded direct slices. Product
-    // filters and unsupported modifiers remain fail-closed. A bounded direct
+    // reactant filters and bare-molecule product filters are mapped within
+    // their bounded direct slices. Complex product filters and unsupported modifiers remain fail-closed. A bounded direct
     // Arrhenius binding slice uses NFsim's existing energy-pattern expansion
     // implementation.
 
@@ -3523,6 +3568,15 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
              directionOrdinal < directions.size(); ++directionOrdinal) {
             const auto* rulePtr = directions[directionOrdinal];
             const auto& rule = *rulePtr;
+            bool productFiltersPass = true;
+            std::string productFilterDiagnostic;
+            if (!validateProductFiltersFromAst(
+                    rule, model, productFiltersPass, productFilterDiagnostic)) {
+                std::cerr << "[nfsim/ast] cannot map reaction '" << rule.getRuleName()
+                          << "': " << productFilterDiagnostic << "\n";
+                return false;
+            }
+            if (!productFiltersPass) continue;
             const auto& reactantPatterns = rule.getReactantPatterns();
             const auto& productPatterns = rule.getProductPatterns();
             const auto& rates = rule.getRates();
@@ -3578,9 +3632,7 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                           << "' requires unsupported scope, empty reaction, or missing-rate handling\n";
                 return false;
             }
-            if (hasUnsupportedReactionFilterModifier(rule) ||
-                hasReactionModifierPrefix(rule, "include_products") ||
-                hasReactionModifierPrefix(rule, "exclude_products")) {
+            if (hasUnsupportedReactionFilterModifier(rule)) {
                 std::cerr << "[nfsim/ast] reaction '" << rule.getRuleName()
                           << "' uses an unsupported reaction modifier\n";
                 return false;
