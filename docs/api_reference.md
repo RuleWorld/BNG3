@@ -156,6 +156,10 @@ Export a process graph.
 
 Export SBML Multi.
 
+#### `to_xml()` / `to_bngl()`
+
+Serialize the model in memory to BNG-XML or BNGL text.
+
 #### `write_xml(path)` / `write_bngl(path)` / `write_net(path)` / `write_sbml(path)` / `write_matlab(path)` / `write_latex(path)`
 
 Export the model to the requested format.

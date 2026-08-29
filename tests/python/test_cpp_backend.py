@@ -1,6 +1,8 @@
 """Tests for the C++ backend bindings."""
 
 import os
+import xml.etree.ElementTree as ET
+
 import pytest
 
 _cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
@@ -338,6 +340,40 @@ end model
 
 
 class TestIO:
+    def test_in_memory_serialization_round_trips(self, tmp_path):
+        bngl = tmp_path / "serialization.bngl"
+        bngl.write_text("""
+begin model
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin observables
+    Molecules Atot A()
+end observables
+begin reaction rules
+    A() -> B() k
+end reaction rules
+end model
+""")
+        model = bionetgen.load(str(bngl))
+
+        serialized_bngl = model.to_bngl()
+        reparsed = _cpp.parse_string(serialized_bngl)
+        assert len(reparsed.reaction_rules) == 1
+        assert "begin model" in serialized_bngl
+
+        serialized_xml = model.to_xml()
+        root = ET.fromstring(serialized_xml)
+        assert root.tag.endswith("sbml")
+        assert root.find(".//{*}ListOfReactionRules") is not None
+
     def test_write_xml(self, tmp_path):
         bngl = tmp_path / "io.bngl"
         bngl.write_text("""

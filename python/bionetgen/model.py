@@ -279,8 +279,16 @@ class BioNetGenModel:
     def write_xml(self, path: str) -> None:
         _cpp.io.write_xml(self._model, path)
 
+    def to_xml(self) -> str:
+        """Serialize the model to an in-memory BNG-XML string."""
+        return _cpp.io.write_xml_string(self._model)
+
     def write_bngl(self, path: str) -> None:
         _cpp.io.write_bngl(self._model, path)
+
+    def to_bngl(self) -> str:
+        """Serialize the model to an in-memory BNGL string."""
+        return _cpp.io.write_bngl_string(self._model)
 
     def write_net(self, path: str) -> None:
         if self._network is None:
