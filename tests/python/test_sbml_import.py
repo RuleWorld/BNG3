@@ -13,7 +13,13 @@ import bionetgen
 
 
 def test_sbml_to_bngl_and_from_sbml():
-    sbml_path = Path(__file__).parent / "test" / "test_sbml.xml"
+    sbml_path = (
+        Path(__file__).parent.parent
+        / "validation"
+        / "Validate"
+        / "INPUT_FILES"
+        / "test_sbml_flat_SBML.xml"
+    )
     assert sbml_path.exists()
 
     try:
