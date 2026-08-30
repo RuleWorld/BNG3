@@ -159,6 +159,107 @@ std::string normalizeLegacyActionNames(const std::string& source) {
     return result;
 }
 
+bool isLooseActionLine(const std::string& line) {
+    static constexpr std::array<std::string_view, 27> actionNames = {
+        "generate_network", "generatenetwork", "simulate", "simulate_ode",
+        "simulate_ssa", "simulate_nf", "simulate_pla", "simulate_psa",
+        "simulate_rm", "simulate_protocol", "writefile", "writexml",
+        "writesbml", "writesbmlmulti", "writenetwork", "writemodel",
+        "writemfile", "writemexfile", "writecppfile", "writecpyfile",
+        "writelatex", "writemdl", "writessc", "writessccfg",
+        "setconcentration", "addconcentration", "setparameter"};
+
+    auto trimmed = trimCopy(line);
+    if (trimmed.empty() || trimmed.front() == '#') return false;
+    const auto comment = trimmed.find('#');
+    if (comment != std::string::npos) trimmed.resize(comment);
+
+    std::size_t nameEnd = 0;
+    while (nameEnd < trimmed.size() &&
+           (std::isalnum(static_cast<unsigned char>(trimmed[nameEnd])) ||
+            trimmed[nameEnd] == '_')) {
+        ++nameEnd;
+    }
+    if (nameEnd == 0) return false;
+
+    auto name = trimmed.substr(0, nameEnd);
+    std::transform(name.begin(), name.end(), name.begin(), [](unsigned char value) {
+        return static_cast<char>(std::tolower(value));
+    });
+    if (std::find(actionNames.begin(), actionNames.end(), name) == actionNames.end()) {
+        return false;
+    }
+    while (nameEnd < trimmed.size() &&
+           std::isspace(static_cast<unsigned char>(trimmed[nameEnd]))) {
+        ++nameEnd;
+    }
+    return nameEnd < trimmed.size() && trimmed[nameEnd] == '(';
+}
+
+std::string normalizeLooseActionsInsideModel(const std::string& source) {
+    std::vector<std::string> output;
+    std::vector<std::string> deferredActions;
+    bool insideModel = false;
+    int nestedBlockDepth = 0;
+    const bool hadTrailingNewline = !source.empty() && source.back() == '\n';
+
+    std::size_t lineStart = 0;
+    while (lineStart <= source.size()) {
+        const auto lineEnd = source.find('\n', lineStart);
+        const auto lineLength = lineEnd == std::string::npos
+                                     ? source.size() - lineStart
+                                     : lineEnd - lineStart;
+        const auto line = source.substr(lineStart, lineLength);
+        const auto trimmed = trimCopy(line);
+        std::istringstream words(trimmed);
+        std::string command;
+        std::string block;
+        words >> command >> block;
+        std::transform(command.begin(), command.end(), command.begin(), [](unsigned char value) {
+            return static_cast<char>(std::tolower(value));
+        });
+        std::transform(block.begin(), block.end(), block.begin(), [](unsigned char value) {
+            return static_cast<char>(std::tolower(value));
+        });
+
+        if (!insideModel) {
+            output.push_back(line);
+            if (command == "begin" && block == "model") {
+                insideModel = true;
+                nestedBlockDepth = 0;
+            }
+        } else if (command == "end" && block == "model") {
+            output.push_back(line);
+            output.insert(output.end(), deferredActions.begin(), deferredActions.end());
+            deferredActions.clear();
+            insideModel = false;
+            nestedBlockDepth = 0;
+        } else if (nestedBlockDepth == 0 && isLooseActionLine(line)) {
+            deferredActions.push_back(line);
+        } else {
+            output.push_back(line);
+            if (command == "begin") {
+                ++nestedBlockDepth;
+            } else if (command == "end" && nestedBlockDepth > 0) {
+                --nestedBlockDepth;
+            }
+        }
+
+        if (lineEnd == std::string::npos) break;
+        lineStart = lineEnd + 1;
+    }
+
+    output.insert(output.end(), deferredActions.begin(), deferredActions.end());
+
+    std::ostringstream normalized;
+    for (std::size_t index = 0; index < output.size(); ++index) {
+        if (index != 0) normalized << '\n';
+        normalized << output[index];
+    }
+    if (hadTrailingNewline) normalized << '\n';
+    return normalized.str();
+}
+
 bool isIdentifierStart(char value) {
     return std::isalpha(static_cast<unsigned char>(value)) || value == '_';
 }
@@ -862,8 +963,8 @@ ast::Expression parseExpressionImpl(const std::string& exprText) {
 } // namespace
 
 std::string normalizeBNGLSource(const std::string& sourceText) {
-    return normalizeLegacyActionNames(
-        normalizeLegacyBlockHeaders(normalizeTfunSyntax(sourceText)));
+    return normalizeLooseActionsInsideModel(normalizeLegacyActionNames(
+        normalizeLegacyBlockHeaders(normalizeTfunSyntax(sourceText))));
 }
 
 BNGAstVisitor::BNGAstVisitor()
