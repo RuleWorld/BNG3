@@ -469,6 +469,31 @@ TEST_CASE("NFsim AST adapter builds a direct no-rule system") {
     delete system;
 }
 
+TEST_CASE("NFsim AST adapter consumes Null discard seeds") {
+    auto model = bng::parser::parseModel(R"(
+begin molecule types
+    A()
+    Null()
+end molecule types
+begin seed species
+    A() 1
+    $Null() 0
+end seed species
+begin observables
+    Molecules A_total A()
+end observables
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(
+        *model, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    CHECK(system->getMoleculeTypeByName("Null") == nullptr);
+    CHECK(system->getNumOfMolecules() == 1);
+    delete system;
+}
+
 TEST_CASE("NFsim AST adapter counts a connected observable pattern once") {
     bng::ast::Model model;
     model.setModelName("connected-observable");
