@@ -13,9 +13,12 @@ Both write into a caller-supplied work dir so nothing touches the source tree.
 
 from __future__ import annotations
 
+import concurrent.futures
+import multiprocessing
 import os
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -110,18 +113,57 @@ def run_api(
     return _result_to_trajectory(result)
 
 
+def _run_api_ensemble_item(payload: tuple[str, str, int, dict]) -> Trajectory:
+    """Run one ensemble member in a clean worker process."""
+    model_name, method, seed, kwargs = payload
+    return run_api(model_name, method=method, seed=seed, **kwargs)
+
+
+def _resolve_ensemble_workers(requested: int | None, n_runs: int) -> int:
+    """Resolve a bounded worker count without changing fixed-seed semantics."""
+    if n_runs < 0:
+        raise ValueError("n_runs must be non-negative")
+    if requested is None:
+        raw = os.environ.get("BNG_ENSEMBLE_WORKERS")
+        requested = int(raw) if raw else 4
+    if requested < 1:
+        raise ValueError("ensemble workers must be at least one")
+    return min(requested, n_runs) if n_runs else 1
+
+
 def run_api_ensemble(
     model_name: str,
     *,
     method: str = "ssa",
     n_runs: int = 200,
     base_seed: int = 1,
+    workers: int | None = None,
     **kwargs,
 ) -> list[tuple[np.ndarray, list[str]]]:
-    """Run a seeded stochastic ensemble; returns runs in compare.py's shape."""
+    """Run a seeded stochastic ensemble; returns runs in compare.py's shape.
+
+    Members use explicit seeds and are returned in seed order.  The default is
+    four isolated worker processes; set ``BNG_ENSEMBLE_WORKERS=1`` or pass
+    ``workers=1`` for serial debugging.
+    """
+    worker_count = _resolve_ensemble_workers(workers, n_runs)
+    payloads = [
+        (model_name, method, base_seed + i, kwargs) for i in range(n_runs)
+    ]
+    if worker_count == 1:
+        trajectories = [_run_api_ensemble_item(payload) for payload in payloads]
+    else:
+        repo_path = str(corpus.REPO)
+        if repo_path not in sys.path:
+            sys.path.insert(0, repo_path)
+        context = multiprocessing.get_context("spawn")
+        with concurrent.futures.ProcessPoolExecutor(
+            max_workers=worker_count, mp_context=context
+        ) as pool:
+            trajectories = list(pool.map(_run_api_ensemble_item, payloads))
+
     runs = []
-    for i in range(n_runs):
-        traj = run_api(model_name, method=method, seed=base_seed + i, **kwargs)
+    for traj in trajectories:
         runs.append((traj.data, traj.columns))
     return runs
 

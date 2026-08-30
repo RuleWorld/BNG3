@@ -6,6 +6,8 @@ paths must be anchored before execution begins.
 
 from __future__ import annotations
 
+import pytest
+
 from tests.validation import conftest, oracle_nfsim, runner
 
 
@@ -41,3 +43,21 @@ def test_api_ensemble_parallel_workers_preserve_seed_order():
 
     assert len(runs) == 2
     assert [columns[0] for _, columns in runs] == ["time", "time"]
+
+
+def test_native_ensemble_parallel_workers_preserve_seed_order(tmp_path):
+    if not oracle_nfsim.nfsim_available():
+        pytest.skip("native NFsim binary not available")
+
+    runs = oracle_nfsim.ensemble(
+        "simple_system",
+        tmp_path,
+        n_runs=2,
+        base_seed=11,
+        t_end=1.0,
+        n_steps=1,
+        workers=2,
+    )
+
+    assert len(runs) == 2
+    assert runs[0][0][0, 0] == pytest.approx(0.0)
