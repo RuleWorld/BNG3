@@ -3,6 +3,7 @@
 import os
 import pytest
 from click.testing import CliRunner
+from unittest.mock import patch
 
 try:
     from bionetgen.cli import main
@@ -86,6 +87,18 @@ def test_cli_visualize_legacy_flags_write_graphml(runner, simple_model, tmp_path
 
     assert result.exit_code == 0, result.output
     assert any(path.suffix == ".graphml" for path in tmp_path.iterdir())
+
+
+def test_legacy_bngcli_does_not_fallback_after_cpp_failure(tmp_path):
+    from bionetgen.core.tools.cli import BNGCLI
+
+    model = tmp_path / "invalid.bngl"
+    model.write_text("begin model\nend model\n")
+    cli = BNGCLI(model, tmp_path / "output", str(tmp_path / "missing"), suppress=True)
+    with patch("bionetgen._bionetgen_cpp.parse_file") as parse_file:
+        parse_file.side_effect = RuntimeError("backend parse failure")
+        with pytest.raises(RuntimeError, match="backend parse failure"):
+            cli.run()
 
 
 @pytest.mark.parametrize("method", ["pla", "psa"])
