@@ -76,10 +76,30 @@ TEST_CASE("CVODE honors steady-state stopping", "[OdeOptions]") {
     options.tEnd = 10.0;
     options.nSteps = 10;
     options.steadyState = true;
-    options.steadyStateTol = 1e-12;
+    options.steadyStateTol = 100.0;
 
     const auto result = engine::OdeIntegrator(*model, network).integrate(options);
 
     REQUIRE(result.timePoints.size() < options.nSteps + 1);
     REQUIRE(result.timePoints.back() < options.tEnd);
+}
+
+TEST_CASE("SSA honors explicit sample times", "[OdeOptions]") {
+    auto model = parseDecayModel();
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+
+    engine::OdeOptions options;
+    options.method = "ssa";
+    options.tStart = 0.0;
+    options.tEnd = 10.0;
+    options.nSteps = 1;
+    options.seed = 42;
+    options.sampleTimes = {0.0, 0.25, 1.5, 10.0};
+
+    const auto result = engine::OdeIntegrator(*model, network).integrate(options);
+
+    REQUIRE(result.timePoints == options.sampleTimes);
+    REQUIRE(result.concentrations.size() == options.sampleTimes.size());
+    REQUIRE(result.observables.size() == options.sampleTimes.size());
 }

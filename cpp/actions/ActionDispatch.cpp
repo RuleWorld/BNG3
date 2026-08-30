@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <iomanip>
 #include <set>
@@ -141,6 +142,54 @@ double parseScalarValue(const std::string& text, ast::Model& model) {
     } catch (...) {}
 
     throw std::runtime_error("Unsupported scalar action value: '" + text + "'");
+}
+
+std::vector<double> parseSampleTimes(const std::string& text, ast::Model& model) {
+    std::string value = trim(stripQuotes(text));
+    if (value.size() < 2 || value.front() != '[' || value.back() != ']') {
+        throw std::runtime_error(
+            "sample_times must be a comma-separated list enclosed in square brackets");
+    }
+    value = value.substr(1, value.size() - 2);
+    std::vector<double> times;
+    std::size_t start = 0;
+    while (start <= value.size()) {
+        const auto comma = value.find(',', start);
+        const auto token = trim(value.substr(start, comma == std::string::npos
+                                                       ? std::string::npos
+                                                       : comma - start));
+        if (token.empty()) {
+            throw std::runtime_error("sample_times must not contain empty entries");
+        }
+        const double time = parseScalarValue(token, model);
+        if (!std::isfinite(time)) {
+            throw std::runtime_error("sample_times must contain only finite values");
+        }
+        times.push_back(time);
+        if (comma == std::string::npos) break;
+        start = comma + 1;
+    }
+    if (times.empty()) {
+        throw std::runtime_error("sample_times must not be empty");
+    }
+    for (std::size_t i = 1; i < times.size(); ++i) {
+        if (times[i] <= times[i - 1]) {
+            throw std::runtime_error(
+                "sample_times must be strictly increasing");
+        }
+    }
+    return times;
+}
+
+std::size_t parseNonNegativeCount(const std::string& text,
+                                  ast::Model& model,
+                                  const std::string& name) {
+    const double value = parseScalarValue(text, model);
+    if (!std::isfinite(value) || value < 0.0 || std::floor(value) != value ||
+        value > static_cast<double>(std::numeric_limits<std::size_t>::max())) {
+        throw std::runtime_error(name + " must be a non-negative integer");
+    }
+    return static_cast<std::size_t>(value);
 }
 
 std::string readArgument(const ast::Action& action, const std::string& key, const std::string& fallback = {}) {
@@ -415,19 +464,55 @@ void runSimulation(
     const auto method = resolveSimulationMethod(action);
     const auto tEnd = stripQuotes(readArgument(action, "t_end", ""));
     const auto nSteps = stripQuotes(readArgument(action, "n_steps", stripQuotes(readArgument(action, "n_output_steps", ""))));
-    if (tEnd.empty() || nSteps.empty()) {
-        throw std::runtime_error("simulate requires t_end and n_steps (or n_output_steps)");
+    const auto sampleTimesText = readArgument(action, "sample_times", "");
+    const bool hasSampleTimes = !trim(stripQuotes(sampleTimesText)).empty();
+    const bool hasStepCount = !nSteps.empty();
+    if (tEnd.empty() && (!hasSampleTimes || hasStepCount)) {
+        throw std::runtime_error(
+            "simulate requires t_end, or sample_times when n_steps is omitted");
+    }
+    if (hasStepCount && tEnd.empty()) {
+        throw std::runtime_error("simulate requires t_end when n_steps is provided");
     }
 
     // Parse simulation options
     engine::OdeOptions opts;
-    opts.tEnd = parseScalarValue(tEnd, model);
-    opts.nSteps = static_cast<std::size_t>(parseScalarValue(nSteps, model));
+    if (!tEnd.empty()) {
+        opts.tEnd = parseScalarValue(tEnd, model);
+    }
+    if (!nSteps.empty()) {
+        opts.nSteps = parseNonNegativeCount(nSteps, model, "n_steps");
+        if (opts.nSteps == 0) {
+            throw std::runtime_error("n_steps must be positive");
+        }
+    }
 
     // Parse t_start (BNG2 parity)
     const auto tStartText = readArgument(action, "t_start", "");
     if (!tStartText.empty()) {
         opts.tStart = parseScalarValue(tStartText, model);
+    }
+
+    if (hasSampleTimes && hasStepCount) {
+        std::cerr << "WARNING: n_steps and sample_times both defined. "
+                     "n_steps takes precedence.\n";
+    } else if (hasSampleTimes) {
+        opts.sampleTimes = parseSampleTimes(sampleTimesText, model);
+        if (tEnd.empty()) {
+            opts.tEnd = opts.sampleTimes.back();
+        } else if (opts.sampleTimes.back() > opts.tEnd) {
+            throw std::runtime_error(
+                "sample_times cannot extend beyond t_end");
+        } else if (opts.sampleTimes.back() < opts.tEnd) {
+            opts.sampleTimes.push_back(opts.tEnd);
+        }
+        if (opts.sampleTimes.front() < opts.tStart) {
+            throw std::runtime_error(
+                "sample_times cannot occur before t_start");
+        }
+        opts.nSteps = opts.sampleTimes.size() > 1
+            ? opts.sampleTimes.size() - 1
+            : 1;
     }
 
     // Parse method (match BNG2 defaults)
@@ -463,11 +548,27 @@ void runSimulation(
         opts.rtol = parseScalarValue(rtolText, model);
     }
 
+    const auto maxStepText = readArgument(action, "max_step", "");
+    if (!maxStepText.empty()) {
+        opts.maxStep = parseScalarValue(maxStepText, model);
+        if (!std::isfinite(opts.maxStep) || opts.maxStep < 0.0) {
+            throw std::runtime_error("max_step must be finite and non-negative");
+        }
+    }
+
     // Parse steady_state option (BNG2 parity)
     const auto steadyStateText = lowercase(stripQuotes(readArgument(action, "steady_state", "0")));
     opts.steadyState = (steadyStateText == "1" || steadyStateText == "true");
     if (opts.steadyState) {
         opts.steadyStateTol = opts.atol;  // Use atol for steady-state check
+    }
+    const auto steadyStateTolText = readArgument(action, "steady_state_tol", "");
+    if (!steadyStateTolText.empty()) {
+        opts.steadyStateTol = parseScalarValue(steadyStateTolText, model);
+        if (!std::isfinite(opts.steadyStateTol) || opts.steadyStateTol <= 0.0) {
+            throw std::runtime_error(
+                "steady_state_tol must be finite and positive");
+        }
     }
 
     // Parse stop_if expression (BNG2 parity)
@@ -512,7 +613,14 @@ void runSimulation(
     // Parse output_step_interval (BNG2 parity: output every N internal steps, mainly for SSA/PLA)
     const auto outputStepIntervalText = readArgument(action, "output_step_interval", "");
     if (!outputStepIntervalText.empty()) {
-        opts.outputStepInterval = static_cast<std::size_t>(parseScalarValue(outputStepIntervalText, model));
+        opts.outputStepInterval = parseNonNegativeCount(
+            outputStepIntervalText, model, "output_step_interval");
+    }
+
+    const auto maxSimStepsText = readArgument(action, "max_sim_steps", "");
+    if (!maxSimStepsText.empty()) {
+        opts.maxSimSteps = parseNonNegativeCount(
+            maxSimStepsText, model, "max_sim_steps");
     }
 
     // Parse sparse option (request sparse Jacobian for large networks)
@@ -527,6 +635,36 @@ void runSimulation(
     const auto checkProdScaleText = readArgument(action, "check_product_scale", "");
     if (!checkProdScaleText.empty()) {
         opts.checkProductScale = parseScalarValue(checkProdScaleText, model);
+        if (!std::isfinite(opts.checkProductScale) || opts.checkProductScale < 0.0) {
+            throw std::runtime_error(
+                "check_product_scale must be finite and non-negative");
+        }
+    }
+
+    const bool isOdeMethod = opts.method == "cvode" || opts.method == "euler" ||
+        opts.method == "rk4";
+    if (!isOdeMethod && (opts.maxStep > 0.0 || opts.steadyState || opts.sparse)) {
+        throw std::runtime_error(
+            "max_step, steady_state, and sparse require an ODE simulation method");
+    }
+    if (!isOdeMethod && opts.method != "ssa" && !opts.stopIf.empty()) {
+        throw std::runtime_error("stop_if requires an ODE or SSA simulation method");
+    }
+    if (!isOdeMethod && opts.method != "ssa" && hasSampleTimes) {
+        throw std::runtime_error(
+            "sample_times requires an ODE or SSA simulation method");
+    }
+    if (opts.method != "ssa" && opts.outputStepInterval > 0) {
+        throw std::runtime_error(
+            "output_step_interval requires an SSA simulation method");
+    }
+    if (opts.method != "ssa" && opts.method != "psa" && opts.maxSimSteps > 0) {
+        throw std::runtime_error(
+            "max_sim_steps requires an SSA or PSA simulation method");
+    }
+    if (!isOdeMethod && opts.method != "psa" && opts.checkProductScale > 0.0) {
+        throw std::runtime_error(
+            "check_product_scale requires an ODE or PSA simulation method");
     }
 
     if (verbose) {
@@ -575,6 +713,14 @@ void runSimulation(
         auto plaConfig = engine::PlaConfig::parse(plaConfigStr);
         engine::PlaSimulator simulator(model, network);
         result = simulator.simulate(opts, plaConfig);
+    } else if (opts.method == "psa") {
+        const auto poplevelText = readArgument(action, "poplevel", "0");
+        const double poplevel = parseScalarValue(poplevelText, model);
+        if (!std::isfinite(poplevel) || poplevel < 0.0) {
+            throw std::runtime_error("poplevel must be finite and non-negative");
+        }
+        engine::PsaSimulator simulator(model, network);
+        result = simulator.simulate(opts, poplevel);
     } else {
         // ODE/SSA integration
         engine::OdeIntegrator integrator(model, network);

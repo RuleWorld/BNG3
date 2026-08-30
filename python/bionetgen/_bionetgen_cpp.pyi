@@ -178,6 +178,12 @@ class OdeOptions:
     max_step: float
     steady_state: bool
     steady_state_tol: float
+    stop_if: str
+    sample_times: List[float]
+    max_sim_steps: int
+    output_step_interval: int
+    sparse: bool
+    check_product_scale: float
     def __init__(self) -> None: ...
 
 # ─── Result Type ──────────────────────────────────────────────────────────────
@@ -264,6 +270,15 @@ def simulate_ode(
     rtol: float = 1e-8,
     atol: float = 1e-8,
     method: str = "cvode",
+    max_step: float = 0.0,
+    steady_state: bool = False,
+    steady_state_tol: float = 1e-8,
+    stop_if: str = "",
+    sample_times: List[float] = [],
+    max_sim_steps: int = 0,
+    output_step_interval: int = 0,
+    sparse: bool = False,
+    check_product_scale: float = 0.0,
 ) -> Dict[str, object]:
     """Run ODE simulation on a generated network.
 
@@ -285,6 +300,24 @@ def simulate_ode(
         Absolute tolerance.
     method : str
         Integration method: "cvode", "euler", or "rk4".
+    max_step : float
+        Maximum internal CVODE step size; zero disables the limit.
+    steady_state : bool
+        Stop when the derivative norm is below ``steady_state_tol``.
+    steady_state_tol : float
+        Derivative threshold for steady-state stopping.
+    stop_if : str
+        Expression evaluated at output points; nonzero stops the run.
+    sample_times : list[float]
+        Strictly increasing output times between ``t_start`` and ``t_end``.
+    max_sim_steps : int
+        Stochastic-only option; must be zero for ``simulate_ode``.
+    output_step_interval : int
+        Stochastic-only option; must be zero for ``simulate_ode``.
+    sparse : bool
+        Request the sparse CVODE linear solver.
+    check_product_scale : float
+        Warn when a species exceeds this threshold.
 
     Returns
     -------
@@ -301,6 +334,10 @@ def simulate_ssa(
     n_steps: int = 100,
     t_start: float = 0.0,
     seed: int = 0,
+    stop_if: str = "",
+    sample_times: List[float] = [],
+    max_sim_steps: int = 0,
+    output_step_interval: int = 0,
 ) -> Dict[str, object]:
     """Run SSA (stochastic) simulation on a generated network.
 
@@ -318,6 +355,14 @@ def simulate_ssa(
         Start time.
     seed : int
         Random seed (0 = system default).
+    stop_if : str
+        Expression evaluated after each reaction; nonzero stops the run.
+    sample_times : list[float], optional
+        Strictly increasing output times between ``t_start`` and ``t_end``.
+    max_sim_steps : int
+        Maximum number of reaction events (0 = unlimited).
+    output_step_interval : int
+        Output every N reaction events when ``sample_times`` is not set.
 
     Returns
     -------

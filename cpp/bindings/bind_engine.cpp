@@ -3,6 +3,7 @@
 #include <pybind11/numpy.h>
 
 #include <string>
+#include <stdexcept>
 #include <vector>
 
 #include "ast/Model.hpp"
@@ -105,7 +106,13 @@ void bind_engine(py::module_& m) {
         .def_readwrite("method", &OdeOptions::method)
         .def_readwrite("max_step", &OdeOptions::maxStep)
         .def_readwrite("steady_state", &OdeOptions::steadyState)
-        .def_readwrite("steady_state_tol", &OdeOptions::steadyStateTol);
+        .def_readwrite("steady_state_tol", &OdeOptions::steadyStateTol)
+        .def_readwrite("stop_if", &OdeOptions::stopIf)
+        .def_readwrite("sample_times", &OdeOptions::sampleTimes)
+        .def_readwrite("max_sim_steps", &OdeOptions::maxSimSteps)
+        .def_readwrite("output_step_interval", &OdeOptions::outputStepInterval)
+        .def_readwrite("sparse", &OdeOptions::sparse)
+        .def_readwrite("check_product_scale", &OdeOptions::checkProductScale);
 
     m.def("generate_network", [](Model& model, size_t max_iter) {
         py::gil_scoped_release release;
@@ -116,7 +123,18 @@ void bind_engine(py::module_& m) {
 
     m.def("simulate_ode", [](Model& model, GeneratedNetwork& network,
                              double t_end, int n_steps, double t_start,
-                             double rtol, double atol, const std::string& method) {
+                             double rtol, double atol, const std::string& method,
+                             double max_step, bool steady_state,
+                             double steady_state_tol, const std::string& stop_if,
+                             const std::vector<double>& sample_times,
+                             std::size_t max_sim_steps,
+                             std::size_t output_step_interval, bool sparse,
+                             double check_product_scale) {
+        if (max_sim_steps > 0 || output_step_interval > 0) {
+            throw std::runtime_error(
+                "max_sim_steps and output_step_interval are supported only "
+                "for simulate_ssa");
+        }
         py::gil_scoped_release release;
 
         OdeOptions opts;
@@ -126,6 +144,15 @@ void bind_engine(py::module_& m) {
         opts.rtol = rtol;
         opts.atol = atol;
         opts.method = method;
+        opts.maxStep = max_step;
+        opts.steadyState = steady_state;
+        opts.steadyStateTol = steady_state_tol;
+        opts.stopIf = stop_if;
+        opts.sampleTimes = sample_times;
+        opts.maxSimSteps = max_sim_steps;
+        opts.outputStepInterval = output_step_interval;
+        opts.sparse = sparse;
+        opts.checkProductScale = check_product_scale;
 
         OdeIntegrator integrator(model, network);
         OdeResult result = integrator.integrate(opts);
@@ -141,10 +168,23 @@ void bind_engine(py::module_& m) {
         py::arg("rtol") = 1e-8,
         py::arg("atol") = 1e-8,
         py::arg("method") = "cvode",
+        py::arg("max_step") = 0.0,
+        py::arg("steady_state") = false,
+        py::arg("steady_state_tol") = 1e-8,
+        py::arg("stop_if") = "",
+        py::arg("sample_times") = std::vector<double>{},
+        py::arg("max_sim_steps") = 0,
+        py::arg("output_step_interval") = 0,
+        py::arg("sparse") = false,
+        py::arg("check_product_scale") = 0.0,
         "Run ODE simulation on a generated network");
 
     m.def("simulate_ssa", [](Model& model, GeneratedNetwork& network,
-                             double t_end, int n_steps, double t_start, int seed) {
+                             double t_end, int n_steps, double t_start, int seed,
+                             const std::string& stop_if,
+                             const std::vector<double>& sample_times,
+                             std::size_t max_sim_steps,
+                             std::size_t output_step_interval) {
         py::gil_scoped_release release;
 
         OdeOptions opts;
@@ -153,6 +193,10 @@ void bind_engine(py::module_& m) {
         opts.nSteps = n_steps;
         opts.method = "ssa";
         opts.seed = seed;
+        opts.stopIf = stop_if;
+        opts.sampleTimes = sample_times;
+        opts.maxSimSteps = max_sim_steps;
+        opts.outputStepInterval = output_step_interval;
 
         OdeIntegrator integrator(model, network);
         OdeResult result = integrator.integrate(opts);
@@ -166,6 +210,10 @@ void bind_engine(py::module_& m) {
         py::arg("n_steps") = 100,
         py::arg("t_start") = 0.0,
         py::arg("seed") = 0,
+        py::arg("stop_if") = "",
+        py::arg("sample_times") = std::vector<double>{},
+        py::arg("max_sim_steps") = 0,
+        py::arg("output_step_interval") = 0,
         "Run SSA simulation on a generated network");
 
     m.def("simulate_pla", [](Model& model, GeneratedNetwork& network,

@@ -97,6 +97,14 @@ private:
     void compile();
     void compileGroups();
     void updateGroups(const double* y, std::vector<double>& groupValues) const;
+    std::vector<double> outputTimes(const OdeOptions& options) const;
+    std::optional<ast::Expression> parseStopIf(const OdeOptions& options) const;
+    bool stopConditionMet(const ast::Expression& condition,
+                          double time,
+                          const std::vector<double>& state) const;
+    bool steadyStateReached(const OdeOptions& options,
+                            double time,
+                            const std::vector<double>& state) const;
 
     OdeResult integrateEuler(const OdeOptions& opts);
     OdeResult integrateRK4(const OdeOptions& opts);

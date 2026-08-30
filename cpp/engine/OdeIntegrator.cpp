@@ -939,7 +939,111 @@ void OdeIntegrator::updateGroups(const double* y, std::vector<double>& groupValu
     }
 }
 
+std::vector<double> OdeIntegrator::outputTimes(const OdeOptions& options) const {
+    if (!std::isfinite(options.tStart) || !std::isfinite(options.tEnd)) {
+        throw std::runtime_error("t_start and t_end must be finite");
+    }
+    if (options.tEnd < options.tStart) {
+        throw std::runtime_error("t_end must be greater than or equal to t_start");
+    }
+
+    if (!options.sampleTimes.empty()) {
+        std::vector<double> times = options.sampleTimes;
+        for (std::size_t i = 0; i < times.size(); ++i) {
+            if (!std::isfinite(times[i])) {
+                throw std::runtime_error("sample_times must contain only finite values");
+            }
+            if (times[i] < options.tStart || times[i] > options.tEnd) {
+                throw std::runtime_error(
+                    "sample_times must lie between t_start and t_end");
+            }
+            if (i > 0 && times[i] <= times[i - 1]) {
+                throw std::runtime_error(
+                    "sample_times must be strictly increasing");
+            }
+        }
+        return times;
+    }
+
+    if (options.nSteps == 0) {
+        throw std::runtime_error("n_steps must be positive");
+    }
+
+    const double dt = (options.tEnd - options.tStart) /
+                      static_cast<double>(options.nSteps);
+    std::vector<double> times;
+    times.reserve(options.nSteps + 1);
+    for (std::size_t step = 0; step <= options.nSteps; ++step) {
+        times.push_back(options.tStart + step * dt);
+    }
+    return times;
+}
+
+std::optional<ast::Expression> OdeIntegrator::parseStopIf(
+    const OdeOptions& options) const {
+    if (options.stopIf.empty()) {
+        return std::nullopt;
+    }
+    try {
+        return parser::parseExpression(options.stopIf);
+    } catch (const std::exception& error) {
+        throw std::runtime_error(
+            "Failed to parse stop_if expression: " + std::string(error.what()));
+    }
+}
+
+bool OdeIntegrator::stopConditionMet(const ast::Expression& condition,
+                                     double time,
+                                     const std::vector<double>& state) const {
+    std::vector<double> groupValues;
+    updateGroups(state.data(), groupValues);
+
+    const auto resolver = [&](const std::string& name) -> double {
+        if (name == "time") {
+            return time;
+        }
+        const auto observable = observableIndex_.find(name);
+        if (observable != observableIndex_.end()) {
+            return groupValues[observable->second];
+        }
+        return model_.getParameters().evaluate(name, time);
+    };
+
+    try {
+        return condition.evaluate(resolver, time) != 0.0;
+    } catch (const std::exception& error) {
+        throw std::runtime_error(
+            "Failed to evaluate stop_if expression '" +
+            condition.toString() + "': " + error.what());
+    }
+}
+
+bool OdeIntegrator::steadyStateReached(const OdeOptions& options,
+                                       double time,
+                                       const std::vector<double>& state) const {
+    if (!options.steadyState) {
+        return false;
+    }
+    if (nSpecies_ == 0) {
+        return true;
+    }
+
+    std::vector<double> derivatives(nSpecies_);
+    derivs(time, state.data(), derivatives.data());
+    double sumSq = 0.0;
+    for (const double derivative : derivatives) {
+        sumSq += derivative * derivative;
+    }
+    const double dx = std::sqrt(sumSq) / static_cast<double>(nSpecies_);
+    return dx < options.steadyStateTol;
+}
+
 OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
+    if (options.method != "ssa" &&
+        (options.maxSimSteps > 0 || options.outputStepInterval > 0)) {
+        throw std::runtime_error(
+            "max_sim_steps and output_step_interval are supported only for SSA");
+    }
     if (options.method == "euler") {
         return integrateEuler(options);
     } else if (options.method == "rk4") {
@@ -954,18 +1058,9 @@ OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
 }
 
 OdeResult OdeIntegrator::integrateEuler(const OdeOptions& opts) {
-    const double dt = (opts.tEnd - opts.tStart) / static_cast<double>(opts.nSteps);
+    const auto times = outputTimes(opts);
+    const auto stopIfExpr = parseStopIf(opts);
     std::vector<double> y(nSpecies_);
-
-    // Parse stop_if expression at compile time
-    std::optional<ast::Expression> stopIfExpr;
-    if (!opts.stopIf.empty()) {
-        try {
-            stopIfExpr = parser::parseExpression(opts.stopIf);
-        } catch (const std::exception& e) {
-            std::cerr << "[bng_cpp] Warning: failed to parse stop_if expression: " << e.what() << "\n";
-        }
-    }
 
     // Initialize from species amounts
     for (std::size_t i = 0; i < nSpecies_; ++i) {
@@ -973,69 +1068,38 @@ OdeResult OdeIntegrator::integrateEuler(const OdeOptions& opts) {
     }
 
     OdeResult result;
-    result.timePoints.reserve(opts.nSteps + 1);
-    result.concentrations.reserve(opts.nSteps + 1);
+    result.timePoints.reserve(times.size());
+    result.concentrations.reserve(times.size());
 
-    for (std::size_t step = 0; step <= opts.nSteps; ++step) {
-        double t = opts.tStart + step * dt;
-        result.timePoints.push_back(t);
-        result.concentrations.push_back(y);
-
-        if (step < opts.nSteps) {
+    double currentTime = opts.tStart;
+    for (std::size_t step = 0; step < times.size(); ++step) {
+        const double targetTime = times[step];
+        const double dt = targetTime - currentTime;
+        if (dt > 0.0) {
             std::vector<double> dydt(nSpecies_);
-            derivs(t, y.data(), dydt.data());
-
-            // Check steady-state condition (BNG2 parity)
-            if (opts.steadyState && step > 0) {
-                double sumSq = 0.0;
-                for (std::size_t i = 0; i < nSpecies_; ++i) {
-                    sumSq += dydt[i] * dydt[i];
-                }
-                double dx = std::sqrt(sumSq) / static_cast<double>(nSpecies_);
-                if (dx < opts.steadyStateTol) {
-                    std::cerr << "[bng_cpp] Steady state reached at step " << step
-                              << ", t=" << t << ", dx=" << dx << "\n";
-                    break;  // Stop early
-                }
-            }
-
-            // Check stop_if condition (BNG2 parity)
-            if (stopIfExpr.has_value() && step > 0) {
-                std::vector<double> groupValues;
-                updateGroups(y.data(), groupValues);
-
-                auto resolver = [&](const std::string& name) -> double {
-                    if (name == "time") return t;
-                    for (std::size_t g = 0; g < compiledGroups_.size(); ++g) {
-                        if (compiledGroups_[g].name == name) {
-                            return groupValues[g];
-                        }
-                    }
-                    return model_.getParameters().evaluate(name);
-                };
-
-                try {
-                    double stopVal = stopIfExpr->evaluate(resolver, t);
-                    if (stopVal != 0.0) {
-                        std::cerr << "[bng_cpp] stop_if condition met at step " << step
-                                  << ", t=" << t << ": " << opts.stopIf << "\n";
-                        break;
-                    }
-                } catch (const std::exception& e) {
-                    // Ignore evaluation errors in stop_if
-                }
-            }
-
+            derivs(currentTime, y.data(), dydt.data());
             for (std::size_t i = 0; i < nSpecies_; ++i) {
                 y[i] += dt * dydt[i];
-                if (y[i] < 0.0) y[i] = 0.0;  // Clamp negative concentrations
+                if (y[i] < 0.0) y[i] = 0.0;
             }
+            currentTime = targetTime;
+        }
+
+        result.timePoints.push_back(targetTime);
+        result.concentrations.push_back(y);
+
+        if (step > 0 && steadyStateReached(opts, targetTime, y)) {
+            break;
+        }
+        if (step > 0 && stopIfExpr.has_value() &&
+            stopConditionMet(*stopIfExpr, targetTime, y)) {
+            break;
         }
     }
 
     // Compute observables for each time point
     result.observables.resize(result.timePoints.size());
-    for (std::size_t step = 0; step <= opts.nSteps; ++step) {
+    for (std::size_t step = 0; step < result.timePoints.size(); ++step) {
         updateGroups(result.concentrations[step].data(), result.observables[step]);
     }
 
@@ -1046,20 +1110,10 @@ OdeResult OdeIntegrator::integrateRK4(const OdeOptions& opts) {
     // Use internal sub-stepping for stability
     // For stiff systems, we need many more steps than the output points
     const std::size_t internalStepsPerOutput = 1000;  // Subdivide each output interval
-    const double outputDt = (opts.tEnd - opts.tStart) / static_cast<double>(opts.nSteps);
-    const double dt = outputDt / static_cast<double>(internalStepsPerOutput);
+    const auto times = outputTimes(opts);
+    const auto stopIfExpr = parseStopIf(opts);
 
     std::vector<double> y(nSpecies_);
-
-    // Parse stop_if expression at compile time
-    std::optional<ast::Expression> stopIfExpr;
-    if (!opts.stopIf.empty()) {
-        try {
-            stopIfExpr = parser::parseExpression(opts.stopIf);
-        } catch (const std::exception& e) {
-            std::cerr << "[bng_cpp] Warning: failed to parse stop_if expression: " << e.what() << "\n";
-        }
-    }
 
     // Initialize from species amounts
     for (std::size_t i = 0; i < nSpecies_; ++i) {
@@ -1067,75 +1121,19 @@ OdeResult OdeIntegrator::integrateRK4(const OdeOptions& opts) {
     }
 
     OdeResult result;
-    result.timePoints.reserve(opts.nSteps + 1);
-    result.concentrations.reserve(opts.nSteps + 1);
+    result.timePoints.reserve(times.size());
+    result.concentrations.reserve(times.size());
 
     std::vector<double> k1(nSpecies_), k2(nSpecies_), k3(nSpecies_), k4(nSpecies_);
     std::vector<double> yTemp(nSpecies_);
 
     double t = opts.tStart;
-    bool stopEarly = false;
-
-    for (std::size_t outputStep = 0; outputStep <= opts.nSteps; ++outputStep) {
-        double targetT = opts.tStart + outputStep * outputDt;
-
-        // Save output at this time point
-        result.timePoints.push_back(targetT);
-        result.concentrations.push_back(y);
-
-        // Check steady-state and stop_if at each output point
-        if (outputStep > 0 && outputStep < opts.nSteps) {
-            std::vector<double> dydt(nSpecies_);
-            derivs(t, y.data(), dydt.data());
-
-            // Steady-state detection (BNG2 parity)
-            if (opts.steadyState) {
-                double sumSq = 0.0;
-                for (std::size_t i = 0; i < nSpecies_; ++i) {
-                    sumSq += dydt[i] * dydt[i];
-                }
-                double dx = std::sqrt(sumSq) / static_cast<double>(nSpecies_);
-                if (dx < opts.steadyStateTol) {
-                    std::cerr << "[bng_cpp] Steady state reached at step " << outputStep
-                              << ", t=" << t << ", dx=" << dx << "\n";
-                    stopEarly = true;
-                }
-            }
-
-            // stop_if condition (BNG2 parity)
-            if (stopIfExpr.has_value()) {
-                std::vector<double> groupValues;
-                updateGroups(y.data(), groupValues);
-
-                auto resolver = [&](const std::string& name) -> double {
-                    if (name == "time") return t;
-                    for (std::size_t g = 0; g < compiledGroups_.size(); ++g) {
-                        if (compiledGroups_[g].name == name) {
-                            return groupValues[g];
-                        }
-                    }
-                    return model_.getParameters().evaluate(name);
-                };
-
-                try {
-                    double stopVal = stopIfExpr->evaluate(resolver, t);
-                    if (stopVal != 0.0) {
-                        std::cerr << "[bng_cpp] stop_if condition met at step " << outputStep
-                                  << ", t=" << t << ": " << opts.stopIf << "\n";
-                        stopEarly = true;
-                    }
-                } catch (const std::exception& e) {
-                    // Ignore evaluation errors
-                }
-            }
-        }
-
-        if (stopEarly || outputStep >= opts.nSteps) {
-            break;
-        }
-
-        if (outputStep < opts.nSteps) {
-            // Take internal steps to reach next output point
+    for (std::size_t outputStep = 0; outputStep < times.size(); ++outputStep) {
+        const double targetT = times[outputStep];
+        const double outputDt = targetT - t;
+        if (outputDt > 0.0) {
+            const double dt = outputDt / static_cast<double>(internalStepsPerOutput);
+            // Take internal steps to reach the next output point.
             for (std::size_t internalStep = 0; internalStep < internalStepsPerOutput; ++internalStep) {
                 // k1 = f(t, y)
                 derivs(t, y.data(), k1.data());
@@ -1172,12 +1170,24 @@ OdeResult OdeIntegrator::integrateRK4(const OdeOptions& opts) {
 
                 t += dt;
             }
+            t = targetT;
+        }
+
+        result.timePoints.push_back(targetT);
+        result.concentrations.push_back(y);
+
+        if (outputStep > 0 && steadyStateReached(opts, targetT, y)) {
+            break;
+        }
+        if (outputStep > 0 && stopIfExpr.has_value() &&
+            stopConditionMet(*stopIfExpr, targetT, y)) {
+            break;
         }
     }
 
     // Compute observables for each time point
     result.observables.resize(result.timePoints.size());
-    for (std::size_t step = 0; step <= opts.nSteps; ++step) {
+    for (std::size_t step = 0; step < result.timePoints.size(); ++step) {
         updateGroups(result.concentrations[step].data(), result.observables[step]);
     }
 
@@ -1313,15 +1323,8 @@ static int cvodeCallbackWrapper(sunrealtype t, N_Vector y, N_Vector ydot, void* 
 }
 
 OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
-    // Parse stop_if expression at compile time
-    std::optional<ast::Expression> stopIfExpr;
-    if (!opts.stopIf.empty()) {
-        try {
-            stopIfExpr = parser::parseExpression(opts.stopIf);
-        } catch (const std::exception& e) {
-            std::cerr << "[bng_cpp] Warning: failed to parse stop_if expression: " << e.what() << "\n";
-        }
-    }
+    const auto times = outputTimes(opts);
+    const auto stopIfExpr = parseStopIf(opts);
 
     // SUNDIALS v7: Create context (required for all SUNDIALS objects)
     SUNContext sunctx = nullptr;
@@ -1372,6 +1375,15 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
 
     // Set max number of steps (BNG2 default: 2000, auto-increases if needed)
     CVodeSetMaxNumSteps(cvode_mem, 2000);
+    if (opts.maxStep > 0.0) {
+        flag = CVodeSetMaxStep(cvode_mem, opts.maxStep);
+        if (flag != CV_SUCCESS) {
+            CVodeFree(&cvode_mem);
+            N_VDestroy(y);
+            SUNContext_Free(&sunctx);
+            throw std::runtime_error("CVodeSetMaxStep failed");
+        }
+    }
 
     // Note: Perl's run_network does NOT enable stability limit detection.
     // Disabled for exact parity with Perl CVODE stepping behavior.
@@ -1431,14 +1443,37 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
 
     // Integration loop
     OdeResult result;
-    result.timePoints.reserve(opts.nSteps + 1);
-    result.concentrations.reserve(opts.nSteps + 1);
+    result.timePoints.reserve(times.size());
+    result.concentrations.reserve(times.size());
 
-    const double dt = (opts.tEnd - opts.tStart) / static_cast<double>(opts.nSteps);
     double t = opts.tStart;
 
-    for (std::size_t step = 0; step <= opts.nSteps; ++step) {
-        double tOut = opts.tStart + step * dt;
+    for (std::size_t step = 0; step < times.size(); ++step) {
+        const double tOut = times[step];
+
+        if (tOut > t) {
+            long int maxSteps = 2000;
+            while (true) {
+                flag = CVode(cvode_mem, tOut, y, &t, CV_NORMAL);
+
+                if (flag == CV_SUCCESS || flag == CV_TSTOP_RETURN) {
+                    break;
+                } else if (flag == CV_TOO_MUCH_WORK) {
+                    // Auto-increase max steps (matches BNG2 behavior)
+                    maxSteps *= 2;
+                    CVodeSetMaxNumSteps(cvode_mem, maxSteps);
+                    continue;
+                } else {
+                    SUNLinSolFree(LS);
+                    if (A) SUNMatDestroy(A);
+                    CVodeFree(&cvode_mem);
+                    N_VDestroy(y);
+                    SUNContext_Free(&sunctx);
+                    throw std::runtime_error("CVODE failed with flag " + std::to_string(flag));
+                }
+            }
+            t = tOut;
+        }
 
         // Save current state
         result.timePoints.push_back(tOut);
@@ -1461,55 +1496,12 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
             }
         }
 
-        // Check stop_if condition after each output point (BNG2 parity)
-        if (stopIfExpr.has_value() && step > 0 && step < opts.nSteps) {
-            std::vector<double> groupValues;
-            updateGroups(conc.data(), groupValues);
-
-            auto resolver = [&](const std::string& name) -> double {
-                if (name == "time") return tOut;
-                for (std::size_t g = 0; g < compiledGroups_.size(); ++g) {
-                    if (compiledGroups_[g].name == name) {
-                        return groupValues[g];
-                    }
-                }
-                return model_.getParameters().evaluate(name);
-            };
-
-            try {
-                double stopVal = stopIfExpr->evaluate(resolver, tOut);
-                if (stopVal != 0.0) {
-                    std::cerr << "[bng_cpp] stop_if condition met at step " << step
-                              << ", t=" << tOut << ": " << opts.stopIf << "\n";
-                    break;
-                }
-            } catch (const std::exception& e) {
-                // Ignore evaluation errors
-            }
+        if (step > 0 && steadyStateReached(opts, tOut, conc)) {
+            break;
         }
-
-        // Integrate to next output point
-        if (step < opts.nSteps) {
-            long int maxSteps = 2000;
-            while (true) {
-                flag = CVode(cvode_mem, tOut + dt, y, &t, CV_NORMAL);
-
-                if (flag == CV_SUCCESS || flag == CV_TSTOP_RETURN) {
-                    break;
-                } else if (flag == CV_TOO_MUCH_WORK) {
-                    // Auto-increase max steps (matches BNG2 behavior)
-                    maxSteps *= 2;
-                    CVodeSetMaxNumSteps(cvode_mem, maxSteps);
-                    continue;
-                } else {
-                    SUNLinSolFree(LS);
-                    if (A) SUNMatDestroy(A);
-                    CVodeFree(&cvode_mem);
-                    N_VDestroy(y);
-                    SUNContext_Free(&sunctx);
-                    throw std::runtime_error("CVODE failed with flag " + std::to_string(flag));
-                }
-            }
+        if (step > 0 && stopIfExpr.has_value() &&
+            stopConditionMet(*stopIfExpr, tOut, conc)) {
+            break;
         }
     }
 
@@ -1571,6 +1563,9 @@ double OdeIntegrator::computePropensity(const CompiledReaction& rxn, const std::
 
 OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     // Direct Gillespie algorithm (matches BNG2 implementation)
+    const auto times = outputTimes(opts);
+    const auto stopIfExpr = parseStopIf(opts);
+    const bool explicitTimes = !opts.sampleTimes.empty();
     std::mt19937_64 rng;
     if (opts.seed > 0) {
         rng.seed(opts.seed);
@@ -1587,13 +1582,43 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     }
 
     OdeResult result;
-    result.timePoints.reserve(opts.nSteps + 1);
-    result.concentrations.reserve(opts.nSteps + 1);
+    result.timePoints.reserve(times.size() + 1);
+    result.concentrations.reserve(times.size() + 1);
 
     double t = opts.tStart;
-    const double dt = (opts.tEnd - opts.tStart) / static_cast<double>(opts.nSteps);
-    std::size_t nextOutputStep = 0;
+    std::size_t nextOutputTime = 0;
     std::size_t ssaStepCount = 0;  // track internal SSA steps for output_step_interval
+    bool stoppedEarly = false;
+
+    const auto appendScheduledBefore = [&](double until) {
+        while (nextOutputTime < times.size() &&
+               times[nextOutputTime] < until - 1e-12) {
+            result.timePoints.push_back(times[nextOutputTime]);
+            result.concentrations.push_back(y);
+            ++nextOutputTime;
+        }
+    };
+
+    const auto appendScheduledThrough = [&](double until) {
+        while (nextOutputTime < times.size() &&
+               times[nextOutputTime] <= until + 1e-12) {
+            result.timePoints.push_back(times[nextOutputTime]);
+            result.concentrations.push_back(y);
+            ++nextOutputTime;
+        }
+    };
+
+    const auto appendEventState = [&]() {
+        if (result.timePoints.empty() ||
+            std::abs(result.timePoints.back() - t) > 1e-12) {
+            result.timePoints.push_back(t);
+            result.concentrations.push_back(y);
+        } else {
+            // An event may land exactly on an explicit output time.  The
+            // sample at that instant represents the post-event state.
+            result.concentrations.back() = y;
+        }
+    };
 
     // Compute initial propensities
     std::vector<double> propensities(compiledRxns_.size());
@@ -1610,24 +1635,30 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     recomputePropensities();
 
     // Record initial state
-    if (opts.outputStepInterval > 0) {
+    if (opts.outputStepInterval == 0 || explicitTimes) {
+        appendScheduledThrough(t);
+    } else {
         result.timePoints.push_back(t);
         result.concentrations.push_back(y);
     }
 
     // Main SSA loop
     while (t < opts.tEnd) {
-        // Record output points as we pass them (only when not using output_step_interval)
-        if (opts.outputStepInterval == 0) {
-            while (opts.tStart + nextOutputStep * dt <= t && nextOutputStep <= opts.nSteps) {
-                result.timePoints.push_back(opts.tStart + nextOutputStep * dt);
-                result.concentrations.push_back(y);
-                ++nextOutputStep;
-            }
+        // Record scheduled output points as events advance the trajectory.
+        if (opts.outputStepInterval == 0 || explicitTimes) {
+            appendScheduledThrough(t);
         }
 
         // Check if we've passed the end time
-        if (t >= opts.tEnd || totalPropensity <= 0.0) {
+        if (opts.maxSimSteps > 0 && ssaStepCount >= opts.maxSimSteps) {
+            stoppedEarly = true;
+            break;
+        }
+        if (t >= opts.tEnd) {
+            break;
+        }
+        if (totalPropensity <= 0.0) {
+            t = opts.tEnd;
             break;
         }
 
@@ -1644,7 +1675,12 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             break;
         }
 
-        t += tau;
+        const double eventTime = t + tau;
+        if (opts.outputStepInterval == 0 || explicitTimes) {
+            // Scheduled samples before the event see the pre-event state.
+            appendScheduledBefore(eventTime);
+        }
+        t = eventTime;
 
         // Select next reaction
         double r2 = uniform(rng);
@@ -1662,6 +1698,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
 
         if (selectedRxn >= compiledRxns_.size()) {
             // Shouldn't happen unless roundoff error
+            stoppedEarly = true;
             break;
         }
 
@@ -1679,24 +1716,37 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         // Optimization: could track which reactions are affected by this species change
         recomputePropensities();
 
+        if (opts.outputStepInterval == 0 || explicitTimes) {
+            // Include an explicit sample that coincides with the event using
+            // the post-event state.
+            appendScheduledThrough(t);
+        }
+
         // output_step_interval: record output every N internal SSA steps
         ++ssaStepCount;
-        if (opts.outputStepInterval > 0 && (ssaStepCount % opts.outputStepInterval) == 0) {
+        if (opts.outputStepInterval > 0 && !explicitTimes &&
+            (ssaStepCount % opts.outputStepInterval) == 0) {
             result.timePoints.push_back(t);
             result.concentrations.push_back(y);
         }
+
+        if (stopIfExpr.has_value() &&
+            stopConditionMet(*stopIfExpr, t, y)) {
+            stoppedEarly = true;
+            break;
+        }
     }
 
-    if (opts.outputStepInterval > 0) {
-        // Record final state at end time
-        result.timePoints.push_back(t);
-        result.concentrations.push_back(y);
+    if (opts.outputStepInterval > 0 && !explicitTimes) {
+        // Record final state at the actual stopping time.
+        appendEventState();
     } else {
-        // Record final state if we haven't already (uniform time-interval mode)
-        while (nextOutputStep <= opts.nSteps) {
-            result.timePoints.push_back(opts.tStart + nextOutputStep * dt);
-            result.concentrations.push_back(y);
-            ++nextOutputStep;
+        if (!stoppedEarly) {
+            t = opts.tEnd;
+        }
+        appendScheduledThrough(t);
+        if (stoppedEarly) {
+            appendEventState();
         }
     }
 

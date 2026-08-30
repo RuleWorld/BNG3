@@ -207,6 +207,51 @@ end model
         result = _cpp.simulate_ssa(model, network, t_end=10.0, n_steps=50, seed=42)
         assert "time" in result
 
+    def test_simulation_output_controls(self, tmp_path):
+        bngl = tmp_path / "controls.bngl"
+        bngl.write_text("""
+begin model
+begin parameters
+    k 0.1
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 100
+end seed species
+begin observables
+    Molecules Xtot X()
+end observables
+begin reaction rules
+    X() -> 0 k
+end reaction rules
+end model
+""")
+        model = _cpp.parse_file(str(bngl))
+        network = _cpp.generate_network(model)
+        sample_times = [0.0, 0.25, 1.5, 10.0]
+
+        ode = _cpp.simulate_ode(
+            model, network, t_end=10.0, n_steps=0, sample_times=sample_times
+        )
+        assert ode["time"].tolist() == sample_times
+
+        ssa = _cpp.simulate_ssa(
+            model,
+            network,
+            t_end=10.0,
+            n_steps=0,
+            sample_times=sample_times,
+            seed=42,
+        )
+        assert ssa["time"].tolist() == sample_times
+
+        with pytest.raises(RuntimeError, match="stop_if"):
+            _cpp.simulate_ode(
+                model, network, t_end=1.0, n_steps=1, stop_if="Xtot <"
+            )
+
     @pytest.mark.parametrize("method", ["pla", "psa"])
     def test_approximate_simulation_respects_start_time(self, tmp_path, method):
         bngl = tmp_path / f"{method}.bngl"
@@ -369,6 +414,22 @@ end model
         assert result.n_steps == 51
         assert len(result.observable_names) >= 1
 
+        sample_times = [0.0, 0.25, 1.5, 10.0]
+        result = model.simulate(
+            method="ode", t_end=10.0, n_steps=0, sample_times=sample_times
+        )
+        assert result.time.tolist() == sample_times
+
+        result = model.simulate(
+            method="ssa", t_end=10.0, n_steps=0, sample_times=sample_times, seed=42
+        )
+        assert result.time.tolist() == sample_times
+
+        with pytest.raises(ValueError, match="only for method='ssa'"):
+            model.simulate(
+                method="ode", t_end=1.0, n_steps=1, max_sim_steps=1
+            )
+
         for method in ["pla", "psa"]:
             result = model.simulate(method=method, t_start=2.0, t_end=4.0, n_steps=2)
             assert result.time[0] == pytest.approx(2.0)
@@ -400,6 +461,40 @@ end model
 """)
         model = bionetgen.load(str(bngl))
         model.set_parameter("k", 0.5)
+
+    def test_action_simulation_honors_sample_times(self, tmp_path):
+        bngl = tmp_path / "action_controls.bngl"
+        bngl.write_text("""
+begin model
+begin parameters
+    k 0.1
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 100
+end seed species
+begin observables
+    Molecules Xtot X()
+end observables
+begin reaction rules
+    X() -> 0 k
+end reaction rules
+begin actions
+    simulate_ode({prefix=>"sample",t_start=>0,t_end=>2,sample_times=>[0,0.25,1.5,2]})
+end actions
+end model
+""")
+
+        model = bionetgen.load(str(bngl))
+        model.execute()
+        rows = [
+            line.split()
+            for line in (tmp_path / "sample.gdat").read_text().splitlines()
+            if line and not line.startswith("#")
+        ]
+        assert [float(row[0]) for row in rows] == [0.0, 0.25, 1.5, 2.0]
 
 
 class TestIO:
