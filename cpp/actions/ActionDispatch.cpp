@@ -25,6 +25,7 @@
 #include "io/XmlWriter.hpp"
 #include "io/BnglWriter.hpp"
 #include "io/NetReader.hpp"
+#include "io/SbmlReader.hpp"
 #include "io/SbmlWriter.hpp"
 #include "io/SbmlMultiWriter.hpp"
 #include "io/MatlabWriter.hpp"
@@ -148,6 +149,72 @@ std::string readArgument(const ast::Action& action, const std::string& key, cons
         return fallback;
     }
     return found->second;
+}
+
+engine::GeneratedNetwork networkFromParsedData(
+    const io::NetReader::ParseResult& parseResult, ast::Model& model) {
+    engine::GeneratedNetwork loadedNetwork;
+    for (const auto& [pattern, concStr] : parseResult.species) {
+        bool isConstant = false;
+        std::string cleanPattern = pattern;
+        if (!cleanPattern.empty() && cleanPattern[0] == '$') {
+            isConstant = true;
+            cleanPattern = cleanPattern.substr(1);
+        }
+        BNGcore::PatternGraph pg;
+        pg.set_raw_string(cleanPattern);
+        ast::SpeciesGraph sg(std::move(pg));
+        double concentration = 0.0;
+        try {
+            concentration = std::stod(concStr);
+        } catch (...) {
+            try {
+                concentration = model.getParameters().evaluate(concStr);
+            } catch (...) {
+                concentration = 0.0;
+            }
+        }
+        ast::Species sp(std::move(sg), concentration, isConstant);
+        loadedNetwork.species.add(std::move(sp));
+    }
+
+    for (const auto& rxnLine : parseResult.reactions) {
+        std::istringstream iss(rxnLine);
+        std::string idxStr, reactantsStr, productsStr, rateStr;
+        iss >> idxStr >> reactantsStr >> productsStr;
+        std::getline(iss, rateStr);
+        auto rateStart = rateStr.find_first_not_of(" \t");
+        if (rateStart != std::string::npos) {
+            rateStr = rateStr.substr(rateStart);
+        }
+        const auto commentPos = rateStr.find('#');
+        if (commentPos != std::string::npos) {
+            rateStr = rateStr.substr(0, commentPos);
+        }
+        while (!rateStr.empty() && std::isspace(rateStr.back())) {
+            rateStr.pop_back();
+        }
+
+        std::vector<std::size_t> reactants;
+        if (reactantsStr != "0") {
+            std::istringstream rss(reactantsStr);
+            std::string token;
+            while (std::getline(rss, token, ',')) {
+                reactants.push_back(std::stoul(token) - 1);
+            }
+        }
+        std::vector<std::size_t> products;
+        if (productsStr != "0") {
+            std::istringstream pss(productsStr);
+            std::string token;
+            while (std::getline(pss, token, ',')) {
+                products.push_back(std::stoul(token) - 1);
+            }
+        }
+        loadedNetwork.reactions.add(
+            ast::Rxn(idxStr, reactants, products, rateStr));
+    }
+    return loadedNetwork;
 }
 
 std::string resolveSimulationMethod(const ast::Action& action) {
@@ -682,7 +749,8 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 path = sourcePath.parent_path() / filepath;
             }
 
-            if (path.extension() == ".net") {
+            const auto extension = lowercase(path.extension().string());
+            if (extension == ".net") {
                 // Parse .net file
                 auto parseResult = io::NetReader::parse(path);
                 if (!parseResult.success) {
@@ -774,7 +842,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                     std::cerr << "[bng_cpp]   Species: " << network->species.size() << "\n";
                     std::cerr << "[bng_cpp]   Reactions: " << network->reactions.size() << "\n";
                 }
-            } else if (path.extension() == ".bngl") {
+            } else if (extension == ".bngl") {
                 auto includedModel = bng::parser::parseModelFromFile(path.string());
                 model.merge(*includedModel);
                 model.getParameters().evaluateAll();
@@ -786,6 +854,34 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                     std::cerr << "[bng_cpp]   Observables: " << includedModel->getObservables().size() << "\n";
                     std::cerr << "[bng_cpp]   Reaction rules: " << includedModel->getReactionRules().size() << "\n";
                     std::cerr << "[bng_cpp]   Functions: " << includedModel->getFunctions().size() << "\n";
+                }
+            } else if (extension == ".xml") {
+                const auto atomizeText = lowercase(
+                    trim(stripQuotes(readArgument(action, "atomize", "0"))));
+                const bool atomize = atomizeText == "1" || atomizeText == "true" ||
+                    atomizeText == "yes" || atomizeText == "on";
+                auto parseResult = io::SbmlReader::parse(path, atomize);
+                if (!parseResult.success) {
+                    throw std::runtime_error(
+                        "Failed to read SBML file: " + parseResult.error);
+                }
+                for (const auto& [name, value] : parseResult.parameters) {
+                    model.getParameters().add(
+                        ast::Parameter(name, ast::Expression::number(value)));
+                }
+                for (const auto& [name, expression] : parseResult.functions) {
+                    model.addFunction(ast::Function(
+                        name, {}, bng::parser::parseExpression(expression)));
+                }
+                model.getParameters().evaluateAll();
+                network = networkFromParsedData(parseResult, model);
+                loadedNetData = std::move(parseResult);
+                if (verbose) {
+                    std::cerr << "[bng_cpp] Read flat SBML file: " << path << "\n";
+                    std::cerr << "[bng_cpp]   Parameters: "
+                              << loadedNetData->parameters.size() << "\n";
+                    std::cerr << "[bng_cpp]   Species: " << network->species.size() << "\n";
+                    std::cerr << "[bng_cpp]   Reactions: " << network->reactions.size() << "\n";
                 }
             } else {
                 throw std::runtime_error("readFile: unsupported file type: " + path.extension().string());
@@ -985,7 +1081,6 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 }
             }
 
-            network = generator.generate(sourcePath);
             const auto evalExprText = readArgument(action, "evaluate_expressions", "1");
             bool evalExpr = true;
             {
@@ -994,6 +1089,15 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             }
             io::NetWriterOptions writerOptions;
             writerOptions.evaluateExpressions = evalExpr;
+            if (loadedNetData.has_value() && network.has_value()) {
+                // readFile(.net/.xml) already supplied a concrete network.  Keep
+                // that network when the following generate_network action is
+                // explicitly requested with overwrite=1; regenerating from the
+                // action-only model would silently discard the imported graph.
+                writeCurrentNetwork(writerOptions);
+                continue;
+            }
+            network = generator.generate(sourcePath);
             writeCurrentNetwork(writerOptions);  // Triggers NetWriter::buildDerivedRateParams
             continue;
         }

@@ -67,6 +67,7 @@ add_library(bng_engine STATIC
     engine/HybridModelGenerator.cpp
     io/NetWriter.cpp
     io/NetReader.cpp
+    io/SbmlReader.cpp
     io/XmlWriter.cpp
     io/BnglWriter.cpp
     io/SbmlWriter.cpp
@@ -90,6 +91,7 @@ add_library(bng_engine STATIC
 )
 target_include_directories(bng_engine PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/nfsim/NFinput/TinyXML
     ${ANTLR_GEN_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/parser
     ${antlr4_runtime_SOURCE_DIR}/runtime/Cpp/runtime/src
@@ -108,6 +110,7 @@ target_link_libraries(bng_engine PUBLIC
     sundials_sunmatrixdense_static
 )
 target_compile_definitions(bng_engine PUBLIC BNG_CPP_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+target_compile_definitions(bng_engine PUBLIC TIXML_USE_STL)
 
 # =============================================================================
 # nfsim_core (Network-free stochastic simulator)

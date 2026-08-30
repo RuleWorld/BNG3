@@ -26,6 +26,12 @@ def _norm(s: str) -> str:
     return _WS.sub(" ", s.strip())
 
 
+def _rate_definition_key(name: str) -> str:
+    """Normalize .net function definitions to the names used in rate fields."""
+    key = _norm(name)
+    return key[:-2] if key.endswith("()") else key
+
+
 # --------------------------------------------------------------------------- #
 # .net parsing
 # --------------------------------------------------------------------------- #
@@ -126,6 +132,9 @@ def _resolve_rate(token: str, rate_defs: dict[str, str], rate_mode: str) -> str:
 
 # Tokenizer for simple rate arithmetic: numbers, identifiers, operators, parens.
 _TOKEN = re.compile(r"[A-Za-z_]\w*|\d+\.?\d*(?:[eE][+-]?\d+)?|[()+\-*/^,]|\S")
+_NUMBER_TOKEN = re.compile(
+    r"(?<![A-Za-z_])(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?(?![A-Za-z_])"
+)
 
 
 def _eval_symbol(name: str, defs: dict[str, str], seen: set[str]):
@@ -217,8 +226,88 @@ def _safe_arith(expr: str) -> float:
 
 
 def _canon_expr(expr: str) -> str:
-    """Whitespace/format-insensitive canonical form for a rate expression."""
-    return re.sub(r"\s+", "", expr)
+    """Canonicalize harmless numeric and parenthesis serialization differences."""
+    result = re.sub(r"\s+", "", expr)
+
+    def strip_outer_parentheses(value: str) -> str:
+        while value.startswith("(") and value.endswith(")"):
+            depth = 0
+            encloses_all = True
+            for index, char in enumerate(value):
+                if char == "(":
+                    depth += 1
+                elif char == ")":
+                    depth -= 1
+                    if depth == 0 and index != len(value) - 1:
+                        encloses_all = False
+                        break
+            if not encloses_all or depth != 0:
+                break
+            value = value[1:-1]
+        return value
+
+    # BNG2 and BNG3 can wrap the same function argument or whole expression
+    # with different numbers of redundant parentheses.
+    result = strip_outer_parentheses(result)
+
+    def strip_negative_product_parentheses(value: str) -> str:
+        while True:
+            changed = False
+            for index in range(len(value) - 1):
+                if value[index : index + 2] != "-(":
+                    continue
+                depth = 0
+                has_top_level_product = False
+                matching = None
+                for end in range(index + 1, len(value)):
+                    char = value[end]
+                    if char == "(":
+                        depth += 1
+                    elif char == ")":
+                        depth -= 1
+                        if depth == 0:
+                            matching = end
+                            break
+                    elif char == "*" and depth == 1:
+                        has_top_level_product = True
+                if matching is not None and has_top_level_product:
+                    value = (
+                        value[:index]
+                        + "-"
+                        + value[index + 2 : matching]
+                        + value[matching + 1 :]
+                    )
+                    changed = True
+                    break
+            if not changed:
+                return value
+
+    result = strip_negative_product_parentheses(result)
+    while True:
+        changed = False
+        for index in range(len(result) - 1):
+            if result[index] == "(" and result[index + 1] == "(":
+                inner_depth = 0
+                for end in range(index + 1, len(result)):
+                    if result[end] == "(":
+                        inner_depth += 1
+                    elif result[end] == ")":
+                        inner_depth -= 1
+                        if inner_depth == 0:
+                            if end + 1 < len(result) and result[end + 1] == ")":
+                                result = result[:index] + result[index + 1 : end + 1] + result[end + 2 :]
+                                changed = True
+                            break
+                if changed:
+                    break
+        if not changed:
+            break
+
+    def normalize_number(match: re.Match[str]) -> str:
+        normalized = format(float(match.group(0)), ".15g")
+        return "0" if normalized in {"-0", "-0.0"} else normalized
+
+    return _NUMBER_TOKEN.sub(normalize_number, result)
 
 
 def split_species(s: str) -> list[str]:
@@ -794,12 +883,12 @@ def parse_net(path: str | Path, *, rate_mode: str = "value") -> Network | None:
             # "<name> <expr...>" or "<name>=<expr>".
             if "=" in stripped and len(parts) >= 1 and "=" in parts[0]:
                 name, _, expr = stripped.partition("=")
-                rate_defs[_norm(name)] = _norm(expr)
+                rate_defs[_rate_definition_key(name)] = _norm(expr)
                 continue
             if len(parts) >= 3 and parts[0].isdigit():
-                rate_defs[parts[1]] = " ".join(parts[2:])
+                rate_defs[_rate_definition_key(parts[1])] = " ".join(parts[2:])
             elif len(parts) >= 2:
-                rate_defs[parts[0]] = " ".join(parts[1:])
+                rate_defs[_rate_definition_key(parts[0])] = " ".join(parts[1:])
 
         elif section == "groups":
             parts = _norm(stripped).split(" ", 2)

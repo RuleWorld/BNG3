@@ -9,7 +9,7 @@
 TEST_CASE("SBML reader imports a flat reaction network", "[SbmlReader]") {
     const auto path = std::filesystem::temp_directory_path() / "bng3_sbml_reader_test.xml";
     std::ofstream out(path);
-    out << R"(<?xml version="1.0"?>
+    out << R"xml(<?xml version="1.0"?>
 <sbml xmlns="http://www.sbml.org/sbml/level2/version3" level="2" version="3">
   <model id="flat">
     <listOfCompartments><compartment id="cell" size="1"/></listOfCompartments>
@@ -17,6 +17,9 @@ TEST_CASE("SBML reader imports a flat reaction network", "[SbmlReader]") {
       <species id="S1" compartment="cell" initialAmount="2" name="A()"/>
     </listOfSpecies>
     <listOfParameters><parameter id="k" value="3"/></listOfParameters>
+    <listOfRules>
+      <assignmentRule variable="dim"><math xmlns="http://www.w3.org/1998/Math/MathML"><ci>k</ci></math></assignmentRule>
+    </listOfRules>
     <listOfReactions>
       <reaction id="R1" reversible="false">
         <listOfReactants><speciesReference species="S1"/></listOfReactants>
@@ -27,7 +30,7 @@ TEST_CASE("SBML reader imports a flat reaction network", "[SbmlReader]") {
       </reaction>
     </listOfReactions>
   </model>
-</sbml>)";
+</sbml>)xml";
     out.close();
 
     const auto parsed = bng::io::SbmlReader::parse(path);
@@ -35,6 +38,9 @@ TEST_CASE("SBML reader imports a flat reaction network", "[SbmlReader]") {
 
     REQUIRE(parsed.success);
     REQUIRE(parsed.parameters.at("k") == 3.0);
+    REQUIRE(parsed.functions.size() == 1);
+    CHECK(parsed.functions.front().first == "dim");
+    CHECK(parsed.functions.front().second == "k");
     REQUIRE(parsed.species.size() == 1);
     CHECK(parsed.species.front().first == "@cell::A____()");
     CHECK(parsed.species.front().second == "2");
