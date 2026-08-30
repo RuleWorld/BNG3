@@ -33,7 +33,7 @@ python scripts/regen_golden.py --tier p              # (re)build golden, reviewe
 Engine discovery: `--bng-cpp PATH` / `BNG_CPP` for the CLI; `import bionetgen` for the API.
 
 ## What each gate proves
-- `test_parity_net` — WO-1a. Active expected failures come only from `exceptions.json`; each is signature-checked and an unexpected pass fails. The current ledger contains `blbr` (+26 reactions). `Motivating_example_cBNGL` was removed from the exception set when rate normalization eliminated its prior mismatch.
+- `test_parity_net` — WO-1a. Active expected failures come only from `exceptions.json`; each is signature-checked and an unexpected pass fails. The current ledger is empty: `blbr` now compares equal under structural species identity, including its symmetry-heavy bond-label orientations.
 - `test_parity_ode` — ODE rel-err <= 1e-6 vs Perl.
 - `test_parity_stochastic` — seeded determinism + fixed-seed ensembles (at least
   200 members per side) within mean +/- 3 SE. A single `.gdat` is never treated
@@ -43,7 +43,7 @@ Engine discovery: `--bng-cpp PATH` / `BNG_CPP` for the CLI; `import bionetgen` f
 - `test_export_formats` — WO-5. BNG-XML/SBML valid, `.net` idempotent.
 
 ## Comparator notes
-`.net` reactions are keyed by **species strings**, not indices, so networks equal up to ordering compare equal and a failed merge (the over-count) compares unequal. Verified: a duplicated reaction is detected and named.
+`.net` reactions are keyed by structural species identity, not indices or raw bond-label strings. Molecule/site order and explicit bond numbers are ignored; site states, compartments, connectivity, stoichiometry, multiplicity, and rate values remain significant. A duplicated reaction is detected and named.
 
 ## Exceptions
 `exceptions.json` is the only expected-failure ledger. Every entry names exact tests, model, method/platform scope, tracking URL, technical reason, owner, introduction/review dates, and expected assertion signature. `exception_ledger.py` rejects incomplete, duplicate, expired, or stale references and exposes `--max-exceptions` for a non-increasing budget gate.

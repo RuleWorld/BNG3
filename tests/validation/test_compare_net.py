@@ -96,6 +96,7 @@ def test_network_comparison_uses_graph_identity_for_reactions(tmp_path):
             + "\n",
             encoding="utf-8",
         )
+        return path
 
     reference = parse_net(
         write(
