@@ -16,7 +16,15 @@ def main():
 
 
 @main.command()
-@click.argument("model", type=click.Path(exists=True))
+@click.argument("model", required=False, type=click.Path(exists=True))
+@click.option(
+    "--input",
+    "-i",
+    "input_path",
+    default=None,
+    type=click.Path(exists=True),
+    help="Legacy PyBioNetGen input path (use with an output directory).",
+)
 @click.option(
     "--method",
     "-m",
@@ -48,6 +56,7 @@ def main():
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output.")
 def run(
     model,
+    input_path,
     method,
     t_start,
     t_end,
@@ -61,6 +70,25 @@ def run(
     verbose,
 ):
     """Run a BNGL model simulation."""
+    if input_path is not None:
+        if model is not None:
+            raise click.UsageError("provide either MODEL or --input, not both")
+        from bionetgen.compat.runner import run as compatibility_run
+
+        try:
+            result = compatibility_run(
+                input_path,
+                out=output or ".",
+                suppress=not verbose,
+            )
+        except Exception as exc:
+            raise click.ClickException(str(exc)) from exc
+        click.echo(f"Results written to {result.path}")
+        return
+
+    if model is None:
+        raise click.UsageError("MODEL or --input is required")
+
     from bionetgen import load
 
     path = str(Path(model).resolve())
