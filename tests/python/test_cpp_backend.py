@@ -383,6 +383,34 @@ end model
         with pytest.raises(RuntimeError, match="direct AST initialization required"):
             _cpp.simulate_nf(model, t_end=1.0, n_steps=1)
 
+    def test_simulate_method_nf_uses_nf_route(self, tmp_path, monkeypatch):
+        bngl = tmp_path / "action_nf.bngl"
+        bngl.write_text(
+            """
+begin model
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 1
+end seed species
+begin observables
+    Molecules X_total X()
+end observables
+begin actions
+    simulate({method=>"nf",suffix=>"route",t_end=>1,n_steps=>2,seed=>1})
+end actions
+end model
+"""
+        )
+        monkeypatch.setenv("BNG_NFSIM_REQUIRE_DIRECT", "1")
+
+        model = bionetgen.load(str(bngl))
+        model.execute()
+
+        assert (tmp_path / "action_nf_route.gdat").exists()
+        assert (tmp_path / "action_nf_route.species").exists()
+
 
 class TestHighLevelAPI:
     def test_load_and_simulate(self, tmp_path):

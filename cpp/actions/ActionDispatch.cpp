@@ -1170,6 +1170,12 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             if (protoName == "simulate" || protoName == "simulate_ode" ||
                 protoName == "simulate_ssa" || protoName == "simulate_pla" ||
                 protoName == "simulate_psa") {
+                if (protoName == "simulate" &&
+                    resolveSimulationMethod(protoAction) == "nf") {
+                    throw std::runtime_error(
+                        "simulate_protocol does not yet support simulate_nf; use a "
+                        "standalone simulate_nf action");
+                }
                 ensureNetwork();
                 ast::Action actualAction = protoAction;
                 if (protoName == "simulate_pla" || protoName == "simulate_psa") {
@@ -1998,7 +2004,8 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             continue;
         }
 
-        if (actionName == "simulate_nf") {
+        if (actionName == "simulate_nf" ||
+            (actionName == "simulate" && resolveSimulationMethod(action) == "nf")) {
             const auto prefix = simulationPrefix(action, sourcePath);
             const auto xmlPath = sourcePath.parent_path() / (prefix + ".xml");
 
