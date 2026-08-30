@@ -41,6 +41,11 @@ Completed slices now present in BNG3 include:
 - Legacy NFsim zero-order synthesis semantics, including explicit product
   operations, compartment-volume/NumberPerQuantityUnit scaling, and direct/XML
   parity; partial parameter-scan ranges now preserve explicit-list behavior.
+- Legacy NFsim compatibility flags are now parsed through a bounded in-process
+  adapter, complex bookkeeping is separated from ring-blocking semantics, and
+  the Michaelis-Menten propensity uses a cancellation-safe tiny-Km root.
+- BNGL models without a molecule-types block now infer component multiplicity
+  and numeric state ranges across all patterns before graph materialization.
 - Python scan and sensitivity forwarding for sample times, stopping, solver
   limits, sparse/check controls, and parallel worker payloads.
 - Modern SymPy ODE export through the canonical C++ MEX writer, strict action
@@ -51,8 +56,8 @@ Completed slices now present in BNG3 include:
 
 Local evidence at this checkpoint:
 
-- CTest: 114/114 tests passed.
-- Fast Python suite (`-m 'not slow'`): 144 passed, 27 skipped.
+- CTest: 116/116 tests passed.
+- Fast Python suite (`-m 'not slow'`): 146 passed, 27 skipped.
 - Direct-vs-in-memory-XML NFsim shadow suite: 4/4 passed with the built native
   NFsim executable available for the separate oracle gate.
 - Ruff passed with `--no-cache`; the repository Ruff cache is not writable in
@@ -285,7 +290,7 @@ The work therefore starts from an incomplete convergence, not from four empty re
 | Golden references | The validation corpus and BNG2 `.net` references are present, but a reviewed provenance-complete release golden bundle is not frozen. | Build provenance-aware oracle generation before using parity as a release claim. |
 | Stochastic parity | Seeded determinism and 200-run local smoke comparisons are covered for selected NFsim models; the full distributional gate is not complete. | Keep fixed ensembles and pooled independent-ensemble error rules; execution success is insufficient. |
 | RuleHub integration | A pinned RuleHub revision and selection manifest are committed, but both remain pending maintainer approval. | Approve selectors and external tier membership before release use. |
-| CI truthfulness | Local C++/Python/Ruff gates pass; deterministic validation has one explicit structured-SBML error; hosted CI has not been rerun on the current unpushed branch. No CodeQL workflow is present. | Resolve or govern the SBML gap, add security coverage, and rerun on the exact pushed SHA before claiming completion. |
+| CI truthfulness | Local C++/Python/Ruff gates pass; deterministic validation has one explicit structured-SBML error; hosted CI has not been rerun on the current unpushed branch. The CodeQL workflow is configured locally but has no current hosted result. | Resolve or govern the SBML gap, run the security workflow on the exact pushed SHA, and rerun hosted CI before claiming completion. |
 | Documentation | The architecture document, unification spec, analysis notes, and live implementation disagree in places. | Add documentation consistency checks and name one governing decision record. |
 | Packaging | Shared-extension static linking was corrected locally and the Python/CLI smoke paths pass; current hosted wheel evidence is stale. | Re-run clean wheel, CLI, import, and embedded-data gates on the current SHA. |
 
@@ -681,7 +686,7 @@ Each phase has deliverables and an exit gate. Later phases may prepare in parall
 | Phase | Status | Evidence and next gate |
 |---|---|---|
 | 0 — authority/common ground | In progress | Individual BNG2/NFsim source paths are being used for semantic decisions; the accepted source lock, complete reconciliation ledger, owners, and RuleHub selection manifest remain open. |
-| 1 — honest green CI | In progress | Local CTest 114/114, fast Python 144 passed/27 skipped, and Ruff pass; deterministic validation has one explicit structured-SBML error, hosted CI is stale for this branch, and CodeQL awaits a hosted run. |
+| 1 — honest green CI | In progress | Local CTest 116/116, fast Python 146 passed/27 skipped, and Ruff pass; deterministic validation has one explicit structured-SBML error, hosted CI is stale for this branch, and CodeQL awaits a hosted run. |
 | 2 — independent validation | In progress | Structural BNG2 `.net` comparison, native NFsim seeded smoke ensembles, pooled-error comparator coverage, and provenance scaffolding exist; the reviewed golden bundle and complete independent-oracle gate remain open. |
 | 4 — semantic core | In progress | BNG2-derived deletion, bond-cardinality, product-molecularity, symmetry, compartment, dynamic-rate, protocol, scan, and sensitivity slices are implemented; broader source differential coverage remains open. |
 | 5 — direct NFsim | In progress | Typed AST-to-NFsim construction and direct-vs-XML tests cover a substantial subset; full Tier-NF coverage, native-oracle parity, protocol NF support, and XML-path retirement remain open. |
