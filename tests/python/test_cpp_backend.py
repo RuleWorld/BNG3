@@ -411,6 +411,33 @@ end model
         assert (tmp_path / "action_nf_route.gdat").exists()
         assert (tmp_path / "action_nf_route.species").exists()
 
+    def test_action_rejects_unknown_simulation_method(self, tmp_path):
+        bngl = tmp_path / "unknown_method.bngl"
+        bngl.write_text(
+            """
+begin model
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 1
+end seed species
+begin observables
+    Molecules X_total X()
+end observables
+begin reaction rules
+    X() -> 0 1
+end reaction rules
+begin actions
+    simulate({method=>"not_a_method",t_end=>1,n_steps=>1})
+end actions
+end model
+"""
+        )
+
+        with pytest.raises(RuntimeError, match="unsupported simulation method"):
+            bionetgen.load(str(bngl)).execute()
+
 
 class TestHighLevelAPI:
     def test_load_and_simulate(self, tmp_path):

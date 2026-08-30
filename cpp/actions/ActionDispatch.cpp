@@ -561,7 +561,11 @@ std::string resolveSimulationMethod(const ast::Action& action) {
     if (method == "nf") {
         return "nf";
     }
-    return method;
+    if (method == "cvode" || method == "ssa" || method == "euler" ||
+        method == "rk4" || method == "psa") {
+        return method;
+    }
+    throw std::runtime_error("simulate: unsupported simulation method: " + method);
 }
 
 std::optional<std::size_t> findSpeciesIndex(const engine::GeneratedNetwork& network, const std::string& target) {
