@@ -3,10 +3,10 @@
 **Status:** Active implementation; convergence foundation and direct NFsim migration in progress
 **Plan date:** 2026-08-28
 **Scope:** BioNetGen, NFsim, and PyBioNetGen convergence into one maintained BNG3 codebase
-**Last progress update:** 2026-08-29
+**Last progress update:** 2026-08-30
 **Implementation:** The current branch owns the active port; this document remains the authoritative backlog and completion contract. Section 11 is not yet satisfied.
 
-## Implementation progress checkpoint — 2026-08-29
+## Implementation progress checkpoint — 2026-08-30
 
 The branch `codex/bng3-integration-foundations` has advanced from the initial
 foundation into source-led semantic porting. The individual BioNetGen and
@@ -35,34 +35,42 @@ Completed slices now present in BNG3 include:
 - Validation improvements that key network reactions by species content and
   pool independent stochastic-ensemble standard errors. This does not relax
   scientific thresholds or replace structural parity with string matching.
+- Protocol and parameter-scan actions with explicit value/range precedence,
+  per-point state isolation, final-observable `.scan` output, and strict
+  sensitivity `.gsc`/`.csc` artifacts.
+- Python scan and sensitivity forwarding for sample times, stopping, solver
+  limits, sparse/check controls, and parallel worker payloads.
+- Modern SymPy ODE export through the canonical C++ MEX writer, strict action
+  method validation, and explicit compatibility errors for unsupported
+  simulator types or missing RoadRunner.
+- Legacy runner boundaries that preserve C++ parse/execution failures and do
+  not return an empty successful result when neither backend is available.
 
 Local evidence at this checkpoint:
 
-- CTest: 105/105 tests passed.
-- Python suite: 101 passed, 27 skipped.
-- Black check: 150 files unchanged; Ruff passed.
-- Targeted mypy over the validation comparator/oracle modules: no issues.
+- CTest: 113/113 tests passed.
+- Fast Python suite (`-m 'not slow'`): 125 passed, 27 skipped.
+- Ruff passed with `--no-cache`; the repository Ruff cache is not writable in
+  this checkout.
+- The deterministic validation command reports 71 models: 40 passes, 0
+  mismatches, 1 explicit error, and 30 skips.
 - Native NFsim/API seeded ensemble smoke tests passed for `simple_system` and
   `localfunc` at 200 runs. The larger `motor` diagnostic was not completed
   within the local runtime budget and is not counted as evidence.
 
-The exact validation command currently reports 71 models, 32 passes, 4
-failures, and 35 skips. The remaining failures are deliberately visible:
+The sole validation error is deliberately visible:
 
-- `Motivating_example_cBNGL`: two cross-compartment binding reactions still
-  need source-faithful rejection or product-compartment handling.
-- `blbr`: reaction count is now the BNG2 value of 92; remaining text differs
-  in canonical bond-label orientation and needs structural comparison aligned
-  with BNG2 `SpeciesList::lookup(check_iso)` semantics.
-- `test_network_gen` and `tlbr`: reaction counts match; canonical species
-  labels still differ and require an explicit graph-equivalence audit rather
-  than ad hoc string normalization.
+- `test_sbml_structured`: the C++ flat SBML reader rejects
+  `atomize=>1` explicitly because structured SBML still requires the Python
+  atomizer path. The historical reference uses different inferred molecule
+  naming/topology, so the oracle is not weakened and the error remains a
+  tracked P5 gap.
 
 Hosted CI has not been rerun for this checkpoint because the branch has not
 been pushed after these changes. Earlier PR results predate the current link,
-engine, and adapter fixes and must not be reported as current evidence. No
-CodeQL workflow is configured in the checked tree; adding it to the required
-CI contract remains open.
+engine, adapter, scan, and runner fixes and must not be reported as current
+evidence. No CodeQL workflow is configured in the checked tree; adding it to
+the required CI contract remains open.
 
 ## Completion charter — port everything
 
@@ -263,16 +271,16 @@ The work therefore starts from an incomplete convergence, not from four empty re
 
 | Area | Current condition | Planning consequence |
 |---|---|---|
-| Source provenance | No single lock file records all imported source revisions and reconciliation status. | Freeze and record the common ground before further convergence. |
+| Source provenance | `provenance/upstreams.lock.yml` records the observed source revisions, but maintainer approval and oracle artifacts remain pending. | Review and approve the lock before using it as a release cutoff. |
 | Direct NFsim bridge | `NFinput_fromAst.cpp` now maps a substantial typed subset: options, parameters, compartments, molecule types, functions, observables, seed species, rules, transformations, filters, dynamic rates, and symmetry. | Keep unsupported forms explicit and finish independent BNG2/NFsim differential coverage before declaring the adapter complete. |
 | Active NFsim path | The direct adapter and XML bridge both exist; XML remains needed for shadow comparison and compatibility while direct parity is incomplete. | Keep the XML path as a temporary comparator, then remove it from the default runtime only after the Tier-NF gate passes. |
-| Graph identity | BioNetGen network canonicalization and NFsim complex identity remain different scientific contracts; several current `.net` failures are label-orientation differences. | Use the individual BNG2/NFsim implementations as authority and compare graph identity structurally, without forcing one unproven high-level labeling algorithm onto both engines. |
+| Graph identity | Structural `.net` comparison now passes the available deterministic models; BNG2/NFsim identity contracts still need broader differential coverage. | Expand independent corpus coverage without replacing graph comparison with string matching. |
 | Expression evaluation | Several dynamic global, local, TFUN, composite, and bounded rate forms are direct; the full shared expression contract is not complete. | Preserve fail-closed behavior for unsupported forms and define one expression contract before removing specialized evaluators. |
 | Python convergence | Legacy `core`, `modelapi`, `network`, and `simulator` trees remain. | Inventory public compatibility before deletion; use contract tests to govern removal. |
 | Golden references | The validation corpus and BNG2 `.net` references are present, but a reviewed provenance-complete release golden bundle is not frozen. | Build provenance-aware oracle generation before using parity as a release claim. |
 | Stochastic parity | Seeded determinism and 200-run local smoke comparisons are covered for selected NFsim models; the full distributional gate is not complete. | Keep fixed ensembles and pooled independent-ensemble error rules; execution success is insufficient. |
-| RuleHub integration | The local corpus loader does not use a pinned RuleHub snapshot. | Add an exact RuleHub revision and generated selection manifest. |
-| CI truthfulness | Local C++/Python/lint/type gates pass, but exact network validation still has four visible failures and hosted CI has not been rerun on the current unpushed branch. No CodeQL workflow is present. | Make required CI honest and green, add security coverage, and rerun it on the exact pushed SHA before claiming completion. |
+| RuleHub integration | A pinned RuleHub revision and selection manifest are committed, but both remain pending maintainer approval. | Approve selectors and external tier membership before release use. |
+| CI truthfulness | Local C++/Python/Ruff gates pass; deterministic validation has one explicit structured-SBML error; hosted CI has not been rerun on the current unpushed branch. No CodeQL workflow is present. | Resolve or govern the SBML gap, add security coverage, and rerun on the exact pushed SHA before claiming completion. |
 | Documentation | The architecture document, unification spec, analysis notes, and live implementation disagree in places. | Add documentation consistency checks and name one governing decision record. |
 | Packaging | Shared-extension static linking was corrected locally and the Python/CLI smoke paths pass; current hosted wheel evidence is stale. | Re-run clean wheel, CLI, import, and embedded-data gates on the current SHA. |
 
@@ -663,15 +671,15 @@ Use Jules Playground as a valuable independently implemented differential target
 
 Each phase has deliverables and an exit gate. Later phases may prepare in parallel, but deletion and authority changes follow the stated dependencies.
 
-### Current phase status — 2026-08-29
+### Current phase status — 2026-08-30
 
 | Phase | Status | Evidence and next gate |
 |---|---|---|
 | 0 — authority/common ground | In progress | Individual BNG2/NFsim source paths are being used for semantic decisions; the accepted source lock, complete reconciliation ledger, owners, and RuleHub selection manifest remain open. |
-| 1 — honest green CI | In progress | Local CTest, Python, formatting, Ruff, and targeted mypy pass; exact network validation has 4 visible failures, hosted CI is stale for this branch, and CodeQL is not yet configured. |
-| 2 — independent validation | In progress | BNG2 `.net` corpus comparison, native NFsim seeded smoke ensembles, pooled-error comparator coverage, and provenance scaffolding exist; the reviewed golden bundle and complete independent-oracle gate remain open. |
-| 4 — semantic core | In progress | BNG2-derived deletion, bond-cardinality, product-molecularity, symmetry, compartment, and dynamic-rate slices are implemented; canonical graph-label parity and remaining cBNGL behavior are open. |
-| 5 — direct NFsim | In progress | Typed AST-to-NFsim construction and direct-vs-XML tests cover a substantial subset; full Tier-NF coverage, native-oracle parity, and XML-path retirement remain open. |
+| 1 — honest green CI | In progress | Local CTest 113/113, fast Python 125 passed/27 skipped, and Ruff pass; deterministic validation has one explicit structured-SBML error, hosted CI is stale for this branch, and CodeQL is not yet configured. |
+| 2 — independent validation | In progress | Structural BNG2 `.net` comparison, native NFsim seeded smoke ensembles, pooled-error comparator coverage, and provenance scaffolding exist; the reviewed golden bundle and complete independent-oracle gate remain open. |
+| 4 — semantic core | In progress | BNG2-derived deletion, bond-cardinality, product-molecularity, symmetry, compartment, dynamic-rate, protocol, scan, and sensitivity slices are implemented; broader source differential coverage remains open. |
+| 5 — direct NFsim | In progress | Typed AST-to-NFsim construction and direct-vs-XML tests cover a substantial subset; full Tier-NF coverage, native-oracle parity, protocol NF support, and XML-path retirement remain open. |
 | 6–8 — consolidation/release | Not started | Dependent on the authority, parity, packaging, CI, and provenance exit gates above. |
 
 ### Phase 0 — Establish authority and freeze the common ground
