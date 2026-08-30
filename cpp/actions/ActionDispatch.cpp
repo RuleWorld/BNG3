@@ -379,7 +379,7 @@ void writeSensitivityFile(const std::filesystem::path& baselinePath,
     }
 }
 
-ScanData readLastGdat(const std::filesystem::path& path) {
+ScanData readLastGdat(const std::filesystem::path& path, const ast::Model& model) {
     std::ifstream input(path);
     if (!input) {
         throw std::runtime_error("parameter_scan could not open observable file: " + path.string());
@@ -418,6 +418,15 @@ ScanData readLastGdat(const std::filesystem::path& path) {
         }
     }
 
+    // Native NFsim output is intentionally headerless.  Recover the stable
+    // column contract from the model rather than inventing names or dropping
+    // the data from an NF parameter scan.
+    if (columns.empty()) {
+        columns.push_back("time");
+        for (const auto& observable : model.getObservables()) {
+            columns.push_back(observable.getName());
+        }
+    }
     if (columns.size() < 2 || lastValues.size() != columns.size()) {
         throw std::runtime_error(
             "parameter_scan found an invalid observable file: " + path.string());
@@ -1157,6 +1166,110 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         }
         io::NetWriter::write(outputPath, model, *network, options);
         return outputPath;
+    };
+
+    const auto runNfSimulation = [&](const ast::Action& action) {
+        const auto prefix = simulationPrefix(action, sourcePath);
+        const auto xmlPath = sourcePath.parent_path() / (prefix + ".xml");
+
+        // Parse simulation parameters using the same defaults as the
+        // standalone simulate_nf action.
+        const auto tEnd = stripQuotes(readArgument(action, "t_end", "10"));
+        const auto nSteps = stripQuotes(readArgument(action, "n_steps", "20"));
+        const auto gdatPath = sourcePath.parent_path() / (prefix + ".gdat");
+        const auto seedText = stripQuotes(readArgument(action, "seed", ""));
+        const auto utlText = stripQuotes(readArgument(action, "utl", "3"));
+        const auto verboseFlag = lowercase(stripQuotes(readArgument(action, "verbose", "0")));
+        const auto complexFlag = lowercase(stripQuotes(readArgument(action, "complex", "1")));
+        const auto getFinalState = lowercase(stripQuotes(readArgument(action, "get_final_state", "1")));
+        const bool nfVerbose = verboseFlag == "1" || verboseFlag == "true";
+        const bool useComplex = complexFlag == "1" || complexFlag == "true";
+        const bool evalCSLF = lowercase(stripQuotes(readArgument(action, "nocslf", "0"))) != "1";
+        const bool connectivityFlag = lowercase(stripQuotes(readArgument(action, "pcg", "0"))) == "1";
+
+        int globalMoleculeLimit = 200000;
+        const auto gmlText = stripQuotes(readArgument(action, "gml", ""));
+        if (!gmlText.empty()) {
+            globalMoleculeLimit = std::stoi(gmlText);
+        }
+        int suggestedTraversalLimit = utlText.empty() ? 3 : std::stoi(utlText);
+
+        if (verbose) {
+            std::cerr << "[bng_cpp] Running NFSim in-process from AST model\n";
+        }
+
+        // Direct construction is the default.  XML remains an explicit
+        // compatibility bridge while the direct adapter is being qualified.
+        NFcore::System *nfSystem = NFinput::buildSystemFromAst(
+            model,
+            useComplex,
+            globalMoleculeLimit,
+            nfVerbose,
+            suggestedTraversalLimit,
+            sourcePath);
+
+        if (!nfSystem) {
+            if (std::getenv("BNG_NFSIM_REQUIRE_DIRECT") != nullptr) {
+                throw std::runtime_error(
+                    "NFsim direct AST initialization required but unavailable");
+            }
+            if (verbose) {
+                std::cerr << "[bng_cpp] AST adapter returned nullptr; using in-memory XML fallback...\n";
+            }
+            nfSystem = NFinput::initializeFromModel(
+                &model,
+                useComplex,
+                globalMoleculeLimit,
+                nfVerbose,
+                suggestedTraversalLimit);
+        }
+
+        if (!nfSystem) {
+            if (verbose) {
+                std::cerr << "[bng_cpp] In-memory XML fallback failed; writing XML fallback...\n";
+            }
+            const auto xmlContent = io::XmlWriter::write(
+                model, network.has_value() ? &(*network) : nullptr);
+            std::ofstream xmlOut(xmlPath);
+            if (!xmlOut) {
+                throw std::runtime_error("Failed to write XML for NFSim: " + xmlPath.string());
+            }
+            xmlOut << xmlContent;
+            if (!xmlOut) {
+                throw std::runtime_error("Failed to write XML for NFSim: " + xmlPath.string());
+            }
+            nfSystem = NFinput::initializeFromXML(
+                xmlPath.string(), useComplex, globalMoleculeLimit, nfVerbose,
+                suggestedTraversalLimit, evalCSLF, connectivityFlag);
+        }
+
+        if (!nfSystem) {
+            throw std::runtime_error("NFSim: Failed to initialize system: " + prefix);
+        }
+
+        // The legacy initializer applies these switches while reading XML.
+        // Apply the same runtime policy to a directly-built System.
+        nfSystem->setEvaluateComplexScopedLocalFunctions(evalCSLF);
+        nfSystem->useConnectivityFlag(connectivityFlag);
+        nfSystem->setUniversalTraversalLimit(suggestedTraversalLimit);
+
+        if (!seedText.empty()) {
+            nfSystem->seedRNG(std::stoul(seedText));
+        }
+
+        nfSystem->registerOutputFileLocation(gdatPath.string());
+        nfSystem->prepareForSimulation();
+        nfSystem->sim(std::stod(tEnd), std::stol(nSteps), nfVerbose);
+
+        if (getFinalState == "1" || getFinalState == "true") {
+            const auto speciesPath = sourcePath.parent_path() / (prefix + ".species");
+            nfSystem->saveSpecies(speciesPath.string());
+        }
+
+        if (verbose) {
+            std::cerr << "[bng_cpp] NFSim completed. Output: " << gdatPath << "\n";
+        }
+        delete nfSystem;
     };
 
     // Execute protocol actions through the same stateful dispatcher used by
@@ -2010,121 +2123,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
         if (actionName == "simulate_nf" ||
             (actionName == "simulate" && resolveSimulationMethod(action) == "nf")) {
-            const auto prefix = simulationPrefix(action, sourcePath);
-            const auto xmlPath = sourcePath.parent_path() / (prefix + ".xml");
-
-            // Parse simulation parameters
-            const auto tEnd = stripQuotes(readArgument(action, "t_end", "10"));
-            const auto nSteps = stripQuotes(readArgument(action, "n_steps", "20"));
-            const auto gdatPath = sourcePath.parent_path() / (prefix + ".gdat");
-            const auto seedText = stripQuotes(readArgument(action, "seed", ""));
-            const auto utlText = stripQuotes(readArgument(action, "utl", "3"));
-            const auto verboseFlag = lowercase(stripQuotes(readArgument(action, "verbose", "0")));
-            const auto complexFlag = lowercase(stripQuotes(readArgument(action, "complex", "1")));
-            const auto getFinalState = lowercase(stripQuotes(readArgument(action, "get_final_state", "1")));
-            bool nfVerbose = (verboseFlag == "1" || verboseFlag == "true");
-            bool useComplex = (complexFlag == "1" || complexFlag == "true");
-            bool evalCSLF = lowercase(stripQuotes(readArgument(action, "nocslf", "0"))) != "1";
-            bool connectivityFlag = lowercase(stripQuotes(readArgument(action, "pcg", "0"))) == "1";
-
-            int globalMoleculeLimit = 200000;
-            const auto gmlText = stripQuotes(readArgument(action, "gml", ""));
-            if (!gmlText.empty()) globalMoleculeLimit = std::stoi(gmlText);
-
-            int suggestedTraversalLimit = utlText.empty() ? 3 : std::stoi(utlText);
-
-            if (verbose) {
-                std::cerr << "[bng_cpp] Running NFSim in-process from AST model\n";
-            }
-
-            // Try the direct AST adapter first.  The compatibility XML paths
-            // remain available for sections that are still explicitly gated.
-            NFcore::System *nfSystem = NFinput::buildSystemFromAst(
-                model,
-                useComplex,
-                globalMoleculeLimit,
-                nfVerbose,
-                suggestedTraversalLimit,
-                sourcePath);
-
-            if (!nfSystem) {
-                if (std::getenv("BNG_NFSIM_REQUIRE_DIRECT") != nullptr) {
-                    throw std::runtime_error(
-                        "NFsim direct AST initialization required but unavailable");
-                }
-                if (verbose) {
-                    std::cerr << "[bng_cpp] AST adapter returned nullptr; using in-memory XML fallback...\n";
-                }
-                nfSystem = NFinput::initializeFromModel(
-                    &model,
-                    useComplex,
-                    globalMoleculeLimit,
-                    nfVerbose,
-                    suggestedTraversalLimit);
-            }
-
-            if (!nfSystem) {
-                if (verbose) {
-                    std::cerr << "[bng_cpp] In-memory XML fallback failed; writing XML fallback...\n";
-                }
-                const auto xmlContent = io::XmlWriter::write(
-                    model, network.has_value() ? &(*network) : nullptr);
-                std::ofstream xmlOut(xmlPath);
-                if (!xmlOut) {
-                    throw std::runtime_error("Failed to write XML for NFSim: " + xmlPath.string());
-                }
-                xmlOut << xmlContent;
-                if (!xmlOut) {
-                    throw std::runtime_error("Failed to write XML for NFSim: " + xmlPath.string());
-                }
-                nfSystem = NFinput::initializeFromXML(
-                    xmlPath.string(), useComplex, globalMoleculeLimit, nfVerbose,
-                    suggestedTraversalLimit, evalCSLF, connectivityFlag);
-            }
-
-            if (!nfSystem) {
-                throw std::runtime_error("NFSim: Failed to initialize system from XML: " + xmlPath.string());
-            }
-
-            // The legacy initializer applies these switches while reading XML.
-            // Apply the same runtime policy to a directly-built System.
-            nfSystem->setEvaluateComplexScopedLocalFunctions(evalCSLF);
-            nfSystem->useConnectivityFlag(connectivityFlag);
-            nfSystem->setUniversalTraversalLimit(suggestedTraversalLimit);
-
-            // Seed the RNG if requested
-            if (!seedText.empty()) {
-                unsigned long seed = std::stoul(seedText);
-                nfSystem->seedRNG(seed);
-            }
-
-            // Register output file
-            nfSystem->registerOutputFileLocation(gdatPath.string());
-
-            // Handle species output
-            if (getFinalState == "1" || getFinalState == "true") {
-                // Will save species after simulation
-            }
-
-            // Prepare and run simulation
-            nfSystem->prepareForSimulation();
-
-            double simTime = std::stod(tEnd);
-            long int sampleTimes = std::stol(nSteps);
-
-            nfSystem->sim(simTime, sampleTimes, nfVerbose);
-
-            // Save final species state if requested
-            if (getFinalState == "1" || getFinalState == "true") {
-                const auto speciesPath = sourcePath.parent_path() / (prefix + ".species");
-                nfSystem->saveSpecies(speciesPath.string());
-            }
-
-            if (verbose) {
-                std::cerr << "[bng_cpp] NFSim completed. Output: " << gdatPath << "\n";
-            }
-
-            delete nfSystem;
+            runNfSimulation(action);
             continue;
         }
 
@@ -2208,11 +2207,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
             const auto method = lowercase(stripQuotes(
                 readArgument(action, "method", "ode")));
-            if (method == "nf") {
-                throw std::runtime_error(
-                    "parameter_scan method='nf' is not supported by the action "
-                    "dispatcher; use the Python API or separate simulate_nf actions");
-            }
+            const bool nfScan = method == "nf";
             const auto parallelText = readArgument(action, "parallel", "");
             if (!trim(stripQuotes(parallelText)).empty() &&
                 parseNonNegativeCount(parallelText, model, "parallel") > 0) {
@@ -2288,6 +2283,12 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                     const auto localPrefix = workdir / localName.str();
                     if (method == "protocol") {
                         runProtocol(localPrefix);
+                    } else if (nfScan) {
+                        ast::Action nfAction = action;
+                        nfAction.name = "simulate_nf";
+                        nfAction.arguments["prefix"] = localPrefix.string();
+                        nfAction.arguments.erase("suffix");
+                        runNfSimulation(nfAction);
                     } else {
                         ast::Action simulateAction = action;
                         simulateAction.name = "simulate";
@@ -2297,7 +2298,8 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                                       verbose, lastSimulationState,
                                       lastSimulationEndTime);
                     }
-                    scanData.push_back(readLastGdat(localPrefix.string() + ".gdat"));
+                    scanData.push_back(
+                        readLastGdat(localPrefix.string() + ".gdat", model));
                 }
                 writeScanFile(scanBase.string() + ".scan", parameterName,
                               scanValues, scanData);
