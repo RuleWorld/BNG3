@@ -166,6 +166,38 @@ end reaction rules
         # inferred from the two native boundary rules.
         assert len(model.reaction_rules) == 16
 
+    def test_singular_function_block_header_is_accepted(self, tmp_path):
+        """BNG2/NFsim-era fixtures use ``begin function`` as a legacy alias."""
+        bngl = tmp_path / "singular_function_block.bngl"
+        bngl.write_text(
+            """
+begin parameters
+    k 2
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 1
+end seed species
+begin observables
+    Molecules X_total X()
+end observables
+begin function
+    rate() = k
+end function
+begin reaction rules
+    X() -> 0 rate()
+end reaction rules
+"""
+        )
+
+        model = _cpp.parse_file(str(bngl))
+
+        assert len(model.functions) == 1
+        assert model.functions[0].name == "rate"
+        assert len(model.reaction_rules) == 1
+
 
 class TestNetworkGeneration:
     def test_generate_simple(self, tmp_path):
