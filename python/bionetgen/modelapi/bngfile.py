@@ -68,6 +68,31 @@ class BNGFile:
         try:
             # make a stripped copy without actions in the folder
             stripped_bngl = self.strip_actions(model_file, temp_folder)
+
+            # The legacy model API consumes BNG-XML, but the canonical BNG3
+            # parser can produce that representation without invoking Perl.
+            # Keep the stripped copy so parsed_actions retains its historical
+            # behavior for the caller.
+            try:
+                from bionetgen import _bionetgen_cpp as cpp
+            except ImportError:
+                cpp = None
+            if cpp is not None:
+                cpp_model = cpp.parse_file(stripped_bngl)
+                if not cpp_model.model_name:
+                    cpp_model.set_model_name(
+                        os.path.splitext(os.path.basename(model_file))[0]
+                    )
+                content = cpp.io.write_xml_string(cpp_model)
+                try:
+                    xml_file.seek(0)
+                    xml_file.truncate(0)
+                except (AttributeError, OSError):
+                    pass
+                xml_file.write(content)
+                xml_file.seek(0)
+                return True
+
             # run with --xml
             os.chdir(temp_folder)
             # If BNG2.pl is not available, fall back to a minimal in-Python XML
