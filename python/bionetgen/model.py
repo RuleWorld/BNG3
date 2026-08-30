@@ -167,6 +167,7 @@ class BioNetGenModel:
         output_step_interval: int = 0,
         sparse: bool = False,
         check_product_scale: float = 0.0,
+        equilibrate: float = 0.0,
     ) -> SimResult:
         """Run a simulation using the specified method.
 
@@ -254,6 +255,10 @@ class BioNetGenModel:
             raise TypeError("stop_if must be a string")
         if not math.isfinite(float(check_product_scale)) or check_product_scale < 0.0:
             raise ValueError("check_product_scale must be finite and non-negative")
+        if not math.isfinite(float(equilibrate)) or equilibrate < 0.0:
+            raise ValueError("equilibrate must be finite and non-negative")
+        if method != "nf" and equilibrate != 0.0:
+            raise ValueError("equilibrate is supported only for method='nf'")
         for option_name, option_value in {
             "max_sim_steps": max_sim_steps,
             "output_step_interval": output_step_interval,
@@ -331,6 +336,7 @@ class BioNetGenModel:
                 n_steps=n_steps,
                 seed=seed,
                 verbose=verbose,
+                equilibrate=equilibrate,
                 source_path=self._source_path or "",
             )
         else:

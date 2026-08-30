@@ -824,6 +824,16 @@ end model
         with pytest.raises(ValueError, match="t_start=0.0"):
             model.simulate(method="nf", t_start=1.0, t_end=2.0, n_steps=1)
 
+        with pytest.raises(ValueError, match="equilibrate must be finite and non-negative"):
+            model.simulate(
+                method="nf", t_end=1.0, n_steps=1, equilibrate=-0.1
+            )
+
+        result = model.simulate(
+            method="nf", t_end=1.0, n_steps=1, seed=1, equilibrate=0.1
+        )
+        assert result.time.tolist() == pytest.approx([0.0, 1.0])
+
     def test_set_parameter(self, tmp_path):
         bngl = tmp_path / "param.bngl"
         bngl.write_text("""

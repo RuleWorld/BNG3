@@ -443,7 +443,7 @@ def simulate_nf(
     t_end: float = 100.0,
     n_steps: int = 100,
     seed: int = 0,
-    equilibrate: int = 0,
+    equilibrate: float = 0.0,
     verbose: bool = False,
     source_path: str = "",
 ) -> Dict[str, object]:
@@ -462,7 +462,7 @@ def simulate_nf(
         Number of output time steps.
     seed : int
         Random seed (0 = system default).
-    equilibrate : int
+    equilibrate : float
         Equilibration time before simulation (0 = none).
     verbose : bool
         Print progress information.

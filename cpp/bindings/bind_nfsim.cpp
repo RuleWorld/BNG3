@@ -43,14 +43,18 @@ std::string make_temp_xml_path() {
 
 void bind_nfsim(py::module_& m) {
 
-    m.def("simulate_nf", [](Model& model, double t_end, int n_steps,
-                            int seed, int equilibrate, bool verbose,
+        m.def("simulate_nf", [](Model& model, double t_end, int n_steps,
+                            int seed, double equilibrate, bool verbose,
                             const std::string& source_path) -> py::dict {
         if (t_end < 0.0) {
             throw std::invalid_argument("t_end must be non-negative");
         }
         if (n_steps <= 0) {
             throw std::invalid_argument("n_steps must be positive");
+        }
+        if (!std::isfinite(equilibrate) || equilibrate < 0.0) {
+            throw std::invalid_argument(
+                "equilibrate must be finite and non-negative");
         }
 
         // The direct adapter is deliberately fail-closed.  XML compatibility
@@ -152,7 +156,7 @@ void bind_nfsim(py::module_& m) {
         // Step 6: Run equilibration if requested
         if (equilibrate > 0) {
             py::gil_scoped_release release;
-            system->equilibrate(static_cast<double>(equilibrate));
+            system->equilibrate(equilibrate);
         }
 
         // Step 7: Collect observable names
