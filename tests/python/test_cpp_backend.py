@@ -485,7 +485,7 @@ end model
         ("option", "value", "message"),
         [
             ("t_start", "1", "t_start"),
-            ("param", "\"-notf\"", "param"),
+            ("param", "\"-unsupported_nf_flag\"", "param"),
         ],
     )
     def test_simulate_nf_rejects_unhandled_controls(
@@ -510,6 +510,33 @@ end model
 
         with pytest.raises(RuntimeError, match=message):
             bionetgen.load(str(bngl)).execute()
+
+    def test_simulate_nf_accepts_legacy_supported_param_flags(self, tmp_path):
+        bngl = tmp_path / "nf_param_compat.bngl"
+        bngl.write_text(
+            """
+begin model
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 1
+end seed species
+begin observables
+    Molecules X_total X()
+end observables
+begin actions
+    simulate_nf({prefix=>"param_compat",t_end=>1,n_steps=>1,param=>"-gml 1000000 -utl 4 -notf"})
+end actions
+end model
+"""
+        )
+
+        bionetgen.load(str(bngl)).execute()
+
+        output = tmp_path / "param_compat.gdat"
+        assert output.exists()
+        assert "X_total" in output.read_text()
 
     def test_simulate_nf_action_honors_sample_times(self, tmp_path):
         bngl = tmp_path / "nf_sample_times.bngl"
