@@ -2248,14 +2248,11 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             const bool hasExplicitValues =
                 !trim(stripQuotes(explicitValuesText)).empty();
 
-            // BNG2 gives min/max/n_scan_pts precedence over an explicit list.
+            // BNG2 gives a complete min/max/n_scan_pts range precedence over an
+            // explicit list. Partial range arguments do not suppress a list;
+            // without a list, they remain an error.
             std::vector<double> scanValues;
-            if (hasMin || hasMax || hasPoints) {
-                if (!hasMin || !hasMax || !hasPoints) {
-                    throw std::runtime_error(
-                        "parameter_scan requires par_min, par_max, and n_scan_pts "
-                        "together");
-                }
+            if (hasMin && hasMax && hasPoints) {
                 const double minValue = parseScalarValue(minText, model);
                 const double maxValue = parseScalarValue(maxText, model);
                 const auto points = parseNonNegativeCount(
@@ -2292,6 +2289,10 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             } else if (hasExplicitValues) {
                 scanValues = parseScalarList(
                     explicitValuesText, model, "par_scan_vals");
+            } else if (hasMin || hasMax || hasPoints) {
+                throw std::runtime_error(
+                    "parameter_scan requires par_min, par_max, and n_scan_pts "
+                    "together");
             } else {
                 throw std::runtime_error(
                     "parameter_scan requires par_scan_vals or par_min, par_max, and n_scan_pts");

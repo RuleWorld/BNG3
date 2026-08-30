@@ -952,7 +952,7 @@ end reaction rules
 end model
 
 generate_network({overwrite=>1})
-parameter_scan({method=>"ode",parameter=>"k",par_min=>0.1,par_max=>0.2,n_scan_pts=>2,t_end=>1,n_steps=>1})
+parameter_scan({method=>"ode",parameter=>"k",par_min=>0.1,par_max=>0.2,n_scan_pts=>2,par_scan_vals=>[9,10],t_end=>1,n_steps=>1})
 """
         )
 
@@ -969,6 +969,44 @@ parameter_scan({method=>"ode",parameter=>"k",par_min=>0.1,par_max=>0.2,n_scan_pt
         assert len(rows) == 2
         assert [float(row[0]) for row in rows] == pytest.approx([0.1, 0.2])
         assert float(rows[0][1]) > float(rows[1][1])
+
+    def test_parameter_scan_partial_range_uses_explicit_values(self, tmp_path):
+        bngl = tmp_path / "scan_partial_range.bngl"
+        bngl.write_text(
+            """
+begin model
+begin parameters
+    k 0.1
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 10
+end seed species
+begin observables
+    Molecules Xtot X()
+end observables
+begin reaction rules
+    X() -> 0 k
+end reaction rules
+end model
+
+generate_network({overwrite=>1})
+parameter_scan({method=>"ode",parameter=>"k",par_min=>0.9,par_scan_vals=>[0.1,0.2],t_end=>1,n_steps=>1})
+"""
+        )
+
+        bionetgen.load(str(bngl)).execute()
+
+        scan_path = tmp_path / "scan_partial_range_k.scan"
+        assert scan_path.exists()
+        rows = [
+            line.split()
+            for line in scan_path.read_text().splitlines()
+            if line and not line.startswith("#")
+        ]
+        assert [float(row[0]) for row in rows] == pytest.approx([0.1, 0.2])
 
     def test_parameter_scan_nf_action_writes_final_observables(
         self, tmp_path, monkeypatch
