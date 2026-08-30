@@ -1177,6 +1177,10 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         const auto prefix = simulationPrefix(action, sourcePath);
         const auto xmlPath = sourcePath.parent_path() / (prefix + ".xml");
 
+        if (parseBoolean(readArgument(action, "continue", "0"))) {
+            throw std::runtime_error("NFsim does not support 'continue' option");
+        }
+
         // Parse simulation parameters using the same defaults as the
         // standalone simulate_nf action.
         const auto tEnd = stripQuotes(readArgument(action, "t_end", "10"));

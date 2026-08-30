@@ -411,6 +411,27 @@ end model
         assert (tmp_path / "action_nf_route.gdat").exists()
         assert (tmp_path / "action_nf_route.species").exists()
 
+    def test_simulate_nf_rejects_unsupported_continue(self, tmp_path):
+        bngl = tmp_path / "nf_continue.bngl"
+        bngl.write_text(
+            """
+begin model
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 1
+end seed species
+begin actions
+    simulate_nf({continue=>1,t_end=>1,n_steps=>1})
+end actions
+end model
+"""
+        )
+
+        with pytest.raises(RuntimeError, match="NFsim does not support 'continue'"):
+            bionetgen.load(str(bngl)).execute()
+
     def test_action_rejects_unknown_simulation_method(self, tmp_path):
         bngl = tmp_path / "unknown_method.bngl"
         bngl.write_text(
