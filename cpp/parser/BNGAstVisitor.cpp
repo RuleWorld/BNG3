@@ -6,6 +6,7 @@
 #include <cmath>
 #include <fstream>
 #include <iomanip>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -250,6 +251,124 @@ std::string normalizeLooseActionsInsideModel(const std::string& source) {
     }
 
     output.insert(output.end(), deferredActions.begin(), deferredActions.end());
+
+    std::ostringstream normalized;
+    for (std::size_t index = 0; index < output.size(); ++index) {
+        if (index != 0) normalized << '\n';
+        normalized << output[index];
+    }
+    if (hadTrailingNewline) normalized << '\n';
+    return normalized.str();
+}
+
+int maximumIntegerState(const std::string& source) {
+    int maximum = -1;
+    for (std::size_t index = 0; index < source.size(); ++index) {
+        if (source[index] != '~') continue;
+        std::size_t number = index + 1;
+        if (number < source.size() && source[number] == '^') {
+            if (number + 1 >= source.size() || source[number + 1] != '[') continue;
+            number += 2;
+        }
+        if (number >= source.size() ||
+            !std::isdigit(static_cast<unsigned char>(source[number]))) {
+            continue;
+        }
+        int value = 0;
+        while (number < source.size() &&
+               std::isdigit(static_cast<unsigned char>(source[number]))) {
+            const int digit = source[number] - '0';
+            if (value > (std::numeric_limits<int>::max() - digit) / 10) {
+                value = std::numeric_limits<int>::max();
+                break;
+            }
+            value = value * 10 + digit;
+            ++number;
+        }
+        maximum = std::max(maximum, value);
+    }
+    return maximum;
+}
+
+std::vector<std::string> expandIntegerStateTransition(
+    const std::string& line, int maximumState) {
+    const auto increment = line.find("~++");
+    const auto decrement = line.find("~--");
+    const bool isIncrement = increment != std::string::npos;
+    const bool isDecrement = decrement != std::string::npos;
+    if (isIncrement == isDecrement) return {line};
+
+    const auto transition = isIncrement ? increment : decrement;
+    const std::string transitionText = isIncrement ? "~++" : "~--";
+    if (line.find(transitionText, transition + 1) != std::string::npos) {
+        return {line};
+    }
+
+    const auto boundary = line.rfind("~^[", transition);
+    if (boundary == std::string::npos ||
+        line.find("~^[", boundary + 1) != std::string::npos) {
+        return {line};
+    }
+    const auto boundaryEnd = line.find(']', boundary + 3);
+    if (boundaryEnd == std::string::npos || boundaryEnd >= transition) {
+        return {line};
+    }
+
+    const auto boundText = line.substr(boundary + 3, boundaryEnd - boundary - 3);
+    if (boundText.empty() ||
+        !std::all_of(boundText.begin(), boundText.end(), [](unsigned char value) {
+            return std::isdigit(value) != 0;
+        })) {
+        return {line};
+    }
+
+    std::size_t consumed = 0;
+    int bound = 0;
+    try {
+        bound = std::stoi(boundText, &consumed);
+    } catch (const std::exception&) {
+        return {line};
+    }
+    if (consumed != boundText.size()) return {line};
+
+    const int firstState = isIncrement ? 0 : 1;
+    const int lastState = isIncrement ? bound - 1 : maximumState;
+    if (lastState < firstState) return {line};
+    constexpr int maxExpandedStates = 10000;
+    if (lastState > firstState + maxExpandedStates - 1) return {line};
+
+    std::vector<std::string> expanded;
+    expanded.reserve(static_cast<std::size_t>(lastState - firstState + 1));
+    for (int state = firstState; state <= lastState; ++state) {
+        auto replacement = line;
+        replacement.replace(boundary, boundaryEnd - boundary + 1,
+                            "~" + std::to_string(state));
+        const auto replacementTransition = replacement.find(transitionText);
+        if (replacementTransition == std::string::npos) return {line};
+        replacement.replace(replacementTransition, transitionText.size(),
+                            "~" + std::to_string(state + (isIncrement ? 1 : -1)));
+        expanded.push_back(std::move(replacement));
+    }
+    return expanded;
+}
+
+std::string normalizeIntegerStateTransitions(const std::string& source) {
+    const int maximumState = maximumIntegerState(source);
+    std::vector<std::string> output;
+    const bool hadTrailingNewline = !source.empty() && source.back() == '\n';
+
+    std::size_t lineStart = 0;
+    while (lineStart <= source.size()) {
+        const auto lineEnd = source.find('\n', lineStart);
+        const auto lineLength = lineEnd == std::string::npos
+                                     ? source.size() - lineStart
+                                     : lineEnd - lineStart;
+        const auto line = source.substr(lineStart, lineLength);
+        const auto expanded = expandIntegerStateTransition(line, maximumState);
+        output.insert(output.end(), expanded.begin(), expanded.end());
+        if (lineEnd == std::string::npos) break;
+        lineStart = lineEnd + 1;
+    }
 
     std::ostringstream normalized;
     for (std::size_t index = 0; index < output.size(); ++index) {
@@ -963,8 +1082,9 @@ ast::Expression parseExpressionImpl(const std::string& exprText) {
 } // namespace
 
 std::string normalizeBNGLSource(const std::string& sourceText) {
-    return normalizeLooseActionsInsideModel(normalizeLegacyActionNames(
-        normalizeLegacyBlockHeaders(normalizeTfunSyntax(sourceText))));
+    return normalizeLooseActionsInsideModel(normalizeIntegerStateTransitions(
+        normalizeLegacyActionNames(
+            normalizeLegacyBlockHeaders(normalizeTfunSyntax(sourceText)))));
 }
 
 BNGAstVisitor::BNGAstVisitor()
