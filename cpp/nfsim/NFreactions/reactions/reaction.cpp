@@ -195,8 +195,25 @@ double MMRxnClass::update_a()
 {
 	double S = (double)getCorrectedReactantCount(0);
 	double E = (double)getCorrectedReactantCount(1);
-	sFree=0.5*( (S-Km-E) + pow((pow( (S-Km-E),2.0) + 4.0*Km*S),  0.5) );
-	a=kcat*sFree*E/(Km+sFree);
+	const double b = S - Km - E;
+	// Solve the quadratic for free substrate without losing the small root
+	// when enzyme is in excess.  The direct ``b + sqrt(b*b + 4*Km*S)``
+	// expression rounds to zero for the tiny-Km regression from
+	// NFsim/test/MM/mm_small_km.bngl.  hypot keeps the discriminant stable,
+	// while the alternate root form avoids cancellation when b is negative.
+	const double KmS = Km * S;
+	const double discriminant = (Km >= 0.0 && S >= 0.0)
+		? std::hypot(b, 2.0 * std::sqrt(KmS))
+		: std::sqrt(b * b + 4.0 * KmS);
+	if (b < 0.0 && KmS > 0.0) {
+		sFree = (2.0 * KmS) / (discriminant - b);
+	} else {
+		sFree = 0.5 * (b + discriminant);
+	}
+	const double denominator = Km + sFree;
+	a = (denominator > 0.0 && std::isfinite(denominator))
+		? kcat * sFree * E / denominator
+		: 0.0;
 	return a;
 }
 
