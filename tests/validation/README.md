@@ -26,6 +26,7 @@ maintainer approval; CI does not infer an unpinned RuleHub corpus.
 pytest tests/validation -m smoke                     # Tier-S, every commit
 pytest tests/validation -m "parity and not slow"     # full corpus
 pytest tests/validation -m nf      --bng-cpp build/bng_cpp
+BNG_ENSEMBLE_WORKERS=8 pytest tests/validation -m nf  # fixed 200-seed NF gate
 pytest tests/validation -m export
 python -m tests.validation.exception_ledger --max-exceptions 1
 python scripts/regen_golden.py --tier p              # (re)build golden, reviewed

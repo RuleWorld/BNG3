@@ -64,6 +64,8 @@ Local evidence at this checkpoint:
 - Full Python suite: 146 passed, 27 skipped.
 - Direct-vs-in-memory-XML NFsim shadow suite: 4/4 passed with the built native
   NFsim executable available for the separate oracle gate.
+- Fixed-seed Tier-NF gate: 4 models × 200 native-oracle runs, plus the four
+  direct-vs-XML checks, passed 8/8 in 19m25s using eight isolated workers.
 - Native `t_dor2.bngl` DOR2 smoke: 114 reactions and 113 events; seeded direct
   AST output was byte-identical to standalone NFsim using both generated XML
   and the original BNG2 XML fixture.
@@ -694,9 +696,9 @@ Each phase has deliverables and an exit gate. Later phases may prepare in parall
 |---|---|---|
 | 0 — authority/common ground | In progress | Individual BNG2/NFsim source paths are being used for semantic decisions; the accepted source lock, complete reconciliation ledger, owners, and RuleHub selection manifest remain open. |
 | 1 — honest green CI | In progress | Local CTest 120/120, Python 146 passed/27 skipped, and Ruff pass; deterministic validation has one explicit structured-SBML error, hosted CI is stale for this branch, and CodeQL awaits a hosted run. |
-| 2 — independent validation | In progress | Structural BNG2 `.net` comparison, native NFsim seeded smoke ensembles, pooled-error comparator coverage, and provenance scaffolding exist; the reviewed golden bundle and complete independent-oracle gate remain open. |
+| 2 — independent validation | In progress | Structural BNG2 `.net` comparison, a fixed 4-model × 200-seed native NFsim gate, pooled-error comparator coverage, and provenance scaffolding exist; the reviewed golden bundle and broader independent-oracle gate remain open. |
 | 4 — semantic core | In progress | BNG2-derived deletion, bond-cardinality, product-molecularity, symmetry, compartment, dynamic-rate, protocol, scan, and sensitivity slices are implemented; broader source differential coverage remains open. |
-| 5 — direct NFsim | In progress | Typed AST-to-NFsim construction, legacy DOR2 XML compatibility, direct-vs-XML tests, and native `t_dor2` parity now cover additional Tier-NF behavior; full Tier-NF coverage, protocol NF support, and XML-path retirement remain open. |
+| 5 — direct NFsim | In progress | Typed AST-to-NFsim construction, legacy DOR2 XML compatibility, direct-vs-XML tests, and fixed-seed native `t_dor2`/Tier-NF parity now cover additional behavior; broader Tier-NF coverage, protocol NF support, and XML-path retirement remain open. |
 | 6–8 — consolidation/release | Not started | Dependent on the authority, parity, packaging, CI, and provenance exit gates above. |
 
 ### Phase 0 — Establish authority and freeze the common ground
