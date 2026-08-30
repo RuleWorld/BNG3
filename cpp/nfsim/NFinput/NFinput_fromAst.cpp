@@ -3833,6 +3833,7 @@ bool isDiscardMolecule(const GraphMolecule& molecule) {
 struct DirectProductMolecule {
     TemplateMolecule* templateMolecule = nullptr;
     MoleculeCreator* creator = nullptr;
+    std::vector<std::string> runtimeComponentNames;
 };
 
 bool buildDirectProductMolecule(const bng::ast::SpeciesGraph& pattern,
@@ -3877,6 +3878,8 @@ bool buildDirectProductMolecule(const bng::ast::SpeciesGraph& pattern,
     }
 
     std::vector<std::pair<int, int>> componentStates;
+    std::vector<std::string> runtimeComponentNames;
+    std::map<std::string, std::size_t> symmetricComponentUse;
     std::set<int> specifiedComponents;
     for (const auto& component : molecule.components) {
         if (component.bonds.size() > 1) {
@@ -3918,15 +3921,29 @@ bool buildDirectProductMolecule(const bng::ast::SpeciesGraph& pattern,
                 }
             }
         }
+        std::string runtimeName = component.name;
         if (moleculeType->isEquivalentComponent(component.name)) {
-            diagnostic = "symmetric product components require permutation expansion";
-            delete templateMolecule;
-            return false;
+            std::vector<std::string> equivalentNames;
+            if (!getEquivalentNames(moleculeType, component.name, equivalentNames)) {
+                diagnostic = "could not resolve symmetric product component '" +
+                             component.name + "'";
+                delete templateMolecule;
+                return false;
+            }
+            auto& useCount = symmetricComponentUse[component.name];
+            if (useCount >= equivalentNames.size()) {
+                diagnostic = "too many symmetric product components named '" +
+                             component.name + "'";
+                delete templateMolecule;
+                return false;
+            }
+            runtimeName = equivalentNames[useCount++];
         }
+        runtimeComponentNames.push_back(runtimeName);
 
         int componentIndex = -1;
         try {
-            componentIndex = moleculeType->getCompIndexFromName(component.name);
+            componentIndex = moleculeType->getCompIndexFromName(runtimeName);
         } catch (const std::exception& error) {
             diagnostic = error.what();
             delete templateMolecule;
@@ -3940,7 +3957,7 @@ bool buildDirectProductMolecule(const bng::ast::SpeciesGraph& pattern,
 
         const std::string state = graphStateToken(*component.node);
         const int stateValue = componentStateValue(
-            moleculeType, component.name, state, diagnostic);
+            moleculeType, runtimeName, state, diagnostic);
         if (stateValue == -2) {
             delete templateMolecule;
             return false;
@@ -3948,7 +3965,7 @@ bool buildDirectProductMolecule(const bng::ast::SpeciesGraph& pattern,
         if (stateValue >= 0) {
             componentStates.emplace_back(componentIndex, stateValue);
             try {
-                templateMolecule->addComponentConstraint(component.name, stateValue);
+                templateMolecule->addComponentConstraint(runtimeName, stateValue);
             } catch (const std::exception& error) {
                 diagnostic = error.what();
                 delete templateMolecule;
@@ -3958,6 +3975,7 @@ bool buildDirectProductMolecule(const bng::ast::SpeciesGraph& pattern,
     }
 
     result.templateMolecule = templateMolecule;
+    result.runtimeComponentNames = std::move(runtimeComponentNames);
     result.creator = new MoleculeCreator(
         templateMolecule, moleculeType, componentStates, compartment);
     return true;
@@ -4798,7 +4816,7 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                         bng::ast::ReactionRule::ComponentRef{
                             productRef.patternIndex, productRef.moleculeIndex, componentIndex},
                         std::make_pair(operationProduct.templateMolecule,
-                                       graphMolecule.components[componentIndex].name));
+                                       operationProduct.runtimeComponentNames.at(componentIndex)));
                 }
             }
         }
