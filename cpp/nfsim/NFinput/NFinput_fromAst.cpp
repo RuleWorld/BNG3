@@ -991,6 +991,14 @@ bool collectLocalFunctionReferences(
             }
             return true;
         }
+        if (hasModelObservable(model, expression.name())) {
+            // BNGL permits a zero-argument observable in a local function
+            // without an explicit call, e.g. ``k*Total + 0*Scoped(x)``.
+            // NFsim's legacy local-function constructor treats this as a
+            // global-scope observable reference.
+            addReference(expression.name(), "Observable");
+            return true;
+        }
         diagnostic = "unknown local-function identifier '" + expression.name() + "'";
         return false;
     case ExpressionKind::Unary:
