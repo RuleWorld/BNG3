@@ -1181,10 +1181,6 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             throw std::runtime_error("NFsim does not support 'continue' option");
         }
 
-        if (action.arguments.find("sample_times") != action.arguments.end()) {
-            throw std::runtime_error(
-                "NFsim action does not support 'sample_times' yet; use n_steps");
-        }
         const auto tStartText = stripQuotes(readArgument(action, "t_start", ""));
         if (!tStartText.empty() && parseScalarValue(tStartText, model) != 0.0) {
             throw std::runtime_error(
@@ -1203,6 +1199,24 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         // standalone simulate_nf action.
         const auto tEnd = stripQuotes(readArgument(action, "t_end", "10"));
         const auto nSteps = stripQuotes(readArgument(action, "n_steps", "20"));
+        const auto sampleTimesText = readArgument(action, "sample_times", "");
+        std::vector<double> sampleTimes;
+        if (!trim(stripQuotes(sampleTimesText)).empty()) {
+            sampleTimes = parseSampleTimes(sampleTimesText, model);
+        }
+        const double endTime = parseScalarValue(tEnd, model);
+        if (!std::isfinite(endTime) || endTime < 0.0) {
+            throw std::runtime_error("NFsim 't_end' must be finite and non-negative");
+        }
+        if (!sampleTimes.empty()) {
+            if (sampleTimes.front() < 0.0 || sampleTimes.back() > endTime) {
+                throw std::runtime_error(
+                    "NFsim sample_times must lie between 0 and t_end");
+            }
+            if (sampleTimes.back() < endTime) {
+                sampleTimes.push_back(endTime);
+            }
+        }
         const auto gdatPath = sourcePath.parent_path() / (prefix + ".gdat");
         const auto seedText = stripQuotes(readArgument(action, "seed", ""));
         const auto utlText = stripQuotes(readArgument(action, "utl", "3"));
@@ -1322,7 +1336,15 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         if (equilibration > 0.0) {
             nfSystem->equilibrate(equilibration);
         }
-        nfSystem->sim(std::stod(tEnd), std::stol(nSteps), nfVerbose);
+        if (sampleTimes.empty()) {
+            nfSystem->sim(endTime, std::stol(nSteps), nfVerbose);
+        } else {
+            for (const double sampleTime : sampleTimes) {
+                nfSystem->stepTo(sampleTime);
+                nfSystem->outputAllObservableCounts(sampleTime);
+                nfSystem->tryToDump();
+            }
+        }
 
         if (getFinalState) {
             const auto speciesPath = sourcePath.parent_path() / (prefix + ".species");

@@ -485,7 +485,6 @@ end model
         ("option", "value", "message"),
         [
             ("t_start", "1", "t_start"),
-            ("sample_times", "[0,0.5,1]", "sample_times"),
             ("param", "\"-notf\"", "param"),
         ],
     )
@@ -511,6 +510,37 @@ end model
 
         with pytest.raises(RuntimeError, match=message):
             bionetgen.load(str(bngl)).execute()
+
+    def test_simulate_nf_action_honors_sample_times(self, tmp_path):
+        bngl = tmp_path / "nf_sample_times.bngl"
+        bngl.write_text(
+            """
+begin model
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 1
+end seed species
+begin observables
+    Molecules X_total X()
+end observables
+begin actions
+    simulate_nf({prefix=>"sample_times",t_end=>1,sample_times=>[0,0.25,0.75]})
+end actions
+end model
+"""
+        )
+
+        bionetgen.load(str(bngl)).execute()
+
+        output = tmp_path / "sample_times.gdat"
+        rows = [
+            line.split()
+            for line in output.read_text().splitlines()
+            if line and not line.startswith("#")
+        ]
+        assert [float(row[0]) for row in rows] == pytest.approx([0.0, 0.25, 0.75, 1.0])
 
     def test_simulate_nf_action_outputs_global_functions(self, tmp_path):
         bngl = tmp_path / "nf_functions.bngl"
