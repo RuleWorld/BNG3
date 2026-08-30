@@ -181,6 +181,74 @@ std::vector<double> parseSampleTimes(const std::string& text, ast::Model& model)
     return times;
 }
 
+std::vector<double> parseScalarList(const std::string& text,
+                                    ast::Model& model,
+                                    const std::string& name) {
+    std::string value = trim(stripQuotes(text));
+    if (value.size() < 2 || value.front() != '[' || value.back() != ']') {
+        throw std::runtime_error(
+            name + " must be a comma-separated list enclosed in square brackets");
+    }
+
+    value = value.substr(1, value.size() - 2);
+    std::vector<double> values;
+    std::size_t tokenStart = 0;
+    int parentheses = 0;
+    int brackets = 0;
+    char quote = '\0';
+
+    const auto appendToken = [&](std::size_t tokenEnd) {
+        const auto token = trim(value.substr(tokenStart, tokenEnd - tokenStart));
+        if (token.empty()) {
+            throw std::runtime_error(name + " must not contain empty entries");
+        }
+        const double parsed = parseScalarValue(token, model);
+        if (!std::isfinite(parsed)) {
+            throw std::runtime_error(name + " must contain only finite values");
+        }
+        values.push_back(parsed);
+    };
+
+    for (std::size_t i = 0; i < value.size(); ++i) {
+        const char current = value[i];
+        if (quote != '\0') {
+            if (current == quote && (i == 0 || value[i - 1] != '\\')) {
+                quote = '\0';
+            }
+            continue;
+        }
+        if (current == '\'' || current == '"') {
+            quote = current;
+        } else if (current == '(') {
+            ++parentheses;
+        } else if (current == ')') {
+            if (--parentheses < 0) {
+                throw std::runtime_error(name + " contains unbalanced parentheses");
+            }
+        } else if (current == '[') {
+            ++brackets;
+        } else if (current == ']') {
+            if (--brackets < 0) {
+                throw std::runtime_error(name + " contains unbalanced brackets");
+            }
+        } else if (current == ',' && parentheses == 0 && brackets == 0) {
+            appendToken(i);
+            tokenStart = i + 1;
+        }
+    }
+
+    if (quote != '\0' || parentheses != 0 || brackets != 0) {
+        throw std::runtime_error(name + " contains an unbalanced expression");
+    }
+    if (tokenStart < value.size() || !value.empty()) {
+        appendToken(value.size());
+    }
+    if (values.empty()) {
+        throw std::runtime_error(name + " must not be empty");
+    }
+    return values;
+}
+
 std::size_t parseNonNegativeCount(const std::string& text,
                                   ast::Model& model,
                                   const std::string& name) {
@@ -190,6 +258,108 @@ std::size_t parseNonNegativeCount(const std::string& text,
         throw std::runtime_error(name + " must be a non-negative integer");
     }
     return static_cast<std::size_t>(value);
+}
+
+bool parseBoolean(const std::string& text, bool defaultValue = false) {
+    const auto value = lowercase(stripQuotes(trim(text)));
+    if (value.empty()) {
+        return defaultValue;
+    }
+    if (value == "1" || value == "true" || value == "yes" || value == "on") {
+        return true;
+    }
+    if (value == "0" || value == "false" || value == "no" || value == "off") {
+        return false;
+    }
+    throw std::runtime_error("Expected a boolean value, got '" + text + "'");
+}
+
+struct ScanData {
+    std::vector<std::string> columns;
+    std::vector<double> values;
+};
+
+ScanData readLastGdat(const std::filesystem::path& path) {
+    std::ifstream input(path);
+    if (!input) {
+        throw std::runtime_error("parameter_scan could not open observable file: " + path.string());
+    }
+
+    std::vector<std::string> columns;
+    std::vector<double> lastValues;
+    std::string line;
+    while (std::getline(input, line)) {
+        line = trim(line);
+        if (line.empty()) {
+            continue;
+        }
+        if (line.front() == '#') {
+            std::istringstream header(line.substr(1));
+            header >> std::ws;
+            std::string column;
+            while (header >> column) {
+                columns.push_back(column);
+            }
+            continue;
+        }
+
+        std::istringstream data(line);
+        std::vector<double> values;
+        double value = 0.0;
+        while (data >> value) {
+            if (!std::isfinite(value)) {
+                throw std::runtime_error(
+                    "parameter_scan found a non-finite value in " + path.string());
+            }
+            values.push_back(value);
+        }
+        if (!values.empty()) {
+            lastValues = std::move(values);
+        }
+    }
+
+    if (columns.size() < 2 || lastValues.size() != columns.size()) {
+        throw std::runtime_error(
+            "parameter_scan found an invalid observable file: " + path.string());
+    }
+    columns.erase(columns.begin()); // drop the time column
+    lastValues.erase(lastValues.begin());
+    return {std::move(columns), std::move(lastValues)};
+}
+
+void writeScanFile(const std::filesystem::path& path,
+                   const std::string& parameterName,
+                   const std::vector<double>& parameterValues,
+                   const std::vector<ScanData>& data) {
+    if (parameterValues.size() != data.size() || data.empty()) {
+        throw std::runtime_error("parameter_scan has no complete scan data");
+    }
+    for (std::size_t i = 1; i < data.size(); ++i) {
+        if (data[i].columns != data[0].columns ||
+            data[i].values.size() != data[0].values.size()) {
+            throw std::runtime_error(
+                "parameter_scan observable columns changed between scan points");
+        }
+    }
+
+    std::ofstream output(path);
+    if (!output) {
+        throw std::runtime_error("parameter_scan could not open output file: " + path.string());
+    }
+    output << "#" << std::setw(15) << parameterName;
+    for (const auto& column : data[0].columns) {
+        output << " " << std::setw(16) << column;
+    }
+    output << '\n';
+    for (std::size_t i = 0; i < parameterValues.size(); ++i) {
+        output << std::setw(16) << std::setprecision(8) << std::scientific
+               << parameterValues[i];
+        for (const auto value : data[i].values) {
+            output << " " << std::setw(16) << std::setprecision(8) << std::scientific
+                   << value;
+        }
+        output << '\n';
+    }
 }
 
 std::string readArgument(const ast::Action& action, const std::string& key, const std::string& fallback = {}) {
@@ -877,6 +1047,165 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         }
         io::NetWriter::write(outputPath, model, *network, options);
         return outputPath;
+    };
+
+    // Execute protocol actions through the same stateful dispatcher used by
+    // the standalone simulate_protocol action.  Parameter scans need a
+    // per-point prefix, so keeping this as one helper prevents protocol
+    // scans from silently taking a different simulation path.
+    const auto runProtocol = [&](const std::optional<std::filesystem::path>& prefixOverride) {
+        const auto& protocol = model.getSimulationProtocol();
+        if (protocol.empty()) {
+            throw std::runtime_error("simulate_protocol requires a non-empty protocol block");
+        }
+
+        for (const auto& protoAction : protocol) {
+            const auto protoName = lowercase(protoAction.name);
+            if (protoName == "simulate" || protoName == "simulate_ode" ||
+                protoName == "simulate_ssa" || protoName == "simulate_pla" ||
+                protoName == "simulate_psa") {
+                ensureNetwork();
+                ast::Action actualAction = protoAction;
+                if (protoName == "simulate_pla" || protoName == "simulate_psa") {
+                    actualAction.arguments["method"] =
+                        protoName == "simulate_pla" ? "pla" : "psa";
+                }
+                if (prefixOverride.has_value()) {
+                    actualAction.arguments["prefix"] = prefixOverride->string();
+                    actualAction.arguments.erase("suffix");
+                }
+                if (!lastSimulationState.empty()) {
+                    actualAction.arguments["continue"] = "1";
+                }
+                runSimulation(model, actualAction, sourcePath, *network, verbose,
+                              lastSimulationState, lastSimulationEndTime);
+                continue;
+            }
+
+            if (protoName == "simulate_nf") {
+                throw std::runtime_error(
+                    "simulate_protocol does not yet support simulate_nf; use a "
+                    "standalone simulate_nf action");
+            }
+
+            if (protoName == "setparameter") {
+                const auto target = stripQuotes(readArgument(protoAction, "target", ""));
+                const auto valueText = readArgument(protoAction, "value", "");
+                if (target.empty() || trim(valueText).empty()) {
+                    throw std::runtime_error(
+                        "setParameter in a protocol requires target and value");
+                }
+                if (!model.getParameters().contains(target)) {
+                    throw std::runtime_error("setParameter: unknown parameter: " + target);
+                }
+                const double value = parseScalarValue(valueText, model);
+                model.getParameters().add(
+                    ast::Parameter(target, ast::Expression::number(value)));
+                model.getParameters().evaluateAll();
+                if (network.has_value()) {
+                    const auto savedAmounts = snapshotConcentrations(*network);
+                    network = generator.generate(sourcePath);
+                    restoreConcentrations(*network, savedAmounts);
+                }
+                continue;
+            }
+
+            if (protoName == "setconcentration" || protoName == "addconcentration" ||
+                protoName == "add_concentration") {
+                ensureNetwork();
+                const auto target = readArgument(protoAction, "target", "");
+                const auto valueText = readArgument(protoAction, "value", "");
+                if (trim(target).empty() || trim(valueText).empty()) {
+                    throw std::runtime_error(
+                        protoName == "setconcentration"
+                            ? "setConcentration in a protocol requires target and value"
+                            : "addConcentration in a protocol requires target and value");
+                }
+                const auto found = findSpeciesIndex(*network, target);
+                if (!found.has_value()) {
+                    throw std::runtime_error(
+                        "Protocol concentration target species not found: " +
+                        stripQuotes(target));
+                }
+                const double value = parseScalarValue(valueText, model);
+                if (protoName == "setconcentration") {
+                    network->species.get(*found).setAmount(value);
+                } else {
+                    network->species.get(*found).setAmount(
+                        network->species.get(*found).getAmount() + value);
+                }
+                continue;
+            }
+
+            if (protoName == "saveparameters" || protoName == "save_parameters") {
+                const auto label = stripQuotes(readArgument(protoAction, "value", "default"));
+                std::unordered_map<std::string, double> snapshot;
+                for (const auto& param : model.getParameters().all()) {
+                    snapshot[param.getName()] = param.getValue();
+                }
+                savedParameters[label] = std::move(snapshot);
+                continue;
+            }
+
+            if (protoName == "resetparameters" || protoName == "reset_parameters") {
+                const auto label = stripQuotes(readArgument(protoAction, "value", "default"));
+                const auto found = savedParameters.find(label);
+                if (found == savedParameters.end()) {
+                    throw std::runtime_error("resetParameters label not found: " + label);
+                }
+                for (const auto& [name, value] : found->second) {
+                    model.getParameters().add(
+                        ast::Parameter(name, ast::Expression::number(value)));
+                }
+                model.getParameters().evaluateAll();
+                if (network.has_value()) {
+                    const auto savedAmounts = snapshotConcentrations(*network);
+                    network = generator.generate(sourcePath);
+                    restoreConcentrations(*network, savedAmounts);
+                }
+                continue;
+            }
+
+            if (protoName == "saveconcentrations" || protoName == "save_concentrations") {
+                ensureNetwork();
+                const auto label = stripQuotes(readArgument(protoAction, "value", "default"));
+                savedConcentrations[label] = snapshotConcentrations(*network);
+                continue;
+            }
+
+            if (protoName == "resetconcentrations" || protoName == "reset_concentrations") {
+                ensureNetwork();
+                const auto label = stripQuotes(readArgument(protoAction, "value", "default"));
+                const auto found = savedConcentrations.find(label);
+                if (found != savedConcentrations.end()) {
+                    restoreConcentrations(*network, found->second);
+                } else if (label != "default") {
+                    throw std::runtime_error("resetConcentrations label not found: " + label);
+                } else {
+                    const auto& seeds = model.getSeedSpecies();
+                    for (std::size_t i = 0; i < network->species.size(); ++i) {
+                        if (i < seeds.size()) {
+                            try {
+                                network->species.get(i).setAmount(
+                                    seeds[i].getAmount().evaluate([&](const std::string& name) {
+                                        return model.getParameters().evaluate(name);
+                                    }));
+                            } catch (const std::exception& error) {
+                                throw std::runtime_error(
+                                    "resetConcentrations could not evaluate seed species "
+                                    + std::to_string(i + 1) + ": " + error.what());
+                            }
+                        } else {
+                            network->species.get(i).setAmount(0.0);
+                        }
+                    }
+                }
+                continue;
+            }
+
+            throw std::runtime_error(
+                "Unsupported action in protocol: " + protoAction.name);
+        }
     };
 
     for (const auto& action : model.getActions()) {
@@ -1696,36 +2025,170 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 throw std::runtime_error("parameter_scan requires parameter argument");
             }
 
-            const auto minValue = parseScalarValue(readArgument(action, "par_min", ""), model);
-            const auto maxValue = parseScalarValue(readArgument(action, "par_max", ""), model);
-            const auto points = static_cast<std::size_t>(std::max(1.0, parseScalarValue(readArgument(action, "n_scan_pts", "1"), model)));
-            const auto logScale = lowercase(stripQuotes(readArgument(action, "log_scale", "0"))) == "1"
-                || lowercase(stripQuotes(readArgument(action, "log_scale", "0"))) == "true";
+            if (!model.getParameters().contains(parameterName)) {
+                throw std::runtime_error("parameter_scan: unknown parameter: " + parameterName);
+            }
 
-            ast::Action simulateAction = action;
-            simulateAction.name = "simulate";
-            simulateAction.arguments["method"] = readArgument(action, "method", "ode");
+            const auto minText = readArgument(action, "par_min", "");
+            const auto maxText = readArgument(action, "par_max", "");
+            const auto pointsText = readArgument(action, "n_scan_pts", "");
+            const bool hasMin = !trim(stripQuotes(minText)).empty();
+            const bool hasMax = !trim(stripQuotes(maxText)).empty();
+            const bool hasPoints = !trim(stripQuotes(pointsText)).empty();
+            const auto explicitValuesText = readArgument(
+                action, "par_scan_vals", readArgument(action, "values", ""));
+            const bool hasExplicitValues =
+                !trim(stripQuotes(explicitValuesText)).empty();
 
-            for (std::size_t i = 0; i < points; ++i) {
-                const double alpha = points == 1 ? 0.0 : static_cast<double>(i) / static_cast<double>(points - 1);
-                double value = 0.0;
-                if (logScale) {
-                    if (minValue <= 0.0 || maxValue <= 0.0) {
-                        throw std::runtime_error("parameter_scan with log_scale requires positive par_min and par_max");
-                    }
-                    value = std::exp(std::log(minValue) + alpha * (std::log(maxValue) - std::log(minValue)));
-                } else {
-                    value = minValue + alpha * (maxValue - minValue);
+            // BNG2 gives min/max/n_scan_pts precedence over an explicit list.
+            std::vector<double> scanValues;
+            if (hasMin || hasMax || hasPoints) {
+                if (!hasMin || !hasMax || !hasPoints) {
+                    throw std::runtime_error(
+                        "parameter_scan requires par_min, par_max, and n_scan_pts "
+                        "together");
                 }
+                const double minValue = parseScalarValue(minText, model);
+                const double maxValue = parseScalarValue(maxText, model);
+                const auto points = parseNonNegativeCount(
+                    pointsText, model, "n_scan_pts");
+                if (minValue == maxValue) {
+                    if (points < 1) {
+                        throw std::runtime_error(
+                            "n_scan_pts must be at least one when par_min equals par_max");
+                    }
+                } else if (points <= 1) {
+                    throw std::runtime_error(
+                        "n_scan_pts must be greater than one when par_min differs from par_max");
+                }
+                const bool logScale = parseBoolean(
+                    readArgument(action, "log_scale", "0"));
+                if (logScale && (minValue <= 0.0 || maxValue <= 0.0)) {
+                    throw std::runtime_error(
+                        "parameter_scan with log_scale requires positive par_min and par_max");
+                }
+                scanValues.reserve(points);
+                for (std::size_t i = 0; i < points; ++i) {
+                    const double alpha = points == 1
+                        ? 0.0
+                        : static_cast<double>(i) / static_cast<double>(points - 1);
+                    if (logScale) {
+                        scanValues.push_back(std::exp(
+                            std::log(minValue) +
+                            alpha * (std::log(maxValue) - std::log(minValue))));
+                    } else {
+                        scanValues.push_back(
+                            minValue + alpha * (maxValue - minValue));
+                    }
+                }
+            } else if (hasExplicitValues) {
+                scanValues = parseScalarList(
+                    explicitValuesText, model, "par_scan_vals");
+            } else {
+                throw std::runtime_error(
+                    "parameter_scan requires par_scan_vals or par_min, par_max, and n_scan_pts");
+            }
 
-                model.getParameters().add(ast::Parameter(parameterName, ast::Expression::number(value)));
+            const auto method = lowercase(stripQuotes(
+                readArgument(action, "method", "ode")));
+            if (method == "nf") {
+                throw std::runtime_error(
+                    "parameter_scan method='nf' is not supported by the action "
+                    "dispatcher; use the Python API or separate simulate_nf actions");
+            }
+            const auto parallelText = readArgument(action, "parallel", "");
+            if (!trim(stripQuotes(parallelText)).empty() &&
+                parseNonNegativeCount(parallelText, model, "parallel") > 0) {
+                throw std::runtime_error(
+                    "parameter_scan parallel execution is not implemented");
+            }
+            const bool resetConcentrations = parseBoolean(
+                readArgument(action, "reset_conc", "1"), true);
+
+            ensureNetwork();
+            const auto scanInitialConcentrations = snapshotConcentrations(*network);
+            const auto originalLastState = lastSimulationState;
+            const double originalLastEndTime = lastSimulationEndTime;
+            std::vector<ast::Parameter> originalParameters;
+            for (const auto& parameter : model.getParameters().all()) {
+                originalParameters.push_back(parameter);
+            }
+            const auto savedConcentrationsBeforeScan = savedConcentrations;
+            const auto savedParametersBeforeScan = savedParameters;
+
+            std::filesystem::path scanBase = stripQuotes(
+                readArgument(action, "prefix", sourcePath.stem().string()));
+            if (!scanBase.is_absolute()) {
+                scanBase = sourcePath.parent_path() / scanBase;
+            }
+            const auto suffix = stripQuotes(readArgument(action, "suffix", ""));
+            if (!suffix.empty()) {
+                scanBase += "_" + suffix;
+            } else {
+                scanBase += "_" + parameterName;
+            }
+            const auto workdir = scanBase;
+            std::filesystem::create_directories(workdir);
+            const auto localStem = scanBase.filename().string();
+
+            const auto restoreScanContext = [&]() {
+                for (const auto& parameter : originalParameters) {
+                    model.getParameters().add(parameter);
+                }
                 model.getParameters().evaluateAll();
                 network = generator.generate(sourcePath);
-                writeCurrentNetwork();  // Still write .net file for compatibility
+                restoreConcentrations(*network, scanInitialConcentrations);
+                lastSimulationState = originalLastState;
+                lastSimulationEndTime = originalLastEndTime;
+                savedConcentrations = savedConcentrationsBeforeScan;
+                savedParameters = savedParametersBeforeScan;
+            };
 
-                simulateAction.arguments["prefix"] = simulationPrefix(action, sourcePath, i);
-                runSimulation(model, simulateAction, sourcePath, *network, verbose, lastSimulationState, lastSimulationEndTime);
+            std::vector<ScanData> scanData;
+            try {
+                if (method == "protocol" && model.getSimulationProtocol().empty()) {
+                    throw std::runtime_error(
+                        "parameter_scan method='protocol' requires a protocol block");
+                }
+                for (std::size_t i = 0; i < scanValues.size(); ++i) {
+                    const auto priorConcentrations = snapshotConcentrations(*network);
+                    model.getParameters().add(ast::Parameter(
+                        parameterName, ast::Expression::number(scanValues[i])));
+                    model.getParameters().evaluateAll();
+                    network = generator.generate(sourcePath);
+                    restoreConcentrations(
+                        *network,
+                        resetConcentrations ? scanInitialConcentrations
+                                            : priorConcentrations);
+                    lastSimulationState.clear();
+                    lastSimulationEndTime = 0.0;
+                    savedConcentrations.clear();
+                    savedParameters.clear();
+
+                    std::ostringstream localName;
+                    localName << localStem << "_" << std::setfill('0')
+                              << std::setw(5) << (i + 1);
+                    const auto localPrefix = workdir / localName.str();
+                    if (method == "protocol") {
+                        runProtocol(localPrefix);
+                    } else {
+                        ast::Action simulateAction = action;
+                        simulateAction.name = "simulate";
+                        simulateAction.arguments["prefix"] = localPrefix.string();
+                        simulateAction.arguments.erase("suffix");
+                        runSimulation(model, simulateAction, sourcePath, *network,
+                                      verbose, lastSimulationState,
+                                      lastSimulationEndTime);
+                    }
+                    scanData.push_back(readLastGdat(localPrefix.string() + ".gdat"));
+                }
+                writeScanFile(scanBase.string() + ".scan", parameterName,
+                              scanValues, scanData);
+            } catch (...) {
+                restoreScanContext();
+                throw;
             }
+            restoreScanContext();
             continue;
         }
 
@@ -2509,120 +2972,13 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         if (actionName == "simulate_protocol") {
             const auto& protocol = model.getSimulationProtocol();
             if (protocol.empty()) {
-                if (verbose) {
-                    std::cerr << "[bng_cpp] simulate_protocol: no protocol block defined, skipping\n";
-                }
-                continue;
+                throw std::runtime_error(
+                    "simulate_protocol requires a non-empty protocol block");
             }
             if (verbose) {
                 std::cerr << "[bng_cpp] simulate_protocol: dispatching " << protocol.size() << " protocol actions\n";
             }
-            for (const auto& protoAction : protocol) {
-                std::string protoName = lowercase(protoAction.name);
-                if (protoName == "simulate" || protoName == "simulate_ode" || protoName == "simulate_ssa" ||
-                    protoName == "simulate_pla" || protoName == "simulate_nf") {
-                    ensureNetwork();
-                    ast::Action actualAction = protoAction;
-                    if (!lastSimulationState.empty()) {
-                        actualAction.arguments["continue"] = "1";
-                    }
-                    runSimulation(model, actualAction, sourcePath, *network, verbose, lastSimulationState, lastSimulationEndTime);
-                } else if (protoName == "setparameter") {
-                    auto target = stripQuotes(readArgument(protoAction, "target", ""));
-                    auto valueText = stripQuotes(readArgument(protoAction, "value", ""));
-                    if (!target.empty() && !valueText.empty()) {
-                        double val = parseScalarValue(valueText, model);
-                        model.getParameters().add(ast::Parameter(target, ast::Expression::number(val)));
-                        model.getParameters().evaluateAll();
-                        if (network.has_value()) {
-                            std::vector<double> savedAmounts = lastSimulationState;
-                            network = generator.generate(sourcePath);
-                            if (!savedAmounts.empty()) {
-                                for (std::size_t i = 0; i < network->species.size() && i < savedAmounts.size(); ++i) {
-                                    network->species.get(i).setAmount(savedAmounts[i]);
-                                }
-                            }
-                        }
-                    }
-                } else if (protoName == "setconcentration") {
-                    ensureNetwork();
-                    auto target = readArgument(protoAction, "target", "");
-                    auto valueText = readArgument(protoAction, "value", "");
-                    if (!target.empty() && !valueText.empty()) {
-                        double val = parseScalarValue(valueText, model);
-                        const auto found = findSpeciesIndex(*network, target);
-                        if (found.has_value()) {
-                            network->species.get(*found).setAmount(val);
-                        }
-                    }
-                } else if (protoName == "addconcentration" || protoName == "add_concentration") {
-                    ensureNetwork();
-                    auto target = readArgument(protoAction, "target", "");
-                    auto valueText = readArgument(protoAction, "value", "");
-                    if (!target.empty() && !valueText.empty()) {
-                        double val = parseScalarValue(valueText, model);
-                        const auto found = findSpeciesIndex(*network, target);
-                        if (found.has_value()) {
-                            double current = network->species.get(*found).getAmount();
-                            network->species.get(*found).setAmount(current + val);
-                        }
-                    }
-                } else if (protoName == "saveparameters" || protoName == "save_parameters") {
-                    const auto label = stripQuotes(readArgument(protoAction, "value", "default"));
-                    std::unordered_map<std::string, double> snapshot;
-                    for (const auto& param : model.getParameters().all()) {
-                        snapshot[param.getName()] = param.getValue();
-                    }
-                    savedParameters[label] = snapshot;
-                } else if (protoName == "resetparameters" || protoName == "reset_parameters") {
-                    const auto label = stripQuotes(readArgument(protoAction, "value", "default"));
-                    const auto found = savedParameters.find(label);
-                    if (found != savedParameters.end()) {
-                        for (const auto& [name, val] : found->second) {
-                            model.getParameters().add(ast::Parameter(name, ast::Expression::number(val)));
-                        }
-                        model.getParameters().evaluateAll();
-                        if (network.has_value()) {
-                            std::vector<double> savedAmounts;
-                            if (!lastSimulationState.empty()) {
-                                savedAmounts = lastSimulationState;
-                            }
-                            network = generator.generate(sourcePath);
-                            if (!savedAmounts.empty()) {
-                                for (std::size_t i = 0; i < network->species.size() && i < savedAmounts.size(); ++i) {
-                                    network->species.get(i).setAmount(savedAmounts[i]);
-                                }
-                            }
-                        }
-                    }
-                } else if (protoName == "saveconcentrations" || protoName == "save_concentrations") {
-                    ensureNetwork();
-                    const auto label = stripQuotes(readArgument(protoAction, "value", "default"));
-                    savedConcentrations[label] = snapshotConcentrations(*network);
-                } else if (protoName == "resetconcentrations" || protoName == "reset_concentrations") {
-                    ensureNetwork();
-                    const auto label = stripQuotes(readArgument(protoAction, "value", "default"));
-                    const auto found = savedConcentrations.find(label);
-                    if (found != savedConcentrations.end()) {
-                        restoreConcentrations(*network, found->second);
-                    } else {
-                        const auto& seeds = model.getSeedSpecies();
-                        for (std::size_t i = 0; i < network->species.size(); ++i) {
-                            if (i < seeds.size()) {
-                                try {
-                                    const double amount = seeds[i].getAmount().evaluate(
-                                        [&](const std::string& name) { return model.getParameters().evaluate(name); });
-                                    network->species.get(i).setAmount(amount);
-                                } catch (...) {
-                                    network->species.get(i).setAmount(0.0);
-                                }
-                            } else {
-                                network->species.get(i).setAmount(0.0);
-                            }
-                        }
-                    }
-                }
-            }
+            runProtocol(std::nullopt);
             continue;
         }
 

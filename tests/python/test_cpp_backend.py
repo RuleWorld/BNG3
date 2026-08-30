@@ -496,6 +496,91 @@ end model
         ]
         assert [float(row[0]) for row in rows] == [0.0, 0.25, 1.5, 2.0]
 
+    def test_parameter_scan_action_writes_final_observables(self, tmp_path):
+        bngl = tmp_path / "scan_action.bngl"
+        bngl.write_text(
+            """
+begin model
+begin parameters
+    k 0.1
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 10
+end seed species
+begin observables
+    Molecules Xtot X()
+end observables
+begin reaction rules
+    X() -> 0 k
+end reaction rules
+end model
+
+generate_network({overwrite=>1})
+parameter_scan({method=>"ode",parameter=>"k",par_min=>0.1,par_max=>0.2,n_scan_pts=>2,t_end=>1,n_steps=>1})
+"""
+        )
+
+        model = bionetgen.load(str(bngl))
+        model.execute()
+
+        scan_path = tmp_path / "scan_action_k.scan"
+        assert scan_path.exists()
+        rows = [
+            line.split()
+            for line in scan_path.read_text().splitlines()
+            if line and not line.startswith("#")
+        ]
+        assert len(rows) == 2
+        assert [float(row[0]) for row in rows] == pytest.approx([0.1, 0.2])
+        assert float(rows[0][1]) > float(rows[1][1])
+
+    def test_protocol_parameter_scan_uses_explicit_values(self, tmp_path):
+        bngl = tmp_path / "protocol_scan.bngl"
+        bngl.write_text(
+            """
+begin model
+begin parameters
+    k 0.1
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 10
+end seed species
+begin observables
+    Molecules Xtot X()
+end observables
+begin reaction rules
+    X() -> 0 k
+end reaction rules
+begin protocol
+    simulate({method=>"ode",t_start=>0,t_end=>1,n_steps=>1})
+end protocol
+end model
+
+generate_network({overwrite=>1})
+parameter_scan({method=>"protocol",parameter=>"k",par_scan_vals=>[0.1,0.2]})
+"""
+        )
+
+        model = bionetgen.load(str(bngl))
+        model.execute()
+
+        scan_path = tmp_path / "protocol_scan_k.scan"
+        assert scan_path.exists()
+        rows = [
+            line.split()
+            for line in scan_path.read_text().splitlines()
+            if line and not line.startswith("#")
+        ]
+        assert len(rows) == 2
+        assert [float(row[0]) for row in rows] == pytest.approx([0.1, 0.2])
+        assert float(rows[0][1]) > float(rows[1][1])
+
 
 class TestIO:
     def test_in_memory_serialization_round_trips(self, tmp_path):
