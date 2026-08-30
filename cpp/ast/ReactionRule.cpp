@@ -971,7 +971,29 @@ void ReactionRule::initialize() {
     reactionCenter_.assign(reactantPatterns_.size(), {});
     patternMatches_.assign(reactantPatterns_.size(), {});
     matchesInitialized_ = true;
-    if (reactantPatterns_.empty() || productPatterns_.empty()) {
+    if (reactantPatterns_.empty()) {
+        // Zero-order synthesis has no reactant-side graph to diff against, but
+        // each product molecule still needs an explicit creation operation.
+        // Besides driving direct AST expansion, XmlWriter uses these operations
+        // to serialize the same product construction for the compatibility
+        // loader.
+        if (!productPatterns_.empty()) {
+            const auto productInfo = describePatterns(productPatterns_);
+            const auto productMolecules = flattenMolecules(productInfo);
+            for (const auto& productMolecule : productMolecules) {
+                operations_.push_back(TransformOp {
+                    TransformOp::Type::AddMolecule,
+                    {},
+                    {},
+                    productMolecule.base.moleculeIndex,
+                    productMolecule.base.patternIndex,
+                    {},
+                });
+            }
+        }
+        return;
+    }
+    if (productPatterns_.empty()) {
         return;
     }
 

@@ -1518,6 +1518,46 @@ end reaction rules
     delete system;
 }
 
+TEST_CASE("NFsim AST adapter applies zero-order compartment volume conversion") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 2.0
+end parameters
+begin compartments
+    cell 3 4
+end compartments
+begin molecule types
+    Product(site~U~P)
+end molecule types
+begin observables
+    Molecules product_P Product@cell(site~P)
+end observables
+begin reaction rules
+    0 -> Product@cell(site~P) k
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+    model->setOption("NumberPerQuantityUnit", "10");
+
+    int directTraversalLimit = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 100, false, directTraversalLimit);
+    REQUIRE(direct != nullptr);
+    REQUIRE(direct->getAllReactions().size() == 1);
+    direct->prepareForSimulation();
+    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(80.0));
+    delete direct;
+
+    int xmlTraversalLimit = 0;
+    auto* xml = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, xmlTraversalLimit);
+    REQUIRE(xml != nullptr);
+    REQUIRE(xml->getAllReactions().size() == 1);
+    xml->prepareForSimulation();
+    CHECK(xml->getReaction(0)->get_a() == Catch::Approx(80.0));
+    delete xml;
+}
+
 TEST_CASE("NFsim AST adapter maps zero-argument functional reaction rates") {
     auto model = bng::parser::parseModel(R"(
 begin parameters

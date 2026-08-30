@@ -4667,7 +4667,7 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 }
             }
         }
-        if (ok && reactantPatterns.empty()) {
+        if (ok && reactantPatterns.empty() && addMoleculeTemplates.empty()) {
             for (std::size_t patternIndex = 0;
                  patternIndex < productPatterns.size() && ok; ++patternIndex) {
                 const auto molecules = collectGraphMolecules(
@@ -5316,6 +5316,66 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
         if (hasReactionModifier(rule, "matchonce")) {
             for (std::size_t index = 0; index < reactantRoots.size(); ++index) {
                 reaction->setMatchOnce(static_cast<unsigned int>(index), true);
+            }
+        }
+
+        // Match NFinput::initReactionRules: a zero-order synthesis rate is
+        // converted from concentration/time to molecule-count/time using the
+        // product compartment volume and NumberPerQuantityUnit.  The factor is
+        // kept on functional reactions for update_a(); elementary rates must be
+        // scaled once before they enter the live reaction list.
+        if (reactantRoots.empty()) {
+            Compartment* productCompartment = nullptr;
+            bool allSameCompartment = true;
+            for (const auto& product : collectRuleGraphMolecules(productPatterns)) {
+                const auto& molecule = product.molecule;
+                bool declaredProductType = false;
+                for (int index = 0; index < s->getNumOfMoleculeTypes(); ++index) {
+                    if (s->getMoleculeType(index)->getName() == molecule.name) {
+                        declaredProductType = true;
+                        break;
+                    }
+                }
+                if (isDiscardMolecule(molecule) && !declaredProductType) {
+                    continue;
+                }
+
+                const std::string compartmentName = graphMoleculeCompartment(
+                    productPatterns[product.patternIndex], molecule);
+                if (compartmentName.empty()) continue;
+                Compartment* compartment = nullptr;
+                if (!resolveCompartment(s, compartmentName, compartment, diagnostic)) {
+                    std::cerr << "[nfsim/ast] cannot map reaction '"
+                              << rule.getRuleName() << "': " << diagnostic << "\n";
+                    delete reaction;
+                    delete transformationSet;
+                    cleanupDirectProducts();
+                    return false;
+                }
+                if (productCompartment == nullptr) {
+                    productCompartment = compartment;
+                } else if (productCompartment != compartment) {
+                    allSameCompartment = false;
+                    std::cerr << "[nfsim/ast] warning: zero-order synthesis ('"
+                              << rule.getRuleName()
+                              << "') has products in different compartments; "
+                                 "volume scaling may be incorrect\n";
+                    break;
+                }
+            }
+
+            double volumeConversion = 1.0;
+            if (productCompartment != nullptr && allSameCompartment) {
+                volumeConversion = productCompartment->getSize();
+                const double numberPerQuantity = s->getNumberPerQuantityUnit();
+                if (numberPerQuantity > 0.0) {
+                    volumeConversion *= numberPerQuantity;
+                }
+            }
+            reaction->volumeConversionFactor = volumeConversion;
+            if (reaction->getRxnType() != ReactionClass::OBS_DEPENDENT_RXN) {
+                reaction->setBaseRate(
+                    reaction->getBaseRate() * volumeConversion, "");
             }
         }
 
