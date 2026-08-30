@@ -197,6 +197,142 @@ def export(model, fmt, output):
 
 
 @main.command()
+def info():
+    """Show BioNetGen installation and runtime information."""
+    import bionetgen
+
+    click.echo(f"BioNetGen version: {bionetgen.__version__}")
+    click.echo(f"Python package: {Path(bionetgen.__file__).resolve().parent}")
+    click.echo(f"Python: {sys.executable}")
+
+
+@main.command()
+@click.option(
+    "--input",
+    "-i",
+    "input_path",
+    required=True,
+    type=click.Path(exists=True, dir_okay=False),
+    help="Input .gdat, .cdat, or .scan file.",
+)
+@click.option("--output", "-o", "output_path", default=None, type=click.Path())
+def plot(input_path, output_path):
+    """Plot a BioNetGen data file."""
+    from bionetgen.core.tools.plot import BNGPlotter
+
+    output = Path(output_path) if output_path else Path(input_path).with_suffix(".png")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        BNGPlotter(input_path, str(output)).plot()
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(f"Plot written to {output}")
+
+
+@main.command()
+@click.option("--input", "-i", "input_path", default=None, type=click.Path(exists=True))
+@click.option("--output", "-o", "output_path", default=None, type=click.Path())
+@click.option("--open", "open_notebook", is_flag=True, help="Report the notebook path.")
+def notebook(input_path, output_path, open_notebook):
+    """Create a Jupyter notebook from the bundled BioNetGen template."""
+    assets = Path(__file__).resolve().parent / "assets"
+    if input_path:
+        template = assets / "bionetgen-temp.ipynb"
+        default_output = Path(input_path).with_suffix(".ipynb")
+    else:
+        template = assets / "bionetgen.ipynb"
+        default_output = Path.cwd() / "bionetgen.ipynb"
+    output = Path(output_path) if output_path else default_output
+    if output.exists() and output.is_dir():
+        output = output / default_output.name
+    output.parent.mkdir(parents=True, exist_ok=True)
+    content = template.read_text(encoding="utf-8")
+    if input_path:
+        content = content.replace("INPUT_ARG", str(Path(input_path).resolve()).replace("\\", "/"))
+    output.write_text(content, encoding="utf-8")
+    click.echo(f"Notebook written to {output}")
+    if open_notebook:
+        click.echo("Open the notebook with Jupyter or your preferred notebook viewer.")
+
+
+@main.command()
+@click.option(
+    "--input",
+    "-i",
+    "input_path",
+    required=True,
+    type=click.Path(exists=True, dir_okay=False),
+)
+@click.option(
+    "--input2",
+    "-i2",
+    "input2_path",
+    required=True,
+    type=click.Path(exists=True, dir_okay=False),
+)
+@click.option("--output", "-o", "output_path", default=None, type=click.Path())
+@click.option("--output2", "-o2", "output2_path", default=None, type=click.Path())
+@click.option("--mode", "-m", default="matrix", type=click.Choice(["matrix", "union"]))
+@click.option("--colors", "-c", "colors_path", default=None, type=click.Path(exists=True))
+def graphdiff(input_path, input2_path, output_path, output2_path, mode, colors_path):
+    """Compare two GraphML visualization outputs."""
+    from bionetgen.core.tools.gdiff import BNGGdiff
+
+    for candidate in (output_path, output2_path):
+        if candidate:
+            Path(candidate).parent.mkdir(parents=True, exist_ok=True)
+    try:
+        BNGGdiff(
+            input_path,
+            input2_path,
+            out=output_path,
+            out2=output2_path,
+            mode=mode,
+            colors=colors_path,
+        ).run()
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo("Graph diff complete")
+
+
+@main.command()
+@click.option(
+    "--input",
+    "-i",
+    "input_path",
+    required=True,
+    type=click.Path(exists=True, dir_okay=False),
+)
+@click.option("--output", "-o", "output_path", default=None, type=click.Path())
+@click.option("--atomize", "-a", is_flag=True, help="Infer molecular structure.")
+@click.option("--no-conversion", is_flag=True, help="Disable reaction conversion heuristics.")
+@click.option("--no-pathwaycommons", is_flag=True, help="Do not query Pathway Commons.")
+def atomize(input_path, output_path, atomize, no_conversion, no_pathwaycommons):
+    """Translate an SBML file to BNGL through the Python atomizer."""
+    from bionetgen import sbml_to_bngl
+
+    try:
+        text = sbml_to_bngl(
+            input_path,
+            atomize=atomize,
+            no_conversion=no_conversion,
+            pathwaycommons=not no_pathwaycommons,
+        )
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    if output_path is None:
+        output = Path(input_path).with_suffix(".bngl")
+    else:
+        output = Path(output_path)
+        if output.exists() and output.is_dir():
+            output = output / (Path(input_path).stem + ".bngl")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(text, encoding="utf-8")
+    click.echo(f"BNGL written to {output}")
+
+
+@main.command()
 @click.argument("model", type=click.Path(exists=True))
 @click.option("--parameter", "parameter_name", required=True, help="Parameter to scan.")
 @click.option(
