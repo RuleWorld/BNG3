@@ -101,6 +101,43 @@ end model
         with pytest.raises(_cpp.ParseError):
             _cpp.parse_file("/nonexistent/path.bngl")
 
+    def test_actions_after_model_blocks_are_accepted(self, tmp_path):
+        bngl = tmp_path / "actions_inside_model.bngl"
+        bngl.write_text(
+            """
+begin model
+begin parameters
+    k_deg 1.0
+    k_syn 10.0
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    $A() 5
+    B() 0
+end seed species
+begin observables
+    Molecules Atot A()
+    Molecules Btot B()
+end observables
+begin reaction rules
+    A() -> 0 k_deg
+    0 -> B() k_syn
+end reaction rules
+generate_network({overwrite=>1})
+simulate_nf({prefix=>"inside_model",t_end=>1,n_steps=>1,seed=>7})
+end model
+"""
+        )
+
+        bionetgen.load(str(bngl)).execute()
+
+        output = tmp_path / "inside_model.gdat"
+        assert output.exists()
+        assert "Atot" in output.read_text()
+
 
 class TestNetworkGeneration:
     def test_generate_simple(self, tmp_path):
