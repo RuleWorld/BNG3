@@ -279,6 +279,106 @@ struct ScanData {
     std::vector<double> values;
 };
 
+struct TrajectoryData {
+    std::vector<std::string> columns;
+    std::vector<std::vector<double>> rows;
+};
+
+TrajectoryData readDat(const std::filesystem::path& path) {
+    std::ifstream input(path);
+    if (!input) {
+        throw std::runtime_error("sensitivity could not open data file: " + path.string());
+    }
+
+    TrajectoryData data;
+    std::string line;
+    while (std::getline(input, line)) {
+        line = trim(line);
+        if (line.empty()) {
+            continue;
+        }
+        if (line.front() == '#') {
+            std::istringstream header(line.substr(1));
+            header >> std::ws;
+            std::string column;
+            while (header >> column) {
+                data.columns.push_back(column);
+            }
+            continue;
+        }
+
+        std::istringstream rowStream(line);
+        std::vector<double> row;
+        double value = 0.0;
+        while (rowStream >> value) {
+            if (!std::isfinite(value)) {
+                throw std::runtime_error(
+                    "sensitivity found a non-finite value in " + path.string());
+            }
+            row.push_back(value);
+        }
+        if (!row.empty()) {
+            data.rows.push_back(std::move(row));
+        }
+    }
+
+    if (data.columns.size() < 2 || data.rows.empty()) {
+        throw std::runtime_error("sensitivity found an invalid data file: " + path.string());
+    }
+    for (const auto& row : data.rows) {
+        if (row.size() != data.columns.size()) {
+            throw std::runtime_error(
+                "sensitivity found an inconsistent row in " + path.string());
+        }
+    }
+    return data;
+}
+
+void writeSensitivityFile(const std::filesystem::path& baselinePath,
+                          const std::filesystem::path& perturbedPath,
+                          const std::filesystem::path& outputPath,
+                          double parameterDelta) {
+    const auto baseline = readDat(baselinePath);
+    const auto perturbed = readDat(perturbedPath);
+    if (baseline.columns != perturbed.columns ||
+        baseline.rows.size() != perturbed.rows.size()) {
+        throw std::runtime_error(
+            "sensitivity baseline and perturbed trajectories have different shapes");
+    }
+    for (std::size_t row = 0; row < baseline.rows.size(); ++row) {
+        if (std::abs(baseline.rows[row][0] - perturbed.rows[row][0]) >
+            1e-12 * std::max({1.0, std::abs(baseline.rows[row][0]),
+                              std::abs(perturbed.rows[row][0])})) {
+            throw std::runtime_error(
+                "sensitivity baseline and perturbed trajectories use different time grids");
+        }
+    }
+
+    std::ofstream output(outputPath);
+    if (!output) {
+        throw std::runtime_error("sensitivity could not open output file: " + outputPath.string());
+    }
+    output << std::setw(16) << "# time";
+    for (const auto& row : baseline.rows) {
+        output << " " << std::setw(16) << std::setprecision(8) << std::scientific
+               << row[0];
+    }
+    output << '\n';
+
+    for (std::size_t column = 1; column < baseline.columns.size(); ++column) {
+        output << std::setw(16) << baseline.columns[column];
+        for (std::size_t row = 0; row < baseline.rows.size(); ++row) {
+            const double sensitivity = parameterDelta == 0.0
+                ? 0.0
+                : (perturbed.rows[row][column] - baseline.rows[row][column]) /
+                      parameterDelta;
+            output << " " << std::setw(16) << std::setprecision(8)
+                   << std::scientific << sensitivity;
+        }
+        output << '\n';
+    }
+}
+
 ScanData readLastGdat(const std::filesystem::path& path) {
     std::ifstream input(path);
     if (!input) {
@@ -360,6 +460,12 @@ void writeScanFile(const std::filesystem::path& path,
         }
         output << '\n';
     }
+}
+
+std::string formatScalar(double value) {
+    std::ostringstream output;
+    output << std::setprecision(17) << value;
+    return output.str();
 }
 
 std::string readArgument(const ast::Action& action, const std::string& key, const std::string& fallback = {}) {
@@ -2230,10 +2336,10 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 ast::Action simAction;
                 simAction.name = "simulate";
                 simAction.arguments["method"] = "ode";
-                simAction.arguments["t_end"] = std::to_string(tEnd);
+                simAction.arguments["t_end"] = formatScalar(tEnd);
                 simAction.arguments["n_steps"] = std::to_string(nSteps);
-                simAction.arguments["atol"] = std::to_string(atol);
-                simAction.arguments["rtol"] = std::to_string(rtol);
+                simAction.arguments["atol"] = formatScalar(atol);
+                simAction.arguments["rtol"] = formatScalar(rtol);
                 simAction.arguments["prefix"] = simPrefix;
                 if (steadyState) {
                     simAction.arguments["steady_state"] = "1";
@@ -2289,6 +2395,16 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 std::string bumpPrefix = prefix + "_" + paramName + "_" + suffix;
                 auto bumpAction = makeSimulateAction(bumpPrefix, parseScalarValue(tEndText, model), false);
                 runSimulation(model, bumpAction, sourcePath, *network, verbose, lastSimulationState, lastSimulationEndTime);
+
+                const double parameterDelta = newValue - paramValue;
+                writeSensitivityFile(
+                    outputDir / (prefix + "_basecase_" + suffix + ".cdat"),
+                    outputDir / (bumpPrefix + ".cdat"),
+                    outputDir / (bumpPrefix + ".csc"), parameterDelta);
+                writeSensitivityFile(
+                    outputDir / (prefix + "_basecase_" + suffix + ".gdat"),
+                    outputDir / (bumpPrefix + ".gdat"),
+                    outputDir / (bumpPrefix + ".gsc"), parameterDelta);
 
                 if (verbose) {
                     std::cerr << "[bng_cpp] LinearParameterSensitivity: completed bump for '" << paramName

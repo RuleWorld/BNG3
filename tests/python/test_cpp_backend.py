@@ -581,6 +581,43 @@ parameter_scan({method=>"protocol",parameter=>"k",par_scan_vals=>[0.1,0.2]})
         assert [float(row[0]) for row in rows] == pytest.approx([0.1, 0.2])
         assert float(rows[0][1]) > float(rows[1][1])
 
+    def test_linear_parameter_sensitivity_writes_gsc_and_csc(self, tmp_path):
+        bngl = tmp_path / "linear_sensitivity.bngl"
+        bngl.write_text(
+            """
+begin model
+begin parameters
+    k 0.1
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 10
+end seed species
+begin observables
+    Molecules Xtot X()
+end observables
+begin reaction rules
+    X() -> 0 k
+end reaction rules
+end model
+
+generate_network({overwrite=>1})
+LinearParameterSensitivity({t_end=>1,n_steps=>2,bump=>10,init_equil=>0,re_equil=>0,suffix=>"sens"})
+"""
+        )
+
+        model = bionetgen.load(str(bngl))
+        model.execute()
+
+        gsc_path = tmp_path / "linear_sensitivity_k_sens.gsc"
+        csc_path = tmp_path / "linear_sensitivity_k_sens.csc"
+        assert gsc_path.exists()
+        assert csc_path.exists()
+        assert "Xtot" in gsc_path.read_text()
+        assert "X()" in csc_path.read_text()
+
 
 class TestIO:
     def test_in_memory_serialization_round_trips(self, tmp_path):
