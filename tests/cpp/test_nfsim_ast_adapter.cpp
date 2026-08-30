@@ -95,6 +95,46 @@ end seed species
     REQUIRE(model->getSeedSpecies().size() == 1);
 }
 
+TEST_CASE("BNGL infers numeric molecule states from all patterns") {
+    // Native BNG2/NFsim accepts models without a molecule-types block and
+    // derives the complete integer range from every later pattern.  This is
+    // distilled from nfsim/test/testSuite/t_dor2.bngl: the seed introduces
+    // m~1, while observables and rules reference m~0, m~2, and m~3.
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 1
+end parameters
+begin seed species
+    A(m~1) 1
+end seed species
+begin observables
+    Molecules A0 A(m~0)
+    Molecules A2 A(m~2)
+    Molecules A3 A(m~3)
+end observables
+begin reaction rules
+    A(m~1) -> A(m~3) k
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    REQUIRE(model->getMoleculeTypes().size() == 1);
+    REQUIRE(model->getMoleculeTypes().front().getComponents().size() == 1);
+    CHECK(model->getMoleculeTypes().front().getComponents().front().allowedStates ==
+          std::vector<std::string> {"1", "0", "2", "3"});
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(
+        *model, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    auto* moleculeType = system->getMoleculeTypeByName("A");
+    REQUIRE(moleculeType != nullptr);
+    CHECK(moleculeType->isIntegerComponent(0));
+    CHECK(moleculeType->getStateValueFromName(0, "0") == 0);
+    CHECK(moleculeType->getStateValueFromName(0, "3") == 3);
+    delete system;
+}
+
 TEST_CASE("XML writer preserves the first explicit bond") {
     auto model = bng::parser::parseModel(R"(
 begin molecule types
