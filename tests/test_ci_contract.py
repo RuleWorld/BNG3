@@ -47,3 +47,14 @@ def test_python_matrix_installs_runtime_dependencies_before_no_deps_wheel():
     assert any(re.search(r"\bclick(?:[<>=!~].*)?\b", line) for line in install_lines), (
         "python-test no-deps wheel path must install declared click dependency"
     )
+
+
+def test_msvc_parser_translation_unit_clears_constant_macro_before_antlr():
+    """The Windows SDK's ``constant`` macro must not rewrite ANTLR enums."""
+
+    source = (REPO / "cpp" / "nfsim" / "NFinput" / "NFinput_fromAst.cpp").read_text(
+        encoding="utf-8"
+    )
+    parser_include = source.index('#include "PatternGraphBuilder.hpp"')
+    prefix = source[:parser_include]
+    assert "#undef constant" in prefix

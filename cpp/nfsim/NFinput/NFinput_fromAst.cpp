@@ -56,6 +56,14 @@
 #include "../NFfunction/NFfunction.hh"
 #include "../NFutil/NFutil.hh"
 #include "NFinput_energy.hh"
+
+// Some Windows SDK headers expose ``constant`` as a macro.  ANTLR4's C++
+// runtime and generated parser both use that identifier as a namespace/enum
+// member, so remove the legacy macro before any parser header is included.
+#if defined(_WIN32) && defined(constant)
+#undef constant
+#endif
+
 #include "PatternGraphBuilder.hpp"
 #include "BNGLexer.h"
 #include "BNGParser.h"
