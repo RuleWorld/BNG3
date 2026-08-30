@@ -102,6 +102,54 @@ std::string normalizeLegacyBlockHeaders(const std::string& source) {
     return result;
 }
 
+std::string normalizeLegacyActionNames(const std::string& source) {
+    std::string result;
+    result.reserve(source.size());
+
+    bool atLineStart = true;
+    std::size_t index = 0;
+    while (index < source.size()) {
+        if (atLineStart) {
+            if (source[index] == ' ' || source[index] == '\t' || source[index] == '\r') {
+                result.push_back(source[index++]);
+                continue;
+            }
+
+            if (source[index] == '#') {
+                const auto lineEnd = source.find('\n', index);
+                const auto end = lineEnd == std::string::npos ? source.size() : lineEnd;
+                result.append(source, index, end - index);
+                index = end;
+                continue;
+            }
+
+            constexpr std::string_view legacyName = "readNetwork";
+            if (source.compare(index, legacyName.size(), legacyName) == 0) {
+                const auto afterName = index + legacyName.size();
+                std::size_t next = afterName;
+                while (next < source.size() &&
+                       (source[next] == ' ' || source[next] == '\t' || source[next] == '\r')) {
+                    ++next;
+                }
+                if (next < source.size() && source[next] == '(') {
+                    result += "readFile";
+                    index = afterName;
+                    atLineStart = false;
+                    continue;
+                }
+            }
+
+            atLineStart = false;
+        }
+
+        const char current = source[index++];
+        result.push_back(current);
+        if (current == '\n') atLineStart = true;
+    }
+
+    return result;
+}
+
 bool isIdentifierStart(char value) {
     return std::isalpha(static_cast<unsigned char>(value)) || value == '_';
 }
@@ -792,7 +840,8 @@ ast::Expression parseExpressionImpl(const std::string& exprText) {
 } // namespace
 
 std::string normalizeBNGLSource(const std::string& sourceText) {
-    return normalizeLegacyBlockHeaders(normalizeTfunSyntax(sourceText));
+    return normalizeLegacyActionNames(
+        normalizeLegacyBlockHeaders(normalizeTfunSyntax(sourceText)));
 }
 
 BNGAstVisitor::BNGAstVisitor()

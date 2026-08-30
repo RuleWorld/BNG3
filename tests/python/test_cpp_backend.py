@@ -513,6 +513,52 @@ writeFile({format=>"ssc",prefix=>"export",suffix=>"v1"})
         with pytest.raises(RuntimeError, match="file exists"):
             model.execute()
 
+    def test_readnetwork_alias_loads_net_data(self, tmp_path):
+        net_path = tmp_path / "import.net"
+        net_path.write_text(
+            """# imported network
+begin parameters
+    1 k 0.2
+end parameters
+begin species
+    1 X() 7
+end species
+begin reactions
+    1 1 0 k
+end reactions
+"""
+        )
+        bngl = tmp_path / "readnetwork.bngl"
+        bngl.write_text(
+            """
+begin model
+end model
+
+readNetwork({file=>"import.net"})
+writeNetwork()
+"""
+        )
+
+        bionetgen.load(str(bngl)).execute()
+
+        output = tmp_path / "readnetwork.net"
+        assert output.exists()
+        assert "X() 7" in output.read_text()
+
+    def test_readnetwork_alias_rejects_missing_file(self, tmp_path):
+        bngl = tmp_path / "missing_readnetwork.bngl"
+        bngl.write_text(
+            """
+begin model
+end model
+
+readNetwork({file=>"missing.net"})
+"""
+        )
+
+        with pytest.raises(RuntimeError, match=r"Failed to read \.net file"):
+            bionetgen.load(str(bngl)).execute()
+
 
 class TestHighLevelAPI:
     def test_load_and_simulate(self, tmp_path):

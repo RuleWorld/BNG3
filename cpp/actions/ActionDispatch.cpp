@@ -1450,6 +1450,13 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         // Normalize action name to lowercase for case-insensitive matching
         std::string actionName = lowercase(action.name);
 
+        // BNG2 exposes readNetwork as an alias for readFile.  Normalize here
+        // too so programmatically constructed actions get the same semantics
+        // as parsed BNGL sources.
+        if (actionName == "readnetwork") {
+            actionName = "readfile";
+        }
+
         if (actionName == "readfile") {
             const auto filepath = stripQuotes(readArgument(action, "file", ""));
             if (filepath.empty()) {
@@ -3158,20 +3165,6 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 std::cerr << "[bng_cpp] simulate_protocol: dispatching " << protocol.size() << " protocol actions\n";
             }
             runProtocol(std::nullopt);
-            continue;
-        }
-
-        // Action aliases for BNG2 compatibility
-        if (actionName == "readnetwork") {
-            // Alias for include_network / readFile with .net
-            const auto netFile = stripQuotes(readArgument(action, "file", ""));
-            if (!netFile.empty()) {
-                auto netPath = sourcePath.parent_path() / netFile;
-                if (std::filesystem::exists(netPath)) {
-                    auto parseResult = io::NetReader::parse(netPath);
-                    if (verbose) std::cerr << "[bng_cpp] readNetwork: loaded " << netPath << "\n";
-                }
-            }
             continue;
         }
 
