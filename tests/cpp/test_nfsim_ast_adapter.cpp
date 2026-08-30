@@ -1,6 +1,7 @@
 #include <cmath>
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <map>
 #include <string>
 #include <vector>
@@ -2759,6 +2760,85 @@ end reaction rules
     system->prepareForSimulation();
     CHECK(system->getReaction(0)->get_a() == Catch::Approx(1.0));
     delete system;
+}
+
+TEST_CASE("NFsim XML bridge reads legacy composite DOR2 rate laws") {
+    auto model = bng::parser::parseModel(R"BNG(
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+    B() 1
+end seed species
+begin observables
+    Molecules atotal A()
+    Molecules btotal B()
+end observables
+begin functions
+    fA(x) = atotal(x)
+    fB(y) = btotal(y)
+end functions
+begin reaction rules
+    A%x() + B%y() -> A%x() + B%y() fA(x)*fB(y)
+end reaction rules
+)BNG");
+
+    REQUIRE(model != nullptr);
+    auto xml = bng::io::XmlWriter::write(*model);
+    const auto rateStart = xml.find("        <RateLaw id=\"RR1_RateLaw\"");
+    REQUIRE(rateStart != std::string::npos);
+    const std::string rateEndMarker = "        </RateLaw>\n";
+    const auto rateEnd = xml.find(rateEndMarker, rateStart);
+    REQUIRE(rateEnd != std::string::npos);
+    const std::string legacyRate = R"XML(        <RateLaw id="RR1_RateLaw" type="Function" name="_rateLaw1" totalrate="0">
+          <ListOfArguments>
+            <Argument id="x" type="ObjectReference" value="RR1_RP1_M1"/>
+            <Argument id="y" type="ObjectReference" value="RR1_RP2_M1"/>
+          </ListOfArguments>
+        </RateLaw>
+)XML";
+    xml.replace(rateStart, rateEnd + rateEndMarker.size() - rateStart, legacyRate);
+
+    const auto functionsEnd = xml.find("    </ListOfFunctions>");
+    REQUIRE(functionsEnd != std::string::npos);
+    const std::string legacyComposite = R"XML(      <Function id="_rateLaw1">
+        <ListOfArguments>
+          <Argument id="x"/>
+          <Argument id="y"/>
+        </ListOfArguments>
+        <ListOfReferences>
+          <Reference name="fA" type="Function"/>
+          <Reference name="fB" type="Function"/>
+          <Reference name="x" type="Local"/>
+          <Reference name="y" type="Local"/>
+        </ListOfReferences>
+        <Expression>fA(x)*fB(y)</Expression>
+      </Function>
+)XML";
+    xml.insert(functionsEnd, legacyComposite);
+
+    const auto token = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto xmlPath = std::filesystem::temp_directory_path() /
+                         ("bng3-legacy-dor2-" + std::to_string(token) + ".xml");
+    std::ofstream xmlFile(xmlPath);
+    REQUIRE(xmlFile.good());
+    xmlFile << xml;
+    xmlFile.close();
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::initializeFromXML(
+        xmlPath.string(), false, 100, false, suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    CHECK(system->getReaction(0)->getRxnType() == NFcore::ReactionClass::DOR2_RXN);
+    system->prepareForSimulation();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(1.0));
+    delete system;
+
+    std::error_code error;
+    std::filesystem::remove(xmlPath, error);
 }
 
 TEST_CASE("NFsim XML bridge preserves bounded FunctionProduct rates") {
