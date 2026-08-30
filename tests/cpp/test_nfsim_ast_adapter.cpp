@@ -1389,6 +1389,47 @@ end reaction rules
     delete system;
 }
 
+TEST_CASE("NFsim Michaelis-Menten propensity remains stable for tiny Km") {
+    // Regression distilled from NFsim/test/MM/mm_small_km.bngl. With enzyme
+    // in excess and Km far below one, the naive quadratic-root expression
+    // loses the small positive substrate root to floating-point cancellation.
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    kcat 1.0
+    Km 1e-15
+end parameters
+begin molecule types
+    S()
+    E()
+    P()
+end molecule types
+begin seed species
+    S() 100
+    E() 200
+    P() 0
+end seed species
+begin observables
+    Molecules S_total S()
+    Molecules P_total P()
+end observables
+begin reaction rules
+    S() + E() -> P() + E() MM(kcat,Km)
+end reaction rules
+)");
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(
+        *model, false, 1000, false, suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    system->prepareForSimulation();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(100.0));
+    system->singleStep();
+    CHECK(system->getObservableByName("S_total")->getCount() == 99);
+    CHECK(system->getObservableByName("P_total")->getCount() == 1);
+    delete system;
+}
+
 TEST_CASE("NFsim AST adapter maps Sat rates directly and through XML") {
     auto model = bng::parser::parseModel(R"(
 begin parameters
