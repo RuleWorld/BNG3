@@ -39,6 +39,25 @@ target_link_libraries(test_pla_simulator PRIVATE
 )
 catch_discover_tests(test_pla_simulator)
 
+# test_ode_options
+add_executable(test_ode_options test_ode_options.cpp)
+target_include_directories(test_ode_options PRIVATE
+    ${CMAKE_SOURCE_DIR}/cpp
+    ${CMAKE_SOURCE_DIR}/cpp/parser
+    ${CMAKE_SOURCE_DIR}/cpp/parser/generated
+    ${antlr4_runtime_SOURCE_DIR}/runtime/Cpp/runtime/src
+    ${sundials_SOURCE_DIR}/include
+    ${sundials_BINARY_DIR}/include
+)
+target_link_libraries(test_ode_options PRIVATE
+    Catch2::Catch2WithMain
+    Catch2::Catch2
+    bng_engine
+    bng_ast
+    antlr4_static
+)
+catch_discover_tests(test_ode_options)
+
 # test_hybrid_model_generator
 add_executable(test_hybrid_model_generator test_hybrid_model_generator.cpp)
 target_link_libraries(test_hybrid_model_generator PRIVATE
