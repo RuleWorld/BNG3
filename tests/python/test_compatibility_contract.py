@@ -11,7 +11,6 @@ import numpy as np
 
 import bionetgen
 
-
 REPO = Path(__file__).resolve().parents[2]
 MODEL = Path(__file__).with_name("test.bngl")
 
