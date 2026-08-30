@@ -48,6 +48,10 @@ class Network:
     _raw: list = field(default_factory=list)
     # Rate-key semantics used when the parsed reaction multiset was built.
     rate_mode: str = "value"
+    # Observable-group index -> (serialized label, species index -> weight).
+    # BNG2 and BNG3 use different labels for some groups; the indexed weighted
+    # membership is the semantic contract used by the network engine.
+    groups: dict[int, tuple[str, dict[int, float]]] = field(default_factory=dict)
 
     @property
     def n_species(self) -> int:
@@ -743,6 +747,7 @@ def parse_net(path: str | Path, *, rate_mode: str = "value") -> Network | None:
     species: dict[int, str] = {}
     raw_reactions: list[tuple[list[int], list[int], str]] = []
     rate_defs: dict[str, str] = {}
+    groups: dict[str, dict[int, float]] = {}
     section = None
 
     for line in path.read_text().splitlines():
@@ -796,6 +801,37 @@ def parse_net(path: str | Path, *, rate_mode: str = "value") -> Network | None:
             elif len(parts) >= 2:
                 rate_defs[parts[0]] = " ".join(parts[1:])
 
+        elif section == "groups":
+            parts = _norm(stripped).split(" ", 2)
+            if len(parts) < 3:
+                continue
+            try:
+                int(parts[0])
+            except ValueError:
+                continue
+            group_index = int(parts[0])
+            name = parts[1]
+            entries: dict[int, float] = {}
+            for item in parts[2].split(","):
+                item = item.strip()
+                if not item:
+                    continue
+                if "*" in item:
+                    weight_text, index_text = item.split("*", 1)
+                    try:
+                        weight = float(weight_text)
+                    except ValueError:
+                        continue
+                else:
+                    weight = 1.0
+                    index_text = item
+                try:
+                    index = int(index_text)
+                except ValueError:
+                    continue
+                entries[index] = entries.get(index, 0.0) + weight
+            groups[group_index] = (name, entries)
+
     if not species and not raw_reactions:
         return None
 
@@ -805,6 +841,7 @@ def parse_net(path: str | Path, *, rate_mode: str = "value") -> Network | None:
         rate_defs=rate_defs,
         _raw=raw_reactions,
         rate_mode=rate_mode,
+        groups=groups,
     )
     _rekey(net, rate_mode)
     return net
@@ -836,6 +873,10 @@ class NetDiff:
     species_only_test: set[str]
     reactions_only_ref: list
     reactions_only_test: list
+    groups_only_ref: set[int] = field(default_factory=set)
+    groups_only_test: set[int] = field(default_factory=set)
+    groups_changed: set[int] = field(default_factory=set)
+    groups_renamed: set[int] = field(default_factory=set)
 
     def summary(self) -> str:
         lines = [
@@ -864,6 +905,26 @@ class NetDiff:
             lines.append(f"  reactions only in ref ({len(self.reactions_only_ref)}):")
             for r, p, rate in self.reactions_only_ref[:5]:
                 lines.append(f"    {' + '.join(r)} -> {' + '.join(p)}  [{rate}]")
+        if self.groups_only_ref:
+            lines.append(
+                f"  observable groups only in ref ({len(self.groups_only_ref)}): "
+                + ", ".join(str(i) for i in sorted(self.groups_only_ref)[:5])
+            )
+        if self.groups_only_test:
+            lines.append(
+                f"  observable groups only in test ({len(self.groups_only_test)}): "
+                + ", ".join(str(i) for i in sorted(self.groups_only_test)[:5])
+            )
+        if self.groups_changed:
+            lines.append(
+                f"  observable groups changed ({len(self.groups_changed)}): "
+                + ", ".join(str(i) for i in sorted(self.groups_changed)[:5])
+            )
+        if self.groups_renamed:
+            lines.append(
+                f"  observable group labels differ ({len(self.groups_renamed)}): "
+                + ", ".join(str(i) for i in sorted(self.groups_renamed)[:5])
+            )
         return "\n".join(lines)
 
 
@@ -943,6 +1004,21 @@ def _reaction_view(
     return counter, payload
 
 
+def _group_view(
+    net: Network, species_identity: dict[int, tuple[str, int]]
+) -> dict[int, tuple[str, tuple[tuple[tuple[str, int], float], ...]]]:
+    """Map indexed observable groups from species indices to identities."""
+
+    view = {}
+    for group_index, (name, entries) in net.groups.items():
+        mapped: dict[tuple[str, int], float] = {}
+        for index, weight in entries.items():
+            identity = species_identity.get(index, ("missing", index))
+            mapped[identity] = mapped.get(identity, 0.0) + weight
+        view[group_index] = (name, tuple(sorted(mapped.items(), key=repr)))
+    return view
+
+
 def compare_net(ref: Network, test: Network, *, compare_rates: bool = True) -> NetDiff:
     """Compare networks by graph identity and reaction multiset.
 
@@ -967,8 +1043,22 @@ def compare_net(ref: Network, test: Network, *, compare_rates: bool = True) -> N
     rxn_test, payload_test = _reaction_view(
         test, test_identity, compare_rates=compare_rates
     )
+    groups_ref = _group_view(ref, ref_identity)
+    groups_test = _group_view(test, test_identity)
     only_ref = rxn_ref - rxn_test
     only_test = rxn_test - rxn_ref
+    groups_only_ref = set(groups_ref) - set(groups_test)
+    groups_only_test = set(groups_test) - set(groups_ref)
+    groups_changed = {
+        index
+        for index in set(groups_ref) & set(groups_test)
+        if groups_ref[index][1] != groups_test[index][1]
+    }
+    groups_renamed = {
+        index
+        for index in set(groups_ref) & set(groups_test)
+        if groups_ref[index][0] != groups_test[index][0]
+    }
 
     def _explode(counter, payload):
         out = []
@@ -992,6 +1082,9 @@ def compare_net(ref: Network, test: Network, *, compare_rates: bool = True) -> N
         len(mapping) == len(ref.species_by_index) == len(test.species_by_index)
         and not only_ref
         and not only_test
+        and not groups_only_ref
+        and not groups_only_test
+        and not groups_changed
     )
     return NetDiff(
         ok=ok,
@@ -1003,6 +1096,10 @@ def compare_net(ref: Network, test: Network, *, compare_rates: bool = True) -> N
         species_only_test=species_only_test,
         reactions_only_ref=_explode(only_ref, payload_ref),
         reactions_only_test=_explode(only_test, payload_test),
+        groups_only_ref=groups_only_ref,
+        groups_only_test=groups_only_test,
+        groups_changed=groups_changed,
+        groups_renamed=groups_renamed,
     )
 
 
