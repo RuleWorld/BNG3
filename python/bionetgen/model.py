@@ -202,8 +202,8 @@ class BioNetGenModel:
             Expression evaluated at output points/events; a nonzero value stops
             ODE/SSA simulation.
         sample_times : sequence of float, optional
-            Strictly increasing ODE/SSA output times between ``t_start`` and
-            ``t_end``. If the final time is omitted, ``t_end`` is appended.
+            Strictly increasing ODE/SSA/NF output times between ``t_start``
+            and ``t_end``. If the final time is omitted, ``t_end`` is appended.
         max_sim_steps : int
             Maximum internal SSA reaction events (0 = unlimited).
         output_step_interval : int
@@ -318,13 +318,17 @@ class BioNetGenModel:
                 "max_sim_steps and output_step_interval are supported only "
                 "for method='ssa'"
             )
-        if method not in {"ode", "ssa"} and (
-            stop_if or normalized_sample_times or max_sim_steps or output_step_interval
+        if method not in {"ode", "ssa", "nf"} and (
+            stop_if or max_sim_steps or output_step_interval
         ):
             raise ValueError(
-                "stop_if, sample_times, max_sim_steps, and "
-                "output_step_interval are supported only for method='ode' or "
-                "method='ssa'"
+                "stop_if, max_sim_steps, and output_step_interval are supported "
+                "only for method='ode' or method='ssa'"
+            )
+        if method == "nf" and (stop_if or max_sim_steps or output_step_interval):
+            raise ValueError(
+                "stop_if, max_sim_steps, and output_step_interval are supported "
+                "only for method='ode' or method='ssa'"
             )
 
         if method == "nf":
@@ -338,6 +342,7 @@ class BioNetGenModel:
                 verbose=verbose,
                 equilibrate=equilibrate,
                 source_path=self._source_path or "",
+                sample_times=normalized_sample_times,
             )
         else:
             if self._network is None:

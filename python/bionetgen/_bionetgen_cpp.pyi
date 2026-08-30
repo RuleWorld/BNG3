@@ -446,6 +446,7 @@ def simulate_nf(
     equilibrate: float = 0.0,
     verbose: bool = False,
     source_path: str = "",
+    sample_times: List[float] = [],
 ) -> Dict[str, object]:
     """Run network-free (NFSim) simulation on a model.
 
@@ -468,6 +469,9 @@ def simulate_nf(
         Print progress information.
     source_path : str
         Path to the source BNGL file for resolving relative TFUN tables.
+    sample_times : list[float]
+        Strictly increasing output times between zero and ``t_end``.  If the
+        final time is omitted, ``t_end`` is appended.
 
     Returns
     -------

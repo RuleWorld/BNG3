@@ -3,6 +3,7 @@
 #include <pybind11/numpy.h>
 
 #include <cstdio>
+#include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -45,16 +46,34 @@ void bind_nfsim(py::module_& m) {
 
         m.def("simulate_nf", [](Model& model, double t_end, int n_steps,
                             int seed, double equilibrate, bool verbose,
-                            const std::string& source_path) -> py::dict {
+                            const std::string& source_path,
+                            const std::vector<double>& sample_times) -> py::dict {
         if (t_end < 0.0) {
             throw std::invalid_argument("t_end must be non-negative");
         }
-        if (n_steps <= 0) {
-            throw std::invalid_argument("n_steps must be positive");
+        if (n_steps < 0 || (n_steps == 0 && sample_times.empty())) {
+            throw std::invalid_argument(
+                "n_steps must be positive unless sample_times is set");
         }
         if (!std::isfinite(equilibrate) || equilibrate < 0.0) {
             throw std::invalid_argument(
                 "equilibrate must be finite and non-negative");
+        }
+
+        std::vector<double> output_times = sample_times;
+        if (!output_times.empty()) {
+            for (std::size_t index = 0; index < output_times.size(); ++index) {
+                const double time = output_times[index];
+                if (!std::isfinite(time) || time < 0.0 || time > t_end ||
+                    (index > 0 && time <= output_times[index - 1])) {
+                    throw std::invalid_argument(
+                        "sample_times must be finite, strictly increasing, "
+                        "and within [0, t_end]");
+                }
+            }
+            if (output_times.back() < t_end) {
+                output_times.push_back(t_end);
+            }
         }
 
         // The direct adapter is deliberately fail-closed.  XML compatibility
@@ -166,14 +185,13 @@ void bind_nfsim(py::module_& m) {
         }
         int n_obs = static_cast<int>(obs_names.size());
 
-        // Step 8: Run simulation in steps, collecting time-series data
-        double dt = t_end / static_cast<double>(n_steps);
+        // Step 8: Run simulation in steps, collecting time-series data.
+        // NFsim's System supports arbitrary stopping times through stepTo;
+        // use that path when the caller requests explicit sample times.
         std::vector<double> time_points;
         std::vector<std::vector<double>> obs_series(n_obs);
 
-        // Record initial state
-        time_points.push_back(0.0);
-        {
+        const auto record_observables = [&]() {
             int idx = 0;
             for (auto* obs : system->getObsToOutput()) {
                 if (obs) {
@@ -181,22 +199,26 @@ void bind_nfsim(py::module_& m) {
                     idx++;
                 }
             }
-        }
+        };
 
-        // Simulate in chunks to get time-series
         {
             py::gil_scoped_release release;
-            for (int step = 1; step <= n_steps; ++step) {
-                double t_current = step * dt;
-                system->stepTo(t_current);
-
-                time_points.push_back(t_current);
-                int idx = 0;
-                for (auto* obs : system->getObsToOutput()) {
-                    if (obs) {
-                        obs_series[idx].push_back(static_cast<double>(obs->getCount()));
-                        idx++;
-                    }
+            if (output_times.empty()) {
+                const double dt = t_end / static_cast<double>(n_steps);
+                time_points.push_back(0.0);
+                record_observables();
+                for (int step = 1; step <= n_steps; ++step) {
+                    const double t_current = step * dt;
+                    system->stepTo(t_current);
+                    time_points.push_back(t_current);
+                    record_observables();
+                }
+            } else {
+                time_points.reserve(output_times.size());
+                for (const double time : output_times) {
+                    system->stepTo(time);
+                    time_points.push_back(time);
+                    record_observables();
                 }
             }
         }
@@ -229,6 +251,7 @@ void bind_nfsim(py::module_& m) {
         py::arg("equilibrate") = 0,
         py::arg("verbose") = false,
         py::arg("source_path") = "",
+        py::arg("sample_times") = std::vector<double>{},
         "Run network-free (NFSim) simulation on a model.\n\n"
         "Returns a dict with 'time' (numpy array of time points) and\n"
         "'observables' (dict of name -> numpy array of values at each time point).");

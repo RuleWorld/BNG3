@@ -811,6 +811,13 @@ end model
         )
         assert result.time.tolist() == sample_times
 
+        nf_sample_times = [0.0, 0.25, 1.5, 10.0]
+        result = model.simulate(
+            method="nf", t_end=10.0, n_steps=0,
+            sample_times=nf_sample_times, seed=42
+        )
+        assert result.time.tolist() == nf_sample_times
+
         with pytest.raises(ValueError, match="only for method='ssa'"):
             model.simulate(
                 method="ode", t_end=1.0, n_steps=1, max_sim_steps=1
