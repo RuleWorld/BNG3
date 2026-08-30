@@ -2637,6 +2637,49 @@ end reaction rules
     delete system;
 }
 
+TEST_CASE("NFsim AST adapter maps a raw local-function product rate") {
+    auto model = bng::parser::parseModel(R"BNG(
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+    B() 1
+end seed species
+begin observables
+    Molecules atotal A()
+    Molecules btotal B()
+end observables
+begin functions
+    fA(x) = atotal(x)
+    fB(y) = btotal(y)
+end functions
+begin reaction rules
+    %x::A() + %y::B() -> %x::A() + %y::B() fA(x)*fB(y)
+end reaction rules
+)BNG");
+
+    REQUIRE(model != nullptr);
+    REQUIRE(model->getReactionRules().size() == 1);
+    const auto& rate = model->getReactionRules().front().getRates().front();
+    REQUIRE(rate.kind() == bng::ast::ExpressionKind::Binary);
+    CHECK(rate.name() == "*");
+    REQUIRE(rate.args().size() == 2);
+    CHECK(rate.args()[0].name() == "fA");
+    CHECK(rate.args()[1].name() == "fB");
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    CHECK(system->getReaction(0)->getRxnType() == NFcore::ReactionClass::DOR2_RXN);
+    system->prepareForSimulation();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(1.0));
+    delete system;
+}
+
 TEST_CASE("NFsim XML bridge preserves bounded FunctionProduct rates") {
     auto model = bng::parser::parseModel(R"BNG(
 begin molecule types
