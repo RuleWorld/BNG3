@@ -201,14 +201,64 @@ class BNGFile:
 
     def write_xml(self, open_file, xml_type="bngxml", bngl_str=None) -> bool:
         """
-        write new BNG-XML or SBML of file by calling BNG2.pl again
-        or can take BNGL string in as well.
+        Write BNG-XML or SBML for this file, or for an explicit BNGL string.
+
+        When the compiled BNG3 backend is available, both inputs use the
+        canonical parser and writers.  The Perl route remains available only
+        as a compatibility fallback for environments that cannot import the
+        compiled backend.
         """
-        # TODO: Implement the route where this function uses the file itself
-        # for this generation
         if bngl_str is None:
-            # should load in the right str here
-            raise NotImplementedError
+            try:
+                with open(self.path, "r", encoding="UTF-8") as model_file:
+                    bngl_str = model_file.read()
+            except OSError as exc:
+                raise BNGFileError(
+                    self.path, message=f"Could not read BNGL file: {exc}"
+                ) from exc
+
+        xml_type = str(xml_type).lower()
+
+        # Keep the compatibility facade on the same canonical implementation
+        # as the modern Model API whenever the extension is present.
+        try:
+            from bionetgen import _bionetgen_cpp as cpp
+        except ImportError:
+            cpp = None
+
+        if cpp is not None:
+            if xml_type not in {"bngxml", "sbml"}:
+                print("XML type {} not recognized".format(xml_type))
+                return False
+
+            cpp_model = cpp.parse_string(bngl_str)
+            if xml_type == "bngxml":
+                content = cpp.io.write_xml_string(cpp_model)
+            else:
+                network = cpp.generate_network(cpp_model)
+                with tempfile.TemporaryDirectory(prefix="pybng-") as temp_folder:
+                    sbml_path = os.path.join(temp_folder, "model.xml")
+                    cpp.io.write_sbml(cpp_model, network, sbml_path)
+                    with open(sbml_path, "r", encoding="UTF-8") as sbml_file:
+                        content = sbml_file.read()
+
+            try:
+                open_file.seek(0)
+                open_file.truncate(0)
+            except (AttributeError, OSError):
+                pass
+            open_file.write(content)
+            open_file.seek(0)
+            return True
+
+        if self.bngexec is None:
+            raise BNGFileError(
+                self.path,
+                message=(
+                    "BNG3 compiled backend is unavailable and no BNG2.pl "
+                    "compatibility executable was found"
+                ),
+            )
 
         cur_dir = os.getcwd()
         # temporary folder to work in
