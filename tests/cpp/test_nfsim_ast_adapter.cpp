@@ -498,6 +498,49 @@ end reaction rules
     delete system;
 }
 
+TEST_CASE("NFsim AST adapter creates products with symmetric components") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k_bind 2
+    k_unbind 1
+end parameters
+begin molecule types
+    D(x,x)
+    C(n~0~1~2~3)
+end molecule types
+begin seed species
+    D(x,x) 2
+    C(n~3) 0
+end seed species
+begin observables
+    Species D1 D(x,x)
+    Species D2 D(x,x!0).D(x!0,x)
+    Species D3 D(x,x!0).D(x!0,x!1).D(x!1,x)
+    Species D3c D(x!2,x!0).D(x!0,x!1).D(x!1,x!2)
+end observables
+begin reaction rules
+    C(n~3) -> D(x,x) 1
+    D(x,x) + D(x,x) <-> D(x!0,x).D(x!0,x) k_bind, k_unbind
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(direct != nullptr);
+    REQUIRE(direct->getAllReactions().size() > 1);
+    const auto directReactionCount = direct->getAllReactions().size();
+    delete direct;
+
+    suggestedTraversalLimit = 0;
+    auto* xml = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, suggestedTraversalLimit);
+    REQUIRE(xml != nullptr);
+    CHECK(xml->getAllReactions().size() == directReactionCount);
+    delete xml;
+}
+
 TEST_CASE("NFsim AST adapter counts a connected observable pattern once") {
     bng::ast::Model model;
     model.setModelName("connected-observable");
