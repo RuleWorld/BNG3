@@ -57,6 +57,21 @@ NFcore::System* buildSystemFromAst(
         int&   suggestedTraversalLimit,
         const std::filesystem::path& sourcePath = {});
 
+/// Build an NFcore::System with the native NFsim complex flags separated.
+///
+/// Native NFsim uses ``-cb`` to maintain complex identities and ``-bscb`` to
+/// reject bindings whose reactants already share a complex.  The historical
+/// five-argument API above predates that distinction and remains as a
+/// compatibility wrapper where its boolean means both behaviors.
+NFcore::System* buildSystemFromAst(
+        const bng::ast::Model& model,
+        bool   useComplex,
+        bool   blockSameComplexBinding,
+        int    globalMoleculeLimit,
+        bool   verbose,
+        int&   suggestedTraversalLimit,
+        const std::filesystem::path& sourcePath = {});
+
 // --- Per-section direct builders (mirror the TiXml-based init* functions) ---
 // Each returns false on error. Implement incrementally; until a builder is
 // done, buildSystemFromAst delegates that section to the in-memory-XML path.

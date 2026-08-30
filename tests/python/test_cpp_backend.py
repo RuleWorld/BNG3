@@ -565,7 +565,7 @@ begin observables
     Molecules closed A(y!2).B(z!2)
 end observables
 begin reaction rules
-    A(x!1,y).B(x!1,z) -> A(x!1,y!2).B(x!1,z!2) k
+    A(x!1,y) + B(x!1,z) -> A(x!1,y!2).B(x!1,z!2) k
 end reaction rules
 begin actions
     simulate_nf({prefix=>"cb",t_end=>1,n_steps=>1,seed=>1,complex=>1})

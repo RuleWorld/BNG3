@@ -5404,6 +5404,21 @@ System* buildSystemFromAst(const bng::ast::Model& model,
                            bool verbose,
                            int& suggestedTraversalLimit,
                            const std::filesystem::path& sourcePath) {
+    // Preserve the historical API contract: before the direct adapter grew a
+    // separate complex-bookkeeping flag, this argument controlled both the
+    // System constructor and same-complex binding checks.
+    return buildSystemFromAst(
+        model, blockSameComplexBinding, blockSameComplexBinding,
+        globalMoleculeLimit, verbose, suggestedTraversalLimit, sourcePath);
+}
+
+System* buildSystemFromAst(const bng::ast::Model& model,
+                           bool useComplex,
+                           bool blockSameComplexBinding,
+                           int globalMoleculeLimit,
+                           bool verbose,
+                           int& suggestedTraversalLimit,
+                           const std::filesystem::path& sourcePath) {
     // Migration escape hatch used by the parity gate: force the XML path.
     if (std::getenv("BNG_NFSIM_FORCE_XML")) {
         if (verbose) std::cerr << "[nfsim/ast] BNG_NFSIM_FORCE_XML set -> XML path\n";
@@ -5412,7 +5427,7 @@ System* buildSystemFromAst(const bng::ast::Model& model,
 
     const std::string& name = model.getModelName();
     System* s = new System(name.empty() ? "model" : name,
-                           blockSameComplexBinding, globalMoleculeLimit);
+                           useComplex, globalMoleculeLimit);
     // The CLI enables complex-scoped local functions by default.  The direct
     // AST entry point has no separate -nocslf argument, so preserve that
     // default explicitly instead of leaving the legacy System flag unset.

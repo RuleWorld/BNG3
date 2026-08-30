@@ -1437,7 +1437,8 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         // compatibility bridge while the direct adapter is being qualified.
         NFcore::System *nfSystem = NFinput::buildSystemFromAst(
             model,
-            complexConstruction,
+            useComplex,
+            blockSameComplexBinding,
             globalMoleculeLimit,
             nfVerbose,
             suggestedTraversalLimit,
