@@ -78,6 +78,14 @@ std::string normalizeLegacyBlockHeaders(const std::string& source) {
 
         if (matchWord("begin") || matchWord("end")) {
             skipSpace();
+            const auto blockPosition = position;
+            if (matchWord("function") && hasBoundary()) {
+                result.append(line, 0, position);
+                result.push_back('s');
+                result.append(line, position, std::string::npos);
+                return;
+            }
+            position = blockPosition;
             if (matchWord("molecule")) {
                 skipSpace();
                 if (matchWord("type") && hasBoundary()) {
