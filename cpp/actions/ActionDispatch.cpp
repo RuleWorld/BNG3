@@ -1181,6 +1181,24 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             throw std::runtime_error("NFsim does not support 'continue' option");
         }
 
+        if (action.arguments.find("sample_times") != action.arguments.end()) {
+            throw std::runtime_error(
+                "NFsim action does not support 'sample_times' yet; use n_steps");
+        }
+        const auto tStartText = stripQuotes(readArgument(action, "t_start", ""));
+        if (!tStartText.empty() && parseScalarValue(tStartText, model) != 0.0) {
+            throw std::runtime_error(
+                "NFsim action does not support non-zero 't_start' yet");
+        }
+        if (!stripQuotes(trim(readArgument(action, "param", ""))).empty()) {
+            throw std::runtime_error(
+                "NFsim action does not support arbitrary 'param' flags yet");
+        }
+        if (!stripQuotes(trim(readArgument(action, "nfsim_exec", ""))).empty()) {
+            throw std::runtime_error(
+                "NFsim action does not support 'nfsim_exec' yet");
+        }
+
         // Parse simulation parameters using the same defaults as the
         // standalone simulate_nf action.
         const auto tEnd = stripQuotes(readArgument(action, "t_end", "10"));
@@ -1190,11 +1208,27 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         const auto utlText = stripQuotes(readArgument(action, "utl", "3"));
         const auto verboseFlag = lowercase(stripQuotes(readArgument(action, "verbose", "0")));
         const auto complexFlag = lowercase(stripQuotes(readArgument(action, "complex", "1")));
-        const auto getFinalState = lowercase(stripQuotes(readArgument(action, "get_final_state", "1")));
+        const auto equilText = stripQuotes(readArgument(action, "equil", ""));
+        const bool binaryOutput = parseBoolean(
+            readArgument(action, "binary_output", "0"));
+        const bool outputFunctions = parseBoolean(
+            readArgument(action, "print_functions", "0"));
+        const bool disableOnTheFly = parseBoolean(
+            readArgument(action, "notf", "0"));
+        const bool getFinalState = parseBoolean(
+            readArgument(action, "get_final_state", "1"), true);
         const bool nfVerbose = verboseFlag == "1" || verboseFlag == "true";
         const bool useComplex = complexFlag == "1" || complexFlag == "true";
-        const bool evalCSLF = lowercase(stripQuotes(readArgument(action, "nocslf", "0"))) != "1";
-        const bool connectivityFlag = lowercase(stripQuotes(readArgument(action, "pcg", "0"))) == "1";
+        const bool evalCSLF = !parseBoolean(readArgument(action, "nocslf", "0"));
+        const bool connectivityFlag = parseBoolean(readArgument(action, "pcg", "0"));
+
+        double equilibration = 0.0;
+        if (!equilText.empty()) {
+            equilibration = parseScalarValue(equilText, model);
+            if (!std::isfinite(equilibration) || equilibration < 0.0) {
+                throw std::runtime_error("NFsim 'equil' must be finite and non-negative");
+            }
+        }
 
         int globalMoleculeLimit = 200000;
         const auto gmlText = stripQuotes(readArgument(action, "gml", ""));
@@ -1266,6 +1300,15 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         nfSystem->setEvaluateComplexScopedLocalFunctions(evalCSLF);
         nfSystem->useConnectivityFlag(connectivityFlag);
         nfSystem->setUniversalTraversalLimit(suggestedTraversalLimit);
+        if (disableOnTheFly) {
+            nfSystem->turnOff_OnTheFlyObs();
+        }
+        if (outputFunctions) {
+            nfSystem->turnOnGlobalFuncOut();
+        }
+        if (binaryOutput) {
+            nfSystem->setOutputToBinary();
+        }
 
         if (!seedText.empty()) {
             nfSystem->seedRNG(std::stoul(seedText));
@@ -1273,9 +1316,15 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
         nfSystem->registerOutputFileLocation(gdatPath.string());
         nfSystem->prepareForSimulation();
+        if (!nfSystem->isOutputtingBinary()) {
+            nfSystem->outputAllObservableNames();
+        }
+        if (equilibration > 0.0) {
+            nfSystem->equilibrate(equilibration);
+        }
         nfSystem->sim(std::stod(tEnd), std::stol(nSteps), nfVerbose);
 
-        if (getFinalState == "1" || getFinalState == "true") {
+        if (getFinalState) {
             const auto speciesPath = sourcePath.parent_path() / (prefix + ".species");
             nfSystem->saveSpecies(speciesPath.string());
         }

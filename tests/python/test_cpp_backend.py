@@ -481,6 +481,119 @@ end model
         with pytest.raises(RuntimeError, match="NFsim does not support 'continue'"):
             bionetgen.load(str(bngl)).execute()
 
+    @pytest.mark.parametrize(
+        ("option", "value", "message"),
+        [
+            ("t_start", "1", "t_start"),
+            ("sample_times", "[0,0.5,1]", "sample_times"),
+            ("param", "\"-notf\"", "param"),
+        ],
+    )
+    def test_simulate_nf_rejects_unhandled_controls(
+        self, tmp_path, option, value, message
+    ):
+        bngl = tmp_path / f"nf_{option}.bngl"
+        bngl.write_text(
+            f"""
+begin model
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 1
+end seed species
+begin actions
+    simulate_nf({{{option}=>{value},t_end=>1,n_steps=>1}})
+end actions
+end model
+"""
+        )
+
+        with pytest.raises(RuntimeError, match=message):
+            bionetgen.load(str(bngl)).execute()
+
+    def test_simulate_nf_action_outputs_global_functions(self, tmp_path):
+        bngl = tmp_path / "nf_functions.bngl"
+        bngl.write_text(
+            """
+begin model
+begin parameters
+    k 0.1
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 1
+end seed species
+begin observables
+    Molecules X_total X()
+end observables
+begin functions
+    rate = k
+end functions
+begin reaction rules
+    X() -> 0 rate
+end reaction rules
+begin actions
+    simulate_nf({prefix=>"functions",t_end=>1,n_steps=>1,print_functions=>1})
+end actions
+end model
+"""
+        )
+
+        bionetgen.load(str(bngl)).execute()
+
+        output = tmp_path / "functions.gdat"
+        assert "rate" in output.read_text()
+
+    def test_simulate_nf_action_binary_output_writes_header(self, tmp_path):
+        bngl = tmp_path / "nf_binary.bngl"
+        bngl.write_text(
+            """
+begin model
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 1
+end seed species
+begin actions
+    simulate_nf({prefix=>"binary",t_end=>1,n_steps=>1,binary_output=>1})
+end actions
+end model
+"""
+        )
+
+        bionetgen.load(str(bngl)).execute()
+
+        output = tmp_path / "binary.gdat"
+        assert output.exists()
+        assert output.stat().st_size > 0
+        assert (tmp_path / "binary.gdat.head").exists()
+        assert "Time" in (tmp_path / "binary.gdat.head").read_text()
+
+    def test_simulate_nf_action_rejects_invalid_equilibration(self, tmp_path):
+        bngl = tmp_path / "nf_bad_equil.bngl"
+        bngl.write_text(
+            """
+begin model
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 1
+end seed species
+begin actions
+    simulate_nf({equil=>-1,t_end=>1,n_steps=>1})
+end actions
+end model
+"""
+        )
+
+        with pytest.raises(RuntimeError, match="equil.*non-negative"):
+            bionetgen.load(str(bngl)).execute()
+
     def test_action_rejects_unknown_simulation_method(self, tmp_path):
         bngl = tmp_path / "unknown_method.bngl"
         bngl.write_text(
