@@ -12,6 +12,7 @@
 #include "io/SbmlWriter.hpp"
 #include "io/MatlabWriter.hpp"
 #include "io/LatexWriter.hpp"
+#include "io/MexWriter.hpp"
 
 namespace py = pybind11;
 using namespace bng::ast;
@@ -79,4 +80,25 @@ void bind_io(py::module_& m) {
         out << content;
     }, py::arg("model"), py::arg("network"), py::arg("path"),
        "Write model to LaTeX format");
+
+    io.def("write_mex_string", [](const Model& model, const GeneratedNetwork& network,
+                                   double t_start, double t_end, std::size_t n_steps,
+                                   double atol, double rtol, int max_num_steps,
+                                   double max_step, bool sparse) {
+        MexWriter::Options options;
+        options.tStart = t_start;
+        options.tEnd = t_end;
+        options.nSteps = n_steps;
+        options.atol = atol;
+        options.rtol = rtol;
+        options.maxNumSteps = max_num_steps;
+        options.maxStep = max_step;
+        options.sparse = sparse;
+        return MexWriter::write(model, network, options);
+    }, py::arg("model"), py::arg("network"),
+       py::arg("t_start") = 0.0, py::arg("t_end") = 10.0,
+       py::arg("n_steps") = 20, py::arg("atol") = 1e-6,
+       py::arg("rtol") = 1e-8, py::arg("max_num_steps") = 2000,
+       py::arg("max_step") = 0.0, py::arg("sparse") = false,
+       "Serialize a generated MEX ODE implementation");
 }

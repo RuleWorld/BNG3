@@ -536,6 +536,22 @@ class io:
         """Write model to LaTeX format."""
         ...
 
+    @staticmethod
+    def write_mex_string(
+        model: Model,
+        network: GeneratedNetwork,
+        t_start: float = 0.0,
+        t_end: float = 10.0,
+        n_steps: int = 20,
+        atol: float = 1e-6,
+        rtol: float = 1e-8,
+        max_num_steps: int = 2000,
+        max_step: float = 0.0,
+        sparse: bool = False,
+    ) -> str:
+        """Serialize a generated MEX ODE implementation."""
+        ...
+
 class viz:
     """Visualization graph writers exposed through the C++ extension."""
 

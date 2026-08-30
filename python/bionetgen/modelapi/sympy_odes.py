@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import glob
 import os
+from pathlib import Path
 import re
 import tempfile
 from dataclasses import dataclass
@@ -32,6 +33,52 @@ _PARAM_ARRAY_PATTERNS = [
 ]
 
 
+def _export_modern_sympy_odes(
+    model_or_path,
+    out_dir: Optional[str],
+    mex_suffix: str,
+    keep_files: bool,
+) -> SympyOdes:
+    """Generate MEX source from the canonical C++ model and parse it."""
+    from bionetgen.model import BioNetGenModel, load
+
+    if isinstance(model_or_path, BioNetGenModel):
+        model = model_or_path
+    else:
+        model = load(model_or_path)
+
+    try:
+        from bionetgen import _bionetgen_cpp as cpp
+    except ImportError as exc:  # pragma: no cover - guarded by package setup
+        raise ImportError("The compiled _bionetgen_cpp extension is required") from exc
+
+    network = model.generate_network()
+    if model.source_path:
+        model_stem = Path(model.source_path).stem
+    else:
+        model_stem = model.name or "model"
+    output_root = (
+        Path(out_dir)
+        if out_dir is not None
+        else Path(tempfile.mkdtemp(prefix="pybng_sympy_"))
+    )
+    cleanup = out_dir is None and not keep_files
+    output_root.mkdir(parents=True, exist_ok=True)
+    output_name = model_stem
+    if mex_suffix:
+        output_name += f"_{mex_suffix}"
+    output_path = output_root / f"{output_name}_mex.c"
+
+    try:
+        output_path.write_text(
+            cpp.io.write_mex_string(model._model, network), encoding="utf-8"
+        )
+        return extract_odes_from_mexfile(str(output_path))
+    finally:
+        if cleanup:
+            _safe_rmtree(str(output_root))
+
+
 def export_sympy_odes(
     model_or_path,
     out_dir: Optional[str] = None,
@@ -45,6 +92,15 @@ def export_sympy_odes(
     Returns a SympyOdes object containing SymPy symbols and expressions.
     """
     from bionetgen.modelapi.model import bngmodel
+
+    if not isinstance(model_or_path, bngmodel):
+        return _export_modern_sympy_odes(
+            model_or_path,
+            out_dir=out_dir,
+            mex_suffix=mex_suffix,
+            keep_files=keep_files,
+        )
+
     from bionetgen.modelapi.runner import run
 
     if isinstance(model_or_path, bngmodel):
@@ -100,6 +156,8 @@ def extract_odes_from_mexfile(mex_c_path: str) -> SympyOdes:
     # format first.
     if "calc_species_deriv" in text and "NV_Ith_S(Dspecies" in text:
         return _extract_odes_from_cvode_mex(text, mex_c_path)
+    if "calc_species_deriv" in text and re.search(r"\bdydt\s*\[", text):
+        return _extract_odes_from_cpp_mex(text, mex_c_path)
 
     species_names = _extract_name_array(text, _NAME_ARRAY_PATTERNS)
     param_names = _extract_name_array(text, _PARAM_ARRAY_PATTERNS)
@@ -289,6 +347,126 @@ def _extract_odes_from_cvode_mex(text: str, mex_c_path: str) -> SympyOdes:
     )
 
 
+def _extract_odes_from_cpp_mex(text: str, mex_c_path: str) -> SympyOdes:
+    """Parse the standalone C++ MEX format emitted by BNG3's MexWriter."""
+    n_species = _extract_define_int_any(text, "N_SPECIES")
+    n_params = _extract_define_int_any(text, "N_PARAMETERS")
+    n_expr = _extract_define_int_any(text, "N_EXPRESSIONS")
+    n_obs = _extract_define_int_any(text, "N_OBSERVABLES")
+    n_rate = _extract_define_int_any(text, "N_RATELAWS")
+
+    expr_map = _extract_array_assignments(
+        _extract_function_body(text, "calc_expressions"), "expressions"
+    )
+    obs_map = _extract_array_assignments(
+        _extract_function_body(text, "calc_observables"), "observables"
+    )
+    rate_map = _extract_array_assignments(
+        _extract_function_body(text, "calc_ratelaws"), "ratelaws"
+    )
+    deriv_map = _extract_array_assignments(
+        _extract_function_body(text, "calc_species_deriv"), "dydt"
+    )
+    if not deriv_map:
+        raise ValueError(
+            "No ODE assignments found in BNG3 MEX output. "
+            "Expected dydt[index] assignments in calc_species_deriv."
+        )
+
+    n_species = n_species or (max(deriv_map) + 1)
+    n_params = n_params or _max_cpp_reference_index(text, "parameters")
+    n_expr = n_expr or (max(expr_map) + 1 if expr_map else n_params)
+    n_obs = n_obs or (max(obs_map) + 1 if obs_map else 0)
+    n_rate = n_rate or (max(rate_map) + 1 if rate_map else 0)
+
+    species_symbol_names, species_names = _build_symbol_names(
+        [], n_species, prefix="s"
+    )
+    param_symbol_names, param_names = _build_symbol_names([], n_params, prefix="p")
+    species_symbols = [sp.Symbol(name) for name in species_symbol_names]
+    param_symbols = [sp.Symbol(name) for name in param_symbol_names]
+    expr_syms = [sp.Symbol(f"e{i}") for i in range(n_expr)]
+    obs_syms = [sp.Symbol(f"o{i}") for i in range(n_obs)]
+    rate_syms = [sp.Symbol(f"r{i}") for i in range(n_rate)]
+    t = sp.Symbol("t")
+
+    local_dict: Dict[str, object] = {s.name: s for s in species_symbols}
+    local_dict.update({p.name: p for p in param_symbols})
+    local_dict.update({e.name: e for e in expr_syms})
+    local_dict.update({o.name: o for o in obs_syms})
+    local_dict.update({r.name: r for r in rate_syms})
+    local_dict.update(
+        {
+            "Pow": sp.Pow,
+            "Abs": sp.Abs,
+            "Max": sp.Max,
+            "Min": sp.Min,
+            "exp": sp.exp,
+            "log": sp.log,
+            "sqrt": sp.sqrt,
+            "pi": sp.pi,
+        }
+    )
+
+    def parse_rhs(rhs: str) -> sp.Expr:
+        cleaned = _normalize_expr(rhs)
+        cleaned = _replace_cpp_array_symbols(
+            cleaned,
+            species_symbol_names,
+            param_symbol_names,
+            expr_syms,
+            obs_syms,
+            rate_syms,
+        )
+        return cast(
+            sp.Expr,
+            parse_expr(
+                cleaned,
+                local_dict=local_dict,
+                transformations=standard_transformations,
+            ),
+        )
+
+    expr_exprs: List[sp.Expr] = [sp.Integer(0) for _ in range(n_expr)]
+    for idx in sorted(expr_map):
+        expr_exprs[idx] = cast(
+            sp.Expr,
+            parse_rhs(expr_map[idx]).subs(
+                {expr_syms[j]: expr_exprs[j] for j in range(idx)}
+            ),
+        )
+
+    expr_sub = {expr_syms[i]: expr_exprs[i] for i in range(n_expr)}
+    obs_exprs: List[sp.Expr] = [sp.Integer(0) for _ in range(n_obs)]
+    for idx in sorted(obs_map):
+        obs_exprs[idx] = cast(sp.Expr, parse_rhs(obs_map[idx]).subs(expr_sub))
+    obs_sub = {obs_syms[i]: obs_exprs[i] for i in range(n_obs)}
+
+    rate_exprs: List[sp.Expr] = [sp.Integer(0) for _ in range(n_rate)]
+    for idx in sorted(rate_map):
+        rate_exprs[idx] = cast(
+            sp.Expr, parse_rhs(rate_map[idx]).subs(expr_sub).subs(obs_sub)
+        )
+    rate_sub = {rate_syms[i]: rate_exprs[i] for i in range(n_rate)}
+
+    odes: List[sp.Expr] = [sp.Integer(0) for _ in range(n_species)]
+    for idx in range(n_species):
+        if idx in deriv_map:
+            odes[idx] = cast(
+                sp.Expr, parse_rhs(deriv_map[idx]).subs(rate_sub)
+            )
+
+    return SympyOdes(
+        t=t,
+        species=species_symbols,
+        params=param_symbols,
+        odes=odes,
+        species_names=species_names,
+        param_names=param_names,
+        source_path=mex_c_path,
+    )
+
+
 def _extract_define_int(text: str, define_name: str) -> Optional[int]:
     m = re.search(
         rf"^\s*#define\s+{re.escape(define_name)}\s+(\d+)\s*$", text, flags=re.M
@@ -319,6 +497,65 @@ def _extract_nv_assignments(body: str, lhs_var: str) -> Dict[int, str]:
         idx = int(match.group(1))
         eq_map[idx] = match.group(2).strip()
     return eq_map
+
+
+def _extract_array_assignments(body: str, lhs_var: str) -> Dict[int, str]:
+    if not body:
+        return {}
+    eq_map: Dict[int, str] = {}
+    pattern = rf"\b{re.escape(lhs_var)}\s*\[\s*(\d+)\s*\]\s*=\s*(.*?);"
+    for match in re.finditer(pattern, body, flags=re.S):
+        eq_map[int(match.group(1))] = match.group(2).strip()
+    return eq_map
+
+
+def _extract_define_int_any(text: str, define_name: str) -> Optional[int]:
+    match = re.search(
+        rf"^\s*#define\s+{re.escape(define_name)}\s+(\d+)\s*$",
+        text,
+        flags=re.M,
+    )
+    return int(match.group(1)) if match else None
+
+
+def _max_cpp_reference_index(text: str, array_name: str) -> int:
+    indices = [
+        int(match.group(1))
+        for match in re.finditer(
+            rf"\b{re.escape(array_name)}\s*\[\s*(\d+)\s*\]", text
+        )
+    ]
+    return max(indices, default=-1) + 1
+
+
+def _replace_cpp_array_symbols(
+    expr: str,
+    species_names: List[str],
+    param_names: List[str],
+    expr_syms: List[sp.Symbol],
+    obs_syms: List[sp.Symbol],
+    rate_syms: List[sp.Symbol],
+) -> str:
+    def replace(match: re.Match[str]) -> str:
+        array_name = match.group(1)
+        idx = int(match.group(2))
+        if array_name == "species":
+            return species_names[idx] if idx < len(species_names) else f"s{idx}"
+        if array_name == "parameters":
+            return param_names[idx] if idx < len(param_names) else f"p{idx}"
+        if array_name == "expressions":
+            return expr_syms[idx].name if idx < len(expr_syms) else f"e{idx}"
+        if array_name == "observables":
+            return obs_syms[idx].name if idx < len(obs_syms) else f"o{idx}"
+        if array_name == "ratelaws":
+            return rate_syms[idx].name if idx < len(rate_syms) else f"r{idx}"
+        return match.group(0)
+
+    return re.sub(
+        r"\b(species|parameters|expressions|observables|ratelaws)\s*\[\s*(\d+)\s*\]",
+        replace,
+        expr,
+    )
 
 
 def _replace_parameters_brackets(expr: str, param_names: List[str]) -> str:
