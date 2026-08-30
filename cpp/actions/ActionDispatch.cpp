@@ -1450,10 +1450,10 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         // Normalize action name to lowercase for case-insensitive matching
         std::string actionName = lowercase(action.name);
 
-        // BNG2 exposes readNetwork as an alias for readFile.  Normalize here
-        // too so programmatically constructed actions get the same semantics
-        // as parsed BNGL sources.
-        if (actionName == "readnetwork") {
+        // BNG2 exposes readNetwork and readModel as aliases for readFile.
+        // Normalize here too so programmatically constructed actions get the
+        // same semantics as parsed BNGL sources.
+        if (actionName == "readnetwork" || actionName == "readmodel") {
             actionName = "readfile";
         }
 
@@ -3171,22 +3171,6 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         if (actionName == "writenetwork" || actionName == "writenet") {
             ensureNetwork();
             writeCurrentNetwork();
-            continue;
-        }
-
-        if (actionName == "readmodel") {
-            // readModel: re-read a BNGL file — delegate to include_model semantics
-            const auto modelFile = stripQuotes(readArgument(action, "file", ""));
-            if (!modelFile.empty()) {
-                auto modelPath = sourcePath.parent_path() / modelFile;
-                if (std::filesystem::exists(modelPath)) {
-                    auto newModel = bng::parser::parseModelFromFile(modelPath.string());
-                    model.merge(*newModel);
-                    model.getParameters().evaluateAll();
-                    network.reset();
-                    if (verbose) std::cerr << "[bng_cpp] readModel: loaded " << modelPath << "\n";
-                }
-            }
             continue;
         }
 

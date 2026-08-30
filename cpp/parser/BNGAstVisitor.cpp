@@ -1,6 +1,7 @@
 #include "BNGAstVisitor.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <fstream>
@@ -123,8 +124,11 @@ std::string normalizeLegacyActionNames(const std::string& source) {
                 continue;
             }
 
-            constexpr std::string_view legacyName = "readNetwork";
-            if (source.compare(index, legacyName.size(), legacyName) == 0) {
+            constexpr std::array<std::string_view, 2> legacyNames = {
+                "readNetwork", "readModel"};
+            bool normalized = false;
+            for (const auto legacyName : legacyNames) {
+                if (source.compare(index, legacyName.size(), legacyName) != 0) continue;
                 const auto afterName = index + legacyName.size();
                 std::size_t next = afterName;
                 while (next < source.size() &&
@@ -134,9 +138,13 @@ std::string normalizeLegacyActionNames(const std::string& source) {
                 if (next < source.size() && source[next] == '(') {
                     result += "readFile";
                     index = afterName;
-                    atLineStart = false;
-                    continue;
+                    normalized = true;
+                    break;
                 }
+            }
+            if (normalized) {
+                atLineStart = false;
+                continue;
             }
 
             atLineStart = false;

@@ -559,6 +559,54 @@ readNetwork({file=>"missing.net"})
         with pytest.raises(RuntimeError, match=r"Failed to read \.net file"):
             bionetgen.load(str(bngl)).execute()
 
+    def test_readmodel_alias_loads_bngl_data(self, tmp_path):
+        imported = tmp_path / "imported.bngl"
+        imported.write_text(
+            """
+begin model
+begin parameters
+    k 0.2
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 7
+end seed species
+end model
+"""
+        )
+        bngl = tmp_path / "readmodel.bngl"
+        bngl.write_text(
+            """
+begin model
+end model
+
+readModel({file=>"imported.bngl"})
+writeModel()
+"""
+        )
+
+        bionetgen.load(str(bngl)).execute()
+
+        output = tmp_path / "readmodel_out.bngl"
+        assert output.exists()
+        assert "X()" in output.read_text()
+
+    def test_readmodel_alias_rejects_missing_file(self, tmp_path):
+        bngl = tmp_path / "missing_readmodel.bngl"
+        bngl.write_text(
+            """
+begin model
+end model
+
+readModel({file=>"missing.bngl"})
+"""
+        )
+
+        with pytest.raises(RuntimeError, match="Could not open BNGL file"):
+            bionetgen.load(str(bngl)).execute()
+
 
 class TestHighLevelAPI:
     def test_load_and_simulate(self, tmp_path):
