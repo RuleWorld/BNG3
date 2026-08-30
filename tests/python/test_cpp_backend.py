@@ -438,6 +438,27 @@ end model
         with pytest.raises(RuntimeError, match="unsupported simulation method"):
             bionetgen.load(str(bngl)).execute()
 
+    def test_action_rejects_unknown_visualization_type(self, tmp_path):
+        bngl = tmp_path / "unknown_visualization.bngl"
+        bngl.write_text(
+            """
+begin model
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 1
+end seed species
+begin actions
+    visualize({type=>"not_a_visualization"})
+end actions
+end model
+"""
+        )
+
+        with pytest.raises(RuntimeError, match="unsupported visualization type"):
+            bionetgen.load(str(bngl)).execute()
+
 
 class TestHighLevelAPI:
     def test_load_and_simulate(self, tmp_path):

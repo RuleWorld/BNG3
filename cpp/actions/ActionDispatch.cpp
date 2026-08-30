@@ -3022,13 +3022,8 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 fileSuffix = "_viz_opts";
 
             } else {
-                // Unsupported type - fall back to contact map
-                std::cerr << "WARNING: visualize type '" << vizType
-                          << "' not yet supported, falling back to contactmap.\n";
-                auto contactMap = io::ContactMapWriter::buildContactMap(model);
-                content = io::ContactMapWriter::toGML(contactMap);
-                extension = ".gml";
-                fileSuffix = "_contact";
+                throw std::runtime_error(
+                    "visualize: unsupported visualization type '" + vizType + "'");
             }
 
             const auto outputPath = sourcePath.parent_path() / (sourcePath.stem().string() + fileSuffix + extension);
