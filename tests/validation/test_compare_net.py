@@ -117,3 +117,58 @@ def test_network_comparison_uses_graph_identity_for_reactions(tmp_path):
     assert reference is not None
     assert generated is not None
     assert compare_net(reference, generated).ok
+
+
+def _net_with_group(
+    path: Path, first: str, second: str, group: str, reaction: str = "1 2"
+) -> Path:
+    path.write_text(
+        "\n".join(
+            [
+                "begin parameters",
+                "    1 kd 0.5 # Constant",
+                "end parameters",
+                "begin species",
+                f"    1 {first} 1",
+                f"    2 {second} 0",
+                "end species",
+                "begin reactions",
+                f"    1 {reaction} kd",
+                "end reactions",
+                "begin groups",
+                f"    1 Atot {group}",
+                "end groups",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_network_comparison_maps_observable_groups_with_species(tmp_path):
+    reference = parse_net(
+        _net_with_group(
+            tmp_path / "reference.net", "A(x!1).B(y!1)", "C()", "1,2*2"
+        )
+    )
+    generated = parse_net(
+        _net_with_group(
+            tmp_path / "generated.net", "C()", "B(y!9).A(x!9)", "2*1,2", "2 1"
+        )
+    )
+    assert reference is not None
+    assert generated is not None
+    assert compare_net(reference, generated).ok
+
+
+def test_network_comparison_rejects_changed_observable_group_weight(tmp_path):
+    reference = parse_net(
+        _net_with_group(tmp_path / "reference.net", "A()", "B()", "1,2*2")
+    )
+    generated = parse_net(
+        _net_with_group(tmp_path / "generated.net", "A()", "B()", "1,3*2")
+    )
+    assert reference is not None
+    assert generated is not None
+    assert not compare_net(reference, generated).ok
