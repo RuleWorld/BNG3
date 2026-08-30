@@ -10,6 +10,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -523,6 +524,19 @@ std::string getComponentName(BNGParser::Component_defContext* ctx) {
     return ctx->getText();
 }
 
+template <typename Context>
+void collectParseContexts(antlr4::tree::ParseTree* node, std::vector<Context*>& contexts) {
+    if (node == nullptr) {
+        return;
+    }
+    if (auto* context = dynamic_cast<Context*>(node)) {
+        contexts.push_back(context);
+    }
+    for (auto* child : node->children) {
+        collectParseContexts(child, contexts);
+    }
+}
+
 template <typename ContextT, typename ChildT>
 ast::Expression buildLeftAssociativeExpression(
     ContextT* ctx,
@@ -860,9 +874,41 @@ std::unique_ptr<ast::Model> BNGAstVisitor::takeModel() {
 }
 
 std::any BNGAstVisitor::visitProg(BNGParser::ProgContext* ctx) {
+    predeclareMoleculeTypes(ctx);
     visitChildren(ctx);
     currentModel_->getParameters().evaluateAll();
     return {};
+}
+
+void BNGAstVisitor::predeclareMoleculeTypes(BNGParser::ProgContext* ctx) {
+    std::vector<BNGParser::Molecule_type_defContext*> explicitDefinitions;
+    collectParseContexts(ctx, explicitDefinitions);
+    for (auto* definition : explicitDefinitions) {
+        visitMolecule_type_def(definition);
+        predeclaredMoleculeTypes_.insert(definition);
+    }
+
+    std::vector<BNGParser::Molecule_patternContext*> patterns;
+    collectParseContexts(ctx, patterns);
+    std::unordered_set<std::string> explicitNames;
+    for (auto* definition : explicitDefinitions) {
+        if (definition->molecule_def() == nullptr) {
+            continue;
+        }
+        explicitNames.insert(getMoleculeName(definition->molecule_def()));
+    }
+
+    for (auto* pattern : patterns) {
+        auto fragment = inferMoleculeTypeFromPattern(pattern);
+        if (explicitNames.find(fragment.getName()) != explicitNames.end()) {
+            continue;
+        }
+        if (auto* existing = currentModel_->findMoleculeType(fragment.getName())) {
+            existing->mergeInferredComponents(fragment.getComponents());
+        } else {
+            currentModel_->addMoleculeType(std::move(fragment));
+        }
+    }
 }
 
 std::any BNGAstVisitor::visitVersion_def(BNGParser::Version_defContext* ctx) {
@@ -928,6 +974,9 @@ std::any BNGAstVisitor::visitCompartment_def(BNGParser::Compartment_defContext* 
 }
 
 std::any BNGAstVisitor::visitMolecule_type_def(BNGParser::Molecule_type_defContext* ctx) {
+    if (predeclaredMoleculeTypes_.find(ctx) != predeclaredMoleculeTypes_.end()) {
+        return {};
+    }
     if (ctx->molecule_def() == nullptr) {
         return {};
     }

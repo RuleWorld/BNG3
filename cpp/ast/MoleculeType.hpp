@@ -18,6 +18,10 @@ public:
     const std::vector<ComponentType>& getComponents() const;
     bool isPopulation() const;
 
+    /// Extend an inferred type with components/states observed in later
+    /// patterns. Explicit molecule types are never normalized this way.
+    void mergeInferredComponents(const std::vector<ComponentType>& components);
+
 private:
     std::string name_;
     std::vector<ComponentType> components_;

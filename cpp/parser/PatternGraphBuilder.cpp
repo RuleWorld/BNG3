@@ -46,12 +46,10 @@ const bng::ast::ComponentType* findComponentType(const bng::ast::MoleculeType& m
     return nullptr;
 }
 
-const bng::ast::MoleculeType& ensureInferredMoleculeType(BNGParser::Molecule_patternContext* ctx, bng::ast::Model& model) {
-    const auto name = moleculePatternName(ctx);
-    if (const auto* existing = findMoleculeType(model, name)) {
-        return *existing;
-    }
+} // namespace
 
+bng::ast::MoleculeType inferMoleculeTypeFromPattern(BNGParser::Molecule_patternContext* ctx) {
+    const auto name = moleculePatternName(ctx);
     std::vector<bng::ast::ComponentType> components;
     if (auto* componentList = ctx->component_pattern_list()) {
         for (auto* componentPattern : componentList->component_pattern()) {
@@ -63,7 +61,18 @@ const bng::ast::MoleculeType& ensureInferredMoleculeType(BNGParser::Molecule_pat
         }
     }
 
-    model.addMoleculeType(bng::ast::MoleculeType(name, std::move(components), false));
+    return bng::ast::MoleculeType(name, std::move(components), false);
+}
+
+namespace {
+
+const bng::ast::MoleculeType& ensureInferredMoleculeType(BNGParser::Molecule_patternContext* ctx, bng::ast::Model& model) {
+    const auto name = moleculePatternName(ctx);
+    if (const auto* existing = findMoleculeType(model, name)) {
+        return *existing;
+    }
+
+    model.addMoleculeType(inferMoleculeTypeFromPattern(ctx));
     return model.getMoleculeTypes().back();
 }
 
@@ -254,4 +263,3 @@ bool isSpeciesCompartmentPrefix(BNGParser::Species_defContext* ctx) {
 }
 
 } // namespace bng::parser
-
