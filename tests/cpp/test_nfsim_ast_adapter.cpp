@@ -2680,6 +2680,87 @@ end reaction rules
     delete system;
 }
 
+TEST_CASE("NFsim AST adapter maps legacy-tagged raw local-function products") {
+    auto model = bng::parser::parseModel(R"BNG(
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+    B() 1
+end seed species
+begin observables
+    Molecules atotal A()
+    Molecules btotal B()
+end observables
+begin functions
+    fA(x) = atotal(x)
+    fB(y) = btotal(y)
+end functions
+begin reaction rules
+    A%x() + B%y() -> A%x() + B%y() fA(x)*fB(y)
+end reaction rules
+)BNG");
+
+    REQUIRE(model != nullptr);
+    REQUIRE(model->getReactionRules().size() == 1);
+    const auto& rule = model->getReactionRules().front();
+    REQUIRE(rule.getReactants().size() == 2);
+    CHECK(rule.getReactants()[0] == "A%x()");
+    CHECK(rule.getReactants()[1] == "B%y()");
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    CHECK(system->getReaction(0)->getRxnType() == NFcore::ReactionClass::DOR2_RXN);
+    system->prepareForSimulation();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(1.0));
+    delete system;
+}
+
+TEST_CASE("NFsim XML bridge preserves raw local-function products") {
+    auto model = bng::parser::parseModel(R"BNG(
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+    B() 1
+end seed species
+begin observables
+    Molecules atotal A()
+    Molecules btotal B()
+end observables
+begin functions
+    fA(x) = atotal(x)
+    fB(y) = btotal(y)
+end functions
+begin reaction rules
+    A%x() + B%y() -> A%x() + B%y() fA(x)*fB(y)
+end reaction rules
+)BNG");
+
+    REQUIRE(model != nullptr);
+    const auto xml = bng::io::XmlWriter::write(*model);
+    CHECK(xml.find("type=\"FunctionProduct\"") != std::string::npos);
+    CHECK(xml.find("name1=\"fA\"") != std::string::npos);
+    CHECK(xml.find("name2=\"fB\"") != std::string::npos);
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    CHECK(system->getReaction(0)->getRxnType() == NFcore::ReactionClass::DOR2_RXN);
+    system->prepareForSimulation();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(1.0));
+    delete system;
+}
+
 TEST_CASE("NFsim XML bridge preserves bounded FunctionProduct rates") {
     auto model = bng::parser::parseModel(R"BNG(
 begin molecule types
