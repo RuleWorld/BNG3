@@ -538,6 +538,50 @@ end model
         assert output.exists()
         assert "X_total" in output.read_text()
 
+    def test_simulate_nf_separates_complex_bookkeeping_from_ring_blocking(
+        self, tmp_path
+    ):
+        """NFsim's -cb and -bscb switches must keep their distinct meanings.
+
+        Native NFsim enables complex bookkeeping for ``-cb`` but blocks an
+        intracomplex bond only when ``-bscb`` is also present. This fixture
+        makes that distinction observable with a high-rate ring closure.
+        """
+        bngl = tmp_path / "nf_complex_flags.bngl"
+        bngl.write_text(
+            """
+begin model
+begin parameters
+    k 1000000
+end parameters
+begin molecule types
+    A(x,y)
+    B(x,z)
+end molecule types
+begin seed species
+    A(x!1,y).B(x!1,z) 1
+end seed species
+begin observables
+    Molecules closed A(y!2).B(z!2)
+end observables
+begin reaction rules
+    A(x!1,y).B(x!1,z) -> A(x!1,y!2).B(x!1,z!2) k
+end reaction rules
+begin actions
+    simulate_nf({prefix=>"cb",t_end=>1,n_steps=>1,seed=>1,complex=>1})
+    simulate_nf({prefix=>"bscb",t_end=>1,n_steps=>1,seed=>1,complex=>1,param=>"-bscb"})
+end actions
+end model
+"""
+        )
+
+        bionetgen.load(str(bngl)).execute()
+
+        cb_rows = (tmp_path / "cb.gdat").read_text().splitlines()
+        bscb_rows = (tmp_path / "bscb.gdat").read_text().splitlines()
+        assert float(cb_rows[-1].split()[1]) == pytest.approx(1.0)
+        assert float(bscb_rows[-1].split()[1]) == pytest.approx(0.0)
+
     def test_simulate_nf_action_honors_sample_times(self, tmp_path):
         bngl = tmp_path / "nf_sample_times.bngl"
         bngl.write_text(
