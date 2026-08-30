@@ -138,6 +138,34 @@ end model
         assert output.exists()
         assert "Atot" in output.read_text()
 
+    def test_integer_state_increment_and_decrement_rules_are_expanded(self, tmp_path):
+        bngl = tmp_path / "integer_states.bngl"
+        bngl.write_text(
+            """
+begin parameters
+    kr 5
+    kb 20
+end parameters
+begin seed species
+    ReceptorDimer(m~3) 4000
+end seed species
+begin observables
+    Molecules R0 ReceptorDimer(m~0)
+    Molecules R8 ReceptorDimer(m~8)
+end observables
+begin reaction rules
+    ReceptorDimer(m~^[8]) -> ReceptorDimer(m~++) kr
+    ReceptorDimer(m~^[0]) -> ReceptorDimer(m~--) kb
+end reaction rules
+"""
+        )
+
+        model = _cpp.parse_file(str(bngl))
+
+        # Eight transitions in each direction, with the integer state range
+        # inferred from the two native boundary rules.
+        assert len(model.reaction_rules) == 16
+
 
 class TestNetworkGeneration:
     def test_generate_simple(self, tmp_path):
