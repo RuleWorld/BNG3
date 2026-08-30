@@ -11,7 +11,7 @@ Monorepo merging three tools into one in-process platform:
 ## Build
 ```bash
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build                  # produces build/bng_cpp and the _bionetgen_cpp extension
+cmake --build build                  # produces build/cpp/bng_cpp and the Python extension
 pip install -e .                     # scikit-build-core compiles the extension
 cmake -B build -DBUILD_NFSIM_CLI=ON  # also build the native NFsim oracle (for -m nf)
 ```
@@ -22,10 +22,13 @@ Deps fetched via CMake FetchContent (ANTLR4 4.13.1, SUNDIALS 7.6.0, Catch2, pybi
 ctest --test-dir build                              # C++ unit tests (Catch2)
 pytest tests/validation -m smoke                    # Tier-S parity, every commit
 pytest tests/validation -m "parity and not slow"    # full corpus
-pytest tests/validation -m nf --bng-cpp build/bng_cpp
+PYTHONPATH=python:build/cpp pytest -q tests/python -m 'not slow'
+NFSIM_BIN=build/cpp/NFsim PYTHONPATH=python:build/cpp pytest tests/validation -m nf --bng-cpp build/cpp/bng_cpp
 python scripts/regen_golden.py --tier p             # rebuild golden oracles (reviewed, committed)
 ```
-Engine discovery for the harness: `--bng-cpp PATH` / `BNG_CPP`; the Python API is `import bionetgen`.
+Engine discovery for the harness: `--bng-cpp PATH` / `BNG_CPP`; the current
+development build places the CLI and extension under `build/cpp/`. The Python
+API is `import bionetgen`.
 
 ## The rule that matters
 No master function lands until its validation gate is green. Gates live in `tests/validation/` and compare against Perl (`.net`, ODE) and native NFsim (network-free). `blbr` is the sole strict net-parity exception until WO-1a; `Motivating_example_cBNGL` must pass after rate normalization. Do not broaden the exception ledger to hide a new mismatch.
