@@ -10,6 +10,7 @@ Usage:
 """
 
 import argparse
+import re
 import shutil
 import subprocess
 import sys
@@ -20,6 +21,46 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
 from tests.validation.compare import compare_net, parse_net  # noqa: E402
+
+
+_FILE_ARGUMENT = re.compile(r"\b(?:file|argfile)\s*=>\s*(['\"])([^'\"]+)\1")
+
+
+def copy_referenced_support_files(
+    bngl: Path, validate_dir: Path, dat_dir: Path, work_dir: Path
+) -> list[Path]:
+    """Stage files named by model file arguments into a validation work tree.
+
+    Validation runs in an isolated directory.  Besides the BNGL input and the
+    explicit ``INPUT_FILES`` directory, legacy models may reference a sibling
+    ``.net`` or another artifact from the BNG2 reference directory.  Copy the
+    referenced relative path, preserving subdirectories, so actions observe
+    the same file layout as the source model.
+    """
+
+    copied: list[Path] = []
+    text = bngl.read_text(encoding="utf-8")
+    for match in _FILE_ARGUMENT.finditer(text):
+        relative = Path(match.group(2))
+        if relative.is_absolute() or ".." in relative.parts:
+            continue
+
+        candidates = [
+            validate_dir / relative,
+            dat_dir / relative,
+            dat_dir / relative.name,
+            validate_dir / relative.name,
+        ]
+        source = next((candidate for candidate in candidates if candidate.is_file()), None)
+        if source is None:
+            continue
+
+        destination = work_dir / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+        copied.append(destination)
+
+    return copied
 
 
 def run_validation(bng_cpp, validate_dir, verbose=False, skip_models=None):
@@ -68,6 +109,7 @@ def run_validation(bng_cpp, validate_dir, verbose=False, skip_models=None):
             if input_dir.exists():
                 for f in input_dir.iterdir():
                     shutil.copy(f, Path(tmpdir) / f.name)
+            copy_referenced_support_files(bngl, validate_dir, dat_dir, Path(tmpdir))
 
             try:
                 result = subprocess.run(
