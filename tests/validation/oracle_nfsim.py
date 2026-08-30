@@ -30,8 +30,9 @@ def _nfsim_bin() -> Path | None:
         REPO / "build" / "cpp" / "NFsim",
     )
     for cand in candidates:
-        if cand.exists():
-            return cand
+        path = cand.expanduser()
+        if path.exists():
+            return path.resolve()
     return None
 
 
