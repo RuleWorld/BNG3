@@ -275,6 +275,44 @@ end model
         obs_values = next(iter(result["observables"].values()))
         assert len(obs_values) == 11
 
+    def test_nf_simulation_resolves_relative_tfun_from_model_path(
+        self, tmp_path, monkeypatch
+    ):
+        table_dir = tmp_path / "tables"
+        table_dir.mkdir()
+        (table_dir / "rate.dat").write_text("0 1\n10 1\n")
+        bngl = tmp_path / "relative_tfun.bngl"
+        bngl.write_text(
+            """
+begin model
+begin parameters
+end parameters
+begin molecule types
+    A()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin observables
+    Molecules A_total A()
+end observables
+begin functions
+    rate = TFUN(time, "tables/rate.dat")
+end functions
+begin reaction rules
+    A() -> 0 rate
+end reaction rules
+end model
+"""
+        )
+
+        monkeypatch.chdir(tmp_path.parent)
+        model = bionetgen.load(str(bngl))
+        result = model.simulate(method="nf", t_end=1.0, n_steps=2, seed=1)
+
+        assert result.time[-1] == pytest.approx(1.0)
+        assert result.observables["A_total"][0] == pytest.approx(1.0)
+
 
 class TestHighLevelAPI:
     def test_load_and_simulate(self, tmp_path):
