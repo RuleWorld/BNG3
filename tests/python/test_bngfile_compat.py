@@ -67,3 +67,35 @@ end model
     root = ET.fromstring(output.getvalue())
     assert root.tag.endswith("sbml")
     assert root.find(".//{*}listOfReactions") is not None
+
+
+def test_legacy_bngmodel_loads_blocks_without_perl_bng(tmp_path):
+    import bionetgen
+
+    source = tmp_path / "legacy_modelapi.bngl"
+    source.write_text(
+        """
+begin model
+begin parameters
+    k 1
+end parameters
+begin molecule types
+    A()
+end molecule types
+begin seed species
+    A() 2
+end seed species
+begin reaction rules
+    A() -> 0 k
+end reaction rules
+end model
+"""
+    )
+
+    model = bionetgen.bngmodel(str(source))
+
+    assert model.model_name == "legacy_modelapi"
+    assert len(model.parameters) == 1
+    assert len(model.molecule_types) == 1
+    assert len(model.species) == 1
+    assert len(model.rules) == 1
