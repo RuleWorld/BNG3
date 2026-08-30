@@ -483,6 +483,35 @@ bool modelHasFunction(const ast::Model& model, const std::string& name) {
                        [&](const auto& function) { return function.getName() == name; });
 }
 
+const ast::Function* findModelFunction(const ast::Model& model,
+                                       const std::string& name) {
+    const auto found = std::find_if(
+        model.getFunctions().begin(), model.getFunctions().end(),
+        [&](const auto& function) { return function.getName() == name; });
+    return found == model.getFunctions().end() ? nullptr : &*found;
+}
+
+bool isBoundedLocalFunctionCall(const ast::Model& model,
+                                const ast::Expression& expression) {
+    using ast::ExpressionKind;
+    if (expression.kind() != ExpressionKind::Function &&
+        expression.kind() != ExpressionKind::ObservableRef) {
+        return false;
+    }
+    const auto* function = findModelFunction(model, expression.name());
+    return function != nullptr && function->getArgs().size() == 1 &&
+           expression.args().size() == 1 &&
+           expression.args().front().kind() == ExpressionKind::Identifier;
+}
+
+bool isBoundedRawLocalFunctionProduct(const ast::Model& model,
+                                      const ast::Expression& expression) {
+    return expression.kind() == ast::ExpressionKind::Binary &&
+           expression.name() == "*" && expression.args().size() == 2 &&
+           isBoundedLocalFunctionCall(model, expression.args()[0]) &&
+           isBoundedLocalFunctionCall(model, expression.args()[1]);
+}
+
 struct GeneratedRateFunction {
     std::string name;
     const ast::Expression* expression = nullptr;
@@ -979,6 +1008,7 @@ bool modelContainsFunction(const ast::Model& model, const std::string& name) {
 
 bool needsGeneratedDynamicRateFunction(const ast::Model& model,
                                        const ast::Expression& rate) {
+    if (isBoundedRawLocalFunctionProduct(model, rate)) return false;
     const bool isCall = rate.kind() == ast::ExpressionKind::Function ||
                         rate.kind() == ast::ExpressionKind::ObservableRef;
     if (isCall && modelContainsFunction(model, rate.name())) return false;
@@ -1218,8 +1248,11 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
                                   const ast::Expression& rate) {
         const bool isCall = rate.kind() == ast::ExpressionKind::Function ||
                             rate.kind() == ast::ExpressionKind::ObservableRef;
-        const bool isFunctionProduct =
+        const bool explicitFunctionProduct =
             isCall && lowercase(rate.name()) == "functionproduct" && rate.args().size() == 2;
+        const bool rawLocalFunctionProduct =
+            isBoundedRawLocalFunctionProduct(model, rate);
+        const bool isFunctionProduct = explicitFunctionProduct || rawLocalFunctionProduct;
         const auto* declaredFunction = modelFunction(rate.name());
         const bool generatedRateFunction =
             needsGeneratedDynamicRateFunction(model, rate);
