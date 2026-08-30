@@ -269,6 +269,7 @@ end model
 
         assert "time" in result
         assert "observables" in result
+        assert result["construction_path"] == "direct"
         assert len(result["time"]) == 11
         assert result["time"][0] == 0.0
         assert result["time"][-1] == pytest.approx(5.0)
