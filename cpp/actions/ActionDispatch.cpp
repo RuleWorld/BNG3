@@ -181,6 +181,164 @@ std::vector<double> parseSampleTimes(const std::string& text, ast::Model& model)
     return times;
 }
 
+struct LegacyNfParamOptions {
+    bool verbose = false;
+    bool complex = false;
+    bool blockSameComplexBinding = false;
+    bool noComplexScopedLocalFunctions = false;
+    bool noOnTheFlyObservables = false;
+    bool binaryOutput = false;
+    bool printFunctions = false;
+    bool connectivity = false;
+    std::optional<int> globalMoleculeLimit;
+    std::optional<int> traversalLimit;
+    std::optional<unsigned long> seed;
+    std::optional<double> equilibration;
+};
+
+std::vector<std::string> tokenizeLegacyNfParams(const std::string& raw) {
+    std::vector<std::string> tokens;
+    std::string token;
+    char quote = '\0';
+    bool escaped = false;
+
+    for (const char current : raw) {
+        if (escaped) {
+            token.push_back(current);
+            escaped = false;
+            continue;
+        }
+        if (current == '\\' && quote != '\'') {
+            escaped = true;
+            continue;
+        }
+        if (quote != '\0') {
+            if (current == quote) {
+                quote = '\0';
+            } else {
+                token.push_back(current);
+            }
+            continue;
+        }
+        if (current == '\'' || current == '"') {
+            quote = current;
+        } else if (std::isspace(static_cast<unsigned char>(current))) {
+            if (!token.empty()) {
+                tokens.push_back(std::move(token));
+                token.clear();
+            }
+        } else {
+            token.push_back(current);
+        }
+    }
+
+    if (escaped || quote != '\0') {
+        throw std::runtime_error("NFsim param contains an unterminated quote or escape");
+    }
+    if (!token.empty()) tokens.push_back(std::move(token));
+    return tokens;
+}
+
+int parseLegacyNfInt(const std::string& value, const std::string& flag) {
+    std::size_t consumed = 0;
+    try {
+        const long long parsed = std::stoll(value, &consumed);
+        if (consumed != value.size() || parsed < std::numeric_limits<int>::min() ||
+            parsed > std::numeric_limits<int>::max()) {
+            throw std::runtime_error("range");
+        }
+        return static_cast<int>(parsed);
+    } catch (const std::exception&) {
+        throw std::runtime_error(
+            "NFsim param flag '" + flag + "' requires an integer value");
+    }
+}
+
+unsigned long parseLegacyNfSeed(const std::string& value) {
+    std::size_t consumed = 0;
+    try {
+        const unsigned long parsed = std::stoul(value, &consumed);
+        if (consumed != value.size()) throw std::runtime_error("trailing");
+        return parsed;
+    } catch (const std::exception&) {
+        throw std::runtime_error("NFsim param flag '-seed' requires a non-negative integer");
+    }
+}
+
+LegacyNfParamOptions parseLegacyNfParams(const std::string& raw, ast::Model& model) {
+    LegacyNfParamOptions options;
+    const auto tokens = tokenizeLegacyNfParams(raw);
+    for (std::size_t index = 0; index < tokens.size(); ++index) {
+        const std::string& token = tokens[index];
+        std::string flag = token;
+        std::string inlineValue;
+        if (const auto equals = token.find('='); equals != std::string::npos) {
+            flag = token.substr(0, equals);
+            inlineValue = token.substr(equals + 1);
+        }
+        flag = lowercase(flag);
+
+        const auto readValue = [&](const std::string& name) -> std::string {
+            if (!inlineValue.empty()) return inlineValue;
+            if (index + 1 >= tokens.size() ||
+                tokens[index + 1].rfind("-", 0) == 0) {
+                throw std::runtime_error(
+                    "NFsim param flag '" + name + "' requires a value");
+            }
+            return tokens[++index];
+        };
+
+        if (flag == "-v" || flag == "--verbose") {
+            options.verbose = true;
+        } else if (flag == "-cb" || flag == "--complex" || flag == "-complex") {
+            options.complex = true;
+        } else if (flag == "-bscb" || flag == "--bscb") {
+            options.blockSameComplexBinding = true;
+            options.complex = true;
+        } else if (flag == "-nocslf" || flag == "--nocslf") {
+            options.noComplexScopedLocalFunctions = true;
+        } else if (flag == "-notf" || flag == "--notf") {
+            options.noOnTheFlyObservables = true;
+        } else if (flag == "-b" || flag == "--binary" || flag == "-binary_output") {
+            options.binaryOutput = true;
+        } else if (flag == "-ogf" || flag == "--print-functions" ||
+                   flag == "-print_functions") {
+            options.printFunctions = true;
+        } else if (flag == "-connect" || flag == "-pcg" || flag == "--connect") {
+            options.connectivity = true;
+        } else if (flag == "-gml" || flag == "--gml") {
+            const auto value = lowercase(readValue(flag));
+            if (value == "auto" || value == "none" || value == "nolimit") {
+                options.globalMoleculeLimit = -1;
+            } else {
+                const int parsed = parseLegacyNfInt(value, flag);
+                if (parsed < 0) {
+                    throw std::runtime_error(
+                        "NFsim param flag '-gml' requires a non-negative integer or auto");
+                }
+                options.globalMoleculeLimit = parsed;
+            }
+        } else if (flag == "-utl" || flag == "--utl") {
+            options.traversalLimit = parseLegacyNfInt(readValue(flag), flag);
+        } else if (flag == "-seed" || flag == "--seed") {
+            options.seed = parseLegacyNfSeed(readValue(flag));
+        } else if (flag == "-eq" || flag == "--equil") {
+            const auto value = readValue(flag);
+            const double parsed = parseScalarValue(value, model);
+            if (!std::isfinite(parsed) || parsed < 0.0) {
+                throw std::runtime_error(
+                    "NFsim param flag '-eq' requires a finite non-negative value");
+            }
+            options.equilibration = parsed;
+        } else {
+            throw std::runtime_error(
+                "NFsim param flag '" + token +
+                "' is not supported by the in-process adapter");
+        }
+    }
+    return options;
+}
+
 std::vector<double> parseScalarList(const std::string& text,
                                     ast::Model& model,
                                     const std::string& name) {
@@ -1186,14 +1344,12 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             throw std::runtime_error(
                 "NFsim action does not support non-zero 't_start' yet");
         }
-        if (!stripQuotes(trim(readArgument(action, "param", ""))).empty()) {
-            throw std::runtime_error(
-                "NFsim action does not support arbitrary 'param' flags yet");
-        }
         if (!stripQuotes(trim(readArgument(action, "nfsim_exec", ""))).empty()) {
             throw std::runtime_error(
                 "NFsim action does not support 'nfsim_exec' yet");
         }
+        const auto legacyParamText = stripQuotes(trim(readArgument(action, "param", "")));
+        const auto legacyParam = parseLegacyNfParams(legacyParamText, model);
 
         // Parse simulation parameters using the same defaults as the
         // standalone simulate_nf action.
@@ -1219,22 +1375,24 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         }
         const auto gdatPath = sourcePath.parent_path() / (prefix + ".gdat");
         const auto seedText = stripQuotes(readArgument(action, "seed", ""));
-        const auto utlText = stripQuotes(readArgument(action, "utl", "3"));
+        const auto utlText = stripQuotes(readArgument(action, "utl", ""));
         const auto verboseFlag = lowercase(stripQuotes(readArgument(action, "verbose", "0")));
         const auto complexFlag = lowercase(stripQuotes(readArgument(action, "complex", "1")));
         const auto equilText = stripQuotes(readArgument(action, "equil", ""));
-        const bool binaryOutput = parseBoolean(
-            readArgument(action, "binary_output", "0"));
-        const bool outputFunctions = parseBoolean(
-            readArgument(action, "print_functions", "0"));
-        const bool disableOnTheFly = parseBoolean(
-            readArgument(action, "notf", "0"));
         const bool getFinalState = parseBoolean(
             readArgument(action, "get_final_state", "1"), true);
-        const bool nfVerbose = verboseFlag == "1" || verboseFlag == "true";
-        const bool useComplex = complexFlag == "1" || complexFlag == "true";
-        const bool evalCSLF = !parseBoolean(readArgument(action, "nocslf", "0"));
-        const bool connectivityFlag = parseBoolean(readArgument(action, "pcg", "0"));
+        const bool nfVerbose = legacyParam.verbose || verboseFlag == "1" || verboseFlag == "true";
+        const bool useComplex = legacyParam.complex || complexFlag == "1" || complexFlag == "true";
+        const bool evalCSLF = !parseBoolean(readArgument(action, "nocslf", "0")) &&
+                              !legacyParam.noComplexScopedLocalFunctions;
+        const bool connectivityFlag = legacyParam.connectivity ||
+                                       parseBoolean(readArgument(action, "pcg", "0"));
+        const bool disableOnTheFly = legacyParam.noOnTheFlyObservables ||
+                                     parseBoolean(readArgument(action, "notf", "0"));
+        const bool outputFunctions = legacyParam.printFunctions ||
+                                     parseBoolean(readArgument(action, "print_functions", "0"));
+        const bool binaryOutput = legacyParam.binaryOutput ||
+                                  parseBoolean(readArgument(action, "binary_output", "0"));
 
         double equilibration = 0.0;
         if (!equilText.empty()) {
@@ -1242,14 +1400,34 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             if (!std::isfinite(equilibration) || equilibration < 0.0) {
                 throw std::runtime_error("NFsim 'equil' must be finite and non-negative");
             }
+        } else if (legacyParam.equilibration.has_value()) {
+            equilibration = *legacyParam.equilibration;
         }
 
         int globalMoleculeLimit = 200000;
         const auto gmlText = stripQuotes(readArgument(action, "gml", ""));
         if (!gmlText.empty()) {
-            globalMoleculeLimit = std::stoi(gmlText);
+            const auto normalized = lowercase(gmlText);
+            if (normalized == "auto" || normalized == "none" || normalized == "nolimit") {
+                globalMoleculeLimit = -1;
+            } else {
+                globalMoleculeLimit = parseLegacyNfInt(gmlText, "gml");
+                if (globalMoleculeLimit < 0) {
+                    throw std::runtime_error(
+                        "NFsim 'gml' requires a non-negative integer or auto");
+                }
+            }
+        } else if (legacyParam.globalMoleculeLimit.has_value()) {
+            globalMoleculeLimit = *legacyParam.globalMoleculeLimit;
         }
-        int suggestedTraversalLimit = utlText.empty() ? 3 : std::stoi(utlText);
+        int suggestedTraversalLimit = utlText.empty()
+            ? legacyParam.traversalLimit.value_or(3)
+            : parseLegacyNfInt(utlText, "utl");
+        const bool blockSameComplexBinding = legacyParam.blockSameComplexBinding;
+        const bool complexConstruction = useComplex || blockSameComplexBinding;
+        const std::string effectiveSeedText = !seedText.empty()
+            ? seedText
+            : (legacyParam.seed.has_value() ? std::to_string(*legacyParam.seed) : "");
 
         if (verbose) {
             std::cerr << "[bng_cpp] Running NFSim in-process from AST model\n";
@@ -1259,7 +1437,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         // compatibility bridge while the direct adapter is being qualified.
         NFcore::System *nfSystem = NFinput::buildSystemFromAst(
             model,
-            useComplex,
+            complexConstruction,
             globalMoleculeLimit,
             nfVerbose,
             suggestedTraversalLimit,
@@ -1280,7 +1458,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             }
             nfSystem = NFinput::initializeFromModel(
                 &model,
-                useComplex,
+                complexConstruction,
                 globalMoleculeLimit,
                 nfVerbose,
                 suggestedTraversalLimit);
@@ -1301,7 +1479,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 throw std::runtime_error("Failed to write XML for NFSim: " + xmlPath.string());
             }
             nfSystem = NFinput::initializeFromXML(
-                xmlPath.string(), useComplex, globalMoleculeLimit, nfVerbose,
+                xmlPath.string(), complexConstruction, globalMoleculeLimit, nfVerbose,
                 suggestedTraversalLimit, evalCSLF, connectivityFlag);
         }
 
@@ -1324,8 +1502,8 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             nfSystem->setOutputToBinary();
         }
 
-        if (!seedText.empty()) {
-            nfSystem->seedRNG(std::stoul(seedText));
+        if (!effectiveSeedText.empty()) {
+            nfSystem->seedRNG(std::stoul(effectiveSeedText));
         }
 
         nfSystem->registerOutputFileLocation(gdatPath.string());
