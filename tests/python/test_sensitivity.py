@@ -51,6 +51,31 @@ def test_sensitivity_binding_signs():
     assert result.matrix[1, 0] < 0
 
 
+def test_sensitivity_forwards_advanced_simulation_controls():
+    builder = ModelBuilder("AdvancedSensitivity")
+    builder.add_parameter("k", 0.1)
+    builder.add_molecule_type("X()")
+    builder.add_seed_species("X()", 100)
+    builder.add_observable("Molecules", "Xtot", "X()")
+    builder.add_rule("X() -> 0", "k")
+    model = builder.build()
+
+    result = model.sensitivity_analysis(
+        parameters=["k"],
+        observables=["Xtot"],
+        method="ode",
+        t_end=1.0,
+        n_steps=0,
+        sample_times=[0.0, 0.25, 1.0],
+        max_step=0.1,
+        stop_if="Xtot < 0",
+        sparse=False,
+        check_product_scale=1000.0,
+    )
+
+    assert result.baseline.time.tolist() == [0.0, 0.25, 1.0]
+
+
 def test_sensitivity_rejects_invalid_inputs():
     builder = ModelBuilder("InvalidSensitivity")
     builder.add_parameter("k", 0.1)
