@@ -4476,11 +4476,16 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 (rates.front().kind() == bng::ast::ExpressionKind::ObservableRef ||
                  rates.front().kind() == bng::ast::ExpressionKind::Function) &&
                 rates.front().args().size() == rateFunction->getArgs().size();
-            const bool functionProductRate =
+            const bool explicitFunctionProductRate =
                 !rates.empty() &&
                 rates.front().kind() == bng::ast::ExpressionKind::Function &&
                 lowerCase(rates.front().name()) == "functionproduct" &&
                 rates.front().args().size() == 2;
+            const bool rawFunctionProductShape =
+                !rates.empty() &&
+                rates.front().kind() == bng::ast::ExpressionKind::Binary &&
+                rates.front().name() == "*" && rates.front().args().size() == 2;
+            bool functionProductRate = explicitFunctionProductRate;
             FunctionProductOperand functionProductOperand1;
             FunctionProductOperand functionProductOperand2;
             if (functionProductRate) {
@@ -4495,6 +4500,22 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                               << "' cannot use FunctionProduct: " << productDiagnostic
                               << "\n";
                     return false;
+                }
+            } else if (rawFunctionProductShape) {
+                // BNG2 emits a raw multiplication for DOR2 local functions
+                // (for example, rateA(x)*rateB(y)), while the explicit
+                // FunctionProduct form is also accepted as a bounded bridge.
+                // Recognize only the exact two one-argument local-function
+                // shape so ordinary arithmetic still follows the generic
+                // dynamic-rate path.
+                std::string productDiagnostic;
+                if (parseFunctionProductOperand(
+                        model, rates.front().args()[0], functionProductOperand1,
+                        productDiagnostic) &&
+                    parseFunctionProductOperand(
+                        model, rates.front().args()[1], functionProductOperand2,
+                        productDiagnostic)) {
+                    functionProductRate = true;
                 }
             }
             const auto hasRateScope = [&](const std::string& argument) {
