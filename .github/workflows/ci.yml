@@ -297,7 +297,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-22.04, macos-14, windows-2022]
-        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+          python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
 
     steps:
       - uses: actions/checkout@v4
@@ -437,10 +437,10 @@ jobs:
       - name: Build wheels
         run: cibuildwheel --output-dir wheelhouse
         env:
-          CIBW_BUILD: "cp39-* cp310-* cp311-* cp312-* cp313-*"
+          CIBW_BUILD: "cp39-* cp310-* cp311-* cp312-* cp313-* cp314-*"
           CIBW_SKIP: "*-musllinux_* *-manylinux_i686 *-win32"
           CIBW_BUILD_VERBOSITY: 1
-          CIBW_TEST_REQUIRES: pytest numpy
+          CIBW_TEST_REQUIRES: pytest numpy click
           CIBW_TEST_COMMAND: pytest {project}/tests/python/test_cpp_backend.py -v --tb=short
           CIBW_ENVIRONMENT: CMAKE_ARGS="-DBUILD_TESTS=OFF -DBUILD_CLI=OFF"
           # macOS: build universal2 wheels
