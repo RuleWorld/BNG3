@@ -1107,8 +1107,8 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         }
     };
 
-    const auto writeCurrentNetwork = [&](const io::NetWriterOptions& options = {}) {
-        const auto outputPath = sourcePath.parent_path() / (sourcePath.stem().string() + ".net");
+    const auto writeNetworkAt = [&](const std::filesystem::path& outputPath,
+                                    const io::NetWriterOptions& options = {}) {
         if (loadedNetData.has_value()) {
             // Write loaded .net data with updated species concentrations
             std::ofstream out(outputPath);
@@ -1166,6 +1166,11 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         }
         io::NetWriter::write(outputPath, model, *network, options);
         return outputPath;
+    };
+
+    const auto writeCurrentNetwork = [&](const io::NetWriterOptions& options = {}) {
+        return writeNetworkAt(
+            sourcePath.parent_path() / (sourcePath.stem().string() + ".net"), options);
     };
 
     const auto runNfSimulation = [&](const ast::Action& action) {
@@ -2682,35 +2687,81 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         if (actionName == "writefile") {
             ensureNetwork();
             auto format = lowercase(stripQuotes(readArgument(action, "format", "")));
-            auto suffix = stripQuotes(readArgument(action, "suffix", ""));
-            if (format.empty()) format = suffix;
+            if (format.empty()) format = "net";
+
+            std::string extension;
             if (format == "net") {
-                writeCurrentNetwork();
-            } else if (format == "xml") {
-                const auto xmlContent = io::XmlWriter::write(model, &(*network));
-                const auto outputPath = sourcePath.parent_path() / (sourcePath.stem().string() + ".xml");
-                std::ofstream outFile(outputPath);
-                if (outFile) outFile << xmlContent;
-            } else if (format == "sbml") {
-                const auto sbmlContent = io::SbmlWriter::write(model, &(*network));
-                const auto outputPath = sourcePath.parent_path() / (sourcePath.stem().string() + ".xml");
-                std::ofstream outFile(outputPath);
-                if (outFile) outFile << sbmlContent;
-            } else if (format == "m" || format == "matlab") {
-                const auto mContent = io::MatlabWriter::write(model, *network);
-                const auto outputPath = sourcePath.parent_path() / (sourcePath.stem().string() + "_cvode.m");
-                std::ofstream outFile(outputPath);
-                if (outFile) outFile << mContent;
+                extension = ".net";
+            } else if (format == "xml" || format == "sbml") {
+                extension = ".xml";
             } else if (format == "bngl") {
-                const auto bnglContent = io::BnglWriter::write(model);
-                const auto outputPath = sourcePath.parent_path() / (sourcePath.stem().string() + ".bngl");
-                std::ofstream outFile(outputPath);
-                if (outFile) outFile << bnglContent;
+                extension = ".bngl";
+            } else if (format == "ssc") {
+                extension = ".rxn";
             } else {
                 throw std::runtime_error("writeFile: unknown format '" + format + "'");
             }
+
+            auto prefixText = stripQuotes(
+                readArgument(action, "prefix", sourcePath.stem().string()));
+            if (prefixText.empty()) {
+                prefixText = sourcePath.stem().string();
+            }
+            std::filesystem::path outputPrefix(prefixText);
+            if (!outputPrefix.is_absolute()) {
+                outputPrefix = sourcePath.parent_path() / outputPrefix;
+            }
+            const auto suffix = stripQuotes(readArgument(action, "suffix", ""));
+            if (!suffix.empty()) {
+                outputPrefix += "_" + suffix;
+            }
+            const auto outputPath = outputPrefix.string() + extension;
+            const bool overwrite = parseBoolean(
+                readArgument(action, "overwrite", "0"));
+            if (!overwrite && std::filesystem::exists(outputPath)) {
+                throw std::runtime_error(
+                    "writeFile: file exists: " + outputPath +
+                    "; set overwrite=>1 to replace it");
+            }
+
+            const bool evaluateExpressions = parseBoolean(
+                readArgument(action, "evaluate_expressions", "0"));
+            if (format == "net") {
+                io::NetWriterOptions options;
+                options.evaluateExpressions = evaluateExpressions;
+                writeNetworkAt(outputPath, options);
+            } else {
+                std::string content;
+                if (format == "xml") {
+                    content = io::XmlWriter::write(model, &(*network));
+                } else if (format == "sbml") {
+                    io::SbmlWriter::Options options;
+                    options.level = 2;
+                    options.version = 3;
+                    options.networksExport = true;
+                    content = io::SbmlWriter::write(model, &(*network), options);
+                } else if (format == "bngl") {
+                    io::BnglWriter::Options options;
+                    options.evaluateExpressions = evaluateExpressions;
+                    content = io::BnglWriter::write(model, &(*network), options);
+                } else {
+                    content = io::SscWriter::write(model, *network);
+                }
+
+                std::ofstream outFile(outputPath);
+                if (!outFile) {
+                    throw std::runtime_error(
+                        "writeFile: failed to open output file: " + outputPath);
+                }
+                outFile << content;
+                if (!outFile) {
+                    throw std::runtime_error(
+                        "writeFile: failed to write output file: " + outputPath);
+                }
+            }
             if (verbose) {
-                std::cerr << "[bng_cpp] writeFile format=" << format << "\n";
+                std::cerr << "[bng_cpp] writeFile format=" << format
+                          << " path=" << outputPath << "\n";
             }
             continue;
         }

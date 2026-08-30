@@ -459,6 +459,39 @@ end model
         with pytest.raises(RuntimeError, match="unsupported visualization type"):
             bionetgen.load(str(bngl)).execute()
 
+    def test_writefile_honors_ssc_prefix_suffix_and_overwrite(self, tmp_path):
+        bngl = tmp_path / "writefile_contract.bngl"
+        bngl.write_text(
+            """
+begin model
+begin parameters
+    k 0.1
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 1
+end seed species
+begin reaction rules
+    X() -> 0 k
+end reaction rules
+end model
+
+writeFile({format=>"ssc",prefix=>"export",suffix=>"v1"})
+"""
+        )
+
+        model = bionetgen.load(str(bngl))
+        model.execute()
+
+        output = tmp_path / "export_v1.rxn"
+        assert output.exists()
+        assert "new X" in output.read_text()
+
+        with pytest.raises(RuntimeError, match="file exists"):
+            model.execute()
+
 
 class TestHighLevelAPI:
     def test_load_and_simulate(self, tmp_path):
