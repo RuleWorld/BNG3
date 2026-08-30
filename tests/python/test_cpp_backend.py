@@ -677,6 +677,42 @@ parameter_scan({method=>"protocol",parameter=>"k",par_scan_vals=>[0.1,0.2]})
         assert [float(row[0]) for row in rows] == pytest.approx([0.1, 0.2])
         assert float(rows[0][1]) > float(rows[1][1])
 
+    def test_simulate_protocol_supports_direct_nf(self, tmp_path, monkeypatch):
+        bngl = tmp_path / "protocol_nf.bngl"
+        bngl.write_text(
+            """
+begin model
+begin parameters
+    k 0.1
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 10
+end seed species
+begin observables
+    Molecules Xtot X()
+end observables
+begin reaction rules
+    X() -> 0 k
+end reaction rules
+begin protocol
+    simulate_nf({prefix=>"protocol_nf",t_end=>1,n_steps=>2,seed=>1})
+end protocol
+end model
+
+simulate_protocol()
+"""
+        )
+
+        monkeypatch.setenv("BNG_NFSIM_REQUIRE_DIRECT", "1")
+        bionetgen.load(str(bngl)).execute()
+
+        assert (tmp_path / "protocol_nf.gdat").exists()
+        assert (tmp_path / "protocol_nf.species").exists()
+        assert not (tmp_path / "protocol_nf.xml").exists()
+
     def test_linear_parameter_sensitivity_writes_gsc_and_csc(self, tmp_path):
         bngl = tmp_path / "linear_sensitivity.bngl"
         bngl.write_text(

@@ -1284,15 +1284,21 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
         for (const auto& protoAction : protocol) {
             const auto protoName = lowercase(protoAction.name);
+            if (protoName == "simulate_nf" ||
+                (protoName == "simulate" &&
+                 resolveSimulationMethod(protoAction) == "nf")) {
+                ast::Action actualAction = protoAction;
+                if (prefixOverride.has_value()) {
+                    actualAction.arguments["prefix"] = prefixOverride->string();
+                    actualAction.arguments.erase("suffix");
+                }
+                runNfSimulation(actualAction);
+                continue;
+            }
+
             if (protoName == "simulate" || protoName == "simulate_ode" ||
                 protoName == "simulate_ssa" || protoName == "simulate_pla" ||
                 protoName == "simulate_psa") {
-                if (protoName == "simulate" &&
-                    resolveSimulationMethod(protoAction) == "nf") {
-                    throw std::runtime_error(
-                        "simulate_protocol does not yet support simulate_nf; use a "
-                        "standalone simulate_nf action");
-                }
                 ensureNetwork();
                 ast::Action actualAction = protoAction;
                 if (protoName == "simulate_pla" || protoName == "simulate_psa") {
@@ -1309,12 +1315,6 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 runSimulation(model, actualAction, sourcePath, *network, verbose,
                               lastSimulationState, lastSimulationEndTime);
                 continue;
-            }
-
-            if (protoName == "simulate_nf") {
-                throw std::runtime_error(
-                    "simulate_protocol does not yet support simulate_nf; use a "
-                    "standalone simulate_nf action");
             }
 
             if (protoName == "setparameter") {
