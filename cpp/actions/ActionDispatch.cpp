@@ -1456,6 +1456,10 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 sourcePath);
 
             if (!nfSystem) {
+                if (std::getenv("BNG_NFSIM_REQUIRE_DIRECT") != nullptr) {
+                    throw std::runtime_error(
+                        "NFsim direct AST initialization required but unavailable");
+                }
                 if (verbose) {
                     std::cerr << "[bng_cpp] AST adapter returned nullptr; using in-memory XML fallback...\n";
                 }

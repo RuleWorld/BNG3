@@ -427,7 +427,8 @@ def simulate_nf(
     Returns
     -------
     dict
-        Keys: "time" (ndarray), "observables" (dict[str, ndarray]).
+        Keys: "time" (ndarray), "observables" (dict[str, ndarray]), and
+        "construction_path" ("direct", "in-memory-xml", or "on-disk-xml").
     """
     ...
 

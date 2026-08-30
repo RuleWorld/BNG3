@@ -3,6 +3,7 @@
 #include <pybind11/numpy.h>
 
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -59,6 +60,7 @@ void bind_nfsim(py::module_& m) {
         TempFileGuard tmp_guard;
         int suggestedTraversalLimit = -1;
         std::unique_ptr<NFcore::System> system;
+        std::string construction_path = "direct";
 
         {
             py::gil_scoped_release release;
@@ -72,6 +74,11 @@ void bind_nfsim(py::module_& m) {
             ));
 
             if (!system) {
+                if (std::getenv("BNG_NFSIM_REQUIRE_DIRECT") != nullptr) {
+                    throw std::runtime_error(
+                        "NFsim direct AST initialization required but unavailable");
+                }
+                construction_path = "in-memory-xml";
                 if (verbose) {
                     std::cerr << "[bind_nfsim] Direct AST initialization unavailable; "
                                  "using compatibility XML path...\n";
@@ -90,6 +97,7 @@ void bind_nfsim(py::module_& m) {
             }
 
             if (!system) {
+                construction_path = "on-disk-xml";
                 // Preserve the historical on-disk initializer as a last-resort
                 // compatibility mode.  This branch is expected to be rare and
                 // is intentionally visible in verbose diagnostics.
@@ -201,6 +209,7 @@ void bind_nfsim(py::module_& m) {
             obs_dict[py::cast(obs_names[i])] = arr;
         }
         result["observables"] = obs_dict;
+        result["construction_path"] = construction_path;
 
         return result;
     },
