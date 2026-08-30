@@ -26,24 +26,25 @@ def sim_getter(model_file=None, model_str=None, sim_type="libRR"):
         A simulator object with an API that's supposed to be agnostic to the
         underlying simulator it's running.
     """
+    if model_file is None and model_str is None:
+        raise ValueError("Provide model_file or model_str")
+    if not isinstance(sim_type, str):
+        raise TypeError("sim_type must be a string")
+
+    normalized_type = sim_type.lower()
+    if normalized_type == "cpy":
+        raise ValueError("Simulator type 'cpy' is no longer supported")
+    if normalized_type != "librr":
+        raise ValueError(f"Simulator type {sim_type!r} not supported")
+
     if model_str is not None and model_file is None:
         from tempfile import NamedTemporaryFile
 
         with NamedTemporaryFile("w+") as model_file_obj:
             model_file_obj.write(model_str)
             model_file = model_file_obj.name
-            if sim_type == "libRR":
-                # need to go back to beginning of the file for this to work
-                model_file_obj.seek(0)
-                return libRRSimulator(model_file=model_file)
-            elif sim_type == "cpy":
-                raise ValueError("Simulator type 'cpy' is no longer supported")
-            else:
-                print("simulator type {} not supported".format(sim_type))
-    if model_file is not None:
-        if sim_type == "libRR":
+            # Need to go back to beginning for callers that inspect the file.
+            model_file_obj.seek(0)
             return libRRSimulator(model_file=model_file)
-        elif sim_type == "cpy":
-            raise ValueError("Simulator type 'cpy' is no longer supported")
-        else:
-            print("simulator type {} not supported".format(sim_type))
+
+    return libRRSimulator(model_file=model_file)

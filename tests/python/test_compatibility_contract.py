@@ -8,6 +8,7 @@ import subprocess
 import sys
 
 import numpy as np
+import pytest
 
 import bionetgen
 
@@ -56,3 +57,8 @@ def test_module_entry_point_exposes_cli_help():
     assert result.returncode == 0, result.stderr
     assert "Usage:" in result.stdout
     assert "BioNetGen" in result.stdout
+
+
+def test_legacy_sim_getter_rejects_unknown_simulator_type():
+    with pytest.raises(ValueError, match="not supported"):
+        bionetgen.sim_getter(model_file=str(MODEL), sim_type="unknown")
