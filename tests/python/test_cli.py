@@ -41,6 +41,20 @@ def test_cli_check(runner, simple_model):
     assert result.exit_code == 0
 
 
+def test_cli_legacy_run_flags_preserve_action_outputs(runner, tmp_path):
+    output = tmp_path / "legacy-results"
+    result = runner.invoke(
+        main,
+        ["run", "-i", os.path.join(os.path.dirname(__file__), "test.bngl"),
+         "-o", str(output)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert {"test.net", "test.xml", "test.gdat", "test.cdat"}.issubset(
+        {path.name for path in output.iterdir()}
+    )
+
+
 def test_cli_export_bngl(runner, simple_model, tmp_path):
     out = str(tmp_path / "output.bngl")
     result = runner.invoke(
