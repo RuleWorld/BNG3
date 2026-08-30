@@ -319,7 +319,7 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Install Python build dependencies
-        run: pip install scikit-build-core pybind11 numpy pytest pytest-cov cement colorlog pyparsing pylru pandas matplotlib python-libsbml pyyaml lxml networkx sympy seaborn xmltodict
+        run: pip install scikit-build-core pybind11 numpy click pytest pytest-cov cement colorlog pyparsing pylru pandas matplotlib python-libsbml pyyaml lxml networkx sympy seaborn xmltodict
 
       - name: Build and install package (Windows)
         if: startsWith(matrix.os, 'windows')
