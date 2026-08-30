@@ -55,6 +55,12 @@ def test_cli_legacy_run_flags_preserve_action_outputs(runner, tmp_path):
     )
 
 
+@pytest.mark.parametrize("command", ["info", "plot", "notebook", "graphdiff", "atomize"])
+def test_cli_legacy_command_surface(runner, command):
+    result = runner.invoke(main, [command, "--help"])
+    assert result.exit_code == 0, result.output
+
+
 def test_cli_export_bngl(runner, simple_model, tmp_path):
     out = str(tmp_path / "output.bngl")
     result = runner.invoke(
