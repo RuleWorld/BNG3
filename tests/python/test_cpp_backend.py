@@ -456,6 +456,45 @@ end model
         assert result.time[-1] == pytest.approx(1.0)
         assert result.observables["A_total"][0] == pytest.approx(1.0)
 
+    def test_nf_direct_local_function_accepts_bare_global_observable(
+        self, tmp_path, monkeypatch
+    ):
+        bngl = tmp_path / "local_global_observable.bngl"
+        bngl.write_text(
+            """
+begin model
+begin parameters
+    k 0.1
+end parameters
+begin molecule types
+    A(s~0~1)
+    C(d)
+end molecule types
+begin seed species
+    A(s~0) 1
+    C(d!1).C(d!1) 1
+end seed species
+begin observables
+    Molecules Atot A()
+    Molecules Ctot C()
+end observables
+begin functions
+    loc(x) = k*Atot + 0*Ctot(x)
+end functions
+begin reaction rules
+    A(s~0) + C(d!1)%x.C(d!1) -> A(s~1) + C(d!1)%x.C(d!1) loc(x)
+end reaction rules
+end model
+"""
+        )
+
+        monkeypatch.setenv("BNG_NFSIM_REQUIRE_DIRECT", "1")
+        result = bionetgen.load(str(bngl)).simulate(
+            method="nf", t_end=0.0, n_steps=1, seed=1
+        )
+
+        assert result.time.tolist() == [0.0, 0.0]
+
     def test_nf_direct_route_can_be_required(self, tmp_path, monkeypatch):
         bngl = tmp_path / "strict_nf.bngl"
         bngl.write_text(
