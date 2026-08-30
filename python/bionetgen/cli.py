@@ -518,9 +518,18 @@ def sensitivity(
 
 
 @main.command()
-@click.argument("model", type=click.Path(exists=True))
+@click.argument("model", required=False, type=click.Path(exists=True))
+@click.option(
+    "--input",
+    "-i",
+    "input_path",
+    default=None,
+    type=click.Path(exists=True),
+    help="Legacy input model path.",
+)
 @click.option(
     "--type",
+    "-t",
     "viz_type",
     default="contact_map",
     type=click.Choice(
@@ -533,6 +542,10 @@ def sensitivity(
             "ruleviz_operation",
             "process_graph",
             "sbml_multi",
+            "contactmap",
+            "regulatory",
+            "atom_rule",
+            "all",
         ]
     ),
     show_default=True,
@@ -541,17 +554,55 @@ def sensitivity(
 @click.option(
     "--output", "-o", default=None, type=click.Path(), help="Output GraphML path."
 )
-def visualize(model, viz_type, output):
+def visualize(model, input_path, viz_type, output):
     """Generate a model visualization graph."""
 
     from bionetgen import load
 
+    if input_path is not None:
+        if model is not None:
+            raise click.UsageError("provide either MODEL or --input, not both")
+        model = input_path
+    if model is None:
+        raise click.UsageError("MODEL or --input is required")
+
     bng_model = load(model)
-    graph_text = getattr(bng_model, viz_type)(output)
-    if output is None:
+    aliases = {
+        "contactmap": "contact_map",
+        "regulatory": "regulatory_graph",
+        "atom_rule": "regulatory_graph",
+    }
+    canonical = aliases.get(viz_type, viz_type)
+    if canonical == "all":
+        output_dir = Path(output) if output else Path.cwd()
+        if output and output_dir.suffix:
+            raise click.ClickException("--output for visualize --type all must be a directory")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        methods = [
+            "contact_map",
+            "regulatory_graph",
+            "ruleviz_pattern",
+            "ruleviz_operation",
+        ]
+        for method in methods:
+            destination = output_dir / f"{method}.graphml"
+            getattr(bng_model, method)(str(destination))
+        click.echo(f"Wrote {len(methods)} visualizations to {output_dir}")
+        return
+
+    destination = None
+    if output:
+        destination = Path(output)
+        if destination.exists() and destination.is_dir():
+            destination = destination / f"{canonical}.graphml"
+        elif not destination.exists() and not destination.suffix:
+            destination.mkdir(parents=True, exist_ok=True)
+            destination = destination / f"{canonical}.graphml"
+    graph_text = getattr(bng_model, canonical)(None if destination is None else str(destination))
+    if destination is None:
         click.echo(graph_text)
     else:
-        click.echo(f"Wrote {viz_type} to {output}")
+        click.echo(f"Wrote {canonical} to {destination}")
 
 
 if __name__ == "__main__":
