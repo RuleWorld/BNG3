@@ -383,6 +383,31 @@ end model
         with pytest.raises(RuntimeError, match="direct AST initialization required"):
             _cpp.simulate_nf(model, t_end=1.0, n_steps=1)
 
+    def test_nf_xml_fallback_requires_explicit_opt_in(self, tmp_path, monkeypatch):
+        bngl = tmp_path / "implicit_xml_nf.bngl"
+        bngl.write_text(
+            """
+begin model
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 1
+end seed species
+begin observables
+    Molecules X_total X()
+end observables
+end model
+"""
+        )
+        model = _cpp.parse_file(str(bngl))
+        monkeypatch.setenv("BNG_NFSIM_FORCE_XML", "1")
+        monkeypatch.delenv("BNG_NFSIM_REQUIRE_DIRECT", raising=False)
+        monkeypatch.delenv("BNG_NFSIM_ALLOW_XML_FALLBACK", raising=False)
+
+        with pytest.raises(RuntimeError, match="XML fallback disabled"):
+            _cpp.simulate_nf(model, t_end=1.0, n_steps=1)
+
     def test_simulate_method_nf_uses_nf_route(self, tmp_path, monkeypatch):
         bngl = tmp_path / "action_nf.bngl"
         bngl.write_text(
@@ -410,6 +435,30 @@ end model
 
         assert (tmp_path / "action_nf_route.gdat").exists()
         assert (tmp_path / "action_nf_route.species").exists()
+
+    def test_action_nf_xml_fallback_requires_explicit_opt_in(self, tmp_path, monkeypatch):
+        bngl = tmp_path / "implicit_action_xml_nf.bngl"
+        bngl.write_text(
+            """
+begin model
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 1
+end seed species
+begin actions
+    simulate_nf({prefix=>"implicit",t_end=>1,n_steps=>1})
+end actions
+end model
+"""
+        )
+        monkeypatch.setenv("BNG_NFSIM_FORCE_XML", "1")
+        monkeypatch.delenv("BNG_NFSIM_REQUIRE_DIRECT", raising=False)
+        monkeypatch.delenv("BNG_NFSIM_ALLOW_XML_FALLBACK", raising=False)
+
+        with pytest.raises(RuntimeError, match="XML fallback disabled"):
+            bionetgen.load(str(bngl)).execute()
 
     def test_simulate_nf_rejects_unsupported_continue(self, tmp_path):
         bngl = tmp_path / "nf_continue.bngl"

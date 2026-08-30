@@ -53,10 +53,10 @@ void bind_nfsim(py::module_& m) {
             throw std::invalid_argument("n_steps must be positive");
         }
 
-        // The direct adapter is deliberately fail-closed: while any section is
-        // incomplete it returns nullptr and we retain the established
-        // in-memory XML initializer as the compatibility path.  XML is only
-        // materialized on disk if that compatibility initializer also fails.
+        // The direct adapter is deliberately fail-closed.  XML compatibility
+        // construction is available only when the caller explicitly opts in;
+        // unsupported direct semantics must not silently change execution
+        // paths.
         TempFileGuard tmp_guard;
         int suggestedTraversalLimit = -1;
         std::unique_ptr<NFcore::System> system;
@@ -77,6 +77,11 @@ void bind_nfsim(py::module_& m) {
                 if (std::getenv("BNG_NFSIM_REQUIRE_DIRECT") != nullptr) {
                     throw std::runtime_error(
                         "NFsim direct AST initialization required but unavailable");
+                }
+                if (std::getenv("BNG_NFSIM_ALLOW_XML_FALLBACK") == nullptr) {
+                    throw std::runtime_error(
+                        "NFsim direct AST initialization unavailable; XML fallback disabled "
+                        "(set BNG_NFSIM_ALLOW_XML_FALLBACK=1 to opt in)");
                 }
                 construction_path = "in-memory-xml";
                 if (verbose) {

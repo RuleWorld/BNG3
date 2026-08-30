@@ -53,6 +53,7 @@ def test_nf_ast_direct_matches_xml(model_name, api, work_dir, monkeypatch):
     t_end, n_steps, seed = 50.0, 50, 7
 
     monkeypatch.setenv("BNG_NFSIM_FORCE_XML", "1")
+    monkeypatch.setenv("BNG_NFSIM_ALLOW_XML_FALLBACK", "1")
     xml_traj = runner.run_api(model_name, method="nf", seed=seed, t_end=t_end, n_steps=n_steps)
 
     monkeypatch.delenv("BNG_NFSIM_FORCE_XML", raising=False)

@@ -1222,6 +1222,11 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 throw std::runtime_error(
                     "NFsim direct AST initialization required but unavailable");
             }
+            if (std::getenv("BNG_NFSIM_ALLOW_XML_FALLBACK") == nullptr) {
+                throw std::runtime_error(
+                    "NFsim direct AST initialization unavailable; XML fallback disabled "
+                    "(set BNG_NFSIM_ALLOW_XML_FALLBACK=1 to opt in)");
+            }
             if (verbose) {
                 std::cerr << "[bng_cpp] AST adapter returned nullptr; using in-memory XML fallback...\n";
             }

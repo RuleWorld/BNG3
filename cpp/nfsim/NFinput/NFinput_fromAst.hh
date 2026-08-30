@@ -17,8 +17,9 @@
 ///
 /// MIGRATION CONTRACT (how the gate proves correctness):
 ///   - bind_nfsim routes through buildSystemFromAst() by default.
-///   - Setting the env var BNG_NFSIM_FORCE_XML=1 forces the old in-memory-XML
-///     path (initializeFromModel). The harness test
+///   - Setting BNG_NFSIM_FORCE_XML=1 forces the old in-memory-XML path
+///     (initializeFromModel), and BNG_NFSIM_ALLOW_XML_FALLBACK=1 explicitly
+///     permits that compatibility path. The harness test
 ///     test_parity_nfsim::test_nf_ast_direct_matches_xml runs the model both
 ///     ways under one fixed seed and requires identical trajectories. The
 ///     in-memory-XML path is therefore the behavioral oracle for the direct
@@ -46,7 +47,8 @@ namespace NFinput {
 /// @param verbose                  progress messages.
 /// @param suggestedTraversalLimit  out: recommended traversal depth.
 /// @param sourcePath               optional BNGL source path for relative TFUN files.
-/// @return owned System, or nullptr on error (caller may fall back to XML).
+/// @return owned System, or nullptr on error. Callers must make any XML
+///         compatibility fallback explicit to the user.
 NFcore::System* buildSystemFromAst(
         const bng::ast::Model& model,
         bool   blockSameComplexBinding,
