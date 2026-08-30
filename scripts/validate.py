@@ -1,88 +1,25 @@
-"""Validation script: Run bng_cpp on validation models and compare .net output.
+"""Validation script: run bng_cpp and compare typed .net output.
 
 Compares the C++ engine's network generation against reference .net files
-produced by the Perl BNG2.pl engine.
+produced by the Perl BNG2.pl engine.  Network equality is structural: species
+strings and reaction multisets (including resolved rate expressions) are
+compared through ``tests.validation.compare`` rather than by section counts.
 
 Usage:
     python scripts/validate.py [--bng-cpp PATH] [--verbose]
 """
 
 import argparse
-import os
-import re
+import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO))
 
-def parse_net_file(path):
-    """Parse a .net file into sections for comparison.
-
-    Returns dict of section_name -> list of content lines (stripped, sorted).
-    We compare species and reactions sections.
-    """
-    sections = {}
-    current_section = None
-    current_lines = []
-
-    if not os.path.exists(path):
-        return None
-
-    with open(path, "r") as f:
-        for line in f:
-            line = line.rstrip("\n")
-
-            # Section headers
-            if line.startswith("begin "):
-                current_section = line.strip()
-                current_lines = []
-            elif line.startswith("end "):
-                if current_section:
-                    sections[current_section] = sorted(current_lines)
-                current_section = None
-            elif current_section and line.strip():
-                # Normalize whitespace in content lines
-                normalized = re.sub(r"\s+", " ", line.strip())
-                current_lines.append(normalized)
-
-    return sections
-
-
-def compare_sections(ref_sections, test_sections, section_name):
-    """Compare a specific section between reference and test .net files.
-
-    Returns (match, details_string).
-    """
-    ref_key = None
-    test_key = None
-
-    for key in ref_sections:
-        if section_name in key:
-            ref_key = key
-            break
-    for key in test_sections:
-        if section_name in key:
-            test_key = key
-            break
-
-    if ref_key is None:
-        return True, f"  {section_name}: not in reference (skip)"
-    if test_key is None:
-        return False, f"  {section_name}: MISSING in test output"
-
-    ref_lines = ref_sections[ref_key]
-    test_lines = test_sections[test_key]
-
-    if len(ref_lines) != len(test_lines):
-        return False, (
-            f"  {section_name}: count mismatch "
-            f"(ref={len(ref_lines)}, test={len(test_lines)})"
-        )
-
-    # For species: compare count only (ordering may differ)
-    # For reactions: compare count (rate expressions may have cosmetic differences)
-    return True, f"  {section_name}: OK ({len(ref_lines)} entries)"
+from tests.validation.compare import compare_net, parse_net  # noqa: E402
 
 
 def run_validation(bng_cpp, validate_dir, verbose=False, skip_models=None):
@@ -123,8 +60,6 @@ def run_validation(bng_cpp, validate_dir, verbose=False, skip_models=None):
         # Run bng_cpp to generate network
         with tempfile.TemporaryDirectory() as tmpdir:
             # Copy bngl to tmpdir (some models use relative includes)
-            import shutil
-
             tmp_bngl = Path(tmpdir) / bngl.name
             shutil.copy(bngl, tmp_bngl)
 
@@ -168,32 +103,27 @@ def run_validation(bng_cpp, validate_dir, verbose=False, skip_models=None):
                     details.append(f"ERROR {model_name} (no .net generated)")
                 continue
 
-            # Parse and compare
-            ref_sections = parse_net_file(str(ref_net))
-            test_sections = parse_net_file(str(test_net))
+            # Parse and compare through the typed validation comparator.  This
+            # catches changed species identity and reaction topology even when
+            # section counts happen to be unchanged.
+            ref_network = parse_net(ref_net)
+            test_network = parse_net(test_net)
 
-            if ref_sections is None or test_sections is None:
+            if ref_network is None or test_network is None:
                 results["error"] += 1
                 details.append(f"ERROR {model_name} (parse failure)")
                 continue
 
-            # Compare species and reactions counts
-            sp_ok, sp_detail = compare_sections(ref_sections, test_sections, "species")
-            rx_ok, rx_detail = compare_sections(
-                ref_sections, test_sections, "reactions"
-            )
-
-            if sp_ok and rx_ok:
+            diff = compare_net(ref_network, test_network)
+            if diff.ok:
                 results["pass"] += 1
                 if verbose:
                     details.append(f"PASS  {model_name}")
-                    details.append(sp_detail)
-                    details.append(rx_detail)
+                    details.append(diff.summary())
             else:
                 results["fail"] += 1
                 details.append(f"FAIL  {model_name}")
-                details.append(sp_detail)
-                details.append(rx_detail)
+                details.append(diff.summary())
 
     return results, details
 
@@ -212,8 +142,7 @@ def main():
     args = parser.parse_args()
 
     # Find bng_cpp
-    script_dir = Path(__file__).parent
-    repo_dir = script_dir.parent
+    repo_dir = REPO
 
     if args.bng_cpp:
         bng_cpp = Path(args.bng_cpp).resolve()

@@ -51,6 +51,10 @@ Run a 1D parameter scan and return time-series results for each sampled value.
 
 Run a 2D parameter grid scan.
 
+### `sensitivity_analysis(model_or_path, parameters=None, observables=None, *, **kwargs) -> SensitivityResult`
+
+Compute local normalized sensitivities using central finite differences.
+
 ### `from_sbml(path, atomize=False, **options) -> BioNetGenModel`
 
 Import SBML through the atomizer bridge and return a model.
@@ -151,6 +155,10 @@ Export a process graph.
 #### `sbml_multi(path=None)`
 
 Export SBML Multi.
+
+#### `to_xml()` / `to_bngl()`
+
+Serialize the model in memory to BNG-XML or BNGL text.
 
 #### `write_xml(path)` / `write_bngl(path)` / `write_net(path)` / `write_sbml(path)` / `write_matlab(path)` / `write_latex(path)`
 

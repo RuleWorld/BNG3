@@ -336,6 +336,16 @@ Molecule *MoleculeType::genDefaultMolecule(Compartment *c)
 	mList->create(m);
 	m->setAlive(true);
 	m->setCompartment(c);
+	// MoleculeList preallocates inactive Molecule objects.  If complex
+	// bookkeeping was enabled after the MoleculeType was constructed (for
+	// example by a Species observable), those objects still carry the old
+	// per-molecule flag and no complex ID.
+	if (system->isUsingComplex()) {
+		m->setUseComplex(true);
+		if (m->getComplexID() == -1) {
+			m->setComplexID(createComplex(m));
+		}
+	}
 	//cout<<"adding molecule: "<<m->getMoleculeTypeName()<<"_"<<m->getUniqueID()<<endl;
 
 	return m;
@@ -826,6 +836,5 @@ void MoleculeType::printDetails() const
 
 //     return nfstream;
 // }
-
 
 

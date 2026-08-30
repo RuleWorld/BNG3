@@ -2,6 +2,7 @@
 #include <pybind11/stl.h>
 
 #include <fstream>
+#include <iterator>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -53,14 +54,16 @@ void bind_parser(py::module_& m) {
         if (!inputStream) {
             throw ParseError("Cannot open file: " + path);
         }
-        antlr4::ANTLRInputStream input(inputStream);
+        const std::string source((std::istreambuf_iterator<char>(inputStream)),
+                                 std::istreambuf_iterator<char>());
+        antlr4::ANTLRInputStream input(bng::parser::normalizeBNGLSource(source));
         return do_parse(input, path);
     }, py::arg("path"),
        "Parse a BNGL file and return a Model object");
 
     m.def("parse_string", [](const std::string& text) {
         py::gil_scoped_release release;
-        antlr4::ANTLRInputStream input(text);
+        antlr4::ANTLRInputStream input(bng::parser::normalizeBNGLSource(text));
         return do_parse(input, "<string>");
     }, py::arg("text"),
        "Parse a BNGL string and return a Model object");

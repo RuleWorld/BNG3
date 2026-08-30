@@ -34,6 +34,17 @@ def golden_gdat(model_name: str) -> Path | None:
     return p if p.exists() else None
 
 
+def golden_ensemble(model_name: str) -> Path | None:
+    """Return a committed directory of fixed-seed Perl trajectories, if any.
+
+    Ensemble references are deliberately separate from the single-trajectory
+    golden.  A directory named ``<model>.ens`` contains one ``.gdat`` per
+    predeclared seed; callers must enforce the required member count.
+    """
+    p = GOLDEN / f"{Path(model_name).stem}.ens"
+    return p if p.is_dir() else None
+
+
 def _bng2_path() -> Path | None:
     p = Path(os.environ.get("BNG2_PERL", REPO / "legacy" / "perl" / "BNG2.pl"))
     return p if p.exists() else None
@@ -91,3 +102,43 @@ def gdat(model_name: str, work_dir: Path) -> tuple[Path | None, str]:
         _, p, err = run_perl(model_name, work_dir)
         return (p, "perl") if p else (None, f"perl failed: {err}")
     return None, "no golden and no perl"
+
+
+def ensemble(
+    model_name: str, *, min_runs: int = 200
+) -> tuple[list[tuple[object, list[str]]], str]:
+    """Load a committed fixed-seed Perl ensemble; never substitute one gdat.
+
+    The returned arrays are intentionally typed loosely here to avoid making
+    the oracle module depend on NumPy at import time; ``compare.parse_gdat``
+    supplies the concrete arrays in the test process.
+    """
+    from .compare import parse_gdat
+
+    directory = golden_ensemble(model_name)
+    if directory is None:
+        return [], "no committed ensemble directory"
+    paths = sorted(directory.glob("*.gdat"))
+    if len(paths) < min_runs:
+        return paths_to_runs(paths), (
+            f"ensemble has {len(paths)} member(s), requires at least {min_runs}"
+        )
+    runs = []
+    for path in paths:
+        data, columns = parse_gdat(path)
+        if data is None or columns is None:
+            return [], f"invalid ensemble member: {path.name}"
+        runs.append((data, columns))
+    return runs, f"golden ensemble ({len(runs)} members)"
+
+
+def paths_to_runs(paths):
+    """Parse best-effort members for useful diagnostics when the count is low."""
+    from .compare import parse_gdat
+
+    runs = []
+    for path in paths:
+        data, columns = parse_gdat(path)
+        if data is not None and columns is not None:
+            runs.append((data, columns))
+    return runs

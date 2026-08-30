@@ -1,0 +1,108 @@
+schema_version: 1
+status: working-inventory
+description: >-
+  Source-to-BNG3 capability inventory for the full-port effort. This is not a
+  release approval ledger; pending rows require implementation, differential
+  evidence, or an explicit maintainer compatibility decision.
+baseline_date: 2026-08-28
+source_lock: provenance/upstreams.lock.yml
+rows:
+  - id: bngl.ast.model
+    source: cpp/ast/Model.hpp
+    bng3_reference: cpp/ast/Model.hpp
+    status: implemented
+    direct_path: canonical
+    tests: tests/cpp/test_nfsim_ast_adapter.cpp
+    oracle: pending
+    owner: pending-maintainer
+    notes: Canonical forward-development model; parser and writers still need complete feature coverage.
+  - id: nfsim.options.parameters
+    source: legacy NFinput::initializeFromModel and initParameters
+    bng3_reference: cpp/nfsim/NFinput/NFinput_fromAst.cpp:addOptionsFromAst/addParametersFromAst
+    status: implemented-subset
+    direct_path: direct
+    tests: tests/cpp/test_nfsim_ast_adapter.cpp
+    oracle: pending
+    owner: pending-maintainer
+    notes: NumberPerQuantityUnit and typed parameter values are mapped; remaining options are explicit gates.
+  - id: nfsim.compartments
+    source: legacy NFinput::initCompartments
+    bng3_reference: cpp/nfsim/NFinput/NFinput_fromAst.cpp:addCompartmentsFromAst
+    status: implemented-subset
+    direct_path: direct
+    tests: tests/cpp/test_nfsim_ast_adapter.cpp
+    oracle: pending
+    owner: pending-maintainer
+    notes: Hierarchy and duplicate/name validation are mapped; compartment semantics need differential coverage.
+  - id: nfsim.molecule-types
+    source: legacy NFinput::initMoleculeTypes
+    bng3_reference: cpp/nfsim/NFinput/NFinput_fromAst.cpp:addMoleculeTypesFromAst
+    status: implemented-subset
+    direct_path: direct
+    tests: tests/cpp/test_nfsim_ast_adapter.cpp
+    oracle: pending
+    owner: pending-maintainer
+    notes: Integer state expansion and symmetric-site renaming are mapped.
+  - id: nfsim.global-functions.safe-subset
+    source: legacy NFinput::initFunctions
+    bng3_reference: cpp/nfsim/NFinput/NFinput_fromAst.cpp:addFunctionsFromAst
+    status: implemented-subset
+    direct_path: direct
+    tests: tests/cpp/test_nfsim_ast_adapter.cpp
+    oracle: pending
+    owner: pending-maintainer
+    notes: Parameter, zero-argument observable/time references, zero-argument composites over base globals, normalized zero-argument composite chains, inline and file-backed TFUN (linear/step with time, parameter, or observable counters; relative files resolve beside the supplied BNGL source), and one-argument local functions with molecule- or species-scoped observable and time references are direct; time/parameter/observable-backed local TFUNs, bounded one-level nested local composites, and bounded function-counter TFUNs over one zero-argument base global are also direct, while unbounded function-counter composites, other rate-law forms, and non-percent scopes remain gated.
+  - id: nfsim.seed-species
+    source: legacy NFinput::initStartSpecies
+    bng3_reference: cpp/nfsim/NFinput/NFinput_fromAst.cpp:addSpeciesFromAst
+    status: implemented-subset
+    direct_path: direct
+    tests: tests/cpp/test_nfsim_ast_adapter.cpp
+    oracle: pending
+    owner: pending-maintainer
+    notes: Must preserve particle/population, state, bond, compartment, and fixed-species semantics.
+  - id: nfsim.observables
+    source: legacy NFinput::initObservables/readObservableForTemplateMolecules
+    bng3_reference: cpp/nfsim/NFinput/NFinput_fromAst.cpp:addObservablesFromAst
+    status: implemented-subset
+    direct_path: direct
+    tests: tests/cpp/test_nfsim_ast_adapter.cpp
+    oracle: pending
+    owner: pending-maintainer
+    notes: Molecules, Species, stoichiometric constraints, symmetry, and disjoint-pattern behavior require parity evidence.
+  - id: nfsim.reaction-rules
+    source: legacy NFinput::initReactionRules
+    bng3_reference: cpp/nfsim/NFinput/NFinput_fromAst.cpp:addReactionRulesFromAst
+    status: implemented-subset
+    direct_path: direct
+    tests: tests/cpp/test_nfsim_ast_adapter.cpp
+    oracle: pending
+    owner: pending-maintainer
+    notes: Elementary state, bond, degradation, product-creation, compartment-transport, and MoveConnected rules are direct; bidirectional, zero-order, static MM, Sat, Hill, zero-argument functional, bounded molecule- or species-scoped local-function, bounded nested local, bounded function-counter TFUN, bounded two-factor FunctionProduct rates, bounded unidirectional reactant/product bare-molecule include/exclude filters, bounded reversible filter swapping, bounded symmetric state-change and bond reaction-center permutations with context symmetry, and dynamic rates over parameters, observables, time, one TFUN, base global functions, or bounded zero-argument model-function chains are covered. Dynamic symmetric state-change and bond permutations retain generated live rate functions. Dynamic rates mixing direct observables with base global functions use generated observable aliases; context-only symmetric reaction centers and other non-static forms remain fail-closed.
+  - id: nfsim.energy-and-time-functions
+    source: legacy NFinput::initEnergyFunctions and initFunctions
+    bng3_reference: cpp/nfsim/NFinput/NFinput_fromAst.cpp
+    status: implemented-subset
+    direct_path: direct-subset
+    tests: tests/cpp/test_nfsim_ast_adapter.cpp
+    oracle: pending
+    owner: pending-maintainer
+    notes: Energy patterns plus bounded Arrhenius binding/state-change expansion, time-dependent global functions, file-backed/inline TFUN, time-bearing local functions, bounded nested local and function-counter TFUN composites, and bounded composites are direct; context variants use NFsim EnergyFunction. Local TFUN inside energy/rate-law forms and other energy/rate-law forms remain fail-closed on the direct path.
+  - id: pybionetgen.api-cli-atomizer
+    source: python/bionetgen and legacy/PyBioNetGen
+    bng3_reference: python/bionetgen
+    status: implemented-subset
+    direct_path: in-process
+    tests: tests/python/test_cpp_backend.py, tests/python/test_cli.py, tests/python/test_parameter_scan.py, tests/python/test_sensitivity.py
+    oracle: pending
+    owner: pending-maintainer
+    notes: Core API and CLI share the in-process backend; source-build and wheel imports, solver controls, scans, and sensitivity have smoke coverage. Atomizer, serialization, plotting, and format-roundtrip parity remain.
+  - id: validation.oracles-goldens-release
+    source: provenance/upstreams.lock.yml and provenance/golden
+    bng3_reference: provenance/
+    status: pending-maintainer-approval
+    direct_path: governance
+    tests: scripts/validate_provenance.py
+    oracle: pending
+    owner: pending-maintainer
+    notes: Immutable BNG2/NFsim/PyBioNetGen sources, manifests, tolerances, owners, and release gates are required.

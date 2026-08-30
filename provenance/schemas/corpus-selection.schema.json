@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/RuleWorld/BNG3/provenance/schemas/corpus-selection.schema.json",
+  "title": "BNG3 validation corpus selection",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "selection_status",
+    "source_lock",
+    "rulehub",
+    "tiers",
+    "records",
+    "notes"
+  ],
+  "properties": {
+    "$schema": {"type": "string"},
+    "schema_version": {"const": 1},
+    "selection_status": {
+      "enum": ["pending-maintainer-approval", "approved"]
+    },
+    "source_lock": {"$ref": "#/$defs/lock_reference"},
+    "rulehub": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "revision", "status", "policy"],
+      "properties": {
+        "repository": {"type": "string", "pattern": "^https://github\\.com/.+\\.git$"},
+        "revision": {"$ref": "#/$defs/sha"},
+        "status": {
+          "enum": ["observed", "pending-maintainer-approval", "approved"]
+        },
+        "policy": {"type": "string", "minLength": 1}
+      }
+    },
+    "tiers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["s", "p", "nf", "expr", "x", "b"],
+      "properties": {
+        "s": {"$ref": "#/$defs/id_list"},
+        "p": {"$ref": "#/$defs/id_list"},
+        "nf": {"$ref": "#/$defs/id_list"},
+        "expr": {"$ref": "#/$defs/id_list"},
+        "x": {"$ref": "#/$defs/id_list"},
+        "b": {"$ref": "#/$defs/id_list"}
+      }
+    },
+    "records": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/record"}
+    },
+    "notes": {"type": "array", "items": {"type": "string"}}
+  },
+  "$defs": {
+    "sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "lock_reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "id_list": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "path", "sha256", "origin", "tiers"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/digest"},
+        "origin": {"const": "repository-fixture"},
+        "tiers": {"$ref": "#/$defs/id_list"}
+      }
+    }
+  }
+}

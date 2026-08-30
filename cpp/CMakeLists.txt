@@ -23,7 +23,7 @@ target_link_libraries(bng_core PUBLIC nauty)
 # =============================================================================
 # bng_ast (model AST nodes)
 # =============================================================================
-file(GLOB BNG_AST_SOURCES "ast/*.cpp")
+file(GLOB BNG_AST_SOURCES CONFIGURE_DEPENDS "ast/*.cpp")
 add_library(bng_ast STATIC ${BNG_AST_SOURCES})
 target_include_directories(bng_ast PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -178,13 +178,19 @@ target_include_directories(nfsim_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/ast
     ${CMAKE_CURRENT_SOURCE_DIR}/core
+    ${CMAKE_CURRENT_SOURCE_DIR}/parser
+    ${CMAKE_CURRENT_SOURCE_DIR}/parser/generated
 )
 target_compile_definitions(nfsim_core PUBLIC TIXML_USE_STL NFSIM_USE_EXPRTK)
 target_include_directories(nfsim_core PRIVATE ${exprtk_SOURCE_DIR})
-if(NOT MSVC)
-    target_compile_options(nfsim_core PRIVATE -Wno-deprecated-declarations -Wa,-mbig-obj)
-else()
+target_link_libraries(nfsim_core PUBLIC bng_parser)
+if(MSVC)
     target_compile_options(nfsim_core PRIVATE /bigobj)
+else()
+    target_compile_options(nfsim_core PRIVATE -Wno-deprecated-declarations)
+    if(MINGW)
+        target_compile_options(nfsim_core PRIVATE -Wa,-mbig-obj)
+    endif()
 endif()
 
 # =============================================================================
@@ -213,13 +219,8 @@ endif()
 # NFsim executable (optional, for backward compatibility)
 # =============================================================================
 if(BUILD_NFSIM_CLI)
-    file(GLOB NFSIM_TEST_SRC
+    file(GLOB_RECURSE NFSIM_TEST_SRC CONFIGURE_DEPENDS
         "${NFSIM_DIR}/NFtest/*.cpp"
-        "${NFSIM_DIR}/NFtest/simple_system/*.cpp"
-        "${NFSIM_DIR}/NFtest/transcription/*.cpp"
-        "${NFSIM_DIR}/NFtest/tlbr/*.cpp"
-        "${NFSIM_DIR}/NFtest/agentcell/*.cpp"
-        "${NFSIM_DIR}/NFtest/agentcell/cell/*.cpp"
     )
     add_executable(NFsim ${NFSIM_DIR}/NFsim.cpp ${NFSIM_TEST_SRC})
     target_link_libraries(NFsim PRIVATE nfsim_core)
@@ -249,7 +250,10 @@ if(BUILD_PYTHON_BINDINGS)
     )
     target_link_libraries(_bionetgen_cpp PRIVATE bionetgen_core)
     if(MINGW OR CMAKE_COMPILER_IS_GNUCXX)
-        target_link_options(_bionetgen_cpp PRIVATE -static-libgcc -static-libstdc++ -static)
+        # A shared Python extension cannot be linked with -static. Static
+        # compiler runtimes remain supported, but the module itself must stay
+        # dynamically loadable on Linux.
+        target_link_options(_bionetgen_cpp PRIVATE -static-libgcc -static-libstdc++)
     endif()
     target_include_directories(_bionetgen_cpp PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}

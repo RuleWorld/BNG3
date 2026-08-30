@@ -28,6 +28,7 @@
 
 #pragma once
 
+#include <filesystem>
 #include <map>
 #include <string>
 
@@ -44,13 +45,15 @@ namespace NFinput {
 /// @param globalMoleculeLimit      max molecules per type.
 /// @param verbose                  progress messages.
 /// @param suggestedTraversalLimit  out: recommended traversal depth.
+/// @param sourcePath               optional BNGL source path for relative TFUN files.
 /// @return owned System, or nullptr on error (caller may fall back to XML).
 NFcore::System* buildSystemFromAst(
         const bng::ast::Model& model,
         bool   blockSameComplexBinding,
         int    globalMoleculeLimit,
         bool   verbose,
-        int&   suggestedTraversalLimit);
+        int&   suggestedTraversalLimit,
+        const std::filesystem::path& sourcePath = {});
 
 // --- Per-section direct builders (mirror the TiXml-based init* functions) ---
 // Each returns false on error. Implement incrementally; until a builder is
@@ -59,11 +62,22 @@ NFcore::System* buildSystemFromAst(
 bool addParametersFromAst(const bng::ast::Model& model, NFcore::System* s,
                           std::map<std::string, double>& parameters, bool verbose);
 
+/// Apply model options that have an NFsim System representation.  Options
+/// owned by other backends remain in the AST and are intentionally ignored.
+bool addOptionsFromAst(const bng::ast::Model& model, NFcore::System* s, bool verbose);
+
+/// Add AST compartments, preserving the XML loader's two-pass parent wiring.
+bool addCompartmentsFromAst(const bng::ast::Model& model, NFcore::System* s,
+                            bool verbose);
+
+/// Add molecule types and populate the state lookup consumed by later stages.
 bool addMoleculeTypesFromAst(const bng::ast::Model& model, NFcore::System* s,
+                             std::map<std::string, int>& allowedStates,
                              bool verbose);
 
 bool addFunctionsFromAst(const bng::ast::Model& model, NFcore::System* s,
-                         const std::map<std::string, double>& parameters, bool verbose);
+                         const std::map<std::string, double>& parameters, bool verbose,
+                         const std::filesystem::path& sourcePath = {});
 
 bool addObservablesFromAst(const bng::ast::Model& model, NFcore::System* s,
                            const std::map<std::string, double>& parameters,
@@ -75,6 +89,7 @@ bool addSpeciesFromAst(const bng::ast::Model& model, NFcore::System* s,
 bool addReactionRulesFromAst(const bng::ast::Model& model, NFcore::System* s,
                              const std::map<std::string, double>& parameters,
                              bool blockSameComplexBinding, bool verbose,
-                             int& suggestedTraversalLimit);
+                             int& suggestedTraversalLimit,
+                             const std::filesystem::path& sourcePath = {});
 
 } // namespace NFinput

@@ -4,6 +4,9 @@
 
 #include "reaction.hh"
 
+#include <cmath>
+#include <utility>
+
 
 using namespace std;
 using namespace NFcore;
@@ -21,6 +24,11 @@ FunctionalRxnClass::FunctionalRxnClass(string name, GlobalFunction *gf, Transfor
 		if(gf->getVarRefType(vr)=="Observable") {
 			Observable *obs = s->getObservableByName(gf->getVarRefName(vr));
 			obs->addDependentRxn(this);
+		} else if(gf->getVarRefType(vr)=="Time") {
+			// Time is read through GlobalFunction's live System pointer and
+			// changes on every NFsim step; it has no observable dependency to
+			// register for propensity invalidation.
+			continue;
 		} else {
 			cerr<<"When creating a FunctionalRxnClass of name: "+name+" you provided a function that\n";
 			cerr<<"depends on an observable type that I can't yet handle! (which is "+gf->getVarRefType(vr)+"\n";
@@ -209,6 +217,126 @@ void MMRxnClass::printDetails() const {
 
 
 
+
+
+SatRxnClass::SatRxnClass(string name, vector<double> saturationConstants,
+                         TransformationSet *transformationSet, System *s) :
+    BasicRxnClass(name, 1, "", transformationSet, s),
+    saturationConstants(std::move(saturationConstants))
+{
+    if (this->saturationConstants.size() < 2 ||
+        this->saturationConstants.size() > static_cast<std::size_t>(n_reactants) + 1 ||
+        n_reactants == 0) {
+        cerr << "Saturation reactions require at least two constants and no more "
+             << "constants than reactants plus one!" << endl;
+        exit(1);
+    }
+    for (const double constant : this->saturationConstants) {
+        if (!std::isfinite(constant) || constant < 0.0) {
+            cerr << "Saturation reaction constants must be finite and nonnegative!" << endl;
+            exit(1);
+        }
+    }
+}
+
+SatRxnClass::~SatRxnClass() {}
+
+double SatRxnClass::update_a()
+{
+    // BNG2's Sat(k0,K1,...,KN) law is a total rate:
+    //   k0 * prod_i S_i / prod_i (K_i + S_i)
+    // where the first N reactants receive saturation denominators and any
+    // remaining reactants remain ordinary multiplicative factors.
+    double rate = saturationConstants.front();
+    const std::size_t denominatorCount = saturationConstants.size() - 1;
+    for (unsigned int i = 0; i < n_reactants; ++i) {
+        const double count = static_cast<double>(getCorrectedReactantCount(i));
+        if (i < denominatorCount) {
+            const double denominator = saturationConstants[i + 1] + count;
+            if (denominator <= 0.0 || !std::isfinite(denominator)) {
+                a = 0.0;
+                return a;
+            }
+            rate *= count / denominator;
+        } else {
+            rate *= count;
+        }
+    }
+    a = rate * volumeConversionFactor;
+    if (!std::isfinite(a) || a < 0.0) a = 0.0;
+    return a;
+}
+
+double SatRxnClass::exactRuleMonkey_a()
+{
+    return update_a();
+}
+
+void SatRxnClass::printDetails() const {
+    cout << "ReactionClass: " << name << "  ( Sat=";
+    for (std::size_t i = 0; i < saturationConstants.size(); ++i) {
+        if (i != 0) cout << ",";
+        cout << saturationConstants[i];
+    }
+    cout << ",  a=" << a << ", fired=" << fireCounter << " times )" << endl;
+    for (unsigned int r = 0; r < n_reactants; ++r) {
+        cout << "      -" << this->reactantTemplates[r]->getMoleculeTypeName();
+        cout << "\t(count=" << this->getReactantCount(r) << ")." << endl;
+    }
+}
+
+HillRxnClass::HillRxnClass(string name, double vmax, double kh, double exponent,
+                           TransformationSet *transformationSet, System *s) :
+    BasicRxnClass(name, 1, "", transformationSet, s),
+    vmax(vmax), kh(kh), exponent(exponent)
+{
+    if (n_reactants == 0 || !std::isfinite(this->vmax) ||
+        !std::isfinite(this->kh) || !std::isfinite(this->exponent) ||
+        this->vmax < 0.0 || this->kh < 0.0 || this->exponent < 0.0) {
+        cerr << "Hill reactions require finite, nonnegative constants and at least one "
+             << "reactant!" << endl;
+        exit(1);
+    }
+}
+
+HillRxnClass::~HillRxnClass() {}
+
+double HillRxnClass::update_a()
+{
+    // BNG2's Hill(Vmax,Kh,n) law saturates the first reactant and leaves
+    // additional reactants as ordinary multiplicative factors.
+    const double substrate = static_cast<double>(getCorrectedReactantCount(0));
+    const double substratePower = std::pow(substrate, exponent);
+    const double thresholdPower = std::pow(kh, exponent);
+    const double denominator = thresholdPower + substratePower;
+    if (denominator <= 0.0 || !std::isfinite(denominator)) {
+        a = 0.0;
+        return a;
+    }
+
+    a = vmax * substratePower / denominator;
+    for (unsigned int i = 1; i < n_reactants; ++i) {
+        a *= static_cast<double>(getCorrectedReactantCount(i));
+    }
+    a *= volumeConversionFactor;
+    if (!std::isfinite(a) || a < 0.0) a = 0.0;
+    return a;
+}
+
+double HillRxnClass::exactRuleMonkey_a()
+{
+    return update_a();
+}
+
+void HillRxnClass::printDetails() const {
+    cout << "ReactionClass: " << name << "  ( Hill=" << vmax << "," << kh
+         << "," << exponent << ",  a=" << a << ", fired=" << fireCounter
+         << " times )" << endl;
+    for (unsigned int r = 0; r < n_reactants; ++r) {
+        cout << "      -" << this->reactantTemplates[r]->getMoleculeTypeName();
+        cout << "\t(count=" << this->getReactantCount(r) << ")." << endl;
+    }
+}
 
 
 BasicRxnClass::BasicRxnClass(string name, double baseRate, string baseRateName, TransformationSet *transformationSet, System *s) :
@@ -680,6 +808,3 @@ void BasicRxnClass::pickMappingSets(double random_A_number) const
 		}
 	}
 }
-
-
-

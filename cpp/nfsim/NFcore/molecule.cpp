@@ -104,6 +104,8 @@ void Molecule::prepareForSimulation()
 
 
 
+
+
 void Molecule::setUpLocalFunctionList()
 {
 	if (parentMoleculeType->getNumOfTypeIFunctions() > 0)
@@ -772,9 +774,6 @@ void Molecule::printMoleculeList(list <Molecule *> &members)
 		cout<<"_u"<<(*molIter)->getUniqueID()<<endl;
 	}
 }
-
-
-
 
 
 

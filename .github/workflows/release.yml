@@ -69,7 +69,7 @@ jobs:
         run: |
           mkdir -p dist/${{ matrix.artifact_name }}
           cp build/cpp/bng_cpp${{ matrix.binary_ext }} dist/${{ matrix.artifact_name }}/
-          cp build/cpp/NFsim${{ matrix.binary_ext }} dist/${{ matrix.artifact_name }}/ 2>/dev/null || true
+          cp build/cpp/NFsim${{ matrix.binary_ext }} dist/${{ matrix.artifact_name }}/
           cp README.md dist/${{ matrix.artifact_name }}/
           cd dist && tar czf ${{ matrix.artifact_name }}.tar.gz ${{ matrix.artifact_name }}/
 

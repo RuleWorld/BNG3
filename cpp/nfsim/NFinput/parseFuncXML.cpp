@@ -648,6 +648,9 @@ bool NFinput::initFunctions(
 					CompositeFunction *cf = system->getCompositeFunctionByName(funcName);
 					if (cf) {
 						cf->addSystemPointer(system);
+					} else {
+						LocalFunction *lf = system->getLocalFunctionByName(funcName);
+						if (lf) lf->setTimeDependent(true);
 					}
 				}
 				system->setHasTimeDependentFunctions(true);
@@ -815,7 +818,8 @@ bool NFinput::initFunctions(
 
 					GlobalFunction *gf = system->getGlobalFunctionByName(funcName);
 					CompositeFunction *cf = system->getCompositeFunctionByName(funcName);
-					if (!gf && !cf) {
+					LocalFunction *lf = system->getLocalFunctionByName(funcName);
+					if (!gf && !cf && !lf) {
 						cerr<<"!!!Error:  Could not find created TFUN function object '"<<funcName<<"'.  Quitting."<<endl;
 						return false;
 					}
@@ -830,6 +834,11 @@ bool NFinput::initFunctions(
 						else cf->enableInlineDependency(inlineXs, inlineYs, method);
 						cf->setCtrName(activePlaceholder);
 					}
+					if (lf) {
+						if (mode == "file") lf->enableFileDependency(filePath, method);
+						else lf->enableInlineDependency(inlineXs, inlineYs, method);
+						lf->setCtrName(activePlaceholder);
+					}
 
 					if (ctrType == "Observable") {
 						Observable *obs = system->getObservableByName(ctrName);
@@ -840,13 +849,18 @@ bool NFinput::initFunctions(
 						}
 						if (gf) obs->addReferenceToGlobalFunction(gf);
 						if (cf) obs->addReferenceToCompositeFunction(cf);
+						if (lf) {
+							lf->setCounterFromObservable(obs);
+						}
 					} else if (ctrType == "Time") {
 						if (gf) gf->setCounterFromTime(system);
 						if (cf) cf->setCounterFromTime(system);
+						if (lf) lf->setCounterFromTime(system);
 						system->setHasTimeDependentFunctions(true);
 					} else if (ctrType == "Parameter") {
 						if (gf) gf->setCounterFromParameter(system, ctrName);
 						if (cf) cf->setCounterFromParameter(system, ctrName);
+						if (lf) lf->setCounterFromParameter(system, ctrName);
 					} else if (ctrType == "Function") {
 						GlobalFunction *ctrFunc = system->getGlobalFunctionByName(ctrName);
 						if (!ctrFunc) {

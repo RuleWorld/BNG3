@@ -538,8 +538,9 @@ OdeResult PsaSimulator::simulate(const OdeOptions& opts, double poplevel,
     result.timePoints.reserve(opts.nSteps + 1);
     result.concentrations.reserve(opts.nSteps + 1);
 
-    const double dt = opts.tEnd / static_cast<double>(opts.nSteps);
-    double t = 0.0;
+    const double tStart = opts.tStart;
+    const double dt = (opts.tEnd - tStart) / static_cast<double>(opts.nSteps);
+    double t = tStart;
 
     // Determine max simulation steps
     const double maxStep = (opts.maxSimSteps > 0)
@@ -547,7 +548,7 @@ OdeResult PsaSimulator::simulate(const OdeOptions& opts, double poplevel,
         : std::numeric_limits<double>::max();
 
     // Record initial state
-    result.timePoints.push_back(0.0);
+    result.timePoints.push_back(tStart);
     result.concentrations.push_back(c);
 
     double nSteps = 0.0;
@@ -557,8 +558,8 @@ OdeResult PsaSimulator::simulate(const OdeOptions& opts, double poplevel,
     // === MAIN SIMULATION LOOP (adaptive_scaling_network) ===
     // Process each output interval [t, t + dt]
     for (std::size_t step = 1; step <= opts.nSteps; ++step) {
-        const double tEnd = step * dt;
-        double tRemain = tEnd - t;
+        const double outputTime = tStart + step * dt;
+        double tRemain = outputTime - t;
 
         while (tRemain > 0.0) {
             // Check maxStep limit
@@ -599,14 +600,14 @@ OdeResult PsaSimulator::simulate(const OdeOptions& opts, double poplevel,
 
         if (hitMaxSteps || hitStopCondition) {
             // Adjust time to where we actually got
-            t = tEnd - std::max(0.0, tRemain);
+            t = outputTime - std::max(0.0, tRemain);
         } else {
             // Back up to return time (t_remain < 0 means no rxn fired past endpoint)
-            t = tEnd;
+            t = outputTime;
         }
 
         // Record state at this output time
-        result.timePoints.push_back(step * dt);
+        result.timePoints.push_back(outputTime);
         result.concentrations.push_back(c);
 
         if (hitMaxSteps || hitStopCondition) {

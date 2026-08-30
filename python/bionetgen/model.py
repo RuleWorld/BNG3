@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import math
+import operator
 from pathlib import Path
+import sys
 from typing import Optional, Union
 
 try:
@@ -12,6 +15,16 @@ except ImportError:
         import _bionetgen_cpp as _cpp
     except ImportError:
         _cpp = None
+    else:
+        # CMake's development build places the extension in build/cpp rather
+        # than inside the source package.  Register that fallback under the
+        # package name so ``import bionetgen._bionetgen_cpp`` works exactly as
+        # it does from an installed wheel.
+        _module_name = f"{__package__}._bionetgen_cpp"
+        sys.modules.setdefault(_module_name, _cpp)
+        _package = sys.modules.get(__package__)
+        if _package is not None:
+            setattr(_package, "_bionetgen_cpp", _cpp)
 
 from bionetgen.result import SimResult
 
@@ -157,7 +170,8 @@ class BioNetGenModel:
         n_steps : int
             Number of output time steps.
         t_start : float
-            Start time for simulation.
+            Start time for ODE, SSA, PLA, or PSA simulation. NF currently
+            supports only the default start time of zero.
         rtol, atol : float
             Relative and absolute tolerances (ODE only).
         seed : int
@@ -174,7 +188,36 @@ class BioNetGenModel:
         SimResult
             Object containing time, observable, and concentration arrays.
         """
+        if not isinstance(method, str):
+            raise TypeError("method must be a string")
+        method = method.lower()
+        if method not in {"ode", "ssa", "nf", "pla", "psa"}:
+            raise ValueError(
+                "Unknown simulation method: "
+                f"{method!r}. Use 'ode', 'ssa', 'nf', 'pla', or 'psa'."
+            )
+        if not math.isfinite(float(t_start)) or not math.isfinite(float(t_end)):
+            raise ValueError("t_start and t_end must be finite")
+        if t_end < t_start:
+            raise ValueError("t_end must be greater than or equal to t_start")
+        if isinstance(n_steps, bool):
+            raise TypeError("n_steps must be a positive integer")
+        try:
+            n_steps = operator.index(n_steps)
+        except TypeError as exc:
+            raise TypeError("n_steps must be a positive integer") from exc
+        if n_steps <= 0:
+            raise ValueError("n_steps must be a positive integer")
+        if not math.isfinite(float(rtol)) or rtol <= 0.0:
+            raise ValueError("rtol must be finite and positive")
+        if not math.isfinite(float(atol)) or atol <= 0.0:
+            raise ValueError("atol must be finite and positive")
+        if not math.isfinite(float(psa_poplevel)):
+            raise ValueError("psa_poplevel must be finite")
+
         if method == "nf":
+            if t_start != 0.0:
+                raise ValueError("NF simulation currently supports only t_start=0.0")
             raw = _cpp.simulate_nf(
                 self._model,
                 t_end=t_end,
@@ -212,6 +255,7 @@ class BioNetGenModel:
                     t_end=t_end,
                     n_steps=n_steps,
                     config_str=pla_config,
+                    t_start=t_start,
                 )
             elif method == "psa":
                 raw = _cpp.simulate_psa(
@@ -220,12 +264,10 @@ class BioNetGenModel:
                     t_end=t_end,
                     n_steps=n_steps,
                     poplevel=psa_poplevel,
+                    t_start=t_start,
                 )
             else:
-                raise ValueError(
-                    "Unknown simulation method: "
-                    f"{method!r}. Use 'ode', 'ssa', 'nf', 'pla', or 'psa'."
-                )
+                raise AssertionError("validated method dispatch is incomplete")
 
         return SimResult(raw)
 
@@ -237,8 +279,16 @@ class BioNetGenModel:
     def write_xml(self, path: str) -> None:
         _cpp.io.write_xml(self._model, path)
 
+    def to_xml(self) -> str:
+        """Serialize the model to an in-memory BNG-XML string."""
+        return _cpp.io.write_xml_string(self._model)
+
     def write_bngl(self, path: str) -> None:
         _cpp.io.write_bngl(self._model, path)
+
+    def to_bngl(self) -> str:
+        """Serialize the model to an in-memory BNGL string."""
+        return _cpp.io.write_bngl_string(self._model)
 
     def write_net(self, path: str) -> None:
         if self._network is None:

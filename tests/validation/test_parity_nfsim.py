@@ -37,7 +37,12 @@ def test_nf_vs_native(model_name, api, work_dir):
     test = runner.run_api_ensemble(
         model_name, method="nf", n_runs=n_runs, t_end=t_end, n_steps=n_steps
     )
-    diff = compare.compare_stochastic(native, test)
+    diff = compare.compare_stochastic(
+        native,
+        test,
+        min_ref_runs=n_runs,
+        min_test_runs=n_runs,
+    )
     assert diff.ok, f"NF vs native mismatch [{model_name}]: {diff.summary()}"
 
 

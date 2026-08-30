@@ -28,7 +28,7 @@ python scripts/regen_golden.py --tier p             # rebuild golden oracles (re
 Engine discovery for the harness: `--bng-cpp PATH` / `BNG_CPP`; the Python API is `import bionetgen`.
 
 ## The rule that matters
-No master function lands until its validation gate is green. Gates live in `tests/validation/` and compare against Perl (`.net`, ODE) and native NFsim (network-free). `blbr` and `Motivating_example_cBNGL` are `xfail(strict)` on net parity until WO-1a; do not relax that without fixing the canonicalizer.
+No master function lands until its validation gate is green. Gates live in `tests/validation/` and compare against Perl (`.net`, ODE) and native NFsim (network-free). `blbr` is the sole strict net-parity exception until WO-1a; `Motivating_example_cBNGL` must pass after rate normalization. Do not broaden the exception ledger to hide a new mismatch.
 
 ## Conventions
 - Read the tree, not memory. Grep before asserting state.

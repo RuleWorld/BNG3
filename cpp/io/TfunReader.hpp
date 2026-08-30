@@ -13,6 +13,7 @@ namespace bng::io {
 struct TfunTable {
     std::vector<double> times;
     std::vector<double> values;
+    std::string method = "linear";
 
     double interpolate(double t) const {
         if (times.empty()) return 0.0;
@@ -22,14 +23,16 @@ struct TfunTable {
         if (t <= times.front()) return values.front();
         if (t >= times.back()) return values.back();
 
-        // Binary search for interval
-        auto it = std::lower_bound(times.begin(), times.end(), t);
-        size_t i = static_cast<size_t>(it - times.begin());
-        if (i == 0) i = 1;
+        // Select the interval to the left of t.  upper_bound makes an exact
+        // knot use the new value for step interpolation, matching NFsim's
+        // TFUN implementation.
+        auto it = std::upper_bound(times.begin(), times.end(), t);
+        size_t i = static_cast<size_t>(it - times.begin()) - 1;
 
         // Linear interpolation
-        double t0 = times[i - 1], t1 = times[i];
-        double v0 = values[i - 1], v1 = values[i];
+        double t0 = times[i], t1 = times[i + 1];
+        double v0 = values[i], v1 = values[i + 1];
+        if (method == "step") return v0;
         double alpha = (t - t0) / (t1 - t0);
         return v0 + alpha * (v1 - v0);
     }
@@ -67,8 +70,12 @@ public:
 
 class TfunRegistry {
 public:
-    void load(const std::string& name, const std::string& filePath) {
-        tables_[name] = TfunReader::read(filePath);
+    void load(const std::string& name,
+              const std::string& filePath,
+              std::string method = "linear") {
+        auto table = TfunReader::read(filePath);
+        if (!method.empty()) table.method = std::move(method);
+        tables_[name] = std::move(table);
     }
 
     void addTable(const std::string& name, TfunTable table) {

@@ -21,38 +21,70 @@ def main():
     "--method",
     "-m",
     default="ode",
-    type=click.Choice(["ode", "ssa", "nf"]),
+    type=click.Choice(["ode", "ssa", "nf", "pla", "psa"]),
     help="Simulation method.",
+)
+@click.option(
+    "--t-start",
+    default=0.0,
+    type=float,
+    help="Start time (ODE/SSA/PLA/PSA; NF requires zero).",
 )
 @click.option("--t-end", "-t", default=100.0, type=float, help="End time.")
 @click.option("--n-steps", "-n", default=100, type=int, help="Number of output steps.")
+@click.option("--rtol", default=1e-8, type=float, help="Relative ODE tolerance.")
+@click.option("--atol", default=1e-8, type=float, help="Absolute ODE tolerance.")
+@click.option("--seed", default=0, type=int, help="Random seed for stochastic methods.")
+@click.option("--pla-config", default="", help="PLA configuration string.")
+@click.option(
+    "--psa-poplevel",
+    default=100.0,
+    type=float,
+    help="Population threshold for PSA.",
+)
 @click.option(
     "--output", "-o", default=None, type=click.Path(), help="Output file path."
 )
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output.")
-def run(model, method, t_end, n_steps, output, verbose):
+def run(
+    model,
+    method,
+    t_start,
+    t_end,
+    n_steps,
+    rtol,
+    atol,
+    seed,
+    pla_config,
+    psa_poplevel,
+    output,
+    verbose,
+):
     """Run a BNGL model simulation."""
-    from bionetgen import _bionetgen_cpp as _cpp
+    from bionetgen import load
 
     path = str(Path(model).resolve())
-    cpp_model = _cpp.parse_file(path)
-
-    if method == "nf":
-        result = _cpp.simulate_nf(
-            cpp_model, t_end=t_end, n_steps=n_steps, verbose=verbose
+    try:
+        result = load(path).simulate(
+            method=method,
+            t_start=t_start,
+            t_end=t_end,
+            n_steps=n_steps,
+            rtol=rtol,
+            atol=atol,
+            seed=seed,
+            pla_config=pla_config,
+            psa_poplevel=psa_poplevel,
+            verbose=verbose,
         )
-    else:
-        network = _cpp.generate_network(cpp_model)
-        if method == "ode":
-            result = _cpp.simulate_ode(cpp_model, network, t_end=t_end, n_steps=n_steps)
-        else:
-            result = _cpp.simulate_ssa(cpp_model, network, t_end=t_end, n_steps=n_steps)
+    except (TypeError, ValueError) as exc:
+        raise click.ClickException(str(exc).replace("t_start", "t-start")) from exc
 
     if output:
         import numpy as np
 
-        time = result["time"]
-        obs = result.get("observables", {})
+        time = result.time
+        obs = result.observables
         header = "time\t" + "\t".join(obs.keys()) if obs else "time"
         data = [time] + list(obs.values())
         np.savetxt(
@@ -61,7 +93,7 @@ def run(model, method, t_end, n_steps, output, verbose):
         if verbose:
             click.echo(f"Results written to {output}")
     else:
-        click.echo(f"Simulation complete: {len(result['time'])} time points")
+        click.echo(f"Simulation complete: {len(result.time)} time points")
 
 
 @main.command()
@@ -165,11 +197,20 @@ def export(model, fmt, output):
     help="Number of output steps.",
 )
 @click.option(
+    "--t-start", default=0.0, type=float, show_default=True, help="Start time."
+)
+@click.option("--rtol", default=1e-8, type=float, show_default=True)
+@click.option("--atol", default=1e-8, type=float, show_default=True)
+@click.option("--seed", default=0, type=int, show_default=True)
+@click.option("--pla-config", default="", show_default=False)
+@click.option("--psa-poplevel", default=100.0, type=float, show_default=True)
+@click.option(
     "--parallel", default=0, type=int, show_default=True, help="Worker process count."
 )
 @click.option(
     "--output", "-o", default=None, type=click.Path(), help="Optional CSV output path."
 )
+@click.option("--verbose", "-v", is_flag=True, help="Show progress.")
 def scan(
     model,
     parameter_name,
@@ -180,8 +221,15 @@ def scan(
     method,
     t_end,
     n_steps,
+    t_start,
+    rtol,
+    atol,
+    seed,
+    pla_config,
+    psa_poplevel,
     parallel,
     output,
+    verbose,
 ):
     """Run a one-dimensional parameter scan."""
 
@@ -195,8 +243,15 @@ def scan(
         n_points=n_points,
         log_scale=log_scale,
         method=method,
+        t_start=t_start,
         t_end=t_end,
         n_steps=n_steps,
+        rtol=rtol,
+        atol=atol,
+        seed=seed,
+        pla_config=pla_config,
+        psa_poplevel=psa_poplevel,
+        verbose=verbose,
         parallel=parallel,
     )
 
@@ -230,6 +285,12 @@ def scan(
 )
 @click.option("--t-end", default=100.0, type=float, show_default=True)
 @click.option("--n-steps", default=100, type=int, show_default=True)
+@click.option("--t-start", default=0.0, type=float, show_default=True)
+@click.option("--rtol", default=1e-8, type=float, show_default=True)
+@click.option("--atol", default=1e-8, type=float, show_default=True)
+@click.option("--seed", default=0, type=int, show_default=True)
+@click.option("--pla-config", default="", show_default=False)
+@click.option("--psa-poplevel", default=100.0, type=float, show_default=True)
 @click.option(
     "--delta",
     default=0.01,
@@ -243,6 +304,7 @@ def scan(
 @click.option(
     "--output", "-o", default=None, type=click.Path(), help="Optional CSV output path."
 )
+@click.option("--verbose", "-v", is_flag=True, help="Show progress.")
 def sensitivity(
     model,
     parameter_names,
@@ -250,9 +312,16 @@ def sensitivity(
     method,
     t_end,
     n_steps,
+    t_start,
+    rtol,
+    atol,
+    seed,
+    pla_config,
+    psa_poplevel,
     delta,
     parallel,
     output,
+    verbose,
 ):
     """Run local sensitivity analysis."""
 
@@ -263,8 +332,15 @@ def sensitivity(
         parameters=list(parameter_names) or None,
         observables=list(observable_names) or None,
         method=method,
+        t_start=t_start,
         t_end=t_end,
         n_steps=n_steps,
+        rtol=rtol,
+        atol=atol,
+        seed=seed,
+        pla_config=pla_config,
+        psa_poplevel=psa_poplevel,
+        verbose=verbose,
         delta=delta,
         parallel=parallel,
     )

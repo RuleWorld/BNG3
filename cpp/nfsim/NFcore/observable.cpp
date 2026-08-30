@@ -1,5 +1,6 @@
 #include <iostream>
 #include "observable.hh"
+#include "../NFfunction/NFfunction.hh"
 
 
 using namespace std;
@@ -31,6 +32,19 @@ Observable::~Observable()
 	this->dependentRxns = 0;
 }
 
+void Observable::notifyLocalFunctions()
+{
+	for (LocalFunction *localFunction : localFunctionReferences) {
+		if (localFunction != nullptr) localFunction->refreshObservableCounter();
+	}
+}
+
+void Observable::clear()
+{
+	count = 0;
+	notifyLocalFunctions();
+}
+
 void Observable::add()
 {
 	//First, we add to our observable count
@@ -42,6 +56,7 @@ void Observable::add()
 		double new_a = dependentRxns[r]->update_a();
 		templateMolecules[0]->getMoleculeType()->getSystem()->update_A_tot(dependentRxns[r],old_a,new_a);
 	}
+	notifyLocalFunctions();
 }
 
 /* add multiple new matches to an observable (rather than call 'add' a bunch of times --justin */
@@ -61,17 +76,20 @@ void Observable::add( int n_matches )
 		double new_a = dependentRxns[r]->update_a();
 		templateMolecules[0]->getMoleculeType()->getSystem()->update_A_tot( dependentRxns[r], old_a, new_a);
 	}
+	notifyLocalFunctions();
 }
 
 
 void Observable::straightAdd()
 {
 	count++;
+	notifyLocalFunctions();
 }
 
 void Observable::straightAdd(int n_matches)
 {
 	count += n_matches;
+	notifyLocalFunctions();
 }
 
 void Observable::subtract()
@@ -90,6 +108,7 @@ void Observable::subtract()
 		double new_a = dependentRxns[r]->update_a();
 		templateMolecules[0]->getMoleculeType()->getSystem()->update_A_tot(dependentRxns[r],old_a,new_a);
 	}
+	notifyLocalFunctions();
 }
 
 /* Remove multiple matches fron an observable (rather than call 'subtract' a bunch of times --justin */
@@ -116,16 +135,19 @@ void Observable::subtract( int n_matches )
 		double new_a = dependentRxns[r]->update_a();
 		templateMolecules[0]->getMoleculeType()->getSystem()->update_A_tot( dependentRxns[r], old_a, new_a);
 	}
+	notifyLocalFunctions();
 }
 
 void Observable::straightSubtract()
 {
 	count--;
+	notifyLocalFunctions();
 }
 
 void Observable::straightSubtract(int n_matches)
 {
 	count -= n_matches;
+	notifyLocalFunctions();
 }
 
 
@@ -141,6 +163,13 @@ void Observable::addReferenceToGlobalFunction(GlobalFunction *f) {
 }
 void Observable::addReferenceToCompositeFunction(CompositeFunction *f) {
 	f->addCounterPointer(&count);
+}
+void Observable::addReferenceToLocalFunction(LocalFunction *f) {
+	if (f == nullptr) return;
+	if (std::find(localFunctionReferences.begin(), localFunctionReferences.end(), f) ==
+		localFunctionReferences.end()) {
+		localFunctionReferences.push_back(f);
+	}
 }
 // AS-2021
 void Observable::addReferenceToMyself(mu::Parser *p)
@@ -529,7 +558,5 @@ int SpeciesObservable::isObservable(Complex *c) const
 	}
 	return matches;
 }
-
-
 
 

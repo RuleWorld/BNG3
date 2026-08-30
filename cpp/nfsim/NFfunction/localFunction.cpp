@@ -7,6 +7,9 @@
 
 
 #include "NFfunction.hh"
+#include <algorithm>
+#include <cctype>
+#include <stdexcept>
 
 
 
@@ -18,6 +21,50 @@ using namespace NFcore;
 #ifndef NFSIM_USE_EXPRTK
 using namespace mu;
 #endif
+
+namespace {
+
+std::string normalizeTimeCalls(const std::string& expression) {
+	std::string normalized;
+	normalized.reserve(expression.size());
+	std::size_t index = 0;
+	while (index < expression.size()) {
+		const unsigned char first = static_cast<unsigned char>(expression[index]);
+		if (std::isalpha(first) || expression[index] == '_') {
+			const std::size_t start = index++;
+			while (index < expression.size()) {
+				const unsigned char current = static_cast<unsigned char>(expression[index]);
+				if (!std::isalnum(current) && expression[index] != '_') break;
+				++index;
+			}
+			const std::string token = expression.substr(start, index - start);
+			std::size_t lookahead = index;
+			while (lookahead < expression.size() &&
+				   std::isspace(static_cast<unsigned char>(expression[lookahead]))) {
+				++lookahead;
+			}
+			if ((token == "time" || token == "t") && lookahead < expression.size() &&
+				expression[lookahead] == '(') {
+				std::size_t close = lookahead + 1;
+				while (close < expression.size() &&
+					   std::isspace(static_cast<unsigned char>(expression[close]))) {
+					++close;
+				}
+				if (close < expression.size() && expression[close] == ')') {
+					normalized += token;
+					index = close + 1;
+					continue;
+				}
+			}
+			normalized.append(expression, start, index - start);
+			continue;
+		}
+		normalized.push_back(expression[index++]);
+	}
+	return normalized;
+}
+
+} // namespace
 
 
 
@@ -71,6 +118,7 @@ LocalFunction::LocalFunction(System *s,
 	this->parsedExpression=parsedExpression;
 	// default to false
 	this->isEverEvaluatedOnSpeciesScope=false;
+	this->isTimeDependent=false;
 	// remember the system
 	this->system = s;
 
@@ -108,6 +156,17 @@ LocalFunction::LocalFunction(System *s,
 	nicename+=")";
 
 	p=0;
+
+	// AS-2021: local TFUN state mirrors GlobalFunction/CompositeFunction.
+	this->fileFunc = false;
+	this->interpolationMethod = "linear";
+	this->currInd = 0;
+	this->dataLen = 0;
+	this->sysPtr = NULL;
+	this->ctrType = "";
+	this->ctrName = "";
+	this->counterParamName = "";
+	this->counterObservable = NULL;
 
 
 	//Identify the type II molecules - those molecules that when changed
@@ -185,6 +244,7 @@ void LocalFunction::prepareForSimulation(System *s) {
 
 	//Finally, we can create the local function
 	try {
+		this->system = s;
 		p=FuncFactory::create();
 
 		//Give the local observable to the function so it can be used
@@ -201,8 +261,22 @@ void LocalFunction::prepareForSimulation(System *s) {
 			p->DefineConst(this->paramNames[i],s->getParameter(paramNames[i]));
 		}
 
+		std::string expression = this->parsedExpression;
+		if (this->isTimeDependent) {
+			double *currentTime = s->getCurrentTimePtr();
+			p->DefineVar("time", currentTime);
+			p->DefineVar("t", currentTime);
+			expression = normalizeTimeCalls(expression);
+		}
+		if (this->fileFunc && !this->ctrName.empty()) {
+			p->DefineConst(this->ctrName, 0.0);
+		}
+
 		//Finally, we can set the expression
-		p->SetExpr(this->parsedExpression);
+		p->SetExpr(expression);
+		if (this->fileFunc) {
+			this->fileUpdate();
+		}
 
 	//Catch anything that goes astray
 	} catch (mu::Parser::exception_type &e) {
@@ -214,8 +288,66 @@ void LocalFunction::prepareForSimulation(System *s) {
 }
 
 
+double LocalFunction::evaluateWithoutUpdating(Molecule *m, int scope)
+{
+	if (scope == LocalFunction::SPECIES) {
+		if (!isEverEvaluatedOnSpeciesScope) {
+			return this->evaluateWithoutUpdating(m, LocalFunction::MOLECULE);
+		}
+		if (!system->getEvaluateComplexScopedLocalFunctions()) {
+			return 0;
+		}
+
+		std::list<Molecule *> speciesMolecules;
+		m->traverseBondedNeighborhood(speciesMolecules, ReactionClass::NO_LIMIT);
+		for (unsigned int i = 0; i < n_varRefs; ++i) {
+			if (varLocalObservables[i] != 0) varLocalObservables[i]->clear();
+		}
+		for (Molecule *speciesMolecule : speciesMolecules) {
+			for (unsigned int i = 0; i < n_varRefs; ++i) {
+				if (varLocalObservables[i] == 0) continue;
+				if (varLocalObservables[i]->getType() != Observable::MOLECULES) {
+					cerr << "Error in LocalFunction::evaluateOn()! cannot handle Species observable when" << endl;
+					cerr << "evaluating on a single molecule." << endl;
+					exit(1);
+				}
+				varLocalObservables[i]->straightAdd(
+					varLocalObservables[i]->isObservable(speciesMolecule));
+			}
+		}
+		double value = FuncFactory::Eval(p);
+		return value;
+	}
+
+	if (scope == LocalFunction::MOLECULE) {
+		for (unsigned int i = 0; i < n_varRefs; ++i) {
+			if (varLocalObservables[i] == 0) continue;
+			if (varLocalObservables[i]->getType() != Observable::MOLECULES) {
+				cerr << "Error in LocalFunction::evaluateOn()! cannot handle Species observable when" << endl;
+				cerr << "evaluating on a single molecule." << endl;
+				exit(1);
+			}
+			varLocalObservables[i]->clear();
+			const int matches = varLocalObservables[i]->isObservable(m);
+			for (int k = 0; k < matches; ++k) varLocalObservables[i]->straightAdd();
+		}
+		double value = FuncFactory::Eval(p);
+		return value;
+	}
+
+	cerr << "Internal error in LocalFunction::evaluateWithoutUpdating()! unknown scope." << endl;
+	exit(1);
+}
+
+
 double LocalFunction::getValue(Molecule *m, int scope)
 {
+	if (this->fileFunc) {
+		this->fileUpdate();
+	}
+	if (isTimeDependent) {
+		return this->evaluateWithoutUpdating(m, scope);
+	}
 	//cout<<"getting local function value: "<<this->nicename<<endl;
 	//cout<<"using molecule: "<<m->getUniqueID()<<" with scope: "<<scope<<endl;
 
@@ -277,6 +409,9 @@ double LocalFunction::getValue(Molecule *m, int scope)
 //if we can have multiple arguments, this must be extended to have an
 //array of molecules (as in a composite function evaluation)
 double LocalFunction::evaluateOn(Molecule *m, int scope) {
+	if (this->fileFunc) {
+		this->fileUpdate();
+	}
 
 	//cout<<"evaluating local function: "<<this->nicename<<endl;
 	//this->printDetails(m->getMoleculeType()->getSystem());
@@ -397,6 +532,9 @@ double LocalFunction::evaluateOn(Molecule *m, int scope) {
 
 //This version accepts a complex and evaluates the LocalFunction with SPECIES scope.
 double LocalFunction::evaluateOn(Complex *c) {
+	if (this->fileFunc) {
+		this->fileUpdate();
+	}
 
 	if (!isEverEvaluatedOnSpeciesScope) {
 		// If this is a molecule-scoped function, we still might want to update
@@ -476,6 +614,177 @@ LocalFunction::~LocalFunction() {
 
 
 	if(p!=NULL) delete p;
+}
+
+
+// AS-2021: local TFUN support.  Keep interpolation and counter behavior
+// aligned with the existing global/composite function implementations.
+void LocalFunction::loadParamFile(string filePath)
+{
+	string callerName = this->name + " in class LocalFunction";
+	NFutil::TimeSeries ts = NFutil::loadTimeSeries(filePath, callerName);
+	this->data.push_back(ts.time);
+	this->data.push_back(ts.values);
+}
+
+void LocalFunction::setCtrName(string name)
+{
+	this->ctrName = name;
+}
+
+void LocalFunction::setInterpolationMethod(string method)
+{
+	string normalized = method;
+	std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+		[](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+	if (normalized.empty()) normalized = "linear";
+	if (normalized != "linear" && normalized != "step") {
+		cerr << "Error preparing function " << name << " in class LocalFunction!!" << endl;
+		cerr << "Unsupported TFUN interpolation method '" << method << "'." << endl;
+		cerr << "Quitting." << endl;
+		exit(1);
+	}
+	this->interpolationMethod = normalized;
+}
+
+void LocalFunction::setCounterFromTime(System *s)
+{
+	this->addSystemPointer(s);
+}
+
+void LocalFunction::setCounterFromParameter(System *s, string paramName)
+{
+	this->ctrType = "Parameter";
+	this->sysPtr = s;
+	this->counterParamName = paramName;
+	this->counterObservable = NULL;
+}
+
+void LocalFunction::setCounterFromObservable(Observable *observable)
+{
+	if (observable == NULL) {
+		cerr << "Error preparing function " << name << " in class LocalFunction!!" << endl;
+		cerr << "Observable TFUN counter is null." << endl;
+		cerr << "Quitting." << endl;
+		exit(1);
+	}
+	this->ctrType = "Observable";
+	this->counterObservable = observable;
+	this->sysPtr = NULL;
+	this->counterParamName = "";
+	observable->addReferenceToLocalFunction(this);
+}
+
+void LocalFunction::addSystemPointer(System *s)
+{
+	this->ctrType = "System";
+	this->sysPtr = s;
+	this->counterObservable = NULL;
+}
+
+void LocalFunction::enableFileDependency(string filePath, string method)
+{
+	try {
+		this->loadParamFile(filePath);
+	} catch (exception const & e) {
+		throw std::runtime_error("Error preparing function " + name +
+			" in class LocalFunction!!\n" + std::string(e.what()));
+	}
+	this->filePath = filePath;
+	this->fileFunc = true;
+	this->currInd = 0;
+	this->dataLen = static_cast<int>(data[0].size());
+	if (!method.empty()) {
+		this->setInterpolationMethod(method);
+	}
+}
+
+void LocalFunction::enableInlineDependency(const vector<double> &xs,
+		const vector<double> &ys, string method)
+{
+	this->data.clear();
+	this->data.push_back(xs);
+	this->data.push_back(ys);
+	this->filePath = "<inline>";
+	this->fileFunc = true;
+	this->setInterpolationMethod(method);
+	this->currInd = 0;
+	this->dataLen = static_cast<int>(xs.size());
+}
+
+double LocalFunction::getCounterValue()
+{
+	double ctrVal = 0.0;
+	if (ctrType == "System") {
+		if (this->sysPtr == NULL) {
+			cerr << "Error preparing function " << name << " in class LocalFunction!!" << endl;
+			cerr << "System TFUN counter pointer is null." << endl;
+			cerr << "Quitting." << endl;
+			exit(1);
+		}
+		ctrVal = this->sysPtr->getCurrentTime();
+	} else if (ctrType == "Observable") {
+		if (this->counterObservable == NULL) {
+			cerr << "Error preparing function " << name << " in class LocalFunction!!" << endl;
+			cerr << "Observable TFUN counter is null." << endl;
+			cerr << "Quitting." << endl;
+			exit(1);
+		}
+		ctrVal = this->counterObservable->getCount();
+	} else if (ctrType == "Parameter") {
+		if (this->sysPtr == NULL || this->counterParamName.empty()) {
+			cerr << "Error preparing function " << name << " in class LocalFunction!!" << endl;
+			cerr << "Parameter TFUN counter is not configured." << endl;
+			cerr << "Quitting." << endl;
+			exit(1);
+		}
+		ctrVal = this->sysPtr->getParameter(counterParamName);
+	} else {
+		cerr << "Error preparing function " << name << " in class LocalFunction!!" << endl;
+		cerr << "TFUN counter type '" << ctrType << "' is not supported." << endl;
+		cerr << "Quitting." << endl;
+		exit(1);
+	}
+	return ctrVal;
+}
+
+void LocalFunction::refreshObservableCounter()
+{
+	if (!fileFunc || p == NULL || counterObservable == NULL || system == NULL) return;
+
+	std::set<int> refreshedComplexes;
+	for (MoleculeType *moleculeType : typeI_mol) {
+		for (int index = 0; index < moleculeType->getMoleculeCount(); ++index) {
+			Molecule *molecule = moleculeType->getMolecule(index);
+			if (molecule == NULL || !molecule->isAlive()) continue;
+
+			if (isEverEvaluatedOnSpeciesScope && system->isUsingComplex()) {
+				const int complexId = molecule->getComplexID();
+				if (complexId >= 0 && !refreshedComplexes.insert(complexId).second) continue;
+				evaluateOn(molecule, LocalFunction::SPECIES);
+			} else {
+				evaluateOn(molecule, isEverEvaluatedOnSpeciesScope ?
+					LocalFunction::SPECIES : LocalFunction::MOLECULE);
+			}
+		}
+	}
+}
+
+void LocalFunction::fileUpdate()
+{
+	this->fileUpdate(this->getCounterValue());
+}
+
+void LocalFunction::fileUpdate(double ctrVal)
+{
+	if (data.size() < 2 || data[0].empty()) {
+		cerr << "Error in function " << this->name << " in class LocalFunction!!" << endl;
+		cerr << "Data for file update is empty or malformed." << endl;
+		cerr << "Quitting." << endl;
+		exit(1);
+	}
+	double y = tfun_interpolate_value(data[0], data[1], interpolationMethod, ctrVal);
+	p->DefineConst(ctrName, y);
 }
 
 

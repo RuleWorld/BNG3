@@ -96,8 +96,12 @@ Then decide:
 3. **Localize within HNauty.** Re-derive the terminal-node comparison against
    Perl HNauty.pm `lex_ordered` semantics: which representative (min or max) is
    canonical, and that the automorphism generators produced during refinement
-   are applied to collapse equivalent labelings. Fix; re-run; the surplus must
-   go to zero and `blbr` + `cBNGL` come off `KNOWN_OVERCOUNT`.
+   are applied to collapse equivalent labelings. Fix; re-run; the `blbr`
+   surplus must go to zero and its strict exception must be removed.
+
+`Motivating_example_cBNGL` was removed from the active exception set by
+`085341b` after comparator rate normalization eliminated its former +2
+mismatch. It remains a passing regression case, not an active over-count defect.
 
 ## Correction to the v1 spec
 

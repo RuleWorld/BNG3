@@ -20,6 +20,7 @@ namespace NFcore
 	// AS-2021
 	class GlobalFunction;
 	class CompositeFunction;
+	class LocalFunction;
 	// AS-2021
 
 	//!  Tracks the counts of predefined observables in the simulation.
@@ -84,7 +85,7 @@ namespace NFcore
 			void straightAdd();
 			void subtract();
 			void straightSubtract();
-			void clear() { count=0; };
+			void clear();
 
 			/* add multiple new matches, all at once. useful for counter updates --justin */
 			void add( int n_matches );
@@ -106,6 +107,7 @@ namespace NFcore
 			// AS-2021
 			void addReferenceToGlobalFunction(GlobalFunction *f);
 			void addReferenceToCompositeFunction(CompositeFunction *f);
+			void addReferenceToLocalFunction(LocalFunction *f);
 			// AS-2021
 
 			virtual int isObservable(Molecule *m) const = 0;
@@ -147,6 +149,10 @@ namespace NFcore
 
 			int n_dependentRxns;
 			ReactionClass ** dependentRxns;
+
+			vector <LocalFunction *> localFunctionReferences;
+
+			void notifyLocalFunctions();
 
 	};
 

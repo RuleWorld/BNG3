@@ -43,6 +43,9 @@ private:
 
 std::unique_ptr<ast::Model> parseModel(const std::string& sourceText);
 
+/// Normalize legacy BNGL spellings before the generated parser sees them.
+std::string normalizeBNGLSource(const std::string& sourceText);
+
 /// Parse a BNGL model from a file path.
 std::unique_ptr<ast::Model> parseModelFromFile(const std::string& filePath);
 

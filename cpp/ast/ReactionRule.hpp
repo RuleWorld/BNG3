@@ -6,6 +6,7 @@
 #include <memory>
 #include <string>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "SpeciesGraph.hpp"
@@ -80,6 +81,13 @@ public:
     const std::vector<SpeciesGraph>& getReactantPatterns() const;
     const std::vector<SpeciesGraph>& getProductPatterns() const;
     const std::vector<TransformOp>& getOperations() const;
+    // Product-to-reactant molecule correspondences computed during rule
+    // initialization.  Writers use the canonical mapping so unchanged
+    // molecules are not rematched heuristically.
+    const std::vector<std::pair<ComponentRef, ComponentRef>>& getMoleculeMappings() const;
+    const std::map<ComponentRef, ComponentRef>& getComponentMappings() const;
+    std::vector<std::pair<ComponentRef, ComponentRef>> getCrossBonds() const;
+    std::vector<std::pair<ComponentRef, ComponentRef>> getNewMoleculeBonds() const;
 
     void initialize();
     void clearPatternMatchCache() const;
@@ -116,6 +124,8 @@ private:
     std::vector<SpeciesGraph> reactantPatterns_;
     std::vector<SpeciesGraph> productPatterns_;
     std::vector<TransformOp> operations_;
+    std::vector<std::pair<ComponentRef, ComponentRef>> moleculeMappings_;
+    std::map<ComponentRef, ComponentRef> componentMappings_;
     std::vector<std::vector<ReactionCenterRef>> reactionCenter_;
     mutable std::vector<std::vector<EmbeddingResult>> patternMatches_;
     mutable bool matchesInitialized_ = false;

@@ -98,6 +98,9 @@ namespace NFcore
 
 		/* functions that are needed to perform TemplateMolecule operations */
 		bool contains(TemplateMolecule *tempMol);
+		// Matching caches use raw object pointers.  Clear them when a System is
+		// destroyed so a later System cannot observe recycled addresses.
+		static void clearMatchCache();
 
 		const static bool FIND_ALL = false;
 		const static bool SKIP_CONNECTED_TO = true;

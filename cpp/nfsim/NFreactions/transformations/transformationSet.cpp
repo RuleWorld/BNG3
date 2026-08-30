@@ -100,11 +100,13 @@ TransformationSet::~TransformationSet()
 	}
 
 	for (auto &rf : reactantFilters) {
-		// Clean up all templates generated for this filter pattern
-		for (auto &kv : rf.parsedTemplates) {
-			delete kv.second;
-		}
-		// Note: we don't delete rf.pattern directly since it is one of the parsedTemplates and handled above
+		// Filter templates are registered with their MoleculeType by the
+		// TemplateMolecule constructor.  MoleculeType owns and deletes every
+		// registered template when the System is destroyed, just like the
+		// ordinary reactant templates.  Do not delete them here: doing so leaves
+		// dangling entries in MoleculeType::allTemplates and double-frees them
+		// during System teardown.
+		rf.parsedTemplates.clear();
 	}
 	reactantFilters.clear();
 

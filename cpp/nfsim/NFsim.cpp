@@ -165,13 +165,62 @@
 
 
 #include "NFsim.hh"
-#include "NFtest/util/test_util.hh"
-#include "NFtest/mapping/test_mapping.hh"
-#include "NFtest/moleculeType/test_moleculeType.hh"
-#include "NFtest/transformations/test_transformations.hh"
-#include "NFtest/molecule/test_molecule.hh"
+#include "NFtest/agentcell/agentcell.hh"
+#include "NFtest/simple_system/simple_system.hh"
+#include "NFtest/tlbr/tlbr.hh"
+#include "NFtest/transcription/transcription.hh"
+
+// Some historical source distributions omit subsets of NFsim's internal test
+// tree. Keep the CLI buildable without advertising unavailable tests, while
+// restoring each test automatically when its source is reconciled into BNG3.
+#if __has_include("NFtest/input/test_input.hh")
 #include "NFtest/input/test_input.hh"
+#define NFSIM_HAS_TEST_INPUT
+#endif
+#if __has_include("NFtest/mapping/test_mapping.hh")
+#include "NFtest/mapping/test_mapping.hh"
+#define NFSIM_HAS_TEST_MAPPING
+#endif
+#if __has_include("NFtest/mappingSet/mappingSet_test.hh")
 #include "NFtest/mappingSet/mappingSet_test.hh"
+#define NFSIM_HAS_TEST_MAPPING_SET
+#endif
+#if __has_include("NFtest/molecule/test_molecule.hh")
+#include "NFtest/molecule/test_molecule.hh"
+#define NFSIM_HAS_TEST_MOLECULE
+#endif
+#if __has_include("NFtest/moleculeType/test_moleculeType.hh")
+#include "NFtest/moleculeType/test_moleculeType.hh"
+#define NFSIM_HAS_TEST_MOLECULE_TYPE
+#endif
+#if __has_include("NFtest/nauty24/test_nauty24.hh")
+#include "NFtest/nauty24/test_nauty24.hh"
+#define NFSIM_HAS_TEST_NAUTY24
+#endif
+#if __has_include("NFtest/observable/test_observable.hh")
+#include "NFtest/observable/test_observable.hh"
+#define NFSIM_HAS_TEST_OBSERVABLE
+#endif
+#if __has_include("NFtest/scheduler/scheduler.hh")
+#include "NFtest/scheduler/scheduler.hh"
+#define NFSIM_HAS_TEST_SCHEDULER
+#endif
+#if __has_include("NFtest/system/test_system.hh")
+#include "NFtest/system/test_system.hh"
+#define NFSIM_HAS_TEST_SYSTEM
+#endif
+#if __has_include("NFtest/tinyxml/test_tinyxml.hh")
+#include "NFtest/tinyxml/test_tinyxml.hh"
+#define NFSIM_HAS_TEST_TINYXML
+#endif
+#if __has_include("NFtest/transformations/test_transformations.hh")
+#include "NFtest/transformations/test_transformations.hh"
+#define NFSIM_HAS_TEST_TRANSFORMATIONS
+#endif
+#if __has_include("NFtest/util/test_util.hh")
+#include "NFtest/util/test_util.hh"
+#define NFSIM_HAS_TEST_UTIL
+#endif
 
 #include <iostream>
 #include <string>
@@ -321,58 +370,82 @@ int main(int argc, char *argv[])
 					NFtest_tlbr::run(argMap);
 					foundATest=true;
 				}
+#ifdef NFSIM_HAS_TEST_TRANSFORMATIONS
 				if(test=="transformations") {
 					NFtest_transformations::run();
 					foundATest=true;
 				}
+#endif
+#ifdef NFSIM_HAS_TEST_SCHEDULER
 				if(test=="scheduler") {
 					NFtest_scheduler::run();
 					foundATest=true;
 				}
+#endif
 				if(test=="mathFuncParser") {
 					FuncFactory::test();
 					foundATest=true;
 				}
+#ifdef NFSIM_HAS_TEST_NAUTY24
 				if(test=="nauty24") {
 					NFtest_nauty24::run();
 					foundATest=true;
 				}
+#endif
+#ifdef NFSIM_HAS_TEST_TINYXML
 				if(test=="tinyxml") {
 					NFtest_tinyxml::run();
 					foundATest=true;
 				}
+#endif
+#ifdef NFSIM_HAS_TEST_INPUT
 				if(test=="input") {
 					NFtest_input::run();
 					foundATest=true;
 				}
+#endif
+#ifdef NFSIM_HAS_TEST_UTIL
 				if(test=="util") {
 					NFtest_util::run();
 					foundATest=true;
 				}
+#endif
+#ifdef NFSIM_HAS_TEST_MAPPING
 				if(test=="mapping") {
 					NFtest_mapping::run();
 					foundATest=true;
 				}
+#endif
+#ifdef NFSIM_HAS_TEST_MOLECULE
 				if(test=="molecule") {
 					NFtest_molecule::run();
 					foundATest=true;
 				}
+#endif
+#ifdef NFSIM_HAS_TEST_MOLECULE_TYPE
 				if(test=="moleculeType") {
 					NFtest_moleculeType::run();
 					foundATest=true;
 				}
+#endif
+#ifdef NFSIM_HAS_TEST_OBSERVABLE
 				if(test=="observable") {
 					NFtest_observable::run();
 					foundATest=true;
 				}
+#endif
+#ifdef NFSIM_HAS_TEST_SYSTEM
 				if(test=="system") {
 					NFtest_system::run();
 					foundATest=true;
 				}
+#endif
+#ifdef NFSIM_HAS_TEST_MAPPING_SET
 				if(test=="mappingSet") {
 					NFtest_mappingSet::run();
 					foundATest=true;
 				}
+#endif
 
 				if(!foundATest) {
 					cout<<"  That test could not be identified!!  Skipping!"<<endl;
@@ -505,6 +578,14 @@ System *initSystemFromFlags(map<string,string> argMap, bool verbose)
 
 			if(s!=NULL)
 			{
+				// System owns the RNG used by reaction selection and timing.  Keep
+				// the command-line seed aligned with that per-instance generator;
+				// seeding NFutil's legacy global RNG alone is insufficient.
+				if (argMap.find("seed") != argMap.end()) {
+					int seed = abs(NFinput::parseAsInt(argMap, "seed", 0));
+					s->seedRNG(static_cast<unsigned long>(seed));
+				}
+
 				if(verbose) {cout<<endl;}
 
 				//If requested, be sure to output the values of global functions
@@ -981,10 +1062,6 @@ void printHelp(const string& version)
 	cout<<""<<endl;
 	cout<<""<<endl;
 }
-
-
-
-
 
 
 

@@ -101,6 +101,9 @@ namespace NFcore
 				Returns a MappingSet so that a DOR can evaluate a local function on it.
 			 */
 			virtual MappingSet * getMappingSet(unsigned int mappingSetId) const;
+			MappingSet * getMappingSetByIndex(unsigned int index) const {
+				return index < static_cast<unsigned int>(n_mappingSets) ? mappingSets[index] : 0;
+			}
 
 
 

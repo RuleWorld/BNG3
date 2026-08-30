@@ -114,6 +114,10 @@ System* initializeFromModel(
         blockSameComplexBinding,
         globalMoleculeLimit
     );
+    // initializeFromModel has no separate -nocslf parameter.  Match the
+    // command-line loader's default and make species-scoped local functions
+    // evaluate rather than depending on an uninitialised System flag.
+    s->setEvaluateComplexScopedLocalFunctions(true);
     if (verbose) {
         cerr << "[nfsim] initializeFromModel: created System '" << s->getName() << "'.\n";
     }

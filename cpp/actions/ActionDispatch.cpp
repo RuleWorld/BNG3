@@ -45,6 +45,7 @@
 
 // NFsim in-process invocation
 #include "nfsim/NFinput/NFinput.hh"
+#include "nfsim/NFinput/NFinput_fromAst.hh"
 #include "nfsim/NFcore/NFcore.hh"
 
 #if defined(_WIN32) || defined(__WIN32__) || defined(__CYGWIN__)
@@ -229,41 +230,56 @@ void restoreConcentrations(engine::GeneratedNetwork& network, const std::vector<
     }
 }
 
-void collectTfunNames(const ast::Expression& expr, std::set<std::string>& names) {
-    if (expr.kind() == ast::ExpressionKind::Function &&
-        (expr.name() == "TFUN" || expr.name() == "tfun")) {
-        if (expr.args().size() == 1) {
-            if (expr.args()[0].kind() == ast::ExpressionKind::Identifier) {
-                names.insert(expr.args()[0].name());
-            }
-        } else if (expr.args().size() >= 2) {
-            if (expr.args()[1].kind() == ast::ExpressionKind::Identifier) {
-                names.insert(expr.args()[1].name());
-            }
+struct TfunFileReference {
+    std::string key;
+    std::string path;
+    std::string method;
+};
+
+void collectTfunFiles(const ast::Expression& expr,
+                      std::vector<TfunFileReference>& references) {
+    if (expr.kind() == ast::ExpressionKind::TableFunction &&
+        !expr.tableFilePath().empty()) {
+        references.push_back({expr.tableFileKey(), expr.tableFilePath(), expr.tableMethod()});
+    } else if (expr.kind() == ast::ExpressionKind::Function &&
+               lowercase(expr.name()) == "tfun") {
+        // Preserve support for hand-built legacy AST nodes while parsed BNGL
+        // now uses the explicit TableFunction node.
+        std::string name;
+        if (expr.args().size() == 1 &&
+            expr.args()[0].kind() == ast::ExpressionKind::Identifier) {
+            name = expr.args()[0].name();
+        } else if (expr.args().size() >= 2 &&
+                   expr.args()[1].kind() == ast::ExpressionKind::Identifier) {
+            name = expr.args()[1].name();
         }
+        if (!name.empty()) references.push_back({name, name + ".tfun", "linear"});
     }
     for (const auto& child : expr.args()) {
-        collectTfunNames(child, names);
+        collectTfunFiles(child, references);
     }
 }
 
-std::set<std::string> findTfunReferences(const ast::Model& model) {
-    std::set<std::string> names;
+std::vector<TfunFileReference> findTfunReferences(const ast::Model& model) {
+    std::vector<TfunFileReference> references;
     for (const auto& fn : model.getFunctions()) {
-        collectTfunNames(fn.getExpression(), names);
+        collectTfunFiles(fn.getExpression(), references);
     }
     for (const auto& param : model.getParameters().all()) {
-        collectTfunNames(param.getExpression(), names);
+        collectTfunFiles(param.getExpression(), references);
     }
-    return names;
+    return references;
 }
 
 void loadTfunFiles(engine::OdeIntegrator& integrator, const ast::Model& model, const std::filesystem::path& sourcePath) {
-    auto tfunNames = findTfunReferences(model);
-    for (const auto& name : tfunNames) {
-        auto tfunPath = sourcePath.parent_path() / (name + ".tfun");
+    const auto references = findTfunReferences(model);
+    std::set<std::string> loaded;
+    for (const auto& reference : references) {
+        const std::filesystem::path source(reference.path);
+        const auto tfunPath = source.is_absolute() ? source : sourcePath.parent_path() / source;
+        if (!loaded.insert(reference.key).second) continue;
         if (std::filesystem::exists(tfunPath)) {
-            integrator.loadTfun(name, tfunPath.string());
+            integrator.loadTfun(reference.key, tfunPath.string(), reference.method);
         }
     }
 }
@@ -976,7 +992,9 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 std::string ee = lowercase(trim(stripQuotes(evalExprText)));
                 evalExpr = (ee == "1" || ee == "true" || ee == "yes" || ee == "on");
             }
-            writeCurrentNetwork(io::NetWriterOptions{.evaluateExpressions = evalExpr});  // Triggers NetWriter::buildDerivedRateParams
+            io::NetWriterOptions writerOptions;
+            writerOptions.evaluateExpressions = evalExpr;
+            writeCurrentNetwork(writerOptions);  // Triggers NetWriter::buildDerivedRateParams
             continue;
         }
 
@@ -1296,15 +1314,8 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         }
 
         if (actionName == "simulate_nf") {
-            // NFSim simulation: write XML, invoke nfsim_core in-process
-            const auto xmlContent = io::XmlWriter::write(model, network.has_value() ? &(*network) : nullptr);
             const auto prefix = simulationPrefix(action, sourcePath);
             const auto xmlPath = sourcePath.parent_path() / (prefix + ".xml");
-            {
-                std::ofstream xmlOut(xmlPath);
-                if (!xmlOut) throw std::runtime_error("Failed to write XML for NFSim: " + xmlPath.string());
-                xmlOut << xmlContent;
-            }
 
             // Parse simulation parameters
             const auto tEnd = stripQuotes(readArgument(action, "t_end", "10"));
@@ -1327,35 +1338,59 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             int suggestedTraversalLimit = utlText.empty() ? 3 : std::stoi(utlText);
 
             if (verbose) {
-                std::cerr << "[bng_cpp] Running NFSim in-process: " << xmlPath << "\n";
+                std::cerr << "[bng_cpp] Running NFSim in-process from AST model\n";
             }
 
-            // Try in-process direct initialization from AST model first
-            NFcore::System *nfSystem = NFinput::initializeFromModel(
-                &model,
+            // Try the direct AST adapter first.  The compatibility XML paths
+            // remain available for sections that are still explicitly gated.
+            NFcore::System *nfSystem = NFinput::buildSystemFromAst(
+                model,
                 useComplex,
                 globalMoleculeLimit,
                 nfVerbose,
-                suggestedTraversalLimit);
+                suggestedTraversalLimit,
+                sourcePath);
 
             if (!nfSystem) {
                 if (verbose) {
-                    std::cerr << "[bng_cpp] Direct initialization returned nullptr; using XML fallback...\n";
+                    std::cerr << "[bng_cpp] AST adapter returned nullptr; using in-memory XML fallback...\n";
                 }
-                // Initialize NFsim System from the XML file
-                nfSystem = NFinput::initializeFromXML(
-                    xmlPath.string(),
+                nfSystem = NFinput::initializeFromModel(
+                    &model,
                     useComplex,
                     globalMoleculeLimit,
                     nfVerbose,
-                    suggestedTraversalLimit,
-                    evalCSLF,
-                    connectivityFlag);
+                    suggestedTraversalLimit);
+            }
+
+            if (!nfSystem) {
+                if (verbose) {
+                    std::cerr << "[bng_cpp] In-memory XML fallback failed; writing XML fallback...\n";
+                }
+                const auto xmlContent = io::XmlWriter::write(
+                    model, network.has_value() ? &(*network) : nullptr);
+                std::ofstream xmlOut(xmlPath);
+                if (!xmlOut) {
+                    throw std::runtime_error("Failed to write XML for NFSim: " + xmlPath.string());
+                }
+                xmlOut << xmlContent;
+                if (!xmlOut) {
+                    throw std::runtime_error("Failed to write XML for NFSim: " + xmlPath.string());
+                }
+                nfSystem = NFinput::initializeFromXML(
+                    xmlPath.string(), useComplex, globalMoleculeLimit, nfVerbose,
+                    suggestedTraversalLimit, evalCSLF, connectivityFlag);
             }
 
             if (!nfSystem) {
                 throw std::runtime_error("NFSim: Failed to initialize system from XML: " + xmlPath.string());
             }
+
+            // The legacy initializer applies these switches while reading XML.
+            // Apply the same runtime policy to a directly-built System.
+            nfSystem->setEvaluateComplexScopedLocalFunctions(evalCSLF);
+            nfSystem->useConnectivityFlag(connectivityFlag);
+            nfSystem->setUniversalTraversalLimit(suggestedTraversalLimit);
 
             // Seed the RNG if requested
             if (!seedText.empty()) {

@@ -17,6 +17,7 @@
 
 #include "NFcore/NFcore.hh"
 #include "NFinput/NFinput.hh"
+#include "NFinput/NFinput_fromAst.hh"
 
 namespace py = pybind11;
 namespace fs = std::filesystem;
@@ -50,26 +51,18 @@ void bind_nfsim(py::module_& m) {
             throw std::invalid_argument("n_steps must be positive");
         }
 
-        // Step 1: Serialize model to XML string
-        std::string xml_content = bng::io::XmlWriter::write(model);
-
-        // Step 2: Write XML to a temp file with RAII cleanup
+        // The direct adapter is deliberately fail-closed: while any section is
+        // incomplete it returns nullptr and we retain the established
+        // in-memory XML initializer as the compatibility path.  XML is only
+        // materialized on disk if that compatibility initializer also fails.
         TempFileGuard tmp_guard;
-        tmp_guard.path = make_temp_xml_path();
-        {
-            std::ofstream out(tmp_guard.path);
-            if (!out) throw std::runtime_error("Failed to create temp file for NFSim XML");
-            out << xml_content;
-        }
-
-        // Step 3: Try direct AST initialization, fall back to XML if needed
         int suggestedTraversalLimit = -1;
         std::unique_ptr<NFcore::System> system;
 
         {
             py::gil_scoped_release release;
-            system.reset(NFinput::initializeFromModel(
-                &model,
+            system.reset(NFinput::buildSystemFromAst(
+                model,
                 false,    // blockSameComplexBinding
                 -1,       // globalMoleculeLimit (unlimited)
                 verbose,
@@ -78,7 +71,41 @@ void bind_nfsim(py::module_& m) {
 
             if (!system) {
                 if (verbose) {
-                    std::cerr << "[bind_nfsim] Direct initialization returned nullptr; using XML fallback...\n";
+                    std::cerr << "[bind_nfsim] Direct AST initialization unavailable; "
+                                 "using compatibility XML path...\n";
+                }
+                // initializeFromModel is the old in-memory XML path and does
+                // not touch the filesystem.  Keep it as the first fallback so
+                // migration builds remain usable without granting the direct
+                // adapter any unproven semantics.
+                system.reset(NFinput::initializeFromModel(
+                    &model,
+                    false,    // blockSameComplexBinding
+                    -1,       // globalMoleculeLimit (unlimited)
+                    verbose,
+                    suggestedTraversalLimit
+                ));
+            }
+
+            if (!system) {
+                // Preserve the historical on-disk initializer as a last-resort
+                // compatibility mode.  This branch is expected to be rare and
+                // is intentionally visible in verbose diagnostics.
+                if (verbose) {
+                    std::cerr << "[bind_nfsim] In-memory XML initialization failed; "
+                                 "using on-disk XML fallback...\n";
+                }
+                const std::string xml_content = bng::io::XmlWriter::write(model);
+                tmp_guard.path = make_temp_xml_path();
+                {
+                    std::ofstream out(tmp_guard.path);
+                    if (!out) {
+                        throw std::runtime_error("Failed to create temp file for NFSim XML");
+                    }
+                    out << xml_content;
+                    if (!out) {
+                        throw std::runtime_error("Failed to write temp file for NFSim XML");
+                    }
                 }
                 system.reset(NFinput::initializeFromXML(
                     tmp_guard.path,

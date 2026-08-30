@@ -6,8 +6,8 @@ scattered across scripts/validate_*.py.
 Key correctness fix over the old scripts: the .net comparator keys reactions by
 their *species strings*, not by species indices. Two networks that are identical
 up to species ordering must compare equal; an extra or unmerged reaction must
-compare unequal. This is what detects the over-count (blbr +26, cBNGL +2):
-the test network carries reaction tuples that the reference (Perl) merged.
+compare unequal. This detects the active blbr over-count (+26): the test network
+carries reaction tuples that the reference (Perl) merged.
 """
 
 from __future__ import annotations
@@ -29,7 +29,6 @@ def _norm(s: str) -> str:
 # --------------------------------------------------------------------------- #
 # .net parsing
 # --------------------------------------------------------------------------- #
-
 @dataclass
 class Network:
     """A parsed reaction network, comparison-ready."""
@@ -65,13 +64,27 @@ import math
 
 _SAFE_NAMES = {
     "ln": math.log,
+    # Perl's legacy ``log`` spelling is base-10; ``ln`` is natural log.
     "log": math.log10,
     "log10": math.log10,
+    "log2": math.log2,
     "exp": math.exp,
     "sqrt": math.sqrt,
     "sin": math.sin,
     "cos": math.cos,
     "tan": math.tan,
+    "asin": math.asin,
+    "acos": math.acos,
+    "atan": math.atan,
+    "sinh": math.sinh,
+    "cosh": math.cosh,
+    "tanh": math.tanh,
+    "asinh": math.asinh,
+    "acosh": math.acosh,
+    "atanh": math.atanh,
+    "rint": round,
+    "floor": math.floor,
+    "ceil": math.ceil,
     "abs": abs,
     "pi": math.pi,
     "e": math.e,
@@ -162,20 +175,33 @@ def _safe_arith(expr: str) -> float:
     """Evaluate a pure-numeric arithmetic expression with safe math functions."""
     e = expr.replace("^", "**")
     e = re.sub(r"\bln\b", "log", e)
-    
+
     # Check that all alphabetical tokens are allowed math functions
     for word in re.findall(r"\b[A-Za-z_]\w*\b", e):
-        if word not in _SAFE_NAMES and word not in ("log", "log10"):
+        if word not in _SAFE_NAMES:
             raise ValueError(f"unknown function or symbol {word!r}")
-            
+
     ns = {
-        "log": math.log,
+        "log": math.log10,
         "log10": math.log10,
+        "log2": math.log2,
         "exp": math.exp,
         "sqrt": math.sqrt,
         "sin": math.sin,
         "cos": math.cos,
         "tan": math.tan,
+        "asin": math.asin,
+        "acos": math.acos,
+        "atan": math.atan,
+        "sinh": math.sinh,
+        "cosh": math.cosh,
+        "tanh": math.tanh,
+        "asinh": math.asinh,
+        "acosh": math.acosh,
+        "atanh": math.atanh,
+        "rint": round,
+        "floor": math.floor,
+        "ceil": math.ceil,
         "abs": abs,
         "pi": math.pi,
         "e": math.e,
@@ -191,8 +217,8 @@ def _canon_expr(expr: str) -> str:
 
 def split_species(s: str) -> list[str]:
     """Split a species string into a list of molecules separated by '.' (outside parens)."""
-    parts = []
-    curr = []
+    parts: list[str] = []
+    curr: list[str] = []
     depth = 0
     for char in s:
         if char == "(":
@@ -262,6 +288,7 @@ def _mol_site_orderings(mol: str) -> list[str]:
     full species string).
     """
     import itertools
+
     name, sites = split_sites(mol)
     if len(sites) <= 1:
         return [mol]
@@ -290,7 +317,9 @@ def canonicalize_species(s: str) -> str:
         name, sites = split_sites(mols[0])
         if len(sites) <= 1:
             return mols[0]
-        sorted_sites = sorted(sites, key=lambda st: (re.sub(r"!\d+", "", st), "!" in st))
+        sorted_sites = sorted(
+            sites, key=lambda st: (re.sub(r"!\d+", "", st), "!" in st)
+        )
         return name + "(" + ",".join(sorted_sites) + ")"
 
     # --- Parse each molecule ---
@@ -344,8 +373,13 @@ def canonicalize_species(s: str) -> str:
     # Sort each adjacency list by (neighbor_sig, my_site_name, their_site_name)
     # This is fully independent of original bond indices
     for mi, bl in enumerate(mol_bonds):
-        bl.sort(key=lambda t: (mol_sigs[t[0]], parsed[mi][1][t[1]][0], parsed[t[0]][1][t[2]][0]))
-
+        bl.sort(
+            key=lambda t: (
+                mol_sigs[t[0]],
+                parsed[mi][1][t[1]][0],
+                parsed[t[0]][1][t[2]][0],
+            )
+        )
 
     def _serialize_from_root(root: int) -> str:
         """BFS from `root`, serialize in BFS order with bond renumbering."""
@@ -355,7 +389,7 @@ def canonicalize_species(s: str) -> str:
         while queue:
             mi = queue.popleft()
             visited_order.append(mi)
-            for (neighbor, _, _, _) in mol_bonds[mi]:
+            for neighbor, _, _, _ in mol_bonds[mi]:
                 if neighbor not in visited:
                     visited.add(neighbor)
                     queue.append(neighbor)
@@ -412,15 +446,14 @@ def canonicalize_species(s: str) -> str:
             mol_strs.append(name + "(" + ",".join(site_strs) + ")")
         return ".".join(mol_strs)
 
-
     # Try BFS from every molecule as root; pick the lex-min serialization
     best: str | None = None
     for root in range(n):
         candidate = _serialize_from_root(root)
         if best is None or candidate < best:
             best = candidate
+    assert best is not None
     return best
-
 
 
 def parse_net(path: str | Path, *, rate_mode: str = "value") -> Network | None:
@@ -450,7 +483,7 @@ def parse_net(path: str | Path, *, rate_mode: str = "value") -> Network | None:
         if not stripped:
             continue
         if stripped.startswith("begin "):
-            section = stripped[len("begin "):].strip()
+            section = stripped[len("begin ") :].strip()
             continue
         if stripped.startswith("end "):
             section = None
@@ -538,14 +571,20 @@ class NetDiff:
             f"(delta={self.n_reactions_test - self.n_reactions_ref:+d})",
         ]
         if self.species_only_ref:
-            lines.append(f"  species only in ref ({len(self.species_only_ref)}): "
-                         + ", ".join(sorted(self.species_only_ref)[:5]))
+            lines.append(
+                f"  species only in ref ({len(self.species_only_ref)}): "
+                + ", ".join(sorted(self.species_only_ref)[:5])
+            )
         if self.species_only_test:
-            lines.append(f"  species only in test ({len(self.species_only_test)}): "
-                         + ", ".join(sorted(self.species_only_test)[:5]))
+            lines.append(
+                f"  species only in test ({len(self.species_only_test)}): "
+                + ", ".join(sorted(self.species_only_test)[:5])
+            )
         if self.reactions_only_test:
-            lines.append(f"  reactions only in test ({len(self.reactions_only_test)}) "
-                         "— candidates for the over-count / failed merge:")
+            lines.append(
+                f"  reactions only in test ({len(self.reactions_only_test)}) "
+                "— candidates for the over-count / failed merge:"
+            )
             for r, p, rate in self.reactions_only_test[:5]:
                 lines.append(f"    {' + '.join(r)} -> {' + '.join(p)}  [{rate}]")
         if self.reactions_only_ref:
@@ -583,10 +622,12 @@ def compare_net(ref: Network, test: Network, *, compare_rates: bool = True) -> N
         rxn_ref = ref.reaction_multiset
         rxn_test = test.reaction_multiset
     else:
-        rxn_ref = Counter((r, p) for (r, p, _), n in ref.reaction_multiset.items()
-                          for _ in range(n))
-        rxn_test = Counter((r, p) for (r, p, _), n in test.reaction_multiset.items()
-                           for _ in range(n))
+        rxn_ref = Counter(
+            (r, p) for (r, p, _), n in ref.reaction_multiset.items() for _ in range(n)
+        )
+        rxn_test = Counter(
+            (r, p) for (r, p, _), n in test.reaction_multiset.items() for _ in range(n)
+        )
 
     only_ref = rxn_ref - rxn_test
     only_test = rxn_test - rxn_ref
@@ -616,6 +657,7 @@ def compare_net(ref: Network, test: Network, *, compare_rates: bool = True) -> N
 # --------------------------------------------------------------------------- #
 # .gdat / trajectory parsing
 # --------------------------------------------------------------------------- #
+
 
 def parse_gdat(path: str | Path) -> tuple[np.ndarray, list[str]] | tuple[None, None]:
     """Parse a .gdat/.cdat file into (data, columns). First column is time."""
@@ -647,8 +689,10 @@ class TrajDiff:
     note: str = ""
 
     def summary(self) -> str:
-        s = (f"max rel err = {self.max_rel_err:.3e} at '{self.max_rel_col}', "
-             f"L2 rel err = {self.l2_rel_err:.3e}")
+        s = (
+            f"max rel err = {self.max_rel_err:.3e} at '{self.max_rel_col}', "
+            f"L2 rel err = {self.l2_rel_err:.3e}"
+        )
         return s if not self.note else f"{s} ({self.note})"
 
 
@@ -677,8 +721,13 @@ def compare_trajectories(
     # Align on shared time points (tolerant match).
     ridx, tidx = _align_times(rt, tt)
     if len(ridx) < 2:
-        return TrajDiff(False, np.inf, "", np.inf,
-                        f"insufficient shared time points (ref={len(rt)}, test={len(tt)})")
+        return TrajDiff(
+            False,
+            np.inf,
+            "",
+            np.inf,
+            f"insufficient shared time points (ref={len(rt)}, test={len(tt)})",
+        )
 
     worst = 0.0
     worst_col = ""
@@ -692,7 +741,7 @@ def compare_trajectories(
         cmax = float(np.max(rel))
         if cmax > worst:
             worst, worst_col = cmax, c
-        sq_sum += float(np.sum(rel ** 2))
+        sq_sum += float(np.sum(rel**2))
         n += rel.size
 
     l2 = float(np.sqrt(sq_sum / max(n, 1)))
@@ -718,6 +767,7 @@ def _align_times(a: np.ndarray, b: np.ndarray, tol: float = 1e-9):
 # Stochastic ensemble comparison (SSA / PLA / PSA / NF)
 # --------------------------------------------------------------------------- #
 
+
 @dataclass
 class EnsembleDiff:
     ok: bool
@@ -725,10 +775,14 @@ class EnsembleDiff:
     n_points_checked: int
     worst_z: float
     worst_col: str
+    note: str = ""
 
     def summary(self) -> str:
-        return (f"ensemble: {self.n_violations}/{self.n_points_checked} points outside "
-                f"mean +/- 3 SE; worst |z|={self.worst_z:.2f} at '{self.worst_col}'")
+        summary = (
+            f"ensemble: {self.n_violations}/{self.n_points_checked} points outside "
+            f"mean +/- 3 pooled SE; worst |z|={self.worst_z:.2f} at '{self.worst_col}'"
+        )
+        return summary if not self.note else f"{summary} ({self.note})"
 
 
 def compare_stochastic(
@@ -737,23 +791,39 @@ def compare_stochastic(
     *,
     n_sigma: float = 3.0,
     max_violation_frac: float = 0.02,
+    min_ref_runs: int = 2,
+    min_test_runs: int = 2,
 ) -> EnsembleDiff:
     """Distributional comparison of two stochastic ensembles.
 
-    For each shared observable at each shared time point, check that the test
-    ensemble mean lies within ref_mean +/- n_sigma * SE(ref). Pass if the
-    fraction of violating points is <= max_violation_frac (allows for the few
-    tail points expected at 3 sigma over many checks).
+    For each shared observable at each shared time point, compare the two
+    independent ensemble means using the pooled standard error
+    sqrt(SE(ref)^2 + SE(test)^2). Pass if the fraction of violating points is
+    <= max_violation_frac (allows for the few tail points expected at 3 sigma
+    over many checks).
     """
+    if len(ref_runs) < min_ref_runs or len(test_runs) < min_test_runs:
+        return EnsembleDiff(
+            False,
+            0,
+            0,
+            np.inf,
+            "",
+            note=(
+                f"insufficient ensemble members (ref={len(ref_runs)}, "
+                f"test={len(test_runs)}, required={min_ref_runs}/{min_test_runs})"
+            ),
+        )
+
     rmean, rse, rcols, rt = _ensemble_stats(ref_runs)
-    tmean, _, tcols, tt = _ensemble_stats(test_runs)
+    tmean, tse, tcols, tt = _ensemble_stats(test_runs)
     if rmean is None or tmean is None:
-        return EnsembleDiff(False, 0, 0, np.inf, "")
+        return EnsembleDiff(False, 0, 0, np.inf, "", note="empty ensemble")
 
     common = [c for c in rcols if c in tcols and c.lower() != "time"]
     ridx, tidx = _align_times(rt, tt)
     if not common or len(ridx) < 2:
-        return EnsembleDiff(False, 0, 0, np.inf, "")
+        return EnsembleDiff(False, 0, 0, np.inf, "", note="no shared trajectory")
 
     violations = 0
     checked = 0
@@ -762,8 +832,13 @@ def compare_stochastic(
     for c in common:
         rm = rmean[ridx, rcols.index(c)]
         rs = rse[ridx, rcols.index(c)]
+        ts = tse[tidx, tcols.index(c)]
+        # The ensembles are independent samples.  Using only the reference
+        # SE makes a zero-variance rare observable fail whenever the test
+        # ensemble contains one or two events, even when the two distributions
+        # are compatible.  Pool both mean uncertainties instead.
         tm = tmean[tidx, tcols.index(c)]
-        se = np.maximum(rs, 1e-12)
+        se = np.maximum(np.hypot(rs, ts), 1e-12)
         z = np.abs(tm - rm) / se
         cz = float(np.max(z))
         if cz > worst_z:
@@ -784,11 +859,26 @@ def compare_stochastic(
 def _ensemble_stats(runs: list[tuple[np.ndarray, list[str]]]):
     if not runs:
         return None, None, None, None
-    cols = runs[0][1]
-    time = runs[0][0][:, cols.index("time")] if "time" in cols else runs[0][0][:, 0]
+    first_data, first_cols = runs[0]
+    if first_data.ndim != 2 or first_data.shape[1] != len(first_cols):
+        return None, None, None, None
+    cols = list(first_cols)
+    for data, run_cols in runs:
+        if (
+            data.ndim != 2
+            or data.shape != first_data.shape
+            or list(run_cols) != cols
+            or not np.all(np.isfinite(data))
+        ):
+            return None, None, None, None
+    time = first_data[:, cols.index("time")] if "time" in cols else first_data[:, 0]
     stack = np.stack([r[0] for r in runs], axis=0)  # (n_runs, n_t, n_col)
     mean = stack.mean(axis=0)
-    se = stack.std(axis=0, ddof=1) / np.sqrt(stack.shape[0]) if stack.shape[0] > 1 else np.zeros_like(mean)
+    se = (
+        stack.std(axis=0, ddof=1) / np.sqrt(stack.shape[0])
+        if stack.shape[0] > 1
+        else np.zeros_like(mean)
+    )
     return mean, se, cols, time
 
 
@@ -796,8 +886,10 @@ def _ensemble_stats(runs: list[tuple[np.ndarray, list[str]]]):
 # Export format checks
 # --------------------------------------------------------------------------- #
 
+
 def check_xml_wellformed(path: str | Path) -> tuple[bool, str]:
     import xml.etree.ElementTree as ET
+
     try:
         ET.parse(str(path))
         return True, "well-formed"
@@ -815,7 +907,8 @@ def check_sbml(path: str | Path) -> tuple[bool, str]:
     doc = libsbml.readSBML(str(path))
     n_err = doc.getNumErrors()
     serious = sum(
-        1 for i in range(n_err)
+        1
+        for i in range(n_err)
         if doc.getError(i).getSeverity() >= libsbml.LIBSBML_SEV_ERROR
     )
     if serious:

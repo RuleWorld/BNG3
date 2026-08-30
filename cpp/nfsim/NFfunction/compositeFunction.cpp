@@ -7,11 +7,56 @@
 
 #include "NFfunction.hh"
 #include <stdexcept>
+#include <cctype>
 
 
 using namespace std;
 using namespace NFcore;
 using namespace mu;
+
+namespace {
+
+std::string normalizeTimeCalls(const std::string& expression) {
+	std::string normalized;
+	normalized.reserve(expression.size());
+	std::size_t index = 0;
+	while (index < expression.size()) {
+		const unsigned char first = static_cast<unsigned char>(expression[index]);
+		if (std::isalpha(first) || expression[index] == '_') {
+			const std::size_t start = index++;
+			while (index < expression.size()) {
+				const unsigned char current = static_cast<unsigned char>(expression[index]);
+				if (!std::isalnum(current) && expression[index] != '_') break;
+				++index;
+			}
+			const std::string token = expression.substr(start, index - start);
+			std::size_t lookahead = index;
+			while (lookahead < expression.size() &&
+				   std::isspace(static_cast<unsigned char>(expression[lookahead]))) {
+				++lookahead;
+			}
+			if ((token == "time" || token == "t") && lookahead < expression.size() &&
+				expression[lookahead] == '(') {
+				std::size_t close = lookahead + 1;
+				while (close < expression.size() &&
+					   std::isspace(static_cast<unsigned char>(expression[close]))) {
+					++close;
+				}
+				if (close < expression.size() && expression[close] == ')') {
+					normalized += token;
+					index = close + 1;
+					continue;
+				}
+			}
+			normalized.append(expression, start, index - start);
+			continue;
+		}
+		normalized.push_back(expression[index++]);
+	}
+	return normalized;
+}
+
+} // namespace
 
 
 CompositeFunction::CompositeFunction(System *s,
@@ -97,6 +142,10 @@ void CompositeFunction::setGlobalObservableDependency(ReactionClass *r, System *
 			if(gf->getVarRefType(vr)=="Observable" || gf->getVarRefType(vr)=="MoleculeObservable" || gf->getVarRefType(vr)=="SpeciesObservable") {
 				Observable *obs = s->getObservableByName(gf->getVarRefName(vr));
 				obs->addDependentRxn(r);
+			} else if (gf->getVarRefType(vr)=="Time") {
+				// Time is a live System value, not an observable whose cached
+				// count can trigger dependency invalidation.
+				continue;
 			} else {
 				cerr<<"When creating a FunctionalRxnClass of name: "+r->getName()+" you provided a function that\n";
 				cerr<<"depends on an observable type that I can't yet handle! (which is "+gf->getVarRefType(vr)+"\n";
@@ -345,11 +394,19 @@ void CompositeFunction::prepareForSimulation(System *s)
 			p->DefineVar(reactantStr,&reactantCount[r]);
 		}
 
+		std::string expression = this->parsedExpression;
+		if (this->ctrType == "System") {
+			double *currentTime = s->getCurrentTimePtr();
+			p->DefineVar("time", currentTime);
+			p->DefineVar("t", currentTime);
+			expression = normalizeTimeCalls(expression);
+		}
+
 		if (this->fileFunc && !this->ctrName.empty()) {
 			p->DefineConst(this->ctrName, 0.0);
 		}
 
-		p->SetExpr(this->parsedExpression);
+		p->SetExpr(expression);
 	}
 	catch (mu::Parser::exception_type &e)
 	{
@@ -440,6 +497,15 @@ void CompositeFunction::addTypeIMoleculeDependency(MoleculeType *mt) {
 			lfs[i]->setEvaluateComplexScope( true );
 		}
 	}
+}
+
+bool CompositeFunction::hasTimeDependentLocalFunction() const {
+	for (int i = 0; i < n_lfs; ++i) {
+		if (lfs[i] != nullptr && lfs[i]->getTimeDependent() && lfs[i]->p != nullptr) {
+			return true;
+		}
+	}
+	return false;
 }
 
 

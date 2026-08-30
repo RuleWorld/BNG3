@@ -4,6 +4,7 @@
 
 
 #include <algorithm>
+#include <cmath>
 
 
 using namespace NFinput;
@@ -858,6 +859,21 @@ string NFinput::initStartSpecies(
 					molUid = pMol->Attribute("id");
 				}
 
+				// A molecule may override the species-level compartment.  The XML
+				// writer emits this for multi-compartment complexes, and preserving
+				// it is required for transport rules such as MoveConnected.
+				Compartment *moleculeCompartment = speciesCompartment;
+				if (pMol->Attribute("compartment")) {
+					string compartmentId = pMol->Attribute("compartment");
+					moleculeCompartment = s->getCompartment(compartmentId);
+					if (!moleculeCompartment) {
+						cerr << "!!!Error. Molecule '" << molUid << "' in species '"
+						     << speciesName << "' refers to unknown compartment '"
+						     << compartmentId << "'. Quitting" << endl;
+						return "";
+					}
+				}
+
 				//Skip anything that is null or trash molecule
 				if(molName=="Null" || molName=="NULL" || molName=="null") {
 					if(verbose) cout<<"\t\t\tSkipping a null molecule in species declaration"<<endl;
@@ -1023,7 +1039,7 @@ string NFinput::initStartSpecies(
 				{
 					for(int m=0; m<specCountInteger; m++)
 					{
-						Molecule *mol = mt->genDefaultMolecule(speciesCompartment);
+						Molecule *mol = mt->genDefaultMolecule(moleculeCompartment);
 						// AS2023 - storing what has been generated, we need both the ID of the 
 						// molecule type as well as the global ID that's assigned to the instance
 						mids.push_back(mol->getMoleculeType()->getTypeID());
@@ -1064,7 +1080,7 @@ string NFinput::initStartSpecies(
 				// handle population case (only create one instance of this molecule type) --Justin
 				else
 				{
-					Molecule *mol = mt->genDefaultMolecule(speciesCompartment);
+					Molecule *mol = mt->genDefaultMolecule(moleculeCompartment);
 					// set population
 					mol->setPopulation( specCountInteger );
 
@@ -1263,6 +1279,113 @@ string NFinput::initStartSpecies(
 
 
 
+namespace {
+
+bool readBareProductFilterMolecule(
+		TiXmlElement *pPattern, string &moleculeName, string &diagnostic)
+{
+	if (!pPattern || pPattern->Attribute("compartment")) {
+		diagnostic = "NFsim product filters support only one bare molecule pattern";
+		return false;
+	}
+	TiXmlElement *pListOfMolecules = pPattern->FirstChildElement("ListOfMolecules");
+	TiXmlElement *pMolecule = pListOfMolecules
+			? pListOfMolecules->FirstChildElement("Molecule") : NULL;
+	if (!pMolecule || pMolecule->NextSiblingElement("Molecule") != NULL ||
+			!pMolecule->Attribute("name") || pMolecule->Attribute("compartment")) {
+		diagnostic = "NFsim product filters support only one bare molecule pattern";
+		return false;
+	}
+	TiXmlElement *pComponents = pMolecule->FirstChildElement("ListOfComponents");
+	if (pComponents && pComponents->FirstChildElement("Component") != NULL) {
+		diagnostic = "NFsim product filters support only one bare molecule pattern";
+		return false;
+	}
+	moleculeName = pMolecule->Attribute("name");
+	return true;
+}
+
+bool productPatternContainsMolecule(
+		TiXmlElement *pProductPattern, const string &moleculeName)
+{
+	if (!pProductPattern) return false;
+	TiXmlElement *pListOfMolecules = pProductPattern->FirstChildElement("ListOfMolecules");
+	if (!pListOfMolecules) return false;
+	for (TiXmlElement *pMolecule = pListOfMolecules->FirstChildElement("Molecule");
+		 pMolecule != NULL;
+		 pMolecule = pMolecule->NextSiblingElement("Molecule")) {
+		if (pMolecule->Attribute("name") &&
+				moleculeName == pMolecule->Attribute("name")) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool validateXmlProductFilters(
+		TiXmlElement *pRxnRule, bool &passes, string &diagnostic)
+{
+	passes = true;
+	TiXmlElement *pListOfProductPatterns =
+			pRxnRule->FirstChildElement("ListOfProductPatterns");
+	if (!pListOfProductPatterns) {
+		diagnostic = "product filter has no product patterns to inspect";
+		return false;
+	}
+
+	const char *filterLists[] = {
+			"ListOfIncludeProducts", "ListOfExcludeProducts"};
+	for (const char *filterListName : filterLists) {
+		const bool include = string(filterListName) == "ListOfIncludeProducts";
+		for (TiXmlElement *pFilterList = pRxnRule->FirstChildElement(filterListName);
+			 pFilterList != NULL;
+			 pFilterList = pFilterList->NextSiblingElement(filterListName)) {
+			if (!pFilterList->Attribute("id")) {
+				diagnostic = "product filter list has no product pattern id";
+				return false;
+			}
+			const string productPatternId = pFilterList->Attribute("id");
+			TiXmlElement *pProductPattern = NULL;
+			for (TiXmlElement *candidate =
+					pListOfProductPatterns->FirstChildElement("ProductPattern");
+				 candidate != NULL;
+				 candidate = candidate->NextSiblingElement("ProductPattern")) {
+				if (candidate->Attribute("id") &&
+						productPatternId == candidate->Attribute("id")) {
+					pProductPattern = candidate;
+					break;
+				}
+			}
+			if (!pProductPattern) {
+				diagnostic = "product filter refers to an unknown product pattern";
+				return false;
+			}
+
+			TiXmlElement *pFilterPattern = pFilterList->FirstChildElement("Pattern");
+			if (!pFilterPattern) {
+				diagnostic = "product filter list contains no pattern";
+				return false;
+			}
+			for (; pFilterPattern != NULL;
+				 pFilterPattern = pFilterPattern->NextSiblingElement("Pattern")) {
+				string moleculeName;
+				if (!readBareProductFilterMolecule(
+						pFilterPattern, moleculeName, diagnostic)) {
+					return false;
+				}
+				const bool contains = productPatternContainsMolecule(
+						pProductPattern, moleculeName);
+				if ((include && !contains) || (!include && contains)) {
+					passes = false;
+				}
+			}
+		}
+	}
+	return true;
+}
+
+} // namespace
+
 bool NFinput::initReactionRules(
 		TiXmlElement * pListOfReactionRules,
 		System * s,
@@ -1283,6 +1406,15 @@ bool NFinput::initReactionRules(
 		int reaction_count = 0;
 		for ( pRxnRule = pListOfReactionRules->FirstChildElement("ReactionRule"); pRxnRule != 0; pRxnRule = pRxnRule->NextSiblingElement("ReactionRule"))
 		{
+			bool productFiltersPass = true;
+			string productFilterDiagnostic;
+			if (!validateXmlProductFilters(
+					pRxnRule, productFiltersPass, productFilterDiagnostic)) {
+				cerr << "Error:: ReactionRule product filter is unsupported: "
+				     << productFilterDiagnostic << ". Quitting." << endl;
+				return false;
+			}
+			if (!productFiltersPass) continue;
 
 			//First, scan the reaction rule for possible symmetries!!!
 			map <string, component> symComps;
@@ -1760,16 +1892,6 @@ bool NFinput::initReactionRules(
 						}
 					}
 				}
-
-				if (pRxnRule->FirstChildElement("ListOfExcludeProducts") ||
-					pRxnRule->FirstChildElement("ListOfIncludeProducts"))
-				{
-					cerr << "Error:: ReactionRule " << rxnName
-					     << " uses include_products()/exclude_products(), which are not yet enforced in NFsim." << endl;
-					cerr << "Error:: Aborting to avoid silently incorrect results." << endl;
-					return false;
-				}
-
 
 				//Next extract out the state changes
 				TiXmlElement *pStateChange;
@@ -2503,18 +2625,37 @@ bool NFinput::initReactionRules(
 
 							string functionName = pRateLaw->Attribute("name");
 							LocalFunction *lf = s->getLocalFunctionByName(functionName);
-							if(lf!=NULL) {
-								cout<<"Error!! call a local function through a composite function always!"<<endl;
-								cout<<"DOR rxn should never directly call a local function."<<endl;
-								exit(1);
-							} else {
+			if(lf!=NULL) {
+				// The XML writer may retain the source-level local
+				// function name. DOR reactions consume a composite
+				// pointer, so create the same thin wrapper used by the
+				// direct adapter and the FunctionProduct loader path.
+				if (funcArgs.size() != 1) {
+					cerr<<"Error: local function '"<<functionName
+					    <<"' must have exactly one reaction argument."<<endl;
+					return false;
+				}
+				if (s->getCompositeFunctionByName(functionName) == NULL) {
+					vector <string> calledFunctions(1, functionName);
+					vector <string> wrapperArgs(1, funcArgs.front());
+					vector <string> wrapperParams;
+					CompositeFunction *wrapper = new CompositeFunction(
+						s, functionName,
+						functionName+"("+funcArgs.front()+")",
+						calledFunctions, wrapperArgs, wrapperParams);
+					s->addCompositeFunction(wrapper);
+					wrapper->finalizeInitialization(s);
+				}
+			}
 
-								ts->finalize();
-
-								CompositeFunction *cf = s->getCompositeFunctionByName(functionName);
-
-								r=new DORRxnClass(rxnName,1,"",ts,cf,funcArgs,s);
-							}
+			ts->finalize();
+			CompositeFunction *cf = s->getCompositeFunctionByName(functionName);
+			if (cf == NULL) {
+				cerr<<"Error: could not resolve local-function wrapper '"
+				    <<functionName<<"'."<<endl;
+				return false;
+			}
+			r=new DORRxnClass(rxnName,1,"",ts,cf,funcArgs,s);
 						}
 					}
 					else if(rateLawType=="FunctionProduct") {
@@ -2619,22 +2760,56 @@ bool NFinput::initReactionRules(
 						string functionName1 = pRateLaw->Attribute("name1");
 						LocalFunction *lf1 = s->getLocalFunctionByName(functionName1);
 						if(lf1 != NULL) {
-							cout<<"Error!! call a local function through a composite function always!"<<endl;
-							cout<<"DOR rxn should never directly call a local function."<<endl;
-							exit(1);
+							// FunctionProduct stores its factors as composite-function
+							// pointers, but a source-level one-argument local function is
+							// also a valid factor.  Create the same thin wrapper used by
+							// the direct AST adapter instead of aborting the XML path.
+							if (funcArgs1.size() != 1) {
+								cerr<<"!!Error: FunctionProduct local function '"<<functionName1
+								    <<"' must have exactly one argument."<<endl;
+								return false;
+							}
+							if (s->getCompositeFunctionByName(functionName1) == NULL) {
+								vector <string> calledFunctions1(1, functionName1);
+								vector <string> wrapperArgs1(1, funcArgs1.front());
+								vector <string> wrapperParams1;
+								CompositeFunction *wrapper1 = new CompositeFunction(
+									s, functionName1,
+									functionName1+"("+funcArgs1.front()+")",
+									calledFunctions1, wrapperArgs1, wrapperParams1);
+								s->addCompositeFunction(wrapper1);
+								wrapper1->finalizeInitialization(s);
+							}
 						}
 
 						string functionName2 = pRateLaw->Attribute("name2");
 						LocalFunction *lf2 = s->getLocalFunctionByName(functionName2);
 						if(lf2 != NULL) {
-							cout<<"Error!! call a local function through a composite function always!"<<endl;
-							cout<<"DOR rxn should never directly call a local function."<<endl;
-							exit(1);
+							if (funcArgs2.size() != 1) {
+								cerr<<"!!Error: FunctionProduct local function '"<<functionName2
+								    <<"' must have exactly one argument."<<endl;
+								return false;
+							}
+							if (s->getCompositeFunctionByName(functionName2) == NULL) {
+								vector <string> calledFunctions2(1, functionName2);
+								vector <string> wrapperArgs2(1, funcArgs2.front());
+								vector <string> wrapperParams2;
+								CompositeFunction *wrapper2 = new CompositeFunction(
+									s, functionName2,
+									functionName2+"("+funcArgs2.front()+")",
+									calledFunctions2, wrapperArgs2, wrapperParams2);
+								s->addCompositeFunction(wrapper2);
+								wrapper2->finalizeInitialization(s);
+							}
 						}
 
 						ts->finalize();
 						CompositeFunction *cf1 = s->getCompositeFunctionByName(functionName1);
 						CompositeFunction *cf2 = s->getCompositeFunctionByName(functionName2);
+						if (cf1 == NULL || cf2 == NULL) {
+							cerr<<"!!Error: FunctionProduct could not resolve both composite factors."<<endl;
+							return false;
+						}
 
 						r=new DOR2RxnClass(rxnName,1,"",ts,cf1,cf2,funcArgs1,funcArgs2,s);
 
@@ -2719,12 +2894,84 @@ bool NFinput::initReactionRules(
 							
 						}
 					}
-					else if(rateLawType=="Sat") {
-						cerr<<"!! Nfsim cannot, and will not, interpret a Rate Law of 'type': 'Sat' as BioNetGen.\n";
-						cerr<<"  once could.  You should instead use a Michaelis-Menten rate law (use type 'MM')\n";
-						cerr<<"  that also takes the parameters (kcat, Km) but is more accurate.\n"<<endl;
-						cerr<<"  But for now, I'm aborting..."<<endl;
-						return false;
+					else if(rateLawType=="Sat" || rateLawType=="Hill") {
+						// Sat(k0,K1,...,KN) and Hill(Vmax,Kh,n) are total-rate
+						// laws.  Keep the constants symbolic in XML, but resolve them
+						// once here just as the existing MM loader does.
+						if (totalRateFlag) {
+							cerr << "Rate Law " << rateLawType << " is not compatible with "
+							     << "the TotalRate convention for reaction " << rxnName << "." << endl;
+							delete ts;
+							return false;
+						}
+						if (ts->getNreactants() == 0) {
+							cerr << "Rate Law " << rateLawType << " requires at least one reactant "
+							     << "for reaction " << rxnName << "." << endl;
+							delete ts;
+							return false;
+						}
+
+						TiXmlElement *pListOfRateConstants =
+							pRateLaw->FirstChildElement("ListOfRateConstants");
+						if (!pListOfRateConstants) {
+							cerr << "Rate Law " << rateLawType << " definition for " << rxnName
+							     << " does not have a ListOfRateConstants tag!  Quitting" << endl;
+							delete ts;
+							return false;
+						}
+
+						vector<double> constants;
+						for (TiXmlElement *pRateConstant =
+							 pListOfRateConstants->FirstChildElement("RateConstant");
+							 pRateConstant != 0;
+							 pRateConstant = pRateConstant->NextSiblingElement("RateConstant")) {
+							if (!pRateConstant->Attribute("value")) {
+								cerr << "Rate Law " << rateLawType << " definition for " << rxnName
+								     << " has a RateConstant without a value!  Quitting" << endl;
+								delete ts;
+								return false;
+							}
+							const string valueName = pRateConstant->Attribute("value");
+							double value = 0.0;
+							try {
+								value = NFutil::convertToDouble(valueName);
+							} catch (std::runtime_error &) {
+								const auto parameterIt = parameter.find(valueName);
+								if (parameterIt == parameter.end()) {
+									cerr << "Could not find parameter: " << valueName
+									     << " when reading " << rateLawType << " rate for rxn "
+									     << rxnName << ". Quitting" << endl;
+									delete ts;
+									return false;
+								}
+								value = parameterIt->second;
+							}
+							if (!std::isfinite(value) || value < 0.0) {
+								cerr << "Rate Law " << rateLawType << " constants must be finite "
+								     << "and nonnegative for reaction " << rxnName << "." << endl;
+								delete ts;
+								return false;
+							}
+							constants.push_back(value);
+						}
+
+						if ((rateLawType == "Sat" &&
+							 (constants.size() < 2 ||
+							  constants.size() > static_cast<std::size_t>(ts->getNreactants()) + 1)) ||
+							(rateLawType == "Hill" && constants.size() != 3)) {
+							cerr << "Rate Law " << rateLawType << " has an invalid number of "
+							     << "constants for reaction " << rxnName << "." << endl;
+							delete ts;
+							return false;
+						}
+
+						ts->finalize();
+						if (rateLawType == "Sat") {
+							r = new SatRxnClass(rxnName, constants, ts, s);
+						} else {
+							r = new HillRxnClass(
+								rxnName, constants[0], constants[1], constants[2], ts, s);
+						}
 					}
 
 					////  To extend NFsim to parse more rate law types, add an extra else if clause here to catch the rate law

@@ -84,6 +84,38 @@ namespace NFcore
 			double Km;
 			double kcat;
 			double sFree;
+		};
+
+	class SatRxnClass : public BasicRxnClass {
+		public:
+			SatRxnClass(string name, vector<double> saturationConstants,
+			            TransformationSet *transformationSet, System *s);
+			virtual ~SatRxnClass();
+
+			virtual double update_a();
+			virtual double exactRuleMonkey_a();
+			virtual void pickRuleMonkeyMappingSets(double randNumber) const { BasicRxnClass::pickRuleMonkeyMappingSets(randNumber); }
+			virtual void printDetails() const;
+
+		protected:
+			vector<double> saturationConstants;
+	};
+
+	class HillRxnClass : public BasicRxnClass {
+		public:
+			HillRxnClass(string name, double vmax, double kh, double exponent,
+			             TransformationSet *transformationSet, System *s);
+			virtual ~HillRxnClass();
+
+			virtual double update_a();
+			virtual double exactRuleMonkey_a();
+			virtual void pickRuleMonkeyMappingSets(double randNumber) const { BasicRxnClass::pickRuleMonkeyMappingSets(randNumber); }
+			virtual void printDetails() const;
+
+		protected:
+			double vmax;
+			double kh;
+			double exponent;
 	};
 
 
@@ -131,6 +163,7 @@ namespace NFcore
 			mutable vector<pair<int, int> > validPairsBuffer;
 
 			virtual double evaluateLocalFunctions(MappingSet *ms);
+			void refreshTimeDependentLocalFunctions();
 
 			virtual void pickMappingSets(double randNumber) const;
 
@@ -144,6 +177,8 @@ namespace NFcore
 
 
 			CompositeFunction *cf;
+			bool hasRefreshedTimeDependentLocalFunctions;
+			double lastTimeDependentLocalFunctionRefresh;
 
 			//Parameters to keep track of local functions
 			int DORreactantIndex;
@@ -212,6 +247,7 @@ namespace NFcore
 
 			virtual double evaluateLocalFunctions1(MappingSet *ms);
 			virtual double evaluateLocalFunctions2(MappingSet *ms);
+			void refreshTimeDependentLocalFunctions();
 
 			virtual void pickMappingSets(double randNumber) const;
 
@@ -224,6 +260,8 @@ namespace NFcore
 
 			CompositeFunction *cf1;
 			CompositeFunction *cf2;
+			bool hasRefreshedTimeDependentLocalFunctions;
+			double lastTimeDependentLocalFunctionRefresh;
 
 			//Parameters to keep track of local functions
 			int DORreactantIndex1;

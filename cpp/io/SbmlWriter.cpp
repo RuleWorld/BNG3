@@ -85,20 +85,21 @@ std::string SbmlWriter::write(const ast::Model& model, const engine::GeneratedNe
     // Compartments
     sbml << writeCompartments(model);
 
-    // Parameters (constants + observables as non-constant params)
-    sbml << writeParameters(model, groups);
-
     // Species
     sbml << writeSpecies(model, network);
 
-    // Reactions
-    if (network && options.networksExport) {
-        sbml << writeReactions(*network, model);
-    }
+    // SBML L2V3 requires parameters after species, rules before reactions.
+    // Keep this order even though the generated MathML references all three.
+    sbml << writeParameters(model, groups);
 
     // Assignment rules (observables + global functions)
     if (network && options.networksExport) {
         sbml << writeAssignmentRules(model, groups);
+    }
+
+    // Reactions
+    if (network && options.networksExport) {
+        sbml << writeReactions(*network, model);
     }
 
     sbml << "  </model>\n";

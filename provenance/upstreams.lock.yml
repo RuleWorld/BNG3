@@ -1,0 +1,96 @@
+{
+  "$schema": "schemas/upstreams-lock.schema.json",
+  "schema_version": 1,
+  "baseline": {
+    "date": "2026-08-28",
+    "status": "pending-maintainer-approval",
+    "approved_by": null,
+    "approved_at": null,
+    "notes": [
+      "Revisions are the planning snapshot from docs/BNG3_INTEGRATION_PLAN.md, not accepted import cutoffs.",
+      "The BNG3 revision and remote were verified from this checkout on 2026-08-28."
+    ]
+  },
+  "sources": {
+    "bng3": {
+      "repository": "https://github.com/RuleWorld/BNG3.git",
+      "branch": "main",
+      "revision": "59b774a14aa956a2c25daa6d904e7ad476feda15",
+      "role": "destination-and-future-authority",
+      "status": "observed",
+      "evidence": {
+        "kind": "local-checkout",
+        "checked_at": "2026-08-28"
+      }
+    },
+    "bionetgen": {
+      "repository": "https://github.com/RuleWorld/bionetgen.git",
+      "branch": "master",
+      "revision": "43ddf3afe165192a222fd13e4917a1902ffe3446",
+      "role": "reconciliation-source-and-bng2-oracle-lineage",
+      "status": "observed",
+      "evidence": {
+        "kind": "planning-snapshot",
+        "checked_at": "2026-08-28"
+      }
+    },
+    "nfsim": {
+      "repository": "https://github.com/RuleWorld/NFsim.git",
+      "branch": "master",
+      "revision": "5962ea9ad4248522f6170a61367b1d7242e2824b",
+      "role": "reconciliation-source-and-native-oracle-lineage",
+      "status": "observed",
+      "evidence": {
+        "kind": "planning-snapshot",
+        "checked_at": "2026-08-28"
+      }
+    },
+    "pybionetgen": {
+      "repository": "https://github.com/RuleWorld/PyBioNetGen.git",
+      "branch": "main",
+      "revision": "43b09a5346402986d48b1defba5eaec0ae2f7802",
+      "role": "python-and-atomizer-reconciliation-source",
+      "status": "observed",
+      "evidence": {
+        "kind": "planning-snapshot",
+        "checked_at": "2026-08-28"
+      }
+    },
+    "rulehub": {
+      "repository": "https://github.com/RuleWorld/RuleHub.git",
+      "branch": "master",
+      "revision": "b84f0a72ad21dc70cb99d4880b49a40f17046357",
+      "role": "validation-corpus-and-metadata",
+      "status": "observed",
+      "evidence": {
+        "kind": "planning-snapshot",
+        "checked_at": "2026-08-28"
+      }
+    }
+  },
+  "oracles": {
+    "bng2": {
+      "source": "bionetgen",
+      "status": "pending",
+      "build_recipe": null,
+      "artifact_digest": null
+    },
+    "nfsim": {
+      "source": "nfsim",
+      "status": "pending",
+      "build_recipe": null,
+      "artifact_digest": null
+    }
+  },
+  "dependencies": {
+    "compiler_images": {
+      "status": "pending",
+      "images": []
+    },
+    "python_lock": {
+      "status": "pending",
+      "path": null,
+      "digest": null
+    }
+  }
+}

@@ -309,6 +309,26 @@ namespace NFcore {
 			void printDetails(System *s);
 
 			void prepareForSimulation(System *s);
+			void setTimeDependent(bool value) { isTimeDependent = value; }
+			bool getTimeDependent() const { return isTimeDependent; }
+
+			// AS-2021: bounded TFUN support for local functions.  The direct
+			// adapter currently wires time- and parameter-backed counters; the
+			// legacy object keeps the same interpolation semantics as globals.
+			void fileUpdate();
+			void fileUpdate(double counterOverride);
+			double getCounterValue();
+			void loadParamFile(string filePath);
+			void enableFileDependency(string FilePath, string method="linear");
+			void enableInlineDependency(const vector<double> &xs, const vector<double> &ys, string method="linear");
+			void setInterpolationMethod(string method);
+			void setCtrName(string name);
+			void setCounterFromTime(System *s);
+			void setCounterFromParameter(System *s, string paramName);
+			void setCounterFromObservable(Observable *observable);
+			void refreshObservableCounter();
+			void addSystemPointer(System *s);
+			bool fileFunc;
 
 
 			double getValue(Molecule *m, int scope);
@@ -332,6 +352,20 @@ namespace NFcore {
 			// function molecule requests to be evaluated over the species scope, because,
 			// by golly, that is never needed.  Is that clear?
 			bool isEverEvaluatedOnSpeciesScope;
+			bool isTimeDependent;
+
+			// AS-2021
+			string ctrType;
+			string ctrName;
+			System *sysPtr;
+			int currInd;
+			int dataLen;
+			vector <vector <double> > data;
+			string filePath;
+			string counterParamName;
+			string interpolationMethod;
+			Observable *counterObservable;
+			// AS-2021
 
 			string name;
 			string nicename;
@@ -356,6 +390,8 @@ namespace NFcore {
 
 			static list <Molecule *> molList;
 			static list <Molecule *>::iterator molIter;
+
+			double evaluateWithoutUpdating(Molecule *m, int scope);
 
 			//Here we store back pointers into both type I and type II molecules
 			//Remember that type I molecules must store the value of this function
@@ -407,6 +443,7 @@ namespace NFcore {
 				string getArgName(int aIndex) const;
 
 				void addTypeIMoleculeDependency(MoleculeType *mt);
+				bool hasTimeDependentLocalFunction() const;
 
 				// AS-2021
 				void fileUpdate();

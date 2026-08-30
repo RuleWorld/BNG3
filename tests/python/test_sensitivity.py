@@ -49,3 +49,18 @@ def test_sensitivity_binding_signs():
 
     assert result.matrix[0, 0] > 0
     assert result.matrix[1, 0] < 0
+
+
+def test_sensitivity_rejects_invalid_inputs():
+    builder = ModelBuilder("InvalidSensitivity")
+    builder.add_parameter("k", 0.1)
+    builder.add_molecule_type("X()")
+    builder.add_seed_species("X()", 100)
+    builder.add_observable("Molecules", "Xtot", "X()")
+    builder.add_rule("X() -> 0", "k")
+    model = builder.build()
+
+    with pytest.raises(ValueError, match="Unknown parameter"):
+        model.sensitivity_analysis(parameters=["missing"])
+    with pytest.raises(ValueError, match="delta"):
+        model.sensitivity_analysis(delta=0.0)

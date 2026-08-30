@@ -8,7 +8,7 @@ never invoked by the test suite.
 Usage:
     python scripts/regen_golden.py --tier p          # all on-disk compatible models
     python scripts/regen_golden.py --models blbr egfr_net
-    python scripts/regen_golden.py --tier s --ensemble 200   # also write SSA ensembles
+    python scripts/regen_golden.py --tier s                  # deterministic goldens
 
 Requires a working Perl BNG2 (set BNG2_PERL, or have legacy/perl/BNG2.pl present).
 """
@@ -29,6 +29,13 @@ GOLDEN = corpus.REPO / "tests" / "validation" / "golden"
 
 
 def regen(models: list[str], ensemble: int) -> int:
+    if ensemble:
+        print(
+            "ERROR: ensemble golden generation is not implemented; no ensemble "
+            "reference may be inferred from a single trajectory.",
+            file=sys.stderr,
+        )
+        return 2
     if not oracle_perl.perl_available():
         print("ERROR: Perl BNG2 not available (set BNG2_PERL).", file=sys.stderr)
         return 2
@@ -50,10 +57,6 @@ def regen(models: list[str], ensemble: int) -> int:
                 f"({'net ' if net else ''}{'gdat' if gdat else ''})".rstrip()
             )
             n_ok += 1
-        # Ensemble goldens for stochastic comparison are intentionally NOT
-        # generated here yet: a faithful Perl SSA ensemble needs a fixed-seed
-        # sweep wrapper. Tracked as follow-up; the harness skips ensemble tests
-        # until <stem>.ens.gdat files exist.
     print(f"\n{n_ok}/{len(models)} models regenerated into {GOLDEN}")
     return 0 if n_ok else 1
 
@@ -66,7 +69,7 @@ def main() -> int:
         "--ensemble",
         type=int,
         default=0,
-        help="(reserved) number of SSA runs per ensemble golden",
+        help="reserved; fails until a fixed-seed Perl ensemble wrapper is reviewed",
     )
     args = ap.parse_args()
 

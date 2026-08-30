@@ -54,7 +54,11 @@ public:
     void writeBinaryOutputFiles(const std::string& prefix, const OdeResult& result, bool printCDAT = true) const;
     void derivs(double t, const double* y, double* dydt) const;
 
-    void loadTfun(const std::string& name, const std::string& filePath) { tfunRegistry_.load(name, filePath); }
+    void loadTfun(const std::string& name,
+                  const std::string& filePath,
+                  const std::string& method = "linear") {
+        tfunRegistry_.load(name, filePath, method);
+    }
     io::TfunRegistry& getTfunRegistry() { return tfunRegistry_; }
 
 private:
