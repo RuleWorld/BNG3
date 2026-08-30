@@ -70,6 +70,24 @@ def test_cli_export_bngl(runner, simple_model, tmp_path):
     assert os.path.exists(out)
 
 
+def test_cli_visualize_legacy_flags_write_graphml(runner, simple_model, tmp_path):
+    result = runner.invoke(
+        main,
+        [
+            "visualize",
+            "-i",
+            simple_model,
+            "--type",
+            "contactmap",
+            "-o",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert any(path.suffix == ".graphml" for path in tmp_path.iterdir())
+
+
 @pytest.mark.parametrize("method", ["pla", "psa"])
 def test_cli_approximate_simulation_start_time(runner, simple_model, method):
     result = runner.invoke(
