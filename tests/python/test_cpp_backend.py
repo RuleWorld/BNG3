@@ -314,6 +314,30 @@ end model
         assert result.time[-1] == pytest.approx(1.0)
         assert result.observables["A_total"][0] == pytest.approx(1.0)
 
+    def test_nf_direct_route_can_be_required(self, tmp_path, monkeypatch):
+        bngl = tmp_path / "strict_nf.bngl"
+        bngl.write_text(
+            """
+begin model
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 1
+end seed species
+begin observables
+    Molecules X_total X()
+end observables
+end model
+"""
+        )
+        model = _cpp.parse_file(str(bngl))
+        monkeypatch.setenv("BNG_NFSIM_FORCE_XML", "1")
+        monkeypatch.setenv("BNG_NFSIM_REQUIRE_DIRECT", "1")
+
+        with pytest.raises(RuntimeError, match="direct AST initialization required"):
+            _cpp.simulate_nf(model, t_end=1.0, n_steps=1)
+
 
 class TestHighLevelAPI:
     def test_load_and_simulate(self, tmp_path):
