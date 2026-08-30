@@ -400,6 +400,7 @@ def simulate_nf(
     seed: int = 0,
     equilibrate: int = 0,
     verbose: bool = False,
+    source_path: str = "",
 ) -> Dict[str, object]:
     """Run network-free (NFSim) simulation on a model.
 
@@ -420,6 +421,8 @@ def simulate_nf(
         Equilibration time before simulation (0 = none).
     verbose : bool
         Print progress information.
+    source_path : str
+        Path to the source BNGL file for resolving relative TFUN tables.
 
     Returns
     -------

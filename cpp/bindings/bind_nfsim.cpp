@@ -43,7 +43,8 @@ std::string make_temp_xml_path() {
 void bind_nfsim(py::module_& m) {
 
     m.def("simulate_nf", [](Model& model, double t_end, int n_steps,
-                            int seed, int equilibrate, bool verbose) -> py::dict {
+                            int seed, int equilibrate, bool verbose,
+                            const std::string& source_path) -> py::dict {
         if (t_end < 0.0) {
             throw std::invalid_argument("t_end must be non-negative");
         }
@@ -66,7 +67,8 @@ void bind_nfsim(py::module_& m) {
                 false,    // blockSameComplexBinding
                 -1,       // globalMoleculeLimit (unlimited)
                 verbose,
-                suggestedTraversalLimit
+                suggestedTraversalLimit,
+                fs::path(source_path)
             ));
 
             if (!system) {
@@ -208,6 +210,7 @@ void bind_nfsim(py::module_& m) {
         py::arg("seed") = 0,
         py::arg("equilibrate") = 0,
         py::arg("verbose") = false,
+        py::arg("source_path") = "",
         "Run network-free (NFSim) simulation on a model.\n\n"
         "Returns a dict with 'time' (numpy array of time points) and\n"
         "'observables' (dict of name -> numpy array of values at each time point).");

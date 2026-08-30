@@ -224,6 +224,7 @@ class BioNetGenModel:
                 n_steps=n_steps,
                 seed=seed,
                 verbose=verbose,
+                source_path=self._source_path or "",
             )
         else:
             if self._network is None:
