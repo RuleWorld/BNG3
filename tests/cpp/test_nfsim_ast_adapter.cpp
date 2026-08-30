@@ -482,6 +482,9 @@ end seed species
 begin observables
     Molecules A_total A()
 end observables
+begin reaction rules
+    A() -> Null() 1
+end reaction rules
 )");
 
     REQUIRE(model != nullptr);
@@ -489,8 +492,9 @@ end observables
     auto* system = NFinput::buildSystemFromAst(
         *model, false, 100, false, suggestedTraversalLimit);
     REQUIRE(system != nullptr);
-    CHECK(system->getMoleculeTypeByName("Null") == nullptr);
+    CHECK(system->getNumOfMoleculeTypes() == 1);
     CHECK(system->getNumOfMolecules() == 1);
+    CHECK(system->getAllReactions().size() == 1);
     delete system;
 }
 

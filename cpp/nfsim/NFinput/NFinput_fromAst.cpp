@@ -1227,11 +1227,14 @@ bool addMoleculeTypesFromAst(const bng::ast::Model& model, System* s,
                 std::cerr << "[nfsim/ast] molecule type is missing a name\n";
                 return false;
             }
+            // Null is an NFsim keyword, not a constructible molecule type.
+            // It is accepted in product positions as the degradation sink,
+            // but NFsim rejects it in reactant and observable patterns.
             const std::string normalizedName = lowerCase(typeName);
-            if (normalizedName == "null" || normalizedName == "trash") {
+            if (normalizedName == "null") {
                 if (verbose) {
-                    std::cerr << "[nfsim/ast] skipping molecule type '" << typeName
-                              << "'\n";
+                    std::cerr << "[nfsim/ast] skipping reserved molecule type '"
+                              << typeName << "'\n";
                 }
                 continue;
             }
@@ -4198,12 +4201,20 @@ bool addSpeciesFromAst(const bng::ast::Model& model, System* s,
                       << "' contains no molecule graph\n";
             return false;
         }
-        // NFsim treats $Trash() (and the corresponding Trash molecule type) as
-        // a discard seed.  The molecule-type builder omits this sentinel, so
-        // consume an all-trash seed here instead of reporting an unknown type.
-        if (std::all_of(molecules.begin(), molecules.end(), [](const auto& molecule) {
-                return lowerCase(molecule.name) == "trash";
-            })) {
+        // A declared Null()/Trash() is an ordinary molecule in BNGL.  Only
+        // fixed discard seeds (the `$Null`/`$Trash` convention) or an
+        // undeclared discard name are sentinels; preserving this distinction
+        // matters for models that use Null as a catalyst or observable.
+        const bool allDiscard = std::all_of(
+            molecules.begin(), molecules.end(), isDiscardMolecule);
+        const bool hasUndeclaredDiscard = std::any_of(
+            molecules.begin(), molecules.end(), [&](const auto& molecule) {
+                for (int index = 0; index < s->getNumOfMoleculeTypes(); ++index) {
+                    if (s->getMoleculeType(index)->getName() == molecule.name) return false;
+                }
+                return true;
+            });
+        if (allDiscard && (seed.isConstant() || hasUndeclaredDiscard)) {
             continue;
         }
         std::string diagnostic;
@@ -4602,7 +4613,15 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
             // Null/Trash are NFsim's degradation sentinels, not real molecule
             // types.  The XML loader drops these product entries and keeps the
             // corresponding DeleteMolecule operation.
-            if (isDiscardMolecule(productMolecules[productRef.moleculeIndex])) {
+            const auto& productMolecule = productMolecules[productRef.moleculeIndex];
+            bool declaredProductType = false;
+            for (int index = 0; index < s->getNumOfMoleculeTypes(); ++index) {
+                if (s->getMoleculeType(index)->getName() == productMolecule.name) {
+                    declaredProductType = true;
+                    break;
+                }
+            }
+            if (isDiscardMolecule(productMolecule) && !declaredProductType) {
                 return true;
             }
             if (!addedProductIndexes.emplace(productRef, directProducts.size()).second) {
