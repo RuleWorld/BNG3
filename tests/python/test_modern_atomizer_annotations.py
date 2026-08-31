@@ -7,6 +7,7 @@ the pinned reference revision, not the implementation under test.
 from __future__ import annotations
 
 from collections import OrderedDict
+from pathlib import Path
 
 from bionetgen.atomizer.modern import (
     AnnotationInfo,
@@ -222,3 +223,18 @@ def test_atomizer_annotation_payload_matches_reference_shape():
     assert result.annotation["species"]["A"]["annotations"][0]["resources"] == [
         "uniprot:P12345"
     ]
+
+
+def test_bng_xml_converter_preserves_reference_sections_and_bonds():
+    from bionetgen.atomizer.modern import convert_bng_xml_to_bngl
+
+    xml = Path(__file__).parent / "test" / "test.xml"
+    bngl = convert_bng_xml_to_bngl(xml.read_text(encoding="utf-8"))
+
+    assert "begin parameters" in bngl
+    assert "begin molecule types" in bngl
+    assert "begin seed species" in bngl
+    assert "begin reaction rules" in bngl
+    assert "kon 10" in bngl
+    assert "X(y,p~0)" in bngl
+    assert "X(y!1,p~0).Y(x!1)" in bngl
