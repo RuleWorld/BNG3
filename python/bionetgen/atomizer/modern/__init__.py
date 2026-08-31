@@ -37,7 +37,17 @@ from .events import (
     parse_time_threshold,
     synthesize_event_actions,
 )
-from .structures import Action, Component, Molecule, Rule, Species, read_from_string
+from .structures import (
+    Action,
+    AtomicPatternResult,
+    Component,
+    Databases,
+    Molecule,
+    Rule,
+    Species,
+    States,
+    read_from_string,
+)
 from .types import *  # noqa: F401,F403
 from .writer import (
     bngl_function,
@@ -283,9 +293,11 @@ def sbml_to_bngl_atomized(
 __all__ = [
     "Action",
     "Atomizer",
+    "AtomicPatternResult",
     "AnnotationStats",
     "BNGL_LEXER_KEYWORDS",
     "Component",
+    "Databases",
     "EventTranslationContext",
     "EventTranslationResult",
     "Molecule",
@@ -294,6 +306,7 @@ __all__ = [
     "Rule",
     "SBMLParser",
     "Species",
+    "States",
     "StateTransition",
     "StateTransitionDiagram",
     "TransformationCenter",

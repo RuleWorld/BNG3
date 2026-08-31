@@ -31,8 +31,8 @@ def test_extract_atomic_patterns_preserves_reaction_center_and_bond_context():
 
     assert "A(site~P)" in result.atomic_patterns
     assert "A(site!1).B(bind!1)" in result.atomic_patterns
-    assert "A(site~P)" in result.reaction_center
     assert "A(site!1).B(bind!1)" in result.reaction_center
+    assert "A(site~P)" in result.context
 
 
 def test_list_of_bonds_maps_internal_component_ids_to_public_names():

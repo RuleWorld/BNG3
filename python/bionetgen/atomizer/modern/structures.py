@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import copy
 import re
+from collections import Counter
+from dataclasses import dataclass
 from difflib import SequenceMatcher
 from typing import Iterable, List, Optional, Sequence, Tuple, Union
 
@@ -109,6 +111,9 @@ class Component:
     def __str__(self) -> str:
         return self.get_rule_str()
 
+    def hash(self) -> str:
+        return self.name
+
 
 class Molecule:
     """A molecule instance or molecule type."""
@@ -172,6 +177,11 @@ class Molecule:
             for component in self.components
             if component.name != component_name
         ]
+
+    def remove_components(self, components: Iterable[Component]) -> None:
+        for element in components:
+            if element in self.components:
+                self.components.remove(element)
 
     def add_bond(self, component_name: str, bond_name: int) -> None:
         while bond_name in self.get_bond_numbers():
@@ -369,6 +379,116 @@ class Species:
 
     def has_wildcard_bonds(self) -> bool:
         return any(molecule.has_wildcard_bonds() for molecule in self.molecules)
+
+    def extract_atomic_patterns(
+        self,
+        action: str,
+        site1: str,
+        site2: str,
+        differentiate_dimers: bool = False,
+    ) -> "AtomicPatternResult":
+        """Extract component and bonded patterns for rule-center analysis."""
+
+        atomic_patterns: dict[str, Species] = {}
+        bonded_patterns: dict[str, Species] = {}
+        reaction_center: List[Species] = []
+        context: List[Species] = []
+
+        name_counter = Counter(molecule.name for molecule in self.molecules)
+        name_counter_copy = Counter(molecule.name for molecule in self.molecules)
+        self.sort()
+
+        for molecule in self.molecules:
+            molecule_counter = (
+                name_counter[molecule.name] - name_counter_copy[molecule.name]
+            )
+            name_counter_copy[molecule.name] -= 1
+            mol_name = (
+                f"{molecule.name}%{molecule_counter}"
+                if differentiate_dimers
+                else molecule.name
+            )
+
+            for component in molecule.components:
+                if component.active_state != "":
+                    species_structure = Species()
+                    species_structure.bonds = list(self.bonds)
+                    molecule_structure = Molecule(mol_name, molecule.idx)
+                    component_structure = Component(component.name, component.idx)
+                    component_structure.add_state(component.active_state)
+                    component_structure.active_state = component.active_state
+                    molecule_structure.add_component(component_structure)
+                    species_structure.add_molecule(molecule_structure)
+
+                    if (
+                        component_structure.idx in {site1, site2}
+                        and action == "StateChange"
+                    ):
+                        reaction_center.append(species_structure)
+                    else:
+                        context.append(species_structure)
+                    atomic_patterns[str(species_structure)] = species_structure
+
+                species_structure = Species()
+                species_structure.bonds = list(self.bonds)
+                molecule_structure = Molecule(mol_name, molecule.idx)
+                component_structure = Component(component.name, component.idx)
+                molecule_structure.add_component(component_structure)
+                species_structure.add_molecule(molecule_structure)
+
+                if not component.bonds:
+                    atomic_patterns[str(species_structure)] = species_structure
+                else:
+                    bond_key = str(component.bonds[0])
+                    component_structure.add_bond("+" if bond_key == "+" else 1)
+                    if bond_key not in bonded_patterns:
+                        bonded_patterns[bond_key] = species_structure
+                    elif bond_key != "+" or not bonded_patterns[bond_key].molecules:
+                        bonded_patterns[bond_key].add_molecule(molecule_structure)
+
+                if (
+                    component_structure.idx in {site1, site2}
+                    and action != "StateChange"
+                ):
+                    reaction_center.append(species_structure)
+                elif component.bonds or component.active_state == "":
+                    context.append(species_structure)
+
+        atomic_patterns.update(
+            (str(value), value) for value in bonded_patterns.values()
+        )
+        reaction_center_strings = [
+            str(value) for value in reaction_center if str(value) in atomic_patterns
+        ]
+        context_strings = [
+            str(value) for value in context if str(value) in atomic_patterns
+        ]
+        return AtomicPatternResult(
+            atomic_patterns=atomic_patterns,
+            reaction_center=reaction_center_strings,
+            context=context_strings,
+        )
+
+    def list_of_bonds(
+        self, name_dict: Mapping[str, str]
+    ) -> Dict[str, Dict[str, List[Tuple[str, str]]]]:
+        """Return bonds indexed by molecule and component display names."""
+
+        result: Dict[str, Dict[str, List[Tuple[str, str]]]] = {}
+        for first, second in self.bonds:
+            molecule1 = re.sub(r"_C[^_]*$", "", first)
+            molecule2 = re.sub(r"_C[^_]*$", "", second)
+            molecule1_name = name_dict.get(molecule1, molecule1)
+            molecule2_name = name_dict.get(molecule2, molecule2)
+            first_name = name_dict.get(first, first)
+            second_name = name_dict.get(second, second)
+            result.setdefault(molecule1_name, {})[first_name] = [
+                (molecule2_name, second_name)
+            ]
+            result.setdefault(molecule2_name, {})[second_name] = [
+                (molecule1_name, first_name)
+            ]
+        return result
 
     def extend(self, species: "Species", update: bool = True) -> None:
         if len(self.molecules) == len(species.molecules):
@@ -578,6 +698,58 @@ class Rule:
     toString = __str__
 
 
+@dataclass
+class AtomicPatternResult:
+    atomic_patterns: Dict[str, Species]
+    reaction_center: List[str]
+    context: List[str]
+
+    @property
+    def atomicPatterns(self) -> Dict[str, Species]:
+        return self.atomic_patterns
+
+    @property
+    def reactionCenter(self) -> List[str]:
+        return self.reaction_center
+
+
+class Databases:
+    """Container for translation and annotation lookup tables."""
+
+    def __init__(self) -> None:
+        self.translator: Dict[str, Species] = {}
+        self.synthesis_database: Dict[str, object] = {}
+        self.catalysis_database: Dict[str, object] = {}
+        self.raw_database: Dict[str, object] = {}
+        self.label_dictionary: Dict[str, object] = {}
+        self.synthesis_database2: Dict[str, object] = {}
+
+    def get_raw_database(self) -> Dict[str, object]:
+        return self.raw_database
+
+    def get_label_dictionary(self) -> Dict[str, object]:
+        return self.label_dictionary
+
+    def add2_label_dictionary(self, key: Iterable[str], value: object) -> None:
+        self.label_dictionary[",".join(sorted(key))] = value
+
+    def get_translator(self) -> Dict[str, Species]:
+        return self.translator
+
+    getRawDatabase = get_raw_database
+    getLabelDictionary = get_label_dictionary
+    add2LabelDictionary = add2_label_dictionary
+    getTranslator = get_translator
+
+
+class States:
+    """Simple state descriptor retained for source compatibility."""
+
+    def __init__(self, name: str = "", idx: str = "") -> None:
+        self.name = name
+        self.idx = idx
+
+
 def _split_top_level(value: str, separator: str) -> List[str]:
     parts: List[str] = []
     start = 0
@@ -637,10 +809,13 @@ def read_from_string(pattern_str: str) -> Species:
 
 __all__ = [
     "Action",
+    "AtomicPatternResult",
     "Bond",
     "Component",
+    "Databases",
     "Molecule",
     "Rule",
     "Species",
+    "States",
     "read_from_string",
 ]
