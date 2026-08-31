@@ -1385,6 +1385,46 @@ end reaction rules
     delete system;
 }
 
+TEST_CASE("NFsim AST adapter maps intramolecular product bonds") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    Source()
+    A(x,x)
+end molecule types
+begin seed species
+    Source() 1
+end seed species
+begin observables
+    Species A_ring A(x!1,x!1)
+end observables
+begin reaction rules
+    Source() -> Source() + A(x!1,x!1) k
+end reaction rules
+)");
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    system->prepareForSimulation();
+    CHECK(system->getObservableByName("A_ring")->getCount() == 0);
+    system->seedRNG(8);
+    system->stepTo(100.0);
+    CHECK(system->getObservableByName("A_ring")->getCount() == 1);
+    auto* moleculeType = system->getMoleculeTypeByName("A");
+    REQUIRE(moleculeType != nullptr);
+    REQUIRE(moleculeType->getMolecule(0) != nullptr);
+    const auto x1 = moleculeType->getCompIndexFromName("x1");
+    const auto x2 = moleculeType->getCompIndexFromName("x2");
+    CHECK(moleculeType->getMolecule(0)->isBindingSiteBonded(x1));
+    CHECK(moleculeType->getMolecule(0)->isBindingSiteBonded(x2));
+    delete system;
+}
+
 TEST_CASE("NFsim AST adapter expands direct reversible reaction rules") {
     auto model = bng::parser::parseModel(R"(
 begin parameters
