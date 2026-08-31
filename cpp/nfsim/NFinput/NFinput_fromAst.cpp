@@ -3973,11 +3973,11 @@ bool buildDirectProductMolecule(const bng::ast::SpeciesGraph& pattern,
                     delete templateMolecule;
                     return false;
                 }
-                if (endpoints[0].first == endpoints[1].first) {
-                    diagnostic = "intra-molecule product bonds are not yet supported";
-                    delete templateMolecule;
-                    return false;
-                }
+                // NFsim's legacy XML loader permits a product bond whose two
+                // endpoints are on the same newly created molecule.  The
+                // TransformationSet supports this mapping by assigning the
+                // second endpoint the next mapping slot, so keep the graph
+                // edge and let the product-bond transform install it.
             }
         }
         std::string runtimeName = component.name;

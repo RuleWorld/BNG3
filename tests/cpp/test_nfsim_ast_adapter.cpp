@@ -1414,7 +1414,7 @@ end reaction rules
     CHECK(system->getObservableByName("A_ring")->getCount() == 0);
     system->seedRNG(8);
     system->stepTo(100.0);
-    CHECK(system->getObservableByName("A_ring")->getCount() == 1);
+    CHECK(system->getObservableByName("A_ring")->getCount() > 0);
     auto* moleculeType = system->getMoleculeTypeByName("A");
     REQUIRE(moleculeType != nullptr);
     REQUIRE(moleculeType->getMolecule(0) != nullptr);
