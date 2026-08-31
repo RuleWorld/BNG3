@@ -773,3 +773,36 @@ def test_playground_writer_reports_mixed_sbml_conversion_factors():
     assert "2 * (k)" not in bngl
     assert any(w["category"] == "conversionFactor" for w in model.import_warnings)
     assert "differing conversionFactors" in bngl
+
+
+def test_playground_writer_synthesizes_source_sink_rules_for_species_rate_rule():
+    from bionetgen.atomizer.modern import (
+        SBMLModel,
+        SBMLParameter,
+        SBMLRule,
+        SBMLSpecies,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    model = SBMLModel(
+        id="rate_rule",
+        species=OrderedDict([("A", SBMLSpecies(id="A", name="A", initial_amount=1))]),
+        parameters=OrderedDict([("k", SBMLParameter(id="k", value=0.5))]),
+        rules=[SBMLRule(type="rate", variable="A", math="-k*A")],
+    )
+
+    sct = build_species_composition_table(model)
+    bngl, _ = generate_bngl(
+        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+    )
+
+    assert "__rate_rule__A()" in bngl
+    assert "__rate_rule_pos__A()" in bngl
+    assert "__rate_rule_neg__A()" in bngl
+    assert "__rate_rule_in_A: 0 -> M_A()" in bngl
+    assert "__rate_rule_out_A: M_A() -> 0" in bngl
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    cpp.parse_string(bngl)

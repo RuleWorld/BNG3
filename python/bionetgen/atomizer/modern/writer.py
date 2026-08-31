@@ -747,6 +747,41 @@ def write_functions(model: SBMLModel) -> List[str]:
         body = convert_math_expression(body)
         body = _rewrite_zero_argument_calls(body, zero_argument_functions)
         lines.append(f"{standardize_name(rule.variable)}() = {body}")
+
+    rate_rule_variables = {
+        standardize_name(rule.variable)
+        for rule in model.rules
+        if rule.variable and rule.type in {"assignment", "rate"}
+    }
+    species_map = {species_id: species_id for species_id in model.species}
+    concentration_names = {
+        standardize_name(species_id)
+        for species_id, species in model.species.items()
+        if not species.has_only_substance_units
+    }
+    for rule in model.rules:
+        if not rule.variable or rule.type != "rate":
+            continue
+        body = extend_function(rule.math, {}, model.function_definitions)
+        body = bngl_function(
+            body,
+            rule.variable,
+            [],
+            list(model.compartments),
+            assignment_rule_variables=rate_rule_variables,
+            species_with_conc_functions=concentration_names,
+            sbml_to_bngl_id=species_map,
+        )
+        name = standardize_name(rule.variable)
+        lines.append(f"__rate_rule__{name}() = {body}")
+        lines.append(
+            f"__rate_rule_pos__{name}() = if(__rate_rule__{name}() > 0, "
+            f"__rate_rule__{name}(), 0)"
+        )
+        lines.append(
+            f"__rate_rule_neg__{name}() = if(__rate_rule__{name}() < 0, "
+            f"-(__rate_rule__{name}()), 0)"
+        )
     return lines
 
 
@@ -802,6 +837,28 @@ def write_reaction_rules(
             f"{candidate}: {' + '.join(reactants) if reactants else '0'} "
             f"{arrow} {' + '.join(products) if products else '0'} {rate}"
         )
+
+    for rule in model.rules:
+        if not rule.variable or rule.type != "rate":
+            continue
+        target_id = rule.variable
+        if target_id not in sct.entries and target_id not in model.species:
+            standardized = standardize_name(target_id)
+            if standardized in sct.entries:
+                target_id = standardized
+            else:
+                _record_import_warning(
+                    model,
+                    f'Rate rule "{rule.variable}" has no materialized SBML species; '
+                    "it was retained as metadata but no source/sink rule was emitted.",
+                )
+                continue
+        pattern = _reaction_pattern(target_id, sct, model)
+        name = standardize_name(rule.variable)
+        lines.append(f"__rate_rule_in_{name}: 0 -> {pattern} __rate_rule_pos__{name}()")
+        lines.append(
+            f"__rate_rule_out_{name}: {pattern} -> 0 __rate_rule_neg__{name}()"
+        )
     return lines
 
 
@@ -815,6 +872,26 @@ def generate_bngl(
     t_end: float = 10,
     n_steps: int = 100,
 ) -> Tuple[str, Mapping[str, str]]:
+    for rule in model.rules:
+        if rule.type != "algebraic":
+            continue
+        message = (
+            f'Algebraic rule "{rule.variable or ''}" is an implicit DAE constraint '
+            "with no BNGL equivalent; it was not applied."
+        )
+        if not any(
+            warning.get("category") == "algebraicRule"
+            and warning.get("message") == message
+            for warning in model.import_warnings
+        ):
+            model.import_warnings.append(
+                {
+                    "category": "algebraicRule",
+                    "message": message,
+                    "count": 1,
+                    "severity": "dropped",
+                }
+            )
     assignment_variables = {
         standardize_name(rule.variable)
         for rule in model.rules
