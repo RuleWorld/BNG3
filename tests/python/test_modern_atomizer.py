@@ -265,3 +265,64 @@ def test_playground_atomizer_generates_flat_and_atomized_bngl():
     assert "A()" in flat.bngl or "M_A" in flat.bngl
     assert "b1" in atomized.bngl
     assert "~P" in atomized.bngl
+
+
+def test_playground_math_rewrites_match_writer_contract():
+    from bionetgen.atomizer.modern import convert_math_expression
+
+    assert convert_math_expression("pow(x, y)") == "((x)^(y))"
+    assert convert_math_expression("sqrt(x)") == "((x)^(1/2))"
+    assert convert_math_expression("exp(x)") == "(2.71828182845905^(x))"
+    assert convert_math_expression("log(x)") == "ln(x)"
+    assert convert_math_expression("log10(x)") == "(ln(x)/2.302585093)"
+    assert convert_math_expression("abs(x)") == "if(x>=0,x,-(x))"
+    assert (
+        convert_math_expression("piecewise(v1, c1, v2, c2)")
+        == "if(c1, v1, if(c2, v2, 0))"
+    )
+    assert convert_math_expression("gt(a, b)") == "(a > b)"
+    assert convert_math_expression("pi * exponentiale * true * false") == (
+        "3.14159265358979 * 2.71828182845905 * 1 * 0"
+    )
+
+
+def test_playground_writer_emits_zero_argument_functions_and_assignment_rules():
+    from bionetgen.atomizer.modern import (
+        SBMLFunctionDefinition,
+        SBMLModel,
+        SBMLParameter,
+        SBMLRule,
+        SBMLSpecies,
+        Atomizer,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    model = SBMLModel(
+        id="rules",
+        name="rules",
+        species=OrderedDict(
+            [
+                (
+                    "A",
+                    SBMLSpecies(
+                        id="A", name="A", initial_amount=1, initial_amount_set=True
+                    ),
+                )
+            ]
+        ),
+        parameters=OrderedDict([("k", SBMLParameter(id="k", value=2))]),
+        function_definitions=OrderedDict(
+            [("f", SBMLFunctionDefinition(id="f", name="f", math="k + 1"))]
+        ),
+        rules=[SBMLRule(type="assignment", variable="v", math="f")],
+    )
+    sct = build_species_composition_table(model)
+    bngl, _ = generate_bngl(
+        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+    )
+
+    assert "f() = k + 1" in bngl
+    assert "v() = f()" in bngl
