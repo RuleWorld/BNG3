@@ -4,8 +4,8 @@
 **Last audited:** 2026-08-31
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 7de3194a39730a3b6fd6e63ee9fe4eeb75efdb95
-**Checklist refresh base:** 7de3194 (refresh after each semantic checkpoint)
+**Audited semantic code head:** 7e91acc02a62a838c8efceaaa363aea0e806a937
+**Checklist refresh base:** 7e91acc (refresh after each semantic checkpoint)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 
@@ -42,27 +42,33 @@ completion gate.
 
 - [x] Required fast-forward pull completed before this documentation change.
 - [x] The latest pushed semantic checkpoint is
-  7de3194a39730a3b6fd6e63ee9fe4eeb75efdb95; documentation-only refreshes may
+  7e91acc02a62a838c8efceaaa363aea0e806a937; documentation-only refreshes may
   be layered after it without invalidating its semantic test evidence.
 - [x] The small documentation grammar fix remains the only pre-existing
   worktree modification. It is intentionally not staged by this checklist
   checkpoint.
 - [x] Local CTest passes 124/124.
-- [x] Local Python suite passes 219 tests with 27 skips and 8 warnings.
+- [x] Local Python suite passes 227 tests with 27 skips and 8 warnings.
 - [x] Local CI workflow contract tests pass 6/6, including the pull-request
   source-distribution smoke gate.
 - [x] Local Black check, Ruff check, and git diff check pass.
 - [x] Local validation smoke reports 4 passed and 15 skipped; the skips are
   visible because this checkout lacks the expected validation CLI/oracle
   environment and must not be treated as parity.
-- [ ] A clean, no-build-isolation wheel was built, installed into a separate
-  target, and imported with its compiled extension at this exact head. The
-  prior wheel evidence predates the helper-surface checkpoint.
-- [x] Hosted PR checks at this exact head pass across the C++ matrix, Python
-  matrix, ASan, integration, validation, formatter, package smoke, and CodeQL:
-  CI run [33445358582](https://github.com/RuleWorld/BNG3/actions/runs/33445358582),
-  CodeQL run [33445358475](https://github.com/RuleWorld/BNG3/actions/runs/33445358475),
-  and formatting run [33445358526](https://github.com/RuleWorld/BNG3/actions/runs/33445358526).
+- [x] A clean, no-build-isolation wheel was built, installed into a separate
+  target, and imported with its compiled extension at this exact head:
+  `bionetgen-3.0.0a1-cp314-cp314-macosx_26_0_arm64.whl`, fresh venv
+  `/private/tmp/bng3-wheel-venv-7e91acc.W3MJKN`, package-local extension import
+  and CLI `--version`/`--help` passed. This is one local macOS wheel smoke,
+  not the complete release artifact matrix.
+- [x] Hosted PR checks for this exact head pass across the C++ matrix, Python
+  matrix, ASan, integration, validation, package smoke, formatter, and CodeQL:
+  CI run
+  [33449613101](https://github.com/RuleWorld/BNG3/actions/runs/33449613101),
+  CodeQL run
+  [33449613124](https://github.com/RuleWorld/BNG3/actions/runs/33449613124),
+  and formatting run
+  [33449613199](https://github.com/RuleWorld/BNG3/actions/runs/33449613199).
 - [x] Modern Atomizer checkpoints exist for annotations, BNG-XML conversion,
   Rulifier, UniProt, structure helpers, and conservative SBML-Multi discovery,
   helper/rate-rule constants, each with source-derived tests.
@@ -366,6 +372,10 @@ completion gate.
   7de3194 with source-derived coverage in
   tests/python/test_modern_atomizer_core.py; the remaining core and writer
   surface is still open.
+- [x] The public `bnglReaction`, `inlineSBMLFunctions`, and
+  `splitReversibleRate` writer facades are ported at 7e91acc with
+  source-derived coverage in tests/python/test_modern_atomizer_writer_facade.py
+  and tests/python/test_modern_atomizer_writer_rate_helpers.py.
 - [ ] Complete or explicitly govern remaining modern reference modules:
   atomization/core, parser/bngXmlParser and parser/sbmlParser,
   validation/units, writer/bnglWriter, writer/eventActions, and
@@ -470,7 +480,7 @@ completion gate.
   contents.
 - [x] The pull-request package-smoke job builds and installs a source
   distribution on the exact head (CI run
-  [33445358582](https://github.com/RuleWorld/BNG3/actions/runs/33445358582));
+  [33449613101](https://github.com/RuleWorld/BNG3/actions/runs/33449613101));
   release-candidate provenance and the complete artifact matrix remain open.
 - [ ] Clean isolated wheels build for every supported platform/architecture.
 - [ ] Installed-wheel tests cover import, compiled extension loading, API,
@@ -593,9 +603,9 @@ These are known unchecked requirements, not reasons to claim completion:
   sdist/wheel matrices,
   Docker, publication, and release-artifact provenance remain open; hosted
   PR release jobs were skipped by event conditions.
-- The modern helper/rate-rule-constant surface is now covered by a focused
-  source-derived checkpoint, but broad Atomizer writer/parser/SBML parity is
-  still open.
+- Focused source-derived checkpoints now cover modern helper/rate-rule
+  constants, selected atomization/core helpers, and selected writer facades;
+  broad Atomizer writer/parser/SBML parity is still open.
 - CODEOWNERS and complete domain approval enforcement remain open even though
   AGENTS.md exists.
 - Historical progress text in the integration plan must be refreshed as later
