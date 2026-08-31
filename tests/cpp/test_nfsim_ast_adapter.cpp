@@ -510,6 +510,37 @@ TEST_CASE("NFsim AST adapter builds a direct no-rule system") {
     delete system;
 }
 
+TEST_CASE("NFsim AST adapter accepts legacy single-ended seed bond metadata") {
+    // BNG2's XML species reader preserves a numeric seed bond's
+    // numberOfBonds="1" metadata even when the source bond label has no
+    // second endpoint.  It creates the molecule without an actual runtime
+    // bond; this is the compatibility behavior used by the RNA NFsim
+    // fixture, so the direct AST path must not reject that seed.
+    auto model = bng::parser::parseModel(R"(
+begin molecule types
+    DNA(three)
+end molecule types
+begin seed species
+    DNA(three!1) 1
+end seed species
+begin observables
+    Molecules DNA_total DNA()
+end observables
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(
+        *model, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getNumOfMolecules() == 1);
+    auto* moleculeType = system->getMoleculeTypeByName("DNA");
+    REQUIRE(moleculeType != nullptr);
+    const auto componentIndex = moleculeType->getCompIndexFromName("three");
+    CHECK(moleculeType->getMolecule(0)->isBindingSiteOpen(componentIndex));
+    delete system;
+}
+
 TEST_CASE("NFsim AST adapter consumes Null discard seeds") {
     auto model = bng::parser::parseModel(R"(
 begin molecule types
