@@ -2037,6 +2037,42 @@ end reaction rules
     delete system;
 }
 
+TEST_CASE("NFsim AST adapter maps arithmetic around a scoped local function rate") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 2.0
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin observables
+    Molecules atotal A()
+end observables
+begin functions
+    f(x) = atotal(x)
+end functions
+begin reaction rules
+    %x::A() -> %x::A() + B() k + f(x)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(direct != nullptr);
+    REQUIRE(direct->getCompositeFunctionByName("__bng3_reaction_rate_1") != nullptr);
+    REQUIRE(direct->getAllReactions().size() == 1);
+    CHECK(direct->getReaction(0)->getRxnType() == NFcore::ReactionClass::DOR_RXN);
+    direct->prepareForSimulation();
+    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(3.0));
+    delete direct;
+}
+
 TEST_CASE("NFsim AST adapter maps a bounded nested local function rate") {
     auto model = bng::parser::parseModel(R"(
 begin parameters
