@@ -1265,8 +1265,9 @@ def generate_bngl(
     for rule in model.rules:
         if rule.type != "algebraic":
             continue
+        variable = rule.variable or ""
         message = (
-            f'Algebraic rule "{rule.variable or ''}" is an implicit DAE constraint '
+            f'Algebraic rule "{variable}" is an implicit DAE constraint '
             "with no BNGL equivalent; it was not applied."
         )
         if not any(
