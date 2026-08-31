@@ -13,6 +13,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -2481,10 +2482,35 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 readArgument(action, "method", "ode")));
             const bool nfScan = method == "nf";
             const auto parallelText = readArgument(action, "parallel", "");
-            if (!trim(stripQuotes(parallelText)).empty() &&
-                parseNonNegativeCount(parallelText, model, "parallel") > 0) {
-                throw std::runtime_error(
-                    "parameter_scan parallel execution is not implemented");
+            std::size_t parallelWorkers = 0;
+            if (!trim(stripQuotes(parallelText)).empty()) {
+                const auto parallelValue = parseNonNegativeCount(
+                    parallelText, model, "parallel");
+                if (parallelValue > 0) {
+                    // BNG2 treats parallel=>1 as an enable flag and takes the
+                    // worker count from num_cores.  Accept a worker count in
+                    // parallel itself as well, matching the Python API.
+                    if (parallelValue == 1) {
+                        const auto numCoresText = readArgument(
+                            action, "num_cores", "");
+                        if (trim(stripQuotes(numCoresText)).empty()) {
+                            const auto detected = std::thread::hardware_concurrency();
+                            parallelWorkers = detected == 0
+                                ? 1
+                                : static_cast<std::size_t>(detected);
+                        } else {
+                            parallelWorkers = parseNonNegativeCount(
+                                numCoresText, model, "num_cores");
+                            if (parallelWorkers == 0) {
+                                throw std::runtime_error(
+                                    "num_cores must be positive when parameter_scan parallelism is enabled");
+                            }
+                        }
+                    } else {
+                        parallelWorkers = parallelValue;
+                    }
+                    parallelWorkers = std::min(parallelWorkers, scanValues.size());
+                }
             }
             const bool resetConcentrations = parseBoolean(
                 readArgument(action, "reset_conc", "1"), true);
@@ -2528,50 +2554,154 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 savedParameters = savedParametersBeforeScan;
             };
 
+            const auto runScanPoint = [&](std::size_t index) {
+                const auto priorConcentrations = snapshotConcentrations(*network);
+                model.getParameters().add(ast::Parameter(
+                    parameterName, ast::Expression::number(scanValues[index])));
+                model.getParameters().evaluateAll();
+                network = generator.generate(sourcePath);
+                restoreConcentrations(
+                    *network,
+                    resetConcentrations ? scanInitialConcentrations
+                                        : priorConcentrations);
+                lastSimulationState.clear();
+                lastSimulationEndTime = 0.0;
+                savedConcentrations.clear();
+                savedParameters.clear();
+
+                std::ostringstream localName;
+                localName << localStem << "_" << std::setfill('0')
+                          << std::setw(5) << (index + 1);
+                const auto localPrefix = workdir / localName.str();
+                if (method == "protocol") {
+                    runProtocol(localPrefix);
+                } else if (nfScan) {
+                    ast::Action nfAction = action;
+                    nfAction.name = "simulate_nf";
+                    nfAction.arguments["prefix"] = localPrefix.string();
+                    nfAction.arguments.erase("suffix");
+                    runNfSimulation(nfAction);
+                } else {
+                    ast::Action simulateAction = action;
+                    simulateAction.name = "simulate";
+                    simulateAction.arguments["prefix"] = localPrefix.string();
+                    simulateAction.arguments.erase("suffix");
+                    runSimulation(model, simulateAction, sourcePath, *network,
+                                  verbose, lastSimulationState,
+                                  lastSimulationEndTime);
+                }
+            };
+
             std::vector<ScanData> scanData;
             try {
                 if (method == "protocol" && model.getSimulationProtocol().empty()) {
                     throw std::runtime_error(
                         "parameter_scan method='protocol' requires a protocol block");
                 }
-                for (std::size_t i = 0; i < scanValues.size(); ++i) {
-                    const auto priorConcentrations = snapshotConcentrations(*network);
-                    model.getParameters().add(ast::Parameter(
-                        parameterName, ast::Expression::number(scanValues[i])));
-                    model.getParameters().evaluateAll();
-                    network = generator.generate(sourcePath);
-                    restoreConcentrations(
-                        *network,
-                        resetConcentrations ? scanInitialConcentrations
-                                            : priorConcentrations);
-                    lastSimulationState.clear();
-                    lastSimulationEndTime = 0.0;
-                    savedConcentrations.clear();
-                    savedParameters.clear();
-
-                    std::ostringstream localName;
-                    localName << localStem << "_" << std::setfill('0')
-                              << std::setw(5) << (i + 1);
-                    const auto localPrefix = workdir / localName.str();
-                    if (method == "protocol") {
-                        runProtocol(localPrefix);
-                    } else if (nfScan) {
-                        ast::Action nfAction = action;
-                        nfAction.name = "simulate_nf";
-                        nfAction.arguments["prefix"] = localPrefix.string();
-                        nfAction.arguments.erase("suffix");
-                        runNfSimulation(nfAction);
-                    } else {
-                        ast::Action simulateAction = action;
-                        simulateAction.name = "simulate";
-                        simulateAction.arguments["prefix"] = localPrefix.string();
-                        simulateAction.arguments.erase("suffix");
-                        runSimulation(model, simulateAction, sourcePath, *network,
-                                      verbose, lastSimulationState,
-                                      lastSimulationEndTime);
+                if (parallelWorkers == 0) {
+                    for (std::size_t i = 0; i < scanValues.size(); ++i) {
+                        runScanPoint(i);
+                        std::ostringstream localName;
+                        localName << localStem << "_" << std::setfill('0')
+                                  << std::setw(5) << (i + 1);
+                        const auto localPrefix = workdir / localName.str();
+                        scanData.push_back(
+                            readLastGdat(localPrefix.string() + ".gdat", model));
                     }
-                    scanData.push_back(
-                        readLastGdat(localPrefix.string() + ".gdat", model));
+                } else {
+#if defined(_WIN32) || defined(__WIN32__) || defined(__CYGWIN__)
+                    // The embedded backend has no safe Windows fork equivalent.
+                    // Preserve action semantics and output ordering while keeping
+                    // the parallel request usable on that platform.
+                    if (verbose) {
+                        std::cerr << "[bng_cpp] parameter_scan: running workers serially "
+                                  << "on Windows\n";
+                    }
+                    for (std::size_t i = 0; i < scanValues.size(); ++i) {
+                        runScanPoint(i);
+                    }
+#else
+                    // Fork after the model/network snapshot is ready.  Each
+                    // child receives an independent copy-on-write model and
+                    // network, so rates, RNG state, and mutable simulation
+                    // state cannot leak between scan points.  Contiguous
+                    // batches retain BNG2's reset_conc=false behavior.
+                    struct ScanChild {
+                        pid_t pid;
+                        std::size_t begin;
+                        std::filesystem::path errorPath;
+                    };
+                    const auto batchSize = (scanValues.size() + parallelWorkers - 1) /
+                        parallelWorkers;
+                    std::vector<ScanChild> children;
+                    std::string launchError;
+                    for (std::size_t begin = 0; begin < scanValues.size();
+                         begin += batchSize) {
+                        const auto end = std::min(begin + batchSize, scanValues.size());
+                        const auto errorPath = workdir /
+                            (localStem + "_worker_" + std::to_string(begin) + ".error");
+                        std::error_code removeError;
+                        std::filesystem::remove(errorPath, removeError);
+                        const auto pid = fork();
+                        if (pid < 0) {
+                            launchError = "parameter_scan could not fork a worker";
+                            break;
+                        }
+                        if (pid == 0) {
+                            std::size_t activeIndex = begin;
+                            try {
+                                for (; activeIndex < end; ++activeIndex) {
+                                    runScanPoint(activeIndex);
+                                }
+                                _exit(0);
+                            } catch (const std::exception& error) {
+                                std::ofstream errorFile(errorPath);
+                                errorFile << "step " << (activeIndex + 1) << ": "
+                                          << error.what();
+                                _exit(1);
+                            } catch (...) {
+                                std::ofstream errorFile(errorPath);
+                                errorFile << "step " << (activeIndex + 1)
+                                          << ": unknown worker failure";
+                                _exit(1);
+                            }
+                        }
+                        children.push_back({pid, begin, errorPath});
+                    }
+
+                    std::string workerError = launchError;
+                    for (const auto& child : children) {
+                        int status = 0;
+                        if (waitpid(child.pid, &status, 0) < 0) {
+                            if (workerError.empty()) {
+                                workerError = "parameter_scan could not wait for a worker";
+                            }
+                            continue;
+                        }
+                        if (workerError.empty() &&
+                            (!WIFEXITED(status) || WEXITSTATUS(status) != 0)) {
+                            std::ifstream errorFile(child.errorPath);
+                            std::ostringstream errorText;
+                            errorText << errorFile.rdbuf();
+                            workerError = errorText.str();
+                            if (workerError.empty()) {
+                                workerError = "worker terminated abnormally";
+                            }
+                        }
+                    }
+                    if (!workerError.empty()) {
+                        throw std::runtime_error(
+                            "parameter_scan worker failed: " + workerError);
+                    }
+#endif
+                    for (std::size_t i = 0; i < scanValues.size(); ++i) {
+                        std::ostringstream localName;
+                        localName << localStem << "_" << std::setfill('0')
+                                  << std::setw(5) << (i + 1);
+                        const auto localPrefix = workdir / localName.str();
+                        scanData.push_back(
+                            readLastGdat(localPrefix.string() + ".gdat", model));
+                    }
                 }
                 writeScanFile(scanBase.string() + ".scan", parameterName,
                               scanValues, scanData);
