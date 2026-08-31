@@ -31,7 +31,6 @@ from bionetgen.atomizer.sbml2bngl import SBML2BNGL
 
 # from biogrid import loadBioGridDict as loadBioGrid
 import logging
-from bionetgen.atomizer.rulifier import postAnalysis
 import pprint
 import fnmatch
 from collections import defaultdict
@@ -592,6 +591,11 @@ def reorderFunctions(functions):
 
 
 def postAnalysisHelper(outputFile, bngLocation, database):
+    # Import only for the optional context-analysis path.  The normal SBML
+    # translation path does not need readBNGXML/lxml, and keeping this import
+    # lazy avoids loading a second native XML stack before libSBML is used.
+    from bionetgen.atomizer.rulifier import postAnalysis
+
     consoleCommands.setBngExecutable(bngLocation)
     outputDir = os.sep.join(outputFile.split(os.sep)[:-1])
     if outputDir != "":
@@ -625,6 +629,8 @@ def postAnalyzeFile(
     """
     Performs a postcreation file analysis based on context information
     """
+    from bionetgen.atomizer.rulifier import postAnalysis
+
     # print('Transforming generated BNG file to BNG-XML representation for analysis')
     postAnalysisHelper(outputFile, bngLocation, database)
 

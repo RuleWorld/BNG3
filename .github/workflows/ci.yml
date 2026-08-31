@@ -337,7 +337,14 @@ jobs:
           CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=OFF"
 
       - name: Run Python tests
-        run: pytest tests/python/ -v --tb=short --cov=bionetgen --cov-report=xml
+        run: pytest tests/python/test_sbml_import.py -v --tb=short
+        env:
+          SYMPY_USE_GMPY: "0"
+          MPLBACKEND: Agg
+          MPLCONFIGDIR: ${{ runner.temp }}/matplotlib
+
+      - name: Run Python tests
+        run: pytest tests/python/ -v --tb=short --cov=bionetgen --cov-report=xml --ignore=tests/python/test_sbml_import.py
         env:
           SYMPY_USE_GMPY: "0"
           MPLBACKEND: Agg

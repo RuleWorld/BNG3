@@ -57,6 +57,14 @@ def test_python_tests_use_headless_isolated_matplotlib_cache():
     assert "MPLCONFIGDIR: ${{ runner.temp }}/matplotlib" in job
 
 
+def test_sbml_import_runs_as_a_real_isolated_ci_gate():
+    """SBML coverage stays enabled while native XML libraries are isolated."""
+
+    job = _python_test_job()
+    assert "pytest tests/python/test_sbml_import.py -v --tb=short" in job
+    assert "--ignore=tests/python/test_sbml_import.py" in job
+
+
 def test_msvc_parser_headers_clear_windows_macros_before_antlr():
     """Windows SDK macros must not rewrite ANTLR enum members."""
 
