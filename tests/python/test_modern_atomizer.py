@@ -12,9 +12,6 @@ from collections import OrderedDict
 
 import pytest
 
-libsbml = pytest.importorskip("libsbml")
-
-
 SBML_FIXTURE = """<?xml version="1.0" encoding="UTF-8"?>
 <sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
       xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"

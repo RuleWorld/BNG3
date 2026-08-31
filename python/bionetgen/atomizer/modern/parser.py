@@ -1,9 +1,8 @@
-"""SBML parser for the Playground-derived atomizer.
+"""Pure-XML SBML parser for the Playground-derived atomizer.
 
-The parser deliberately accepts SBML as a string.  This mirrors the
-Playground implementation and avoids the unstable SWIG file-reader path on
-some Python libSBML wheels.  libSBML remains responsible for SBML semantics;
-the small XML pass only preserves attributes that reduced bindings omit.
+The parser deliberately accepts SBML as a string, matching the
+Playground implementation while keeping the modern path independent of the
+optional and platform-sensitive libSBML SWIG bindings.
 """
 
 from __future__ import annotations
