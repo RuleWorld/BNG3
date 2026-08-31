@@ -575,6 +575,113 @@ def test_playground_writer_preserves_nonlinear_rate_laws_and_amount_observables(
     assert "_c_S() = S / __compartment_cell__" in bngl
 
 
+def test_playground_writer_renames_keyword_colliding_parameters_in_rates():
+    from bionetgen.atomizer.modern import (
+        SBMLKineticLaw,
+        SBMLModel,
+        SBMLParameter,
+        SBMLReaction,
+        SBMLSpecies,
+        SBMLSpeciesReference,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    model = SBMLModel(
+        id="keyword_parameter",
+        species=OrderedDict([("A", SBMLSpecies(id="A", name="A", initial_amount=1))]),
+        parameters=OrderedDict([("max", SBMLParameter(id="max", value=2))]),
+        reactions=OrderedDict(
+            [
+                (
+                    "r",
+                    SBMLReaction(
+                        id="r",
+                        reactants=[SBMLSpeciesReference("A")],
+                        products=[],
+                        kinetic_law=SBMLKineticLaw("max*A"),
+                    ),
+                )
+            ]
+        ),
+    )
+
+    sct = build_species_composition_table(model)
+    bngl, _ = generate_bngl(
+        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+    )
+
+    assert "max_id 2" in bngl
+    assert "r: M_A() -> 0 max_id" in bngl
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    cpp.parse_string(bngl)
+
+
+def test_playground_writer_keys_observables_by_sbml_id_not_display_name():
+    from bionetgen.atomizer.modern import (
+        SBMLKineticLaw,
+        SBMLModel,
+        SBMLParameter,
+        SBMLReaction,
+        SBMLSpecies,
+        SBMLSpeciesReference,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    model = SBMLModel(
+        id="display_name",
+        species=OrderedDict(
+            [
+                (
+                    "S",
+                    SBMLSpecies(
+                        id="S",
+                        name="Substrate",
+                        initial_amount=1,
+                        initial_amount_set=True,
+                    ),
+                ),
+                ("P", SBMLSpecies(id="P", name="Product")),
+            ]
+        ),
+        parameters=OrderedDict(
+            [
+                ("kcat", SBMLParameter(id="kcat", value=3)),
+                ("Km", SBMLParameter(id="Km", value=2)),
+            ]
+        ),
+        reactions=OrderedDict(
+            [
+                (
+                    "r",
+                    SBMLReaction(
+                        id="r",
+                        reactants=[SBMLSpeciesReference("S")],
+                        products=[SBMLSpeciesReference("P")],
+                        kinetic_law=SBMLKineticLaw("Sat(kcat,Km)"),
+                    ),
+                )
+            ]
+        ),
+    )
+
+    sct = build_species_composition_table(model)
+    bngl, _ = generate_bngl(
+        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+    )
+
+    assert "Species S_amt" in bngl
+    assert "Species Substrate_amt" not in bngl
+    assert "Sat(kcat, Km, S_amt)" in bngl
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    cpp.parse_string(bngl)
+
+
 def test_playground_event_actions_fold_constants_and_retain_unsupported_events():
     from bionetgen.atomizer.modern import SBMLEvent
     from bionetgen.atomizer.modern.events import (

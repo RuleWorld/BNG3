@@ -96,6 +96,9 @@ Completed slices now present in BNG3 include:
 - The pure-XML MathML fallback now preserves rational and e-notation
   constants, canonical SBML time/Avogadro symbols, constants, roots/log bases,
   and user-function applies before BNGL expression conversion.
+- BNGL keyword-colliding parameters are renamed consistently in rate laws,
+  and generated observables are keyed by SBML IDs so display-name changes do
+  not create undefined rate references.
 - Legacy runner boundaries that preserve C++ parse/execution failures and do
   not return an empty successful result when neither backend is available.
 
@@ -103,12 +106,13 @@ Local evidence at this checkpoint:
 
 - CTest: 124/124 tests passed.
 - Fast Python suite (`-m 'not slow'`): 155 passed, 27 skipped.
-- Full Python suite: 182 passed, 27 skipped.
-- Focused modern Playground atomizer suite: 24 passed, including declared
+- Full Python suite: 184 passed, 27 skipped.
+- Focused modern Playground atomizer suite: 26 passed, including declared
   unit scaling, canonical SBML-Multi extraction, conversion-factor
   diagnostics, materialized species rate-rule synthesis, stoichiometry
   safeguards, fast-reaction handling, unsupported-package diagnostics, and
-  MathML numeric/function handling.
+  MathML numeric/function handling plus identifier-safe rate/observable
+  mapping.
 - Current direct-vs-in-memory-XML NFsim shadow suite: 4/4 passed with the
   rebuilt native NFsim executable after the latest adapter slices.
 - Current fixed-seed Tier-NF gate: all 4 models × 200 native-oracle runs, plus

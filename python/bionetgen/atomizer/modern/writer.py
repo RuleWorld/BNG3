@@ -10,6 +10,7 @@ from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 from .events import EventTranslationContext, synthesize_event_actions
 from .structures import Molecule, Species
 from .types import (
+    BNGL_LEXER_KEYWORDS,
     SBMLModel,
     SBMLReaction,
     SCTEntry,
@@ -18,6 +19,8 @@ from .types import (
     get_kinetic_math,
     standardize_name,
 )
+
+_PROTECTED_BUILTIN_OPERANDS = frozenset({"time", "_pi", "_e", "true", "false"})
 
 
 def _section(name: str, lines: Iterable[str]) -> str:
@@ -358,6 +361,8 @@ def bngl_function(
             if observed_name in species_with_conc_functions:
                 return "_c_" + observed_name + "()"
             return observed_name + "_amt"
+        if token in BNGL_LEXER_KEYWORDS and token not in _PROTECTED_BUILTIN_OPERANDS:
+            return standardize_name(token)
         return token
 
     result = re.sub(r"\b([A-Za-z_][A-Za-z0-9_]*)\b", map_token, result)
@@ -676,7 +681,10 @@ def write_observables(
     observable_map: Dict[str, str] = OrderedDict()
     used = set()
     for species_id, species in model.species.items():
-        name = standardize_name(species.name or species_id)
+        # Expressions are translated from SBML identifiers, not display
+        # names.  Keep observable names on that same key so an SBML species
+        # such as id="S", name="Substrate" is still referenced as S_amt.
+        name = standardize_name(species_id)
         if name in used:
             name = standardize_name(species_id)
         while name in used:
