@@ -981,6 +981,15 @@ def test_playground_atomizer_preserves_zero_stoichiometry_and_rejects_unsupporte
             <listOfProducts><speciesReference species="B"/></listOfProducts>
             <kineticLaw formula="k"/>
           </reaction>
+          <reaction id="math" name="math">
+            <listOfReactants>
+              <speciesReference species="A" stoichiometry="2" constant="true">
+                <stoichiometryMath><math><cn>2</cn></math></stoichiometryMath>
+              </speciesReference>
+            </listOfReactants>
+            <listOfProducts><speciesReference species="B"/></listOfProducts>
+            <kineticLaw formula="k"/>
+          </reaction>
         </listOfReactions>
       </model>
     </sbml>
@@ -992,6 +1001,7 @@ def test_playground_atomizer_preserves_zero_stoichiometry_and_rejects_unsupporte
         0.5
     )
     assert model.reactions["zero"].reactants[0].stoichiometry == 0
+    assert model.reactions["math"].reactants[0].variable_stoichiometry is True
     assert any(w["category"] == "stoichiometry" for w in model.import_warnings)
 
     sct = build_species_composition_table(model)
@@ -1000,3 +1010,4 @@ def test_playground_atomizer_preserves_zero_stoichiometry_and_rejects_unsupporte
     )
     assert "fractional:" not in bngl
     assert "zero: 0 -> M_B()" in bngl
+    assert "math: M_A() + M_A() -> M_B()" in bngl

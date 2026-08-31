@@ -627,13 +627,14 @@ class SBMLParser:
             _float(_attribute(item, "stoichiometry"), 1) if stoichiometry_set else 1
         )
         constant = _bool(_attribute(item, "constant"), True)
+        stoichiometry_math_set = _first_child(item, "stoichiometryMath") is not None
         return SBMLSpeciesReference(
             species=species,
             stoichiometry=stoichiometry,
             constant=constant,
             id=(str(_attribute(item, "id")) if _attribute(item, "id") else None),
             stoichiometry_set=stoichiometry_set,
-            variable_stoichiometry=not constant,
+            variable_stoichiometry=not constant or stoichiometry_math_set,
         )
 
     @staticmethod

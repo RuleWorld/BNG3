@@ -84,9 +84,9 @@ Completed slices now present in BNG3 include:
 - SBML stoichiometry is now handled without silent integer coercion: explicit
   zero references are omitted, fixed integer references are preserved, and
   fractional, negative, or non-finite references cause the affected reaction
-  to be omitted with an explicit provenance warning. Variable references with
-  a finite nonnegative integer value are retained as a documented fixed-value
-  approximation.
+  to be omitted with an explicit provenance warning. Variable or
+  `stoichiometryMath` references with a finite nonnegative integer value are
+  retained as a documented fixed-value approximation.
 - SBML `fast="true"` reactions and reaction-level `conversionFactor`
   declarations are retained in the typed model and surfaced as explicit
   approximations when BNGL cannot preserve their semantics.
