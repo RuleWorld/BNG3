@@ -73,6 +73,10 @@ Completed slices now present in BNG3 include:
   and conservatively extracts canonical SBML-Multi molecule/complex
   references as commented diagnostics. Multi structures are intentionally not
   injected into the simulated network until an end-to-end oracle is approved.
+- Uniform SBML conversion factors are now folded into generated reaction fluxes;
+  reactions with mixed per-species factors remain explicitly unscaled and
+  diagnostic because one BNGL rule cannot represent species-specific flux
+  scalars.
 - Legacy runner boundaries that preserve C++ parse/execution failures and do
   not return an empty successful result when neither backend is available.
 
@@ -80,9 +84,10 @@ Local evidence at this checkpoint:
 
 - CTest: 124/124 tests passed.
 - Fast Python suite (`-m 'not slow'`): 155 passed, 27 skipped.
-- Full Python suite: 174 passed, 27 skipped.
-- Focused modern Playground atomizer suite: 16 passed, including declared
-  unit scaling and canonical SBML-Multi extraction/comment diagnostics.
+- Full Python suite: 176 passed, 27 skipped.
+- Focused modern Playground atomizer suite: 18 passed, including declared
+  unit scaling, canonical SBML-Multi extraction, and conversion-factor
+  diagnostics.
 - Current direct-vs-in-memory-XML NFsim shadow suite: 4/4 passed with the
   rebuilt native NFsim executable after the latest adapter slices.
 - Current fixed-seed Tier-NF gate: all 4 models × 200 native-oracle runs, plus

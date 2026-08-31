@@ -669,3 +669,107 @@ def test_playground_parser_extracts_canonical_sbml_multi_as_comment_only():
     assert "#     A(bind)" in bngl
     assert "#     A(bind!1).A(bind!1)" in bngl
     assert "not yet fed into the simulated network" in bngl
+
+
+def test_playground_writer_applies_uniform_sbml_conversion_factor_to_flux():
+    from bionetgen.atomizer.modern import (
+        SBMLModel,
+        SBMLParameter,
+        SBMLReaction,
+        SBMLSpecies,
+        SBMLSpeciesReference,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    model = SBMLModel(
+        id="conversion",
+        name="conversion",
+        species=OrderedDict(
+            [
+                ("A", SBMLSpecies(id="A", name="A", initial_amount=4)),
+                ("P", SBMLSpecies(id="P", name="P")),
+            ]
+        ),
+        parameters=OrderedDict([("cf", SBMLParameter(id="cf", value=2))]),
+        reactions=OrderedDict(
+            [
+                (
+                    "r",
+                    SBMLReaction(
+                        id="r",
+                        reactants=[SBMLSpeciesReference("A")],
+                        products=[SBMLSpeciesReference("P")],
+                        kinetic_law={
+                            "math": "k*A",
+                            "mathML": "",
+                            "localParameters": [],
+                        },
+                    ),
+                )
+            ]
+        ),
+        conversion_factor="cf",
+    )
+
+    sct = build_species_composition_table(model)
+    bngl, _ = generate_bngl(
+        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+    )
+
+    assert "cf 2" in bngl
+    assert "2 * (k)" in bngl
+
+
+def test_playground_writer_reports_mixed_sbml_conversion_factors():
+    from bionetgen.atomizer.modern import (
+        SBMLModel,
+        SBMLParameter,
+        SBMLReaction,
+        SBMLSpecies,
+        SBMLSpeciesReference,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    model = SBMLModel(
+        id="mixed_conversion",
+        species=OrderedDict(
+            [
+                ("A", SBMLSpecies(id="A", name="A", conversion_factor="cf_a")),
+                ("P", SBMLSpecies(id="P", name="P", conversion_factor="cf_p")),
+            ]
+        ),
+        parameters=OrderedDict(
+            [
+                ("cf_a", SBMLParameter(id="cf_a", value=2)),
+                ("cf_p", SBMLParameter(id="cf_p", value=3)),
+            ]
+        ),
+        reactions=OrderedDict(
+            [
+                (
+                    "r",
+                    SBMLReaction(
+                        id="r",
+                        reactants=[SBMLSpeciesReference("A")],
+                        products=[SBMLSpeciesReference("P")],
+                        kinetic_law={"math": "k*A", "localParameters": []},
+                    ),
+                )
+            ]
+        ),
+    )
+
+    sct = build_species_composition_table(model)
+    bngl, _ = generate_bngl(
+        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+    )
+
+    assert "2 * (k)" not in bngl
+    assert any(w["category"] == "conversionFactor" for w in model.import_warnings)
+    assert "differing conversionFactors" in bngl

@@ -438,7 +438,16 @@ def _strip_mass_action_factors(expression: str, reactant_ids: Sequence[str]) -> 
     return " * ".join(remaining) if remaining else "1"
 
 
-def _rate_for_reaction(reaction: SBMLReaction, model: SBMLModel) -> str:
+def _rate_for_reaction(
+    reaction: SBMLReaction,
+    model: SBMLModel,
+    conversion_factor: Optional[str] = None,
+) -> str:
+    def apply_conversion(rate: str) -> str:
+        if conversion_factor is None:
+            return rate
+        return f"{conversion_factor} * ({rate})"
+
     math = extend_function(
         get_kinetic_math(reaction.kinetic_law),
         {},
@@ -464,7 +473,7 @@ def _rate_for_reaction(reaction: SBMLReaction, model: SBMLModel) -> str:
                 math,
             )
     if not math:
-        return "1"
+        return apply_conversion("1")
     reactants = [
         reference.species
         for reference in reaction.reactants
@@ -489,8 +498,23 @@ def _rate_for_reaction(reaction: SBMLReaction, model: SBMLModel) -> str:
     # its biology.
     nonlinear = bool(re.search(r"\b(?:Sat|MM|Hill)\s*\(", math)) or "/" in math
     if nonlinear:
-        return bngl_function(
-            math,
+        return apply_conversion(
+            bngl_function(
+                math,
+                reaction.name or reaction.id,
+                reactants,
+                list(model.compartments),
+                assignment_rule_variables=assignment_variables,
+                species_with_conc_functions=concentration_names,
+                sbml_to_bngl_id=species_map,
+            )
+        )
+
+    converted = convert_math_expression(math)
+    stripped = _strip_mass_action_factors(converted, reactants)
+    return apply_conversion(
+        bngl_function(
+            stripped,
             reaction.name or reaction.id,
             reactants,
             list(model.compartments),
@@ -498,18 +522,70 @@ def _rate_for_reaction(reaction: SBMLReaction, model: SBMLModel) -> str:
             species_with_conc_functions=concentration_names,
             sbml_to_bngl_id=species_map,
         )
-
-    converted = convert_math_expression(math)
-    stripped = _strip_mass_action_factors(converted, reactants)
-    return bngl_function(
-        stripped,
-        reaction.name or reaction.id,
-        reactants,
-        list(model.compartments),
-        assignment_rule_variables=assignment_variables,
-        species_with_conc_functions=concentration_names,
-        sbml_to_bngl_id=species_map,
     )
+
+
+def _record_import_warning(model: SBMLModel, message: str) -> None:
+    warnings = getattr(model, "import_warnings", None)
+    if warnings is None:
+        model.import_warnings = []
+        warnings = model.import_warnings
+    if any(
+        warning.get("category") == "conversionFactor"
+        and warning.get("message") == message
+        for warning in warnings
+    ):
+        return
+    warnings.append(
+        {
+            "category": "conversionFactor",
+            "message": message,
+            "count": 1,
+            "severity": "approximated",
+        }
+    )
+
+
+def _conversion_factor_for_reaction(
+    reaction: SBMLReaction, model: SBMLModel
+) -> Optional[str]:
+    """Resolve one BNGL-wide scalar, or report an unrepresentable mixed flux."""
+
+    model_factor = getattr(model, "conversion_factor", None) or None
+    effective: List[Optional[str]] = []
+    for reference in [*reaction.reactants, *reaction.products]:
+        if reference.species == "EmptySet":
+            continue
+        species = model.species.get(reference.species)
+        species_factor = (
+            getattr(species, "conversion_factor", None) if species else None
+        )
+        effective.append(species_factor or model_factor)
+    if not effective:
+        return None
+    unique = set(effective)
+    if len(unique) != 1:
+        _record_import_warning(
+            model,
+            f'Reaction "{reaction.id}" has species with differing '
+            "conversionFactors; a single BNGL rule cannot apply different "
+            "scalars per species, so the factor was not applied.",
+        )
+        return None
+    factor_id = effective[0]
+    if factor_id is None:
+        return None
+    parameter = model.parameters.get(factor_id)
+    value = getattr(parameter, "value", None) if parameter is not None else None
+    if isinstance(parameter, Mapping):
+        value = parameter.get("value")
+    try:
+        numeric_value = float(value)
+    except (TypeError, ValueError):
+        numeric_value = None
+    if numeric_value is not None and numeric_value == numeric_value:
+        return _number(numeric_value)
+    return standardize_name(factor_id)
 
 
 def write_parameters(
@@ -717,7 +793,9 @@ def write_reaction_rules(
             suffix += 1
         used_labels.add(candidate)
         arrow = "<->" if reaction.reversible else "->"
-        rate = _rate_for_reaction(reaction, model)
+        rate = _rate_for_reaction(
+            reaction, model, _conversion_factor_for_reaction(reaction, model)
+        )
         if reaction.reversible:
             rate = f"{rate}, {rate}"
         lines.append(
