@@ -4,8 +4,8 @@
 **Last audited:** 2026-08-31
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 53289e2acc81c8aa4a6c79ca6671a6db11b93caf
-**Checklist refresh base:** 53289e2 (refresh after each semantic checkpoint)
+**Audited semantic code head:** 7de3194a39730a3b6fd6e63ee9fe4eeb75efdb95
+**Checklist refresh base:** 7de3194 (refresh after each semantic checkpoint)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 
@@ -42,13 +42,15 @@ completion gate.
 
 - [x] Required fast-forward pull completed before this documentation change.
 - [x] The latest pushed semantic checkpoint is
-  53289e2acc81c8aa4a6c79ca6671a6db11b93caf; documentation-only refreshes may
+  7de3194a39730a3b6fd6e63ee9fe4eeb75efdb95; documentation-only refreshes may
   be layered after it without invalidating its semantic test evidence.
 - [x] The small documentation grammar fix remains the only pre-existing
   worktree modification. It is intentionally not staged by this checklist
   checkpoint.
 - [x] Local CTest passes 124/124.
-- [x] Local Python suite passes 216 tests with 27 skips and 8 warnings.
+- [x] Local Python suite passes 219 tests with 27 skips and 8 warnings.
+- [x] Local CI workflow contract tests pass 6/6, including the pull-request
+  source-distribution smoke gate.
 - [x] Local Black check, Ruff check, and git diff check pass.
 - [x] Local validation smoke reports 4 passed and 15 skipped; the skips are
   visible because this checkout lacks the expected validation CLI/oracle
@@ -56,9 +58,11 @@ completion gate.
 - [ ] A clean, no-build-isolation wheel was built, installed into a separate
   target, and imported with its compiled extension at this exact head. The
   prior wheel evidence predates the helper-surface checkpoint.
-- [ ] Hosted PR checks at this exact head pass across the C++ matrix, Python
-  matrix, ASan, integration, validation, formatter, and CodeQL. At this audit,
-  CI run 33443837069 and CodeQL run 33443837093 are still in progress.
+- [x] Hosted PR checks at this exact head pass across the C++ matrix, Python
+  matrix, ASan, integration, validation, formatter, package smoke, and CodeQL:
+  CI run [33445358582](https://github.com/RuleWorld/BNG3/actions/runs/33445358582),
+  CodeQL run [33445358475](https://github.com/RuleWorld/BNG3/actions/runs/33445358475),
+  and formatting run [33445358526](https://github.com/RuleWorld/BNG3/actions/runs/33445358526).
 - [x] Modern Atomizer checkpoints exist for annotations, BNG-XML conversion,
   Rulifier, UniProt, structure helpers, and conservative SBML-Multi discovery,
   helper/rate-rule constants, each with source-derived tests.
@@ -358,6 +362,10 @@ completion gate.
 - [x] The public `utils/helpers` surface and
   `writer/rateRuleConstants` values are ported at 53289e2 with
   source-derived coverage in tests/python/test_modern_atomizer_helpers.py.
+- [x] The selected public `atomization/core` facade helpers are ported at
+  7de3194 with source-derived coverage in
+  tests/python/test_modern_atomizer_core.py; the remaining core and writer
+  surface is still open.
 - [ ] Complete or explicitly govern remaining modern reference modules:
   atomization/core, parser/bngXmlParser and parser/sbmlParser,
   validation/units, writer/bnglWriter, writer/eventActions, and
@@ -460,7 +468,10 @@ completion gate.
 - [ ] pyproject metadata has the correct BNG3 project/repository URLs,
   supported Python range, dependency policy, package data, and extension
   contents.
-- [ ] Clean isolated source distribution builds and installs.
+- [x] The pull-request package-smoke job builds and installs a source
+  distribution on the exact head (CI run
+  [33445358582](https://github.com/RuleWorld/BNG3/actions/runs/33445358582));
+  release-candidate provenance and the complete artifact matrix remain open.
 - [ ] Clean isolated wheels build for every supported platform/architecture.
 - [ ] Installed-wheel tests cover import, compiled extension loading, API,
   CLI, embedded assets, plotting/data helpers, and representative scientific
