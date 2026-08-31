@@ -71,7 +71,7 @@ def _read_sbml_document(path):
         payload = handle.read()
 
     encoding = "utf-8-sig"
-    declaration = re.search(br"encoding\s*=\s*['\"]([^'\"]+)['\"]", payload[:256])
+    declaration = re.search(rb"encoding\s*=\s*['\"]([^'\"]+)['\"]", payload[:256])
     if declaration is not None:
         encoding = declaration.group(1).decode("ascii")
     return libsbml.SBMLReader().readSBMLFromString(payload.decode(encoding))
