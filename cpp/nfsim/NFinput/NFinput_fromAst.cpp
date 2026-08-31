@@ -4262,8 +4262,10 @@ bool addObservablesFromAst(const bng::ast::Model& model, System* s,
     return true;
 }
 
-bool addSpeciesFromAst(const bng::ast::Model& model, System* s,
-                       const std::map<std::string, double>& parameters, bool verbose) {
+bool addSpeciesFromAstWithOverrides(
+    const bng::ast::Model& model, System* s,
+    const std::map<std::string, double>& parameters, bool verbose,
+    const SeedAmountOverrides& seedAmountOverrides) {
     if (s == nullptr) return false;
 
     for (const auto& seed : model.getSeedSpecies()) {
@@ -4291,7 +4293,33 @@ bool addSpeciesFromAst(const bng::ast::Model& model, System* s,
         }
         std::string diagnostic;
         int count = 0;
-        if (!parseSeedAmount(seed, parameters, count, diagnostic)) {
+        std::vector<std::string> overrideKeys = {
+            seed.getPattern(), seed.getGraph().get_BNG2_string()};
+        if (!seed.getCompartment().empty()) {
+            const auto& compartment = seed.getCompartment();
+            overrideKeys.push_back("@" + compartment + "::" + seed.getPattern());
+            overrideKeys.push_back("@" + compartment + ":" + seed.getPattern());
+            overrideKeys.push_back(
+                "@" + compartment + "::" + seed.getGraph().get_BNG2_string());
+        }
+
+        auto overrideIt = seedAmountOverrides.end();
+        for (const auto& key : overrideKeys) {
+            overrideIt = seedAmountOverrides.find(key);
+            if (overrideIt != seedAmountOverrides.end()) break;
+        }
+        if (overrideIt != seedAmountOverrides.end()) {
+            const double amount = overrideIt->second;
+            if (!std::isfinite(amount) || amount < 0.0 ||
+                amount > static_cast<double>(std::numeric_limits<int>::max()) ||
+                std::floor(amount) != amount) {
+                std::cerr << "[nfsim/ast] cannot map seed species '"
+                          << seed.getPattern()
+                          << "': action concentration must be a nonnegative integer\n";
+                return false;
+            }
+            count = static_cast<int>(amount);
+        } else if (!parseSeedAmount(seed, parameters, count, diagnostic)) {
             std::cerr << "[nfsim/ast] cannot map seed species '" << seed.getPattern()
                       << "': " << diagnostic << "\n";
             return false;
@@ -4425,6 +4453,13 @@ bool addSpeciesFromAst(const bng::ast::Model& model, System* s,
         }
     }
     return true;
+}
+
+bool addSpeciesFromAst(const bng::ast::Model& model, System* s,
+                       const std::map<std::string, double>& parameters, bool verbose) {
+    static const SeedAmountOverrides noOverrides;
+    return addSpeciesFromAstWithOverrides(
+        model, s, parameters, verbose, noOverrides);
 }
 
 bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
@@ -5562,9 +5597,11 @@ System* buildSystemFromAst(const bng::ast::Model& model,
     // Preserve the historical API contract: before the direct adapter grew a
     // separate complex-bookkeeping flag, this argument controlled both the
     // System constructor and same-complex binding checks.
-    return buildSystemFromAst(
+    static const SeedAmountOverrides noOverrides;
+    return buildSystemFromAstWithSeedOverrides(
         model, blockSameComplexBinding, blockSameComplexBinding,
-        globalMoleculeLimit, verbose, suggestedTraversalLimit, sourcePath);
+        globalMoleculeLimit, verbose, suggestedTraversalLimit, sourcePath,
+        noOverrides);
 }
 
 System* buildSystemFromAst(const bng::ast::Model& model,
@@ -5574,6 +5611,21 @@ System* buildSystemFromAst(const bng::ast::Model& model,
                            bool verbose,
                            int& suggestedTraversalLimit,
                            const std::filesystem::path& sourcePath) {
+    static const SeedAmountOverrides noOverrides;
+    return buildSystemFromAstWithSeedOverrides(
+        model, useComplex, blockSameComplexBinding, globalMoleculeLimit,
+        verbose, suggestedTraversalLimit, sourcePath, noOverrides);
+}
+
+System* buildSystemFromAstWithSeedOverrides(
+    const bng::ast::Model& model,
+    bool useComplex,
+    bool blockSameComplexBinding,
+    int globalMoleculeLimit,
+    bool verbose,
+    int& suggestedTraversalLimit,
+    const std::filesystem::path& sourcePath,
+    const SeedAmountOverrides& seedAmountOverrides) {
     // Migration escape hatch used by the parity gate: force the XML path.
     if (std::getenv("BNG_NFSIM_FORCE_XML")) {
         if (verbose) std::cerr << "[nfsim/ast] BNG_NFSIM_FORCE_XML set -> XML path\n";
@@ -5604,7 +5656,8 @@ System* buildSystemFromAst(const bng::ast::Model& model,
              addObservablesFromAst(model, s, parameters, verbose, suggestedTraversalLimit) &&
              addFunctionsFromAst(model, s, parameters, verbose, sourcePath) &&
              addEnergyPatternsFromAst(model, s, parameters, verbose) &&
-             addSpeciesFromAst(model, s, parameters, verbose) &&
+             addSpeciesFromAstWithOverrides(
+                 model, s, parameters, verbose, seedAmountOverrides) &&
              addReactionRulesFromAst(model, s, parameters, blockSameComplexBinding,
                                      verbose, suggestedTraversalLimit, sourcePath);
     } catch (const std::exception& error) {

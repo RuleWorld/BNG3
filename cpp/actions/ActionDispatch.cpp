@@ -1440,16 +1440,37 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             std::cerr << "[bng_cpp] Running NFSim in-process from AST model\n";
         }
 
+        // Action commands can edit the generated network before an NFsim
+        // action.  Keep those current seed amounts as an adapter-local
+        // override so the original AST seed expressions remain unchanged for
+        // resetConcentrations and later network generation.
+        NFinput::SeedAmountOverrides seedAmountOverrides;
+        if (network.has_value()) {
+            for (std::size_t index = 0; index < network->species.size(); ++index) {
+                const auto& species = network->species.get(index);
+                const auto pattern = species.getSpeciesGraph().toString();
+                seedAmountOverrides[pattern] = species.getAmount();
+                if (!species.getCompartment().empty()) {
+                    const auto& compartment = species.getCompartment();
+                    seedAmountOverrides["@" + compartment + "::" + pattern] =
+                        species.getAmount();
+                    seedAmountOverrides["@" + compartment + ":" + pattern] =
+                        species.getAmount();
+                }
+            }
+        }
+
         // Direct construction is the default.  XML remains an explicit
         // compatibility bridge while the direct adapter is being qualified.
-        NFcore::System *nfSystem = NFinput::buildSystemFromAst(
+        NFcore::System *nfSystem = NFinput::buildSystemFromAstWithSeedOverrides(
             model,
             useComplex,
             blockSameComplexBinding,
             globalMoleculeLimit,
             nfVerbose,
             suggestedTraversalLimit,
-            sourcePath);
+            sourcePath,
+            seedAmountOverrides);
 
         if (!nfSystem) {
             if (std::getenv("BNG_NFSIM_REQUIRE_DIRECT") != nullptr) {

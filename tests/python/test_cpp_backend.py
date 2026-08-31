@@ -1403,6 +1403,48 @@ simulate_protocol()
         assert (tmp_path / "protocol_nf.species").exists()
         assert not (tmp_path / "protocol_nf.xml").exists()
 
+    def test_simulate_protocol_applies_concentration_before_nf(
+        self, tmp_path, monkeypatch
+    ):
+        bngl = tmp_path / "protocol_nf_concentration.bngl"
+        bngl.write_text("""
+begin model
+begin parameters
+    k 0
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 10
+end seed species
+begin observables
+    Molecules Xtot X()
+end observables
+begin reaction rules
+    X() -> 0 k
+end reaction rules
+begin protocol
+    setConcentration("X()",0)
+    simulate_nf({prefix=>"protocol_nf_concentration",t_end=>1,n_steps=>1,seed=>1})
+end protocol
+end model
+
+simulate_protocol()
+""")
+
+        monkeypatch.setenv("BNG_NFSIM_REQUIRE_DIRECT", "1")
+        bionetgen.load(str(bngl)).execute()
+
+        rows = [
+            line.split()
+            for line in (tmp_path / "protocol_nf_concentration.gdat")
+            .read_text()
+            .splitlines()
+            if line and not line.startswith("#")
+        ]
+        assert rows[-1][1] == "0.00000000e+00"
+
     def test_linear_parameter_sensitivity_writes_gsc_and_csc(self, tmp_path):
         bngl = tmp_path / "linear_sensitivity.bngl"
         bngl.write_text("""

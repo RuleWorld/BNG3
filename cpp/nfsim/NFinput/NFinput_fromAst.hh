@@ -39,6 +39,8 @@ namespace NFcore { class System; }
 
 namespace NFinput {
 
+using SeedAmountOverrides = std::map<std::string, double>;
+
 /// Build an NFcore::System directly from a parsed ast::Model.
 ///
 /// @param model                    fully-constructed model (network-free target).
@@ -71,6 +73,19 @@ NFcore::System* buildSystemFromAst(
         bool   verbose,
         int&   suggestedTraversalLimit,
         const std::filesystem::path& sourcePath = {});
+
+/// Build directly while replacing matching seed amounts with current action
+/// state.  Action dispatch uses this for setConcentration/addConcentration
+/// before an NFsim run; the model's original seed expressions remain unchanged.
+NFcore::System* buildSystemFromAstWithSeedOverrides(
+        const bng::ast::Model& model,
+        bool   useComplex,
+        bool   blockSameComplexBinding,
+        int    globalMoleculeLimit,
+        bool   verbose,
+        int&   suggestedTraversalLimit,
+        const std::filesystem::path& sourcePath,
+        const SeedAmountOverrides& seedAmountOverrides);
 
 // --- Per-section direct builders (mirror the TiXml-based init* functions) ---
 // Each returns false on error. Implement incrementally; until a builder is
