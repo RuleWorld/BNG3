@@ -68,6 +68,11 @@ Completed slices now present in BNG3 include:
 - Modern SymPy ODE export through the canonical C++ MEX writer, strict action
   method validation, and explicit compatibility errors for unsupported
   simulator types or missing RoadRunner.
+- Playground-derived modern SBML import now normalizes declared unit
+  definitions before BNGL seed emission, records auditable import warnings,
+  and conservatively extracts canonical SBML-Multi molecule/complex
+  references as commented diagnostics. Multi structures are intentionally not
+  injected into the simulated network until an end-to-end oracle is approved.
 - Legacy runner boundaries that preserve C++ parse/execution failures and do
   not return an empty successful result when neither backend is available.
 
@@ -75,7 +80,9 @@ Local evidence at this checkpoint:
 
 - CTest: 124/124 tests passed.
 - Fast Python suite (`-m 'not slow'`): 155 passed, 27 skipped.
-- Full Python suite: 155 passed, 27 skipped.
+- Full Python suite: 174 passed, 27 skipped.
+- Focused modern Playground atomizer suite: 16 passed, including declared
+  unit scaling and canonical SBML-Multi extraction/comment diagnostics.
 - Current direct-vs-in-memory-XML NFsim shadow suite: 4/4 passed with the
   rebuilt native NFsim executable after the latest adapter slices.
 - Current fixed-seed Tier-NF gate: all 4 models × 200 native-oracle runs, plus
@@ -320,6 +327,7 @@ The work therefore starts from an incomplete convergence, not from four empty re
 | Active NFsim path | The direct adapter and XML bridge both exist; XML remains needed for shadow comparison and compatibility while direct parity is incomplete. | Keep the XML path as a temporary comparator, then remove it from the default runtime only after the Tier-NF gate passes. |
 | Graph identity | Structural `.net` comparison now passes the available deterministic models; BNG2/NFsim identity contracts still need broader differential coverage. | Expand independent corpus coverage without replacing graph comparison with string matching. |
 | Expression evaluation | Several dynamic global, local, TFUN, composite, and bounded rate forms are direct; the full shared expression contract is not complete. | Preserve fail-closed behavior for unsupported forms and define one expression contract before removing specialized evaluators. |
+| SBML units and Multi package | The modern Playground-derived parser now scales declared quantities and extracts canonical single-level Multi structures as explicit reference diagnostics; Multi output is not yet simulated. | Add independent unit/round-trip oracles and an approved end-to-end Multi execution path before claiming full Tier-X support. |
 | Python convergence | Legacy `core`, `modelapi`, `network`, and `simulator` trees remain. | Inventory public compatibility before deletion; use contract tests to govern removal. |
 | Golden references | The validation corpus and BNG2 `.net` references are present, but a reviewed provenance-complete release golden bundle is not frozen. | Build provenance-aware oracle generation before using parity as a release claim. |
 | Stochastic parity | Seeded determinism and 200-run local smoke comparisons are covered for selected NFsim models; the full distributional gate is not complete. | Keep fixed ensembles and pooled independent-ensemble error rules; execution success is insufficient. |

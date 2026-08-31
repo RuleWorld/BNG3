@@ -844,6 +844,38 @@ def generate_bngl(
         model_text += "\n".join("  " + line for line in actions.strip().splitlines())
         model_text += "\nend actions\n"
 
+    has_multi = bool(
+        model.multi_molecule_types
+        or model.multi_complex_patterns
+        or model.multi_seed_patterns
+    )
+    if model.import_warnings or has_multi:
+        model_text += "\n# ==== SBML IMPORT NOTES ====\n"
+        for warning in model.import_warnings:
+            category = warning.get("category", "import")
+            severity = warning.get("severity", "info")
+            message = warning.get("message", "")
+            count = warning.get("count", 1)
+            suffix = f" (x{count})" if count and count != 1 else ""
+            model_text += f"# [{severity}] {category}: {message}{suffix}\n"
+        if model.multi_molecule_types:
+            model_text += "# SBML Multi molecule-type skeletons (reference only):\n"
+            for molecule_type in model.multi_molecule_types:
+                model_text += f"#     {molecule_type}\n"
+        if model.multi_complex_patterns:
+            model_text += "# SBML Multi bonded complex patterns (reference only):\n"
+            for pattern in model.multi_complex_patterns:
+                model_text += f"#     {pattern}\n"
+        if model.multi_seed_patterns:
+            model_text += "# SBML Multi seed patterns (reference only):\n"
+            for pattern in model.multi_seed_patterns:
+                model_text += f"#     {pattern}\n"
+        if has_multi:
+            model_text += (
+                "# Multi structures are not yet fed into the simulated network.\n"
+            )
+        model_text += "# ============================\n"
+
     return model_text, observable_map
 
 

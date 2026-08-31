@@ -27,6 +27,7 @@ from .types import (
     SBMLSpecies,
     SBMLSpeciesReference,
 )
+from .multi import parse_multi_package
 from .units import apply_unit_scaling
 
 
@@ -236,6 +237,15 @@ class SBMLParser:
             ),
         )
         result.import_warnings.extend(apply_unit_scaling(result))
+        multi = parse_multi_package(root)
+        result.import_warnings.extend(multi.warnings)
+        result.multi_molecule_types = list(multi.bngl_molecule_types)
+        result.multi_complex_patterns = [
+            pattern for _type_id, pattern in multi.complex_patterns
+        ]
+        result.multi_seed_patterns = [
+            f"{species}: {pattern}" for species, pattern in multi.seed_patterns
+        ]
         if result.constraint_count:
             result.import_warnings.append(
                 {

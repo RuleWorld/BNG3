@@ -29,6 +29,7 @@ from .core import (
     topological_sort,
 )
 from .parser import SBMLParser, extract_go_terms, extract_uniprot_ids
+from .multi import MultiParseResult, parse_multi_package
 from .events import (
     EventTranslationContext,
     EventTranslationResult,
@@ -247,6 +248,7 @@ __all__ = [
     "EventTranslationContext",
     "EventTranslationResult",
     "Molecule",
+    "MultiParseResult",
     "SBMLParser",
     "Species",
     "analyze_naming_conventions",
@@ -266,6 +268,7 @@ __all__ = [
     "read_from_string",
     "resolve_unit_factor",
     "parse_time_threshold",
+    "parse_multi_package",
     "sbml_to_bngl",
     "sbml_to_bngl_atomized",
     "sbml_to_bngl_flat",

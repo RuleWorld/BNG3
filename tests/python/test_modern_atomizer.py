@@ -609,3 +609,63 @@ def test_playground_parser_scales_declared_units_and_records_audit_warning():
     sct = build_species_composition_table(model)
     seeds = {seed.sbml_id: seed.concentration for seed in get_seed_species(sct, model)}
     assert seeds["C"] == "(0.002 * __Avogadro__ * __compartment_cell__)"
+
+
+def test_playground_parser_extracts_canonical_sbml_multi_as_comment_only():
+    from bionetgen.atomizer.modern import (
+        SBMLParser,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    sbml = """<?xml version="1.0"?>
+    <sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+          xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+          level="3" version="1">
+      <model id="multi_fixture">
+        <listOfCompartments><compartment id="cell" size="1"/></listOfCompartments>
+        <listOfSpecies>
+          <species id="AB" name="AB" compartment="cell" multi:speciesType="ABType"
+                   initialAmount="1"/>
+        </listOfSpecies>
+        <multi:listOfSpeciesTypes>
+          <multi:bindingSiteSpeciesType id="bindSite" name="bind"/>
+          <multi:speciesType id="AType" name="A">
+            <multi:listOfSpeciesTypeInstances>
+              <multi:speciesTypeInstance id="bind1" speciesType="bindSite" name="bind"/>
+            </multi:listOfSpeciesTypeInstances>
+          </multi:speciesType>
+          <multi:speciesType id="ABType" name="ABComplex">
+            <multi:listOfSpeciesTypeInstances>
+              <multi:speciesTypeInstance id="A1" speciesType="AType"/>
+              <multi:speciesTypeInstance id="A2" speciesType="AType"/>
+            </multi:listOfSpeciesTypeInstances>
+            <multi:listOfSpeciesTypeComponentIndexes>
+              <multi:speciesTypeComponentIndex id="bind1_1" component="bind1" identifyingParent="A1"/>
+              <multi:speciesTypeComponentIndex id="bind1_2" component="bind1" identifyingParent="A2"/>
+            </multi:listOfSpeciesTypeComponentIndexes>
+            <multi:listOfInSpeciesTypeBonds>
+              <multi:inSpeciesTypeBond bindingSite1="bind1_1" bindingSite2="bind1_2"/>
+            </multi:listOfInSpeciesTypeBonds>
+          </multi:speciesType>
+        </multi:listOfSpeciesTypes>
+      </model>
+    </sbml>
+    """
+
+    model = SBMLParser().parse(sbml)
+
+    assert model.multi_molecule_types == ["A(bind)"]
+    assert model.multi_complex_patterns == ["A(bind!1).A(bind!1)"]
+    assert model.multi_seed_patterns == []
+    assert any(w["category"] == "package:multi" for w in model.import_warnings)
+
+    sct = build_species_composition_table(model)
+    bngl, _ = generate_bngl(
+        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+    )
+    assert "#     A(bind)" in bngl
+    assert "#     A(bind!1).A(bind!1)" in bngl
+    assert "not yet fed into the simulated network" in bngl
