@@ -9,14 +9,31 @@ PYPROJECT = REPO / "pyproject.toml"
 CI_WORKFLOW = REPO / ".github" / "workflows" / "ci.yml"
 
 
-def _python_test_job() -> str:
+def _workflow_job(name: str) -> str:
     workflow = CI_WORKFLOW.read_text(encoding="utf-8")
     match = re.search(
-        r"(?ms)^  python-test:\n(?P<body>.*?)(?=^  [a-z0-9-]+:\n|\Z)",
+        rf"(?ms)^  {re.escape(name)}:\n(?P<body>.*?)(?=^  [a-z0-9-]+:\n|\Z)",
         workflow,
     )
-    assert match, "CI must define a python-test job"
+    assert match, f"CI must define a {name} job"
     return match.group("body")
+
+
+def _python_test_job() -> str:
+    return _workflow_job("python-test")
+
+
+def test_pull_request_exercises_clean_source_distribution_install():
+    """PRs must exercise the sdist install path, not only an in-tree wheel."""
+
+    job = _workflow_job("package-smoke")
+    assert "needs: [python-test]" in job
+    assert not re.search(r"^\s+if:.*github\.event_name.*push", job, re.MULTILINE)
+    assert "python -m build --sdist" in job
+    assert "python -m venv" in job
+    assert "pip install --no-deps dist/*.tar.gz" in job
+    assert "import bionetgen" in job
+    assert "bionetgen --version" in job
 
 
 def test_project_declares_click_as_runtime_dependency():
