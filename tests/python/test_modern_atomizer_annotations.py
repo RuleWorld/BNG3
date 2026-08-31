@@ -186,7 +186,7 @@ def test_annotation_parser_emits_reference_json_and_stats():
     annotation_map = get_all_annotations(model)
     payload = annotations_to_json(model, annotation_map)
 
-    assert '"name": ""' in payload
+    assert '"name": "s1"' in payload
     assert '"identifier": "P12345"' in payload
     assert compute_annotation_stats(model).annotated_species == 1
     assert compute_annotation_stats(model).annotation_count == 1
