@@ -376,11 +376,32 @@ bool expandDynamicRateExpression(
     std::set<std::string>& functionCounterReferences,
     std::set<std::string>& parameterReferences,
     std::vector<const bng::ast::Expression*>& tableFunctions,
+    std::set<std::string>* localFunctionReferences,
+    std::set<std::string>* localFunctionArgumentNames,
     bool& usesTime,
     std::set<std::string>& activeFunctions,
     std::string& expanded,
     std::string& diagnostic) {
     using bng::ast::ExpressionKind;
+
+    const auto preserveScopedModelFunctionCall =
+        [&](const bng::ast::Function& function,
+            const bng::ast::Expression& call,
+            std::string& result) {
+            if (localFunctionReferences == nullptr ||
+                localFunctionArgumentNames == nullptr ||
+                function.getArgs().size() != 1 || call.args().size() != 1 ||
+                call.args().front().kind() != ExpressionKind::Identifier) {
+                diagnostic = "dynamic rates require one scope identifier for "
+                             "argument-bearing model function '" + function.getName() + "'";
+                return false;
+            }
+            const auto& argument = call.args().front().name();
+            localFunctionReferences->insert(function.getName());
+            localFunctionArgumentNames->insert(argument);
+            result = function.getName() + "(" + argument + ")";
+            return true;
+        };
 
     const auto expandModelFunction = [&](const bng::ast::Function& function,
                                          std::string& result) {
@@ -397,7 +418,8 @@ bool expandDynamicRateExpression(
         std::string body;
         const bool ok = expandDynamicRateExpression(
             function.getExpression(), model, parameters, observableReferences,
-            functionCounterReferences, parameterReferences, tableFunctions, usesTime,
+            functionCounterReferences, parameterReferences, tableFunctions,
+            localFunctionReferences, localFunctionArgumentNames, usesTime,
             activeFunctions, body, diagnostic);
         activeFunctions.erase(function.getName());
         if (ok) result = "(" + body + ")";
@@ -460,7 +482,8 @@ bool expandDynamicRateExpression(
         std::string operand;
         if (!expandDynamicRateExpression(
                 expression.args().front(), model, parameters, observableReferences,
-                functionCounterReferences, parameterReferences, tableFunctions, usesTime,
+                functionCounterReferences, parameterReferences, tableFunctions,
+                localFunctionReferences, localFunctionArgumentNames, usesTime,
                 activeFunctions, operand, diagnostic)) {
             return false;
         }
@@ -476,11 +499,13 @@ bool expandDynamicRateExpression(
         std::string rhs;
         if (!expandDynamicRateExpression(
                 expression.args()[0], model, parameters, observableReferences,
-                functionCounterReferences, parameterReferences, tableFunctions, usesTime,
+                functionCounterReferences, parameterReferences, tableFunctions,
+                localFunctionReferences, localFunctionArgumentNames, usesTime,
                 activeFunctions, lhs, diagnostic) ||
             !expandDynamicRateExpression(
                 expression.args()[1], model, parameters, observableReferences,
-                functionCounterReferences, parameterReferences, tableFunctions, usesTime,
+                functionCounterReferences, parameterReferences, tableFunctions,
+                localFunctionReferences, localFunctionArgumentNames, usesTime,
                 activeFunctions, rhs, diagnostic)) {
             return false;
         }
@@ -501,9 +526,7 @@ bool expandDynamicRateExpression(
         }
         if (const auto* function = getModelFunction(model, name)) {
             if (!expression.args().empty()) {
-                diagnostic = "dynamic rates cannot call zero-argument model function '" +
-                             name + "' with arguments";
-                return false;
+                return preserveScopedModelFunctionCall(*function, expression, expanded);
             }
             if (!expressionHasModelFunctionReference(
                     function->getExpression(), expressionHasModelFunctionReference)) {
@@ -530,7 +553,8 @@ bool expandDynamicRateExpression(
             if (!expandDynamicRateExpression(
                     expression.args()[index], model, parameters, observableReferences,
                     functionCounterReferences, parameterReferences, tableFunctions,
-                    usesTime, activeFunctions, argument, diagnostic)) {
+                    localFunctionReferences, localFunctionArgumentNames, usesTime,
+                    activeFunctions, argument, diagnostic)) {
                 return false;
             }
             output << argument;
@@ -543,9 +567,7 @@ bool expandDynamicRateExpression(
         const auto& name = expression.name();
         if (const auto* function = getModelFunction(model, name)) {
             if (!expression.args().empty()) {
-                diagnostic = "dynamic rates cannot call zero-argument model function '" +
-                             name + "' with arguments";
-                return false;
+                return preserveScopedModelFunctionCall(*function, expression, expanded);
             }
             if (!expressionHasModelFunctionReference(
                     function->getExpression(), expressionHasModelFunctionReference)) {
@@ -1604,8 +1626,8 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
         std::string diagnostic;
         if (!expandDynamicRateExpression(
                 function.getExpression(), model, parameters, observableReferences,
-                functionReferences, parameterReferences, tableFunctions, usesTime,
-                activeFunctions, expandedExpression, diagnostic)) {
+                functionReferences, parameterReferences, tableFunctions, nullptr, nullptr,
+                usesTime, activeFunctions, expandedExpression, diagnostic)) {
             std::cerr << "[nfsim/ast] cannot map function '" << function.getName()
                       << "': " << diagnostic << "\n";
             return false;
@@ -2775,6 +2797,7 @@ bool addDynamicReactionRateFunction(
     std::size_t ordinal,
     GlobalFunction*& global,
     CompositeFunction*& composite,
+    std::vector<std::string>& localFunctionArgumentNames,
     std::string& diagnostic);
 
 enum class SymmetricReactionExpansionResult {
@@ -2964,9 +2987,14 @@ SymmetricReactionExpansionResult addSymmetricStateChangeReactionRulesFromAst(
 
     GlobalFunction* dynamicGlobal = nullptr;
     CompositeFunction* dynamicComposite = nullptr;
+    std::vector<std::string> dynamicLocalFunctionArguments;
     if (!staticRate && !addDynamicReactionRateFunction(
                            rule.getRates().front(), model, parameters, system, sourcePath,
-                           rateOrdinal, dynamicGlobal, dynamicComposite, rateDiagnostic)) {
+                           rateOrdinal, dynamicGlobal, dynamicComposite,
+                           dynamicLocalFunctionArguments, rateDiagnostic)) {
+        return SymmetricReactionExpansionResult::NotApplicable;
+    }
+    if (!dynamicLocalFunctionArguments.empty()) {
         return SymmetricReactionExpansionResult::NotApplicable;
     }
 
@@ -3166,9 +3194,14 @@ SymmetricReactionExpansionResult addSymmetricBondReactionRulesFromAst(
 
     GlobalFunction* dynamicGlobal = nullptr;
     CompositeFunction* dynamicComposite = nullptr;
+    std::vector<std::string> dynamicLocalFunctionArguments;
     if (!staticRate && !addDynamicReactionRateFunction(
                            rule.getRates().front(), model, parameters, system, sourcePath,
-                           rateOrdinal, dynamicGlobal, dynamicComposite, rateDiagnostic)) {
+                           rateOrdinal, dynamicGlobal, dynamicComposite,
+                           dynamicLocalFunctionArguments, rateDiagnostic)) {
+        return SymmetricReactionExpansionResult::NotApplicable;
+    }
+    if (!dynamicLocalFunctionArguments.empty()) {
         return SymmetricReactionExpansionResult::NotApplicable;
     }
 
@@ -3313,12 +3346,16 @@ bool addDynamicReactionRateFunction(
     std::size_t ordinal,
     GlobalFunction*& global,
     CompositeFunction*& composite,
+    std::vector<std::string>& localFunctionArgumentNamesOut,
     std::string& diagnostic) {
     global = nullptr;
     composite = nullptr;
+    localFunctionArgumentNamesOut.clear();
 
     std::set<std::string> observableReferences;
     std::set<std::string> functionReferences;
+    std::set<std::string> localFunctionReferences;
+    std::set<std::string> localFunctionArgumentNames;
     std::set<std::string> parameterReferences;
     std::vector<const bng::ast::Expression*> tableFunctions;
     bool usesTime = false;
@@ -3326,7 +3363,8 @@ bool addDynamicReactionRateFunction(
     std::string expandedExpression;
     if (!expandDynamicRateExpression(
             expression, model, parameters, observableReferences,
-            functionReferences, parameterReferences, tableFunctions, usesTime,
+            functionReferences, parameterReferences, tableFunctions,
+            &localFunctionReferences, &localFunctionArgumentNames, usesTime,
             activeFunctions, expandedExpression, diagnostic)) {
         return false;
     }
@@ -3336,6 +3374,7 @@ bool addDynamicReactionRateFunction(
     }
 
     if (!usesTime && observableReferences.empty() && functionReferences.empty() &&
+        localFunctionReferences.empty() &&
         tableFunctions.empty()) {
         diagnostic = "rate expression is not a supported dynamic function";
         return false;
@@ -3361,7 +3400,7 @@ bool addDynamicReactionRateFunction(
 
     std::vector<std::string> parameterNames(
         parameterReferences.begin(), parameterReferences.end());
-    if (!functionReferences.empty()) {
+    if (!functionReferences.empty() || !localFunctionReferences.empty()) {
         // CompositeFunction can depend on live observable values only through
         // GlobalFunction objects.  Materialize a zero-argument alias for each
         // direct observable, then rewrite the generated expression to refer to
@@ -3405,13 +3444,24 @@ bool addDynamicReactionRateFunction(
                 return false;
             }
         }
+        for (const auto& dependency : localFunctionReferences) {
+            if (system->getLocalFunctionByName(dependency) == nullptr) {
+                diagnostic = "dynamic reaction rate references unavailable local function '" +
+                             dependency + "'";
+                return false;
+            }
+        }
         std::vector<std::string> functionsCalled(
             functionReferences.begin(), functionReferences.end());
         for (const auto& [observableName, aliasName] : observableAliases) {
             (void)observableName;
             functionsCalled.push_back(aliasName);
         }
-        std::vector<std::string> argumentNames;
+        functionsCalled.insert(
+            functionsCalled.end(), localFunctionReferences.begin(),
+            localFunctionReferences.end());
+        std::vector<std::string> argumentNames(
+            localFunctionArgumentNames.begin(), localFunctionArgumentNames.end());
         const auto compositeExpression = replaceNamedReferences(
             expandedExpression, observableAliases);
         auto candidate = std::make_unique<CompositeFunction>(
@@ -3429,6 +3479,7 @@ bool addDynamicReactionRateFunction(
         }
         composite = candidate.release();
         composite->finalizeInitialization(system);
+        localFunctionArgumentNamesOut = std::move(argumentNames);
         if (usesTime) {
             composite->setCounterFromTime(system);
             system->setHasTimeDependentFunctions(true);
@@ -5060,6 +5111,7 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
         std::vector<std::string> functionProductArguments2;
         std::size_t functionProductPattern1 = reactantRoots.size();
         std::size_t functionProductPattern2 = reactantRoots.size();
+        std::size_t localFunctionPattern = reactantRoots.size();
         const auto mapFunctionProductArgument =
             [&](const FunctionProductOperand& operand,
                 std::vector<std::string>& argumentNames,
@@ -5099,6 +5151,54 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 argumentNames.push_back(operand.argument);
                 return true;
             };
+        const auto mapLocalFunctionArgument = [&](const std::string& argumentName) {
+            std::size_t matchingPattern = reactantRoots.size();
+            int matchingScope = LocalFunction::MOLECULE;
+            for (std::size_t patternIndex = 0;
+                 patternIndex < reactantRoots.size(); ++patternIndex) {
+                if (patternIndex >= rule.getReactants().size()) continue;
+                if (!hasScopedArgument(
+                        rule.getReactants()[patternIndex], argumentName)) {
+                    continue;
+                }
+                if (matchingPattern != reactantRoots.size()) {
+                    diagnostic = "a local-function scope identifier refers to multiple reactants";
+                    return false;
+                }
+                matchingPattern = patternIndex;
+                if (hasSpeciesScopedArgument(
+                        rule.getReactants()[patternIndex], argumentName)) {
+                    matchingScope = LocalFunction::SPECIES;
+                }
+            }
+            if (matchingPattern == reactantRoots.size()) {
+                diagnostic = "local-function scope identifier '" + argumentName +
+                             "' has no matching reactant";
+                return false;
+            }
+            if (localFunctionPattern == reactantRoots.size()) {
+                localFunctionPattern = matchingPattern;
+            } else if (localFunctionPattern != matchingPattern) {
+                diagnostic = "local-function scope identifiers must refer to one reactant";
+                return false;
+            }
+            if (reactantRoots[matchingPattern]->getMoleculeType()->isPopulationType()) {
+                diagnostic = "local functions cannot scope population reactants";
+                return false;
+            }
+            if (std::find(
+                    localFunctionArgumentNames.begin(), localFunctionArgumentNames.end(),
+                    argumentName) != localFunctionArgumentNames.end()) {
+                return true;
+            }
+            if (!transformationSet->addLocalFunctionReference(
+                    reactantRoots[matchingPattern], argumentName, matchingScope)) {
+                diagnostic = "could not add local-function scope reference";
+                return false;
+            }
+            localFunctionArgumentNames.push_back(argumentName);
+            return true;
+        };
         if (functionProductRate) {
             ok = mapFunctionProductArgument(
                      functionProductOperand1, functionProductArguments1,
@@ -5119,45 +5219,10 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                     ok = false;
                     break;
                 }
-                std::size_t matchingPattern = reactantRoots.size();
-                int matchingScope = LocalFunction::MOLECULE;
-                for (std::size_t patternIndex = 0;
-                     patternIndex < reactantRoots.size(); ++patternIndex) {
-                    if (patternIndex >= rule.getReactants().size()) continue;
-                    if (!hasScopedArgument(
-                            rule.getReactants()[patternIndex], argument.name())) {
-                        continue;
-                    }
-                    if (matchingPattern != reactantRoots.size()) {
-                        diagnostic = "a local-function scope identifier refers to multiple reactants";
-                        ok = false;
-                        break;
-                    }
-                    matchingPattern = patternIndex;
-                    if (hasSpeciesScopedArgument(
-                            rule.getReactants()[patternIndex], argument.name())) {
-                        matchingScope = LocalFunction::SPECIES;
-                    }
-                }
-                if (!ok) break;
-                if (matchingPattern == reactantRoots.size()) {
-                    diagnostic = "local-function scope identifier '" + argument.name() +
-                                 "' has no matching reactant";
+                if (!mapLocalFunctionArgument(argument.name())) {
                     ok = false;
                     break;
                 }
-                if (reactantRoots[matchingPattern]->getMoleculeType()->isPopulationType()) {
-                    diagnostic = "local functions cannot scope population reactants";
-                    ok = false;
-                    break;
-                }
-                if (!transformationSet->addLocalFunctionReference(
-                        reactantRoots[matchingPattern], argument.name(), matchingScope)) {
-                    diagnostic = "could not add local-function scope reference";
-                    ok = false;
-                    break;
-                }
-                localFunctionArgumentNames.push_back(argument.name());
             }
         }
         if (!ok) {
@@ -5168,8 +5233,6 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
             cleanupDirectProducts();
             return false;
         }
-
-        transformationSet->finalize();
 
         const auto& rate = rates.front();
         ReactionClass* reaction = nullptr;
@@ -5213,6 +5276,7 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 delete transformationSet;
                 return false;
             }
+            transformationSet->finalize();
             reaction = new MMRxnClass(rule.getRuleName(), kcat, km, transformationSet, s);
         } else if (saturationRate || hillRate) {
             if (reactantRoots.empty()) {
@@ -5244,9 +5308,11 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 constants.push_back(value);
             }
             if (saturationRate) {
+                transformationSet->finalize();
                 reaction = new SatRxnClass(
                     rule.getRuleName(), std::move(constants), transformationSet, s);
             } else {
+                transformationSet->finalize();
                 reaction = new HillRxnClass(
                     rule.getRuleName(), constants[0], constants[1], constants[2],
                     transformationSet, s);
@@ -5261,6 +5327,7 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 delete transformationSet;
                 return false;
             }
+            transformationSet->finalize();
             reaction = new DOR2RxnClass(
                 rule.getRuleName(), 1.0, "", transformationSet, composite1, composite2,
                 functionProductArguments1, functionProductArguments2, s);
@@ -5272,6 +5339,7 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 delete transformationSet;
                 return false;
             }
+            transformationSet->finalize();
             reaction = new DORRxnClass(
                 rule.getRuleName(), 1.0, "", transformationSet, composite,
                 localFunctionArgumentNames, s);
@@ -5286,6 +5354,7 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 delete transformationSet;
                 return false;
             }
+            transformationSet->finalize();
             if (global != nullptr) {
                 reaction = new FunctionalRxnClass(
                     rule.getRuleName(), global, transformationSet, s);
@@ -5312,27 +5381,46 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                     parameters.count(rate.name()) != 0) {
                     rateParameterName = rate.name();
                 }
+                transformationSet->finalize();
                 reaction = new BasicRxnClass(
                     rule.getRuleName(), 0.0, "", transformationSet, s);
                 reaction->setBaseRate(rateValue, rateParameterName);
             } else {
                 GlobalFunction* dynamicGlobal = nullptr;
                 CompositeFunction* dynamicComposite = nullptr;
+                std::vector<std::string> dynamicLocalFunctionArguments;
                 if (!addDynamicReactionRateFunction(
                         rate, model, parameters, s, sourcePath,
                         originalRuleOrdinal * 2 + directionOrdinal,
-                        dynamicGlobal, dynamicComposite, diagnostic)) {
+                        dynamicGlobal, dynamicComposite, dynamicLocalFunctionArguments,
+                        diagnostic)) {
                     std::cerr << "[nfsim/ast] cannot map reaction '" << rule.getRuleName()
                               << "': " << diagnostic << "\n";
                     delete transformationSet;
                     return false;
                 }
+                for (const auto& argumentName : dynamicLocalFunctionArguments) {
+                    if (!mapLocalFunctionArgument(argumentName)) {
+                        std::cerr << "[nfsim/ast] cannot map reaction '"
+                                  << rule.getRuleName() << "': " << diagnostic << "\n";
+                        delete transformationSet;
+                        return false;
+                    }
+                }
+                transformationSet->finalize();
                 if (dynamicGlobal != nullptr) {
                     reaction = new FunctionalRxnClass(
                         rule.getRuleName(), dynamicGlobal, transformationSet, s);
                 } else if (dynamicComposite != nullptr) {
-                    reaction = new FunctionalRxnClass(
-                        rule.getRuleName(), dynamicComposite, transformationSet, s);
+                    if (dynamicLocalFunctionArguments.empty()) {
+                        reaction = new FunctionalRxnClass(
+                            rule.getRuleName(), dynamicComposite, transformationSet, s);
+                    } else {
+                        reaction = new DORRxnClass(
+                            rule.getRuleName(), 1.0, "", transformationSet,
+                            dynamicComposite, dynamicLocalFunctionArguments, s);
+                        dynamicComposite->setGlobalObservableDependency(reaction, s);
+                    }
                 } else {
                     std::cerr << "[nfsim/ast] dynamic reaction rate produced no function\n";
                     delete transformationSet;
