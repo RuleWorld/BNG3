@@ -563,19 +563,81 @@ def _extract_statistical_factor(
     return rate
 
 
-def _rate_for_reaction(
-    reaction: SBMLReaction,
-    model: SBMLModel,
-    conversion_factor: Optional[str] = None,
-    observable_converted_rules: Optional[Set[str]] = None,
-    reactant_structures: Optional[Mapping[str, Species]] = None,
-) -> str:
-    def apply_conversion(rate: str) -> str:
-        if conversion_factor is None:
-            return rate
-        return f"{conversion_factor} * ({rate})"
+def _extract_top_level_additive_terms(expression: str) -> List[str]:
+    """Split an expression at top-level ``+``/``-`` operators."""
 
-    math = extend_function(
+    terms: List[str] = []
+    depth = 0
+    current_start = 0
+    for index, char in enumerate(expression):
+        if char in "([":
+            depth += 1
+        elif char in ")]":
+            depth -= 1
+        elif (
+            depth == 0
+            and char in "+-"
+            and index > 0
+            and expression[index - 1] not in "eE*/^(["
+        ):
+            term = expression[current_start:index].strip()
+            if term:
+                terms.append(term)
+            current_start = index
+    last = expression[current_start:].strip()
+    if last:
+        terms.append(last)
+    return terms
+
+
+def _split_reversible_rate(expression: str) -> Optional[Tuple[str, str]]:
+    """Recover forward and reverse laws from an SBML net reversible rate."""
+
+    value = expression.strip()
+    while value.startswith("(") and value.endswith(")"):
+        depth = 0
+        encloses_all = True
+        for index, char in enumerate(value):
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth == 0 and index < len(value) - 1:
+                    encloses_all = False
+                    break
+        if not encloses_all:
+            break
+        value = value[1:-1].strip()
+
+    positive: List[str] = []
+    negative: List[str] = []
+    for term in _extract_top_level_additive_terms(value):
+        term = term.strip()
+        if term.startswith("-"):
+            body = term[1:].strip()
+            if body:
+                negative.append(body)
+        elif term.startswith("+"):
+            body = term[1:].strip()
+            if body:
+                positive.append(body)
+        else:
+            positive.append(term)
+    if not positive or not negative:
+        return None
+
+    def combine(terms: Sequence[str]) -> str:
+        return (
+            terms[0] if len(terms) == 1 else " + ".join(f"({term})" for term in terms)
+        )
+
+    return combine(positive), combine(negative)
+
+
+def _prepared_kinetic_math(reaction: SBMLReaction, model: SBMLModel) -> str:
+    """Inline functions and substitute reaction-local parameters once."""
+
+    math_expression = extend_function(
         get_kinetic_math(reaction.kinetic_law),
         {},
         model.function_definitions,
@@ -594,18 +656,45 @@ def _rate_for_reaction(
         if parameter_value is None and isinstance(parameter, Mapping):
             parameter_value = parameter.get("value")
         if parameter_id:
-            math = re.sub(
+            math_expression = re.sub(
                 rf"\b{re.escape(str(parameter_id))}\b",
                 _curated_parameter_value(model, str(parameter_id), parameter_value),
-                math,
+                math_expression,
             )
+    return math_expression
+
+
+def _rate_for_reaction(
+    reaction: SBMLReaction,
+    model: SBMLModel,
+    conversion_factor: Optional[str] = None,
+    observable_converted_rules: Optional[Set[str]] = None,
+    reactant_structures: Optional[Mapping[str, Species]] = None,
+    reactant_ids: Optional[Sequence[str]] = None,
+    prepared_math: Optional[str] = None,
+) -> str:
+    def apply_conversion(rate: str) -> str:
+        if conversion_factor is None:
+            return rate
+        return f"{conversion_factor} * ({rate})"
+
+    math = (
+        prepared_math
+        if prepared_math is not None
+        else _prepared_kinetic_math(reaction, model)
+    )
     if not math:
         return apply_conversion("1")
-    reactants = [
-        reference.species
-        for reference in reaction.reactants
-        if reference.species != "EmptySet"
-    ]
+    reactants = (
+        list(reactant_ids)
+        if reactant_ids is not None
+        else [
+            reference.species
+            for reference in reaction.reactants
+            if reference.species != "EmptySet"
+            for _ in range(max(0, int(round(reference.stoichiometry))))
+        ]
+    )
     species_map = {species_id: species_id for species_id in model.species}
     assignment_variables = {
         rule.variable
@@ -1398,20 +1487,72 @@ def write_reaction_rules(
             candidate = f"{label}_{suffix}"
             suffix += 1
         used_labels.add(candidate)
-        arrow = "<->" if reaction.reversible else "->"
-        rate = _rate_for_reaction(
-            reaction,
-            model,
-            _conversion_factor_for_reaction(reaction, model),
-            observable_converted_rules,
-            {
-                species_id: entry.structure
-                for species_id, entry in sct.entries.items()
-                if entry.structure is not None
-            },
+        conversion_factor = _conversion_factor_for_reaction(reaction, model)
+        structures = {
+            species_id: entry.structure
+            for species_id, entry in sct.entries.items()
+            if entry.structure is not None
+        }
+        prepared_math = _prepared_kinetic_math(reaction, model)
+        split = (
+            _split_reversible_rate(convert_math_expression(prepared_math))
+            if reaction.reversible
+            else None
         )
-        if reaction.reversible:
-            rate = f"{rate}, {rate}"
+        if split is not None:
+            forward_ids = [
+                reference.species
+                for reference in reaction.reactants
+                if reference.species != "EmptySet"
+                for _ in range(max(0, int(round(reference.stoichiometry))))
+            ]
+            reverse_ids = [
+                reference.species
+                for reference in reaction.products
+                if reference.species != "EmptySet"
+                for _ in range(max(0, int(round(reference.stoichiometry))))
+            ]
+            rate = ", ".join(
+                [
+                    _rate_for_reaction(
+                        reaction,
+                        model,
+                        conversion_factor,
+                        observable_converted_rules,
+                        {
+                            species_id: structures[species_id]
+                            for species_id in forward_ids
+                            if species_id in structures
+                        },
+                        reactant_ids=forward_ids,
+                        prepared_math=split[0],
+                    ),
+                    _rate_for_reaction(
+                        reaction,
+                        model,
+                        conversion_factor,
+                        observable_converted_rules,
+                        {
+                            species_id: structures[species_id]
+                            for species_id in reverse_ids
+                            if species_id in structures
+                        },
+                        reactant_ids=reverse_ids,
+                        prepared_math=split[1],
+                    ),
+                ]
+            )
+            arrow = "<->"
+        else:
+            arrow = "->"
+            rate = _rate_for_reaction(
+                reaction,
+                model,
+                conversion_factor,
+                observable_converted_rules,
+                structures,
+                prepared_math=prepared_math,
+            )
         lines.append(
             f"{candidate}: {' + '.join(reactants) if reactants else '0'} "
             f"{arrow} {' + '.join(products) if products else '0'} {rate}"
