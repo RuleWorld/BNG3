@@ -116,9 +116,7 @@ def test_annotation_parser_handles_reference_uri_forms_and_uniprot_extraction():
         ),
     )
 
-    assert extract_uniprot_accessions(model) == {
-        "s1": ["P12345", "Q67890"]
-    }
+    assert extract_uniprot_accessions(model) == {"s1": ["P12345", "Q67890"]}
 
 
 def test_annotation_parser_groups_only_identity_qualifiers():

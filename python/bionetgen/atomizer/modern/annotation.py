@@ -16,7 +16,6 @@ from typing import Dict, Iterable, List, Mapping, Optional, Tuple
 
 from .types import SBMLModel, SBMLSpecies
 
-
 BIOLOGICAL_QUALIFIER_NAMES = {
     0: "BQB_IS",
     1: "BQB_HAS_PART",
@@ -71,7 +70,9 @@ _DATABASE_PATTERNS: Tuple[Tuple[str, re.Pattern[str]], ...] = (
     ("chebi", re.compile(r"CHEBI[:/](\d+)", re.IGNORECASE)),
     (
         "kegg",
-        re.compile(r"kegg\.(compound|reaction|pathway)[:/]([A-Za-z0-9]+)", re.IGNORECASE),
+        re.compile(
+            r"kegg\.(compound|reaction|pathway)[:/]([A-Za-z0-9]+)", re.IGNORECASE
+        ),
     ),
     ("reactome", re.compile(r"reactome[:/]([A-Z0-9_]+)", re.IGNORECASE)),
     ("biomodels", re.compile(r"biomodels\.db[:/](BIOMD\d+)", re.IGNORECASE)),
@@ -95,7 +96,9 @@ def parse_resource_uri(uri: str) -> Tuple[str, str]:
         if match:
             # Keep the public reference behavior for multi-capture patterns:
             # the first capture is the identifier.
-            return database, match.group(1) or (match.group(2) if match.lastindex else "")
+            return database, match.group(1) or (
+                match.group(2) if match.lastindex else ""
+            )
 
     identifiers_match = re.search(
         r"identifiers\.org/([^/]+)/([^/\s]+)", resource, re.IGNORECASE
@@ -118,17 +121,21 @@ def parse_species_annotations(species: SBMLSpecies) -> List[ParsedAnnotation]:
         if annotation.qualifier_type == 1:
             qualifier_type = "biological"
             qualifier = BIOLOGICAL_QUALIFIER_NAMES.get(
-                annotation.biological_qualifier
-                if annotation.biological_qualifier is not None
-                else 13,
+                (
+                    annotation.biological_qualifier
+                    if annotation.biological_qualifier is not None
+                    else 13
+                ),
                 "BQB_UNKNOWN",
             )
         else:
             qualifier_type = "model"
             qualifier = MODEL_QUALIFIER_NAMES.get(
-                annotation.model_qualifier
-                if annotation.model_qualifier is not None
-                else 5,
+                (
+                    annotation.model_qualifier
+                    if annotation.model_qualifier is not None
+                    else 5
+                ),
                 "BQM_UNKNOWN",
             )
 
@@ -219,8 +226,12 @@ def get_canonical_species(
         canonical = min(
             member_list,
             key=lambda species_id: (
-                len(model.species.get(species_id, SBMLSpecies(species_id)).name or species_id),
-                model.species.get(species_id, SBMLSpecies(species_id)).name or species_id,
+                len(
+                    model.species.get(species_id, SBMLSpecies(species_id)).name
+                    or species_id
+                ),
+                model.species.get(species_id, SBMLSpecies(species_id)).name
+                or species_id,
             ),
         )
         for species_id in member_list:
@@ -248,13 +259,16 @@ def build_rdf_database(
     for resource, members in database.items():
         members.sort(
             key=lambda species_id: len(
-                model.species.get(species_id, SBMLSpecies(species_id)).name or species_id
+                model.species.get(species_id, SBMLSpecies(species_id)).name
+                or species_id
             )
         )
     return database
 
 
-def get_equivalence(species_id: str, rdf_database: Mapping[str, List[str]]) -> List[str]:
+def get_equivalence(
+    species_id: str, rdf_database: Mapping[str, List[str]]
+) -> List[str]:
     for members in rdf_database.values():
         if species_id not in members:
             continue
@@ -289,9 +303,9 @@ def compute_annotation_stats(model: SBMLModel) -> AnnotationStats:
         annotation_count=annotation_count,
         database_distribution=database_distribution,
         qualifier_distribution=qualifier_distribution,
-        coverage_percent=(annotated_species / total_species * 100)
-        if total_species
-        else 0.0,
+        coverage_percent=(
+            (annotated_species / total_species * 100) if total_species else 0.0
+        ),
     )
 
 

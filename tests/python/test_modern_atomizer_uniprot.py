@@ -12,9 +12,7 @@ from bionetgen.atomizer.modern import (
 def test_fetch_uniprot_entry_parses_reference_fields(monkeypatch):
     sample = {
         "primaryAccession": "P12345",
-        "proteinDescription": {
-            "recommendedName": {"fullName": {"value": "Protein X"}}
-        },
+        "proteinDescription": {"recommendedName": {"fullName": {"value": "Protein X"}}},
         "genes": [{"geneName": {"value": "GENEX"}}],
         "organism": {"scientificName": "Homo sapiens"},
         "comments": [

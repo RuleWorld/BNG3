@@ -109,11 +109,7 @@ def build_state_transition_diagram(
             product_state = _find_component_state(
                 rule.products, molecule_name, component_name
             )
-            if (
-                reactant_state
-                and product_state
-                and reactant_state != product_state
-            ):
+            if reactant_state and product_state and reactant_state != product_state:
                 states.update((reactant_state, product_state))
                 transitions.append(
                     StateTransition(

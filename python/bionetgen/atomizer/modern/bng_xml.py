@@ -122,7 +122,11 @@ def _reaction_rate(
     rate_type = _attribute(rate_law, "type")
     rate_constants = _descendants(rate_law, "RateConstant")
     if rate_type.lower() == "ele":
-        return _attribute(rate_constants[0], "value", default=_text(rate_constants[0])) if rate_constants else ""
+        return (
+            _attribute(rate_constants[0], "value", default=_text(rate_constants[0]))
+            if rate_constants
+            else ""
+        )
     if rate_type.lower() == "function":
         return _attribute(rate_law, "name")
     if rate_type in {"MM", "Sat", "Hill", "Arrhenius"}:
@@ -174,7 +178,9 @@ def convert_bng_xml_to_bngl(xml: str) -> str:
             lines.append(f"    {identifier} {value}")
         lines.extend(["end parameters", ""])
 
-    compartments = _descendants(_first(model, "ListOfCompartments"), "Compartment", "compartment")
+    compartments = _descendants(
+        _first(model, "ListOfCompartments"), "Compartment", "compartment"
+    )
     if compartments:
         lines.append("begin compartments")
         for compartment in compartments:

@@ -121,7 +121,9 @@ def _parse_entry(key: str, data: Mapping[str, Any]) -> UniProtEntry:
     )
 
 
-def fetch_uniprot_entry(accession: str, timeout: float = 20.0) -> Optional[UniProtEntry]:
+def fetch_uniprot_entry(
+    accession: str, timeout: float = 20.0
+) -> Optional[UniProtEntry]:
     """Fetch one UniProtKB entry, returning ``None`` on network/API failure."""
 
     key = str(accession).upper()
