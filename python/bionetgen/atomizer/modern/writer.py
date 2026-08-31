@@ -527,11 +527,35 @@ def _strip_mass_action_factors(expression: str, reactant_ids: Sequence[str]) -> 
     return " * ".join(remaining) if remaining else "1"
 
 
+def _extract_statistical_factor(
+    rate: str, reactant_structures: Mapping[str, Species]
+) -> str:
+    """Remove a leading repeated-site factor already represented by BNGL patterns."""
+
+    match = re.match(r"^\s*\(?\s*(\d+(?:\.\d+)?)\s*\*\s*(.+?)\s*\)?\s*$", rate)
+    if match is None:
+        return rate
+    coefficient = float(match.group(1))
+    expected = 1
+    for species in reactant_structures.values():
+        for molecule in species.molecules:
+            counts: Dict[str, int] = {}
+            for component in molecule.components:
+                counts[component.name] = counts.get(component.name, 0) + 1
+            for count in counts.values():
+                if count > 1:
+                    expected *= count
+    if expected > 1 and abs(coefficient - expected) < 1e-9:
+        return match.group(2).strip()
+    return rate
+
+
 def _rate_for_reaction(
     reaction: SBMLReaction,
     model: SBMLModel,
     conversion_factor: Optional[str] = None,
     observable_converted_rules: Optional[Set[str]] = None,
+    reactant_structures: Optional[Mapping[str, Species]] = None,
 ) -> str:
     def apply_conversion(rate: str) -> str:
         if conversion_factor is None:
@@ -604,6 +628,8 @@ def _rate_for_reaction(
 
     converted = convert_math_expression(math)
     stripped = _strip_mass_action_factors(converted, reactants)
+    if reactant_structures:
+        stripped = _extract_statistical_factor(stripped, reactant_structures)
     return apply_conversion(
         bngl_function(
             stripped,
@@ -1245,6 +1271,11 @@ def write_reaction_rules(
             model,
             _conversion_factor_for_reaction(reaction, model),
             observable_converted_rules,
+            {
+                species_id: entry.structure
+                for species_id, entry in sct.entries.items()
+                if entry.structure is not None
+            },
         )
         if reaction.reversible:
             rate = f"{rate}, {rate}"
