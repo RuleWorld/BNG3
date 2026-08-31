@@ -153,6 +153,53 @@ def test_playground_parser_surfaces_fast_and_reaction_conversion_diagnostics():
     )
 
 
+def test_playground_parser_reports_unsupported_packages_events_and_constraints():
+    from bionetgen.atomizer.modern import SBMLParser
+
+    sbml = """<?xml version="1.0"?>
+    <sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+          xmlns:fbc="http://www.sbml.org/sbml/level3/version1/fbc/version3"
+          xmlns:layout="http://www.sbml.org/sbml/level3/version1/layout/version1"
+          level="3" version="1">
+      <model id="unsupported">
+        <listOfConstraints>
+          <constraint><math formula="1"/></constraint>
+        </listOfConstraints>
+        <listOfRules>
+          <algebraicRule><math formula="x - 1"/></algebraicRule>
+        </listOfRules>
+        <listOfEvents>
+          <event id="dose">
+            <trigger><math formula="time &gt; 1"/></trigger>
+          </event>
+        </listOfEvents>
+        <fbc:listOfFluxBounds><fbc:fluxBound id="bound"/></fbc:listOfFluxBounds>
+        <layout:layout id="diagram"/>
+      </model>
+    </sbml>
+    """
+
+    model = SBMLParser().parse(sbml)
+    warnings = model.import_warnings
+
+    assert any(
+        w["category"] == "package:fbc" and w["severity"] == "dropped" for w in warnings
+    )
+    assert any(
+        w["category"] == "package:layout" and w["severity"] == "info" for w in warnings
+    )
+    assert any(
+        w["category"] == "event" and w["severity"] == "dropped" for w in warnings
+    )
+    assert any(
+        w["category"] == "algebraicRule" and w["severity"] == "dropped"
+        for w in warnings
+    )
+    assert any(
+        w["category"] == "constraint" and w["severity"] == "info" for w in warnings
+    )
+
+
 def test_playground_sct_infers_complexes_and_named_modifications():
     from bionetgen.atomizer.modern import SBMLParser
     from bionetgen.atomizer.modern import build_species_composition_table

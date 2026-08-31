@@ -162,7 +162,17 @@ class SBMLParser:
         )
         if model_element is None:
             raise ValueError("SBML document has no model")
-        return self._parse_xml_model(root, model_element)
+        declared_packages = {
+            match.group(1).lower()
+            for match in re.finditer(
+                r"xmlns(?::[A-Za-z0-9_]+)?\s*=\s*"
+                r"[\"']http://www\.sbml\.org/sbml/level3/version\d+/"
+                r"([a-z]+)/version\d+[\"']",
+                sbml_string,
+                re.IGNORECASE,
+            )
+        }
+        return self._parse_xml_model(root, model_element, declared_packages)
 
     @staticmethod
     def _xml_math(parent: Optional[Any]) -> str:
@@ -184,7 +194,9 @@ class SBMLParser:
         return list(_children(parent, item)) if parent is not None else []
 
     @staticmethod
-    def _parse_xml_model(root: Any, model: Any) -> SBMLModel:
+    def _parse_xml_model(
+        root: Any, model: Any, declared_packages: Optional[Iterable[str]] = None
+    ) -> SBMLModel:
         compartments = SBMLParser._parse_xml_compartments(model)
         species = SBMLParser._parse_xml_species(model)
         parameters = SBMLParser._parse_xml_parameters(model)
@@ -298,6 +310,105 @@ class SBMLParser:
                         "severity": "approximated",
                     }
                 )
+        if result.events:
+            result.import_warnings.append(
+                {
+                    "category": "event",
+                    "message": (
+                        f"{len(result.events)} SBML event(s) parsed; discrete state "
+                        "changes are not executed by the simulation engine and are "
+                        "emitted as an annotated block for review."
+                    ),
+                    "count": len(result.events),
+                    "severity": "dropped",
+                }
+            )
+        algebraic_count = sum(rule.type == "algebraic" for rule in result.rules)
+        if algebraic_count:
+            result.import_warnings.append(
+                {
+                    "category": "algebraicRule",
+                    "message": (
+                        f"{algebraic_count} algebraic rule(s) present; these are "
+                        "implicit DAE constraints with no BNGL equivalent and are "
+                        "not applied."
+                    ),
+                    "count": algebraic_count,
+                    "severity": "dropped",
+                }
+            )
+        dynamic_packages = {
+            "comp": "hierarchical model composition (submodels/externalModelDefinitions are not flattened)",
+            "multi": "multistate/multicomponent species beyond the conservative reference extraction",
+            "fbc": "flux-balance constraints and objectives",
+            "qual": "qualitative (logical) model transitions",
+            "spatial": "spatial geometry and diffusion",
+            "arrays": "array-expanded objects",
+            "distrib": "distributions and uncertainty",
+            "dyn": "dynamic (agent) behaviour",
+        }
+        benign_packages = {
+            "layout": "diagram layout",
+            "render": "diagram rendering",
+            "groups": "element grouping",
+        }
+        package_counts: Dict[str, int] = {
+            str(package).lower(): 0 for package in (declared_packages or [])
+        }
+        package_uri = re.compile(
+            r"^http://www\.sbml\.org/sbml/level3/version\d+/" r"([a-z]+)/version\d+$",
+            re.IGNORECASE,
+        )
+        for element in root.iter():
+            tag = str(getattr(element, "tag", ""))
+            if not tag.startswith("{") or "}" not in tag:
+                continue
+            uri = tag[1:].split("}", 1)[0]
+            match = package_uri.match(uri)
+            if match:
+                package_counts[match.group(1).lower()] = (
+                    package_counts.get(match.group(1).lower(), 0) + 1
+                )
+        package_reasons = {
+            "fbc": " This is a constraint-based flux-balance model, not a kinetic time-course model.",
+            "qual": " This is a discrete logical model, not a continuous-time kinetic network.",
+        }
+        for package, description in dynamic_packages.items():
+            if package not in package_counts:
+                continue
+            count = package_counts[package]
+            result.import_warnings.append(
+                {
+                    "category": f"package:{package}",
+                    "message": (
+                        f'SBML "{package}" package detected ({count} element(s)): '
+                        f"{description}. This package is not imported; affected "
+                        f"structure is missing from the atomized model."
+                        f"{package_reasons.get(package, '')}"
+                    ),
+                    "count": count or 1,
+                    "severity": "dropped",
+                }
+            )
+        for package, description in benign_packages.items():
+            if package not in package_counts:
+                continue
+            result.import_warnings.append(
+                {
+                    "category": f"package:{package}",
+                    "message": (
+                        f'SBML "{package}" package detected ({description}); '
+                        "not imported. This does not affect the mathematical model."
+                    ),
+                    "count": package_counts[package] or 1,
+                    "severity": "info",
+                }
+            )
+        if package_counts.get("qual", 0) > 0 and not result.reactions:
+            raise ValueError(
+                'Unsupported model class: SBML "qual" qualitative/logical '
+                "model cannot be represented as a BNGL rule-based network."
+            )
         multi = parse_multi_package(root)
         result.import_warnings.extend(multi.warnings)
         result.multi_molecule_types = list(multi.bngl_molecule_types)

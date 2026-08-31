@@ -938,7 +938,6 @@ def generate_bngl(
         )
         if not any(
             warning.get("category") == "algebraicRule"
-            and warning.get("message") == message
             for warning in model.import_warnings
         ):
             model.import_warnings.append(
