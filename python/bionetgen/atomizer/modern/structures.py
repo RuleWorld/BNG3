@@ -497,6 +497,87 @@ class Species:
         return isinstance(other, Species) and str(self) == str(other)
 
 
+class Action:
+    """A state, bond, or molecule operation attached to a reaction rule."""
+
+    def __init__(self) -> None:
+        self.action = ""
+        self.site1 = ""
+        self.site2 = ""
+
+    def set_action(self, action: str, site1: str, site2: str = "") -> None:
+        self.action = action
+        self.site1 = site1
+        self.site2 = site2
+
+    setAction = set_action
+
+    def __str__(self) -> str:
+        return f"{self.action}, {self.site1}, {self.site2}"
+
+    toString = __str__
+
+
+class Rule:
+    """A rule-based reaction with structured patterns and actions."""
+
+    def __init__(self, label: str = "") -> None:
+        self.label = label
+        self.reactants: List[Species] = []
+        self.products: List[Species] = []
+        self.rates: List[str] = []
+        self.bidirectional = False
+        self.actions: List[Action] = []
+        self.mapping: List[Tuple[str, str]] = []
+
+    def add_reactant(self, reactant: Species) -> None:
+        self.reactants.append(reactant)
+
+    def add_product(self, product: Species) -> None:
+        self.products.append(product)
+
+    def add_reactant_list(self, reactants: Iterable[Species]) -> None:
+        self.reactants.extend(reactants)
+
+    def add_product_list(self, products: Iterable[Species]) -> None:
+        self.products.extend(products)
+
+    def add_rate(self, rate: str) -> None:
+        self.rates.append(rate)
+
+    def add_mapping(self, mapping: Tuple[str, str]) -> None:
+        self.mapping.append(mapping)
+
+    def add_mapping_list(self, mappings: Iterable[Tuple[str, str]]) -> None:
+        self.mapping.extend(mappings)
+
+    def add_action_list(self, actions: Iterable[Action]) -> None:
+        self.actions.extend(actions)
+
+    addReactant = add_reactant
+    addProduct = add_product
+    addReactantList = add_reactant_list
+    addProductList = add_product_list
+    addRate = add_rate
+    addMapping = add_mapping
+    addMappingList = add_mapping_list
+    addActionList = add_action_list
+
+    def __str__(self) -> str:
+        label = f"{self.label}: " if self.label else ""
+        arrow = " <-> " if self.bidirectional else " -> "
+        return (
+            label
+            + " + ".join(str(item) for item in self.reactants)
+            + arrow
+            + " + ".join(str(item) for item in self.products)
+            + " "
+            + ",".join(self.rates)
+        )
+
+    toString = __str__
+
+
 def _split_top_level(value: str, separator: str) -> List[str]:
     parts: List[str] = []
     start = 0
@@ -554,4 +635,12 @@ def read_from_string(pattern_str: str) -> Species:
     return species
 
 
-__all__ = ["Bond", "Component", "Molecule", "Species", "read_from_string"]
+__all__ = [
+    "Action",
+    "Bond",
+    "Component",
+    "Molecule",
+    "Rule",
+    "Species",
+    "read_from_string",
+]

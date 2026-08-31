@@ -37,7 +37,7 @@ from .events import (
     parse_time_threshold,
     synthesize_event_actions,
 )
-from .structures import Component, Molecule, Species, read_from_string
+from .structures import Action, Component, Molecule, Rule, Species, read_from_string
 from .types import *  # noqa: F401,F403
 from .writer import (
     bngl_function,
@@ -71,6 +71,20 @@ from .annotation import (
     parse_species_annotations,
 )
 from .bng_xml import convertBNGXmlToBNGL, convert_bng_xml_to_bngl
+from .rulifier import (
+    StateTransition,
+    StateTransitionDiagram,
+    TransformationCenter,
+    TransformationContext,
+    analyze_rate_law,
+    build_state_transition_diagram,
+    collapse_redundant_rules,
+    extract_parameters,
+    extract_transformation_center,
+    find_redundant_rules,
+    group_by_reaction_center,
+    species_equal,
+)
 
 DEFAULT_ATOMIZER_OPTIONS: Dict[str, Any] = {
     "use_id": False,
@@ -262,6 +276,7 @@ def sbml_to_bngl_atomized(
 
 
 __all__ = [
+    "Action",
     "Atomizer",
     "AnnotationStats",
     "BNGL_LEXER_KEYWORDS",
@@ -271,25 +286,36 @@ __all__ = [
     "Molecule",
     "MultiParseResult",
     "ParsedAnnotation",
+    "Rule",
     "SBMLParser",
     "Species",
+    "StateTransition",
+    "StateTransitionDiagram",
+    "TransformationCenter",
+    "TransformationContext",
     "analyze_naming_conventions",
     "analyze_reactions",
+    "analyze_rate_law",
     "annotations_to_json",
     "annotations_to_yaml",
     "apply_unit_scaling",
+    "build_state_transition_diagram",
     "build_species_composition_table",
     "convertBNGXmlToBNGL",
     "convert_bng_xml_to_bngl",
     "bngl_function",
     "classify_reaction",
     "compute_annotation_stats",
+    "collapse_redundant_rules",
     "disambiguate_colliding_species",
     "extend_function",
     "extract_go_terms",
     "extract_uniprot_accessions",
     "extract_uniprot_ids",
+    "extract_parameters",
+    "extract_transformation_center",
     "find_equivalent_species",
+    "find_redundant_rules",
     "fold_numeric",
     "generate_bngl",
     "get_molecule_types",
@@ -299,6 +325,7 @@ __all__ = [
     "get_canonical_species",
     "get_equivalence",
     "get_seed_species",
+    "group_by_reaction_center",
     "build_rdf_database",
     "read_from_string",
     "resolve_unit_factor",
@@ -309,6 +336,7 @@ __all__ = [
     "sbml_to_bngl",
     "sbml_to_bngl_atomized",
     "sbml_to_bngl_flat",
+    "species_equal",
     "synthesize_event_actions",
     "unit_conversion_factor",
 ]
