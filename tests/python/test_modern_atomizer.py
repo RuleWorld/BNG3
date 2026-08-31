@@ -200,6 +200,42 @@ def test_playground_parser_reports_unsupported_packages_events_and_constraints()
     )
 
 
+def test_playground_parser_preserves_mathml_numeric_and_function_semantics():
+    from bionetgen.atomizer.modern import SBMLParser
+
+    sbml = """<?xml version="1.0"?>
+    <sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+          xmlns:math="http://www.w3.org/1998/Math/MathML"
+          level="3" version="1">
+      <model id="mathml">
+        <listOfRules>
+          <assignmentRule variable="ratio">
+            <math:math><math:apply><math:divide/>
+              <math:cn type="rational">1<math:sep/>2</math:cn><math:pi/>
+            </math:apply></math:math>
+          </assignmentRule>
+          <assignmentRule variable="call">
+            <math:math><math:apply><math:ci>f</math:ci><math:ci>x</math:ci></math:apply></math:math>
+          </assignmentRule>
+          <assignmentRule variable="clock">
+            <math:math><math:apply><math:times/>
+              <math:csymbol definitionURL="http://www.sbml.org/sbml/symbols/time">t</math:csymbol>
+              <math:cn type="e-notation">2<math:sep/>3</math:cn>
+            </math:apply></math:math>
+          </assignmentRule>
+        </listOfRules>
+      </model>
+    </sbml>
+    """
+
+    model = SBMLParser().parse(sbml)
+    rules = {rule.variable: rule.math for rule in model.rules}
+
+    assert rules["ratio"] == "(1 / 2) / 3.141592653589793"
+    assert rules["call"] == "f(x)"
+    assert rules["clock"] == "time * (2 * 10^(3))"
+
+
 def test_playground_sct_infers_complexes_and_named_modifications():
     from bionetgen.atomizer.modern import SBMLParser
     from bionetgen.atomizer.modern import build_species_composition_table

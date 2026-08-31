@@ -85,66 +85,147 @@ def _mathml_text(element: Optional[Any]) -> str:
 
 
 def _mathml_to_formula(element: Optional[Any]) -> str:
-    """Small fallback for reduced bindings that cannot stringify MathML."""
+    """Translate the MathML subset used by SBML into stable infix/function text."""
 
     if element is None:
         return ""
     tag = _local_name(element.tag)
-    if tag in {"ci", "cn", "csymbol"}:
-        return (element.text or "").strip()
+    children = [child for child in list(element) if _local_name(child.tag) != "#text"]
+
+    if tag in {"math", "semantics", "annotation-xml", "condition"}:
+        return next(
+            (
+                expression
+                for child in children
+                if (expression := _mathml_to_formula(child).strip())
+            ),
+            "",
+        )
+    if tag in {"ci", "csymbol"}:
+        definition_url = str(_attribute(element, "definitionURL", "") or "").lower()
+        if "symbols/time" in definition_url:
+            return "time"
+        if "symbols/avogadro" in definition_url:
+            return "__Avogadro__"
+        return _mathml_text(element)
+    if tag == "cn":
+        chunks: List[str] = []
+        if element.text and element.text.strip():
+            chunks.append(element.text.strip())
+        for child in children:
+            if _local_name(child.tag) == "sep":
+                if child.tail and child.tail.strip():
+                    chunks.append(child.tail.strip())
+            elif child.tail and child.tail.strip():
+                chunks.append(child.tail.strip())
+        if len(chunks) >= 2 and any(
+            _local_name(child.tag) == "sep" for child in children
+        ):
+            number_type = str(_attribute(element, "type", "") or "").lower()
+            if number_type in {"e-notation", "enotation"}:
+                return f"({chunks[0]} * 10^({chunks[1]}))"
+            return f"({chunks[0]} / {chunks[1]})"
+        return _mathml_text(element)
     if tag == "true":
         return "1"
     if tag == "false":
         return "0"
-    if tag == "lambda":
-        body = list(element)[-1] if list(element) else None
-        return _mathml_to_formula(body)
-    if tag == "bvar":
-        child = list(element)[0] if list(element) else None
-        return _mathml_to_formula(child)
+    if tag == "pi":
+        return "3.141592653589793"
+    if tag == "exponentiale":
+        return "2.718281828459045"
+    if tag == "infinity":
+        return "1e308"
+    if tag == "notanumber":
+        return "0"
+    if tag in {"lambda", "bvar", "piece", "otherwise"}:
+        return next(
+            (
+                expression
+                for child in children
+                if (expression := _mathml_to_formula(child).strip())
+            ),
+            _mathml_text(element) if tag == "bvar" else "",
+        )
+    if tag == "piecewise":
+        branches: List[tuple[str, str]] = []
+        fallback = "0"
+        for part in children:
+            part_tag = _local_name(part.tag)
+            part_children = [
+                child for child in list(part) if _local_name(child.tag) != "#text"
+            ]
+            if part_tag == "piece" and len(part_children) >= 2:
+                value = _mathml_to_formula(part_children[0])
+                condition = _mathml_to_formula(part_children[1])
+                branches.append((value, condition))
+            elif part_tag == "otherwise" and part_children:
+                fallback = _mathml_to_formula(part_children[0])
+        result = fallback
+        for value, condition in reversed(branches):
+            result = f"if({condition}, {value}, {result})"
+        return result
     if tag == "apply":
-        children = list(element)
         if not children:
             return ""
-        operator = _local_name(children[0].tag)
-        args = [_mathml_to_formula(child) for child in children[1:]]
+        operator_node = children[0]
+        operator = _local_name(operator_node.tag)
+        if operator in {"ci", "csymbol"}:
+            function_name = _mathml_to_formula(operator_node)
+            args = [_mathml_to_formula(child) for child in children[1:]]
+            return (
+                f"{function_name}({', '.join(args)})"
+                if function_name
+                else ", ".join(args)
+            )
+
+        degree = next(
+            (child for child in children[1:] if _local_name(child.tag) == "degree"),
+            None,
+        )
+        logbase = next(
+            (child for child in children[1:] if _local_name(child.tag) == "logbase"),
+            None,
+        )
+        args = [
+            _mathml_to_formula(child)
+            for child in children[1:]
+            if _local_name(child.tag) not in {"degree", "logbase"}
+        ]
         if operator in {"plus", "times", "minus", "divide", "power"}:
-            symbols = {
+            symbol = {
                 "plus": "+",
                 "times": "*",
                 "minus": "-",
                 "divide": "/",
                 "power": "^",
-            }
-            symbol = symbols[operator]
+            }[operator]
             if operator == "minus" and len(args) == 1:
                 return f"-({args[0]})"
             return f" {symbol} ".join(args)
-        if operator in {"ln", "log", "exp", "sqrt", "abs", "sin", "cos", "tan"}:
-            return f"{operator}({', '.join(args)})"
         if operator == "root":
-            return f"root({', '.join(args)})"
-        return f"{operator}({', '.join(args)})"
-    if tag == "piecewise":
-        parts = list(element)
-        branches = []
-        fallback = "0"
-        for part in parts:
-            if _local_name(part.tag) == "piece":
-                values = list(part)
-                if len(values) >= 2:
-                    branches.append(
-                        (_mathml_to_formula(values[1]), _mathml_to_formula(values[0]))
-                    )
-            elif _local_name(part.tag) == "otherwise":
-                values = list(part)
-                if values:
-                    fallback = _mathml_to_formula(values[0])
-        result = fallback
-        for value, condition in reversed(branches):
-            result = f"if({condition}, {value}, {result})"
-        return result
-    children = list(element)
+            if degree is not None:
+                return f"root({_mathml_to_formula(degree)}, {args[0] if args else ''})"
+            return f"sqrt({args[0] if args else ''})"
+        if operator == "log":
+            if logbase is not None:
+                return f"log({_mathml_to_formula(logbase)}, {args[0] if args else ''})"
+            return f"log10({args[0] if args else ''})"
+        if operator == "quotient":
+            return f"floor(({args[0]}) / ({args[1]}))" if len(args) >= 2 else ""
+        if operator == "rem":
+            return (
+                f"(({args[0]}) - ({args[1]}) * floor(({args[0]}) / ({args[1]})))"
+                if len(args) >= 2
+                else ""
+            )
+        direct = {
+            "ceiling": "ceil",
+            "arcsin": "asin",
+            "arccos": "acos",
+            "arctan": "atan",
+        }
+        return f"{direct.get(operator, operator)}({', '.join(args)})"
     return _mathml_to_formula(children[0]) if children else _mathml_text(element)
 
 
