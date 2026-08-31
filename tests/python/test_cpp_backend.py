@@ -495,6 +495,41 @@ end model
 
         assert result.time.tolist() == [0.0, 0.0]
 
+    def test_nf_direct_dynamic_rate_wraps_scoped_local_function(
+        self, tmp_path, monkeypatch
+    ):
+        bngl = tmp_path / "dynamic_scoped_local_rate.bngl"
+        bngl.write_text(
+            """
+begin model
+begin parameters
+end parameters
+begin molecule types
+    A(s~0~1)
+end molecule types
+begin seed species
+    A(s~0) 1
+end seed species
+begin observables
+    Molecules A1 A(s~1)
+end observables
+begin functions
+    tally(x) = A1(x)
+end functions
+begin reaction rules
+    A(s~0)%x -> A(s~1) 2 + tally(x)
+end reaction rules
+end model
+"""
+        )
+
+        monkeypatch.setenv("BNG_NFSIM_REQUIRE_DIRECT", "1")
+        result = bionetgen.load(str(bngl)).simulate(
+            method="nf", t_end=0.0, n_steps=1, seed=1
+        )
+
+        assert result.time.tolist() == [0.0, 0.0]
+
     def test_nf_direct_route_can_be_required(self, tmp_path, monkeypatch):
         bngl = tmp_path / "strict_nf.bngl"
         bngl.write_text(
