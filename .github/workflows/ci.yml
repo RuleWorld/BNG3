@@ -336,6 +336,13 @@ jobs:
         env:
           CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=OFF"
 
+      - name: Seed isolated Matplotlib font cache (Unix)
+        if: matrix.os == 'ubuntu-22.04' && (matrix.python-version == '3.9' || matrix.python-version == '3.10')
+        run: python scripts/prepare_matplotlib_cache.py
+        env:
+          MPLBACKEND: Agg
+          MPLCONFIGDIR: ${{ runner.temp }}/matplotlib
+
       - name: Run Python tests
         run: pytest tests/python/test_sbml_import.py -v --tb=short
         env:

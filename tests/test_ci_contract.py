@@ -55,6 +55,7 @@ def test_python_tests_use_headless_isolated_matplotlib_cache():
     job = _python_test_job()
     assert "MPLBACKEND: Agg" in job
     assert "MPLCONFIGDIR: ${{ runner.temp }}/matplotlib" in job
+    assert "scripts/prepare_matplotlib_cache.py" in job
 
 
 def test_sbml_import_runs_as_a_real_isolated_ci_gate():
