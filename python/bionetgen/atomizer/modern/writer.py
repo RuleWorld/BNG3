@@ -690,6 +690,99 @@ def _curated_parameter_value(model: SBMLModel, parameter_id: str, value: object)
     return _number(number)
 
 
+def _inline_reaction_fluxes(
+    expression: str,
+    model: SBMLModel,
+    assignment_rule_variables: Set[str],
+    observable_converted_rules: Set[str],
+    species_with_conc_functions: Set[str],
+    sbml_to_bngl_id: Mapping[str, str],
+) -> str:
+    """Inline reaction IDs used as SBML ``rateOf`` expressions."""
+
+    if not model.reactions:
+        return expression
+    defined = set(model.parameters) | set(model.species)
+    defined.update(
+        standardize_name(name) for name in (*model.parameters, *model.species)
+    )
+    defined.update(assignment_rule_variables)
+    defined.update(standardize_name(name) for name in assignment_rule_variables)
+    for function_id, function in model.function_definitions.items():
+        defined.add(function_id)
+        defined.add(standardize_name(function_id))
+        if getattr(function, "name", ""):
+            defined.add(function.name)
+            defined.add(standardize_name(function.name))
+
+    cache: Dict[str, Optional[str]] = {}
+
+    def reaction_flux(reaction_id: str, reaction: SBMLReaction) -> Optional[str]:
+        if reaction_id in cache:
+            return cache[reaction_id]
+        math_expression = get_kinetic_math(reaction.kinetic_law)
+        if not math_expression.strip():
+            cache[reaction_id] = None
+            return None
+        kinetic_law = reaction.kinetic_law
+        local_parameters = (
+            kinetic_law.get("localParameters", [])
+            if isinstance(kinetic_law, Mapping)
+            else getattr(kinetic_law, "local_parameters", [])
+        )
+        for parameter in local_parameters or []:
+            parameter_id = getattr(parameter, "id", None)
+            if parameter_id is None and isinstance(parameter, Mapping):
+                parameter_id = parameter.get("id")
+            parameter_value = getattr(parameter, "value", None)
+            if parameter_value is None and isinstance(parameter, Mapping):
+                parameter_value = parameter.get("value")
+            if parameter_id:
+                math_expression = re.sub(
+                    rf"\b{re.escape(str(parameter_id))}\b",
+                    _curated_parameter_value(model, str(parameter_id), parameter_value),
+                    math_expression,
+                )
+        try:
+            math_expression = extend_function(
+                math_expression, {}, model.function_definitions
+            )
+            flux = bngl_function(
+                math_expression,
+                reaction_id,
+                [],
+                list(model.compartments),
+                assignment_rule_variables=assignment_rule_variables,
+                observable_converted_rules=observable_converted_rules,
+                species_with_conc_functions=species_with_conc_functions,
+                sbml_to_bngl_id=sbml_to_bngl_id,
+            )
+        except (TypeError, ValueError, re.error):
+            flux = None
+        cache[reaction_id] = flux
+        return flux
+
+    result = expression
+    for _ in range(4):
+        changed = False
+        for reaction_id, reaction in model.reactions.items():
+            reaction_id = str(reaction_id)
+            if reaction_id in defined or standardize_name(reaction_id) in defined:
+                continue
+            flux = reaction_flux(reaction_id, reaction)
+            if flux is None:
+                continue
+            for candidate in (reaction_id, standardize_name(reaction_id)):
+                pattern = rf"\b{re.escape(candidate)}\b(?!\s*\()"
+                result, count = re.subn(pattern, lambda _: f"({flux})", result)
+                if count:
+                    changed = True
+                    break
+        if not changed:
+            break
+    return result
+
+
 def _conversion_factor_for_reaction(
     reaction: SBMLReaction, model: SBMLModel
 ) -> Optional[str]:
@@ -1086,6 +1179,28 @@ def write_functions(
     emitted_names: Set[str] = set()
     synthetic_rate_rule_variables = synthetic_rate_rule_variables or set()
     skip_assignment_rules = skip_assignment_rules or set()
+    assignment_rule_variables = {
+        rule.variable
+        for rule in model.rules
+        if rule.variable and rule.type in {"assignment", "rate"}
+    }
+    rate_rule_variables = {
+        standardize_name(rule.variable)
+        for rule in model.rules
+        if rule.variable and rule.type in {"assignment", "rate"}
+    }
+    species_map = {species_id: species_id for species_id in model.species}
+    for variable in synthetic_rate_rule_variables:
+        # Synthetic rate-rule state species use the SBML variable as their
+        # lookup key, while their generated molecule pattern is carried by
+        # the observable/seed maps in generate_bngl().
+        species_map[variable] = variable
+        species_map[standardize_name(variable)] = variable
+    concentration_names = {
+        standardize_name(species_id)
+        for species_id, species in model.species.items()
+        if not species.has_only_substance_units
+    }
 
     # SBML species are amount-valued in the BNGL observable block.  The
     # concentration helper mirrors the Playground writer and is required for
@@ -1124,7 +1239,14 @@ def write_functions(
         ):
             continue
         body = extend_function(
-            rule.math,
+            _inline_reaction_fluxes(
+                rule.math,
+                model,
+                assignment_rule_variables,
+                skip_assignment_rules,
+                concentration_names,
+                species_map,
+            ),
             {
                 parameter_id: parameter.value
                 for parameter_id, parameter in model.parameters.items()
@@ -1135,27 +1257,21 @@ def write_functions(
         body = _rewrite_zero_argument_calls(body, zero_argument_functions)
         lines.append(f"{standardize_name(rule.variable)}() = {body}")
 
-    rate_rule_variables = {
-        standardize_name(rule.variable)
-        for rule in model.rules
-        if rule.variable and rule.type in {"assignment", "rate"}
-    }
-    species_map = {species_id: species_id for species_id in model.species}
-    for variable in synthetic_rate_rule_variables:
-        # Synthetic rate-rule state species use the SBML variable as their
-        # lookup key, while their generated molecule pattern is carried by
-        # the observable/seed maps in generate_bngl().
-        species_map[variable] = variable
-        species_map[standardize_name(variable)] = variable
-    concentration_names = {
-        standardize_name(species_id)
-        for species_id, species in model.species.items()
-        if not species.has_only_substance_units
-    }
     for rule in model.rules:
         if not rule.variable or rule.type != "rate":
             continue
-        body = extend_function(rule.math, {}, model.function_definitions)
+        body = extend_function(
+            _inline_reaction_fluxes(
+                rule.math,
+                model,
+                assignment_rule_variables,
+                skip_assignment_rules,
+                concentration_names,
+                species_map,
+            ),
+            {},
+            model.function_definitions,
+        )
         body = bngl_function(
             body,
             rule.variable,

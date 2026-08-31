@@ -481,6 +481,56 @@ def test_playground_writer_emits_simple_assignment_rules_as_observables():
     cpp.parse_string(bngl)
 
 
+def test_playground_writer_inlines_reaction_flux_ids_in_assignment_rules():
+    from bionetgen.atomizer.modern import (
+        SBMLKineticLaw,
+        SBMLModel,
+        SBMLParameter,
+        SBMLReaction,
+        SBMLRule,
+        SBMLSpecies,
+        SBMLSpeciesReference,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    model = SBMLModel(
+        id="reaction_flux_rule",
+        species=OrderedDict(
+            [
+                ("A", SBMLSpecies(id="A", initial_amount=3)),
+                ("P", SBMLSpecies(id="P", initial_amount=0)),
+            ]
+        ),
+        parameters=OrderedDict([("k", SBMLParameter(id="k", value=2))]),
+        reactions=OrderedDict(
+            [
+                (
+                    "rA",
+                    SBMLReaction(
+                        id="rA",
+                        reactants=[SBMLSpeciesReference("A")],
+                        products=[SBMLSpeciesReference("P")],
+                        kinetic_law=SBMLKineticLaw("k * A"),
+                    ),
+                )
+            ]
+        ),
+        rules=[SBMLRule(type="assignment", variable="flux", math="rA")],
+    )
+    sct = build_species_composition_table(model)
+    bngl, _ = generate_bngl(
+        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+    )
+
+    assert "flux() = rA" not in bngl
+    assert "flux() = (2 * _c_A())" in bngl
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    cpp.parse_string(bngl)
+
+
 def test_playground_function_inlining_handles_nested_arguments_and_parameters():
     from bionetgen.atomizer.modern import SBMLFunctionDefinition, extend_function
 

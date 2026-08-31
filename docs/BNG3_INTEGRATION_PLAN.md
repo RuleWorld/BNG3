@@ -112,6 +112,8 @@ Completed slices now present in BNG3 include:
 - Repeated component names in reactant patterns now remove matching leading
   statistical multiplicity factors, leaving BNGL pattern matching to carry the
   combinatorics.
+- Assignment and rate-rule expressions that reference reaction IDs now inline
+  the corresponding kinetic flux, covering SBML `rateOf`-style dependencies.
 - Legacy runner boundaries that preserve C++ parse/execution failures and do
   not return an empty successful result when neither backend is available.
 
@@ -119,15 +121,15 @@ Local evidence at this checkpoint:
 
 - CTest: 124/124 tests passed.
 - Fast Python suite (`-m 'not slow'`): 155 passed, 27 skipped.
-- Full Python suite: 189 passed, 27 skipped.
-- Focused modern Playground atomizer suite: 31 passed, including declared
+- Full Python suite: 190 passed, 27 skipped.
+- Focused modern Playground atomizer suite: 32 passed, including declared
   unit scaling, canonical SBML-Multi extraction, conversion-factor
   diagnostics, materialized species rate-rule synthesis, stoichiometry
   safeguards, fast-reaction handling, unsupported-package diagnostics, and
   MathML numeric/function handling, identifier-safe rate/observable mapping,
   fixed-seed preservation, expression-seed folding, assignment-rule
-  observable aliases, non-finite parameter curation, and repeated-site
-  statistical-factor handling.
+  observable aliases, non-finite parameter curation, repeated-site
+  statistical-factor handling, and reaction-flux inlining.
 - Current direct-vs-in-memory-XML NFsim shadow suite: 4/4 passed with the
   rebuilt native NFsim executable after the latest adapter slices.
 - Current fixed-seed Tier-NF gate: all 4 models × 200 native-oracle runs, plus
