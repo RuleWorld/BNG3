@@ -56,6 +56,8 @@ def test_msvc_parser_headers_clear_windows_macros_before_antlr():
         encoding="utf-8"
     )
     assert re.search(r"#\s*undef\s+ERROR", compat)
+    assert re.search(r"#\s*undef\s+TRUE", compat)
+    assert re.search(r"#\s*undef\s+FALSE", compat)
     assert re.search(r"#\s*undef\s+constant", compat)
 
     source = (REPO / "cpp" / "nfsim" / "NFinput" / "NFinput_fromAst.cpp").read_text(
