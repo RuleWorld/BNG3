@@ -77,10 +77,10 @@ Completed slices now present in BNG3 include:
   reactions with mixed per-species factors remain explicitly unscaled and
   diagnostic because one BNGL rule cannot represent species-specific flux
   scalars.
-- SBML rate rules targeting materialized species now become positive/negative
-  source/sink rules driven by explicit rate-rule functions; unmaterialized
-  targets remain metadata-only with a diagnostic, and algebraic rules remain
-  explicit dropped constraints.
+- SBML rate rules now become positive/negative source/sink rules driven by
+  explicit rate-rule functions. Targets absent from `listOfSpecies` are
+  materialized as amount-only synthetic state species, while algebraic rules
+  remain explicit dropped constraints.
 - SBML stoichiometry is now handled without silent integer coercion: explicit
   zero references are omitted, fixed integer references are preserved, and
   fractional, negative, or non-finite references cause the affected reaction
@@ -94,10 +94,11 @@ Local evidence at this checkpoint:
 
 - CTest: 124/124 tests passed.
 - Fast Python suite (`-m 'not slow'`): 155 passed, 27 skipped.
-- Full Python suite: 178 passed, 27 skipped.
-- Focused modern Playground atomizer suite: 20 passed, including declared
+- Full Python suite: 179 passed, 27 skipped.
+- Focused modern Playground atomizer suite: 21 passed, including declared
   unit scaling, canonical SBML-Multi extraction, conversion-factor
-  diagnostics, species rate-rule synthesis, and stoichiometry safeguards.
+  diagnostics, materialized species rate-rule synthesis, and stoichiometry
+  safeguards.
 - Current direct-vs-in-memory-XML NFsim shadow suite: 4/4 passed with the
   rebuilt native NFsim executable after the latest adapter slices.
 - Current fixed-seed Tier-NF gate: all 4 models × 200 native-oracle runs, plus

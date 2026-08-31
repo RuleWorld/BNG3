@@ -808,6 +808,48 @@ def test_playground_writer_synthesizes_source_sink_rules_for_species_rate_rule()
     cpp.parse_string(bngl)
 
 
+def test_playground_writer_materializes_non_species_rate_rule_targets():
+    from bionetgen.atomizer.modern import (
+        SBMLCompartment,
+        SBMLModel,
+        SBMLParameter,
+        SBMLRule,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    model = SBMLModel(
+        id="synthetic_rate_rule",
+        compartments=OrderedDict(
+            [("cell", SBMLCompartment(id="cell", size=2, spatial_dimensions=3))]
+        ),
+        parameters=OrderedDict(
+            [
+                ("X", SBMLParameter(id="X", value=3)),
+                ("k", SBMLParameter(id="k", value=0.5)),
+            ]
+        ),
+        rules=[SBMLRule(type="rate", variable="X", math="-k*X")],
+    )
+
+    sct = build_species_composition_table(model)
+    bngl, _ = generate_bngl(
+        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+    )
+
+    pattern = "M___rate_rule_state__X"
+    assert "M___rate_rule_state__X()" in bngl
+    assert f"@cell:{pattern}() 3" in bngl
+    assert f"Species X_amt @cell:{pattern}()" in bngl
+    assert "__rate_rule__X() = -k*X_amt" in bngl
+    assert f"__rate_rule_in_X: 0 -> {pattern}@cell()" in bngl
+    assert f"__rate_rule_out_X: {pattern}@cell() -> 0" in bngl
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    cpp.parse_string(bngl)
+
+
 def test_playground_atomizer_preserves_zero_stoichiometry_and_rejects_unsupported_values():
     from bionetgen.atomizer.modern import (
         SBMLParser,
