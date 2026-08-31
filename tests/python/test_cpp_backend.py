@@ -489,11 +489,18 @@ end model
         )
 
         monkeypatch.setenv("BNG_NFSIM_REQUIRE_DIRECT", "1")
-        result = bionetgen.load(str(bngl)).simulate(
-            method="nf", t_end=0.0, n_steps=1, seed=1
+        model = bionetgen.load(str(bngl))
+        direct = model.simulate(
+            method="nf", t_end=1.0, n_steps=2, seed=1
         )
 
-        assert result.time.tolist() == [0.0, 0.0]
+        monkeypatch.delenv("BNG_NFSIM_REQUIRE_DIRECT")
+        monkeypatch.setenv("BNG_NFSIM_FORCE_XML", "1")
+        monkeypatch.setenv("BNG_NFSIM_ALLOW_XML_FALLBACK", "1")
+        xml = model.simulate(method="nf", t_end=1.0, n_steps=2, seed=1)
+
+        assert direct.time.tolist() == xml.time.tolist()
+        assert direct.observables["A1"].tolist() == xml.observables["A1"].tolist()
 
     def test_nf_direct_dynamic_rate_wraps_scoped_local_function(
         self, tmp_path, monkeypatch
