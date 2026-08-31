@@ -237,6 +237,41 @@ class SBMLParser:
             ),
         )
         result.import_warnings.extend(apply_unit_scaling(result))
+        for reaction_id, reaction in result.reactions.items():
+            for reference in [*reaction.reactants, *reaction.products]:
+                value = reference.stoichiometry
+                if value == 0:
+                    continue
+                if reference.variable_stoichiometry:
+                    result.import_warnings.append(
+                        {
+                            "category": "stoichiometry",
+                            "message": (
+                                f'Reaction "{reaction_id}" has variable '
+                                f'stoichiometry for species "{reference.species}"; '
+                                f"BNGL will use the parsed fixed value {value:g}."
+                            ),
+                            "count": 1,
+                            "severity": "approximated",
+                        }
+                    )
+                elif (
+                    not math.isfinite(value)
+                    or value < 0
+                    or abs(value - round(value)) > 1e-9
+                ):
+                    result.import_warnings.append(
+                        {
+                            "category": "stoichiometry",
+                            "message": (
+                                f'Reaction "{reaction_id}" has unsupported '
+                                f"stoichiometry {value:g} for species "
+                                f'"{reference.species}"; the reaction will be omitted.'
+                            ),
+                            "count": 1,
+                            "severity": "dropped",
+                        }
+                    )
         multi = parse_multi_package(root)
         result.import_warnings.extend(multi.warnings)
         result.multi_molecule_types = list(multi.bngl_molecule_types)
@@ -370,7 +405,9 @@ class SBMLParser:
     def _parse_xml_reference(item: Any) -> SBMLSpeciesReference:
         species = str(_attribute(item, "species", "") or "")
         stoichiometry_set = _attribute(item, "stoichiometry") is not None
-        stoichiometry = _float(_attribute(item, "stoichiometry"), 1) or 1
+        stoichiometry = (
+            _float(_attribute(item, "stoichiometry"), 1) if stoichiometry_set else 1
+        )
         constant = _bool(_attribute(item, "constant"), True)
         return SBMLSpeciesReference(
             species=species,
@@ -736,7 +773,7 @@ class SBMLParser:
         )
         return SBMLSpeciesReference(
             species=str(ref.getSpecies()),
-            stoichiometry=stoichiometry or 1,
+            stoichiometry=stoichiometry,
             constant=bool(ref.getConstant()) if hasattr(ref, "getConstant") else True,
             id=(
                 str(ref.getId() or "")

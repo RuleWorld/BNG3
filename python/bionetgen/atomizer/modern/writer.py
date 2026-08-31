@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 from collections import OrderedDict
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
@@ -525,23 +526,27 @@ def _rate_for_reaction(
     )
 
 
-def _record_import_warning(model: SBMLModel, message: str) -> None:
+def _record_import_warning(
+    model: SBMLModel,
+    message: str,
+    category: str = "conversionFactor",
+    severity: str = "approximated",
+) -> None:
     warnings = getattr(model, "import_warnings", None)
     if warnings is None:
         model.import_warnings = []
         warnings = model.import_warnings
     if any(
-        warning.get("category") == "conversionFactor"
-        and warning.get("message") == message
+        warning.get("category") == category and warning.get("message") == message
         for warning in warnings
     ):
         return
     warnings.append(
         {
-            "category": "conversionFactor",
+            "category": category,
             "message": message,
             "count": 1,
-            "severity": "approximated",
+            "severity": severity,
         }
     )
 
@@ -804,6 +809,47 @@ def write_reaction_rules(
     lines = []
     used_labels = set()
     for reaction_id, reaction in model.reactions.items():
+        for reference in [*reaction.reactants, *reaction.products]:
+            if (
+                reference.species != "EmptySet"
+                and reference.variable_stoichiometry
+                and math.isfinite(reference.stoichiometry)
+                and reference.stoichiometry >= 0
+                and abs(reference.stoichiometry - round(reference.stoichiometry))
+                <= 1e-9
+            ):
+                _record_import_warning(
+                    model,
+                    f'Reaction "{reaction_id}" has variable stoichiometry for '
+                    f'"{reference.species}"; BNGL uses the parsed fixed value '
+                    f"{reference.stoichiometry:g}.",
+                    category="stoichiometry",
+                    severity="approximated",
+                )
+        unsupported = next(
+            (
+                reference
+                for reference in [*reaction.reactants, *reaction.products]
+                if reference.species != "EmptySet"
+                and (
+                    not math.isfinite(reference.stoichiometry)
+                    or reference.stoichiometry < 0
+                    or abs(reference.stoichiometry - round(reference.stoichiometry))
+                    > 1e-9
+                )
+            ),
+            None,
+        )
+        if unsupported is not None:
+            _record_import_warning(
+                model,
+                f'Reaction "{reaction_id}" has unsupported stoichiometry for '
+                f'"{unsupported.species}"; the reaction was omitted because BNGL '
+                "requires fixed nonnegative integer stoichiometry.",
+                category="stoichiometry",
+                severity="dropped",
+            )
+            continue
         reactants: List[str] = []
         products: List[str] = []
         for reference in reaction.reactants:
@@ -811,14 +857,14 @@ def write_reaction_rules(
                 continue
             reactants.extend(
                 [_reaction_pattern(reference.species, sct, model)]
-                * max(1, int(reference.stoichiometry or 1))
+                * int(round(reference.stoichiometry))
             )
         for reference in reaction.products:
             if reference.species == "EmptySet":
                 continue
             products.extend(
                 [_reaction_pattern(reference.species, sct, model)]
-                * max(1, int(reference.stoichiometry or 1))
+                * int(round(reference.stoichiometry))
             )
         label = standardize_name(reaction.name or reaction_id)
         candidate = label

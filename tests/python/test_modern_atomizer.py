@@ -806,3 +806,51 @@ def test_playground_writer_synthesizes_source_sink_rules_for_species_rate_rule()
     assert "__rate_rule_out_A: M_A() -> 0" in bngl
     cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
     cpp.parse_string(bngl)
+
+
+def test_playground_atomizer_preserves_zero_stoichiometry_and_rejects_unsupported_values():
+    from bionetgen.atomizer.modern import (
+        SBMLParser,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    sbml = """<?xml version="1.0"?>
+    <sbml xmlns="http://www.sbml.org/sbml/level3/version1/core" level="3" version="1">
+      <model id="stoich">
+        <listOfSpecies>
+          <species id="A" name="A" initialAmount="1"/>
+          <species id="B" name="B"/>
+        </listOfSpecies>
+        <listOfReactions>
+          <reaction id="fractional" name="fractional">
+            <listOfReactants><speciesReference species="A" stoichiometry="0.5"/></listOfReactants>
+            <listOfProducts><speciesReference species="B"/></listOfProducts>
+            <kineticLaw formula="k"/>
+          </reaction>
+          <reaction id="zero" name="zero">
+            <listOfReactants><speciesReference species="A" stoichiometry="0"/></listOfReactants>
+            <listOfProducts><speciesReference species="B"/></listOfProducts>
+            <kineticLaw formula="k"/>
+          </reaction>
+        </listOfReactions>
+      </model>
+    </sbml>
+    """
+
+    model = SBMLParser().parse(sbml)
+
+    assert model.reactions["fractional"].reactants[0].stoichiometry == pytest.approx(
+        0.5
+    )
+    assert model.reactions["zero"].reactants[0].stoichiometry == 0
+    assert any(w["category"] == "stoichiometry" for w in model.import_warnings)
+
+    sct = build_species_composition_table(model)
+    bngl, _ = generate_bngl(
+        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+    )
+    assert "fractional:" not in bngl
+    assert "zero: 0 -> M_B()" in bngl

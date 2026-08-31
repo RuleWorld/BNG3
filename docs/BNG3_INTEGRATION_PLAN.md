@@ -81,6 +81,12 @@ Completed slices now present in BNG3 include:
   source/sink rules driven by explicit rate-rule functions; unmaterialized
   targets remain metadata-only with a diagnostic, and algebraic rules remain
   explicit dropped constraints.
+- SBML stoichiometry is now handled without silent integer coercion: explicit
+  zero references are omitted, fixed integer references are preserved, and
+  fractional, negative, or non-finite references cause the affected reaction
+  to be omitted with an explicit provenance warning. Variable references with
+  a finite nonnegative integer value are retained as a documented fixed-value
+  approximation.
 - Legacy runner boundaries that preserve C++ parse/execution failures and do
   not return an empty successful result when neither backend is available.
 
@@ -88,10 +94,10 @@ Local evidence at this checkpoint:
 
 - CTest: 124/124 tests passed.
 - Fast Python suite (`-m 'not slow'`): 155 passed, 27 skipped.
-- Full Python suite: 177 passed, 27 skipped.
-- Focused modern Playground atomizer suite: 19 passed, including declared
-  unit scaling, canonical SBML-Multi extraction, and conversion-factor
-  diagnostics plus species rate-rule synthesis.
+- Full Python suite: 178 passed, 27 skipped.
+- Focused modern Playground atomizer suite: 20 passed, including declared
+  unit scaling, canonical SBML-Multi extraction, conversion-factor
+  diagnostics, species rate-rule synthesis, and stoichiometry safeguards.
 - Current direct-vs-in-memory-XML NFsim shadow suite: 4/4 passed with the
   rebuilt native NFsim executable after the latest adapter slices.
 - Current fixed-seed Tier-NF gate: all 4 models × 200 native-oracle runs, plus
