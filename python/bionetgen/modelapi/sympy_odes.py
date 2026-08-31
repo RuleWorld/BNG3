@@ -379,9 +379,7 @@ def _extract_odes_from_cpp_mex(text: str, mex_c_path: str) -> SympyOdes:
     n_obs = n_obs or (max(obs_map) + 1 if obs_map else 0)
     n_rate = n_rate or (max(rate_map) + 1 if rate_map else 0)
 
-    species_symbol_names, species_names = _build_symbol_names(
-        [], n_species, prefix="s"
-    )
+    species_symbol_names, species_names = _build_symbol_names([], n_species, prefix="s")
     param_symbol_names, param_names = _build_symbol_names([], n_params, prefix="p")
     species_symbols = [sp.Symbol(name) for name in species_symbol_names]
     param_symbols = [sp.Symbol(name) for name in param_symbol_names]
@@ -452,9 +450,7 @@ def _extract_odes_from_cpp_mex(text: str, mex_c_path: str) -> SympyOdes:
     odes: List[sp.Expr] = [sp.Integer(0) for _ in range(n_species)]
     for idx in range(n_species):
         if idx in deriv_map:
-            odes[idx] = cast(
-                sp.Expr, parse_rhs(deriv_map[idx]).subs(rate_sub)
-            )
+            odes[idx] = cast(sp.Expr, parse_rhs(deriv_map[idx]).subs(rate_sub))
 
     return SympyOdes(
         t=t,
@@ -521,9 +517,7 @@ def _extract_define_int_any(text: str, define_name: str) -> Optional[int]:
 def _max_cpp_reference_index(text: str, array_name: str) -> int:
     indices = [
         int(match.group(1))
-        for match in re.finditer(
-            rf"\b{re.escape(array_name)}\s*\[\s*(\d+)\s*\]", text
-        )
+        for match in re.finditer(rf"\b{re.escape(array_name)}\s*\[\s*(\d+)\s*\]", text)
     ]
     return max(indices, default=-1) + 1
 

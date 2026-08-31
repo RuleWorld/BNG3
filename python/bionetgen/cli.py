@@ -248,7 +248,9 @@ def notebook(input_path, output_path, open_notebook):
     output.parent.mkdir(parents=True, exist_ok=True)
     content = template.read_text(encoding="utf-8")
     if input_path:
-        content = content.replace("INPUT_ARG", str(Path(input_path).resolve()).replace("\\", "/"))
+        content = content.replace(
+            "INPUT_ARG", str(Path(input_path).resolve()).replace("\\", "/")
+        )
     output.write_text(content, encoding="utf-8")
     click.echo(f"Notebook written to {output}")
     if open_notebook:
@@ -273,7 +275,9 @@ def notebook(input_path, output_path, open_notebook):
 @click.option("--output", "-o", "output_path", default=None, type=click.Path())
 @click.option("--output2", "-o2", "output2_path", default=None, type=click.Path())
 @click.option("--mode", "-m", default="matrix", type=click.Choice(["matrix", "union"]))
-@click.option("--colors", "-c", "colors_path", default=None, type=click.Path(exists=True))
+@click.option(
+    "--colors", "-c", "colors_path", default=None, type=click.Path(exists=True)
+)
 def graphdiff(input_path, input2_path, output_path, output2_path, mode, colors_path):
     """Compare two GraphML visualization outputs."""
     from bionetgen.core.tools.gdiff import BNGGdiff
@@ -305,7 +309,9 @@ def graphdiff(input_path, input2_path, output_path, output2_path, mode, colors_p
 )
 @click.option("--output", "-o", "output_path", default=None, type=click.Path())
 @click.option("--atomize", "-a", is_flag=True, help="Infer molecular structure.")
-@click.option("--no-conversion", is_flag=True, help="Disable reaction conversion heuristics.")
+@click.option(
+    "--no-conversion", is_flag=True, help="Disable reaction conversion heuristics."
+)
 @click.option("--no-pathwaycommons", is_flag=True, help="Do not query Pathway Commons.")
 def atomize(input_path, output_path, atomize, no_conversion, no_pathwaycommons):
     """Translate an SBML file to BNGL through the Python atomizer."""
@@ -576,7 +582,9 @@ def visualize(model, input_path, viz_type, output):
     if canonical == "all":
         output_dir = Path(output) if output else Path.cwd()
         if output and output_dir.suffix:
-            raise click.ClickException("--output for visualize --type all must be a directory")
+            raise click.ClickException(
+                "--output for visualize --type all must be a directory"
+            )
         output_dir.mkdir(parents=True, exist_ok=True)
         methods = [
             "contact_map",
@@ -598,7 +606,9 @@ def visualize(model, input_path, viz_type, output):
         elif not destination.exists() and not destination.suffix:
             destination.mkdir(parents=True, exist_ok=True)
             destination = destination / f"{canonical}.graphml"
-    graph_text = getattr(bng_model, canonical)(None if destination is None else str(destination))
+    graph_text = getattr(bng_model, canonical)(
+        None if destination is None else str(destination)
+    )
     if destination is None:
         click.echo(graph_text)
     else:

@@ -8,8 +8,7 @@ from bionetgen.modelapi.sympy_odes import SympyOdes, export_sympy_odes
 
 def test_export_sympy_odes_uses_modern_cpp_writer(tmp_path):
     bngl = tmp_path / "sympy_decay.bngl"
-    bngl.write_text(
-        """
+    bngl.write_text("""
 begin model
 begin parameters
     k 0.1
@@ -27,8 +26,7 @@ begin reaction rules
     X() -> 0 k
 end reaction rules
 end model
-"""
-    )
+""")
     output_dir = tmp_path / "mex"
 
     result = export_sympy_odes(

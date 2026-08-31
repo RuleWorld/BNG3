@@ -22,7 +22,6 @@ sys.path.insert(0, str(REPO))
 
 from tests.validation.compare import compare_net, parse_net  # noqa: E402
 
-
 _FILE_ARGUMENT = re.compile(r"\b(?:file|argfile)\s*=>\s*(['\"])([^'\"]+)\1")
 
 
@@ -51,7 +50,9 @@ def copy_referenced_support_files(
             dat_dir / relative.name,
             validate_dir / relative.name,
         ]
-        source = next((candidate for candidate in candidates if candidate.is_file()), None)
+        source = next(
+            (candidate for candidate in candidates if candidate.is_file()), None
+        )
         if source is None:
             continue
 

@@ -103,8 +103,7 @@ end model
 
     def test_actions_after_model_blocks_are_accepted(self, tmp_path):
         bngl = tmp_path / "actions_inside_model.bngl"
-        bngl.write_text(
-            """
+        bngl.write_text("""
 begin model
 begin parameters
     k_deg 1.0
@@ -129,8 +128,7 @@ end reaction rules
 generate_network({overwrite=>1})
 simulate_nf({prefix=>"inside_model",t_end=>1,n_steps=>1,seed=>7})
 end model
-"""
-        )
+""")
 
         bionetgen.load(str(bngl)).execute()
 
@@ -140,8 +138,7 @@ end model
 
     def test_integer_state_increment_and_decrement_rules_are_expanded(self, tmp_path):
         bngl = tmp_path / "integer_states.bngl"
-        bngl.write_text(
-            """
+        bngl.write_text("""
 begin parameters
     kr 5
     kb 20
@@ -157,8 +154,7 @@ begin reaction rules
     ReceptorDimer(m~^[8]) -> ReceptorDimer(m~++) kr
     ReceptorDimer(m~^[0]) -> ReceptorDimer(m~--) kb
 end reaction rules
-"""
-        )
+""")
 
         model = _cpp.parse_file(str(bngl))
 
@@ -169,8 +165,7 @@ end reaction rules
     def test_singular_function_block_header_is_accepted(self, tmp_path):
         """BNG2/NFsim-era fixtures use ``begin function`` as a legacy alias."""
         bngl = tmp_path / "singular_function_block.bngl"
-        bngl.write_text(
-            """
+        bngl.write_text("""
 begin parameters
     k 2
 end parameters
@@ -189,8 +184,7 @@ end function
 begin reaction rules
     X() -> 0 rate()
 end reaction rules
-"""
-        )
+""")
 
         model = _cpp.parse_file(str(bngl))
 
@@ -345,9 +339,7 @@ end model
         assert ssa["time"].tolist() == sample_times
 
         with pytest.raises(RuntimeError, match="stop_if"):
-            _cpp.simulate_ode(
-                model, network, t_end=1.0, n_steps=1, stop_if="Xtot <"
-            )
+            _cpp.simulate_ode(model, network, t_end=1.0, n_steps=1, stop_if="Xtot <")
 
     @pytest.mark.parametrize("method", ["pla", "psa"])
     def test_approximate_simulation_respects_start_time(self, tmp_path, method):
@@ -425,8 +417,7 @@ end model
         table_dir.mkdir()
         (table_dir / "rate.dat").write_text("0 1\n10 1\n")
         bngl = tmp_path / "relative_tfun.bngl"
-        bngl.write_text(
-            """
+        bngl.write_text("""
 begin model
 begin parameters
 end parameters
@@ -446,8 +437,7 @@ begin reaction rules
     A() -> 0 rate
 end reaction rules
 end model
-"""
-        )
+""")
 
         monkeypatch.chdir(tmp_path.parent)
         model = bionetgen.load(str(bngl))
@@ -460,8 +450,7 @@ end model
         self, tmp_path, monkeypatch
     ):
         bngl = tmp_path / "local_global_observable.bngl"
-        bngl.write_text(
-            """
+        bngl.write_text("""
 begin model
 begin parameters
     k 0.1
@@ -485,14 +474,11 @@ begin reaction rules
     A(s~0) + C(d!1)%x.C(d!1) -> A(s~1) + C(d!1)%x.C(d!1) loc(x)
 end reaction rules
 end model
-"""
-        )
+""")
 
         monkeypatch.setenv("BNG_NFSIM_REQUIRE_DIRECT", "1")
         model = bionetgen.load(str(bngl))
-        direct = model.simulate(
-            method="nf", t_end=1.0, n_steps=2, seed=1
-        )
+        direct = model.simulate(method="nf", t_end=1.0, n_steps=2, seed=1)
 
         monkeypatch.delenv("BNG_NFSIM_REQUIRE_DIRECT")
         monkeypatch.setenv("BNG_NFSIM_FORCE_XML", "1")
@@ -508,8 +494,7 @@ end model
         self, tmp_path, monkeypatch
     ):
         bngl = tmp_path / "dynamic_scoped_local_rate.bngl"
-        bngl.write_text(
-            """
+        bngl.write_text("""
 begin model
 begin parameters
 end parameters
@@ -529,8 +514,7 @@ begin reaction rules
     A(s~0)%x -> A(s~1) 2 + tally(x)
 end reaction rules
 end model
-"""
-        )
+""")
 
         monkeypatch.setenv("BNG_NFSIM_REQUIRE_DIRECT", "1")
         result = bionetgen.load(str(bngl)).simulate(
@@ -541,8 +525,7 @@ end model
 
     def test_nf_direct_route_can_be_required(self, tmp_path, monkeypatch):
         bngl = tmp_path / "strict_nf.bngl"
-        bngl.write_text(
-            """
+        bngl.write_text("""
 begin model
 begin molecule types
     X()
@@ -554,8 +537,7 @@ begin observables
     Molecules X_total X()
 end observables
 end model
-"""
-        )
+""")
         model = _cpp.parse_file(str(bngl))
         monkeypatch.setenv("BNG_NFSIM_FORCE_XML", "1")
         monkeypatch.setenv("BNG_NFSIM_REQUIRE_DIRECT", "1")
@@ -565,8 +547,7 @@ end model
 
     def test_nf_xml_fallback_requires_explicit_opt_in(self, tmp_path, monkeypatch):
         bngl = tmp_path / "implicit_xml_nf.bngl"
-        bngl.write_text(
-            """
+        bngl.write_text("""
 begin model
 begin molecule types
     X()
@@ -578,8 +559,7 @@ begin observables
     Molecules X_total X()
 end observables
 end model
-"""
-        )
+""")
         model = _cpp.parse_file(str(bngl))
         monkeypatch.setenv("BNG_NFSIM_FORCE_XML", "1")
         monkeypatch.delenv("BNG_NFSIM_REQUIRE_DIRECT", raising=False)
@@ -590,8 +570,7 @@ end model
 
     def test_simulate_method_nf_uses_nf_route(self, tmp_path, monkeypatch):
         bngl = tmp_path / "action_nf.bngl"
-        bngl.write_text(
-            """
+        bngl.write_text("""
 begin model
 begin molecule types
     X()
@@ -606,8 +585,7 @@ begin actions
     simulate({method=>"nf",suffix=>"route",t_end=>1,n_steps=>2,seed=>1})
 end actions
 end model
-"""
-        )
+""")
         monkeypatch.setenv("BNG_NFSIM_REQUIRE_DIRECT", "1")
 
         model = bionetgen.load(str(bngl))
@@ -616,10 +594,11 @@ end model
         assert (tmp_path / "action_nf_route.gdat").exists()
         assert (tmp_path / "action_nf_route.species").exists()
 
-    def test_action_nf_xml_fallback_requires_explicit_opt_in(self, tmp_path, monkeypatch):
+    def test_action_nf_xml_fallback_requires_explicit_opt_in(
+        self, tmp_path, monkeypatch
+    ):
         bngl = tmp_path / "implicit_action_xml_nf.bngl"
-        bngl.write_text(
-            """
+        bngl.write_text("""
 begin model
 begin molecule types
     X()
@@ -631,8 +610,7 @@ begin actions
     simulate_nf({prefix=>"implicit",t_end=>1,n_steps=>1})
 end actions
 end model
-"""
-        )
+""")
         monkeypatch.setenv("BNG_NFSIM_FORCE_XML", "1")
         monkeypatch.delenv("BNG_NFSIM_REQUIRE_DIRECT", raising=False)
         monkeypatch.delenv("BNG_NFSIM_ALLOW_XML_FALLBACK", raising=False)
@@ -642,8 +620,7 @@ end model
 
     def test_simulate_nf_rejects_unsupported_continue(self, tmp_path):
         bngl = tmp_path / "nf_continue.bngl"
-        bngl.write_text(
-            """
+        bngl.write_text("""
 begin model
 begin molecule types
     X()
@@ -655,8 +632,7 @@ begin actions
     simulate_nf({continue=>1,t_end=>1,n_steps=>1})
 end actions
 end model
-"""
-        )
+""")
 
         with pytest.raises(RuntimeError, match="NFsim does not support 'continue'"):
             bionetgen.load(str(bngl)).execute()
@@ -665,15 +641,14 @@ end model
         ("option", "value", "message"),
         [
             ("t_start", "1", "t_start"),
-            ("param", "\"-unsupported_nf_flag\"", "param"),
+            ("param", '"-unsupported_nf_flag"', "param"),
         ],
     )
     def test_simulate_nf_rejects_unhandled_controls(
         self, tmp_path, option, value, message
     ):
         bngl = tmp_path / f"nf_{option}.bngl"
-        bngl.write_text(
-            f"""
+        bngl.write_text(f"""
 begin model
 begin molecule types
     X()
@@ -685,16 +660,14 @@ begin actions
     simulate_nf({{{option}=>{value},t_end=>1,n_steps=>1}})
 end actions
 end model
-"""
-        )
+""")
 
         with pytest.raises(RuntimeError, match=message):
             bionetgen.load(str(bngl)).execute()
 
     def test_simulate_nf_accepts_legacy_supported_param_flags(self, tmp_path):
         bngl = tmp_path / "nf_param_compat.bngl"
-        bngl.write_text(
-            """
+        bngl.write_text("""
 begin model
 begin molecule types
     X()
@@ -709,8 +682,7 @@ begin actions
     simulate_nf({prefix=>"param_compat",t_end=>1,n_steps=>1,param=>"-gml 1000000 -utl 4 -notf"})
 end actions
 end model
-"""
-        )
+""")
 
         bionetgen.load(str(bngl)).execute()
 
@@ -728,8 +700,7 @@ end model
         makes that distinction observable with a high-rate ring closure.
         """
         bngl = tmp_path / "nf_complex_flags.bngl"
-        bngl.write_text(
-            """
+        bngl.write_text("""
 begin model
 begin parameters
     k 1000000
@@ -752,8 +723,7 @@ begin actions
     simulate_nf({prefix=>"bscb",t_end=>1,n_steps=>1,seed=>1,complex=>1,param=>"-bscb"})
 end actions
 end model
-"""
-        )
+""")
 
         bionetgen.load(str(bngl)).execute()
 
@@ -764,8 +734,7 @@ end model
 
     def test_simulate_nf_action_honors_sample_times(self, tmp_path):
         bngl = tmp_path / "nf_sample_times.bngl"
-        bngl.write_text(
-            """
+        bngl.write_text("""
 begin model
 begin molecule types
     X()
@@ -780,8 +749,7 @@ begin actions
     simulate_nf({prefix=>"sample_times",t_end=>1,sample_times=>[0,0.25,0.75]})
 end actions
 end model
-"""
-        )
+""")
 
         bionetgen.load(str(bngl)).execute()
 
@@ -795,8 +763,7 @@ end model
 
     def test_simulate_nf_action_outputs_global_functions(self, tmp_path):
         bngl = tmp_path / "nf_functions.bngl"
-        bngl.write_text(
-            """
+        bngl.write_text("""
 begin model
 begin parameters
     k 0.1
@@ -820,8 +787,7 @@ begin actions
     simulate_nf({prefix=>"functions",t_end=>1,n_steps=>1,print_functions=>1})
 end actions
 end model
-"""
-        )
+""")
 
         bionetgen.load(str(bngl)).execute()
 
@@ -830,8 +796,7 @@ end model
 
     def test_simulate_nf_action_binary_output_writes_header(self, tmp_path):
         bngl = tmp_path / "nf_binary.bngl"
-        bngl.write_text(
-            """
+        bngl.write_text("""
 begin model
 begin molecule types
     X()
@@ -843,8 +808,7 @@ begin actions
     simulate_nf({prefix=>"binary",t_end=>1,n_steps=>1,binary_output=>1})
 end actions
 end model
-"""
-        )
+""")
 
         bionetgen.load(str(bngl)).execute()
 
@@ -856,8 +820,7 @@ end model
 
     def test_simulate_nf_action_rejects_invalid_equilibration(self, tmp_path):
         bngl = tmp_path / "nf_bad_equil.bngl"
-        bngl.write_text(
-            """
+        bngl.write_text("""
 begin model
 begin molecule types
     X()
@@ -869,16 +832,14 @@ begin actions
     simulate_nf({equil=>-1,t_end=>1,n_steps=>1})
 end actions
 end model
-"""
-        )
+""")
 
         with pytest.raises(RuntimeError, match="equil.*non-negative"):
             bionetgen.load(str(bngl)).execute()
 
     def test_action_rejects_unknown_simulation_method(self, tmp_path):
         bngl = tmp_path / "unknown_method.bngl"
-        bngl.write_text(
-            """
+        bngl.write_text("""
 begin model
 begin molecule types
     X()
@@ -896,16 +857,14 @@ begin actions
     simulate({method=>"not_a_method",t_end=>1,n_steps=>1})
 end actions
 end model
-"""
-        )
+""")
 
         with pytest.raises(RuntimeError, match="unsupported simulation method"):
             bionetgen.load(str(bngl)).execute()
 
     def test_action_rejects_unknown_visualization_type(self, tmp_path):
         bngl = tmp_path / "unknown_visualization.bngl"
-        bngl.write_text(
-            """
+        bngl.write_text("""
 begin model
 begin molecule types
     X()
@@ -917,16 +876,14 @@ begin actions
     visualize({type=>"not_a_visualization"})
 end actions
 end model
-"""
-        )
+""")
 
         with pytest.raises(RuntimeError, match="unsupported visualization type"):
             bionetgen.load(str(bngl)).execute()
 
     def test_writefile_honors_ssc_prefix_suffix_and_overwrite(self, tmp_path):
         bngl = tmp_path / "writefile_contract.bngl"
-        bngl.write_text(
-            """
+        bngl.write_text("""
 begin model
 begin parameters
     k 0.1
@@ -943,8 +900,7 @@ end reaction rules
 end model
 
 writeFile({format=>"ssc",prefix=>"export",suffix=>"v1"})
-"""
-        )
+""")
 
         model = bionetgen.load(str(bngl))
         model.execute()
@@ -958,8 +914,7 @@ writeFile({format=>"ssc",prefix=>"export",suffix=>"v1"})
 
     def test_readnetwork_alias_loads_net_data(self, tmp_path):
         net_path = tmp_path / "import.net"
-        net_path.write_text(
-            """# imported network
+        net_path.write_text("""# imported network
 begin parameters
     1 k 0.2
 end parameters
@@ -969,18 +924,15 @@ end species
 begin reactions
     1 1 0 k
 end reactions
-"""
-        )
+""")
         bngl = tmp_path / "readnetwork.bngl"
-        bngl.write_text(
-            """
+        bngl.write_text("""
 begin model
 end model
 
 readNetwork({file=>"import.net"})
 writeNetwork()
-"""
-        )
+""")
 
         bionetgen.load(str(bngl)).execute()
 
@@ -990,22 +942,19 @@ writeNetwork()
 
     def test_readnetwork_alias_rejects_missing_file(self, tmp_path):
         bngl = tmp_path / "missing_readnetwork.bngl"
-        bngl.write_text(
-            """
+        bngl.write_text("""
 begin model
 end model
 
 readNetwork({file=>"missing.net"})
-"""
-        )
+""")
 
         with pytest.raises(RuntimeError, match=r"Failed to read \.net file"):
             bionetgen.load(str(bngl)).execute()
 
     def test_readmodel_alias_loads_bngl_data(self, tmp_path):
         imported = tmp_path / "imported.bngl"
-        imported.write_text(
-            """
+        imported.write_text("""
 begin model
 begin parameters
     k 0.2
@@ -1017,18 +966,15 @@ begin seed species
     X() 7
 end seed species
 end model
-"""
-        )
+""")
         bngl = tmp_path / "readmodel.bngl"
-        bngl.write_text(
-            """
+        bngl.write_text("""
 begin model
 end model
 
 readModel({file=>"imported.bngl"})
 writeModel()
-"""
-        )
+""")
 
         bionetgen.load(str(bngl)).execute()
 
@@ -1038,14 +984,12 @@ writeModel()
 
     def test_readmodel_alias_rejects_missing_file(self, tmp_path):
         bngl = tmp_path / "missing_readmodel.bngl"
-        bngl.write_text(
-            """
+        bngl.write_text("""
 begin model
 end model
 
 readModel({file=>"missing.bngl"})
-"""
-        )
+""")
 
         with pytest.raises(RuntimeError, match="Could not open BNGL file"):
             bionetgen.load(str(bngl)).execute()
@@ -1094,15 +1038,12 @@ end model
 
         nf_sample_times = [0.0, 0.25, 1.5, 10.0]
         result = model.simulate(
-            method="nf", t_end=10.0, n_steps=0,
-            sample_times=nf_sample_times, seed=42
+            method="nf", t_end=10.0, n_steps=0, sample_times=nf_sample_times, seed=42
         )
         assert result.time.tolist() == nf_sample_times
 
         with pytest.raises(ValueError, match="only for method='ssa'"):
-            model.simulate(
-                method="ode", t_end=1.0, n_steps=1, max_sim_steps=1
-            )
+            model.simulate(method="ode", t_end=1.0, n_steps=1, max_sim_steps=1)
 
         for method in ["pla", "psa"]:
             result = model.simulate(method=method, t_start=2.0, t_end=4.0, n_steps=2)
@@ -1112,10 +1053,10 @@ end model
         with pytest.raises(ValueError, match="t_start=0.0"):
             model.simulate(method="nf", t_start=1.0, t_end=2.0, n_steps=1)
 
-        with pytest.raises(ValueError, match="equilibrate must be finite and non-negative"):
-            model.simulate(
-                method="nf", t_end=1.0, n_steps=1, equilibrate=-0.1
-            )
+        with pytest.raises(
+            ValueError, match="equilibrate must be finite and non-negative"
+        ):
+            model.simulate(method="nf", t_end=1.0, n_steps=1, equilibrate=-0.1)
 
         result = model.simulate(
             method="nf", t_end=1.0, n_steps=1, seed=1, equilibrate=0.1
@@ -1182,8 +1123,7 @@ end model
 
     def test_parameter_scan_action_writes_final_observables(self, tmp_path):
         bngl = tmp_path / "scan_action.bngl"
-        bngl.write_text(
-            """
+        bngl.write_text("""
 begin model
 begin parameters
     k 0.1
@@ -1204,8 +1144,7 @@ end model
 
 generate_network({overwrite=>1})
 parameter_scan({method=>"ode",parameter=>"k",par_min=>0.1,par_max=>0.2,n_scan_pts=>2,par_scan_vals=>[9,10],t_end=>1,n_steps=>1})
-"""
-        )
+""")
 
         model = bionetgen.load(str(bngl))
         model.execute()
@@ -1223,8 +1162,7 @@ parameter_scan({method=>"ode",parameter=>"k",par_min=>0.1,par_max=>0.2,n_scan_pt
 
     def test_parameter_scan_partial_range_uses_explicit_values(self, tmp_path):
         bngl = tmp_path / "scan_partial_range.bngl"
-        bngl.write_text(
-            """
+        bngl.write_text("""
 begin model
 begin parameters
     k 0.1
@@ -1245,8 +1183,7 @@ end model
 
 generate_network({overwrite=>1})
 parameter_scan({method=>"ode",parameter=>"k",par_min=>0.9,par_scan_vals=>[0.1,0.2],t_end=>1,n_steps=>1})
-"""
-        )
+""")
 
         bionetgen.load(str(bngl)).execute()
 
@@ -1263,8 +1200,7 @@ parameter_scan({method=>"ode",parameter=>"k",par_min=>0.9,par_scan_vals=>[0.1,0.
         self, tmp_path, monkeypatch
     ):
         bngl = tmp_path / "scan_nf_action.bngl"
-        bngl.write_text(
-            """
+        bngl.write_text("""
 begin model
 begin parameters
     k 0.1
@@ -1284,8 +1220,7 @@ end reaction rules
 end model
 
 parameter_scan({method=>"nf",parameter=>"k",par_scan_vals=>[0.1,0.2],t_end=>1,n_steps=>2,seed=>1})
-"""
-        )
+""")
 
         monkeypatch.setenv("BNG_NFSIM_REQUIRE_DIRECT", "1")
         bionetgen.load(str(bngl)).execute()
@@ -1302,8 +1237,7 @@ parameter_scan({method=>"nf",parameter=>"k",par_scan_vals=>[0.1,0.2],t_end=>1,n_
 
     def test_protocol_parameter_scan_uses_explicit_values(self, tmp_path):
         bngl = tmp_path / "protocol_scan.bngl"
-        bngl.write_text(
-            """
+        bngl.write_text("""
 begin model
 begin parameters
     k 0.1
@@ -1327,8 +1261,7 @@ end model
 
 generate_network({overwrite=>1})
 parameter_scan({method=>"protocol",parameter=>"k",par_scan_vals=>[0.1,0.2]})
-"""
-        )
+""")
 
         model = bionetgen.load(str(bngl))
         model.execute()
@@ -1346,8 +1279,7 @@ parameter_scan({method=>"protocol",parameter=>"k",par_scan_vals=>[0.1,0.2]})
 
     def test_simulate_protocol_supports_direct_nf(self, tmp_path, monkeypatch):
         bngl = tmp_path / "protocol_nf.bngl"
-        bngl.write_text(
-            """
+        bngl.write_text("""
 begin model
 begin parameters
     k 0.1
@@ -1370,8 +1302,7 @@ end protocol
 end model
 
 simulate_protocol()
-"""
-        )
+""")
 
         monkeypatch.setenv("BNG_NFSIM_REQUIRE_DIRECT", "1")
         bionetgen.load(str(bngl)).execute()
@@ -1382,8 +1313,7 @@ simulate_protocol()
 
     def test_linear_parameter_sensitivity_writes_gsc_and_csc(self, tmp_path):
         bngl = tmp_path / "linear_sensitivity.bngl"
-        bngl.write_text(
-            """
+        bngl.write_text("""
 begin model
 begin parameters
     k 0.1
@@ -1404,8 +1334,7 @@ end model
 
 generate_network({overwrite=>1})
 LinearParameterSensitivity({t_end=>1,n_steps=>2,bump=>10,init_equil=>0,re_equil=>0,suffix=>"sens"})
-"""
-        )
+""")
 
         model = bionetgen.load(str(bngl))
         model.execute()

@@ -295,7 +295,10 @@ class BioNetGenModel:
                 )
             ):
                 raise ValueError("sample_times must be strictly increasing")
-            if normalized_sample_times[0] < t_start or normalized_sample_times[-1] > t_end:
+            if (
+                normalized_sample_times[0] < t_start
+                or normalized_sample_times[-1] > t_end
+            ):
                 raise ValueError("sample_times must lie between t_start and t_end")
             if normalized_sample_times[-1] < t_end:
                 normalized_sample_times.append(float(t_end))
@@ -303,10 +306,7 @@ class BioNetGenModel:
             raise ValueError("n_steps must be positive unless sample_times is set")
 
         ode_only_options = (
-            max_step > 0.0
-            or steady_state
-            or sparse
-            or check_product_scale > 0.0
+            max_step > 0.0 or steady_state or sparse or check_product_scale > 0.0
         )
         if method != "ode" and ode_only_options:
             raise ValueError(

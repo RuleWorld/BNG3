@@ -139,7 +139,11 @@ class BNGCLI:
         # A missing legacy executable is an error, not a successful empty run.
         if self.bng_exec is None:
             raise BNGRunError(
-                ["perl", "BNG2.pl", self.inp_path if not self.is_bngmodel else "<model>"],
+                [
+                    "perl",
+                    "BNG2.pl",
+                    self.inp_path if not self.is_bngmodel else "<model>",
+                ],
                 message=(
                     "Neither the in-process BNG3 backend nor the legacy BNG2.pl "
                     "compatibility executable is available."

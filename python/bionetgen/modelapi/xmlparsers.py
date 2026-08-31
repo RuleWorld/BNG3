@@ -437,10 +437,7 @@ class MoleculeTypeBlockXML(XMLObj):
     def add_molecule_type_to_block(self, block, xml):
         name = xml["@id"]
         components = []
-        if (
-            "ListOfComponentTypes" in xml
-            and xml["ListOfComponentTypes"] is not None
-        ):
+        if "ListOfComponentTypes" in xml and xml["ListOfComponentTypes"] is not None:
             comp_obj = Component()
             comp_dict = xml["ListOfComponentTypes"]["ComponentType"]
             if "@id" in comp_dict:

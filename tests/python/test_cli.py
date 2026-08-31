@@ -46,8 +46,13 @@ def test_cli_legacy_run_flags_preserve_action_outputs(runner, tmp_path):
     output = tmp_path / "legacy-results"
     result = runner.invoke(
         main,
-        ["run", "-i", os.path.join(os.path.dirname(__file__), "test.bngl"),
-         "-o", str(output)],
+        [
+            "run",
+            "-i",
+            os.path.join(os.path.dirname(__file__), "test.bngl"),
+            "-o",
+            str(output),
+        ],
     )
 
     assert result.exit_code == 0, result.output
@@ -56,7 +61,9 @@ def test_cli_legacy_run_flags_preserve_action_outputs(runner, tmp_path):
     )
 
 
-@pytest.mark.parametrize("command", ["info", "plot", "notebook", "graphdiff", "atomize"])
+@pytest.mark.parametrize(
+    "command", ["info", "plot", "notebook", "graphdiff", "atomize"]
+)
 def test_cli_legacy_command_surface(runner, command):
     result = runner.invoke(main, [command, "--help"])
     assert result.exit_code == 0, result.output
