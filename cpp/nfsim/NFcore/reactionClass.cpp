@@ -14,6 +14,10 @@ ReactionClass::ReactionClass(string name, double baseRate, string baseRateParame
 {
 	//cout<<"\n\ncreating reaction "<<name<<endl;
 	this->system=s;
+	// AST-created reactions do not pass through the legacy XML loader, so
+	// initialize this flag here instead of relying on a later setter.  An
+	// indeterminate value can skip ordinary membership refreshes after a fire.
+	this->useConnectivity = s != nullptr && s->getConnectivityFlag();
 	this->tagged = false;
 	this->useRuleMonkey = false;
 

@@ -1220,6 +1220,11 @@ end reaction rules
         *model, false, 100, false, suggestedTraversalLimit);
     REQUIRE(direct != nullptr);
     REQUIRE(direct->getAllReactions().size() == 2);
+    auto* initialA = direct->getMoleculeTypeByName("A")->getMolecule(0);
+    const auto initialB1 = initialA->getMoleculeType()->getCompIndexFromName("b1");
+    const auto initialB2 = initialA->getMoleculeType()->getCompIndexFromName("b2");
+    CHECK(initialA->isBindingSiteBonded(initialB1) !=
+          initialA->isBindingSiteBonded(initialB2));
     CHECK(direct->getAllReactions()[0]->getName() == "R1_sym1");
     CHECK(direct->getAllReactions()[1]->getName() == "R1_sym2");
     direct->prepareForSimulation();
@@ -1302,6 +1307,9 @@ end reaction rules
                                                 suggestedTraversalLimit);
     REQUIRE(system != nullptr);
     REQUIRE(system->getAllReactions().size() == 1);
+    auto* initialA = system->getMoleculeTypeByName("A")->getMolecule(0);
+    const auto initialB = initialA->getMoleculeType()->getCompIndexFromName("b");
+    CHECK(initialA->isBindingSiteBonded(initialB));
     system->prepareForSimulation();
     CHECK(system->getObservableByName("AB")->getCount() == 1);
     system->seedRNG(3);
