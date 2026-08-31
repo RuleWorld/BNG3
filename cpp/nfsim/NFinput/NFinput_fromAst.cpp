@@ -4386,6 +4386,13 @@ bool addSpeciesFromAst(const bng::ast::Model& model, System* s,
                                 }
                             }
                         }
+                        // The legacy XML species reader treats a one-ended
+                        // numeric bond as seed metadata (numberOfBonds=1),
+                        // not as a runtime bond.  This occurs in the bundled
+                        // RNA NFsim fixtures.  Preserve the same open-site
+                        // runtime representation while still rejecting an
+                        // impossible multi-ended bond.
+                        if (endpoints.size() == 1) continue;
                         if (endpoints.size() != 2) {
                             std::cerr << "[nfsim/ast] seed species has an incomplete bound bond\n";
                             return false;
