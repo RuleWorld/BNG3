@@ -59,12 +59,13 @@ AnalysisResults = namedtuple(
 
 
 def _read_sbml_document(path):
-    """Read an SBML path through libSBML's string API.
+    """Read an SBML path through libSBML's global string API.
 
     The Linux ``python-libsbml`` wheels can segfault in the SWIG
     ``readSBMLFromFile`` wrapper on otherwise valid files.  Reading the same
-    bytes in Python and using the string entry point keeps the parser and
-    diagnostics in libSBML while avoiding that wrapper-specific path.
+    bytes in Python and using the global string entry point avoids both the
+    file-wrapper path and a second SWIG method wrapper that is unstable in
+    some Linux wheels.
     """
 
     with open(path, "rb") as handle:
@@ -74,7 +75,7 @@ def _read_sbml_document(path):
     declaration = re.search(rb"encoding\s*=\s*['\"]([^'\"]+)['\"]", payload[:256])
     if declaration is not None:
         encoding = declaration.group(1).decode("ascii")
-    return libsbml.SBMLReader().readSBMLFromString(payload.decode(encoding))
+    return libsbml.readSBMLFromString(payload.decode(encoding))
 
 
 def loadBioGrid():

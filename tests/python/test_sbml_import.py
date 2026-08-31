@@ -33,7 +33,7 @@ def test_sbml_to_bngl_and_from_sbml():
     assert len(model.seed_species) > 0
 
 
-def test_sbml_path_reader_uses_libsbml_string_entry_point():
+def test_sbml_path_reader_uses_libsbml_global_string_entry_point():
     from bionetgen.atomizer.libsbml2bngl import _read_sbml_document
 
     sbml_path = (
