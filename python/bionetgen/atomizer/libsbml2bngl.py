@@ -58,6 +58,25 @@ AnalysisResults = namedtuple(
 )
 
 
+def _read_sbml_document(path):
+    """Read an SBML path through libSBML's string API.
+
+    The Linux ``python-libsbml`` wheels can segfault in the SWIG
+    ``readSBMLFromFile`` wrapper on otherwise valid files.  Reading the same
+    bytes in Python and using the string entry point keeps the parser and
+    diagnostics in libSBML while avoiding that wrapper-specific path.
+    """
+
+    with open(path, "rb") as handle:
+        payload = handle.read()
+
+    encoding = "utf-8-sig"
+    declaration = re.search(br"encoding\s*=\s*['\"]([^'\"]+)['\"]", payload[:256])
+    if declaration is not None:
+        encoding = declaration.group(1).decode("ascii")
+    return libsbml.SBMLReader().readSBMLFromString(payload.decode(encoding))
+
+
 def loadBioGrid():
     pass
 
@@ -409,8 +428,7 @@ def extractCompartmentStatistics(
     Iterate over the translated species and check which compartments
     are used together, and how.
     """
-    reader = libsbml.SBMLReader()
-    document = reader.readSBMLFromFile(bioNumber)
+    document = _read_sbml_document(bioNumber)
 
     parser = SBML2BNGL(document.getModel(), useID)
     database = structures.Databases()
