@@ -60,6 +60,11 @@ Completed slices now present in BNG3 include:
   the RNA fixtures, and maps intramolecular bonds on newly created products.
 - Python scan and sensitivity forwarding for sample times, stopping, solver
   limits, sparse/check controls, and parallel worker payloads.
+- NFsim's model-derived universal traversal limit is now applied on the public
+  Python binding path, while action-level `utl` values remain explicit and are
+  reported in verbose mode. On the large `models/tlbr` fixture, one seeded
+  50-time-unit run measured about 24.9 seconds before this fix and 2.7 seconds
+  after it.
 - Modern SymPy ODE export through the canonical C++ MEX writer, strict action
   method validation, and explicit compatibility errors for unsupported
   simulator types or missing RoadRunner.
@@ -73,12 +78,9 @@ Local evidence at this checkpoint:
 - Full Python suite: 155 passed, 27 skipped.
 - Current direct-vs-in-memory-XML NFsim shadow suite: 4/4 passed with the
   rebuilt native NFsim executable after the latest adapter slices.
-- Earlier fixed-seed Tier-NF gate: 4 models × 200 native-oracle runs, plus the
-  four direct-vs-XML checks, passed 8/8 in 19m25s using eight isolated workers.
-  This is retained as historical evidence until the post-slice rerun.
-- Current post-slice fixed-seed Tier-NF rerun completed three model cases; the
-  `tlbr` 200-run direct ensemble exceeded the local diagnostic budget and is
-  not counted as a pass.
+- Current fixed-seed Tier-NF gate: all 4 models × 200 native-oracle runs, plus
+  the four direct-vs-XML checks, passed 8/8 in 250.07s using eight isolated
+  workers after the traversal-limit fix.
 - Native `t_dor2.bngl` DOR2 smoke: 114 reactions and 113 events; seeded direct
   AST output was byte-identical to standalone NFsim using both generated XML
   and the original BNG2 XML fixture.
@@ -105,15 +107,14 @@ The sole validation error is deliberately visible:
   naming/topology, so the oracle is not weakened and the error remains a
   tracked P5 gap.
 
-Hosted CI run `33362472735` passed for pushed head `05bbc88`, including the
-C++ Linux/macOS/Windows builds, ASan, validation, integration tests, and the
+Hosted CI run `33396166182` passed for pushed head `6d99118`, including the C++
+Linux/macOS/Windows builds, ASan, validation, integration tests, and the
 complete Python platform matrix. The legacy Ubuntu Python 3.9/3.10 jobs also
 passed after seeding an isolated Matplotlib bundled-font cache. The direct
-AST-vs-in-memory-XML NFsim shadow gate was rerun after the latest adapter fixes
-and passed 4/4 models. A current 200-run native NFsim ensemble rerun passed
-three model cases locally; the `tlbr` case remains an unfinished runtime
-diagnostic and is not counted as parity evidence. Earlier PR results predate
-the current adapter, scan, runner, and CI fixes and are not current evidence.
+AST-vs-in-memory-XML NFsim shadow gate passed 4/4 models, and the current
+fixed-seed native NFsim gate passed all 4 models × 200 runs locally after the
+traversal-limit fix. Checkpoint `94d6079` is pushed and its hosted CI is
+currently running; no result from that run is counted until it completes.
 
 ## Completion charter — port everything
 
@@ -722,7 +723,7 @@ Each phase has deliverables and an exit gate. Later phases may prepare in parall
 | 1 — honest green CI | In progress | Local CTest 124/124, Python 155 passed/27 skipped, and Ruff pass; deterministic validation has one explicit structured-SBML error, and the current hosted platform matrix is still running. |
 | 2 — independent validation | In progress | Structural BNG2 `.net` comparison, a fixed 4-model × 200-seed native NFsim gate, pooled-error comparator coverage, and provenance scaffolding exist; the reviewed golden bundle and broader independent-oracle gate remain open. |
 | 4 — semantic core | In progress | BNG2-derived deletion, bond-cardinality, product-molecularity, symmetry, compartment, dynamic-rate, protocol, scan, and sensitivity slices are implemented; broader source differential coverage remains open. |
-| 5 — direct NFsim | In progress | Typed AST-to-NFsim construction, scoped XML rate preservation, legacy DOR2/RNA compatibility, intramolecular product bonds, direct-vs-XML tests, and fixed-seed native `t_dor2`/Tier-NF parity now cover additional behavior; broader Tier-NF coverage, the AN2 mismatch, protocol NF support, and XML-path retirement remain open. |
+| 5 — direct NFsim | In progress | Typed AST-to-NFsim construction, scoped XML rate preservation, legacy DOR2/RNA compatibility, intramolecular product bonds, traversal-limit handling, direct-vs-XML tests, and the full 4-model × 200-seed native Tier-NF gate now cover additional behavior; the AN2 mismatch, protocol NF support, and XML-path retirement remain open. |
 | 6–8 — consolidation/release | Not started | Dependent on the authority, parity, packaging, CI, and provenance exit gates above. |
 
 ### Phase 0 — Establish authority and freeze the common ground
