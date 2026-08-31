@@ -33,6 +33,9 @@ def _translate_sbml(sbml_path: str, atomize: bool = False, **options) -> str:
                 use_id=options.get("use_id", options.get("molecule_id", False)),
                 annotation=options.get("annotation", False),
                 quiet_mode=options.get("quiet_mode", True),
+                actions=options.get("actions", ""),
+                t_end=options.get("t_end", 10),
+                n_steps=options.get("n_steps", 100),
             ).atomize(sbml_text)
         except Exception as exc:  # pragma: no cover - depends on optional deps
             raise BioNetGenError(f"Modern SBML atomizer is unavailable: {exc}") from exc

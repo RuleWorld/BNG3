@@ -6,6 +6,7 @@ import re
 from collections import OrderedDict
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
+from .events import EventTranslationContext, synthesize_event_actions
 from .structures import Molecule, Species
 from .types import (
     SBMLModel,
@@ -440,13 +441,28 @@ def _strip_mass_action_factors(expression: str, reactant_ids: Sequence[str]) -> 
 def _rate_for_reaction(reaction: SBMLReaction, model: SBMLModel) -> str:
     math = extend_function(
         get_kinetic_math(reaction.kinetic_law),
-        {
-            parameter_id: parameter.value
-            for parameter_id, parameter in model.parameters.items()
-        },
+        {},
         model.function_definitions,
     )
-    math = convert_math_expression(math)
+    kinetic_law = reaction.kinetic_law
+    local_parameters = (
+        kinetic_law.get("localParameters", [])
+        if isinstance(kinetic_law, Mapping)
+        else getattr(kinetic_law, "local_parameters", [])
+    )
+    for parameter in local_parameters or []:
+        parameter_id = getattr(parameter, "id", None)
+        if parameter_id is None and isinstance(parameter, Mapping):
+            parameter_id = parameter.get("id")
+        parameter_value = getattr(parameter, "value", None)
+        if parameter_value is None and isinstance(parameter, Mapping):
+            parameter_value = parameter.get("value")
+        if parameter_id:
+            math = re.sub(
+                rf"\b{re.escape(str(parameter_id))}\b",
+                _number(parameter_value),
+                math,
+            )
     if not math:
         return "1"
     reactants = [
@@ -454,7 +470,46 @@ def _rate_for_reaction(reaction: SBMLReaction, model: SBMLModel) -> str:
         for reference in reaction.reactants
         if reference.species != "EmptySet"
     ]
-    return _strip_mass_action_factors(math, reactants)
+    species_map = {species_id: species_id for species_id in model.species}
+    assignment_variables = {
+        rule.variable
+        for rule in model.rules
+        if rule.variable and rule.type in {"assignment", "rate"}
+    }
+    concentration_names = {
+        standardize_name(species_id)
+        for species_id, species in model.species.items()
+        if not species.has_only_substance_units
+    }
+
+    # The Playground writer keeps nonlinear laws intact and maps their species
+    # operands to concentration functions (or amount observables for Sat/MM/
+    # Hill).  Only elementary mass-action factors are removed before that
+    # mapping; stripping a substrate from a saturation or rational law changes
+    # its biology.
+    nonlinear = bool(re.search(r"\b(?:Sat|MM|Hill)\s*\(", math)) or "/" in math
+    if nonlinear:
+        return bngl_function(
+            math,
+            reaction.name or reaction.id,
+            reactants,
+            list(model.compartments),
+            assignment_rule_variables=assignment_variables,
+            species_with_conc_functions=concentration_names,
+            sbml_to_bngl_id=species_map,
+        )
+
+    converted = convert_math_expression(math)
+    stripped = _strip_mass_action_factors(converted, reactants)
+    return bngl_function(
+        stripped,
+        reaction.name or reaction.id,
+        reactants,
+        list(model.compartments),
+        assignment_rule_variables=assignment_variables,
+        species_with_conc_functions=concentration_names,
+        sbml_to_bngl_id=species_map,
+    )
 
 
 def write_parameters(
@@ -553,6 +608,10 @@ def write_observables(
             pattern = "M_" + standardize_name(species_id) + "()"
             if species.compartment:
                 pattern = f"@{standardize_name(species.compartment)}:{pattern}"
+        # Keep both amount and concentration-facing observable names.  The
+        # amount alias is used by saturation laws; the plain name remains the
+        # historical/public observable used by callers.
+        lines.append(f"Species {name}_amt {pattern} # {species_id} amount")
         lines.append(f"Species {name} {pattern} # {species_id}")
         observable_map[species_id] = name
     return lines, observable_map
@@ -568,6 +627,25 @@ def _rewrite_zero_argument_calls(expression: str, names: Iterable[str]) -> str:
 def write_functions(model: SBMLModel) -> List[str]:
     lines = []
     zero_argument_functions = []
+    emitted_names: Set[str] = set()
+
+    # SBML species are amount-valued in the BNGL observable block.  The
+    # concentration helper mirrors the Playground writer and is required for
+    # rational/nonlinear kinetic laws in compartments with volume != 1.
+    for species_id, species in model.species.items():
+        name = standardize_name(species_id)
+        function_name = "_c_" + name
+        if function_name in emitted_names:
+            continue
+        emitted_names.add(function_name)
+        if species.has_only_substance_units or not species.compartment:
+            body = name
+        else:
+            body = (
+                f"{name} / __compartment_" f"{standardize_name(species.compartment)}__"
+            )
+        lines.append(f"{function_name}() = {body}")
+
     for function_id, function in model.function_definitions.items():
         name = standardize_name(function.name or function_id)
         if function.arguments:
@@ -578,6 +656,7 @@ def write_functions(model: SBMLModel) -> List[str]:
         args = ", ".join(standardize_name(argument) for argument in function.arguments)
         lines.append(f"{name}({args}) = {convert_math_expression(function.math)}")
         zero_argument_functions.append(name)
+        emitted_names.add(name)
     for rule in model.rules:
         if not rule.variable or rule.type != "assignment":
             continue
@@ -654,6 +733,9 @@ def generate_bngl(
     molecule_types: Sequence[Molecule],
     seed_species: Sequence[SeedSpeciesEntry],
     atomize: bool = False,
+    actions: str = "",
+    t_end: float = 10,
+    n_steps: int = 100,
 ) -> Tuple[str, Mapping[str, str]]:
     assignment_variables = {
         standardize_name(rule.variable)
@@ -686,10 +768,83 @@ def generate_bngl(
         _section("reaction rules", write_reaction_rules(model, sct, atomize))
     )
     sections.append("end model")
-    return (
-        "\n\n".join(section for section in sections if section != "") + "\n",
-        observable_map,
-    )
+    model_text = "\n\n".join(section for section in sections if section != "") + "\n"
+
+    event_result = None
+    if model.events:
+        event_result = synthesize_event_actions(
+            model.events,
+            EventTranslationContext(
+                resolve_species_pattern=lambda species_id: species_to_pattern.get(
+                    species_id
+                ),
+                resolve_param=lambda identifier: (
+                    model.parameters[identifier].value
+                    if identifier in model.parameters
+                    else (
+                        model.compartments[identifier].size
+                        if identifier in model.compartments
+                        else None
+                    )
+                ),
+                is_param=lambda identifier: identifier in model.parameters
+                or identifier in model.compartments,
+                method=(
+                    "ssa"
+                    if re.search(
+                        r"simulate_ssa|method\s*=>\s*[\"']?ssa", actions or "", re.I
+                    )
+                    else "ode"
+                ),
+                base_t_end=float(t_end),
+                base_steps=max(1, int(n_steps)),
+            ),
+        )
+
+    if event_result is not None and (
+        event_result.actions_block or event_result.untranslated
+    ):
+        notes = ["# ==== SBML DYNAMICS NOTES ====\n"]
+        if event_result.converted:
+            notes.append(
+                f"# {event_result.converted} time-triggered event(s) converted to scheduled actions.\n"
+            )
+        if event_result.untranslated:
+            notes.append(
+                "# Events NOT simulated (state-dependent or non-constant); listed for reference:\n"
+            )
+            for event, reason in event_result.untranslated:
+                label = event.id or event.name or "event"
+                notes.append(f"#   event {label}: {reason}\n")
+                notes.append(f"#     trigger: {event.trigger or '(none)'}\n")
+                if event.delay:
+                    notes.append(f"#     delay: {event.delay}\n")
+                if getattr(event, "priority", None):
+                    notes.append(f"#     priority: {event.priority}\n")
+                for assignment in event.assignments:
+                    if isinstance(assignment, dict):
+                        variable = assignment.get("variable", "")
+                        math = assignment.get("math", "")
+                    else:
+                        variable = assignment[0] if len(assignment) > 0 else ""
+                        math = assignment[1] if len(assignment) > 1 else ""
+                    notes.append(f"#     assign: {variable} := {math}\n")
+        notes.append("# ============================\n")
+        model_text += "\n" + "".join(notes)
+
+    if event_result is not None and event_result.actions_block:
+        model_text += "\nbegin actions\n"
+        model_text += "\n".join(
+            "  " + line if line and not line.startswith("#") else line
+            for line in event_result.actions_block.splitlines()
+        )
+        model_text += "\nend actions\n"
+    elif actions:
+        model_text += "\nbegin actions\n"
+        model_text += "\n".join("  " + line for line in actions.strip().splitlines())
+        model_text += "\nend actions\n"
+
+    return model_text, observable_map
 
 
 __all__ = [

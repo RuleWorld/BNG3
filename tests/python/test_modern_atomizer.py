@@ -403,3 +403,156 @@ def test_playground_bngl_function_maps_species_compartments_and_saturation_rates
         bngl_function("piecewise(v1, c1, v2, c2)", "rxn", [])
         == "if(c1, v1, if(c2, v2, 0))"
     )
+
+
+def test_playground_writer_preserves_nonlinear_rate_laws_and_amount_observables():
+    from bionetgen.atomizer.modern import (
+        SBMLCompartment,
+        SBMLKineticLaw,
+        SBMLModel,
+        SBMLParameter,
+        SBMLReaction,
+        SBMLSpecies,
+        SBMLSpeciesReference,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    model = SBMLModel(
+        id="rates",
+        name="rates",
+        compartments=OrderedDict(
+            [("cell", SBMLCompartment(id="cell", size=2, spatial_dimensions=3))]
+        ),
+        species=OrderedDict(
+            [
+                (
+                    "S",
+                    SBMLSpecies(
+                        id="S",
+                        name="S",
+                        compartment="cell",
+                        initial_amount=10,
+                        initial_amount_set=True,
+                    ),
+                ),
+                (
+                    "P",
+                    SBMLSpecies(id="P", name="P", compartment="cell"),
+                ),
+            ]
+        ),
+        parameters=OrderedDict(
+            [
+                ("kcat", SBMLParameter(id="kcat", value=3)),
+                ("Km", SBMLParameter(id="Km", value=2)),
+            ]
+        ),
+        reactions=OrderedDict(
+            [
+                (
+                    "sat",
+                    SBMLReaction(
+                        id="sat",
+                        reactants=[SBMLSpeciesReference("S")],
+                        products=[SBMLSpeciesReference("P")],
+                        kinetic_law=SBMLKineticLaw("Sat(kcat, Km)"),
+                    ),
+                )
+            ]
+        ),
+    )
+    sct = build_species_composition_table(model)
+    bngl, _ = generate_bngl(
+        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+    )
+
+    assert "Sat(kcat, Km, S_amt)" in bngl
+    assert "Species S_amt" in bngl
+    assert "_c_S() = S / __compartment_cell__" in bngl
+
+
+def test_playground_event_actions_fold_constants_and_retain_unsupported_events():
+    from bionetgen.atomizer.modern import SBMLEvent
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        parse_time_threshold,
+        synthesize_event_actions,
+    )
+
+    assert parse_time_threshold("geq(time, 5)") == "5"
+    assert parse_time_threshold("(2 + 3) <= time") == "2 + 3"
+
+    context = EventTranslationContext(
+        resolve_species_pattern=lambda variable: (
+            "@cell:M_S()" if variable == "S" else None
+        ),
+        resolve_param=lambda variable: {"k0": 3, "cell": 2}.get(variable),
+        is_param=lambda variable: variable == "k",
+        method="ode",
+        base_t_end=10,
+        base_steps=20,
+    )
+    result = synthesize_event_actions(
+        [
+            SBMLEvent(
+                id="dose",
+                trigger="geq(time, 5)",
+                delay="1",
+                assignments=[("S", "2"), ("k", "k0 + 1")],
+            ),
+            SBMLEvent(
+                id="conditional",
+                trigger="geq(S, 3)",
+                assignments=[("S", "0")],
+            ),
+        ],
+        context,
+    )
+
+    assert result.converted == 1
+    assert result.actions_block is not None
+    assert 'setConcentration("@cell:M_S()", "2")' in result.actions_block
+    assert 'setParameter("k", "4")' in result.actions_block
+    assert "t_end=>6" in result.actions_block
+    assert result.untranslated[0][0].id == "conditional"
+    assert "not a simple time threshold" in result.untranslated[0][1]
+
+
+def test_playground_atomizer_emits_event_actions_and_diagnostics_in_bngl():
+    from bionetgen.atomizer.modern import (
+        SBMLEvent,
+        SBMLParser,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    model = SBMLParser().parse(SBML_FIXTURE)
+    model.events = [
+        SBMLEvent(
+            id="dose",
+            trigger="geq(time, 5)",
+            assignments=[("A", "3")],
+        ),
+        SBMLEvent(
+            id="state_dependent",
+            trigger="geq(A, 2)",
+            assignments=[("A", "0")],
+        ),
+    ]
+    sct = build_species_composition_table(model)
+    bngl, _ = generate_bngl(
+        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+    )
+
+    assert "begin actions" in bngl
+    assert 'setConcentration("@cell:M_A()", "3")' in bngl
+    assert "Events NOT simulated" in bngl
+    assert "state_dependent" in bngl
+
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    cpp.parse_string(bngl)

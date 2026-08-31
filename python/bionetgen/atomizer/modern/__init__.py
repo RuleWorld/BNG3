@@ -29,6 +29,13 @@ from .core import (
     topological_sort,
 )
 from .parser import SBMLParser, extract_go_terms, extract_uniprot_ids
+from .events import (
+    EventTranslationContext,
+    EventTranslationResult,
+    fold_numeric,
+    parse_time_threshold,
+    synthesize_event_actions,
+)
 from .structures import Component, Molecule, Species, read_from_string
 from .types import *  # noqa: F401,F403
 from .writer import (
@@ -50,6 +57,9 @@ DEFAULT_ATOMIZER_OPTIONS: Dict[str, Any] = {
     "annotation": False,
     "atomize": False,
     "quiet_mode": False,
+    "actions": "",
+    "t_end": 10,
+    "n_steps": 100,
 }
 
 
@@ -94,6 +104,9 @@ class Atomizer:
                 molecule_types,
                 seed_species,
                 atomize=bool(self.options.get("atomize", False)),
+                actions=str(self.options.get("actions", "") or ""),
+                t_end=float(self.options.get("t_end", 10) or 10),
+                n_steps=int(self.options.get("n_steps", 100) or 100),
             )
             self.databases = {
                 "model": self.model,
@@ -229,6 +242,8 @@ def sbml_to_bngl_atomized(
 __all__ = [
     "Atomizer",
     "Component",
+    "EventTranslationContext",
+    "EventTranslationResult",
     "Molecule",
     "SBMLParser",
     "Species",
@@ -241,11 +256,14 @@ __all__ = [
     "extend_function",
     "extract_go_terms",
     "extract_uniprot_ids",
+    "fold_numeric",
     "generate_bngl",
     "get_molecule_types",
     "get_seed_species",
     "read_from_string",
+    "parse_time_threshold",
     "sbml_to_bngl",
     "sbml_to_bngl_atomized",
     "sbml_to_bngl_flat",
+    "synthesize_event_actions",
 ]

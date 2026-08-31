@@ -488,6 +488,7 @@ class SBMLParser:
                         SBMLParser._formula_for_sbase(assignment, libsbml),
                     )
                 )
+            priority = item.getPriority() if hasattr(item, "getPriority") else None
             result.append(
                 SBMLEvent(
                     id=str(item.getId() or f"event_{index + 1}"),
@@ -498,6 +499,17 @@ class SBMLParser:
                         item.getUseValuesFromTriggerTime()
                     ),
                     assignments=assignments,
+                    trigger_initial_value=(
+                        bool(trigger.getInitialValue())
+                        if trigger is not None and hasattr(trigger, "getInitialValue")
+                        else None
+                    ),
+                    trigger_persistent=(
+                        bool(trigger.getPersistent())
+                        if trigger is not None and hasattr(trigger, "getPersistent")
+                        else None
+                    ),
+                    priority=SBMLParser._formula_for_sbase(priority, libsbml) or None,
                 )
             )
         return result
