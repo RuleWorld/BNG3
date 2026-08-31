@@ -515,11 +515,49 @@ bool isBoundedRawLocalFunctionProduct(const ast::Model& model,
 struct GeneratedRateFunction {
     std::string name;
     const ast::Expression* expression = nullptr;
+    std::vector<std::string> arguments;
     std::string expandedExpression;
     std::map<std::string, std::string> references;
     const ast::Expression* tableFunction = nullptr;
     std::map<std::string, std::string> observableAliases;
 };
+
+bool collectDynamicRateArguments(const ast::Expression& expression,
+                                 const ast::Model& model,
+                                 std::vector<std::string>& arguments,
+                                 std::set<std::string>& seen,
+                                 std::string& diagnostic) {
+    using ast::ExpressionKind;
+
+    if (expression.kind() == ExpressionKind::Function ||
+        expression.kind() == ExpressionKind::ObservableRef) {
+        const auto* function = findModelFunction(model, expression.name());
+        if (function != nullptr && !expression.args().empty()) {
+            if (function->getArgs().size() != expression.args().size()) {
+                diagnostic = "dynamic reaction rate function '" + expression.name() +
+                             "' received the wrong number of arguments";
+                return false;
+            }
+            for (const auto& argument : expression.args()) {
+                if (argument.kind() != ExpressionKind::Identifier) {
+                    diagnostic = "dynamic reaction rate local function arguments must be identifiers";
+                    return false;
+                }
+                if (seen.insert(argument.name()).second) {
+                    arguments.push_back(argument.name());
+                }
+            }
+        }
+    }
+
+    for (const auto& child : expression.args()) {
+        if (!collectDynamicRateArguments(
+                child, model, arguments, seen, diagnostic)) {
+            return false;
+        }
+    }
+    return true;
+}
 
 std::string lowercaseName(std::string value);
 
@@ -1256,6 +1294,15 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
         const auto* declaredFunction = modelFunction(rate.name());
         const bool generatedRateFunction =
             needsGeneratedDynamicRateFunction(model, rate);
+        std::vector<std::string> generatedArguments;
+        if (generatedRateFunction) {
+            std::set<std::string> seenArguments;
+            std::string diagnostic;
+            if (!collectDynamicRateArguments(
+                    rate, model, generatedArguments, seenArguments, diagnostic)) {
+                throw std::runtime_error(diagnostic);
+            }
+        }
         std::string type = "Ele";
         if (generatedRateFunction) {
             type = "Function";
@@ -1322,14 +1369,19 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
                                            : rate.name();
             xml << " name=\"" << escapeXml(functionName) << "\">\n";
             xml << "          <ListOfArguments>\n";
-            if (declaredFunction != nullptr) {
-                for (std::size_t index = 0; index < declaredFunction->getArgs().size(); ++index) {
-                    const auto& argument = declaredFunction->getArgs()[index];
-                    const auto value = scopedMoleculeId(rule, rrId, argument);
-                    xml << "            <Argument id=\"" << escapeXml(argument)
-                        << "\" type=\"ObjectReference\" value=\""
-                        << escapeXml(value) << "\"/>\n";
+            const auto& arguments = declaredFunction != nullptr
+                ? declaredFunction->getArgs()
+                : generatedArguments;
+            for (const auto& argument : arguments) {
+                const auto value = scopedMoleculeId(rule, rrId, argument);
+                if (value.empty()) {
+                    throw std::runtime_error(
+                        "dynamic rate argument '" + argument +
+                        "' has no scoped reactant");
                 }
+                xml << "            <Argument id=\"" << escapeXml(argument)
+                    << "\" type=\"ObjectReference\" value=\""
+                    << escapeXml(value) << "\"/>\n";
             }
             xml << "          </ListOfArguments>\n";
             xml << "        </RateLaw>\n";
@@ -1625,12 +1677,30 @@ std::string XmlWriter::writeFunctions(const ast::Model& model) {
                                        ? name.substr(generatedPrefix.size())
                                        : name;
         std::string diagnostic;
+        std::set<std::string> localArguments;
+        if (!collectDynamicRateArguments(
+                expression, model, generated.arguments, localArguments,
+                diagnostic)) {
+            throw std::runtime_error(diagnostic);
+        }
         std::set<std::string> activeFunctions;
         std::vector<const ast::Expression*> tableFunctions;
-        if (!expandDynamicRateExpression(
-                expression, model, generated.references, tableFunctions,
-                activeFunctions, generated.expandedExpression, diagnostic)) {
-            throw std::runtime_error(diagnostic);
+        if (generated.arguments.empty()) {
+            if (!expandDynamicRateExpression(
+                    expression, model, generated.references, tableFunctions,
+                    activeFunctions, generated.expandedExpression, diagnostic)) {
+                throw std::runtime_error(diagnostic);
+            }
+        } else {
+            collectTableFunctions(expression, tableFunctions);
+            const std::set<std::string> localNames(
+                generated.arguments.begin(), generated.arguments.end());
+            for (const auto& argument : generated.arguments) {
+                addFunctionReference(generated.references, argument, "Local");
+            }
+            collectFunctionReferences(
+                expression, model, localNames, generated.references);
+            generated.expandedExpression = expressionForXml(expression);
         }
         if (tableFunctions.size() > 1) {
             throw std::runtime_error(
@@ -1792,11 +1862,27 @@ std::string XmlWriter::writeFunctions(const ast::Model& model) {
                 xml << " file=\"" << escapeXml(table->tableFilePath()) << "\"";
             }
         }
+        if (!generated.arguments.empty()) {
+            xml << " args=\"";
+            for (std::size_t index = 0; index < generated.arguments.size(); ++index) {
+                if (index != 0) xml << ",";
+                xml << escapeXml(generated.arguments[index]);
+            }
+            xml << "\"";
+        }
         xml << ">\n";
         auto references = generated.references;
         for (const auto& [observableName, aliasName] : generated.observableAliases) {
             references.erase(observableName);
             addFunctionReference(references, aliasName, "Function");
+        }
+        if (!generated.arguments.empty()) {
+            xml << "        <ListOfArguments>\n";
+            for (const auto& argument : generated.arguments) {
+                xml << "          <Argument id=\"" << escapeXml(argument)
+                    << "\"/>\n";
+            }
+            xml << "        </ListOfArguments>\n";
         }
         xml << "        <ListOfReferences>\n";
         for (const auto& [referenceName, referenceType] : references) {
