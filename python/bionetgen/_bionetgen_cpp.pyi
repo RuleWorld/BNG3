@@ -447,11 +447,12 @@ def simulate_nf(
     verbose: bool = False,
     source_path: str = "",
     sample_times: List[float] = [],
+    traversal_limit: int = -1,
 ) -> Dict[str, object]:
     """Run network-free (NFSim) simulation on a model.
 
-    The model is serialized to XML and passed to the NFSim engine
-    for stochastic simulation without network enumeration.
+    The model is mapped directly to the NFSim engine for stochastic simulation
+    without network enumeration. XML is an explicit compatibility fallback.
 
     Parameters
     ----------
@@ -472,6 +473,9 @@ def simulate_nf(
     sample_times : list[float]
         Strictly increasing output times between zero and ``t_end``.  If the
         final time is omitted, ``t_end`` is appended.
+    traversal_limit : int
+        NFsim bonded-neighborhood traversal depth. ``-1`` uses the model-derived
+        recommendation; non-negative values mirror NFsim's ``-utl`` control.
 
     Returns
     -------

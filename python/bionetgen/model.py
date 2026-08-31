@@ -168,6 +168,7 @@ class BioNetGenModel:
         sparse: bool = False,
         check_product_scale: float = 0.0,
         equilibrate: float = 0.0,
+        traversal_limit: int = -1,
     ) -> SimResult:
         """Run a simulation using the specified method.
 
@@ -213,6 +214,10 @@ class BioNetGenModel:
             Request the sparse CVODE linear solver.
         check_product_scale : float
             Warn when an ODE species exceeds this positive threshold.
+        traversal_limit : int
+            NFsim bonded-neighborhood traversal depth. ``-1`` uses the
+            adapter's model-derived recommendation; non-negative values mirror
+            NFsim's ``-utl`` control. NF only.
 
         Returns
         -------
@@ -257,8 +262,20 @@ class BioNetGenModel:
             raise ValueError("check_product_scale must be finite and non-negative")
         if not math.isfinite(float(equilibrate)) or equilibrate < 0.0:
             raise ValueError("equilibrate must be finite and non-negative")
+        if isinstance(traversal_limit, bool):
+            raise TypeError("traversal_limit must be -1 or a non-negative integer")
+        try:
+            traversal_limit = operator.index(traversal_limit)
+        except TypeError as exc:
+            raise TypeError(
+                "traversal_limit must be -1 or a non-negative integer"
+            ) from exc
+        if traversal_limit < -1:
+            raise ValueError("traversal_limit must be -1 or a non-negative integer")
         if method != "nf" and equilibrate != 0.0:
             raise ValueError("equilibrate is supported only for method='nf'")
+        if method != "nf" and traversal_limit != -1:
+            raise ValueError("traversal_limit is supported only for method='nf'")
         for option_name, option_value in {
             "max_sim_steps": max_sim_steps,
             "output_step_interval": output_step_interval,
@@ -343,6 +360,7 @@ class BioNetGenModel:
                 equilibrate=equilibrate,
                 source_path=self._source_path or "",
                 sample_times=normalized_sample_times,
+                traversal_limit=traversal_limit,
             )
         else:
             if self._network is None:

@@ -47,7 +47,8 @@ void bind_nfsim(py::module_& m) {
         m.def("simulate_nf", [](Model& model, double t_end, int n_steps,
                             int seed, double equilibrate, bool verbose,
                             const std::string& source_path,
-                            const std::vector<double>& sample_times) -> py::dict {
+                            const std::vector<double>& sample_times,
+                            int traversal_limit) -> py::dict {
         if (t_end < 0.0) {
             throw std::invalid_argument("t_end must be non-negative");
         }
@@ -58,6 +59,10 @@ void bind_nfsim(py::module_& m) {
         if (!std::isfinite(equilibrate) || equilibrate < 0.0) {
             throw std::invalid_argument(
                 "equilibrate must be finite and non-negative");
+        }
+        if (traversal_limit < -1) {
+            throw std::invalid_argument(
+                "traversal_limit must be -1 (automatic) or non-negative");
         }
 
         std::vector<double> output_times = sample_times;
@@ -161,6 +166,19 @@ void bind_nfsim(py::module_& m) {
             throw std::runtime_error("Failed to initialize NFSim system from model XML");
         }
 
+        // NFsim's XML entry point applies the parser's recommended traversal
+        // depth before preparing reactions.  The direct path must do the same
+        // or large complexes silently fall back to an unrestricted graph walk.
+        // A caller-supplied non-negative value retains the native -utl escape
+        // hatch; -1 uses the recommendation computed while building the system.
+        const int effectiveTraversalLimit =
+            traversal_limit >= 0 ? traversal_limit : suggestedTraversalLimit;
+        system->setUniversalTraversalLimit(effectiveTraversalLimit);
+        if (verbose) {
+            std::cerr << "[bind_nfsim] Universal traversal limit = "
+                      << effectiveTraversalLimit << "\n";
+        }
+
         // Step 5: Seed per-instance RNG (after system creation, before prepareForSimulation)
         if (seed > 0) {
             system->seedRNG(static_cast<unsigned long>(seed));
@@ -252,6 +270,7 @@ void bind_nfsim(py::module_& m) {
         py::arg("verbose") = false,
         py::arg("source_path") = "",
         py::arg("sample_times") = std::vector<double>{},
+        py::arg("traversal_limit") = -1,
         "Run network-free (NFSim) simulation on a model.\n\n"
         "Returns a dict with 'time' (numpy array of time points) and\n"
         "'observables' (dict of name -> numpy array of values at each time point).");

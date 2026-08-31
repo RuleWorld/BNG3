@@ -410,6 +410,30 @@ end model
         obs_values = next(iter(result["observables"].values()))
         assert len(obs_values) == 11
 
+    def test_nf_simulation_accepts_traversal_limit(self, tmp_path):
+        bngl = tmp_path / "nf_traversal_limit.bngl"
+        bngl.write_text("""
+begin model
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 1
+end seed species
+begin observables
+    Molecules X_total X()
+end observables
+end model
+""")
+
+        model = _cpp.parse_file(str(bngl))
+        result = _cpp.simulate_nf(
+            model, t_end=1.0, n_steps=1, seed=1, traversal_limit=1
+        )
+
+        assert result["construction_path"] == "direct"
+        assert result["time"].tolist() == [0.0, 1.0]
+
     def test_nf_simulation_resolves_relative_tfun_from_model_path(
         self, tmp_path, monkeypatch
     ):
@@ -689,6 +713,31 @@ end model
         output = tmp_path / "param_compat.gdat"
         assert output.exists()
         assert "X_total" in output.read_text()
+
+    def test_simulate_nf_action_preserves_explicit_traversal_limit(
+        self, tmp_path, capfd
+    ):
+        bngl = tmp_path / "nf_utl.bngl"
+        bngl.write_text("""
+begin model
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 1
+end seed species
+begin observables
+    Molecules X_total X()
+end observables
+begin actions
+    simulate_nf({prefix=>"utl",t_end=>0,n_steps=>1,utl=>1,verbose=>1})
+end actions
+end model
+""")
+
+        bionetgen.load(str(bngl)).execute(verbose=True)
+
+        assert "Universal traversal limit = 1" in capfd.readouterr().err
 
     def test_simulate_nf_separates_complex_bookkeeping_from_ring_blocking(
         self, tmp_path

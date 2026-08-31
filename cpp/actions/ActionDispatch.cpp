@@ -1421,9 +1421,15 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         } else if (legacyParam.globalMoleculeLimit.has_value()) {
             globalMoleculeLimit = *legacyParam.globalMoleculeLimit;
         }
-        int suggestedTraversalLimit = utlText.empty()
+        const bool explicitTraversalLimit =
+            !utlText.empty() || legacyParam.traversalLimit.has_value();
+        const int requestedTraversalLimit = utlText.empty()
             ? legacyParam.traversalLimit.value_or(3)
             : parseLegacyNfInt(utlText, "utl");
+        // Let the adapter calculate its recommendation for the compatibility
+        // path, then apply the action's explicit/native default below.  The
+        // direct builder uses this value as an output accumulator.
+        int suggestedTraversalLimit = -1;
         const bool blockSameComplexBinding = legacyParam.blockSameComplexBinding;
         const bool complexConstruction = useComplex || blockSameComplexBinding;
         const std::string effectiveSeedText = !seedText.empty()
@@ -1493,7 +1499,14 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         // Apply the same runtime policy to a directly-built System.
         nfSystem->setEvaluateComplexScopedLocalFunctions(evalCSLF);
         nfSystem->useConnectivityFlag(connectivityFlag);
-        nfSystem->setUniversalTraversalLimit(suggestedTraversalLimit);
+        const int effectiveTraversalLimit = explicitTraversalLimit
+            ? requestedTraversalLimit
+            : 3;
+        nfSystem->setUniversalTraversalLimit(effectiveTraversalLimit);
+        if (nfVerbose) {
+            std::cerr << "[bng_cpp] Universal traversal limit = "
+                      << effectiveTraversalLimit << "\n";
+        }
         if (disableOnTheFly) {
             nfSystem->turnOff_OnTheFlyObs();
         }
