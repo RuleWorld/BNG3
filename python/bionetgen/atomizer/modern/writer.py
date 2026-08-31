@@ -863,7 +863,11 @@ def write_compartments(model: SBMLModel) -> List[str]:
     lines = []
     for compartment_id, compartment in model.compartments.items():
         dimension = max(1, int(compartment.spatial_dimensions or 3))
-        line = f"{standardize_name(compartment_id)} {dimension} {_number(compartment.size)}"
+        size = _numeric_value(compartment.size)
+        line = (
+            f"{standardize_name(compartment_id)} {dimension} "
+            f"{_number(size if size is not None else 1)}"
+        )
         if compartment.outside and compartment.outside in model.compartments:
             parent = model.compartments[compartment.outside]
             if int(parent.spatial_dimensions or 3) == dimension + 1:

@@ -116,6 +116,9 @@ Completed slices now present in BNG3 include:
   the corresponding kinetic flux, covering SBML `rateOf`-style dependencies.
 - Parameterized SBML functions are now inlined through either their SBML ID or
   declared name, preserving models whose identifiers differ from display names.
+- Non-finite SBML compartment sizes now default to unit volume in both the
+  emitted parameter and compartment declarations, keeping generated BNGL
+  finite and parseable.
 - Legacy runner boundaries that preserve C++ parse/execution failures and do
   not return an empty successful result when neither backend is available.
 
@@ -123,15 +126,16 @@ Local evidence at this checkpoint:
 
 - CTest: 124/124 tests passed.
 - Fast Python suite (`-m 'not slow'`): 155 passed, 27 skipped.
-- Full Python suite: 190 passed, 27 skipped.
-- Focused modern Playground atomizer suite: 32 passed, including declared
+- Full Python suite: 191 passed, 27 skipped.
+- Focused modern Playground atomizer suite: 33 passed, including declared
   unit scaling, canonical SBML-Multi extraction, conversion-factor
   diagnostics, materialized species rate-rule synthesis, stoichiometry
   safeguards, fast-reaction handling, unsupported-package diagnostics, and
   MathML numeric/function handling, identifier-safe rate/observable mapping,
   fixed-seed preservation, expression-seed folding, assignment-rule
   observable aliases, non-finite parameter curation, repeated-site
-  statistical-factor handling, and reaction-flux inlining.
+  statistical-factor handling, reaction-flux inlining, and non-finite
+  compartment-size curation.
 - Current direct-vs-in-memory-XML NFsim shadow suite: 4/4 passed with the
   rebuilt native NFsim executable after the latest adapter slices.
 - Current fixed-seed Tier-NF gate: all 4 models × 200 native-oracle runs, plus
