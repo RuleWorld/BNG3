@@ -8,6 +8,12 @@ from collections import OrderedDict
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
 from .events import EventTranslationContext, synthesize_event_actions
+from .rate_rule_constants import (
+    RATE_RULE_META_PREFIX,
+    RATE_RULE_NEG_PREFIX,
+    RATE_RULE_POS_PREFIX,
+    SYNTH_RATE_RULE_SPECIES_PREFIX,
+)
 from .structures import Molecule, Species
 from .types import (
     BNGL_LEXER_KEYWORDS,
@@ -1389,14 +1395,14 @@ def write_functions(
             sbml_to_bngl_id=species_map,
         )
         name = standardize_name(rule.variable)
-        lines.append(f"__rate_rule__{name}() = {body}")
+        lines.append(f"{RATE_RULE_META_PREFIX}{name}() = {body}")
         lines.append(
-            f"__rate_rule_pos__{name}() = if(__rate_rule__{name}() > 0, "
-            f"__rate_rule__{name}(), 0)"
+            f"{RATE_RULE_POS_PREFIX}{name}() = if({RATE_RULE_META_PREFIX}{name}() > 0, "
+            f"{RATE_RULE_META_PREFIX}{name}(), 0)"
         )
         lines.append(
-            f"__rate_rule_neg__{name}() = if(__rate_rule__{name}() < 0, "
-            f"-(__rate_rule__{name}()), 0)"
+            f"{RATE_RULE_NEG_PREFIX}{name}() = if({RATE_RULE_META_PREFIX}{name}() < 0, "
+            f"-({RATE_RULE_META_PREFIX}{name}()), 0)"
         )
     return lines
 
@@ -1575,9 +1581,11 @@ def write_reaction_rules(
                 continue
         pattern = _reaction_pattern(target_id, sct, model)
         name = standardize_name(rule.variable)
-        lines.append(f"__rate_rule_in_{name}: 0 -> {pattern} __rate_rule_pos__{name}()")
         lines.append(
-            f"__rate_rule_out_{name}: {pattern} -> 0 __rate_rule_neg__{name}()"
+            f"__rate_rule_in_{name}: 0 -> {pattern} {RATE_RULE_POS_PREFIX}{name}()"
+        )
+        lines.append(
+            f"__rate_rule_out_{name}: {pattern} -> 0 {RATE_RULE_NEG_PREFIX}{name}()"
         )
     return lines
 
@@ -1652,7 +1660,7 @@ def generate_bngl(
             continue
 
         synthetic_rate_rule_variables.add(variable)
-        molecule_name = f"__rate_rule_state__{target}"
+        molecule_name = f"{SYNTH_RATE_RULE_SPECIES_PREFIX}{target}"
         if standardize_name(molecule_name) not in existing_molecule_names:
             augmented_molecule_types.append(Molecule(molecule_name))
             existing_molecule_names.add(standardize_name(molecule_name))

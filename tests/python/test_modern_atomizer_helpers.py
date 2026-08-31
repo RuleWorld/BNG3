@@ -42,13 +42,11 @@ def test_playground_helpers_string_and_math_contract():
     assert convertMathFunction("log(10, x)") == "(ln(x)/ln(10))"
     assert convertMathFunction("log(x)") == "ln(x)"
     assert convertMathFunction("log10(x)") == "(ln(x)/ln(10))"
-    assert convertMathFunction("gt(a, b) and not(c)") == "(a > b) && (!c)"
-    assert convertMathFunction("ceil(x)") == (
-        "min(rint((x)+0.5),rint((x)+1))"
-    )
-    assert cleanParameterValue("Infinity NaN 1E-3 Vmax_2E1") == (
-        "1e20 0 1e-3 Vmax_2E1"
-    )
+    assert convertMathFunction("gt(a, b)") == "(a > b)"
+    assert convertMathFunction("and(a, b)") == "(a && b)"
+    assert convertMathFunction("not(c)") == "(!c)"
+    assert convertMathFunction("ceil(x)") == ("min(rint((x)+0.5),rint((x)+1))")
+    assert cleanParameterValue("Infinity NaN 1E-3 Vmax_2E1") == ("1e20 0 1e-3 Vmax_2E1")
 
 
 def test_playground_rate_rule_prefix_contract():
