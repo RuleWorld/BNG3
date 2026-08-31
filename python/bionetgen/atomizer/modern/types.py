@@ -151,6 +151,18 @@ class SBMLModel:
     species_by_compartment: Mapping[str, List[str]] = field(default_factory=OrderedDict)
     unit_definitions: Mapping[str, Any] = field(default_factory=OrderedDict)
     level: Optional[int] = None
+    version: Optional[int] = None
+    substance_units: str = ""
+    time_units: str = ""
+    volume_units: str = ""
+    area_units: str = ""
+    length_units: str = ""
+    extent_units: str = ""
+    conversion_factor: Optional[str] = None
+    constraint_count: int = 0
+    multi_molecule_types: List[str] = field(default_factory=list)
+    multi_complex_patterns: List[str] = field(default_factory=list)
+    multi_seed_patterns: List[str] = field(default_factory=list)
     import_warnings: List[Dict[str, Any]] = field(default_factory=list)
 
 

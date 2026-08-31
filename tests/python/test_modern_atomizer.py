@@ -563,3 +563,49 @@ def test_playground_name_standardization_handles_sbml_symbols_and_keywords():
     assert standardize_name("A/B") == "A_B"
     assert standardize_name("αβ") == "ab"
     assert standardize_name("7 days") == "_7_days"
+
+
+def test_playground_parser_scales_declared_units_and_records_audit_warning():
+    from bionetgen.atomizer.modern import (
+        SBMLParser,
+        build_species_composition_table,
+        get_seed_species,
+    )
+
+    sbml = """<?xml version="1.0"?>
+    <sbml xmlns="http://www.sbml.org/sbml/level3/version1/core" level="3" version="1">
+      <model id="units" substanceUnits="mmol" volumeUnits="litre">
+        <listOfUnitDefinitions>
+          <unitDefinition id="mmol"><listOfUnits>
+            <unit kind="mole" scale="-3" exponent="1" multiplier="1"/>
+          </listOfUnits></unitDefinition>
+        </listOfUnitDefinitions>
+        <listOfCompartments>
+          <compartment id="cell" spatialDimensions="3" size="2" units="litre"/>
+        </listOfCompartments>
+        <listOfSpecies>
+          <species id="A" name="A" compartment="cell" substanceUnits="mmol"
+                   initialAmount="3"/>
+          <species id="C" name="C" compartment="cell" substanceUnits="mmol"
+                   initialConcentration="2"/>
+        </listOfSpecies>
+        <listOfParameters>
+          <parameter id="k" value="4" units="mmol"/>
+        </listOfParameters>
+      </model>
+    </sbml>
+    """
+
+    model = SBMLParser().parse(sbml)
+
+    assert model.substance_units == "mmol"
+    assert model.volume_units == "litre"
+    assert model.parameters["k"].value == pytest.approx(0.004)
+    assert model.species["A"].initial_amount == pytest.approx(0.003)
+    assert model.species["C"].initial_concentration == pytest.approx(0.002)
+    assert model.compartments["cell"].size == pytest.approx(2)
+    assert any(w["category"] == "units" for w in model.import_warnings)
+
+    sct = build_species_composition_table(model)
+    seeds = {seed.sbml_id: seed.concentration for seed in get_seed_species(sct, model)}
+    assert seeds["C"] == "(0.002 * __Avogadro__ * __compartment_cell__)"

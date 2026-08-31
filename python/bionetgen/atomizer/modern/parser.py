@@ -27,6 +27,7 @@ from .types import (
     SBMLSpecies,
     SBMLSpeciesReference,
 )
+from .units import apply_unit_scaling
 
 
 def _local_name(tag: str) -> str:
@@ -200,7 +201,7 @@ class SBMLParser:
         except (TypeError, ValueError):
             level_value = None
         model_id = str(_attribute(model, "id", "model") or "model")
-        return SBMLModel(
+        result = SBMLModel(
             id=model_id,
             name=str(_attribute(model, "name", model_id) or model_id),
             compartments=compartments,
@@ -214,7 +215,40 @@ class SBMLParser:
             species_by_compartment=species_by_compartment,
             unit_definitions=SBMLParser._parse_xml_units(model),
             level=level_value,
+            version=(
+                int(_attribute(root, "version"))
+                if str(_attribute(root, "version", "")).isdigit()
+                else None
+            ),
+            substance_units=str(_attribute(model, "substanceUnits", "") or ""),
+            time_units=str(_attribute(model, "timeUnits", "") or ""),
+            volume_units=str(_attribute(model, "volumeUnits", "") or ""),
+            area_units=str(_attribute(model, "areaUnits", "") or ""),
+            length_units=str(_attribute(model, "lengthUnits", "") or ""),
+            extent_units=str(_attribute(model, "extentUnits", "") or ""),
+            conversion_factor=(
+                str(_attribute(model, "conversionFactor"))
+                if _attribute(model, "conversionFactor") is not None
+                else None
+            ),
+            constraint_count=len(
+                SBMLParser._xml_items(model, "listOfConstraints", "constraint")
+            ),
         )
+        result.import_warnings.extend(apply_unit_scaling(result))
+        if result.constraint_count:
+            result.import_warnings.append(
+                {
+                    "category": "constraint",
+                    "message": (
+                        f"{result.constraint_count} SBML constraint element(s) present; "
+                        "constraints are not enforced during simulation."
+                    ),
+                    "count": result.constraint_count,
+                    "severity": "info",
+                }
+            )
+        return result
 
     @staticmethod
     def _parse_xml_compartments(model: Any) -> Dict[str, SBMLCompartment]:

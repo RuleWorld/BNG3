@@ -51,6 +51,7 @@ from .writer import (
     write_reaction_rules,
     write_seed_species,
 )
+from .units import apply_unit_scaling, resolve_unit_factor, unit_conversion_factor
 
 DEFAULT_ATOMIZER_OPTIONS: Dict[str, Any] = {
     "use_id": False,
@@ -250,6 +251,7 @@ __all__ = [
     "Species",
     "analyze_naming_conventions",
     "analyze_reactions",
+    "apply_unit_scaling",
     "build_species_composition_table",
     "bngl_function",
     "classify_reaction",
@@ -262,9 +264,11 @@ __all__ = [
     "get_molecule_types",
     "get_seed_species",
     "read_from_string",
+    "resolve_unit_factor",
     "parse_time_threshold",
     "sbml_to_bngl",
     "sbml_to_bngl_atomized",
     "sbml_to_bngl_flat",
     "synthesize_event_actions",
+    "unit_conversion_factor",
 ]
