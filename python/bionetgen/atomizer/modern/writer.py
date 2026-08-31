@@ -66,6 +66,88 @@ def _number(value: object) -> str:
     return format(number, ".15g")
 
 
+def _evaluate_arithmetic(expression: str) -> Optional[float]:
+    """Evaluate only the arithmetic grammar accepted for constant seed folding."""
+
+    tokens = re.findall(
+        r"(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?|[+\-*/^()]",
+        expression,
+    )
+    if not tokens or "".join(tokens) != re.sub(r"\s+", "", expression):
+        return None
+
+    position = 0
+
+    def peek() -> Optional[str]:
+        return tokens[position] if position < len(tokens) else None
+
+    def precedence(operator: str) -> int:
+        return {"+": 1, "-": 1, "*": 2, "/": 2, "^": 3}.get(operator, 0)
+
+    def parse_expression(min_precedence: int) -> float:
+        nonlocal position
+        token = peek()
+        if token is None:
+            raise ValueError("missing operand")
+        if token == "(":
+            position += 1
+            value = parse_expression(0)
+            if peek() != ")":
+                raise ValueError("unbalanced parentheses")
+            position += 1
+        elif token in {"+", "-"}:
+            position += 1
+            operand = parse_expression(3)
+            value = operand if token == "+" else -operand
+        else:
+            try:
+                value = float(token)
+            except (TypeError, ValueError) as error:
+                raise ValueError("invalid number") from error
+            position += 1
+
+        while position < len(tokens):
+            operator = peek()
+            if operator == ")":
+                break
+            if operator is None:
+                break
+            current_precedence = precedence(operator)
+            if current_precedence == 0 or current_precedence < min_precedence:
+                break
+            position += 1
+            right = parse_expression(
+                current_precedence if operator == "^" else current_precedence + 1
+            )
+            if operator == "+":
+                value += right
+            elif operator == "-":
+                value -= right
+            elif operator == "*":
+                value *= right
+            elif operator == "/":
+                value /= right
+            else:
+                value = value**right
+        return value
+
+    try:
+        value = parse_expression(0)
+        if position != len(tokens) or not math.isfinite(value):
+            return None
+        return value
+    except (ArithmeticError, ValueError, OverflowError):
+        return None
+
+
+def _numeric_value(value: object) -> Optional[float]:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
 def _expression_identifiers(expression: str) -> List[str]:
     return re.findall(r"[A-Za-z_][A-Za-z0-9_]*", expression or "")
 
@@ -644,6 +726,160 @@ def write_molecule_types(molecule_types: Sequence[Molecule]) -> List[str]:
     return sorted(dict.fromkeys(lines))
 
 
+def _add_seed_symbol(symbols: Dict[str, float], name: object, value: object) -> bool:
+    number = _numeric_value(value)
+    if number is None or name is None:
+        return False
+    text = str(name)
+    symbols[text] = number
+    symbols[standardize_name(text)] = number
+    return True
+
+
+def _substitute_seed_symbols(
+    expression: str, symbols: Mapping[str, float]
+) -> Optional[float]:
+    result = convert_math_expression(expression)
+    for _ in range(8):
+        changed = False
+        for symbol, value in list(symbols.items()):
+            escaped = re.escape(symbol)
+            result, call_count = re.subn(
+                rf"\b{escaped}\s*\(\s*\)", _number(value), result
+            )
+            result, bare_count = re.subn(
+                rf"\b{escaped}\b(?!\s*\()", _number(value), result
+            )
+            changed = changed or bool(call_count or bare_count)
+        if not changed:
+            break
+    return _evaluate_arithmetic(result)
+
+
+def _seed_symbol_values(
+    model: SBMLModel, seed_species: Sequence[SeedSpeciesEntry]
+) -> Dict[str, float]:
+    """Resolve numeric SBML values needed by expression-valued seed species."""
+
+    symbols: Dict[str, float] = {}
+    _add_seed_symbol(symbols, "__Avogadro__", 1)
+    for parameter_id, parameter in model.parameters.items():
+        _add_seed_symbol(symbols, parameter_id, getattr(parameter, "value", None))
+    for compartment_id, compartment in model.compartments.items():
+        size = getattr(compartment, "size", None)
+        _add_seed_symbol(symbols, compartment_id, size)
+        _add_seed_symbol(
+            symbols,
+            f"__compartment_{standardize_name(compartment_id)}__",
+            size,
+        )
+
+    species_ids = set(model.species)
+    standardized_species_ids = {
+        standardize_name(species_id) for species_id in species_ids
+    }
+
+    def is_species(identifier: object) -> bool:
+        value = str(identifier or "")
+        return (
+            value in species_ids or standardize_name(value) in standardized_species_ids
+        )
+
+    def add_resolved(identifier: object, expression: object) -> bool:
+        if identifier is None or not expression:
+            return False
+        value = _substitute_seed_symbols(str(expression), symbols)
+        return _add_seed_symbol(symbols, identifier, value)
+
+    for _ in range(12):
+        changed = False
+        for function_id, function in model.function_definitions.items():
+            if getattr(function, "arguments", None):
+                continue
+            candidates = [function_id, getattr(function, "name", "") or function_id]
+            if any(
+                candidate in symbols or standardize_name(candidate) in symbols
+                for candidate in candidates
+            ):
+                continue
+            value = _substitute_seed_symbols(
+                str(getattr(function, "math", "") or ""), symbols
+            )
+            if value is not None:
+                for candidate in candidates:
+                    changed = _add_seed_symbol(symbols, candidate, value) or changed
+
+        for assignment in model.initial_assignments:
+            symbol = getattr(assignment, "symbol", "")
+            if is_species(symbol):
+                continue
+            if symbol in symbols or standardize_name(symbol) in symbols:
+                continue
+            changed = add_resolved(symbol, getattr(assignment, "math", "")) or changed
+
+        for rule in model.rules:
+            variable = getattr(rule, "variable", None)
+            if not variable or getattr(rule, "type", "") != "assignment":
+                continue
+            if is_species(variable):
+                continue
+            if variable in symbols or standardize_name(variable) in symbols:
+                continue
+            changed = add_resolved(variable, getattr(rule, "math", "")) or changed
+
+        for seed in seed_species:
+            identifier = seed.sbml_id
+            if identifier in symbols or standardize_name(identifier) in symbols:
+                continue
+            value = _substitute_seed_symbols(str(seed.concentration), symbols)
+            if value is None:
+                continue
+            changed = _add_seed_symbol(symbols, identifier, value) or changed
+            species = model.species.get(identifier)
+            compartment_id = getattr(species, "compartment", "") if species else ""
+            compartment = model.compartments.get(compartment_id)
+            size = _numeric_value(getattr(compartment, "size", None))
+            if size not in (None, 0):
+                _add_seed_symbol(
+                    symbols,
+                    f"_c_{standardize_name(identifier)}",
+                    value / size,
+                )
+        if not changed:
+            break
+    return symbols
+
+
+def _map_seed_identifiers(expression: str, model: SBMLModel) -> str:
+    """Map known raw SBML names to the identifiers emitted in BNGL sections."""
+
+    result = expression
+    for compartment_id in model.compartments:
+        result = re.sub(
+            rf"\b{re.escape(compartment_id)}\b",
+            f"__compartment_{standardize_name(compartment_id)}__",
+            result,
+        )
+    for parameter_id in model.parameters:
+        result = re.sub(
+            rf"\b{re.escape(parameter_id)}\b",
+            standardize_name(parameter_id),
+            result,
+        )
+    for function_id, function in model.function_definitions.items():
+        emitted = standardize_name(getattr(function, "name", "") or function_id)
+        result = re.sub(rf"\b{re.escape(function_id)}\b", emitted, result)
+    for rule in model.rules:
+        variable = getattr(rule, "variable", None)
+        if variable:
+            result = re.sub(
+                rf"\b{re.escape(variable)}\b",
+                standardize_name(variable),
+                result,
+            )
+    return result
+
+
 def write_seed_species(
     seed_species: Sequence[SeedSpeciesEntry],
     sct: SpeciesCompositionTable,
@@ -652,6 +888,7 @@ def write_seed_species(
     lines: List[str] = []
     sbml_to_pattern: Dict[str, str] = OrderedDict()
     pattern_to_id: Dict[str, str] = OrderedDict()
+    seed_symbols = _seed_symbol_values(model, seed_species)
     for seed in seed_species:
         pattern = _pattern(seed.species, seed.compartment)
         if not pattern:
@@ -670,7 +907,16 @@ def write_seed_species(
             source_species
             and (source_species.constant or source_species.boundary_condition)
         )
-        line = f"{'$' if fixed else ''}{pattern} {seed.concentration}"
+        concentration = seed.concentration
+        if isinstance(concentration, str):
+            converted = convert_math_expression(concentration)
+            folded = _substitute_seed_symbols(converted, seed_symbols)
+            concentration = (
+                _number(folded)
+                if folded is not None
+                else _map_seed_identifiers(converted, model)
+            )
+        line = f"{'$' if fixed else ''}{pattern} {concentration}"
         lines.append(line)
         sbml_to_pattern[seed.sbml_id] = pattern
         pattern_to_id[pattern] = seed.sbml_id

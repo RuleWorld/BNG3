@@ -719,6 +719,52 @@ def test_playground_writer_preserves_constant_species_as_fixed_seeds():
     cpp.parse_string(bngl)
 
 
+def test_playground_writer_folds_expression_seed_amounts_before_emission():
+    from bionetgen.atomizer.modern import (
+        SBMLCompartment,
+        SBMLInitialAssignment,
+        SBMLModel,
+        SBMLParameter,
+        SBMLSpecies,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    model = SBMLModel(
+        id="expression_seed",
+        compartments=OrderedDict(
+            [("cell", SBMLCompartment(id="cell", size=2, spatial_dimensions=3))]
+        ),
+        species=OrderedDict(
+            [
+                (
+                    "A",
+                    SBMLSpecies(
+                        id="A",
+                        name="A",
+                        compartment="cell",
+                        initial_amount=0,
+                        initial_amount_set=False,
+                    ),
+                )
+            ]
+        ),
+        parameters=OrderedDict([("k", SBMLParameter(id="k", value=2))]),
+        initial_assignments=[SBMLInitialAssignment(symbol="A", math="power(k, 2)")],
+    )
+    sct = build_species_composition_table(model)
+    bngl, _ = generate_bngl(
+        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+    )
+
+    assert "@cell:M_A() 8" in bngl
+    assert "power(" not in bngl
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    cpp.parse_string(bngl)
+
+
 def test_playground_event_actions_fold_constants_and_retain_unsupported_events():
     from bionetgen.atomizer.modern import SBMLEvent
     from bionetgen.atomizer.modern.events import (
