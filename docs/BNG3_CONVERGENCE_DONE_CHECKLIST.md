@@ -4,7 +4,8 @@
 **Last audited:** 2026-08-31
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited head:** 7f20a685eb140ea0a7f41627bc09e8c224fd3dce
+**Audited code head:** 7f20a685eb140ea0a7f41627bc09e8c224fd3dce
+**Checklist checkpoint:** 7ac8506
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 
