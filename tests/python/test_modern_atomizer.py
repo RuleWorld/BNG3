@@ -132,6 +132,27 @@ def test_playground_parser_preserves_annotations_initial_assignments_and_rates()
     assert model.reactions["bind"].kinetic_law["math"] == "kf * A * B"
 
 
+def test_playground_parser_surfaces_fast_and_reaction_conversion_diagnostics():
+    from bionetgen.atomizer.modern import SBMLParser
+
+    model = SBMLParser().parse(
+        SBML_FIXTURE.replace('fast="false"', 'fast="true" conversionFactor="cf"', 1)
+    )
+
+    assert model.reactions["bind"].fast is True
+    assert model.reactions["bind"].conversion_factor == "cf"
+    assert any(
+        warning["category"] == "fastReaction"
+        and "ordinary reaction" in warning["message"]
+        for warning in model.import_warnings
+    )
+    assert any(
+        warning["category"] == "conversionFactor"
+        and "captured but not applied" in warning["message"]
+        for warning in model.import_warnings
+    )
+
+
 def test_playground_sct_infers_complexes_and_named_modifications():
     from bionetgen.atomizer.modern import SBMLParser
     from bionetgen.atomizer.modern import build_species_composition_table

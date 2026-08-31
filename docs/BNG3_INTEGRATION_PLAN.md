@@ -87,6 +87,9 @@ Completed slices now present in BNG3 include:
   to be omitted with an explicit provenance warning. Variable references with
   a finite nonnegative integer value are retained as a documented fixed-value
   approximation.
+- SBML `fast="true"` reactions and reaction-level `conversionFactor`
+  declarations are retained in the typed model and surfaced as explicit
+  approximations when BNGL cannot preserve their semantics.
 - Legacy runner boundaries that preserve C++ parse/execution failures and do
   not return an empty successful result when neither backend is available.
 
@@ -94,11 +97,11 @@ Local evidence at this checkpoint:
 
 - CTest: 124/124 tests passed.
 - Fast Python suite (`-m 'not slow'`): 155 passed, 27 skipped.
-- Full Python suite: 179 passed, 27 skipped.
-- Focused modern Playground atomizer suite: 21 passed, including declared
+- Full Python suite: 180 passed, 27 skipped.
+- Focused modern Playground atomizer suite: 22 passed, including declared
   unit scaling, canonical SBML-Multi extraction, conversion-factor
-  diagnostics, materialized species rate-rule synthesis, and stoichiometry
-  safeguards.
+  diagnostics, materialized species rate-rule synthesis, stoichiometry
+  safeguards, and fast-reaction handling.
 - Current direct-vs-in-memory-XML NFsim shadow suite: 4/4 passed with the
   rebuilt native NFsim executable after the latest adapter slices.
 - Current fixed-seed Tier-NF gate: all 4 models × 200 native-oracle runs, plus

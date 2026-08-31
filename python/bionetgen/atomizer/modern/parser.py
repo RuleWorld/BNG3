@@ -272,6 +272,32 @@ class SBMLParser:
                             "severity": "dropped",
                         }
                     )
+            if reaction.fast:
+                result.import_warnings.append(
+                    {
+                        "category": "fastReaction",
+                        "message": (
+                            f'Reaction "{reaction_id}" is marked fast '
+                            '(fast="true"); BNGL/BNG has no fast-equilibrium '
+                            "solve, so it is treated as an ordinary reaction."
+                        ),
+                        "count": 1,
+                        "severity": "approximated",
+                    }
+                )
+            if reaction.conversion_factor:
+                result.import_warnings.append(
+                    {
+                        "category": "conversionFactor",
+                        "message": (
+                            f'Reaction "{reaction_id}" declares '
+                            f'conversionFactor="{reaction.conversion_factor}"; '
+                            "captured but not applied to the rate law."
+                        ),
+                        "count": 1,
+                        "severity": "approximated",
+                    }
+                )
         multi = parse_multi_package(root)
         result.import_warnings.extend(multi.warnings)
         result.multi_molecule_types = list(multi.bngl_molecule_types)
