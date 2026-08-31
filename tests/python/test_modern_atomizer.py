@@ -429,6 +429,58 @@ def test_playground_writer_emits_zero_argument_functions_and_assignment_rules():
     assert "v() = f()" in bngl
 
 
+def test_playground_writer_emits_simple_assignment_rules_as_observables():
+    from bionetgen.atomizer.modern import (
+        SBMLKineticLaw,
+        SBMLModel,
+        SBMLParameter,
+        SBMLReaction,
+        SBMLRule,
+        SBMLSpecies,
+        SBMLSpeciesReference,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    model = SBMLModel(
+        id="assignment_observable",
+        species=OrderedDict(
+            [
+                ("A", SBMLSpecies(id="A", name="A", initial_amount=3)),
+                ("B", SBMLSpecies(id="B", name="B", initial_amount=4)),
+            ]
+        ),
+        parameters=OrderedDict([("k", SBMLParameter(id="k", value=1))]),
+        rules=[SBMLRule(type="assignment", variable="total", math="A + 2 * B")],
+        reactions=OrderedDict(
+            [
+                (
+                    "r",
+                    SBMLReaction(
+                        id="r",
+                        reactants=[SBMLSpeciesReference("A")],
+                        products=[SBMLSpeciesReference("B")],
+                        kinetic_law=SBMLKineticLaw("k * total"),
+                    ),
+                )
+            ]
+        ),
+    )
+    sct = build_species_composition_table(model)
+    bngl, _ = generate_bngl(
+        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+    )
+
+    assert "Molecules total " in bngl
+    assert "Molecules total_amt " in bngl
+    assert "total() =" not in bngl
+    assert "r: M_A() -> M_B() k * total" in bngl
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    cpp.parse_string(bngl)
+
+
 def test_playground_function_inlining_handles_nested_arguments_and_parameters():
     from bionetgen.atomizer.modern import SBMLFunctionDefinition, extend_function
 

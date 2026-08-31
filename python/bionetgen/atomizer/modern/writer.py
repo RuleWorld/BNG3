@@ -531,6 +531,7 @@ def _rate_for_reaction(
     reaction: SBMLReaction,
     model: SBMLModel,
     conversion_factor: Optional[str] = None,
+    observable_converted_rules: Optional[Set[str]] = None,
 ) -> str:
     def apply_conversion(rate: str) -> str:
         if conversion_factor is None:
@@ -574,6 +575,7 @@ def _rate_for_reaction(
         for rule in model.rules
         if rule.variable and rule.type in {"assignment", "rate"}
     }
+    observable_converted_rules = observable_converted_rules or set()
     concentration_names = {
         standardize_name(species_id)
         for species_id, species in model.species.items()
@@ -594,6 +596,7 @@ def _rate_for_reaction(
                 reactants,
                 list(model.compartments),
                 assignment_rule_variables=assignment_variables,
+                observable_converted_rules=observable_converted_rules,
                 species_with_conc_functions=concentration_names,
                 sbml_to_bngl_id=species_map,
             )
@@ -608,6 +611,7 @@ def _rate_for_reaction(
             reactants,
             list(model.compartments),
             assignment_rule_variables=assignment_variables,
+            observable_converted_rules=observable_converted_rules,
             species_with_conc_functions=concentration_names,
             sbml_to_bngl_id=species_map,
         )
@@ -955,6 +959,62 @@ def write_observables(
         lines.append(f"Species {name}_amt {pattern} # {species_id} amount")
         lines.append(f"Species {name} {pattern} # {species_id}")
         observable_map[species_id] = name
+
+    # A simple assignment rule such as ``total = A + 2 * B`` is a BNGL
+    # observable, not a dynamic function.  Preserve this losslessly when all
+    # terms resolve to imported species patterns; more complex rules continue
+    # through the function writer below.
+    for rule in model.rules:
+        if rule.type != "assignment" or not rule.variable or not rule.math:
+            continue
+        if re.search(r"[/^()]", rule.math):
+            continue
+        pattern_counts: Dict[str, int] = OrderedDict()
+        rule_compartment = ""
+        for term in rule.math.split("+"):
+            term = term.strip()
+            if not term:
+                continue
+            coefficient = 1
+            species_id = term
+            match = re.fullmatch(r"(\d+)\s*\*\s*(\S+)", term)
+            if match:
+                coefficient, species_id = int(match.group(1)), match.group(2)
+            else:
+                match = re.fullmatch(r"(\S+)\s*\*\s*(\d+)", term)
+                if match:
+                    species_id, coefficient = match.group(1), int(match.group(2))
+            if re.fullmatch(r"\d+(?:\.\d+)?", species_id):
+                continue
+            pattern = species_to_pattern.get(species_id)
+            species = model.species.get(species_id)
+            if not pattern:
+                entry = sct.entries.get(species_id)
+                if entry is not None and species is not None:
+                    pattern = _pattern(entry.structure, species.compartment)
+            if not pattern:
+                pattern_counts.clear()
+                break
+            pattern_counts[pattern] = max(pattern_counts.get(pattern, 0), coefficient)
+            if species is not None and species.compartment and not rule_compartment:
+                rule_compartment = species.compartment
+        if not pattern_counts:
+            continue
+        name = standardize_name(rule.variable)
+        # Remove only the direct species observables with this exact name;
+        # ``name_amt`` is a distinct observable and must also be replaced.
+        lines = [
+            line
+            for line in lines
+            if not line.startswith(f"Species {name} ")
+            and not line.startswith(f"Species {name}_amt ")
+        ]
+        expanded = []
+        for pattern, coefficient in pattern_counts.items():
+            expanded.extend([pattern] * coefficient)
+        pattern_string = " ".join(expanded)
+        lines.append(f"Molecules {name} {pattern_string}")
+        lines.append(f"Molecules {name}_amt {pattern_string}")
     return lines, observable_map
 
 
@@ -968,11 +1028,13 @@ def _rewrite_zero_argument_calls(expression: str, names: Iterable[str]) -> str:
 def write_functions(
     model: SBMLModel,
     synthetic_rate_rule_variables: Optional[Set[str]] = None,
+    skip_assignment_rules: Optional[Set[str]] = None,
 ) -> List[str]:
     lines = []
     zero_argument_functions = []
     emitted_names: Set[str] = set()
     synthetic_rate_rule_variables = synthetic_rate_rule_variables or set()
+    skip_assignment_rules = skip_assignment_rules or set()
 
     # SBML species are amount-valued in the BNGL observable block.  The
     # concentration helper mirrors the Playground writer and is required for
@@ -1004,6 +1066,11 @@ def write_functions(
         emitted_names.add(name)
     for rule in model.rules:
         if not rule.variable or rule.type != "assignment":
+            continue
+        if (
+            rule.variable in skip_assignment_rules
+            or standardize_name(rule.variable) in skip_assignment_rules
+        ):
             continue
         body = extend_function(
             rule.math,
@@ -1044,6 +1111,7 @@ def write_functions(
             [],
             list(model.compartments),
             assignment_rule_variables=rate_rule_variables,
+            observable_converted_rules=skip_assignment_rules,
             species_with_conc_functions=concentration_names,
             sbml_to_bngl_id=species_map,
         )
@@ -1074,7 +1142,10 @@ def _reaction_pattern(
 
 
 def write_reaction_rules(
-    model: SBMLModel, sct: SpeciesCompositionTable, atomize: bool
+    model: SBMLModel,
+    sct: SpeciesCompositionTable,
+    atomize: bool,
+    observable_converted_rules: Optional[Set[str]] = None,
 ) -> List[str]:
     lines = []
     used_labels = set()
@@ -1145,7 +1216,10 @@ def write_reaction_rules(
         used_labels.add(candidate)
         arrow = "<->" if reaction.reversible else "->"
         rate = _rate_for_reaction(
-            reaction, model, _conversion_factor_for_reaction(reaction, model)
+            reaction,
+            model,
+            _conversion_factor_for_reaction(reaction, model),
+            observable_converted_rules,
         )
         if reaction.reversible:
             rate = f"{rate}, {rate}"
@@ -1306,6 +1380,16 @@ def generate_bngl(
     if seed_lines:
         sections.append(_section("seed species", seed_lines))
     observable_lines, observable_map = write_observables(model, sct, species_to_pattern)
+    observable_rule_variables = {
+        rule.variable
+        for rule in model.rules
+        if rule.type == "assignment"
+        and rule.variable
+        and any(
+            line.startswith(f"Molecules {standardize_name(rule.variable)} ")
+            for line in observable_lines
+        )
+    }
     for variable in synthetic_rate_rule_variables:
         pattern = species_to_pattern.get(variable)
         if pattern:
@@ -1314,11 +1398,21 @@ def generate_bngl(
             )
     if observable_lines:
         sections.append(_section("observables", observable_lines))
-    function_lines = write_functions(model, synthetic_rate_rule_variables)
+    function_lines = write_functions(
+        model, synthetic_rate_rule_variables, observable_rule_variables
+    )
     if function_lines:
         sections.append(_section("functions", function_lines))
     sections.append(
-        _section("reaction rules", write_reaction_rules(model, augmented_sct, atomize))
+        _section(
+            "reaction rules",
+            write_reaction_rules(
+                model,
+                augmented_sct,
+                atomize,
+                observable_converted_rules=observable_rule_variables,
+            ),
+        )
     )
     sections.append("end model")
     model_text = "\n\n".join(section for section in sections if section != "") + "\n"

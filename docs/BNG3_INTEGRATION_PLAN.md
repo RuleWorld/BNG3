@@ -104,6 +104,9 @@ Completed slices now present in BNG3 include:
 - Expression-valued SBML initial seeds are constant-folded when their
   parameters, compartments, functions, and initial values resolve numerically;
   unresolved values retain safe emitted identifiers.
+- Simple SBML assignment rules composed of species sums now emit BNGL
+  `Molecules` observables (with amount aliases), and reaction/rate-rule
+  references resolve those observables without generating undefined functions.
 - Legacy runner boundaries that preserve C++ parse/execution failures and do
   not return an empty successful result when neither backend is available.
 
@@ -111,13 +114,14 @@ Local evidence at this checkpoint:
 
 - CTest: 124/124 tests passed.
 - Fast Python suite (`-m 'not slow'`): 155 passed, 27 skipped.
-- Full Python suite: 186 passed, 27 skipped.
-- Focused modern Playground atomizer suite: 28 passed, including declared
+- Full Python suite: 187 passed, 27 skipped.
+- Focused modern Playground atomizer suite: 29 passed, including declared
   unit scaling, canonical SBML-Multi extraction, conversion-factor
   diagnostics, materialized species rate-rule synthesis, stoichiometry
   safeguards, fast-reaction handling, unsupported-package diagnostics, and
   MathML numeric/function handling, identifier-safe rate/observable mapping,
-  fixed-seed preservation, and expression-seed folding.
+  fixed-seed preservation, expression-seed folding, and assignment-rule
+  observable aliases.
 - Current direct-vs-in-memory-XML NFsim shadow suite: 4/4 passed with the
   rebuilt native NFsim executable after the latest adapter slices.
 - Current fixed-seed Tier-NF gate: all 4 models × 200 native-oracle runs, plus
