@@ -85,6 +85,11 @@ from .rulifier import (
     group_by_reaction_center,
     species_equal,
 )
+from .uniprot import (
+    UniProtEntry,
+    clear_uniprot_cache,
+    fetch_uniprot_entry,
+)
 
 DEFAULT_ATOMIZER_OPTIONS: Dict[str, Any] = {
     "use_id": False,
@@ -293,6 +298,7 @@ __all__ = [
     "StateTransitionDiagram",
     "TransformationCenter",
     "TransformationContext",
+    "UniProtEntry",
     "analyze_naming_conventions",
     "analyze_reactions",
     "analyze_rate_law",
@@ -305,6 +311,7 @@ __all__ = [
     "convert_bng_xml_to_bngl",
     "bngl_function",
     "classify_reaction",
+    "clear_uniprot_cache",
     "compute_annotation_stats",
     "collapse_redundant_rules",
     "disambiguate_colliding_species",
@@ -317,6 +324,7 @@ __all__ = [
     "find_equivalent_species",
     "find_redundant_rules",
     "fold_numeric",
+    "fetch_uniprot_entry",
     "generate_bngl",
     "get_molecule_types",
     "get_all_annotations",
