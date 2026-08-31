@@ -559,7 +559,7 @@ def _rate_for_reaction(
         if parameter_id:
             math = re.sub(
                 rf"\b{re.escape(str(parameter_id))}\b",
-                _number(parameter_value),
+                _curated_parameter_value(model, str(parameter_id), parameter_value),
                 math,
             )
     if not math:
@@ -643,6 +643,27 @@ def _record_import_warning(
     )
 
 
+def _curated_parameter_value(model: SBMLModel, parameter_id: str, value: object) -> str:
+    """Emit finite BNGL literals for SBML's non-finite parameter values."""
+
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if math.isnan(number):
+        _record_import_warning(
+            model,
+            f'Parameter "{parameter_id}" has NaN value; emitted 0 as a finite '
+            "BNGL approximation.",
+            category="parameter",
+            severity="approximated",
+        )
+        return "0"
+    if math.isinf(number):
+        return "-1e20" if number < 0 else "1e20"
+    return _number(number)
+
+
 def _conversion_factor_for_reaction(
     reaction: SBMLReaction, model: SBMLModel
 ) -> Optional[str]:
@@ -691,14 +712,18 @@ def write_parameters(
     assignment_variables = assignment_variables or set()
     lines = ["__Avogadro__ 1"]
     for compartment_id, compartment in model.compartments.items():
+        size = _numeric_value(compartment.size)
         lines.append(
-            f"__compartment_{standardize_name(compartment_id)}__ {_number(compartment.size)}"
+            f"__compartment_{standardize_name(compartment_id)}__ "
+            f"{_number(size if size is not None else 1)}"
         )
     for parameter_id, parameter in model.parameters.items():
         name = standardize_name(parameter_id)
         if name in assignment_variables:
             continue
-        lines.append(f"{name} {_number(parameter.value)}")
+        lines.append(
+            f"{name} {_curated_parameter_value(model, parameter_id, parameter.value)}"
+        )
     return lines
 
 

@@ -671,6 +671,41 @@ def test_playground_writer_renames_keyword_colliding_parameters_in_rates():
     cpp.parse_string(bngl)
 
 
+def test_playground_writer_curates_nonfinite_parameter_values():
+    from bionetgen.atomizer.modern import (
+        SBMLModel,
+        SBMLParameter,
+        SBMLSpecies,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    model = SBMLModel(
+        id="nonfinite_parameters",
+        species=OrderedDict([("A", SBMLSpecies(id="A", initial_amount=1))]),
+        parameters=OrderedDict(
+            [
+                ("kInf", SBMLParameter(id="kInf", value=float("inf"))),
+                ("kNaN", SBMLParameter(id="kNaN", value=float("nan"))),
+            ]
+        ),
+    )
+    sct = build_species_composition_table(model)
+    bngl, _ = generate_bngl(
+        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+    )
+
+    assert "kInf 1e20" in bngl
+    assert "kNaN 0" in bngl
+    parameters = bngl.split("begin parameters", 1)[1].split("end parameters", 1)[0]
+    assert " inf" not in parameters.lower()
+    assert " nan" not in parameters.lower()
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    cpp.parse_string(bngl)
+
+
 def test_playground_writer_keys_observables_by_sbml_id_not_display_name():
     from bionetgen.atomizer.modern import (
         SBMLKineticLaw,
