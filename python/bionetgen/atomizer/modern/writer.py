@@ -381,21 +381,34 @@ def extend_function(
         arguments = list(getattr(definition, "arguments", []) or [])
         body = str(getattr(definition, "math", "") or "")
 
-        def replace_call(args: List[str], arguments=arguments, body=body):
+        def replace_call(
+            args: List[str],
+            arguments=arguments,
+            body=body,
+            call_name=name,
+        ):
             if not arguments and len(args) == 1 and not args[0]:
                 return f"({body})"
             if len(args) == 1 and not args[0] and arguments:
-                return f"{name}()"
+                return f"{call_name}()"
             if len(args) != len(arguments):
-                return f"{name}({', '.join(args)})"
+                return f"{call_name}({', '.join(args)})"
             expanded = body
             for formal, actual in zip(arguments, args):
                 expanded = re.sub(rf"\b{re.escape(formal)}\b", f"({actual})", expanded)
             return f"({expanded})"
 
-        result = _replace_nested_function(result, name, replace_call)
-        if not arguments:
-            result = _replace_nested_function(result, function_id, replace_call)
+        function_names = [name]
+        if function_id != name:
+            function_names.append(function_id)
+        for function_name in function_names:
+            result = _replace_nested_function(
+                result,
+                function_name,
+                lambda args, call_name=function_name: replace_call(
+                    args, call_name=call_name
+                ),
+            )
 
     for parameter, value in parameter_dict.items():
         replacement = _number(value)

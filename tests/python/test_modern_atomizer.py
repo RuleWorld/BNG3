@@ -547,6 +547,17 @@ def test_playground_function_inlining_handles_nested_arguments_and_parameters():
     assert extend_function("square(5) + square(a)", {}, functions) == (
         "((5) * (5)) + ((a) * (a))"
     )
+    aliased_functions = OrderedDict(
+        [
+            (
+                "square_id",
+                SBMLFunctionDefinition(
+                    id="square_id", name="square", arguments=["x"], math="x * x"
+                ),
+            )
+        ]
+    )
+    assert extend_function("square_id(5)", {}, aliased_functions) == "((5) * (5))"
     assert extend_function("k1 * x + k2", {"k1": 10, "k2": "20.5"}, {}) == (
         "10 * x + 20.5"
     )

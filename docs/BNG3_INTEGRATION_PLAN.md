@@ -114,6 +114,8 @@ Completed slices now present in BNG3 include:
   combinatorics.
 - Assignment and rate-rule expressions that reference reaction IDs now inline
   the corresponding kinetic flux, covering SBML `rateOf`-style dependencies.
+- Parameterized SBML functions are now inlined through either their SBML ID or
+  declared name, preserving models whose identifiers differ from display names.
 - Legacy runner boundaries that preserve C++ parse/execution failures and do
   not return an empty successful result when neither backend is available.
 
