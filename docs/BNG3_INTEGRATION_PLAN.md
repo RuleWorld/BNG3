@@ -3,10 +3,10 @@
 **Status:** Active implementation; convergence foundation and direct NFsim migration in progress
 **Plan date:** 2026-08-28
 **Scope:** BioNetGen, NFsim, and PyBioNetGen convergence into one maintained BNG3 codebase
-**Last progress update:** 2026-08-30
+**Last progress update:** 2026-08-31
 **Implementation:** The current branch owns the active port; this document remains the authoritative backlog and completion contract. Section 11 is not yet satisfied.
 
-## Implementation progress checkpoint — 2026-08-30
+## Implementation progress checkpoint — 2026-08-31
 
 The branch `codex/bng3-integration-foundations` has advanced from the initial
 foundation into source-led semantic porting. The individual BioNetGen and
@@ -71,12 +71,14 @@ Local evidence at this checkpoint:
 - CTest: 124/124 tests passed.
 - Fast Python suite (`-m 'not slow'`): 155 passed, 27 skipped.
 - Full Python suite: 155 passed, 27 skipped.
-- Earlier direct-vs-in-memory-XML NFsim shadow suite: 4/4 passed with the
-  built native NFsim executable available for the separate oracle gate; it
-  must be rerun after the latest adapter slices.
+- Current direct-vs-in-memory-XML NFsim shadow suite: 4/4 passed with the
+  rebuilt native NFsim executable after the latest adapter slices.
 - Earlier fixed-seed Tier-NF gate: 4 models × 200 native-oracle runs, plus the
   four direct-vs-XML checks, passed 8/8 in 19m25s using eight isolated workers.
   This is retained as historical evidence until the post-slice rerun.
+- Current post-slice fixed-seed Tier-NF rerun completed three model cases; the
+  `tlbr` 200-run direct ensemble exceeded the local diagnostic budget and is
+  not counted as a pass.
 - Native `t_dor2.bngl` DOR2 smoke: 114 reactions and 113 events; seeded direct
   AST output was byte-identical to standalone NFsim using both generated XML
   and the original BNG2 XML fixture.
@@ -103,10 +105,15 @@ The sole validation error is deliberately visible:
   naming/topology, so the oracle is not weakened and the error remains a
   tracked P5 gap.
 
-Hosted CI is running for the current pushed head `ebbf1cd`; CodeQL, Python
-analysis, and lint/format have passed, while the C++ and Python platform jobs
-were pending at the last inspection. Earlier PR results predate the current
-adapter, scan, and runner fixes and are not current evidence.
+Hosted CI run `33362472735` passed for pushed head `05bbc88`, including the
+C++ Linux/macOS/Windows builds, ASan, validation, integration tests, and the
+complete Python platform matrix. The legacy Ubuntu Python 3.9/3.10 jobs also
+passed after seeding an isolated Matplotlib bundled-font cache. The direct
+AST-vs-in-memory-XML NFsim shadow gate was rerun after the latest adapter fixes
+and passed 4/4 models. A current 200-run native NFsim ensemble rerun passed
+three model cases locally; the `tlbr` case remains an unfinished runtime
+diagnostic and is not counted as parity evidence. Earlier PR results predate
+the current adapter, scan, runner, and CI fixes and are not current evidence.
 
 ## Completion charter — port everything
 
@@ -190,7 +197,7 @@ trail in the repository.
 ### Initial starting checkpoint
 
 The public branch `codex/bng3-integration-foundations` and PR
-`RuleWorld/BNG3#1` contain the initial provenance, CI, validation, expression,
+`RuleWorld/BNG3#2` contain the initial provenance, CI, validation, expression,
 and bounded direct-NFsim foundation. Before changing code, verify their live
 heads with `gh`; do not assume the PR description is current.
 
@@ -316,9 +323,9 @@ The work therefore starts from an incomplete convergence, not from four empty re
 | Golden references | The validation corpus and BNG2 `.net` references are present, but a reviewed provenance-complete release golden bundle is not frozen. | Build provenance-aware oracle generation before using parity as a release claim. |
 | Stochastic parity | Seeded determinism and 200-run local smoke comparisons are covered for selected NFsim models; the full distributional gate is not complete. | Keep fixed ensembles and pooled independent-ensemble error rules; execution success is insufficient. |
 | RuleHub integration | A pinned RuleHub revision and selection manifest are committed, but both remain pending maintainer approval. | Approve selectors and external tier membership before release use. |
-| CI truthfulness | Local C++/Python/Ruff gates pass; deterministic validation has one explicit structured-SBML error; hosted CI has not been rerun on the current unpushed branch. The CodeQL workflow is configured locally but has no current hosted result. | Resolve or govern the SBML gap, run the security workflow on the exact pushed SHA, and rerun hosted CI before claiming completion. |
+| CI truthfulness | Local C++/Python/Ruff gates pass; deterministic validation has one explicit structured-SBML error; hosted CI run `33362472735` is green on `05bbc88`. The separate CodeQL result and the structured-SBML disposition remain open. | Read back CodeQL on the exact head, resolve or govern the SBML gap, and keep required checks tied to the final release SHA. |
 | Documentation | The architecture document, unification spec, analysis notes, and live implementation disagree in places. | Add documentation consistency checks and name one governing decision record. |
-| Packaging | Shared-extension static linking was corrected locally and the Python/CLI smoke paths pass; current hosted wheel evidence is stale. | Re-run clean wheel, CLI, import, and embedded-data gates on the current SHA. |
+| Packaging | Shared-extension static linking was corrected locally; hosted Python matrix wheel, import, CLI, and test jobs pass on `05bbc88`. Release-only wheel/publish jobs remain unrun on this PR. | Re-run clean release wheel, CLI, import, and embedded-data gates on the exact release candidate. |
 
 ### 2.3 Source revisions observed on 2026-08-28
 
