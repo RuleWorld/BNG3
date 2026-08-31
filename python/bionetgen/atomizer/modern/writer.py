@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import re
 from collections import OrderedDict
+from dataclasses import dataclass
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
 from .events import EventTranslationContext, synthesize_event_actions
@@ -497,6 +498,80 @@ def extend_function(
     return result
 
 
+def _definition_field(definition: object, field: str, default: object) -> object:
+    value = getattr(definition, field, None)
+    if value is None and isinstance(definition, Mapping):
+        value = definition.get(field, default)
+    return default if value is None else value
+
+
+def _expand_function_call(
+    expression: str, function_name: str, definition: object
+) -> str:
+    """Expand every call of one SBML function with parenthesis-aware parsing."""
+
+    result = expression
+    call_pattern = re.compile(rf"\b{re.escape(function_name)}\s*\(")
+    guard = 0
+    while guard < 10000:
+        match = call_pattern.search(result)
+        if match is None:
+            break
+        depth = 1
+        index = match.end()
+        while depth and index < len(result):
+            if result[index] == "(":
+                depth += 1
+            elif result[index] == ")":
+                depth -= 1
+            index += 1
+        if depth:
+            break
+
+        actual_arguments = _split_arguments(result[match.end() : index - 1])
+        body = str(_definition_field(definition, "math", "") or "")
+        formal_arguments = list(_definition_field(definition, "arguments", []) or [])
+        argument_map = {
+            str(formal).strip(): actual_arguments[position].strip()
+            for position, formal in enumerate(formal_arguments)
+            if position < len(actual_arguments) and str(formal).strip()
+        }
+        names = sorted(argument_map, key=len, reverse=True)
+        if names:
+            formal_pattern = re.compile(
+                rf"\b(?:{'|'.join(re.escape(name) for name in names)})\b"
+            )
+            body = formal_pattern.sub(
+                lambda item: f"({argument_map[item.group(0)]})", body
+            )
+        result = result[: match.start()] + f"({body})" + result[index:]
+        guard += 1
+    return result
+
+
+def inline_sbml_functions(
+    rate_expression: str, function_definitions: Mapping[str, object]
+) -> str:
+    """Inline SBML function calls using the Playground's bounded expansion loop."""
+
+    result = str(rate_expression or "")
+    modified = True
+    iterations = 0
+    while modified and iterations < 20:
+        modified = False
+        iterations += 1
+        for function_id, definition in function_definitions.items():
+            function_name = str(function_id)
+            if not re.search(rf"\b{re.escape(function_name)}\s*\(", result):
+                continue
+            expanded = _expand_function_call(result, function_name, definition)
+            if expanded != result:
+                result = expanded
+                modified = True
+                break
+    return result
+
+
 def bngl_function(
     rule: str,
     function_title: str = "",
@@ -713,6 +788,32 @@ def _split_reversible_rate(expression: str) -> Optional[Tuple[str, str]]:
         )
 
     return combine(positive), combine(negative)
+
+
+@dataclass(frozen=True)
+class ReversibleRateSplit:
+    """Reference-shaped result for reversible SBML rate decomposition."""
+
+    success: bool
+    forward_rate: str
+    reverse_rate: str
+
+    @property
+    def forwardRate(self) -> str:
+        return self.forward_rate
+
+    @property
+    def reverseRate(self) -> str:
+        return self.reverse_rate
+
+
+def split_reversible_rate(rate_expression: str) -> ReversibleRateSplit:
+    """Split a net reversible rate into positive and negative laws."""
+
+    split = _split_reversible_rate(rate_expression)
+    if split is None:
+        return ReversibleRateSplit(False, rate_expression, "0")
+    return ReversibleRateSplit(True, split[0], split[1])
 
 
 def _prepared_kinetic_math(reaction: SBMLReaction, model: SBMLModel) -> str:
@@ -1942,6 +2043,8 @@ def generate_bngl(
 
 # Preserve the TypeScript reference spelling for direct facade callers.
 bnglReaction = bngl_reaction
+inlineSBMLFunctions = inline_sbml_functions
+splitReversibleRate = split_reversible_rate
 
 
 __all__ = [
@@ -1951,6 +2054,11 @@ __all__ = [
     "convert_math_expression",
     "extend_function",
     "generate_bngl",
+    "inlineSBMLFunctions",
+    "inline_sbml_functions",
+    "ReversibleRateSplit",
+    "splitReversibleRate",
+    "split_reversible_rate",
     "write_compartments",
     "write_functions",
     "write_molecule_types",

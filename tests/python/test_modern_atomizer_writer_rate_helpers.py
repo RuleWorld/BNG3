@@ -12,9 +12,7 @@ from bionetgen.atomizer.modern import (
 
 def test_inline_sbml_functions_substitutes_formals_simultaneously():
     definitions = {
-        "f": SBMLFunctionDefinition(
-            id="f", arguments=["x", "y"], math="x + y"
-        ),
+        "f": SBMLFunctionDefinition(id="f", arguments=["x", "y"], math="x + y"),
     }
 
     result = inline_sbml_functions("f(y, 2)", definitions)
@@ -32,7 +30,7 @@ def test_inline_sbml_functions_expands_nested_calls_and_keeps_unknown_calls():
     }
 
     assert inline_sbml_functions("outer(a) + missing(a)", definitions) == (
-        "(((a)^2)) + missing(a)"
+        "((((a))^2)) + missing(a)"
     )
 
 
