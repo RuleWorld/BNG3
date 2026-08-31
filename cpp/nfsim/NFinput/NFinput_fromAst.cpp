@@ -5053,6 +5053,12 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                     ok = false;
                     break;
                 }
+                // A product bond to an existing molecule requires the
+                // reactant site to be available.  New-molecule binding uses a
+                // deferred transform and cannot preflight this condition
+                // after the product molecule is created, so encode the
+                // availability on the reactant template itself.
+                existingTemplate->addEmptyComponent(existingName);
                 if (!transformationSet->addNewMoleculeBindingTransform(
                         existingTemplate, existingName,
                         added->second.first, added->second.second)) {
