@@ -49,12 +49,18 @@ def test_python_matrix_installs_runtime_dependencies_before_no_deps_wheel():
     )
 
 
-def test_msvc_parser_translation_unit_clears_constant_macro_before_antlr():
-    """The Windows SDK's ``constant`` macro must not rewrite ANTLR enums."""
+def test_msvc_parser_headers_clear_windows_macros_before_antlr():
+    """Windows SDK macros must not rewrite ANTLR enum members."""
+
+    compat = (REPO / "cpp" / "parser" / "antlr_compat.hpp").read_text(
+        encoding="utf-8"
+    )
+    assert re.search(r"#\s*undef\s+ERROR", compat)
+    assert re.search(r"#\s*undef\s+constant", compat)
 
     source = (REPO / "cpp" / "nfsim" / "NFinput" / "NFinput_fromAst.cpp").read_text(
         encoding="utf-8"
     )
     parser_include = source.index('#include "PatternGraphBuilder.hpp"')
     prefix = source[:parser_include]
-    assert "#undef constant" in prefix
+    assert '#include "parser/antlr_compat.hpp"' in prefix

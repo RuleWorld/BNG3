@@ -21,6 +21,7 @@
 #include "core/Ullmann.hpp"
 #include "Model.hpp"
 
+#include "parser/antlr_compat.hpp"
 #include <antlr4-runtime.h>
 #include "BNGLexer.h"
 #include "BNGParser.h"

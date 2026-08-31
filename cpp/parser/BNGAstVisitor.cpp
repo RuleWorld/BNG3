@@ -15,6 +15,7 @@
 #include <utility>
 #include <vector>
 
+#include "antlr_compat.hpp"
 #include <antlr4-runtime.h>
 
 #include "generated/BNGLexer.h"
