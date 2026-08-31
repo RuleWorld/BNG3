@@ -4,8 +4,8 @@
 **Last audited:** 2026-08-31
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited code head:** 7f20a685eb140ea0a7f41627bc09e8c224fd3dce
-**Checklist checkpoint:** 7ac8506
+**Audited semantic code head:** 53289e2acc81c8aa4a6c79ca6671a6db11b93caf
+**Checklist refresh base:** 53289e2 (refresh after each semantic checkpoint)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 
@@ -41,24 +41,27 @@ These items describe the current checkpoint. They do not satisfy the full
 completion gate.
 
 - [x] Required fast-forward pull completed before this documentation change.
-- [x] Branch and origin point to the same exact head:
-  7f20a685eb140ea0a7f41627bc09e8c224fd3dce.
+- [x] The latest pushed semantic checkpoint is
+  53289e2acc81c8aa4a6c79ca6671a6db11b93caf; documentation-only refreshes may
+  be layered after it without invalidating its semantic test evidence.
 - [x] The small documentation grammar fix remains the only pre-existing
   worktree modification. It is intentionally not staged by this checklist
   checkpoint.
 - [x] Local CTest passes 124/124.
-- [x] Local Python suite passes 212 tests with 27 skips and 8 warnings.
+- [x] Local Python suite passes 216 tests with 27 skips and 8 warnings.
 - [x] Local Black check, Ruff check, and git diff check pass.
 - [x] Local validation smoke reports 4 passed and 15 skipped; the skips are
   visible because this checkout lacks the expected validation CLI/oracle
   environment and must not be treated as parity.
-- [x] A clean, no-build-isolation wheel was built, installed into a separate
-  target, and imported with its compiled extension.
-- [x] Hosted PR checks at this exact head pass across the C++ matrix, Python
-  matrix, ASan, integration, validation, formatter, and CodeQL.
+- [ ] A clean, no-build-isolation wheel was built, installed into a separate
+  target, and imported with its compiled extension at this exact head. The
+  prior wheel evidence predates the helper-surface checkpoint.
+- [ ] Hosted PR checks at this exact head pass across the C++ matrix, Python
+  matrix, ASan, integration, validation, formatter, and CodeQL. At this audit,
+  CI run 33443837069 and CodeQL run 33443837093 are still in progress.
 - [x] Modern Atomizer checkpoints exist for annotations, BNG-XML conversion,
   Rulifier, UniProt, structure helpers, and conservative SBML-Multi discovery,
-  each with source-derived tests.
+  helper/rate-rule constants, each with source-derived tests.
 - [ ] The release candidate has independent oracle, provenance-complete
   golden, full parity, direct-NFsim, SBML-Multi, legacy, installed-package,
   and release-artifact evidence.
@@ -350,11 +353,15 @@ completion gate.
   RuleWorld/bngplayground source paths, preserving source-level provenance.
 - [x] Source-derived modern tests cover the current annotation API,
   BNG-XML conversion, Rulifier, UniProt seam/cache behavior, structure helpers,
-  and conservative Multi discovery.
+  conservative Multi discovery, and the public helper/rate-rule-constant
+  surface.
+- [x] The public `utils/helpers` surface and
+  `writer/rateRuleConstants` values are ported at 53289e2 with
+  source-derived coverage in tests/python/test_modern_atomizer_helpers.py.
 - [ ] Complete or explicitly govern remaining modern reference modules:
   atomization/core, parser/bngXmlParser and parser/sbmlParser,
-  utils/helpers, validation/units, writer/bnglWriter, writer/eventActions,
-  writer/rateRuleConstants, and writer/sbmlWriter.
+  validation/units, writer/bnglWriter, writer/eventActions, and
+  writer/sbmlWriter.
 - [ ] Compare Atomizer molecule/site/state semantics, bond/wildcard handling,
   compartments, seed species, observables, rules, rate laws, annotations,
   names, and provenance against source-derived fixtures.
@@ -416,8 +423,9 @@ completion gate.
 
 ### 8.1 CI truthfulness
 
-- [x] Current exact PR head has green hosted C++, Python, validation,
-  integration, formatting, ASan, and CodeQL checks.
+- [ ] Current exact PR head has green hosted C++, Python, validation,
+  integration, formatting, ASan, and CodeQL checks. The current CI and CodeQL
+  runs are pending; do not use older green runs as evidence for 53289e2.
 - [ ] Every required job emits a terminal summary with counts, failures,
   skips, exception budget, corpus/source revision, and artifact digests.
 - [ ] Required jobs fail when a claimed oracle, corpus, validator, or compiler
@@ -570,9 +578,13 @@ These are known unchecked requirements, not reasons to claim completion:
   passed zero-reference deletion gates.
 - Atomizer writer/helper/parser parity and all format round trips remain
   broader than the current modern test slices.
-- Package metadata/repository URL review, clean release sdist/wheel matrices,
+- Package metadata/repository URL review, current-head clean release
+  sdist/wheel matrices,
   Docker, publication, and release-artifact provenance remain open; hosted
   PR release jobs were skipped by event conditions.
+- The modern helper/rate-rule-constant surface is now covered by a focused
+  source-derived checkpoint, but broad Atomizer writer/parser/SBML parity is
+  still open.
 - CODEOWNERS and complete domain approval enforcement remain open even though
   AGENTS.md exists.
 - Historical progress text in the integration plan must be refreshed as later
