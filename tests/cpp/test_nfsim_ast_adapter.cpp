@@ -2073,6 +2073,48 @@ end reaction rules
     delete direct;
 }
 
+TEST_CASE("NFsim XML bridge maps arithmetic around a scoped local function rate") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 2.0
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin observables
+    Molecules atotal A()
+end observables
+begin functions
+    f(x) = atotal(x)
+end functions
+begin reaction rules
+    %x::A() -> %x::A() + B() k + f(x)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    const auto xml = bng::io::XmlWriter::write(*model);
+    CHECK(xml.find("<Function id=\"__bng3_reaction_rate_RR1\"") !=
+          std::string::npos);
+    CHECK(xml.find("<Argument id=\"x\"/>") != std::string::npos);
+    CHECK(xml.find("<Expression>(k + f(x))</Expression>") !=
+          std::string::npos);
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getCompositeFunctionByName("__bng3_reaction_rate_RR1") != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    system->prepareForSimulation();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(3.0));
+    delete system;
+}
+
 TEST_CASE("NFsim AST adapter maps a bounded nested local function rate") {
     auto model = bng::parser::parseModel(R"(
 begin parameters
