@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 
 def _local_name(tag: str) -> str:
@@ -89,6 +89,8 @@ def _warning(message: str, severity: str = "approximated") -> Dict[str, Any]:
 
 def _as_root(document: Union[str, Any]) -> Any:
     if isinstance(document, str):
+        if not document.strip():
+            return None
         return ET.fromstring(document)
     return document
 
@@ -134,6 +136,8 @@ def parse_multi_package(document: Union[str, Any]) -> MultiParseResult:
     """Extract canonical Multi-package molecule/complex references."""
 
     root = _as_root(document)
+    if root is None:
+        return MultiParseResult()
     namespace = _multi_namespace(root)
     if namespace is None:
         return MultiParseResult()
@@ -211,8 +215,20 @@ def parse_multi_package(document: Union[str, Any]) -> MultiParseResult:
                 species_type.bonds.append((site1, site2))
         species_types[type_id] = species_type
 
-    species_list = _first_child(model, "listOfSpecies")
     top_types = []
+    for element in root.iter():
+        for attribute, value in getattr(element, "attrib", {}).items():
+            if _local_name(attribute) != "speciesType":
+                continue
+            if _namespace(attribute) != namespace:
+                continue
+            type_id = str(value)
+            if type_id in species_types and type_id not in top_types:
+                top_types.append(type_id)
+
+    # Keep compatibility with hand-authored fixtures that use an unqualified
+    # speciesType attribute on a core species element.
+    species_list = _first_child(model, "listOfSpecies")
     for species in _children(species_list, "species"):
         type_id = _attribute(species, "speciesType")
         if type_id in species_types and type_id not in top_types:
