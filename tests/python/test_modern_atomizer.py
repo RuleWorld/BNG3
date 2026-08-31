@@ -682,6 +682,43 @@ def test_playground_writer_keys_observables_by_sbml_id_not_display_name():
     cpp.parse_string(bngl)
 
 
+def test_playground_writer_preserves_constant_species_as_fixed_seeds():
+    from bionetgen.atomizer.modern import (
+        SBMLModel,
+        SBMLSpecies,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    model = SBMLModel(
+        id="fixed_species",
+        species=OrderedDict(
+            [
+                (
+                    "A",
+                    SBMLSpecies(
+                        id="A",
+                        name="A",
+                        initial_amount=4,
+                        initial_amount_set=True,
+                        boundary_condition=True,
+                    ),
+                )
+            ]
+        ),
+    )
+    sct = build_species_composition_table(model)
+    bngl, _ = generate_bngl(
+        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+    )
+
+    assert "$M_A() 4" in bngl
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    cpp.parse_string(bngl)
+
+
 def test_playground_event_actions_fold_constants_and_retain_unsupported_events():
     from bionetgen.atomizer.modern import SBMLEvent
     from bionetgen.atomizer.modern.events import (

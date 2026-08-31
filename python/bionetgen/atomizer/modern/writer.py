@@ -665,7 +665,12 @@ def write_seed_species(
                 + ":"
                 + pattern.replace("@" + standardize_name(seed.compartment), "")
             )
-        line = f"{pattern} {seed.concentration}"
+        source_species = model.species.get(seed.sbml_id)
+        fixed = bool(
+            source_species
+            and (source_species.constant or source_species.boundary_condition)
+        )
+        line = f"{'$' if fixed else ''}{pattern} {seed.concentration}"
         lines.append(line)
         sbml_to_pattern[seed.sbml_id] = pattern
         pattern_to_id[pattern] = seed.sbml_id
