@@ -33,7 +33,7 @@ def test_pull_request_exercises_clean_source_distribution_install():
     assert "python -m venv" in job
     assert "pip install --no-deps dist/*.tar.gz" in job
     assert "import bionetgen" in job
-    assert "bionetgen --version" in job
+    assert re.search(r"/bin/bionetgen\"?\s+--version", job)
 
 
 def test_project_declares_click_as_runtime_dependency():

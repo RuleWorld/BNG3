@@ -423,6 +423,50 @@ jobs:
           SYMPY_USE_GMPY: "0"
 
   # ═══════════════════════════════════════════════════════════════════════════
+  # Source Distribution Installation Smoke Test
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  package-smoke:
+    name: Package Smoke (sdist)
+    needs: [python-test]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install packaging and native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
+          python -m pip install build
+
+      - name: Build source distribution
+        run: python -m build --sdist
+
+      - name: Install source distribution in clean environment
+        shell: bash
+        run: |
+          set -eu
+          python -m venv "$RUNNER_TEMP/bng3-package-smoke"
+          "$RUNNER_TEMP/bng3-package-smoke/bin/python" -m pip install --upgrade pip
+          "$RUNNER_TEMP/bng3-package-smoke/bin/python" -m pip install numpy click
+          "$RUNNER_TEMP/bng3-package-smoke/bin/python" -m pip install --no-deps dist/*.tar.gz
+        env:
+          CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=OFF"
+
+      - name: Smoke installed package
+        shell: bash
+        run: |
+          set -eu
+          "$RUNNER_TEMP/bng3-package-smoke/bin/python" -c \
+            "import bionetgen; import bionetgen._bionetgen_cpp"
+          "$RUNNER_TEMP/bng3-package-smoke/bin/bionetgen" --version
+          "$RUNNER_TEMP/bng3-package-smoke/bin/bionetgen" --help
+
+  # ═══════════════════════════════════════════════════════════════════════════
   # Wheel Building (binary distribution)
   # ═══════════════════════════════════════════════════════════════════════════
 
