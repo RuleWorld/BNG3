@@ -70,6 +70,7 @@ from .annotation import (
     parse_resource_uri,
     parse_species_annotations,
 )
+from .bng_xml import convertBNGXmlToBNGL, convert_bng_xml_to_bngl
 
 DEFAULT_ATOMIZER_OPTIONS: Dict[str, Any] = {
     "use_id": False,
@@ -278,6 +279,8 @@ __all__ = [
     "annotations_to_yaml",
     "apply_unit_scaling",
     "build_species_composition_table",
+    "convertBNGXmlToBNGL",
+    "convert_bng_xml_to_bngl",
     "bngl_function",
     "classify_reaction",
     "compute_annotation_stats",
