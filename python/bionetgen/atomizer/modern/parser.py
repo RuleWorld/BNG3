@@ -42,6 +42,13 @@ def _first_child(element: Any, name: str) -> Optional[Any]:
     return next(iter(_children(element, name)), None)
 
 
+def _attribute(element: Any, name: str, default: Any = None) -> Any:
+    for key, value in getattr(element, "attrib", {}).items():
+        if key == name or key.rsplit("}", 1)[-1] == name:
+            return value
+    return default
+
+
 def _float(value: Any, default: float = 0.0) -> float:
     try:
         result = float(value)
@@ -88,6 +95,12 @@ def _mathml_to_formula(element: Optional[Any]) -> str:
         return "1"
     if tag == "false":
         return "0"
+    if tag == "lambda":
+        body = list(element)[-1] if list(element) else None
+        return _mathml_to_formula(body)
+    if tag == "bvar":
+        child = list(element)[0] if list(element) else None
+        return _mathml_to_formula(child)
     if tag == "apply":
         children = list(element)
         if not children:
@@ -139,53 +152,58 @@ class SBMLParser:
 
     def parse(self, sbml_string: str) -> SBMLModel:
         try:
-            import libsbml
-        except ImportError as exc:  # pragma: no cover - optional dependency
-            raise RuntimeError(
-                "python-libsbml is required for the modern atomizer"
-            ) from exc
-
-        try:
             root = ET.fromstring(sbml_string)
         except ET.ParseError as exc:
             raise ValueError(f"Invalid SBML XML: {exc}") from exc
-
-        document = libsbml.SBMLReader().readSBMLFromString(sbml_string)
-        sbml_model = document.getModel() if document is not None else None
-        if sbml_model is None:
-            messages = []
-            if document is not None:
-                for index in range(document.getNumErrors()):
-                    messages.append(document.getError(index).getMessage())
-            detail = "; ".join(messages[:3])
-            raise ValueError(
-                "SBML document has no model" + (f": {detail}" if detail else "")
-            )
-
-        raw_by_kind_id = self._raw_elements(root)
-        compartments = self._parse_compartments(
-            sbml_model, raw_by_kind_id.get("compartment", {})
+        model_element = next(
+            (element for element in root.iter() if _local_name(element.tag) == "model"),
+            None,
         )
-        species = self._parse_species(
-            sbml_model, raw_by_kind_id.get("species", {}), libsbml
-        )
-        parameters = self._parse_parameters(sbml_model)
-        reactions = self._parse_reactions(
-            sbml_model, raw_by_kind_id.get("reaction", {}), libsbml
-        )
-        rules = self._parse_rules(sbml_model, libsbml)
-        functions = self._parse_functions(sbml_model, libsbml)
-        events = self._parse_events(sbml_model, libsbml)
-        initial_assignments = self._parse_initial_assignments(sbml_model, libsbml)
+        if model_element is None:
+            raise ValueError("SBML document has no model")
+        return self._parse_xml_model(root, model_element)
 
+    @staticmethod
+    def _xml_math(parent: Optional[Any]) -> str:
+        if parent is None:
+            return ""
+        math_element = (
+            parent
+            if _local_name(getattr(parent, "tag", "")) == "math"
+            else _first_child(parent, "math")
+        )
+        if math_element is None:
+            formula = _attribute(parent, "formula", "")
+            return str(formula or "").strip()
+        return _mathml_to_formula(math_element)
+
+    @staticmethod
+    def _xml_items(model: Any, container: str, item: str) -> List[Any]:
+        parent = _first_child(model, container)
+        return list(_children(parent, item)) if parent is not None else []
+
+    @staticmethod
+    def _parse_xml_model(root: Any, model: Any) -> SBMLModel:
+        compartments = SBMLParser._parse_xml_compartments(model)
+        species = SBMLParser._parse_xml_species(model)
+        parameters = SBMLParser._parse_xml_parameters(model)
+        reactions = SBMLParser._parse_xml_reactions(model)
+        rules = SBMLParser._parse_xml_rules(model)
+        functions = SBMLParser._parse_xml_functions(model)
+        events = SBMLParser._parse_xml_events(model)
+        initial_assignments = SBMLParser._parse_xml_initial_assignments(model)
         species_by_compartment: Dict[str, List[str]] = OrderedDict()
         for species_id, item in species.items():
             species_by_compartment.setdefault(item.compartment, []).append(species_id)
-
-        unit_definitions = self._parse_units(sbml_model)
+        level = _attribute(root, "level")
+        try:
+            level_value = int(level) if level is not None else None
+        except (TypeError, ValueError):
+            level_value = None
+        model_id = str(_attribute(model, "id", "model") or "model")
         return SBMLModel(
-            id=str(sbml_model.getId() or "model"),
-            name=str(sbml_model.getName() or sbml_model.getId() or "model"),
+            id=model_id,
+            name=str(_attribute(model, "name", model_id) or model_id),
             compartments=compartments,
             species=species,
             parameters=parameters,
@@ -195,11 +213,366 @@ class SBMLParser:
             events=events,
             initial_assignments=initial_assignments,
             species_by_compartment=species_by_compartment,
-            unit_definitions=unit_definitions,
-            level=(
-                int(sbml_model.getLevel()) if hasattr(sbml_model, "getLevel") else None
-            ),
+            unit_definitions=SBMLParser._parse_xml_units(model),
+            level=level_value,
         )
+
+    @staticmethod
+    def _parse_xml_compartments(model: Any) -> Dict[str, SBMLCompartment]:
+        result: Dict[str, SBMLCompartment] = OrderedDict()
+        for item in SBMLParser._xml_items(model, "listOfCompartments", "compartment"):
+            item_id = str(_attribute(item, "id", "") or "")
+            if not item_id:
+                continue
+            result[item_id] = SBMLCompartment(
+                id=item_id,
+                name=str(_attribute(item, "name", item_id) or item_id),
+                spatial_dimensions=_float(_attribute(item, "spatialDimensions"), 3),
+                size=_float(_attribute(item, "size", _attribute(item, "volume")), 1),
+                units=str(_attribute(item, "units", "") or ""),
+                constant=_bool(_attribute(item, "constant"), True),
+                outside=(str(_attribute(item, "outside", "") or "") or None),
+                size_set=(
+                    _attribute(item, "size") is not None
+                    or _attribute(item, "volume") is not None
+                ),
+            )
+        return result
+
+    @staticmethod
+    def _parse_xml_annotations(item: Any) -> List[AnnotationInfo]:
+        result: List[AnnotationInfo] = []
+        for annotation in _children(item, "annotation"):
+            resources: List[str] = []
+            qualifier_type = -1
+            biological = None
+            model_qualifier = None
+            for descendant in annotation.iter():
+                resource = _attribute(descendant, "resource")
+                if resource is not None and _local_name(descendant.tag) == "li":
+                    resources.append(str(resource))
+                namespace = str(descendant.tag)
+                if "biology-qualifiers" in namespace:
+                    qualifier_type = 1
+                    biological = 0 if _local_name(descendant.tag) == "is" else None
+                elif "model-qualifiers" in namespace:
+                    qualifier_type = 2
+                    model_qualifier = 0 if _local_name(descendant.tag) == "is" else None
+            if resources:
+                result.append(
+                    AnnotationInfo(
+                        qualifier_type=qualifier_type,
+                        biological_qualifier=biological,
+                        model_qualifier=model_qualifier,
+                        resources=resources,
+                    )
+                )
+        return result
+
+    @staticmethod
+    def _parse_xml_species(model: Any) -> Dict[str, SBMLSpecies]:
+        result: Dict[str, SBMLSpecies] = OrderedDict()
+        for item in SBMLParser._xml_items(model, "listOfSpecies", "species"):
+            item_id = str(_attribute(item, "id", "") or "")
+            if not item_id:
+                continue
+            result[item_id] = SBMLSpecies(
+                id=item_id,
+                name=str(_attribute(item, "name", item_id) or item_id),
+                compartment=str(_attribute(item, "compartment", "") or ""),
+                initial_concentration=_float(
+                    _attribute(item, "initialConcentration"), 0
+                ),
+                initial_amount=_float(_attribute(item, "initialAmount"), 0),
+                substance_units=str(_attribute(item, "substanceUnits", "") or ""),
+                has_only_substance_units=_bool(
+                    _attribute(item, "hasOnlySubstanceUnits"), False
+                ),
+                boundary_condition=_bool(_attribute(item, "boundaryCondition"), False),
+                constant=_bool(_attribute(item, "constant"), False),
+                annotations=SBMLParser._parse_xml_annotations(item),
+                initial_amount_set=_attribute(item, "initialAmount") is not None,
+                initial_concentration_set=(
+                    _attribute(item, "initialConcentration") is not None
+                ),
+                sbo_term=_attribute(item, "sboTerm"),
+                conversion_factor=_attribute(item, "conversionFactor"),
+                charge=(
+                    _float(_attribute(item, "charge"))
+                    if _attribute(item, "charge") is not None
+                    else None
+                ),
+                species_type=_attribute(item, "speciesType"),
+            )
+        return result
+
+    @staticmethod
+    def _parse_xml_parameters(model: Any) -> Dict[str, SBMLParameter]:
+        result: Dict[str, SBMLParameter] = OrderedDict()
+        for item in SBMLParser._xml_items(model, "listOfParameters", "parameter"):
+            item_id = str(_attribute(item, "id", "") or "")
+            if not item_id:
+                continue
+            result[item_id] = SBMLParameter(
+                id=item_id,
+                name=str(_attribute(item, "name", item_id) or item_id),
+                value=_float(_attribute(item, "value"), 0),
+                units=str(_attribute(item, "units", "") or ""),
+                constant=_bool(_attribute(item, "constant"), True),
+                scope="global",
+            )
+        return result
+
+    @staticmethod
+    def _parse_xml_reference(item: Any) -> SBMLSpeciesReference:
+        species = str(_attribute(item, "species", "") or "")
+        stoichiometry_set = _attribute(item, "stoichiometry") is not None
+        stoichiometry = _float(_attribute(item, "stoichiometry"), 1) or 1
+        constant = _bool(_attribute(item, "constant"), True)
+        return SBMLSpeciesReference(
+            species=species,
+            stoichiometry=stoichiometry,
+            constant=constant,
+            id=(str(_attribute(item, "id")) if _attribute(item, "id") else None),
+            stoichiometry_set=stoichiometry_set,
+            variable_stoichiometry=not constant,
+        )
+
+    @staticmethod
+    def _parse_xml_kinetic_law(item: Any) -> Optional[SBMLKineticLaw]:
+        if item is None:
+            return None
+        math = SBMLParser._xml_math(item)
+        local_parameters: List[SBMLParameter] = []
+        local_parent = _first_child(item, "listOfLocalParameters")
+        if local_parent is None:
+            local_parent = _first_child(item, "listOfParameters")
+        if local_parent is not None:
+            for local in _children(local_parent, "localParameter"):
+                local_id = str(_attribute(local, "id", "") or "")
+                if not local_id:
+                    continue
+                local_parameters.append(
+                    SBMLParameter(
+                        id=local_id,
+                        name=str(_attribute(local, "name", local_id) or local_id),
+                        value=_float(_attribute(local, "value"), 0),
+                        units=str(_attribute(local, "units", "") or ""),
+                        scope="local",
+                    )
+                )
+        return SBMLKineticLaw(
+            math=math,
+            math_ml=(
+                ET.tostring(_first_child(item, "math"), encoding="unicode")
+                if _first_child(item, "math") is not None
+                else ""
+            ),
+            local_parameters=local_parameters,
+        )
+
+    @staticmethod
+    def _parse_xml_reactions(model: Any) -> Dict[str, SBMLReaction]:
+        result: Dict[str, SBMLReaction] = OrderedDict()
+        for item in SBMLParser._xml_items(model, "listOfReactions", "reaction"):
+            item_id = str(_attribute(item, "id", "") or "")
+            if not item_id:
+                continue
+            reactant_parent = _first_child(item, "listOfReactants")
+            product_parent = _first_child(item, "listOfProducts")
+            modifier_parent = _first_child(item, "listOfModifiers")
+            result[item_id] = SBMLReaction(
+                id=item_id,
+                name=str(_attribute(item, "name", item_id) or item_id),
+                reversible=_bool(_attribute(item, "reversible"), False),
+                fast=_bool(_attribute(item, "fast"), False),
+                reactants=(
+                    [
+                        SBMLParser._parse_xml_reference(reference)
+                        for reference in _children(reactant_parent, "speciesReference")
+                    ]
+                    if reactant_parent is not None
+                    else []
+                ),
+                products=(
+                    [
+                        SBMLParser._parse_xml_reference(reference)
+                        for reference in _children(product_parent, "speciesReference")
+                    ]
+                    if product_parent is not None
+                    else []
+                ),
+                modifiers=(
+                    [
+                        str(_attribute(reference, "species", "") or "")
+                        for reference in _children(
+                            modifier_parent, "modifierSpeciesReference"
+                        )
+                    ]
+                    if modifier_parent is not None
+                    else []
+                ),
+                kinetic_law=SBMLParser._parse_xml_kinetic_law(
+                    _first_child(item, "kineticLaw")
+                ),
+                compartment=(
+                    str(_attribute(item, "compartment"))
+                    if _attribute(item, "compartment")
+                    else None
+                ),
+                conversion_factor=_attribute(item, "conversionFactor"),
+            )
+        return result
+
+    @staticmethod
+    def _parse_xml_rules(model: Any) -> List[SBMLRule]:
+        result: List[SBMLRule] = []
+        parent = _first_child(model, "listOfRules")
+        if parent is None:
+            return result
+        for item in list(parent):
+            kind = {
+                "assignmentRule": "assignment",
+                "rateRule": "rate",
+                "algebraicRule": "algebraic",
+            }.get(_local_name(item.tag))
+            if kind is None:
+                continue
+            result.append(
+                SBMLRule(
+                    type=kind,
+                    variable=(
+                        str(_attribute(item, "variable"))
+                        if _attribute(item, "variable") is not None
+                        else None
+                    ),
+                    math=SBMLParser._xml_math(item),
+                )
+            )
+        return result
+
+    @staticmethod
+    def _parse_xml_functions(model: Any) -> Dict[str, SBMLFunctionDefinition]:
+        result: Dict[str, SBMLFunctionDefinition] = OrderedDict()
+        for item in SBMLParser._xml_items(
+            model, "listOfFunctionDefinitions", "functionDefinition"
+        ):
+            item_id = str(_attribute(item, "id", "") or "")
+            if not item_id:
+                continue
+            math_element = _first_child(item, "math")
+            lambda_element = (
+                _first_child(math_element, "lambda")
+                if math_element is not None
+                else None
+            )
+            arguments: List[str] = []
+            body = math_element
+            if lambda_element is not None:
+                for bvar in _children(lambda_element, "bvar"):
+                    argument = list(bvar)[0] if list(bvar) else None
+                    name = _mathml_to_formula(argument)
+                    if name:
+                        arguments.append(name)
+                children = list(lambda_element)
+                body = children[-1] if children else None
+            result[item_id] = SBMLFunctionDefinition(
+                id=item_id,
+                name=str(_attribute(item, "name", item_id) or item_id),
+                math=_mathml_to_formula(body),
+                arguments=arguments,
+            )
+        return result
+
+    @staticmethod
+    def _parse_xml_events(model: Any) -> List[SBMLEvent]:
+        result: List[SBMLEvent] = []
+        for index, item in enumerate(
+            SBMLParser._xml_items(model, "listOfEvents", "event")
+        ):
+            trigger = _first_child(item, "trigger")
+            assignments_parent = _first_child(item, "listOfEventAssignments")
+            assignments = []
+            if assignments_parent is not None:
+                for assignment in _children(assignments_parent, "eventAssignment"):
+                    assignments.append(
+                        (
+                            str(_attribute(assignment, "variable", "") or ""),
+                            SBMLParser._xml_math(assignment),
+                        )
+                    )
+            priority = _first_child(item, "priority")
+            result.append(
+                SBMLEvent(
+                    id=str(
+                        _attribute(item, "id", f"event_{index + 1}")
+                        or f"event_{index + 1}"
+                    ),
+                    name=str(
+                        _attribute(
+                            item, "name", _attribute(item, "id", f"event_{index + 1}")
+                        )
+                        or f"event_{index + 1}"
+                    ),
+                    trigger=SBMLParser._xml_math(trigger),
+                    delay=SBMLParser._xml_math(_first_child(item, "delay")) or None,
+                    use_values_from_trigger_time=_bool(
+                        _attribute(item, "useValuesFromTriggerTime"), True
+                    ),
+                    assignments=assignments,
+                    trigger_initial_value=(
+                        _bool(_attribute(trigger, "initialValue"), True)
+                        if trigger is not None
+                        else None
+                    ),
+                    trigger_persistent=(
+                        _bool(_attribute(trigger, "persistent"), True)
+                        if trigger is not None
+                        else None
+                    ),
+                    priority=SBMLParser._xml_math(priority) or None,
+                )
+            )
+        return result
+
+    @staticmethod
+    def _parse_xml_initial_assignments(model: Any) -> List[SBMLInitialAssignment]:
+        result: List[SBMLInitialAssignment] = []
+        for item in SBMLParser._xml_items(
+            model, "listOfInitialAssignments", "initialAssignment"
+        ):
+            symbol = _attribute(item, "symbol")
+            if symbol is not None:
+                result.append(
+                    SBMLInitialAssignment(
+                        symbol=str(symbol), math=SBMLParser._xml_math(item)
+                    )
+                )
+        return result
+
+    @staticmethod
+    def _parse_xml_units(model: Any) -> Dict[str, Any]:
+        result: Dict[str, Any] = OrderedDict()
+        for definition in SBMLParser._xml_items(
+            model, "listOfUnitDefinitions", "unitDefinition"
+        ):
+            definition_id = str(_attribute(definition, "id", "") or "")
+            if not definition_id:
+                continue
+            units = []
+            parent = _first_child(definition, "listOfUnits")
+            if parent is not None:
+                for unit in _children(parent, "unit"):
+                    units.append(
+                        {
+                            "kind": _attribute(unit, "kind", ""),
+                            "scale": int(_float(_attribute(unit, "scale"), 0)),
+                            "exponent": _float(_attribute(unit, "exponent"), 1),
+                            "multiplier": _float(_attribute(unit, "multiplier"), 1),
+                        }
+                    )
+            result[definition_id] = units
+        return result
 
     @staticmethod
     def _raw_elements(root: Any) -> Dict[str, Dict[str, Dict[str, str]]]:

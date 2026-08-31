@@ -556,3 +556,13 @@ def test_playground_atomizer_emits_event_actions_and_diagnostics_in_bngl():
 
     cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
     cpp.parse_string(bngl)
+
+
+def test_playground_name_standardization_handles_sbml_symbols_and_keywords():
+    from bionetgen.atomizer.modern import standardize_name
+
+    assert standardize_name("time") == "time_id"
+    assert standardize_name("A+B") == "AplB"
+    assert standardize_name("A/B") == "A_B"
+    assert standardize_name("αβ") == "ab"
+    assert standardize_name("7 days") == "_7_days"

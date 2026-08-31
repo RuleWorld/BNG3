@@ -241,6 +241,7 @@ def sbml_to_bngl_atomized(
 
 __all__ = [
     "Atomizer",
+    "BNGL_LEXER_KEYWORDS",
     "Component",
     "EventTranslationContext",
     "EventTranslationResult",
