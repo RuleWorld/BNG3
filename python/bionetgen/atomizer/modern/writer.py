@@ -68,19 +68,352 @@ def convert_math_expression(expression: str) -> str:
     """Convert common MathML/libSBML function spellings to BNGL syntax."""
 
     result = str(expression or "").strip()
-    replacements = {
-        "power": "pow",
-        "log10": "log10",
-        "ceiling": "ceil",
-        "exponentiale": "2.71828182845905",
-    }
-    for source, target in replacements.items():
-        if source != target:
-            result = re.sub(rf"\b{re.escape(source)}\b", target, result)
+    result = _replace_nested_function(
+        result,
+        "pow",
+        lambda args: (
+            f"(({args[0]})^({args[1]}))"
+            if len(args) >= 2
+            else f"pow({', '.join(args)})"
+        ),
+    )
+    result = _replace_nested_function(
+        result,
+        "power",
+        lambda args: (
+            f"(({args[0]})^({args[1]}))"
+            if len(args) >= 2
+            else f"power({', '.join(args)})"
+        ),
+    )
+    result = _replace_nested_function(
+        result, "sqrt", lambda args: f"(({args[0]})^(1/2))" if args else "sqrt()"
+    )
+    result = _replace_nested_function(
+        result, "sqr", lambda args: f"(({args[0]})^2)" if args else "sqr()"
+    )
+    result = _replace_nested_function(
+        result,
+        "exp",
+        lambda args: f"(2.71828182845905^({args[0]}))" if args else "exp()",
+    )
+    result = _replace_nested_function(
+        result,
+        "abs",
+        lambda args: f"if({args[0]}>=0,{args[0]},-({args[0]}))" if args else "abs()",
+    )
+
+    # SBML log(base, value) is distinct from the one-argument natural log.
+    result = _replace_nested_function(
+        result,
+        "log",
+        lambda args: (
+            f"(ln({args[1]})/ln({args[0]}))"
+            if len(args) >= 2
+            else f"ln({args[0]})" if args else "log()"
+        ),
+    )
+    result = _replace_nested_function(
+        result,
+        "log10",
+        lambda args: f"(ln({args[0]})/2.302585093)" if args else "log10()",
+    )
+    result = _replace_nested_function(
+        result,
+        "root",
+        lambda args: (
+            f"(({args[1]})^(1/({args[0]})))"
+            if len(args) >= 2
+            else f"(({args[0]})^(1/2))" if args else "root()"
+        ),
+    )
+    result = _replace_nested_function(
+        result,
+        "floor",
+        lambda args: (
+            f"(rint({args[0]}) - if(rint({args[0]}) > ({args[0]}), 1, 0))"
+            if args
+            else "floor()"
+        ),
+    )
+    result = _replace_nested_function(
+        result,
+        "ceiling",
+        lambda args: (
+            f"(rint({args[0]}) + if(rint({args[0]}) < ({args[0]}), 1, 0))"
+            if args
+            else "ceiling()"
+        ),
+    )
+    result = _replace_nested_function(
+        result,
+        "ceil",
+        lambda args: (
+            f"(rint({args[0]}) + if(rint({args[0]}) < ({args[0]}), 1, 0))"
+            if args
+            else "ceil()"
+        ),
+    )
+    for function, operator in {
+        "gt": ">",
+        "lt": "<",
+        "geq": ">=",
+        "leq": "<=",
+        "eq": "==",
+        "neq": "!=",
+        "and": "&&",
+        "or": "||",
+    }.items():
+        result = _replace_nested_function(
+            result,
+            function,
+            lambda args, operator=operator, function=function: (
+                f"({args[0]} {operator} {args[1]})"
+                if len(args) >= 2
+                else f"{function}({', '.join(args)})"
+            ),
+        )
+    result = _replace_nested_function(
+        result,
+        "not",
+        lambda args: f"(!{args[0]})" if len(args) == 1 else f"not({', '.join(args)})",
+    )
+    result = _replace_nested_function(result, "piecewise", _piecewise_expression)
+    result = _replace_nested_function(
+        result,
+        "Sat",
+        lambda args: (
+            f"(({args[0]}) * Sat({args[2]}, {args[1]}))"
+            if len(args) == 3
+            else f"Sat({', '.join(args)})"
+        ),
+    )
+    result = _replace_nested_function(
+        result,
+        "MM",
+        lambda args: (
+            f"(({args[0]}) * MM({args[2]}, {args[1]}))"
+            if len(args) == 3
+            else f"MM({', '.join(args)})"
+        ),
+    )
+    result = _replace_nested_function(
+        result,
+        "Hill",
+        lambda args: (
+            f"(({args[0]}) * ({args[2]})^({args[3]}) / (({args[1]})^({args[3]}) + ({args[2]})^({args[3]})))"
+            if len(args) == 4
+            else f"Hill({', '.join(args)})"
+        ),
+    )
+
     result = re.sub(r"\bpi\b", "3.14159265358979", result)
+    result = re.sub(
+        r"\bexponentiale\b", "2.71828182845905", result, flags=re.IGNORECASE
+    )
     result = re.sub(r"\btrue\b", "1", result, flags=re.IGNORECASE)
     result = re.sub(r"\bfalse\b", "0", result, flags=re.IGNORECASE)
     result = re.sub(r"\btime\b(?!\s*\()", "time()", result)
+    result = result.replace("--", "+")
+    return result
+
+
+def _split_arguments(inner: str) -> List[str]:
+    arguments: List[str] = []
+    current: List[str] = []
+    depth = 0
+    for char in inner:
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        if char == "," and depth == 0:
+            arguments.append("".join(current).strip())
+            current = []
+        else:
+            current.append(char)
+    arguments.append("".join(current).strip())
+    return arguments
+
+
+def _replace_nested_function(expression: str, function: str, replacer) -> str:
+    result = expression
+    pattern = re.compile(rf"\b{re.escape(function)}\s*\(")
+    search_index = 0
+    guard = 0
+    while guard < 10000:
+        match = pattern.search(result, search_index)
+        if match is None:
+            break
+        depth = 1
+        close = match.end()
+        while close < len(result) and depth:
+            if result[close] == "(":
+                depth += 1
+            elif result[close] == ")":
+                depth -= 1
+            close += 1
+        if depth:
+            break
+        inner = result[match.end() : close - 1]
+        replacement = replacer(_split_arguments(inner))
+        original = result[match.start() : close]
+        if replacement == original:
+            search_index = close
+        else:
+            result = result[: match.start()] + replacement + result[close:]
+            search_index = match.start()
+        guard += 1
+    return result
+
+
+def _piecewise_expression(args: List[str]) -> str:
+    if len(args) == 1:
+        return args[0]
+    if len(args) == 2:
+        return f"if({args[1]}, {args[0]}, 0)"
+    otherwise = args[-1] if len(args) % 2 else "0"
+    start = len(args) - 3 if len(args) % 2 else len(args) - 2
+    result = otherwise
+    for index in range(start, -1, -2):
+        result = f"if({args[index + 1]}, {args[index]}, {result})"
+    return result
+
+
+def extend_function(
+    function_string: str,
+    parameter_dict: Mapping[str, object],
+    function_definitions: Mapping[str, object],
+) -> str:
+    """Inline SBML function definitions and scalar parameters at call sites."""
+
+    result = str(function_string or "")
+    for function_id, definition in function_definitions.items():
+        name = getattr(definition, "name", "") or function_id
+        arguments = list(getattr(definition, "arguments", []) or [])
+        body = str(getattr(definition, "math", "") or "")
+
+        def replace_call(args: List[str], arguments=arguments, body=body):
+            if not arguments and len(args) == 1 and not args[0]:
+                return f"({body})"
+            if len(args) == 1 and not args[0] and arguments:
+                return f"{name}()"
+            if len(args) != len(arguments):
+                return f"{name}({', '.join(args)})"
+            expanded = body
+            for formal, actual in zip(arguments, args):
+                expanded = re.sub(rf"\b{re.escape(formal)}\b", f"({actual})", expanded)
+            return f"({expanded})"
+
+        result = _replace_nested_function(result, name, replace_call)
+        if not arguments:
+            result = _replace_nested_function(result, function_id, replace_call)
+
+    for parameter, value in parameter_dict.items():
+        replacement = _number(value)
+        result = re.sub(rf"\b{re.escape(parameter)}\b", replacement, result)
+    return result
+
+
+def bngl_function(
+    rule: str,
+    function_title: str = "",
+    reactants: Optional[Sequence[str]] = None,
+    compartments: Optional[Sequence[str]] = None,
+    parameter_dict: Optional[Mapping[str, object]] = None,
+    reaction_dict: Optional[Mapping[str, str]] = None,
+    assignment_rule_variables: Optional[Set[str]] = None,
+    observable_ids: Optional[Set[str]] = None,
+    species_to_has_only_substance_units: Optional[Mapping[str, bool]] = None,
+    observable_converted_rules: Optional[Set[str]] = None,
+    species_with_conc_functions: Optional[Set[str]] = None,
+    sbml_to_bngl_id: Optional[Mapping[str, str]] = None,
+) -> str:
+    """Translate a rate/function expression using the Playground contract."""
+
+    del function_title, observable_ids, species_to_has_only_substance_units
+    result = str(rule or "")
+    reactants = list(reactants or [])
+    compartments = list(compartments or [])
+    reaction_dict = reaction_dict or {}
+    assignment_rule_variables = assignment_rule_variables or set()
+    observable_converted_rules = observable_converted_rules or set()
+    species_with_conc_functions = species_with_conc_functions or set()
+    sbml_to_bngl_id = sbml_to_bngl_id or {}
+    is_saturation = bool(re.search(r"\b(?:Sat|MM|Hill)\s*\(", result))
+
+    def map_token(match: re.Match) -> str:
+        token = match.group(1)
+        end = match.end()
+        if re.match(r"\s*\(", result[end:]):
+            return token
+        mapped = sbml_to_bngl_id.get(token)
+        if mapped is not None:
+            observed_name = standardize_name(token)
+            if is_saturation and observed_name in species_with_conc_functions:
+                return observed_name + "_amt"
+            if observed_name in species_with_conc_functions:
+                return "_c_" + observed_name + "()"
+            return observed_name + "_amt"
+        return token
+
+    result = re.sub(r"\b([A-Za-z_][A-Za-z0-9_]*)\b", map_token, result)
+    result = convert_math_expression(result)
+
+    for compartment in compartments:
+        result = re.sub(
+            rf"\b{re.escape(compartment)}\b",
+            f"__compartment_{standardize_name(compartment)}__",
+            result,
+        )
+    for reaction_id, reaction_name in reaction_dict.items():
+        result = re.sub(
+            rf"\b{re.escape(reaction_id)}\b", f"netflux_{reaction_name}", result
+        )
+    for variable in assignment_rule_variables:
+        standard = standardize_name(variable)
+        if (
+            variable in observable_converted_rules
+            or standard in observable_converted_rules
+        ):
+            replacement = standard
+        elif standard in species_with_conc_functions:
+            replacement = "_c_" + standard + "()"
+        else:
+            replacement = standard + "()"
+        result = re.sub(rf"\b{re.escape(variable)}\b(?!\s*\()", replacement, result)
+
+    # Sat/MM/Hill are factor-style laws in BNGL.  The Playground writer adds
+    # the first reactant as substrate when the SBML expression omits it.
+    substrate = standardize_name(reactants[0]) + "_amt" if reactants else ""
+    if substrate:
+        result = _replace_nested_function(
+            result,
+            "Sat",
+            lambda args: (
+                f"Sat({', '.join(args + [substrate])})"
+                if len(args) == 2
+                else f"Sat({', '.join(args)})"
+            ),
+        )
+        result = _replace_nested_function(
+            result,
+            "MM",
+            lambda args: (
+                f"MM({', '.join(args + [substrate])})"
+                if len(args) == 2
+                else f"MM({', '.join(args)})"
+            ),
+        )
+        result = _replace_nested_function(
+            result,
+            "Hill",
+            lambda args: (
+                f"Hill({', '.join(args + [substrate])})"
+                if len(args) == 3
+                else f"Hill({', '.join(args)})"
+            ),
+        )
     return result
 
 
@@ -104,8 +437,16 @@ def _strip_mass_action_factors(expression: str, reactant_ids: Sequence[str]) -> 
     return " * ".join(remaining) if remaining else "1"
 
 
-def _rate_for_reaction(reaction: SBMLReaction) -> str:
-    math = convert_math_expression(get_kinetic_math(reaction.kinetic_law))
+def _rate_for_reaction(reaction: SBMLReaction, model: SBMLModel) -> str:
+    math = extend_function(
+        get_kinetic_math(reaction.kinetic_law),
+        {
+            parameter_id: parameter.value
+            for parameter_id, parameter in model.parameters.items()
+        },
+        model.function_definitions,
+    )
+    math = convert_math_expression(math)
     if not math:
         return "1"
     reactants = [
@@ -217,12 +558,40 @@ def write_observables(
     return lines, observable_map
 
 
+def _rewrite_zero_argument_calls(expression: str, names: Iterable[str]) -> str:
+    result = expression
+    for name in names:
+        result = re.sub(rf"\b{re.escape(name)}\b(?!\s*\()", f"{name}()", result)
+    return result
+
+
 def write_functions(model: SBMLModel) -> List[str]:
     lines = []
+    zero_argument_functions = []
     for function_id, function in model.function_definitions.items():
         name = standardize_name(function.name or function_id)
+        if function.arguments:
+            # BNG2/BNGL function blocks do not consistently support
+            # argument-taking SBML definitions.  Inline those definitions at
+            # call sites, as the Playground writer does.
+            continue
         args = ", ".join(standardize_name(argument) for argument in function.arguments)
         lines.append(f"{name}({args}) = {convert_math_expression(function.math)}")
+        zero_argument_functions.append(name)
+    for rule in model.rules:
+        if not rule.variable or rule.type != "assignment":
+            continue
+        body = extend_function(
+            rule.math,
+            {
+                parameter_id: parameter.value
+                for parameter_id, parameter in model.parameters.items()
+            },
+            model.function_definitions,
+        )
+        body = convert_math_expression(body)
+        body = _rewrite_zero_argument_calls(body, zero_argument_functions)
+        lines.append(f"{standardize_name(rule.variable)}() = {body}")
     return lines
 
 
@@ -269,7 +638,7 @@ def write_reaction_rules(
             suffix += 1
         used_labels.add(candidate)
         arrow = "<->" if reaction.reversible else "->"
-        rate = _rate_for_reaction(reaction)
+        rate = _rate_for_reaction(reaction, model)
         if reaction.reversible:
             rate = f"{rate}, {rate}"
         lines.append(
@@ -324,7 +693,9 @@ def generate_bngl(
 
 
 __all__ = [
+    "bngl_function",
     "convert_math_expression",
+    "extend_function",
     "generate_bngl",
     "write_compartments",
     "write_functions",

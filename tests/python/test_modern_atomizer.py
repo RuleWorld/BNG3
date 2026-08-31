@@ -326,3 +326,80 @@ def test_playground_writer_emits_zero_argument_functions_and_assignment_rules():
 
     assert "f() = k + 1" in bngl
     assert "v() = f()" in bngl
+
+
+def test_playground_function_inlining_handles_nested_arguments_and_parameters():
+    from bionetgen.atomizer.modern import SBMLFunctionDefinition, extend_function
+
+    functions = OrderedDict(
+        [
+            (
+                "square",
+                SBMLFunctionDefinition(
+                    id="square", name="square", arguments=["x"], math="x * x"
+                ),
+            )
+        ]
+    )
+    assert extend_function("square(5) + square(a)", {}, functions) == (
+        "((5) * (5)) + ((a) * (a))"
+    )
+    assert extend_function("k1 * x + k2", {"k1": 10, "k2": "20.5"}, {}) == (
+        "10 * x + 20.5"
+    )
+
+    zero_argument = OrderedDict(
+        [
+            (
+                "kPlus",
+                SBMLFunctionDefinition(id="kPlus", name="kPlus", math="1.5"),
+            )
+        ]
+    )
+    assert extend_function("kPlus() * 2", {}, zero_argument) == "(1.5) * 2"
+
+
+def test_playground_bngl_function_maps_species_compartments_and_saturation_rates():
+    from bionetgen.atomizer.modern import bngl_function
+
+    assert (
+        bngl_function(
+            "Sat(k1, Km)",
+            "rxn1",
+            ["S1"],
+            species_with_conc_functions={"S1"},
+            sbml_to_bngl_id={"S1": "S1"},
+        )
+        == "Sat(k1, Km, S1_amt)"
+    )
+    assert (
+        bngl_function(
+            "Sat(k1, Km, S1)",
+            "rxn1",
+            ["S1"],
+            species_with_conc_functions={"S1"},
+            sbml_to_bngl_id={"S1": "S1"},
+        )
+        == "((k1) * Sat(S1_amt, Km, S1_amt))"
+    )
+    assert (
+        bngl_function(
+            "Hill(k1, Km, S1, n)",
+            "rxn1",
+            ["S1"],
+            species_with_conc_functions={"S1"},
+            sbml_to_bngl_id={"S1": "S1"},
+        )
+        == "((k1) * (S1_amt)^(n) / ((Km)^(n) + (S1_amt)^(n)))"
+    )
+    assert bngl_function("k1 * cytosol", "rxn", [], compartments=["cytosol"]) == (
+        "k1 * __compartment_cytosol__"
+    )
+    assert (
+        bngl_function("rxn1 * 2", "rxn", [], reaction_dict={"rxn1": "R1_net"})
+        == "netflux_R1_net * 2"
+    )
+    assert (
+        bngl_function("piecewise(v1, c1, v2, c2)", "rxn", [])
+        == "if(c1, v1, if(c2, v2, 0))"
+    )

@@ -32,7 +32,9 @@ from .parser import SBMLParser, extract_go_terms, extract_uniprot_ids
 from .structures import Component, Molecule, Species, read_from_string
 from .types import *  # noqa: F401,F403
 from .writer import (
+    bngl_function,
     convert_math_expression,
+    extend_function,
     generate_bngl,
     write_compartments,
     write_functions,
@@ -233,8 +235,10 @@ __all__ = [
     "analyze_naming_conventions",
     "analyze_reactions",
     "build_species_composition_table",
+    "bngl_function",
     "classify_reaction",
     "disambiguate_colliding_species",
+    "extend_function",
     "extract_go_terms",
     "extract_uniprot_ids",
     "generate_bngl",
