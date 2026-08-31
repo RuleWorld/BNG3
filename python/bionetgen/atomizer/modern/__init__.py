@@ -53,6 +53,23 @@ from .writer import (
     write_seed_species,
 )
 from .units import apply_unit_scaling, resolve_unit_factor, unit_conversion_factor
+from .annotation import (
+    AnnotationStats,
+    ParsedAnnotation,
+    annotations_to_json,
+    annotations_to_yaml,
+    build_rdf_database,
+    compute_annotation_stats,
+    extract_uniprot_accessions,
+    find_equivalent_species,
+    get_all_annotations,
+    get_annotations_by_database,
+    get_annotations_by_qualifier,
+    get_canonical_species,
+    get_equivalence,
+    parse_resource_uri,
+    parse_species_annotations,
+)
 
 DEFAULT_ATOMIZER_OPTIONS: Dict[str, Any] = {
     "use_id": False,
@@ -211,7 +228,9 @@ class Atomizer:
                     ],
                 }
                 for species_id, species in self.model.species.items()
+                if species.annotations
             },
+            "reactions": {},
             "compartments": {
                 compartment_id: {
                     "name": compartment.name,
@@ -243,32 +262,47 @@ def sbml_to_bngl_atomized(
 
 __all__ = [
     "Atomizer",
+    "AnnotationStats",
     "BNGL_LEXER_KEYWORDS",
     "Component",
     "EventTranslationContext",
     "EventTranslationResult",
     "Molecule",
     "MultiParseResult",
+    "ParsedAnnotation",
     "SBMLParser",
     "Species",
     "analyze_naming_conventions",
     "analyze_reactions",
+    "annotations_to_json",
+    "annotations_to_yaml",
     "apply_unit_scaling",
     "build_species_composition_table",
     "bngl_function",
     "classify_reaction",
+    "compute_annotation_stats",
     "disambiguate_colliding_species",
     "extend_function",
     "extract_go_terms",
+    "extract_uniprot_accessions",
     "extract_uniprot_ids",
+    "find_equivalent_species",
     "fold_numeric",
     "generate_bngl",
     "get_molecule_types",
+    "get_all_annotations",
+    "get_annotations_by_database",
+    "get_annotations_by_qualifier",
+    "get_canonical_species",
+    "get_equivalence",
     "get_seed_species",
+    "build_rdf_database",
     "read_from_string",
     "resolve_unit_factor",
     "parse_time_threshold",
     "parse_multi_package",
+    "parse_resource_uri",
+    "parse_species_annotations",
     "sbml_to_bngl",
     "sbml_to_bngl_atomized",
     "sbml_to_bngl_flat",
