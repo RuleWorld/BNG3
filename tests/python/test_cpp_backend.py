@@ -1160,6 +1160,49 @@ parameter_scan({method=>"ode",parameter=>"k",par_min=>0.1,par_max=>0.2,n_scan_pt
         assert [float(row[0]) for row in rows] == pytest.approx([0.1, 0.2])
         assert float(rows[0][1]) > float(rows[1][1])
 
+    def test_parameter_scan_action_supports_process_isolated_workers(self, tmp_path):
+        bngl = tmp_path / "scan_action_parallel.bngl"
+        bngl.write_text("""
+begin model
+begin parameters
+    k 0.1
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 10
+end seed species
+begin observables
+    Molecules Xtot X()
+end observables
+begin reaction rules
+    X() -> 0 k
+end reaction rules
+end model
+
+parameter_scan({method=>"ode",parameter=>"k",par_scan_vals=>[0.1,0.2],parallel=>1,num_cores=>2,t_end=>1,n_steps=>1})
+""")
+
+        bionetgen.load(str(bngl)).execute()
+
+        scan_path = tmp_path / "scan_action_parallel_k.scan"
+        assert scan_path.exists()
+        rows = [
+            line.split()
+            for line in scan_path.read_text().splitlines()
+            if line and not line.startswith("#")
+        ]
+        assert len(rows) == 2
+        assert [float(row[0]) for row in rows] == pytest.approx([0.1, 0.2])
+        assert float(rows[0][1]) > float(rows[1][1])
+        for index in (1, 2):
+            assert (
+                tmp_path
+                / "scan_action_parallel_k"
+                / f"scan_action_parallel_k_{index:05d}.gdat"
+            ).exists()
+
     def test_parameter_scan_partial_range_uses_explicit_values(self, tmp_path):
         bngl = tmp_path / "scan_partial_range.bngl"
         bngl.write_text("""
