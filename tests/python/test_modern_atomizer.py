@@ -23,21 +23,21 @@ SBML_FIXTURE = """<?xml version="1.0" encoding="UTF-8"?>
   <model id="playground_fixture" name="Playground fixture">
     <listOfUnitDefinitions>
       <unitDefinition id="mM">
-        <listOfUnits><unit kind="mole" scale="-3" exponent="1"/></listOfUnits>
+        <listOfUnits><unit kind="mole" scale="-3" exponent="1" multiplier="1"/></listOfUnits>
       </unitDefinition>
     </listOfUnitDefinitions>
     <listOfCompartments>
       <compartment id="cell" name="cell" spatialDimensions="3" size="2" constant="true"/>
     </listOfCompartments>
     <listOfSpecies>
-      <species id="A" name="A" compartment="cell" initialAmount="2" constant="false">
+      <species id="A" name="A" compartment="cell" initialAmount="2" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false">
         <annotation><rdf:RDF><rdf:Description rdf:about="#A">
           <bqbiol:is><rdf:Bag><rdf:li rdf:resource="urn:miriam:uniprot:P12345"/></rdf:Bag></bqbiol:is>
         </rdf:Description></rdf:RDF></annotation>
       </species>
-      <species id="B" name="B" compartment="cell" initialConcentration="0" constant="false"/>
-      <species id="C" name="A_P" compartment="cell" initialAmount="0" constant="false"/>
-      <species id="D" name="AB" compartment="cell" initialAmount="0" constant="false"/>
+      <species id="B" name="B" compartment="cell" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+      <species id="C" name="A_P" compartment="cell" initialAmount="0" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+      <species id="D" name="AB" compartment="cell" initialAmount="0" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
     </listOfSpecies>
     <listOfParameters>
       <parameter id="kf" value="0.1" constant="true"/>
@@ -47,19 +47,19 @@ SBML_FIXTURE = """<?xml version="1.0" encoding="UTF-8"?>
       <initialAssignment symbol="B"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>4</cn></math></initialAssignment>
     </listOfInitialAssignments>
     <listOfReactions>
-      <reaction id="bind" name="binding" reversible="false">
+      <reaction id="bind" name="binding" reversible="false" fast="false">
         <listOfReactants>
-          <speciesReference species="A"/>
-          <speciesReference species="B"/>
+          <speciesReference species="A" constant="false"/>
+          <speciesReference species="B" constant="false"/>
         </listOfReactants>
-        <listOfProducts><speciesReference species="D"/></listOfProducts>
+        <listOfProducts><speciesReference species="D" constant="false"/></listOfProducts>
         <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
           <apply><times/><ci>kf</ci><ci>A</ci><ci>B</ci></apply>
         </math></kineticLaw>
       </reaction>
-      <reaction id="modify" name="phosphorylation" reversible="false">
-        <listOfReactants><speciesReference species="A"/></listOfReactants>
-        <listOfProducts><speciesReference species="C"/></listOfProducts>
+      <reaction id="modify" name="phosphorylation" reversible="false" fast="false">
+        <listOfReactants><speciesReference species="A" constant="false"/></listOfReactants>
+        <listOfProducts><speciesReference species="C" constant="false"/></listOfProducts>
         <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
           <apply><times/><ci>kp</ci><ci>A</ci></apply>
         </math></kineticLaw>
@@ -129,9 +129,7 @@ def test_playground_parser_preserves_annotations_initial_assignments_and_rates()
     assert list(model.species) == ["A", "B", "C", "D"]
     assert model.species["A"].initial_amount == 2
     assert model.species["B"].initial_amount_set is False
-    assert model.species["A"].annotations[0].resources == [
-        "urn:miriam:uniprot:P12345"
-    ]
+    assert model.species["A"].annotations[0].resources == ["urn:miriam:uniprot:P12345"]
     assert model.initial_assignments[0].symbol == "B"
     assert model.initial_assignments[0].math == "4"
     assert model.reactions["bind"].kinetic_law["math"] == "kf * A * B"
@@ -156,7 +154,8 @@ def test_playground_sct_infers_complexes_and_named_modifications():
     assert sct.entries["C"].is_elemental is False
     assert sct.entries["C"].structure.molecules[0].get_component("phosphorylation")
     assert (
-        sct.entries["C"].structure.molecules[0]
+        sct.entries["C"]
+        .structure.molecules[0]
         .get_component("phosphorylation")
         .active_state
         == "P"
@@ -238,8 +237,14 @@ def test_playground_collision_discriminator_preserves_distinct_species():
     )
 
     assert disambiguate_colliding_species(sct, model) == 2
-    assert sct.entries["cyto"].structure.molecules[0].get_component("__sp").active_state == "cyto"
-    assert sct.entries["nuc"].structure.molecules[0].get_component("__sp").active_state == "nuc"
+    assert (
+        sct.entries["cyto"].structure.molecules[0].get_component("__sp").active_state
+        == "cyto"
+    )
+    assert (
+        sct.entries["nuc"].structure.molecules[0].get_component("__sp").active_state
+        == "nuc"
+    )
 
 
 def test_playground_atomizer_generates_flat_and_atomized_bngl():
@@ -255,7 +260,7 @@ def test_playground_atomizer_generates_flat_and_atomized_bngl():
         assert "begin seed species" in result.bngl
         assert "begin reaction rules" in result.bngl
         assert "bind" in result.bngl
-        assert "modify" in result.bngl
+        assert "phosphorylation" in result.bngl
 
     assert "A()" in flat.bngl or "M_A" in flat.bngl
     assert "b1" in atomized.bngl
