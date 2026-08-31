@@ -500,7 +500,9 @@ end model
         xml = model.simulate(method="nf", t_end=1.0, n_steps=2, seed=1)
 
         assert direct.time.tolist() == xml.time.tolist()
-        assert direct.observables["A1"].tolist() == xml.observables["A1"].tolist()
+        assert direct.observable_names == xml.observable_names
+        for name in direct.observable_names:
+            assert direct.observables[name].tolist() == xml.observables[name].tolist()
 
     def test_nf_direct_dynamic_rate_wraps_scoped_local_function(
         self, tmp_path, monkeypatch
