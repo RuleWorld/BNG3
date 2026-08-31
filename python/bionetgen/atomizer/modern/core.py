@@ -11,7 +11,19 @@ from __future__ import annotations
 
 import re
 from collections import OrderedDict
-from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
+from dataclasses import dataclass
+from typing import (
+    Dict,
+    Iterable,
+    Iterator,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    Union,
+)
 
 from .structures import Component, Molecule, Species, read_from_string
 from .types import (
@@ -55,6 +67,20 @@ def similarity(left: str, right: str) -> float:
     return 1.0 if size == 0 else 1.0 - levenshtein(left, right) / size
 
 
+def add_to_dependency_graph(
+    dependency_graph: Dict[str, List[str]],
+    label: str,
+    value: Union[str, Sequence[str]],
+) -> None:
+    """Add one or more unique dependency labels, matching the reference API."""
+
+    dependencies = dependency_graph.setdefault(label, [])
+    values = [value] if isinstance(value, str) else value
+    for dependency in values:
+        if dependency and dependency not in dependencies:
+            dependencies.append(dependency)
+
+
 def longest_common_substring(left: str, right: str) -> str:
     if not left or not right:
         return ""
@@ -71,6 +97,12 @@ def longest_common_substring(left: str, right: str) -> str:
                 end = left_index
         previous = current
     return left[end - longest : end]
+
+
+def find_longest_substring(left: str, right: str) -> str:
+    """Source-compatible name for the longest-common-substring helper."""
+
+    return longest_common_substring(left, right)
 
 
 def get_differences(shorter: str, longer: str) -> List[str]:
@@ -92,23 +124,41 @@ def get_differences(shorter: str, longer: str) -> List[str]:
     return differences
 
 
+@dataclass(frozen=True)
+class EditDistanceMatrixResult:
+    """Reference-shaped result with a compatibility iterator for old callers."""
+
+    matrix: List[List[int]]
+    pairs: List[Tuple[str, str]]
+    differences: List[List[str]]
+
+    def __iter__(self) -> Iterator[object]:
+        """Keep the pre-port two-value unpacking contract working."""
+
+        yield self.pairs
+        yield self.differences
+
+
 def define_edit_distance_matrix(
     species_names: Sequence[str], similarity_threshold: int = 4
-) -> Tuple[List[Tuple[str, str]], List[List[str]]]:
+) -> EditDistanceMatrixResult:
+    matrix = [[0 for _ in species_names] for _ in species_names]
     pairs: List[Tuple[str, str]] = []
     differences: List[List[str]] = []
     for index, left in enumerate(species_names):
-        for right in species_names[index + 1 :]:
+        for right_index, right in enumerate(species_names[index + 1 :], index + 1):
             if abs(len(left) - len(right)) > similarity_threshold:
                 continue
             distance = levenshtein(left, right)
+            matrix[index][right_index] = distance
+            matrix[right_index][index] = distance
             if 0 < distance <= similarity_threshold:
                 shorter, longer = (
                     (left, right) if len(left) <= len(right) else (right, left)
                 )
                 pairs.append((shorter, longer))
                 differences.append(get_differences(shorter, longer))
-    return pairs, differences
+    return EditDistanceMatrixResult(matrix, pairs, differences)
 
 
 def analyze_naming_conventions(
@@ -117,9 +167,8 @@ def analyze_naming_conventions(
     similarity_threshold: int = 4,
 ) -> Dict[str, object]:
     conventions = patterns or DEFAULT_NAMING_PATTERNS
-    pairs, differences = define_edit_distance_matrix(
-        species_names, similarity_threshold
-    )
+    distance_result = define_edit_distance_matrix(species_names, similarity_threshold)
+    pairs, differences = distance_result
     pair_classification: Dict[str, List[Tuple[str, str]]] = OrderedDict()
     keys: List[str] = []
     for pair, difference in zip(pairs, differences):
@@ -724,15 +773,28 @@ def get_seed_species(
     return result
 
 
+# Keep the public names used by the TypeScript reference available alongside
+# BNG3's snake_case spelling.
+addToDependencyGraph = add_to_dependency_graph
+defineEditDistanceMatrix = define_edit_distance_matrix
+findLongestSubstring = find_longest_substring
+
+
 __all__ = [
+    "EditDistanceMatrixResult",
+    "addToDependencyGraph",
+    "add_to_dependency_graph",
     "analyze_naming_conventions",
     "analyze_reactions",
     "build_species_composition_table",
     "classify_reaction",
     "compute_weights",
+    "defineEditDistanceMatrix",
     "define_edit_distance_matrix",
     "disambiguate_colliding_species",
     "get_differences",
+    "findLongestSubstring",
+    "find_longest_substring",
     "get_molecule_types",
     "get_seed_species",
     "infer_modification",
