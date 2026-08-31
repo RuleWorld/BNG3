@@ -1,0 +1,600 @@
+# BNG3 Convergence: Definition of Done and Remaining Checklist
+
+**Status:** Active; not complete
+**Last audited:** 2026-08-31
+**Repository:** RuleWorld/BNG3
+**Working branch:** codex/bng3-integration-foundations
+**Audited head:** 7f20a685eb140ea0a7f41627bc09e8c224fd3dce
+**PR:** RuleWorld/BNG3#2
+**Independent implementation reference:** RuleWorld/bngplayground Atomizer
+
+This is the execution checklist for the BNG3 convergence goal. It turns the
+completion charter and Section 11 of BNG3_INTEGRATION_PLAN.md into auditable
+work items. The unification work orders in BNG3_unification_spec.md remain the
+detailed dependency map; provenance/capability-matrix.yml remains the
+capability inventory.
+
+The project is done only when every mandatory item below is checked or has an
+explicitly approved compatibility disposition. A green unit suite, a green
+PR, a partial port, a documented limitation, or a known mismatch is not
+completion.
+
+## How to use this checklist
+
+- Use [x] only when current evidence is attached by path, command output,
+  artifact digest, hosted check, or maintainer decision.
+- Use [ ] for work that is absent, partial, unverified, or awaiting approval.
+- Treat a compatibility disposition as valid only when it has an owner,
+  rationale, affected interfaces, migration path, release-note entry, contract
+  test, and review/expiry date.
+- Add the source revision, BNG3 commit, test/fixture, oracle, and gate to every
+  completed semantic item.
+- Never widen tolerances, broaden skips, regenerate goldens silently, or change
+  the exception ledger merely to make this file easier to check.
+- Re-audit the whole checklist on the exact release-candidate SHA. Earlier
+  evidence is stale after a rebase, autofix, merge, or semantic change.
+
+## Current verified checkpoint
+
+These items describe the current checkpoint. They do not satisfy the full
+completion gate.
+
+- [x] Required fast-forward pull completed before this documentation change.
+- [x] Branch and origin point to the same exact head:
+  7f20a685eb140ea0a7f41627bc09e8c224fd3dce.
+- [x] The small documentation grammar fix remains the only pre-existing
+  worktree modification. It is intentionally not staged by this checklist
+  checkpoint.
+- [x] Local CTest passes 124/124.
+- [x] Local Python suite passes 212 tests with 27 skips and 8 warnings.
+- [x] Local Black check, Ruff check, and git diff check pass.
+- [x] Local validation smoke reports 4 passed and 15 skipped; the skips are
+  visible because this checkout lacks the expected validation CLI/oracle
+  environment and must not be treated as parity.
+- [x] A clean, no-build-isolation wheel was built, installed into a separate
+  target, and imported with its compiled extension.
+- [x] Hosted PR checks at this exact head pass across the C++ matrix, Python
+  matrix, ASan, integration, validation, formatter, and CodeQL.
+- [x] Modern Atomizer checkpoints exist for annotations, BNG-XML conversion,
+  Rulifier, UniProt, structure helpers, and conservative SBML-Multi discovery,
+  each with source-derived tests.
+- [ ] The release candidate has independent oracle, provenance-complete
+  golden, full parity, direct-NFsim, SBML-Multi, legacy, installed-package,
+  and release-artifact evidence.
+
+## 1. Authority, ownership, and source reconciliation
+
+### 1.1 Accepted source baseline
+
+- [ ] Maintainers choose exact accepted source cutoffs for BNG3, BioNetGen,
+  NFsim, PyBioNetGen, and RuleHub.
+- [ ] provenance/upstreams.lock.yml changes from observed/pending status to an
+  approved baseline only after the decisions are recorded.
+- [ ] The lock records repository URL, branch/tag, exact revision, observation
+  date, role, license/provenance note, and the reason for selecting the cutoff.
+- [ ] The supported Python, compiler, operating-system, architecture, and
+  dependency matrix is approved and recorded.
+- [ ] Public PyBioNetGen imports, result objects, CLI forms, defaults,
+  warnings, exceptions, and file behaviors are classified as supported,
+  deprecated, or intentionally private.
+- [ ] The sanctioned BIONETGEN_USE_PERL=1 compatibility mode is classified as
+  a release feature or developer-only oracle path.
+- [ ] Numerical tolerances, stochastic acceptance statistics, seed policy,
+  solver versions, and review owners are approved.
+
+### 1.2 Ownership and decisions
+
+- [ ] Every capability-matrix row has an owner, source path/revision,
+  implementation path, regression fixture, independent oracle, and acceptance
+  gate.
+- [ ] CODEOWNERS or equivalent ownership exists for parser/AST, graph/network,
+  NFsim, expressions/solvers, Atomizer/SBML, Python/packaging,
+  CI/release/provenance, and documentation/compatibility policy.
+- [ ] Architecture decisions are recorded for canonical AST boundaries, graph
+  identity, expression evaluation, direct NFsim lifecycle, writer ownership,
+  public API compatibility, and legacy retirement.
+- [ ] Maintainer decisions in Section 12 of BNG3_INTEGRATION_PLAN.md are
+  recorded before release qualification.
+
+### 1.3 Reconciliation ledger
+
+- [ ] A non-empty reconciliation ledger exists for every selected source
+  repository under provenance/reconciliation/.
+- [ ] Every post-baseline source commit is classified exactly once as
+  incorporated identically, incorporated equivalently, superseded,
+  not-applicable, pending-port, or blocked-on-design.
+- [ ] Each ledger entry records source SHA, affected capability, BNG3 commit or
+  issue, tests, reviewer, rationale, and disposition date.
+- [ ] Correctness/security, parser/semantic, numerical/NFsim, Atomizer/API,
+  packaging/platform, performance, and documentation changes are reviewed in
+  that priority order.
+- [ ] A scheduled read-only upstream drift report compares locked SHAs with
+  current upstream heads without copying code, changing goldens, or pushing
+  fixes automatically.
+
+## 2. Independent validation and provenance spine
+
+### 2.1 Independent oracles
+
+- [ ] BNG2 Perl is built from the accepted BioNetGen source revision with a
+  recorded recipe, compiler/runtime details, artifact digest, and retention
+  location.
+- [ ] Native pre-convergence NFsim is built independently from the accepted
+  NFsim revision with the same evidence.
+- [ ] The accepted PyBioNetGen source/release is available for public API and
+  CLI compatibility comparisons and has a recorded digest.
+- [ ] BNG3-generated output is never the sole oracle for BNG3 behavior.
+- [ ] RuleWorld/bngplayground and Jules Playground remain independent
+  differential references, not scientific replacements for BNG2/NFsim.
+
+### 2.2 Corpus and goldens
+
+- [ ] RuleHub selectors and external tier membership are maintainer-approved.
+- [ ] The generated selection manifest is linked to the accepted source lock
+  and has verified content digests for every fixture.
+- [ ] Tier-S is feature-balanced and completes within its declared budget.
+- [ ] Tier-P contains the complete approved BNG2-compatible corpus and models/
+  fixtures, including all known graph-overcount cases.
+- [ ] Tier-NF contains the approved NFsim corpus and all required NFsim
+  function/rate-law fixtures.
+- [ ] Tier-X covers BNGL, BNG-XML, NET, SBML, SBML-Multi, Atomizer, and every
+  supported writer/converter.
+- [ ] Tier-B covers benchmarks, large models, memory stress, sanitizers, leak
+  checks, and reproducibility rebuilds.
+- [ ] A reviewed provenance-complete golden bundle exists. Each manifest
+  records model/content digest, RuleHub and source revisions, oracle/binary
+  digest, compiler/dependency/platform/image details, command, method, seeds,
+  time grid, tolerances, comparator version, output digests, and generation
+  metadata.
+- [ ] A clean machine can verify the golden bundle without regenerating it.
+- [ ] Golden regeneration is an explicit reviewed scientific change and never
+  occurs silently in ordinary tests.
+
+### 2.3 Comparator and exception integrity
+
+- [ ] Parser comparisons cover success/failure, normalized diagnostics, symbol
+  resolution, defaults, actions, functions, includes, and source-sensitive
+  behavior.
+- [ ] NET comparisons are graph-aware and preserve species/reaction
+  multiplicity, stoichiometry, rates, compartments, observables, and
+  duplicates.
+- [ ] NET validation performs actual write/read/write idempotence.
+- [ ] Deterministic trajectories align explicit time points and compare all
+  contracted observables/species at approved absolute and relative tolerances.
+- [ ] Expression/rate-law validation compares direct expression vectors/RHS,
+  not only downstream trajectories, at the approved 1e-9 criterion where
+  applicable.
+- [ ] Stochastic validation uses fixed, predeclared ensembles; verifies
+  repeatability; compares means, variances, relevant quantiles,
+  extinction/zero-inflation behavior, and time-correlated summaries; and uses
+  the approved pooled independent-ensemble standard error.
+- [ ] Designated stochastic gates contain at least 200 complete runs per side
+  or have an approved power-based alternative.
+- [ ] Every skip and expected failure is in the machine-readable ledger with
+  exact test/model/platform scope, issue, technical reason, owner,
+  introduction date, expiry/review date, and expected signature.
+- [ ] Required missing oracles, corpus files, schemas, or validators fail the
+  claiming job; they do not become passing skips.
+- [ ] The exception budget is non-increasing unless a maintainer-approved
+  compatibility decision changes it.
+
+## 3. Parser, AST, graph identity, and network generation
+
+### 3.1 Canonical parsing and model semantics
+
+- [ ] ANTLR BNGL parsing is the sole default front door for BNGL into the
+  canonical ast::Model.
+- [ ] BNGL syntax, diagnostics, block aliases, includes, actions, parameters,
+  compartments, molecule types/states, seed species, observables, rules,
+  functions, protocols, scans, and source metadata are covered.
+- [ ] Invalid constructs fail with stable, documented diagnostics rather than
+  being dropped or routed to a weaker parser.
+- [ ] ModelBuilder, Python load(), Atomizer output, CLI input, network
+  generation, simulation, and writers consume explicit canonical AST
+  boundaries.
+- [ ] Parser/AST behavior is differentially compared with accepted BNG2 and
+  PyBioNetGen behavior for the supported contract.
+
+### 3.2 One graph canonicalizer
+
+- [ ] One bng::core::canonicalLabel implementation is used by network
+  canonicalization and NFsim complex identity.
+- [ ] The duplicate cpp/nfsim/nauty24 build is removed only after independent
+  identity evidence is green.
+- [ ] NFsim private canonicalization is replaced or explicitly governed without
+  changing complex identity semantics.
+- [ ] The HNauty largest-versus-canonical-form decision is resolved against
+  BNG2 semantics and recorded.
+- [ ] Species graph equality preserves site states, bonds, connectivity,
+  stoichiometry, compartments, and symmetry; it does not reduce to string
+  normalization.
+- [ ] blbr, Motivating_example_cBNGL, test_network_gen, tlbr, and all other
+  known overcount fixtures match the independent BNG2 oracle.
+- [ ] Tier-P NET parity passes across the complete approved corpus with no
+  unreviewed overcount exception.
+- [ ] A single low-level Nauty dependency is proven not to alter NFsim
+  runtime identity, reaction counts, or seeded trajectories.
+
+### 3.3 Network and numerical simulation
+
+- [ ] Network generation matches accepted BNG2 species/reaction sets and
+  multisets, including deletion, product molecularity, bond cardinality,
+  symmetry, observables, fixed species, compartments, and rate laws.
+- [ ] ODE/CVODE, SSA, PLA, and PSA methods preserve documented controls,
+  output shapes, sample grids, conservation behavior, and failure modes.
+- [ ] Protocols, time-dependent functions, events, scans, continuation, and
+  solver options are covered by source-derived and independent tests.
+- [ ] One-dimensional and two-dimensional parameter scans match the supported
+  PyBioNetGen contract.
+- [ ] Local sensitivity analysis matches the supported finite-difference
+  contract, including parameter ordering, perturbation controls, and result
+  schema.
+- [ ] Benchmarks establish performance and memory budgets for representative
+  small, medium, and large models; abstractions do not silently regress them.
+
+## 4. One expression and rate-law contract
+
+- [ ] A single parsed/resolved expression representation and error model is
+  shared across ODE RHS, SSA/PLA/PSA propensity evaluation, and NFsim
+  local/global functions.
+- [ ] NFsim ExprTk compilation and the NFSIM_USE_EXPRTK build path are removed
+  only after the shared evaluator passes all dependent gates.
+- [ ] Numeric literals, parameters, observables, time, roots, logs/bases,
+  constants, function definitions, nested functions, and domain errors have
+  cross-backend tests.
+- [ ] Global functions, local functions, molecule/species scopes, TFUN linear
+  and step forms, file-backed files, observable/time/parameter counters,
+  composite functions, bounded nested functions, and function-counter forms
+  match independent references.
+- [ ] Michaelis-Menten, Sat, Hill, elementary, FunctionProduct, Arrhenius,
+  energy-pattern, reversible, zero-order, and scoped-rate laws are validated.
+- [ ] Unsupported function/rate-law combinations remain fail-closed with a
+  diagnostic and a tracked capability status.
+- [ ] Direct expression-vector/RHS parity reaches the approved tolerance for
+  localfunc, isingspin_localfcn, isingspin_energy, CaOscillate_Func, and all
+  approved test_tfun_* fixtures.
+- [ ] Direct NFsim function-bearing models localFunction, motor, TQSSA, and
+  the accepted NFsim test corpus pass through the shared contract.
+
+## 5. Direct NFsim convergence
+
+### 5.1 Adapter completeness
+
+- [ ] Typed direct mapping covers options and flags, parameters, compartments
+  and hierarchy, molecule types and integer/symmetric states, seed species,
+  populations, fixed species, observables, reaction rules, transformations,
+  functions, TFUNs, rate laws, energy patterns, and runtime metadata.
+- [ ] Direct mapping preserves bond labels/cardinality, product molecularity,
+  deletion modes, symmetry factors, molecule/template observables,
+  include/exclude filters, compartment movement, and MoveConnected behavior.
+- [ ] Direct mapping preserves dynamic rates and generated live functions for
+  symmetric state-change/bond permutations.
+- [ ] Unsupported local-function, TFUN, energy, rate-law, filter, and scope
+  combinations fail closed and are listed in the capability matrix.
+- [ ] Adapter ownership, destruction/lifecycle, memory ownership, diagnostics,
+  seed handling, options, and error propagation are documented and tested.
+
+### 5.2 Three-way evidence
+
+- [ ] Direct ast::Model construction is compared with the existing
+  AST-to-XML-to-NFsim path in memory and, where required, on disk.
+- [ ] Direct construction is compared with an independently built native NFsim
+  oracle, not a BNG3-generated oracle.
+- [ ] Comparisons cover molecule types, seed complexes, transformations,
+  observables, functions, compartments, options, reaction rules, seeded
+  deterministic behavior, and stochastic distributions.
+- [ ] Tier-NF includes localfunc, motor, TQSSA, tlbr, simple_system,
+  fceRI/multisite fixtures where supported, and the relevant nfsim-master/test
+  inputs.
+- [ ] The AN2 trajectory mismatch is resolved with a source-level diagnosis,
+  discriminating fixture, and independent evidence.
+- [ ] Protocol NF support and remaining RNA/t4/t5/IfTest direct behavior are
+  implemented or explicitly governed with tests and owners.
+- [ ] The full fixed-seed and distributional Tier-NF gate passes at the
+  approved criteria.
+
+### 5.3 XML bridge retirement
+
+- [ ] The direct path is demonstrably selected and the test asserts the actual
+  construction route.
+- [ ] The XML bridge remains available only as a temporary shadow comparator
+  and supported interchange path during migration.
+- [ ] Direct and XML paths are statistically identical on the approved shadow
+  corpus.
+- [ ] Only after the full gate passes, remove XML serialization, temporary-file
+  machinery, and XML reparse from the default NF simulation path.
+- [ ] Retain BNG-XML export/interchange support and its schema/semantic tests.
+
+## 6. Python API, CLI, and compatibility consolidation
+
+### 6.1 Public contract
+
+- [ ] Inventory current BioNetGen/PyBioNetGen documentation, examples,
+  downstream imports, and CLI usage.
+- [ ] Freeze supported signatures, defaults, result objects, array shapes and
+  dtypes, parameter ordering, warnings, exceptions, serialization, context
+  management, and file behavior.
+- [ ] load(), ModelBuilder, model.simulate(), scans, sensitivity, exports,
+  visualization, and checks route through the canonical in-process backend.
+- [ ] All methods ode, ssa, pla, psa, and nf are tested through both Python
+  API and CLI where applicable.
+- [ ] CLI run, scan, sensitivity, visualize, check, and export commands work
+  on the approved Tier-S and representative Tier-P fixtures.
+- [ ] Plotting/helpers, embedded notebooks/data, optional integrations, and
+  result display behavior have explicit supported/deprecated status.
+- [ ] The default package import has no hidden import of legacy parse or
+  simulation modules.
+- [ ] BIONETGEN_USE_PERL=1 remains an isolated, tested compatibility/oracle
+  path with explicit warnings and no default-path leakage.
+
+### 6.2 Legacy implementation removal
+
+- [ ] Search proves zero default-path references before deleting any legacy
+  implementation.
+- [ ] Contract tests pass before removing python/bionetgen/modelapi/,
+  python/bionetgen/network/networkparser.py, python/bionetgen/simulator/, or
+  legacy Cement parser/simulation entry points.
+- [ ] The sanctioned compatibility runner and only the needed core exceptions,
+  defaults, result, plot, or notebook helpers are retained deliberately.
+- [ ] Deletion lists, deprecation warnings, migration guidance, and release
+  notes are reviewed and committed separately from semantic changes.
+- [ ] Full build, Tier-P, Tier-NF, Tier-X, API, CLI, and clean-wheel tests pass
+  after each deletion checkpoint.
+
+## 7. Atomizer, SBML, and format capability union
+
+### 7.1 Playground-derived Atomizer
+
+- [ ] Reconcile the modern Python port against the pinned
+  RuleWorld/bngplayground source paths, preserving source-level provenance.
+- [x] Source-derived modern tests cover the current annotation API,
+  BNG-XML conversion, Rulifier, UniProt seam/cache behavior, structure helpers,
+  and conservative Multi discovery.
+- [ ] Complete or explicitly govern remaining modern reference modules:
+  atomization/core, parser/bngXmlParser and parser/sbmlParser,
+  utils/helpers, validation/units, writer/bnglWriter, writer/eventActions,
+  writer/rateRuleConstants, and writer/sbmlWriter.
+- [ ] Compare Atomizer molecule/site/state semantics, bond/wildcard handling,
+  compartments, seed species, observables, rules, rate laws, annotations,
+  names, and provenance against source-derived fixtures.
+- [ ] Route Atomizer output through the canonical parser/AST boundary or record
+  a reviewed reason for any supported exception.
+- [ ] Network failures, missing annotations, unsupported constructs, and
+  partial conversions produce explicit diagnostics rather than silent loss.
+
+### 7.2 SBML import/export
+
+- [ ] SBML XML is schema-valid when the relevant validator is available and
+  always well-formed with stable diagnostics otherwise.
+- [ ] MathML translation covers approved arithmetic, functions, constants,
+  roots/log bases, identifiers, namespaces, and escaping.
+- [ ] Compartments, units, conversion factors, NumberPerQuantityUnit,
+  concentration/amount semantics, non-finite values, non-integer
+  stoichiometry, and zero stoichiometry have semantic round-trip tests.
+- [ ] Rate rules, assignment rules, initial assignments, events, algebraic
+  rules, constraints, fast reactions, and package declarations are either
+  implemented with evidence or fail with an explicit governed diagnostic.
+- [ ] SBML IDs and display names remain distinct and stable through generated
+  parameters, observables, functions, seeds, and reaction rates.
+- [ ] The structured SBML atomize=>1 failure is resolved or receives a
+  maintainer-approved compatibility disposition with a replacement gate.
+- [ ] Unsupported SBML packages, qualitative models, dictionaries, and
+  topology cases are reported in an inspectable unsupported-feature report.
+
+### 7.3 SBML-Multi
+
+- [x] Current parser detects and exposes conservative canonical single-level
+  Multi structures as reference diagnostics.
+- [ ] Canonical Multi molecule types, components, states, complexes,
+  species/seed patterns, bonds, compartments, and annotations are fully
+  reconstructed from approved fixtures.
+- [ ] Multi output is emitted through a supported writer with schema and
+  semantic round-trip tests.
+- [ ] An independent oracle and end-to-end execution semantics are approved.
+- [ ] Multi-derived structures are injected into the simulated network only
+  after the oracle and execution gate pass.
+- [ ] Full SBML-Multi simulation, not merely diagnostics/comments, passes Tier-X
+  and representative NF/network gates.
+
+### 7.4 All supported formats and graph writers
+
+- [ ] BNGL import/export is semantically round-trippable.
+- [ ] BNG-XML import/export is well-formed, schema/semantic validated, and
+  preserves supported annotations and rate laws.
+- [ ] NET write/read/write is idempotent and graph-aware.
+- [ ] SBML and SBML-Multi round trips preserve supported dynamics and metadata.
+- [ ] MATLAB/MEX, LaTeX, SSC, MDL, and all documented graph exports have
+  non-empty, valid, semantically checked outputs.
+- [ ] Contact-map, regulatory, rule-influence, reaction-network, RuleViz
+  pattern/operation, and process graph writers are covered.
+- [ ] Every writer has one authoritative implementation or an approved
+  compatibility disposition; Python and Perl duplicates are not silently used
+  on the default path.
+
+## 8. CI, platform, security, and release
+
+### 8.1 CI truthfulness
+
+- [x] Current exact PR head has green hosted C++, Python, validation,
+  integration, formatting, ASan, and CodeQL checks.
+- [ ] Every required job emits a terminal summary with counts, failures,
+  skips, exception budget, corpus/source revision, and artifact digests.
+- [ ] Required jobs fail when a claimed oracle, corpus, validator, or compiler
+  asset is unavailable.
+- [ ] No required test is suppressed by || true or an equivalent mechanism.
+- [ ] Parse-only inventory jobs are named and described as parse-only; they do
+  not imply NFsim execution or scientific parity.
+- [ ] Formatting/autofix jobs report a patch or fail with remediation; they do
+  not commit or push to contributor branches.
+- [ ] Path-based selection is connected to a complete capability-to-test map;
+  full main/nightly coverage prevents a path-map omission from becoming a
+  permanent blind spot.
+- [ ] Required PR fast, targeted, main, nightly, weekly, and release-candidate
+  layers are enabled and reviewed.
+- [ ] CODEOWNERS and domain approval requirements cover scientific semantics,
+  comparators, tolerances, exceptions, provenance, and compatibility changes.
+
+### 8.2 Platform and quality gates
+
+- [ ] Supported Linux, macOS, Windows, compiler, Python, and architecture
+  builds pass on the exact release candidate.
+- [ ] C++ unit tests, Python API tests, validation tiers, ASan/UBSan/leak
+  checks, and integration tests pass without hidden infrastructure failures.
+- [ ] Performance benchmarks, memory budgets, and reproducibility rebuilds
+  pass their approved thresholds.
+- [ ] CodeQL or equivalent security analysis passes on the exact release head.
+- [ ] Hosted weekly full validation and cross-validation complete with
+  independent BNG2/NFsim inputs, not just parser inventory.
+
+### 8.3 Packaging and release
+
+- [ ] pyproject metadata has the correct BNG3 project/repository URLs,
+  supported Python range, dependency policy, package data, and extension
+  contents.
+- [ ] Clean isolated source distribution builds and installs.
+- [ ] Clean isolated wheels build for every supported platform/architecture.
+- [ ] Installed-wheel tests cover import, compiled extension loading, API,
+  CLI, embedded assets, plotting/data helpers, and representative scientific
+  smoke behavior.
+- [ ] CLI binaries and optional native NFsim artifacts are built and tested
+  where promised.
+- [ ] Docker/container artifacts build, run, and have recorded base-image
+  digests where supported.
+- [ ] Release artifacts are content-addressed, reproducible, and tied to the
+  exact validated SHA.
+- [ ] The release workflow cannot publish an unqualified tag or artifacts
+  lacking the approved provenance/golden report.
+- [ ] PyPI/test-index publication is staged or dry-run verified before the
+  first public release.
+- [ ] Hosted release jobs for source distribution, wheels, Docker, and
+  publication are actually exercised for the release candidate; PR-only
+  skipped jobs are not counted as evidence.
+
+## 9. Legacy repositories and governance
+
+- [ ] BioNetGen, NFsim, and PyBioNetGen source deltas through the accepted
+  cutoff are reconciled, rejected with rationale, or tracked as blockers.
+- [ ] Duplicate Nauty, redundant Network3 solver trees, duplicate model copies,
+  unreachable notebook wrappers, and other redundant code have explicit
+  delete lists and zero-reference evidence before removal.
+- [ ] BNG2 Perl and native NFsim oracle sources/artifacts remain buildable and
+  retained for the supported validation window.
+- [ ] BNG3 is documented as the sole forward-development repository.
+- [ ] External repositories have documented maintenance/retirement state,
+  migration guidance, contribution redirects, and issue-routing policy.
+- [ ] No production component retains two authoritative implementations after
+  consolidation.
+- [ ] Every deletion has a separate reviewable checkpoint after its parity,
+  compatibility, packaging, and rollback gates pass.
+
+## 10. Documentation and operational consistency
+
+- [ ] BNG3_INTEGRATION_PLAN.md, BNG3_unification_spec.md, AGENTS.md,
+  provenance/README.md, validation/README.md, and this checklist agree on
+  current gates, command paths, statuses, and ownership.
+- [ ] Dated progress counts and hosted run references are refreshed after each
+  semantic checkpoint; stale historical numbers are labeled as historical.
+- [ ] The small pre-existing grammar fix remains preserved and is not mixed
+  into implementation commits.
+- [ ] Every unsupported capability has a user-visible diagnostic, owner,
+  tracking issue, migration path, and review/expiry date.
+- [ ] Developer build/test/release commands are reproducible from a clean
+  checkout and document required oracle assets.
+- [ ] API, CLI, compatibility, deprecation, and release migration documents
+  are published before deleting supported legacy entry points.
+- [ ] Documentation/link checks run in CI.
+
+## 11. Exact release-candidate qualification
+
+Run the following on a clean checkout of the exact candidate SHA. Adapt paths
+only when the approved environment requires it; record the actual commands and
+versions in the release evidence.
+
+    git pull --ff-only
+    git status --short
+    git rev-parse HEAD
+    cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+    cmake --build build
+    ctest --test-dir build --output-on-failure
+    PYTHONPATH=python:build/cpp python -m pytest tests/python -q
+    black --check --target-version py312 python/ tests/python/ scripts/
+    ruff check python/ tests/python/ scripts/
+    git diff --check
+    python scripts/validate_provenance.py --require-approved
+    python scripts/validate_corpus_manifest.py
+    python scripts/generate_corpus_manifest.py --check
+    python -m tests.validation.exception_ledger --max-exceptions APPROVED_BUDGET
+    PYTHONPATH=python:build/cpp python -m pytest -c tests/validation/pytest.ini tests/validation -m smoke --bng-cpp build/cpp/bng_cpp
+    PYTHONPATH=python:build/cpp python -m pytest -c tests/validation/pytest.ini tests/validation -m "parity and not slow" --bng-cpp build/cpp/bng_cpp
+    NFSIM_BIN=build/cpp/NFsim PYTHONPATH=python:build/cpp python -m pytest -c tests/validation/pytest.ini tests/validation -m nf --bng-cpp build/cpp/bng_cpp
+    PYTHONPATH=python:build/cpp python -m pytest -c tests/validation/pytest.ini tests/validation -m export --bng-cpp build/cpp/bng_cpp
+    python -m build --sdist --wheel
+    gh pr view 2 --repo RuleWorld/BNG3
+    gh pr checks 2 --repo RuleWorld/BNG3
+
+The qualification record must include:
+
+- exact candidate SHA and clean-tree status;
+- compiler, Python, CMake, dependency, platform, and container versions;
+- complete local test counts and terminal summaries;
+- independent BNG2/NFsim/PyBioNetGen artifact digests;
+- RuleHub selection and golden-manifest digests;
+- comparator versions, tolerances, seeds, time grids, and statistical results;
+- every skip/error and its approved ledger entry;
+- installed wheel, source distribution, CLI, Docker, and publication results;
+- hosted CI, validation, integration, and CodeQL links for the same SHA.
+
+## 12. Current blockers at the audited checkpoint
+
+These are known unchecked requirements, not reasons to claim completion:
+
+- Source lock, oracle recipes/artifact digests, compiler images, Python lock
+  digest, owners, and RuleHub selectors remain pending maintainer approval.
+- No provenance-complete approved golden bundle or complete reconciliation
+  ledger is present.
+- Capability-matrix oracle fields remain pending; broad independent BNG2,
+  NFsim, and PyBioNetGen parity is not established by local tests.
+- cpp/nfsim/nauty24 and the NFsim ExprTk path remain in the build; the
+  canonical-label and shared-expression master-function migrations are not
+  complete.
+- Direct NFsim remains a bounded subset with visible XML fallback/shadow
+  machinery; AN2, protocol-NF, remaining function/rate-law, and full
+  independent Tier-NF evidence remain open.
+- Structured SBML atomization still has a deliberate visible error, and
+  local validation has environment-dependent skips; hosted validation green
+  does not prove full Tier-P/NF/X parity.
+- SBML-Multi is currently diagnostic/reference extraction, not approved
+  end-to-end simulated execution.
+- Legacy Python core/modelapi/network/simulator trees remain and have not
+  passed zero-reference deletion gates.
+- Atomizer writer/helper/parser parity and all format round trips remain
+  broader than the current modern test slices.
+- Package metadata/repository URL review, clean release sdist/wheel matrices,
+  Docker, publication, and release-artifact provenance remain open; hosted
+  PR release jobs were skipped by event conditions.
+- CODEOWNERS and complete domain approval enforcement remain open even though
+  AGENTS.md exists.
+- Historical progress text in the integration plan must be refreshed as later
+  checkpoints land.
+
+## 13. Recommended execution order
+
+1. Obtain maintainer decisions and complete the source/oracle/provenance
+   baseline without changing scientific tolerances.
+2. Build independent golden and reconciliation evidence; repair validation
+   infrastructure so missing assets fail honestly.
+3. Complete graph canonicalization and expression master functions, then run
+   full BNG2/NFsim differential gates.
+4. Finish the direct NFsim mapping and three-way shadow gate before removing
+   XML fallback.
+5. Finish Atomizer/SBML/SBML-Multi semantics and all supported format
+   round trips.
+6. Freeze Python/CLI compatibility, then remove redundant default-path trees
+   in isolated deletion checkpoints.
+7. Complete CI ownership, platform, benchmark, clean-package, release, and
+   provenance gates on one exact candidate SHA.
+8. Publish migration/maintenance decisions and only then claim BNG3
+   convergence.
+
+No completion claim is valid until the checklist, the capability matrix, the
+unification work orders, and the exact release evidence all agree.
