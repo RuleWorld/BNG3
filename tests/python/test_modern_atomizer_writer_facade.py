@@ -37,13 +37,14 @@ def test_bngl_reaction_expands_integer_stoichiometry_and_compartment_tags():
 def test_bngl_reaction_uses_translated_patterns_and_renumbers_bonds():
     translator = {
         "A": read_from_string("A(site!7).B(site!7)"),
+        "C": read_from_string("C()"),
     }
 
     result = bngl_reaction(
         [("A", 1, "cytosol")],
         [("C", 1, "cytosol")],
         "k1",
-        {"cytosol": "@cell"},
+        {"cytosol": "cell"},
         translator=translator,
         is_compartments=True,
         reversible=True,

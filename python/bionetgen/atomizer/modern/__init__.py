@@ -56,7 +56,9 @@ from .structures import (
 )
 from .types import *  # noqa: F401,F403
 from .writer import (
+    bnglReaction,
     bngl_function,
+    bngl_reaction,
     convert_math_expression,
     extend_function,
     generate_bngl,
@@ -384,6 +386,8 @@ __all__ = [
     "convertBNGXmlToBNGL",
     "convert_bng_xml_to_bngl",
     "bngl_function",
+    "bnglReaction",
+    "bngl_reaction",
     "classify_reaction",
     "clear_uniprot_cache",
     "comb",

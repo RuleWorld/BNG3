@@ -15,6 +15,7 @@ from .rate_rule_constants import (
     SYNTH_RATE_RULE_SPECIES_PREFIX,
 )
 from .structures import Molecule, Species
+from .helpers import logger
 from .types import (
     BNGL_LEXER_KEYWORDS,
     SBMLModel,
@@ -41,6 +42,80 @@ def _section(name: str, lines: Iterable[str]) -> str:
         + "\nend "
         + name
     )
+
+
+def _print_reaction_species(
+    chemical: Tuple[str, float, str],
+    tag: str,
+    translator: Mapping[str, Species],
+) -> str:
+    """Render one Playground ``bnglReaction`` species entry."""
+
+    species, stoichiometry, _compartment = chemical
+    if species not in translator:
+        rendered = f"{species}{tag}"
+    else:
+        pattern = translator[species]
+        pattern.add_compartment(tag)
+        pattern.renumber_bonds()
+        rendered = str(pattern)
+
+    if float(stoichiometry).is_integer():
+        return " + ".join(rendered for _ in range(int(stoichiometry)))
+
+    logger.error("BNW002", f"Non-integer stoichiometry: {stoichiometry} * {species}")
+    return rendered
+
+
+def bngl_reaction(
+    reactants: Sequence[Tuple[str, float, str]],
+    products: Sequence[Tuple[str, float, str]],
+    rate: str,
+    tags: Mapping[str, str],
+    translator: Optional[Mapping[str, Species]] = None,
+    is_compartments: bool = False,
+    reversible: bool = True,
+    comment: str = "",
+    reaction_name: Optional[str] = None,
+) -> str:
+    """Render one reaction using the Playground writer's public contract."""
+
+    translator = translator or {}
+    if not reactants or (len(reactants) == 1 and reactants[0][1] == 0):
+        result = "0 "
+    else:
+        rendered = []
+        for species, stoichiometry, compartment in reactants:
+            tag = tags.get(compartment, "") if is_compartments else ""
+            rendered.append(
+                _print_reaction_species(
+                    (species, stoichiometry, compartment), tag, translator
+                )
+            )
+        result = " + ".join(rendered)
+
+    result += " <-> " if reversible else " -> "
+
+    if not products:
+        result += "0 "
+    else:
+        rendered = []
+        for species, stoichiometry, compartment in products:
+            tag = tags.get(compartment, "") if is_compartments else ""
+            rendered.append(
+                _print_reaction_species(
+                    (species, stoichiometry, compartment), tag, translator
+                )
+            )
+        result += " + ".join(rendered)
+
+    result += f" {rate}"
+    if comment:
+        result += f" {comment}"
+    result = re.sub(r"(^|\s)0\(\)(?=\s|$)", r"\1 0", result)
+    if reaction_name:
+        result = f"{reaction_name}: {result}"
+    return result
 
 
 def _molecule_pattern(molecule: Molecule) -> str:
@@ -1865,8 +1940,14 @@ def generate_bngl(
     return model_text, observable_map
 
 
+# Preserve the TypeScript reference spelling for direct facade callers.
+bnglReaction = bngl_reaction
+
+
 __all__ = [
     "bngl_function",
+    "bnglReaction",
+    "bngl_reaction",
     "convert_math_expression",
     "extend_function",
     "generate_bngl",
