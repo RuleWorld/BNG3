@@ -4593,7 +4593,37 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 !functionProductRate ||
                 (hasRateScope(functionProductOperand1.argument) &&
                  hasRateScope(functionProductOperand2.argument));
-            if ((rule.hasScopePrefix() && !localFunctionRate && !functionProductRate) ||
+            const auto hasScopedModelFunctionCall =
+                [&](const auto& expression, const auto& self) -> bool {
+                using ExpressionKind = bng::ast::ExpressionKind;
+                if ((expression.kind() == ExpressionKind::Function ||
+                     expression.kind() == ExpressionKind::ObservableRef) &&
+                    !expression.args().empty()) {
+                    const auto* function = getModelFunction(model, expression.name());
+                    if (function != nullptr &&
+                        function->getArgs().size() == expression.args().size() &&
+                        std::all_of(
+                            expression.args().begin(), expression.args().end(),
+                            [&](const auto& argument) {
+                                return argument.kind() == ExpressionKind::Identifier &&
+                                       hasRateScope(argument.name());
+                            })) {
+                        return true;
+                    }
+                }
+                return std::any_of(
+                    expression.args().begin(), expression.args().end(),
+                    [&](const auto& child) { return self(child, self); });
+            };
+            // A species-scoped rule may put a local-function call inside
+            // arithmetic (for example ``kr*(1-pOn(x))``).  That is not the
+            // narrow ``f(x)`` localFunctionRate shape, but the generic dynamic
+            // adapter can preserve and bind the scoped argument as a DOR rate.
+            const bool dynamicScopedFunctionAvailable =
+                !rates.empty() &&
+                hasScopedModelFunctionCall(rates.front(), hasScopedModelFunctionCall);
+            if ((rule.hasScopePrefix() && !localFunctionRate && !functionProductRate &&
+                 !dynamicScopedFunctionAvailable) ||
                 (localFunctionRate && !localFunctionScopeAvailable) ||
                 (functionProductRate && !functionProductScopeAvailable) || rates.empty() ||
                 (reactantPatterns.empty() && productPatterns.empty())) {
