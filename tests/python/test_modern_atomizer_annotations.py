@@ -190,3 +190,35 @@ def test_annotation_parser_emits_reference_json_and_stats():
     assert '"identifier": "P12345"' in payload
     assert compute_annotation_stats(model).annotated_species == 1
     assert compute_annotation_stats(model).annotation_count == 1
+
+
+def test_atomizer_annotation_payload_matches_reference_shape():
+    from bionetgen.atomizer.modern import Atomizer
+
+    sbml = """<?xml version="1.0"?>
+    <sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+          xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+          xmlns:bqbiol="http://biomodels.net/biology-qualifiers/"
+          level="3" version="1">
+      <model id="annotation_payload">
+        <listOfCompartments><compartment id="cell" size="1"/></listOfCompartments>
+        <listOfSpecies>
+          <species id="A" name="A" compartment="cell" initialAmount="1">
+            <annotation><rdf:RDF><rdf:Description rdf:about="#A">
+              <bqbiol:is><rdf:Bag><rdf:li rdf:resource="uniprot:P12345"/></rdf:Bag></bqbiol:is>
+            </rdf:Description></rdf:RDF></annotation>
+          </species>
+          <species id="B" name="B" compartment="cell"/>
+        </listOfSpecies>
+      </model>
+    </sbml>
+    """
+
+    result = Atomizer(annotation=True).atomize(sbml)
+
+    assert result.success is True
+    assert set(result.annotation) == {"species", "reactions", "compartments"}
+    assert set(result.annotation["species"]) == {"A"}
+    assert result.annotation["species"]["A"]["annotations"][0]["resources"] == [
+        "uniprot:P12345"
+    ]
