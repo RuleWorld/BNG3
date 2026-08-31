@@ -340,6 +340,8 @@ jobs:
         run: pytest tests/python/ -v --tb=short --cov=bionetgen --cov-report=xml
         env:
           SYMPY_USE_GMPY: "0"
+          MPLBACKEND: Agg
+          MPLCONFIGDIR: ${{ runner.temp }}/matplotlib
 
       - name: Upload coverage
         if: matrix.os == 'ubuntu-22.04' && matrix.python-version == '3.12'

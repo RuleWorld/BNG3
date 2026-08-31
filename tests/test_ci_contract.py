@@ -49,6 +49,14 @@ def test_python_matrix_installs_runtime_dependencies_before_no_deps_wheel():
     )
 
 
+def test_python_tests_use_headless_isolated_matplotlib_cache():
+    """The plotting test must not share a stale GUI/font cache on runners."""
+
+    job = _python_test_job()
+    assert "MPLBACKEND: Agg" in job
+    assert "MPLCONFIGDIR: ${{ runner.temp }}/matplotlib" in job
+
+
 def test_msvc_parser_headers_clear_windows_macros_before_antlr():
     """Windows SDK macros must not rewrite ANTLR enum members."""
 
