@@ -4,8 +4,8 @@
 **Last audited:** 2026-09-01
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** bb14a207cfbf224a1b6444e565fcee50f8c54bfe
-**Checklist refresh base:** bb14a20 (refresh after each semantic checkpoint)
+**Audited semantic code head:** fbfda3fead99b683ce1a1a60a31f8a3f044614e6
+**Checklist refresh base:** fbfda3f (refresh after each semantic checkpoint)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -47,25 +47,25 @@ completion gate.
 
 - [x] Required fast-forward pull completed before this documentation change.
 - [x] The latest pushed semantic checkpoint is
-  bb14a207cfbf224a1b6444e565fcee50f8c54bfe; the checklist refresh is a
+  fbfda3fead99b683ce1a1a60a31f8a3f044614e6; the checklist refresh is a
   documentation-only checkpoint layered after it and does not alter its
   semantic test evidence.
 - [x] Before this checklist/agent-guidance checkpoint, the small documentation
   grammar fix was the only pre-existing BNG3 worktree modification. It remains
   intentionally unstaged and must not be mixed into semantic or checklist
   commits.
-- [x] Exact-head CTest passes `142/142` on bb14a207 (local Release/Ninja
+- [x] Exact-head CTest passes `143/143` on fbfda3f (local Release/Ninja
   build; `ctest --test-dir build --output-on-failure`).
-- [x] The full NFsim AST adapter executable passes 94 test cases and 879
-  assertions on bb14a207, including compact energy evaluation, cached compact
+- [x] The full NFsim AST adapter executable passes 95 test cases and 921
+  assertions on fbfda3f, including compact energy evaluation, cached compact
   rate factors, specialized reverse propensities, sparse selector ordering,
   cached single- and multi-term Arrhenius factors, direct-product endpoint
   identity propagation, safe direct-product traversal, cached pre-fire binding
   rejection, compact partner mapping-slot compaction, indexed cross-type
-  partner refresh, shared partner-pool updates, dense type-invariant membership
-  decisions, deferred weighted-side propensity capture, materialized fallback,
-  pure-context homodimer/trimer/scaffold counting, transformed homodimer
-  binding multiplicity, and pure DOR context counting.
+  partner refresh, shared partner-pool updates, dense and sparse type-invariant
+  membership decisions, deferred weighted-side propensity capture,
+  materialized fallback, pure-context homodimer/trimer/scaffold counting,
+  transformed homodimer binding multiplicity, and pure DOR context counting.
 - [ ] Exact-head Python/API and package tests must be rerun and recorded for
   the current release candidate; the last recorded baseline was 229 passed,
   27 skipped, and 8 warnings.
@@ -79,9 +79,10 @@ completion gate.
   environment and must not be treated as parity.
 - [ ] A clean, no-build-isolation wheel is rebuilt and installed into a
   separate target for this exact head. The prior 7e91acc macOS wheel smoke is
-  historical evidence only; it is not evidence for bb14a207.
+  historical evidence only; it is not evidence for fbfda3f.
 - [ ] Hosted PR checks for the exact current semantic head
-  `bb14a207cfbf224a1b6444e565fcee50f8c54bfe` are currently pending and have
+  `fbfda3fead99b683ce1a1a60a31f8a3f044614e6` are currently queued or in
+  progress and have
   not yet produced a complete terminal set across the C++ matrix, Python
   matrix, ASan, integration, validation, package smoke, formatter, and
   CodeQL. Older runs are historical and do not establish evidence for this
@@ -375,9 +376,16 @@ completion gate.
   local-function DOR fixtures pass in
   `tests/cpp/test_nfsim_ast_adapter.cpp` (18 assertions across the four
   pure-context cases).
+- [x] BNG3 carries source-derived sparse membership-decision indexing from
+  NFsim commit `ba7466c386c0cf72920863472d8382f8011e1811`: type-invariant
+  direct-product decisions retain an ordered affected-reaction index list when
+  fewer than half the registered reactions are affected, and the adapter
+  refreshes that list without scanning unrelated rules (`fbfda3f`; the
+  unrelated-partner fixture passes 42 assertions in
+  `tests/cpp/test_nfsim_ast_adapter.cpp`).
 - [ ] Port and test the remaining supported CPU evaluator slices from the
-  merged NFSIM source: the broader full incremental-membership machinery,
-  sparse membership-decision indexing, and the remaining direct-product path.
+  merged NFSIM source: the broader full incremental-membership machinery and
+  the remaining direct-product path.
   Source context-count semantics now have a BNG3 adapter port and focused
   source-derived tests, but their full source parity is not implied.
   Cross-type changed-endpoint propagation is now indexed in the
@@ -389,7 +397,8 @@ completion gate.
   candidate bitset/mapping-slot indexing at `401becf`, deferred multi-product
   propensity accounting at `6c681269`, sparse selector integration at
   `a97c02e`, reverse specialization at `dbadea6`, partner endpoint/indexed
-  decision refresh at `bb3ae014`, and pure-context counting at `bb14a207`;
+  decision refresh at `bb3ae014`, pure-context counting at `bb14a207`, and
+  sparse membership-decision indexing at `fbfda3f`;
   the other listed slices remain open.
   Preserve BNG3 lifecycle and direct-AST adapters while porting.
 - [ ] Compare compact and fallback event semantics against an independently
@@ -681,10 +690,10 @@ These are known unchecked requirements, not reasons to claim completion:
   (`401becf`), deferred multi-product propensity accounting (`6c681269`),
   sparse selector integration (`a97c02e`), indexed cross-type partner
   endpoint/decision refresh (`bb3ae014`), and source-derived pure-context
-  complex counting (`bb14a207`). Merged NFSIM PR #475 full
-  incremental-membership semantics, remaining direct-product parity,
-  independent energy parity, benchmark provenance, and source reconciliation
-  are still open.
+  complex counting (`bb14a207`), and sparse type-invariant membership-decision
+  indexing (`fbfda3f`). Merged NFSIM PR #475 full incremental-membership
+  semantics, remaining direct-product parity, independent energy parity,
+  benchmark provenance, and source reconciliation are still open.
 - cpp/nfsim/nauty24 and the NFsim ExprTk path remain in the build; the
   canonical-label and shared-expression master-function migrations are not
   complete.
