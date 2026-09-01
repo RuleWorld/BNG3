@@ -3583,6 +3583,76 @@ end reaction rules
     delete system;
 }
 
+TEST_CASE("NFsim connectivity refresh clears direct endpoint identity") {
+    // Source-derived from akutuva21/nfsim commit 96be0b1: the reusable direct
+    // product scratch set must describe only the current firing.  Two seeded
+    // eligible A molecules make a repeated connectivity-aware firing expose
+    // stale endpoint identity without inspecting private storage.
+    auto model = bng::parser::parseModel(R"BNG(
+begin parameters
+    phi 0.5
+    Gcontext 1.0
+    RT 1.0
+end parameters
+begin molecule types
+    A(b,c)
+    B(a)
+    C(x)
+end molecule types
+begin seed species
+    A(b,c!1).C(x!1) 1
+    A(b) 1
+    B(a) 2
+end seed species
+begin energy patterns
+    A(b!1,c!2).B(a!1).C(x!2) Gcontext
+end energy patterns
+begin reaction rules
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+end reaction rules
+)BNG");
+    REQUIRE(model != nullptr);
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(
+        *model, false, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    auto* reaction = dynamic_cast<NFcore::EnergyRxnClass*>(
+        system->getReaction(0));
+    REQUIRE(reaction != nullptr);
+    auto* aType = system->getMoleculeTypeByName("A");
+    REQUIRE(aType != nullptr);
+    REQUIRE(aType->getMoleculeCount() == 2);
+
+    // The direct AST builder has no connectivity CLI switch yet; mirror the
+    // XML loader's post-construction flag propagation for this source oracle.
+    system->useConnectivityFlag(true);
+    for (auto* candidate : system->getAllReactions())
+        candidate->setConnectivityFlag(true);
+    system->turnOff_OnTheFlyObs();
+    system->prepareForSimulation();
+
+    auto* firstA = aType->getMolecule(0);
+    auto* secondA = aType->getMolecule(1);
+    REQUIRE(firstA != nullptr);
+    REQUIRE(secondA != nullptr);
+
+    reaction->fire(0.0);
+    CHECK(reaction->isDirectProductMolecule(firstA));
+    CHECK_FALSE(reaction->isDirectProductMolecule(secondA));
+
+    // Keep the oracle focused on direct-endpoint scratch lifetime.  Refresh
+    // the changed molecule through the full membership path before the next
+    // event so the second fire is independently selected, even when a
+    // connectivity implementation defers that reaction's self-refresh.
+    aType->updateRxnMembership(firstA);
+    reaction->fire(0.999999);
+    CHECK_FALSE(reaction->isDirectProductMolecule(firstA));
+    CHECK(reaction->isDirectProductMolecule(secondA));
+
+    delete system;
+}
+
 TEST_CASE("NFsim compact energy caches multi-term factors") {
     auto model = bng::parser::parseModel(R"(
 begin parameters
