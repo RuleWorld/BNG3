@@ -475,12 +475,13 @@ void MoleculeType::removeMoleculeFromRunningSystem(Molecule *&m)
 
 void MoleculeType::removeAllMolecules()
 {
-	// Iterate through all molecules and remove them
-	// We need to loop backwards because remove() removes by swapping with the last element
+	// Iterate through all molecules and remove them. Loop backwards because
+	// remove() removes by swapping with the last element. MoleculeList owns its
+	// preallocated Molecule objects, so leave the inactive slots in place for
+	// reuse and for MoleculeList::~MoleculeList() to release.
 	for (int m = mList->size() - 1; m >= 0; m--) {
 		Molecule *mol = mList->at(m);
 		removeMoleculeFromRunningSystem(mol);
-		delete mol; // Free the memory to prevent leaks
 	}
 }
 
