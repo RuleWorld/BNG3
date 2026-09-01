@@ -114,6 +114,63 @@ std::string normalizeLegacyBlockHeaders(const std::string& source) {
     return result;
 }
 
+bool isEmptyReactantFunctionDeclaration(const std::string& line) {
+    const auto comment = line.find('#');
+    const auto code = trimCopy(
+        comment == std::string::npos ? line : line.substr(0, comment));
+    static constexpr std::string_view prefix = "reactant_";
+    if (code.size() <= prefix.size() + 2 ||
+        code.compare(0, prefix.size(), prefix) != 0) {
+        return false;
+    }
+
+    std::size_t position = prefix.size();
+    if (code[position] < '1' || code[position] > '9') return false;
+    ++position;
+    while (position < code.size() &&
+           std::isspace(static_cast<unsigned char>(code[position]))) {
+        ++position;
+    }
+    return code.compare(position, 2, "()") == 0 && position + 2 == code.size();
+}
+
+// The legacy NFsim XML parser accepts empty reactant_N() declarations as
+// placeholders.  They carry no user-defined expression; CompositeFunction
+// materializes the corresponding mapping count when a reaction evaluates its
+// rate.  Keep the generated ANTLR grammar strict for ordinary functions and
+// erase only these source-backed placeholders before parsing.
+std::string normalizeEmptyReactantFunctionDeclarations(const std::string& source) {
+    std::string result;
+    result.reserve(source.size());
+    bool insideFunctions = false;
+
+    std::size_t lineStart = 0;
+    while (lineStart <= source.size()) {
+        const auto lineEnd = source.find('\n', lineStart);
+        const auto lineLength = lineEnd == std::string::npos
+                                    ? source.size() - lineStart
+                                    : lineEnd - lineStart;
+        const auto line = source.substr(lineStart, lineLength);
+        const auto normalizedHeader = toLower(trimCopy(line));
+        if (normalizedHeader == "begin functions") {
+            insideFunctions = true;
+            result.append(line);
+        } else if (normalizedHeader == "end functions") {
+            insideFunctions = false;
+            result.append(line);
+        } else if (insideFunctions && isEmptyReactantFunctionDeclaration(line)) {
+            result.append("# BNG3: legacy empty reactant-count placeholder");
+        } else {
+            result.append(line);
+        }
+
+        if (lineEnd == std::string::npos) break;
+        result.push_back('\n');
+        lineStart = lineEnd + 1;
+    }
+    return result;
+}
+
 std::string normalizeLegacyActionNames(const std::string& source) {
     std::string result;
     result.reserve(source.size());
@@ -1093,7 +1150,8 @@ ast::Expression parseExpressionImpl(const std::string& exprText) {
 std::string normalizeBNGLSource(const std::string& sourceText) {
     return normalizeLooseActionsInsideModel(normalizeIntegerStateTransitions(
         normalizeLegacyActionNames(
-            normalizeLegacyBlockHeaders(normalizeTfunSyntax(sourceText)))));
+            normalizeEmptyReactantFunctionDeclarations(
+                normalizeLegacyBlockHeaders(normalizeTfunSyntax(sourceText))))));
 }
 
 BNGAstVisitor::BNGAstVisitor()

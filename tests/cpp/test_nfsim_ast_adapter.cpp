@@ -2092,6 +2092,7 @@ begin seed species
     A(x) 3
 end seed species
 begin functions
+    reactant_1()
     rateLaw k*reactant_1()
 end functions
 begin reaction rules
@@ -2113,7 +2114,8 @@ end reaction rules
     delete direct;
 
     const auto xml = bng::io::XmlWriter::write(*model);
-    CHECK(xml.find("reactant_1") != std::string::npos);
+    CHECK(xml.find("<Reference name=\"reactant_1\" type=\"Function\"/>") !=
+          std::string::npos);
     suggestedTraversalLimit = 0;
     auto* xmlSystem = NFinput::initializeFromModel(
         static_cast<void*>(model.get()), false, 100, false, suggestedTraversalLimit);
