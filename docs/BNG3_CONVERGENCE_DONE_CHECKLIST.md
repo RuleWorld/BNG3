@@ -4,8 +4,8 @@
 **Last audited:** 2026-09-01
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 73757ead732156f5d4b1a0f9a50901263631a93f
-**Checklist refresh base:** 73757ea (source-derived pattern-metadata cache checkpoint; refresh after each checkpoint)
+**Audited semantic code head:** d502e4798ff0f24f469a2c0a29fd0b13d793f083
+**Checklist refresh base:** d502e47 (source-derived ODE function-match allocation checkpoint; refresh after each checkpoint)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -49,19 +49,18 @@ completion gate.
 
 - [x] Required fast-forward pull completed before this documentation change.
 - [x] The latest local semantic checkpoint is
-  `73757ead732156f5d4b1a0f9a50901263631a93f`; its parent
-  `8b54751cde165c8d625d6103b7ab6e132c44b094` is the exact-key reuse checklist
-  refresh. `73757ea` adds the source-derived `akutuva21/bionetgen`
-  pattern-metadata cache (`7ee2db11`): immutable reactant/product descriptions
-  are built during initialization and reused by embedding, reaction-building,
-  and delete-molecule paths, with explicit move lifecycle support. The earlier
-  exact-key, `533ac26` reorder, ODE, empty-graph, Node serialization,
-  source-derived engine, and modern Atomizer checkpoints remain in this
-  ancestry.
+  `d502e4798ff0f24f469a2c0a29fd0b13d793f083`; its parent
+  `2d69b99d11c29c38e5c0ea78db98b2f1c43c8fa8` is the boolean-parser
+  allocation checkpoint. `d502e47` ports the allocation-sensitive portion of
+  source `akutuva21/bionetgen` Bolt PR heads #508/#509: lowercase function
+  names are prepared once and raw rate-law matching uses a zero-copy
+  case-insensitive boundary scan. Existing user-defined ODE rate semantics
+  remain unchanged; source/parser case semantics are not broadened.
 - [x] The latest public code/test checkpoint is
-  `73757ead732156f5d4b1a0f9a50901263631a93f`, whose parent is
-  `8b54751cde165c8d625d6103b7ab6e132c44b094`; it adds the source-derived
-  pattern-metadata cache and reinitialization/move lifecycle coverage.
+  `d502e4798ff0f24f469a2c0a29fd0b13d793f083`, whose parent is
+  `2d69b99d11c29c38e5c0ea78db98b2f1c43c8fa8`; it adds the source-derived ODE
+  function-match allocation change and its user-defined-rate contract remains
+  green.
 - [x] The latest published CI-repair checkpoint is
   `9a2475a0af360d685dc41eb9bb376f6517d74b4d`; `gh api` and `gh pr view 2`
   agreed on this branch/PR source head immediately after push, and PR #2
@@ -69,11 +68,15 @@ completion gate.
 - [x] The small documentation grammar fix remains the only unrelated tracked
   BNG3 worktree modification. It remains intentionally unstaged and must not
   be mixed into semantic or checklist commits.
-- [x] Exact-head CTest passes `177/177` on `73757ea` (local Release/Ninja
-  build; `ctest --test-dir build --output-on-failure`), including the exact
+- [x] Historical exact-head CTest passes `177/177` on `73757ea` (local
+  Release/Ninja build; `ctest --test-dir build --output-on-failure`), including the exact
   compartment-aware dedup contract, compact ODE derivative contract, empty
   graph, exact Node serialization, t4 rejection contract, inferred-state/
   type-order gates, and IfTest parity assertions.
+- [ ] Current exact-head full CTest has not yet been rerun on `d502e47`; the
+  focused ODE executable passes 14/14 assertions, including the new
+  user-defined-rate contract. Requalify all C++ tests before the next semantic
+  candidate is treated as current evidence.
 - [ ] Separate local Debug/ASan evidence has not yet been rerun for 5f6da07;
   prior 0f83347 evidence was supplemental memory-safety coverage, not a
   substitute for hosted sanitizer and leak/UBSan gates.
@@ -139,9 +142,9 @@ completion gate.
 - [x] Full Python/API tests pass on the latest Python-affecting checkpoint
   `9c60ca4`: `235 passed, 27 skipped, 8 warnings` from
   `PYTHONPATH=python:build/cpp python -m pytest tests/python -q`. The later
-  `73757ea` checkpoint changes only C++ exact-key and pattern-cache internals
-  and has been requalified by native C++/AST gates; rerun the full Python suite
-  on the final candidate.
+  `73757ea`, `2d69b99`, and `d502e47` checkpoints change only C++ internals and have been
+  requalified by targeted native C++ gates; rerun the full Python suite on the
+  final candidate.
   The installed-wheel target still has only historical evidence and is not
   release evidence for this head.
 - [x] Source-derived NFsim Issue78 coverage is green at `7186b65`: the direct
@@ -227,16 +230,15 @@ completion gate.
   was still in progress at the last readback, and [formatting run
   33531304766](https://github.com/RuleWorld/BNG3/actions/runs/33531304766) had
   passed. These runs do not qualify the current repair.
-- [ ] At this refresh, the exact public semantic code checkpoint `73757ea`
-  has fresh hosted evidence beginning with [CI run
+- [ ] Historical exact public semantic code checkpoint `73757ea` had hosted
+  evidence beginning with [CI run
   33539030113](https://github.com/RuleWorld/BNG3/actions/runs/33539030113),
   [CodeQL run
   33539030155](https://github.com/RuleWorld/BNG3/actions/runs/33539030155),
   and [formatting run
   33539030353](https://github.com/RuleWorld/BNG3/actions/runs/33539030353).
-  All three were queued at readback. This checklist refresh creates a
-  documentation-only public head; read back its new exact-head run set
-  separately. Queued or partial results are not completion evidence.
+  All three were queued at readback. Queued or partial results are not
+  completion evidence for any later head.
 - [x] Historical hosted PR checks for semantic head
   `0f833470950fc47329f5b7381c64533e623b45ce` were terminal-success: [CI run
   33493581633](https://github.com/RuleWorld/BNG3/actions/runs/33493581633)
@@ -248,12 +250,10 @@ completion gate.
   passed both C++ and Python analysis, and [formatting run
   33493581573](https://github.com/RuleWorld/BNG3/actions/runs/33493581573)
   passed. Results were read back with `gh` against the exact public head;
-- [x] Before this refresh, `gh api
+- [x] Historical readback before the later refresh: `gh api
   repos/RuleWorld/BNG3/git/ref/heads/codex/bng3-integration-foundations` and
   `gh pr view 2 --repo RuleWorld/BNG3` read back the same full public code
-  checkpoint SHA `73757ead732156f5d4b1a0f9a50901263631a93f`; PR #2 is open.
-  The documentation commit that follows changes the public head and requires
-  a new exact-head readback.
+  checkpoint SHA `73757ead732156f5d4b1a0f9a50901263631a93f`; PR #2 was open.
 - [x] Modern Atomizer checkpoints exist for annotations, BNG-XML conversion,
   Rulifier, UniProt, structure helpers, and conservative SBML-Multi discovery,
   helper/rate-rule constants, each with source-derived tests.
@@ -353,6 +353,20 @@ completion gate.
   per-expansion description sites, with source-derived reinitialization/move
   coverage and full CTest `177/177` green. This closes the source/API slice;
   independent BNG3 benchmark reproduction remains open.
+- [x] Source commit `f30898b6` (`Bolt: Optimize string lowercasing
+  allocations in engine loops`) was ported equivalently at BNG3 `2d69b99` for
+  `parseBooleanLike`; the source-derived accepted-spelling test remains green.
+  Its ODE allocation portion was reconciled with the newer ODE match work
+  below rather than duplicated.
+- [x] Open Bolt PR #508 head
+  `e67850cfc5b2d65322970b77b9e145152e2da0f6` and PR #509 head
+  `5cf5cd4747efa9961b8b3d63127499fce945000e` were audited and their supported
+  allocation-only ODE portions were ported equivalently at BNG3 `d502e47`:
+  lowercase function names are prepared once, raw rate-law matching avoids a
+  lowercased temporary, and the source-derived user-defined ODE-rate contract
+  passes. A probe that changed the declared function's case was rejected from
+  the port because BNG3's parser/runtime function-name semantics are not
+  case-insensitive; no public language behavior was silently broadened.
 - [ ] Audit and, where supported, port the remaining common portable-CPU
   chain represented by branch `codex/portable-cpu-20260831` at
   `305b7482febe3dd52ccd517fa4cd2e02504e834c`, including exact-dedup and
@@ -381,11 +395,11 @@ completion gate.
   `0c5217531ebb9e692cc5cff4d76535ed8b4cca91`; benchmark/launcher and
   documentation-only changes require an approved capability and performance
   disposition before inclusion.
-- [ ] Audit open Bolt PR heads #508/#509 and every remaining non-main branch
-  tip, including closed/superseded Bolt branches, for correctness, security,
-  compatibility, and provenance. Record each exact source SHA once as
-  incorporated, equivalent, superseded, non-applicable, pending-port, or
-  blocked-on-design; do not silently import `.jules` or generated artifacts.
+- [ ] Audit every remaining non-main branch tip, including closed/superseded
+  Bolt branches, for correctness, security, compatibility, and provenance.
+  Record each exact source SHA once as incorporated, equivalent, superseded,
+  non-applicable, pending-port, or blocked-on-design; do not silently import
+  `.jules` or generated artifacts.
 
 ## 2. Independent validation and provenance spine
 
@@ -893,10 +907,17 @@ completion gate.
   event conditions and remain release-candidate work. This documentation
   refresh creates a new public head and requires another exact-head check
   readback after push.
-- [ ] Current public semantic checkpoint `d52f18a` (and every documentation
+- [ ] Current public semantic checkpoint `d502e47` (and every documentation
   checkpoint that follows it) has a fresh terminal hosted check set read back
-  with `gh`; the PR #2 metadata must converge to the same head. The current
-  exact-head set is still pending and must be read back after this refresh.
+  with `gh`; the PR #2 metadata must converge to the same head. For
+  `d502e4798ff0f24f469a2c0a29fd0b13d793f083`, CI run
+  [33540655461](https://github.com/RuleWorld/BNG3/actions/runs/33540655461),
+  CodeQL run
+  [33540655456](https://github.com/RuleWorld/BNG3/actions/runs/33540655456),
+  and formatting run
+  [33540655552](https://github.com/RuleWorld/BNG3/actions/runs/33540655552)
+  were queued at readback. Queued or partial results are not completion
+  evidence; a later checklist push creates another exact-head run set.
 - [ ] Every required job emits a terminal summary with counts, failures,
   skips, exception budget, corpus/source revision, and artifact digests.
 - [ ] Required jobs fail when a claimed oracle, corpus, validator, or compiler
