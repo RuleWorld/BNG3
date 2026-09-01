@@ -3477,6 +3477,32 @@ end reaction rules
     contextChange.isBoundAfter1 = true;
     CHECK(compactReaction->shouldUpdateMembershipForChange(
         weightedMolecule, contextChange));
+
+    NFcore::Molecule* partialWeightedMolecule = nullptr;
+    for (int i = 0;
+         i < system->getMoleculeTypeByName("A")->getMoleculeCount(); ++i) {
+        auto* candidate = system->getMoleculeTypeByName("A")->getMolecule(i);
+        if (candidate->isBindingSiteBonded(contextC) &&
+            candidate->isBindingSiteOpen(contextD)) {
+            partialWeightedMolecule = candidate;
+            break;
+        }
+    }
+    REQUIRE(partialWeightedMolecule != nullptr);
+    auto* partialContextMolecule =
+        partialWeightedMolecule->getBondedMolecule(contextC);
+    REQUIRE(partialContextMolecule != nullptr);
+    const int partialContextComponent =
+        partialWeightedMolecule->getBondedMoleculeBindingSiteIndex(contextC);
+    NFcore::Molecule::unbind(partialWeightedMolecule, contextC);
+    NFcore::IncrementalMembershipChange partialContextChange = membershipChange;
+    partialContextChange.componentIndex1 = contextC;
+    partialContextChange.isBoundAfter1 = false;
+    CHECK_FALSE(compactReaction->shouldUpdateMembershipForChange(
+        partialWeightedMolecule, partialContextChange));
+    NFcore::Molecule::bind(partialWeightedMolecule, contextC,
+                           partialContextMolecule, partialContextComponent);
+
     CHECK(compactReaction->canSkipIndirectMembership(compactReaction));
     CHECK(compactReaction->getCompactPartnerPool()->getRegisteredReactions().size() == 1);
     CHECK(compactReaction->getCompactPartnerPool()->getRegisteredReactions().front() == compactReaction);

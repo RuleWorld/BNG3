@@ -722,6 +722,27 @@ void MoleculeType::updateRxnMembership(Molecule * m,
 	bool hasMembershipChange = directProduct && firedReaction != 0 &&
 		firedReaction->usesIncrementalMembership() &&
 		firedReaction->getIncrementalMembershipChange(membershipChange);
+	bool refineMembershipChange = hasMembershipChange &&
+		m->getMoleculeType() == membershipChange.moleculeType1;
+	if (refineMembershipChange && membershipChange.componentIndex1 >= 0 &&
+			membershipChange.componentIndex1 < 64) {
+		/* If the weighted molecule is full immediately before or after the
+		 * event, every accepted context dependency on the changed site crosses
+		 * its predicate.  The endpoint cache is already exact in that case. */
+		std::uint64_t changedBit = std::uint64_t(1) <<
+				membershipChange.componentIndex1;
+		int componentCount = m->getMoleculeType()->getNumOfComponents();
+		if (componentCount <= 64) {
+			std::uint64_t fullMask = componentCount == 64
+					? ~std::uint64_t(0)
+					: ((std::uint64_t(1) << componentCount) - 1);
+			std::uint64_t newMask = m->getBoundComponentMask();
+			std::uint64_t oldMask = membershipChange.isBoundAfter1
+					? (newMask & ~changedBit) : (newMask | changedBit);
+			if (newMask == fullMask || oldMask == fullMask)
+				refineMembershipChange = false;
+		}
+	}
 	bool useCompactMembershipIndex = hasMembershipChange &&
 		m->getMoleculeType() == membershipChange.moleculeType1 &&
 		membershipChange.componentIndex1 >= 0 &&
@@ -919,6 +940,10 @@ void MoleculeType::updateRxnMembership(Molecule * m,
 				}
 				continue;
 			}
+			if (refineMembershipChange &&
+					!rxn->shouldUpdateMembershipForChange(
+							m, membershipChange))
+				continue;
 			bool handledByCompactPool = false;
 			int partnerComponent = -1;
 			if (rxn->supportsCompactPartnerPoolUpdate() &&
@@ -993,6 +1018,10 @@ void MoleculeType::updateRxnMembership(Molecule * m,
 								m, firedReaction, directProduct))
 						continue;
 				}
+				if (refineMembershipChange &&
+						!rxn->shouldUpdateMembershipForChange(
+								m, membershipChange))
+					continue;
 				bool handledByCompactPool = false;
 				int partnerComponent = -1;
 				if (rxn->supportsCompactPartnerPoolUpdate() &&
@@ -1038,12 +1067,16 @@ void MoleculeType::updateRxnMembership(Molecule * m,
 			if (cachedDecisions != 0) {
 				if (!(*cachedDecisions)[r])
 					continue;
-			} else if (firedReaction != 0 &&
-					!rxn->shouldUpdateMembership(
-							m, firedReaction, directProduct))
+				} else if (firedReaction != 0 &&
+						!rxn->shouldUpdateMembership(
+								m, firedReaction, directProduct))
+					continue;
+			}
+			if (refineMembershipChange &&
+					!rxn->shouldUpdateMembershipForChange(
+							m, membershipChange))
 				continue;
-		}
-		bool handledByCompactPool = false;
+			bool handledByCompactPool = false;
 		int partnerComponent = -1;
 		if (rxn->supportsCompactPartnerPoolUpdate() &&
 				rxn->getCompactPartnerPoolInfo(
