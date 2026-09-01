@@ -4,8 +4,8 @@
 **Last audited:** 2026-09-01
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 5f6da0747beda7d5c4d1728b2aa9caf6f3883dfa
-**Checklist refresh base:** 5f6da07 (refresh after each semantic checkpoint)
+**Audited semantic code head:** 963dbc6fcd357a80592dc2d569a68ce06f1e74d5
+**Checklist refresh base:** 963dbc6 (tests-only t4 checkpoint; refresh after each semantic checkpoint)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -46,20 +46,21 @@ These items describe the current checkpoint. They do not satisfy the full
 completion gate.
 
 - [x] Required fast-forward pull completed before this documentation change.
-- [x] The latest pushed semantic checkpoint is
-  5f6da0747beda7d5c4d1728b2aa9caf6f3883dfa; this checklist refresh is a
-  documentation-only checkpoint layered after it and does not alter its
-  semantic test evidence.
+- [x] The latest pushed checkpoint is
+  963dbc6fcd357a80592dc2d569a68ce06f1e74d5; it adds a source-derived
+  rejection contract for the historical NFsim t4 syntax gap and does not
+  claim that the capability is implemented.
 - [x] The small documentation grammar fix remains the only unrelated tracked
   BNG3 worktree modification. It remains intentionally unstaged and must not
   be mixed into semantic or checklist commits.
-- [x] Exact-head CTest passes `161/161` on 5f6da07 (local Release/Ninja
-  build; `ctest --test-dir build --output-on-failure`).
+- [x] Exact-head CTest passes `162/162` on 963dbc6 (local Release/Ninja
+  build; `ctest --test-dir build --output-on-failure`), including the t4
+  rejection contract.
 - [ ] Separate local Debug/ASan evidence has not yet been rerun for 5f6da07;
   prior 0f83347 evidence was supplemental memory-safety coverage, not a
   substitute for hosted sanitizer and leak/UBSan gates.
-- [x] The full NFsim AST adapter executable passes 108 test cases and 1156
-  assertions on 5f6da07, including compact energy evaluation, cached compact
+- [x] The full NFsim AST adapter executable passes 109 test cases and 1157
+  assertions on 963dbc6. It covers compact energy evaluation, cached compact
   rate factors, specialized reverse propensities, sparse selector ordering,
   cached single- and multi-term Arrhenius factors, direct-product endpoint
   identity propagation, safe direct-product traversal, cached pre-fire binding
@@ -84,6 +85,16 @@ completion gate.
   XML preservation of the `TotalRate` modifier (9 assertions), and the IfTest
   conditional global functions with legacy `&&` expressions and live-threshold
   trajectory branch semantics on direct and XML paths (74 assertions).
+- [ ] The source-derived historical NFsim `test/testSuite/t4.bngl` and related
+  `t5.bngl` syntax remain open capability gaps. At 963dbc6, BNG3's parser
+  rejects the t4 fixture with the stable diagnostic `Cannot build model from
+  source with syntax errors`. Independent inspection found the fixtures were
+  introduced by NFsim commit `3c7b6a3` as preliminary tests, current BNG2
+  rejects `sum(m)`, and the current NFsim `StateCounter` implementation is
+  retained debug/dead support rather than an active parser/XML contract.
+  Do not mark this row complete without a maintainer disposition, active
+  independent oracle, canonical-AST design, runtime semantics, and direct/XML
+  contract tests.
 - [x] The full NFsim tree/system executable passes 157 assertions in 8 test
   cases on 5f6da07. This includes the source-derived unsafe output-name
   rejection port from NFsim `3527edb` and continuous-vs-chunked `stepTo`
@@ -123,6 +134,10 @@ completion gate.
   `419bb2bd29f319bfc638c50b9c29cec0934b6d87eb7ce8fcdefed70a01f618c2`
   (CPython 3.14 arm64 wheel); the installed-target Python suite is recorded
   above.
+- [ ] Current hosted checks for checkpoint `963dbc6` must be refreshed after
+  the rejection-contract and documentation checkpoint. Before this refresh,
+  formatting was terminal-success, CI was queued, and CodeQL was in progress;
+  no nonterminal result is completion evidence.
 - [x] Historical hosted PR checks for semantic head
   `0f833470950fc47329f5b7381c64533e623b45ce` were terminal-success: [CI run
   33493581633](https://github.com/RuleWorld/BNG3/actions/runs/33493581633)

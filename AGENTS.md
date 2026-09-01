@@ -45,6 +45,9 @@ them pass by widening tolerances or hiding skips. The Python API is
   dependent validation gate are green. Gates live in `tests/validation/` and
   must compare against independent BNG2 Perl and native NFsim artifacts when
   they claim parity.
+- A source-derived fixture for an unsupported capability may land only as an
+  explicitly named rejection contract test while its implementation is open;
+  a red acceptance test must not remain on a public checkpoint.
 - A local green suite, parse inventory, or BNG3-generated output is not
   independent parity evidence. Missing oracles and validators remain visible
   failures/skips with an owner and expiry in the exception ledger.
