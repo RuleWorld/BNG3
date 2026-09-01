@@ -3055,6 +3055,69 @@ end reaction rules
     delete xmlSystem;
 }
 
+TEST_CASE("NFsim Species observables refresh dependent reaction rates") {
+    // Source-derived from nfsim/test/Issue86/issue86.bngl: Species and
+    // Molecules observables feed separate synthesis rates, and degrading one
+    // A species must refresh both functional propensities immediately.
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k_deg 0.01
+    k_prod 1.0
+end parameters
+begin molecule types
+    A()
+    Ps()
+    Pm()
+end molecule types
+begin seed species
+    A() 100
+    Ps() 0
+    Pm() 0
+end seed species
+begin observables
+    Species Sobs A()
+    Molecules Mobs A()
+    Molecules Ps_n Ps()
+    Molecules Pm_n Pm()
+end observables
+begin functions
+    fs() = k_prod*Sobs
+    fm() = k_prod*Mobs
+end functions
+begin reaction rules
+    Rdeg: A() -> 0 k_deg
+    Rps: 0 -> Ps() fs()
+    Rpm: 0 -> Pm() fm()
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(
+        *model, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    system->prepareForSimulation();
+
+    auto* degradation = system->getReaction(0);
+    auto* productionPs = system->getReaction(1);
+    auto* productionPm = system->getReaction(2);
+    REQUIRE(degradation != nullptr);
+    REQUIRE(productionPs != nullptr);
+    REQUIRE(productionPm != nullptr);
+    CHECK(system->getObservableByName("Sobs")->getCount() == 100);
+    CHECK(system->getObservableByName("Mobs")->getCount() == 100);
+    CHECK(productionPs->get_a() == Catch::Approx(100.0));
+    CHECK(productionPm->get_a() == Catch::Approx(100.0));
+
+    degradation->fire(0.0);
+
+    CHECK(system->getObservableByName("Sobs")->getCount() == 99);
+    CHECK(system->getObservableByName("Mobs")->getCount() == 99);
+    CHECK(productionPs->get_a() == Catch::Approx(99.0));
+    CHECK(productionPm->get_a() == Catch::Approx(99.0));
+    delete system;
+}
+
 TEST_CASE("NFsim AST adapter maps time-backed local TFUN rates") {
     auto model = bng::parser::parseModel(R"(
 begin parameters

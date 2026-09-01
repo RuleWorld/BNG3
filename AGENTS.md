@@ -65,6 +65,10 @@ them pass by widening tolerances or hiding skips. The Python API is
   `stepTo` form only for its final output checkpoint; the ordinary one-argument
   `stepTo` contract remains exclusive for intermediate callers. Keep the
   source-derived fixed-seed `motor`/`tlbr` endpoint test green.
+- Species-observable maintenance must use semantic `add`/`subtract` so
+  dependent functional propensities refresh; reserve `straightAdd`/
+  `straightSubtract` for count-only initialization or rebuild paths. Keep the
+  source-derived Issue86 rate-refresh test green.
 - Energy-function ports must be source-anchored to the accepted
   `akutuva21/nfsim` energy-evaluation cutoff: PR #475, merge
   `6690fda5d9e053df822d0248ebae185f5caca82a`, source commit
