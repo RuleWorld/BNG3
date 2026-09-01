@@ -16,6 +16,7 @@
 #include <queue>
 #include <map>
 #include <unordered_map>
+#include <unordered_set>
 #include <algorithm>
 #include <set>
 // Include various NFsim classes from other files
@@ -1731,6 +1732,12 @@ namespace NFcore
 			 * reactant trees, so the direct-product decision must not depend on the
 			 * mapping arrays after transformation. */
 			vector <Molecule *> directProductMoleculeList;
+			/* The BNG3 direct-product vector is also needed in stable mapping order
+			 * by compact energy reactions.  Keep a per-reaction lookup set alongside
+			 * it for the connectivity path, mirroring nfsim commit 96be0b1 without
+			 * replacing the ordered adapter representation. */
+			unordered_set <Molecule *> directProductMoleculeSet;
+			bool directProductMoleculeSetValid;
 
 			// remember the molecule type of each product molecule a with typeII dependencies
 			list <MoleculeType *> typeII_products;
