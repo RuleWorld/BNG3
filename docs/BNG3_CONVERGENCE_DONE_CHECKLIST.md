@@ -4,8 +4,8 @@
 **Last audited:** 2026-09-01
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 44d8655d3b0d838dc33420c0d7800c12bb465785
-**Checklist refresh base:** 44d8655 (source-derived legacy Perl open-mode security checkpoint; refresh after each checkpoint)
+**Audited semantic code head:** d7536f5c368929bd0aab735f5c5e43cc2af4ae1c
+**Checklist refresh base:** d7536f5 (source-derived zero-argument model-function output checkpoint; refresh after each checkpoint)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -48,18 +48,23 @@ These items describe the current checkpoint. They do not satisfy the full
 completion gate.
 
 - [x] Required fast-forward pull completed before this documentation change.
+- [x] Historical semantic checkpoint
+  `44d8655d3b0d838dc33420c0d7800c12bb465785` passes the full local
+  Release/Ninja CTest gate and the legacy Macro security contract. The
+  current semantic checkpoint supersedes it and requires fresh exact-head
+  evidence.
 - [x] The latest local semantic checkpoint is
-  `44d8655d3b0d838dc33420c0d7800c12bb465785`; its parent
-  `1c03bc12a62724a3c30a8800b25cc7fb2188a1cb` is the CLI action-error
-  checkpoint. `44d8655` ports the source-derived legacy Perl Macro security
-  contract: file paths no longer control two-argument `open` modes, all
-  audited reads/writes use explicit modes, and the `.rab` failure names the
-  correct output file. Source-derived Python tests and `perl -c` pass.
+  `d7536f5c368929bd0aab735f5c5e43cc2af4ae1c`; its parent
+  `d7fd0dcd192ae9f46331cd5704f8c8ce4da0b89a` is the tests-first
+  zero-argument function-rate checkpoint. `d7536f5` fixes `print_functions`
+  output resolution for nested zero-argument model functions and evaluates
+  them on the output time axis. The source-derived `Validate/test_time.bngl`
+  action contract passes, as does the full `TestSimulation` class (`34
+  passed`).
 - [x] The latest public code/test checkpoint is
-  `44d8655d3b0d838dc33420c0d7800c12bb465785`, whose parent is
-  `1c03bc12a62724a3c30a8800b25cc7fb2188a1cb`; it includes the observable
-  preparse/cache and CLI action-error contracts plus the legacy Macro
-  open-mode security contract.
+  `d7536f5c368929bd0aab735f5c5e43cc2af4ae1c`; it includes the source-derived
+  zero-argument function-rate/action-output contract and is the exact public
+  branch head read back with `gh api` after push.
 - [x] The latest published CI-repair checkpoint is
   `9a2475a0af360d685dc41eb9bb376f6517d74b4d`; `gh api` and `gh pr view 2`
   agreed on this branch/PR source head immediately after push, and PR #2
@@ -85,12 +90,15 @@ completion gate.
   including the source-derived CLI action-error contract. This evidence
   qualifies `1c03bc1` only; later semantic or documentation heads require
   fresh exact-head readback.
-- [x] Current semantic checkpoint `44d8655` passes the full local Release/Ninja
-  CTest gate: `181/181`; the full Python suite passes `237` tests with `27`
-  skips and `8` warnings, and the legacy security contract passes `2/2` with
-  `perl -c legacy/perl/Perl2/MacroBNGModel.pm` reporting syntax OK. This
-  evidence qualifies `44d8655` only; later semantic or documentation heads
-  require fresh exact-head readback.
+- [x] Historical semantic checkpoint `44d8655` passes the full local
+  Release/Ninja CTest gate: `181/181`; the full Python suite passes `237`
+  tests with `27` skips and `8` warnings, and the legacy security contract
+  passes `2/2` with `perl -c legacy/perl/Perl2/MacroBNGModel.pm` reporting
+  syntax OK.
+- [ ] Full local CTest and the full Python/API suite have not yet been rerun
+  at `d7536f5`; the current targeted evidence is the source-derived
+  `test_time` action test plus `TestSimulation` `34 passed`. Do not reuse the
+  `44d8655` full-suite result as evidence for this semantic head.
 - [x] Diagnostic independent BNG2 execution is now available from an isolated
   clone of source revision `fde0cd6a522c9f988d5495db31c70ce0f98e744b` using
   the repository's `bng2/Makefile`; the arm64 `run_network` artifact has
@@ -976,7 +984,7 @@ completion gate.
   event conditions and remain release-candidate work. This documentation
   refresh creates a new public head and requires another exact-head check
   readback after push.
-- [ ] Current public semantic checkpoint
+- [ ] Historical public semantic checkpoint
   `44d8655d3b0d838dc33420c0d7800c12bb465785` has not yet acquired a terminal
   hosted check set. At exact-head readback, CI run
   [33565168766](https://github.com/RuleWorld/BNG3/actions/runs/33565168766),
@@ -989,7 +997,7 @@ completion gate.
   `44d8655d3b0d838dc33420c0d7800c12bb465785` immediately after push. Every
   later semantic or documentation checkpoint requires a fresh exact-head
   readback.
-- [ ] Current public checklist head
+- [ ] Historical public checklist head
   `b8dfd027e50b81737c5e8b59f225f9085149f3c0` has fresh hosted runs, all still
   queued at readback: CI
   [33567163033](https://github.com/RuleWorld/BNG3/actions/runs/33567163033),
@@ -998,6 +1006,17 @@ completion gate.
   and CodeQL
   [33567163054](https://github.com/RuleWorld/BNG3/actions/runs/33567163054).
   Queued status is not validation evidence.
+- [ ] Current public semantic checkpoint
+  `d7536f5c368929bd0aab735f5c5e43cc2af4ae1c` has not yet acquired a terminal
+  hosted check set. At exact-head readback, CI run
+  [33568270131](https://github.com/RuleWorld/BNG3/actions/runs/33568270131),
+  formatting run
+  [33568269922](https://github.com/RuleWorld/BNG3/actions/runs/33568269922),
+  and CodeQL run
+  [33568269927](https://github.com/RuleWorld/BNG3/actions/runs/33568269927)
+  were pending for this exact SHA. Queued or partial results are not
+  completion evidence; a later checklist/documentation push requires another
+  exact-head readback.
 - [ ] Every required job emits a terminal summary with counts, failures,
   skips, exception budget, corpus/source revision, and artifact digests.
 - [ ] Required jobs fail when a claimed oracle, corpus, validator, or compiler
