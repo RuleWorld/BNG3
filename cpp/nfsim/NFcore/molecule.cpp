@@ -87,7 +87,9 @@ void Molecule::prepareForSimulation()
 {
 	if(isPrepared) return;
 	nReactions = parentMoleculeType->getReactionCount();
-	this->rxnListMappingId2 = new set<int>[nReactions];
+	int mappingCount = parentMoleculeType->getReactionMappingCount();
+	this->rxnListMappingId2 = mappingCount > 0
+			? new set<int>[mappingCount] : 0;
 
 	isPrepared = true;
 
@@ -117,6 +119,7 @@ void Molecule::setUpLocalFunctionList()
 		}
 	}
 }
+
 
 
 
@@ -788,4 +791,3 @@ void Molecule::printMoleculeList(list <Molecule *> &members)
 		cout<<"_u"<<(*molIter)->getUniqueID()<<endl;
 	}
 }
-

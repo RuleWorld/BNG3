@@ -3357,6 +3357,56 @@ end reaction rules
     delete system;
 }
 
+TEST_CASE("NFsim compact energy partner memberships avoid mapping storage") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    phi 0.5
+    Gcontext 1.0
+    RT 1.0
+end parameters
+begin molecule types
+    A(b,c)
+    B(a)
+    C(x)
+end molecule types
+begin seed species
+    A(b,c!1).C(x!1) 1
+    A(b) 1
+    B(a) 1
+end seed species
+begin energy patterns
+    A(b!1,c!2).B(a!1).C(x!2) Gcontext
+end energy patterns
+begin reaction rules
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    auto* aType = system->getMoleculeTypeByName("A");
+    auto* bType = system->getMoleculeTypeByName("B");
+    REQUIRE(aType != nullptr);
+    REQUIRE(bType != nullptr);
+    REQUIRE(aType->getReactionCount() == 2);
+    REQUIRE(bType->getReactionCount() == 1);
+
+    CHECK(aType->getReactionMappingCount() == 2);
+    CHECK(aType->getReactionMappingIndex(0) >= 0);
+    CHECK(aType->getReactionMappingIndex(1) >= 0);
+    CHECK(bType->getReactionMappingCount() == 0);
+    CHECK(bType->getReactionMappingIndex(0) == -1);
+
+    system->prepareForSimulation();
+    auto* partner = bType->getMolecule(0);
+    REQUIRE(partner != nullptr);
+    CHECK(partner->getRxnListMappingId(0) == -1);
+    delete system;
+}
+
 TEST_CASE("NFsim compact energy caches multi-term factors") {
     auto model = bng::parser::parseModel(R"(
 begin parameters

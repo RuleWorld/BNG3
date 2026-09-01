@@ -1,9 +1,48 @@
 #include <iostream>
 #include "NFcore.hh"
 
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
+
 
 using namespace std;
 using namespace NFcore;
+
+namespace {
+
+unsigned int compactMembershipBitCount(std::uint64_t value)
+{
+	unsigned int count = 0;
+	while (value != 0) {
+		value &= (value - 1);
+		++count;
+	}
+	return count;
+}
+
+void setCompactMembershipCandidateBit(
+		vector<std::uint64_t> &bits, unsigned int reactionIndex)
+{
+	const std::size_t wordIndex = reactionIndex >> 6;
+	if (bits.size() <= wordIndex)
+		bits.resize(wordIndex + 1, 0);
+	bits[wordIndex] |=
+			(std::uint64_t(1) << (reactionIndex & 63));
+}
+
+unsigned int compactMembershipTrailingZeroCount(std::uint64_t value)
+{
+#if defined(_MSC_VER)
+	unsigned long bit = 0;
+	_BitScanForward64(&bit, value);
+	return static_cast<unsigned int>(bit);
+#else
+	return static_cast<unsigned int>(__builtin_ctzll(value));
+#endif
+}
+
+}
 
 
 
@@ -149,8 +188,21 @@ void MoleculeType::init(
 	//Register myself with the system, and get an ID number
 	this->system = system;
 	this->type_id = this->system->addMoleculeType(this);
+	reactionMappingIndices.clear();
+	reactionMappingCount = 0;
 	compactPartnerPools.assign(numOfComponents,
 			static_cast<CompactPartnerPool *>(0));
+	compactEnergyCenterCandidateBits.assign(
+			numOfComponents, vector<std::uint64_t>());
+	compactEnergyContextCandidateBits.assign(
+			numOfComponents, vector<std::uint64_t>());
+	compactPartnerCandidateBits.assign(
+			numOfComponents, vector<std::uint64_t>());
+	compactPartnerReactionIndices.assign(
+			numOfComponents, vector<unsigned int>());
+	compactEnergyContextMinimumRequiredBits.assign(numOfComponents, 0);
+	nonCompactMembershipCandidateBits.clear();
+	hasCompactEnergyMembershipIndex = false;
 
 
 	mList = new MoleculeList(this,2,system->getGlobalMoleculeLimit());
@@ -505,15 +557,55 @@ int MoleculeType::getStateValueFromName(int cIndex, string stateName) const
 
 void MoleculeType::addReactionClass(ReactionClass * r, int rPosition)
 {
+	unsigned int reactionIndex = static_cast<unsigned int>(reactions.size());
 	this->reactions.push_back(r);
 	this->reactionPositions.push_back(rPosition);
 	int partnerComponent = -1;
-	if (r->getCompactPartnerPoolInfo(rPosition, partnerComponent) &&
-			partnerComponent >= 0 && partnerComponent < numOfComponents) {
+	bool compactPartnerRegistration =
+		r->getCompactPartnerPoolInfo(rPosition, partnerComponent) &&
+		partnerComponent >= 0 && partnerComponent < numOfComponents;
+	reactionMappingIndices.push_back(compactPartnerRegistration
+			? -1 : reactionMappingCount++);
+
+	int reactionCenterComponent = -1;
+	std::uint64_t contextComponentMask = 0;
+	unsigned int minimumContextComponents = 0;
+	bool indexed = r->getCompactMembershipIndexInfo(
+			rPosition, reactionCenterComponent, contextComponentMask,
+			minimumContextComponents) &&
+		reactionCenterComponent >= 0 &&
+		reactionCenterComponent < numOfComponents;
+	if (indexed) {
+		hasCompactEnergyMembershipIndex = true;
+		setCompactMembershipCandidateBit(
+				compactEnergyCenterCandidateBits[reactionCenterComponent],
+				reactionIndex);
+		for (int componentIndex = 0;
+				componentIndex < numOfComponents && componentIndex < 64;
+				++componentIndex) {
+			if ((contextComponentMask &
+					std::uint64_t(1) << componentIndex) == 0)
+				continue;
+			setCompactMembershipCandidateBit(
+					compactEnergyContextCandidateBits[componentIndex],
+					reactionIndex);
+			unsigned int &minimum =
+				compactEnergyContextMinimumRequiredBits[componentIndex];
+			if (minimum == 0 || minimumContextComponents < minimum)
+				minimum = minimumContextComponents;
+		}
+	} else {
+		setCompactMembershipCandidateBit(
+				nonCompactMembershipCandidateBits, reactionIndex);
+	}
+	if (compactPartnerRegistration) {
 		CompactPartnerPool *partnerPool = r->getCompactPartnerPool();
 		if (partnerPool != 0)
 			partnerPool->registerReaction(
 					r, r->supportsCompactPartnerPoolUpdate());
+		setCompactMembershipCandidateBit(
+				compactPartnerCandidateBits[partnerComponent], reactionIndex);
+		compactPartnerReactionIndices[partnerComponent].push_back(reactionIndex);
 	}
 
 	//We also have to check to make sure that if the reaction is a DOR reaction,
@@ -609,6 +701,19 @@ void MoleculeType::prepareForSimulation()
 void MoleculeType::updateRxnMembership(Molecule * m,
 		ReactionClass *firedReaction, bool directProduct)
 {
+	IncrementalMembershipChange membershipChange;
+	bool hasMembershipChange = directProduct && firedReaction != 0 &&
+		firedReaction->usesIncrementalMembership() &&
+		firedReaction->getIncrementalMembershipChange(membershipChange);
+	bool useCompactMembershipIndex = hasMembershipChange &&
+		m->getMoleculeType() == membershipChange.moleculeType1 &&
+		membershipChange.componentIndex1 >= 0 &&
+		membershipChange.componentIndex1 < 64 &&
+		static_cast<unsigned int>(membershipChange.componentIndex1) <
+			compactEnergyCenterCandidateBits.size() &&
+		static_cast<unsigned int>(membershipChange.componentIndex1) <
+			compactEnergyContextCandidateBits.size() &&
+		hasCompactEnergyMembershipIndex;
 	vector<CompactPartnerPool *> compactPools;
 	vector<int> compactPoolOldSizes;
 	vector<bool> compactPoolChanged;
@@ -654,6 +759,79 @@ void MoleculeType::updateRxnMembership(Molecule * m,
 			this->system->updateCompactPartnerPoolBatch(
 					compactPools.at(p), compactPoolOldSizes.at(p),
 					compactPools.at(p)->size());
+	}
+
+	if (useCompactMembershipIndex) {
+		int changedComponent = membershipChange.componentIndex1;
+		std::uint64_t changedBit = std::uint64_t(1) << changedComponent;
+		std::uint64_t newMask = m->getBoundComponentMask();
+		std::uint64_t oldMask = membershipChange.isBoundAfter1
+				? (newMask & ~changedBit) : (newMask | changedBit);
+		unsigned int minimumContextBits =
+				compactEnergyContextMinimumRequiredBits[changedComponent];
+		bool includeContext = minimumContextBits == 0 ||
+			compactMembershipBitCount(newMask | oldMask) >=
+				minimumContextBits;
+		const vector<std::uint64_t> &centerCandidates =
+				compactEnergyCenterCandidateBits[changedComponent];
+		const vector<std::uint64_t> &contextCandidates =
+				compactEnergyContextCandidateBits[changedComponent];
+		const std::size_t wordCount = std::max(
+				nonCompactMembershipCandidateBits.size(),
+				std::max(centerCandidates.size(),
+						includeContext ? contextCandidates.size() : std::size_t(0)));
+
+		for (std::size_t wordIndex = 0; wordIndex < wordCount; ++wordIndex) {
+			std::uint64_t candidates = wordIndex <
+					nonCompactMembershipCandidateBits.size()
+				? nonCompactMembershipCandidateBits[wordIndex] : 0;
+			std::uint64_t contextCandidateBits = 0;
+			if (wordIndex < centerCandidates.size())
+				candidates |= centerCandidates[wordIndex];
+			if (includeContext && wordIndex < contextCandidates.size())
+				contextCandidateBits = contextCandidates[wordIndex];
+			candidates |= contextCandidateBits;
+			while (candidates != 0) {
+				unsigned int bit = compactMembershipTrailingZeroCount(candidates);
+				unsigned int r = static_cast<unsigned int>((wordIndex << 6) + bit);
+				candidates &= candidates - 1;
+				ReactionClass *rxn = reactions[r];
+				std::uint64_t reactionBit = std::uint64_t(1) << bit;
+				bool contextCandidate =
+						(contextCandidateBits & reactionBit) != 0;
+				bool centerCandidate = wordIndex < centerCandidates.size() &&
+						(centerCandidates[wordIndex] & reactionBit) != 0;
+				/* A context-only change cannot create a weighted-side mapping:
+				 * the reaction center occupancy is unchanged.  Avoid probing an
+				 * inactive compact rule. */
+				if (contextCandidate && !centerCandidate &&
+						m->getRxnListMappingId(r) < 0)
+					continue;
+				if (!rxn->shouldUpdateMembership(
+						m, firedReaction, directProduct))
+					continue;
+				bool handledByCompactPool = false;
+				int partnerComponent = -1;
+				if (rxn->supportsCompactPartnerPoolUpdate() &&
+						rxn->getCompactPartnerPoolInfo(
+							reactionPositions.at(r), partnerComponent)) {
+					CompactPartnerPool *pool = rxn->getCompactPartnerPool();
+					for (unsigned int p = 0; p < compactPools.size(); ++p) {
+						if (compactPools.at(p) == pool) {
+							handledByCompactPool = true;
+							break;
+						}
+					}
+				}
+				if (handledByCompactPool)
+					continue;
+				double oldA = rxn->get_a();
+				rxn->tryToAdd(m, reactionPositions.at(r));
+				double newA = rxn->update_a();
+				this->system->update_A_tot(rxn, oldA, newA);
+			}
+		}
+		return;
 	}
 
 	for( unsigned int r=0; r<reactions.size(); r++ )
