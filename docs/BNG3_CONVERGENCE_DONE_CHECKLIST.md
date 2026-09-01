@@ -4,8 +4,8 @@
 **Last audited:** 2026-09-01
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** ead6b8e1513f819ec91571aa0e5ead49aa119a8c
-**Checklist refresh base:** ead6b8e (source-derived cBNGL compartment-aware species-deduplication checkpoint; refresh after each checkpoint)
+**Audited semantic code head:** 4edf4df57f01d22f15d83ee6635b82e974b0e6dc
+**Checklist refresh base:** 4edf4df (source-derived MacroBNGModel transform/link checkpoint; refresh after each checkpoint)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -53,7 +53,7 @@ completion gate.
   Release/Ninja CTest gate and the legacy Macro security contract. The
   current semantic checkpoint supersedes it and requires fresh exact-head
   evidence.
-- [x] The latest local semantic checkpoint is
+- [x] The previous local semantic checkpoint was
   `ead6b8e1513f819ec91571aa0e5ead49aa119a8c`; its parent
   `7705c488c3ce4e1e64b47b001146f981b9e68d48` is the tests-first
   reverse-rate derivation checkpoint. `ead6b8e` makes the compartment-aware
@@ -61,10 +61,19 @@ completion gate.
   The source-derived cBNGL iteration-3 contract passes (`16` species), and
   the full root cBNGL fixture converges to `78` species and `354` reactions,
   matching `tests/validation/Validate/DAT_validate/Motivating_example_cBNGL.net`.
-- [x] The latest public code/test checkpoint is
+- [x] The previous public code/test checkpoint was
   `ead6b8e1513f819ec91571aa0e5ead49aa119a8c`; it includes the source-derived
   cBNGL compartment-deduplication regression and is the exact public branch
-  head read back with `gh api` after push.
+  head read back with `gh api` before the Macro checkpoint.
+- [x] The latest local semantic checkpoint is
+  `4edf4df57f01d22f15d83ee6635b82e974b0e6dc`; it completes the previously
+  unlinked `MacroBNGModel::trans_specie` source port, wires the source
+  `pre_rules`/`pre_obs1` pipeline, and ports the accepted `num_site`
+  allocation rewrite. Its source-derived Macro contract passes in
+  `tests/cpp/test_network_generator.cpp`.
+- [x] The latest public code/test checkpoint is
+  `4edf4df57f01d22f15d83ee6635b82e974b0e6dc`; `gh api` and `gh pr view 2`
+  agree on the exact public branch/PR head after push.
 - [x] Historical published CI-repair checkpoint is
   `9a2475a0af360d685dc41eb9bb376f6517d74b4d`; `gh api` and `gh pr view 2`
   agreed on this branch/PR source head immediately after push, and PR #2
@@ -99,6 +108,13 @@ completion gate.
   --output-on-failure` reports `100% tests passed out of 181`, and
   `PYTHONPATH=build/cpp:python python -m pytest tests/python -q` reports
   `240 passed, 27 skipped, 8 warnings` in `15.83s`. These local results do
+  not substitute for terminal hosted checks or independent full-corpus
+  parity.
+- [x] Exact-head local gates pass at `4edf4df`: `ctest --test-dir build
+  --output-on-failure` reports `100% tests passed out of 183`, including the
+  two source-derived MacroBNGModel contracts, and
+  `PYTHONPATH=build/cpp:python python -m pytest tests/python -q` reports
+  `240 passed, 27 skipped, 8 warnings` in `11.81s`. These local results do
   not substitute for terminal hosted checks or independent full-corpus
   parity.
 - [x] Diagnostic independent BNG2 execution is now available from an isolated
@@ -476,12 +492,15 @@ completion gate.
   the prior `.rab` diagnostic correction from `b13533cc`. The source-derived
   `tests/python/test_legacy_security_contract.py` and Perl syntax gate pass.
   Unrelated ContactMap server fixes remain non-applicable to BNG3.
-- [ ] Reconcile source performance commit
+- [x] Reconcile the applicable Macro portion of source performance commit
   `0463a1f4906a7e4e0d51a4ac79fe16fee6a58ac`
-  (`num_site`/`cor_net` allocation changes) only after BNG3's supported Macro
-  path is link-complete: a source-derived direct test currently exposes the
-  missing `MacroBNGModel::trans_specie` definition. Add the executable-path
-  contract first; do not hide this linker gap with a test stub.
+  (`num_site`/`cor_net` allocation changes) at BNG3 `4edf4df`: the
+  source-derived Macro executable contract now links, `trans_specie` is
+  implemented, and the source `pre_rules`/`pre_obs1` calls are active.
+  `num_site` uses the source `find`/`rfind` extraction and `cor_net` already
+  had the equivalent allocation-free extraction. The source ODE allocation
+  portion is reconciled separately with BNG3's newer ODE matching/cache path;
+  independent benchmarks and full Macro/legacy parity remain open.
 
 ## 2. Independent validation and provenance spine
 
@@ -1032,6 +1051,17 @@ completion gate.
   were pending for this exact SHA. Queued or partial results are not
   completion evidence; the checklist refresh itself requires another
   exact-head readback.
+- [ ] Current public semantic checkpoint
+  `4edf4df57f01d22f15d83ee6635b82e974b0e6dc` has not yet acquired a terminal
+  hosted check set. At exact-head readback, CI run
+  [33571418085](https://github.com/RuleWorld/BNG3/actions/runs/33571418085),
+  formatting patch run
+  [33571418104](https://github.com/RuleWorld/BNG3/actions/runs/33571418104),
+  and CodeQL run
+  [33571418139](https://github.com/RuleWorld/BNG3/actions/runs/33571418139)
+  were queued for this exact SHA. Queued or partial results are not
+  completion evidence; the next checklist documentation head requires a
+  fresh exact-head readback.
 - [ ] Every required job emits a terminal summary with counts, failures,
   skips, exception budget, corpus/source revision, and artifact digests.
 - [ ] Required jobs fail when a claimed oracle, corpus, validator, or compiler
@@ -1223,11 +1253,10 @@ These are known unchecked requirements, not reasons to claim completion:
   seeded trajectory. The source-derived AN2 trajectory is exact at `e92b2c9`;
   remaining direct-NFsim parity work is the broader Tier-NF corpus, protocol,
   and other capability gates below.
-- Source performance commit `0463a1f4` is not ported: BNG3's direct Macro test
-  path cannot link because `MacroBNGModel::trans_specie` is declared but
-  undefined. Restore or explicitly disposition the supported Macro path,
-  write source-derived tests, then revisit the `num_site`/`cor_net` allocation
-  rewrite.
+- Source performance commit `0463a1f4`'s applicable Macro slice is now ported
+  and linked at `4edf4df`, with source-derived `num_site` and `pre_macr`
+  contracts. Full Macro/legacy compatibility, independent benchmark evidence,
+  and release qualification remain open.
 - Structured SBML atomization still has a deliberate visible error, and
   local validation has environment-dependent skips; hosted validation green
   does not prove full Tier-P/NF/X parity.
