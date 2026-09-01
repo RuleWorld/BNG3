@@ -5,7 +5,7 @@
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
 **Audited semantic code head:** 7186b651645b88ab68fb667893f6f96cfde94062
-**Checklist refresh base:** 7186b65 (source-derived NFsim Issue78 absolute-start and equilibrate port; refresh after each semantic checkpoint)
+**Checklist refresh base:** 9378000 (source-derived NFsim EnergyFunction expansion coverage; this is a test-only checkpoint over semantic `7186b65`; refresh after each checkpoint)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -61,18 +61,22 @@ completion gate.
   ports NFsim Issue78 absolute-start semantics through the direct API and
   `simulate_nf` action, and makes `equilibrate(duration)` advance from and
   restore the absolute current clock.
+- [x] The latest public test/coverage checkpoint is
+  `9378000ffe51f5ac0257ea4d7c53dbaba8fa2dce`, whose parent is the semantic
+  `7186b651645b88ab68fb667893f6f96cfde94062`; it adds no production behavior
+  and adds source-derived NFsim EnergyFunction expansion coverage.
 - [x] The small documentation grammar fix remains the only unrelated tracked
   BNG3 worktree modification. It remains intentionally unstaged and must not
   be mixed into semantic or checklist commits.
-- [x] Exact-head CTest passes `169/169` on `7186b65` (local Release/Ninja
+- [x] Exact-head CTest passes `170/170` on `9378000` (local Release/Ninja
   build; `ctest --test-dir build --output-on-failure`), including the t4
   rejection contract, inferred-state/type-order gates, and IfTest parity
   assertions.
 - [ ] Separate local Debug/ASan evidence has not yet been rerun for 5f6da07;
   prior 0f83347 evidence was supplemental memory-safety coverage, not a
   substitute for hosted sanitizer and leak/UBSan gates.
-- [x] The full NFsim AST adapter executable passes 116 test cases and 1251
-  assertions on `7186b65`. It covers compact energy evaluation, cached compact
+- [x] The full NFsim AST adapter executable passes 117 test cases and 1273
+  assertions on `9378000`. It covers compact energy evaluation, cached compact
   rate factors, specialized reverse propensities, sparse selector ordering,
   cached single- and multi-term Arrhenius factors, direct-product endpoint
   identity propagation, safe direct-product traversal, cached pre-fire binding
@@ -105,8 +109,14 @@ completion gate.
   from 100 to 99. It also covers the source-derived NFsim Issue78 absolute
   clock/equilibrate contract: a nonzero current time is preserved across
   equilibration and a time-backed rate observes that absolute origin.
+- [x] The accepted NFsim EnergyFunction unit contract from source commit
+  `f63d676` is covered at `9378000` by 22 assertions: pattern storage,
+  binding expansion, state-change expansion, forward/reverse names and
+  rates, and the expected ΔG values. This is a local source-derived unit
+  gate, not independent native-NFsim parity.
 - [ ] The source-derived historical NFsim `test/testSuite/t4.bngl` and related
-  `t5.bngl` syntax remain open capability gaps. At `7186b65`, BNG3's parser
+  `t5.bngl` syntax remain open capability gaps. At semantic parent `7186b65`,
+  BNG3's parser
   rejects the t4 fixture with the stable diagnostic `Cannot build model from
   source with syntax errors`. Independent inspection found the fixtures were
   introduced by NFsim commit `3c7b6a3` as preliminary tests, current BNG2
@@ -144,7 +154,7 @@ completion gate.
   `6 passed, 4 deselected, 6 warnings` in 131.87 seconds at `7186b65`.
   This is subset evidence only; it does not close the full Tier-NF gate.
 - [x] The source-derived NFsim Issue86 species-observable refresh test remains
-  green in the full current AST adapter run at `7186b65` (13 assertions).
+  green in the full current AST adapter run at `9378000` (13 assertions).
   The independent native-NFsim cross-check on a reduced fixture derived from
   `nfsim/test/Issue86/issue86.bngl` (seed `1`, `t_end=0.1`, 20 output
   intervals, 4 observables) is historical evidence from `852793f`, producing
@@ -185,7 +195,7 @@ completion gate.
   `419bb2bd29f319bfc638c50b9c29cec0934b6d87eb7ce8fcdefed70a01f618c2`
   (CPython 3.14 arm64 wheel); the installed-target Python suite is recorded
   above.
-- [ ] Current hosted checks for semantic checkpoint `7186b65` and the
+- [ ] Current hosted checks for public checkpoint `9378000` and the
   documentation checkpoint that follows it must be refreshed after
   publication. The prior public head's formatting was terminal-success, CI
   was queued, and CodeQL was in progress; no nonterminal result is completion
@@ -201,8 +211,8 @@ completion gate.
   passed both C++ and Python analysis, and [formatting run
   33493581573](https://github.com/RuleWorld/BNG3/actions/runs/33493581573)
   passed. Results were read back with `gh` against the exact public head;
-- [ ] Fresh hosted CI, CodeQL, and formatting checks for semantic head
-  `7186b65` and the following checklist documentation checkpoint are pending.
+- [ ] Fresh hosted CI, CodeQL, and formatting checks for public checkpoint
+  `9378000` and the following checklist documentation checkpoint are pending.
   Both the branch ref and PR source head must be reread with `gh`; superseded
   runs do not count as evidence.
 - [x] Modern Atomizer checkpoints exist for annotations, BNG-XML conversion,
@@ -768,7 +778,7 @@ completion gate.
   event conditions and remain release-candidate work. This documentation
   refresh creates a new public head and requires another exact-head check
   readback after push.
-- [ ] Current public branch head `7186b65` (and the documentation checkpoint
+- [ ] Current public branch head `9378000` (and the documentation checkpoint
   that follows it) has a fresh terminal hosted check set read back with `gh`;
   the PR #2 metadata must converge to the same head.
 - [ ] Every required job emits a terminal summary with counts, failures,
