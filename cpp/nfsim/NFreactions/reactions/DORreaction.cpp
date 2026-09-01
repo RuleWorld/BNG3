@@ -979,6 +979,9 @@ EnergyRxnClass::EnergyRxnClass(
 	conditionalComponentMasks(),
 	componentMaskFastPath(true),
 	simpleMembership(false),
+	compactFactorizedPropensity(false),
+	compactForwardPartnerPropensity(false),
+	compactReversePropensity(false),
 	preFireBindingFastPath(false),
 	reactionCenterComponentIndex(-1),
 	partnerComponentIndex(-1),
@@ -1106,6 +1109,13 @@ EnergyRxnClass::EnergyRxnClass(
 				partnerComponentIndex);
 		compactPartnerMappingSet = transformationSet->generateBlankMappingSet(1, 0);
 	}
+	compactFactorizedPropensity = simpleMembership &&
+			!matchOncePerReactant[DORreactantIndex];
+	compactForwardPartnerPropensity = compactFactorizedPropensity &&
+			isForward && n_reactants == 2 && DORreactantIndex == 0 &&
+			partnerPool != 0 && !matchOncePerReactant[1];
+	compactReversePropensity = compactFactorizedPropensity &&
+			!isForward && n_reactants == 1 && DORreactantIndex == 0;
 	if (simpleMembership) {
 		if (reactionCenterComponentIndex < 0 ||
 				reactionCenterComponentIndex >= 64) {
@@ -1170,7 +1180,7 @@ EnergyRxnClass::~EnergyRxnClass()
 
 void EnergyRxnClass::refreshCompactRateFactor()
 {
-	if (simpleMembership && isForward)
+	if (compactFactorizedPropensity)
 		compactRateFactor = reactantTree->getRateFactorSum();
 }
 
@@ -1536,26 +1546,29 @@ void EnergyRxnClass::remove(Molecule *m, unsigned int reactantPos)
 		return;
 	}
 	DORRxnClass::remove(m, reactantPos);
-	if (simpleMembership && isForward)
+	if (compactFactorizedPropensity)
 		refreshCompactRateFactor();
 }
 
 double EnergyRxnClass::update_a()
 {
-	if (simpleMembership && isForward && n_reactants == 2 &&
-			DORreactantIndex == 0 && !useRuleMonkey && partnerPool != 0) {
-		compactRateFactor = reactantTree->getRateFactorSum();
-		a = baseRate * compactRateFactor *
-				static_cast<double>(partnerPool->size());
-		return a;
+	if (compactFactorizedPropensity && !useRuleMonkey) {
+		if (compactForwardPartnerPropensity) {
+			a = baseRate * compactRateFactor *
+					static_cast<double>(partnerPool->size());
+			return a;
+		}
+		if (compactReversePropensity) {
+			a = baseRate * compactRateFactor;
+			return a;
+		}
 	}
 	return DORRxnClass::update_a();
 }
 
 double EnergyRxnClass::get_a() const
 {
-	if (simpleMembership && isForward && n_reactants == 2 &&
-			DORreactantIndex == 0 && !useRuleMonkey && partnerPool != 0)
+	if (compactForwardPartnerPropensity && !useRuleMonkey && partnerPool != 0)
 		return baseRate * compactRateFactor *
 				static_cast<double>(partnerPool->size());
 	return ReactionClass::get_a();
@@ -1563,16 +1576,14 @@ double EnergyRxnClass::get_a() const
 
 double EnergyRxnClass::getCompactPartnerPoolCoefficient() const
 {
-	if (simpleMembership && isForward && n_reactants == 2 &&
-			DORreactantIndex == 0 && !useRuleMonkey)
+	if (compactForwardPartnerPropensity && !useRuleMonkey)
 		return baseRate * compactRateFactor;
 	return 0.0;
 }
 
 double EnergyRxnClass::update_a_for_compact_partner_pool(int poolSize)
 {
-	if (simpleMembership && isForward && n_reactants == 2 &&
-			DORreactantIndex == 0 && !useRuleMonkey && partnerPool != 0) {
+	if (compactForwardPartnerPropensity && !useRuleMonkey && partnerPool != 0) {
 		a = getCompactPartnerPoolCoefficient() *
 				static_cast<double>(poolSize);
 		return a;

@@ -317,6 +317,9 @@ namespace NFcore
 			vector<std::uint64_t> conditionalComponentMasks;
 			bool componentMaskFastPath;
 			bool simpleMembership;
+			bool compactFactorizedPropensity;
+			bool compactForwardPartnerPropensity;
+			bool compactReversePropensity;
 			bool preFireBindingFastPath;
 			int reactionCenterComponentIndex;
 			int partnerComponentIndex;
