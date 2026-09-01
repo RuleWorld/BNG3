@@ -8,7 +8,8 @@ NFsim consumes BNG-XML, not BNGL. We obtain the XML from the engine under test
 (model.write_xml) so both sides start from the same model, then run NFsim on it.
 
 Configuration (env):
-  NFSIM_BIN   path to the native NFsim executable (default: <repo>/build/NFsim)
+  NFSIM_BIN   path to an independently built native NFsim executable
+              (required; BNG3 build outputs are never selected implicitly)
 """
 
 from __future__ import annotations
@@ -20,21 +21,20 @@ from pathlib import Path
 
 from . import corpus
 
-REPO = corpus.REPO
-
 
 def _nfsim_bin() -> Path | None:
     configured = os.environ.get("NFSIM_BIN")
-    candidates = ((Path(configured),) if configured else ()) + (
-        REPO / "build" / "NFsim",
-        REPO / "build" / "NFsim.exe",
-        REPO / "build" / "cpp" / "NFsim",
-    )
-    for cand in candidates:
-        path = cand.expanduser()
-        if path.exists():
-            return path.resolve()
-    return None
+    if not configured:
+        # BNG3's optional NFsim target is built from the embedded convergence
+        # sources and is not an independent oracle.  Require callers to name
+        # a binary built from the pinned pre-convergence NFsim source.
+        return None
+
+    # An explicit oracle path is an assertion about the binary to use.  Never
+    # silently replace a missing native oracle with BNG3's own CLI; that would
+    # turn an independent parity check into a self-comparison.
+    path = Path(configured).expanduser()
+    return path.resolve() if path.exists() else None
 
 
 def nfsim_available() -> bool:

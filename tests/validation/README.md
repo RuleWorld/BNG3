@@ -4,7 +4,9 @@ Differential testing against the originals. Nothing merges until it matches.
 
 ## Oracles
 - **Perl** — `legacy/perl/BNG2.pl`. Truth for `.net` and ODE/SSA `.gdat`. Cached as golden so Perl is off the hot path.
-- **NFsim** — native binary from the CMake `NFsim` target. Truth for network-free. Set `NFSIM_BIN`.
+- **NFsim** — independently built native binary from the pinned pre-convergence
+  NFsim source. Truth for network-free. Set `NFSIM_BIN` to its existing path;
+  the harness never falls back to BNG3's embedded `NFsim` target.
 - **Golden** — committed under `golden/`. Regenerated only by `scripts/regen_golden.py`, reviewed, committed. Never auto-regenerated.
 
 The exact model IDs used by each tier are frozen in
@@ -25,8 +27,11 @@ maintainer approval; CI does not infer an unpinned RuleHub corpus.
 # build first: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build && pip install -e .
 pytest tests/validation -m smoke                     # Tier-S, every commit
 pytest tests/validation -m "parity and not slow"     # full corpus
-pytest tests/validation -m nf      --bng-cpp build/bng_cpp
-BNG_ENSEMBLE_WORKERS=8 pytest tests/validation -m nf  # fixed 200-seed NF gate
+NFSIM_BIN=/absolute/path/to/pinned/native/NFsim \
+  PYTHONPATH=python:build/cpp pytest tests/validation -m nf --bng-cpp build/cpp/bng_cpp
+NFSIM_BIN=/absolute/path/to/pinned/native/NFsim \
+  BNG_ENSEMBLE_WORKERS=8 PYTHONPATH=python:build/cpp \
+  pytest tests/validation -m nf  # fixed 200-seed NF gate
 pytest tests/validation -m export
 python -m tests.validation.exception_ledger --max-exceptions 1
 python scripts/regen_golden.py --tier p              # (re)build golden, reviewed

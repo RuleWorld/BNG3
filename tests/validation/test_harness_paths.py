@@ -21,6 +21,19 @@ def test_configured_nfsim_path_is_anchored_to_discovery_directory(tmp_path, monk
     assert oracle_nfsim._nfsim_bin() == binary.resolve()
 
 
+def test_missing_configured_nfsim_path_does_not_fall_back(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("NFSIM_BIN", "missing/NFsim")
+
+    assert oracle_nfsim._nfsim_bin() is None
+
+
+def test_unconfigured_nfsim_requires_an_explicit_oracle(monkeypatch):
+    monkeypatch.delenv("NFSIM_BIN", raising=False)
+
+    assert oracle_nfsim._nfsim_bin() is None
+
+
 def test_explicit_bng_cpp_path_is_anchored_to_discovery_directory(tmp_path, monkeypatch):
     binary = tmp_path / "bin" / "bng_cpp"
     binary.parent.mkdir()
