@@ -91,6 +91,22 @@ completion gate.
   `perl -c legacy/perl/Perl2/MacroBNGModel.pm` reporting syntax OK. This
   evidence qualifies `44d8655` only; later semantic or documentation heads
   require fresh exact-head readback.
+- [x] Diagnostic independent BNG2 execution is now available from an isolated
+  clone of source revision `fde0cd6a522c9f988d5495db31c70ce0f98e744b` using
+  the repository's `bng2/Makefile`; the arm64 `run_network` artifact has
+  SHA-256 `0dcde86b0e29a05e1af9ea1fb027cf2441641fd297906701ada37343c442977a`.
+  A copied `simple_system` fixture generated a NET and completed CVODE through
+  that binary. This is diagnostic evidence only: the source revision is not
+  yet the approved lock cutoff and the temporary build is not a retained
+  oracle artifact.
+- [x] With that diagnostic BNG2 Perl/native oracle, the non-slow Tier-P NET
+  parity command produced `50 passed, 46 skipped, 4 failed, 10 deselected` in
+  `342.61s`. The four failures are concrete open gaps: a 180-second
+  `Motivating_example_cBNGL` generation timeout, Repressilator degradation-rate
+  mismatch, NFKB illustrating-protocol expression-rate serialization mismatch,
+  and BNG3 rejection of the legacy `test_time` `f_correct` parameter. The
+  skips remain honest where BNG2 cannot process legacy syntax/assets or lacks
+  NFsim; this run does not qualify complete Tier-P parity.
 - [ ] Separate local Debug/ASan evidence has not yet been rerun for 5f6da07;
   prior 0f83347 evidence was supplemental memory-safety coverage, not a
   substitute for hosted sanitizer and leak/UBSan gates.
