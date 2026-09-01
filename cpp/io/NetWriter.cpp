@@ -995,7 +995,39 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
                 continue;
             }
             if (isModelFunction) {
-                // No-arg model function — write directly as function name
+                // No-arg model function — write directly as function name.
+                // A model-function forward rate can still be reversible; do
+                // not skip derivation of a complex reverse rate when taking
+                // this early path.
+                if (rule.isBidirectional() && rule.getRates().size() > 1) {
+                    const auto& reverseRateExprObj = rule.getRates()[1];
+                    const std::string reverseRateExpr = reverseRateExprObj.toString();
+                    bool reverseIsModelFunction = false;
+                    if (reverseRateExprObj.kind() == ast::ExpressionKind::Function ||
+                        reverseRateExprObj.kind() == ast::ExpressionKind::ObservableRef) {
+                        for (const auto& function : model.getFunctions()) {
+                            if (function.getName() == reverseRateExprObj.name()) {
+                                reverseIsModelFunction = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!reverseIsModelFunction && !isSimpleExpression(reverseRateExpr)) {
+                        const bool reverseAsFunction = referencesObservables(reverseRateExpr);
+                        const std::string reverseParamName =
+                            (reverseAsFunction ? "_rateLaw" : "rateLaw") +
+                            std::to_string(rateLawCounter++);
+                        derived.emplace(
+                            "_reverse__" + ruleName,
+                            DerivedRateInfo {
+                                reverseParamName,
+                                reverseRateExpr,
+                                reverseRateExprObj,
+                                true,
+                                reverseAsFunction
+                            });
+                    }
+                }
                 continue;
             }
         }

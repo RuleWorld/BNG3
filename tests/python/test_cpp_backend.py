@@ -241,6 +241,42 @@ end model
         # the strict exception ledger covers the known blbr over-count.
         assert network.num_reactions > 0
 
+    def test_model_function_forward_rate_keeps_complex_reverse_rate(self, tmp_path):
+        """A model-function forward rate must not drop its reverse rate."""
+        bngl = tmp_path / "reversible_function_rate.bngl"
+        bngl.write_text(
+            """
+begin model
+begin parameters
+    k 3
+end parameters
+begin molecule types
+    A()
+end molecule types
+begin seed species
+    A() 0
+end seed species
+begin functions
+    forward() = 1
+end functions
+begin reaction rules
+    0 <-> A() forward(),10^k
+end reaction rules
+end model
+""",
+            encoding="utf-8",
+        )
+
+        model = bionetgen.load(str(bngl))
+        model.generate_network()
+        net = tmp_path / "reversible_function_rate.net"
+        model.write_net(str(net))
+
+        text = net.read_text(encoding="utf-8")
+        assert "rateLaw1 1000" in text
+        assert "rateLaw1 #_reverse__R1" in text
+        assert "(10 ^ k) #_reverse__R1" not in text
+
 
 class TestSimulation:
     def test_bng2_zero_argument_function_rates_execute(self, tmp_path):
