@@ -4,8 +4,8 @@
 **Last audited:** 2026-09-01
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** ba52c2031cab315a0d2a08a5d737cde82f3b3ce0
-**Checklist refresh base:** ba52c20 (refresh after each semantic checkpoint)
+**Audited semantic code head:** 2c0b999f5ae88ba2d44f2b34b8d13ac16ef89211
+**Checklist refresh base:** 2c0b999 (refresh after each semantic checkpoint)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -47,32 +47,34 @@ completion gate.
 
 - [x] Required fast-forward pull completed before this documentation change.
 - [x] The latest pushed semantic checkpoint is
-  ba52c2031cab315a0d2a08a5d737cde82f3b3ce0; this checklist refresh is a
+  2c0b999f5ae88ba2d44f2b34b8d13ac16ef89211; this checklist refresh is a
   documentation-only checkpoint layered after it and does not alter its
   semantic test evidence.
 - [x] The small documentation grammar fix remains the only unrelated tracked
   BNG3 worktree modification. It remains intentionally unstaged and must not
   be mixed into semantic or checklist commits.
-- [x] Exact-head CTest passes `150/150` on ba52c20 (local Release/Ninja
+- [x] Exact-head CTest passes `151/151` on 2c0b999 (local Release/Ninja
   build; `ctest --test-dir build --output-on-failure`).
-- [x] The full NFsim AST adapter executable passes 102 test cases and 990
-  assertions on ba52c20, including compact energy evaluation, cached compact
+- [x] The full NFsim AST adapter executable passes 103 test cases and 1018
+  assertions on 2c0b999, including compact energy evaluation, cached compact
   rate factors, specialized reverse propensities, sparse selector ordering,
   cached single- and multi-term Arrhenius factors, direct-product endpoint
   identity propagation, safe direct-product traversal, cached pre-fire binding
   rejection, compact partner mapping-slot compaction, indexed cross-type
   partner refresh, shared partner-pool updates, dense and sparse type-invariant
   membership decisions, deferred weighted-side propensity capture,
-  endpoint-refined membership refresh decisions, connected t3 trajectory
+  endpoint-refined membership refresh decisions, compact sorted and inline
+  reaction-membership IDs, connected t3 trajectory
   parity, materialized fallback,
   all-forward compact partner-pool refresh early return,
   pure-context homodimer/trimer/scaffold counting,
   transformed homodimer binding multiplicity, and pure DOR context counting.
   It also covers the source-derived functional symmetry/TotalRate correction,
-  repeated connectivity direct-endpoint scratch refresh, and one-way direct
+  repeated connectivity direct-endpoint scratch refresh with lazy connectivity
+  product lookup allocation, and one-way direct
   Arrhenius binding/state-change expansion including the compact forward-only
   runtime path.
-- [x] Exact-head Python/API tests pass on semantic checkpoint `ba52c20`:
+- [x] Exact-head Python/API tests pass on semantic checkpoint `2c0b999`:
   `229 passed, 27 skipped, 8
   warnings` from `PYTHONPATH=python:build/cpp python -m pytest tests/python -q`,
   and the same result from the installed-wheel target.
@@ -81,10 +83,10 @@ completion gate.
 - [x] Local canonical Black check passes: `177 files would be left unchanged`
   (Jupyter files are skipped because optional Jupyter dependencies are absent);
   Ruff and git diff checks pass.
-- [x] Local validation smoke on semantic head `ba52c20` reports 4 passed and
-  15 skipped. A sandbox-external rerun removes process-inspection noise; the
-  remaining skips are visible `run_network`/reference-oracle gaps and must not
-  be treated as parity.
+- [x] Local validation smoke on semantic head `2c0b999` reports 4 passed and
+  15 skipped. The remaining skips are visible `run_network`/reference-oracle
+  gaps, with sandbox process-inspection noise also present, and must not be
+  treated as parity.
 - [x] Non-strict provenance, corpus-manifest, generated-manifest, and exception
   ledger checks pass. The strict provenance gate remains intentionally red with
   10 pending source/oracle/compiler/Python-lock approval errors.
@@ -97,10 +99,10 @@ completion gate.
   (CPython 3.14 arm64 wheel); the installed-target Python suite is recorded
   above.
 - [ ] Hosted PR checks for exact semantic head
-  `ba52c2031cab315a0d2a08a5d737cde82f3b3ce0` are not yet a complete terminal
-  set: [CI run 33487745845](https://github.com/RuleWorld/BNG3/actions/runs/33487745845)
-  is pending, [CodeQL run 33487745863](https://github.com/RuleWorld/BNG3/actions/runs/33487745863)
-  is in progress, and [formatting run 33487745857](https://github.com/RuleWorld/BNG3/actions/runs/33487745857)
+  `2c0b999f5ae88ba2d44f2b34b8d13ac16ef89211` are not yet a complete terminal
+  set: [CI run 33489470262](https://github.com/RuleWorld/BNG3/actions/runs/33489470262)
+  is still running, [CodeQL run 33489470357](https://github.com/RuleWorld/BNG3/actions/runs/33489470357)
+  is still running, and [formatting run 33489470344](https://github.com/RuleWorld/BNG3/actions/runs/33489470344)
   is terminal-success. C++, Python, ASan, integration, validation, package
   smoke, formatter, and CodeQL results must be read back for the exact public
   head with `gh`; older runs are historical and do not establish evidence for
@@ -433,6 +435,17 @@ completion gate.
   direct-product vector required by compact energy preparation (`a2d7f6c`;
   `tests/cpp/test_nfsim_ast_adapter.cpp`, 11 assertions in the repeated
   connectivity refresh fixture).
+- [x] BNG3 carries compact sorted reaction-membership IDs from NFsim commit
+  `ad4b56a`: the direct-AST adapter uses a dense first-ID plus inline/overflow
+  representation, preserving ordered iteration and set semantics while
+  avoiding one heap-backed ordered container per mapping index (`3fb3373`,
+  `0560c3b`; `tests/cpp/test_nfsim_ast_adapter.cpp`, compact-ID and inline-ID
+  fixtures).
+- [x] BNG3 carries the source-derived lazy direct-product molecule lookup from
+  NFsim commit `2b3c643`: the connectivity-only hash set is allocated on first
+  use and remains separate from the compact ordered direct-product vector
+  (`2c0b999`; compact factorized-energy and repeated connectivity-refresh
+  fixtures pass without changing event behavior).
 - [x] BNG3 preserves BNG2 one-way Arrhenius directionality for the supported
   direct AST binding and state-change slices: one forward reaction is emitted,
   no implicit reverse reaction is synthesized, and contextual compact binding
@@ -457,7 +470,10 @@ completion gate.
   `a97c02e`, reverse specialization at `dbadea6`, partner endpoint/indexed
   decision refresh at `bb3ae014`, pure-context counting at `bb14a207`, and
   sparse membership-decision indexing at `fbfda3f`, and all-forward compact-pool
-  early return at `2940a02` from NFsim `fd01d015`;
+  early return at `2940a02` from NFsim `fd01d015`, compact sorted/inline
+  reaction-membership IDs from NFsim commits `ad4b56a` and `4007795`
+  (`3fb3373`, `0560c3b`), and lazy direct-product lookup allocation from
+  NFsim commit `2b3c643` (`2c0b999`);
   the other listed slices remain open.
   Preserve BNG3 lifecycle and direct-AST adapters while porting.
 - [ ] Compare compact and fallback event semantics against an independently
@@ -758,7 +774,10 @@ These are known unchecked requirements, not reasons to claim completion:
   `23436e2` (`c7dd52d`), plus reusable connectivity direct-product lookup
   scratch from NFsim commit `96be0b1` (`a2d7f6c`), plus the functional
   symmetry/TotalRate correction from NFsim commits `2778162` and `1b19611`
-  (`53a3d3d`). The direct-AST energy fixtures now cover BNG2-compatible
+  (`53a3d3d`), plus compact sorted/inline reaction-membership IDs from NFsim
+  commits `ad4b56a` and `4007795` (`3fb3373`, `0560c3b`), plus lazy
+  direct-product lookup allocation from NFsim commit `2b3c643` (`2c0b999`).
+  The direct-AST energy fixtures now cover BNG2-compatible
   one-way binding and state-change directionality, including the compact
   forward-only path (`72dd033`, `ba52c20`). Merged NFSIM PR #475 full
   incremental-membership semantics, remaining direct-product parity,
