@@ -501,7 +501,25 @@ class Species:
                 key=lambda molecule: (len(molecule.components), molecule.name),
             )
             for current, incoming in zip(left, right):
-                current.extend(incoming)
+                incoming_counts = Counter(
+                    component.name for component in incoming.components
+                )
+                current_counts = Counter(
+                    component.name for component in current.components
+                )
+                existing = {}
+                for component in current.components:
+                    existing.setdefault(component.name, component)
+                for component in incoming.components:
+                    if current_counts[component.name] < incoming_counts[component.name]:
+                        copied = component.copy()
+                        current.components.append(copied)
+                        current_counts[component.name] += 1
+                        existing.setdefault(component.name, copied)
+                    else:
+                        target = existing.get(component.name)
+                        if target is not None:
+                            target.add_states(component.states, update)
             return
 
         for incoming in species.molecules:

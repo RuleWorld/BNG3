@@ -86,6 +86,56 @@ def test_playground_structures_preserve_states_bonds_and_compartments():
     assert component.str2() == "site~P~0"
 
 
+def test_playground_species_extend_honors_update_flag_for_equal_molecule_counts():
+    from bionetgen.atomizer.modern import Component, Molecule, Species
+
+    target = Species()
+    target_molecule = Molecule("A")
+    target_component = Component("site", states=["0"])
+    target_component.set_active_state("0")
+    target_molecule.add_component(target_component)
+    target.add_molecule(target_molecule)
+
+    incoming = Species()
+    incoming_molecule = Molecule("A")
+    incoming_component = Component("site", states=["P"])
+    incoming_component.set_active_state("P")
+    incoming_molecule.add_component(incoming_component)
+    incoming.add_molecule(incoming_molecule)
+
+    # Playground structures.ts passes `update` through to addStates in the
+    # equal-molecule-count branch, so update=False expands state domains while
+    # preserving the target's active state.
+    target.extend(incoming, update=False)
+
+    assert target_component.states == ["0", "P"]
+    assert target_component.active_state == "0"
+
+
+def test_playground_species_extend_preserves_repeated_component_multiplicity():
+    from bionetgen.atomizer.modern import Component, Molecule, Species
+
+    target = Species()
+    target_molecule = Molecule("A")
+    target_molecule.add_component(Component("site"))
+    target.add_molecule(target_molecule)
+
+    incoming = Species()
+    incoming_molecule = Molecule("A")
+    incoming_molecule.add_component(Component("site", states=["P"]))
+    incoming_molecule.add_component(Component("site", states=["U"]))
+    incoming.add_molecule(incoming_molecule)
+
+    # The Playground implementation compares component-name Counters and
+    # appends the missing repeated site instead of collapsing it by name.
+    target.extend(incoming)
+
+    assert [component.name for component in target_molecule.components] == [
+        "site",
+        "site",
+    ]
+
+
 def test_playground_reaction_classification_is_stoichiometry_aware():
     from bionetgen.atomizer.modern import SBMLReaction, SBMLSpeciesReference
     from bionetgen.atomizer.modern import classify_reaction
