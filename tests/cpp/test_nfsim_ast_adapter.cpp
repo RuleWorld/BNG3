@@ -2398,13 +2398,11 @@ begin functions
     kDelay() = if(Ton>5000&&Ton<7000,2,0)
     kDeplete() = if(Ton>7000,2,0)
     reactant_1()
-    rateLaw2 reactant_1()*kDelay()
-    rateLaw3 reactant_1()*kDeplete()
 end functions
 begin reaction rules
     Timer(t~OFF) -> Timer(t~ON) 0.5
-    DelayedStartMolecule(p~U) -> DelayedStartMolecule(p~P) rateLaw2()
-    DelayedStartMolecule(p~P) -> DelayedStartMolecule(p~U) rateLaw3()
+    DelayedStartMolecule(p~U) -> DelayedStartMolecule(p~P) reactant_1()*kDelay()
+    DelayedStartMolecule(p~P) -> DelayedStartMolecule(p~U) reactant_1()*kDeplete()
 end reaction rules
 )BNG");
 
