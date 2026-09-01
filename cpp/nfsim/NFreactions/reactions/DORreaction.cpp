@@ -324,8 +324,8 @@ void DORRxnClass::remove(Molecule *m, unsigned int reactantPos)
 
 int DORRxnClass::checkForCollision(Molecule *m, MappingSet* ms, int rxnIndex){
 	
-	set<int> tempSet = m->getRxnListMappingSet(rxnIndex);
-	for(set<int>::iterator it= tempSet.begin();it!= tempSet.end(); ++it){
+	const MappingIdSet& tempSet = m->getRxnListMappingSet(rxnIndex);
+	for(MappingIdSet::const_iterator it= tempSet.begin();it!= tempSet.end(); ++it){
 		MappingSet* ms2 = reactantTree->getMappingSet(*it);
 		if(MappingSet::checkForEquality(ms,ms2)){
 			return *it;
@@ -362,7 +362,7 @@ bool DORRxnClass::tryToAdd(Molecule *m, unsigned int reactantPos) {
 			}
 		}
 		//JJT: keep a list containing those mapping sets that will be deleted
-		set<int> deleteMs = m->getRxnListMappingSet(rxnIndex);
+		MappingIdSet deleteMs = m->getRxnListMappingSet(rxnIndex);
 		symmetricMappingSet.clear();
 		if(m->getRxnListMappingId(rxnIndex)>=0) {
 			/* JJT: this branch contains those reactions for which a reaction and a molecule had been mapped together before
@@ -435,7 +435,7 @@ bool DORRxnClass::tryToAdd(Molecule *m, unsigned int reactantPos) {
 				
 			}
 
-			for(set<int>::iterator it=deleteMs.begin();it!=deleteMs.end(); ++it){
+			for(MappingIdSet::iterator it=deleteMs.begin();it!=deleteMs.end(); ++it){
 				if(DEBUG_MESSAGE)cout<<"removing..."<<*it<<endl;
 				m->deleteRxnListMappingId(rxnIndex,*it);
 				reactantTree->removeMappingSet(*it);
@@ -1481,10 +1481,9 @@ bool EnergyRxnClass::tryToAddCompact(
 		return changed;
 	}
 
-	/* BNG3 currently returns this mapping-ID set by value; keep the source
-	 * algorithm's local-index behavior while avoiding a reference to a
-	 * temporary. */
-	set<int> existingMappings = m->getRxnListMappingSet(rxnIndex);
+	/* Keep the source algorithm's local-index behavior while reusing the
+	 * molecule's compact membership storage. */
+	const MappingIdSet& existingMappings = m->getRxnListMappingSet(rxnIndex);
 	if (!existingMappings.empty()) {
 		/* A simple compact energy rule has at most one mapping for its weighted
 		 * molecule.  Keep the common refresh on the existing tree node and avoid
@@ -1508,7 +1507,7 @@ bool EnergyRxnClass::tryToAddCompact(
 			}
 		}
 		bool changed = false;
-		for (set<int>::const_iterator it = existingMappings.begin();
+		for (MappingIdSet::const_iterator it = existingMappings.begin();
 				it != existingMappings.end(); ++it) {
 			MappingSet *mappingSet = reactantTree->getMappingSet(*it);
 			if (mappingSet->get(0)->getMolecule() != m)

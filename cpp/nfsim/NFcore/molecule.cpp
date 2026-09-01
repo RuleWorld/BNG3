@@ -89,7 +89,7 @@ void Molecule::prepareForSimulation()
 	nReactions = parentMoleculeType->getReactionCount();
 	int mappingCount = parentMoleculeType->getReactionMappingCount();
 	this->rxnListMappingId2 = mappingCount > 0
-			? new set<int>[mappingCount] : 0;
+			? new MappingIdSet[mappingCount] : 0;
 
 	isPrepared = true;
 
@@ -210,9 +210,9 @@ void Molecule::updateDORRxnValues()
 			//If we are in this reaction, then we have to update our value...
 			if(getRxnListMappingId(rxnIndex)>=0) {
 				//iterate over all mappings
-				set<int> tempSet = getRxnListMappingSet(rxnIndex);
+				const MappingIdSet& tempSet = getRxnListMappingSet(rxnIndex);
 				//iterate over all agent-mappings  for the same reaction
-				for(set<int>::iterator it= tempSet.begin();it!= tempSet.end(); ++it){
+				for(MappingIdSet::const_iterator it= tempSet.begin();it!= tempSet.end(); ++it){
 
 				//Careful here!  remember to update the propensity of this
 				//reaction in the system after we notify of the rate factor change!

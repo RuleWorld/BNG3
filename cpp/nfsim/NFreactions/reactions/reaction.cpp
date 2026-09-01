@@ -508,8 +508,8 @@ int BasicRxnClass::checkForEquality(Molecule *m, MappingSet* ms, int rxnIndex, R
 	/*
 	Check if mapping set clashes with any of the mapping sets already in reactantList
 	*/
-	set<int> tempSet = m->getRxnListMappingSet(rxnIndex);
-	for(set<int>::iterator it= tempSet.begin();it!= tempSet.end(); ++it){
+	const MappingIdSet& tempSet = m->getRxnListMappingSet(rxnIndex);
+	for(MappingIdSet::const_iterator it= tempSet.begin();it!= tempSet.end(); ++it){
 		MappingSet* ms2 = reactantList->getMappingSet(*it);
 		if(MappingSet::checkForEquality(ms,ms2)){
 			return *it;
@@ -629,7 +629,7 @@ bool BasicRxnClass::tryToAdd(Molecule *m, unsigned int reactantPos)
 	// }
 
 	//Here we get the standard update...
-	set<int> deleteMs = m->getRxnListMappingSet(rxnIndex);
+	MappingIdSet deleteMs = m->getRxnListMappingSet(rxnIndex);
 	if (contextCountsPerComplex[reactantPos] && m->getComplex() != 0) {
 		rl->noteMappedComplexSize(m->getComplex()->getComplexSize());
 	}
@@ -677,7 +677,7 @@ bool BasicRxnClass::tryToAdd(Molecule *m, unsigned int reactantPos)
 		
 	}
 
-	for (set<int>::iterator it = deleteMs.begin(); it != deleteMs.end(); ++it) {
+	for (MappingIdSet::iterator it = deleteMs.begin(); it != deleteMs.end(); ++it) {
 		rl->removeMappingSet(*it);
 		m->deleteRxnListMappingId(rxnIndex, *it);
 	}
