@@ -1912,10 +1912,10 @@ namespace NFcore
 			 * mapping arrays after transformation. */
 			vector <Molecule *> directProductMoleculeList;
 			/* The BNG3 direct-product vector is also needed in stable mapping order
-			 * by compact energy reactions.  Keep a per-reaction lookup set alongside
-			 * it for the connectivity path, mirroring nfsim commit 96be0b1 without
-			 * replacing the ordered adapter representation. */
-			unordered_set <Molecule *> directProductMoleculeSet;
+			 * by compact energy reactions.  Allocate the hash lookup lazily for the
+			 * connectivity path, mirroring nfsim commit 2b3c643 without replacing
+			 * the ordered adapter representation. */
+			unordered_set <Molecule *> *directProductMolecules;
 			bool directProductMoleculeSetValid;
 
 			// remember the molecule type of each product molecule a with typeII dependencies

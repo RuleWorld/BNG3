@@ -18,6 +18,7 @@ ReactionClass::ReactionClass(string name, double baseRate, string baseRateParame
 	// initialize this flag here instead of relying on a later setter.  An
 	// indeterminate value can skip ordinary membership refreshes after a fire.
 	this->useConnectivity = s != nullptr && s->getConnectivityFlag();
+	this->directProductMolecules = 0;
 	this->directProductMoleculeSetValid = false;
 	this->tagged = false;
 	this->useRuleMonkey = false;
@@ -325,6 +326,7 @@ ReactionClass::~ReactionClass()
 	delete [] matchOncePerReactant;
 	delete [] contextCountsPerComplex;
 	delete [] identicalPopCountCorrection;
+	delete directProductMolecules;
 	connectedReactions.clear();
 }
 
@@ -387,8 +389,9 @@ bool ReactionClass::isDirectProductMolecule(Molecule *molecule) const
 	if (molecule == 0)
 		return false;
 	if (directProductMoleculeSetValid)
-		return directProductMoleculeSet.find(molecule) !=
-			directProductMoleculeSet.end();
+		return directProductMolecules != 0 &&
+			directProductMolecules->find(molecule) !=
+			directProductMolecules->end();
 	if (!directProductMoleculeList.empty())
 		return std::find(directProductMoleculeList.begin(),
 				directProductMoleculeList.end(), molecule) !=
@@ -443,7 +446,8 @@ string ReactionClass::fire(double random_A_number, bool track) {
 	//cout<<endl<<">FIRE "<<getName()<<endl;
 	fireCounter++;
 	directProductMoleculeList.clear();
-	directProductMoleculeSet.clear();
+	if (directProductMolecules != 0)
+		directProductMolecules->clear();
 	directProductMoleculeSetValid = false;
 
 
@@ -489,8 +493,12 @@ string ReactionClass::fire(double random_A_number, bool track) {
 	 * refresh can recycle mapping entries.  This is the source-derived direct
 	 * endpoint identity used by incremental membership decisions. */
 	if (this->useConnectivity || this->usesIncrementalMembership()) {
-		if (this->useConnectivity)
+		if (this->useConnectivity) {
+			if (directProductMolecules == 0)
+				directProductMolecules = new unordered_set<Molecule *>();
+			directProductMolecules->clear();
 			directProductMoleculeSetValid = true;
+		}
 		for (unsigned int msIndex = 0; msIndex < n_mappingsets; ++msIndex) {
 			MappingSet *ms = mappingSet[msIndex];
 			if (ms == 0)
@@ -502,7 +510,7 @@ string ReactionClass::fire(double random_A_number, bool track) {
 					continue;
 				Molecule *molecule = mapping->getMolecule();
 				if (this->useConnectivity)
-					directProductMoleculeSet.insert(molecule);
+					directProductMolecules->insert(molecule);
 				if (this->usesIncrementalMembership() &&
 						std::find(directProductMoleculeList.begin(),
 							directProductMoleculeList.end(), molecule) ==
