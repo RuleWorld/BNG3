@@ -61,6 +61,10 @@ them pass by widening tolerances or hiding skips. The Python API is
   `BNG_NFSIM_ALLOW_XML_FALLBACK=1`, and `BNG_NFSIM_FORCE_XML=1` selects the
   shadow path. Do not retire XML until the checklist's three-way Tier-NF gate
   passes.
+- The direct NFsim API uses the native-compatible endpoint-inclusive
+  `stepTo` form only for its final output checkpoint; the ordinary one-argument
+  `stepTo` contract remains exclusive for intermediate callers. Keep the
+  source-derived fixed-seed `motor`/`tlbr` endpoint test green.
 - Energy-function ports must be source-anchored to the accepted
   `akutuva21/nfsim` energy-evaluation cutoff: PR #475, merge
   `6690fda5d9e053df822d0248ebae185f5caca82a`, source commit

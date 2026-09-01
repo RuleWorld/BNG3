@@ -4,8 +4,8 @@
 **Last audited:** 2026-09-01
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** b13fe233b16804bcfb2442165bce6487c4dfeb48
-**Checklist refresh base:** b13fe23 (fail-closed independent NFsim oracle discovery; refresh after each semantic checkpoint)
+**Audited semantic code head:** 2d1fad28caa2f60076a25086d6f6edea5af89f9d
+**Checklist refresh base:** 2d1fad2 (native-compatible direct NFsim final endpoint; refresh after each semantic checkpoint)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -49,18 +49,18 @@ completion gate.
 
 - [x] Required fast-forward pull completed before this documentation change.
 - [x] The latest local semantic checkpoint is
-  b13fe233b16804bcfb2442165bce6487c4dfeb48; its parent
-  `2051d8fe8818f8dac90624a36983c580ac102b70` is the pinned-energy documentation
-  checkpoint. The semantic engine at that parent adds the source-compatible
-  direct reactant-count mapping on top of the dual mapping-RNG stream, BNG2
-  seed allocation/canonical ordering, and inferred integer-state handling
-  while preserving per-System reaction timing/selection. `b13fe23` additionally
-  makes the native-NFsim validation harness require an explicit existing
-  independent oracle path and adds source-derived path regression tests.
+  `2d1fad28caa2f60076a25086d6f6edea5af89f9d`; its parent
+  `729b4d293c0c0b666e7fb13697eee6a34c11c0e3` is the cumulative NFsim sample
+  checkpoint. The semantic engine retains the source-compatible direct
+  reactant-count mapping, dual mapping-RNG stream, BNG2 seed allocation and
+  canonical ordering, inferred integer-state handling, and repeated NFsim
+  sample-time accumulation. `2d1fad2` additionally preserves native
+  `System::sim` final-endpoint event semantics in the direct API and adds an
+  independent fixed-seed `motor`/`tlbr` contract.
 - [x] The small documentation grammar fix remains the only unrelated tracked
   BNG3 worktree modification. It remains intentionally unstaged and must not
   be mixed into semantic or checklist commits.
-- [x] Exact-head CTest passes `167/167` on e92b2c9 (local Release/Ninja
+- [x] Exact-head CTest passes `167/167` on `2d1fad2` (local Release/Ninja
   build; `ctest --test-dir build --output-on-failure`), including the t4
   rejection contract, inferred-state/type-order gates, and IfTest parity
   assertions.
@@ -68,7 +68,7 @@ completion gate.
   prior 0f83347 evidence was supplemental memory-safety coverage, not a
   substitute for hosted sanitizer and leak/UBSan gates.
 - [x] The full NFsim AST adapter executable passes 114 test cases and 1234
-  assertions on e92b2c9. It covers compact energy evaluation, cached compact
+  assertions on `2d1fad2`. It covers compact energy evaluation, cached compact
   rate factors, specialized reverse propensities, sparse selector ordering,
   cached single- and multi-term Arrhenius factors, direct-product endpoint
   identity propagation, safe direct-product traversal, cached pre-fire binding
@@ -97,7 +97,7 @@ completion gate.
   lexical molecule-type registration, canonical inferred component order, and
   direct/XML/BNGL writer order.
 - [ ] The source-derived historical NFsim `test/testSuite/t4.bngl` and related
-  `t5.bngl` syntax remain open capability gaps. At e92b2c9, BNG3's parser
+  `t5.bngl` syntax remain open capability gaps. At `2d1fad2`, BNG3's parser
   rejects the t4 fixture with the stable diagnostic `Cannot build model from
   source with syntax errors`. Independent inspection found the fixtures were
   introduced by NFsim commit `3c7b6a3` as preliminary tests, current BNG2
@@ -107,27 +107,27 @@ completion gate.
   independent oracle, canonical-AST design, runtime semantics, and direct/XML
   contract tests.
 - [x] The full NFsim tree/system executable passes 157 assertions in 8 test
-  cases on e92b2c9. This includes the source-derived unsafe output-name
+  cases on `2d1fad2`. This includes the source-derived unsafe output-name
   rejection port from NFsim `3527edb` and continuous-vs-chunked `stepTo`
   checkpoint tests from NFsim `e3ef4a0` (50 assertions across the two new
   cases, including the zero-propensity boundary).
-- [x] Exact-head Python/API tests pass on semantic checkpoint `e92b2c9`:
-  `229 passed, 27 skipped, 8 warnings` from
+- [x] Exact-head Python/API tests pass on semantic checkpoint `2d1fad2`:
+  `230 passed, 27 skipped, 8 warnings` from
   `PYTHONPATH=python:build/cpp python -m pytest tests/python -q`. The installed-
   wheel target still has only historical evidence and is not release evidence
   for this head.
 - [x] The exact NFsim `IfTest/ifTest.bngl` source fixture now parses through
-  `build/cpp/bng_cpp --check` on e92b2c9, including its empty `reactant_1()`
+  `build/cpp/bng_cpp --check` on `2d1fad2`, including its empty `reactant_1()`
   placeholder declaration; parser acceptance is not execution parity.
 - [x] The independent native-NFsim stochastic subset was rerun against the
   absolute native binary `/Users/akutuva/Documents/BioNetGen/nfsim/build/NFsim`
   (binary SHA-256
   `7302fe29b16d1ebe86369f752f2a49d2c87ef16539faaec11b82294a9fa56d22`) with
   `NFSIM_BIN` set to that absolute path. The `motor` and `tlbr` Tier-NF
-  ensemble cases passed the declared 200-run gate, and the direct/XML shadow
-  cases also passed: `4 passed, 4 deselected, 1 warning` in 114.58 seconds.
-  This is subset evidence only; it does not close fixed-seed direct/native
-  endpoint semantics or the full Tier-NF gate.
+  ensemble cases passed the declared 200-run gate, the direct/XML shadow
+  cases passed, and the fixed-seed direct endpoint cases passed:
+  `6 passed, 4 deselected, 1 warning` in 128.96 seconds at `2d1fad2`.
+  This is subset evidence only; it does not close the full Tier-NF gate.
 - [x] The validation harness now fails closed when `NFSIM_BIN` is missing or
   invalid instead of silently selecting BNG3's embedded `build/cpp/NFsim`.
   Source-derived path tests pass `5 passed, 1 skipped` in
@@ -143,7 +143,7 @@ completion gate.
   are absent); Ruff and git diff checks pass. The broader ad hoc check that
   included `tests/validation/` remains red on pre-existing formatting drift
   and is not the hosted CI command.
-- [x] Local validation smoke on current semantic head `e92b2c9` reports 4
+- [x] Local validation smoke on current semantic head `2d1fad2` reports 4
   passed and 15 skipped. The remaining skips are visible
   `run_network`/reference-oracle gaps, with sandbox process-inspection noise
   also present, and must not be treated as parity.
@@ -161,7 +161,7 @@ completion gate.
   `419bb2bd29f319bfc638c50b9c29cec0934b6d87eb7ce8fcdefed70a01f618c2`
   (CPython 3.14 arm64 wheel); the installed-target Python suite is recorded
   above.
-- [ ] Current hosted checks for checkpoint `b13fe23` must be refreshed after
+- [ ] Current hosted checks for checkpoint `2d1fad2` must be refreshed after
   this documentation checkpoint. Before this refresh, formatting was
   terminal-success, CI was queued, and CodeQL was in progress;
   no nonterminal result is completion evidence.
@@ -177,10 +177,9 @@ completion gate.
   33493581573](https://github.com/RuleWorld/BNG3/actions/runs/33493581573)
   passed. Results were read back with `gh` against the exact public head;
 - [ ] Fresh hosted CI, CodeQL, and formatting checks for current public branch
-  head `b13fe23` are pending after this checklist refresh is pushed; the PR API
-  last returned stale head `2051d8f` while the branch ref returned `b13fe23`,
-  so both the PR source head and checks require an exact re-read. Superseded
-  runs do not count as evidence.
+  head `2d1fad2` are pending after this checklist refresh is pushed. Both the
+  branch ref and PR source head must be reread with `gh`; superseded runs do
+  not count as evidence.
 - [x] Modern Atomizer checkpoints exist for annotations, BNG-XML conversion,
   Rulifier, UniProt, structure helpers, and conservative SBML-Multi discovery,
   helper/rate-rule constants, each with source-derived tests.
@@ -441,19 +440,16 @@ completion gate.
   The discriminating source ports were position-major repeated-seed
   allocation (`bdddbd4`), BNG2 canonical seed graph/type ordering
   (`41b12f2`), and numeric-site wildcard/PLUS/MINUS handling (`3be1b40`).
-- [ ] Fixed-seed direct/API NFsim still has a declared endpoint-semantic gap
-  on the source-derived `motor` and `tlbr` fixtures. With seed `1`, the same
-  native binary and XML files, and output grids `0.01` (20 points) and `0.1`
-  (20 points), native NFsim `sim()` and BNG3's XML CLI are byte-identical
-  (`motor`: SHA-256
-  `d1baae3621c2167c05fee6b42c933449b4ec81d22`; `tlbr`: SHA-256
-  `bf1655fdf90fdec4021a618aafaadc22400b9ecdfde7c6ca44c5b5a30d83b896`).
-  The direct binding uses `stepTo()` and stops at each requested boundary;
-  native `sim()` fires the event that crosses the final endpoint. Consequently
-  direct returns `motor CheYp=2007` versus native `2008` and `tlbr
-  Rfree/Lfree=5992/11976` versus `5990/11970`. This needs a source-derived
-  contract decision and a compatible implementation/test or an approved
-  disposition; the 200-run distributional pass above does not close it.
+- [x] Fixed-seed direct/API NFsim endpoint parity is closed for the source-
+  derived `motor` and `tlbr` fixtures at `2d1fad2`. With seed `1`, the
+  independently built native binary above, BNG3-generated XML, and twenty
+  output checkpoints, `tests/validation/test_parity_nfsim.py::test_nf_fixed_seed_direct_matches_native_at_final_endpoint`
+  passes with exact observable arrays and time coordinates within `1e-12`.
+  The full `motor`/`tlbr` subset passed `6 passed, 4 deselected, 1 warning` in
+  128.96 seconds. The direct binding invokes endpoint-inclusive `stepTo` only
+  for the final checkpoint, while the ordinary one-argument `stepTo` contract
+  remains exclusive for intermediate callers. The full Tier-NF gate remains
+  open.
 - [ ] Protocol NF support and remaining RNA/t4/t5 behavior are
   implemented or explicitly governed with tests and owners.
 - [ ] The full fixed-seed and distributional Tier-NF gate passes at the
@@ -747,9 +743,9 @@ completion gate.
   event conditions and remain release-candidate work. This documentation
   refresh creates a new public head and requires another exact-head check
   readback after push.
-- [ ] Current public branch head `b13fe23` (and the documentation checkpoint
-  that will follow it) has a fresh terminal hosted check set read back with
-  `gh`; the PR #2 metadata must first converge to the same head.
+- [ ] Current public branch head `2d1fad2` (and the documentation checkpoint
+  that follows it) has a fresh terminal hosted check set read back with `gh`;
+  the PR #2 metadata must converge to the same head.
 - [ ] Every required job emits a terminal summary with counts, failures,
   skips, exception budget, corpus/source revision, and artifact digests.
 - [ ] Required jobs fail when a claimed oracle, corpus, validator, or compiler
@@ -924,13 +920,9 @@ These are known unchecked requirements, not reasons to claim completion:
   machinery; protocol-NF, remaining function/rate-law, broader Tier-NF, and
   full independent evidence remain open. The exact AN2 and IfTest trajectories
   are green checkpoints, not substitutes for that broader gate.
-- Fixed-seed direct/API NFsim remains observably different from native
-  `sim()` at the final output boundary for `motor` and `tlbr`: direct
-  `stepTo()` excludes the endpoint-crossing event that native `sim()` includes.
-  The XML/native CLI paths agree exactly, and the independent 200-run
-  motor/tlbr distributional subset passes, so this is a narrow but unresolved
-  endpoint contract gap rather than evidence to widen tolerances or hide the
-  direct route.
+- Fixed-seed direct/API NFsim endpoint parity for `motor` and `tlbr` is now
+  covered by the independent native-oracle contract at `2d1fad2`; broader
+  direct-NFsim corpus, protocol, and three-way evidence remain open.
 - The NFsim validation harness now refuses to infer independence from a
   BNG3-built binary when `NFSIM_BIN` is absent or invalid. The required
   independently built oracle path, source revision, binary digest, and
