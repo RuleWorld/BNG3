@@ -6,6 +6,7 @@
 **Working branch:** codex/bng3-integration-foundations
 **Audited semantic code head:** 2940a021b6dad33894f93f8fdf405090e2a79b1f
 **Checklist refresh base:** 2940a02 (refresh after each semantic checkpoint)
+**Latest pushed checklist head:** ab489cae0f634f5b38f05d3263b4d04983a360c8
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -67,23 +68,30 @@ completion gate.
   all-forward compact partner-pool refresh early return,
   pure-context homodimer/trimer/scaffold counting,
   transformed homodimer binding multiplicity, and pure DOR context counting.
-- [ ] Exact-head Python/API and package tests must be rerun and recorded for
-  the current release candidate; the last recorded baseline was 229 passed,
-  27 skipped, and 8 warnings.
+- [x] Exact-head Python/API tests pass on the current public checklist head
+  `ab489cae` (semantic code head `2940a02`): `229 passed, 27 skipped, 8
+  warnings` from `PYTHONPATH=python:build/cpp python -m pytest tests/python -q`,
+  and the same result from the installed-wheel target.
 - [x] Local CI workflow contract tests pass 10/10, including the pull-request
   source-distribution smoke gate.
-- [ ] Local canonical Black check is not runnable in this macOS sandbox because
-  Black's multiprocessing manager is denied a local socket; the canonical
-  command is recorded in the CI workflow. Ruff and git diff checks pass.
+- [x] Local canonical Black check passes: `177 files would be left unchanged`
+  (Jupyter files are skipped because optional Jupyter dependencies are absent);
+  Ruff and git diff checks pass.
 - [x] Local validation smoke reports 4 passed and 15 skipped; the skips are
   visible because this checkout lacks the expected validation CLI/oracle
   environment and must not be treated as parity.
-- [ ] A clean, no-build-isolation wheel is rebuilt and installed into a
-  separate target for this exact head. The prior 7e91acc macOS wheel smoke is
-  historical evidence only; it is not evidence for 2940a02.
-- [ ] Hosted PR checks for the exact current semantic head
-  `2940a021b6dad33894f93f8fdf405090e2a79b1f` are currently queued or in
-  progress and have
+- [x] A no-build-isolation sdist and wheel were rebuilt from the current public
+  checklist head `ab489ca` (semantic code `2940a02`) and the wheel was
+  installed into an isolated target. Artifact SHA-256 digests are
+  `2047835cc20fc6ffb95bcb1c087d645c85bf811073c1531e57cad8af691d9ce9`
+  (sdist) and
+  `dd6fe81bd14b41007a707ce41de0bdc6cbe197733d890f849bca45f51d7e6f3f`
+  (CPython 3.14 arm64 wheel); the installed-target Python suite is recorded
+  above.
+- [ ] Hosted PR checks for the exact current public head
+  `ab489cae0f634f5b38f05d3263b4d04983a360c8` (documentation-only after
+  semantic head `2940a021b6dad33894f93f8fdf405090e2a79b1f`) are currently
+  queued or in progress and have
   not yet produced a complete terminal set across the C++ matrix, Python
   matrix, ASan, integration, validation, package smoke, formatter, and
   CodeQL. Older runs are historical and do not establish evidence for this
@@ -555,8 +563,9 @@ completion gate.
   `2940a021b6dad33894f93f8fdf405090e2a79b1f` has a complete terminal hosted
   check set for C++, Python, validation, integration, formatting, ASan, and
   CodeQL. Exact run links and terminal results must be recorded with `gh`;
-  older `464bd8d` and earlier runs are not evidence for this head. The
-  documentation refresh head will also need a fresh exact-head check set.
+  older `464bd8d` and earlier runs are not evidence for this head. The current
+  public checklist head is the documentation-only `ab489cae0f634f5b38f05d3263b4d04983a360c8`,
+  whose fresh CodeQL and formatting runs are also pending terminal results.
 - [ ] Every required job emits a terminal summary with counts, failures,
   skips, exception budget, corpus/source revision, and artifact digests.
 - [ ] Required jobs fail when a claimed oracle, corpus, validator, or compiler
