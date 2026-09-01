@@ -3560,6 +3560,89 @@ end reaction rules
     delete system;
 }
 
+TEST_CASE("NFsim compact partner refresh preserves mixed reaction memberships") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    phi 0.5
+    Gcontext 1.0
+    RT 1.0
+end parameters
+begin molecule types
+    A(b,c)
+    B(a,u)
+    C(x)
+    D(y)
+end molecule types
+begin seed species
+    A(b,c!1).C(x!1) 1
+    A(b) 1
+    B(a) 2
+    C(x) 1
+    D(y) 1
+end seed species
+begin energy patterns
+    A(b!1,c!2).B(a!1).C(x!2) Gcontext
+end energy patterns
+begin reaction rules
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+    B(u) + D(y) -> B(u!1).D(y!1) 1
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    std::vector<NFcore::EnergyRxnClass*> compactReactions;
+    NFcore::ReactionClass* ordinaryReaction = nullptr;
+    for (auto* reaction : system->getAllReactions()) {
+        auto* energyReaction = dynamic_cast<NFcore::EnergyRxnClass*>(reaction);
+        if (energyReaction != nullptr &&
+                energyReaction->getCompactPartnerPool() != nullptr)
+            compactReactions.push_back(energyReaction);
+        else if (energyReaction == nullptr)
+            ordinaryReaction = reaction;
+    }
+    REQUIRE(compactReactions.size() == 2);
+    REQUIRE(ordinaryReaction != nullptr);
+
+    system->turnOff_OnTheFlyObs();
+    system->prepareForSimulation();
+    auto* bType = system->getMoleculeTypeByName("B");
+    auto* cType = system->getMoleculeTypeByName("C");
+    REQUIRE(bType != nullptr);
+    REQUIRE(cType != nullptr);
+    auto* partner = bType->getMolecule(0);
+    NFcore::Molecule* freeContext = nullptr;
+    const int contextComponent = cType->getCompIndexFromName("x");
+    for (int i = 0; i < cType->getMoleculeCount(); ++i) {
+        auto* candidate = cType->getMolecule(i);
+        if (candidate->isBindingSiteOpen(contextComponent)) {
+            freeContext = candidate;
+            break;
+        }
+    }
+    REQUIRE(partner != nullptr);
+    REQUIRE(freeContext != nullptr);
+    REQUIRE(compactReactions.front()->getCompactPartnerPool() != nullptr);
+    CHECK(compactReactions.front()->getCompactPartnerPool()->size() == 2);
+    CHECK(compactReactions.back()->getCompactPartnerPool() ==
+          compactReactions.front()->getCompactPartnerPool());
+    CHECK(ordinaryReaction->get_a() == Catch::Approx(2.0));
+
+    const double ordinaryBefore = ordinaryReaction->get_a();
+    NFcore::Molecule::bind(partner, "a", freeContext, "x");
+    bType->updateRxnMembership(partner);
+
+    CHECK(compactReactions.front()->getCompactPartnerPool()->size() == 1);
+    CHECK(compactReactions.back()->get_a() == Catch::Approx(
+        compactReactions.front()->get_a()));
+    CHECK(ordinaryReaction->get_a() == Catch::Approx(ordinaryBefore));
+    delete system;
+}
+
 TEST_CASE("NFsim compact energy stale binding is a null event") {
     auto model = bng::parser::parseModel(R"(
 begin parameters
