@@ -2218,6 +2218,12 @@ end reaction rules
     // parity gate: native NFsim uses its legacy global mapping RNG, while the
     // BNG3 adapter deliberately uses a per-System RNG stream.
     const auto checkIfTestTrajectory = [](NFcore::System* system) {
+        // Independent native NFsim a6f9fa9 oracle, using
+        // nfsim/test/IfTest/ifTest.xml, seed 1, and output times
+        // 0.5, 1, 2, 3, 5. These exact values are a parity contract, not a
+        // tolerance or a replacement for the branch-semantic checks below.
+        const std::vector<int> nativeTon{2236, 3944, 6306, 7787, 9176};
+        std::size_t checkpoint = 0;
         const auto count = [system](const char* name) {
             return system->getObservableByName(name)->getCount();
         };
@@ -2229,6 +2235,7 @@ end reaction rules
         system->seedRNG(1);
         system->stepTo(0.5);
         checkConservation();
+        CHECK(count("Ton") == nativeTon[checkpoint++]);
         CHECK(count("Ton") > 0);
         CHECK(count("Ton") < 5000);
         CHECK(count("Du") == 10000);
@@ -2239,11 +2246,13 @@ end reaction rules
 
         system->stepTo(1.0);
         checkConservation();
+        CHECK(count("Ton") == nativeTon[checkpoint++]);
         CHECK(count("Ton") > 0);
         CHECK(count("Ton") < 5000);
 
         system->stepTo(2.0);
         checkConservation();
+        CHECK(count("Ton") == nativeTon[checkpoint++]);
         CHECK(count("Ton") > 5000);
         CHECK(count("Ton") < 7000);
         CHECK(NFcore::FuncFactory::Eval(
@@ -2255,6 +2264,7 @@ end reaction rules
 
         system->stepTo(3.0);
         checkConservation();
+        CHECK(count("Ton") == nativeTon[checkpoint++]);
         CHECK(count("Ton") > 7000);
         CHECK(NFcore::FuncFactory::Eval(
                   system->getGlobalFunctionByName("kDelay")->p) ==
@@ -2265,6 +2275,7 @@ end reaction rules
 
         system->stepTo(5.0);
         checkConservation();
+        CHECK(count("Ton") == nativeTon[checkpoint++]);
         CHECK(count("Ton") > 7000);
     };
     checkIfTestTrajectory(direct);
