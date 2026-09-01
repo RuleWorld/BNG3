@@ -4127,3 +4127,83 @@ end reaction rules
 
     delete system;
 }
+
+TEST_CASE("NFsim compact membership refresh preserves unrelated partner rules") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    phi 0.5
+    G 1.0
+    RT 1.0
+end parameters
+begin molecule types
+    A(b,c)
+    B(a,u,v,w)
+    C(x)
+end molecule types
+begin seed species
+    A(b,c!1).C(x!1) 4
+    B(a,u,v,w) 1
+end seed species
+begin energy patterns
+    A(b!1,c!2).B(a!1).C(x!2) G
+    A(b!1,c!2).B(u!1).C(x!2) G
+    A(b!1,c!2).B(v!1).C(x!2) G
+    A(b!1,c!2).B(w!1).C(x!2) G
+end energy patterns
+begin reaction rules
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+    A(b) + B(u) <-> A(b!1).B(u!1) Arrhenius(phi,0)
+    A(b) + B(v) <-> A(b!1).B(v!1) Arrhenius(phi,0)
+    A(b) + B(w) <-> A(b!1).B(w!1) Arrhenius(phi,0)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    const auto allReactions = system->getAllReactions();
+    REQUIRE(allReactions.size() == 8);
+
+    std::vector<NFcore::EnergyRxnClass*> forwardReactions;
+    std::vector<NFcore::EnergyRxnClass*> reverseReactions;
+    for (auto* reaction : allReactions) {
+        auto* energyReaction = dynamic_cast<NFcore::EnergyRxnClass*>(reaction);
+        REQUIRE(energyReaction != nullptr);
+        CHECK(energyReaction->usesIncrementalMembership());
+        CHECK(energyReaction->membershipDecisionIsTypeInvariant());
+        if (energyReaction->getCompactPartnerPool() != nullptr)
+            forwardReactions.push_back(energyReaction);
+        else
+            reverseReactions.push_back(energyReaction);
+    }
+    REQUIRE(forwardReactions.size() == 4);
+    REQUIRE(reverseReactions.size() == 4);
+
+    system->turnOff_OnTheFlyObs();
+    system->prepareForSimulation();
+    std::vector<double> initialForwardPropensities;
+    for (auto* reaction : forwardReactions) {
+        REQUIRE(reaction->get_a() > 0.0);
+        initialForwardPropensities.push_back(reaction->get_a());
+    }
+    for (auto* reaction : reverseReactions)
+        CHECK(reaction->get_a() == Catch::Approx(0.0));
+
+    auto* firedReaction = forwardReactions.front();
+    firedReaction->fire(0.0);
+
+    CHECK(firedReaction->get_a() == Catch::Approx(0.0));
+    for (std::size_t i = 1; i < forwardReactions.size(); ++i)
+        CHECK(forwardReactions[i]->get_a() == Catch::Approx(
+            initialForwardPropensities[i] * 0.75));
+    int activeReverseCount = 0;
+    for (auto* reaction : reverseReactions) {
+        if (reaction->get_a() > 0.0)
+            ++activeReverseCount;
+    }
+    CHECK(activeReverseCount == 1);
+
+    delete system;
+}

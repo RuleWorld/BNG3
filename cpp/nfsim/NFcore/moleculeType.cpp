@@ -717,6 +717,7 @@ void MoleculeType::updateRxnMembership(Molecule * m,
 		ReactionClass *firedReaction, bool directProduct)
 {
 	const vector<unsigned char> *cachedDecisions = 0;
+	const DirectMembershipDecisionCacheEntry *cachedDecisionEntry = 0;
 	IncrementalMembershipChange membershipChange;
 	bool hasMembershipChange = directProduct && firedReaction != 0 &&
 		firedReaction->usesIncrementalMembership() &&
@@ -789,10 +790,26 @@ void MoleculeType::updateRxnMembership(Molecule * m,
 					entry.decisions.push_back(
 						reactions[r]->shouldUpdateMembership(
 								m, firedReaction, true));
+				std::size_t affectedReactionCount = 0;
+				for (unsigned int r = 0; r < entry.decisions.size(); ++r) {
+					if (entry.decisions[r])
+						++affectedReactionCount;
+				}
+				if (affectedReactionCount * 2 < entry.decisions.size()) {
+					entry.reactionIndices.reserve(affectedReactionCount);
+					for (unsigned int r = 0; r < entry.decisions.size(); ++r) {
+						if (entry.decisions[r])
+							entry.reactionIndices.push_back(r);
+					}
+					vector<unsigned char>().swap(entry.decisions);
+					entry.useReactionIndices = true;
+				}
 				cached = directMembershipDecisionCache.emplace(
 					firedReaction, entry).first;
 			}
-			cachedDecisions = &cached->second.decisions;
+			cachedDecisionEntry = &cached->second;
+			if (!cachedDecisionEntry->useReactionIndices)
+				cachedDecisions = &cachedDecisionEntry->decisions;
 		}
 	}
 	bool compactPartnerPoolChanged = false;
@@ -875,6 +892,51 @@ void MoleculeType::updateRxnMembership(Molecule * m,
 					compactPools.at(p), compactPoolOldSizes.at(p),
 					compactPools.at(p)->size());
 	}
+	}
+
+	if (cachedDecisionEntry != 0 &&
+			cachedDecisionEntry->useReactionIndices &&
+			!useCompactMembershipIndex) {
+		for (vector<unsigned int>::const_iterator it =
+				cachedDecisionEntry->reactionIndices.begin();
+				it != cachedDecisionEntry->reactionIndices.end(); ++it) {
+			unsigned int r = *it;
+			ReactionClass *rxn = reactions.at(r);
+			if (useCompactPartnerPoolIndex &&
+					compactMembershipBitIsSet(*partnerCandidates, r)) {
+				if (!compactPartnerPoolChanged)
+					continue;
+				bool defer = this->system->isDeferringMembershipPropensityUpdates();
+				if (defer) {
+					if (compactPartnerPoolBatchScheduled)
+						continue;
+					double oldA = rxn->get_a();
+					this->system->deferMembershipPropensityUpdate(rxn, oldA);
+				} else {
+					double oldA = rxn->get_a();
+					double newA = rxn->update_a();
+					this->system->update_A_tot(rxn, oldA, newA);
+				}
+				continue;
+			}
+			bool handledByCompactPool = false;
+			int partnerComponent = -1;
+			if (rxn->supportsCompactPartnerPoolUpdate() &&
+					rxn->getCompactPartnerPoolInfo(
+						reactionPositions.at(r), partnerComponent)) {
+				CompactPartnerPool *pool = rxn->getCompactPartnerPool();
+				for (unsigned int p = 0; p < compactPools.size(); ++p) {
+					if (compactPools.at(p) == pool) {
+						handledByCompactPool = true;
+						break;
+					}
+				}
+			}
+			if (handledByCompactPool)
+				continue;
+			refreshReactionMembership(rxn, r);
+		}
+		return;
 	}
 
 	if (useCompactMembershipIndex) {

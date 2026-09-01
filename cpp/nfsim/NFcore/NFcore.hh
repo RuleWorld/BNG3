@@ -1031,9 +1031,14 @@ namespace NFcore
 			ReactionClass *rxn; /*used so we don't need to redeclare this at every call to updateRxnMembership */
 
 			/* Cache direct-product membership decisions when every reaction on this
-			 * molecule type proves that its decision is type-invariant. */
+			 * molecule type proves that its decision is type-invariant.  Dense
+			 * decisions use one byte per reaction; sparse decisions retain only the
+			 * ordered affected reaction indices. */
 			struct DirectMembershipDecisionCacheEntry {
+				DirectMembershipDecisionCacheEntry() : useReactionIndices(false) {}
 				std::vector<unsigned char> decisions;
+				std::vector<unsigned int> reactionIndices;
+				bool useReactionIndices;
 			};
 			std::unordered_map<ReactionClass *, DirectMembershipDecisionCacheEntry>
 				directMembershipDecisionCache;
