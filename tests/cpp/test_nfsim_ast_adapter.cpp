@@ -240,6 +240,46 @@ end reaction rules
     delete xmlSystem;
 }
 
+TEST_CASE("BNGL inferred type ordering matches BNG2 canonical registration") {
+    // Source-derived from BNG2 MoleculeTypesList.pm::toXML/writeBNGL and
+    // SpeciesGraph.pm::labelQuasi: inferred molecule types are registered and
+    // serialized by lexical molecule name, while their component definitions
+    // follow the canonical component order rather than source spelling order.
+    auto model = bng::parser::parseModel(R"(
+begin seed species
+    Z(b,a) 1
+    A(y,x) 1
+end seed species
+)");
+
+    REQUIRE(model != nullptr);
+    REQUIRE(model->getMoleculeTypes().size() == 2);
+
+    const auto xml = bng::io::XmlWriter::write(*model);
+    const auto aType = xml.find("<MoleculeType id=\"A\">");
+    const auto zType = xml.find("<MoleculeType id=\"Z\">");
+    REQUIRE(aType != std::string::npos);
+    REQUIRE(zType != std::string::npos);
+    CHECK(aType < zType);
+    CHECK(xml.find("<ComponentType id=\"x\"", aType) <
+          xml.find("<ComponentType id=\"y\"", aType));
+    CHECK(xml.find("<ComponentType id=\"a\"", zType) <
+          xml.find("<ComponentType id=\"b\"", zType));
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(
+        *model, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getNumOfMoleculeTypes() == 2);
+    CHECK(system->getMoleculeType(0)->getName() == "A");
+    CHECK(system->getMoleculeType(1)->getName() == "Z");
+    CHECK(system->getMoleculeTypeByName("A")->getComponentName(0) == "x");
+    CHECK(system->getMoleculeTypeByName("A")->getComponentName(1) == "y");
+    CHECK(system->getMoleculeTypeByName("Z")->getComponentName(0) == "a");
+    CHECK(system->getMoleculeTypeByName("Z")->getComponentName(1) == "b");
+    delete system;
+}
+
 TEST_CASE("BNGL parser keeps the historical NFsim t4 gap explicit") {
     // Source-derived from nfsim/test/testSuite/t4.bngl.  The historical
     // preliminary fixture uses an observable state counter (sum(m)), dollar
