@@ -4,8 +4,8 @@
 **Last audited:** 2026-09-01
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 4ea7157acbed00467f3e93ac6155d6c39486169a
-**Checklist refresh base:** 4ea7157 (source-derived observable-pattern preparse checkpoint; refresh after each checkpoint)
+**Audited semantic code head:** 1c03bc12a62724a3c30a8800b25cc7fb2188a1cb
+**Checklist refresh base:** 1c03bc1 (source-derived CLI action-error checkpoint; refresh after each checkpoint)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -49,18 +49,16 @@ completion gate.
 
 - [x] Required fast-forward pull completed before this documentation change.
 - [x] The latest local semantic checkpoint is
-  `4ea7157acbed00467f3e93ac6155d6c39486169a`; its parent
-  `d502e4798ff0f24f469a2c0a29fd0b13d793f083` is the ODE function-match
-  allocation checkpoint. `4ea7157` ports source `akutuva21/bionetgen`
-  commit `60ac7e5f`: observable patterns and quantifier metadata are prepared
-  once per observable, with cached graphs reused by ODE matching and NetWriter
-  group emission. Source-derived multi-pattern ODE and `.net` group contracts
-  pass; no observable semantics were intentionally broadened.
+  `1c03bc12a62724a3c30a8800b25cc7fb2188a1cb`; its parent
+  `4ea7157acbed00467f3e93ac6155d6c39486169a` is the observable-pattern
+  preparse/cache checkpoint. `1c03bc1` ports the source-derived CLI action
+  execution error boundary: action exceptions now produce a deterministic
+  failure exit and diagnostic instead of an uncaught C++ abort. The missing
+  `.net` fixture and CTest contract pass.
 - [x] The latest public code/test checkpoint is
-  `4ea7157acbed00467f3e93ac6155d6c39486169a`, whose parent is
-  `d502e4798ff0f24f469a2c0a29fd0b13d793f083`; it adds the source-derived
-  observable-pattern preparse/cache change and targeted behavior remains
-  green.
+  `1c03bc12a62724a3c30a8800b25cc7fb2188a1cb`, whose parent is
+  `4ea7157acbed00467f3e93ac6155d6c39486169a`; it includes the observable
+  preparse/cache contracts and the source-derived CLI action-error contract.
 - [x] The latest published CI-repair checkpoint is
   `9a2475a0af360d685dc41eb9bb376f6517d74b4d`; `gh api` and `gh pr view 2`
   agreed on this branch/PR source head immediately after push, and PR #2
@@ -81,6 +79,11 @@ completion gate.
   including the source-derived multi-pattern ODE and repeated-pattern NetWriter
   contracts. This evidence qualifies `4ea7157` only; later semantic or
   documentation heads require fresh exact-head readback.
+- [x] Current semantic checkpoint `1c03bc1` passes the full local Release/Ninja
+  CTest gate: `181/181` from `ctest --test-dir build --output-on-failure`,
+  including the source-derived CLI action-error contract. This evidence
+  qualifies `1c03bc1` only; later semantic or documentation heads require
+  fresh exact-head readback.
 - [ ] Separate local Debug/ASan evidence has not yet been rerun for 5f6da07;
   prior 0f83347 evidence was supplemental memory-safety coverage, not a
   substitute for hosted sanitizer and leak/UBSan gates.
@@ -379,14 +382,13 @@ completion gate.
   source-derived multi-pattern ODE and repeated-pattern NetWriter contracts
   pass in the targeted `6/6` CTest selection; independent BNG3 benchmark
   reproduction remains open.
-- [ ] Audit and, where supported, port the remaining common portable-CPU
-  chain represented by branch `codex/portable-cpu-20260831` at
-  `305b7482febe3dd52ccd517fa4cd2e02504e834c`, including exact-dedup and
-  canonical-label/order changes (`5291159d`, `92ca4c03`, `70acc9e2`, and
-  `7ee2db11`) with source-derived correctness and benchmark evidence. The
-  listed source commits are now ported above; branch-level residuals,
-  independent BNG3 benchmark evidence, and unsafe or superseded experiments
-  must still be classified explicitly.
+- [x] Branch `codex/portable-cpu-20260831` at
+  `305b7482febe3dd52ccd517fa4cd2e02504e834c` was audited. Its listed
+  exact-dedup/canonical-label source commits are ported above; remaining
+  branch content is documentation/benchmark material plus the separate
+  `0463a1f4` Macro allocation candidate. Independent BNG3 benchmark evidence
+  and the supported Macro executable path remain open below; the branch is not
+  a clean merge target.
 - [x] Branch `codex/ode-integration` at
   `9c7c0aa3e031330b7421a8e93a2340dc65c43cbb` and source commit `dd665873`
   were audited and ported tests-first at BNG3 `3b284a5`. The focused
@@ -395,23 +397,53 @@ completion gate.
   `codex/ode-jtimes-20260901` at
   `fde0cd6a522c9f988d5495db31c70ce0f98e744b` adds no code beyond that ODE
   lineage and must not be bulk-merged.
-- [ ] Audit branch `codex/graph-string-20260901` at
+- [x] Branch `codex/graph-string-20260901` at
   `62f4dc6bd2a191d89a593e2d952e6c74c5b47271` and
   `codex/canonical-redesign-20260901` at
-  `901ce2d94db6d423e81745cb5f1ef1e82e1c865a`; their remaining Node/canonical
-  performance changes must be reconciled separately from the already ported
-  formatting changes.
-- [ ] Classify branch `codex/parallel-optin-20260901` at
-  `e52e8e41751f389eb8187b7e6d0ab946f0e5b8e8` and
-  `codex/gpu-optin-20260901` at
-  `0c5217531ebb9e692cc5cff4d76535ed8b4cca91`; benchmark/launcher and
-  documentation-only changes require an approved capability and performance
-  disposition before inclusion.
-- [ ] Audit every remaining non-main branch tip, including closed/superseded
-  Bolt branches, for correctness, security, compatibility, and provenance.
-  Record each exact source SHA once as incorporated, equivalent, superseded,
-  non-applicable, pending-port, or blocked-on-design; do not silently import
-  `.jules` or generated artifacts.
+  `901ce2d94db6d423e81745cb5f1ef1e82e1c865a` were audited. Their residual
+  tips are documentation-only records beyond the already ported Node/string
+  and canonical behavior; no unreviewed source change is pending from them.
+- [x] Branch `codex/parallel-optin-20260901` at
+  `e52e8e41751f389eb8187b7e6d0ab946f0e5b8e8` was classified as an opt-in
+  independent-model launcher/benchmark branch, not a default runtime port.
+  Branch `codex/gpu-optin-20260901` at
+  `0c5217531ebb9e692cc5cff4d76535ed8b4cca91` is documentation-only and
+  records no retained GPU capability; both require a separate approved
+  capability/performance decision before inclusion.
+- [x] The remaining non-main fork tips were audited read-only, including issue
+  branch `codex/bionetgen-issues-20260901` at
+  `1f92663066cfccfa33876f8e3b61c8dd21e10742`, ODE-JTimes branch
+  `fde0cd6a522c9f988d5495db31c70ce0f98e744b`, closed/superseded Bolt heads
+  `8aff40f6ddc017ece0eb03c5251edbcd0a27dd82`,
+  `06d8c9f2947594b38664c929c625d9164e09fd91`,
+  `0351eba9d4827c6c86e07fb06a1c56cd9dfd2160`,
+  `07240c0774d51073259205cf78f44e31314d5a98`, and
+  `abecfecb339f7ba2dc66580abf4c584f859caf0b`, plus the Jules and Sentinel
+  security branches. Source changes were classified as already ported,
+  superseded, non-applicable to BNG3, or pending below; `.jules` and generated
+  artifacts were not imported. A durable per-commit reconciliation ledger is
+  still required by Section 1.3.
+- [x] The issue branch's native fixes were reconciled: empty-graph handling,
+  pure-bond rejection, and CLI action exception reporting are already covered
+  by BNG3 checkpoints `b610992`, `0f83347`, and `1c03bc1`. Its BNG2 `Network3`
+  memory/tfun/output fixes are not native BNG3 source and remain a separate
+  legacy compatibility audit.
+- [x] Sentinel ContactMap server branches were classified non-applicable to
+  the current BNG3 tree, which has no `parsers/ContactMap/server.py`; their
+  exact security findings remain recorded for inventory. The Sentinel Perl
+  open-injection branch is applicable to the bundled legacy Macro module and
+  remains an explicit pending port below.
+- [ ] Port and test the applicable legacy Perl open-mode hardening from source
+  commit `cdbd6ee98a7a546a7c8fa774e8d97bec6d9104d0` into
+  `legacy/perl/Perl2/MacroBNGModel.pm`, including explicit three-argument
+  input/output modes and the corrected error path. Do not treat the unrelated
+  ContactMap server fixes as BNG3 ports.
+- [ ] Reconcile source performance commit
+  `0463a1f4906a7e4e0d51a4ac79fe16fee6a58ac`
+  (`num_site`/`cor_net` allocation changes) only after BNG3's supported Macro
+  path is link-complete: a source-derived direct test currently exposes the
+  missing `MacroBNGModel::trans_specie` definition. Add the executable-path
+  contract first; do not hide this linker gap with a test stub.
 
 ## 2. Independent validation and provenance spine
 
@@ -919,17 +951,19 @@ completion gate.
   event conditions and remain release-candidate work. This documentation
   refresh creates a new public head and requires another exact-head check
   readback after push.
-- [ ] Current public semantic checkpoint `4ea7157` (and every documentation
-  checkpoint that follows it) has a fresh terminal hosted check set read back
-  with `gh`; the PR #2 metadata must converge to the same head. For
-  `4ea7157acbed00467f3e93ac6155d6c39486169a`, CI run
-  [33541584804](https://github.com/RuleWorld/BNG3/actions/runs/33541584804),
-  CodeQL run
-  [33541584888](https://github.com/RuleWorld/BNG3/actions/runs/33541584888),
-  and formatting run
-  [33541584669](https://github.com/RuleWorld/BNG3/actions/runs/33541584669)
-  were queued at readback. Queued or partial results are not completion
-  evidence; a later checklist push creates another exact-head run set.
+- [ ] Current public semantic checkpoint
+  `1c03bc12a62724a3c30a8800b25cc7fb2188a1cb` has not yet acquired a terminal
+  hosted check set. At exact-head readback, CI run
+  [33559750553](https://github.com/RuleWorld/BNG3/actions/runs/33559750553),
+  formatting run
+  [33559750558](https://github.com/RuleWorld/BNG3/actions/runs/33559750558),
+  and CodeQL run
+  [33559750568](https://github.com/RuleWorld/BNG3/actions/runs/33559750568)
+  were queued; queued or partial results are not completion evidence. The PR
+  #2 metadata and branch ref agreed on
+  `1c03bc12a62724a3c30a8800b25cc7fb2188a1cb` immediately after push. Every
+  later semantic or documentation checkpoint requires a fresh exact-head
+  readback.
 - [ ] Every required job emits a terminal summary with counts, failures,
   skips, exception budget, corpus/source revision, and artifact digests.
 - [ ] Required jobs fail when a claimed oracle, corpus, validator, or compiler
@@ -1121,6 +1155,15 @@ These are known unchecked requirements, not reasons to claim completion:
   seeded trajectory. The source-derived AN2 trajectory is exact at `e92b2c9`;
   remaining direct-NFsim parity work is the broader Tier-NF corpus, protocol,
   and other capability gates below.
+- Source performance commit `0463a1f4` is not ported: BNG3's direct Macro test
+  path cannot link because `MacroBNGModel::trans_specie` is declared but
+  undefined. Restore or explicitly disposition the supported Macro path,
+  write source-derived tests, then revisit the `num_site`/`cor_net` allocation
+  rewrite.
+- The bundled legacy `legacy/perl/Perl2/MacroBNGModel.pm` still contains
+  two-argument `open` calls and filename-controlled mode forms. The source
+  security hardening at `cdbd6ee9` remains an unchecked compatibility/security
+  item until tests and an explicit-mode port land.
 - Structured SBML atomization still has a deliberate visible error, and
   local validation has environment-dependent skips; hosted validation green
   does not prove full Tier-P/NF/X parity.
