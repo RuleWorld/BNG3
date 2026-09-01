@@ -165,6 +165,16 @@ double FunctionalRxnClass::update_a() {
 
 	a *= this->volumeConversionFactor;
 
+	// FunctionalRxnClass is constructed with baseRate=1, so the constructor's
+	// symmetry correction is otherwise lost for ordinary functional rates.
+	// TotalRate already states the complete propensity and must not receive that
+	// reaction-center correction.  This placement matches NFsim commit 1b19611:
+	// the loader sets totalRateFlag after construction and setBaseRate().
+	if (!this->totalRateFlag)
+	{
+		a *= this->baseRate;
+	}
+
 	if(a<0) {
 		cout<<"Warning!!  The function you provided for functional rxn: '"<<name<<"' evaluates\n";
 		cout<<"to a value less than zero!  You cannot have a negative propensity!";

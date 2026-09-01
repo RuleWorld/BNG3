@@ -203,7 +203,9 @@ ReactionClass::ReactionClass(string name, double baseRate, string baseRateParame
 
 	if ( this->transformationSet->usingSymmetryFactor() )
 	{	// new general method for handling reaction center symmetry
-		baseRate *= this->transformationSet->getSymmetryFactor();
+		// Keep the correction on the member.  The constructor argument has the
+		// same name and scaling it would discard the correction on return.
+		this->baseRate *= this->transformationSet->getSymmetryFactor();
 	}
 	else
 	{	// old method for handling symmetric binding and unbinding
