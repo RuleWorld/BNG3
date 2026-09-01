@@ -30,6 +30,7 @@
 #include "BNGParser.h"
 #include <antlr4-runtime.h>
 #include "io/XmlWriter.hpp"
+#include "io/BnglWriter.hpp"
 #include "parser/BNGAstVisitor.hpp"
 
 namespace {
@@ -265,6 +266,13 @@ end seed species
           xml.find("<ComponentType id=\"y\"", aType));
     CHECK(xml.find("<ComponentType id=\"a\"", zType) <
           xml.find("<ComponentType id=\"b\"", zType));
+
+    const auto bngl = bng::io::BnglWriter::write(*model);
+    const auto aBngl = bngl.find("  A(x,y)");
+    const auto zBngl = bngl.find("  Z(a,b)");
+    REQUIRE(aBngl != std::string::npos);
+    REQUIRE(zBngl != std::string::npos);
+    CHECK(aBngl < zBngl);
 
     int suggestedTraversalLimit = 0;
     auto* system = NFinput::buildSystemFromAst(
