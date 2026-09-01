@@ -4,8 +4,8 @@
 **Last audited:** 2026-09-01
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 300724baf8a08670255f2c79e548b051bd00119d
-**Checklist refresh base:** 300724b (NFsim mapping-RNG parity checkpoint; refresh after each semantic checkpoint)
+**Audited semantic code head:** 41b12f2d897154f9c7ea4a35482d022ad37c69f9
+**Checklist refresh base:** 41b12f2 (BNG2 inferred state/type-order and AN2 trajectory checkpoint; refresh after each semantic checkpoint)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -47,20 +47,22 @@ completion gate.
 
 - [x] Required fast-forward pull completed before this documentation change.
 - [x] The latest pushed semantic checkpoint is
-  300724baf8a08670255f2c79e548b051bd00119d; it adds the source-compatible
-  dual mapping-RNG stream and exact IfTest trajectory assertions while
-  preserving per-System reaction timing/selection.
+  41b12f2d897154f9c7ea4a35482d022ad37c69f9; it adds the source-compatible
+  dual mapping-RNG stream, BNG2 seed allocation/canonical ordering, and
+  inferred integer-state handling while preserving per-System reaction
+  timing/selection.
 - [x] The small documentation grammar fix remains the only unrelated tracked
   BNG3 worktree modification. It remains intentionally unstaged and must not
   be mixed into semantic or checklist commits.
-- [x] Exact-head CTest passes `162/162` on 300724b (local Release/Ninja
+- [x] Exact-head CTest passes `167/167` on 41b12f2 (local Release/Ninja
   build; `ctest --test-dir build --output-on-failure`), including the t4
-  rejection contract and IfTest parity assertions.
+  rejection contract, inferred-state/type-order gates, and IfTest parity
+  assertions.
 - [ ] Separate local Debug/ASan evidence has not yet been rerun for 5f6da07;
   prior 0f83347 evidence was supplemental memory-safety coverage, not a
   substitute for hosted sanitizer and leak/UBSan gates.
-- [x] The full NFsim AST adapter executable passes 109 test cases and 1167
-  assertions on 300724b. It covers compact energy evaluation, cached compact
+- [x] The full NFsim AST adapter executable passes 114 test cases and 1234
+  assertions on 41b12f2. It covers compact energy evaluation, cached compact
   rate factors, specialized reverse propensities, sparse selector ordering,
   cached single- and multi-term Arrhenius factors, direct-product endpoint
   identity propagation, safe direct-product traversal, cached pre-fire binding
@@ -84,9 +86,12 @@ completion gate.
   reactant-count rate on direct and in-memory XML paths (11 assertions), plus
   XML preservation of the `TotalRate` modifier (9 assertions), and the IfTest
   conditional global functions with legacy `&&` expressions and live-threshold
-  trajectory branch semantics on direct and XML paths (74 assertions).
+  trajectory branch semantics on direct and XML paths (74 assertions). It also
+  covers BNG2 inferred integer-state handling for wildcard/PLUS/MINUS tokens,
+  lexical molecule-type registration, canonical inferred component order, and
+  direct/XML/BNGL writer order.
 - [ ] The source-derived historical NFsim `test/testSuite/t4.bngl` and related
-  `t5.bngl` syntax remain open capability gaps. At 300724b, BNG3's parser
+  `t5.bngl` syntax remain open capability gaps. At 41b12f2, BNG3's parser
   rejects the t4 fixture with the stable diagnostic `Cannot build model from
   source with syntax errors`. Independent inspection found the fixtures were
   introduced by NFsim commit `3c7b6a3` as preliminary tests, current BNG2
@@ -96,17 +101,17 @@ completion gate.
   independent oracle, canonical-AST design, runtime semantics, and direct/XML
   contract tests.
 - [x] The full NFsim tree/system executable passes 157 assertions in 8 test
-  cases on 300724b. This includes the source-derived unsafe output-name
+  cases on 41b12f2. This includes the source-derived unsafe output-name
   rejection port from NFsim `3527edb` and continuous-vs-chunked `stepTo`
   checkpoint tests from NFsim `e3ef4a0` (50 assertions across the two new
   cases, including the zero-propensity boundary).
-- [x] Exact-head Python/API tests pass on semantic checkpoint `300724b`:
+- [x] Exact-head Python/API tests pass on semantic checkpoint `41b12f2`:
   `229 passed, 27 skipped, 8 warnings` from
   `PYTHONPATH=python:build/cpp python -m pytest tests/python -q`. The installed-
   wheel target still has only historical evidence and is not release evidence
   for this head.
 - [x] The exact NFsim `IfTest/ifTest.bngl` source fixture now parses through
-  `build/cpp/bng_cpp --check` on 300724b, including its empty `reactant_1()`
+  `build/cpp/bng_cpp --check` on 41b12f2, including its empty `reactant_1()`
   placeholder declaration; parser acceptance is not execution parity.
 - [x] Local CI workflow contract tests pass 10/10, including the pull-request
   source-distribution smoke gate.
@@ -116,7 +121,7 @@ completion gate.
   are absent); Ruff and git diff checks pass. The broader ad hoc check that
   included `tests/validation/` remains red on pre-existing formatting drift
   and is not the hosted CI command.
-- [x] Local validation smoke on current semantic head `300724b` reports 4
+- [x] Local validation smoke on current semantic head `41b12f2` reports 4
   passed and 15 skipped. The remaining skips are visible
   `run_network`/reference-oracle gaps, with sandbox process-inspection noise
   also present, and must not be treated as parity.
@@ -134,10 +139,9 @@ completion gate.
   `419bb2bd29f319bfc638c50b9c29cec0934b6d87eb7ce8fcdefed70a01f618c2`
   (CPython 3.14 arm64 wheel); the installed-target Python suite is recorded
   above.
-- [ ] Current hosted checks for checkpoint `300724b` must be refreshed after
-  the mapping-RNG checkpoint and this documentation checkpoint. Before this
-  refresh, formatting was terminal-success, CI was queued, and CodeQL was in
-  progress;
+- [ ] Current hosted checks for checkpoint `41b12f2` must be refreshed after
+  this documentation checkpoint. Before this refresh, formatting was
+  terminal-success, CI was queued, and CodeQL was in progress;
   no nonterminal result is completion evidence.
 - [x] Historical hosted PR checks for semantic head
   `0f833470950fc47329f5b7381c64533e623b45ce` were terminal-success: [CI run
@@ -151,7 +155,7 @@ completion gate.
   33493581573](https://github.com/RuleWorld/BNG3/actions/runs/33493581573)
   passed. Results were read back with `gh` against the exact public head;
 - [ ] Fresh hosted CI, CodeQL, and formatting checks for current public head
-  `300724b` are pending after this checklist refresh is pushed; superseded runs
+  `41b12f2` are pending after this checklist refresh is pushed; superseded runs
   do not count as evidence.
 - [x] Modern Atomizer checkpoints exist for annotations, BNG-XML conversion,
   Rulifier, UniProt, structure helpers, and conservative SBML-Multi discovery,
@@ -381,24 +385,39 @@ completion gate.
 - [ ] Comparisons cover molecule types, seed complexes, transformations,
   observables, functions, compartments, options, reaction rules, seeded
   deterministic behavior, and stochastic distributions.
-- [x] Exact seeded native-NFsim trajectory parity is resolved for the
-  source-derived `IfTest` fixture at 300724b. An independent rebuild of the
-  public NFsim checkout at `a6f9fa945c9d6e1e122e789c952260112c93f157` and BNG3
-  were both run from `nfsim/test/IfTest/ifTest.xml`, seed `1`, and output times
-  `0,0.5,1,2,3,4,5`; both produced byte-identical `.gdat` files with SHA-256
+- [ ] Current exact seeded native-NFsim trajectory parity is not yet closed for
+  the source-derived `IfTest` fixture. Historical evidence at `300724b` remains
+  reproducible: an independent rebuild of the public NFsim checkout at
+  `a6f9fa945c9d6e1e122e789c952260112c93f157` and BNG3 were both run from
+  `nfsim/test/IfTest/ifTest.xml`, seed `1`, and output times `0,0.5,1,2,3,4,5`;
+  both produced byte-identical `.gdat` files with SHA-256
   `85fef92118f5effffec6e8f179c0912f4f28efd5a53c2b5a79ef9807de6ffe88` and
-  `Ton = 0, 2236, 3944, 6306, 7787, 8656, 9176`. The source-derived
+  `Ton = 0, 2236, 3944, 6306, 7787, 8656, 9176`. The current `41b12f2`
+  focused direct/XML adapter assertions remain green, and the source-derived
   `stepTo` event-cache port from NFsim `e3ef4a0` preserves
-  continuous-vs-chunked checkpoint timing. BNG3 mirrors current NFsim's split:
-  reaction timing/selection stays per-System, while legacy molecule/mapping
-  selectors identified in source commits `64d225f` and `a6f9fa9` use a second
-  per-System stream seeded identically (`300724b`; exact direct and XML
-  assertions in `tests/cpp/test_nfsim_ast_adapter.cpp`).
+  continuous-vs-chunked checkpoint timing. However, the exact
+  `bng_cpp --console` fixture still fails closed while mapping `R2` because
+  `reactant_1` is classified as composite or unavailable. The current-head
+  direct-console acceptance gate and a fresh independent three-way trajectory
+  run remain required. BNG3 mirrors current NFsim's split: reaction
+  timing/selection stays per-System, while legacy molecule/mapping selectors
+  identified in source commits `64d225f` and `a6f9fa9` use a second per-System
+  stream seeded identically (exact direct and XML assertions in
+  `tests/cpp/test_nfsim_ast_adapter.cpp`).
 - [ ] Tier-NF includes localfunc, motor, TQSSA, tlbr, simple_system,
   fceRI/multisite fixtures where supported, and the relevant nfsim-master/test
   inputs.
-- [ ] The AN2 trajectory mismatch is resolved with a source-level diagnosis,
-  discriminating fixture, and independent evidence.
+- [x] The source-derived AN2 trajectory is now exact through the direct AST
+  path. The unmodified NFsim fixture
+  `nfsim/test/AN_chemotaxis/an2.bngl` was parsed by BNG3 `41b12f2` and run
+  with seed `1`, `t_end=10`, and ten output steps; an independent native
+  NFsim `a6f9fa9` run from `nfsim/test/AN_chemotaxis/an2.xml` used the same
+  seed/time grid. Both produced 7,807 events and byte-identical `.gdat`
+  output with SHA-256
+  `0fdb80a8e151a30b3051be2e1fced2dafc6ccc5223e96e4d474ab5f386032d64`.
+  The discriminating source ports were position-major repeated-seed
+  allocation (`bdddbd4`), BNG2 canonical seed graph/type ordering
+  (`41b12f2`), and numeric-site wildcard/PLUS/MINUS handling (`3be1b40`).
 - [ ] Protocol NF support and remaining RNA/t4/t5/IfTest direct behavior are
   implemented or explicitly governed with tests and owners.
 - [ ] The full fixed-seed and distributional Tier-NF gate passes at the
@@ -857,12 +876,16 @@ These are known unchecked requirements, not reasons to claim completion:
   canonical-label and shared-expression master-function migrations are not
   complete.
 - Direct NFsim remains a bounded subset with visible XML fallback/shadow
-  machinery; AN2, protocol-NF, remaining function/rate-law, and full
-  independent Tier-NF evidence remain open.
-- The source-derived IfTest branch gate and exact seeded native-NFsim
-  trajectory are now green on direct and XML paths at `300724b`; the remaining
-  direct-NFsim parity work is the broader Tier-NF corpus and unresolved AN2,
-  protocol, and other capability gates below.
+  machinery; protocol-NF, remaining function/rate-law, broader Tier-NF, and
+  full independent evidence remain open. The exact AN2 trajectory is now a
+  green checkpoint, not a substitute for that broader gate.
+- The source-derived IfTest conditional-function branch tests remain green in
+  focused direct/XML adapter tests, but the exact current-head console route
+  still has the `reactant_1` direct-mapper gap; the historical seeded artifact
+  is therefore not current-head completion evidence. The source-derived AN2
+  trajectory is exact at `41b12f2`; remaining direct-NFsim parity work is the
+  IfTest console gate, broader Tier-NF corpus, protocol, and other capability
+  gates below.
 - Structured SBML atomization still has a deliberate visible error, and
   local validation has environment-dependent skips; hosted validation green
   does not prove full Tier-P/NF/X parity.
