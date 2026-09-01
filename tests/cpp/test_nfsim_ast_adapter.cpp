@@ -672,6 +672,121 @@ end reaction rules
     delete system;
 }
 
+TEST_CASE("NFsim AST adapter counts pure context trimer and scaffold once") {
+    // Source-derived from akutuva21/nfsim commit 9b2fff8.  A single-molecule
+    // context pattern must collapse all embeddings in one complex, independent
+    // of pattern or species automorphisms: the trimer distinguishes a factor
+    // of three, while the scaffold has two distinguishable copies.
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    C(s~0~1)
+    T(a,b)
+    Vx(d,t)
+    Vs(p,q)
+end molecule types
+begin seed species
+    C(s~0) 1
+    T(a!1,b!3).T(a!2,b!1).T(a!3,b!2) 1
+    Vx(d,t!1).Vs(p!1,q!2).Vx(d,t!2) 1
+end seed species
+begin reaction rules
+    C(s~0) + T(a!1,b!3).T(a!2,b!1).T(a!3,b!2) -> C(s~1) + T(a!1,b!3).T(a!2,b!1).T(a!3,b!2) k
+    C(s~0) + Vx(d) -> C(s~1) + Vx(d) k
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(
+        *model, true, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 2);
+    system->prepareForSimulation();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(1.0));
+    CHECK(system->getReaction(1)->get_a() == Catch::Approx(1.0));
+    delete system;
+}
+
+TEST_CASE("NFsim AST adapter preserves transformed homodimer binding multiplicity") {
+    // Source-derived from akutuva21/nfsim commit 9b2fff8 and its context
+    // symmetry fixture.  The homodimer is a reaction center here: either half
+    // can bind B, so the propensity remains 2*k.  In particular, the EMPTY
+    // transform on the second binding partner must not make this pure context.
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    B(b)
+    H(d,c)
+end molecule types
+begin seed species
+    B(b) 1
+    H(d!1,c).H(d!1,c) 1
+end seed species
+begin reaction rules
+    B(b) + H(d!1,c).H(d!1,c) -> B(b!2).H(d!1,c!2).H(d!1,c) k
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(
+        *model, true, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    system->prepareForSimulation();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(2.0));
+    delete system;
+}
+
+TEST_CASE("NFsim AST adapter counts pure DOR context once per complex") {
+    // Source-derived from akutuva21/nfsim commit 9b2fff8 and its
+    // context_symmetry.bngl R_dor_sym/R_dor_asym pair.  The locally scoped
+    // homodimer is a pure context for the state-changing C molecule, so the
+    // DOR tree must contribute one matching complex rather than two matching
+    // embeddings.
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    Src()
+    C(s~0~1)
+    W(d)
+end molecule types
+begin seed species
+    Src() 1
+    C(s~0) 1
+    W(d!1).W(d!1) 1
+end seed species
+begin observables
+    Molecules Obs_Src Src()
+    Molecules Cnt_W W()
+end observables
+begin functions
+    locs(x) = k*Obs_Src + 0*Cnt_W(x)
+end functions
+begin reaction rules
+    C(s~0) + W(d!1)%x.W(d!1) -> C(s~1) + W(d!1)%x.W(d!1) locs(x)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(
+        *model, true, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    CHECK(system->getReaction(0)->getRxnType() == NFcore::ReactionClass::DOR_RXN);
+    system->prepareForSimulation();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(1.0));
+    delete system;
+}
+
 TEST_CASE("NFsim AST adapter maps bare molecule stoichiometric observables") {
     auto model = bng::parser::parseModel(R"(
 begin molecule types

@@ -55,6 +55,11 @@ namespace NFcore
 			 */
 			virtual int size() const { return n_mappingSets; };
 
+			void noteMappedComplexSize(int complexSize) {
+				if (complexSize > 1) anyMultiMoleculeComplex = true;
+			}
+			bool mayShareComplexes() const { return anyMultiMoleculeComplex; }
+
 			/*!
 				Returns the sum population of all mappingSets that have been added to this list
 			 */
@@ -117,6 +122,7 @@ namespace NFcore
 
 			/*! Maintains the number of mappingSets on this list */
 			int n_mappingSets;
+			bool anyMultiMoleculeComplex;
 
 			/*! The total capacity that this list can hold */
 			int capacity;

@@ -339,6 +339,12 @@ int DORRxnClass::checkForCollision(Molecule *m, MappingSet* ms, int rxnIndex){
 bool DORRxnClass::tryToAdd(Molecule *m, unsigned int reactantPos) {
 	if(DEBUG_MESSAGE)cout<<endl<<endl<<"adding molecule to DORRxnClass"<<endl;
 	if(DEBUG_MESSAGE)m->printDetails();
+	if (contextCountsPerComplex[reactantPos] && m->getComplex() != 0) {
+		if (reactantPos == (unsigned)DORreactantIndex)
+			reactantTree->noteMappedComplexSize(m->getComplex()->getComplexSize());
+		else
+			reactantLists[reactantPos]->noteMappedComplexSize(m->getComplex()->getComplexSize());
+	}
 	if(reactantPos==(unsigned)this->DORreactantIndex) {
 		if(DEBUG_MESSAGE)cout<<" ... as a DOR "<<this->name<<endl;
 		//cout<<"RxnListMappingId: "<<m->getRxnListMappingId(m->getMoleculeType()->getRxnIndex(this,reactantPos))<<endl;
@@ -583,23 +589,15 @@ int DORRxnClass::getReactantCount(unsigned int reactantIndex) const
 int DORRxnClass::getCorrectedReactantCount(unsigned int reactantIndex) const
 {
 	if(reactantIndex==(unsigned)this->DORreactantIndex) {
-		return reactantTree->size();
+		return contextCountsPerComplex[reactantIndex]
+				? countDistinctComplexes(reactantTree)
+				: reactantTree->size();
 	}
 
-	if (matchOncePerReactant[reactantIndex] && !isPopulationType[reactantIndex]) {
-		std::set<int> uniqueComplexes;
-		ReactantList *rl = reactantLists[reactantIndex];
-		int size = rl->size();
-		for (int i = 0; i < size; ++i) {
-			MappingSet *ms = rl->getMappingSetByIndex(i);
-			if (ms && ms->getNumOfMappings() > 0) {
-				Mapping *mapping = ms->get(0);
-				if (mapping && mapping->getMolecule()) {
-					uniqueComplexes.insert(mapping->getMolecule()->getComplexID());
-				}
-			}
-		}
-		return (int)uniqueComplexes.size();
+	if ((matchOncePerReactant[reactantIndex] ||
+			contextCountsPerComplex[reactantIndex]) &&
+			!isPopulationType[reactantIndex]) {
+		return countDistinctComplexes(reactantLists[reactantIndex]);
 	}
 
 	return isPopulationType[reactantIndex] ?
@@ -712,7 +710,9 @@ double DORRxnClass::update_a() {
 		if(i!=DORreactantIndex) {
 			a*=(double)getCorrectedReactantCount(i);
 		} else {
-			a*=reactantTree->getRateFactorSum();
+			a *= contextCountsPerComplex[i]
+					? perComplexRateFactorSum(reactantTree)
+					: reactantTree->getRateFactorSum();
 		}
 	}
 	return a;
@@ -749,35 +749,41 @@ double DORRxnClass::exactRuleMonkey_a()
 		validCombinations = 1.0;
 	} else if (n_reactants == 1) {
 		if (0 == DORreactantIndex) {
-			validCombinations = reactantTree->getRateFactorSum();
+			validCombinations = contextCountsPerComplex[0]
+					? perComplexRateFactorSum(reactantTree)
+					: reactantTree->getRateFactorSum();
 		} else {
 			validCombinations = getCorrectedReactantCount(0);
 		}
 	} else if (n_reactants == 2) {
-		int size0 = getReactantCount(0);
-		int size1 = getReactantCount(1);
+		static thread_local vector<MappingSet*> reps0, reps1;
+		static thread_local vector<int> idx0, idx1;
+		collectReactantRepresentatives(reactantLists[0], contextCountsPerComplex[0], reps0, &idx0);
+		collectReactantRepresentatives(reactantLists[1], contextCountsPerComplex[1], reps1, &idx1);
 		double totalCombinations = 1.0;
 		for(unsigned int i=0; i<n_reactants; i++) {
 			if(i!=DORreactantIndex) {
-				totalCombinations*=(double)getReactantCount(i);
+				totalCombinations*=(double)getCorrectedReactantCount(i);
 			} else {
-				totalCombinations*=reactantTree->getRateFactorSum();
+				totalCombinations *= contextCountsPerComplex[i]
+						? perComplexRateFactorSum(reactantTree)
+						: reactantTree->getRateFactorSum();
 			}
 		}
 
 		double invalidCombinations = 0;
 
-		for (int i = 0; i < size0; ++i) {
-			msPairBuffer[0] = reactantLists[0]->getMappingSet(i);
-			for (int j = 0; j < size1; ++j) {
-				msPairBuffer[1] = reactantLists[1]->getMappingSet(j);
+		for (size_t i = 0; i < reps0.size(); ++i) {
+			msPairBuffer[0] = reps0[i];
+			for (size_t j = 0; j < reps1.size(); ++j) {
+				msPairBuffer[1] = reps1[j];
 				
 				if (!transformationSet->checkMolecularity(msPairBuffer)) {
-					double weight = 1.0;
+				double weight = 1.0;
 					if (0 == DORreactantIndex) {
-						weight = reactantTree->getRateFactor(i);
+						weight = reactantTree->getRateFactor(idx0[i]);
 					} else if (1 == DORreactantIndex) {
-						weight = reactantTree->getRateFactor(j);
+						weight = reactantTree->getRateFactor(idx1[j]);
 					}
 					invalidCombinations += weight;
 				}
@@ -791,7 +797,9 @@ double DORRxnClass::exactRuleMonkey_a()
 			if(i!=DORreactantIndex) {
 				validCombinations*=(double)getCorrectedReactantCount(i);
 			} else {
-				validCombinations*=reactantTree->getRateFactorSum();
+				validCombinations *= contextCountsPerComplex[i]
+						? perComplexRateFactorSum(reactantTree)
+						: reactantTree->getRateFactorSum();
 			}
 		}
 	}
@@ -2133,6 +2141,14 @@ bool DOR2RxnClass::tryToAdd(Molecule *m, unsigned int reactantPos) {
 
 	// adding molecule to DOR2RxnClass
 	//if(DEBUG_MESSAGE)m->printDetails();
+	if (contextCountsPerComplex[reactantPos] && m->getComplex() != 0) {
+		if (reactantPos == (unsigned)DORreactantIndex1)
+			reactantTree1->noteMappedComplexSize(m->getComplex()->getComplexSize());
+		else if (reactantPos == (unsigned)DORreactantIndex2)
+			reactantTree2->noteMappedComplexSize(m->getComplex()->getComplexSize());
+		else
+			reactantLists[reactantPos]->noteMappedComplexSize(m->getComplex()->getComplexSize());
+	}
 	if (reactantPos==(unsigned)this->DORreactantIndex1) {
 
 		// handle the DOR reactant
@@ -2260,26 +2276,18 @@ int DOR2RxnClass::getReactantCount(unsigned int reactantIndex) const
 int DOR2RxnClass::getCorrectedReactantCount(unsigned int reactantIndex) const
 {
 	if (reactantIndex==(unsigned)DORreactantIndex1) {
-		return reactantTree1->size();
+		return contextCountsPerComplex[reactantIndex]
+				? countDistinctComplexes(reactantTree1) : reactantTree1->size();
 	}
 	else if (reactantIndex==(unsigned)DORreactantIndex2) {
-		return reactantTree2->size();
+		return contextCountsPerComplex[reactantIndex]
+				? countDistinctComplexes(reactantTree2) : reactantTree2->size();
 	}
 
-	if (matchOncePerReactant[reactantIndex] && !isPopulationType[reactantIndex]) {
-		std::set<int> uniqueComplexes;
-		ReactantList *rl = reactantLists[reactantIndex];
-		int size = rl->size();
-		for (int i = 0; i < size; ++i) {
-			MappingSet *ms = rl->getMappingSetByIndex(i);
-			if (ms && ms->getNumOfMappings() > 0) {
-				Mapping *mapping = ms->get(0);
-				if (mapping && mapping->getMolecule()) {
-					uniqueComplexes.insert(mapping->getMolecule()->getComplexID());
-				}
-			}
-		}
-		return (int)uniqueComplexes.size();
+	if ((matchOncePerReactant[reactantIndex] ||
+			contextCountsPerComplex[reactantIndex]) &&
+			!isPopulationType[reactantIndex]) {
+		return countDistinctComplexes(reactantLists[reactantIndex]);
 	}
 
 	return isPopulationType[reactantIndex] ?
@@ -2375,11 +2383,15 @@ double DOR2RxnClass::update_a() {
 	//cout << "baseRate=" << baseRate << endl;
 	for (unsigned int i=0; i<n_reactants; i++) {
 		if (i==(unsigned int)DORreactantIndex1) {
-			a*=reactantTree1->getRateFactorSum();
+			a *= contextCountsPerComplex[i]
+					? perComplexRateFactorSum(reactantTree1)
+					: reactantTree1->getRateFactorSum();
 			//cout << i << ":rateFactorSum1=" << reactantTree1->getRateFactorSum() << endl;
 		}
 		else if (i==(unsigned int)DORreactantIndex2) {
-			a*=reactantTree2->getRateFactorSum();
+			a *= contextCountsPerComplex[i]
+					? perComplexRateFactorSum(reactantTree2)
+					: reactantTree2->getRateFactorSum();
 			//cout << i << ":rateFactorSum2=" << reactantTree2->getRateFactorSum() << endl;
 		}
 		else {
@@ -2435,38 +2447,48 @@ double DOR2RxnClass::exactRuleMonkey_a()
 		validCombinations = 1.0;
 	} else if (n_reactants == 1) {
 		if (0 == DORreactantIndex1) {
-			validCombinations = reactantTree1->getRateFactorSum();
+			validCombinations = contextCountsPerComplex[0]
+					? perComplexRateFactorSum(reactantTree1)
+					: reactantTree1->getRateFactorSum();
 		} else if (0 == DORreactantIndex2) {
-			validCombinations = reactantTree2->getRateFactorSum();
+			validCombinations = contextCountsPerComplex[0]
+					? perComplexRateFactorSum(reactantTree2)
+					: reactantTree2->getRateFactorSum();
 		} else {
 			validCombinations = getCorrectedReactantCount(0);
 		}
 	} else if (n_reactants == 2) {
-		int size0 = getReactantCount(0);
-		int size1 = getReactantCount(1);
+		static thread_local vector<MappingSet*> reps0, reps1;
+		static thread_local vector<int> idx0, idx1;
+		collectReactantRepresentatives(reactantLists[0], contextCountsPerComplex[0], reps0, &idx0);
+		collectReactantRepresentatives(reactantLists[1], contextCountsPerComplex[1], reps1, &idx1);
 		double totalCombinations = 1.0;
 		for (unsigned int i=0; i<n_reactants; i++) {
 			if (i==(unsigned int)DORreactantIndex1) {
-				totalCombinations*=reactantTree1->getRateFactorSum();
+				totalCombinations *= contextCountsPerComplex[i]
+						? perComplexRateFactorSum(reactantTree1)
+						: reactantTree1->getRateFactorSum();
 			} else if (i==(unsigned int)DORreactantIndex2) {
-				totalCombinations*=reactantTree2->getRateFactorSum();
+				totalCombinations *= contextCountsPerComplex[i]
+						? perComplexRateFactorSum(reactantTree2)
+						: reactantTree2->getRateFactorSum();
 			} else {
-				totalCombinations*=(double)getReactantCount(i);
+				totalCombinations*=(double)getCorrectedReactantCount(i);
 			}
 		}
 
 		double invalidCombinations = 0;
 
-		for (int i = 0; i < size0; ++i) {
-			msPairBuffer[0] = reactantLists[0]->getMappingSet(i);
-			for (int j = 0; j < size1; ++j) {
-				msPairBuffer[1] = reactantLists[1]->getMappingSet(j);
+		for (size_t i = 0; i < reps0.size(); ++i) {
+			msPairBuffer[0] = reps0[i];
+			for (size_t j = 0; j < reps1.size(); ++j) {
+				msPairBuffer[1] = reps1[j];
 				
 				if (!transformationSet->checkMolecularity(msPairBuffer)) {
-					double weight0 = (0 == DORreactantIndex1) ? reactantTree1->getRateFactor(i) :
-					                 ((0 == DORreactantIndex2) ? reactantTree2->getRateFactor(i) : 1.0);
-					double weight1 = (1 == DORreactantIndex1) ? reactantTree1->getRateFactor(j) :
-					                 ((1 == DORreactantIndex2) ? reactantTree2->getRateFactor(j) : 1.0);
+					double weight0 = (0 == DORreactantIndex1) ? reactantTree1->getRateFactor(idx0[i]) :
+					                 ((0 == DORreactantIndex2) ? reactantTree2->getRateFactor(idx0[i]) : 1.0);
+					double weight1 = (1 == DORreactantIndex1) ? reactantTree1->getRateFactor(idx1[j]) :
+					                 ((1 == DORreactantIndex2) ? reactantTree2->getRateFactor(idx1[j]) : 1.0);
 					invalidCombinations += (weight0 * weight1);
 				}
 			}
@@ -2477,9 +2499,13 @@ double DOR2RxnClass::exactRuleMonkey_a()
 		validCombinations = 1.0;
 		for (unsigned int i=0; i<n_reactants; i++) {
 			if (i==(unsigned int)DORreactantIndex1) {
-				validCombinations*=reactantTree1->getRateFactorSum();
+				validCombinations *= contextCountsPerComplex[i]
+						? perComplexRateFactorSum(reactantTree1)
+						: reactantTree1->getRateFactorSum();
 			} else if (i==(unsigned int)DORreactantIndex2) {
-				validCombinations*=reactantTree2->getRateFactorSum();
+				validCombinations *= contextCountsPerComplex[i]
+						? perComplexRateFactorSum(reactantTree2)
+						: reactantTree2->getRateFactorSum();
 			} else {
 				validCombinations*=(double)getCorrectedReactantCount(i);
 			}

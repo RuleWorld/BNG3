@@ -241,10 +241,21 @@ ReactionClass::ReactionClass(string name, double baseRate, string baseRateParame
 	// check for population type reactants
 	isPopulationType = new bool[n_reactants];
 	matchOncePerReactant = new bool[n_reactants];
+	contextCountsPerComplex = new bool[n_reactants];
 	for( unsigned int i=0; i < n_reactants; ++i )
 	{
 		isPopulationType[i] = reactantTemplates[i]->getMoleculeType()->isPopulationType();
 		matchOncePerReactant[i] = false;
+		contextCountsPerComplex[i] = false;
+	}
+
+	if (system != 0 && system->isUsingComplex()) {
+		for (unsigned int i = 0; i < n_reactants; ++i) {
+			if (!isPopulationType[i]) {
+				contextCountsPerComplex[i] =
+					transformationSet->isPureContextReactant(i);
+			}
+		}
 	}
 
 
@@ -292,6 +303,7 @@ ReactionClass::~ReactionClass()
 	delete [] mappingSet;
 	delete [] isPopulationType;
 	delete [] matchOncePerReactant;
+	delete [] contextCountsPerComplex;
 	delete [] identicalPopCountCorrection;
 	connectedReactions.clear();
 }

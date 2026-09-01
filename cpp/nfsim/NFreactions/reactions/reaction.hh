@@ -11,6 +11,11 @@ using namespace std;
 
 namespace NFcore
 {
+	int countDistinctComplexes(ReactantList *rl);
+	int countDistinctComplexes(ReactantTree *tree);
+	double perComplexRateFactorSum(ReactantTree *tree);
+	void collectReactantRepresentatives(ReactantList *rl, bool perComplex,
+			std::vector<MappingSet*> &out, std::vector<int> *flatIndices = 0);
 
 	class BasicRxnClass : public ReactionClass {
 		public:

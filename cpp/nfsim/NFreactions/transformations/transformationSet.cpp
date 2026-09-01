@@ -894,11 +894,31 @@ MappingSet *TransformationSet::generateBlankMappingSet(unsigned int reactantInde
 	return new MappingSet(mappingSetId, transformations[reactantIndex]);
 }
 
+bool TransformationSet::isPureContextReactant(unsigned int reactantIndex) const
+{
+	if (reactantIndex >= n_reactants) return false;
+	return pureContextReactants.find(reactantIndex) != pureContextReactants.end();
+}
+
 void TransformationSet::finalize()
 {
 	//Be sure to add at least a blank transformation to every reactant if there is no transformation
 	//specified so that we count the reactants even if we don't do anything to it.
 	for(unsigned int r=0; r<getNmappingSets(); r++)  {
+		// Record pure context before the placeholder below makes it
+		// indistinguishable from the second partner of a binding transform.
+		bool pureContext = true;
+		for (unsigned int t = 0; t < transformations[r].size(); ++t) {
+			if (transformations[r].at(t)->getType() !=
+					(int)TransformationFactory::LOCAL_FUNCTION_REFERENCE) {
+				pureContext = false;
+				break;
+			}
+		}
+		if (r < n_reactants && pureContext) {
+			pureContextReactants.insert(r);
+		}
+
 		if(transformations[r].size()==0) {
 			transformations[r].push_back(TransformationFactory::genEmptyTransform());
 			MapGenerator *mg = new MapGenerator(transformations[r].size()-1);

@@ -104,6 +104,10 @@ namespace NFcore
 			MappingSet * getMappingSetByIndex(unsigned int index) const {
 				return index < static_cast<unsigned int>(n_mappingSets) ? mappingSets[index] : 0;
 			}
+			void noteMappedComplexSize(int complexSize) {
+				if (complexSize > 1) anyMultiMoleculeComplex = true;
+			}
+			bool mayShareComplexes() const { return anyMultiMoleculeComplex; }
 
 
 
@@ -157,6 +161,7 @@ namespace NFcore
 			unsigned int navigateAndInsertTree(unsigned int firstTreeIndex, int* lElementCount, int* rElementCount, double* lRateFactorSum, double rateFactor);
 
 
+			bool anyMultiMoleculeComplex;
 			TransformationSet *ts;       //Keeps track of the set of transformations
 			unsigned int reactantIndex;  //the index of the tree
 

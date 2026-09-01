@@ -11,6 +11,84 @@
 using namespace std;
 using namespace NFcore;
 
+namespace {
+	thread_local vector<int> complexScratch;
+
+	template <typename Container>
+	int distinctComplexesOf(Container *container, int size)
+	{
+		complexScratch.clear();
+		if (static_cast<int>(complexScratch.capacity()) < size)
+			complexScratch.reserve(size);
+		for (int i = 0; i < size; ++i) {
+			MappingSet *ms = container->getMappingSetByIndex(i);
+			if (!ms || ms->getNumOfMappings() == 0) continue;
+			Mapping *mapping = ms->get(0);
+			if (mapping && mapping->getMolecule())
+				complexScratch.push_back(mapping->getMolecule()->getComplexID());
+		}
+		sort(complexScratch.begin(), complexScratch.end());
+		return static_cast<int>(unique(complexScratch.begin(), complexScratch.end()) -
+				complexScratch.begin());
+	}
+}
+
+int NFcore::countDistinctComplexes(ReactantList *rl)
+{
+	if (!rl->mayShareComplexes()) return rl->size();
+	return distinctComplexesOf(rl, rl->size());
+}
+
+int NFcore::countDistinctComplexes(ReactantTree *tree)
+{
+	if (!tree->mayShareComplexes()) return tree->size();
+	return distinctComplexesOf(tree, tree->size());
+}
+
+double NFcore::perComplexRateFactorSum(ReactantTree *tree)
+{
+	set<int> seen;
+	double sum = 0.0;
+	for (int i = 0; i < tree->size(); ++i) {
+		MappingSet *ms = tree->getMappingSetByIndex(i);
+		if (!ms || ms->getNumOfMappings() == 0) continue;
+		Mapping *mapping = ms->get(0);
+		if (!mapping || !mapping->getMolecule()) continue;
+		if (seen.insert(mapping->getMolecule()->getComplexID()).second)
+			sum += tree->getRateFactor(i);
+	}
+	return sum;
+}
+
+void NFcore::collectReactantRepresentatives(ReactantList *rl, bool perComplex,
+		vector<MappingSet*> &out, vector<int> *flatIndices)
+{
+	out.clear();
+	if (flatIndices) flatIndices->clear();
+	if (!perComplex || !rl->mayShareComplexes()) {
+		for (int i = 0; i < rl->size(); ++i) {
+			MappingSet *ms = rl->getMappingSetByIndex(i);
+			if (ms) {
+				out.push_back(ms);
+				if (flatIndices) flatIndices->push_back(i);
+			}
+		}
+		return;
+	}
+
+	set<int> seen;
+	for (int i = 0; i < rl->size(); ++i) {
+		MappingSet *ms = rl->getMappingSetByIndex(i);
+		if (!ms || ms->getNumOfMappings() == 0) continue;
+		Mapping *mapping = ms->get(0);
+		if (!mapping || !mapping->getMolecule()) continue;
+		if (seen.insert(mapping->getMolecule()->getComplexID()).second) {
+			out.push_back(ms);
+			if (flatIndices) flatIndices->push_back(i);
+		}
+	}
+}
+
 
 
 
@@ -542,6 +620,9 @@ bool BasicRxnClass::tryToAdd(Molecule *m, unsigned int reactantPos)
 
 	//Here we get the standard update...
 	set<int> deleteMs = m->getRxnListMappingSet(rxnIndex);
+	if (contextCountsPerComplex[reactantPos] && m->getComplex() != 0) {
+		rl->noteMappedComplexSize(m->getComplex()->getComplexSize());
+	}
 
 	//Try to map it!
 	MappingSet *ms = rl->pushNextAvailableMappingSet();
@@ -648,17 +729,17 @@ double BasicRxnClass::exactRuleMonkey_a()
 	} else if (n_reactants == 1) {
 		validCombinations = getCorrectedReactantCount(0);
 	} else if (n_reactants == 2) {
-		// Exact calculation: subtract null events
-		int size0 = getReactantCount(0);
-		int size1 = getReactantCount(1);
-		// Use raw counts here because invalid self-pairs are removed explicitly below.
-		double totalCombinations = (double)getReactantCount(0) * (double)getReactantCount(1);
+		// Enumerate one representative per complex for pure context reactants.
+		static thread_local vector<MappingSet*> reps0, reps1;
+		collectReactantRepresentatives(reactantLists[0], contextCountsPerComplex[0], reps0);
+		collectReactantRepresentatives(reactantLists[1], contextCountsPerComplex[1], reps1);
+		double totalCombinations = (double)reps0.size() * (double)reps1.size();
 		double invalidCombinations = 0;
 
-		for (int i = 0; i < size0; ++i) {
-			msPairBuffer[0] = reactantLists[0]->getMappingSet(i);
-			for (int j = 0; j < size1; ++j) {
-				msPairBuffer[1] = reactantLists[1]->getMappingSet(j);
+		for (size_t i = 0; i < reps0.size(); ++i) {
+			msPairBuffer[0] = reps0[i];
+			for (size_t j = 0; j < reps1.size(); ++j) {
+				msPairBuffer[1] = reps1[j];
 				
 				// check for collision
 				if (!transformationSet->checkMolecularity(msPairBuffer)) {
@@ -727,20 +808,10 @@ int BasicRxnClass::getCorrectedReactantCount(unsigned int reactantIndex) const
 	}
 	*/
 
-	if (matchOncePerReactant[reactantIndex] && !isPopulationType[reactantIndex]) {
-		std::set<int> uniqueComplexes;
-		ReactantList *rl = reactantLists[reactantIndex];
-		int size = rl->size();
-		for (int i = 0; i < size; ++i) {
-			MappingSet *ms = rl->getMappingSetByIndex(i);
-			if (ms && ms->getNumOfMappings() > 0) {
-				Mapping *mapping = ms->get(0);
-				if (mapping && mapping->getMolecule()) {
-					uniqueComplexes.insert(mapping->getMolecule()->getComplexID());
-				}
-			}
-		}
-		return (int)uniqueComplexes.size();
+	if ((matchOncePerReactant[reactantIndex] ||
+			contextCountsPerComplex[reactantIndex]) &&
+			!isPopulationType[reactantIndex]) {
+		return countDistinctComplexes(reactantLists[reactantIndex]);
 	}
 
 	return isPopulationType[reactantIndex] ?

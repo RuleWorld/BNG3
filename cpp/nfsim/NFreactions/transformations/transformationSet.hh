@@ -4,6 +4,7 @@
 
 #include "../NFreactions.hh"
 #include <algorithm>
+#include <set>
 #include <unordered_set>
 
 using namespace std;
@@ -308,6 +309,11 @@ namespace NFcore
 			double getSymmetryFactor() const { return symmetryFactor; };
 			void   setSymmetryFactor(double val) { symmetryFactor = val; useSymmetryFactor = true; };
 
+			/* True when the rule does not transform this reactant at all.  The
+			 * answer is recorded by finalize() before its EMPTY placeholder is
+			 * appended, because EMPTY also represents a binding partner. */
+			bool isPureContextReactant(unsigned int reactantIndex) const;
+
 			// To get the connected reactions for each transformation
 			bool checkConnection(ReactionClass * rxn);
 
@@ -363,6 +369,10 @@ namespace NFcore
 
 			/*!	A vector that holds the actual Transformation objects	*/
 			vector <Transformation *> *transformations;
+
+			/* Reactant indices that are pure context, recorded before finalize()
+			 * appends placeholder EMPTY transformations. */
+			set <unsigned int> pureContextReactants;
 
 			/*!	A vector that holds the addMolecule Transformations, because they are handled separately	*/
 			vector <AddMoleculeTransform *> addMoleculeTransformations;

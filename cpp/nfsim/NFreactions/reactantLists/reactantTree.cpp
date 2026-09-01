@@ -18,6 +18,7 @@ ReactantTree::ReactantTree(
 		TransformationSet *ts,
 		unsigned int init_capacity)
 {
+	this->anyMultiMoleculeComplex = false;
 	//cout<<"Creating reactant tree... "<<endl;
 	//cout<<"  Initial Capacity: "<< init_capacity <<" molecules, ";
 

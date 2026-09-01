@@ -1632,6 +1632,9 @@ namespace NFcore
 			bool getMatchOnce(unsigned int reactantIndex) const {
 				return (reactantIndex < n_reactants) ? matchOncePerReactant[reactantIndex] : false;
 			}
+			bool getCountsPerComplex(unsigned int reactantIndex) const {
+				return (reactantIndex < n_reactants) ? contextCountsPerComplex[reactantIndex] : false;
+			}
 
 
 			void setRxnId(int rxnId) { this->rxnId = rxnId; };
@@ -1745,6 +1748,9 @@ namespace NFcore
 
 			/* flag for MatchOnce */
 			bool *matchOncePerReactant;
+
+			/* flag for pure context reactants counted once per complex */
+			bool *contextCountsPerComplex;
 
 			/* if population reactants are identical, this is the discrete
 			 * count correction for calculating the ratelaw
