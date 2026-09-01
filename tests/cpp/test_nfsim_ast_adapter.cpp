@@ -2178,6 +2178,62 @@ end reaction rules
     CHECK(direct->getReaction(0)->get_a() == Catch::Approx(5000.0));
     CHECK(direct->getReaction(1)->get_a() == Catch::Approx(0.0));
     CHECK(direct->getReaction(2)->get_a() == Catch::Approx(0.0));
+
+    // Exercise both sides of the live Ton thresholds, rather than only the
+    // initial false branch.  Exact seeded molecule counts remain a separate
+    // parity gate: native NFsim uses its legacy global mapping RNG, while the
+    // BNG3 adapter deliberately uses a per-System RNG stream.
+    const auto checkIfTestTrajectory = [](NFcore::System* system) {
+        const auto count = [system](const char* name) {
+            return system->getObservableByName(name)->getCount();
+        };
+        const auto checkConservation = [&count]() {
+            CHECK(count("Toff") + count("Ton") == 10000);
+            CHECK(count("Du") + count("Dp") == 10000);
+        };
+
+        system->seedRNG(1);
+        system->stepTo(0.5);
+        checkConservation();
+        CHECK(count("Ton") > 0);
+        CHECK(count("Ton") < 5000);
+        CHECK(count("Du") == 10000);
+        CHECK(count("Dp") == 0);
+        CHECK(NFcore::FuncFactory::Eval(
+                  system->getGlobalFunctionByName("kDelay")->p) ==
+              Catch::Approx(0.0));
+
+        system->stepTo(1.0);
+        checkConservation();
+        CHECK(count("Ton") > 0);
+        CHECK(count("Ton") < 5000);
+
+        system->stepTo(2.0);
+        checkConservation();
+        CHECK(count("Ton") > 5000);
+        CHECK(count("Ton") < 7000);
+        CHECK(NFcore::FuncFactory::Eval(
+                  system->getGlobalFunctionByName("kDelay")->p) ==
+              Catch::Approx(2.0));
+        CHECK(NFcore::FuncFactory::Eval(
+                  system->getGlobalFunctionByName("kDeplete")->p) ==
+              Catch::Approx(0.0));
+
+        system->stepTo(3.0);
+        checkConservation();
+        CHECK(count("Ton") > 7000);
+        CHECK(NFcore::FuncFactory::Eval(
+                  system->getGlobalFunctionByName("kDelay")->p) ==
+              Catch::Approx(0.0));
+        CHECK(NFcore::FuncFactory::Eval(
+                  system->getGlobalFunctionByName("kDeplete")->p) ==
+              Catch::Approx(2.0));
+
+        system->stepTo(5.0);
+        checkConservation();
+        CHECK(count("Ton") > 7000);
+    };
+    checkIfTestTrajectory(direct);
     delete direct;
 
     const auto xml = bng::io::XmlWriter::write(*model);
@@ -2199,6 +2255,8 @@ end reaction rules
     CHECK(xmlSystem->getReaction(0)->get_a() == Catch::Approx(5000.0));
     CHECK(xmlSystem->getReaction(1)->get_a() == Catch::Approx(0.0));
     CHECK(xmlSystem->getReaction(2)->get_a() == Catch::Approx(0.0));
+
+    checkIfTestTrajectory(xmlSystem);
     delete xmlSystem;
 }
 
