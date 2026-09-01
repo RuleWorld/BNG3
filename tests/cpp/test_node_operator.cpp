@@ -97,3 +97,28 @@ TEST_CASE("PatternGraph canonicalization defines the empty graph", "[BNGcore][Pa
     REQUIRE(graph.get_label().empty());
     REQUIRE(graph.is_canonical());
 }
+
+TEST_CASE("Node canonical labels retain their exact format", "[BNGcore][Node]") {
+    // Source-derived from akutuva21/bionetgen commit b73d9e3d: the
+    // allocation reduction must preserve canonical label bytes.
+    NodeType type("A", ENTITY_NODE_TYPE, NULL_STATE_TYPE);
+    Node node(type);
+    node.set_index(7);
+
+    REQUIRE(node.get_label() == "7:A~<0>");
+}
+
+TEST_CASE("PatternGraph BNG2 strings retain their exact format", "[BNGcore][PatternGraph]") {
+    // Source-derived from akutuva21/bionetgen commit 556099d3: replacing
+    // string streams with append-based assembly must not change .net text.
+    PatternGraph graph;
+    NodeType typeA("A", ENTITY_NODE_TYPE, NULL_STATE_TYPE);
+    NodeType typeB("B", ENTITY_NODE_TYPE, NULL_STATE_TYPE);
+    Node nodeA(typeA);
+    Node nodeB(typeB);
+    Node* graphNodeA = graph.add_node(nodeA);
+    Node* graphNodeB = graph.add_node(nodeB);
+    graph.add_edge(graphNodeA, graphNodeB);
+
+    REQUIRE(graph.get_BNG2_string() == "A(B)");
+}
