@@ -189,7 +189,6 @@ def _eval_expr(expr: str, defs: dict[str, str], seen: set[str]):
 def _safe_arith(expr: str) -> float:
     """Evaluate a pure-numeric arithmetic expression with safe math functions."""
     e = expr.replace("^", "**")
-    e = re.sub(r"\bln\b", "log", e)
 
     # Check that all alphabetical tokens are allowed math functions
     for word in re.findall(r"\b[A-Za-z_]\w*\b", e):
@@ -197,6 +196,7 @@ def _safe_arith(expr: str) -> float:
             raise ValueError(f"unknown function or symbol {word!r}")
 
     ns = {
+        "ln": math.log,
         "log": math.log10,
         "log10": math.log10,
         "log2": math.log2,

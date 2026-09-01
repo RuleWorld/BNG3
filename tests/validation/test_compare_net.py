@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 from tests.validation.compare import compare_net, parse_net, species_isomorphic
@@ -32,6 +33,16 @@ def _net(path: Path, rate: str) -> Path:
 def test_equivalent_built_in_rate_expressions_compare_equal(tmp_path):
     reference = parse_net(_net(tmp_path / "reference.net", "2*asin(1)"))
     generated = parse_net(_net(tmp_path / "generated.net", "3.14159265359"))
+    assert reference is not None
+    assert generated is not None
+    assert compare_net(reference, generated).ok
+
+
+def test_net_rate_comparison_preserves_natural_log_semantics(tmp_path):
+    reference = parse_net(_net(tmp_path / "reference.net", "ln(2)/120"))
+    generated = parse_net(
+        _net(tmp_path / "generated.net", repr(math.log(2) / 120))
+    )
     assert reference is not None
     assert generated is not None
     assert compare_net(reference, generated).ok
