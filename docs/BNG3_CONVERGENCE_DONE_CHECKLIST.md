@@ -4,8 +4,8 @@
 **Last audited:** 2026-09-01
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 963dbc6fcd357a80592dc2d569a68ce06f1e74d5
-**Checklist refresh base:** 963dbc6 (tests-only t4 checkpoint; refresh after each semantic checkpoint)
+**Audited semantic code head:** 300724baf8a08670255f2c79e548b051bd00119d
+**Checklist refresh base:** 300724b (NFsim mapping-RNG parity checkpoint; refresh after each semantic checkpoint)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -46,21 +46,21 @@ These items describe the current checkpoint. They do not satisfy the full
 completion gate.
 
 - [x] Required fast-forward pull completed before this documentation change.
-- [x] The latest pushed checkpoint is
-  963dbc6fcd357a80592dc2d569a68ce06f1e74d5; it adds a source-derived
-  rejection contract for the historical NFsim t4 syntax gap and does not
-  claim that the capability is implemented.
+- [x] The latest pushed semantic checkpoint is
+  300724baf8a08670255f2c79e548b051bd00119d; it adds the source-compatible
+  dual mapping-RNG stream and exact IfTest trajectory assertions while
+  preserving per-System reaction timing/selection.
 - [x] The small documentation grammar fix remains the only unrelated tracked
   BNG3 worktree modification. It remains intentionally unstaged and must not
   be mixed into semantic or checklist commits.
-- [x] Exact-head CTest passes `162/162` on 963dbc6 (local Release/Ninja
+- [x] Exact-head CTest passes `162/162` on 300724b (local Release/Ninja
   build; `ctest --test-dir build --output-on-failure`), including the t4
-  rejection contract.
+  rejection contract and IfTest parity assertions.
 - [ ] Separate local Debug/ASan evidence has not yet been rerun for 5f6da07;
   prior 0f83347 evidence was supplemental memory-safety coverage, not a
   substitute for hosted sanitizer and leak/UBSan gates.
-- [x] The full NFsim AST adapter executable passes 109 test cases and 1157
-  assertions on 963dbc6. It covers compact energy evaluation, cached compact
+- [x] The full NFsim AST adapter executable passes 109 test cases and 1167
+  assertions on 300724b. It covers compact energy evaluation, cached compact
   rate factors, specialized reverse propensities, sparse selector ordering,
   cached single- and multi-term Arrhenius factors, direct-product endpoint
   identity propagation, safe direct-product traversal, cached pre-fire binding
@@ -86,7 +86,7 @@ completion gate.
   conditional global functions with legacy `&&` expressions and live-threshold
   trajectory branch semantics on direct and XML paths (74 assertions).
 - [ ] The source-derived historical NFsim `test/testSuite/t4.bngl` and related
-  `t5.bngl` syntax remain open capability gaps. At 963dbc6, BNG3's parser
+  `t5.bngl` syntax remain open capability gaps. At 300724b, BNG3's parser
   rejects the t4 fixture with the stable diagnostic `Cannot build model from
   source with syntax errors`. Independent inspection found the fixtures were
   introduced by NFsim commit `3c7b6a3` as preliminary tests, current BNG2
@@ -96,17 +96,17 @@ completion gate.
   independent oracle, canonical-AST design, runtime semantics, and direct/XML
   contract tests.
 - [x] The full NFsim tree/system executable passes 157 assertions in 8 test
-  cases on 5f6da07. This includes the source-derived unsafe output-name
+  cases on 300724b. This includes the source-derived unsafe output-name
   rejection port from NFsim `3527edb` and continuous-vs-chunked `stepTo`
   checkpoint tests from NFsim `e3ef4a0` (50 assertions across the two new
   cases, including the zero-propensity boundary).
-- [x] Exact-head Python/API tests pass on semantic checkpoint `5f6da07`:
+- [x] Exact-head Python/API tests pass on semantic checkpoint `300724b`:
   `229 passed, 27 skipped, 8 warnings` from
   `PYTHONPATH=python:build/cpp python -m pytest tests/python -q`. The installed-
   wheel target still has only historical evidence and is not release evidence
   for this head.
 - [x] The exact NFsim `IfTest/ifTest.bngl` source fixture now parses through
-  `build/cpp/bng_cpp --check` on 5f6da07, including its empty `reactant_1()`
+  `build/cpp/bng_cpp --check` on 300724b, including its empty `reactant_1()`
   placeholder declaration; parser acceptance is not execution parity.
 - [x] Local CI workflow contract tests pass 10/10, including the pull-request
   source-distribution smoke gate.
@@ -116,7 +116,7 @@ completion gate.
   are absent); Ruff and git diff checks pass. The broader ad hoc check that
   included `tests/validation/` remains red on pre-existing formatting drift
   and is not the hosted CI command.
-- [x] Local validation smoke on current semantic head `5f6da07` reports 4
+- [x] Local validation smoke on current semantic head `300724b` reports 4
   passed and 15 skipped. The remaining skips are visible
   `run_network`/reference-oracle gaps, with sandbox process-inspection noise
   also present, and must not be treated as parity.
@@ -134,9 +134,10 @@ completion gate.
   `419bb2bd29f319bfc638c50b9c29cec0934b6d87eb7ce8fcdefed70a01f618c2`
   (CPython 3.14 arm64 wheel); the installed-target Python suite is recorded
   above.
-- [ ] Current hosted checks for checkpoint `963dbc6` must be refreshed after
-  the rejection-contract and documentation checkpoint. Before this refresh,
-  formatting was terminal-success, CI was queued, and CodeQL was in progress;
+- [ ] Current hosted checks for checkpoint `300724b` must be refreshed after
+  the mapping-RNG checkpoint and this documentation checkpoint. Before this
+  refresh, formatting was terminal-success, CI was queued, and CodeQL was in
+  progress;
   no nonterminal result is completion evidence.
 - [x] Historical hosted PR checks for semantic head
   `0f833470950fc47329f5b7381c64533e623b45ce` were terminal-success: [CI run
@@ -150,7 +151,7 @@ completion gate.
   33493581573](https://github.com/RuleWorld/BNG3/actions/runs/33493581573)
   passed. Results were read back with `gh` against the exact public head;
 - [ ] Fresh hosted CI, CodeQL, and formatting checks for current public head
-  `5f6da07` are pending after this checklist refresh is pushed; superseded runs
+  `300724b` are pending after this checklist refresh is pushed; superseded runs
   do not count as evidence.
 - [x] Modern Atomizer checkpoints exist for annotations, BNG-XML conversion,
   Rulifier, UniProt, structure helpers, and conservative SBML-Multi discovery,
@@ -380,22 +381,19 @@ completion gate.
 - [ ] Comparisons cover molecule types, seed complexes, transformations,
   observables, functions, compartments, options, reaction rules, seeded
   deterministic behavior, and stochastic distributions.
-- [ ] Exact seeded native-NFsim trajectory parity is resolved for the
-  source-derived `IfTest` fixture. An independent rebuild of the public NFsim
-  checkout at `a6f9fa945c9d6e1e122e789c952260112c93f157` produced, from
-  `nfsim/test/IfTest/ifTest.xml`, seed `1`, and output times
-  `0,0.5,1,2,3,4,5`: `Ton = 0, 2236, 3944, 6306, 7787, 8656, 9176`.
-  BNG3 at `5f6da07` produced `Ton = 0, 2217, 3969, 6343, 7795, 8672, 9194`
-  from the same XML and seed. The source-derived `stepTo` event-cache port
-  from NFsim `e3ef4a0` now preserves continuous-vs-chunked checkpoint timing,
-  and the direct-AST and in-memory XML paths agree on BNG3's branch semantics;
-  exact seeded equality is still open. The remaining identified source
-  diagnosis is the mapping-selection RNG contract: native
-  `src/NFreactions/reactantLists/reactantList.cpp` consumes the legacy
-  process-global `NFutil::RANDOM_INT`, while BNG3's corresponding adapter path
-  consumes the per-System `NfsimRNG`. Resolve this with an approved
-  compatibility decision, dual-stream oracle protocol, or source-faithful
-  implementation and a regression test; do not relabel this as tolerance.
+- [x] Exact seeded native-NFsim trajectory parity is resolved for the
+  source-derived `IfTest` fixture at 300724b. An independent rebuild of the
+  public NFsim checkout at `a6f9fa945c9d6e1e122e789c952260112c93f157` and BNG3
+  were both run from `nfsim/test/IfTest/ifTest.xml`, seed `1`, and output times
+  `0,0.5,1,2,3,4,5`; both produced byte-identical `.gdat` files with SHA-256
+  `85fef92118f5effffec6e8f179c0912f4f28efd5a53c2b5a79ef9807de6ffe88` and
+  `Ton = 0, 2236, 3944, 6306, 7787, 8656, 9176`. The source-derived
+  `stepTo` event-cache port from NFsim `e3ef4a0` preserves
+  continuous-vs-chunked checkpoint timing. BNG3 mirrors current NFsim's split:
+  reaction timing/selection stays per-System, while legacy molecule/mapping
+  selectors identified in source commits `64d225f` and `a6f9fa9` use a second
+  per-System stream seeded identically (`300724b`; exact direct and XML
+  assertions in `tests/cpp/test_nfsim_ast_adapter.cpp`).
 - [ ] Tier-NF includes localfunc, motor, TQSSA, tlbr, simple_system,
   fceRI/multisite fixtures where supported, and the relevant nfsim-master/test
   inputs.
@@ -861,11 +859,10 @@ These are known unchecked requirements, not reasons to claim completion:
 - Direct NFsim remains a bounded subset with visible XML fallback/shadow
   machinery; AN2, protocol-NF, remaining function/rate-law, and full
   independent Tier-NF evidence remain open.
-- The source-derived IfTest branch gate is green on direct and XML paths, but
-  exact seeded native-NFsim counts remain discrepant (`a6f9fa9` versus
-  `5f6da07`) because mapping selection consumes different RNG streams after
-  the stepTo event-boundary port. This is a mandatory parity decision, not an
-  acceptable stochastic tolerance.
+- The source-derived IfTest branch gate and exact seeded native-NFsim
+  trajectory are now green on direct and XML paths at `300724b`; the remaining
+  direct-NFsim parity work is the broader Tier-NF corpus and unresolved AN2,
+  protocol, and other capability gates below.
 - Structured SBML atomization still has a deliberate visible error, and
   local validation has environment-dependent skips; hosted validation green
   does not prove full Tier-P/NF/X parity.
