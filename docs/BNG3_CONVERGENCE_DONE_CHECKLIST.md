@@ -4,8 +4,8 @@
 **Last audited:** 2026-09-01
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 6c681269191063b0c441efa320aefb5387bb6ffd
-**Checklist refresh base:** 6c681269 (refresh after each semantic checkpoint)
+**Audited semantic code head:** a97c02e5fcb1e65b19457316c584c0f5aad2688e
+**Checklist refresh base:** a97c02e (refresh after each semantic checkpoint)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -45,14 +45,15 @@ completion gate.
 
 - [x] Required fast-forward pull completed before this documentation change.
 - [x] The latest pushed semantic checkpoint is
-  6c681269191063b0c441efa320aefb5387bb6ffd; documentation-only refreshes may
+  a97c02e5fcb1e65b19457316c584c0f5aad2688e; documentation-only refreshes may
   be layered after it without invalidating its semantic test evidence.
 - [x] The small documentation grammar fix remains the only pre-existing
   worktree modification. It is intentionally not staged by this checklist
   checkpoint.
-- [x] Local CTest passes 134/134.
-- [x] The full NFsim AST adapter executable passes 86 test cases and 776
-  assertions, including compact energy evaluation, cached single- and
+- [x] Local CTest passes 135/135.
+- [x] The full NFsim AST adapter executable passes 87 test cases and 827
+  assertions, including compact energy evaluation, sparse selector ordering,
+  cached single- and
   multi-term Arrhenius factors, direct-product endpoint identity propagation,
   safe direct-product traversal, cached pre-fire binding rejection, compact
   partner mapping-slot compaction, shared partner-pool updates, deferred
@@ -68,16 +69,16 @@ completion gate.
   environment and must not be treated as parity.
 - [ ] A clean, no-build-isolation wheel is rebuilt and installed into a
   separate target for this exact head. The prior 7e91acc macOS wheel smoke is
-  historical evidence only; it is not evidence for 6c681269.
+  historical evidence only; it is not evidence for a97c02e.
 - [ ] Hosted PR checks for the exact current semantic head
-  `6c681269191063b0c441efa320aefb5387bb6ffd` are all terminal and successful
+  `a97c02e5fcb1e65b19457316c584c0f5aad2688e` are all terminal and successful
   across the C++ matrix, Python matrix, ASan, integration, validation, package
   smoke, formatter, and CodeQL. Fresh exact-semantic-head runs are CI
-  [33471490275](https://github.com/RuleWorld/BNG3/actions/runs/33471490275)
-  (queued/in progress), CodeQL
-  [33471490274](https://github.com/RuleWorld/BNG3/actions/runs/33471490274)
+  [33472941776](https://github.com/RuleWorld/BNG3/actions/runs/33472941776)
+  (pending), CodeQL
+  [33472941770](https://github.com/RuleWorld/BNG3/actions/runs/33472941770)
   (in progress), and formatting
-  [33471490276](https://github.com/RuleWorld/BNG3/actions/runs/33471490276)
+  [33472941761](https://github.com/RuleWorld/BNG3/actions/runs/33472941761)
   (successful). A later documentation-only PR head requires its own fresh
   exact-head check set.
 - [x] Modern Atomizer checkpoints exist for annotations, BNG-XML conversion,
@@ -341,7 +342,7 @@ completion gate.
   registration/indexing and selector batch updates, and materialized fallback.
   Current checkpoints are `b9ab125`, `2b1c02f`, `92543ca`, `6ed6e97`,
   `a77ceb8`, `b8f44e4`, `4a2fc3e`, `738c881`, `6b6e246`, `bd29714`,
-  `401becf`, and `6c681269`.
+  `401becf`, `6c681269`, and `a97c02e`.
 - [x] BNG3 carries the compact `EnergyBindingContext` and mapping-local
   `EnergyRxnClass` path for supported contexts while retaining legacy
   materialized expansion for unsupported topologies.
@@ -352,16 +353,20 @@ completion gate.
   direct-product events, including coalesced partner-pool changes and selector
   updates that capture BNG3's live compact propensity before membership
   mutation (`6c681269`; `tests/cpp/test_nfsim_ast_adapter.cpp`, 30 assertions).
+- [x] BNG3 carries source-derived sparse direct-selector behavior for compact
+  reactions: active propensity bits, block prefix sums, cached sparse
+  propensities, indexed updates, and shared compact-pool scale groups
+  (`a97c02e`; `tests/cpp/test_nfsim_ast_adapter.cpp`, 51 assertions).
 - [ ] Port and test the remaining supported CPU evaluator slices from the
   merged NFSIM source: full incremental membership and changed-endpoint
-  propagation, sparse-selector integration, and the broader source direct-
-  product path. Direct-product endpoint identity is snapshot-tested and
+  propagation and the broader source direct-product path. Direct-product
+  endpoint identity is snapshot-tested and
   propagated through fired membership refresh at `4a2fc3e`, safe direct-product
   traversal is checkpointed at `738c881`, cached single-/multi-term rate factors
   at `6b6e246`, cached simple pre-fire binding rejection at `bd29714`, and
-  candidate bitset/mapping-slot indexing at `401becf`; deferred multi-product
-  propensity accounting is checkpointed at `6c681269`, while the other listed
-  slices remain open.
+  candidate bitset/mapping-slot indexing at `401becf`, deferred multi-product
+  propensity accounting at `6c681269`, and sparse selector integration at
+  `a97c02e`; the other listed slices remain open.
   Preserve BNG3 lifecycle and direct-AST adapters while porting.
 - [ ] Compare compact and fallback event semantics against an independently
   built native NFsim at the pinned source revision, including zero crossings,
@@ -496,14 +501,14 @@ completion gate.
 
 ### 8.1 CI truthfulness
 
-- [ ] Current exact semantic PR head `6c681269191063b0c441efa320aefb5387bb6ffd`
+- [ ] Current exact semantic PR head `a97c02e5fcb1e65b19457316c584c0f5aad2688e`
   has green hosted C++, Python, validation, integration, formatting, ASan, and
   CodeQL checks. The fresh semantic-head CI run
-  [33471490275](https://github.com/RuleWorld/BNG3/actions/runs/33471490275)
-  is queued/in progress, CodeQL run
-  [33471490274](https://github.com/RuleWorld/BNG3/actions/runs/33471490274)
+  [33472941776](https://github.com/RuleWorld/BNG3/actions/runs/33472941776)
+  is pending, CodeQL run
+  [33472941770](https://github.com/RuleWorld/BNG3/actions/runs/33472941770)
   is in progress, and formatting run
-  [33471490276](https://github.com/RuleWorld/BNG3/actions/runs/33471490276)
+  [33472941761](https://github.com/RuleWorld/BNG3/actions/runs/33472941761)
   is successful. Do not use older runs as evidence for this head; the
   documentation refresh head will also need a fresh exact-head check set.
 - [ ] Every required job emits a terminal summary with counts, failures,
@@ -651,11 +656,12 @@ These are known unchecked requirements, not reasons to claim completion:
   endpoint identity snapshot used by fired membership refresh (`4a2fc3e`),
   safe direct-product traversal (`738c881`), and cached single-/multi-term
   Arrhenius rate factors (`6b6e246`), cached simple pre-fire binding rejection
-  (`bd29714`), candidate bitset/mapping-slot indexing (`401becf`), and
-  deferred multi-product propensity accounting (`6c681269`), but merged NFSIM
-  PR #475 full incremental-membership/changed-endpoint propagation,
-  sparse-selector, broader direct-product, independent energy parity, benchmark
-  provenance, and source reconciliation are still open.
+  (`bd29714`), candidate bitset/mapping-slot indexing (`401becf`), deferred
+  multi-product propensity accounting (`6c681269`), and sparse selector
+  integration (`a97c02e`), but merged NFSIM PR #475
+  full incremental-membership/changed-endpoint propagation, broader
+  direct-product, independent energy parity, benchmark provenance, and source
+  reconciliation are still open.
 - cpp/nfsim/nauty24 and the NFsim ExprTk path remain in the build; the
   canonical-label and shared-expression master-function migrations are not
   complete.
