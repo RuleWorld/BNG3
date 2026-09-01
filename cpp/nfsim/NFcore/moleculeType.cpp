@@ -507,6 +507,14 @@ void MoleculeType::addReactionClass(ReactionClass * r, int rPosition)
 {
 	this->reactions.push_back(r);
 	this->reactionPositions.push_back(rPosition);
+	int partnerComponent = -1;
+	if (r->getCompactPartnerPoolInfo(rPosition, partnerComponent) &&
+			partnerComponent >= 0 && partnerComponent < numOfComponents) {
+		CompactPartnerPool *partnerPool = r->getCompactPartnerPool();
+		if (partnerPool != 0)
+			partnerPool->registerReaction(
+					r, r->supportsCompactPartnerPoolUpdate());
+	}
 
 	//We also have to check to make sure that if the reaction is a DOR reaction,
 	//we remember it so we can updated it

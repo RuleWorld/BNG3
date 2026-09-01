@@ -3272,6 +3272,8 @@ end reaction rules
         dynamic_cast<NFcore::EnergyRxnClass*>(system->getReaction(0));
     REQUIRE(compactReaction != nullptr);
     REQUIRE(compactReaction->getCompactPartnerPool() != nullptr);
+    CHECK(compactReaction->getCompactPartnerPool()->getRegisteredReactions().size() == 1);
+    CHECK(compactReaction->getCompactPartnerPool()->getRegisteredReactions().front() == compactReaction);
 
     system->prepareForSimulation();
     CHECK(compactReaction->getCompactPartnerPool()->size() == 1);

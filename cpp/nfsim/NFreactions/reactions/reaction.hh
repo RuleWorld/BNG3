@@ -240,6 +240,17 @@ namespace NFcore
 			virtual CompactPartnerPool *getCompactPartnerPool() const {
 				return partnerPool;
 			}
+			virtual bool getCompactPartnerPoolInfo(
+					unsigned int reactantPos, int &partnerComponent) const {
+				if (!simpleMembership || !isForward || reactantPos != 1 ||
+						partnerComponentIndex < 0)
+					return false;
+				partnerComponent = partnerComponentIndex;
+				return true;
+			}
+			virtual bool supportsCompactPartnerPoolUpdate() const {
+				return simpleMembership && isForward;
+			}
 			virtual bool tryToAdd(Molecule *m, unsigned int reactantPos);
 			virtual void remove(Molecule *m, unsigned int reactantPos);
 			virtual double update_a();

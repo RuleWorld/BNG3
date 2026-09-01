@@ -1433,6 +1433,16 @@ namespace NFcore
 			virtual int getReactantCount(unsigned int reactantIndex) const = 0;
 			virtual int getCorrectedReactantCount(unsigned int reactantIndex) const = 0;
 			virtual void printFullDetails() const = 0;
+			/* Optional shared partner-pool hooks used by compact EnergyPattern
+			 * reactions.  Legacy reaction classes retain the ordinary path. */
+			virtual bool getCompactPartnerPoolInfo(
+					unsigned int reactantPos, int &partnerComponent) const {
+				(void)reactantPos;
+				(void)partnerComponent;
+				return false;
+			}
+			virtual bool supportsCompactPartnerPoolUpdate() const { return false; }
+			virtual CompactPartnerPool *getCompactPartnerPool() const { return 0; }
 
 			void setMatchOnce(unsigned int reactantIndex, bool val) {
 				if (reactantIndex < n_reactants) matchOncePerReactant[reactantIndex] = val;
