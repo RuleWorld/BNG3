@@ -989,6 +989,15 @@ completion gate.
   `44d8655d3b0d838dc33420c0d7800c12bb465785` immediately after push. Every
   later semantic or documentation checkpoint requires a fresh exact-head
   readback.
+- [ ] Current public checklist head
+  `b8dfd027e50b81737c5e8b59f225f9085149f3c0` has fresh hosted runs, all still
+  queued at readback: CI
+  [33567163033](https://github.com/RuleWorld/BNG3/actions/runs/33567163033),
+  formatting patch
+  [33567163155](https://github.com/RuleWorld/BNG3/actions/runs/33567163155),
+  and CodeQL
+  [33567163054](https://github.com/RuleWorld/BNG3/actions/runs/33567163054).
+  Queued status is not validation evidence.
 - [ ] Every required job emits a terminal summary with counts, failures,
   skips, exception budget, corpus/source revision, and artifact digests.
 - [ ] Required jobs fail when a claimed oracle, corpus, validator, or compiler
