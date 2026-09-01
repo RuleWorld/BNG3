@@ -307,6 +307,48 @@ end seed species
     delete xml;
 }
 
+TEST_CASE("NFsim AST adapter allocates repeated seed molecules like XML") {
+    // Source-derived from NFinput::initStartSpecies: XML creates all copies
+    // of each molecule position before moving to the next position.  This is
+    // observable when one seed species contains repeated molecules of one type.
+    auto model = bng::parser::parseModel(R"(
+begin molecule types
+    A(b)
+end molecule types
+begin seed species
+    A(b!1).A(b!1) 3
+end seed species
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(direct != nullptr);
+    auto* directA = direct->getMoleculeTypeByName("A");
+    REQUIRE(directA != nullptr);
+    REQUIRE(directA->getMoleculeCount() == 6);
+
+    suggestedTraversalLimit = 0;
+    auto* xml = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, suggestedTraversalLimit);
+    REQUIRE(xml != nullptr);
+    auto* xmlA = xml->getMoleculeTypeByName("A");
+    REQUIRE(xmlA != nullptr);
+    REQUIRE(xmlA->getMoleculeCount() == 6);
+
+    const std::vector<int> expectedPartners {3, 4, 5, 0, 1, 2};
+    for (int moleculeIndex = 0; moleculeIndex < 6; ++moleculeIndex) {
+        CHECK(directA->getMolecule(moleculeIndex)->getBondedMolecule(0)->getMolListId() ==
+              expectedPartners[moleculeIndex]);
+        CHECK(xmlA->getMolecule(moleculeIndex)->getBondedMolecule(0)->getMolListId() ==
+              expectedPartners[moleculeIndex]);
+    }
+
+    delete direct;
+    delete xml;
+}
+
 TEST_CASE("NFsim AST adapter maps an inline time-backed TFUN directly") {
     auto model = bng::parser::parseModel(R"(
 begin parameters
