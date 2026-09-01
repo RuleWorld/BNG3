@@ -4,8 +4,8 @@
 **Last audited:** 2026-09-01
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 7186b651645b88ab68fb667893f6f96cfde94062
-**Checklist refresh base:** 9378000 (source-derived NFsim EnergyFunction expansion coverage; this is a test-only checkpoint over semantic `7186b65`; refresh after each checkpoint)
+**Audited semantic code head:** c754544bce31b4efe708c84afdb9bfc46464570d
+**Checklist refresh base:** c754544 (source-derived NFsim XML local-function rate compatibility; refresh after each checkpoint)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -49,8 +49,14 @@ completion gate.
 
 - [x] Required fast-forward pull completed before this documentation change.
 - [x] The latest local semantic checkpoint is
-  `7186b651645b88ab68fb667893f6f96cfde94062`; its parent
-  `852793f9d8c4216dfb1c211497959cdb479e4e9f` is the source-derived Issue86
+  `c754544bce31b4efe708c84afdb9bfc46464570d`; its parent
+  `7186b651645b88ab68fb667893f6f96cfde94062` is the Issue78 absolute-clock
+  checkpoint. `c754544` adds the source-derived NFsim XML contract for plain
+  scoped LocalFunction reaction rates: XML emits a generated composite
+  wrapper, while nested CompositeFunction rates retain their direct name.
+  The wrapper is accepted by the independently built native NFsim binary. Its
+  earlier source-derived parents include the Issue86 checkpoint
+  `852793f9d8c4216dfb1c211497959cdb479e4e9f`, which is the source-derived
   species-observable refresh checkpoint, and its grandparent
   `2d1fad28caa2f60076a25086d6f6edea5af89f9d` is the native-compatible direct
   NFsim endpoint checkpoint. The semantic engine retains the source-compatible
@@ -61,22 +67,22 @@ completion gate.
   ports NFsim Issue78 absolute-start semantics through the direct API and
   `simulate_nf` action, and makes `equilibrate(duration)` advance from and
   restore the absolute current clock.
-- [x] The latest public test/coverage checkpoint is
-  `9378000ffe51f5ac0257ea4d7c53dbaba8fa2dce`, whose parent is the semantic
-  `7186b651645b88ab68fb667893f6f96cfde94062`; it adds no production behavior
-  and adds source-derived NFsim EnergyFunction expansion coverage.
+- [x] The latest public code/test checkpoint is
+  `c754544bce31b4efe708c84afdb9bfc46464570d`, whose parent is the prior
+  documentation checkpoint `ed3f295bc2b1b505ef1b6c8c64e72a56e12117fd`; it
+  adds the XML-writer compatibility behavior and its source-derived tests.
 - [x] The small documentation grammar fix remains the only unrelated tracked
   BNG3 worktree modification. It remains intentionally unstaged and must not
   be mixed into semantic or checklist commits.
-- [x] Exact-head CTest passes `170/170` on `9378000` (local Release/Ninja
+- [x] Exact-head CTest passes `171/171` on `c754544` (local Release/Ninja
   build; `ctest --test-dir build --output-on-failure`), including the t4
   rejection contract, inferred-state/type-order gates, and IfTest parity
   assertions.
 - [ ] Separate local Debug/ASan evidence has not yet been rerun for 5f6da07;
   prior 0f83347 evidence was supplemental memory-safety coverage, not a
   substitute for hosted sanitizer and leak/UBSan gates.
-- [x] The full NFsim AST adapter executable passes 117 test cases and 1273
-  assertions on `9378000`. It covers compact energy evaluation, cached compact
+- [x] The full NFsim AST adapter executable passes 118 test cases and 1280
+  assertions on `c754544`. It covers compact energy evaluation, cached compact
   rate factors, specialized reverse propensities, sparse selector ordering,
   cached single- and multi-term Arrhenius factors, direct-product endpoint
   identity propagation, safe direct-product traversal, cached pre-fire binding
@@ -96,6 +102,10 @@ completion gate.
   runtime path, the source-derived bulk molecule-pool reuse regression, and
   source-derived multi-bond product-molecularity checks on direct and XML
   paths, including a negative single-bond ring control. It also covers the
+  source-derived NFsim `t3.xml` LocalFunction XML contract: a plain scoped
+  local-function reaction rate is serialized through a generated composite
+  wrapper, while a nested CompositeFunction remains direct (5 assertions).
+  It also covers the
   source-derived `reactant_1()` compatibility placeholder and dynamic
   reactant-count rate on direct and in-memory XML paths (11 assertions), plus
   XML preservation of the `TotalRate` modifier (9 assertions), and the IfTest
@@ -130,7 +140,7 @@ completion gate.
   rejection port from NFsim `3527edb` and continuous-vs-chunked `stepTo`
   checkpoint tests from NFsim `e3ef4a0` (50 assertions across the two new
   cases, including the zero-propensity boundary).
-- [x] Exact-head Python/API tests pass on semantic checkpoint `7186b65`:
+- [x] Exact-head Python/API tests pass on semantic checkpoint `c754544`:
   `231 passed, 27 skipped, 8 warnings` from
   `PYTHONPATH=python:build/cpp python -m pytest tests/python -q`. The installed-
   wheel target still has only historical evidence and is not release evidence
@@ -153,6 +163,14 @@ completion gate.
   cases passed, and the fixed-seed direct endpoint cases passed:
   `6 passed, 4 deselected, 6 warnings` in 131.87 seconds at `7186b65`.
   This is subset evidence only; it does not close the full Tier-NF gate.
+- [x] Current checkpoint `c754544` passes the four-model local Tier-NF
+  200-run gate (`simple_system`, `tlbr`, `motor`, `localfunc`) against the
+  independently built native binary: `4 passed, 6 deselected, 5 warnings` in
+  168.62 seconds. Its direct-vs-in-memory-XML shadow suite passes `4 passed,
+  6 deselected, 8 warnings` in 4.17 seconds. The focused localfunc XML output
+  is also accepted by that native binary; the focused native test passes
+  `1 passed, 9 deselected, 5 warnings`. These are current subset/checkpoint
+  results, not full approved Tier-NF or three-way parity evidence.
 - [x] The source-derived NFsim Issue86 species-observable refresh test remains
   green in the full current AST adapter run at `9378000` (13 assertions).
   The independent native-NFsim cross-check on a reduced fixture derived from
@@ -195,11 +213,14 @@ completion gate.
   `419bb2bd29f319bfc638c50b9c29cec0934b6d87eb7ce8fcdefed70a01f618c2`
   (CPython 3.14 arm64 wheel); the installed-target Python suite is recorded
   above.
-- [ ] Current hosted checks for public checkpoint `9378000` and the
-  documentation checkpoint that follows it must be refreshed after
-  publication. The prior public head's formatting was terminal-success, CI
-  was queued, and CodeQL was in progress; no nonterminal result is completion
-  evidence.
+- [ ] Current hosted checks for public code checkpoint `c754544` are not yet
+  terminal as one set: [CI run
+  33531304777](https://github.com/RuleWorld/BNG3/actions/runs/33531304777) is
+  pending, [CodeQL run
+  33531304750](https://github.com/RuleWorld/BNG3/actions/runs/33531304750) is
+  in progress, and [formatting run
+  33531304766](https://github.com/RuleWorld/BNG3/actions/runs/33531304766) has
+  passed. No nonterminal result is completion evidence.
 - [x] Historical hosted PR checks for semantic head
   `0f833470950fc47329f5b7381c64533e623b45ce` were terminal-success: [CI run
   33493581633](https://github.com/RuleWorld/BNG3/actions/runs/33493581633)
@@ -211,10 +232,10 @@ completion gate.
   passed both C++ and Python analysis, and [formatting run
   33493581573](https://github.com/RuleWorld/BNG3/actions/runs/33493581573)
   passed. Results were read back with `gh` against the exact public head;
-- [ ] Fresh hosted CI, CodeQL, and formatting checks for public checkpoint
-  `9378000` and the following checklist documentation checkpoint are pending.
-  Both the branch ref and PR source head must be reread with `gh`; superseded
-  runs do not count as evidence.
+- [ ] Fresh hosted CI, CodeQL, and formatting checks for the public checklist
+  documentation checkpoint that follows `c754544` are pending. Both the
+  branch ref and PR source head must be reread with `gh`; superseded runs do
+  not count as evidence.
 - [x] Modern Atomizer checkpoints exist for annotations, BNG-XML conversion,
   Rulifier, UniProt, structure helpers, and conservative SBML-Multi discovery,
   helper/rate-rule constants, each with source-derived tests.
