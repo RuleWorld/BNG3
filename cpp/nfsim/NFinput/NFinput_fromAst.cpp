@@ -1278,7 +1278,18 @@ bool addMoleculeTypesFromAst(const bng::ast::Model& model, System* s,
                              std::map<std::string, int>& allowedStates,
                              bool verbose) {
     try {
+        std::vector<const bng::ast::MoleculeType*> moleculeTypes;
+        moleculeTypes.reserve(model.getMoleculeTypes().size());
         for (const auto& moleculeType : model.getMoleculeTypes()) {
+            moleculeTypes.push_back(&moleculeType);
+        }
+        std::sort(moleculeTypes.begin(), moleculeTypes.end(),
+                  [](const auto* left, const auto* right) {
+                      return left->getName() < right->getName();
+                  });
+
+        for (const auto* moleculeTypePtr : moleculeTypes) {
+            const auto& moleculeType = *moleculeTypePtr;
             const std::string& typeName = moleculeType.getName();
             if (typeName.empty()) {
                 std::cerr << "[nfsim/ast] molecule type is missing a name\n";

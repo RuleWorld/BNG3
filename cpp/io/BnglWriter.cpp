@@ -3,6 +3,8 @@
 #include <sstream>
 #include <iomanip>
 #include <cmath>
+#include <algorithm>
+#include <vector>
 
 namespace bng::io {
 
@@ -133,7 +135,18 @@ std::string BnglWriter::writeMoleculeTypes(const ast::Model& model) {
     std::ostringstream bngl;
     bngl << "begin molecule types\n";
 
+    std::vector<const ast::MoleculeType*> moleculeTypes;
+    moleculeTypes.reserve(model.getMoleculeTypes().size());
     for (const auto& mt : model.getMoleculeTypes()) {
+        moleculeTypes.push_back(&mt);
+    }
+    std::sort(moleculeTypes.begin(), moleculeTypes.end(),
+              [](const auto* left, const auto* right) {
+                  return left->getName() < right->getName();
+              });
+
+    for (const auto* mtPtr : moleculeTypes) {
+        const auto& mt = *mtPtr;
         bngl << "  " << mt.getName();
 
         const auto& components = mt.getComponents();

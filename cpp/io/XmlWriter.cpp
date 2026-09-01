@@ -1338,7 +1338,18 @@ std::string XmlWriter::writeMoleculeTypes(const ast::Model& model) {
     std::ostringstream xml;
     xml << "    <ListOfMoleculeTypes>\n";
 
+    std::vector<const ast::MoleculeType*> moleculeTypes;
+    moleculeTypes.reserve(model.getMoleculeTypes().size());
     for (const auto& mt : model.getMoleculeTypes()) {
+        moleculeTypes.push_back(&mt);
+    }
+    std::sort(moleculeTypes.begin(), moleculeTypes.end(),
+              [](const auto* left, const auto* right) {
+                  return left->getName() < right->getName();
+              });
+
+    for (const auto* mtPtr : moleculeTypes) {
+        const auto& mt = *mtPtr;
         xml << "      <MoleculeType id=\"" << escapeXml(mt.getName()) << "\">\n";
         xml << "        <ListOfComponentTypes>\n";
 

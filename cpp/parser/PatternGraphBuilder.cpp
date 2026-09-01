@@ -1,5 +1,6 @@
 ﻿#include "PatternGraphBuilder.hpp"
 
+#include <algorithm>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -60,6 +61,16 @@ bng::ast::MoleculeType inferMoleculeTypeFromPattern(BNGParser::Molecule_patternC
             components.push_back({componentPatternName(componentPattern), std::move(states)});
         }
     }
+
+    // BNG2 sorts inferred species-graph components before creating a new
+    // molecule type.  Keep the source pattern's order for ties (notably
+    // symmetric sites), but make the canonical name ordering observable to
+    // both the XML writer and direct NFsim type registration.
+    std::stable_sort(components.begin(), components.end(),
+                     [](const bng::ast::ComponentType& left,
+                        const bng::ast::ComponentType& right) {
+                         return left.name < right.name;
+                     });
 
     return bng::ast::MoleculeType(name, std::move(components), false);
 }
