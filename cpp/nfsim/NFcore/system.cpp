@@ -20,9 +20,22 @@ using namespace NFcore;
 
 int System::NULL_EVENT_COUNTER = 0;
 
+namespace {
+
+void validateSystemName(const string &name)
+{
+	if (name.find("..") != string::npos || name.find("/") != string::npos ||
+	    name.find("\\") != string::npos || name.find(":") != string::npos) {
+		throw runtime_error("Path traversal detected in System name.");
+	}
+}
+
+}
+
 
 System::System(string name)
 {
+	validateSystemName(name);
 	this->name = name;
 	this->a_tot = 0;
 	current_time = 0;
@@ -65,6 +78,7 @@ System::System(string name)
 
 System::System(string name, bool useComplex)
 {
+	validateSystemName(name);
 	this->name = name;
 	this->a_tot = 0;
 	current_time = 0;
@@ -108,6 +122,7 @@ System::System(string name, bool useComplex)
 
 System::System(string name, bool useComplex, int globalMoleculeLimit)
 {
+	validateSystemName(name);
 	this->name = name;
 	this->a_tot = 0;
 	current_time = 0;

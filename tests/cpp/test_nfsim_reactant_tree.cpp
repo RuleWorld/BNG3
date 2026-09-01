@@ -3,10 +3,37 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include "NFcore.hh"
 #include "NFreactions/reactantLists/reactantTree.hh"
 #include "NFreactions/transformations/transformationSet.hh"
+
+TEST_CASE("NFsim System rejects unsafe output names") {
+    // Source-derived from NFsim commit 3527edb and its System constructor
+    // regression test.  System names become output-file prefixes, so all
+    // constructor overloads must reject path-like input.
+    const std::vector<std::string> invalidNames {
+        "../escape", "/absolute", "C:\\escape", "C:escape",
+        "nested/name", "nested\\name", "contains..dots"
+    };
+
+    for (const auto& name : invalidNames) {
+        for (int constructor = 0; constructor < 3; ++constructor) {
+            const auto construct = [&name, constructor]() {
+                if (constructor == 0) {
+                    NFcore::System system(name);
+                } else if (constructor == 1) {
+                    NFcore::System system(name, true);
+                } else {
+                    NFcore::System system(name, true, 100);
+                }
+            };
+            CHECK_THROWS_WITH(construct(),
+                              "Path traversal detected in System name.");
+        }
+    }
+}
 
 TEST_CASE("NFsim ReactantTree preserves the compact one-leaf contract") {
     NFcore::System system("ReactantTree contract");
