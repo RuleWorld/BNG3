@@ -847,6 +847,7 @@ namespace NFcore
 
 			//Adds the basic components that this MoleculeType needs to reference
 			void addReactionClass(ReactionClass * r, int rPosition);
+			bool canSkipIndirectMembership(ReactionClass *firedReaction) const;
 			void addMolObs(MoleculesObservable * mo) { molObs.push_back(mo); }; //could add check here to make sure observable is of this type
 			int createComplex(Molecule *m) { return (system->getAllComplexes()).createComplex(m); };
 			void addTemplateMolecule(TemplateMolecule *t);
@@ -1464,6 +1465,9 @@ namespace NFcore
 				return false;
 			}
 			virtual bool supportsSparseSelection() const { return false; }
+			/* Whether the product list can be limited to explicitly mapped
+			 * molecules for this firing. */
+			virtual bool canUseDirectProductList() const { return false; }
 			virtual bool canSkipIndirectMembership(
 					ReactionClass *firedReaction) const {
 				(void)firedReaction;

@@ -1279,6 +1279,25 @@ bool EnergyRxnClass::canSkipIndirectMembership(
 	return firedEnergy != 0 && firedEnergy->simpleMembership;
 }
 
+bool EnergyRxnClass::canUseDirectProductList() const
+{
+	if (!simpleMembership || system == 0 || onTheFlyObservables ||
+			transformationSet->getNumOfAddMoleculeTransforms() != 0)
+		return false;
+
+	/* The direct list omits the rest of every affected complex.  Require every
+	 * molecule type to prove that indirect membership refresh is unnecessary,
+	 * and reject any type-II dependency that would need the omitted molecules. */
+	for (int i = 0; i < system->getNumOfMoleculeTypes(); ++i) {
+		MoleculeType *moleculeType = system->getMoleculeType(i);
+		if (moleculeType->getNumOfTypeIIFunctions() > 0 ||
+				!moleculeType->canSkipIndirectMembership(
+					const_cast<EnergyRxnClass *>(this)))
+			return false;
+	}
+	return true;
+}
+
 bool EnergyRxnClass::refreshCompactPartnerPool(
 		Molecule *m, unsigned int reactantPos)
 {

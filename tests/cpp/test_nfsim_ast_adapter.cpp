@@ -3277,6 +3277,8 @@ end reaction rules
     CHECK(compactReaction->supportsSparseSelection());
     CHECK(compactReaction->membershipDecisionIsTypeInvariant());
     REQUIRE(compactReaction->getCompactPartnerPool() != nullptr);
+    system->turnOff_OnTheFlyObs();
+    CHECK(compactReaction->canUseDirectProductList());
     NFcore::IncrementalMembershipChange membershipChange;
     REQUIRE(compactReaction->getIncrementalMembershipChange(membershipChange));
     CHECK(membershipChange.moleculeType1 == system->getMoleculeTypeByName("A"));

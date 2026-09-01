@@ -246,6 +246,7 @@ namespace NFcore
 			virtual bool supportsSparseSelection() const {
 				return simpleMembership;
 			}
+			virtual bool canUseDirectProductList() const;
 			virtual bool getIncrementalMembershipChange(
 					IncrementalMembershipChange &change) const;
 			virtual bool getCompactMembershipIndexInfo(

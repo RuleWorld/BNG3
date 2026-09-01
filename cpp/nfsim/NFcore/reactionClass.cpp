@@ -476,8 +476,19 @@ string ReactionClass::fire(double random_A_number, bool track) {
 	// }
 
 	// Generate the set of possible products that we need to update
-	// (excluding new molecules, we'll get those later --Justin)
-	this->transformationSet->getListOfProducts(mappingSet,products,traversalLimit);
+	// (excluding new molecules, we'll get those later --Justin).  A compact
+	// energy reaction can use only its explicitly mapped endpoints when every
+	// omitted dependency has been proven safe; all other reactions retain the
+	// complete bonded-neighborhood traversal.
+	if (this->canUseDirectProductList()) {
+		for (vector<Molecule *>::const_iterator it =
+				directProductMoleculeList.begin();
+				it != directProductMoleculeList.end(); ++it)
+			products.push_back(*it);
+	} else {
+		this->transformationSet->getListOfProducts(
+				mappingSet, products, traversalLimit);
+	}
 
 	// Loop through the products (excluding added molecules) and remove from observables
 	if (this->onTheFlyObservables) {
