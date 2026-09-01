@@ -241,6 +241,19 @@ end model
         # the strict exception ledger covers the known blbr over-count.
         assert network.num_reactions > 0
 
+    def test_cbnGL_iteration_three_deduplicates_compartmented_isomorphs(self):
+        """Match the BNG2 iteration-3 boundary for the cBNGL fixture.
+
+        The independent BNG2 oracle reports 16 species after iteration 3.
+        Two isomorphic compartmented products can serialize their root
+        molecules in different orders; that representation detail must not
+        create a second species.
+        """
+        model = _cpp.parse_file(get_model_path("Motivating_example_cBNGL.bngl"))
+        network = _cpp.generate_network(model, max_iter=3)
+
+        assert network.num_species == 16
+
     def test_model_function_forward_rate_keeps_complex_reverse_rate(self, tmp_path):
         """A model-function forward rate must not drop its reverse rate."""
         bngl = tmp_path / "reversible_function_rate.bngl"

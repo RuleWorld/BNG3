@@ -127,6 +127,10 @@ std::pair<std::size_t, bool> SpeciesList::addChecked(
     // serialization. Only compute it after the exact-key fast path misses;
     // product graphs are frequently exact duplicates of an existing species.
     const std::string label = species.getSpeciesGraph().canonicalLabel();
+    // The fingerprint is also compartment-aware at the molecule level.  It
+    // is the semantic guard needed when a graph's serialization order differs
+    // between two otherwise isomorphic products.
+    const std::string fp = species.getSpeciesGraph().fingerprint();
     // Canonical labeling may change node-index tie breakers used by the
     // serializer, so use the canonicalized key for compartmented fallback and
     // insert paths. Unscoped species retain the pre-label exact key and avoid
@@ -147,11 +151,10 @@ std::pair<std::size_t, bool> SpeciesList::addChecked(
             if (existingSpecies.getCompartment() != species.getCompartment()) {
                 continue;
             }
-            // Per-molecule compartment check: when species have compartments,
-            // dedup strings must match to avoid merging species that differ
-            // only in per-molecule compartments (e.g., Im@CP.NP vs Im@NU.NP)
-            if (!species.getCompartment().empty() &&
-                existingSpecies.getSpeciesGraph().toStringForDedup() != exact) {
+            // Canonical labels omit molecule compartments.  Require the
+            // compartment-aware fingerprint instead of the serialization key:
+            // equivalent graphs may list root molecules in different orders.
+            if (existingSpecies.getSpeciesGraph().fingerprint() != fp) {
                 continue;
             }
             if (existingSpecies.getCompartment().empty() && !species.getCompartment().empty()) {
@@ -166,7 +169,6 @@ std::pair<std::size_t, bool> SpeciesList::addChecked(
     // the same fingerprint. This replaces the old O(n) scan over all species with an
     // O(1) hash lookup. Only species in the same fingerprint bucket need Ullmann
     // confirmation (which now correctly handles in-edges for full isomorphism).
-    const std::string fp = species.getSpeciesGraph().fingerprint();
     const auto fpBucket = indicesByFingerprint_.find(fp);
     if (fpBucket != indicesByFingerprint_.end()) {
         for (const auto index : fpBucket->second) {
@@ -175,10 +177,6 @@ std::pair<std::size_t, bool> SpeciesList::addChecked(
                 continue;
             }
             if (!isIsomorphic(existingSpecies.getSpeciesGraph(), species.getSpeciesGraph())) {
-                continue;
-            }
-            if (!species.getCompartment().empty() &&
-                existingSpecies.getSpeciesGraph().toStringForDedup() != exact) {
                 continue;
             }
             if (existingSpecies.getCompartment().empty() && !species.getCompartment().empty()) {
