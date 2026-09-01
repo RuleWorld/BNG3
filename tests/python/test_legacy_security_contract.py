@@ -3,7 +3,6 @@
 from pathlib import Path
 import re
 
-
 REPO = Path(__file__).resolve().parents[2]
 MACRO_MODEL = REPO / "legacy" / "perl" / "Perl2" / "MacroBNGModel.pm"
 
@@ -85,5 +84,7 @@ def test_legacy_macro_removes_mode_prefixes_from_path_variables():
         '$obserfile= ">macr_${param_prefix}.obser"',
         '$spec2file= ">macr_${param_prefix}.spec2"',
     )
-    present = [assignment for assignment in forbidden_assignments if assignment in source]
+    present = [
+        assignment for assignment in forbidden_assignments if assignment in source
+    ]
     assert not present, f"mode prefixes remain in path variables: {present}"
