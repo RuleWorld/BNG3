@@ -4270,6 +4270,123 @@ end reaction rules
     delete system;
 }
 
+TEST_CASE("NFsim compact selector scales shared pools during selection") {
+    // Source-derived from NFsim 3b046fc: a DirectSelector may represent a
+    // factorized compact reaction as a weighted coefficient times the shared
+    // partner-pool size.  Resizing that pool must update selection totals and
+    // the subsequent reaction draw without reevaluating every reaction.
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    phi 0.5
+    G 1.0
+    RT 1.0
+end parameters
+begin molecule types
+    A(b,c)
+    B(a)
+    C(x)
+end molecule types
+begin seed species
+    A(b,c!1).C(x!1) 1
+    B(a) 2
+    C(x) 1
+end seed species
+begin energy patterns
+    A(b!1,c!2).B(a!1).C(x!2) G
+end energy patterns
+begin reaction rules
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    system->prepareForSimulation();
+
+    auto allReactions = system->getAllReactions();
+    REQUIRE(allReactions.size() == 4);
+    std::vector<NFcore::EnergyRxnClass*> forwardReactions;
+    NFcore::CompactPartnerPool* pool = nullptr;
+    for (auto* reaction : allReactions) {
+        auto* energyReaction = dynamic_cast<NFcore::EnergyRxnClass*>(reaction);
+        REQUIRE(energyReaction != nullptr);
+        if (energyReaction->getCompactPartnerPool() == nullptr)
+            continue;
+        forwardReactions.push_back(energyReaction);
+        if (pool == nullptr)
+            pool = energyReaction->getCompactPartnerPool();
+        CHECK(energyReaction->getCompactPartnerPool() == pool);
+    }
+    REQUIRE(forwardReactions.size() == 2);
+    REQUIRE(pool != nullptr);
+    REQUIRE(pool->size() == 2);
+
+    NFcore::DirectSelector selector(allReactions, system);
+    const auto sumPropensities = [&]() {
+        double total = 0.0;
+        for (auto* reaction : allReactions)
+            total += reaction->get_a();
+        return total;
+    };
+    CHECK(selector.getAtot() == Catch::Approx(sumPropensities()));
+
+    auto* bType = system->getMoleculeTypeByName("B");
+    auto* cType = system->getMoleculeTypeByName("C");
+    REQUIRE(bType != nullptr);
+    REQUIRE(cType != nullptr);
+    auto* partner = bType->getMolecule(0);
+    const int contextComponent = cType->getCompIndexFromName("x");
+    NFcore::Molecule* context = nullptr;
+    for (int i = 0; i < cType->getMoleculeCount(); ++i) {
+        auto* candidate = cType->getMolecule(i);
+        if (candidate->isBindingSiteOpen(contextComponent)) {
+            context = candidate;
+            break;
+        }
+    }
+    REQUIRE(partner != nullptr);
+    REQUIRE(context != nullptr);
+
+    const int oldPoolSize = pool->size();
+    NFcore::Molecule::bind(partner, "a", context, "x");
+    bType->updateRxnMembership(partner);
+    REQUIRE(pool->size() == oldPoolSize - 1);
+    selector.updateCompactPartnerPoolBatch(
+        pool->getRegisteredReactions(), oldPoolSize, pool->size(), 0);
+
+    const double resizedTotal = sumPropensities();
+    CHECK(selector.getAtot() == Catch::Approx(resizedTotal));
+    REQUIRE(resizedTotal > 0.0);
+
+    system->seedRNG(29);
+    NFcore::NfsimRNG expectedRng(29);
+    const double expectedDraw = expectedRng.random(resizedTotal);
+    double cumulative = 0.0;
+    std::size_t expectedIndex = allReactions.size();
+    double previous = 0.0;
+    for (std::size_t index = 0; index < allReactions.size(); ++index) {
+        cumulative += allReactions[index]->get_a();
+        if (expectedDraw <= cumulative) {
+            expectedIndex = index;
+            break;
+        }
+        previous = cumulative;
+    }
+    REQUIRE(expectedIndex < allReactions.size());
+
+    NFcore::ReactionClass* selected = nullptr;
+    const double residual = selector.getNextReactionClass(selected);
+    CHECK(selected == allReactions[expectedIndex]);
+    CHECK(residual == Catch::Approx(expectedDraw - previous));
+
+    NFcore::Molecule::unbind(partner, bType->getCompIndexFromName("a"));
+    delete system;
+}
+
 TEST_CASE("NFsim compact selector preserves seeded order across membership refresh") {
     const std::string modelText = R"(
 begin parameters
