@@ -9,6 +9,14 @@ PYPROJECT = REPO / "pyproject.toml"
 CI_WORKFLOW = REPO / ".github" / "workflows" / "ci.yml"
 
 
+def test_pull_request_runs_keep_exact_head_evidence_available():
+    """A later PR push must not cancel validation for the preceding SHA."""
+
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+    assert "github.event.pull_request.head.sha" in workflow
+    assert re.search(r"^\s+cancel-in-progress:\s+false\s*$", workflow, re.MULTILINE)
+
+
 def _workflow_job(name: str) -> str:
     workflow = CI_WORKFLOW.read_text(encoding="utf-8")
     match = re.search(

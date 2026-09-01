@@ -7,8 +7,10 @@ on:
     branches: [main]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Keep hosted evidence attached to the exact PR head being evaluated. A
+  # checklist/documentation push must not cancel the preceding semantic run.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: false
 
 env:
   CMAKE_BUILD_TYPE: Release
