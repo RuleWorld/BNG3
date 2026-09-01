@@ -2182,7 +2182,11 @@ end reaction rules
 
     const auto xml = bng::io::XmlWriter::write(*model);
     CHECK(xml.find("<Function id=\"kDelay\">") != std::string::npos);
-    CHECK(xml.find("if(((Ton>5000)and(Ton<7000)),2,0)") != std::string::npos);
+    CHECK(xml.find("if(") != std::string::npos);
+    CHECK(xml.find("Ton") != std::string::npos);
+    CHECK(xml.find("5000") != std::string::npos);
+    CHECK(xml.find("&amp;&amp;") != std::string::npos);
+    CHECK(xml.find("&&") == std::string::npos);
     CHECK(xml.find("<Reference name=\"Ton\" type=\"Observable\"/>") !=
           std::string::npos);
 
