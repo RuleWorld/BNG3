@@ -3268,6 +3268,83 @@ end reaction rules
     delete system;
 }
 
+TEST_CASE("NFsim AST adapter expands one-way direct Arrhenius binding") {
+    // BNG2 2.9.3 expands this unidirectional rule to one forward network
+    // reaction with exp(-(Ea + phi*Gbind)); it does not synthesize a reverse
+    // reaction. Keep that source-derived directionality contract explicit.
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    phi 0.25
+    Ea 0.0
+    Gbind 1.0
+    RT 1.0
+end parameters
+begin molecule types
+    A(b)
+    B(a)
+end molecule types
+begin seed species
+    A(b) 1
+    B(a) 1
+end seed species
+begin energy patterns
+    A(b!1).B(a!1) Gbind
+end energy patterns
+begin reaction rules
+    A(b) + B(a) -> A(b!1).B(a!1) Arrhenius(phi,Ea)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getEnergyFunction() != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    CHECK(system->getReaction(0)->getBaseRate() == Catch::Approx(std::exp(-0.25)));
+    CHECK(suggestedTraversalLimit >= 2);
+    delete system;
+}
+
+TEST_CASE("NFsim AST adapter expands one-way direct Arrhenius state changes") {
+    // BNG2 2.9.3 emits one forward reaction for this rule with
+    // exp(-(Ea + phi*(Gup-Gdn))); no reverse direction is implicit.
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    phi 0.25
+    Ea 0.0
+    Gup 1.0
+    Gdn 0.0
+    RT 1.0
+end parameters
+begin molecule types
+    A(conf~dn~up)
+end molecule types
+begin seed species
+    A(conf~dn) 1
+end seed species
+begin energy patterns
+    A(conf~up) Gup
+    A(conf~dn) Gdn
+end energy patterns
+begin reaction rules
+    A(conf~dn) -> A(conf~up) Arrhenius(phi,Ea)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getEnergyFunction() != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    CHECK(system->getReaction(0)->getBaseRate() == Catch::Approx(std::exp(-0.25)));
+    CHECK(suggestedTraversalLimit >= 1);
+    delete system;
+}
+
 TEST_CASE("NFsim AST adapter retains materialized expansion for non-factorized contexts") {
     auto model = bng::parser::parseModel(R"(
 begin parameters
