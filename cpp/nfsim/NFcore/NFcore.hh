@@ -1396,7 +1396,7 @@ namespace NFcore
 
 			void setTraversalLimit(int limit) { this->traversalLimit = limit; };
 
-			double get_a() const { return a; };
+			virtual double get_a() const { return a; };
 			virtual void printDetails() const;
 			void fire(double random_A_number);
 			// AS2023 - additional call sig to use with reaction firing tracking. The call

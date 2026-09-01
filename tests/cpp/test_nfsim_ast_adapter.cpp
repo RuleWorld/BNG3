@@ -3268,10 +3268,18 @@ end reaction rules
     REQUIRE(system != nullptr);
     REQUIRE(system->getAllReactions().size() == 2);
     CHECK(system->getReaction(0)->getRxnType() == NFcore::ReactionClass::DOR_RXN);
-    CHECK(dynamic_cast<NFcore::EnergyRxnClass*>(system->getReaction(0)) != nullptr);
+    auto* compactReaction =
+        dynamic_cast<NFcore::EnergyRxnClass*>(system->getReaction(0));
+    REQUIRE(compactReaction != nullptr);
+    REQUIRE(compactReaction->getCompactPartnerPool() != nullptr);
 
     system->prepareForSimulation();
+    CHECK(compactReaction->getCompactPartnerPool()->size() == 1);
     CHECK(system->getReaction(0)->get_a() == Catch::Approx(2.0 + std::exp(-0.5)));
     CHECK(system->getReaction(1)->get_a() == Catch::Approx(0.0));
+
+    compactReaction->setUseRuleMonkey(true);
+    CHECK(compactReaction->update_a() == Catch::Approx(2.0 + std::exp(-0.5)));
+    compactReaction->setUseRuleMonkey(false);
     delete system;
 }

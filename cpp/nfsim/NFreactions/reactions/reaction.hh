@@ -138,6 +138,16 @@ namespace NFcore
 					TransformationSet *transformationSet,
 					int dorReactantIndex,
 					System *s);
+			DORRxnClass(
+					string name,
+					double baseRate,
+					string baseRateName,
+					TransformationSet *transformationSet,
+					int dorReactantIndex,
+					System *s,
+					unsigned int reactantListInitialCapacity,
+					unsigned int reactantTreeInitialCapacity,
+					bool allocateReactantLists);
 			virtual ~DORRxnClass();
 
 			virtual void init();
@@ -226,9 +236,19 @@ namespace NFcore
 					double RT,
 					bool isForward,
 					System *s);
-			virtual ~EnergyRxnClass() {}
+			virtual ~EnergyRxnClass();
+			virtual CompactPartnerPool *getCompactPartnerPool() const {
+				return partnerPool;
+			}
+			virtual bool tryToAdd(Molecule *m, unsigned int reactantPos);
+			virtual void remove(Molecule *m, unsigned int reactantPos);
+			virtual double update_a();
+			virtual double get_a() const;
+			virtual int getReactantCount(unsigned int reactantIndex) const;
+			virtual int getCorrectedReactantCount(unsigned int reactantIndex) const;
 
 		protected:
+			virtual void pickMappingSets(double randNumber) const;
 			virtual double evaluateLocalFunctions(MappingSet *ms);
 			virtual void pickRuleMonkeyMappingSets(double randNumber) const;
 			virtual double exactRuleMonkey_a();
@@ -236,6 +256,13 @@ namespace NFcore
 		private:
 			vector<EnergyPatternTerm> conditionalTerms;
 			vector<int> conditionComponentIndices;
+			bool simpleMembership;
+			int reactionCenterComponentIndex;
+			int partnerComponentIndex;
+			MoleculeType *partnerMoleculeType;
+			CompactPartnerPool *partnerPool;
+			MappingSet *compactPartnerMappingSet;
+			double compactRateFactor;
 			double baseEnergy;
 			double phi;
 			double RT;
