@@ -2,6 +2,7 @@
 
 import os
 import xml.etree.ElementTree as ET
+from pathlib import Path
 
 import pytest
 
@@ -242,6 +243,28 @@ end model
 
 
 class TestSimulation:
+    def test_bng2_zero_argument_function_rates_execute(self, tmp_path):
+        """The BNG2 test_time fixture must execute through the action path."""
+        source = Path(VALIDATION_DIR) / "Validate" / "test_time.bngl"
+        bngl = tmp_path / source.name
+        bngl.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+
+        bionetgen.load(str(bngl)).execute()
+
+        output = tmp_path / "test_time.gdat"
+        assert output.exists()
+        rows = output.read_text(encoding="utf-8").splitlines()
+        assert rows[0].split() == [
+            "time",
+            "t",
+            "x_exact",
+            "x_builtin",
+            "f_correct",
+            "f_builtin",
+            "f_diff",
+        ]
+        assert len(rows) == 102  # header plus 100 output intervals and t=0
+
     def test_ode_simulation(self, tmp_path):
         bngl = tmp_path / "sim.bngl"
         bngl.write_text("""
