@@ -4,8 +4,8 @@
 **Last audited:** 2026-08-31
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** a77ceb871fde2cd2d2327bb6ea806368e307c91e
-**Checklist refresh base:** a77ceb8 (refresh after each semantic checkpoint)
+**Audited semantic code head:** b8f44e4eefd8cb515f6a6ca31c15f7971994e717
+**Checklist refresh base:** b8f44e4 (refresh after each semantic checkpoint)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -45,14 +45,15 @@ completion gate.
 
 - [x] Required fast-forward pull completed before this documentation change.
 - [x] The latest pushed semantic checkpoint is
-  a77ceb871fde2cd2d2327bb6ea806368e307c91e; documentation-only refreshes may
+  b8f44e4eefd8cb515f6a6ca31c15f7971994e717; documentation-only refreshes may
   be layered after it without invalidating its semantic test evidence.
 - [x] The small documentation grammar fix remains the only pre-existing
   worktree modification. It is intentionally not staged by this checklist
   checkpoint.
-- [x] Local CTest passes 127/127.
-- [x] The full NFsim AST adapter executable passes 82 test cases and 674
-  assertions, including compact energy evaluation and materialized fallback.
+- [x] Local CTest passes 131/131.
+- [x] The full NFsim AST adapter executable passes 83 test cases and 697
+  assertions, including compact energy evaluation, shared partner-pool
+  updates, and materialized fallback.
 - [x] Local Python suite passes 229 tests with 27 skips and 8 warnings.
 - [x] Local CI workflow contract tests pass 6/6, including the pull-request
   source-distribution smoke gate.
@@ -66,11 +67,11 @@ completion gate.
 - [ ] Hosted PR checks for this exact head pass across the C++ matrix, Python
   matrix, ASan, integration, validation, package smoke, formatter, and CodeQL.
   Current exact-head runs are CI
-  [33456973533](https://github.com/RuleWorld/BNG3/actions/runs/33456973533),
+  [33460698209](https://github.com/RuleWorld/BNG3/actions/runs/33460698209),
   CodeQL
-  [33456973548](https://github.com/RuleWorld/BNG3/actions/runs/33456973548),
+  [33460698212](https://github.com/RuleWorld/BNG3/actions/runs/33460698212),
   and formatting
-  [33456973608](https://github.com/RuleWorld/BNG3/actions/runs/33456973608);
+  [33460698205](https://github.com/RuleWorld/BNG3/actions/runs/33460698205);
   they must be terminal before this item is checked.
 - [x] Modern Atomizer checkpoints exist for annotations, BNG-XML conversion,
   Rulifier, UniProt, structure helpers, and conservative SBML-Multi discovery,
@@ -329,17 +330,21 @@ completion gate.
   public source head `3b046fc1b9f76719d92be22279b24992cdae7c35`.
 - [x] Source-derived BNG3 tests define compact binding-context extraction,
   rejection of duplicate weighted molecule topologies, compact conjunction
-  masks, factorized runtime propensity evaluation, and materialized fallback.
-  Current checkpoints are `b9ab125`, `2b1c02f`, `92543ca`, `6ed6e97`, and
-  `a77ceb8`.
+  masks, factorized runtime propensity evaluation, shared partner-pool
+  registration/indexing and selector batch updates, and materialized fallback.
+  Current checkpoints are `b9ab125`, `2b1c02f`, `92543ca`, `6ed6e97`,
+  `a77ceb8`, and `b8f44e4`.
 - [x] BNG3 carries the compact `EnergyBindingContext` and mapping-local
   `EnergyRxnClass` path for supported contexts while retaining legacy
   materialized expansion for unsupported topologies.
+- [x] BNG3 carries the compact partner-pool index for simple forward binding
+  rules, including shared pool registration and batched selector updates on
+  partner add/remove membership changes.
 - [ ] Port and test the remaining supported CPU evaluator slices from the
-  merged NFSIM source: compact partner pools, incremental membership and
-  changed-endpoint propagation, deferred/batched propensity updates, direct
-  product lists, sparse-selector integration, and cached preflight/rate
-  factors. Preserve BNG3 lifecycle and direct-AST adapters while porting.
+  merged NFSIM source: incremental membership and changed-endpoint
+  propagation, deferred multi-product propensity updates, direct product
+  lists, sparse-selector integration, and cached preflight/rate factors.
+  Preserve BNG3 lifecycle and direct-AST adapters while porting.
 - [ ] Compare compact and fallback event semantics against an independently
   built native NFsim at the pinned source revision, including zero crossings,
   conjunction contexts, reversible binding/unbinding, RuleMonkey selection,
@@ -616,10 +621,11 @@ These are known unchecked requirements, not reasons to claim completion:
   ledger is present.
 - Capability-matrix oracle fields remain pending; broad independent BNG2,
   NFsim, and PyBioNetGen parity is not established by local tests.
-- The compact energy evaluator is ported through conjunction masks, but the
-  merged NFSIM PR #475 pool/membership/selector optimization slices,
-  independent energy parity, benchmark provenance, and source reconciliation
-  are still open.
+- The compact energy evaluator is ported through shared partner-pool indexing
+  and batched add/remove propensity updates, but merged NFSIM PR #475
+  incremental-membership, changed-endpoint, direct-product, sparse-selector,
+  preflight/rate-cache slices, independent energy parity, benchmark
+  provenance, and source reconciliation are still open.
 - cpp/nfsim/nauty24 and the NFsim ExprTk path remain in the build; the
   canonical-label and shared-expression master-function migrations are not
   complete.
