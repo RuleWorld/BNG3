@@ -4,8 +4,8 @@
 **Last audited:** 2026-09-01
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 2c498afaaa26d2f1cbf3fc8a7c5874cf5c9ee619
-**Checklist refresh base:** 2c498af (source-derived Node serialization allocation checkpoint; refresh after each checkpoint)
+**Audited semantic code head:** 3b284a516f10cfd277ca968cd31eae83e738ef9c
+**Checklist refresh base:** 3b284a5 (source-derived compact ODE update checkpoint; refresh after each checkpoint)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -49,18 +49,17 @@ completion gate.
 
 - [x] Required fast-forward pull completed before this documentation change.
 - [x] The latest local semantic checkpoint is
-  `2c498afaaa26d2f1cbf3fc8a7c5874cf5c9ee619`; its parent
-  `b610992ca1493c900edcefb09df4e74670fdd6a5` defines empty PatternGraph
-  canonicalization. `2c498af` adds source-derived ports from
-  `akutuva21/bionetgen` commits `b73d9e3d` and `556099d3`: canonical Node
-  labels and recursive BNG2 graph serialization use append-based strings
-  while preserving exact output bytes. The earlier source-derived engine and
-  modern Atomizer checkpoints remain in this commit's ancestry, including
-  Issue78/Issue86 and the full `Species.extend` parity ports.
+  `3b284a516f10cfd277ca968cd31eae83e738ef9c`; its parent
+  `d3b1476c30704d7a2da5a42700627cbd4b80dbf6` is the fork-audit checklist
+  refresh. `3b284a5` adds the source-derived `akutuva21/bionetgen` commit
+  `dd665873` compact constant-reaction representation for large ODE networks,
+  with a fallback for small networks and unchanged multi-species derivative
+  semantics. The earlier empty-graph, Node serialization, source-derived
+  engine, and modern Atomizer checkpoints remain in this ancestry.
 - [x] The latest public code/test checkpoint is
-  `2c498afaaa26d2f1cbf3fc8a7c5874cf5c9ee619`, whose parent is
-  `b610992ca1493c900edcefb09df4e74670fdd6a5`; it adds the source-derived
-  Node serialization tests and implementation.
+  `3b284a516f10cfd277ca968cd31eae83e738ef9c`, whose parent is
+  `d3b1476c30704d7a2da5a42700627cbd4b80dbf6`; it adds the source-derived
+  compact ODE update tests and implementation.
 - [x] The latest published CI-repair checkpoint is
   `9a2475a0af360d685dc41eb9bb376f6517d74b4d`; `gh api` and `gh pr view 2`
   agreed on this branch/PR source head immediately after push, and PR #2
@@ -68,10 +67,10 @@ completion gate.
 - [x] The small documentation grammar fix remains the only unrelated tracked
   BNG3 worktree modification. It remains intentionally unstaged and must not
   be mixed into semantic or checklist commits.
-- [x] Exact-head CTest passes `174/174` on `2c498af` (local Release/Ninja
-  build; `ctest --test-dir build --output-on-failure`), including the empty
-  graph, exact Node serialization, t4 rejection contract, inferred-state/
-  type-order gates, and IfTest parity assertions.
+- [x] Exact-head CTest passes `175/175` on `3b284a5` (local Release/Ninja
+  build; `ctest --test-dir build --output-on-failure`), including the compact
+  ODE derivative contract, empty graph, exact Node serialization, t4 rejection
+  contract, inferred-state/type-order gates, and IfTest parity assertions.
 - [ ] Separate local Debug/ASan evidence has not yet been rerun for 5f6da07;
   prior 0f83347 evidence was supplemental memory-safety coverage, not a
   substitute for hosted sanitizer and leak/UBSan gates.
@@ -137,7 +136,7 @@ completion gate.
 - [x] Full Python/API tests pass on the latest Python-affecting checkpoint
   `9c60ca4`: `235 passed, 27 skipped, 8 warnings` from
   `PYTHONPATH=python:build/cpp python -m pytest tests/python -q`. The later
-  `2c498af` checkpoint changes only C++ serialization and has been requalified
+  `3b284a5` checkpoint changes only C++ ODE internals and has been requalified
   by native C++/AST gates; rerun the full Python suite on the final candidate.
   The installed-wheel target still has only historical evidence and is not
   release evidence for this head.
@@ -224,17 +223,16 @@ completion gate.
   was still in progress at the last readback, and [formatting run
   33531304766](https://github.com/RuleWorld/BNG3/actions/runs/33531304766) had
   passed. These runs do not qualify the current repair.
-- [ ] At this refresh, the exact public semantic code checkpoint `2c498af`
-  had fresh hosted evidence beginning with [CI run
-  33535966760](https://github.com/RuleWorld/BNG3/actions/runs/33535966760),
+- [ ] At this refresh, the exact public semantic code checkpoint `3b284a5`
+  has fresh hosted evidence beginning with [CI run
+  33536641103](https://github.com/RuleWorld/BNG3/actions/runs/33536641103),
   [CodeQL run
-  33535966751](https://github.com/RuleWorld/BNG3/actions/runs/33535966751),
+  33536641106](https://github.com/RuleWorld/BNG3/actions/runs/33536641106),
   and [formatting run
-  33535966856](https://github.com/RuleWorld/BNG3/actions/runs/33535966856).
-  CI was queued, CodeQL was in progress, and formatting had passed at
-  readback. This checklist refresh creates a documentation-only public head;
-  read back its new exact-head run set separately. Queued or partial results
-  are not completion evidence.
+  33536641264](https://github.com/RuleWorld/BNG3/actions/runs/33536641264).
+  All three were queued at readback. This checklist refresh creates a
+  documentation-only public head; read back its new exact-head run set
+  separately. Queued or partial results are not completion evidence.
 - [x] Historical hosted PR checks for semantic head
   `0f833470950fc47329f5b7381c64533e623b45ce` were terminal-success: [CI run
   33493581633](https://github.com/RuleWorld/BNG3/actions/runs/33493581633)
@@ -249,7 +247,7 @@ completion gate.
 - [x] Before this refresh, `gh api
   repos/RuleWorld/BNG3/git/ref/heads/codex/bng3-integration-foundations` and
   `gh pr view 2 --repo RuleWorld/BNG3` read back the same full public code
-  checkpoint SHA `2c498afaaa26d2f1cbf3fc8a7c5874cf5c9ee619`; PR #2 is open.
+  checkpoint SHA `3b284a516f10cfd277ca968cd31eae83e738ef9c`; PR #2 is open.
   The documentation commit that follows changes the public head and requires
   a new exact-head readback.
 - [x] Modern Atomizer checkpoints exist for annotations, BNG-XML conversion,
@@ -336,11 +334,12 @@ completion gate.
   canonical-label/order changes (`533ac26`, `5291159d`, `92ca4c03`,
   `70acc9e2`, `7ee2db11`) with source-derived correctness and benchmark
   evidence. Unsafe or superseded experiments must be classified explicitly.
-- [ ] Audit branch `codex/ode-integration` at
-  `9c7c0aa3e031330b7421a8e93a2340dc65c43cbb` and its source commit
-  `dd665873` for the compact constant-reaction/flattened ODE update path;
-  port tests-first only if BNG3's OdeIntegrator contract can preserve exact
-  solver behavior. Branch `codex/ode-jtimes-20260901` at
+- [x] Branch `codex/ode-integration` at
+  `9c7c0aa3e031330b7421a8e93a2340dc65c43cbb` and source commit `dd665873`
+  were audited and ported tests-first at BNG3 `3b284a5`. The focused
+  multi-species 512-reaction derivative contract and full CTest `175/175` are
+  green; representative performance benchmark evidence remains open. Branch
+  `codex/ode-jtimes-20260901` at
   `fde0cd6a522c9f988d5495db31c70ce0f98e744b` adds no code beyond that ODE
   lineage and must not be bulk-merged.
 - [ ] Audit branch `codex/graph-string-20260901` at
@@ -867,7 +866,7 @@ completion gate.
   event conditions and remain release-candidate work. This documentation
   refresh creates a new public head and requires another exact-head check
   readback after push.
-- [ ] Current public semantic checkpoint `2c498af` (and every documentation
+- [ ] Current public semantic checkpoint `3b284a5` (and every documentation
   checkpoint that follows it) has a fresh terminal hosted check set read back
   with `gh`; the PR #2 metadata must converge to the same head. The current
   exact-head set is still pending and must be read back after this refresh.
