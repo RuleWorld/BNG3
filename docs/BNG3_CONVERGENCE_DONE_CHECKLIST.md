@@ -5,7 +5,7 @@
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
 **Audited semantic code head:** c754544bce31b4efe708c84afdb9bfc46464570d
-**Checklist refresh base:** c754544 (source-derived NFsim XML local-function rate compatibility; refresh after each checkpoint)
+**Checklist refresh base:** 9a2475a (source-derived exact-head CI evidence repair; refresh after each checkpoint)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -71,9 +71,10 @@ completion gate.
   `c754544bce31b4efe708c84afdb9bfc46464570d`, whose parent is the prior
   documentation checkpoint `ed3f295bc2b1b505ef1b6c8c64e72a56e12117fd`; it
   adds the XML-writer compatibility behavior and its source-derived tests.
-- [x] The latest public checklist head is
-  `2979bb522825a408758828dfdae2565eab1700e3`; `gh api` and `gh pr view 2`
-  agree on this branch/PR source head, and PR #2 remains open.
+- [x] The latest published CI-repair checkpoint is
+  `9a2475a0af360d685dc41eb9bb376f6517d74b4d`; `gh api` and `gh pr view 2`
+  agreed on this branch/PR source head immediately after push, and PR #2
+  remains open.
 - [x] The small documentation grammar fix remains the only unrelated tracked
   BNG3 worktree modification. It remains intentionally unstaged and must not
   be mixed into semantic or checklist commits.
@@ -190,8 +191,9 @@ completion gate.
   absent local explicit oracle after the repair. The exact repair is
   `b13fe23`; use an absolute independently built native path for claimed
   parity.
-- [x] Exact-head local CI workflow contract tests pass 6/6 on `7186b65`,
-  including the pull-request source-distribution smoke gate.
+- [x] Exact-head local CI workflow contract tests pass 7/7 on `9a2475a`,
+  including the pull-request source-distribution smoke gate and the contract
+  that PR-head concurrency preserves in-flight hosted evidence.
 - [x] Local canonical Black check passes: `177 files would be left unchanged`
   under `black --check --diff --target-version py312 python/ tests/python/
   scripts/` (Jupyter files are skipped because optional Jupyter dependencies
@@ -216,16 +218,23 @@ completion gate.
   `419bb2bd29f319bfc638c50b9c29cec0934b6d87eb7ce8fcdefed70a01f618c2`
   (CPython 3.14 arm64 wheel); the installed-target Python suite is recorded
   above.
-- [ ] Current hosted checks for public code checkpoint `c754544` were not
-  terminal as one set: [CI run
-  33531304777](https://github.com/RuleWorld/BNG3/actions/runs/33531304777) is
-  pending, [CodeQL run
-  33531304750](https://github.com/RuleWorld/BNG3/actions/runs/33531304750) is
-  in progress, and [formatting run
-  33531304766](https://github.com/RuleWorld/BNG3/actions/runs/33531304766) has
-  passed. These runs target superseded code head `c754544`, not current
-  public checklist head `2979bb5`; no nonterminal result is completion
-  evidence.
+- [ ] Superseded hosted checks for semantic head `c754544` were not terminal
+  as one set: [CI run
+  33531304777](https://github.com/RuleWorld/BNG3/actions/runs/33531304777) was
+  cancelled, [CodeQL run
+  33531304750](https://github.com/RuleWorld/BNG3/actions/runs/33531304750)
+  was still in progress at the last readback, and [formatting run
+  33531304766](https://github.com/RuleWorld/BNG3/actions/runs/33531304766) had
+  passed. These runs do not qualify the current repair.
+- [ ] At this refresh, the exact public CI-repair head
+  `9a2475a0af360d685dc41eb9bb376f6517d74b4d` has queued hosted [CI run
+  33532740611](https://github.com/RuleWorld/BNG3/actions/runs/33532740611),
+  [CodeQL run
+  33532740599](https://github.com/RuleWorld/BNG3/actions/runs/33532740599),
+  and [formatting run
+  33532740608](https://github.com/RuleWorld/BNG3/actions/runs/33532740608).
+  They must be read back as one terminal exact-head set; queued or partial
+  results are not completion evidence.
 - [x] Historical hosted PR checks for semantic head
   `0f833470950fc47329f5b7381c64533e623b45ce` were terminal-success: [CI run
   33493581633](https://github.com/RuleWorld/BNG3/actions/runs/33493581633)
@@ -237,10 +246,10 @@ completion gate.
   passed both C++ and Python analysis, and [formatting run
   33493581573](https://github.com/RuleWorld/BNG3/actions/runs/33493581573)
   passed. Results were read back with `gh` against the exact public head;
-- [ ] `gh pr checks 2 --repo RuleWorld/BNG3` reports no checks on current public
-  checklist head `2979bb5` (documentation-only push). Fresh hosted CI, CodeQL,
-  and formatting checks must be read back for an exact semantic/release
-  candidate head; superseded runs do not count as evidence.
+- [x] `gh api repos/RuleWorld/BNG3/git/ref/heads/codex/bng3-integration-foundations`
+  and `gh pr view 2 --repo RuleWorld/BNG3` read back the same full public
+  checkpoint SHA `9a2475a0af360d685dc41eb9bb376f6517d74b4d`; PR #2 is open.
+  Hosted terminal status for that exact SHA remains a separate unchecked gate.
 - [x] Modern Atomizer checkpoints exist for annotations, BNG-XML conversion,
   Rulifier, UniProt, structure helpers, and conservative SBML-Multi discovery,
   helper/rate-rule constants, each with source-derived tests.
@@ -804,9 +813,9 @@ completion gate.
   event conditions and remain release-candidate work. This documentation
   refresh creates a new public head and requires another exact-head check
   readback after push.
-- [ ] Current public branch head `9378000` (and the documentation checkpoint
-  that follows it) has a fresh terminal hosted check set read back with `gh`;
-  the PR #2 metadata must converge to the same head.
+- [ ] Current public CI-repair head `9a2475a` (and every documentation
+  checkpoint that follows it) has a fresh terminal hosted check set read back
+  with `gh`; the PR #2 metadata must converge to the same head.
 - [ ] Every required job emits a terminal summary with counts, failures,
   skips, exception budget, corpus/source revision, and artifact digests.
 - [ ] Required jobs fail when a claimed oracle, corpus, validator, or compiler

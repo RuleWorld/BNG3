@@ -93,6 +93,9 @@ them pass by widening tolerances or hiding skips. The Python API is
   every semantic or documentation checkpoint. Preserve unrelated worktree
   edits, especially the small grammar-only change in
   `docs/BNG3_INTEGRATION_PLAN.md`.
+- CI pull-request concurrency must key runs by the exact PR head and must not
+  cancel an in-flight head when a later checklist/documentation push lands;
+  preserve this contract with a local workflow test.
 - Before each checkpoint, inspect and preserve unrelated edits, fast-forward
   pull the selected branch when possible, and record the resulting full SHA;
   a documentation-only checkpoint still requires fresh exact-head evidence.
