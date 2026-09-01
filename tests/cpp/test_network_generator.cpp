@@ -1,6 +1,11 @@
 #include <catch2/catch_test_macros.hpp>
+#include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <utility>
 
+#include "../../cpp/ast/MacroBNGModel.hpp"
 #include "../../cpp/engine/NetworkGenerator.hpp"
 // Include implementation to exercise evaluateRateString in anonymous namespace.
 #include "../../cpp/engine/NetworkGenerator.cpp"
@@ -86,4 +91,68 @@ TEST_CASE("SpeciesList preserves compartment-aware deduplication", "[SpeciesList
     const auto keyed = list.addWithExactKey(makeSpecies("MITO"), std::move(exactKey));
     REQUIRE(keyed.second);
     REQUIRE(list.size() == 3);
+}
+
+TEST_CASE("MacroBNGModel num_site preserves Perl dependency semantics", "[MacroBNGModel]") {
+    // Source-derived from legacy/perl/Perl2/MacroBNGModel.pm:num_site:
+    // duplicate sites are numbered from the molecule-site inventory, while
+    // the activated site and its remaining dependencies are returned in the
+    // original order.
+    bng::ast::MacroBNGModel macro;
+    std::map<std::string, int> siteCounts{{"Lig:l", 2}};
+    std::vector<std::string> dependencies;
+
+    const auto active = macro.num_site("Lig(l,l)", "Lig(l!1,l)", siteCounts, dependencies);
+
+    REQUIRE(active == "l");
+    REQUIRE(dependencies == std::vector<std::string>{"l", "l:2"});
+
+    dependencies.clear();
+    REQUIRE(macro.num_site("Lig(l,l)", "Lig(l,l)", siteCounts, dependencies) == "%");
+    REQUIRE(dependencies == std::vector<std::string>{"l"});
+}
+
+TEST_CASE("MacroBNGModel pre_macr runs the species and rule transforms", "[MacroBNGModel]") {
+    // Source-derived from MacroBNGModel.pm::pre_macr: rule dependencies are
+    // prepared before trans_rec/trans_specie write the combined macro BNGL.
+    const auto workdir = std::filesystem::temp_directory_path() /
+                          ("bng3_macro_model_" +
+                          std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    std::filesystem::create_directories(workdir);
+    const auto original = std::filesystem::current_path();
+    struct WorkingDirectoryGuard {
+        std::filesystem::path original;
+        std::filesystem::path temporary;
+        ~WorkingDirectoryGuard() {
+            std::error_code error;
+            std::filesystem::current_path(original, error);
+            std::filesystem::remove_all(temporary, error);
+        }
+    } guard{original, workdir};
+    std::filesystem::current_path(workdir);
+
+    std::ofstream input("macro_input.bngl");
+    input << "begin parameters\n"
+          << "  k 1\n"
+          << "end parameters\n"
+          << "begin species\n"
+          << "  Lig(l,l) 10\n"
+          << "end species\n"
+          << "begin reaction_rules\n"
+          << "  Lig(l,l) -> Lig(l!1,l) k\n"
+          << "end reaction_rules\n"
+          << "end model\n";
+    input.close();
+
+    bng::ast::MacroBNGModel macro;
+    REQUIRE(macro.pre_macr("macro_input") == "");
+
+    std::ifstream output("macr_macro_input.bngl");
+    std::stringstream contents;
+    contents << output.rdbuf();
+    const auto generated = contents.str();
+
+    REQUIRE(generated.find("begin species") != std::string::npos);
+    REQUIRE(generated.find("Lig_l(l) 10") != std::string::npos);
+    REQUIRE(generated.find("begin reaction_rules") != std::string::npos);
 }
