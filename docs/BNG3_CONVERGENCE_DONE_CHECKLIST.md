@@ -4,13 +4,15 @@
 **Last audited:** 2026-09-01
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** a97c02e5fcb1e65b19457316c584c0f5aad2688e
-**Checklist refresh base:** a97c02e (refresh after each semantic checkpoint)
+**Audited semantic code head:** bb3ae01432adfd8bb92240af3e1e947e49b017ee
+**Checklist refresh base:** bb3ae01 (refresh after each semantic checkpoint)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
-6690fda5d9e053df822d0248ebae185f5caca82a; final public source head
-3b046fc1b9f76719d92be22279b24992cdae7c35
+6690fda5d9e053df822d0248ebae185f5caca82a; accepted energy-source cutoff
+3b046fc1b9f76719d92be22279b24992cdae7c35. The current public NFsim checkout
+is a6f9fa945c9d6e1e122e789c952260112c93f157; later non-energy source changes
+are not silently included in the BNG3 port.
 
 This is the execution checklist for the BNG3 convergence goal. It turns the
 completion charter and Section 11 of BNG3_INTEGRATION_PLAN.md into auditable
@@ -45,20 +47,27 @@ completion gate.
 
 - [x] Required fast-forward pull completed before this documentation change.
 - [x] The latest pushed semantic checkpoint is
-  a97c02e5fcb1e65b19457316c584c0f5aad2688e; documentation-only refreshes may
-  be layered after it without invalidating its semantic test evidence.
-- [x] The small documentation grammar fix remains the only pre-existing
-  worktree modification. It is intentionally not staged by this checklist
-  checkpoint.
-- [x] Local CTest passes 135/135.
-- [x] The full NFsim AST adapter executable passes 87 test cases and 827
-  assertions, including compact energy evaluation, sparse selector ordering,
-  cached single- and
-  multi-term Arrhenius factors, direct-product endpoint identity propagation,
-  safe direct-product traversal, cached pre-fire binding rejection, compact
-  partner mapping-slot compaction, shared partner-pool updates, deferred
-  weighted-side propensity capture, and materialized fallback.
-- [x] Local Python suite passes 229 tests with 27 skips and 8 warnings.
+  bb3ae01432adfd8bb92240af3e1e947e49b017ee; the checklist refresh is a
+  documentation-only checkpoint layered after it and does not alter its
+  semantic test evidence.
+- [x] Before this checklist/agent-guidance checkpoint, the small documentation
+  grammar fix was the only pre-existing BNG3 worktree modification. It remains
+  intentionally unstaged and must not be mixed into semantic or checklist
+  commits.
+- [ ] Exact-head CTest must be rerun and recorded for the current release
+  candidate; the last recorded baseline was 135/135.
+- [x] The full NFsim AST adapter executable passes 90 test cases and 861
+  assertions on bb3ae014, including compact energy evaluation, cached compact
+  rate factors, specialized reverse propensities, sparse selector ordering,
+  cached single- and multi-term Arrhenius factors, direct-product endpoint
+  identity propagation, safe direct-product traversal, cached pre-fire binding
+  rejection, compact partner mapping-slot compaction, indexed cross-type
+  partner refresh, shared partner-pool updates, dense type-invariant membership
+  decisions, deferred weighted-side propensity capture, and materialized
+  fallback.
+- [ ] Exact-head Python/API and package tests must be rerun and recorded for
+  the current release candidate; the last recorded baseline was 229 passed,
+  27 skipped, and 8 warnings.
 - [x] Local CI workflow contract tests pass 10/10, including the pull-request
   source-distribution smoke gate.
 - [ ] Local canonical Black check is not runnable in this macOS sandbox because
@@ -69,18 +78,14 @@ completion gate.
   environment and must not be treated as parity.
 - [ ] A clean, no-build-isolation wheel is rebuilt and installed into a
   separate target for this exact head. The prior 7e91acc macOS wheel smoke is
-  historical evidence only; it is not evidence for a97c02e.
+  historical evidence only; it is not evidence for bb3ae014.
 - [ ] Hosted PR checks for the exact current semantic head
-  `a97c02e5fcb1e65b19457316c584c0f5aad2688e` are all terminal and successful
-  across the C++ matrix, Python matrix, ASan, integration, validation, package
-  smoke, formatter, and CodeQL. Fresh exact-semantic-head runs are CI
-  [33472941776](https://github.com/RuleWorld/BNG3/actions/runs/33472941776)
-  (pending), CodeQL
-  [33472941770](https://github.com/RuleWorld/BNG3/actions/runs/33472941770)
-  (in progress), and formatting
-  [33472941761](https://github.com/RuleWorld/BNG3/actions/runs/33472941761)
-  (successful). A later documentation-only PR head requires its own fresh
-  exact-head check set.
+  `bb3ae01432adfd8bb92240af3e1e947e49b017ee` have not yet been recorded as a
+  complete terminal set across the C++ matrix, Python matrix, ASan,
+  integration, validation, package smoke, formatter, and CodeQL. Older runs
+  are historical and do not establish evidence for this head. The subsequent
+  checklist/AGENTS documentation checkpoint requires a fresh exact-head set
+  of its own.
 - [x] Modern Atomizer checkpoints exist for annotations, BNG-XML conversion,
   Rulifier, UniProt, structure helpers, and conservative SBML-Multi discovery,
   helper/rate-rule constants, each with source-derived tests.
@@ -334,15 +339,16 @@ completion gate.
 ### 5.4 Energy-function evaluator convergence
 
 - [x] The merged `akutuva21/nfsim` energy-evaluation source is pinned for this
-  work: PR #475, merge `6690fda5d9e053df822d0248ebae185f5caca82a`, final
-  public source head `3b046fc1b9f76719d92be22279b24992cdae7c35`.
+  work: PR #475, merge `6690fda5d9e053df822d0248ebae185f5caca82a`, accepted
+  energy-source cutoff `3b046fc1b9f76719d92be22279b24992cdae7c35`.
 - [x] Source-derived BNG3 tests define compact binding-context extraction,
   rejection of duplicate weighted molecule topologies, compact conjunction
   masks, factorized runtime propensity evaluation, shared partner-pool
   registration/indexing and selector batch updates, and materialized fallback.
   Current checkpoints are `b9ab125`, `2b1c02f`, `92543ca`, `6ed6e97`,
   `a77ceb8`, `b8f44e4`, `4a2fc3e`, `738c881`, `6b6e246`, `bd29714`,
-  `401becf`, `6c681269`, and `a97c02e`.
+  `401becf`, `6c681269`, `a97c02e`, `7b2a199`, `dbadea6`, `c0d1bb5`, and
+  `bb3ae01432adfd8bb92240af3e1e947e49b017ee`.
 - [x] BNG3 carries the compact `EnergyBindingContext` and mapping-local
   `EnergyRxnClass` path for supported contexts while retaining legacy
   materialized expansion for unsupported topologies.
@@ -357,16 +363,24 @@ completion gate.
   reactions: active propensity bits, block prefix sums, cached sparse
   propensities, indexed updates, and shared compact-pool scale groups
   (`a97c02e`; `tests/cpp/test_nfsim_ast_adapter.cpp`, 51 assertions).
+- [x] BNG3 carries source-derived compact reverse propensity specialization
+  and factorization guards (`dbadea6`), plus indexed cross-type partner
+  endpoint propagation and a dense type-invariant membership-decision cache
+  (`bb3ae014`; `tests/cpp/test_nfsim_ast_adapter.cpp`, 15 mixed-fixture
+  assertions).
 - [ ] Port and test the remaining supported CPU evaluator slices from the
-  merged NFSIM source: full incremental membership and changed-endpoint
-  propagation and the broader source direct-product path. Direct-product
-  endpoint identity is snapshot-tested and
+  merged NFSIM source: the broader full incremental-membership machinery,
+  sparse membership-decision indexing, source context-count semantics, and
+  the remaining direct-product path. Cross-type changed-endpoint propagation
+  is now indexed in the BNG3-adapted path, but source parity is not implied.
+  Direct-product endpoint identity is snapshot-tested and
   propagated through fired membership refresh at `4a2fc3e`, safe direct-product
   traversal is checkpointed at `738c881`, cached single-/multi-term rate factors
   at `6b6e246`, cached simple pre-fire binding rejection at `bd29714`, and
   candidate bitset/mapping-slot indexing at `401becf`, deferred multi-product
-  propensity accounting at `6c681269`, and sparse selector integration at
-  `a97c02e`; the other listed slices remain open.
+  propensity accounting at `6c681269`, sparse selector integration at
+  `a97c02e`, reverse specialization at `dbadea6`, and partner endpoint/indexed
+  decision refresh at `bb3ae014`; the other listed slices remain open.
   Preserve BNG3 lifecycle and direct-AST adapters while porting.
 - [ ] Compare compact and fallback event semantics against an independently
   built native NFsim at the pinned source revision, including zero crossings,
@@ -501,15 +515,11 @@ completion gate.
 
 ### 8.1 CI truthfulness
 
-- [ ] Current exact semantic PR head `a97c02e5fcb1e65b19457316c584c0f5aad2688e`
-  has green hosted C++, Python, validation, integration, formatting, ASan, and
-  CodeQL checks. The fresh semantic-head CI run
-  [33472941776](https://github.com/RuleWorld/BNG3/actions/runs/33472941776)
-  is pending, CodeQL run
-  [33472941770](https://github.com/RuleWorld/BNG3/actions/runs/33472941770)
-  is in progress, and formatting run
-  [33472941761](https://github.com/RuleWorld/BNG3/actions/runs/33472941761)
-  is successful. Do not use older runs as evidence for this head; the
+- [ ] Current exact semantic PR head
+  `bb3ae01432adfd8bb92240af3e1e947e49b017ee` has a complete terminal hosted
+  check set for C++, Python, validation, integration, formatting, ASan, and
+  CodeQL. Exact run links and terminal results must be recorded with `gh`;
+  older `a97c02e` and earlier runs are not evidence for this head. The
   documentation refresh head will also need a fresh exact-head check set.
 - [ ] Every required job emits a terminal summary with counts, failures,
   skips, exception budget, corpus/source revision, and artifact digests.
@@ -652,16 +662,18 @@ These are known unchecked requirements, not reasons to claim completion:
 - Capability-matrix oracle fields remain pending; broad independent BNG2,
   NFsim, and PyBioNetGen parity is not established by local tests.
 - The compact energy evaluator is ported through shared partner-pool indexing,
-  batched add/remove propensity updates, a source-derived direct-product
-  endpoint identity snapshot used by fired membership refresh (`4a2fc3e`),
-  safe direct-product traversal (`738c881`), and cached single-/multi-term
-  Arrhenius rate factors (`6b6e246`), cached simple pre-fire binding rejection
-  (`bd29714`), candidate bitset/mapping-slot indexing (`401becf`), deferred
-  multi-product propensity accounting (`6c681269`), and sparse selector
-  integration (`a97c02e`), but merged NFSIM PR #475
-  full incremental-membership/changed-endpoint propagation, broader
-  direct-product, independent energy parity, benchmark provenance, and source
-  reconciliation are still open.
+  batched add/remove propensity updates, cached compact rate-factor refresh
+  (`963d01b`), specialized reverse propensities (`dbadea6`), a source-derived
+  direct-product endpoint identity snapshot used by fired membership refresh
+  (`4a2fc3e`), safe direct-product traversal (`738c881`), and cached
+  single-/multi-term Arrhenius rate factors (`6b6e246`), cached simple pre-fire
+  binding rejection (`bd29714`), candidate bitset/mapping-slot indexing
+  (`401becf`), deferred multi-product propensity accounting (`6c681269`),
+  sparse selector integration (`a97c02e`), and indexed cross-type partner
+  endpoint/decision refresh (`bb3ae014`). Merged NFSIM PR #475 full
+  incremental-membership semantics, source context-count behavior, remaining
+  direct-product parity, independent energy parity, benchmark provenance, and
+  source reconciliation are still open.
 - cpp/nfsim/nauty24 and the NFsim ExprTk path remain in the build; the
   canonical-label and shared-expression master-function migrations are not
   complete.

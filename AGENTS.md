@@ -68,6 +68,9 @@ them pass by widening tolerances or hiding skips. The Python API is
   every semantic or documentation checkpoint. Preserve unrelated worktree
   edits, especially the small grammar-only change in
   `docs/BNG3_INTEGRATION_PLAN.md`.
+- Before each checkpoint, inspect and preserve unrelated edits, fast-forward
+  pull the selected branch when possible, and record the resulting full SHA;
+  a documentation-only checkpoint still requires fresh exact-head evidence.
 - Do not broaden the exception ledger to hide a new mismatch. The current
   checklist, not a historical model-specific exception, defines completion.
 
