@@ -4471,8 +4471,12 @@ bool addSpeciesFromAstWithOverrides(
         const int copies = foundPopulation ? 1 : count;
         std::vector<std::vector<Molecule*>> generated(
             molecules.size(), std::vector<Molecule*>());
-        for (int copy = 0; copy < copies; ++copy) {
-            for (std::size_t moleculeIndex = 0; moleculeIndex < molecules.size(); ++moleculeIndex) {
+        // Match NFinput::initStartSpecies' allocation order: all copies of a
+        // molecule position are allocated before advancing to the next
+        // position.  The order is observable through MoleculeList IDs and is
+        // part of the seeded NFsim mapping stream for repeated molecules.
+        for (std::size_t moleculeIndex = 0; moleculeIndex < molecules.size(); ++moleculeIndex) {
+            for (int copy = 0; copy < copies; ++copy) {
                 auto* moleculeType = s->getMoleculeTypeByName(molecules[moleculeIndex].name);
                 auto* molecule = moleculeType->genDefaultMolecule(compartments[moleculeIndex]);
                 generated[moleculeIndex].push_back(molecule);
@@ -4493,7 +4497,9 @@ bool addSpeciesFromAstWithOverrides(
                         runtimeNames[moleculeIndex][componentIndex], stateValue);
                 }
             }
+        }
 
+        for (int copy = 0; copy < copies; ++copy) {
             std::unordered_set<BNGcore::Node*> processedBonds;
             for (std::size_t moleculeIndex = 0; moleculeIndex < molecules.size(); ++moleculeIndex) {
                 for (std::size_t componentIndex = 0;
@@ -4525,9 +4531,9 @@ bool addSpeciesFromAstWithOverrides(
                         const auto [firstMolecule, firstComponent] = endpoints[0];
                         const auto [secondMolecule, secondComponent] = endpoints[1];
                         Molecule::bind(
-                            generated[firstMolecule].back(),
+                            generated[firstMolecule][copy],
                             runtimeNames[firstMolecule][firstComponent],
-                            generated[secondMolecule].back(),
+                            generated[secondMolecule][copy],
                             runtimeNames[secondMolecule][secondComponent]);
                     }
                 }
