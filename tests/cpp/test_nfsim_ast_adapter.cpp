@@ -2874,6 +2874,49 @@ end reaction rules
     delete system;
 }
 
+TEST_CASE("NFsim XML writer wraps a scoped local function rate") {
+    // Source-derived from nfsim/test/testSuite/t3.xml: legacy NFsim expects
+    // a scoped local function to be called through a composite wrapper
+    // (pOn -> _rateLaw1), rather than using the LocalFunction directly as the
+    // reaction RateLaw name.  The wrapper keeps the XML interchange path
+    // consumable by an independently built native NFsim binary.
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 2.0
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin observables
+    Molecules atotal A()
+end observables
+begin functions
+    f(x) = k*atotal(x)
+end functions
+begin reaction rules
+    %x::A() -> %x::A() + B() f(x)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    const auto xml = bng::io::XmlWriter::write(*model);
+    CHECK(xml.find(
+              "<RateLaw id=\"RR1_RateLaw\" type=\"Function\" "
+              "totalrate=\"0\" name=\"__bng3_reaction_rate_RR1\"") !=
+          std::string::npos);
+    CHECK(xml.find(
+              "<Function id=\"__bng3_reaction_rate_RR1\" args=\"x\">") !=
+          std::string::npos);
+    CHECK(xml.find(
+              "<Reference name=\"f\" type=\"Function\"/>") !=
+          std::string::npos);
+    CHECK(xml.find("<Expression>f(x)</Expression>") != std::string::npos);
+}
+
 TEST_CASE("NFsim AST adapter maps arithmetic around a scoped local function rate") {
     auto model = bng::parser::parseModel(R"(
 begin parameters
@@ -2974,12 +3017,16 @@ end functions
 begin reaction rules
     %x::A() -> %x::A() + B() f(x)
 end reaction rules
-)");
+    )");
 
     REQUIRE(model != nullptr);
     const auto xml = bng::io::XmlWriter::write(*model);
     CHECK(xml.find("<Reference name=\"g\" type=\"Function\"/>") !=
           std::string::npos);
+    CHECK(xml.find(
+              "<RateLaw id=\"RR1_RateLaw\" type=\"Function\" "
+              "totalrate=\"0\" name=\"f\"") != std::string::npos);
+    CHECK(xml.find("__bng3_reaction_rate_RR1") == std::string::npos);
 
     int suggestedTraversalLimit = 0;
     auto* direct = NFinput::buildSystemFromAst(

@@ -1266,12 +1266,39 @@ bool modelContainsFunction(const ast::Model& model, const std::string& name) {
                        [&](const auto& function) { return function.getName() == name; });
 }
 
+bool expressionContainsModelFunctionReference(const ast::Expression& expression,
+                                               const ast::Model& model) {
+    const bool namedExpression =
+        expression.kind() == ast::ExpressionKind::Identifier ||
+        expression.kind() == ast::ExpressionKind::Function ||
+        expression.kind() == ast::ExpressionKind::ObservableRef;
+    if (namedExpression && modelContainsFunction(model, expression.name())) return true;
+    return std::any_of(
+        expression.args().begin(), expression.args().end(),
+        [&](const auto& child) {
+            return expressionContainsModelFunctionReference(child, model);
+        });
+}
+
 bool needsGeneratedDynamicRateFunction(const ast::Model& model,
                                        const ast::Expression& rate) {
     if (isBoundedRawLocalFunctionProduct(model, rate)) return false;
     const bool isCall = rate.kind() == ast::ExpressionKind::Function ||
                         rate.kind() == ast::ExpressionKind::ObservableRef;
-    if (isCall && modelContainsFunction(model, rate.name())) return false;
+    if (isCall && modelContainsFunction(model, rate.name())) {
+        // NFsim's XML loader represents a plain scoped LocalFunction rate
+        // through a composite wrapper (see nfsim/test/testSuite/t3.xml).
+        // Keep the direct AST path on the declared local function, but
+        // generate the compatibility wrapper for serialized XML when the
+        // function takes local scope arguments.  Nested model functions are
+        // already represented as CompositeFunctions and cannot be referenced
+        // from another composite wrapper, so retain their direct name.
+        // Zero-argument model functions are valid global function rates and
+        // need no wrapper.
+        const auto* function = findModelFunction(model, rate.name());
+        return function != nullptr && !function->getArgs().empty() &&
+               !expressionContainsModelFunctionReference(function->getExpression(), model);
+    }
     if (isCall) {
         const auto name = lowercaseName(rate.name());
         if ((name == "functionproduct" && rate.args().size() == 2) ||
