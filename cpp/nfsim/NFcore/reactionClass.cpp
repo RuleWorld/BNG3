@@ -489,11 +489,13 @@ string ReactionClass::fire(double random_A_number, bool track) {
 	// energy reaction can use only its explicitly mapped endpoints when every
 	// omitted dependency has been proven safe; all other reactions retain the
 	// complete bonded-neighborhood traversal.
+	bool directProductsPrepared = false;
 	if (this->canUseDirectProductList()) {
 		for (vector<Molecule *>::const_iterator it =
 				directProductMoleculeList.begin();
-				it != directProductMoleculeList.end(); ++it)
+			it != directProductMoleculeList.end(); ++it)
 			products.push_back(*it);
+		directProductsPrepared = true;
 	} else {
 		this->transformationSet->getListOfProducts(
 				mappingSet, products, traversalLimit);
@@ -612,6 +614,11 @@ string ReactionClass::fire(double random_A_number, bool track) {
 	//  also, gather a list of typeII dependencies that will require updating
 	typeII_products.clear();
 	std::unordered_set<MoleculeType*> typeIIProductSet;
+	bool deferMembershipPropensityUpdates =
+		directProductsPrepared && this->usesIncrementalMembership() &&
+		!useConnectivity;
+	if (deferMembershipPropensityUpdates)
+		this->system->beginDeferredMembershipPropensityUpdates();
 	for ( molIter = products.begin(); molIter != products.end(); molIter++ ) {
 		Molecule * mol = *molIter;
 		MoleculeType * mt = mol->getMoleculeType();
@@ -633,6 +640,8 @@ string ReactionClass::fire(double random_A_number, bool track) {
 			mol->updateRxnMembership(this, useConnectivity, directProduct);
 		}
 	}
+	if (deferMembershipPropensityUpdates)
+		this->system->endDeferredMembershipPropensityUpdates();
 
 	// update complex-scoped local functions for typeII dependencies
 	// NOTE: as a side-effect, dependent DOR reactions (via typeI molecule dependencies) will be updated

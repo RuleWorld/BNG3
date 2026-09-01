@@ -934,6 +934,68 @@ void System::update_A_tot(ReactionClass *r, double old_a, double new_a)
 	//a_tot+=new_a;
 }
 
+void System::beginDeferredMembershipPropensityUpdates()
+{
+	deferredMembershipReactions.clear();
+	deferredMembershipOldPropensities.clear();
+	deferredCompactPartnerPoolUpdates.clear();
+	++deferredMembershipUpdateGeneration;
+	deferringMembershipPropensityUpdates = true;
+}
+
+void System::deferMembershipPropensityUpdate(ReactionClass *r, double oldA)
+{
+	if (r != 0 && r->markDeferredMembershipUpdate(
+			deferredMembershipUpdateGeneration)) {
+		deferredMembershipReactions.push_back(r);
+		deferredMembershipOldPropensities.push_back(oldA);
+	}
+}
+
+void System::deferCompactPartnerPoolUpdate(
+		CompactPartnerPool *pool, int oldPoolSize, int newPoolSize)
+{
+	if (!deferringMembershipPropensityUpdates || pool == 0 ||
+			oldPoolSize == newPoolSize || !pool->supportsBatchUpdate())
+		return;
+	for (vector<DeferredCompactPartnerPoolUpdate>::iterator it =
+			deferredCompactPartnerPoolUpdates.begin();
+			it != deferredCompactPartnerPoolUpdates.end(); ++it) {
+		if (it->pool == pool) {
+			it->newPoolSize = newPoolSize;
+			return;
+		}
+	}
+	DeferredCompactPartnerPoolUpdate update;
+	update.pool = pool;
+	update.oldPoolSize = oldPoolSize;
+	update.newPoolSize = newPoolSize;
+	deferredCompactPartnerPoolUpdates.push_back(update);
+}
+
+void System::endDeferredMembershipPropensityUpdates()
+{
+	if (!deferringMembershipPropensityUpdates)
+		return;
+	/* Reset the guard before selector work so nested updates follow the normal
+	 * immediate path. */
+	deferringMembershipPropensityUpdates = false;
+	if (selector != 0) {
+		a_tot = selector->updateBatch(
+			deferredMembershipReactions, deferredMembershipOldPropensities);
+		for (vector<DeferredCompactPartnerPoolUpdate>::const_iterator it =
+				deferredCompactPartnerPoolUpdates.begin();
+				it != deferredCompactPartnerPoolUpdates.end(); ++it) {
+			a_tot = selector->updateCompactPartnerPoolBatch(
+					it->pool->getRegisteredReactions(), it->oldPoolSize,
+					it->newPoolSize, deferredMembershipUpdateGeneration);
+		}
+	}
+	deferredMembershipReactions.clear();
+	deferredMembershipOldPropensities.clear();
+	deferredCompactPartnerPoolUpdates.clear();
+}
+
 void System::updateCompactPartnerPoolBatch(
 		CompactPartnerPool *pool, int oldPoolSize, int newPoolSize)
 {

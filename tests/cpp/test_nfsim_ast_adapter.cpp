@@ -3341,6 +3341,7 @@ end reaction rules
     CHECK(compactReaction->update_a() == Catch::Approx(2.0 + std::exp(-0.5)));
     compactReaction->setUseRuleMonkey(false);
     compactReaction->fire(0.1);
+    CHECK_FALSE(system->isDeferringMembershipPropensityUpdates());
     int directWeightedCount = 0;
     for (int i = 0; i < system->getMoleculeTypeByName("A")->getMoleculeCount(); ++i)
         directWeightedCount += compactReaction->isDirectProductMolecule(
@@ -3573,14 +3574,12 @@ end reaction rules
     system->prepareForSimulation();
     REQUIRE(pool->size() == 2);
     auto allReactions = system->getAllReactions();
-    NFcore::DirectSelector selector(allReactions, system);
     auto sumPropensities = [&]() {
         double total = 0.0;
         for (auto* reaction : system->getAllReactions())
             total += reaction->get_a();
         return total;
     };
-    CHECK(selector.getAtot() == Catch::Approx(sumPropensities()));
 
     auto* bType = system->getMoleculeTypeByName("B");
     auto* cType = system->getMoleculeTypeByName("C");
@@ -3598,6 +3597,31 @@ end reaction rules
     }
     REQUIRE(partner != nullptr);
     REQUIRE(context != nullptr);
+
+    const int deferredOldPoolSize = pool->size();
+    const double deferredInitialPropensity = sumPropensities();
+    system->beginDeferredMembershipPropensityUpdates();
+    CHECK(system->isDeferringMembershipPropensityUpdates());
+    NFcore::Molecule::bind(partner, "a", context, "x");
+    bType->updateRxnMembership(partner);
+    CHECK(pool->size() == deferredOldPoolSize - 1);
+    system->endDeferredMembershipPropensityUpdates();
+    CHECK_FALSE(system->isDeferringMembershipPropensityUpdates());
+    CHECK(sumPropensities() == Catch::Approx(
+        deferredInitialPropensity * pool->size() / deferredOldPoolSize));
+
+    const int deferredReboundPoolSize = pool->size();
+    NFcore::Molecule::unbind(partner, bType->getCompIndexFromName("a"));
+    system->beginDeferredMembershipPropensityUpdates();
+    bType->updateRxnMembership(partner);
+    CHECK(pool->size() == deferredReboundPoolSize + 1);
+    system->endDeferredMembershipPropensityUpdates();
+    CHECK_FALSE(system->isDeferringMembershipPropensityUpdates());
+    CHECK(sumPropensities() == Catch::Approx(deferredInitialPropensity));
+
+    NFcore::DirectSelector selector(allReactions, system);
+    CHECK(selector.getAtot() == Catch::Approx(sumPropensities()));
+
     const int oldPoolSize = pool->size();
     NFcore::Molecule::bind(partner, "a", context, "x");
     bType->updateRxnMembership(partner);
@@ -3621,6 +3645,24 @@ end reaction rules
     CHECK(pool->size() == 1);
     selector.updateCompactPartnerPoolBatch(
         pool->getRegisteredReactions(), removedPoolSize, pool->size(), 0);
+    CHECK(selector.getAtot() == Catch::Approx(sumPropensities()));
+
+    auto* aType = system->getMoleculeTypeByName("A");
+    REQUIRE(aType != nullptr);
+    auto* weighted = aType->getMolecule(0);
+    REQUIRE(weighted != nullptr);
+    const int weightedComponent = aType->getCompIndexFromName("b");
+    REQUIRE(weighted->isBindingSiteOpen(weightedComponent));
+    std::vector<double> oldPropensities;
+    for (auto* reaction : allReactions)
+        oldPropensities.push_back(reaction->get_a());
+    NFcore::Molecule::bind(weighted, weightedComponent, context,
+                           contextComponent);
+    system->beginDeferredMembershipPropensityUpdates();
+    aType->updateRxnMembership(weighted);
+    system->endDeferredMembershipPropensityUpdates();
+    CHECK_FALSE(system->isDeferringMembershipPropensityUpdates());
+    selector.updateBatch(allReactions, oldPropensities);
     CHECK(selector.getAtot() == Catch::Approx(sumPropensities()));
 
     delete system;

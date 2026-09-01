@@ -405,6 +405,14 @@ namespace NFcore
 			//double calculateMeanCount(MoleculeType *m);
 
 			void update_A_tot(ReactionClass *r, double old_a, double new_a);
+			void beginDeferredMembershipPropensityUpdates();
+			void deferMembershipPropensityUpdate(ReactionClass *r, double oldA);
+			void deferCompactPartnerPoolUpdate(
+					CompactPartnerPool *pool, int oldPoolSize, int newPoolSize);
+			void endDeferredMembershipPropensityUpdates();
+			bool isDeferringMembershipPropensityUpdates() const {
+				return deferringMembershipPropensityUpdates;
+			}
 			void updateCompactPartnerPoolBatch(
 					CompactPartnerPool *pool, int oldPoolSize, int newPoolSize);
 
@@ -670,6 +678,19 @@ namespace NFcore
 
 			//Data structure that performs the selection of the next reaction class
 			ReactionSelector * selector;
+			struct DeferredCompactPartnerPoolUpdate {
+				DeferredCompactPartnerPoolUpdate() :
+						pool(0), oldPoolSize(0), newPoolSize(0) {}
+				CompactPartnerPool *pool;
+				int oldPoolSize;
+				int newPoolSize;
+			};
+			bool deferringMembershipPropensityUpdates = false;
+			vector<ReactionClass *> deferredMembershipReactions;
+			vector<double> deferredMembershipOldPropensities;
+			vector<DeferredCompactPartnerPoolUpdate>
+					deferredCompactPartnerPoolUpdates;
+			unsigned long long deferredMembershipUpdateGeneration = 0;
 
 			// To look up connected reactions quickly
 			vector <vector <bool> > connectedReactions;
@@ -1477,6 +1498,26 @@ namespace NFcore
 			virtual void init() = 0; //called when the reaction is added to the system
 			virtual void prepareForSimulation() = 0; //called once everything is added to the system
 			virtual bool tryToAdd(Molecule *m, unsigned int reactantPos) = 0;
+			/* Membership refresh callers already walk a MoleculeType's reaction
+			 * vector, so the local reaction-list index is available without the
+			 * system-wide rxnId/position lookup. */
+			virtual bool tryToAddWithIndex(Molecule *m, unsigned int reactantPos,
+					int rxnIndex) {
+				(void)rxnIndex;
+				return tryToAdd(m, reactantPos);
+			}
+			/* Same membership update as tryToAdd(), with a conservative indication
+			 * of whether the reaction's propensity may have changed. */
+			virtual bool tryToAddAndReportChange(
+					Molecule *m, unsigned int reactantPos) {
+				tryToAdd(m, reactantPos);
+				return true;
+			}
+			virtual bool tryToAddAndReportChangeWithIndex(
+					Molecule *m, unsigned int reactantPos, int rxnIndex) {
+				(void)rxnIndex;
+				return tryToAddAndReportChange(m, reactantPos);
+			}
 			virtual void remove(Molecule *m, unsigned int reactantPos) = 0;
 
 			virtual double update_a() = 0;
@@ -1561,6 +1602,19 @@ namespace NFcore
 				(void)poolSize;
 				return update_a();
 			}
+			/* Whether membership mutations can defer update_a() until all direct
+			 * products from the current compact EnergyPattern event are processed. */
+			virtual bool supportsDeferredMembershipUpdate() const { return false; }
+			/* Mark this reaction once per deferred membership batch. */
+			bool markDeferredMembershipUpdate(unsigned long long generation) {
+				if (deferredMembershipUpdateGeneration == generation)
+					return false;
+				deferredMembershipUpdateGeneration = generation;
+				return true;
+			}
+			bool hasDeferredMembershipUpdate(unsigned long long generation) const {
+				return deferredMembershipUpdateGeneration == generation;
+			}
 
 			void setMatchOnce(unsigned int reactantIndex, bool val) {
 				if (reactantIndex < n_reactants) matchOncePerReactant[reactantIndex] = val;
@@ -1630,6 +1684,7 @@ namespace NFcore
 			string baseRateParameterName;
 			double a;
 			unsigned int fireCounter;
+			unsigned long long deferredMembershipUpdateGeneration = 0;
 
 			unsigned int traversalLimit;
 

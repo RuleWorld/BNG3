@@ -54,18 +54,80 @@ double DirectSelector::update(ReactionClass *r,double oldA, double newA)
 }
 
 
+double ReactionSelector::updateBatch(vector<ReactionClass *> &rxns)
+{
+	for (vector<ReactionClass *>::const_iterator it = rxns.begin();
+			it != rxns.end(); ++it) {
+		ReactionClass *r = *it;
+		if (r == 0)
+			continue;
+		double oldA = r->get_a();
+		double newA = r->update_a();
+		update(r, oldA, newA);
+	}
+	return getAtot();
+}
+
+
+double ReactionSelector::updateBatch(
+		vector<ReactionClass *> &rxns, const vector<double> &oldAs)
+{
+	for (std::size_t i = 0; i < rxns.size(); ++i) {
+		ReactionClass *r = rxns[i];
+		if (r == 0)
+			continue;
+		double oldA = i < oldAs.size() ? oldAs[i] : r->get_a();
+		double newA = r->update_a();
+		update(r, oldA, newA);
+	}
+	return getAtot();
+}
+
+
+double DirectSelector::updateBatch(vector<ReactionClass *> &rxns)
+{
+	for (vector<ReactionClass *>::const_iterator it = rxns.begin();
+			it != rxns.end(); ++it) {
+		ReactionClass *r = *it;
+		if (r == 0)
+			continue;
+		double oldA = r->get_a();
+		double newA = r->update_a();
+		Atot -= oldA;
+		Atot += newA;
+	}
+	return Atot;
+}
+
+
+double DirectSelector::updateBatch(
+		vector<ReactionClass *> &rxns, const vector<double> &oldAs)
+{
+	for (std::size_t i = 0; i < rxns.size(); ++i) {
+		ReactionClass *r = rxns[i];
+		if (r == 0)
+			continue;
+		double oldA = i < oldAs.size() ? oldAs[i] : r->get_a();
+		double newA = r->update_a();
+		Atot -= oldA;
+		Atot += newA;
+	}
+	return Atot;
+}
+
+
 double ReactionSelector::updateCompactPartnerPoolBatch(
 		const vector<ReactionClass *> &rxns,
 		int oldPoolSize, int newPoolSize,
 		unsigned long long deferredGeneration)
 {
-	(void)deferredGeneration;
 	if (oldPoolSize == newPoolSize)
 		return getAtot();
 	for (vector<ReactionClass *>::const_iterator it = rxns.begin();
 			it != rxns.end(); ++it) {
 		ReactionClass *r = *it;
-		if (r == 0)
+		if (r == 0 || (deferredGeneration != 0 &&
+				r->hasDeferredMembershipUpdate(deferredGeneration)))
 			continue;
 		double coefficient = r->getCompactPartnerPoolCoefficient();
 		double oldA = coefficient == 0.0 ? r->get_a()
@@ -82,13 +144,13 @@ double DirectSelector::updateCompactPartnerPoolBatch(
 		int oldPoolSize, int newPoolSize,
 		unsigned long long deferredGeneration)
 {
-	(void)deferredGeneration;
 	if (oldPoolSize == newPoolSize)
 		return Atot;
 	for (vector<ReactionClass *>::const_iterator it = rxns.begin();
 			it != rxns.end(); ++it) {
 		ReactionClass *r = *it;
-		if (r == 0)
+		if (r == 0 || (deferredGeneration != 0 &&
+				r->hasDeferredMembershipUpdate(deferredGeneration)))
 			continue;
 		double coefficient = r->getCompactPartnerPoolCoefficient();
 		double oldA = coefficient == 0.0 ? r->get_a()

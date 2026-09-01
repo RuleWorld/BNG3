@@ -1381,20 +1381,137 @@ bool EnergyRxnClass::refreshCompactPartnerPool(
 			m->isBindingSiteOpen(partnerComponentIndex));
 }
 
+bool EnergyRxnClass::tryToAddAndReportChange(
+		Molecule *m, unsigned int reactantPos)
+{
+	if (!simpleMembership) {
+		tryToAdd(m, reactantPos);
+		return true;
+	}
+	return tryToAddCompact(m, reactantPos, -1);
+}
+
+bool EnergyRxnClass::tryToAddWithIndex(
+		Molecule *m, unsigned int reactantPos, int rxnIndex)
+{
+	if (!simpleMembership)
+		return DORRxnClass::tryToAdd(m, reactantPos);
+	return tryToAddCompact(m, reactantPos, rxnIndex);
+}
+
+bool EnergyRxnClass::tryToAddAndReportChangeWithIndex(
+		Molecule *m, unsigned int reactantPos, int rxnIndex)
+{
+	if (!simpleMembership) {
+		tryToAdd(m, reactantPos);
+		return true;
+	}
+	return tryToAddCompact(m, reactantPos, rxnIndex);
+}
+
 bool EnergyRxnClass::tryToAdd(Molecule *m, unsigned int reactantPos)
 {
 	if (!simpleMembership)
 		return DORRxnClass::tryToAdd(m, reactantPos);
+	return tryToAddCompact(m, reactantPos, -1);
+}
 
+bool EnergyRxnClass::tryToAddCompact(
+		Molecule *m, unsigned int reactantPos, int rxnIndex)
+{
+	/* The unweighted ligand side of a compact forward rule has exactly one
+	 * empty-site constraint.  All simple rules for the same endpoint share this
+	 * pool, so only the first membership change needs to mutate storage. */
 	if (isForward && reactantPos == 1) {
 		refreshCompactPartnerPool(m, reactantPos);
 		return true;
 	}
 
-	bool changed = DORRxnClass::tryToAdd(m, reactantPos);
-	if (isForward && reactantPos == static_cast<unsigned int>(DORreactantIndex))
+	if (reactantPos != static_cast<unsigned int>(DORreactantIndex)) {
+		DORRxnClass::tryToAdd(m, reactantPos);
+		return true;
+	}
+
+	if (rxnIndex < 0)
+		rxnIndex = m->getMoleculeType()->getRxnIndex(this, reactantPos);
+	Molecule *partnerMolecule = 0;
+	bool matches = false;
+	if (isForward) {
+		matches = m->isBindingSiteOpen(reactionCenterComponentIndex);
+	} else if (m->isBindingSiteBonded(reactionCenterComponentIndex)) {
+		partnerMolecule = m->getBondedMolecule(reactionCenterComponentIndex);
+		matches = partnerMolecule != 0 &&
+				partnerMolecule->getMoleculeType() == partnerMoleculeType &&
+				m->getBondedMoleculeBindingSiteIndex(reactionCenterComponentIndex) ==
+					partnerComponentIndex;
+	}
+	if (!matches) {
+		bool changed = m->getRxnListMappingId(rxnIndex) >= 0;
+		while (m->getRxnListMappingId(rxnIndex) >= 0) {
+			int mappingId = m->getRxnListMappingId(rxnIndex);
+			m->deleteRxnListMappingId(rxnIndex, mappingId);
+			reactantTree->removeMappingSet(mappingId);
+		}
+		if (changed)
+			compactRateFactor = reactantTree->getRateFactorSum();
+		return changed;
+	}
+
+	/* BNG3 currently returns this mapping-ID set by value; keep the source
+	 * algorithm's local-index behavior while avoiding a reference to a
+	 * temporary. */
+	set<int> existingMappings = m->getRxnListMappingSet(rxnIndex);
+	if (!existingMappings.empty()) {
+		/* A simple compact energy rule has at most one mapping for its weighted
+		 * molecule.  Keep the common refresh on the existing tree node and avoid
+		 * the iterator/setup work used by the general multi-mapping path. */
+		if (existingMappings.size() == 1) {
+			int mappingId = *existingMappings.begin();
+			MappingSet *mappingSet = reactantTree->getMappingSet(mappingId);
+			if (mappingSet != 0 && mappingSet->get(0) != 0 &&
+					mappingSet->get(0)->getMolecule() == m) {
+				bool mappingChanged = false;
+				if (!isForward) {
+					mappingChanged = mappingSet->get(1)->getMolecule() !=
+							partnerMolecule;
+					if (mappingChanged)
+						mappingSet->set(1, partnerMolecule);
+				}
+				bool rateChanged = reactantTree->updateValue(
+						mappingId, evaluateLocalFunctions(mappingSet));
+				compactRateFactor = reactantTree->getRateFactorSum();
+				return mappingChanged || rateChanged;
+			}
+		}
+		bool changed = false;
+		for (set<int>::const_iterator it = existingMappings.begin();
+				it != existingMappings.end(); ++it) {
+			MappingSet *mappingSet = reactantTree->getMappingSet(*it);
+			if (mappingSet->get(0)->getMolecule() != m)
+				changed = true;
+			mappingSet->set(0, m);
+			if (!isForward) {
+				if (mappingSet->get(1)->getMolecule() != partnerMolecule)
+					changed = true;
+				mappingSet->set(1, partnerMolecule);
+			}
+			if (reactantTree->updateValue(
+						*it, evaluateLocalFunctions(mappingSet)))
+				changed = true;
+		}
 		compactRateFactor = reactantTree->getRateFactorSum();
-	return changed;
+		return changed;
+	}
+
+	MappingSet *mappingSet = reactantTree->pushNextAvailableMappingSet();
+	mappingSet->set(0, m);
+	if (!isForward)
+		mappingSet->set(1, partnerMolecule);
+	reactantTree->confirmPush(
+				mappingSet->getId(), evaluateLocalFunctions(mappingSet));
+	m->setRxnListMappingId(rxnIndex, mappingSet->getId());
+	compactRateFactor = reactantTree->getRateFactorSum();
+	return true;
 }
 
 void EnergyRxnClass::remove(Molecule *m, unsigned int reactantPos)

@@ -690,11 +690,15 @@ void MoleculeType::prepareForSimulation()
   		//Check each observable and see if this molecule should be counted
   		this->addToObservables(mol);
 
-  		//Check each reaction and add this molecule as a reactant if we have to
+		//Check each reaction and add this molecule as a reactant if we have to
 		for(rxnIter = reactions.begin(), r=0; rxnIter != reactions.end(); rxnIter++, r++ )
 		{
-			(*rxnIter)->tryToAdd(mol, reactionPositions.at(r));
-  		}
+			if ((*rxnIter)->usesIncrementalMembership())
+				(*rxnIter)->tryToAddWithIndex(
+						mol, reactionPositions.at(r), r);
+			else
+				(*rxnIter)->tryToAdd(mol, reactionPositions.at(r));
+		}
 	}
 }
 
@@ -714,6 +718,27 @@ void MoleculeType::updateRxnMembership(Molecule * m,
 		static_cast<unsigned int>(membershipChange.componentIndex1) <
 			compactEnergyContextCandidateBits.size() &&
 		hasCompactEnergyMembershipIndex;
+	auto refreshReactionMembership = [&](ReactionClass *rxn,
+			unsigned int reactionIndex) {
+		bool defer = this->system->isDeferringMembershipPropensityUpdates() &&
+			rxn->supportsDeferredMembershipUpdate();
+		if (defer) {
+			double oldA = rxn->get_a();
+			bool changed = rxn->tryToAddAndReportChangeWithIndex(
+					m, reactionPositions.at(reactionIndex), reactionIndex);
+			if (changed)
+				this->system->deferMembershipPropensityUpdate(rxn, oldA);
+			return;
+		}
+		double oldA = rxn->get_a();
+		if (rxn->usesIncrementalMembership())
+			rxn->tryToAddWithIndex(
+					m, reactionPositions.at(reactionIndex), reactionIndex);
+		else
+			rxn->tryToAdd(m, reactionPositions.at(reactionIndex));
+		double newA = rxn->update_a();
+		this->system->update_A_tot(rxn, oldA, newA);
+	};
 	vector<CompactPartnerPool *> compactPools;
 	vector<int> compactPoolOldSizes;
 	vector<bool> compactPoolChanged;
@@ -755,7 +780,13 @@ void MoleculeType::updateRxnMembership(Molecule * m,
 					reactionPositions.at(r)));
 	}
 	for (unsigned int p=0; p<compactPools.size(); p++) {
-		if (compactPoolChanged.at(p))
+		if (!compactPoolChanged.at(p))
+			continue;
+		if (this->system->isDeferringMembershipPropensityUpdates())
+			this->system->deferCompactPartnerPoolUpdate(
+					compactPools.at(p), compactPoolOldSizes.at(p),
+					compactPools.at(p)->size());
+		else
 			this->system->updateCompactPartnerPoolBatch(
 					compactPools.at(p), compactPoolOldSizes.at(p),
 					compactPools.at(p)->size());
@@ -825,10 +856,7 @@ void MoleculeType::updateRxnMembership(Molecule * m,
 				}
 				if (handledByCompactPool)
 					continue;
-				double oldA = rxn->get_a();
-				rxn->tryToAdd(m, reactionPositions.at(r));
-				double newA = rxn->update_a();
-				this->system->update_A_tot(rxn, oldA, newA);
+				refreshReactionMembership(rxn, r);
 			}
 		}
 		return;
@@ -855,10 +883,7 @@ void MoleculeType::updateRxnMembership(Molecule * m,
 		}
 		if (handledByCompactPool)
 			continue;
-		double oldA = rxn->get_a();
-		rxn->tryToAdd(m, reactionPositions.at(r));
-		double newA = rxn->update_a();
-		this->system->update_A_tot(rxn,oldA,newA);
+		refreshReactionMembership(rxn, r);
   	}
 
 }

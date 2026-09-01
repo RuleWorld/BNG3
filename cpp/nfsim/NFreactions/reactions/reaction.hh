@@ -283,6 +283,15 @@ namespace NFcore
 			virtual bool supportsCompactPartnerPoolScale() const {
 				return simpleMembership && isForward && !useRuleMonkey;
 			}
+			virtual bool supportsDeferredMembershipUpdate() const {
+				return simpleMembership;
+			}
+			virtual bool tryToAddAndReportChange(
+					Molecule *m, unsigned int reactantPos);
+			virtual bool tryToAddWithIndex(
+					Molecule *m, unsigned int reactantPos, int rxnIndex);
+			virtual bool tryToAddAndReportChangeWithIndex(
+					Molecule *m, unsigned int reactantPos, int rxnIndex);
 			virtual bool tryToAdd(Molecule *m, unsigned int reactantPos);
 			virtual void remove(Molecule *m, unsigned int reactantPos);
 			virtual double update_a();
@@ -297,6 +306,8 @@ namespace NFcore
 			virtual double evaluateLocalFunctions(MappingSet *ms);
 			virtual void pickRuleMonkeyMappingSets(double randNumber) const;
 			virtual double exactRuleMonkey_a();
+			bool tryToAddCompact(
+					Molecule *m, unsigned int reactantPos, int rxnIndex = -1);
 
 		private:
 			vector<EnergyPatternTerm> conditionalTerms;
