@@ -4,8 +4,8 @@
 **Last audited:** 2026-09-01
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** d52f18a23cc8a5e2a840ed0d06925f8c6c5f9e53
-**Checklist refresh base:** d52f18a (source-derived exact-probe checkpoint; refresh after each checkpoint)
+**Audited semantic code head:** 7100f5e618d39f5e57557053562ff961ae08fcca
+**Checklist refresh base:** 7100f5e (source-derived exact-key reuse checkpoint; refresh after each checkpoint)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -49,18 +49,19 @@ completion gate.
 
 - [x] Required fast-forward pull completed before this documentation change.
 - [x] The latest local semantic checkpoint is
-  `d52f18a23cc8a5e2a840ed0d06925f8c6c5f9e53`; its parent
-  `1a80c82b22b3da783aefcd3bc48e25bdb1e16278` is the exact-dedup checklist
-  refresh. `d52f18a` adds the source-derived `akutuva21/bionetgen` exact-probe
-  path (`92ca4c03`): product insertion checks the cheap exact key before
-  canonicalizing, while new products and reaction labels retain the canonical
-  species contract. The earlier `533ac26` reorder, ODE, empty-graph, Node
-  serialization, source-derived engine, and modern Atomizer checkpoints remain
-  in this ancestry.
+  `7100f5e618d39f5e57557053562ff961ae08fcca`; its parent
+  `1fd68d661d2997568ea3f6efa99d88b657a82e86` is the exact-probe checklist
+  refresh. `7100f5e` adds the source-derived `akutuva21/bionetgen` exact-key
+  reuse path (`70acc9e2`): product insertion obtains the exact dedup key once,
+  then reuses it through keyed insertion after canonicalization, while
+  compartmented species retain the canonicalized key contract. The earlier
+  `533ac26` reorder, ODE, empty-graph, Node serialization, source-derived
+  engine, and modern Atomizer checkpoints remain in this ancestry.
 - [x] The latest public code/test checkpoint is
-  `d52f18a23cc8a5e2a840ed0d06925f8c6c5f9e53`, whose parent is
-  `1a80c82b22b3da783aefcd3bc48e25bdb1e16278`; it adds the source-derived
-  exact-probe tests and implementation.
+  `7100f5e618d39f5e57557053562ff961ae08fcca`, whose parent is
+  `1fd68d661d2997568ea3f6efa99d88b657a82e86`; it adds the source-derived
+  exact-key output overload, keyed insertion API, three product-path callers,
+  and source-derived reuse coverage.
 - [x] The latest published CI-repair checkpoint is
   `9a2475a0af360d685dc41eb9bb376f6517d74b4d`; `gh api` and `gh pr view 2`
   agreed on this branch/PR source head immediately after push, and PR #2
@@ -68,7 +69,7 @@ completion gate.
 - [x] The small documentation grammar fix remains the only unrelated tracked
   BNG3 worktree modification. It remains intentionally unstaged and must not
   be mixed into semantic or checklist commits.
-- [x] Exact-head CTest passes `176/176` on `084090e` (local Release/Ninja
+- [x] Exact-head CTest passes `176/176` on `7100f5e` (local Release/Ninja
   build; `ctest --test-dir build --output-on-failure`), including the exact
   compartment-aware dedup contract, compact ODE derivative contract, empty
   graph, exact Node serialization, t4 rejection contract, inferred-state/
@@ -138,8 +139,9 @@ completion gate.
 - [x] Full Python/API tests pass on the latest Python-affecting checkpoint
   `9c60ca4`: `235 passed, 27 skipped, 8 warnings` from
   `PYTHONPATH=python:build/cpp python -m pytest tests/python -q`. The later
-  `d52f18a` checkpoint changes only C++ exact-probe internals and has been requalified
-  by native C++/AST gates; rerun the full Python suite on the final candidate.
+  `7100f5e` checkpoint changes only C++ exact-key internals and has been
+  requalified by native C++/AST gates; rerun the full Python suite on the final
+  candidate.
   The installed-wheel target still has only historical evidence and is not
   release evidence for this head.
 - [x] Source-derived NFsim Issue78 coverage is green at `7186b65`: the direct
@@ -225,13 +227,13 @@ completion gate.
   was still in progress at the last readback, and [formatting run
   33531304766](https://github.com/RuleWorld/BNG3/actions/runs/33531304766) had
   passed. These runs do not qualify the current repair.
-- [ ] At this refresh, the exact public semantic code checkpoint `d52f18a`
+- [ ] At this refresh, the exact public semantic code checkpoint `7100f5e`
   has fresh hosted evidence beginning with [CI run
-  33537654323](https://github.com/RuleWorld/BNG3/actions/runs/33537654323),
+  33538351665](https://github.com/RuleWorld/BNG3/actions/runs/33538351665),
   [CodeQL run
-  33537654475](https://github.com/RuleWorld/BNG3/actions/runs/33537654475),
+  33538351645](https://github.com/RuleWorld/BNG3/actions/runs/33538351645),
   and [formatting run
-  33537654723](https://github.com/RuleWorld/BNG3/actions/runs/33537654723).
+  33538351648](https://github.com/RuleWorld/BNG3/actions/runs/33538351648).
   All three were queued at readback. This checklist refresh creates a
   documentation-only public head; read back its new exact-head run set
   separately. Queued or partial results are not completion evidence.
@@ -249,7 +251,7 @@ completion gate.
 - [x] Before this refresh, `gh api
   repos/RuleWorld/BNG3/git/ref/heads/codex/bng3-integration-foundations` and
   `gh pr view 2 --repo RuleWorld/BNG3` read back the same full public code
-  checkpoint SHA `d52f18a23cc8a5e2a840ed0d06925f8c6c5f9e53`; PR #2 is open.
+  checkpoint SHA `7100f5e618d39f5e57557053562ff961ae08fcca`; PR #2 is open.
   The documentation commit that follows changes the public head and requires
   a new exact-head readback.
 - [x] Modern Atomizer checkpoints exist for annotations, BNG-XML conversion,
@@ -337,13 +339,21 @@ completion gate.
 - [x] Source commit `92ca4c03` (`perf: preserve canonical product ordering in
   exact dedup fast path`) was ported equivalently at BNG3 `d52f18a`, with the
   source-derived no-canonicalization exact-probe test and full CTest `176/176`
-  green. The subsequent `70acc9e2` exact-key reuse API remains separate.
+  green.
+- [x] Source commit `70acc9e2` (`perf: reuse exact dedup keys across product
+  insertion`) was ported equivalently at BNG3 `7100f5e`: the exact-key output
+  overload and keyed insertion API are covered by a source-derived
+  `SpeciesList` test, and all three product insertion paths reuse the computed
+  key. BNG3 retains the required compartmented-species key recomputation after
+  canonicalization from the earlier `533ac26` port; full CTest `176/176` is
+  green. This closes the source/API slice, not independent benchmark parity.
 - [ ] Audit and, where supported, port the remaining common portable-CPU
   chain represented by branch `codex/portable-cpu-20260831` at
   `305b7482febe3dd52ccd517fa4cd2e02504e834c`, including exact-dedup and
-  canonical-label/order changes (`5291159d`, `92ca4c03`, `70acc9e2`,
-  `7ee2db11`) with source-derived correctness and benchmark evidence. Unsafe
-  or superseded experiments must be classified explicitly.
+  canonical-label/order changes (`5291159d`, `92ca4c03`, `70acc9e2`, and
+  `7ee2db11`) with source-derived correctness and benchmark evidence. The
+  first three are now ported above; `7ee2db11`, branch-level residuals, and
+  unsafe or superseded experiments must still be classified explicitly.
 - [x] Branch `codex/ode-integration` at
   `9c7c0aa3e031330b7421a8e93a2340dc65c43cbb` and source commit `dd665873`
   were audited and ported tests-first at BNG3 `3b284a5`. The focused
