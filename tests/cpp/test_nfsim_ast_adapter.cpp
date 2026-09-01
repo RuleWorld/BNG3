@@ -638,6 +638,40 @@ TEST_CASE("NFsim AST adapter counts a connected observable pattern once") {
     delete system;
 }
 
+TEST_CASE("NFsim AST adapter counts a pure context homodimer once per complex") {
+    // Source-derived from akutuva21/nfsim commit 9b2fff8: a reactant that the
+    // rule never transforms contributes one reaction instance per matching
+    // complex, not one per matching molecule in that complex.  The two C
+    // molecules are two independent reaction choices; the A homodimer is one
+    // context choice, so the propensity is 2*k rather than 4*k.
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    A(x)
+    C(s~0~1)
+end molecule types
+begin seed species
+    A(x!1).A(x!1) 1
+    C(s~0) 2
+end seed species
+begin reaction rules
+    A(x!1).A(x!1) + C(s~0) -> A(x!1).A(x!1) + C(s~1) k
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(
+        *model, true, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    system->prepareForSimulation();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(2.0));
+    delete system;
+}
+
 TEST_CASE("NFsim AST adapter maps bare molecule stoichiometric observables") {
     auto model = bng::parser::parseModel(R"(
 begin molecule types
