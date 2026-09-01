@@ -4,8 +4,8 @@
 **Last audited:** 2026-09-01
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 1c03bc12a62724a3c30a8800b25cc7fb2188a1cb
-**Checklist refresh base:** 1c03bc1 (source-derived CLI action-error checkpoint; refresh after each checkpoint)
+**Audited semantic code head:** 44d8655d3b0d838dc33420c0d7800c12bb465785
+**Checklist refresh base:** 44d8655 (source-derived legacy Perl open-mode security checkpoint; refresh after each checkpoint)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -49,16 +49,17 @@ completion gate.
 
 - [x] Required fast-forward pull completed before this documentation change.
 - [x] The latest local semantic checkpoint is
-  `1c03bc12a62724a3c30a8800b25cc7fb2188a1cb`; its parent
-  `4ea7157acbed00467f3e93ac6155d6c39486169a` is the observable-pattern
-  preparse/cache checkpoint. `1c03bc1` ports the source-derived CLI action
-  execution error boundary: action exceptions now produce a deterministic
-  failure exit and diagnostic instead of an uncaught C++ abort. The missing
-  `.net` fixture and CTest contract pass.
+  `44d8655d3b0d838dc33420c0d7800c12bb465785`; its parent
+  `1c03bc12a62724a3c30a8800b25cc7fb2188a1cb` is the CLI action-error
+  checkpoint. `44d8655` ports the source-derived legacy Perl Macro security
+  contract: file paths no longer control two-argument `open` modes, all
+  audited reads/writes use explicit modes, and the `.rab` failure names the
+  correct output file. Source-derived Python tests and `perl -c` pass.
 - [x] The latest public code/test checkpoint is
-  `1c03bc12a62724a3c30a8800b25cc7fb2188a1cb`, whose parent is
-  `4ea7157acbed00467f3e93ac6155d6c39486169a`; it includes the observable
-  preparse/cache contracts and the source-derived CLI action-error contract.
+  `44d8655d3b0d838dc33420c0d7800c12bb465785`, whose parent is
+  `1c03bc12a62724a3c30a8800b25cc7fb2188a1cb`; it includes the observable
+  preparse/cache and CLI action-error contracts plus the legacy Macro
+  open-mode security contract.
 - [x] The latest published CI-repair checkpoint is
   `9a2475a0af360d685dc41eb9bb376f6517d74b4d`; `gh api` and `gh pr view 2`
   agreed on this branch/PR source head immediately after push, and PR #2
@@ -84,6 +85,12 @@ completion gate.
   including the source-derived CLI action-error contract. This evidence
   qualifies `1c03bc1` only; later semantic or documentation heads require
   fresh exact-head readback.
+- [x] Current semantic checkpoint `44d8655` passes the full local Release/Ninja
+  CTest gate: `181/181`; the full Python suite passes `237` tests with `27`
+  skips and `8` warnings, and the legacy security contract passes `2/2` with
+  `perl -c legacy/perl/Perl2/MacroBNGModel.pm` reporting syntax OK. This
+  evidence qualifies `44d8655` only; later semantic or documentation heads
+  require fresh exact-head readback.
 - [ ] Separate local Debug/ASan evidence has not yet been rerun for 5f6da07;
   prior 0f83347 evidence was supplemental memory-safety coverage, not a
   substitute for hosted sanitizer and leak/UBSan gates.
@@ -431,13 +438,15 @@ completion gate.
 - [x] Sentinel ContactMap server branches were classified non-applicable to
   the current BNG3 tree, which has no `parsers/ContactMap/server.py`; their
   exact security findings remain recorded for inventory. The Sentinel Perl
-  open-injection branch is applicable to the bundled legacy Macro module and
-  remains an explicit pending port below.
-- [ ] Port and test the applicable legacy Perl open-mode hardening from source
-  commit `cdbd6ee98a7a546a7c8fa774e8d97bec6d9104d0` into
-  `legacy/perl/Perl2/MacroBNGModel.pm`, including explicit three-argument
-  input/output modes and the corrected error path. Do not treat the unrelated
-  ContactMap server fixes as BNG3 ports.
+  open-injection branch was applicable to the bundled legacy Macro module and
+  is ported and tested below.
+- [x] The applicable legacy Perl open-mode hardening is ported and tested at
+  BNG3 `44d8655`. Sentinel commit `cdbd6ee98a7a546a7c8fa774e8d97bec6d9104d0`
+  is an empty duplicate of payload commit
+  `2b95afe90a41b52343596ac4adf396782e648a43`; the final contract also retains
+  the prior `.rab` diagnostic correction from `b13533cc`. The source-derived
+  `tests/python/test_legacy_security_contract.py` and Perl syntax gate pass.
+  Unrelated ContactMap server fixes remain non-applicable to BNG3.
 - [ ] Reconcile source performance commit
   `0463a1f4906a7e4e0d51a4ac79fe16fee6a58ac`
   (`num_site`/`cor_net` allocation changes) only after BNG3's supported Macro
@@ -952,16 +961,16 @@ completion gate.
   refresh creates a new public head and requires another exact-head check
   readback after push.
 - [ ] Current public semantic checkpoint
-  `1c03bc12a62724a3c30a8800b25cc7fb2188a1cb` has not yet acquired a terminal
+  `44d8655d3b0d838dc33420c0d7800c12bb465785` has not yet acquired a terminal
   hosted check set. At exact-head readback, CI run
-  [33559750553](https://github.com/RuleWorld/BNG3/actions/runs/33559750553),
+  [33565168766](https://github.com/RuleWorld/BNG3/actions/runs/33565168766),
   formatting run
-  [33559750558](https://github.com/RuleWorld/BNG3/actions/runs/33559750558),
+  [33565168844](https://github.com/RuleWorld/BNG3/actions/runs/33565168844),
   and CodeQL run
-  [33559750568](https://github.com/RuleWorld/BNG3/actions/runs/33559750568)
+  [33565168898](https://github.com/RuleWorld/BNG3/actions/runs/33565168898)
   were queued; queued or partial results are not completion evidence. The PR
   #2 metadata and branch ref agreed on
-  `1c03bc12a62724a3c30a8800b25cc7fb2188a1cb` immediately after push. Every
+  `44d8655d3b0d838dc33420c0d7800c12bb465785` immediately after push. Every
   later semantic or documentation checkpoint requires a fresh exact-head
   readback.
 - [ ] Every required job emits a terminal summary with counts, failures,
@@ -1160,10 +1169,6 @@ These are known unchecked requirements, not reasons to claim completion:
   undefined. Restore or explicitly disposition the supported Macro path,
   write source-derived tests, then revisit the `num_site`/`cor_net` allocation
   rewrite.
-- The bundled legacy `legacy/perl/Perl2/MacroBNGModel.pm` still contains
-  two-argument `open` calls and filename-controlled mode forms. The source
-  security hardening at `cdbd6ee9` remains an unchecked compatibility/security
-  item until tests and an explicit-mode port land.
 - Structured SBML atomization still has a deliberate visible error, and
   local validation has environment-dependent skips; hosted validation green
   does not prove full Tier-P/NF/X parity.
