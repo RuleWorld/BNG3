@@ -288,7 +288,24 @@ void ReactionClass::appendConnectedRxn(ReactionClass * rxn) {
 bool ReactionClass::isReactionConnected(ReactionClass * rxn) {
 	// First check if any of the operations share MoleculeType and components with
 	// one of the reactant templates of rxn.
-	return this->transformationSet->checkConnection(rxn);
+	if (this->transformationSet->checkConnection(rxn)) return true;
+
+	// Full membership refresh revisits every explicit reactant template in the
+	// fired rule, not only templates that carry direct transformations. Treat
+	// any compatible explicit template as connected so the fast path preserves
+	// the same reachable update set.
+	for (unsigned int i=0; i<allReactantTemplates.size(); i++) {
+		if (rxn->isTemplateCompatible(allReactantTemplates[i])) return true;
+	}
+
+	// Product templates can also create new compatible mappings, but avoid
+	// broadening synthesis rules where this would over-connect add-only paths.
+	if (n_reactants > 0) {
+		for (unsigned int i=0; i<allProductTemplates.size(); i++) {
+			if (rxn->isTemplateCompatible(allProductTemplates[i])) return true;
+		}
+	}
+	return false;
 }
 
 ReactionClass::~ReactionClass()
