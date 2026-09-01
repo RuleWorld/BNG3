@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 #include "engine/NetworkGenerator.hpp"
@@ -102,4 +103,38 @@ TEST_CASE("SSA honors explicit sample times", "[OdeOptions]") {
     REQUIRE(result.timePoints == options.sampleTimes);
     REQUIRE(result.concentrations.size() == options.sampleTimes.size());
     REQUIRE(result.observables.size() == options.sampleTimes.size());
+}
+
+TEST_CASE("OdeIntegrator preserves multi-species derivative updates", "[OdeOptions]") {
+    // Source-derived from akutuva21/bionetgen commit dd665873: compacting
+    // large constant-reaction updates must preserve the complete stoichiometric
+    // derivative, including multiple reactants and products.
+    ast::Model model;
+    engine::GeneratedNetwork network;
+    network.species.setCheckIso(false);
+
+    for (double amount : {3.0, 4.0, 0.0, 0.0}) {
+        ast::SpeciesGraph graph;
+        network.species.add(ast::Species(graph, amount));
+    }
+
+    // Cross the source port's compact-reaction threshold while retaining a
+    // two-reactant, two-product update shape representative of generated
+    // networks.
+    for (std::size_t i = 0; i < 512; ++i) {
+        network.reactions.add(ast::Rxn(
+            "R" + std::to_string(i), {0, 1}, {2, 3}, "2.0", 1.0,
+            "rule" + std::to_string(i)));
+    }
+
+    engine::OdeIntegrator integrator(model, network);
+    double state[] = {3.0, 4.0, 0.0, 0.0};
+    double derivatives[] = {0.0, 0.0, 0.0, 0.0};
+    integrator.derivs(0.0, state, derivatives);
+
+    constexpr double expectedRate = 2.0 * 3.0 * 4.0 * 512.0;
+    REQUIRE_THAT(derivatives[0], Catch::Matchers::WithinAbs(-expectedRate, 1e-12));
+    REQUIRE_THAT(derivatives[1], Catch::Matchers::WithinAbs(-expectedRate, 1e-12));
+    REQUIRE_THAT(derivatives[2], Catch::Matchers::WithinAbs(expectedRate, 1e-12));
+    REQUIRE_THAT(derivatives[3], Catch::Matchers::WithinAbs(expectedRate, 1e-12));
 }
