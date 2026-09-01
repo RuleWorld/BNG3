@@ -3117,7 +3117,7 @@ end reaction rules
     delete system;
 }
 
-TEST_CASE("NFsim AST adapter expands Arrhenius binding context variants") {
+TEST_CASE("NFsim AST adapter retains materialized expansion for non-factorized contexts") {
     auto model = bng::parser::parseModel(R"(
 begin parameters
     phi 0.5
@@ -3126,16 +3126,17 @@ begin parameters
     RT 1.0
 end parameters
 begin molecule types
-    A(b,c)
+    A(b,c,d)
     B(a)
     C(x)
+    D(x)
 end molecule types
 begin seed species
-    A(b,c!1).C(x!1) 1
+    A(b,c!1,d!2).C(x!1).D(x!2) 1
     B(a) 1
 end seed species
 begin energy patterns
-    A(b!1,c!2).B(a!1).C(x!2) Gcontext
+    A(b!1,c!2,d!3).B(a!1).C(x!2).D(x!3) Gcontext
 end energy patterns
 begin reaction rules
     A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
@@ -3147,7 +3148,7 @@ end reaction rules
     auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
                                                 suggestedTraversalLimit);
     REQUIRE(system != nullptr);
-    REQUIRE(system->getAllReactions().size() == 4);
+    REQUIRE(system->getAllReactions().size() == 8);
     CHECK(system->getReaction(0)->getBaseRate() == Catch::Approx(1.0));
     CHECK(system->getReaction(1)->getBaseRate() == Catch::Approx(1.0));
     CHECK(system->getReaction(2)->getBaseRate() == Catch::Approx(std::exp(-0.5)));
@@ -3248,6 +3249,7 @@ begin molecule types
 end molecule types
 begin seed species
     A(b,c!1).C(x!1) 1
+    A(b) 1
     B(a) 1
 end seed species
 begin energy patterns
@@ -3268,7 +3270,7 @@ end reaction rules
     CHECK(dynamic_cast<NFcore::EnergyRxnClass*>(system->getReaction(0)) != nullptr);
 
     system->prepareForSimulation();
-    CHECK(system->getReaction(0)->get_a() == Catch::Approx(std::exp(-0.5)));
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(1.0 + std::exp(-0.5)));
     CHECK(system->getReaction(1)->get_a() == Catch::Approx(0.0));
     delete system;
 }

@@ -53,6 +53,12 @@ them pass by widening tolerances or hiding skips. The Python API is
   `BNG_NFSIM_ALLOW_XML_FALLBACK=1`, and `BNG_NFSIM_FORCE_XML=1` selects the
   shadow path. Do not retire XML until the checklist's three-way Tier-NF gate
   passes.
+- Energy-function ports must be source-anchored to the current
+  `akutuva21/nfsim` energy-evaluation implementation and landed tests-first.
+  The compact `EnergyBindingContext`/`EnergyRxnClass` path is only for proven
+  factorized contexts; retain materialized expansion as the compatibility
+  fallback until broader energy parity, provenance, and direct-NFsim gates
+  pass.
 - Do not broaden the exception ledger to hide a new mismatch. The current
   checklist, not a historical model-specific exception, defines completion.
 
