@@ -4383,3 +4383,76 @@ end reaction rules
     std::filesystem::remove(offPath, error);
     std::filesystem::remove(onPath, error);
 }
+
+TEST_CASE("NFsim XML bridge preserves functional symmetry around TotalRate") {
+    // Source-derived from akutuva21/nfsim commit 1b19611 and its
+    // test/symmetry/symmetry_factor_total_rate fixture.  XML carries the
+    // BNG2-emitted reaction-center symmetry factor; ordinary functional rates
+    // must apply it, while TotalRate must use the function value unchanged.
+    auto model = bng::parser::parseModel(R"BNG(
+begin parameters
+    k 1
+end parameters
+begin molecule types
+    A(b)
+    B(b)
+    Source()
+end molecule types
+begin seed species
+    A(b!1).A(b!1) 1
+    B(b!1).B(b!1) 1
+    Source() 1
+end seed species
+begin observables
+    Molecules SourceCount Source()
+end observables
+begin functions
+    rate() = k*SourceCount
+end functions
+begin reaction rules
+    ordinary: A(b!1).A(b!1) -> 0 rate DeleteMolecules
+    total: B(b!1).B(b!1) -> 0 rate TotalRate DeleteMolecules
+end reaction rules
+)BNG");
+    REQUIRE(model != nullptr);
+
+    std::string xml = bng::io::XmlWriter::write(*model);
+    std::size_t searchPosition = 0;
+    for (int ruleIndex = 0; ruleIndex < 2; ++ruleIndex) {
+        const auto rulePosition = xml.find("<ReactionRule ", searchPosition);
+        REQUIRE(rulePosition != std::string::npos);
+        xml.insert(rulePosition + std::string("<ReactionRule ").size(),
+                   "symmetry_factor=\"0.5\" ");
+        searchPosition = rulePosition + std::string("<ReactionRule ").size() +
+                         std::string("symmetry_factor=\"0.5\" ").size();
+    }
+    const auto totalRatePosition = xml.find(
+        "totalrate=\"0\"", xml.find("RR2_RateLaw"));
+    REQUIRE(totalRatePosition != std::string::npos);
+    xml.replace(totalRatePosition, std::string("totalrate=\"0\"").size(),
+                "totalrate=\"1\"");
+
+    const auto token = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto xmlPath = std::filesystem::temp_directory_path() /
+                         ("bng3-functional-totalrate-symmetry-" +
+                          std::to_string(token) + ".xml");
+    std::ofstream xmlFile(xmlPath);
+    REQUIRE(xmlFile.good());
+    xmlFile << xml;
+    xmlFile.close();
+
+    int suggestedTraversalLimit = NFcore::ReactionClass::NO_LIMIT;
+    auto* system = NFinput::initializeFromXML(
+        xmlPath.string(), false, 100, false, suggestedTraversalLimit,
+        true, false);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 2);
+    system->prepareForSimulation();
+
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(1.0));
+    CHECK(system->getReaction(1)->get_a() == Catch::Approx(1.0));
+
+    delete system;
+    std::error_code error;
+    std::filesystem::remove(xmlPath, error);
+}
