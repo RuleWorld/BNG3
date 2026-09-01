@@ -71,6 +71,11 @@ struct ParsedReactionFilter {
     std::vector<std::string> patterns;
 };
 
+bool isReactantCountReference(const std::string& name) {
+    return name.size() == 10 && name.compare(0, 9, "reactant_") == 0 &&
+           name.back() >= '1' && name.back() <= '9';
+}
+
 std::string trimText(std::string value) {
     const auto first = value.find_first_not_of(" \t\r\n");
     if (first == std::string::npos) return {};
@@ -642,6 +647,8 @@ void collectFunctionReferences(const ast::Expression& expression,
         const auto& name = expression.name();
         if (localNames.count(name) != 0) {
             addFunctionReference(references, name, "Local");
+        } else if (isReactantCountReference(name)) {
+            addFunctionReference(references, name, "Function");
         } else if (name == "time" || name == "t") {
             addFunctionReference(references, name, "Time");
         } else if (model.getParameters().contains(name)) {
@@ -660,6 +667,9 @@ void collectFunctionReferences(const ast::Expression& expression,
         if ((expression.name() == "time" || expression.name() == "t") &&
             expression.args().empty()) {
             addFunctionReference(references, expression.name(), "Time");
+        } else if (isReactantCountReference(expression.name()) &&
+                   expression.args().empty()) {
+            addFunctionReference(references, expression.name(), "Function");
         } else if (modelHasFunction(model, expression.name())) {
             addFunctionReference(references, expression.name(), "Function");
         } else if (expression.args().empty() &&
@@ -674,7 +684,9 @@ void collectFunctionReferences(const ast::Expression& expression,
         }
         return;
     case ExpressionKind::ObservableRef:
-        if (modelHasFunction(model, expression.name())) {
+        if (isReactantCountReference(expression.name()) && expression.args().empty()) {
+            addFunctionReference(references, expression.name(), "Function");
+        } else if (modelHasFunction(model, expression.name())) {
             addFunctionReference(references, expression.name(), "Function");
         } else {
             addFunctionReference(references, expression.name(), "Observable");
@@ -873,6 +885,15 @@ bool expandDynamicRateExpression(
             expanded = lowerName;
             return true;
         }
+        if (isReactantCountReference(name)) {
+            if (!expression.args().empty()) {
+                diagnostic = name + "() takes no arguments";
+                return false;
+            }
+            addFunctionReference(references, name, "Function");
+            expanded = name + "()";
+            return true;
+        }
         if (const auto* function = findFunction(name)) {
             if (!expression.args().empty()) {
                 diagnostic = "dynamic rates cannot call zero-argument model function '" +
@@ -910,6 +931,15 @@ bool expandDynamicRateExpression(
     }
     case ExpressionKind::ObservableRef: {
         const auto& name = expression.name();
+        if (isReactantCountReference(name)) {
+            if (!expression.args().empty()) {
+                diagnostic = name + "() takes no arguments";
+                return false;
+            }
+            addFunctionReference(references, name, "Function");
+            expanded = name + "()";
+            return true;
+        }
         if (const auto* function = findFunction(name)) {
             if (!expression.args().empty()) {
                 diagnostic = "dynamic rates cannot call zero-argument model function '" +

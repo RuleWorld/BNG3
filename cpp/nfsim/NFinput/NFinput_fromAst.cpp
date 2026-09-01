@@ -363,6 +363,15 @@ std::string expressionForNfsim(const bng::ast::Expression& expression) {
     return {};
 }
 
+// NFsim's legacy CompositeFunction reserves reactant_1 through reactant_9 for
+// the current reaction's mapping counts.  They are not model functions or
+// observables, even though the BNGL expression grammar represents the call as
+// a function-shaped reference.
+bool isReactantCountReference(const std::string& name) {
+    return name.size() == 10 && name.compare(0, 9, "reactant_") == 0 &&
+           name.back() >= '1' && name.back() <= '9';
+}
+
 bool expandDynamicRateExpression(
     const bng::ast::Expression& expression,
     const bng::ast::Model& model,
@@ -452,6 +461,11 @@ bool expandDynamicRateExpression(
             expanded = name;
             return true;
         }
+        if (isReactantCountReference(name)) {
+            functionCounterReferences.insert(name);
+            expanded = name;
+            return true;
+        }
         if (const auto* function = getModelFunction(model, name)) {
             if (!expressionHasModelFunctionReference(
                     function->getExpression(), expressionHasModelFunctionReference)) {
@@ -519,6 +533,15 @@ bool expandDynamicRateExpression(
             expanded = lowerName;
             return true;
         }
+        if (isReactantCountReference(name)) {
+            if (!expression.args().empty()) {
+                diagnostic = name + "() takes no arguments";
+                return false;
+            }
+            functionCounterReferences.insert(name);
+            expanded = name + "()";
+            return true;
+        }
         if (const auto* function = getModelFunction(model, name)) {
             if (!expression.args().empty()) {
                 return preserveScopedModelFunctionCall(*function, expression, expanded);
@@ -560,6 +583,15 @@ bool expandDynamicRateExpression(
     }
     case ExpressionKind::ObservableRef: {
         const auto& name = expression.name();
+        if (isReactantCountReference(name)) {
+            if (!expression.args().empty()) {
+                diagnostic = name + "() takes no arguments";
+                return false;
+            }
+            functionCounterReferences.insert(name);
+            expanded = name + "()";
+            return true;
+        }
         if (const auto* function = getModelFunction(model, name)) {
             if (!expression.args().empty()) {
                 return preserveScopedModelFunctionCall(*function, expression, expanded);
@@ -1826,6 +1858,10 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
 
         std::vector<std::string> functionsCalled;
         for (const auto& dependency : function.functionReferences) {
+            if (isReactantCountReference(dependency)) {
+                functionsCalled.push_back(dependency);
+                continue;
+            }
             const auto* target = getModelFunction(model, dependency);
             const auto targetPending = std::find_if(
                 pending.begin(), pending.end(),

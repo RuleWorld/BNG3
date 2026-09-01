@@ -2085,17 +2085,17 @@ begin parameters
     k 2.0
 end parameters
 begin molecule types
-    A()
-    B()
+    A(x)
+    B(x)
 end molecule types
 begin seed species
-    A() 3
+    A(x) 3
 end seed species
 begin functions
     rateLaw k*reactant_1()
 end functions
 begin reaction rules
-    A() -> B() rateLaw
+    A(x) -> B(x) rateLaw()
 end reaction rules
 )");
 
@@ -2105,11 +2105,11 @@ end reaction rules
         *model, false, 100, false, suggestedTraversalLimit);
     REQUIRE(direct != nullptr);
     REQUIRE(direct->getAllReactions().size() == 1);
-    REQUIRE(direct->getCompositeFunctionByName("__bng3_reaction_rate_1") != nullptr);
+    REQUIRE(direct->getCompositeFunctionByName("rateLaw") != nullptr);
     CHECK(direct->getReaction(0)->getRxnType() ==
           NFcore::ReactionClass::OBS_DEPENDENT_RXN);
     direct->prepareForSimulation();
-    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(6.0));
+    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(18.0));
     delete direct;
 
     const auto xml = bng::io::XmlWriter::write(*model);
@@ -2119,9 +2119,9 @@ end reaction rules
         static_cast<void*>(model.get()), false, 100, false, suggestedTraversalLimit);
     REQUIRE(xmlSystem != nullptr);
     REQUIRE(xmlSystem->getAllReactions().size() == 1);
-    REQUIRE(xmlSystem->getCompositeFunctionByName("__bng3_reaction_rate_RR1") != nullptr);
+    REQUIRE(xmlSystem->getCompositeFunctionByName("rateLaw") != nullptr);
     xmlSystem->prepareForSimulation();
-    CHECK(xmlSystem->getReaction(0)->get_a() == Catch::Approx(6.0));
+    CHECK(xmlSystem->getReaction(0)->get_a() == Catch::Approx(18.0));
     delete xmlSystem;
 }
 
