@@ -73,10 +73,11 @@ completion gate.
   compartment-aware dedup contract, compact ODE derivative contract, empty
   graph, exact Node serialization, t4 rejection contract, inferred-state/
   type-order gates, and IfTest parity assertions.
-- [ ] Current exact-head full CTest has not yet been rerun on `d502e47`; the
-  focused ODE executable passes 14/14 assertions, including the new
-  user-defined-rate contract. Requalify all C++ tests before the next semantic
-  candidate is treated as current evidence.
+- [x] Current semantic checkpoint `d502e47` passes the full local Release/Ninja
+  CTest gate: `178/178` from `ctest --test-dir build --output-on-failure`,
+  including the new user-defined ODE-rate contract. This evidence qualifies
+  `d502e47` only; a later semantic or documentation head requires fresh
+  exact-head readback.
 - [ ] Separate local Debug/ASan evidence has not yet been rerun for 5f6da07;
   prior 0f83347 evidence was supplemental memory-safety coverage, not a
   substitute for hosted sanitizer and leak/UBSan gates.
