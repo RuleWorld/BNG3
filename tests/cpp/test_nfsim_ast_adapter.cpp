@@ -45,6 +45,26 @@ BNGcore::PatternGraph parseSpeciesGraph(const std::string& text, bng::ast::Model
 
 } // namespace
 
+TEST_CASE("NFsim compact reaction membership IDs stay sorted and unique") {
+    // Source-derived from NFsim ad4b56a: reaction membership is commonly
+    // empty or contains one mapping, so the compact representation must retain
+    // ordered set semantics without duplicate IDs.
+    NFcore::MappingIdSet mappingIds;
+    CHECK(mappingIds.empty());
+    CHECK(mappingIds.insert(9).second);
+    CHECK(mappingIds.insert(3).second);
+    CHECK_FALSE(mappingIds.insert(9).second);
+    REQUIRE(mappingIds.size() == 2);
+    CHECK(*mappingIds.begin() == 3);
+    CHECK(*(mappingIds.begin() + 1) == 9);
+    CHECK(mappingIds.erase(3) == 1);
+    CHECK(mappingIds.erase(3) == 0);
+    REQUIRE(mappingIds.size() == 1);
+    CHECK(*mappingIds.begin() == 9);
+    mappingIds.clear();
+    CHECK(mappingIds.empty());
+}
+
 TEST_CASE("BNGL parser preserves inline and file TFUN metadata") {
     const auto linear = bng::parser::parseExpression(
         "TFUN([0, 1, 2], [0, 10, 20], time)");
