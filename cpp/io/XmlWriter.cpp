@@ -6,6 +6,7 @@
 #include <cctype>
 #include <cmath>
 #include <map>
+#include <numeric>
 #include <regex>
 #include <set>
 #include <stdexcept>
@@ -412,6 +413,197 @@ ParsedPattern parsePattern(const std::string& text) {
     }
 
     return pattern;
+}
+
+bool parsedComponentLess(const ParsedComponent& left,
+                         const ParsedComponent& right) {
+    if (left.name != right.name) return left.name < right.name;
+
+    const bool leftHasState = !left.state.empty();
+    const bool rightHasState = !right.state.empty();
+    if (leftHasState != rightHasState) return !leftHasState;
+    if (leftHasState && left.state != right.state) {
+        return left.state < right.state;
+    }
+
+    // BNG2's cmp_component puts components with more edges first after
+    // comparing name and state.  Labels are deliberately not compared: they
+    // are attributes, not part of the quasi-canonical ordering contract.
+    if (left.bonds.size() != right.bonds.size()) {
+        return left.bonds.size() > right.bonds.size();
+    }
+    return false;
+}
+
+bool parsedMoleculeLess(const ParsedMolecule& left,
+                        const ParsedMolecule& right) {
+    if (left.name != right.name) return left.name < right.name;
+    if (left.components.size() != right.components.size()) {
+        return left.components.size() < right.components.size();
+    }
+
+    // BNG2 puts an explicitly compartmented molecule after an unassigned one,
+    // then compares compartment names lexically.
+    const bool leftHasCompartment = !left.compartment.empty();
+    const bool rightHasCompartment = !right.compartment.empty();
+    if (leftHasCompartment != rightHasCompartment) return !leftHasCompartment;
+    if (leftHasCompartment && left.compartment != right.compartment) {
+        return left.compartment < right.compartment;
+    }
+
+    for (std::size_t index = 0; index < left.components.size(); ++index) {
+        const auto& leftComponent = left.components[index];
+        const auto& rightComponent = right.components[index];
+        if (parsedComponentLess(leftComponent, rightComponent)) return true;
+        if (parsedComponentLess(rightComponent, leftComponent)) return false;
+    }
+    return false;
+}
+
+void canonicalizeParsedPattern(ParsedPattern& pattern) {
+    if (pattern.molecules.empty()) return;
+
+    // Keep old component indices long enough to remap ParsedBond endpoints
+    // after BNG2's component and molecule sorts.
+    auto sourceMolecules = std::move(pattern.molecules);
+    std::vector<std::vector<int>> componentOrder(sourceMolecules.size());
+    std::vector<std::vector<int>> componentMap(sourceMolecules.size());
+    for (std::size_t moleculeIndex = 0;
+         moleculeIndex < sourceMolecules.size(); ++moleculeIndex) {
+        auto& order = componentOrder[moleculeIndex];
+        order.resize(sourceMolecules[moleculeIndex].components.size());
+        std::iota(order.begin(), order.end(), 0);
+        std::stable_sort(order.begin(), order.end(), [&](int left, int right) {
+            const auto& leftComponent = sourceMolecules[moleculeIndex].components[left];
+            const auto& rightComponent = sourceMolecules[moleculeIndex].components[right];
+            if (parsedComponentLess(leftComponent, rightComponent)) return true;
+            if (parsedComponentLess(rightComponent, leftComponent)) return false;
+            return left < right;
+        });
+
+        auto& map = componentMap[moleculeIndex];
+        map.resize(order.size());
+        std::vector<ParsedComponent> sortedComponents;
+        sortedComponents.reserve(order.size());
+        for (std::size_t newIndex = 0; newIndex < order.size(); ++newIndex) {
+            map[order[newIndex]] = static_cast<int>(newIndex);
+            sortedComponents.push_back(
+                std::move(sourceMolecules[moleculeIndex].components[order[newIndex]]));
+        }
+        sourceMolecules[moleculeIndex].components = std::move(sortedComponents);
+    }
+
+    std::vector<int> moleculeOrder(sourceMolecules.size());
+    std::iota(moleculeOrder.begin(), moleculeOrder.end(), 0);
+    std::stable_sort(moleculeOrder.begin(), moleculeOrder.end(),
+                     [&](int left, int right) {
+        if (parsedMoleculeLess(sourceMolecules[left], sourceMolecules[right])) return true;
+        if (parsedMoleculeLess(sourceMolecules[right], sourceMolecules[left])) return false;
+        return left < right;
+    });
+
+    std::vector<int> moleculeMap(sourceMolecules.size());
+    pattern.molecules.reserve(sourceMolecules.size());
+    for (std::size_t newIndex = 0; newIndex < moleculeOrder.size(); ++newIndex) {
+        const auto oldIndex = moleculeOrder[newIndex];
+        moleculeMap[oldIndex] = static_cast<int>(newIndex);
+        pattern.molecules.push_back(std::move(sourceMolecules[oldIndex]));
+    }
+
+    std::vector<ParsedBond> remappedBonds;
+    remappedBonds.reserve(pattern.bonds.size());
+    for (const auto& bond : pattern.bonds) {
+        if (bond.mol1 < 0 || bond.mol2 < 0 ||
+            static_cast<std::size_t>(bond.mol1) >= moleculeMap.size() ||
+            static_cast<std::size_t>(bond.mol2) >= moleculeMap.size() ||
+            bond.comp1 < 0 || bond.comp2 < 0 ||
+            static_cast<std::size_t>(bond.comp1) >= componentMap[bond.mol1].size() ||
+            static_cast<std::size_t>(bond.comp2) >= componentMap[bond.mol2].size()) {
+            continue;
+        }
+
+        ParsedBond remapped = bond;
+        remapped.mol1 = moleculeMap[bond.mol1];
+        remapped.comp1 = componentMap[bond.mol1][bond.comp1];
+        remapped.mol2 = moleculeMap[bond.mol2];
+        remapped.comp2 = componentMap[bond.mol2][bond.comp2];
+        if (remapped.mol2 < remapped.mol1 ||
+            (remapped.mol2 == remapped.mol1 && remapped.comp2 < remapped.comp1)) {
+            std::swap(remapped.mol1, remapped.mol2);
+            std::swap(remapped.comp1, remapped.comp2);
+        }
+        remappedBonds.push_back(remapped);
+    }
+    std::sort(remappedBonds.begin(), remappedBonds.end(), [](const ParsedBond& left,
+                                                              const ParsedBond& right) {
+        if (left.mol1 != right.mol1) return left.mol1 < right.mol1;
+        if (left.comp1 != right.comp1) return left.comp1 < right.comp1;
+        if (left.mol2 != right.mol2) return left.mol2 < right.mol2;
+        if (left.comp2 != right.comp2) return left.comp2 < right.comp2;
+        return left.id < right.id;
+    });
+
+    // BNG2 rebuilds complete edge IDs in endpoint order.  Map any dangling
+    // numeric edge labels after complete bonds so their XML bond counts remain
+    // visible without inventing a second endpoint.
+    std::map<int, int> canonicalBondIds;
+    int nextBondId = 1;
+    for (const auto& bond : remappedBonds) {
+        canonicalBondIds.emplace(bond.id, nextBondId++);
+    }
+    for (auto& molecule : pattern.molecules) {
+        for (auto& component : molecule.components) {
+            for (auto& bondId : component.bonds) {
+                if (bondId < 0) continue;
+                auto [it, inserted] = canonicalBondIds.emplace(bondId, nextBondId);
+                if (inserted) ++nextBondId;
+                bondId = it->second;
+            }
+        }
+    }
+
+    for (auto& bond : remappedBonds) {
+        bond.id = canonicalBondIds.at(bond.id);
+    }
+    pattern.bonds = std::move(remappedBonds);
+}
+
+std::string patternToBngl(const ParsedPattern& pattern, bool constant) {
+    std::ostringstream result;
+    if (!pattern.compartment.empty()) {
+        result << "@" << pattern.compartment << "::";
+    }
+    if (constant) result << "$";
+
+    for (std::size_t moleculeIndex = 0;
+         moleculeIndex < pattern.molecules.size(); ++moleculeIndex) {
+        if (moleculeIndex != 0) result << ".";
+        const auto& molecule = pattern.molecules[moleculeIndex];
+        result << molecule.name;
+        if (!molecule.label.empty()) result << "%" << molecule.label;
+        if (!molecule.components.empty()) {
+            result << "(";
+            for (std::size_t componentIndex = 0;
+                 componentIndex < molecule.components.size(); ++componentIndex) {
+                if (componentIndex != 0) result << ",";
+                const auto& component = molecule.components[componentIndex];
+                result << component.name;
+                if (!component.state.empty()) result << "~" << component.state;
+                if (!component.label.empty()) result << "%" << component.label;
+                for (const int bondId : component.bonds) {
+                    if (bondId == -1) result << "!?";
+                    else if (bondId == -2) result << "!+";
+                    else result << "!" << bondId;
+                }
+            }
+            result << ")";
+        }
+        if (!molecule.compartment.empty() &&
+            molecule.compartment != pattern.compartment) {
+            result << "@" << molecule.compartment;
+        }
+    }
+    return result.str();
 }
 
 std::string patternToXml(const ParsedPattern& pattern, const std::string& idPrefix,
@@ -1218,15 +1410,27 @@ std::string XmlWriter::writeSpecies(const ast::Model& model, const engine::Gener
             const auto& seed = model.getSeedSpecies()[i];
             std::string spId = "S" + std::to_string(i + 1);
 
+            // BNG2 parses seed species as concrete SpeciesGraphs and applies
+            // its quasi-canonical molecule/component ordering before XML
+            // serialization.  Canonicalize the parsed raw seed rather than
+            // serializing the AST graph directly: pattern graphs retain
+            // wildcard states for omitted seed states and their molecule
+            // nodes do not carry every source-level compartment spelling.
+            auto parsed = parsePattern(seed.getPattern());
+            if (!seed.getCompartment().empty()) {
+                parsed.compartment = seed.getCompartment();
+            }
+            canonicalizeParsedPattern(parsed);
+            const std::string patternStr = patternToBngl(parsed, seed.isConstant());
+
             auto amountValue = seed.getAmount().evaluate([&](const std::string& name) {
                 return model.getParameters().evaluate(name);
             }, 0.0);
 
             xml << "      <Species id=\"" << spId
                 << "\" concentration=\"" << amountValue
-                << "\" name=\"" << escapeXml(seed.getPattern()) << "\">\n";
+                << "\" name=\"" << escapeXml(patternStr) << "\">\n";
 
-            auto parsed = parsePattern(seed.getPattern());
             xml << patternToXml(parsed, spId, "        ");
 
             xml << "      </Species>\n";

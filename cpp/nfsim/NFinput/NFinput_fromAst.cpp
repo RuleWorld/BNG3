@@ -1990,6 +1990,71 @@ std::string graphBondToken(const BNGcore::Node& node) {
     return node.get_state().get_BNG2_string();
 }
 
+std::string graphSortState(const GraphComponent& component) {
+    const auto state = graphStateToken(*component.node);
+    // buildPatternGraph represents an omitted seed state as the graph
+    // wildcard `?`; BNG2's source SpeciesGraph represents that same input as
+    // an undefined state for quasi-canonical ordering.
+    return state == "?" ? std::string() : state;
+}
+
+std::size_t graphComponentBondCount(const GraphComponent& component) {
+    return static_cast<std::size_t>(std::count_if(
+        component.bonds.begin(), component.bonds.end(), [](const auto* bond) {
+            return graphBondToken(*bond) != "!-";
+        }));
+}
+
+bool graphComponentLess(const GraphComponent& left,
+                        const GraphComponent& right) {
+    if (left.name != right.name) return left.name < right.name;
+    const auto leftState = graphSortState(left);
+    const auto rightState = graphSortState(right);
+    if (leftState != rightState) {
+        if (leftState.empty() != rightState.empty()) return leftState.empty();
+        return leftState < rightState;
+    }
+    // BNG2's cmp_component puts components with more edges first after name
+    // and state comparisons.
+    const auto leftBondCount = graphComponentBondCount(left);
+    const auto rightBondCount = graphComponentBondCount(right);
+    if (leftBondCount != rightBondCount) {
+        return leftBondCount > rightBondCount;
+    }
+    return false;
+}
+
+bool graphMoleculeLess(const GraphMolecule& left,
+                       const GraphMolecule& right) {
+    if (left.name != right.name) return left.name < right.name;
+    if (left.components.size() != right.components.size()) {
+        return left.components.size() < right.components.size();
+    }
+
+    const auto leftCompartment = left.node->get_compartment();
+    const auto rightCompartment = right.node->get_compartment();
+    if (leftCompartment.empty() != rightCompartment.empty()) {
+        return leftCompartment.empty();
+    }
+    if (leftCompartment != rightCompartment) return leftCompartment < rightCompartment;
+
+    for (std::size_t index = 0; index < left.components.size(); ++index) {
+        if (graphComponentLess(left.components[index], right.components[index])) return true;
+        if (graphComponentLess(right.components[index], left.components[index])) return false;
+    }
+    return false;
+}
+
+std::vector<GraphMolecule> canonicalizeSeedGraphMolecules(
+    std::vector<GraphMolecule> molecules) {
+    for (auto& molecule : molecules) {
+        std::stable_sort(molecule.components.begin(), molecule.components.end(),
+                         graphComponentLess);
+    }
+    std::stable_sort(molecules.begin(), molecules.end(), graphMoleculeLess);
+    return molecules;
+}
+
 bool parseObservablePattern(const std::string& text,
                             const bng::ast::Model& model,
                             ParsedObservablePattern& result,
@@ -4305,7 +4370,8 @@ bool addSpeciesFromAstWithOverrides(
     if (s == nullptr) return false;
 
     for (const auto& seed : model.getSeedSpecies()) {
-        const auto molecules = collectGraphMolecules(seed.getGraph());
+        const auto molecules = canonicalizeSeedGraphMolecules(
+            collectGraphMolecules(seed.getGraph()));
         if (molecules.empty()) {
             std::cerr << "[nfsim/ast] seed species '" << seed.getPattern()
                       << "' contains no molecule graph\n";
