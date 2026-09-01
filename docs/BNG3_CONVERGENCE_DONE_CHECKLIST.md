@@ -4,8 +4,8 @@
 **Last audited:** 2026-09-01
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 7100f5e618d39f5e57557053562ff961ae08fcca
-**Checklist refresh base:** 7100f5e (source-derived exact-key reuse checkpoint; refresh after each checkpoint)
+**Audited semantic code head:** 73757ead732156f5d4b1a0f9a50901263631a93f
+**Checklist refresh base:** 73757ea (source-derived pattern-metadata cache checkpoint; refresh after each checkpoint)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -49,19 +49,19 @@ completion gate.
 
 - [x] Required fast-forward pull completed before this documentation change.
 - [x] The latest local semantic checkpoint is
-  `7100f5e618d39f5e57557053562ff961ae08fcca`; its parent
-  `1fd68d661d2997568ea3f6efa99d88b657a82e86` is the exact-probe checklist
-  refresh. `7100f5e` adds the source-derived `akutuva21/bionetgen` exact-key
-  reuse path (`70acc9e2`): product insertion obtains the exact dedup key once,
-  then reuses it through keyed insertion after canonicalization, while
-  compartmented species retain the canonicalized key contract. The earlier
-  `533ac26` reorder, ODE, empty-graph, Node serialization, source-derived
-  engine, and modern Atomizer checkpoints remain in this ancestry.
+  `73757ead732156f5d4b1a0f9a50901263631a93f`; its parent
+  `8b54751cde165c8d625d6103b7ab6e132c44b094` is the exact-key reuse checklist
+  refresh. `73757ea` adds the source-derived `akutuva21/bionetgen`
+  pattern-metadata cache (`7ee2db11`): immutable reactant/product descriptions
+  are built during initialization and reused by embedding, reaction-building,
+  and delete-molecule paths, with explicit move lifecycle support. The earlier
+  exact-key, `533ac26` reorder, ODE, empty-graph, Node serialization,
+  source-derived engine, and modern Atomizer checkpoints remain in this
+  ancestry.
 - [x] The latest public code/test checkpoint is
-  `7100f5e618d39f5e57557053562ff961ae08fcca`, whose parent is
-  `1fd68d661d2997568ea3f6efa99d88b657a82e86`; it adds the source-derived
-  exact-key output overload, keyed insertion API, three product-path callers,
-  and source-derived reuse coverage.
+  `73757ead732156f5d4b1a0f9a50901263631a93f`, whose parent is
+  `8b54751cde165c8d625d6103b7ab6e132c44b094`; it adds the source-derived
+  pattern-metadata cache and reinitialization/move lifecycle coverage.
 - [x] The latest published CI-repair checkpoint is
   `9a2475a0af360d685dc41eb9bb376f6517d74b4d`; `gh api` and `gh pr view 2`
   agreed on this branch/PR source head immediately after push, and PR #2
@@ -69,7 +69,7 @@ completion gate.
 - [x] The small documentation grammar fix remains the only unrelated tracked
   BNG3 worktree modification. It remains intentionally unstaged and must not
   be mixed into semantic or checklist commits.
-- [x] Exact-head CTest passes `176/176` on `7100f5e` (local Release/Ninja
+- [x] Exact-head CTest passes `177/177` on `73757ea` (local Release/Ninja
   build; `ctest --test-dir build --output-on-failure`), including the exact
   compartment-aware dedup contract, compact ODE derivative contract, empty
   graph, exact Node serialization, t4 rejection contract, inferred-state/
@@ -139,9 +139,9 @@ completion gate.
 - [x] Full Python/API tests pass on the latest Python-affecting checkpoint
   `9c60ca4`: `235 passed, 27 skipped, 8 warnings` from
   `PYTHONPATH=python:build/cpp python -m pytest tests/python -q`. The later
-  `7100f5e` checkpoint changes only C++ exact-key internals and has been
-  requalified by native C++/AST gates; rerun the full Python suite on the final
-  candidate.
+  `73757ea` checkpoint changes only C++ exact-key and pattern-cache internals
+  and has been requalified by native C++/AST gates; rerun the full Python suite
+  on the final candidate.
   The installed-wheel target still has only historical evidence and is not
   release evidence for this head.
 - [x] Source-derived NFsim Issue78 coverage is green at `7186b65`: the direct
@@ -227,13 +227,13 @@ completion gate.
   was still in progress at the last readback, and [formatting run
   33531304766](https://github.com/RuleWorld/BNG3/actions/runs/33531304766) had
   passed. These runs do not qualify the current repair.
-- [ ] At this refresh, the exact public semantic code checkpoint `7100f5e`
+- [ ] At this refresh, the exact public semantic code checkpoint `73757ea`
   has fresh hosted evidence beginning with [CI run
-  33538351665](https://github.com/RuleWorld/BNG3/actions/runs/33538351665),
+  33539030113](https://github.com/RuleWorld/BNG3/actions/runs/33539030113),
   [CodeQL run
-  33538351645](https://github.com/RuleWorld/BNG3/actions/runs/33538351645),
+  33539030155](https://github.com/RuleWorld/BNG3/actions/runs/33539030155),
   and [formatting run
-  33538351648](https://github.com/RuleWorld/BNG3/actions/runs/33538351648).
+  33539030353](https://github.com/RuleWorld/BNG3/actions/runs/33539030353).
   All three were queued at readback. This checklist refresh creates a
   documentation-only public head; read back its new exact-head run set
   separately. Queued or partial results are not completion evidence.
@@ -251,7 +251,7 @@ completion gate.
 - [x] Before this refresh, `gh api
   repos/RuleWorld/BNG3/git/ref/heads/codex/bng3-integration-foundations` and
   `gh pr view 2 --repo RuleWorld/BNG3` read back the same full public code
-  checkpoint SHA `7100f5e618d39f5e57557053562ff961ae08fcca`; PR #2 is open.
+  checkpoint SHA `73757ead732156f5d4b1a0f9a50901263631a93f`; PR #2 is open.
   The documentation commit that follows changes the public head and requires
   a new exact-head readback.
 - [x] Modern Atomizer checkpoints exist for annotations, BNG-XML conversion,
@@ -347,13 +347,20 @@ completion gate.
   key. BNG3 retains the required compartmented-species key recomputation after
   canonicalization from the earlier `533ac26` port; full CTest `176/176` is
   green. This closes the source/API slice, not independent benchmark parity.
+- [x] Source commit `7ee2db11` (`perf: cache immutable reaction pattern
+  metadata`) was ported equivalently at BNG3 `73757ea`: cached immutable
+  `PatternInfo` is rebuilt by `initialize()` and reused by all former
+  per-expansion description sites, with source-derived reinitialization/move
+  coverage and full CTest `177/177` green. This closes the source/API slice;
+  independent BNG3 benchmark reproduction remains open.
 - [ ] Audit and, where supported, port the remaining common portable-CPU
   chain represented by branch `codex/portable-cpu-20260831` at
   `305b7482febe3dd52ccd517fa4cd2e02504e834c`, including exact-dedup and
   canonical-label/order changes (`5291159d`, `92ca4c03`, `70acc9e2`, and
   `7ee2db11`) with source-derived correctness and benchmark evidence. The
-  first three are now ported above; `7ee2db11`, branch-level residuals, and
-  unsafe or superseded experiments must still be classified explicitly.
+  listed source commits are now ported above; branch-level residuals,
+  independent BNG3 benchmark evidence, and unsafe or superseded experiments
+  must still be classified explicitly.
 - [x] Branch `codex/ode-integration` at
   `9c7c0aa3e031330b7421a8e93a2340dc65c43cbb` and source commit `dd665873`
   were audited and ported tests-first at BNG3 `3b284a5`. The focused
