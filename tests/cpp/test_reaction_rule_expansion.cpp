@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <utility>
 
 #include "parser/BNGAstVisitor.hpp"
 #include "engine/NetworkGenerator.hpp"
@@ -7,6 +8,38 @@ using namespace bng;
 
 static std::unique_ptr<ast::Model> parseModel(const std::string& bngl) {
     return parser::parseModel(bngl);
+}
+
+TEST_CASE("Rule expansion: pattern metadata survives reinitialization and move", "[ReactionRule]") {
+    // Source-derived from akutuva21/bionetgen commit 7ee2db11: immutable
+    // pattern metadata is rebuilt on initialize() and must survive moving a
+    // fully initialized rule into the owning model before expansion.
+    auto model = parseModel(R"(
+begin parameters
+    kf 1.0
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 100
+end seed species
+begin reaction rules
+    A() -> B() kf
+end reaction rules
+)");
+
+    auto rule = std::move(model->getReactionRules().front());
+    model->getReactionRules().clear();
+    rule.initialize();
+    model->addReactionRule(std::move(rule));
+
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative(5);
+
+    REQUIRE(network.species.size() == 2);
+    REQUIRE(network.reactions.size() == 1);
 }
 
 TEST_CASE("Rule expansion: simple binding A + B -> AB", "[ReactionRule]") {

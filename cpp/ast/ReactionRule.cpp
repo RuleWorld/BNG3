@@ -860,6 +860,18 @@ bool verifyBondTopology(const BNGcore::PatternGraph& graph) {
 
 } // namespace
 
+// Pattern metadata points into the immutable rule pattern graphs. Keeping it
+// per rule avoids rebuilding the same molecule/component descriptions for
+// every embedding search and generated reaction.
+struct ReactionRule::PatternCache {
+    std::vector<PatternInfo> reactantInfo;
+    std::vector<PatternInfo> productInfo;
+};
+
+ReactionRule::~ReactionRule() = default;
+ReactionRule::ReactionRule(ReactionRule&&) noexcept = default;
+ReactionRule& ReactionRule::operator=(ReactionRule&&) noexcept = default;
+
 bool ReactionRule::ComponentRef::operator==(const ComponentRef& other) const {
     return std::tie(patternIndex, moleculeIndex, componentIndex) ==
            std::tie(other.patternIndex, other.moleculeIndex, other.componentIndex);
@@ -964,6 +976,10 @@ ReactionRule::getNewMoleculeBonds() const {
 }
 
 void ReactionRule::initialize() {
+    patternCache_ = std::make_unique<PatternCache>();
+    patternCache_->reactantInfo = describePatterns(reactantPatterns_);
+    patternCache_->productInfo = describePatterns(productPatterns_);
+
     operations_.clear();
     moleculeMappings_.clear();
     componentMappings_.clear();
@@ -979,7 +995,7 @@ void ReactionRule::initialize() {
         // to serialize the same product construction for the compatibility
         // loader.
         if (!productPatterns_.empty()) {
-            const auto productInfo = describePatterns(productPatterns_);
+            const auto& productInfo = patternCache_->productInfo;
             const auto productMolecules = flattenMolecules(productInfo);
             for (const auto& productMolecule : productMolecules) {
                 operations_.push_back(TransformOp {
@@ -998,8 +1014,8 @@ void ReactionRule::initialize() {
         return;
     }
 
-    const auto reactantInfo = describePatterns(reactantPatterns_);
-    const auto productInfo = describePatterns(productPatterns_);
+    const auto& reactantInfo = patternCache_->reactantInfo;
+    const auto& productInfo = patternCache_->productInfo;
     const auto reactantMolecules = flattenMolecules(reactantInfo);
     const auto productMolecules = flattenMolecules(productInfo);
 
@@ -1326,7 +1342,7 @@ std::vector<ReactionRule::EmbeddingResult> ReactionRule::findEmbeddingsForSpecie
     const Model* model) const {
     std::vector<EmbeddingResult> results;
     const auto& pattern = reactantPatterns_.at(patternIndex).getGraph();
-    const auto reactantInfo = describePatterns(reactantPatterns_);
+    const auto& reactantInfo = patternCache_->reactantInfo;
     std::unordered_set<std::string> seen;
     const bool debug = std::getenv("BNG_DEBUG_EMBEDDINGS") != nullptr;
 
@@ -1870,8 +1886,8 @@ bool ReactionRule::buildReaction(
     const std::function<bool(const SpeciesGraph&)>& productFilter,
     const Model* model) const {
     const bool debug = std::getenv("BNG_DEBUG_BUILD_RXN") != nullptr;
-    const auto reactantInfo = describePatterns(reactantPatterns_);
-    const auto productInfo = describePatterns(productPatterns_);
+    const auto& reactantInfo = patternCache_->reactantInfo;
+    const auto& productInfo = patternCache_->productInfo;
     std::vector<std::size_t> reactantIndices;
     reactantIndices.reserve(matchSet.size());
     std::string inferredCompartment;
@@ -2426,7 +2442,7 @@ bool ReactionRule::buildReaction(
             // should leave the other half of the complex as a product.
 
             // Delete matched molecules from aggregate graph
-            const auto reactantInfoLocal = describePatterns(reactantPatterns_);
+            const auto& reactantInfoLocal = patternCache_->reactantInfo;
             for (std::size_t pi = 0; pi < reactantPatterns_.size(); ++pi) {
                 for (const auto& molInfo : reactantInfoLocal[pi].molecules) {
                     auto* targetMol = matchSet[pi].map.mapf(molInfo.node);

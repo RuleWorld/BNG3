@@ -70,6 +70,11 @@ public:
         bool bidirectional,
         std::vector<SpeciesGraph> reactantPatterns = {},
         std::vector<SpeciesGraph> productPatterns = {});
+    ~ReactionRule();
+    ReactionRule(ReactionRule&&) noexcept;
+    ReactionRule& operator=(ReactionRule&&) noexcept;
+    ReactionRule(const ReactionRule&) = delete;
+    ReactionRule& operator=(const ReactionRule&) = delete;
 
     const std::string& getRuleName() const;
     const std::string& getLabel() const;
@@ -123,6 +128,8 @@ private:
     bool bidirectional_;
     std::vector<SpeciesGraph> reactantPatterns_;
     std::vector<SpeciesGraph> productPatterns_;
+    struct PatternCache;
+    mutable std::unique_ptr<PatternCache> patternCache_;
     std::vector<TransformOp> operations_;
     std::vector<std::pair<ComponentRef, ComponentRef>> moleculeMappings_;
     std::map<ComponentRef, ComponentRef> componentMappings_;
