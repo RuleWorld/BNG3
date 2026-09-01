@@ -71,6 +71,9 @@ completion gate.
   `c754544bce31b4efe708c84afdb9bfc46464570d`, whose parent is the prior
   documentation checkpoint `ed3f295bc2b1b505ef1b6c8c64e72a56e12117fd`; it
   adds the XML-writer compatibility behavior and its source-derived tests.
+- [x] The latest public checklist head is
+  `2979bb522825a408758828dfdae2565eab1700e3`; `gh api` and `gh pr view 2`
+  agree on this branch/PR source head, and PR #2 remains open.
 - [x] The small documentation grammar fix remains the only unrelated tracked
   BNG3 worktree modification. It remains intentionally unstaged and must not
   be mixed into semantic or checklist commits.
@@ -213,14 +216,16 @@ completion gate.
   `419bb2bd29f319bfc638c50b9c29cec0934b6d87eb7ce8fcdefed70a01f618c2`
   (CPython 3.14 arm64 wheel); the installed-target Python suite is recorded
   above.
-- [ ] Current hosted checks for public code checkpoint `c754544` are not yet
+- [ ] Current hosted checks for public code checkpoint `c754544` were not
   terminal as one set: [CI run
   33531304777](https://github.com/RuleWorld/BNG3/actions/runs/33531304777) is
   pending, [CodeQL run
   33531304750](https://github.com/RuleWorld/BNG3/actions/runs/33531304750) is
   in progress, and [formatting run
   33531304766](https://github.com/RuleWorld/BNG3/actions/runs/33531304766) has
-  passed. No nonterminal result is completion evidence.
+  passed. These runs target superseded code head `c754544`, not current
+  public checklist head `2979bb5`; no nonterminal result is completion
+  evidence.
 - [x] Historical hosted PR checks for semantic head
   `0f833470950fc47329f5b7381c64533e623b45ce` were terminal-success: [CI run
   33493581633](https://github.com/RuleWorld/BNG3/actions/runs/33493581633)
@@ -232,10 +237,10 @@ completion gate.
   passed both C++ and Python analysis, and [formatting run
   33493581573](https://github.com/RuleWorld/BNG3/actions/runs/33493581573)
   passed. Results were read back with `gh` against the exact public head;
-- [ ] Fresh hosted CI, CodeQL, and formatting checks for the public checklist
-  documentation checkpoint that follows `c754544` are pending. Both the
-  branch ref and PR source head must be reread with `gh`; superseded runs do
-  not count as evidence.
+- [ ] `gh pr checks 2 --repo RuleWorld/BNG3` reports no checks on current public
+  checklist head `2979bb5` (documentation-only push). Fresh hosted CI, CodeQL,
+  and formatting checks must be read back for an exact semantic/release
+  candidate head; superseded runs do not count as evidence.
 - [x] Modern Atomizer checkpoints exist for annotations, BNG-XML conversion,
   Rulifier, UniProt, structure helpers, and conservative SBML-Multi discovery,
   helper/rate-rule constants, each with source-derived tests.
