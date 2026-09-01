@@ -186,6 +186,43 @@ end reaction rules
     delete system;
 }
 
+TEST_CASE("BNGL parser accepts NFsim t4 state-counter local scopes") {
+    // Source-derived from nfsim/test/testSuite/t4.bngl.  NFsim's fixture uses
+    // an observable state counter (sum(m)), dollar molecule tags ($1), and
+    // tagged local-function calls.  These are distinct from ordinary
+    // zero-argument observables and must survive into the canonical AST.
+    const auto source = R"(
+begin parameters
+    kr 7
+    kb 20
+    ReceptorDimerCount 4000
+end parameters
+begin seed species
+    ReceptorDimer(m~3) ReceptorDimerCount
+end seed species
+begin observables
+    Molecules R0 ReceptorDimer(m~0)
+    Molecules MethSum ReceptorDimer(sum(m))
+end observables
+begin functions
+    openSites($1) = kr*(8-MethSum($1))
+    closedSites($1) = kb*MethSum($1)
+end functions
+begin reaction rules
+    ReceptorDimer$1(m~^[8]) -> ReceptorDimer$1(m~++) openSites($1)
+    ReceptorDimer$1(m~^[0]) -> ReceptorDimer$1(m~--) closedSites($1)
+end reaction rules
+)";
+
+    REQUIRE_NOTHROW([&]() {
+        const auto model = bng::parser::parseModel(source);
+        REQUIRE(model != nullptr);
+        CHECK(model->getObservables().size() == 2);
+        CHECK(model->getFunctions().size() == 2);
+        CHECK(model->getReactionRules().size() == 2);
+    }());
+}
+
 TEST_CASE("XML writer preserves the first explicit bond") {
     auto model = bng::parser::parseModel(R"(
 begin molecule types
