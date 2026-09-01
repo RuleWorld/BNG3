@@ -3557,6 +3557,12 @@ bool addDynamicReactionRateFunction(
         }
 
         for (const auto& dependency : functionReferences) {
+            if (isReactantCountReference(dependency)) {
+                // CompositeFunction binds reactant_N at preparation time from
+                // the current reaction mapping. It is not a System global,
+                // even though the source-shaped expression retains the name.
+                continue;
+            }
             if (system->getGlobalFunctionByName(dependency) == nullptr) {
                 diagnostic = "dynamic reaction rates only support references to base global "
                              "functions; '" + dependency + "' is composite or unavailable";
