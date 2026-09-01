@@ -13,6 +13,7 @@
 #include "NFinput.hh"
 #include "NFcore.hh"
 #include "NFcore/energyPattern.hh"
+#include "NFcore/reactionSelector/reactionSelector.hh"
 #include "NFreactions/reactions/reaction.hh"
 #include "compartment.hh"
 #include "NFfunction/NFfunction.hh"
@@ -3283,5 +3284,110 @@ end reaction rules
     compactReaction->setUseRuleMonkey(true);
     CHECK(compactReaction->update_a() == Catch::Approx(2.0 + std::exp(-0.5)));
     compactReaction->setUseRuleMonkey(false);
+    delete system;
+}
+
+TEST_CASE("NFsim compact partner pool batches shared propensity changes") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    phi 0.5
+    Gcontext 1.0
+    RT 1.0
+end parameters
+begin molecule types
+    A(b,c,d)
+    B(a)
+    C(x)
+    D(x)
+end molecule types
+begin seed species
+    A(b,c!1,d!2).C(x!1).D(x!2) 1
+    A(b,c!3).C(x!3) 1
+    A(b) 1
+    B(a) 2
+    C(x) 1
+    D(x) 1
+end seed species
+begin energy patterns
+    A(b!1,c!2,d!3).B(a!1).C(x!2).D(x!3) Gcontext
+end energy patterns
+begin reaction rules
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+
+    std::vector<NFcore::EnergyRxnClass*> compactReactions;
+    for (auto* reaction : system->getAllReactions()) {
+        auto* energyReaction = dynamic_cast<NFcore::EnergyRxnClass*>(reaction);
+        if (energyReaction != nullptr &&
+                energyReaction->getCompactPartnerPool() != nullptr)
+            compactReactions.push_back(energyReaction);
+    }
+    REQUIRE(compactReactions.size() == 2);
+    auto* pool = compactReactions.front()->getCompactPartnerPool();
+    REQUIRE(pool != nullptr);
+    CHECK(compactReactions.back()->getCompactPartnerPool() == pool);
+    CHECK(pool->getRegisteredReactions().size() == 2);
+
+    system->prepareForSimulation();
+    REQUIRE(pool->size() == 2);
+    auto allReactions = system->getAllReactions();
+    NFcore::DirectSelector selector(allReactions, system);
+    auto sumPropensities = [&]() {
+        double total = 0.0;
+        for (auto* reaction : system->getAllReactions())
+            total += reaction->get_a();
+        return total;
+    };
+    CHECK(selector.getAtot() == Catch::Approx(sumPropensities()));
+
+    auto* bType = system->getMoleculeTypeByName("B");
+    auto* cType = system->getMoleculeTypeByName("C");
+    REQUIRE(bType != nullptr);
+    REQUIRE(cType != nullptr);
+    auto* partner = bType->getMolecule(0);
+    auto* context = static_cast<NFcore::Molecule*>(nullptr);
+    const int contextComponent = cType->getCompIndexFromName("x");
+    for (int i = 0; i < cType->getMoleculeCount(); ++i) {
+        auto* candidate = cType->getMolecule(i);
+        if (candidate->isBindingSiteOpen(contextComponent)) {
+            context = candidate;
+            break;
+        }
+    }
+    REQUIRE(partner != nullptr);
+    REQUIRE(context != nullptr);
+    const int oldPoolSize = pool->size();
+    NFcore::Molecule::bind(partner, "a", context, "x");
+    bType->updateRxnMembership(partner);
+
+    CHECK(pool->size() == 1);
+    selector.updateCompactPartnerPoolBatch(
+        pool->getRegisteredReactions(), oldPoolSize, pool->size(), 0);
+    CHECK(selector.getAtot() == Catch::Approx(sumPropensities()));
+
+    const int reboundPoolSize = pool->size();
+    const int partnerComponent = bType->getCompIndexFromName("a");
+    NFcore::Molecule::unbind(partner, partnerComponent);
+    bType->updateRxnMembership(partner);
+    CHECK(pool->size() == 2);
+    selector.updateCompactPartnerPoolBatch(
+        pool->getRegisteredReactions(), reboundPoolSize, pool->size(), 0);
+    CHECK(selector.getAtot() == Catch::Approx(sumPropensities()));
+
+    const int removedPoolSize = pool->size();
+    bType->removeFromRxns(partner);
+    CHECK(pool->size() == 1);
+    selector.updateCompactPartnerPoolBatch(
+        pool->getRegisteredReactions(), removedPoolSize, pool->size(), 0);
+    CHECK(selector.getAtot() == Catch::Approx(sumPropensities()));
+
     delete system;
 }

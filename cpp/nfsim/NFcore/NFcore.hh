@@ -391,6 +391,8 @@ namespace NFcore
 			//double calculateMeanCount(MoleculeType *m);
 
 			void update_A_tot(ReactionClass *r, double old_a, double new_a);
+			void updateCompactPartnerPoolBatch(
+					CompactPartnerPool *pool, int oldPoolSize, int newPoolSize);
 
 
 
@@ -1441,8 +1443,20 @@ namespace NFcore
 				(void)partnerComponent;
 				return false;
 			}
+			virtual bool refreshCompactPartnerPool(
+					Molecule *m, unsigned int reactantPos) {
+				(void)m;
+				(void)reactantPos;
+				return false;
+			}
 			virtual bool supportsCompactPartnerPoolUpdate() const { return false; }
+			virtual bool supportsCompactPartnerPoolScale() const { return false; }
 			virtual CompactPartnerPool *getCompactPartnerPool() const { return 0; }
+			virtual double getCompactPartnerPoolCoefficient() const { return 0.0; }
+			virtual double update_a_for_compact_partner_pool(int poolSize) {
+				(void)poolSize;
+				return update_a();
+			}
 
 			void setMatchOnce(unsigned int reactantIndex, bool val) {
 				if (reactantIndex < n_reactants) matchOncePerReactant[reactantIndex] = val;

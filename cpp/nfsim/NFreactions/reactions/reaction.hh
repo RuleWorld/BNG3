@@ -248,13 +248,20 @@ namespace NFcore
 				partnerComponent = partnerComponentIndex;
 				return true;
 			}
+			virtual bool refreshCompactPartnerPool(
+					Molecule *m, unsigned int reactantPos);
 			virtual bool supportsCompactPartnerPoolUpdate() const {
 				return simpleMembership && isForward;
+			}
+			virtual bool supportsCompactPartnerPoolScale() const {
+				return simpleMembership && isForward && !useRuleMonkey;
 			}
 			virtual bool tryToAdd(Molecule *m, unsigned int reactantPos);
 			virtual void remove(Molecule *m, unsigned int reactantPos);
 			virtual double update_a();
 			virtual double get_a() const;
+			virtual double getCompactPartnerPoolCoefficient() const;
+			virtual double update_a_for_compact_partner_pool(int poolSize);
 			virtual int getReactantCount(unsigned int reactantIndex) const;
 			virtual int getCorrectedReactantCount(unsigned int reactantIndex) const;
 

@@ -597,9 +597,71 @@ void MoleculeType::prepareForSimulation()
 
 void MoleculeType::updateRxnMembership(Molecule * m)
 {
+	vector<CompactPartnerPool *> compactPools;
+	vector<int> compactPoolOldSizes;
+	vector<bool> compactPoolChanged;
+	for (unsigned int r=0; r<reactions.size(); r++) {
+		ReactionClass *rxn = reactions.at(r);
+		int partnerComponent = -1;
+		if (!rxn->supportsCompactPartnerPoolScale() ||
+				!rxn->getCompactPartnerPoolInfo(
+						reactionPositions.at(r), partnerComponent))
+			continue;
+		CompactPartnerPool *pool = rxn->getCompactPartnerPool();
+		if (pool == 0 || !pool->supportsBatchUpdate())
+			continue;
+		bool allReactionsSupportScale = true;
+		const vector<ReactionClass *> &registered =
+				pool->getRegisteredReactions();
+		for (vector<ReactionClass *>::const_iterator it = registered.begin();
+				it != registered.end(); ++it) {
+			if (*it == 0 || !(*it)->supportsCompactPartnerPoolScale()) {
+				allReactionsSupportScale = false;
+				break;
+			}
+		}
+		if (!allReactionsSupportScale)
+			continue;
+		int poolIndex = -1;
+		for (unsigned int p=0; p<compactPools.size(); p++) {
+			if (compactPools.at(p) == pool) {
+				poolIndex = static_cast<int>(p);
+				break;
+			}
+		}
+		if (poolIndex >= 0)
+			continue;
+		compactPools.push_back(pool);
+		compactPoolOldSizes.push_back(pool->size());
+		compactPoolChanged.push_back(
+				rxn->refreshCompactPartnerPool(m,
+					reactionPositions.at(r)));
+	}
+	for (unsigned int p=0; p<compactPools.size(); p++) {
+		if (compactPoolChanged.at(p))
+			this->system->updateCompactPartnerPoolBatch(
+					compactPools.at(p), compactPoolOldSizes.at(p),
+					compactPools.at(p)->size());
+	}
+
 	for( unsigned int r=0; r<reactions.size(); r++ )
 	{
 		ReactionClass * rxn=reactions.at(r);
+		bool handledByCompactPool = false;
+		int partnerComponent = -1;
+		if (rxn->supportsCompactPartnerPoolUpdate() &&
+				rxn->getCompactPartnerPoolInfo(
+					reactionPositions.at(r), partnerComponent)) {
+			CompactPartnerPool *pool = rxn->getCompactPartnerPool();
+			for (unsigned int p=0; p<compactPools.size(); p++) {
+				if (compactPools.at(p) == pool) {
+					handledByCompactPool = true;
+					break;
+				}
+			}
+		}
+		if (handledByCompactPool)
+			continue;
 		double oldA = rxn->get_a();
 		rxn->tryToAdd(m, reactionPositions.at(r));
 		double newA = rxn->update_a();
@@ -688,9 +750,71 @@ void MoleculeType::removeFromObservables(Molecule *m)
 
 void MoleculeType::removeFromRxns(Molecule * m)
 {
+	vector<CompactPartnerPool *> compactPools;
+	vector<int> compactPoolOldSizes;
+	vector<bool> compactPoolChanged;
+	for (unsigned int r=0; r<reactions.size(); r++) {
+		ReactionClass *rxn = reactions.at(r);
+		int partnerComponent = -1;
+		if (!rxn->supportsCompactPartnerPoolScale() ||
+				!rxn->getCompactPartnerPoolInfo(
+					reactionPositions.at(r), partnerComponent))
+			continue;
+		CompactPartnerPool *pool = rxn->getCompactPartnerPool();
+		if (pool == 0 || !pool->supportsBatchUpdate())
+			continue;
+		bool allReactionsSupportScale = true;
+		const vector<ReactionClass *> &registered =
+				pool->getRegisteredReactions();
+		for (vector<ReactionClass *>::const_iterator it = registered.begin();
+				it != registered.end(); ++it) {
+			if (*it == 0 || !(*it)->supportsCompactPartnerPoolScale()) {
+				allReactionsSupportScale = false;
+				break;
+			}
+		}
+		if (!allReactionsSupportScale)
+			continue;
+		int poolIndex = -1;
+		for (unsigned int p=0; p<compactPools.size(); p++) {
+			if (compactPools.at(p) == pool) {
+				poolIndex = static_cast<int>(p);
+				break;
+			}
+		}
+		if (poolIndex >= 0)
+			continue;
+		compactPools.push_back(pool);
+		compactPoolOldSizes.push_back(pool->size());
+		rxn->remove(m, reactionPositions.at(r));
+		compactPoolChanged.push_back(pool->size() != compactPoolOldSizes.back());
+	}
+	for (unsigned int p=0; p<compactPools.size(); p++) {
+		if (compactPoolChanged.at(p))
+			this->system->updateCompactPartnerPoolBatch(
+					compactPools.at(p), compactPoolOldSizes.at(p),
+					compactPools.at(p)->size());
+	}
+
 	int r=0;
 	for(rxnIter = reactions.begin(); rxnIter != reactions.end(); rxnIter++, r++ )
 	{
+		ReactionClass *rxn = *rxnIter;
+		bool handledByCompactPool = false;
+		int partnerComponent = -1;
+		if (rxn->supportsCompactPartnerPoolUpdate() &&
+			rxn->getCompactPartnerPoolInfo(
+				reactionPositions.at(r), partnerComponent)) {
+			CompactPartnerPool *pool = rxn->getCompactPartnerPool();
+			for (unsigned int p=0; p<compactPools.size(); p++) {
+				if (compactPools.at(p) == pool) {
+					handledByCompactPool = true;
+					break;
+				}
+			}
+		}
+		if (handledByCompactPool)
+			continue;
 		double oldA = (*rxnIter)->get_a();
 		(*rxnIter)->remove(m, reactionPositions.at(r));
 		double newA = (*rxnIter)->update_a();

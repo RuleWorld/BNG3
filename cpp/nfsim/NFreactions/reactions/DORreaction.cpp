@@ -1072,16 +1072,24 @@ EnergyRxnClass::~EnergyRxnClass()
 	compactPartnerMappingSet = 0;
 }
 
+bool EnergyRxnClass::refreshCompactPartnerPool(
+		Molecule *m, unsigned int reactantPos)
+{
+	if (!simpleMembership || !isForward || reactantPos != 1 ||
+			m == 0 || partnerPool == 0)
+		return false;
+	return partnerPool->refresh(m,
+			static_cast<unsigned int>(m->getMolListId()),
+			m->isBindingSiteOpen(partnerComponentIndex));
+}
+
 bool EnergyRxnClass::tryToAdd(Molecule *m, unsigned int reactantPos)
 {
 	if (!simpleMembership)
 		return DORRxnClass::tryToAdd(m, reactantPos);
 
 	if (isForward && reactantPos == 1) {
-		if (partnerPool != 0)
-			partnerPool->refresh(m,
-					static_cast<unsigned int>(m->getMolListId()),
-					m->isBindingSiteOpen(partnerComponentIndex));
+		refreshCompactPartnerPool(m, reactantPos);
 		return true;
 	}
 
@@ -1123,6 +1131,25 @@ double EnergyRxnClass::get_a() const
 		return baseRate * reactantTree->getRateFactorSum() *
 				static_cast<double>(partnerPool->size());
 	return ReactionClass::get_a();
+}
+
+double EnergyRxnClass::getCompactPartnerPoolCoefficient() const
+{
+	if (simpleMembership && isForward && n_reactants == 2 &&
+			DORreactantIndex == 0 && !useRuleMonkey)
+		return baseRate * reactantTree->getRateFactorSum();
+	return 0.0;
+}
+
+double EnergyRxnClass::update_a_for_compact_partner_pool(int poolSize)
+{
+	if (simpleMembership && isForward && n_reactants == 2 &&
+			DORreactantIndex == 0 && !useRuleMonkey && partnerPool != 0) {
+		a = getCompactPartnerPoolCoefficient() *
+				static_cast<double>(poolSize);
+		return a;
+	}
+	return update_a();
 }
 
 int EnergyRxnClass::getReactantCount(unsigned int reactantIndex) const

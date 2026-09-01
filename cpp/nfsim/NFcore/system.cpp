@@ -934,6 +934,15 @@ void System::update_A_tot(ReactionClass *r, double old_a, double new_a)
 	//a_tot+=new_a;
 }
 
+void System::updateCompactPartnerPoolBatch(
+		CompactPartnerPool *pool, int oldPoolSize, int newPoolSize)
+{
+	if (selector == 0 || pool == 0 || oldPoolSize == newPoolSize)
+		return;
+	a_tot = selector->updateCompactPartnerPoolBatch(
+			pool->getRegisteredReactions(), oldPoolSize, newPoolSize, 0);
+}
+
 
 double System::recompute_A_tot()
 {
