@@ -17,7 +17,7 @@ until their deletion gate passes),
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build                  # bng_cpp and, when enabled, bindings
 pip install -e .                     # scikit-build-core package build
-cmake -B build -DBUILD_NFSIM_CLI=ON  # native NFsim oracle executable
+cmake -B build -DBUILD_NFSIM_CLI=ON  # BNG3 standalone NFsim CLI/smoke executable
 ```
 Dependencies are fetched by CMake FetchContent (ANTLR4 4.13.1, SUNDIALS
 7.6.0, Catch2, pybind11, and ExprTk while the expression work order remains
@@ -29,8 +29,9 @@ ctest --test-dir build --output-on-failure
 PYTHONPATH=python:build/cpp python -m pytest -q tests/python
 PYTHONPATH=python:build/cpp python -m pytest -q \
   -c tests/validation/pytest.ini tests/validation -m smoke
-NFSIM_BIN=build/cpp/NFsim PYTHONPATH=python:build/cpp \
-  python -m pytest tests/validation -m nf --bng-cpp build/cpp/bng_cpp
+NFSIM_BIN=/absolute/path/to/pinned/native/NFsim \
+  PYTHONPATH=python:build/cpp python -m pytest tests/validation -m nf \
+  --bng-cpp build/cpp/bng_cpp
 ```
 Engine discovery for the validation harness is `--bng-cpp PATH` or `BNG_CPP`.
 The local development build places executables and the extension under
@@ -51,6 +52,10 @@ them pass by widening tolerances or hiding skips. The Python API is
 - A local green suite, parse inventory, or BNG3-generated output is not
   independent parity evidence. Missing oracles and validators remain visible
   failures/skips with an owner and expiry in the exception ledger.
+- `NFSIM_BIN` must name an independently built native NFsim binary from the
+  pinned pre-convergence source. The embedded BNG3 `NFsim` target is a smoke
+  executable only; the validation harness must not silently substitute it for
+  an absent or invalid oracle path.
 - Keep the XML NFsim path as a temporary comparator. The default NFsim route
   is the direct AST adapter; XML compatibility requires an explicit
   `BNG_NFSIM_ALLOW_XML_FALLBACK=1`, and `BNG_NFSIM_FORCE_XML=1` selects the

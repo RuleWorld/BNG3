@@ -4,8 +4,8 @@
 **Last audited:** 2026-09-01
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** e92b2c95eee2e3e89af11a3ac1cb8270417ad621
-**Checklist refresh base:** e92b2c9 (direct IfTest reactant-count mapping and current-head trajectory checkpoint; refresh after each semantic checkpoint)
+**Audited semantic code head:** b13fe233b16804bcfb2442165bce6487c4dfeb48
+**Checklist refresh base:** b13fe23 (fail-closed independent NFsim oracle discovery; refresh after each semantic checkpoint)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -49,10 +49,14 @@ completion gate.
 
 - [x] Required fast-forward pull completed before this documentation change.
 - [x] The latest local semantic checkpoint is
-  e92b2c95eee2e3e89af11a3ac1cb8270417ad621; it adds the source-compatible
+  b13fe233b16804bcfb2442165bce6487c4dfeb48; its parent
+  `2051d8fe8818f8dac90624a36983c580ac102b70` is the pinned-energy documentation
+  checkpoint. The semantic engine at that parent adds the source-compatible
   direct reactant-count mapping on top of the dual mapping-RNG stream, BNG2
   seed allocation/canonical ordering, and inferred integer-state handling
-  while preserving per-System reaction timing/selection.
+  while preserving per-System reaction timing/selection. `b13fe23` additionally
+  makes the native-NFsim validation harness require an explicit existing
+  independent oracle path and adds source-derived path regression tests.
 - [x] The small documentation grammar fix remains the only unrelated tracked
   BNG3 worktree modification. It remains intentionally unstaged and must not
   be mixed into semantic or checklist commits.
@@ -115,6 +119,22 @@ completion gate.
 - [x] The exact NFsim `IfTest/ifTest.bngl` source fixture now parses through
   `build/cpp/bng_cpp --check` on e92b2c9, including its empty `reactant_1()`
   placeholder declaration; parser acceptance is not execution parity.
+- [x] The independent native-NFsim stochastic subset was rerun against the
+  absolute native binary `/Users/akutuva/Documents/BioNetGen/nfsim/build/NFsim`
+  (binary SHA-256
+  `7302fe29b16d1ebe86369f752f2a49d2c87ef16539faaec11b82294a9fa56d22`) with
+  `NFSIM_BIN` set to that absolute path. The `motor` and `tlbr` Tier-NF
+  ensemble cases passed the declared 200-run gate, and the direct/XML shadow
+  cases also passed: `4 passed, 4 deselected, 1 warning` in 114.58 seconds.
+  This is subset evidence only; it does not close fixed-seed direct/native
+  endpoint semantics or the full Tier-NF gate.
+- [x] The validation harness now fails closed when `NFSIM_BIN` is missing or
+  invalid instead of silently selecting BNG3's embedded `build/cpp/NFsim`.
+  Source-derived path tests pass `5 passed, 1 skipped` in
+  `tests/validation/test_harness_paths.py`; the skip is the intentionally
+  absent local explicit oracle after the repair. The exact repair is
+  `b13fe23`; use an absolute independently built native path for claimed
+  parity.
 - [x] Local CI workflow contract tests pass 10/10, including the pull-request
   source-distribution smoke gate.
 - [x] Local canonical Black check passes: `177 files would be left unchanged`
@@ -141,7 +161,7 @@ completion gate.
   `419bb2bd29f319bfc638c50b9c29cec0934b6d87eb7ce8fcdefed70a01f618c2`
   (CPython 3.14 arm64 wheel); the installed-target Python suite is recorded
   above.
-- [ ] Current hosted checks for checkpoint `e92b2c9` must be refreshed after
+- [ ] Current hosted checks for checkpoint `b13fe23` must be refreshed after
   this documentation checkpoint. Before this refresh, formatting was
   terminal-success, CI was queued, and CodeQL was in progress;
   no nonterminal result is completion evidence.
@@ -156,9 +176,11 @@ completion gate.
   passed both C++ and Python analysis, and [formatting run
   33493581573](https://github.com/RuleWorld/BNG3/actions/runs/33493581573)
   passed. Results were read back with `gh` against the exact public head;
-- [ ] Fresh hosted CI, CodeQL, and formatting checks for current public head
-  `e92b2c9` are pending after this checklist refresh is pushed; superseded runs
-  do not count as evidence.
+- [ ] Fresh hosted CI, CodeQL, and formatting checks for current public branch
+  head `b13fe23` are pending after this checklist refresh is pushed; the PR API
+  last returned stale head `2051d8f` while the branch ref returned `b13fe23`,
+  so both the PR source head and checks require an exact re-read. Superseded
+  runs do not count as evidence.
 - [x] Modern Atomizer checkpoints exist for annotations, BNG-XML conversion,
   Rulifier, UniProt, structure helpers, and conservative SBML-Multi discovery,
   helper/rate-rule constants, each with source-derived tests.
@@ -419,6 +441,19 @@ completion gate.
   The discriminating source ports were position-major repeated-seed
   allocation (`bdddbd4`), BNG2 canonical seed graph/type ordering
   (`41b12f2`), and numeric-site wildcard/PLUS/MINUS handling (`3be1b40`).
+- [ ] Fixed-seed direct/API NFsim still has a declared endpoint-semantic gap
+  on the source-derived `motor` and `tlbr` fixtures. With seed `1`, the same
+  native binary and XML files, and output grids `0.01` (20 points) and `0.1`
+  (20 points), native NFsim `sim()` and BNG3's XML CLI are byte-identical
+  (`motor`: SHA-256
+  `d1baae3621c2167c05fee6b42c933449b4ec81d22`; `tlbr`: SHA-256
+  `bf1655fdf90fdec4021a618aafaadc22400b9ecdfde7c6ca44c5b5a30d83b896`).
+  The direct binding uses `stepTo()` and stops at each requested boundary;
+  native `sim()` fires the event that crosses the final endpoint. Consequently
+  direct returns `motor CheYp=2007` versus native `2008` and `tlbr
+  Rfree/Lfree=5992/11976` versus `5990/11970`. This needs a source-derived
+  contract decision and a compatible implementation/test or an approved
+  disposition; the 200-run distributional pass above does not close it.
 - [ ] Protocol NF support and remaining RNA/t4/t5 behavior are
   implemented or explicitly governed with tests and owners.
 - [ ] The full fixed-seed and distributional Tier-NF gate passes at the
@@ -712,8 +747,9 @@ completion gate.
   event conditions and remain release-candidate work. This documentation
   refresh creates a new public head and requires another exact-head check
   readback after push.
-- [ ] Current public head `5f6da07` (and the documentation checkpoint that
-  will follow it) has a fresh terminal hosted check set read back with `gh`.
+- [ ] Current public branch head `b13fe23` (and the documentation checkpoint
+  that will follow it) has a fresh terminal hosted check set read back with
+  `gh`; the PR #2 metadata must first converge to the same head.
 - [ ] Every required job emits a terminal summary with counts, failures,
   skips, exception budget, corpus/source revision, and artifact digests.
 - [ ] Required jobs fail when a claimed oracle, corpus, validator, or compiler
@@ -888,6 +924,17 @@ These are known unchecked requirements, not reasons to claim completion:
   machinery; protocol-NF, remaining function/rate-law, broader Tier-NF, and
   full independent evidence remain open. The exact AN2 and IfTest trajectories
   are green checkpoints, not substitutes for that broader gate.
+- Fixed-seed direct/API NFsim remains observably different from native
+  `sim()` at the final output boundary for `motor` and `tlbr`: direct
+  `stepTo()` excludes the endpoint-crossing event that native `sim()` includes.
+  The XML/native CLI paths agree exactly, and the independent 200-run
+  motor/tlbr distributional subset passes, so this is a narrow but unresolved
+  endpoint contract gap rather than evidence to widen tolerances or hide the
+  direct route.
+- The NFsim validation harness now refuses to infer independence from a
+  BNG3-built binary when `NFSIM_BIN` is absent or invalid. The required
+  independently built oracle path, source revision, binary digest, and
+  reproducibility recipe still need maintainer approval and hosted execution.
 - The source-derived IfTest conditional-function branch and current-head direct
   console route are green, including the `reactant_1` mapper and independent
   seeded trajectory. The source-derived AN2 trajectory is exact at `e92b2c9`;
