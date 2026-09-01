@@ -238,6 +238,32 @@ end seed species
     CHECK(xml.find("site2=") != std::string::npos);
 }
 
+TEST_CASE("XML writer canonicalizes seed species like BNG2") {
+    // BNG2 parses and quasi-canonicalizes seed SpeciesGraphs before writeXML.
+    // The graph serializer sorts molecules/components and renumbers bonds;
+    // emitting the raw seed text changes NFsim mapping order for asymmetric
+    // complexes and can change seeded trajectories.
+    auto model = bng::parser::parseModel(R"(
+begin molecule types
+    A(b,a)
+    B(x)
+end molecule types
+begin seed species
+    A(b!1,a).B(x!1) 1
+end seed species
+)");
+
+    REQUIRE(model != nullptr);
+    const auto xml = bng::io::XmlWriter::write(*model);
+    CHECK(xml.find(
+              "name=\"A(a,b!1).B(x!1)\"") != std::string::npos);
+    CHECK(xml.find(
+              "<Component id=\"S1_M1_C1\" name=\"a\"") != std::string::npos);
+    CHECK(xml.find(
+              "<Component id=\"S1_M1_C2\" name=\"b\" numberOfBonds=\"1\"/>") !=
+          std::string::npos);
+}
+
 TEST_CASE("NFsim AST adapter maps an inline time-backed TFUN directly") {
     auto model = bng::parser::parseModel(R"(
 begin parameters
