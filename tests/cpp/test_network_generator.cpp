@@ -9,6 +9,8 @@
 using namespace bng::engine;
 
 TEST_CASE("parseBooleanLike behaves correctly", "[NetworkGenerator]") {
+    // Source-derived from akutuva21/bionetgen commit f30898b6: preserve the
+    // accepted boolean spellings while avoiding a temporary lowercased copy.
     // positive cases
     REQUIRE(parseBooleanLike("1") == true);
     REQUIRE(parseBooleanLike("true") == true);

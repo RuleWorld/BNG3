@@ -7,6 +7,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <string_view>
 
 #include "ast/ReactionRule.hpp"
 #include "io/NetWriter.hpp"
@@ -79,10 +80,17 @@ bool parseBooleanLike(std::string text) {
     if (text.size() >= 2 && ((text.front() == '"' && text.back() == '"') || (text.front() == '\'' && text.back() == '\''))) {
         text = text.substr(1, text.size() - 2);
     }
-    std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
-    return text == "1" || text == "true" || text == "yes" || text == "on";
+    const auto caseInsensitiveEqual = [](const std::string& value, std::string_view expected) {
+        if (value.size() != expected.size()) return false;
+        return std::equal(value.begin(), value.end(), expected.begin(), [](char lhs, char rhs) {
+            return std::tolower(static_cast<unsigned char>(lhs)) ==
+                   std::tolower(static_cast<unsigned char>(rhs));
+        });
+    };
+    return caseInsensitiveEqual(text, "1") ||
+           caseInsensitiveEqual(text, "true") ||
+           caseInsensitiveEqual(text, "yes") ||
+           caseInsensitiveEqual(text, "on");
 }
 
 std::optional<std::size_t> parseMaxAgg(const ast::Model& model) {
