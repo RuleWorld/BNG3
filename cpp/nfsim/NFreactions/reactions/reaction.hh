@@ -262,6 +262,8 @@ namespace NFcore
 					const IncrementalMembershipChange &change) const;
 			virtual bool canSkipIndirectMembership(
 					ReactionClass *firedReaction) const;
+			virtual bool checkPreFireConditions(
+					MappingSet **mappingSets) const;
 			virtual CompactPartnerPool *getCompactPartnerPool() const {
 				return partnerPool;
 			}
@@ -302,6 +304,7 @@ namespace NFcore
 			vector<std::uint64_t> conditionalComponentMasks;
 			bool componentMaskFastPath;
 			bool simpleMembership;
+			bool preFireBindingFastPath;
 			int reactionCenterComponentIndex;
 			int partnerComponentIndex;
 			MoleculeType *partnerMoleculeType;

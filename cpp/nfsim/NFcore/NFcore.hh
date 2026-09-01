@@ -1488,6 +1488,13 @@ namespace NFcore
 				(void)change;
 				return true;
 			}
+			/* Give specialized reactions a chance to reject a stale mapping before
+			 * product preparation and membership work.  The default preserves the
+			 * legacy transformation-time checks. */
+			virtual bool checkPreFireConditions(MappingSet **mappingSets) const {
+				(void)mappingSets;
+				return true;
+			}
 
 
 

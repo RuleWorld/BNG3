@@ -3404,6 +3404,73 @@ end reaction rules
     delete system;
 }
 
+TEST_CASE("NFsim compact energy stale binding is a null event") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    phi 0.5
+    Gcontext 1.0
+    RT 1.0
+end parameters
+begin molecule types
+    A(b,c)
+    B(a)
+    C(x)
+end molecule types
+begin seed species
+    A(b,c) 1
+    B(a) 1
+    C(x) 1
+end seed species
+begin energy patterns
+    A(b!1,c!2).B(a!1).C(x!2) Gcontext
+end energy patterns
+begin reaction rules
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    auto* compactReaction =
+        dynamic_cast<NFcore::EnergyRxnClass*>(system->getReaction(0));
+    REQUIRE(compactReaction != nullptr);
+    system->turnOff_OnTheFlyObs();
+    system->prepareForSimulation();
+
+    auto* aType = system->getMoleculeTypeByName("A");
+    auto* bType = system->getMoleculeTypeByName("B");
+    auto* cType = system->getMoleculeTypeByName("C");
+    REQUIRE(aType != nullptr);
+    REQUIRE(bType != nullptr);
+    REQUIRE(cType != nullptr);
+    auto* a = aType->getMolecule(0);
+    auto* b = bType->getMolecule(0);
+    auto* c = cType->getMolecule(0);
+    REQUIRE(a != nullptr);
+    REQUIRE(b != nullptr);
+    REQUIRE(c != nullptr);
+
+    /* Simulate a concurrent endpoint change after membership selection.  The
+     * stale compact mapping must retain BindingTransform's null-event
+     * semantics and must not create an A-B bond. */
+    const int aBindingComponent = aType->getCompIndexFromName("b");
+    const int bBindingComponent = bType->getCompIndexFromName("a");
+    NFcore::Molecule::bind(a, aBindingComponent, c, 0);
+    NFcore::System::NULL_EVENT_COUNTER = 0;
+    compactReaction->fire(0.0);
+
+    CHECK(NFcore::System::NULL_EVENT_COUNTER == 1);
+    CHECK(a->getBondedMolecule(aBindingComponent) == c);
+    CHECK_FALSE(b->isBindingSiteBonded(bBindingComponent));
+    CHECK_FALSE(a->getBondedMolecule(aBindingComponent) == b);
+
+    NFcore::Molecule::unbind(a, aBindingComponent);
+    delete system;
+}
+
 TEST_CASE("NFsim compact partner pool batches shared propensity changes") {
     auto model = bng::parser::parseModel(R"(
 begin parameters

@@ -422,6 +422,15 @@ string ReactionClass::fire(double random_A_number, bool track) {
 		return string("");
 	}
 
+	/* Compact EnergyPattern binding rules can detect an occupied endpoint
+	 * before the generic product/membership pipeline.  This preserves the
+	 * transformation's null-event semantics while avoiding all work that
+	 * cannot change the state. */
+	if (!this->checkPreFireConditions(mappingSet)) {
+		++(System::NULL_EVENT_COUNTER);
+		return string("");
+	}
+
 	// Defensive check: a picked MappingSet can occasionally contain an unmapped entry
 	// (null molecule) in edge cases involving internal bond reconnection/symmetry.
 	// Treat this as a null event and skip firing to avoid dereferencing null mappings.
