@@ -991,6 +991,11 @@ EnergyRxnClass::EnergyRxnClass(
 	isForward(isForward),
 	weightedDependencyMask(0),
 	dependencyMaskValid(true),
+	singleConditionalTermFastPath(false),
+	baseEnergyRateFactor(0.0),
+	conditionedEnergyRateFactor(0.0),
+	multiConditionalTermFastPath(false),
+	conditionalRateFactors(),
 	minimumConditionalBits(0)
 {
 	/* The compact input path currently supplies contexts on the first
@@ -1119,6 +1124,36 @@ EnergyRxnClass::EnergyRxnClass(
 		/* Unsupported contexts still need the ordinary partner list because the
 		 * compact path is deliberately conservative. */
 		reactantLists[1] = new ReactantList(1, transformationSet, 25);
+	}
+
+	/* Cache the small Arrhenius factor table once.  Membership updates still
+	 * perform the same occupancy-mask tests, but avoid recomputing exponentials
+	 * for every weighted molecule. */
+	if (componentMaskFastPath && conditionalTerms.size() == 1) {
+		double energyCoefficient = isForward ? phi : (phi - 1.0);
+		baseEnergyRateFactor = std::exp(
+				-(energyCoefficient * baseEnergy) / RT);
+		conditionedEnergyRateFactor = std::exp(
+				-(energyCoefficient *
+					(baseEnergy + conditionalTerms[0].energyValue)) / RT);
+		singleConditionalTermFastPath = true;
+	} else if (componentMaskFastPath && conditionalTerms.size() > 1 &&
+			conditionalTerms.size() <= 8) {
+		double energyCoefficient = isForward ? phi : (phi - 1.0);
+		unsigned int combinationCount =
+				1u << static_cast<unsigned int>(conditionalTerms.size());
+		conditionalRateFactors.resize(combinationCount);
+		for (unsigned int combination = 0;
+				combination < combinationCount; ++combination) {
+			double deltaG = baseEnergy;
+			for (unsigned int ti = 0; ti < conditionalTerms.size(); ++ti) {
+				if (combination & (1u << ti))
+					deltaG += conditionalTerms[ti].energyValue;
+			}
+			conditionalRateFactors[combination] = std::exp(
+					-(energyCoefficient * deltaG) / RT);
+		}
+		multiConditionalTermFastPath = true;
 	}
 }
 
@@ -1424,6 +1459,22 @@ double EnergyRxnClass::evaluateLocalFunctions(MappingSet *ms)
 	}
 
 	Molecule *weightedMolecule = ms->get(0)->getMolecule();
+	if (singleConditionalTermFastPath) {
+		std::uint64_t boundMask = weightedMolecule->getBoundComponentMask();
+		return (boundMask & conditionalComponentMasks[0]) ==
+				conditionalComponentMasks[0]
+			? conditionedEnergyRateFactor : baseEnergyRateFactor;
+	}
+	if (multiConditionalTermFastPath) {
+		std::uint64_t boundMask = weightedMolecule->getBoundComponentMask();
+		unsigned int activeTerms = 0;
+		for (unsigned int ti = 0; ti < conditionalTerms.size(); ++ti) {
+			std::uint64_t requiredMask = conditionalComponentMasks[ti];
+			if ((boundMask & requiredMask) == requiredMask)
+				activeTerms |= (1u << ti);
+		}
+		return conditionalRateFactors[activeTerms];
+	}
 	std::uint64_t conditionMask = 0;
 	for (unsigned int ci=0; ci<conditionComponentIndices.size(); ci++) {
 		if (weightedMolecule->isBindingSiteBonded(conditionComponentIndices[ci]))

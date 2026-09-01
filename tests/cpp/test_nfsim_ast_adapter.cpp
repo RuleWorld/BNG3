@@ -3357,6 +3357,53 @@ end reaction rules
     delete system;
 }
 
+TEST_CASE("NFsim compact energy caches multi-term factors") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    phi 0.5
+    Gc 1.0
+    Gd 2.0
+    RT 1.0
+end parameters
+begin molecule types
+    A(b,c,d)
+    B(a)
+    C(x)
+    D(x)
+end molecule types
+begin seed species
+    A(b,c!1,d!2).C(x!1).D(x!2) 1
+    A(b,c!3).C(x!3) 1
+    A(b) 1
+    B(a) 1
+end seed species
+begin energy patterns
+    A(b!1,c!2).B(a!1).C(x!2) Gc
+    A(b!1,d!2).B(a!1).D(x!2) Gd
+end energy patterns
+begin reaction rules
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 2);
+    auto* compactReaction =
+        dynamic_cast<NFcore::EnergyRxnClass*>(system->getReaction(0));
+    REQUIRE(compactReaction != nullptr);
+    REQUIRE(compactReaction->usesIncrementalMembership());
+    system->turnOff_OnTheFlyObs();
+    REQUIRE(compactReaction->canUseDirectProductList());
+    system->prepareForSimulation();
+    CHECK(compactReaction->get_a() == Catch::Approx(
+        1.0 + std::exp(-0.5) + std::exp(-1.5)));
+    delete system;
+}
+
 TEST_CASE("NFsim compact partner pool batches shared propensity changes") {
     auto model = bng::parser::parseModel(R"(
 begin parameters

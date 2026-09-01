@@ -314,6 +314,11 @@ namespace NFcore
 			bool isForward;
 			std::uint64_t weightedDependencyMask;
 			bool dependencyMaskValid;
+			bool singleConditionalTermFastPath;
+			double baseEnergyRateFactor;
+			double conditionedEnergyRateFactor;
+			bool multiConditionalTermFastPath;
+			vector<double> conditionalRateFactors;
 			unsigned int minimumConditionalBits;
 
 			bool dependsOnEndpoint(
