@@ -223,10 +223,14 @@ void bind_nfsim(py::module_& m) {
             py::gil_scoped_release release;
             if (output_times.empty()) {
                 const double dt = t_end / static_cast<double>(n_steps);
+                double t_current = 0.0;
                 time_points.push_back(0.0);
                 record_observables();
                 for (int step = 1; step <= n_steps; ++step) {
-                    const double t_current = step * dt;
+                    // Match NFsim::sim's repeated checkpoint accumulation.
+                    // Multiplication can round a final boundary differently
+                    // and change whether an event is included at that edge.
+                    t_current += dt;
                     system->stepTo(t_current);
                     time_points.push_back(t_current);
                     record_observables();

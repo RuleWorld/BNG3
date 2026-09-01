@@ -410,6 +410,32 @@ end model
         obs_values = next(iter(result["observables"].values()))
         assert len(obs_values) == 11
 
+    def test_nf_sampling_matches_nfsim_accumulated_output_grid(self, tmp_path):
+        # Source-derived from NFsim System::sim: output checkpoints advance by
+        # repeated dSampleTime addition, not by multiplying the step index.
+        bngl = tmp_path / "nf_sample_grid.bngl"
+        bngl.write_text("""
+begin model
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 1
+end seed species
+begin observables
+    Molecules X_total X()
+end observables
+end model
+""")
+        model = _cpp.parse_file(str(bngl))
+        result = _cpp.simulate_nf(model, t_end=0.2, n_steps=20, seed=1)
+
+        dt = 0.2 / 20
+        expected = [0.0]
+        for _ in range(20):
+            expected.append(expected[-1] + dt)
+        assert result["time"].tolist() == expected
+
     def test_nf_simulation_accepts_traversal_limit(self, tmp_path):
         bngl = tmp_path / "nf_traversal_limit.bngl"
         bngl.write_text("""
