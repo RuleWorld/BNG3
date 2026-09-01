@@ -2127,6 +2127,77 @@ end reaction rules
     delete xmlSystem;
 }
 
+TEST_CASE("NFsim AST adapter maps the IfTest conditional function rates") {
+    // Source-derived from nfsim/test/IfTest/ifTest.bngl and its generated XML:
+    // conditional global functions reference a live molecule observable, while
+    // the reaction laws multiply the per-reaction reactant-count placeholder.
+    auto model = bng::parser::parseModel(R"BNG(
+begin parameters
+end parameters
+begin molecule types
+    Timer(t~OFF~ON)
+    DelayedStartMolecule(p~U~P)
+end molecule types
+begin seed species
+    Timer(t~OFF) 10000
+    DelayedStartMolecule(p~U) 10000
+end seed species
+begin observables
+    Molecules Toff Timer(t~OFF)
+    Molecules Ton Timer(t~ON)
+    Molecules Du DelayedStartMolecule(p~U)
+    Molecules Dp DelayedStartMolecule(p~P)
+end observables
+begin functions
+    kDelay() = if(Ton>5000&&Ton<7000,2,0)
+    kDeplete() = if(Ton>7000,2,0)
+    reactant_1()
+    rateLaw2 reactant_1()*kDelay()
+    rateLaw3 reactant_1()*kDeplete()
+end functions
+begin reaction rules
+    Timer(t~OFF) -> Timer(t~ON) 0.5
+    DelayedStartMolecule(p~U) -> DelayedStartMolecule(p~P) rateLaw2()
+    DelayedStartMolecule(p~P) -> DelayedStartMolecule(p~U) rateLaw3()
+end reaction rules
+)BNG");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 10000, false, suggestedTraversalLimit);
+    REQUIRE(direct != nullptr);
+    REQUIRE(direct->getAllReactions().size() == 3);
+    REQUIRE(direct->getGlobalFunctionByName("kDelay") != nullptr);
+    REQUIRE(direct->getGlobalFunctionByName("kDeplete") != nullptr);
+    CHECK(direct->getGlobalFunctionByName("kDelay")->getNumOfVarRefs() == 1);
+    CHECK(direct->getGlobalFunctionByName("kDelay")->getVarRefName(0) == "Ton");
+    CHECK(direct->getGlobalFunctionByName("kDeplete")->getNumOfVarRefs() == 1);
+    CHECK(direct->getGlobalFunctionByName("kDeplete")->getVarRefName(0) == "Ton");
+    direct->prepareForSimulation();
+    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(5000.0));
+    CHECK(direct->getReaction(1)->get_a() == Catch::Approx(0.0));
+    CHECK(direct->getReaction(2)->get_a() == Catch::Approx(0.0));
+    delete direct;
+
+    const auto xml = bng::io::XmlWriter::write(*model);
+    CHECK(xml.find("<Function id=\"kDelay\">") != std::string::npos);
+    CHECK(xml.find("if(((Ton>5000)and(Ton<7000)),2,0)") != std::string::npos);
+    CHECK(xml.find("<Reference name=\"Ton\" type=\"Observable\"/>") !=
+          std::string::npos);
+
+    suggestedTraversalLimit = 0;
+    auto* xmlSystem = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 10000, false, suggestedTraversalLimit);
+    REQUIRE(xmlSystem != nullptr);
+    REQUIRE(xmlSystem->getAllReactions().size() == 3);
+    xmlSystem->prepareForSimulation();
+    CHECK(xmlSystem->getReaction(0)->get_a() == Catch::Approx(5000.0));
+    CHECK(xmlSystem->getReaction(1)->get_a() == Catch::Approx(0.0));
+    CHECK(xmlSystem->getReaction(2)->get_a() == Catch::Approx(0.0));
+    delete xmlSystem;
+}
+
 TEST_CASE("NFsim AST adapter maps dynamic observable reaction rates directly and through XML") {
     auto model = bng::parser::parseModel(R"(
 begin parameters
