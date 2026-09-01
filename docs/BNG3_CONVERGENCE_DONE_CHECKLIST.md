@@ -4,8 +4,8 @@
 **Last audited:** 2026-09-01
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** d7536f5c368929bd0aab735f5c5e43cc2af4ae1c
-**Checklist refresh base:** d7536f5 (source-derived zero-argument model-function output checkpoint; refresh after each checkpoint)
+**Audited semantic code head:** ead6b8e1513f819ec91571aa0e5ead49aa119a8c
+**Checklist refresh base:** ead6b8e (source-derived cBNGL compartment-aware species-deduplication checkpoint; refresh after each checkpoint)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -54,17 +54,17 @@ completion gate.
   current semantic checkpoint supersedes it and requires fresh exact-head
   evidence.
 - [x] The latest local semantic checkpoint is
-  `d7536f5c368929bd0aab735f5c5e43cc2af4ae1c`; its parent
-  `d7fd0dcd192ae9f46331cd5704f8c8ce4da0b89a` is the tests-first
-  zero-argument function-rate checkpoint. `d7536f5` fixes `print_functions`
-  output resolution for nested zero-argument model functions and evaluates
-  them on the output time axis. The source-derived `Validate/test_time.bngl`
-  action contract passes, as does the full `TestSimulation` class (`34
-  passed`).
+  `ead6b8e1513f819ec91571aa0e5ead49aa119a8c`; its parent
+  `7705c488c3ce4e1e64b47b001146f981b9e68d48` is the tests-first
+  reverse-rate derivation checkpoint. `ead6b8e` makes the compartment-aware
+  species deduplication guard semantic rather than serialization-order based.
+  The source-derived cBNGL iteration-3 contract passes (`16` species), and
+  the full root cBNGL fixture converges to `78` species and `354` reactions,
+  matching `tests/validation/Validate/DAT_validate/Motivating_example_cBNGL.net`.
 - [x] The latest public code/test checkpoint is
-  `d7536f5c368929bd0aab735f5c5e43cc2af4ae1c`; it includes the source-derived
-  zero-argument function-rate/action-output contract and is the exact public
-  branch head read back with `gh api` after push.
+  `ead6b8e1513f819ec91571aa0e5ead49aa119a8c`; it includes the source-derived
+  cBNGL compartment-deduplication regression and is the exact public branch
+  head read back with `gh api` after push.
 - [x] Historical published CI-repair checkpoint is
   `9a2475a0af360d685dc41eb9bb376f6517d74b4d`; `gh api` and `gh pr view 2`
   agreed on this branch/PR source head immediately after push, and PR #2
@@ -95,10 +95,12 @@ completion gate.
   tests with `27` skips and `8` warnings, and the legacy security contract
   passes `2/2` with `perl -c legacy/perl/Perl2/MacroBNGModel.pm` reporting
   syntax OK.
-- [ ] Full local CTest and the full Python/API suite have not yet been rerun
-  at `d7536f5`; the current targeted evidence is the source-derived
-  `test_time` action test plus `TestSimulation` `34 passed`. Do not reuse the
-  `44d8655` full-suite result as evidence for this semantic head.
+- [x] Exact-head local gates pass at `ead6b8e`: `ctest --test-dir build
+  --output-on-failure` reports `100% tests passed out of 181`, and
+  `PYTHONPATH=build/cpp:python python -m pytest tests/python -q` reports
+  `240 passed, 27 skipped, 8 warnings` in `15.83s`. These local results do
+  not substitute for terminal hosted checks or independent full-corpus
+  parity.
 - [x] Diagnostic independent BNG2 execution is now available from an isolated
   clone of source revision `fde0cd6a522c9f988d5495db31c70ce0f98e744b` using
   the repository's `bng2/Makefile`; the arm64 `run_network` artifact has
@@ -114,7 +116,10 @@ completion gate.
   mismatch, NFKB illustrating-protocol expression-rate serialization mismatch,
   and BNG3 rejection of the legacy `test_time` `f_correct` parameter. The
   skips remain honest where BNG2 cannot process legacy syntax/assets or lacks
-  NFsim; this run does not qualify complete Tier-P parity.
+  NFsim; this historical run does not qualify complete Tier-P parity. Targeted
+  repairs now cover the four recorded signatures (`ead6b8e`, `418db22`,
+  `7705c48`, and `d7536f5` respectively); the full differential command still
+  needs a fresh terminal run against the approved independent oracle.
 - [ ] Separate local Debug/ASan evidence has not yet been rerun for 5f6da07;
   prior 0f83347 evidence was supplemental memory-safety coverage, not a
   substitute for hosted sanitizer and leak/UBSan gates.
@@ -1017,15 +1022,15 @@ completion gate.
   These checks qualify only `7b53663`; pending status is not validation
   evidence.
 - [ ] Current public semantic checkpoint
-  `d7536f5c368929bd0aab735f5c5e43cc2af4ae1c` has not yet acquired a terminal
+  `ead6b8e1513f819ec91571aa0e5ead49aa119a8c` has not yet acquired a terminal
   hosted check set. At exact-head readback, CI run
-  [33568270131](https://github.com/RuleWorld/BNG3/actions/runs/33568270131),
-  formatting run
-  [33568269922](https://github.com/RuleWorld/BNG3/actions/runs/33568269922),
+  [33570349978](https://github.com/RuleWorld/BNG3/actions/runs/33570349978),
+  formatting patch run
+  [33570350028](https://github.com/RuleWorld/BNG3/actions/runs/33570350028),
   and CodeQL run
-  [33568269927](https://github.com/RuleWorld/BNG3/actions/runs/33568269927)
+  [33570349982](https://github.com/RuleWorld/BNG3/actions/runs/33570349982)
   were pending for this exact SHA. Queued or partial results are not
-  completion evidence; a later checklist/documentation push requires another
+  completion evidence; the checklist refresh itself requires another
   exact-head readback.
 - [ ] Every required job emits a terminal summary with counts, failures,
   skips, exception budget, corpus/source revision, and artifact digests.
