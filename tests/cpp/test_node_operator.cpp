@@ -88,3 +88,12 @@ TEST_CASE("Node::operator==", "[BNGcore][Node]") {
         REQUIRE_FALSE(node1 == node2);
     }
 }
+
+TEST_CASE("PatternGraph canonicalization defines the empty graph", "[BNGcore][PatternGraph]") {
+    // Source-derived from akutuva21/bionetgen commit 46da45c4: empty
+    // SpeciesGraph values must not index ptn[-1] during canonicalization.
+    PatternGraph graph;
+
+    REQUIRE(graph.get_label().empty());
+    REQUIRE(graph.is_canonical());
+}
