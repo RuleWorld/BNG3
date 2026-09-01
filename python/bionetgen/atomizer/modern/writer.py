@@ -676,6 +676,36 @@ def bngl_function(
     return result
 
 
+def curate_parameters(parameters: Mapping[str, object]) -> Dict[str, str]:
+    """Curate SBML parameter values for BNGL emission.
+
+    This mirrors the Playground writer's public ``curateParameters`` helper:
+    non-finite literals are made parseable, NaN emits a warning and becomes
+    zero, and identifiers use the same BNGL-safe spelling as the writer.
+    """
+
+    curated: Dict[str, str] = {}
+    for parameter_id, parameter in parameters.items():
+        value = (
+            parameter.get("value", "")
+            if isinstance(parameter, Mapping)
+            else getattr(parameter, "value", "")
+        )
+        value_text = str(value)
+        if re.search(r"inf", value_text, flags=re.IGNORECASE):
+            value_text = re.sub(
+                r"inf", "1e20", value_text, flags=re.IGNORECASE
+            )
+        if re.search(r"nan", value_text, flags=re.IGNORECASE):
+            logger.warning(
+                "BNW001",
+                f"Parameter {parameter_id} has NaN value, setting to 0",
+            )
+            value_text = "0"
+        curated[standardize_name(str(parameter_id))] = value_text
+    return curated
+
+
 def _strip_mass_action_factors(expression: str, reactant_ids: Sequence[str]) -> str:
     """Remove explicit SBML species factors from an elementary mass-action law."""
 
@@ -2043,6 +2073,7 @@ def generate_bngl(
 
 # Preserve the TypeScript reference spelling for direct facade callers.
 bnglReaction = bngl_reaction
+curateParameters = curate_parameters
 inlineSBMLFunctions = inline_sbml_functions
 splitReversibleRate = split_reversible_rate
 
@@ -2052,6 +2083,8 @@ __all__ = [
     "bnglReaction",
     "bngl_reaction",
     "convert_math_expression",
+    "curateParameters",
+    "curate_parameters",
     "extend_function",
     "generate_bngl",
     "inlineSBMLFunctions",
