@@ -65,7 +65,7 @@ completion gate.
   `d7536f5c368929bd0aab735f5c5e43cc2af4ae1c`; it includes the source-derived
   zero-argument function-rate/action-output contract and is the exact public
   branch head read back with `gh api` after push.
-- [x] The latest published CI-repair checkpoint is
+- [x] Historical published CI-repair checkpoint is
   `9a2475a0af360d685dc41eb9bb376f6517d74b4d`; `gh api` and `gh pr view 2`
   agreed on this branch/PR source head immediately after push, and PR #2
   remains open.
@@ -998,7 +998,7 @@ completion gate.
   later semantic or documentation checkpoint requires a fresh exact-head
   readback.
 - [ ] Historical public checklist head
-  `b8dfd027e50b81737c5e8b59f225f9085149f3c0` has fresh hosted runs, all still
+  `b8dfd027e50b81737c5e8b59f225f9085149f3c0` had fresh hosted runs, all
   queued at readback: CI
   [33567163033](https://github.com/RuleWorld/BNG3/actions/runs/33567163033),
   formatting patch
@@ -1006,6 +1006,16 @@ completion gate.
   and CodeQL
   [33567163054](https://github.com/RuleWorld/BNG3/actions/runs/33567163054).
   Queued status is not validation evidence.
+- [ ] Latest published checklist checkpoint
+  `7b53663d32b35ec1df4057b6a2832d79b0152577` has fresh hosted runs, all
+  pending at readback: CI
+  [33568454975](https://github.com/RuleWorld/BNG3/actions/runs/33568454975),
+  formatting patch
+  [33568454932](https://github.com/RuleWorld/BNG3/actions/runs/33568454932),
+  and CodeQL
+  [33568454970](https://github.com/RuleWorld/BNG3/actions/runs/33568454970).
+  These checks qualify only `7b53663`; pending status is not validation
+  evidence.
 - [ ] Current public semantic checkpoint
   `d7536f5c368929bd0aab735f5c5e43cc2af4ae1c` has not yet acquired a terminal
   hosted check set. At exact-head readback, CI run
