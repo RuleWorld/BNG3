@@ -55,14 +55,41 @@ TEST_CASE("NFsim compact reaction membership IDs stay sorted and unique") {
     CHECK(mappingIds.insert(3).second);
     CHECK_FALSE(mappingIds.insert(9).second);
     REQUIRE(mappingIds.size() == 2);
-    CHECK(*mappingIds.begin() == 3);
-    CHECK(*(mappingIds.begin() + 1) == 9);
+    auto mappingIdsIt = mappingIds.begin();
+    CHECK(*mappingIdsIt == 3);
+    ++mappingIdsIt;
+    CHECK(*mappingIdsIt == 9);
     CHECK(mappingIds.erase(3) == 1);
     CHECK(mappingIds.erase(3) == 0);
     REQUIRE(mappingIds.size() == 1);
     CHECK(*mappingIds.begin() == 9);
     mappingIds.clear();
     CHECK(mappingIds.empty());
+
+    NFcore::MappingIdSet overflowIds;
+    for (int id : {7, 3, 11, 1, 9})
+        CHECK(overflowIds.insert(id).second);
+    CHECK_FALSE(overflowIds.insert(7).second);
+    REQUIRE(overflowIds.size() == 5);
+    std::vector<int> observed;
+    for (auto it = overflowIds.begin(); it != overflowIds.end(); ++it)
+        observed.push_back(*it);
+    CHECK(observed == std::vector<int> {1, 3, 7, 9, 11});
+
+    NFcore::MappingIdSet copiedIds(overflowIds);
+    NFcore::MappingIdSet assignedIds;
+    assignedIds = overflowIds;
+    CHECK(copiedIds.size() == overflowIds.size());
+    CHECK(assignedIds.size() == overflowIds.size());
+    CHECK(copiedIds.erase(1) == 1);
+    CHECK(copiedIds.erase(7) == 1);
+    CHECK(copiedIds.erase(11) == 1);
+    CHECK(copiedIds.erase(11) == 0);
+    observed.clear();
+    for (auto it = copiedIds.begin(); it != copiedIds.end(); ++it)
+        observed.push_back(*it);
+    CHECK(observed == std::vector<int> {3, 9});
+    CHECK(assignedIds.size() == 5);
 }
 
 TEST_CASE("BNGL parser preserves inline and file TFUN metadata") {
