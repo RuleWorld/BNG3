@@ -4,8 +4,8 @@
 **Last audited:** 2026-09-01
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 8c9790ea19371fc9c4412e5c980c2decaf89d781
-**Checklist refresh base:** 8c9790e (refresh after each semantic checkpoint)
+**Audited semantic code head:** 6b953c5aeee49df160631c96be391244e9b6bb04
+**Checklist refresh base:** 6b953c5 (refresh after each semantic checkpoint)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -47,19 +47,19 @@ completion gate.
 
 - [x] Required fast-forward pull completed before this documentation change.
 - [x] The latest pushed semantic checkpoint is
-  8c9790ea19371fc9c4412e5c980c2decaf89d781; this checklist refresh is a
+  6b953c5aeee49df160631c96be391244e9b6bb04; this checklist refresh is a
   documentation-only checkpoint layered after it and does not alter its
   semantic test evidence.
 - [x] The small documentation grammar fix remains the only unrelated tracked
   BNG3 worktree modification. It remains intentionally unstaged and must not
   be mixed into semantic or checklist commits.
-- [x] Exact-head CTest passes `157/157` on 8c9790e (local Release/Ninja
+- [x] Exact-head CTest passes `158/158` on 6b953c5 (local Release/Ninja
   build; `ctest --test-dir build --output-on-failure`).
-- [ ] Separate local Debug/ASan evidence has not yet been rerun for 8c9790e;
+- [ ] Separate local Debug/ASan evidence has not yet been rerun for 6b953c5;
   prior 0f83347 evidence was supplemental memory-safety coverage, not a
   substitute for hosted sanitizer and leak/UBSan gates.
-- [x] The full NFsim AST adapter executable passes 107 test cases and 1082
-  assertions on 8c9790e, including compact energy evaluation, cached compact
+- [x] The full NFsim AST adapter executable passes 108 test cases and 1106
+  assertions on 6b953c5, including compact energy evaluation, cached compact
   rate factors, specialized reverse propensities, sparse selector ordering,
   cached single- and multi-term Arrhenius factors, direct-product endpoint
   identity propagation, safe direct-product traversal, cached pre-fire binding
@@ -81,14 +81,16 @@ completion gate.
   paths, including a negative single-bond ring control. It also covers the
   source-derived `reactant_1()` compatibility placeholder and dynamic
   reactant-count rate on direct and in-memory XML paths (11 assertions), plus
-  XML preservation of the `TotalRate` modifier (9 assertions).
-- [x] Exact-head Python/API tests pass on semantic checkpoint `8c9790e`:
+  XML preservation of the `TotalRate` modifier (9 assertions), and the exact
+  IfTest conditional global functions with legacy `&&` expressions on direct
+  and XML paths (24 assertions).
+- [x] Exact-head Python/API tests pass on semantic checkpoint `6b953c5`:
   `229 passed, 27 skipped, 8 warnings` from
   `PYTHONPATH=python:build/cpp python -m pytest tests/python -q`. The installed-
   wheel target still has only historical evidence and is not release evidence
   for this head.
 - [x] The exact NFsim `IfTest/ifTest.bngl` source fixture now parses through
-  `build/cpp/bng_cpp --check` on 8c9790e, including its empty `reactant_1()`
+  `build/cpp/bng_cpp --check` on 6b953c5, including its empty `reactant_1()`
   placeholder declaration; parser acceptance is not execution parity.
 - [x] Local CI workflow contract tests pass 10/10, including the pull-request
   source-distribution smoke gate.
@@ -105,7 +107,7 @@ completion gate.
 - [x] Historical package evidence: a no-build-isolation sdist and wheel were
   rebuilt from semantic checkpoint `ba52c20` and the wheel was installed into
   an isolated target. These artifact digests and installed-wheel test results
-  are not current release evidence for 8c9790e.
+  are not current release evidence for 6b953c5.
   Artifact SHA-256 digests are
   `7ce09d700a5ff8fc42982c71eeaa448873811d4f3a10464bb67a8aac728a8780`
   (sdist) and
@@ -476,7 +478,7 @@ completion gate.
   multi-bond dissociation: all bonds deleted by one firing are excluded from a
   single connectivity check, allowing genuine ring opening while retaining the
   single-bond ring rejection. Direct AST and XML-compatibility fixtures in
-  `tests/cpp/test_nfsim_ast_adapter.cpp` pass 30 assertions at `8c9790e`.
+  `tests/cpp/test_nfsim_ast_adapter.cpp` pass 30 assertions at `6b953c5`.
 - [ ] Port and test the remaining supported CPU evaluator slices from the
   merged NFSIM source: the broader full incremental-membership machinery and
   the remaining direct-product paths. The connected direct-product refresh
@@ -644,7 +646,7 @@ completion gate.
   event conditions and remain release-candidate work. This documentation
   refresh creates a new public head and requires another exact-head check
   readback after push.
-- [ ] Current public head `8c9790e` (and the documentation checkpoint that
+- [ ] Current public head `6b953c5` (and the documentation checkpoint that
   will follow it) has a fresh terminal hosted check set read back with `gh`.
 - [ ] Every required job emits a terminal summary with counts, failures,
   skips, exception budget, corpus/source revision, and artifact digests.
