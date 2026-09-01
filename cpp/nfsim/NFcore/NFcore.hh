@@ -649,9 +649,16 @@ namespace NFcore
 			void updateSystemWithNewParameters();
 			void printAllParameters();
 
-			// RNG management for thread-safe, deterministic simulations
-			void seedRNG(unsigned long seed) { rng_.seed(seed); }
-			NfsimRNG& getRNG() { return rng_; }
+            // RNG management for thread-safe, deterministic simulations.
+            // Current NFsim keeps legacy global draws for molecule/mapping
+            // selection, so preserve that source split in a second
+            // per-System stream without reintroducing shared global state.
+            void seedRNG(unsigned long seed) {
+                rng_.seed(seed);
+                mapping_rng_.seed(seed);
+            }
+            NfsimRNG& getRNG() { return rng_; }
+            NfsimRNG& getMappingRNG() { return mapping_rng_; }
 
 	        NFstream& getOutputFileStream();
 	        NFstream& getReactionFileStream();
@@ -877,8 +884,12 @@ namespace NFcore
 			// To look up connected reactions quickly
 			vector <vector <bool> > connectedReactions;
 
-			// Per-instance random number generator for thread safety
-			NfsimRNG rng_;
+            // Per-instance random number generator for thread safety
+            NfsimRNG rng_;
+
+            // Source-compatible stream for legacy molecule/mapping selection
+            // draws that remain separate from the System reaction stream.
+            NfsimRNG mapping_rng_;
 
 			// AS2023 - sets the default log buffer size to 10000 firings.
 			int log_buffer_size = 10000;

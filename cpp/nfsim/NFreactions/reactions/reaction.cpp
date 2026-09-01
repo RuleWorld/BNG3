@@ -840,7 +840,7 @@ void BasicRxnClass::printFullDetails() const
 
 void BasicRxnClass::pickRuleMonkeyMappingSets(double random_A_number) const
 {
-	NfsimRNG& rng = system->getRNG();
+    NfsimRNG& rng = system->getMappingRNG();
 	if (n_reactants != 2 || totalRateFlag) {
 		for(unsigned int i=0; i<n_reactants; i++) {
 			if ( isPopulationType[i] ) {
@@ -880,7 +880,7 @@ void BasicRxnClass::pickRuleMonkeyMappingSets(double random_A_number) const
 	}
 
 	// Select a valid pair
-	int selectedIndex = rng.random_int(0, validPairsBuffer.size());
+    int selectedIndex = rng.random_int(0, validPairsBuffer.size());
 	int i = validPairsBuffer[selectedIndex].first;
 	int j = validPairsBuffer[selectedIndex].second;
 
@@ -896,7 +896,7 @@ void BasicRxnClass::pickMappingSets(double random_A_number) const
 		return;
 	}
 
-	NfsimRNG& rng = system->getRNG();
+    NfsimRNG& rng = system->getMappingRNG();
 	for(unsigned int i=0; i<n_reactants; i++)
 	{
 		if ( isPopulationType[i] ) {
