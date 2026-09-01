@@ -3667,3 +3667,126 @@ end reaction rules
 
     delete system;
 }
+
+TEST_CASE("NFsim compact selector preserves seeded order across membership refresh") {
+    const std::string modelText = R"(
+begin parameters
+    phi 0.5
+    Gcontext 1.0
+    RT 1.0
+end parameters
+begin molecule types
+    A(b,c,d)
+    B(a)
+    C(x)
+    D(x)
+end molecule types
+begin seed species
+    A(b,c!1,d!2).C(x!1).D(x!2) 1
+    A(b,c!3).C(x!3) 1
+    A(b) 1
+    B(a) 2
+    C(x) 1
+    D(x) 1
+end seed species
+begin energy patterns
+    A(b!1,c!2,d!3).B(a!1).C(x!2).D(x!3) Gcontext
+end energy patterns
+begin reaction rules
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+end reaction rules
+)";
+
+    auto model = bng::parser::parseModel(modelText);
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    system->prepareForSimulation();
+
+    auto allReactions = system->getAllReactions();
+    REQUIRE(allReactions.size() == 18);
+    for (auto* reaction : allReactions) {
+        auto* compactReaction = dynamic_cast<NFcore::EnergyRxnClass*>(reaction);
+        REQUIRE(compactReaction != nullptr);
+        CHECK(compactReaction->supportsSparseSelection());
+    }
+
+    auto sumPropensities = [&]() {
+        double total = 0.0;
+        for (auto* reaction : allReactions)
+            total += reaction->get_a();
+        return total;
+    };
+    NFcore::DirectSelector selector(allReactions, system);
+    const double initialTotal = sumPropensities();
+    CHECK(initialTotal > 0.0);
+    CHECK(selector.getAtot() == Catch::Approx(initialTotal));
+
+    system->seedRNG(17);
+    NFcore::NfsimRNG expectedInitialRng(17);
+    const double initialDraw = expectedInitialRng.random(initialTotal);
+    double expectedPrefix = 0.0;
+    double expectedPreviousPrefix = 0.0;
+    std::size_t expectedIndex = allReactions.size();
+    for (std::size_t i = 0; i < allReactions.size(); ++i) {
+        expectedPrefix += allReactions[i]->get_a();
+        if (initialDraw <= expectedPrefix) {
+            expectedIndex = i;
+            break;
+        }
+        expectedPreviousPrefix = expectedPrefix;
+    }
+    REQUIRE(expectedIndex < allReactions.size());
+    NFcore::ReactionClass* selected = nullptr;
+    const double initialResidual = selector.getNextReactionClass(selected);
+    CHECK(selected == allReactions[expectedIndex]);
+    CHECK(initialResidual == Catch::Approx(
+        initialDraw - expectedPreviousPrefix));
+
+    std::vector<double> oldPropensities;
+    for (auto* reaction : allReactions)
+        oldPropensities.push_back(reaction->get_a());
+    auto* compactReaction = dynamic_cast<NFcore::EnergyRxnClass*>(
+        allReactions.front());
+    REQUIRE(compactReaction != nullptr);
+    REQUIRE(compactReaction->get_a() > 0.0);
+    compactReaction->fire(0.0);
+
+    const double refreshedTotal = sumPropensities();
+    REQUIRE(refreshedTotal > 0.0);
+    selector.updateBatch(allReactions, oldPropensities);
+    CHECK(selector.getAtot() == Catch::Approx(refreshedTotal));
+
+    system->seedRNG(19);
+    NFcore::NfsimRNG expectedRefreshedRng(19);
+    const double refreshedDraw = expectedRefreshedRng.random(refreshedTotal);
+    expectedPrefix = 0.0;
+    expectedPreviousPrefix = 0.0;
+    expectedIndex = allReactions.size();
+    for (std::size_t i = 0; i < allReactions.size(); ++i) {
+        expectedPrefix += allReactions[i]->get_a();
+        if (refreshedDraw <= expectedPrefix) {
+            expectedIndex = i;
+            break;
+        }
+        expectedPreviousPrefix = expectedPrefix;
+    }
+    REQUIRE(expectedIndex < allReactions.size());
+    selected = nullptr;
+    const double refreshedResidual = selector.getNextReactionClass(selected);
+    CHECK(selected == allReactions[expectedIndex]);
+    CHECK(refreshedResidual == Catch::Approx(
+        refreshedDraw - expectedPreviousPrefix));
+
+    delete system;
+}
