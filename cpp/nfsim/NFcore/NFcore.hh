@@ -860,12 +860,15 @@ namespace NFcore
 
 
 			/* updates a molecules membership (assumes molecule is of type this) */
-			void updateRxnMembership(Molecule * m);
+			void updateRxnMembership(Molecule * m,
+					ReactionClass *firedReaction = 0,
+					bool directProduct = false);
 			/* Updates only molecule membership in connected reactions.
 			 * The connected reactions are inferred at the simulation start.
 			 * Arvind Rasi Subramaniam
 			 */
-			void updateConnectedRxnMembership(Molecule * m, ReactionClass * r);
+			void updateConnectedRxnMembership(Molecule * m, ReactionClass * r,
+					bool directProduct = false);
 
 			/* auto populate with default molecules */
 			void populateWithDefaultMolecules(int moleculeCount);
@@ -1135,7 +1138,8 @@ namespace NFcore
 
 			/* function that tells this molecule that it changed states or bonds
 			 * and it should update its reaction membership */
-			void updateRxnMembership(ReactionClass * r, bool useConnectivity);
+			void updateRxnMembership(ReactionClass * r, bool useConnectivity,
+					bool directProduct = false);
 			void removeFromObservables();
 			void addToObservables();
 
@@ -1559,6 +1563,7 @@ namespace NFcore
 			// Called from within Transformation Set to check connectivity
 			bool areMoleculeTypeAndComponentPresent(MoleculeType * mt, int cIndex);
 			bool isTemplateCompatible(TemplateMolecule * t);
+			bool isDirectProductMolecule(Molecule *molecule) const;
 
 		protected:
 			virtual void pickMappingSets(double randNumber) const=0;
@@ -1603,6 +1608,11 @@ namespace NFcore
 
 			list <Molecule *> products;
 			list <Molecule *>::iterator molIter;
+			/* Preserve the molecules explicitly selected by the fired mapping sets.
+			 * Membership refresh can recycle those mappings while rebuilding the
+			 * reactant trees, so the direct-product decision must not depend on the
+			 * mapping arrays after transformation. */
+			vector <Molecule *> directProductMoleculeList;
 
 			// remember the molecule type of each product molecule a with typeII dependencies
 			list <MoleculeType *> typeII_products;

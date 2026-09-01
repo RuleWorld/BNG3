@@ -163,13 +163,16 @@ LocalFunction * Molecule::getLocalFunction(int localFunctionIndex) {
 
 
 
-void Molecule::updateRxnMembership(ReactionClass * r, bool useConnectivity)
+void Molecule::updateRxnMembership(ReactionClass * r, bool useConnectivity,
+		bool directProduct)
 {
 	if (useConnectivity) {
-		parentMoleculeType->updateConnectedRxnMembership(this, r);
+		parentMoleculeType->updateConnectedRxnMembership(
+				this, r, directProduct);
 	}
 	else {
-		parentMoleculeType->updateRxnMembership(this);
+		parentMoleculeType->updateRxnMembership(
+				this, r, directProduct);
 	}
 }
 
@@ -785,5 +788,4 @@ void Molecule::printMoleculeList(list <Molecule *> &members)
 		cout<<"_u"<<(*molIter)->getUniqueID()<<endl;
 	}
 }
-
 

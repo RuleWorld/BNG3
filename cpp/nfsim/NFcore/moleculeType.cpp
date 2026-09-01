@@ -595,7 +595,8 @@ void MoleculeType::prepareForSimulation()
 	}
 }
 
-void MoleculeType::updateRxnMembership(Molecule * m)
+void MoleculeType::updateRxnMembership(Molecule * m,
+		ReactionClass *firedReaction, bool directProduct)
 {
 	vector<CompactPartnerPool *> compactPools;
 	vector<int> compactPoolOldSizes;
@@ -647,6 +648,9 @@ void MoleculeType::updateRxnMembership(Molecule * m)
 	for( unsigned int r=0; r<reactions.size(); r++ )
 	{
 		ReactionClass * rxn=reactions.at(r);
+		if (firedReaction != 0 &&
+				!rxn->shouldUpdateMembership(m, firedReaction, directProduct))
+			continue;
 		bool handledByCompactPool = false;
 		int partnerComponent = -1;
 		if (rxn->supportsCompactPartnerPoolUpdate() &&
@@ -670,7 +674,8 @@ void MoleculeType::updateRxnMembership(Molecule * m)
 
 }
 
-void MoleculeType::updateConnectedRxnMembership(Molecule * m, ReactionClass * firedReaction)
+void MoleculeType::updateConnectedRxnMembership(
+		Molecule * m, ReactionClass * firedReaction, bool directProduct)
 {
 	// Replace the iteration over all reactions for the MoleculeType in
 	// MoleculeType::updateRxnMembership by only the
@@ -683,6 +688,8 @@ void MoleculeType::updateConnectedRxnMembership(Molecule * m, ReactionClass * fi
 		rxn = firedReaction->getconnectedRxn(r);
 		for (int pos=0; pos<rxn->getNumOfReactants(); pos++) {
 			if (rxn->getMoleculeTypeOfReactantTemplate(pos) != this) continue;
+			if (!rxn->shouldUpdateMembership(m, firedReaction, directProduct))
+				continue;
 			double oldA = rxn->get_a();
 			double oldAwithTotal = rxn->update_a();
 			rxn->tryToAdd(m, pos);

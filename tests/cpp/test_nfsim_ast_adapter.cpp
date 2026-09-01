@@ -3338,6 +3338,20 @@ end reaction rules
     compactReaction->setUseRuleMonkey(true);
     CHECK(compactReaction->update_a() == Catch::Approx(2.0 + std::exp(-0.5)));
     compactReaction->setUseRuleMonkey(false);
+    compactReaction->fire(0.1);
+    int directWeightedCount = 0;
+    for (int i = 0; i < system->getMoleculeTypeByName("A")->getMoleculeCount(); ++i)
+        directWeightedCount += compactReaction->isDirectProductMolecule(
+            system->getMoleculeTypeByName("A")->getMolecule(i)) ? 1 : 0;
+    CHECK(directWeightedCount == 1);
+    CHECK(compactReaction->isDirectProductMolecule(
+        system->getMoleculeTypeByName("B")->getMolecule(0)));
+    for (int i = 0; i < system->getMoleculeTypeByName("C")->getMoleculeCount(); ++i)
+        CHECK_FALSE(compactReaction->isDirectProductMolecule(
+            system->getMoleculeTypeByName("C")->getMolecule(i)));
+    for (int i = 0; i < system->getMoleculeTypeByName("D")->getMoleculeCount(); ++i)
+        CHECK_FALSE(compactReaction->isDirectProductMolecule(
+            system->getMoleculeTypeByName("D")->getMolecule(i)));
     delete system;
 }
 

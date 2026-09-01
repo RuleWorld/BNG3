@@ -350,6 +350,28 @@ MoleculeType *ReactionClass::getMoleculeTypeOfReactantTemplate(int pos) const {
 	return reactantTemplates[pos]->getMoleculeType();
 }
 
+bool ReactionClass::isDirectProductMolecule(Molecule *molecule) const
+{
+	if (molecule == 0)
+		return false;
+	if (!directProductMoleculeList.empty())
+		return std::find(directProductMoleculeList.begin(),
+				directProductMoleculeList.end(), molecule) !=
+			directProductMoleculeList.end();
+	for (unsigned int msIndex = 0; msIndex < n_mappingsets; ++msIndex) {
+		MappingSet *ms = mappingSet[msIndex];
+		if (ms == 0)
+			continue;
+		for (unsigned int mappingIndex = 0;
+				mappingIndex < ms->getNumOfMappings(); ++mappingIndex) {
+			Mapping *mapping = ms->get(mappingIndex);
+			if (mapping != 0 && mapping->getMolecule() == molecule)
+				return true;
+		}
+	}
+	return false;
+}
+
 
 void ReactionClass::printDetails() const {
 	cout<< name <<"  (id="<<this->rxnId<<", baseRate="<<baseRate<<",  a="<<a<<", fired="<<fireCounter<<" times )"<<endl;
@@ -385,6 +407,7 @@ void ReactionClass::fire(double random_A_number) {
 string ReactionClass::fire(double random_A_number, bool track) {
 	//cout<<endl<<">FIRE "<<getName()<<endl;
 	fireCounter++;
+	directProductMoleculeList.clear();
 
 
 	// First randomly pick the reactants to fire by selecting the MappingSets
@@ -413,6 +436,28 @@ string ReactionClass::fire(double random_A_number, bool track) {
 		if (!transformationSet->checkReactantFilters(k, mol)) {
 			++(System::NULL_EVENT_COUNTER);
 			return string("");
+		}
+	}
+
+	/* Save the explicitly mapped molecules before transformation and membership
+	 * refresh can recycle mapping entries.  This is the source-derived direct
+	 * endpoint identity used by incremental membership decisions. */
+	if (this->usesIncrementalMembership()) {
+		for (unsigned int msIndex = 0; msIndex < n_mappingsets; ++msIndex) {
+			MappingSet *ms = mappingSet[msIndex];
+			if (ms == 0)
+				continue;
+			for (unsigned int mappingIndex = 0;
+					mappingIndex < ms->getNumOfMappings(); ++mappingIndex) {
+				Mapping *mapping = ms->get(mappingIndex);
+				if (mapping == 0 || mapping->getMolecule() == 0)
+					continue;
+				Molecule *molecule = mapping->getMolecule();
+				if (std::find(directProductMoleculeList.begin(),
+						directProductMoleculeList.end(), molecule) ==
+					directProductMoleculeList.end())
+					directProductMoleculeList.push_back(molecule);
+			}
 		}
 	}
 
@@ -562,8 +607,11 @@ string ReactionClass::fire(double random_A_number, bool track) {
 		//Update this molcule's reaction membership
 		//  NOTE: as a side-effect, DORreactions that depend on molecule-scoped local functions
 		//   (typeI relationship) will be updated as long as UTL is set appropriately.
-		if ( mol->isAlive() )
-			mol->updateRxnMembership(this, useConnectivity);
+		if ( mol->isAlive() ) {
+			bool directProduct = !this->usesIncrementalMembership() ||
+					this->isDirectProductMolecule(mol);
+			mol->updateRxnMembership(this, useConnectivity, directProduct);
+		}
 	}
 
 	// update complex-scoped local functions for typeII dependencies
