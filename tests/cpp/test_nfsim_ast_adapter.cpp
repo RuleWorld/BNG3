@@ -4296,3 +4296,90 @@ end reaction rules
 
     delete system;
 }
+
+TEST_CASE("NFsim connectivity preserves the seeded t3 trajectory") {
+    // Source-derived regression oracle: nfsim/test/testSuite/t3.bngl and the
+    // connected-update fix in nfsim commit 23436e2.  The upstream validation
+    // runs the same XML model with and without -connect and requires bytewise
+    // identical observable trajectories for seed 1.
+    auto model = bng::parser::parseModel(R"BNG(
+begin parameters
+    kr 7
+    kb 20
+    kCat 10
+    kDephos 10
+    ReceptorComplexCount 4000
+end parameters
+begin seed species
+    Receptor(m~3,a!1).CheA(rec!1,p~unphos) ReceptorComplexCount
+end seed species
+begin observables
+    Molecules R0 Receptor(m~0)
+    Molecules R1 Receptor(m~1)
+    Molecules R2 Receptor(m~2)
+    Molecules R3 Receptor(m~3)
+    Molecules R4 Receptor(m~4)
+    Molecules RA Receptor(a!1).CheA(rec!1,p~unphos)
+    Molecules CheA CheA(p~unphos)
+    Molecules CheAp CheA(p~PHOS)
+end observables
+begin functions
+    pOn(x) = kCat*(R1(x)+2*R2(x)+3*R3(x)+4*R4(x))
+end functions
+begin reaction rules
+    Receptor(m~0) <-> Receptor(m~1) kr,kb
+    Receptor(m~1) <-> Receptor(m~2) kr,kb
+    Receptor(m~2) <-> Receptor(m~3) kr,kb
+    Receptor(m~3) <-> Receptor(m~4) kr,kb
+    %x::Receptor(a!1).CheA(rec!1,p~unphos) -> %x::Receptor(a!1).CheA(rec!1,p~PHOS) pOn(x)
+    CheA(p~PHOS) -> CheA(p~unphos) kDephos
+end reaction rules
+)BNG");
+    REQUIRE(model != nullptr);
+
+    const auto xml = bng::io::XmlWriter::write(*model);
+    const auto token = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto xmlPath = std::filesystem::temp_directory_path() /
+                         ("bng3-t3-connectivity-" + std::to_string(token) + ".xml");
+    std::ofstream xmlFile(xmlPath);
+    REQUIRE(xmlFile.good());
+    xmlFile << xml;
+    xmlFile.close();
+
+    auto run = [&](bool connectivity, const std::filesystem::path& outputPath) {
+        int suggestedTraversalLimit = NFcore::ReactionClass::NO_LIMIT;
+        auto* system = NFinput::initializeFromXML(
+            xmlPath.string(), false, 100000, false, suggestedTraversalLimit,
+            true, connectivity);
+        REQUIRE(system != nullptr);
+        system->setUniversalTraversalLimit(suggestedTraversalLimit);
+        system->registerOutputFileLocation(outputPath.string());
+        system->outputAllObservableNames();
+        system->prepareForSimulation();
+        system->seedRNG(1);
+        system->sim(0.02, 5, false);
+        delete system;
+    };
+
+    const auto offPath = std::filesystem::temp_directory_path() /
+                         ("bng3-t3-off-" + std::to_string(token) + ".gdat");
+    const auto onPath = std::filesystem::temp_directory_path() /
+                        ("bng3-t3-on-" + std::to_string(token) + ".gdat");
+    run(false, offPath);
+    run(true, onPath);
+
+    std::ifstream offFile(offPath);
+    std::ifstream onFile(onPath);
+    REQUIRE(offFile.good());
+    REQUIRE(onFile.good());
+    const std::string offData((std::istreambuf_iterator<char>(offFile)),
+                              std::istreambuf_iterator<char>());
+    const std::string onData((std::istreambuf_iterator<char>(onFile)),
+                             std::istreambuf_iterator<char>());
+    CHECK(offData == onData);
+
+    std::error_code error;
+    std::filesystem::remove(xmlPath, error);
+    std::filesystem::remove(offPath, error);
+    std::filesystem::remove(onPath, error);
+}
