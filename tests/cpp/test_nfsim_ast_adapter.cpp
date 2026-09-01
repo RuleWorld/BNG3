@@ -264,6 +264,49 @@ end seed species
           std::string::npos);
 }
 
+TEST_CASE("NFsim AST adapter canonicalizes seed molecule order like BNG2") {
+    // Source-derived from BNG2 SpeciesGraph.pm::labelQuasi/cmp_molecule:
+    // seed molecules with the same type are ordered by their sorted
+    // components, with a more-bound component preceding a free component.
+    // This order is observable to NFsim's seeded mapping selectors.
+    auto model = bng::parser::parseModel(R"(
+begin molecule types
+    A(a,b)
+    B(x,y)
+end molecule types
+begin seed species
+    A(a,b!1).B(x!1,y).A(a!2,b).B(x!2,y) 1
+end seed species
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(direct != nullptr);
+    auto* directA = direct->getMoleculeTypeByName("A");
+    REQUIRE(directA != nullptr);
+    REQUIRE(directA->getMoleculeCount() == 2);
+    const auto directAIndex = directA->getCompIndexFromName("a");
+    const auto directBIndex = directA->getCompIndexFromName("b");
+    CHECK(directA->getMolecule(0)->isBindingSiteBonded(directAIndex));
+    CHECK_FALSE(directA->getMolecule(0)->isBindingSiteBonded(directBIndex));
+    delete direct;
+
+    suggestedTraversalLimit = 0;
+    auto* xml = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, suggestedTraversalLimit);
+    REQUIRE(xml != nullptr);
+    auto* xmlA = xml->getMoleculeTypeByName("A");
+    REQUIRE(xmlA != nullptr);
+    REQUIRE(xmlA->getMoleculeCount() == 2);
+    const auto xmlAIndex = xmlA->getCompIndexFromName("a");
+    const auto xmlBIndex = xmlA->getCompIndexFromName("b");
+    CHECK(xmlA->getMolecule(0)->isBindingSiteBonded(xmlAIndex));
+    CHECK_FALSE(xmlA->getMolecule(0)->isBindingSiteBonded(xmlBIndex));
+    delete xml;
+}
+
 TEST_CASE("NFsim AST adapter maps an inline time-backed TFUN directly") {
     auto model = bng::parser::parseModel(R"(
 begin parameters
