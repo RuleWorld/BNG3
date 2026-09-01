@@ -28,6 +28,92 @@ void EnergyFunction::addEnergyPattern(const EnergyPatternInfo &ep) {
     patterns.push_back(ep);
 }
 
+bool EnergyFunction::getBindingContext(
+    const string &molType1, const string &bindSite1,
+    const string &molType2, const string &bindSite2,
+    EnergyBindingContext &context
+) const {
+    context.baseEnergy = 0.0;
+    context.conditions.clear();
+    context.conditionalTerms.clear();
+
+    const vector<int> relevant = findRelevantPatternsForBinding(
+        molType1, bindSite1, molType2, bindSite2);
+    if (relevant.empty()) return false;
+
+    vector<int> alwaysPatterns;
+    vector<int> conditionalPatterns;
+
+    for (int pi : relevant) {
+        const EnergyPatternInfo &ep = patterns[pi];
+        bool hasExtraContext = false;
+        int weightedMoleculeCount = 0;
+
+        for (const auto &mol : ep.molecules) {
+            if (mol.typeName == molType1) ++weightedMoleculeCount;
+        }
+        for (const auto &mol : ep.molecules) {
+            const bool isReactantType =
+                mol.typeName == molType1 || mol.typeName == molType2;
+            if (!isReactantType) {
+                hasExtraContext = true;
+                break;
+            }
+            for (const auto &comp : mol.components) {
+                if (mol.typeName == molType1 && comp.name == bindSite1) continue;
+                if (mol.typeName == molType2 && comp.name == bindSite2) continue;
+                if (comp.isBound || !comp.stateConstraint.empty()) {
+                    hasExtraContext = true;
+                    break;
+                }
+            }
+            if (hasExtraContext) break;
+        }
+
+        /* The compact evaluator receives one selected reaction-center
+         * molecule. A second molecule of that same type could contribute a
+         * context match that is not a property of the selected molecule, so
+         * retain the materialized expansion for that topology. */
+        if (weightedMoleculeCount != 1) return false;
+
+        if (hasExtraContext) {
+            conditionalPatterns.push_back(pi);
+        } else {
+            alwaysPatterns.push_back(pi);
+        }
+    }
+
+    for (int pi : alwaysPatterns) context.baseEnergy += patterns[pi].energyValue;
+
+    context.conditions = extractContextConditions(
+        conditionalPatterns, molType1, bindSite1, molType2, bindSite2);
+
+    /* Keep the descriptor within the 64-bit mask used by the compact
+     * evaluator. */
+    if (context.conditions.empty() || context.conditions.size() >= 64) return false;
+
+    for (int pi : conditionalPatterns) {
+        std::uint64_t conditionMask = 0;
+        for (unsigned int ci = 0; ci < context.conditions.size(); ++ci) {
+            const vector<int> &gated = context.conditions[ci].gatedPatternIndices;
+            if (find(gated.begin(), gated.end(), pi) != gated.end()) {
+                conditionMask |= (std::uint64_t(1) << ci);
+            }
+        }
+
+        /* A conditional pattern with no representable reactant-side
+         * condition is not safe to execute incrementally. */
+        if (conditionMask == 0) return false;
+
+        EnergyPatternTerm term;
+        term.energyValue = patterns[pi].energyValue;
+        term.conditionMask = conditionMask;
+        context.conditionalTerms.push_back(term);
+    }
+
+    return !context.conditionalTerms.empty();
+}
+
 /*
  * Find energy patterns relevant to a binding rule.
  *
