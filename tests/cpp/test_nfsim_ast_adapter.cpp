@@ -3511,6 +3511,55 @@ end reaction rules
     delete system;
 }
 
+TEST_CASE("NFsim compact reverse energy uses the weighted propensity factor") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    phi 0.5
+    Gcontext 1.0
+    RT 1.0
+end parameters
+begin molecule types
+    A(b,c)
+    B(a)
+    C(x)
+end molecule types
+begin seed species
+    A(b,c!1).C(x!1) 1
+    B(a) 1
+end seed species
+begin energy patterns
+    A(b!1,c!2).B(a!1).C(x!2) Gcontext
+end energy patterns
+begin reaction rules
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 2);
+    auto* forward = dynamic_cast<NFcore::EnergyRxnClass*>(
+        system->getReaction(0));
+    auto* reverse = dynamic_cast<NFcore::EnergyRxnClass*>(
+        system->getReaction(1));
+    REQUIRE(forward != nullptr);
+    REQUIRE(reverse != nullptr);
+
+    system->turnOff_OnTheFlyObs();
+    system->prepareForSimulation();
+    CHECK(forward->get_a() == Catch::Approx(std::exp(-0.5)));
+    CHECK(reverse->get_a() == Catch::Approx(0.0));
+
+    forward->fire(0.0);
+
+    CHECK(reverse->update_a() == Catch::Approx(std::exp(0.5)));
+    CHECK(reverse->get_a() == Catch::Approx(std::exp(0.5)));
+    delete system;
+}
+
 TEST_CASE("NFsim compact energy stale binding is a null event") {
     auto model = bng::parser::parseModel(R"(
 begin parameters
