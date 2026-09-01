@@ -128,13 +128,25 @@ def test_cli_approximate_simulation_start_time(runner, simple_model, method):
     assert result.exit_code == 0, result.output
 
 
-def test_cli_nf_rejects_nonzero_start_time(runner, simple_model):
+def test_cli_nf_honors_nonzero_start_time(runner, simple_model):
     result = runner.invoke(
         main,
-        ["run", simple_model, "--method", "nf", "--t-start", "1"],
+        [
+            "run",
+            simple_model,
+            "--method",
+            "nf",
+            "--t-start",
+            "1",
+            "--t-end",
+            "2",
+            "--n-steps",
+            "1",
+            "--seed",
+            "1",
+        ],
     )
-    assert result.exit_code != 0
-    assert "t-start" in result.output
+    assert result.exit_code == 0, result.output
 
 
 def test_cli_scan_and_sensitivity_forward_simulation_options(runner, tmp_path):

@@ -181,8 +181,8 @@ class BioNetGenModel:
         n_steps : int
             Number of output time steps.
         t_start : float
-            Start time for ODE, SSA, PLA, or PSA simulation. NF currently
-            supports only the default start time of zero.
+            Absolute start time for the simulation. NF uses this time for
+            time-dependent functions and output coordinates.
         rtol, atol : float
             Relative and absolute tolerances (ODE only).
         seed : int
@@ -349,12 +349,11 @@ class BioNetGenModel:
             )
 
         if method == "nf":
-            if t_start != 0.0:
-                raise ValueError("NF simulation currently supports only t_start=0.0")
             raw = _cpp.simulate_nf(
                 self._model,
                 t_end=t_end,
                 n_steps=n_steps,
+                t_start=t_start,
                 seed=seed,
                 verbose=verbose,
                 equilibrate=equilibrate,

@@ -306,6 +306,12 @@ void System::setUsingComplex(bool val)
 	}
 }
 
+void System::setCurrentTime(double time)
+{
+	current_time = time;
+	invalidateStepToCache();
+}
+
 void System::setOutputToBinary()
 {
 	this->useBinaryOutput = true;
@@ -1409,7 +1415,7 @@ void System::equilibrate(double duration)
 {
 	invalidateStepToCache();
 	double startTime = current_time;
-	stepTo(duration);
+	stepTo(startTime + duration);
 	current_time = startTime;
 	invalidateStepToCache();
 }

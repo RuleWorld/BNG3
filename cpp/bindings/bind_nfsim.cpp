@@ -48,9 +48,13 @@ void bind_nfsim(py::module_& m) {
                             int seed, double equilibrate, bool verbose,
                             const std::string& source_path,
                             const std::vector<double>& sample_times,
-                            int traversal_limit) -> py::dict {
-        if (t_end < 0.0) {
-            throw std::invalid_argument("t_end must be non-negative");
+                            int traversal_limit, double t_start) -> py::dict {
+        if (!std::isfinite(t_start) || !std::isfinite(t_end)) {
+            throw std::invalid_argument("t_start and t_end must be finite");
+        }
+        if (t_end < t_start) {
+            throw std::invalid_argument(
+                "t_end must be greater than or equal to t_start");
         }
         if (n_steps < 0 || (n_steps == 0 && sample_times.empty())) {
             throw std::invalid_argument(
@@ -69,11 +73,11 @@ void bind_nfsim(py::module_& m) {
         if (!output_times.empty()) {
             for (std::size_t index = 0; index < output_times.size(); ++index) {
                 const double time = output_times[index];
-                if (!std::isfinite(time) || time < 0.0 || time > t_end ||
+                if (!std::isfinite(time) || time < t_start || time > t_end ||
                     (index > 0 && time <= output_times[index - 1])) {
                     throw std::invalid_argument(
                         "sample_times must be finite, strictly increasing, "
-                        "and within [0, t_end]");
+                        "and within [t_start, t_end]");
                 }
             }
             if (output_times.back() < t_end) {
@@ -179,6 +183,11 @@ void bind_nfsim(py::module_& m) {
                       << effectiveTraversalLimit << "\n";
         }
 
+        // NFsim evaluates time-dependent functions against the system clock.
+        // Set the absolute API start before preparation so initial propensities
+        // and later output checkpoints use the same time origin.
+        system->setCurrentTime(t_start);
+
         // Step 5: Seed per-instance RNG (after system creation, before prepareForSimulation)
         if (seed > 0) {
             system->seedRNG(static_cast<unsigned long>(seed));
@@ -222,9 +231,9 @@ void bind_nfsim(py::module_& m) {
         {
             py::gil_scoped_release release;
             if (output_times.empty()) {
-                const double dt = t_end / static_cast<double>(n_steps);
-                double t_current = 0.0;
-                time_points.push_back(0.0);
+                const double dt = (t_end - t_start) / static_cast<double>(n_steps);
+                double t_current = t_start;
+                time_points.push_back(t_start);
                 record_observables();
                 for (int step = 1; step <= n_steps; ++step) {
                     // Match NFsim::sim's repeated checkpoint accumulation.
@@ -276,6 +285,7 @@ void bind_nfsim(py::module_& m) {
         py::arg("source_path") = "",
         py::arg("sample_times") = std::vector<double>{},
         py::arg("traversal_limit") = -1,
+        py::arg("t_start") = 0.0,
         "Run network-free (NFSim) simulation on a model.\n\n"
         "Returns a dict with 'time' (numpy array of time points) and\n"
         "'observables' (dict of name -> numpy array of values at each time point).");

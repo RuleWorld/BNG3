@@ -1340,10 +1340,10 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             throw std::runtime_error("NFsim does not support 'continue' option");
         }
 
-        const auto tStartText = stripQuotes(readArgument(action, "t_start", ""));
-        if (!tStartText.empty() && parseScalarValue(tStartText, model) != 0.0) {
-            throw std::runtime_error(
-                "NFsim action does not support non-zero 't_start' yet");
+        const auto tStartText = stripQuotes(readArgument(action, "t_start", "0"));
+        const double startTime = parseScalarValue(tStartText, model);
+        if (!std::isfinite(startTime)) {
+            throw std::runtime_error("NFsim 't_start' must be finite");
         }
         if (!stripQuotes(trim(readArgument(action, "nfsim_exec", ""))).empty()) {
             throw std::runtime_error(
@@ -1362,13 +1362,14 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             sampleTimes = parseSampleTimes(sampleTimesText, model);
         }
         const double endTime = parseScalarValue(tEnd, model);
-        if (!std::isfinite(endTime) || endTime < 0.0) {
-            throw std::runtime_error("NFsim 't_end' must be finite and non-negative");
+        if (!std::isfinite(endTime) || endTime < startTime) {
+            throw std::runtime_error(
+                "NFsim 't_end' must be finite and greater than or equal to t_start");
         }
         if (!sampleTimes.empty()) {
-            if (sampleTimes.front() < 0.0 || sampleTimes.back() > endTime) {
+            if (sampleTimes.front() < startTime || sampleTimes.back() > endTime) {
                 throw std::runtime_error(
-                    "NFsim sample_times must lie between 0 and t_end");
+                    "NFsim sample_times must lie between t_start and t_end");
             }
             if (sampleTimes.back() < endTime) {
                 sampleTimes.push_back(endTime);
@@ -1542,6 +1543,9 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             nfSystem->seedRNG(std::stoul(effectiveSeedText));
         }
 
+        // Match NFsim's absolute-start contract before preparation so generic
+        // time() functions and initial propensities see the requested clock.
+        nfSystem->setCurrentTime(startTime);
         nfSystem->registerOutputFileLocation(gdatPath.string());
         nfSystem->prepareForSimulation();
         if (!nfSystem->isOutputtingBinary()) {
@@ -1551,7 +1555,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             nfSystem->equilibrate(equilibration);
         }
         if (sampleTimes.empty()) {
-            nfSystem->sim(endTime, std::stol(nSteps), nfVerbose);
+            nfSystem->sim(endTime - startTime, std::stol(nSteps), nfVerbose);
         } else {
             for (const double sampleTime : sampleTimes) {
                 nfSystem->stepTo(sampleTime);

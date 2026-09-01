@@ -3118,6 +3118,45 @@ end reaction rules
     delete system;
 }
 
+TEST_CASE("NFsim equilibrate uses the absolute current time") {
+    // Source-derived from NFsim afad408606ee3e8f579ff50269d266bc66dae0b2:
+    // equilibrate receives a duration but must advance from the system's
+    // current absolute clock before restoring that clock.
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 100.0
+end parameters
+begin molecule types
+    B()
+end molecule types
+begin seed species
+    B() 0
+end seed species
+begin observables
+    Molecules B_total B()
+end observables
+begin reaction rules
+    R: 0 -> B() k
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(
+        *model, false, 1000, false, suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    system->seedRNG(1);
+    system->prepareForSimulation();
+
+    system->stepTo(1.0);
+    const auto before = system->getObservableByName("B_total")->getCount();
+    system->equilibrate(0.25);
+
+    CHECK(system->getCurrentTime() == Catch::Approx(1.0));
+    CHECK(system->getObservableByName("B_total")->getCount() > before);
+    delete system;
+}
+
 TEST_CASE("NFsim AST adapter maps time-backed local TFUN rates") {
     auto model = bng::parser::parseModel(R"(
 begin parameters

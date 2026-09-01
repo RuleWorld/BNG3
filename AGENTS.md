@@ -69,6 +69,12 @@ them pass by widening tolerances or hiding skips. The Python API is
   dependent functional propensities refresh; reserve `straightAdd`/
   `straightSubtract` for count-only initialization or rebuild paths. Keep the
   source-derived Issue86 rate-refresh test green.
+- NF absolute `t_start` is the simulation clock origin: set it before
+  `prepareForSimulation()`, pass `t_end - t_start` to duration-based NFsim
+  loops, keep direct-API/action sample times within `[t_start, t_end]`, and
+  make `equilibrate(duration)` advance from then restore the absolute clock.
+  Keep the source-derived Issue78 direct-API/action and equilibrate tests
+  green.
 - Energy-function ports must be source-anchored to the accepted
   `akutuva21/nfsim` energy-evaluation cutoff: PR #475, merge
   `6690fda5d9e053df822d0248ebae185f5caca82a`, source commit

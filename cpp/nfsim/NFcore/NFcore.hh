@@ -440,6 +440,8 @@ namespace NFcore
 			bool isOutputtingBinary() { return useBinaryOutput; };
 			double getCurrentTime() const { return current_time; };
 			double * getCurrentTimePtr() { return &current_time; };
+			/* Set the absolute simulation time before prepareForSimulation(). */
+			void setCurrentTime(double time);
 			int getGlobalMoleculeLimit() const { return globalMoleculeLimit; };
 
 			void setHasTimeDependentFunctions(bool val) { hasTimeDependentFunctions = val; }

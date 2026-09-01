@@ -36,7 +36,7 @@ def main():
     "--t-start",
     default=0.0,
     type=float,
-    help="Start time (ODE/SSA/PLA/PSA; NF requires zero).",
+    help="Absolute simulation start time.",
 )
 @click.option("--t-end", "-t", default=100.0, type=float, help="End time.")
 @click.option("--n-steps", "-n", default=100, type=int, help="Number of output steps.")

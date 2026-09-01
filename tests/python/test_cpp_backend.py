@@ -410,6 +410,43 @@ end model
         obs_values = next(iter(result["observables"].values()))
         assert len(obs_values) == 11
 
+    def test_nf_simulation_honors_absolute_start_time(self, tmp_path):
+        # Source-derived from NFsim test/Issue78/issue78.bngl and afad408:
+        # absolute start time must affect both the output axis and a generic
+        # time() function used as a reaction rate.
+        bngl = tmp_path / "issue78.bngl"
+        bngl.write_text("""
+begin model
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 0
+end seed species
+begin observables
+    Molecules Xtot X()
+end observables
+begin functions
+    stimulus() = time()
+end functions
+begin reaction rules
+    R: 0 -> X() stimulus()
+end reaction rules
+end model
+""")
+        model = bionetgen.load(str(bngl))
+        result = model.simulate(
+            method="nf",
+            t_start=100.0,
+            t_end=102.0,
+            n_steps=0,
+            sample_times=[100.0, 101.0, 102.0],
+            seed=1,
+        )
+
+        assert result.time.tolist() == pytest.approx([100.0, 101.0, 102.0])
+        assert result.observables["Xtot"][-1] > 100.0
+
     def test_nf_sampling_matches_nfsim_accumulated_output_grid(self, tmp_path):
         # Source-derived from NFsim System::sim: output checkpoints advance by
         # repeated dSampleTime addition, not by multiplying the step index.
@@ -690,7 +727,6 @@ end model
     @pytest.mark.parametrize(
         ("option", "value", "message"),
         [
-            ("t_start", "1", "t_start"),
             ("param", '"-unsupported_nf_flag"', "param"),
         ],
     )
@@ -835,6 +871,45 @@ end model
             if line and not line.startswith("#")
         ]
         assert [float(row[0]) for row in rows] == pytest.approx([0.0, 0.25, 0.75, 1.0])
+
+    def test_simulate_nf_action_honors_absolute_start_time(self, tmp_path):
+        # Source-derived from NFsim test/Issue78/issue78.bngl and afad408:
+        # action execution must preserve the absolute time axis and evaluate
+        # time() at that axis.
+        bngl = tmp_path / "issue78_action.bngl"
+        bngl.write_text("""
+begin model
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 0
+end seed species
+begin observables
+    Molecules Xtot X()
+end observables
+begin functions
+    stimulus() = time()
+end functions
+begin reaction rules
+    R: 0 -> X() stimulus()
+end reaction rules
+begin actions
+    simulate_nf({prefix=>"issue78",t_start=>100,t_end=>102,sample_times=>[100,101,102],seed=>1,print_functions=>1})
+end actions
+end model
+""")
+
+        bionetgen.load(str(bngl)).execute()
+
+        output = tmp_path / "issue78.gdat"
+        rows = [
+            line.split()
+            for line in output.read_text().splitlines()
+            if line and not line.startswith("#")
+        ]
+        assert [float(row[0]) for row in rows] == pytest.approx([100.0, 101.0, 102.0])
+        assert "stimulus" in output.read_text()
 
     def test_simulate_nf_action_outputs_global_functions(self, tmp_path):
         bngl = tmp_path / "nf_functions.bngl"
@@ -1125,8 +1200,8 @@ end model
             assert result.time[0] == pytest.approx(2.0)
             assert result.time[-1] == pytest.approx(4.0)
 
-        with pytest.raises(ValueError, match="t_start=0.0"):
-            model.simulate(method="nf", t_start=1.0, t_end=2.0, n_steps=1)
+        result = model.simulate(method="nf", t_start=1.0, t_end=2.0, n_steps=1, seed=1)
+        assert result.time.tolist() == pytest.approx([1.0, 2.0])
 
         with pytest.raises(
             ValueError, match="equilibrate must be finite and non-negative"
