@@ -1348,6 +1348,14 @@ std::string XmlWriter::writeMoleculeTypes(const ast::Model& model) {
                 xml << ">\n";
                 xml << "            <ListOfAllowedStates>\n";
                 for (const auto& state : comp.allowedStates) {
+                    // `?` is a pattern wildcard, not a constructible state.
+                    // NFinput::initMoleculeTypes ignores PLUS/MINUS while
+                    // classifying numeric sites, but treats an emitted `?`
+                    // as a string state and therefore changes the runtime
+                    // representation of inferred integer components.
+                    if (state == "?") {
+                        continue;
+                    }
                     xml << "              <AllowedState id=\"" << escapeXml(state) << "\"/>\n";
                 }
                 xml << "            </ListOfAllowedStates>\n";

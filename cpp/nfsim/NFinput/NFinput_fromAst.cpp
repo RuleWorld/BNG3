@@ -1358,15 +1358,24 @@ bool addMoleculeTypesFromAst(const bng::ast::Model& model, System* s,
                 bool hasNegativeInteger = false;
                 int maximumState = -1;
                 for (const auto& state : component.allowedStates) {
+                    // `?` is a pattern wildcard, never a constructible
+                    // state.  NFinput::initMoleculeTypes also keeps PLUS and
+                    // MINUS out of the string-state count so an otherwise
+                    // numeric component remains an integer site; they are
+                    // transition sentinels consumed by the rule builder.
+                    if (state == "?") {
+                        continue;
+                    }
                     int integerValue = 0;
                     if (parseIntegerState(state, integerValue)) {
                         hasIntegerState = true;
                         hasNegativeInteger = hasNegativeInteger || integerValue < 0;
                         maximumState = std::max(maximumState, integerValue);
                     } else {
-                        hasStringState = true;
                         if (state == "PLUS" || state == "MINUS") {
                             hasPlusMinusState = true;
+                        } else {
+                            hasStringState = true;
                         }
                     }
                 }
@@ -1391,6 +1400,9 @@ bool addMoleculeTypesFromAst(const bng::ast::Model& model, System* s,
                                   << "' are labels, not integer increments\n";
                     }
                     for (const auto& state : component.allowedStates) {
+                        if (state == "?") {
+                            continue;
+                        }
                         if (std::find(states.begin(), states.end(), state) == states.end()) {
                             states.push_back(state);
                         }
