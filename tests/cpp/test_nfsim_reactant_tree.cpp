@@ -88,6 +88,30 @@ TEST_CASE("NFsim CompactPartnerPool preserves source swap-removal indexing") {
     CHECK(pool.size() == 2);
 }
 
+TEST_CASE("NFsim MoleculeType retains pooled molecules across bulk removal") {
+    /* Source-derived from MoleculeList ownership: removeAllMolecules removes
+     * live entries from the fixed-capacity list, while MoleculeList remains
+     * responsible for deleting every preallocated object at destruction. */
+    NFcore::System system("MoleculeType bulk removal contract");
+    std::vector<std::string> componentNames {"site"};
+    auto* moleculeType = new NFcore::MoleculeType(
+        "BulkRemoval", componentNames, &system);
+
+    auto* first = moleculeType->genDefaultMolecule();
+    auto* second = moleculeType->genDefaultMolecule();
+    REQUIRE(first != nullptr);
+    REQUIRE(second != nullptr);
+    CHECK(moleculeType->getMoleculeCount() == 2);
+
+    moleculeType->removeAllMolecules();
+    CHECK(moleculeType->getMoleculeCount() == 0);
+
+    auto* recycled = moleculeType->genDefaultMolecule();
+    REQUIRE(recycled != nullptr);
+    CHECK(moleculeType->getMoleculeCount() == 1);
+    CHECK(recycled == first);
+}
+
 TEST_CASE("NFsim MoleculeType exposes one compact pool per component") {
     NFcore::System system("MoleculeType compact pool contract");
     std::vector<std::string> componentNames {"left", "right"};
