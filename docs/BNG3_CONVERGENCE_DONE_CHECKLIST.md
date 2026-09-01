@@ -76,10 +76,11 @@ completion gate.
 - [x] Historical semantic checkpoint `d502e47` passes the full local
   Release/Ninja CTest gate: `178/178` from `ctest --test-dir build
   --output-on-failure`, including the user-defined ODE-rate contract.
-- [ ] Current semantic checkpoint `4ea7157` has targeted observable/NetWriter
-  CTest coverage green (`6/6` selected tests; `20` assertions in the ODE
-  executable), but the full CTest gate must be rerun before another semantic
-  candidate is treated as current evidence.
+- [x] Current semantic checkpoint `4ea7157` passes the full local Release/Ninja
+  CTest gate: `180/180` from `ctest --test-dir build --output-on-failure`,
+  including the source-derived multi-pattern ODE and repeated-pattern NetWriter
+  contracts. This evidence qualifies `4ea7157` only; later semantic or
+  documentation heads require fresh exact-head readback.
 - [ ] Separate local Debug/ASan evidence has not yet been rerun for 5f6da07;
   prior 0f83347 evidence was supplemental memory-safety coverage, not a
   substitute for hosted sanitizer and leak/UBSan gates.
