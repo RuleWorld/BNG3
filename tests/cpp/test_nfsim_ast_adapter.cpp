@@ -4170,6 +4170,70 @@ TEST_CASE("NFsim energy function rejects non-factorized compact contexts") {
     CHECK(context.conditionalTerms.empty());
 }
 
+TEST_CASE("NFsim EnergyFunction expands source-derived Arrhenius rules") {
+    // Source-derived from NFsim f63d676 (test_energyPattern): the public
+    // EnergyFunction contract must retain pattern storage and calculate the
+    // forward/reverse Arrhenius rates for binding and state-change rules.
+    NFcore::EnergyFunction energy(0.5, 1.0);
+    CHECK(energy.getPhi() == Catch::Approx(0.5));
+    CHECK(energy.getRT() == Catch::Approx(1.0));
+    CHECK(energy.getNumPatterns() == 0);
+
+    NFcore::EnergyPatternInfo bindingPattern;
+    bindingPattern.id = "EP1";
+    bindingPattern.energyValue = -5.0;
+
+    NFcore::EpMolecule moleculeA;
+    moleculeA.typeName = "A";
+    moleculeA.xmlId = "m1";
+    moleculeA.components.push_back({"b", "m2", true, ""});
+
+    NFcore::EpMolecule moleculeB;
+    moleculeB.typeName = "B";
+    moleculeB.xmlId = "m2";
+    moleculeB.components.push_back({"a", "m1", true, ""});
+
+    bindingPattern.molecules = {moleculeA, moleculeB};
+    bindingPattern.bonds.push_back({0, 0, 1, 0});
+    energy.addEnergyPattern(bindingPattern);
+
+    CHECK(energy.getNumPatterns() == 1);
+    CHECK(energy.getPattern(0).id == "EP1");
+
+    const auto bindingRules = energy.expandBindingRule(
+        "Rxn1", 10.0, 0.5, "A", "b", "B", "a");
+    REQUIRE(bindingRules.size() == 2);
+    CHECK(bindingRules[0].name == "Rxn1_fwd");
+    CHECK(bindingRules[0].isForward);
+    CHECK(bindingRules[0].deltaG == Catch::Approx(-5.0));
+    CHECK(bindingRules[0].rate == Catch::Approx(std::exp(-7.5)));
+    CHECK(bindingRules[1].name == "Rxn1_rev");
+    CHECK_FALSE(bindingRules[1].isForward);
+    CHECK(bindingRules[1].deltaG == Catch::Approx(-5.0));
+    CHECK(bindingRules[1].rate == Catch::Approx(std::exp(-12.5)));
+
+    NFcore::EnergyPatternInfo statePattern;
+    statePattern.id = "EP2";
+    statePattern.energyValue = -3.0;
+    NFcore::EpMolecule moleculeC;
+    moleculeC.typeName = "C";
+    moleculeC.xmlId = "m3";
+    moleculeC.components.push_back({"p", "", false, "phos"});
+    statePattern.molecules.push_back(moleculeC);
+    energy.addEnergyPattern(statePattern);
+
+    const auto stateRules = energy.expandStateChangeRule(
+        "RxnState", 10.0, 0.5, "C", "p", "unphos", "phos");
+    REQUIRE(stateRules.size() == 2);
+    CHECK(stateRules[0].name == "RxnState_fwd");
+    CHECK(stateRules[0].deltaG == Catch::Approx(-3.0));
+    CHECK(stateRules[0].rate == Catch::Approx(std::exp(-8.5)));
+    CHECK(stateRules[1].name == "RxnState_rev");
+    CHECK_FALSE(stateRules[1].isForward);
+    CHECK(stateRules[1].deltaG == Catch::Approx(-3.0));
+    CHECK(stateRules[1].rate == Catch::Approx(std::exp(-11.5)));
+}
+
 TEST_CASE("NFsim AST adapter uses compact factorized energy evaluation") {
     auto model = bng::parser::parseModel(R"(
 begin parameters
