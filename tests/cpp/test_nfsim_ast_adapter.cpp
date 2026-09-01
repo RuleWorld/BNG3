@@ -187,6 +187,45 @@ end reaction rules
     delete system;
 }
 
+TEST_CASE("BNGL inferred integer states ignore wildcard and transition sentinels") {
+    // Source-derived from nfsim/test/AN_chemotaxis/an2.bngl: an inferred
+    // integer component is matched with m~?, then advanced with m~PLUS or
+    // m~MINUS.  NFinput::initMoleculeTypes treats those three tokens as
+    // pattern/transition syntax, not as string-valued molecule states.
+    auto model = bng::parser::parseModel(R"(
+begin seed species
+    A(m~3) 1
+end seed species
+begin observables
+    Molecules A0 A(m~0)
+    Molecules A8 A(m~8)
+end observables
+begin reaction rules
+    A(m~?) -> A(m~PLUS) 1
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    REQUIRE(model->getMoleculeTypes().size() == 1);
+    REQUIRE(model->getMoleculeTypes().front().getComponents().size() == 1);
+    const auto& component = model->getMoleculeTypes().front().getComponents().front();
+    CHECK(component.allowedStates ==
+          std::vector<std::string> {"3", "0", "8", "?", "PLUS"});
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(
+        *model, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    auto* moleculeType = system->getMoleculeTypeByName("A");
+    REQUIRE(moleculeType != nullptr);
+    CHECK(moleculeType->isIntegerComponent(0));
+    CHECK(moleculeType->getPossibleCompStates().at(0) ==
+          std::vector<std::string> {"0", "1", "2", "3", "4", "5", "6", "7", "8"});
+    CHECK(moleculeType->getStateValueFromName(0, "3") == 3);
+    CHECK(moleculeType->getStateValueFromName(0, "8") == 8);
+    delete system;
+}
+
 TEST_CASE("BNGL parser keeps the historical NFsim t4 gap explicit") {
     // Source-derived from nfsim/test/testSuite/t4.bngl.  The historical
     // preliminary fixture uses an observable state counter (sum(m)), dollar
