@@ -67,6 +67,36 @@ TEST_CASE("OdeIntegrator rejects malformed stop conditions", "[OdeOptions]") {
         Catch::Matchers::ContainsSubstring("stop_if"));
 }
 
+TEST_CASE("OdeIntegrator evaluates user-defined function rates", "[OdeOptions]") {
+    // Source-derived from akutuva21/bionetgen PR #508 head e67850cf and
+    // PR #509 head 5cf5cd47: function-name matching is an allocation-sensitive
+    // compile path, but must retain the user-defined rate contract.
+    auto model = parser::parseModel(R"(
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 1
+end seed species
+begin functions
+    rate() = 2
+end functions
+begin reaction rules
+    X() -> 0 rate
+end reaction rules
+)");
+
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    engine::OdeIntegrator integrator(*model, network);
+
+    double state[] = {1.0};
+    double derivatives[] = {0.0};
+    integrator.derivs(0.0, state, derivatives);
+
+    REQUIRE_THAT(derivatives[0], Catch::Matchers::WithinAbs(-2.0, 1e-12));
+}
+
 TEST_CASE("CVODE honors steady-state stopping", "[OdeOptions]") {
     auto model = parseDecayModel();
     engine::NetworkGenerator generator(*model);

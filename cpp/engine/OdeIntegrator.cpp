@@ -7,6 +7,7 @@
 #include <random>
 #include <sstream>
 #include <stdexcept>
+#include <string_view>
 
 #include "parser/antlr_compat.hpp"
 #include "antlr4-runtime.h"
@@ -119,6 +120,37 @@ bool hasWordBoundaryMatch(const std::string& text, const std::string& target) {
     return false;
 }
 
+bool hasWordBoundaryMatchCaseInsensitive(std::string_view text, std::string_view target) {
+    if (target.empty() || text.length() < target.length()) {
+        return false;
+    }
+
+    for (std::size_t i = 0; i <= text.length() - target.length(); ++i) {
+        bool match = true;
+        for (std::size_t j = 0; j < target.length(); ++j) {
+            if (std::tolower(static_cast<unsigned char>(text[i + j])) !=
+                std::tolower(static_cast<unsigned char>(target[j]))) {
+                match = false;
+                break;
+            }
+        }
+        if (!match) {
+            continue;
+        }
+
+        const bool leftBoundary =
+            i == 0 || (!std::isalnum(static_cast<unsigned char>(text[i - 1])) && text[i - 1] != '_');
+        const bool rightBoundary =
+            i + target.length() == text.length() ||
+            (!std::isalnum(static_cast<unsigned char>(text[i + target.length()])) &&
+             text[i + target.length()] != '_');
+        if (leftBoundary && rightBoundary) {
+            return true;
+        }
+    }
+    return false;
+}
+
 } // anonymous namespace
 
 
@@ -168,6 +200,18 @@ void OdeIntegrator::compile() {
                 }
             }
         }
+    }
+
+    // Precompute lowercase function names once instead of allocating and
+    // transforming them for every reaction/function pair.
+    std::vector<std::string> lowerFuncNames;
+    lowerFuncNames.reserve(model_.getFunctions().size());
+    for (const auto& func : model_.getFunctions()) {
+        std::string name = func.getName();
+        std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+        lowerFuncNames.push_back(std::move(name));
     }
 
     std::size_t rxnIndex = 0;
@@ -467,12 +511,24 @@ void OdeIntegrator::compile() {
         bool isFunctional = crxn.isFunctional;  // May already be set by Sat/MM/Hill
         const auto& rateExpr = rxn.getRateExpression();
 
-        if (!isFunctional && rateExpr.has_value()) {
-            std::string rateLawLower = rawRateLaw;
-            std::transform(rateLawLower.begin(), rateLawLower.end(), rateLawLower.begin(), ::tolower);
+        std::string lowerRawRL;
+        bool lowerRawRLPopulated = false;
+        const auto ensureLowerRawRL = [&]() {
+            if (lowerRawRLPopulated) {
+                return;
+            }
+            lowerRawRL = rawRateLaw;
+            std::transform(lowerRawRL.begin(), lowerRawRL.end(), lowerRawRL.begin(), [](unsigned char c) {
+                return static_cast<char>(std::tolower(c));
+            });
+            lowerRawRLPopulated = true;
+        };
 
-            if (rateLawLower.find("time") != std::string::npos ||
-                hasWordBoundaryMatch(rateLawLower, "t")) {
+        if (!isFunctional && rateExpr.has_value()) {
+            ensureLowerRawRL();
+
+            if (lowerRawRL.find("time") != std::string::npos ||
+                hasWordBoundaryMatch(lowerRawRL, "t")) {
                 isFunctional = true;
             } else {
                 // Check for observable dependencies
@@ -488,17 +544,16 @@ void OdeIntegrator::compile() {
             // --- Bug 2 fix: Check for user-defined function references ---
             std::string matchedFuncName;
             if (!isFunctional) {
-                const std::string rawRL = rxn.getRateLaw();
+                std::size_t functionIndex = 0;
                 for (const auto& func : model_.getFunctions()) {
                     const auto& fname = func.getName();
-                    std::string fnameLower = fname;
-                    std::transform(fnameLower.begin(), fnameLower.end(), fnameLower.begin(), ::tolower);
-                    if (hasWordBoundaryMatch(rateLawLower, fnameLower) ||
-                        hasWordBoundaryMatch(rawRL, fname)) {
+                    if (hasWordBoundaryMatchCaseInsensitive(rawRateLaw, lowerFuncNames[functionIndex]) ||
+                        hasWordBoundaryMatch(rawRateLaw, fname)) {
                         isFunctional = true;
                         matchedFuncName = fname;
                         break;
                     }
+                    ++functionIndex;
                 }
             }
 
@@ -527,19 +582,16 @@ void OdeIntegrator::compile() {
         // Bug 2 fix: Also check for user-defined function references OUTSIDE the rateExpr block
         // This catches cases where rateExpr is nullopt but the rate law string references a function
         if (!crxn.isFunctional) {
-            const std::string rawRL = rxn.getRateLaw();
-            std::string rlLow = rawRL;
-            std::transform(rlLow.begin(), rlLow.end(), rlLow.begin(), ::tolower);
+            std::size_t functionIndex = 0;
             for (const auto& func : model_.getFunctions()) {
-                std::string fnameLow = func.getName();
-                std::transform(fnameLow.begin(), fnameLow.end(), fnameLow.begin(), ::tolower);
-                if (hasWordBoundaryMatch(rlLow, fnameLow) || hasWordBoundaryMatch(rawRL, func.getName())) {
+                if (hasWordBoundaryMatchCaseInsensitive(rawRateLaw, lowerFuncNames[functionIndex]) ||
+                    hasWordBoundaryMatch(rawRateLaw, func.getName())) {
                     crxn.isFunctional = true;
                     // Parse the full rate law string into an expression so that
                     // compound expressions like "k * funcName()" are preserved.
                     ast::Expression funcExpr2 = ast::Expression::number(0.0);
                     try {
-                        funcExpr2 = parser::parseExpression(rawRL);
+                        funcExpr2 = parser::parseExpression(rawRateLaw);
                     } catch (...) {
                         // Fallback: use bare identifier if parsing fails
                         funcExpr2 = ast::Expression::identifier(func.getName());
@@ -560,6 +612,7 @@ void OdeIntegrator::compile() {
                     hasFunctionalRates_ = true;
                     break;
                 }
+                ++functionIndex;
             }
         }
 
