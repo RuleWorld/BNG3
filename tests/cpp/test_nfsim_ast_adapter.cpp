@@ -3455,6 +3455,62 @@ end reaction rules
     delete system;
 }
 
+TEST_CASE("NFsim compact energy refreshes rate factor after endpoint change") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    phi 0.5
+    Gcontext 1.0
+    RT 1.0
+end parameters
+begin molecule types
+    A(b,c)
+    B(a)
+    C(x)
+end molecule types
+begin seed species
+    A(b,c!1).C(x!1) 1
+    A(b) 1
+    B(a) 1
+end seed species
+begin energy patterns
+    A(b!1,c!2).B(a!1).C(x!2) Gcontext
+end energy patterns
+begin reaction rules
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    auto* reaction = dynamic_cast<NFcore::EnergyRxnClass*>(
+        system->getReaction(0));
+    REQUIRE(reaction != nullptr);
+    auto* aType = system->getMoleculeTypeByName("A");
+    REQUIRE(aType != nullptr);
+    auto* weighted = aType->getMolecule(0);
+    REQUIRE(weighted != nullptr);
+
+    system->prepareForSimulation();
+    const int reactionIndex = aType->getRxnIndex(reaction, 0);
+    const int mappingId = weighted->getRxnListMappingId(reactionIndex);
+    REQUIRE(mappingId >= 0);
+    CHECK(reaction->get_a() == Catch::Approx(1.0 + std::exp(-0.5)));
+
+    const double oldA = reaction->get_a();
+    NFcore::Molecule::unbind(weighted, aType->getCompIndexFromName("c"));
+    reaction->notifyRateFactorChange(weighted, 0, mappingId);
+    const double newA = reaction->update_a();
+    system->update_A_tot(reaction, oldA, newA);
+
+    CHECK(newA == Catch::Approx(2.0));
+    CHECK(reaction->getCompactPartnerPoolCoefficient() == Catch::Approx(2.0));
+    CHECK(reaction->get_a() == Catch::Approx(newA));
+    delete system;
+}
+
 TEST_CASE("NFsim compact energy stale binding is a null event") {
     auto model = bng::parser::parseModel(R"(
 begin parameters
