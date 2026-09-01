@@ -13,6 +13,7 @@
 #include "NFinput.hh"
 #include "NFcore.hh"
 #include "NFcore/energyPattern.hh"
+#include "NFreactions/reactions/reaction.hh"
 #include "compartment.hh"
 #include "NFfunction/NFfunction.hh"
 #include "ast/Function.hpp"
@@ -3231,4 +3232,43 @@ TEST_CASE("NFsim energy function rejects non-factorized compact contexts") {
     NFcore::EnergyBindingContext context;
     CHECK_FALSE(energy.getBindingContext("A", "b", "B", "a", context));
     CHECK(context.conditionalTerms.empty());
+}
+
+TEST_CASE("NFsim AST adapter uses compact factorized energy evaluation") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    phi 0.5
+    Gcontext 1.0
+    RT 1.0
+end parameters
+begin molecule types
+    A(b,c)
+    B(a)
+    C(x)
+end molecule types
+begin seed species
+    A(b,c!1).C(x!1) 1
+    B(a) 1
+end seed species
+begin energy patterns
+    A(b!1,c!2).B(a!1).C(x!2) Gcontext
+end energy patterns
+begin reaction rules
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 2);
+    CHECK(system->getReaction(0)->getRxnType() == NFcore::ReactionClass::DOR_RXN);
+    CHECK(dynamic_cast<NFcore::EnergyRxnClass*>(system->getReaction(0)) != nullptr);
+
+    system->prepareForSimulation();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(std::exp(-0.5)));
+    CHECK(system->getReaction(1)->get_a() == Catch::Approx(0.0));
+    delete system;
 }
