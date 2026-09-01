@@ -87,3 +87,21 @@ TEST_CASE("NFsim CompactPartnerPool preserves source swap-removal indexing") {
     CHECK(pool.getByIndex(0) == third);
     CHECK(pool.size() == 2);
 }
+
+TEST_CASE("NFsim MoleculeType exposes one compact pool per component") {
+    NFcore::System system("MoleculeType compact pool contract");
+    std::vector<std::string> componentNames {"left", "right"};
+    auto* moleculeType = new NFcore::MoleculeType(
+        "PoolOwner", componentNames, &system);
+
+    auto* left = moleculeType->getOrCreateCompactPartnerPool(0);
+    auto* leftAgain = moleculeType->getOrCreateCompactPartnerPool(0);
+    auto* right = moleculeType->getOrCreateCompactPartnerPool(1);
+
+    REQUIRE(left != nullptr);
+    CHECK(leftAgain == left);
+    REQUIRE(right != nullptr);
+    CHECK(right != left);
+    CHECK(moleculeType->getOrCreateCompactPartnerPool(-1) == nullptr);
+    CHECK(moleculeType->getOrCreateCompactPartnerPool(2) == nullptr);
+}

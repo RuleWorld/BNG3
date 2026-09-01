@@ -94,6 +94,7 @@ namespace NFcore
 	//                           think of these as regular expressions for molecule comparison */
 
 	class ReactionClass; /* defines a reaction class, (in other words, a rxn rule) */
+	class CompactPartnerPool;
 
 	class Observable;  /* object that moniters counts of things we want to keep track of */
 
@@ -816,6 +817,7 @@ namespace NFcore
 			//Functions to generate molecules, remove molecules at the beginning
 			//or during a running simulation
 			Molecule *genDefaultMolecule(Compartment *c = 0);
+			CompactPartnerPool *getOrCreateCompactPartnerPool(int componentIndex);
 
 			void removeAllMolecules();
 
@@ -953,6 +955,7 @@ namespace NFcore
 
 			vector <ReactionClass *> reactions; /* List of reactions that this type can be involved with */
 			vector <int> reactionPositions;   /* the position in the reaction for this type of molecule */
+			vector <CompactPartnerPool *> compactPartnerPools;
 
 			vector <int> indexOfDORrxns;
 
