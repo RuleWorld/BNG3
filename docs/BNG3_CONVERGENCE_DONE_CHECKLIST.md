@@ -4,8 +4,8 @@
 **Last audited:** 2026-09-01
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 464bd8d8822ec1077fca0a1ae07eb5829b48e1a1
-**Checklist refresh base:** 464bd8d (refresh after each semantic checkpoint)
+**Audited semantic code head:** 2940a021b6dad33894f93f8fdf405090e2a79b1f
+**Checklist refresh base:** 2940a02 (refresh after each semantic checkpoint)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -47,16 +47,16 @@ completion gate.
 
 - [x] Required fast-forward pull completed before this documentation change.
 - [x] The latest pushed semantic checkpoint is
-  464bd8d8822ec1077fca0a1ae07eb5829b48e1a1; this checklist refresh is a
+  2940a021b6dad33894f93f8fdf405090e2a79b1f; this checklist refresh is a
   documentation-only checkpoint layered after it and does not alter its
   semantic test evidence.
 - [x] The small documentation grammar fix remains the only unrelated tracked
   BNG3 worktree modification. It remains intentionally unstaged and must not
   be mixed into semantic or checklist commits.
-- [x] Exact-head CTest passes `143/143` on 464bd8d (local Release/Ninja
+- [x] Exact-head CTest passes `144/144` on 2940a02 (local Release/Ninja
   build; `ctest --test-dir build --output-on-failure`).
-- [x] The full NFsim AST adapter executable passes 95 test cases and 924
-  assertions on 464bd8d, including compact energy evaluation, cached compact
+- [x] The full NFsim AST adapter executable passes 96 test cases and 942
+  assertions on 2940a02, including compact energy evaluation, cached compact
   rate factors, specialized reverse propensities, sparse selector ordering,
   cached single- and multi-term Arrhenius factors, direct-product endpoint
   identity propagation, safe direct-product traversal, cached pre-fire binding
@@ -64,6 +64,7 @@ completion gate.
   partner refresh, shared partner-pool updates, dense and sparse type-invariant
   membership decisions, deferred weighted-side propensity capture,
   endpoint-refined membership refresh decisions, materialized fallback,
+  all-forward compact partner-pool refresh early return,
   pure-context homodimer/trimer/scaffold counting,
   transformed homodimer binding multiplicity, and pure DOR context counting.
 - [ ] Exact-head Python/API and package tests must be rerun and recorded for
@@ -79,9 +80,9 @@ completion gate.
   environment and must not be treated as parity.
 - [ ] A clean, no-build-isolation wheel is rebuilt and installed into a
   separate target for this exact head. The prior 7e91acc macOS wheel smoke is
-  historical evidence only; it is not evidence for 464bd8d.
+  historical evidence only; it is not evidence for 2940a02.
 - [ ] Hosted PR checks for the exact current semantic head
-  `464bd8d8822ec1077fca0a1ae07eb5829b48e1a1` are currently queued or in
+  `2940a021b6dad33894f93f8fdf405090e2a79b1f` are currently queued or in
   progress and have
   not yet produced a complete terminal set across the C++ matrix, Python
   matrix, ASan, integration, validation, package smoke, formatter, and
@@ -350,7 +351,7 @@ completion gate.
   Current checkpoints are `b9ab125`, `2b1c02f`, `92543ca`, `6ed6e97`,
   `a77ceb8`, `b8f44e4`, `4a2fc3e`, `738c881`, `6b6e246`, `bd29714`,
   `401becf`, `6c681269`, `a97c02e`, `7b2a199`, `dbadea6`, `c0d1bb5`,
-  `bb3ae01432adfd8bb92240af3e1e947e49b017ee`, and `464bd8d`.
+  `bb3ae01432adfd8bb92240af3e1e947e49b017ee`, `464bd8d`, and `2940a02`.
 - [x] BNG3 carries the compact `EnergyBindingContext` and mapping-local
   `EnergyRxnClass` path for supported contexts while retaining legacy
   materialized expansion for unsupported topologies.
@@ -389,6 +390,15 @@ completion gate.
   full-mask case retains the source fallback (`464bd8d`; the compact
   factorized-energy fixture passes 49 assertions in
   `tests/cpp/test_nfsim_ast_adapter.cpp`).
+- [x] BNG3 carries the source-derived all-forward compact partner-pool early
+  return from NFsim commit `fd01d015ea70552fe2196a1029317ac8f08674fe`:
+  when every candidate reaction uses the shared compact pool, only that pool's
+  registered reactions are refreshed before returning from generic membership
+  scanning (`2940a02`; the direct AST fixture passes 18 assertions in
+  `tests/cpp/test_nfsim_ast_adapter.cpp`). The fixture uses bidirectional
+  energy rules because the current direct AST Arrhenius helper requires a
+  bidirectional rule; one-way direct-AST energy mapping remains an explicit
+  unsupported gap.
 - [ ] Port and test the remaining supported CPU evaluator slices from the
   merged NFSIM source: the broader full incremental-membership machinery and
   the remaining direct-product path.
@@ -404,7 +414,8 @@ completion gate.
   propensity accounting at `6c681269`, sparse selector integration at
   `a97c02e`, reverse specialization at `dbadea6`, partner endpoint/indexed
   decision refresh at `bb3ae014`, pure-context counting at `bb14a207`, and
-  sparse membership-decision indexing at `fbfda3f`;
+  sparse membership-decision indexing at `fbfda3f`, and all-forward compact-pool
+  early return at `2940a02` from NFsim `fd01d015`;
   the other listed slices remain open.
   Preserve BNG3 lifecycle and direct-AST adapters while porting.
 - [ ] Compare compact and fallback event semantics against an independently
@@ -541,10 +552,10 @@ completion gate.
 ### 8.1 CI truthfulness
 
 - [ ] Current exact semantic PR head
-  `464bd8d8822ec1077fca0a1ae07eb5829b48e1a1` has a complete terminal hosted
+  `2940a021b6dad33894f93f8fdf405090e2a79b1f` has a complete terminal hosted
   check set for C++, Python, validation, integration, formatting, ASan, and
   CodeQL. Exact run links and terminal results must be recorded with `gh`;
-  older `a97c02e` and earlier runs are not evidence for this head. The
+  older `464bd8d` and earlier runs are not evidence for this head. The
   documentation refresh head will also need a fresh exact-head check set.
 - [ ] Every required job emits a terminal summary with counts, failures,
   skips, exception budget, corpus/source revision, and artifact digests.
@@ -698,8 +709,11 @@ These are known unchecked requirements, not reasons to claim completion:
   endpoint/decision refresh (`bb3ae014`), source-derived pure-context
   complex counting (`bb14a207`), sparse type-invariant membership-decision
   indexing (`fbfda3f`), and endpoint-refined membership refresh decisions
-  from NFsim commit `ced6f60` (`464bd8d`). Merged NFSIM PR #475 full
-  incremental-membership
+  from NFsim commit `ced6f60` (`464bd8d`), and all-forward compact partner-pool
+  early return from NFsim commit `fd01d015` (`2940a02`). The direct-AST energy
+  fixture documents that one-way Arrhenius rules currently do not reach the
+  compact energy helper because it requires bidirectionality. Merged NFSIM PR
+  #475 full incremental-membership
   semantics, remaining direct-product parity, independent energy parity,
   benchmark provenance, and source reconciliation are still open.
 - cpp/nfsim/nauty24 and the NFsim ExprTk path remain in the build; the
