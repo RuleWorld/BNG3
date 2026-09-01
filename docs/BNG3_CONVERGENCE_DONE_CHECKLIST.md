@@ -4,8 +4,8 @@
 **Last audited:** 2026-09-01
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 4edf4df57f01d22f15d83ee6635b82e974b0e6dc
-**Checklist refresh base:** 4edf4df (source-derived MacroBNGModel transform/link checkpoint; refresh after each checkpoint)
+**Audited semantic code head:** 88f4e548ed8b7ef43cfc57aa62ad7b7914205613
+**Checklist refresh base:** 88f4e54 (source-derived sparse-selector cached-propensity checkpoint; refresh after each checkpoint)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -65,14 +65,22 @@ completion gate.
   `ead6b8e1513f819ec91571aa0e5ead49aa119a8c`; it includes the source-derived
   cBNGL compartment-deduplication regression and is the exact public branch
   head read back with `gh api` before the Macro checkpoint.
-- [x] The latest local semantic checkpoint is
+- [x] The previous local semantic checkpoint is
   `4edf4df57f01d22f15d83ee6635b82e974b0e6dc`; it completes the previously
   unlinked `MacroBNGModel::trans_specie` source port, wires the source
   `pre_rules`/`pre_obs1` pipeline, and ports the accepted `num_site`
   allocation rewrite. Its source-derived Macro contract passes in
   `tests/cpp/test_network_generator.cpp`.
-- [x] The latest public code/test checkpoint is
+- [x] The previous public code/test checkpoint is
   `4edf4df57f01d22f15d83ee6635b82e974b0e6dc`; `gh api` and `gh pr view 2`
+  agreed on the exact public branch/PR head before this semantic checkpoint.
+- [x] The latest local semantic checkpoint is
+  `88f4e548ed8b7ef43cfc57aa62ad7b7914205613`; it ports the accepted NFsim
+  `4bb24b3119684e9ec6e870bb4b517866e2aa15a4` cached-old-propensity lookup
+  for implicit sparse selector batches and adds a source-derived fired-event
+  regression in `tests/cpp/test_nfsim_ast_adapter.cpp`.
+- [x] The latest public code/test checkpoint is
+  `88f4e548ed8b7ef43cfc57aa62ad7b7914205613`; `gh api` and `gh pr view 2`
   agree on the exact public branch/PR head after push.
 - [x] Historical published CI-repair checkpoint is
   `9a2475a0af360d685dc41eb9bb376f6517d74b4d`; `gh api` and `gh pr view 2`
@@ -117,6 +125,14 @@ completion gate.
   `240 passed, 27 skipped, 8 warnings` in `11.81s`. These local results do
   not substitute for terminal hosted checks or independent full-corpus
   parity.
+- [x] Exact-head local gates pass at `88f4e54`: `ctest --test-dir build
+  --output-on-failure` reports `100% tests passed out of 184`, including the
+  source-derived cached sparse-selector batch contract;
+  `PYTHONPATH=build/cpp:python python -m pytest tests/python -q` reports
+  `240 passed, 27 skipped, 8 warnings` in `11.28s`; and
+  `PYTHONPATH=build/cpp:python python -m pytest tests/test_ci_contract.py -q`
+  reports `7 passed`. These local results do not substitute for terminal
+  hosted checks or independent full-corpus parity.
 - [x] Diagnostic independent BNG2 execution is now available from an isolated
   clone of source revision `fde0cd6a522c9f988d5495db31c70ce0f98e744b` using
   the repository's `bng2/Makefile`; the arm64 `run_network` artifact has
@@ -769,6 +785,13 @@ completion gate.
   reactions: active propensity bits, block prefix sums, cached sparse
   propensities, indexed updates, and shared compact-pool scale groups
   (`a97c02e`; `tests/cpp/test_nfsim_ast_adapter.cpp`, 51 assertions).
+- [x] BNG3 carries the accepted NFsim `4bb24b3119684e9ec6e870bb4b517866e2aa15a4`
+  sparse-batch refinement: indexed sparse updates use the selector's cached
+  pre-update propensity instead of rereading a post-event `get_a()` value.
+  The source-derived fired-event regression is
+  `NFsim sparse selector reuses cached propensities in implicit batches` in
+  `tests/cpp/test_nfsim_ast_adapter.cpp`, implemented at `88f4e54` and green
+  in the exact-head `184/184` CTest gate.
 - [x] BNG3 carries source-derived compact reverse propensity specialization
   and factorization guards (`dbadea6`), plus indexed cross-type partner
   endpoint propagation and a dense type-invariant membership-decision cache
@@ -856,7 +879,8 @@ completion gate.
   at `6b6e246`, cached simple pre-fire binding rejection at `bd29714`, and
   candidate bitset/mapping-slot indexing at `401becf`, deferred multi-product
   propensity accounting at `6c681269`, sparse selector integration at
-  `a97c02e`, reverse specialization at `dbadea6`, partner endpoint/indexed
+  `a97c02e`, cached implicit sparse-batch old-propensity reuse at `88f4e54`
+  (NFsim `4bb24b3`), reverse specialization at `dbadea6`, partner endpoint/indexed
   decision refresh at `bb3ae014`, pure-context counting at `bb14a207`, and
   sparse membership-decision indexing at `fbfda3f`, and all-forward compact-pool
   early return at `2940a02` from NFsim `fd01d015`, compact sorted/inline
@@ -1062,6 +1086,17 @@ completion gate.
   were queued for this exact SHA. Queued or partial results are not
   completion evidence; the next checklist documentation head requires a
   fresh exact-head readback.
+- [ ] Current public semantic checkpoint
+  `88f4e548ed8b7ef43cfc57aa62ad7b7914205613` has not yet acquired a terminal
+  hosted check set. At exact-head readback, CI run
+  [33572711786](https://github.com/RuleWorld/BNG3/actions/runs/33572711786),
+  formatting patch run
+  [33572711779](https://github.com/RuleWorld/BNG3/actions/runs/33572711779),
+  and CodeQL run
+  [33572711794](https://github.com/RuleWorld/BNG3/actions/runs/33572711794)
+  were queued for this exact SHA. Queued or partial results are not
+  completion evidence; the next checklist documentation head requires a
+  fresh exact-head readback.
 - [ ] Every required job emits a terminal summary with counts, failures,
   skips, exception budget, corpus/source revision, and artifact digests.
 - [ ] Required jobs fail when a claimed oracle, corpus, validator, or compiler
@@ -1210,7 +1245,8 @@ These are known unchecked requirements, not reasons to claim completion:
   single-/multi-term Arrhenius rate factors (`6b6e246`), cached simple pre-fire
   binding rejection (`bd29714`), candidate bitset/mapping-slot indexing
   (`401becf`), deferred multi-product propensity accounting (`6c681269`),
-  sparse selector integration (`a97c02e`), indexed cross-type partner
+  sparse selector integration (`a97c02e`) and cached implicit sparse-batch
+  old-propensity reuse (`88f4e54`, source `4bb24b3`), indexed cross-type partner
   endpoint/decision refresh (`bb3ae014`), source-derived pure-context
   complex counting (`bb14a207`), sparse type-invariant membership-decision
   indexing (`fbfda3f`), and endpoint-refined membership refresh decisions
