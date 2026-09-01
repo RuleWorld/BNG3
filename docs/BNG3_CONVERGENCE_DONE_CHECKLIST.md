@@ -10,9 +10,11 @@
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
 6690fda5d9e053df822d0248ebae185f5caca82a; accepted energy-source cutoff
-3b046fc1b9f76719d92be22279b24992cdae7c35. The current public NFsim checkout
-is a6f9fa945c9d6e1e122e789c952260112c93f157; later non-energy source changes
-are not silently included in the BNG3 port.
+3b046fc1b9f76719d92be22279b24992cdae7c35. The public
+`akutuva21/nfsim` fork currently has master at
+`c51c7a34128d188189485bd318aeae4d936bcb29` (observed 2026-09-01); later
+non-energy PRs #476 and #477 are deliberately not silently included in the
+BNG3 port.
 
 This is the execution checklist for the BNG3 convergence goal. It turns the
 completion charter and Section 11 of BNG3_INTEGRATION_PLAN.md into auditable
@@ -439,6 +441,14 @@ completion gate.
 - [x] The merged `akutuva21/nfsim` energy-evaluation source is pinned for this
   work: PR #475, merge `6690fda5d9e053df822d0248ebae185f5caca82a`, accepted
   energy-source cutoff `3b046fc1b9f76719d92be22279b24992cdae7c35`.
+- [x] The accepted PR #475 source is already reconciled equivalently in BNG3:
+  the compact evaluator, partner-pool scale groups, and direct-selector
+  integration are represented by the source-derived BNG3 checkpoints through
+  `a97c02e`, with the corresponding AST/lifecycle/RNG adaptations retained.
+  A file-level comparison against the accepted NFsim cutoff found no missing
+  PR #475 implementation that should be merged wholesale. This closes source
+  incorporation only; independent native-NFsim parity, benchmark provenance,
+  and the remaining evaluator slices below remain open.
 - [x] Source-derived BNG3 tests define compact binding-context extraction,
   rejection of duplicate weighted molecule topologies, compact conjunction
   masks, factorized runtime propensity evaluation, shared partner-pool
