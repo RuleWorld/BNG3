@@ -4,8 +4,8 @@
 **Last audited:** 2026-09-01
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** d502e4798ff0f24f469a2c0a29fd0b13d793f083
-**Checklist refresh base:** d502e47 (source-derived ODE function-match allocation checkpoint; refresh after each checkpoint)
+**Audited semantic code head:** 4ea7157acbed00467f3e93ac6155d6c39486169a
+**Checklist refresh base:** 4ea7157 (source-derived observable-pattern preparse checkpoint; refresh after each checkpoint)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -49,17 +49,17 @@ completion gate.
 
 - [x] Required fast-forward pull completed before this documentation change.
 - [x] The latest local semantic checkpoint is
-  `d502e4798ff0f24f469a2c0a29fd0b13d793f083`; its parent
-  `2d69b99d11c29c38e5c0ea78db98b2f1c43c8fa8` is the boolean-parser
-  allocation checkpoint. `d502e47` ports the allocation-sensitive portion of
-  source `akutuva21/bionetgen` Bolt PR heads #508/#509: lowercase function
-  names are prepared once and raw rate-law matching uses a zero-copy
-  case-insensitive boundary scan. Existing user-defined ODE rate semantics
-  remain unchanged; source/parser case semantics are not broadened.
+  `4ea7157acbed00467f3e93ac6155d6c39486169a`; its parent
+  `d502e4798ff0f24f469a2c0a29fd0b13d793f083` is the ODE function-match
+  allocation checkpoint. `4ea7157` ports source `akutuva21/bionetgen`
+  commit `60ac7e5f`: observable patterns and quantifier metadata are prepared
+  once per observable, with cached graphs reused by ODE matching and NetWriter
+  group emission. Source-derived multi-pattern ODE and `.net` group contracts
+  pass; no observable semantics were intentionally broadened.
 - [x] The latest public code/test checkpoint is
-  `d502e4798ff0f24f469a2c0a29fd0b13d793f083`, whose parent is
-  `2d69b99d11c29c38e5c0ea78db98b2f1c43c8fa8`; it adds the source-derived ODE
-  function-match allocation change and its user-defined-rate contract remains
+  `4ea7157acbed00467f3e93ac6155d6c39486169a`, whose parent is
+  `d502e4798ff0f24f469a2c0a29fd0b13d793f083`; it adds the source-derived
+  observable-pattern preparse/cache change and targeted behavior remains
   green.
 - [x] The latest published CI-repair checkpoint is
   `9a2475a0af360d685dc41eb9bb376f6517d74b4d`; `gh api` and `gh pr view 2`
@@ -73,11 +73,13 @@ completion gate.
   compartment-aware dedup contract, compact ODE derivative contract, empty
   graph, exact Node serialization, t4 rejection contract, inferred-state/
   type-order gates, and IfTest parity assertions.
-- [x] Current semantic checkpoint `d502e47` passes the full local Release/Ninja
-  CTest gate: `178/178` from `ctest --test-dir build --output-on-failure`,
-  including the new user-defined ODE-rate contract. This evidence qualifies
-  `d502e47` only; a later semantic or documentation head requires fresh
-  exact-head readback.
+- [x] Historical semantic checkpoint `d502e47` passes the full local
+  Release/Ninja CTest gate: `178/178` from `ctest --test-dir build
+  --output-on-failure`, including the user-defined ODE-rate contract.
+- [ ] Current semantic checkpoint `4ea7157` has targeted observable/NetWriter
+  CTest coverage green (`6/6` selected tests; `20` assertions in the ODE
+  executable), but the full CTest gate must be rerun before another semantic
+  candidate is treated as current evidence.
 - [ ] Separate local Debug/ASan evidence has not yet been rerun for 5f6da07;
   prior 0f83347 evidence was supplemental memory-safety coverage, not a
   substitute for hosted sanitizer and leak/UBSan gates.
@@ -143,7 +145,8 @@ completion gate.
 - [x] Full Python/API tests pass on the latest Python-affecting checkpoint
   `9c60ca4`: `235 passed, 27 skipped, 8 warnings` from
   `PYTHONPATH=python:build/cpp python -m pytest tests/python -q`. The later
-  `73757ea`, `2d69b99`, and `d502e47` checkpoints change only C++ internals and have been
+  `73757ea`, `2d69b99`, `d502e47`, and `4ea7157` checkpoints change only C++
+  internals and have been
   requalified by targeted native C++ gates; rerun the full Python suite on the
   final candidate.
   The installed-wheel target still has only historical evidence and is not
@@ -368,6 +371,13 @@ completion gate.
   passes. A probe that changed the declared function's case was rejected from
   the port because BNG3's parser/runtime function-name semantics are not
   case-insensitive; no public language behavior was silently broadened.
+- [x] Source commit `60ac7e5f` (`Bolt: Pre-parse observable patterns in loops`)
+  was ported equivalently at BNG3 `4ea7157`: ODE group compilation and NetWriter
+  group serialization cache parsed graphs while retaining compartment,
+  quantifier, state, structural-role, and species-observable behavior. The
+  source-derived multi-pattern ODE and repeated-pattern NetWriter contracts
+  pass in the targeted `6/6` CTest selection; independent BNG3 benchmark
+  reproduction remains open.
 - [ ] Audit and, where supported, port the remaining common portable-CPU
   chain represented by branch `codex/portable-cpu-20260831` at
   `305b7482febe3dd52ccd517fa4cd2e02504e834c`, including exact-dedup and
@@ -908,15 +918,15 @@ completion gate.
   event conditions and remain release-candidate work. This documentation
   refresh creates a new public head and requires another exact-head check
   readback after push.
-- [ ] Current public semantic checkpoint `d502e47` (and every documentation
+- [ ] Current public semantic checkpoint `4ea7157` (and every documentation
   checkpoint that follows it) has a fresh terminal hosted check set read back
   with `gh`; the PR #2 metadata must converge to the same head. For
-  `d502e4798ff0f24f469a2c0a29fd0b13d793f083`, CI run
-  [33540655461](https://github.com/RuleWorld/BNG3/actions/runs/33540655461),
+  `4ea7157acbed00467f3e93ac6155d6c39486169a`, CI run
+  [33541584804](https://github.com/RuleWorld/BNG3/actions/runs/33541584804),
   CodeQL run
-  [33540655456](https://github.com/RuleWorld/BNG3/actions/runs/33540655456),
+  [33541584888](https://github.com/RuleWorld/BNG3/actions/runs/33541584888),
   and formatting run
-  [33540655552](https://github.com/RuleWorld/BNG3/actions/runs/33540655552)
+  [33541584669](https://github.com/RuleWorld/BNG3/actions/runs/33541584669)
   were queued at readback. Queued or partial results are not completion
   evidence; a later checklist push creates another exact-head run set.
 - [ ] Every required job emits a terminal summary with counts, failures,
