@@ -224,6 +224,20 @@ end reaction rules
     CHECK(moleculeType->getStateValueFromName(0, "3") == 3);
     CHECK(moleculeType->getStateValueFromName(0, "8") == 8);
     delete system;
+
+    const auto xml = bng::io::XmlWriter::write(*model);
+    CHECK(xml.find("<AllowedState id=\"?\"/>") == std::string::npos);
+
+    suggestedTraversalLimit = 0;
+    auto* xmlSystem = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, suggestedTraversalLimit);
+    REQUIRE(xmlSystem != nullptr);
+    auto* xmlMoleculeType = xmlSystem->getMoleculeTypeByName("A");
+    REQUIRE(xmlMoleculeType != nullptr);
+    CHECK(xmlMoleculeType->isIntegerComponent(0));
+    CHECK(xmlMoleculeType->getPossibleCompStates().at(0) ==
+          std::vector<std::string> {"0", "1", "2", "3", "4", "5", "6", "7", "8"});
+    delete xmlSystem;
 }
 
 TEST_CASE("BNGL parser keeps the historical NFsim t4 gap explicit") {
