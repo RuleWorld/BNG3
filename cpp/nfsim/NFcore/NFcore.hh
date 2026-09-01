@@ -1030,6 +1030,16 @@ namespace NFcore
 
 			ReactionClass *rxn; /*used so we don't need to redeclare this at every call to updateRxnMembership */
 
+			/* Cache direct-product membership decisions when every reaction on this
+			 * molecule type proves that its decision is type-invariant. */
+			struct DirectMembershipDecisionCacheEntry {
+				std::vector<unsigned char> decisions;
+			};
+			std::unordered_map<ReactionClass *, DirectMembershipDecisionCacheEntry>
+				directMembershipDecisionCache;
+			std::unordered_map<ReactionClass *, bool>
+				directMembershipDecisionCacheSafe;
+
 
 
 		private:
