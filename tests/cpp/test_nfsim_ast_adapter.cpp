@@ -3153,3 +3153,82 @@ end reaction rules
     CHECK(system->getReaction(3)->getBaseRate() == Catch::Approx(std::exp(0.5)));
     delete system;
 }
+
+TEST_CASE("NFsim energy function exposes compact binding context") {
+    NFcore::EnergyFunction energy(0.5, 1.0);
+
+    NFcore::EnergyPatternInfo pattern;
+    pattern.id = "A_context_B";
+    pattern.energyValue = 2.0;
+
+    NFcore::EpMolecule moleculeA;
+    moleculeA.typeName = "A";
+    moleculeA.xmlId = "a";
+    moleculeA.components.push_back({"b", "b", true, ""});
+    moleculeA.components.push_back({"c", "c", true, ""});
+
+    NFcore::EpMolecule moleculeB;
+    moleculeB.typeName = "B";
+    moleculeB.xmlId = "b";
+    moleculeB.components.push_back({"a", "a", true, ""});
+
+    NFcore::EpMolecule moleculeC;
+    moleculeC.typeName = "C";
+    moleculeC.xmlId = "c";
+    moleculeC.components.push_back({"x", "x", true, ""});
+
+    pattern.molecules = {moleculeA, moleculeB, moleculeC};
+    pattern.bonds.push_back({0, 0, 1, 0});
+    pattern.bonds.push_back({0, 1, 2, 0});
+    energy.addEnergyPattern(pattern);
+
+    NFcore::EnergyBindingContext context;
+    REQUIRE(energy.getBindingContext("A", "b", "B", "a", context));
+    CHECK(context.baseEnergy == Catch::Approx(0.0));
+    REQUIRE(context.conditions.size() == 1);
+    CHECK(context.conditions.front().reactantIdx == 0);
+    CHECK(context.conditions.front().molType == "A");
+    CHECK(context.conditions.front().compName == "c");
+    CHECK(context.conditions.front().partnerType == "C");
+    CHECK(context.conditions.front().partnerComp == "x");
+    REQUIRE(context.conditionalTerms.size() == 1);
+    CHECK(context.conditionalTerms.front().energyValue == Catch::Approx(2.0));
+    CHECK(context.conditionalTerms.front().conditionMask == 1);
+}
+
+TEST_CASE("NFsim energy function rejects non-factorized compact contexts") {
+    NFcore::EnergyFunction energy(0.5, 1.0);
+
+    NFcore::EnergyPatternInfo pattern;
+    pattern.id = "A_duplicate_context_B";
+    pattern.energyValue = 1.0;
+
+    NFcore::EpMolecule firstA;
+    firstA.typeName = "A";
+    firstA.xmlId = "a1";
+    firstA.components.push_back({"b", "b", true, ""});
+
+    NFcore::EpMolecule secondA;
+    secondA.typeName = "A";
+    secondA.xmlId = "a2";
+    secondA.components.push_back({"c", "c", true, ""});
+
+    NFcore::EpMolecule moleculeB;
+    moleculeB.typeName = "B";
+    moleculeB.xmlId = "b";
+    moleculeB.components.push_back({"a", "a1", true, ""});
+
+    NFcore::EpMolecule moleculeC;
+    moleculeC.typeName = "C";
+    moleculeC.xmlId = "c";
+    moleculeC.components.push_back({"x", "x", true, ""});
+
+    pattern.molecules = {firstA, secondA, moleculeB, moleculeC};
+    pattern.bonds.push_back({0, 0, 2, 0});
+    pattern.bonds.push_back({1, 0, 3, 0});
+    energy.addEnergyPattern(pattern);
+
+    NFcore::EnergyBindingContext context;
+    CHECK_FALSE(energy.getBindingContext("A", "b", "B", "a", context));
+    CHECK(context.conditionalTerms.empty());
+}
