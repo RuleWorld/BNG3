@@ -50,11 +50,18 @@ bool SpeciesList::getCheckIso() const {
 }
 
 std::optional<std::size_t> SpeciesList::findExact(const Species& species) const {
+    std::string exact;
+    return findExact(species, exact);
+}
+
+std::optional<std::size_t> SpeciesList::findExact(
+    const Species& species, std::string& exact) const {
+    exact.clear();
     if (!checkIso_) {
         return std::nullopt;
     }
 
-    const std::string exact = species.getSpeciesGraph().toStringForDedup();
+    exact = species.getSpeciesGraph().toStringForDedup();
     const auto exactBucket = indicesByExactString_.find(exact);
     if (exactBucket == indicesByExactString_.end()) {
         return std::nullopt;
@@ -77,9 +84,29 @@ std::pair<std::size_t, bool> SpeciesList::add(Species species) {
         return {index, true};
     }
 
+    return addChecked(std::move(species), {}, false);
+}
+
+std::pair<std::size_t, bool> SpeciesList::addWithExactKey(
+    Species species, std::string exact) {
+    // When check_iso is disabled, skip all dedup and add unconditionally
+    if (!checkIso_) {
+        const std::size_t index = species_.size();
+        species.setIndex(index);
+        species_.push_back(std::move(species));
+        return {index, true};
+    }
+
+    return addChecked(std::move(species), std::move(exact), true);
+}
+
+std::pair<std::size_t, bool> SpeciesList::addChecked(
+    Species species, std::string exact, bool hasExact) {
     // Use compartment-aware string for dedup to distinguish species that differ
     // only by per-molecule compartments (e.g., Im@CP.NP vs Im@NU.NP).
-    std::string exact = species.getSpeciesGraph().toStringForDedup();
+    if (!hasExact) {
+        exact = species.getSpeciesGraph().toStringForDedup();
+    }
 
     // Fast path 1: exact string match (O(1))
     const auto exactBucket = indicesByExactString_.find(exact);

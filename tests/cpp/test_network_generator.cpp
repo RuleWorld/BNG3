@@ -74,5 +74,14 @@ TEST_CASE("SpeciesList preserves compartment-aware deduplication", "[SpeciesList
     REQUIRE(exact.value() == first.first);
     REQUIRE_FALSE(probe.getSpeciesGraph().getGraph().is_canonical());
     REQUIRE_FALSE(list.findExact(makeSpecies("MITO")).has_value());
-    REQUIRE(list.size() == 2);
+
+    // Source-derived from akutuva21/bionetgen commit 70acc9e2: the exact key
+    // can be returned by lookup and reused by a subsequent keyed insertion.
+    std::string exactKey;
+    const auto missing = list.findExact(makeSpecies("MITO"), exactKey);
+    REQUIRE_FALSE(missing.has_value());
+    REQUIRE_FALSE(exactKey.empty());
+    const auto keyed = list.addWithExactKey(makeSpecies("MITO"), std::move(exactKey));
+    REQUIRE(keyed.second);
+    REQUIRE(list.size() == 3);
 }
