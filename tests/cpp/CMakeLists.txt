@@ -1,5 +1,13 @@
 include(Catch)
 
+add_test(
+    NAME bng_cpp_action_errors
+    COMMAND ${CMAKE_COMMAND}
+        -DBNG_CPP_PATH=$<TARGET_FILE:bng_cpp>
+        -DMODEL_PATH=${CMAKE_SOURCE_DIR}/tests/fixtures/issue_328_missing_net.bngl
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/test_bng_cpp_action_errors.cmake
+)
+
 # localfunc_test
 add_executable(localfunc_test localfunc_test.cpp)
 target_include_directories(localfunc_test PRIVATE
