@@ -4,8 +4,8 @@
 **Last audited:** 2026-09-01
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 6b953c5aeee49df160631c96be391244e9b6bb04
-**Checklist refresh base:** 6b953c5 (refresh after each semantic checkpoint)
+**Audited semantic code head:** e87682d3a4b753e05e5644a4f5f9dd3410702550
+**Checklist refresh base:** e87682d (refresh after each semantic checkpoint)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -47,19 +47,19 @@ completion gate.
 
 - [x] Required fast-forward pull completed before this documentation change.
 - [x] The latest pushed semantic checkpoint is
-  6b953c5aeee49df160631c96be391244e9b6bb04; this checklist refresh is a
+  e87682d3a4b753e05e5644a4f5f9dd3410702550; this checklist refresh is a
   documentation-only checkpoint layered after it and does not alter its
   semantic test evidence.
 - [x] The small documentation grammar fix remains the only unrelated tracked
   BNG3 worktree modification. It remains intentionally unstaged and must not
   be mixed into semantic or checklist commits.
-- [x] Exact-head CTest passes `158/158` on 6b953c5 (local Release/Ninja
+- [x] Exact-head CTest passes `158/158` on e87682d (local Release/Ninja
   build; `ctest --test-dir build --output-on-failure`).
-- [ ] Separate local Debug/ASan evidence has not yet been rerun for 6b953c5;
+- [ ] Separate local Debug/ASan evidence has not yet been rerun for e87682d;
   prior 0f83347 evidence was supplemental memory-safety coverage, not a
   substitute for hosted sanitizer and leak/UBSan gates.
-- [x] The full NFsim AST adapter executable passes 108 test cases and 1106
-  assertions on 6b953c5, including compact energy evaluation, cached compact
+- [x] The full NFsim AST adapter executable passes 108 test cases and 1156
+  assertions on e87682d, including compact energy evaluation, cached compact
   rate factors, specialized reverse propensities, sparse selector ordering,
   cached single- and multi-term Arrhenius factors, direct-product endpoint
   identity propagation, safe direct-product traversal, cached pre-fire binding
@@ -81,16 +81,16 @@ completion gate.
   paths, including a negative single-bond ring control. It also covers the
   source-derived `reactant_1()` compatibility placeholder and dynamic
   reactant-count rate on direct and in-memory XML paths (11 assertions), plus
-  XML preservation of the `TotalRate` modifier (9 assertions), and the exact
-  IfTest conditional global functions with legacy `&&` expressions on direct
-  and XML paths (24 assertions).
-- [x] Exact-head Python/API tests pass on semantic checkpoint `6b953c5`:
+  XML preservation of the `TotalRate` modifier (9 assertions), and the IfTest
+  conditional global functions with legacy `&&` expressions and live-threshold
+  trajectory branch semantics on direct and XML paths (74 assertions).
+- [x] Exact-head Python/API tests pass on semantic checkpoint `e87682d`:
   `229 passed, 27 skipped, 8 warnings` from
   `PYTHONPATH=python:build/cpp python -m pytest tests/python -q`. The installed-
   wheel target still has only historical evidence and is not release evidence
   for this head.
 - [x] The exact NFsim `IfTest/ifTest.bngl` source fixture now parses through
-  `build/cpp/bng_cpp --check` on 6b953c5, including its empty `reactant_1()`
+  `build/cpp/bng_cpp --check` on e87682d, including its empty `reactant_1()`
   placeholder declaration; parser acceptance is not execution parity.
 - [x] Local CI workflow contract tests pass 10/10, including the pull-request
   source-distribution smoke gate.
@@ -356,6 +356,21 @@ completion gate.
 - [ ] Comparisons cover molecule types, seed complexes, transformations,
   observables, functions, compartments, options, reaction rules, seeded
   deterministic behavior, and stochastic distributions.
+- [ ] Exact seeded native-NFsim trajectory parity is resolved for the
+  source-derived `IfTest` fixture. An independent rebuild of the public NFsim
+  checkout at `a6f9fa945c9d6e1e122e789c952260112c93f157` produced, from
+  `nfsim/test/IfTest/ifTest.xml`, seed `1`, and output times
+  `0,0.5,1,2,3,4,5`: `Ton = 0, 2236, 3944, 6306, 7787, 8656, 9176`.
+  BNG3 at `e87682d` produced `Ton = 0, 2217, 3932, 6343, 7796, 8671, 9197`
+  from the same XML and seed. The direct-AST and in-memory XML paths agree
+  on BNG3's branch semantics, and the source-derived test checks conservation
+  plus all three live-threshold branches, but exact seeded equality is still
+  open. The current source diagnosis is the mapping-selection RNG contract:
+  native `src/NFreactions/reactantLists/reactantList.cpp` consumes the legacy
+  process-global `NFutil::RANDOM_INT`, while BNG3's corresponding adapter path
+  consumes the per-System `NfsimRNG`. Resolve this with an approved
+  compatibility decision, dual-stream oracle protocol, or source-faithful
+  implementation and a regression test; do not relabel this as tolerance.
 - [ ] Tier-NF includes localfunc, motor, TQSSA, tlbr, simple_system,
   fceRI/multisite fixtures where supported, and the relevant nfsim-master/test
   inputs.
@@ -646,7 +661,7 @@ completion gate.
   event conditions and remain release-candidate work. This documentation
   refresh creates a new public head and requires another exact-head check
   readback after push.
-- [ ] Current public head `6b953c5` (and the documentation checkpoint that
+- [ ] Current public head `e87682d` (and the documentation checkpoint that
   will follow it) has a fresh terminal hosted check set read back with `gh`.
 - [ ] Every required job emits a terminal summary with counts, failures,
   skips, exception budget, corpus/source revision, and artifact digests.
@@ -821,6 +836,10 @@ These are known unchecked requirements, not reasons to claim completion:
 - Direct NFsim remains a bounded subset with visible XML fallback/shadow
   machinery; AN2, protocol-NF, remaining function/rate-law, and full
   independent Tier-NF evidence remain open.
+- The source-derived IfTest branch gate is green on direct and XML paths, but
+  exact seeded native-NFsim counts remain discrepant (`a6f9fa9` versus
+  `e87682d`) because mapping selection consumes different RNG streams. This
+  is a mandatory parity decision, not an acceptable stochastic tolerance.
 - Structured SBML atomization still has a deliberate visible error, and
   local validation has environment-dependent skips; hosted validation green
   does not prove full Tier-P/NF/X parity.
