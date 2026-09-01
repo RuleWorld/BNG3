@@ -59,3 +59,31 @@ TEST_CASE("NFsim ReactantTree preserves the compact one-leaf contract") {
     CHECK(tree.size() == 0);
     CHECK(tree.getRateFactorSum() == 0.0);
 }
+
+TEST_CASE("NFsim CompactPartnerPool preserves source swap-removal indexing") {
+    NFcore::System system("CompactPartnerPool contract");
+    std::vector<std::string> componentNames {"site"};
+    auto* moleculeType = new NFcore::MoleculeType(
+        "PoolMolecule", componentNames, &system);
+    auto* first = moleculeType->genDefaultMolecule();
+    auto* second = moleculeType->genDefaultMolecule();
+    auto* third = moleculeType->genDefaultMolecule();
+
+    NFcore::CompactPartnerPool pool;
+    const auto firstId = static_cast<unsigned int>(first->getMolListId());
+    const auto secondId = static_cast<unsigned int>(second->getMolListId());
+    const auto thirdId = static_cast<unsigned int>(third->getMolListId());
+
+    CHECK(pool.size() == 0);
+    CHECK(pool.add(first, firstId));
+    CHECK(pool.add(second, secondId));
+    CHECK(pool.add(third, thirdId));
+    CHECK_FALSE(pool.add(first, firstId));
+
+    CHECK(pool.remove(first, firstId));
+    CHECK_FALSE(pool.contains(first, firstId));
+    CHECK(pool.contains(second, secondId));
+    CHECK(pool.contains(third, thirdId));
+    CHECK(pool.getByIndex(0) == third);
+    CHECK(pool.size() == 2);
+}
