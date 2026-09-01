@@ -136,6 +136,71 @@ def test_playground_species_extend_preserves_repeated_component_multiplicity():
     ]
 
 
+def test_playground_species_extend_unequal_counts_only_updates_states():
+    from bionetgen.atomizer.modern import Component, Molecule, Species
+
+    target = Species()
+    target_molecule = Molecule("A")
+    target_component = Component("site", bonds=["1"], states=["0"])
+    target_component.set_active_state("0")
+    target_molecule.add_component(target_component)
+    target.add_molecule(target_molecule)
+
+    incoming = Species()
+    incoming_molecule = Molecule("A")
+    incoming_component = Component("site", bonds=["2"], states=["P"])
+    incoming_component.set_active_state("P")
+    incoming_molecule.add_component(incoming_component)
+    incoming.add_molecule(incoming_molecule)
+    incoming.add_molecule(Molecule("B"))
+
+    # Playground structures.ts does not merge bonds in this branch. It passes
+    # update through to addState and deep-copies a newly seen molecule.
+    target.extend(incoming, update=False)
+
+    assert target_component.bonds == ["1"]
+    assert target_component.states == ["0", "P"]
+    assert target_component.active_state == "0"
+    assert [molecule.name for molecule in target.molecules] == ["A", "B"]
+
+
+def test_playground_species_extend_uses_order_insensitive_molecule_match_score():
+    from bionetgen.atomizer.modern import Component, Molecule, Species
+
+    target = Species()
+    broad = Molecule("A")
+    broad_a = Component("a", bonds=["1"], states=["0"])
+    broad_a.set_active_state("0")
+    broad.add_component(broad_a)
+    broad.add_component(Component("b", bonds=["2"]))
+    broad.add_component(Component("c", bonds=["3"]))
+    target.add_molecule(broad)
+
+    narrow = Molecule("A")
+    narrow_a = Component("a", bonds=["3"], states=["0"])
+    narrow_a.set_active_state("0")
+    narrow.add_component(narrow_a)
+    target.add_molecule(narrow)
+
+    incoming = Species()
+    incoming_molecule = Molecule("A")
+    incoming_a = Component("a", bonds=["3"], states=["P"])
+    incoming_a.set_active_state("P")
+    incoming_molecule.add_component(incoming_a)
+    incoming_molecule.add_component(Component("b", bonds=["2"]))
+    incoming_molecule.add_component(Component("c", bonds=["1"]))
+    incoming.add_molecule(incoming_molecule)
+    incoming.add_molecule(Molecule("B"))
+    incoming.add_molecule(Molecule("C"))
+
+    # The Playground score counts included bond values, independent of order:
+    # [1, 2, 3] against [3, 2, 1] beats the narrower [3] candidate.
+    target.extend(incoming)
+
+    assert broad_a.active_state == "P"
+    assert narrow_a.active_state == "0"
+
+
 def test_playground_reaction_classification_is_stoichiometry_aware():
     from bionetgen.atomizer.modern import SBMLReaction, SBMLSpeciesReference
     from bionetgen.atomizer.modern import classify_reaction

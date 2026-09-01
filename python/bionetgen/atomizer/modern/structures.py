@@ -12,7 +12,6 @@ import copy
 import re
 from collections import Counter
 from dataclasses import dataclass
-from difflib import SequenceMatcher
 from typing import Iterable, List, Optional, Sequence, Tuple, Union
 
 Bond = Union[str, int]
@@ -533,8 +532,7 @@ class Species:
                 continue
             target = max(
                 candidates,
-                key=lambda molecule: SequenceMatcher(
-                    None,
+                key=lambda molecule: self._sequence_match_ratio(
                     [
                         str(bond)
                         for component in molecule.components
@@ -545,9 +543,27 @@ class Species:
                         for component in incoming.components
                         for bond in component.bonds
                     ],
-                ).ratio(),
+                ),
             )
-            target.extend(incoming)
+            for component in incoming.components:
+                existing = target.get_component(component.name)
+                if existing is None:
+                    target.add_component(component.copy(), update)
+                else:
+                    existing.add_states(component.states, update)
+
+    @staticmethod
+    def _sequence_match_ratio(
+        left: Sequence[Union[str, int]], right: Sequence[Union[str, int]]
+    ) -> float:
+        """Match the Playground's inclusion-based molecule similarity score."""
+
+        if not left and not right:
+            return 1.0
+        if not left or not right:
+            return 0.0
+        matches = sum(1 for item in left if item in right)
+        return (2 * matches) / (len(left) + len(right))
 
     def update_bonds(self, bond_numbers: Iterable[int]) -> None:
         offset = max(list(bond_numbers) or [0]) + 1
