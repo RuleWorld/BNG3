@@ -1168,6 +1168,12 @@ EnergyRxnClass::~EnergyRxnClass()
 	compactPartnerMappingSet = 0;
 }
 
+void EnergyRxnClass::refreshCompactRateFactor()
+{
+	if (simpleMembership && isForward)
+		compactRateFactor = reactantTree->getRateFactorSum();
+}
+
 bool EnergyRxnClass::getIncrementalMembershipChange(
 		IncrementalMembershipChange &change) const
 {
@@ -1453,7 +1459,7 @@ bool EnergyRxnClass::tryToAddCompact(
 			reactantTree->removeMappingSet(mappingId);
 		}
 		if (changed)
-			compactRateFactor = reactantTree->getRateFactorSum();
+			refreshCompactRateFactor();
 		return changed;
 	}
 
@@ -1479,7 +1485,7 @@ bool EnergyRxnClass::tryToAddCompact(
 				}
 				bool rateChanged = reactantTree->updateValue(
 						mappingId, evaluateLocalFunctions(mappingSet));
-				compactRateFactor = reactantTree->getRateFactorSum();
+				refreshCompactRateFactor();
 				return mappingChanged || rateChanged;
 			}
 		}
@@ -1499,7 +1505,7 @@ bool EnergyRxnClass::tryToAddCompact(
 						*it, evaluateLocalFunctions(mappingSet)))
 				changed = true;
 		}
-		compactRateFactor = reactantTree->getRateFactorSum();
+		refreshCompactRateFactor();
 		return changed;
 	}
 
@@ -1510,8 +1516,15 @@ bool EnergyRxnClass::tryToAddCompact(
 	reactantTree->confirmPush(
 				mappingSet->getId(), evaluateLocalFunctions(mappingSet));
 	m->setRxnListMappingId(rxnIndex, mappingSet->getId());
-	compactRateFactor = reactantTree->getRateFactorSum();
+	refreshCompactRateFactor();
 	return true;
+}
+
+void EnergyRxnClass::notifyRateFactorChange(
+		Molecule *m, int reactantIndex, int rxnListIndex)
+{
+	DORRxnClass::notifyRateFactorChange(m, reactantIndex, rxnListIndex);
+	refreshCompactRateFactor();
 }
 
 void EnergyRxnClass::remove(Molecule *m, unsigned int reactantPos)
@@ -1524,7 +1537,7 @@ void EnergyRxnClass::remove(Molecule *m, unsigned int reactantPos)
 	}
 	DORRxnClass::remove(m, reactantPos);
 	if (simpleMembership && isForward)
-		compactRateFactor = reactantTree->getRateFactorSum();
+		refreshCompactRateFactor();
 }
 
 double EnergyRxnClass::update_a()
@@ -1543,7 +1556,7 @@ double EnergyRxnClass::get_a() const
 {
 	if (simpleMembership && isForward && n_reactants == 2 &&
 			DORreactantIndex == 0 && !useRuleMonkey && partnerPool != 0)
-		return baseRate * reactantTree->getRateFactorSum() *
+		return baseRate * compactRateFactor *
 				static_cast<double>(partnerPool->size());
 	return ReactionClass::get_a();
 }
@@ -1552,7 +1565,7 @@ double EnergyRxnClass::getCompactPartnerPoolCoefficient() const
 {
 	if (simpleMembership && isForward && n_reactants == 2 &&
 			DORreactantIndex == 0 && !useRuleMonkey)
-		return baseRate * reactantTree->getRateFactorSum();
+		return baseRate * compactRateFactor;
 	return 0.0;
 }
 

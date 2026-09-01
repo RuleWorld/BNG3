@@ -298,6 +298,8 @@ namespace NFcore
 			virtual double get_a() const;
 			virtual double getCompactPartnerPoolCoefficient() const;
 			virtual double update_a_for_compact_partner_pool(int poolSize);
+			virtual void notifyRateFactorChange(
+					Molecule *m, int reactantIndex, int rxnListIndex);
 			virtual int getReactantCount(unsigned int reactantIndex) const;
 			virtual int getCorrectedReactantCount(unsigned int reactantIndex) const;
 
@@ -334,6 +336,8 @@ namespace NFcore
 			bool multiConditionalTermFastPath;
 			vector<double> conditionalRateFactors;
 			unsigned int minimumConditionalBits;
+
+			void refreshCompactRateFactor();
 
 			bool dependsOnEndpoint(
 					MoleculeType *targetMoleculeType,
