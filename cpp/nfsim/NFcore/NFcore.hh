@@ -617,10 +617,12 @@ namespace NFcore
 			 * a file divided equally throughout the elapsed time  */
 			double sim(double time, long int sampleTimes, bool verbose);
 
-			/* run the simulation up until the stopping time (but not exceding the stopping time. This
-			 * will not output anything to file (so must be done manually) and returns the current time
-			 * of the simulation, which will always be less than the stopping time */
+			/* Run up to, but not across, the stopping time without file output. */
 			double stepTo(double stoppingTime);
+			/* API compatibility form: native System::sim may fire the pending event
+			 * that crosses its final output endpoint; ordinary stepTo callers retain
+			 * the exclusive boundary above. */
+			double stepTo(double stoppingTime, bool includeEndpointEvent);
 
 			void singleStep();
 

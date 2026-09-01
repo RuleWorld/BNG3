@@ -231,14 +231,15 @@ void bind_nfsim(py::module_& m) {
                     // Multiplication can round a final boundary differently
                     // and change whether an event is included at that edge.
                     t_current += dt;
-                    system->stepTo(t_current);
+                    system->stepTo(t_current, step == n_steps);
                     time_points.push_back(t_current);
                     record_observables();
                 }
             } else {
                 time_points.reserve(output_times.size());
-                for (const double time : output_times) {
-                    system->stepTo(time);
+                for (std::size_t index = 0; index < output_times.size(); ++index) {
+                    const double time = output_times[index];
+                    system->stepTo(time, index + 1 == output_times.size());
                     time_points.push_back(time);
                     record_observables();
                 }
