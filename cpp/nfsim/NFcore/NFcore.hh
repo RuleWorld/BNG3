@@ -114,38 +114,176 @@ namespace NFcore
 
 	/* Compact sorted membership IDs. Reaction membership is usually empty or
 	 * contains one mapping per molecule, while std::set stores tree metadata for
-	 * every reaction slot and mapping. */
+	 * every reaction slot and mapping. Keep the first ID inline and allocate an
+	 * overflow array only when a reaction has multiple mappings. */
 	class MappingIdSet {
 		public:
-			typedef vector<int>::iterator iterator;
-			typedef vector<int>::const_iterator const_iterator;
+			class iterator {
+				friend class MappingIdSet;
+				MappingIdSet *owner;
+				unsigned int index;
+				iterator(MappingIdSet *owner, unsigned int index)
+					: owner(owner), index(index) {}
+				public:
+					iterator() : owner(0), index(0) {}
+					int& operator*() const { return owner->valueAt(index); }
+					iterator& operator++() { ++index; return *this; }
+					bool operator==(const iterator &other) const {
+						return owner == other.owner && index == other.index;
+					}
+					bool operator!=(const iterator &other) const {
+						return !(*this == other);
+					}
+			};
 
-			bool empty() const { return ids.empty(); }
-			size_t size() const { return ids.size(); }
-			iterator begin() { return ids.begin(); }
-			iterator end() { return ids.end(); }
-			const_iterator begin() const { return ids.begin(); }
-			const_iterator end() const { return ids.end(); }
-			void clear() { ids.clear(); }
+			class const_iterator {
+				friend class MappingIdSet;
+				const MappingIdSet *owner;
+				unsigned int index;
+				const_iterator(const MappingIdSet *owner, unsigned int index)
+					: owner(owner), index(index) {}
+				public:
+					const_iterator() : owner(0), index(0) {}
+					const int& operator*() const { return owner->valueAt(index); }
+					const_iterator& operator++() { ++index; return *this; }
+					bool operator==(const const_iterator &other) const {
+						return owner == other.owner && index == other.index;
+					}
+					bool operator!=(const const_iterator &other) const {
+						return !(*this == other);
+					}
+			};
+
+			MappingIdSet()
+				: firstId(-1), extraIds(0), extraSize(0), extraCapacity(0) {}
+			MappingIdSet(const MappingIdSet &other)
+				: firstId(other.firstId), extraIds(0),
+				  extraSize(other.extraSize), extraCapacity(0) {
+				if (extraSize > 0) {
+					extraCapacity = extraSize;
+					extraIds = new int[extraCapacity];
+					for (unsigned int i = 0; i < extraSize; ++i)
+						extraIds[i] = other.extraIds[i];
+				}
+			}
+			~MappingIdSet() { delete [] extraIds; }
+
+			MappingIdSet& operator=(const MappingIdSet &other) {
+				if (this == &other) return *this;
+				clear();
+				firstId = other.firstId;
+				if (other.extraSize > 0) {
+					extraCapacity = other.extraSize;
+					extraSize = other.extraSize;
+					extraIds = new int[extraCapacity];
+					for (unsigned int i = 0; i < extraSize; ++i)
+						extraIds[i] = other.extraIds[i];
+				}
+				return *this;
+			}
+
+			bool empty() const { return firstId < 0; }
+			size_t size() const {
+				return empty() ? 0 : static_cast<size_t>(extraSize + 1);
+			}
+			iterator begin() { return iterator(this, 0); }
+			iterator end() {
+				return iterator(this, static_cast<unsigned int>(size()));
+			}
+			const_iterator begin() const { return const_iterator(this, 0); }
+			const_iterator end() const {
+				return const_iterator(this, static_cast<unsigned int>(size()));
+			}
+			void clear() {
+				firstId = -1;
+				extraSize = 0;
+				delete [] extraIds;
+				extraIds = 0;
+				extraCapacity = 0;
+			}
 
 			pair<iterator, bool> insert(int id) {
-				iterator position = lower_bound(ids.begin(), ids.end(), id);
-				if (position != ids.end() && *position == id)
-					return make_pair(position, false);
-				position = ids.insert(position, id);
-				return make_pair(position, true);
+				if (empty()) {
+					firstId = id;
+					return make_pair(iterator(this, 0), true);
+				}
+				if (id == firstId)
+					return make_pair(iterator(this, 0), false);
+				if (id < firstId) {
+					int oldFirstId = firstId;
+					firstId = id;
+					insertExtra(oldFirstId);
+					return make_pair(iterator(this, 0), true);
+				}
+				unsigned int position = lowerBoundExtra(id);
+				if (position < extraSize && extraIds[position] == id)
+					return make_pair(iterator(this, position + 1), false);
+				insertExtraAt(position, id);
+				return make_pair(iterator(this, position + 1), true);
 			}
 
 			size_t erase(int id) {
-				iterator position = lower_bound(ids.begin(), ids.end(), id);
-				if (position == ids.end() || *position != id)
+				if (empty()) return 0;
+				if (id == firstId) {
+					if (extraSize == 0) {
+						firstId = -1;
+						return 1;
+					}
+					firstId = extraIds[0];
+					for (unsigned int i = 1; i < extraSize; ++i)
+						extraIds[i - 1] = extraIds[i];
+					--extraSize;
+					return 1;
+				}
+				if (id < firstId) return 0;
+				unsigned int position = lowerBoundExtra(id);
+				if (position == extraSize || extraIds[position] != id)
 					return 0;
-				ids.erase(position);
+				for (unsigned int i = position + 1; i < extraSize; ++i)
+					extraIds[i - 1] = extraIds[i];
+				--extraSize;
 				return 1;
 			}
 
 		private:
-			vector<int> ids;
+			int& valueAt(unsigned int index) {
+				return index == 0 ? firstId : extraIds[index - 1];
+			}
+			const int& valueAt(unsigned int index) const {
+				return index == 0 ? firstId : extraIds[index - 1];
+			}
+			unsigned int lowerBoundExtra(int id) const {
+				unsigned int position = 0;
+				while (position < extraSize && extraIds[position] < id)
+					++position;
+				return position;
+			}
+			void ensureExtraCapacity(unsigned int required) {
+				if (required <= extraCapacity) return;
+				unsigned int newCapacity = extraCapacity == 0 ? 2 : extraCapacity * 2;
+				while (newCapacity < required) newCapacity *= 2;
+				int *newIds = new int[newCapacity];
+				for (unsigned int i = 0; i < extraSize; ++i)
+					newIds[i] = extraIds[i];
+				delete [] extraIds;
+				extraIds = newIds;
+				extraCapacity = newCapacity;
+			}
+			void insertExtraAt(unsigned int position, int id) {
+				ensureExtraCapacity(extraSize + 1);
+				for (unsigned int i = extraSize; i > position; --i)
+					extraIds[i] = extraIds[i - 1];
+				extraIds[position] = id;
+				++extraSize;
+			}
+			void insertExtra(int id) {
+				insertExtraAt(lowerBoundExtra(id), id);
+			}
+
+			int firstId;
+			int *extraIds;
+			unsigned int extraSize;
+			unsigned int extraCapacity;
 	};
 
 	/* Endpoint state changes exposed by compact EnergyPattern reactions. */
