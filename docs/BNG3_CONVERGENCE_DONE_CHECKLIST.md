@@ -4,10 +4,13 @@
 **Last audited:** 2026-08-31
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 7e91acc02a62a838c8efceaaa363aea0e806a937
-**Checklist refresh base:** 7e91acc (refresh after each semantic checkpoint)
+**Audited semantic code head:** a77ceb871fde2cd2d2327bb6ea806368e307c91e
+**Checklist refresh base:** a77ceb8 (refresh after each semantic checkpoint)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
+**Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
+6690fda5d9e053df822d0248ebae185f5caca82a; final public source head
+3b046fc1b9f76719d92be22279b24992cdae7c35
 
 This is the execution checklist for the BNG3 convergence goal. It turns the
 completion charter and Section 11 of BNG3_INTEGRATION_PLAN.md into auditable
@@ -42,33 +45,33 @@ completion gate.
 
 - [x] Required fast-forward pull completed before this documentation change.
 - [x] The latest pushed semantic checkpoint is
-  7e91acc02a62a838c8efceaaa363aea0e806a937; documentation-only refreshes may
+  a77ceb871fde2cd2d2327bb6ea806368e307c91e; documentation-only refreshes may
   be layered after it without invalidating its semantic test evidence.
 - [x] The small documentation grammar fix remains the only pre-existing
   worktree modification. It is intentionally not staged by this checklist
   checkpoint.
-- [x] Local CTest passes 124/124.
-- [x] Local Python suite passes 227 tests with 27 skips and 8 warnings.
+- [x] Local CTest passes 127/127.
+- [x] The full NFsim AST adapter executable passes 82 test cases and 674
+  assertions, including compact energy evaluation and materialized fallback.
+- [x] Local Python suite passes 229 tests with 27 skips and 8 warnings.
 - [x] Local CI workflow contract tests pass 6/6, including the pull-request
   source-distribution smoke gate.
 - [x] Local Black check, Ruff check, and git diff check pass.
 - [x] Local validation smoke reports 4 passed and 15 skipped; the skips are
   visible because this checkout lacks the expected validation CLI/oracle
   environment and must not be treated as parity.
-- [x] A clean, no-build-isolation wheel was built, installed into a separate
-  target, and imported with its compiled extension at this exact head:
-  `bionetgen-3.0.0a1-cp314-cp314-macosx_26_0_arm64.whl`, fresh venv
-  `/private/tmp/bng3-wheel-venv-7e91acc.W3MJKN`, package-local extension import
-  and CLI `--version`/`--help` passed. This is one local macOS wheel smoke,
-  not the complete release artifact matrix.
-- [x] Hosted PR checks for this exact head pass across the C++ matrix, Python
-  matrix, ASan, integration, validation, package smoke, formatter, and CodeQL:
-  CI run
-  [33449613101](https://github.com/RuleWorld/BNG3/actions/runs/33449613101),
-  CodeQL run
-  [33449613124](https://github.com/RuleWorld/BNG3/actions/runs/33449613124),
-  and formatting run
-  [33449613199](https://github.com/RuleWorld/BNG3/actions/runs/33449613199).
+- [ ] A clean, no-build-isolation wheel is rebuilt and installed into a
+  separate target for this exact head. The prior 7e91acc macOS wheel smoke is
+  historical evidence only; it is not evidence for a77ceb8.
+- [ ] Hosted PR checks for this exact head pass across the C++ matrix, Python
+  matrix, ASan, integration, validation, package smoke, formatter, and CodeQL.
+  Current exact-head runs are CI
+  [33456973533](https://github.com/RuleWorld/BNG3/actions/runs/33456973533),
+  CodeQL
+  [33456973548](https://github.com/RuleWorld/BNG3/actions/runs/33456973548),
+  and formatting
+  [33456973608](https://github.com/RuleWorld/BNG3/actions/runs/33456973608);
+  they must be terminal before this item is checked.
 - [x] Modern Atomizer checkpoints exist for annotations, BNG-XML conversion,
   Rulifier, UniProt, structure helpers, and conservative SBML-Multi discovery,
   helper/rate-rule constants, each with source-derived tests.
@@ -319,6 +322,35 @@ completion gate.
   machinery, and XML reparse from the default NF simulation path.
 - [ ] Retain BNG-XML export/interchange support and its schema/semantic tests.
 
+### 5.4 Energy-function evaluator convergence
+
+- [x] The merged `akutuva21/nfsim` energy-evaluation source is pinned for this
+  work: PR #475, merge `6690fda5d9e053df822d0248ebae185f5caca82a`, final
+  public source head `3b046fc1b9f76719d92be22279b24992cdae7c35`.
+- [x] Source-derived BNG3 tests define compact binding-context extraction,
+  rejection of duplicate weighted molecule topologies, compact conjunction
+  masks, factorized runtime propensity evaluation, and materialized fallback.
+  Current checkpoints are `b9ab125`, `2b1c02f`, `92543ca`, `6ed6e97`, and
+  `a77ceb8`.
+- [x] BNG3 carries the compact `EnergyBindingContext` and mapping-local
+  `EnergyRxnClass` path for supported contexts while retaining legacy
+  materialized expansion for unsupported topologies.
+- [ ] Port and test the remaining supported CPU evaluator slices from the
+  merged NFSIM source: compact partner pools, incremental membership and
+  changed-endpoint propagation, deferred/batched propensity updates, direct
+  product lists, sparse-selector integration, and cached preflight/rate
+  factors. Preserve BNG3 lifecycle and direct-AST adapters while porting.
+- [ ] Compare compact and fallback event semantics against an independently
+  built native NFsim at the pinned source revision, including zero crossings,
+  conjunction contexts, reversible binding/unbinding, RuleMonkey selection,
+  complex-bookkeeping modes, and fixed-seed trajectories.
+- [ ] Record the energy benchmark fixture, compiler/platform, event counts,
+  memory, and non-additive CPU measurements with reproducible artifact
+  digests; performance evidence must not substitute for parity evidence.
+- [ ] Reconcile every remaining energy-specific source commit as identical,
+  equivalent, superseded, not-applicable, pending-port, or blocked-on-design
+  in `provenance/reconciliation/`.
+
 ## 6. Python API, CLI, and compatibility consolidation
 
 ### 6.1 Public contract
@@ -443,7 +475,7 @@ completion gate.
 
 - [ ] Current exact PR head has green hosted C++, Python, validation,
   integration, formatting, ASan, and CodeQL checks. The current CI and CodeQL
-  runs are pending; do not use older green runs as evidence for 53289e2.
+  runs are pending; do not use older green runs as evidence for a77ceb8.
 - [ ] Every required job emits a terminal summary with counts, failures,
   skips, exception budget, corpus/source revision, and artifact digests.
 - [ ] Required jobs fail when a claimed oracle, corpus, validator, or compiler
@@ -584,6 +616,10 @@ These are known unchecked requirements, not reasons to claim completion:
   ledger is present.
 - Capability-matrix oracle fields remain pending; broad independent BNG2,
   NFsim, and PyBioNetGen parity is not established by local tests.
+- The compact energy evaluator is ported through conjunction masks, but the
+  merged NFSIM PR #475 pool/membership/selector optimization slices,
+  independent energy parity, benchmark provenance, and source reconciliation
+  are still open.
 - cpp/nfsim/nauty24 and the NFsim ExprTk path remain in the build; the
   canonical-label and shared-expression master-function migrations are not
   complete.

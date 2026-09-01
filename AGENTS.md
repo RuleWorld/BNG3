@@ -59,6 +59,15 @@ them pass by widening tolerances or hiding skips. The Python API is
   factorized contexts; retain materialized expansion as the compatibility
   fallback until broader energy parity, provenance, and direct-NFsim gates
   pass.
+- The convergence session is single-agent: do not delegate implementation or
+  validation work. Use the checklist as the authoritative work queue, keep
+  every open gap visible, and never claim completion while a mandatory item is
+  unchecked or lacks exact evidence.
+- Public GitHub state, commits, pushes, and checks are inspected with `gh`
+  where supported; record full SHAs and revalidate the exact final SHA after
+  every semantic or documentation checkpoint. Preserve unrelated worktree
+  edits, especially the small grammar-only change in
+  `docs/BNG3_INTEGRATION_PLAN.md`.
 - Do not broaden the exception ledger to hide a new mismatch. The current
   checklist, not a historical model-specific exception, defines completion.
 
