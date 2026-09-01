@@ -4,8 +4,8 @@
 **Last audited:** 2026-09-01
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 2940a021b6dad33894f93f8fdf405090e2a79b1f
-**Checklist refresh base:** 2940a02 (refresh after each semantic checkpoint)
+**Audited semantic code head:** c7dd52d2c530a9c112178e3001f9e8f717a45a16
+**Checklist refresh base:** c7dd52d (refresh after each semantic checkpoint)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -47,28 +47,29 @@ completion gate.
 
 - [x] Required fast-forward pull completed before this documentation change.
 - [x] The latest pushed semantic checkpoint is
-  2940a021b6dad33894f93f8fdf405090e2a79b1f; this checklist refresh is a
+  c7dd52d2c530a9c112178e3001f9e8f717a45a16; this checklist refresh is a
   documentation-only checkpoint layered after it and does not alter its
   semantic test evidence.
 - [x] The small documentation grammar fix remains the only unrelated tracked
   BNG3 worktree modification. It remains intentionally unstaged and must not
   be mixed into semantic or checklist commits.
-- [x] Exact-head CTest passes `144/144` on 2940a02 (local Release/Ninja
+- [x] Exact-head CTest passes `145/145` on c7dd52d (local Release/Ninja
   build; `ctest --test-dir build --output-on-failure`).
-- [x] The full NFsim AST adapter executable passes 96 test cases and 942
-  assertions on 2940a02, including compact energy evaluation, cached compact
+- [x] The full NFsim AST adapter executable passes 97 test cases and 949
+  assertions on c7dd52d, including compact energy evaluation, cached compact
   rate factors, specialized reverse propensities, sparse selector ordering,
   cached single- and multi-term Arrhenius factors, direct-product endpoint
   identity propagation, safe direct-product traversal, cached pre-fire binding
   rejection, compact partner mapping-slot compaction, indexed cross-type
   partner refresh, shared partner-pool updates, dense and sparse type-invariant
   membership decisions, deferred weighted-side propensity capture,
-  endpoint-refined membership refresh decisions, materialized fallback,
+  endpoint-refined membership refresh decisions, connected t3 trajectory
+  parity, materialized fallback,
   all-forward compact partner-pool refresh early return,
   pure-context homodimer/trimer/scaffold counting,
   transformed homodimer binding multiplicity, and pure DOR context counting.
-- [x] Exact-head Python/API tests pass on the current public checklist head
-  `ab489cae` (semantic code head `2940a02`): `229 passed, 27 skipped, 8
+- [x] Exact-head Python/API tests pass on semantic checkpoint `c7dd52d`:
+  `229 passed, 27 skipped, 8
   warnings` from `PYTHONPATH=python:build/cpp python -m pytest tests/python -q`,
   and the same result from the installed-wheel target.
 - [x] Local CI workflow contract tests pass 10/10, including the pull-request
@@ -76,29 +77,30 @@ completion gate.
 - [x] Local canonical Black check passes: `177 files would be left unchanged`
   (Jupyter files are skipped because optional Jupyter dependencies are absent);
   Ruff and git diff checks pass.
-- [x] Local validation smoke on semantic head `2940a02` reports 4 passed and
+- [x] Local validation smoke on semantic head `c7dd52d` reports 4 passed and
   15 skipped. A sandbox-external rerun removes process-inspection noise; the
   remaining skips are visible `run_network`/reference-oracle gaps and must not
   be treated as parity.
 - [x] Non-strict provenance, corpus-manifest, generated-manifest, and exception
   ledger checks pass. The strict provenance gate remains intentionally red with
   10 pending source/oracle/compiler/Python-lock approval errors.
-- [x] A no-build-isolation sdist and wheel were rebuilt from the current public
-  checklist head `ab489ca` (semantic code `2940a02`) and the wheel was
-  installed into an isolated target. Artifact SHA-256 digests are
-  `2047835cc20fc6ffb95bcb1c087d645c85bf811073c1531e57cad8af691d9ce9`
+- [x] A no-build-isolation sdist and wheel were rebuilt from semantic
+  checkpoint `c7dd52d` and the wheel was installed into an isolated target.
+  Artifact SHA-256 digests are
+  `d1d8018c61dcb875740b5cc8732cc943f97214b10d06470ce099a2ea035572bc`
   (sdist) and
-  `dd6fe81bd14b41007a707ce41de0bdc6cbe197733d890f849bca45f51d7e6f3f`
+  `b98819230c1cad3f5c0d69cbeefd2f77c40c16e63cf54fc41d2a888c9ac29635`
   (CPython 3.14 arm64 wheel); the installed-target Python suite is recorded
   above.
-- [ ] Hosted PR checks at the preceding exact public checklist head
-  `b128e4a0ce852a9a293ae2f956f4e25b16637e7b` (documentation-only after
-  semantic head `2940a021b6dad33894f93f8fdf405090e2a79b1f`) are currently
-  queued or in progress and have
-  not yet produced a complete terminal set across the C++ matrix, Python
-  matrix, ASan, integration, validation, package smoke, formatter, and
+- [ ] Hosted PR checks for exact semantic head
+  `c7dd52d2c530a9c112178e3001f9e8f717a45a16` are currently queued/pending:
+  [CI run 33482886840](https://github.com/RuleWorld/BNG3/actions/runs/33482886840),
+  [CodeQL run 33482886854](https://github.com/RuleWorld/BNG3/actions/runs/33482886854),
+  and [formatting run 33482886862](https://github.com/RuleWorld/BNG3/actions/runs/33482886862).
+  They have not yet produced a complete terminal set across the C++ matrix,
+  Python matrix, ASan, integration, validation, package smoke, formatter, and
   CodeQL. Older runs are historical and do not establish evidence for this
-  head. The subsequent checklist documentation checkpoint requires a fresh
+  head. This checklist refresh creates a new public head and requires a fresh
   exact-head set of its own.
 - [x] Modern Atomizer checkpoints exist for annotations, BNG-XML conversion,
   Rulifier, UniProt, structure helpers, and conservative SBML-Multi discovery,
@@ -410,9 +412,17 @@ completion gate.
   energy rules because the current direct AST Arrhenius helper requires a
   bidirectional rule; one-way direct-AST energy mapping remains an explicit
   unsupported gap.
+- [x] BNG3 carries the source-derived connected-membership refresh from NFsim
+  commits `051e7e2` and `23436e2`: native MoleculeType reaction order,
+  precomputed `areReactionsConnected` lookup, compatible explicit template
+  connectivity, and indexed `tryToAddWithIndex` for incremental reactions
+  (`c7dd52d`; the source-derived t3 XML bridge test passes bytewise seeded
+  no-connect/connect trajectory comparison in
+  `tests/cpp/test_nfsim_ast_adapter.cpp`).
 - [ ] Port and test the remaining supported CPU evaluator slices from the
   merged NFSIM source: the broader full incremental-membership machinery and
-  the remaining direct-product path.
+  the remaining direct-product paths. The connected direct-product refresh
+  path is now covered above, but full source parity is not implied.
   Source context-count semantics now have a BNG3 adapter port and focused
   source-derived tests, but their full source parity is not implied.
   Cross-type changed-endpoint propagation is now indexed in the
@@ -563,7 +573,7 @@ completion gate.
 ### 8.1 CI truthfulness
 
 - [ ] Current exact semantic PR head
-  `2940a021b6dad33894f93f8fdf405090e2a79b1f` has a complete terminal hosted
+  `c7dd52d2c530a9c112178e3001f9e8f717a45a16` has a complete terminal hosted
   check set for C++, Python, validation, integration, formatting, ASan, and
   CodeQL. Exact run links and terminal results must be recorded with `gh`;
   older `464bd8d` and earlier runs are not evidence for this head. This
@@ -722,12 +732,14 @@ These are known unchecked requirements, not reasons to claim completion:
   complex counting (`bb14a207`), sparse type-invariant membership-decision
   indexing (`fbfda3f`), and endpoint-refined membership refresh decisions
   from NFsim commit `ced6f60` (`464bd8d`), and all-forward compact partner-pool
-  early return from NFsim commit `fd01d015` (`2940a02`). The direct-AST energy
-  fixture documents that one-way Arrhenius rules currently do not reach the
-  compact energy helper because it requires bidirectionality. Merged NFSIM PR
-  #475 full incremental-membership
-  semantics, remaining direct-product parity, independent energy parity,
-  benchmark provenance, and source reconciliation are still open.
+  early return from NFsim commit `fd01d015` (`2940a02`), plus connected
+  membership order/template coverage from NFsim commits `051e7e2` and
+  `23436e2` (`c7dd52d`). The direct-AST energy fixture documents that one-way
+  Arrhenius rules currently do not reach the compact energy helper because it
+  requires bidirectionality. Merged NFSIM PR #475 full
+  incremental-membership semantics, remaining direct-product parity,
+  independent energy parity, benchmark provenance, and source reconciliation
+  are still open.
 - cpp/nfsim/nauty24 and the NFsim ExprTk path remain in the build; the
   canonical-label and shared-expression master-function migrations are not
   complete.
