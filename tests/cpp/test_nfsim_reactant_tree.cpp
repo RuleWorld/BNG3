@@ -1,13 +1,17 @@
 #include <map>
+#include <sstream>
 #include <string>
 #include <vector>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 #include "NFcore.hh"
+#include "NFinput/NFinput_fromAst.hh"
 #include "NFreactions/reactantLists/reactantTree.hh"
 #include "NFreactions/transformations/transformationSet.hh"
+#include "parser/BNGAstVisitor.hpp"
 
 TEST_CASE("NFsim System rejects unsafe output names") {
     // Source-derived from NFsim commit 3527edb and its System constructor
@@ -33,6 +37,152 @@ TEST_CASE("NFsim System rejects unsafe output names") {
                               "Path traversal detected in System name.");
         }
     }
+}
+
+TEST_CASE("NFsim stepTo preserves continuous simulation checkpoints") {
+    // Source-derived from NFsim commit e3ef4a0 and
+    // validate/basicModels/step_to_cache.xml.  A pending event that falls
+    // after an output boundary must be retained, so chunked stepTo calls and
+    // one continuous sim consume the same event stream.
+    auto model = bng::parser::parseModel(R"BNG(
+begin parameters
+    k 10
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 100
+end seed species
+begin observables
+    Molecules B_total B()
+end observables
+begin reaction rules
+    A() -> A() + B() k
+end reaction rules
+)BNG");
+    REQUIRE(model != nullptr);
+
+    int continuousTraversalLimit = 0;
+    auto* continuous = NFinput::buildSystemFromAst(
+        *model, false, 20000, false, continuousTraversalLimit);
+    REQUIRE(continuous != nullptr);
+    continuous->seedRNG(1);
+    continuous->prepareForSimulation();
+    continuous->getOutputFileStream().setUseFile(false);
+    continuous->sim(10.0, 10, false);
+
+    std::vector<double> continuousTimes;
+    std::vector<double> continuousCounts;
+    std::istringstream continuousOutput(continuous->getOutputFileStream().str());
+    std::string outputLine;
+    while (std::getline(continuousOutput, outputLine)) {
+        if (outputLine.empty() || outputLine.front() == '#') continue;
+        std::istringstream row(outputLine);
+        double time = 0.0;
+        double count = 0.0;
+        if (row >> time >> count) {
+            continuousTimes.push_back(time);
+            continuousCounts.push_back(count);
+        }
+    }
+    REQUIRE(continuousTimes.size() == 11);
+    REQUIRE(continuousCounts.size() == 11);
+
+    int chunkedTraversalLimit = 0;
+    auto* chunked = NFinput::buildSystemFromAst(
+        *model, false, 20000, false, chunkedTraversalLimit);
+    REQUIRE(chunked != nullptr);
+    chunked->seedRNG(1);
+    chunked->prepareForSimulation();
+    std::vector<int> chunkedCounts;
+    for (int checkpoint = 1; checkpoint <= 10; ++checkpoint) {
+        CHECK(chunked->stepTo(static_cast<double>(checkpoint)) ==
+              Catch::Approx(static_cast<double>(checkpoint)));
+        chunkedCounts.push_back(
+            chunked->getObservableByName("B_total")->getCount());
+    }
+
+    CHECK(chunked->getCurrentTime() == Catch::Approx(10.0));
+    REQUIRE(chunkedCounts.size() == 10);
+    for (std::size_t index = 0; index < chunkedCounts.size(); ++index) {
+        CHECK(continuousTimes[index + 1] ==
+              Catch::Approx(static_cast<double>(index + 1)));
+        CHECK(chunkedCounts[index] ==
+              static_cast<int>(continuousCounts[index + 1]));
+    }
+
+    delete chunked;
+    delete continuous;
+}
+
+TEST_CASE("NFsim stepTo advances zero-propensity checkpoints") {
+    // Source-derived from NFsim commit e3ef4a0 and
+    // validate/basicModels/step_to_zero_propensity.xml.  A system with no
+    // available reactants must still advance each requested output boundary.
+    auto model = bng::parser::parseModel(R"BNG(
+begin parameters
+    k 1
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 0
+    B() 1
+end seed species
+begin observables
+    Molecules B_total B()
+end observables
+begin reaction rules
+    A() -> A() + B() k
+end reaction rules
+)BNG");
+    REQUIRE(model != nullptr);
+
+    int continuousTraversalLimit = 0;
+    auto* continuous = NFinput::buildSystemFromAst(
+        *model, false, 100, false, continuousTraversalLimit);
+    REQUIRE(continuous != nullptr);
+    continuous->prepareForSimulation();
+    continuous->getOutputFileStream().setUseFile(false);
+    continuous->sim(2.0, 2, false);
+
+    int chunkedTraversalLimit = 0;
+    auto* chunked = NFinput::buildSystemFromAst(
+        *model, false, 100, false, chunkedTraversalLimit);
+    REQUIRE(chunked != nullptr);
+    chunked->prepareForSimulation();
+    CHECK(chunked->stepTo(1.0) == Catch::Approx(1.0));
+    CHECK(chunked->stepTo(2.0) == Catch::Approx(2.0));
+    CHECK(chunked->getObservableByName("B_total")->getCount() == 1);
+
+    std::vector<double> continuousTimes;
+    std::vector<double> continuousCounts;
+    std::istringstream continuousOutput(continuous->getOutputFileStream().str());
+    std::string outputLine;
+    while (std::getline(continuousOutput, outputLine)) {
+        if (outputLine.empty() || outputLine.front() == '#') continue;
+        std::istringstream row(outputLine);
+        double time = 0.0;
+        double count = 0.0;
+        if (row >> time >> count) {
+            continuousTimes.push_back(time);
+            continuousCounts.push_back(count);
+        }
+    }
+    REQUIRE(continuousTimes.size() == 3);
+    REQUIRE(continuousCounts.size() == 3);
+    CHECK(continuousTimes[1] == Catch::Approx(1.0));
+    CHECK(continuousTimes[2] == Catch::Approx(2.0));
+    CHECK(continuousCounts[0] == 1.0);
+    CHECK(continuousCounts[1] == 1.0);
+    CHECK(continuousCounts[2] == 1.0);
+
+    delete chunked;
+    delete continuous;
 }
 
 TEST_CASE("NFsim ReactantTree preserves the compact one-leaf contract") {
