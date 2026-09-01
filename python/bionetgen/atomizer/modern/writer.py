@@ -693,9 +693,7 @@ def curate_parameters(parameters: Mapping[str, object]) -> Dict[str, str]:
         )
         value_text = str(value)
         if re.search(r"inf", value_text, flags=re.IGNORECASE):
-            value_text = re.sub(
-                r"inf", "1e20", value_text, flags=re.IGNORECASE
-            )
+            value_text = re.sub(r"inf", "1e20", value_text, flags=re.IGNORECASE)
         if re.search(r"nan", value_text, flags=re.IGNORECASE):
             logger.warning(
                 "BNW001",
