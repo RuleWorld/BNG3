@@ -4954,10 +4954,8 @@ end reaction rules
                          std::string("symmetry_factor=\"0.5\" ").size();
     }
     const auto totalRatePosition = xml.find(
-        "totalrate=\"0\"", xml.find("RR2_RateLaw"));
+        "totalrate=\"1\"", xml.find("RR2_RateLaw"));
     REQUIRE(totalRatePosition != std::string::npos);
-    xml.replace(totalRatePosition, std::string("totalrate=\"0\"").size(),
-                "totalrate=\"1\"");
 
     const auto token = std::chrono::steady_clock::now().time_since_epoch().count();
     const auto xmlPath = std::filesystem::temp_directory_path() /

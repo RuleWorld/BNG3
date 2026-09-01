@@ -1352,7 +1352,8 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
         }
 
         xml << "        <RateLaw id=\"" << rrId << "_RateLaw\" type=\"" << type
-            << "\" totalrate=\"0\"";
+            << "\" totalrate=\""
+            << (hasModifier(rule.getModifiers(), "TotalRate") ? "1" : "0") << "\"";
         if (type == "FunctionProduct") {
             const auto writeOperand = [&](const ast::Expression& operand,
                                            const char* functionAttribute,
