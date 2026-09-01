@@ -860,6 +860,32 @@ void MoleculeType::updateRxnMembership(Molecule * m,
 			compactPartnerPoolBatchScheduled = true;
 		}
 	}
+	bool allReactionsUseCompactPartnerPool =
+			useCompactPartnerPoolIndex &&
+			compactPartnerReactionIndices[membershipChange.componentIndex2].size() ==
+				reactions.size();
+	if (allReactionsUseCompactPartnerPool) {
+		if (compactPartnerPoolChanged) {
+			bool defer = this->system->isDeferringMembershipPropensityUpdates();
+			if (defer && compactPartnerPoolBatchScheduled)
+				return;
+			const vector<unsigned int> &partnerReactions =
+					compactPartnerReactionIndices[membershipChange.componentIndex2];
+			for (vector<unsigned int>::const_iterator it =
+					partnerReactions.begin(); it != partnerReactions.end(); ++it) {
+				ReactionClass *rxn = reactions[*it];
+				if (defer) {
+					double oldA = rxn->get_a();
+					this->system->deferMembershipPropensityUpdate(rxn, oldA);
+				} else {
+					double oldA = rxn->get_a();
+					double newA = rxn->update_a();
+					this->system->update_A_tot(rxn, oldA, newA);
+				}
+			}
+		}
+		return;
+	}
 	vector<CompactPartnerPool *> compactPools;
 	vector<int> compactPoolOldSizes;
 	vector<bool> compactPoolChanged;

@@ -4233,3 +4233,66 @@ end reaction rules
 
     delete system;
 }
+
+TEST_CASE("NFsim compact pool refresh preserves all-forward reaction state") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    phi 0.5
+    G 1.0
+    RT 1.0
+end parameters
+begin molecule types
+    A(b,c)
+    B(a)
+    C(x)
+end molecule types
+begin seed species
+    A(b,c!1).C(x!1) 1
+    B(a) 1
+end seed species
+begin energy patterns
+    A(b!1,c!2).B(a!1).C(x!2) G
+end energy patterns
+begin reaction rules
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    const auto allReactions = system->getAllReactions();
+    REQUIRE(allReactions.size() == 4);
+
+    std::vector<NFcore::EnergyRxnClass*> forwardReactions;
+    NFcore::CompactPartnerPool* pool = nullptr;
+    for (auto* reaction : allReactions) {
+        auto* energyReaction = dynamic_cast<NFcore::EnergyRxnClass*>(reaction);
+        REQUIRE(energyReaction != nullptr);
+        if (energyReaction->getCompactPartnerPool() == nullptr)
+            continue;
+        forwardReactions.push_back(energyReaction);
+        if (pool == nullptr)
+            pool = energyReaction->getCompactPartnerPool();
+        CHECK(energyReaction->getCompactPartnerPool() == pool);
+    }
+    REQUIRE(forwardReactions.size() == 2);
+    REQUIRE(pool != nullptr);
+    CHECK(pool->getRegisteredReactions().size() == forwardReactions.size());
+
+    system->prepareForSimulation();
+    REQUIRE(pool->size() == 1);
+    for (auto* reaction : forwardReactions)
+        REQUIRE(reaction->get_a() > 0.0);
+
+    forwardReactions.front()->fire(0.0);
+
+    CHECK(pool->size() == 0);
+    for (auto* reaction : forwardReactions)
+        CHECK(reaction->get_a() == Catch::Approx(0.0));
+
+    delete system;
+}
