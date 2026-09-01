@@ -160,7 +160,8 @@ bool createExpandedBindingReactions(
     map<string, int> &allowedStates,
     bool blockSameComplexBinding,
     bool verbose,
-    int &reaction_count)
+    int &reaction_count,
+    bool includeReverse)
 {
     EnergyFunction *ef = s->getEnergyFunction();
     if (!ef) return false;
@@ -204,6 +205,7 @@ bool createExpandedBindingReactions(
     if (useCompact) {
         for (int direction = 0; direction < 2; direction++) {
             const bool isForward = (direction == 0);
+            if (!includeReverse && !isForward) continue;
             TemplateMolecule *t1 = new TemplateMolecule(molType1);
             TemplateMolecule *t2 = new TemplateMolecule(molType2);
 
@@ -250,6 +252,7 @@ bool createExpandedBindingReactions(
         rxnName, Ea0, phi_val, mt1Name, bindSite1, mt2Name, bindSite2);
 
     for (const auto &rule : expanded) {
+        if (!includeReverse && !rule.isForward) continue;
         TemplateMolecule *t1, *t2;
 
         if (rule.isForward) {
@@ -312,7 +315,8 @@ bool createExpandedStateChangeReactions(
     System *s,
     bool blockSameComplexBinding,
     bool verbose,
-    int &reaction_count)
+    int &reaction_count,
+    bool includeReverse)
 {
     EnergyFunction *ef = s->getEnergyFunction();
     if (!ef || !molType || stateFrom.empty() || stateTo.empty()) return false;
@@ -321,6 +325,7 @@ bool createExpandedStateChangeReactions(
         rxnName, Ea0, phi_val, molType->getName(), component, stateFrom, stateTo);
 
     for (const auto &rule : expanded) {
+        if (!includeReverse && !rule.isForward) continue;
         const string &fromState = rule.isForward ? stateFrom : stateTo;
         const string &toState = rule.isForward ? stateTo : stateFrom;
         if (molType->isEquivalentComponent(component)) return false;

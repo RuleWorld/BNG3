@@ -3668,7 +3668,7 @@ bool addDirectArrheniusBinding(const bng::ast::ReactionRule& rule, System* syste
                                const std::map<std::string, double>& parameters,
                                bool blockSameComplexBinding, bool verbose,
                                int& suggestedTraversalLimit) {
-    if (!rule.isBidirectional() || rule.getRates().size() != 1 ||
+    if (rule.getRates().size() != 1 ||
         !isArrheniusExpression(rule.getRates().front())) {
         return false;
     }
@@ -3754,7 +3754,7 @@ bool addDirectArrheniusBinding(const bng::ast::ReactionRule& rule, System* syste
     if (!createExpandedBindingReactions(
             rule.getRuleName(), phi, activationEnergy, moleculeType1, site1,
             moleculeType2, site2, system, unusedParameters, unusedStates,
-            blockSameComplexBinding, verbose, reactionCount)) {
+            blockSameComplexBinding, verbose, reactionCount, rule.isBidirectional())) {
         return false;
     }
 
@@ -3778,7 +3778,7 @@ bool addDirectArrheniusStateChange(const bng::ast::ReactionRule& rule, System* s
                                    const std::map<std::string, double>& parameters,
                                    bool blockSameComplexBinding, bool verbose,
                                    int& suggestedTraversalLimit) {
-    if (!rule.isBidirectional() || rule.getRates().size() != 1 ||
+    if (rule.getRates().size() != 1 ||
         !isArrheniusExpression(rule.getRates().front())) {
         return false;
     }
@@ -3854,7 +3854,7 @@ bool addDirectArrheniusStateChange(const bng::ast::ReactionRule& rule, System* s
     if (!createExpandedStateChangeReactions(
             rule.getRuleName(), phi, activationEnergy, moleculeType, component,
             stateFrom, stateChange->newState, system, blockSameComplexBinding,
-            verbose, reactionCount)) {
+            verbose, reactionCount, rule.isBidirectional())) {
         return false;
     }
 
@@ -4490,8 +4490,7 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
         const auto& originalRule = model.getReactionRules()[originalRuleOrdinal];
         const auto& originalRates = originalRule.getRates();
         const bool directArrhenius =
-            originalRule.isBidirectional() && originalRates.size() == 1 &&
-            isArrheniusExpression(originalRates.front());
+            originalRates.size() == 1 && isArrheniusExpression(originalRates.front());
         if ((!originalRule.isBidirectional() && originalRates.size() != 1) ||
             (originalRule.isBidirectional() && originalRates.size() != 2 &&
              !directArrhenius)) {
@@ -4505,7 +4504,7 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 hasReactionModifierPrefix(originalRule, "include_") ||
                 hasReactionModifierPrefix(originalRule, "exclude_") ||
                 hasReactionModifier(originalRule, "moveconnected")) {
-                std::cerr << "[nfsim/ast] direct Arrhenius binding uses an unsupported modifier\n";
+                std::cerr << "[nfsim/ast] direct Arrhenius reaction uses an unsupported modifier\n";
                 return false;
             }
             const bool onlyStateChange =
