@@ -2,8 +2,15 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
+#include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <sstream>
+
 #include "engine/NetworkGenerator.hpp"
 #include "engine/OdeIntegrator.hpp"
+#include "io/NetWriter.hpp"
 #include "parser/BNGAstVisitor.hpp"
 
 using namespace bng;
@@ -95,6 +102,77 @@ end reaction rules
     integrator.derivs(0.0, state, derivatives);
 
     REQUIRE_THAT(derivatives[0], Catch::Matchers::WithinAbs(-2.0, 1e-12));
+}
+
+TEST_CASE("Observable pattern compilation preserves multi-pattern weights", "[OdeOptions]") {
+    // Source-derived from akutuva21/bionetgen commit 60ac7e5f: moving
+    // observable parsing outside the species loop must preserve every pattern
+    // contribution when a functional ODE rate reads the group.
+    auto model = parser::parseModel(R"(
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 2
+    B() 1
+end seed species
+begin observables
+    Molecules total A() B()
+end observables
+begin reaction rules
+    A() -> B() total
+end reaction rules
+)");
+
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    engine::OdeIntegrator integrator(*model, network);
+
+    double state[] = {2.0, 1.0};
+    double derivatives[] = {0.0, 0.0};
+    integrator.derivs(0.0, state, derivatives);
+
+    REQUIRE_THAT(derivatives[0], Catch::Matchers::WithinAbs(-6.0, 1e-12));
+    REQUIRE_THAT(derivatives[1], Catch::Matchers::WithinAbs(6.0, 1e-12));
+}
+
+TEST_CASE("NetWriter preserves repeated observable group patterns", "[NetWriter]") {
+    // Source-derived from akutuva21/bionetgen commit 60ac7e5f: pre-parsing
+    // each observable pattern must leave the emitted group entries unchanged.
+    auto model = parser::parseModel(R"(
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 2
+    B() 1
+end seed species
+begin observables
+    Molecules total A() B()
+    Species present A()
+end observables
+begin reaction rules
+    A() -> B() 1
+end reaction rules
+)");
+
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    const auto suffix = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto outputPath = std::filesystem::temp_directory_path() /
+                            ("bng3-net-writer-groups-" + std::to_string(suffix) + ".net");
+    io::NetWriter::write(outputPath, *model, network);
+
+    std::ifstream input(outputPath);
+    REQUIRE(input.good());
+    const std::string output((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+    std::filesystem::remove(outputPath);
+
+    REQUIRE(output.find("begin groups\n") != std::string::npos);
+    REQUIRE(output.find("    1 total 1,2\n") != std::string::npos);
+    REQUIRE(output.find("    2 present 1\n") != std::string::npos);
 }
 
 TEST_CASE("CVODE honors steady-state stopping", "[OdeOptions]") {
