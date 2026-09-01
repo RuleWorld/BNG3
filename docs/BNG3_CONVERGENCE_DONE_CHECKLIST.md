@@ -6,7 +6,6 @@
 **Working branch:** codex/bng3-integration-foundations
 **Audited semantic code head:** 2940a021b6dad33894f93f8fdf405090e2a79b1f
 **Checklist refresh base:** 2940a02 (refresh after each semantic checkpoint)
-**Latest pushed checklist head:** ab489cae0f634f5b38f05d3263b4d04983a360c8
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -77,9 +76,13 @@ completion gate.
 - [x] Local canonical Black check passes: `177 files would be left unchanged`
   (Jupyter files are skipped because optional Jupyter dependencies are absent);
   Ruff and git diff checks pass.
-- [x] Local validation smoke reports 4 passed and 15 skipped; the skips are
-  visible because this checkout lacks the expected validation CLI/oracle
-  environment and must not be treated as parity.
+- [x] Local validation smoke on semantic head `2940a02` reports 4 passed and
+  15 skipped. A sandbox-external rerun removes process-inspection noise; the
+  remaining skips are visible `run_network`/reference-oracle gaps and must not
+  be treated as parity.
+- [x] Non-strict provenance, corpus-manifest, generated-manifest, and exception
+  ledger checks pass. The strict provenance gate remains intentionally red with
+  10 pending source/oracle/compiler/Python-lock approval errors.
 - [x] A no-build-isolation sdist and wheel were rebuilt from the current public
   checklist head `ab489ca` (semantic code `2940a02`) and the wheel was
   installed into an isolated target. Artifact SHA-256 digests are
@@ -88,8 +91,8 @@ completion gate.
   `dd6fe81bd14b41007a707ce41de0bdc6cbe197733d890f849bca45f51d7e6f3f`
   (CPython 3.14 arm64 wheel); the installed-target Python suite is recorded
   above.
-- [ ] Hosted PR checks for the exact current public head
-  `ab489cae0f634f5b38f05d3263b4d04983a360c8` (documentation-only after
+- [ ] Hosted PR checks at the preceding exact public checklist head
+  `b128e4a0ce852a9a293ae2f956f4e25b16637e7b` (documentation-only after
   semantic head `2940a021b6dad33894f93f8fdf405090e2a79b1f`) are currently
   queued or in progress and have
   not yet produced a complete terminal set across the C++ matrix, Python
@@ -563,9 +566,9 @@ completion gate.
   `2940a021b6dad33894f93f8fdf405090e2a79b1f` has a complete terminal hosted
   check set for C++, Python, validation, integration, formatting, ASan, and
   CodeQL. Exact run links and terminal results must be recorded with `gh`;
-  older `464bd8d` and earlier runs are not evidence for this head. The current
-  public checklist head is the documentation-only `ab489cae0f634f5b38f05d3263b4d04983a360c8`,
-  whose fresh CodeQL and formatting runs are also pending terminal results.
+  older `464bd8d` and earlier runs are not evidence for this head. This
+  documentation refresh creates a new public head and requires another exact-
+  head check readback after push.
 - [ ] Every required job emits a terminal summary with counts, failures,
   skips, exception budget, corpus/source revision, and artifact digests.
 - [ ] Required jobs fail when a claimed oracle, corpus, validator, or compiler
