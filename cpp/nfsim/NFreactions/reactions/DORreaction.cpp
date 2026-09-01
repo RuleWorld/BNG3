@@ -974,8 +974,10 @@ EnergyRxnClass::EnergyRxnClass(
 		bool isForward,
 		System *s) :
 	DORRxnClass(name,baseRate,baseRateName,transformationSet,dorReactantIndex,
-			s,1,1,false),
+					 s,1,1,false),
 	conditionalTerms(context.conditionalTerms),
+	conditionalComponentMasks(),
+	componentMaskFastPath(true),
 	simpleMembership(false),
 	reactionCenterComponentIndex(-1),
 	partnerComponentIndex(-1),
@@ -986,7 +988,10 @@ EnergyRxnClass::EnergyRxnClass(
 	baseEnergy(context.baseEnergy),
 	phi(phi),
 	RT(RT),
-	isForward(isForward)
+	isForward(isForward),
+	weightedDependencyMask(0),
+	dependencyMaskValid(true),
+	minimumConditionalBits(0)
 {
 	/* The compact input path currently supplies contexts on the first
 	 * reaction-center molecule. Its mapping is the first mapping in both the
@@ -1015,6 +1020,39 @@ EnergyRxnClass::EnergyRxnClass(
 			exit(1);
 		}
 		conditionComponentIndices.push_back(componentIndex);
+	}
+	for (unsigned int ti = 0; ti < conditionalTerms.size(); ++ti) {
+		std::uint64_t componentMask = 0;
+		for (unsigned int ci = 0; ci < conditionComponentIndices.size(); ++ci) {
+			if ((conditionalTerms[ti].conditionMask &
+					(std::uint64_t(1) << ci)) == 0)
+				continue;
+			int componentIndex = conditionComponentIndices[ci];
+			if (componentIndex < 0 || componentIndex >= 64) {
+				componentMaskFastPath = false;
+				break;
+			}
+			componentMask |=
+					(std::uint64_t(1) << static_cast<unsigned int>(componentIndex));
+		}
+		conditionalComponentMasks.push_back(componentMask);
+	}
+	if (componentMaskFastPath && !conditionalComponentMasks.empty()) {
+		minimumConditionalBits = 64;
+		for (vector<std::uint64_t>::const_iterator it =
+				conditionalComponentMasks.begin();
+				it != conditionalComponentMasks.end(); ++it) {
+			std::uint64_t mask = *it;
+			unsigned int bits = 0;
+			while (mask != 0) {
+				mask &= (mask - 1);
+				++bits;
+			}
+			if (bits < minimumConditionalBits)
+				minimumConditionalBits = bits;
+		}
+		if (minimumConditionalBits == 64)
+			minimumConditionalBits = 0;
 	}
 
 	/* Simple factorized binding contexts have one reaction-center constraint on
@@ -1058,6 +1096,24 @@ EnergyRxnClass::EnergyRxnClass(
 				partnerComponentIndex);
 		compactPartnerMappingSet = transformationSet->generateBlankMappingSet(1, 0);
 	}
+	if (simpleMembership) {
+		if (reactionCenterComponentIndex < 0 ||
+				reactionCenterComponentIndex >= 64) {
+			dependencyMaskValid = false;
+		} else {
+			weightedDependencyMask |=
+					(std::uint64_t(1) << reactionCenterComponentIndex);
+		}
+		for (vector<int>::const_iterator it = conditionComponentIndices.begin();
+				it != conditionComponentIndices.end(); ++it) {
+			if (*it < 0 || *it >= 64) {
+				dependencyMaskValid = false;
+			} else {
+				weightedDependencyMask |=
+					(std::uint64_t(1) << static_cast<unsigned int>(*it));
+			}
+		}
+	}
 
 	if (!simpleMembership && n_reactants > 1 && reactantLists[1] == 0) {
 		/* Unsupported contexts still need the ordinary partner list because the
@@ -1070,6 +1126,157 @@ EnergyRxnClass::~EnergyRxnClass()
 {
 	delete compactPartnerMappingSet;
 	compactPartnerMappingSet = 0;
+}
+
+bool EnergyRxnClass::getIncrementalMembershipChange(
+		IncrementalMembershipChange &change) const
+{
+	if (!simpleMembership)
+		return false;
+	change.moleculeType1 = reactantTemplates[0]->getMoleculeType();
+	change.componentIndex1 = reactionCenterComponentIndex;
+	change.isBoundAfter1 = isForward;
+	change.moleculeType2 = partnerMoleculeType;
+	change.componentIndex2 = partnerComponentIndex;
+	change.isBoundAfter2 = isForward;
+	return true;
+}
+
+bool EnergyRxnClass::getCompactMembershipIndexInfo(
+		unsigned int reactantPos,
+		int &reactionCenterComponent,
+		std::uint64_t &contextComponentMask,
+		unsigned int &minimumContextComponents) const
+{
+	if (!simpleMembership ||
+			reactantPos != static_cast<unsigned int>(DORreactantIndex) ||
+			!componentMaskFastPath || reactionCenterComponentIndex < 0)
+		return false;
+	contextComponentMask = 0;
+	for (vector<int>::const_iterator it = conditionComponentIndices.begin();
+			it != conditionComponentIndices.end(); ++it) {
+		if (*it < 0 || *it >= 64)
+			return false;
+		contextComponentMask |=
+				(std::uint64_t(1) << static_cast<unsigned int>(*it));
+	}
+	minimumContextComponents = minimumConditionalBits;
+	reactionCenterComponent = reactionCenterComponentIndex;
+	return true;
+}
+
+bool EnergyRxnClass::dependsOnEndpoint(
+		MoleculeType *targetMoleculeType,
+		MoleculeType *changedMoleculeType,
+		int changedComponentIndex) const
+{
+	MoleculeType *weightedType = reactantTemplates[0]->getMoleculeType();
+	if (targetMoleculeType == weightedType &&
+			changedMoleculeType == weightedType) {
+		if (dependencyMaskValid && changedComponentIndex >= 0 &&
+				changedComponentIndex < 64) {
+			return (weightedDependencyMask &
+					(std::uint64_t(1) << changedComponentIndex)) != 0;
+		}
+		if (changedComponentIndex == reactionCenterComponentIndex)
+			return true;
+		for (vector<int>::const_iterator it = conditionComponentIndices.begin();
+				it != conditionComponentIndices.end(); ++it) {
+			if (changedComponentIndex == *it)
+				return true;
+		}
+	}
+
+	return targetMoleculeType == partnerMoleculeType &&
+			changedMoleculeType == partnerMoleculeType &&
+			changedComponentIndex == partnerComponentIndex;
+}
+
+bool EnergyRxnClass::shouldUpdateMembership(
+		Molecule *m, ReactionClass *firedReaction, bool directProduct) const
+{
+	if (!simpleMembership || firedReaction == 0 ||
+			!firedReaction->usesIncrementalMembership())
+		return true;
+
+	IncrementalMembershipChange firedChange;
+	if (!firedReaction->getIncrementalMembershipChange(firedChange))
+		return true;
+	if (!directProduct)
+		return false;
+
+	MoleculeType *targetMoleculeType = m->getMoleculeType();
+	if (dependsOnEndpoint(targetMoleculeType, firedChange.moleculeType1,
+			firedChange.componentIndex1))
+		return true;
+	if (dependsOnEndpoint(targetMoleculeType, firedChange.moleculeType2,
+			firedChange.componentIndex2))
+		return true;
+	return false;
+}
+
+bool EnergyRxnClass::shouldUpdateMembershipForChange(
+		Molecule *m, const IncrementalMembershipChange &change) const
+{
+	if (!simpleMembership || m == 0)
+		return true;
+
+	MoleculeType *targetMoleculeType = m->getMoleculeType();
+	if (targetMoleculeType == partnerMoleculeType &&
+			change.moleculeType2 == partnerMoleculeType &&
+			change.componentIndex2 == partnerComponentIndex)
+		return true;
+
+	MoleculeType *weightedType = reactantTemplates[0]->getMoleculeType();
+	if (targetMoleculeType != weightedType ||
+			change.moleculeType1 != weightedType)
+		return false;
+
+	if (change.componentIndex1 == reactionCenterComponentIndex)
+		return true;
+	if (change.componentIndex1 < 0 || change.componentIndex1 >= 64)
+		return true;
+	std::uint64_t changedBit =
+			(std::uint64_t(1) << change.componentIndex1);
+	if (dependencyMaskValid &&
+			(weightedDependencyMask & changedBit) == 0)
+		return false;
+	if (!componentMaskFastPath) {
+		for (vector<int>::const_iterator it = conditionComponentIndices.begin();
+				it != conditionComponentIndices.end(); ++it) {
+			if (*it == change.componentIndex1)
+				return true;
+		}
+		return false;
+	}
+
+	std::uint64_t newMask = m->getBoundComponentMask();
+	bool observedBound = (newMask & changedBit) != 0;
+	if (observedBound != change.isBoundAfter1)
+		return true;
+	std::uint64_t oldMask = change.isBoundAfter1
+			? (newMask & ~changedBit) : (newMask | changedBit);
+	for (vector<std::uint64_t>::const_iterator it =
+			conditionalComponentMasks.begin();
+			it != conditionalComponentMasks.end(); ++it) {
+		std::uint64_t requiredMask = *it;
+		bool wasSatisfied = (oldMask & requiredMask) == requiredMask;
+		bool isSatisfied = (newMask & requiredMask) == requiredMask;
+		if (wasSatisfied != isSatisfied)
+			return true;
+	}
+	return false;
+}
+
+bool EnergyRxnClass::canSkipIndirectMembership(
+		ReactionClass *firedReaction) const
+{
+	if (!simpleMembership || firedReaction == 0 ||
+			!firedReaction->usesIncrementalMembership())
+		return false;
+	const EnergyRxnClass *firedEnergy =
+		dynamic_cast<const EnergyRxnClass *>(firedReaction);
+	return firedEnergy != 0 && firedEnergy->simpleMembership;
 }
 
 bool EnergyRxnClass::refreshCompactPartnerPool(

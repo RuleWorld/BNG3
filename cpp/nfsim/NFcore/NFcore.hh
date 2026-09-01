@@ -7,6 +7,7 @@
 //Include stl IO and string functionality
 #include <iostream>
 #include <fstream>
+#include <cstdint>
 #include <string>
 
 //Include stl containers
@@ -108,6 +109,19 @@ namespace NFcore
 	class ReactionSelector;
 
 	class SystemSnapshot;
+
+	/* Endpoint state changes exposed by compact EnergyPattern reactions. */
+	struct IncrementalMembershipChange {
+		IncrementalMembershipChange() :
+				moleculeType1(0), componentIndex1(-1), isBoundAfter1(false),
+				moleculeType2(0), componentIndex2(-1), isBoundAfter2(false) {}
+		MoleculeType *moleculeType1;
+		int componentIndex1;
+		bool isBoundAfter1;
+		MoleculeType *moleculeType2;
+		int componentIndex2;
+		bool isBoundAfter2;
+	};
 
 
 	//exception for the handling of local functions and mapping sets
@@ -1042,6 +1056,7 @@ namespace NFcore
 			///////////////////////////////////////////////////////////////////////
 			int getComponentState(int cIndex) const { return component[cIndex]; };
 			int getComponentIndexOfBond(int cIndex) const { return indexOfBond[cIndex]; };
+			std::uint64_t getBoundComponentMask() const { return boundComponentMask; };
 			void setComponentState(int cIndex, int newValue);
 			void setComponentState(string cName, int newValue);
 
@@ -1201,6 +1216,7 @@ namespace NFcore
 			int numOfComponents;
 			Molecule **bond;
 			int *indexOfBond; /* gives the index of the component that is bonded to this molecule */
+			std::uint64_t boundComponentMask;
 
 
 			//////////// keep track of local function values
@@ -1425,6 +1441,45 @@ namespace NFcore
 			virtual void remove(Molecule *m, unsigned int reactantPos) = 0;
 
 			virtual double update_a() = 0;
+			virtual bool usesIncrementalMembership() const { return false; }
+			virtual bool membershipDecisionIsTypeInvariant() const { return false; }
+			virtual bool getIncrementalMembershipChange(
+					IncrementalMembershipChange &change) const {
+				(void)change;
+				return false;
+			}
+			virtual bool getCompactMembershipIndexInfo(
+					unsigned int reactantPos,
+					int &reactionCenterComponent,
+					std::uint64_t &contextComponentMask,
+					unsigned int &minimumContextComponents) const {
+				(void)reactantPos;
+				(void)reactionCenterComponent;
+				(void)contextComponentMask;
+				(void)minimumContextComponents;
+				return false;
+			}
+			virtual bool supportsSparseSelection() const { return false; }
+			virtual bool canSkipIndirectMembership(
+					ReactionClass *firedReaction) const {
+				(void)firedReaction;
+				return false;
+			}
+			virtual bool shouldUpdateMembership(
+					Molecule *m, ReactionClass *firedReaction,
+					bool directProduct) const {
+				(void)m;
+				(void)firedReaction;
+				(void)directProduct;
+				return true;
+			}
+			virtual bool shouldUpdateMembershipForChange(
+					Molecule *m,
+					const IncrementalMembershipChange &change) const {
+				(void)m;
+				(void)change;
+				return true;
+			}
 
 
 

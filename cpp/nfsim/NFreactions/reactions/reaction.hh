@@ -237,6 +237,30 @@ namespace NFcore
 					bool isForward,
 					System *s);
 			virtual ~EnergyRxnClass();
+			virtual bool usesIncrementalMembership() const {
+				return simpleMembership;
+			}
+			virtual bool membershipDecisionIsTypeInvariant() const {
+				return simpleMembership;
+			}
+			virtual bool supportsSparseSelection() const {
+				return simpleMembership;
+			}
+			virtual bool getIncrementalMembershipChange(
+					IncrementalMembershipChange &change) const;
+			virtual bool getCompactMembershipIndexInfo(
+					unsigned int reactantPos,
+					int &reactionCenterComponent,
+					std::uint64_t &contextComponentMask,
+					unsigned int &minimumContextComponents) const;
+			virtual bool shouldUpdateMembership(
+					Molecule *m, ReactionClass *firedReaction,
+					bool directProduct) const;
+			virtual bool shouldUpdateMembershipForChange(
+					Molecule *m,
+					const IncrementalMembershipChange &change) const;
+			virtual bool canSkipIndirectMembership(
+					ReactionClass *firedReaction) const;
 			virtual CompactPartnerPool *getCompactPartnerPool() const {
 				return partnerPool;
 			}
@@ -274,6 +298,8 @@ namespace NFcore
 		private:
 			vector<EnergyPatternTerm> conditionalTerms;
 			vector<int> conditionComponentIndices;
+			vector<std::uint64_t> conditionalComponentMasks;
+			bool componentMaskFastPath;
 			bool simpleMembership;
 			int reactionCenterComponentIndex;
 			int partnerComponentIndex;
@@ -285,6 +311,14 @@ namespace NFcore
 			double phi;
 			double RT;
 			bool isForward;
+			std::uint64_t weightedDependencyMask;
+			bool dependencyMaskValid;
+			unsigned int minimumConditionalBits;
+
+			bool dependsOnEndpoint(
+					MoleculeType *targetMoleculeType,
+					MoleculeType *changedMoleculeType,
+					int changedComponentIndex) const;
 	};
 
 	/* A reaction class with DOR calculations on two reactants.

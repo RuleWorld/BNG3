@@ -39,6 +39,7 @@ Molecule::Molecule(MoleculeType * parentMoleculeType, int listId, Compartment * 
 		bond[b]=0; indexOfBond[b]=NOBOND;
 		hasVisitedBond[b] = false;
 	}
+	boundComponentMask = 0;
 
 
 	hasVisitedMolecule = false;
@@ -480,6 +481,10 @@ void Molecule::bind(Molecule *m1, int cIndex1, Molecule *m2, int cIndex2)
 
 	m1->indexOfBond[cIndex1] = cIndex2;
 	m2->indexOfBond[cIndex2] = cIndex1;
+	if (cIndex1 < 64)
+		m1->boundComponentMask |= (std::uint64_t(1) << cIndex1);
+	if (cIndex2 < 64)
+		m2->boundComponentMask |= (std::uint64_t(1) << cIndex2);
 
 	//Handle Complexes
 	if(m1->useComplex)
@@ -530,6 +535,12 @@ vector<int> Molecule::unbind(Molecule *m1, int cIndex)
 
 	m1->indexOfBond[cIndex] = NOINDEX;
 	m2->indexOfBond[cIndex2] = NOINDEX;
+	if (cIndex < 64)
+		m1->boundComponentMask &=
+				~(std::uint64_t(1) << cIndex);
+	if (cIndex2 < 64)
+		m2->boundComponentMask &=
+				~(std::uint64_t(1) << cIndex2);
 
 	//Handle Complexes
 	if(m1->useComplex)
@@ -774,6 +785,5 @@ void Molecule::printMoleculeList(list <Molecule *> &members)
 		cout<<"_u"<<(*molIter)->getUniqueID()<<endl;
 	}
 }
-
 
 

@@ -1,5 +1,6 @@
 #include <cmath>
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -3272,7 +3273,60 @@ end reaction rules
     auto* compactReaction =
         dynamic_cast<NFcore::EnergyRxnClass*>(system->getReaction(0));
     REQUIRE(compactReaction != nullptr);
+    CHECK(compactReaction->usesIncrementalMembership());
+    CHECK(compactReaction->supportsSparseSelection());
+    CHECK(compactReaction->membershipDecisionIsTypeInvariant());
     REQUIRE(compactReaction->getCompactPartnerPool() != nullptr);
+    NFcore::IncrementalMembershipChange membershipChange;
+    REQUIRE(compactReaction->getIncrementalMembershipChange(membershipChange));
+    CHECK(membershipChange.moleculeType1 == system->getMoleculeTypeByName("A"));
+    CHECK(membershipChange.componentIndex1 ==
+          system->getMoleculeTypeByName("A")->getCompIndexFromName("b"));
+    CHECK(membershipChange.isBoundAfter1);
+    CHECK(membershipChange.moleculeType2 == system->getMoleculeTypeByName("B"));
+    CHECK(membershipChange.componentIndex2 ==
+          system->getMoleculeTypeByName("B")->getCompIndexFromName("a"));
+    CHECK(membershipChange.isBoundAfter2);
+    int reactionCenterComponent = -1;
+    std::uint64_t contextComponentMask = 0;
+    unsigned int minimumContextComponents = 0;
+    REQUIRE(compactReaction->getCompactMembershipIndexInfo(
+        0, reactionCenterComponent, contextComponentMask,
+        minimumContextComponents));
+    CHECK(reactionCenterComponent == membershipChange.componentIndex1);
+    const int contextC = system->getMoleculeTypeByName("A")
+                             ->getCompIndexFromName("c");
+    const int contextD = system->getMoleculeTypeByName("A")
+                             ->getCompIndexFromName("d");
+    CHECK((contextComponentMask & (std::uint64_t(1) << contextC)) != 0);
+    CHECK((contextComponentMask & (std::uint64_t(1) << contextD)) != 0);
+    CHECK(minimumContextComponents >= 1);
+    auto* weightedMolecule = system->getMoleculeTypeByName("A")->getMolecule(0);
+    auto* partnerMolecule = system->getMoleculeTypeByName("B")->getMolecule(0);
+    auto* indirectMolecule = system->getMoleculeTypeByName("C")->getMolecule(0);
+    REQUIRE(weightedMolecule != nullptr);
+    REQUIRE(partnerMolecule != nullptr);
+    REQUIRE(indirectMolecule != nullptr);
+    CHECK(compactReaction->shouldUpdateMembership(
+        weightedMolecule, compactReaction, true));
+    CHECK(compactReaction->shouldUpdateMembership(
+        partnerMolecule, compactReaction, true));
+    CHECK_FALSE(compactReaction->shouldUpdateMembership(
+        indirectMolecule, compactReaction, true));
+    CHECK_FALSE(compactReaction->shouldUpdateMembership(
+        weightedMolecule, compactReaction, false));
+    CHECK(compactReaction->shouldUpdateMembershipForChange(
+        weightedMolecule, membershipChange));
+    CHECK(compactReaction->shouldUpdateMembershipForChange(
+        partnerMolecule, membershipChange));
+    CHECK_FALSE(compactReaction->shouldUpdateMembershipForChange(
+        indirectMolecule, membershipChange));
+    NFcore::IncrementalMembershipChange contextChange = membershipChange;
+    contextChange.componentIndex1 = contextC;
+    contextChange.isBoundAfter1 = true;
+    CHECK(compactReaction->shouldUpdateMembershipForChange(
+        weightedMolecule, contextChange));
+    CHECK(compactReaction->canSkipIndirectMembership(compactReaction));
     CHECK(compactReaction->getCompactPartnerPool()->getRegisteredReactions().size() == 1);
     CHECK(compactReaction->getCompactPartnerPool()->getRegisteredReactions().front() == compactReaction);
 
