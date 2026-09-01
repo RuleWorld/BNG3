@@ -5282,6 +5282,87 @@ end reaction rules
     delete system;
 }
 
+TEST_CASE("NFsim sparse selector reuses cached propensities in implicit batches") {
+    // Source-derived from NFsim 4bb24b3: an implicit sparse update batch must
+    // subtract the selector's cached pre-update propensity.  Reading get_a()
+    // after the membership event has already changed it would subtract the
+    // new value and leave Atot stale.
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    phi 0.5
+    G 1.0
+    RT 1.0
+end parameters
+begin molecule types
+    A(b,c,d)
+    B(a)
+    C(x)
+    D(x)
+end molecule types
+begin seed species
+    A(b,c!1,d!2).C(x!1).D(x!2) 1
+    A(b,c!3).C(x!3) 1
+    A(b) 1
+    B(a) 2
+    C(x) 1
+    D(x) 1
+end seed species
+begin energy patterns
+    A(b!1,c!2,d!3).B(a!1).C(x!2).D(x!3) G
+end energy patterns
+begin reaction rules
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    system->prepareForSimulation();
+
+    auto allReactions = system->getAllReactions();
+    REQUIRE(allReactions.size() == 18);
+    NFcore::EnergyRxnClass* compactReaction = nullptr;
+    for (auto* reaction : allReactions) {
+        auto* energyReaction = dynamic_cast<NFcore::EnergyRxnClass*>(reaction);
+        REQUIRE(energyReaction != nullptr);
+        if (energyReaction->getCompactPartnerPool() != nullptr &&
+                compactReaction == nullptr)
+            compactReaction = energyReaction;
+        CHECK(energyReaction->supportsSparseSelection());
+    }
+    REQUIRE(compactReaction != nullptr);
+
+    const auto sumPropensities = [&]() {
+        double total = 0.0;
+        for (auto* reaction : allReactions)
+            total += reaction->get_a();
+        return total;
+    };
+    NFcore::DirectSelector selector(allReactions, system);
+    const double initialTotal = sumPropensities();
+    REQUIRE(initialTotal > 0.0);
+    CHECK(selector.getAtot() == Catch::Approx(initialTotal));
+
+    compactReaction->fire(0.0);
+    const double refreshedTotal = sumPropensities();
+    REQUIRE(refreshedTotal != Catch::Approx(initialTotal));
+    selector.updateBatch(allReactions);
+    CHECK(selector.getAtot() == Catch::Approx(refreshedTotal));
+
+    delete system;
+}
+
 TEST_CASE("NFsim compact membership refresh preserves unrelated partner rules") {
     auto model = bng::parser::parseModel(R"(
 begin parameters

@@ -403,7 +403,13 @@ double DirectSelector::updateBatch(vector<ReactionClass *> &rxns)
 		ReactionClass *r = *it;
 		if (r == 0)
 			continue;
-		double oldA = r->get_a();
+		int reaction = r->getRxnId();
+		bool indexedReaction = sparseSelectionSafe &&
+				reaction >= 0 && reaction < n_reactions &&
+				reactionClassList[reaction] == r;
+		double oldA = indexedReaction
+				? reactionPropensities[static_cast<std::size_t>(reaction)]
+				: r->get_a();
 		double newA = r->update_a();
 		update(r, oldA, newA);
 	}
