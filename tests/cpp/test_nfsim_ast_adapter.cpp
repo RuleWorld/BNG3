@@ -1519,6 +1519,126 @@ end reaction rules
     delete system;
 }
 
+TEST_CASE("NFsim AST adapter permits multi-bond ring-opening dissociation") {
+    // Source-derived from NFsim 4b4e514: product molecularity must evaluate
+    // all bonds deleted by one firing together.  Removing either bond alone
+    // leaves this two-bond homodimer connected, but removing both bonds splits
+    // it into two products and must be allowed.
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k_reverse 1.0
+end parameters
+begin molecule types
+    M(h,f)
+end molecule types
+begin seed species
+    M(h!1,f!2).M(h!2,f!1) 1
+end seed species
+begin observables
+    Species Ring M(h!1,f!2).M(h!2,f!1)
+    Molecules Monomer M(h,f)
+end observables
+begin reaction rules
+    M(h!1,f!2).M(h!2,f!1) -> M(h,f) + M(h,f) k_reverse
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(
+        *model, true, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    system->prepareForSimulation();
+    REQUIRE(system->getObservableByName("Ring") != nullptr);
+    REQUIRE(system->getObservableByName("Monomer") != nullptr);
+    CHECK(system->getObservableByName("Ring")->getCount() == 1);
+    CHECK(system->getObservableByName("Monomer")->getCount() == 0);
+
+    NFcore::System::NULL_EVENT_COUNTER = 0;
+    system->getReaction(0)->fire(0.0);
+
+    CHECK(NFcore::System::NULL_EVENT_COUNTER == 0);
+    CHECK(system->getObservableByName("Ring")->getCount() == 0);
+    CHECK(system->getObservableByName("Monomer")->getCount() == 2);
+    delete system;
+
+    // The XML compatibility path exercises the same embedded NFsim
+    // TransformationSet implementation and is retained as the migration
+    // comparator for the direct adapter.
+    int xmlSuggestedTraversalLimit = 0;
+    auto* xmlSystem = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), true, 100, false,
+        xmlSuggestedTraversalLimit);
+    REQUIRE(xmlSystem != nullptr);
+    xmlSystem->prepareForSimulation();
+    REQUIRE(xmlSystem->getObservableByName("Ring") != nullptr);
+    REQUIRE(xmlSystem->getObservableByName("Monomer") != nullptr);
+    CHECK(xmlSystem->getObservableByName("Ring")->getCount() == 1);
+    CHECK(xmlSystem->getObservableByName("Monomer")->getCount() == 0);
+    NFcore::System::NULL_EVENT_COUNTER = 0;
+    xmlSystem->getReaction(0)->fire(0.0);
+    CHECK(NFcore::System::NULL_EVENT_COUNTER == 0);
+    CHECK(xmlSystem->getObservableByName("Ring")->getCount() == 0);
+    CHECK(xmlSystem->getObservableByName("Monomer")->getCount() == 2);
+    delete xmlSystem;
+}
+
+TEST_CASE("NFsim AST adapter blocks single-bond ring dissociation") {
+    // The negative control from the same NFsim source fix: a single deleted
+    // bond must remain blocked when an alternate path keeps the two products
+    // in one connected complex.
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k_reverse 1.0
+end parameters
+begin molecule types
+    L(a,b)
+    R(c,d)
+end molecule types
+begin seed species
+    L(a!1,b!2).L(a!3,b!4).R(c!2,d!3).R(c!4,d!1) 1
+end seed species
+begin observables
+    Species Ring L(a!1,b!2).L(a!3,b!4).R(c!2,d!3).R(c!4,d!1)
+end observables
+begin reaction rules
+    L(a!1).R(c!1) -> L(a) + R(c) k_reverse
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(
+        *model, true, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    system->prepareForSimulation();
+    REQUIRE(system->getObservableByName("Ring") != nullptr);
+    CHECK(system->getObservableByName("Ring")->getCount() == 1);
+
+    NFcore::System::NULL_EVENT_COUNTER = 0;
+    system->getReaction(0)->fire(0.0);
+
+    CHECK(NFcore::System::NULL_EVENT_COUNTER == 1);
+    CHECK(system->getObservableByName("Ring")->getCount() == 1);
+    delete system;
+
+    int xmlSuggestedTraversalLimit = 0;
+    auto* xmlSystem = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), true, 100, false,
+        xmlSuggestedTraversalLimit);
+    REQUIRE(xmlSystem != nullptr);
+    xmlSystem->prepareForSimulation();
+    REQUIRE(xmlSystem->getObservableByName("Ring") != nullptr);
+    CHECK(xmlSystem->getObservableByName("Ring")->getCount() == 1);
+    NFcore::System::NULL_EVENT_COUNTER = 0;
+    xmlSystem->getReaction(0)->fire(0.0);
+    CHECK(NFcore::System::NULL_EVENT_COUNTER == 1);
+    CHECK(xmlSystem->getObservableByName("Ring")->getCount() == 1);
+    delete xmlSystem;
+}
+
 TEST_CASE("NFsim AST adapter creates direct standalone product molecules") {
     auto model = bng::parser::parseModel(R"(
 begin parameters
