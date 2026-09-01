@@ -4,8 +4,8 @@
 **Last audited:** 2026-09-01
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** c754544bce31b4efe708c84afdb9bfc46464570d
-**Checklist refresh base:** 9a2475a (source-derived exact-head CI evidence repair; refresh after each checkpoint)
+**Audited semantic code head:** 144b5e3a2f333ffaf025ba044277c65dc27d13db
+**Checklist refresh base:** 144b5e3 (source-derived modern Atomizer Species.extend parity checkpoint; refresh after each checkpoint)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -49,28 +49,19 @@ completion gate.
 
 - [x] Required fast-forward pull completed before this documentation change.
 - [x] The latest local semantic checkpoint is
-  `c754544bce31b4efe708c84afdb9bfc46464570d`; its parent
-  `7186b651645b88ab68fb667893f6f96cfde94062` is the Issue78 absolute-clock
-  checkpoint. `c754544` adds the source-derived NFsim XML contract for plain
-  scoped LocalFunction reaction rates: XML emits a generated composite
-  wrapper, while nested CompositeFunction rates retain their direct name.
-  The wrapper is accepted by the independently built native NFsim binary. Its
-  earlier source-derived parents include the Issue86 checkpoint
-  `852793f9d8c4216dfb1c211497959cdb479e4e9f`, which is the source-derived
-  species-observable refresh checkpoint, and its grandparent
-  `2d1fad28caa2f60076a25086d6f6edea5af89f9d` is the native-compatible direct
-  NFsim endpoint checkpoint. The semantic engine retains the source-compatible
-  direct reactant-count mapping, dual mapping-RNG stream, BNG2 seed allocation
-  and canonical ordering, inferred integer-state handling, repeated NFsim
-  sample-time accumulation, final-endpoint event semantics, and Issue86
-  `Species`/`Molecules` dependent propensity refresh. `7186b65` additionally
-  ports NFsim Issue78 absolute-start semantics through the direct API and
-  `simulate_nf` action, and makes `equilibrate(duration)` advance from and
-  restore the absolute current clock.
+  `144b5e3a2f333ffaf025ba044277c65dc27d13db`; its parent
+  `c754544bce31b4efe708c84afdb9bfc46464570d` is the NFsim XML local-function
+  compatibility checkpoint. `144b5e3` adds the source-derived
+  Playground `Species.extend` equal-molecule-count behavior: `update=False`
+  expands a component's state domain without changing its active state, and
+  repeated same-name components retain their multiplicity. The earlier
+  source-derived engine checkpoints remain in this commit's ancestry,
+  including the Issue78 absolute-clock and Issue86 species-observable
+  refresh ports.
 - [x] The latest public code/test checkpoint is
-  `c754544bce31b4efe708c84afdb9bfc46464570d`, whose parent is the prior
-  documentation checkpoint `ed3f295bc2b1b505ef1b6c8c64e72a56e12117fd`; it
-  adds the XML-writer compatibility behavior and its source-derived tests.
+  `144b5e3a2f333ffaf025ba044277c65dc27d13db`, whose parent is
+  `c754544bce31b4efe708c84afdb9bfc46464570d`; it adds the source-derived
+  modern Atomizer extension tests and implementation.
 - [x] The latest published CI-repair checkpoint is
   `9a2475a0af360d685dc41eb9bb376f6517d74b4d`; `gh api` and `gh pr view 2`
   agreed on this branch/PR source head immediately after push, and PR #2
@@ -78,7 +69,7 @@ completion gate.
 - [x] The small documentation grammar fix remains the only unrelated tracked
   BNG3 worktree modification. It remains intentionally unstaged and must not
   be mixed into semantic or checklist commits.
-- [x] Exact-head CTest passes `171/171` on `c754544` (local Release/Ninja
+- [x] Exact-head CTest passes `171/171` on `144b5e3` (local Release/Ninja
   build; `ctest --test-dir build --output-on-failure`), including the t4
   rejection contract, inferred-state/type-order gates, and IfTest parity
   assertions.
@@ -86,7 +77,7 @@ completion gate.
   prior 0f83347 evidence was supplemental memory-safety coverage, not a
   substitute for hosted sanitizer and leak/UBSan gates.
 - [x] The full NFsim AST adapter executable passes 118 test cases and 1280
-  assertions on `c754544`. It covers compact energy evaluation, cached compact
+  assertions on `144b5e3`. It covers compact energy evaluation, cached compact
   rate factors, specialized reverse propensities, sparse selector ordering,
   cached single- and multi-term Arrhenius factors, direct-product endpoint
   identity propagation, safe direct-product traversal, cached pre-fire binding
@@ -144,8 +135,8 @@ completion gate.
   rejection port from NFsim `3527edb` and continuous-vs-chunked `stepTo`
   checkpoint tests from NFsim `e3ef4a0` (50 assertions across the two new
   cases, including the zero-propensity boundary).
-- [x] Exact-head Python/API tests pass on semantic checkpoint `c754544`:
-  `231 passed, 27 skipped, 8 warnings` from
+- [x] Exact-head Python/API tests pass on semantic checkpoint `144b5e3`:
+  `233 passed, 27 skipped, 8 warnings` from
   `PYTHONPATH=python:build/cpp python -m pytest tests/python -q`. The installed-
   wheel target still has only historical evidence and is not release evidence
   for this head.
@@ -167,7 +158,7 @@ completion gate.
   cases passed, and the fixed-seed direct endpoint cases passed:
   `6 passed, 4 deselected, 6 warnings` in 131.87 seconds at `7186b65`.
   This is subset evidence only; it does not close the full Tier-NF gate.
-- [x] Current checkpoint `c754544` passes the four-model local Tier-NF
+- [x] The C++-unchanged native checkpoint `c754544` passes the four-model local Tier-NF
   200-run gate (`simple_system`, `tlbr`, `motor`, `localfunc`) against the
   independently built native binary: `4 passed, 6 deselected, 5 warnings` in
   168.62 seconds. Its direct-vs-in-memory-XML shadow suite passes `4 passed,
@@ -194,6 +185,12 @@ completion gate.
 - [x] Exact-head local CI workflow contract tests pass 7/7 on `9a2475a`,
   including the pull-request source-distribution smoke gate and the contract
   that PR-head concurrency preserves in-flight hosted evidence.
+- [x] Source-derived Playground Atomizer `Species.extend` coverage passes
+  `2 passed, 34 deselected` in
+  `tests/python/test_modern_atomizer.py -k species_extend` after the expected
+  red-first run. The implementation is in
+  `python/bionetgen/atomizer/modern/structures.py` and follows the reference
+  branch `src/lib/atomizer/core/structures.ts:637-672`.
 - [x] Local canonical Black check passes: `177 files would be left unchanged`
   under `black --check --diff --target-version py312 python/ tests/python/
   scripts/` (Jupyter files are skipped because optional Jupyter dependencies
@@ -226,13 +223,13 @@ completion gate.
   was still in progress at the last readback, and [formatting run
   33531304766](https://github.com/RuleWorld/BNG3/actions/runs/33531304766) had
   passed. These runs do not qualify the current repair.
-- [ ] At this refresh, the exact public CI-repair head
-  `9a2475a0af360d685dc41eb9bb376f6517d74b4d` has queued hosted [CI run
-  33532740611](https://github.com/RuleWorld/BNG3/actions/runs/33532740611),
+- [ ] At this refresh, the exact public semantic head
+  `144b5e3a2f333ffaf025ba044277c65dc27d13db` has queued hosted [CI run
+  33534289682](https://github.com/RuleWorld/BNG3/actions/runs/33534289682),
   [CodeQL run
-  33532740599](https://github.com/RuleWorld/BNG3/actions/runs/33532740599),
+  33534289689](https://github.com/RuleWorld/BNG3/actions/runs/33534289689),
   and [formatting run
-  33532740608](https://github.com/RuleWorld/BNG3/actions/runs/33532740608).
+  33534289789](https://github.com/RuleWorld/BNG3/actions/runs/33534289789).
   They must be read back as one terminal exact-head set; queued or partial
   results are not completion evidence.
 - [x] Historical hosted PR checks for semantic head
@@ -248,7 +245,7 @@ completion gate.
   passed. Results were read back with `gh` against the exact public head;
 - [x] `gh api repos/RuleWorld/BNG3/git/ref/heads/codex/bng3-integration-foundations`
   and `gh pr view 2 --repo RuleWorld/BNG3` read back the same full public
-  checkpoint SHA `9a2475a0af360d685dc41eb9bb376f6517d74b4d`; PR #2 is open.
+  checkpoint SHA `144b5e3a2f333ffaf025ba044277c65dc27d13db`; PR #2 is open.
   Hosted terminal status for that exact SHA remains a separate unchecked gate.
 - [x] Modern Atomizer checkpoints exist for annotations, BNG-XML conversion,
   Rulifier, UniProt, structure helpers, and conservative SBML-Multi discovery,
@@ -813,7 +810,7 @@ completion gate.
   event conditions and remain release-candidate work. This documentation
   refresh creates a new public head and requires another exact-head check
   readback after push.
-- [ ] Current public CI-repair head `9a2475a` (and every documentation
+- [ ] Current public semantic head `144b5e3` (and every documentation
   checkpoint that follows it) has a fresh terminal hosted check set read back
   with `gh`; the PR #2 metadata must converge to the same head.
 - [ ] Every required job emits a terminal summary with counts, failures,
