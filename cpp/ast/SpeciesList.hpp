@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -11,6 +12,8 @@ namespace bng::ast {
 class SpeciesList {
 public:
     std::pair<std::size_t, bool> add(Species species);
+    // Check the exact compartment-aware key without canonicalizing the graph.
+    std::optional<std::size_t> findExact(const Species& species) const;
     const Species& get(std::size_t index) const;
     Species& get(std::size_t index);
     bool containsLabel(const std::string& canonicalLabel) const;

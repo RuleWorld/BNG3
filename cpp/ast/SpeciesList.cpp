@@ -49,6 +49,25 @@ bool SpeciesList::getCheckIso() const {
     return checkIso_;
 }
 
+std::optional<std::size_t> SpeciesList::findExact(const Species& species) const {
+    if (!checkIso_) {
+        return std::nullopt;
+    }
+
+    const std::string exact = species.getSpeciesGraph().toStringForDedup();
+    const auto exactBucket = indicesByExactString_.find(exact);
+    if (exactBucket == indicesByExactString_.end()) {
+        return std::nullopt;
+    }
+
+    for (const auto index : exactBucket->second) {
+        if (species_[index].getCompartment() == species.getCompartment()) {
+            return index;
+        }
+    }
+    return std::nullopt;
+}
+
 std::pair<std::size_t, bool> SpeciesList::add(Species species) {
     // When check_iso is disabled, skip all dedup and add unconditionally
     if (!checkIso_) {

@@ -66,5 +66,13 @@ TEST_CASE("SpeciesList preserves compartment-aware deduplication", "[SpeciesList
     REQUIRE(second.second);
     REQUIRE_FALSE(duplicate.second);
     REQUIRE(duplicate.first == first.first);
+
+    const bng::ast::Species probe = makeSpecies("CP");
+    const auto exact = list.findExact(probe);
+
+    REQUIRE(exact.has_value());
+    REQUIRE(exact.value() == first.first);
+    REQUIRE_FALSE(probe.getSpeciesGraph().getGraph().is_canonical());
+    REQUIRE_FALSE(list.findExact(makeSpecies("MITO")).has_value());
     REQUIRE(list.size() == 2);
 }

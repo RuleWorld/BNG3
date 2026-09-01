@@ -1592,8 +1592,16 @@ std::size_t ReactionRule::expandRule(
                 if (productFilter && !productFilter(sg)) {
                     return 0;
                 }
-                productLabels.push_back(sg.canonicalLabel());
-                const auto [index, isNew] = speciesList.add(Species(sg, 0.0, false, productPattern.getCompartment()));
+                auto product = Species(std::move(sg), 0.0, false, productPattern.getCompartment());
+                const auto exactIndex = speciesList.findExact(product);
+                std::size_t index;
+                if (exactIndex) {
+                    index = *exactIndex;
+                } else {
+                    product.getSpeciesGraph().canonicalLabel();
+                    index = speciesList.add(std::move(product)).first;
+                }
+                productLabels.push_back(speciesList.get(index).getSpeciesGraph().canonicalLabel());
                 productIndices.push_back(index);
             }
             std::sort(productLabels.begin(), productLabels.end());
@@ -2450,7 +2458,6 @@ bool ReactionRule::buildReaction(
                 if (productFilter && !productFilter(productGraph)) {
                     return false;
                 }
-                productLabels.push_back(productGraph.canonicalLabel());
                 std::string compartmentToUse;
                 if (!g_compartmentDimensions.empty()) {
                     std::set<std::string> surfaces, volumes;
@@ -2481,8 +2488,16 @@ bool ReactionRule::buildReaction(
                         }
                     }
                 }
-                auto prodSp = Species(productGraph, 0.0, false, compartmentToUse);
-                const auto [index, wasNew] = speciesList.add(std::move(prodSp));
+                auto prodSp = Species(std::move(productGraph), 0.0, false, compartmentToUse);
+                const auto exactIndex = speciesList.findExact(prodSp);
+                std::size_t index;
+                if (exactIndex) {
+                    index = *exactIndex;
+                } else {
+                    prodSp.getSpeciesGraph().canonicalLabel();
+                    index = speciesList.add(std::move(prodSp)).first;
+                }
+                productLabels.push_back(speciesList.get(index).getSpeciesGraph().canonicalLabel());
                 productIndices.push_back(index);
             }
         }
@@ -2663,7 +2678,6 @@ bool ReactionRule::buildReaction(
             if (productFilter && !productFilter(productGraph)) {
                 return false;
             }
-            productLabels.push_back(productGraph.canonicalLabel());
             // Perl-faithful inferSpeciesCompartment (SpeciesGraph.pm:795-893):
             // Collect unique 2D surfaces and 3D volumes from molecule compartments.
             // 0 surfaces: 1 volume → that volume; 0 volumes → undefined; >1 → first alphabetically
@@ -2751,8 +2765,16 @@ bool ReactionRule::buildReaction(
             // GPCR(l,b!1,loc~cyt,s~P).Arrestin(b!1) from applying to species where
             // GPCR has 'l' bonded: the product pattern says 'l' should be unbound.
             // (Product pattern bond constraint check would go here in a future version)
-            auto prodSp = Species(productGraph, 0.0, false, compartmentToUse);
-            const auto [index, wasNew] = speciesList.add(std::move(prodSp));
+            auto prodSp = Species(std::move(productGraph), 0.0, false, compartmentToUse);
+            const auto exactIndex = speciesList.findExact(prodSp);
+            std::size_t index;
+            if (exactIndex) {
+                index = *exactIndex;
+            } else {
+                prodSp.getSpeciesGraph().canonicalLabel();
+                index = speciesList.add(std::move(prodSp)).first;
+            }
+            productLabels.push_back(speciesList.get(index).getSpeciesGraph().canonicalLabel());
             productIndices.push_back(index);
         }
     }
