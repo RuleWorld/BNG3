@@ -186,11 +186,10 @@ bool createExpandedBindingReactions(
             }
         }
 
-        /* One bit per term is the factorized case: each conditional energy
-         * contribution is gated by one occupancy predicate. */
+        /* A compact term may be gated by a conjunction of occupancy
+         * predicates on the selected weighted molecule. */
         for (const auto &term : compactContext.conditionalTerms) {
-            if (term.conditionMask == 0 ||
-                (term.conditionMask & (term.conditionMask - 1u)) != 0) {
+            if (term.conditionMask == 0) {
                 useCompact = false;
                 break;
             }
