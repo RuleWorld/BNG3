@@ -4,8 +4,8 @@
 **Last audited:** 2026-09-01
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 2c0b999f5ae88ba2d44f2b34b8d13ac16ef89211
-**Checklist refresh base:** 2c0b999 (refresh after each semantic checkpoint)
+**Audited semantic code head:** ec42926fd1ae8ac8e2968b384cfe7c6c3f1794cf
+**Checklist refresh base:** ec42926 (refresh after each semantic checkpoint)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -47,16 +47,16 @@ completion gate.
 
 - [x] Required fast-forward pull completed before this documentation change.
 - [x] The latest pushed semantic checkpoint is
-  2c0b999f5ae88ba2d44f2b34b8d13ac16ef89211; this checklist refresh is a
+  ec42926fd1ae8ac8e2968b384cfe7c6c3f1794cf; this checklist refresh is a
   documentation-only checkpoint layered after it and does not alter its
   semantic test evidence.
 - [x] The small documentation grammar fix remains the only unrelated tracked
   BNG3 worktree modification. It remains intentionally unstaged and must not
   be mixed into semantic or checklist commits.
-- [x] Exact-head CTest passes `151/151` on 2c0b999 (local Release/Ninja
+- [x] Exact-head CTest passes `152/152` on ec42926 (local Release/Ninja
   build; `ctest --test-dir build --output-on-failure`).
 - [x] The full NFsim AST adapter executable passes 103 test cases and 1018
-  assertions on 2c0b999, including compact energy evaluation, cached compact
+  assertions on ec42926, including compact energy evaluation, cached compact
   rate factors, specialized reverse propensities, sparse selector ordering,
   cached single- and multi-term Arrhenius factors, direct-product endpoint
   identity propagation, safe direct-product traversal, cached pre-fire binding
@@ -73,8 +73,8 @@ completion gate.
   repeated connectivity direct-endpoint scratch refresh with lazy connectivity
   product lookup allocation, and one-way direct
   Arrhenius binding/state-change expansion including the compact forward-only
-  runtime path.
-- [x] Exact-head Python/API tests pass on semantic checkpoint `2c0b999`:
+  runtime path, plus the source-derived bulk molecule-pool reuse regression.
+- [x] Exact-head Python/API tests pass on semantic checkpoint `ec42926`:
   `229 passed, 27 skipped, 8
   warnings` from `PYTHONPATH=python:build/cpp python -m pytest tests/python -q`,
   and the same result from the installed-wheel target.
@@ -83,15 +83,17 @@ completion gate.
 - [x] Local canonical Black check passes: `177 files would be left unchanged`
   (Jupyter files are skipped because optional Jupyter dependencies are absent);
   Ruff and git diff checks pass.
-- [x] Local validation smoke on semantic head `2c0b999` reports 4 passed and
+- [x] Local validation smoke on semantic head `ec42926` reports 4 passed and
   15 skipped. The remaining skips are visible `run_network`/reference-oracle
   gaps, with sandbox process-inspection noise also present, and must not be
   treated as parity.
 - [x] Non-strict provenance, corpus-manifest, generated-manifest, and exception
   ledger checks pass. The strict provenance gate remains intentionally red with
   10 pending source/oracle/compiler/Python-lock approval errors.
-- [x] A no-build-isolation sdist and wheel were rebuilt from semantic
-  checkpoint `ba52c20` and the wheel was installed into an isolated target.
+- [x] Historical package evidence: a no-build-isolation sdist and wheel were
+  rebuilt from semantic checkpoint `ba52c20` and the wheel was installed into
+  an isolated target. These artifact digests and installed-wheel test results
+  are not current release evidence for ec42926.
   Artifact SHA-256 digests are
   `7ce09d700a5ff8fc42982c71eeaa448873811d4f3a10464bb67a8aac728a8780`
   (sdist) and
@@ -99,10 +101,10 @@ completion gate.
   (CPython 3.14 arm64 wheel); the installed-target Python suite is recorded
   above.
 - [ ] Hosted PR checks for exact semantic head
-  `2c0b999f5ae88ba2d44f2b34b8d13ac16ef89211` are not yet a complete terminal
-  set: [CI run 33489470262](https://github.com/RuleWorld/BNG3/actions/runs/33489470262)
-  is still running, [CodeQL run 33489470357](https://github.com/RuleWorld/BNG3/actions/runs/33489470357)
-  is still running, and [formatting run 33489470344](https://github.com/RuleWorld/BNG3/actions/runs/33489470344)
+  `ec42926fd1ae8ac8e2968b384cfe7c6c3f1794cf` are not yet a complete terminal
+  set: [CI run 33491330680](https://github.com/RuleWorld/BNG3/actions/runs/33491330680)
+  and [CodeQL run 33491330597](https://github.com/RuleWorld/BNG3/actions/runs/33491330597)
+  are still running; [formatting run 33491330729](https://github.com/RuleWorld/BNG3/actions/runs/33491330729)
   is terminal-success. C++, Python, ASan, integration, validation, package
   smoke, formatter, and CodeQL results must be read back for the exact public
   head with `gh`; older runs are historical and do not establish evidence for
@@ -371,6 +373,8 @@ completion gate.
   `a77ceb8`, `b8f44e4`, `4a2fc3e`, `738c881`, `6b6e246`, `bd29714`,
   `401becf`, `6c681269`, `a97c02e`, `7b2a199`, `dbadea6`, `c0d1bb5`,
   `bb3ae01432adfd8bb92240af3e1e947e49b017ee`, `464bd8d`, and `2940a02`.
+  The source-derived MoleculeList ownership/reuse regression is covered at
+  `f510e49` and fixed at `ec42926`.
 - [x] BNG3 carries the compact `EnergyBindingContext` and mapping-local
   `EnergyRxnClass` path for supported contexts while retaining legacy
   materialized expansion for unsupported topologies.
@@ -610,12 +614,12 @@ completion gate.
 ### 8.1 CI truthfulness
 
 - [ ] Current exact semantic PR head
-  `53a3d3dcda2077fa62bf40caaa085f7d53e4faa1` has a complete terminal hosted
+  `ec42926fd1ae8ac8e2968b384cfe7c6c3f1794cf` has a complete terminal hosted
   check set for C++, Python, validation, integration, formatting, ASan, and
   CodeQL. Exact run links and terminal results must be recorded with `gh`;
-  older `464bd8d` and earlier runs are not evidence for this head. This
-  documentation refresh creates a new public head and requires another exact-
-  head check readback after push.
+  older runs are not evidence for this head. This documentation refresh
+  creates a new public head and requires another exact-head check readback
+  after push.
 - [ ] Every required job emits a terminal summary with counts, failures,
   skips, exception budget, corpus/source revision, and artifact digests.
 - [ ] Required jobs fail when a claimed oracle, corpus, validator, or compiler
