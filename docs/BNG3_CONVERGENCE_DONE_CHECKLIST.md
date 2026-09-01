@@ -4,8 +4,8 @@
 **Last audited:** 2026-09-01
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 084090ea4458db355f7d47e82121d9532823fa81
-**Checklist refresh base:** 084090e (source-derived exact-dedup checkpoint; refresh after each checkpoint)
+**Audited semantic code head:** d52f18a23cc8a5e2a840ed0d06925f8c6c5f9e53
+**Checklist refresh base:** d52f18a (source-derived exact-probe checkpoint; refresh after each checkpoint)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -49,18 +49,18 @@ completion gate.
 
 - [x] Required fast-forward pull completed before this documentation change.
 - [x] The latest local semantic checkpoint is
-  `084090ea4458db355f7d47e82121d9532823fa81`; its parent
-  `1576bbd14f8d84f01746b670fedf310b1779f3cc` is the compact-ODE checklist
-  refresh. `084090e` adds the source-derived `akutuva21/bionetgen` exact-key
-  dedup reorder (`533ac26`): cheap compartment-aware serialization runs
-  before canonical labeling, with canonicalized recomputation retained for
-  compartmented fallback paths. The earlier ODE, empty-graph, Node
+  `d52f18a23cc8a5e2a840ed0d06925f8c6c5f9e53`; its parent
+  `1a80c82b22b3da783aefcd3bc48e25bdb1e16278` is the exact-dedup checklist
+  refresh. `d52f18a` adds the source-derived `akutuva21/bionetgen` exact-probe
+  path (`92ca4c03`): product insertion checks the cheap exact key before
+  canonicalizing, while new products and reaction labels retain the canonical
+  species contract. The earlier `533ac26` reorder, ODE, empty-graph, Node
   serialization, source-derived engine, and modern Atomizer checkpoints remain
   in this ancestry.
 - [x] The latest public code/test checkpoint is
-  `084090ea4458db355f7d47e82121d9532823fa81`, whose parent is
-  `1576bbd14f8d84f01746b670fedf310b1779f3cc`; it adds the source-derived
-  exact-dedup test and implementation.
+  `d52f18a23cc8a5e2a840ed0d06925f8c6c5f9e53`, whose parent is
+  `1a80c82b22b3da783aefcd3bc48e25bdb1e16278`; it adds the source-derived
+  exact-probe tests and implementation.
 - [x] The latest published CI-repair checkpoint is
   `9a2475a0af360d685dc41eb9bb376f6517d74b4d`; `gh api` and `gh pr view 2`
   agreed on this branch/PR source head immediately after push, and PR #2
@@ -138,7 +138,7 @@ completion gate.
 - [x] Full Python/API tests pass on the latest Python-affecting checkpoint
   `9c60ca4`: `235 passed, 27 skipped, 8 warnings` from
   `PYTHONPATH=python:build/cpp python -m pytest tests/python -q`. The later
-  `084090e` checkpoint changes only C++ dedup internals and has been requalified
+  `d52f18a` checkpoint changes only C++ exact-probe internals and has been requalified
   by native C++/AST gates; rerun the full Python suite on the final candidate.
   The installed-wheel target still has only historical evidence and is not
   release evidence for this head.
@@ -225,13 +225,13 @@ completion gate.
   was still in progress at the last readback, and [formatting run
   33531304766](https://github.com/RuleWorld/BNG3/actions/runs/33531304766) had
   passed. These runs do not qualify the current repair.
-- [ ] At this refresh, the exact public semantic code checkpoint `084090e`
+- [ ] At this refresh, the exact public semantic code checkpoint `d52f18a`
   has fresh hosted evidence beginning with [CI run
-  33537055176](https://github.com/RuleWorld/BNG3/actions/runs/33537055176),
+  33537654323](https://github.com/RuleWorld/BNG3/actions/runs/33537654323),
   [CodeQL run
-  33537055339](https://github.com/RuleWorld/BNG3/actions/runs/33537055339),
+  33537654475](https://github.com/RuleWorld/BNG3/actions/runs/33537654475),
   and [formatting run
-  33537055216](https://github.com/RuleWorld/BNG3/actions/runs/33537055216).
+  33537654723](https://github.com/RuleWorld/BNG3/actions/runs/33537654723).
   All three were queued at readback. This checklist refresh creates a
   documentation-only public head; read back its new exact-head run set
   separately. Queued or partial results are not completion evidence.
@@ -249,7 +249,7 @@ completion gate.
 - [x] Before this refresh, `gh api
   repos/RuleWorld/BNG3/git/ref/heads/codex/bng3-integration-foundations` and
   `gh pr view 2 --repo RuleWorld/BNG3` read back the same full public code
-  checkpoint SHA `084090ea4458db355f7d47e82121d9532823fa81`; PR #2 is open.
+  checkpoint SHA `d52f18a23cc8a5e2a840ed0d06925f8c6c5f9e53`; PR #2 is open.
   The documentation commit that follows changes the public head and requires
   a new exact-head readback.
 - [x] Modern Atomizer checkpoints exist for annotations, BNG-XML conversion,
@@ -330,9 +330,14 @@ completion gate.
   overloads`) is classified non-applicable to the current BNG3 tree: BNG3
   already uses type/member-scoped inequality operators rather than the generic
   overload removed by that source patch.
-- [x] Source commit `533ac26` (`perf: skip canonical labels for exact product
-  duplicates`) was ported equivalently at BNG3 `084090e`, with the
-  source-derived compartment-aware dedup test and full CTest `176/176` green.
+- [x] Source commits `5291159d` (compartment-aware dedup test) and `533ac26`
+  (`perf: skip canonical labels for exact product duplicates`) were ported
+  equivalently at BNG3 `084090e`, with the source-derived compartment-aware
+  dedup test and full CTest `176/176` green.
+- [x] Source commit `92ca4c03` (`perf: preserve canonical product ordering in
+  exact dedup fast path`) was ported equivalently at BNG3 `d52f18a`, with the
+  source-derived no-canonicalization exact-probe test and full CTest `176/176`
+  green. The subsequent `70acc9e2` exact-key reuse API remains separate.
 - [ ] Audit and, where supported, port the remaining common portable-CPU
   chain represented by branch `codex/portable-cpu-20260831` at
   `305b7482febe3dd52ccd517fa4cd2e02504e834c`, including exact-dedup and
@@ -871,7 +876,7 @@ completion gate.
   event conditions and remain release-candidate work. This documentation
   refresh creates a new public head and requires another exact-head check
   readback after push.
-- [ ] Current public semantic checkpoint `084090e` (and every documentation
+- [ ] Current public semantic checkpoint `d52f18a` (and every documentation
   checkpoint that follows it) has a fresh terminal hosted check set read back
   with `gh`; the PR #2 metadata must converge to the same head. The current
   exact-head set is still pending and must be read back after this refresh.
