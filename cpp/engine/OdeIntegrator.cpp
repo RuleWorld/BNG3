@@ -1416,14 +1416,25 @@ void OdeIntegrator::writeOutputFiles(const std::string& prefix, const OdeResult&
             for (std::size_t gi = 0; gi < compiledGroups_.size() && gi < result.observables[step].size(); ++gi) {
                 obsMap[compiledGroups_[gi].name] = result.observables[step][gi];
             }
-            // Also include parameters
-            auto resolver = [&](const std::string& name) -> double {
+            // Also resolve model-defined functions recursively.  A function
+            // output may reference another zero-argument function (for
+            // example f_diff() = f_correct() - f_builtin()), so treating
+            // every identifier as a parameter loses the model-function
+            // namespace and raises "Unknown parameter".
+            std::function<double(const std::string&)> resolver;
+            resolver = [&](const std::string& name) -> double {
                 auto obsIt = obsMap.find(name);
                 if (obsIt != obsMap.end()) return obsIt->second;
+                for (const auto& function : model_.getFunctions()) {
+                    if (function.getName() == name && function.getArgs().empty()) {
+                        return function.getExpression().evaluate(
+                            resolver, result.timePoints[step]);
+                    }
+                }
                 return model_.getParameters().evaluate(name);
             };
             for (auto& fexpr : funcExprs) {
-                double val = fexpr.evaluate(resolver);
+                double val = fexpr.evaluate(resolver, result.timePoints[step]);
                 gdat << " " << std::setw(18) << val;
             }
         }

@@ -254,7 +254,7 @@ class TestSimulation:
         output = tmp_path / "test_time.gdat"
         assert output.exists()
         rows = output.read_text(encoding="utf-8").splitlines()
-        assert rows[0].split() == [
+        assert rows[0].lstrip("#").split() == [
             "time",
             "t",
             "x_exact",
@@ -264,6 +264,11 @@ class TestSimulation:
             "f_diff",
         ]
         assert len(rows) == 102  # header plus 100 output intervals and t=0
+        final = [float(value) for value in rows[-1].split()]
+        assert final[1] == pytest.approx(10.0)
+        assert final[4] == pytest.approx(10.0)
+        assert final[5] == pytest.approx(10.0)
+        assert final[6] == pytest.approx(0.0, abs=1e-10)
 
     def test_ode_simulation(self, tmp_path):
         bngl = tmp_path / "sim.bngl"
