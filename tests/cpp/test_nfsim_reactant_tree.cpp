@@ -1,3 +1,4 @@
+#include <map>
 #include <string>
 #include <vector>
 
@@ -58,6 +59,63 @@ TEST_CASE("NFsim ReactantTree preserves the compact one-leaf contract") {
     tree.removeMappingSet(firstId);
     CHECK(tree.size() == 0);
     CHECK(tree.getRateFactorSum() == 0.0);
+}
+
+TEST_CASE("NFsim ReactantTree preserves weights across repeated expansion") {
+    /* Source-derived from ReactantTree::expandTree: active MappingSets are
+     * reinserted by stable id when the complete tree grows, then cleared
+     * slots are reused without losing weighted selection state. */
+    NFcore::System system("ReactantTree expansion contract");
+    std::vector<std::string> componentNames {"site"};
+    auto* moleculeType = new NFcore::MoleculeType(
+        "ExpansionTree", componentNames, &system);
+    auto* templateMolecule = new NFcore::TemplateMolecule(moleculeType);
+    std::vector<NFcore::TemplateMolecule*> templates {templateMolecule};
+    NFcore::TransformationSet transformations(templates);
+    transformations.finalize();
+
+    NFcore::ReactantTree tree(0, &transformations, 1);
+    const std::vector<double> rates {2.0, 5.0, 7.0, 11.0, 13.0};
+    std::map<unsigned int, double> expected;
+
+    for (const double rate : rates) {
+        auto* mapping = tree.pushNextAvailableMappingSet();
+        REQUIRE(mapping != nullptr);
+        expected.emplace(mapping->getId(), rate);
+        tree.confirmPush(mapping->getId(), rate);
+    }
+
+    CHECK(tree.getDepthOfTree() == 3);
+    CHECK(tree.size() == static_cast<int>(rates.size()));
+    CHECK(tree.getRateFactorSum() == 38.0);
+    for (int index = 0; index < tree.size(); ++index) {
+        auto* mapping = tree.getMappingSetByIndex(static_cast<unsigned int>(index));
+        REQUIRE(mapping != nullptr);
+        CHECK(tree.getRateFactor(index) == expected.at(mapping->getId()));
+    }
+
+    tree.removeMappingSet(1);
+    expected.erase(1);
+    CHECK(tree.size() == 4);
+    CHECK(tree.getRateFactorSum() == 33.0);
+    for (int index = 0; index < tree.size(); ++index) {
+        auto* mapping = tree.getMappingSetByIndex(static_cast<unsigned int>(index));
+        REQUIRE(mapping != nullptr);
+        CHECK(tree.getRateFactor(index) == expected.at(mapping->getId()));
+    }
+
+    auto* recycled = tree.pushNextAvailableMappingSet();
+    REQUIRE(recycled != nullptr);
+    const unsigned int recycledId = recycled->getId();
+    tree.confirmPush(recycledId, 17.0);
+    expected[recycledId] = 17.0;
+    CHECK(tree.size() == 5);
+    CHECK(tree.getRateFactorSum() == 50.0);
+    for (int index = 0; index < tree.size(); ++index) {
+        auto* mapping = tree.getMappingSetByIndex(static_cast<unsigned int>(index));
+        REQUIRE(mapping != nullptr);
+        CHECK(tree.getRateFactor(index) == expected.at(mapping->getId()));
+    }
 }
 
 TEST_CASE("NFsim CompactPartnerPool preserves source swap-removal indexing") {
