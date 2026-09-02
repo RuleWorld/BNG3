@@ -79,3 +79,20 @@ def test_write_functions_maps_compartment_references_in_function_bodies():
         "rate() = __compartment_cytosol__ * k",
         "flux() = __compartment_cytosol__ * 3",
     ]
+
+
+def test_write_functions_orders_assignment_rules_by_dependencies():
+    """Mirror Playground's stable topological ordering of assignment rules."""
+
+    model = SBMLModel(
+        id="ordered-rules",
+        rules=[
+            SBMLRule(type="assignment", variable="downstream", math="upstream + 1"),
+            SBMLRule(type="assignment", variable="upstream", math="2"),
+        ],
+    )
+
+    assert write_functions(model) == [
+        "upstream() = 2",
+        "downstream() = upstream + 1",
+    ]
