@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import os
 import re
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -29,6 +30,30 @@ from .types import (
 )
 
 _PROTECTED_BUILTIN_OPERANDS = frozenset({"time", "_pi", "_e", "true", "false"})
+
+_MISSING_KINETIC_RATE_FALLBACK = (
+    os.environ.get("BNGL_MISSING_KINETIC_RATE", "1").strip() or "1"
+)
+try:
+    _MISSING_KINETIC_LOG_LIMIT = int(
+        os.environ.get("BNGL_MISSING_KINETIC_LOG_LIMIT", "25")
+    )
+except ValueError:
+    _MISSING_KINETIC_LOG_LIMIT = 25
+_missing_kinetic_log_count = 0
+
+
+def _log_missing_kinetic(message: str) -> None:
+    global _missing_kinetic_log_count
+
+    if (
+        _MISSING_KINETIC_LOG_LIMIT < 0
+        or _missing_kinetic_log_count < _MISSING_KINETIC_LOG_LIMIT
+    ):
+        logger.warning("BNW011", message)
+    elif _missing_kinetic_log_count == _MISSING_KINETIC_LOG_LIMIT:
+        logger.warning("BNW011", "Additional missing-kinetic-law logs suppressed.")
+    _missing_kinetic_log_count += 1
 
 
 def _section(name: str, lines: Iterable[str]) -> str:
@@ -893,8 +918,12 @@ def _rate_for_reaction(
         if prepared_math is not None
         else _prepared_kinetic_math(reaction, model)
     )
-    if not math:
-        return apply_conversion("1")
+    if not math or not str(math).strip():
+        _log_missing_kinetic(
+            f"Reaction {standardize_name(reaction.name or reaction.id)} "
+            f"missing kinetic law; using fallback rate {_MISSING_KINETIC_RATE_FALLBACK}"
+        )
+        return apply_conversion(_MISSING_KINETIC_RATE_FALLBACK)
     reactants = (
         list(reactant_ids)
         if reactant_ids is not None

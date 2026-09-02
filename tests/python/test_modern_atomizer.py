@@ -1115,6 +1115,65 @@ def test_playground_writer_wraps_time_only_rates_in_live_functions():
     cpp.parse_string(bngl)
 
 
+def test_playground_writer_reports_missing_kinetic_laws():
+    from bionetgen.atomizer.modern import (
+        SBMLModel,
+        SBMLReaction,
+        SBMLSpecies,
+        SBMLSpeciesReference,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+    from bionetgen.atomizer.modern.helpers import logger
+
+    model = SBMLModel(
+        id="missing_kinetic",
+        species=OrderedDict(
+            [
+                ("A", SBMLSpecies(id="A", name="A", initial_amount=1)),
+                ("B", SBMLSpecies(id="B", name="B")),
+            ]
+        ),
+        reactions=OrderedDict(
+            [
+                (
+                    "missing",
+                    SBMLReaction(
+                        id="missing",
+                        name="missing",
+                        reactants=[SBMLSpeciesReference("A")],
+                        products=[SBMLSpeciesReference("B")],
+                    ),
+                )
+            ]
+        ),
+    )
+
+    sct = build_species_composition_table(model)
+    logger.clear()
+    logger.setLevel("WARNING")
+    logger.setQuietMode(True)
+    try:
+        bngl, _ = generate_bngl(
+            model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+        )
+        warnings = logger.getMessagesByLevel("WARNING")
+    finally:
+        logger.clear()
+        logger.setLevel("WARNING")
+        logger.setQuietMode(False)
+
+    assert "missing: M_A() -> M_B() 1" in bngl
+    assert [(message.code, message.message) for message in warnings] == [
+        (
+            "BNW011",
+            "Reaction missing missing kinetic law; using fallback rate 1",
+        )
+    ]
+
+
 def test_playground_writer_removes_repeated_site_statistical_factors():
     from bionetgen.atomizer.modern import (
         SBMLKineticLaw,
