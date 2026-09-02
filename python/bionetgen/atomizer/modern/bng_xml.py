@@ -11,6 +11,8 @@ import re
 import xml.etree.ElementTree as ET
 from typing import Dict, Iterable, List, Optional
 
+from .helpers import logger
+
 
 def _local_name(tag: object) -> str:
     return str(tag).rsplit("}", 1)[-1]
@@ -136,15 +138,21 @@ def _reaction_rate(
         ]
         if rate_type in {"MM", "Sat"} and len(arguments) >= 2:
             reactant_list = _first(reaction_rule, "ListOfReactantPatterns")
-            compartment = _attribute(
-                _first(reactant_list, "Molecule") or ET.Element("Molecule"),
-                "compartment",
+            reactant_molecule = _first(reactant_list, "Molecule")
+            compartment = (
+                _attribute(reactant_molecule, "compartment")
+                if reactant_molecule is not None
+                else ""
             )
             if compartment:
                 scale = compartment
                 if "NA" in set(parameter_names):
                     scale += " * NA"
                 arguments[1] = f"({arguments[1]} * {scale})"
+                logger.info(
+                    "BNGXML002",
+                    f"Scaled {rate_type} constant for {compartment}: {arguments[1]}",
+                )
         return f"{rate_type}({','.join(arguments)})"
     return (
         _attribute(rate_constants[0], "value", default=_text(rate_constants[0]))
@@ -271,7 +279,9 @@ def convert_bng_xml_to_bngl(xml: str) -> str:
             lines.append(f"    {reactant_string} -> {product_string}   {rate}")
         lines.extend(["end reaction rules", ""])
 
-    return "\n".join(lines)
+    bngl = "\n".join(lines)
+    logger.info("BNGXML001", "Converted BNG SBML to BNGL (fallback)")
+    return bngl
 
 
 # Preserve source-facing spelling for callers porting directly from the

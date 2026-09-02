@@ -277,3 +277,49 @@ def test_bng_xml_converter_preserves_reference_sections_and_bonds():
     assert "kon 10" in bngl
     assert "X(y,p~0)" in bngl
     assert "X(y!1,p~0).Y(x!1)" in bngl
+
+
+def test_bng_xml_converter_reports_source_diagnostics():
+    from bionetgen.atomizer.modern import convert_bng_xml_to_bngl
+    from bionetgen.atomizer.modern.helpers import logger
+
+    xml = """<?xml version="1.0"?>
+    <sbml><model id="bng_xml_diagnostics">
+      <ListOfParameters><Parameter id="NA" value="6.02e23"/></ListOfParameters>
+      <ListOfReactionRules>
+        <ReactionRule id="r">
+          <ListOfReactantPatterns><ReactantPattern>
+            <ListOfMolecules><Molecule name="A" compartment="cell">
+              <ListOfComponents><Component name="x"/></ListOfComponents>
+            </Molecule></ListOfMolecules>
+          </ReactantPattern></ListOfReactantPatterns>
+          <ListOfProductPatterns><ProductPattern>
+            <ListOfMolecules><Molecule name="B" compartment="cell"/></ListOfMolecules>
+          </ProductPattern></ListOfProductPatterns>
+          <RateLaw type="MM"><ListOfRateConstants>
+            <RateConstant value="vmax"/><RateConstant value="km"/>
+          </ListOfRateConstants></RateLaw>
+        </ReactionRule>
+      </ListOfReactionRules>
+    </model></sbml>"""
+
+    logger.clear()
+    logger.setLevel("INFO")
+    logger.setQuietMode(True)
+    try:
+        bngl = convert_bng_xml_to_bngl(xml)
+        messages = [
+            message
+            for message in logger.getMessages()
+            if message.code.startswith("BNGXML")
+        ]
+    finally:
+        logger.clear()
+        logger.setLevel("WARNING")
+        logger.setQuietMode(False)
+
+    assert "MM(vmax,(km * cell * NA))" in bngl
+    assert [(message.code, message.message) for message in messages] == [
+        ("BNGXML002", "Scaled MM constant for cell: (km * cell * NA)"),
+        ("BNGXML001", "Converted BNG SBML to BNGL (fallback)"),
+    ]
