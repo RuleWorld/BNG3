@@ -155,6 +155,23 @@ completion gate.
 - [ ] Separate local Debug/ASan evidence has not yet been rerun for 5f6da07;
   prior 0f83347 evidence was supplemental memory-safety coverage, not a
   substitute for hosted sanitizer and leak/UBSan gates.
+- [x] Fresh external-Perl Tier-P NET parity at semantic head `88f4e54` used
+  `BNG2_PERL=/private/tmp/bng2-oracle.TToh58/source/bng2/BNG2.pl` from source
+  revision `fde0cd6a522c9f988d5495db31c70ce0f98e744b`. The exact command
+  selected 100 tests and completed `54 passed, 46 skipped, 94 deselected` in
+  `125.70s`, with no assertion failures. The 46 skips are still honest
+  oracle/asset/environment gaps (including legacy syntax, missing NFsim,
+  missing test data, and the sandbox's blocked `ps`), so this is an improved
+  external subset result, not complete Tier-P qualification.
+- [x] Fresh selected Tier-NF native-oracle evidence at semantic head `88f4e54`
+  used the independent binary `/Users/akutuva/Documents/BioNetGen/nfsim/build/NFsim`
+  from source checkout `a6f9fa945c9d6e1e122e789c952260112c93f157`, SHA-256
+  `7302fe29b16d1ebe86369f752f2a49d2c87ef16539faaec11b82294a9fa56d22`.
+  The full selected command completed `10 passed, 184 deselected, 3 warnings`
+  in `175.92s`; direct/XML shadow-only selection separately completed
+  `4 passed, 190 deselected, 3 warnings` in `4.87s`. This qualifies the
+  selected four-model subset only; full Tier-NF corpus and three-way evidence
+  remain open.
 - [x] The full NFsim AST adapter executable passes 118 test cases and 1280
   assertions on `2c498af`. It covers compact energy evaluation, cached compact
   rate factors, specialized reverse propensities, sparse selector ordering,
