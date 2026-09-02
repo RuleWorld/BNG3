@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-02
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 5933584c3ae26690b35612bd589eeff37f37822a
-**Checklist refresh base:** 5933584c3ae26690b35612bd589eeff37f37822a (public exact-head checkpoint for deletion parity and action-aware ODE validation)
-**Latest workflow checkpoint:** 5933584c3ae26690b35612bd589eeff37f37822a (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33642690870, CodeQL run 33642690911, formatting run 33642690862)
+**Audited semantic code head:** 1de39f4d3bb040dc5a2844c7432aadba5595d4c6
+**Checklist refresh base:** 1de39f4d3bb040dc5a2844c7432aadba5595d4c6 (public exact-head checkpoint for deletion parity, action-aware ODE validation, and OdeIntegrator function-scan caching)
+**Latest workflow checkpoint:** 1de39f4d3bb040dc5a2844c7432aadba5595d4c6 (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33692044194, CodeQL run 33692044135, formatting run 33692044130)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -1432,15 +1432,29 @@ completion gate.
   portability patch `897e8a29a93dc42db8c1af74b0fbce968e52cb23` is likewise
   non-applicable because BNG3 has type/member-scoped inequality operators.
   No native issue-branch code was bulk-merged.
-- [ ] Source performance commit
+- [x] Source performance commit
   `5fab87788a4d6253ea83fd2cb35312be0c99c725` (`Cache OdeIntegrator rate-law
-  normalization`) remains a pending performance reconciliation. BNG3 already
-  precomputes lowercase function names and caches each raw rate-law lowercase
-  conversion in `cpp/engine/OdeIntegrator.cpp`, but the source commit's
-  duplicate function-scan suppression has no red-first semantic regression or
-  paired performance gate in BNG3. Port only after such evidence exists; the
-  source branch's semantic case-insensitivity test is not sufficient because
-  BNG3 already passes that behavior.
+  normalization`) is ported equivalently at BNG3
+  `1de39f4d3bb040dc5a2844c7432aadba5595d4c6`. The source parent is
+  `31155dc049a77057eb9a0afa5a41bf44b7bbaa81`; BNG3 adds the explicit
+  `<cctype>` dependency, retains the existing lowercase-function and raw-rate
+  caches, and records the completed function scan so the fallback block cannot
+  rescan a rate expression. The source-derived case-classification contract is
+  `tests/cpp/test_ode_options.cpp:107-158`; it was green before the production
+  edit with `8 assertions`, and the focused post-edit target is `9/9` CTest
+  cases. A temporary benchmark harness, removed before commit, generated the
+  production `models/nfkb_illustrating_protocols.bngl` network (22 species,
+  31 reactions) and constructed 512 OdeIntegrator instances per fresh process.
+  Twelve alternating baseline/candidate pairs using `/usr/bin/time -p` gave
+  coarse real-time medians of `0.78s` without and `0.775s` with the guard;
+  this is a sub-percent signal under timer noise, not a release performance
+  claim. Temporary baseline/candidate test artifacts were hashed as
+  `404777ab7161acc855830bdbb934adb9b9d73054d77a140308b3e4dc73c3e65f` and
+  `8d0c7e06944cb013ae6b97052ea7312a79b7c7331c6e3d7b113be521455342c2`.
+  Full local gates at the candidate report `187/187` CTest and
+  `276 passed, 27 skipped, 8 warnings` in Python. This closes the source/API
+  reconciliation only; cross-platform performance budgets, release
+  reproducibility, and broader benchmark provenance remain open.
 - [x] Sentinel ContactMap server branches were classified non-applicable to
   the current BNG3 tree, which has no `parsers/ContactMap/server.py`; their
   exact security findings remain recorded for inventory. The Sentinel Perl
