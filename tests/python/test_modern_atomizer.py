@@ -1653,6 +1653,46 @@ def test_playground_writer_folds_expression_seed_amounts_before_emission():
     cpp.parse_string(bngl)
 
 
+def test_playground_seed_selection_honors_explicit_unset_initial_values():
+    from bionetgen.atomizer.modern import (
+        SBMLModel,
+        SBMLSpecies,
+        build_species_composition_table,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    model = SBMLModel(
+        id="explicit_unset_seed",
+        species=OrderedDict(
+            [
+                (
+                    "A",
+                    SBMLSpecies(
+                        id="A",
+                        name="A",
+                        initial_amount=5,
+                        initial_amount_set=False,
+                    ),
+                ),
+                (
+                    "B",
+                    SBMLSpecies(
+                        id="B",
+                        name="B",
+                        initial_concentration=7,
+                        initial_concentration_set=False,
+                    ),
+                ),
+            ]
+        ),
+    )
+    sct = build_species_composition_table(model)
+    seeds = get_seed_species(sct, model)
+
+    assert [seed.concentration for seed in seeds] == ["0", "0"]
+
+
 def test_playground_event_actions_fold_constants_and_retain_unsupported_events():
     from bionetgen.atomizer.modern import SBMLEvent
     from bionetgen.atomizer.modern.events import (

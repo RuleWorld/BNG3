@@ -51,8 +51,11 @@ class SBMLSpecies:
     boundary_condition: bool = False
     constant: bool = False
     annotations: List[AnnotationInfo] = field(default_factory=list)
-    initial_amount_set: bool = False
-    initial_concentration_set: bool = False
+    # ``None`` represents an unavailable raw-SBML presence flag.  This mirrors
+    # the Playground contract, where an absent flag falls back to a non-zero
+    # parsed value while an explicit false remains authoritative.
+    initial_amount_set: Optional[bool] = None
+    initial_concentration_set: Optional[bool] = None
     sbo_term: Optional[str] = None
     conversion_factor: Optional[str] = None
     charge: Optional[float] = None

@@ -788,9 +788,15 @@ def get_seed_species(
         item = model.species[species_id]
         compartment = standardize_name(item.compartment or "Compartment")
         volume = f"__compartment_{compartment}__"
-        amount_set = item.initial_amount_set or item.initial_amount != 0
+        amount_set = (
+            item.initial_amount_set
+            if item.initial_amount_set is not None
+            else item.initial_amount != 0
+        )
         concentration_set = (
-            item.initial_concentration_set or item.initial_concentration != 0
+            item.initial_concentration_set
+            if item.initial_concentration_set is not None
+            else item.initial_concentration != 0
         )
         if species_id in initial_assignments:
             expression = initial_assignments[species_id]
