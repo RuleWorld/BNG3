@@ -1,15 +1,17 @@
 """Acceptance contracts for the Python package CI installation path."""
 
+import json
 from pathlib import Path
 import re
 
-from scripts.validate import run_validation
-
+from scripts.validate import load_skip_models, run_validation
 
 REPO = Path(__file__).resolve().parents[1]
 PYPROJECT = REPO / "pyproject.toml"
 CI_WORKFLOW = REPO / ".github" / "workflows" / "ci.yml"
 WEEKLY_WORKFLOW = REPO / ".github" / "workflows" / "weekly.yml"
+REFERENCE_EXCLUSIONS = REPO / "tests" / "validation" / "reference_exclusions.json"
+VALIDATE_DIR = REPO / "tests" / "validation" / "Validate"
 
 
 def test_pull_request_runs_keep_exact_head_evidence_available():
@@ -159,3 +161,72 @@ def test_reference_ci_jobs_enable_strict_reference_validation():
     assert "--strict-references" in _workflow_job("validation")
     weekly_job = _workflow_job_from(WEEKLY_WORKFLOW, "bng-validation")
     assert "--strict-references" in weekly_job
+
+
+def test_reference_exclusion_manifest_is_explicit_and_corpus_backed():
+    """Reference skips must be centralized, typed, and tied to corpus evidence."""
+
+    manifest = json.loads(REFERENCE_EXCLUSIONS.read_text(encoding="utf-8"))
+    assert manifest["schema_version"] == 1
+    assert manifest["status"] == "pending-maintainer-approval"
+    assert set(manifest["profiles"]) == {"pull_request", "weekly"}
+    assert set(manifest["reasons"]) == {
+        "missing_reference_net",
+        "unsupported_native_path",
+    }
+
+    pull_request = manifest["profiles"]["pull_request"]
+    weekly = manifest["profiles"]["weekly"]
+    assert len(pull_request) == len(set(pull_request))
+    assert len(weekly) == len(set(weekly))
+    assert set(weekly) == set(pull_request)
+
+    missing_reference = set(manifest["reasons"]["missing_reference_net"])
+    unsupported_native = set(manifest["reasons"]["unsupported_native_path"])
+    assert missing_reference.isdisjoint(unsupported_native)
+    assert set(pull_request) == missing_reference | unsupported_native
+
+    for model in missing_reference | unsupported_native:
+        assert isinstance(model, str) and model
+        assert (VALIDATE_DIR / f"{model}.bngl").is_file(), model
+    assert all(
+        not (VALIDATE_DIR / "DAT_validate" / f"{model}.net").is_file()
+        for model in missing_reference
+    )
+    assert all(
+        (VALIDATE_DIR / "DAT_validate" / f"{model}.net").is_file()
+        for model in unsupported_native
+    )
+
+
+def test_reference_ci_jobs_consume_profiled_exclusions():
+    """CI must use the committed profile instead of duplicating skip strings."""
+
+    validation_job = _workflow_job("validation")
+    weekly_job = _workflow_job_from(WEEKLY_WORKFLOW, "bng-validation")
+    assert "SKIP=" not in validation_job
+    assert "SKIP=" not in weekly_job
+    assert re.search(
+        r"--skip-file tests/validation/reference_exclusions\.json\s*\\?\s+"
+        r"--skip-profile pull_request",
+        validation_job,
+    )
+    assert re.search(
+        r"--skip-file tests/validation/reference_exclusions\.json\s*\\?\s+"
+        r"--skip-profile weekly",
+        weekly_job,
+    )
+
+
+def test_validate_loads_the_committed_reference_exclusion_profile():
+    """The CLI loader must expose the same ordered models as the manifest."""
+
+    manifest = json.loads(REFERENCE_EXCLUSIONS.read_text(encoding="utf-8"))
+    assert (
+        load_skip_models(REFERENCE_EXCLUSIONS, "pull_request")
+        == manifest["profiles"]["pull_request"]
+    )
+    assert (
+        load_skip_models(REFERENCE_EXCLUSIONS, "weekly")
+        == manifest["profiles"]["weekly"]
+    )

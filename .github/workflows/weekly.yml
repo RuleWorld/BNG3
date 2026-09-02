@@ -53,13 +53,14 @@ jobs:
       - name: Run supported validation
         shell: bash
         run: |
-          SKIP="--skip ANx,egfr_net,fceri_ji,gene_expr,gene_expr_func,gene_expr_simple,hybrid_test,isomerization,nfkb_illustrating_protocols,test_MM,test_expression_xml_escaping,test_paramname,test_partial_dynamical_scaling,test_sat,test_sat_cont,test_tfun,test_tfun_expr,test_tfun_expr2,test_tfun_file,test_tfun_net_full,test_tfun_observable,test_tfun_ode_simple,test_tfun_ode_step,test_tfun_parse,test_tfun_step_sbml,test_tfun_validation,test_tfun_xml,test_write_sbml_multi,tlmr,visualize,michment_cont,test_sbml_flat,test_sbml_structured,Repressilator,SHP2_base_model,Motivating_example_cBNGL,blbr"
           if [[ "${{ matrix.os }}" == *windows* ]]; then
             BNG=build/cpp/bng_cpp.exe
           else
             BNG=build/cpp/bng_cpp
           fi
-          python scripts/validate.py --bng-cpp "$BNG" --strict-references $SKIP --verbose
+          python scripts/validate.py --bng-cpp "$BNG" --strict-references \
+            --skip-file tests/validation/reference_exclusions.json \
+            --skip-profile weekly --verbose
 
   # ═══════════════════════════════════════════════════════════════════════════
   # NFsim execution smoke test (not a statistical parity check)

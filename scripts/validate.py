@@ -7,15 +7,18 @@ compared through ``tests.validation.compare`` rather than by section counts.
 
 Usage:
     python scripts/validate.py [--bng-cpp PATH] [--verbose]
+    python scripts/validate.py [--bng-cpp PATH] --skip-file PATH --skip-profile NAME
 """
 
 import argparse
+import json
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import Union
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
@@ -23,6 +26,39 @@ sys.path.insert(0, str(REPO))
 from tests.validation.compare import compare_net, parse_net  # noqa: E402
 
 _FILE_ARGUMENT = re.compile(r"\b(?:file|argfile)\s*=>\s*(['\"])([^'\"]+)\1")
+
+
+def load_skip_models(skip_file: Union[Path, str], profile: str) -> list[str]:
+    """Load one validated reference-exclusion profile from a JSON manifest."""
+
+    path = Path(skip_file)
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError(
+            f"cannot read reference exclusion manifest {path}: {exc}"
+        ) from exc
+
+    if not isinstance(manifest, dict) or manifest.get("schema_version") != 1:
+        raise ValueError(
+            f"reference exclusion manifest {path} must use schema_version 1"
+        )
+
+    profiles = manifest.get("profiles")
+    if not isinstance(profiles, dict):
+        raise ValueError(f"reference exclusion manifest {path} must contain profiles")
+
+    models = profiles.get(profile)
+    if not isinstance(models, list) or any(
+        not isinstance(model, str) or not model.strip() for model in models
+    ):
+        raise ValueError(
+            f"reference exclusion profile {profile!r} must be a list of names"
+        )
+    if len(models) != len(set(models)):
+        raise ValueError(f"reference exclusion profile {profile!r} contains duplicates")
+
+    return list(models)
 
 
 def copy_referenced_support_files(
@@ -190,6 +226,17 @@ def main():
         help="Comma-separated list of model names to skip (without .bngl extension)",
     )
     parser.add_argument(
+        "--skip-file",
+        type=Path,
+        default=None,
+        help="JSON manifest containing named reference-exclusion profiles",
+    )
+    parser.add_argument(
+        "--skip-profile",
+        default=None,
+        help="Profile to load from --skip-file",
+    )
+    parser.add_argument(
         "--strict-references",
         action="store_true",
         help="Treat an unskipped model without a reference .net as an error",
@@ -226,8 +273,16 @@ def main():
         print(f"ERROR: Validation directory not found: {validate_dir}")
         sys.exit(1)
 
+    if bool(args.skip_file) != bool(args.skip_profile):
+        parser.error("--skip-file and --skip-profile must be provided together")
+
     # Parse skip list
     skip_models = [m.strip() for m in args.skip.split(",") if m.strip()]
+    if args.skip_file:
+        try:
+            skip_models.extend(load_skip_models(args.skip_file, args.skip_profile))
+        except ValueError as exc:
+            parser.error(str(exc))
 
     print(f"BNG C++:    {bng_cpp}")
     print(f"Validation: {validate_dir}")
