@@ -865,7 +865,8 @@ def test_playground_writer_strips_leading_compartment_factor_from_mass_action():
     cpp.parse_string(bngl)
 
 
-def test_playground_writer_strips_internal_compartment_factor_from_mass_action():
+@pytest.mark.parametrize("rate", ["k * A * cell", "k * A / cell"])
+def test_playground_writer_strips_internal_compartment_factor_from_mass_action(rate):
     from bionetgen.atomizer.modern import (
         SBMLCompartment,
         SBMLKineticLaw,
@@ -909,7 +910,7 @@ def test_playground_writer_strips_internal_compartment_factor_from_mass_action()
                         id="r",
                         reactants=[SBMLSpeciesReference("A")],
                         products=[SBMLSpeciesReference("P")],
-                        kinetic_law=SBMLKineticLaw("k * A * cell"),
+                        kinetic_law=SBMLKineticLaw(rate),
                     ),
                 )
             ]

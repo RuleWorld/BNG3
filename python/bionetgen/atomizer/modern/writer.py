@@ -925,9 +925,10 @@ def _rate_for_reaction(
     # second time.  Restrict this bounded cleanup to elementary laws that
     # actually mention a reactant, so zero-order fluxes retain their volume
     # semantics.
-    nonlinear = bool(re.search(r"\b(?:Sat|MM|Hill)\s*\(", math)) or "/" in math
+    has_saturation = bool(re.search(r"\b(?:Sat|MM|Hill)\s*\(", math))
+    nonlinear = has_saturation or "/" in math
     if (
-        not nonlinear
+        not has_saturation
         and reactants
         and any(
             re.search(rf"\b{re.escape(standardize_name(species_id))}\b", math)
@@ -947,6 +948,16 @@ def _rate_for_reaction(
                 math,
             )
             math = re.sub(
+                rf"\s*/\s*__compartment_{re.escape(standardized)}__\s*",
+                " ",
+                math,
+            )
+            math = re.sub(
+                rf"\s*/\s*{re.escape(str(compartment_id))}\b\s*",
+                " ",
+                math,
+            )
+            math = re.sub(
                 rf"^\s*__compartment_{re.escape(standardized)}__\s*\*\s*",
                 "",
                 math,
@@ -957,6 +968,7 @@ def _rate_for_reaction(
                 math,
             )
         math = math.strip() or "1"
+        nonlinear = has_saturation or "/" in math
 
     # The Playground writer keeps nonlinear laws intact and maps their species
     # operands to concentration functions (or amount observables for Sat/MM/
