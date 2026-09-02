@@ -5,7 +5,7 @@
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
 **Audited semantic code head:** 413523620b1903f7152a27ee6441b0b4d07b933b
-**Checklist refresh base:** 474549232748b29789270be780503d456eccf0d2 (documentation-only refresh; semantic code head remains 413523620b1903f7152a27ee6441b0b4d07b933b)
+**Checklist refresh base:** 4ed849f98f80b9139e0df018f8835025aa6b6410 (CI validation-governance checkpoint; semantic code head remains 413523620b1903f7152a27ee6441b0b4d07b933b)
 **Latest workflow checkpoint:** 0e2642aa239c569f66eb550db6c0952219060142 (fail-closed missing-reference repair)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -1243,6 +1243,23 @@ completion gate.
   and CodeQL [33577070593](https://github.com/RuleWorld/BNG3/actions/runs/33577070593)
   were queued at readback. Queued status is not completion evidence, and the
   35 exclusions remain validation gaps.
+- [x] CI validation-governance checkpoint
+  `4ed849f98f80b9139e0df018f8835025aa6b6410` centralizes the PR and weekly
+  reference exclusions in `tests/validation/reference_exclusions.json`, adds
+  strict profile loading to `scripts/validate.py`, and runs the source-derived
+  CI contract tests in the hosted lint job. Six stale passing exclusions
+  (`michment_cont`, `test_sbml_flat`, `Repressilator`, `SHP2_base_model`,
+  `Motivating_example_cBNGL`, and `blbr`) were removed; the current local
+  profiled validation reports `40` passes, `0` failures, `0` errors, and `31`
+  explicit skips. The focused contract reports `13 passed`; the proportional
+  exact-tree CTest/Python gates report `185/185` and `241 passed, 27 skipped,
+  8 warnings`. The manifest remains pending maintainer approval, and its 30
+  missing-reference entries plus one unsupported native SBML path remain open
+  validation gaps rather than completion evidence. Public branch and PR #2
+  read back to this exact SHA; CI [33579480347](https://github.com/RuleWorld/BNG3/actions/runs/33579480347),
+  formatting [33579480344](https://github.com/RuleWorld/BNG3/actions/runs/33579480344),
+  and CodeQL [33579480349](https://github.com/RuleWorld/BNG3/actions/runs/33579480349)
+  were queued at readback.
 - [ ] Every required job emits a terminal summary with counts, failures,
   skips, exception budget, corpus/source revision, and artifact digests.
 - [ ] Required jobs fail when a claimed oracle, corpus, validator, or compiler
