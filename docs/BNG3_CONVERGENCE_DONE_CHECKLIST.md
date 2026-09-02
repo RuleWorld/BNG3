@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-01
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 19a90ed83fad4529bb8e85e1a538e00ade274cb2
-**Checklist refresh base:** 944a0adfe484bda4cfbb04d01c98cfb6209f29e4 (public exact-head compartment-factor parity checkpoint)
-**Latest workflow checkpoint:** 944a0adfe484bda4cfbb04d01c98cfb6209f29e4 (hosted checks read back 2026-09-01; all listed PR checks remain pending: CI run 33587583467, matrix run 33587583339, formatting run 33587583414)
+**Audited semantic code head:** 924fb36f7d0d36a523a54875afaae5b4662910d7
+**Checklist refresh base:** 924fb36f7d0d36a523a54875afaae5b4662910d7 (public exact-head internal compartment-factor parity checkpoint)
+**Latest workflow checkpoint:** 924fb36f7d0d36a523a54875afaae5b4662910d7 (hosted checks read back 2026-09-01; all listed PR checks remain pending: CI run 33588117925, matrix run 33588117909, formatting run 33588117927)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -414,6 +414,36 @@ completion gate.
   and exact-tree CTest reports `185/185`. This closes only the bounded
   elementary leading-factor slice; nonlinear and broader rate normalization
   parity remain open.
+- [x] The same Playground source block at reference
+  `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` strips an internal multiplicative
+  compartment factor before mass-action normalization. The tests-first BNG3
+  port is `924fb36f7d0d36a523a54875afaae5b4662910d7`; the red-first output was
+  `r: M_A()@cell -> M_P()@cell k * __compartment_cell__`, while the repaired
+  contract is
+  `tests/python/test_modern_atomizer.py::test_playground_writer_strips_internal_compartment_factor_from_mass_action`
+  with `r: M_A()@cell -> M_P()@cell k`. The focused test command
+  `PYTHONPATH=build/cpp:python python -m pytest tests/python/test_modern_atomizer.py -q -k internal_compartment_factor`
+  reports `1 passed`; the modern Atomizer glob reports `81 passed`; the full
+  Python gate reports `256 passed, 27 skipped, 9 warnings` in `11.48s`; exact
+  tree `ctest --test-dir build --output-on-failure` reports `185/185`; Ruff
+  passes; and Black reports `186 files would be left unchanged`. The existing
+  native smoke artifact `build/cpp/bng_cpp` remains SHA-256
+  `8e80832c8a347a303fcfb21fa8c4c35a98b13ffd8967cc9192f964784287a7f3`.
+  Exact public head readback is `924fb36f7d0d36a523a54875afaae5b4662910d7`;
+  hosted CI run
+  [33588117925](https://github.com/RuleWorld/BNG3/actions/runs/33588117925),
+  matrix run
+  [33588117909](https://github.com/RuleWorld/BNG3/actions/runs/33588117909),
+  and formatting run
+  [33588117927](https://github.com/RuleWorld/BNG3/actions/runs/33588117927)
+  were pending when read back. The exact-head smoke command
+  `PYTHONPATH=build/cpp:python python -m pytest -c tests/validation/pytest.ini tests/validation -m smoke --bng-cpp build/cpp/bng_cpp -q`
+  reports `4 passed, 15 skipped, 175 deselected, 1 warning` in `8.16s`;
+  skips remain explicit missing-reference/legacy-oracle and sandbox
+  `run_network`/process-inspection gaps. This closes only the bounded
+  elementary internal-multiplication slice; source `/ compartment` handling,
+  zero-order/nonlinear normalization, and broader writer/parser/SBML parity
+  remain open.
 - [x] Fresh external-Perl Tier-P NET parity at semantic head `88f4e54` used
   `BNG2_PERL=/private/tmp/bng2-oracle.TToh58/source/bng2/BNG2.pl` from source
   revision `fde0cd6a522c9f988d5495db31c70ce0f98e744b`. The exact command
