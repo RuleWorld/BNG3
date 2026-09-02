@@ -1,6 +1,13 @@
 include(Catch)
 
 add_test(
+    NAME bng3_release_lto_contract
+    COMMAND ${CMAKE_COMMAND}
+        -DCONTRACT_PATH=${CMAKE_BINARY_DIR}/bng3_lto_contract.txt
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/test_release_lto.cmake
+)
+
+add_test(
     NAME bng_cpp_action_errors
     COMMAND ${CMAKE_COMMAND}
         -DBNG_CPP_PATH=$<TARGET_FILE:bng_cpp>
