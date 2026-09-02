@@ -885,6 +885,54 @@ def split_reversible_rate(rate_expression: str) -> ReversibleRateSplit:
     return ReversibleRateSplit(True, split[0], split[1])
 
 
+def _find_top_level_division(expression: str) -> int:
+    """Return the first division outside parentheses, matching the reference writer."""
+
+    depth = 0
+    for index, character in enumerate(expression):
+        if character in "([":
+            depth += 1
+        elif character in ")]":
+            depth -= 1
+        elif character == "/" and depth == 0:
+            return index
+    return -1
+
+
+def _has_denominator_issue(neutralized_rate: str, reactant_ids: Sequence[str]) -> bool:
+    """Detect saturation-like denominators after reactant neutralization.
+
+    The Playground writer's ``split_rxn`` fallback protects a reversible rule
+    when neutralizing a reactant would turn a denominator such as ``Km + A``
+    into ``Km + 1``.  Removing that factor would change the rate law, so the
+    complete net expression must remain on an irreversible functional rule.
+    """
+
+    normalized = neutralized_rate
+    for species_id in reactant_ids:
+        name = standardize_name(species_id)
+        normalized = re.sub(
+            rf"_c_{re.escape(name)}\(\)", "1", normalized, flags=re.IGNORECASE
+        )
+        normalized = re.sub(
+            rf"\b{re.escape(name)}_amt\b", "1", normalized, flags=re.IGNORECASE
+        )
+        normalized = re.sub(
+            rf"\b{re.escape(name)}\b", "1", normalized, flags=re.IGNORECASE
+        )
+
+    division_index = _find_top_level_division(normalized)
+    if division_index < 0:
+        return False
+    denominator = normalized[division_index + 1 :].strip()
+    if "+" not in denominator:
+        return False
+    return bool(
+        re.search(r"[\(+]\s*1\s*[+\)]", denominator)
+        or re.search(r"[\(+]\s*1\s*$", denominator)
+    )
+
+
 def _prepared_kinetic_math(reaction: SBMLReaction, model: SBMLModel) -> str:
     """Inline functions and substitute reaction-local parameters once."""
 
@@ -1940,37 +1988,47 @@ def write_reaction_rules(
                 if reference.species != "EmptySet"
                 for _ in range(max(0, int(round(reference.stoichiometry))))
             ]
-            rate = ", ".join(
-                [
-                    _rate_for_reaction(
-                        reaction,
-                        model,
-                        conversion_factor,
-                        observable_converted_rules,
-                        {
-                            species_id: structures[species_id]
-                            for species_id in forward_ids
-                            if species_id in structures
-                        },
-                        reactant_ids=forward_ids,
-                        prepared_math=split[0],
-                    ),
-                    _rate_for_reaction(
-                        reaction,
-                        model,
-                        conversion_factor,
-                        observable_converted_rules,
-                        {
-                            species_id: structures[species_id]
-                            for species_id in reverse_ids
-                            if species_id in structures
-                        },
-                        reactant_ids=reverse_ids,
-                        prepared_math=split[1],
-                    ),
-                ]
+            forward_rate = _rate_for_reaction(
+                reaction,
+                model,
+                conversion_factor,
+                observable_converted_rules,
+                {
+                    species_id: structures[species_id]
+                    for species_id in forward_ids
+                    if species_id in structures
+                },
+                reactant_ids=forward_ids,
+                prepared_math=split[0],
             )
-            arrow = "<->"
+            reverse_rate = _rate_for_reaction(
+                reaction,
+                model,
+                conversion_factor,
+                observable_converted_rules,
+                {
+                    species_id: structures[species_id]
+                    for species_id in reverse_ids
+                    if species_id in structures
+                },
+                reactant_ids=reverse_ids,
+                prepared_math=split[1],
+            )
+            if _has_denominator_issue(
+                forward_rate, forward_ids
+            ) or _has_denominator_issue(reverse_rate, reverse_ids):
+                rate = _rate_for_reaction(
+                    reaction,
+                    model,
+                    conversion_factor,
+                    observable_converted_rules,
+                    structures,
+                    prepared_math=prepared_math,
+                )
+                arrow = "->"
+            else:
+                rate = f"{forward_rate}, {reverse_rate}"
+                arrow = "<->"
         else:
             arrow = "->"
             rate = _rate_for_reaction(

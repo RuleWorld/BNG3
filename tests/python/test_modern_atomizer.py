@@ -1112,6 +1112,63 @@ def test_playground_writer_splits_reversible_net_rates_by_direction():
     cpp.parse_string(bngl)
 
 
+def test_playground_writer_falls_back_for_unsplittable_reversible_nonlinear_rate():
+    from bionetgen.atomizer.modern import (
+        SBMLKineticLaw,
+        SBMLModel,
+        SBMLParameter,
+        SBMLReaction,
+        SBMLSpecies,
+        SBMLSpeciesReference,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    model = SBMLModel(
+        id="reversible_nonlinear_fallback",
+        species=OrderedDict(
+            [
+                ("A", SBMLSpecies(id="A", name="A", initial_amount=2)),
+                ("B", SBMLSpecies(id="B", name="B", initial_amount=0)),
+            ]
+        ),
+        parameters=OrderedDict(
+            [
+                ("kf", SBMLParameter(id="kf", value=0.5)),
+                ("Km", SBMLParameter(id="Km", value=1)),
+                ("kr", SBMLParameter(id="kr", value=0.25)),
+            ]
+        ),
+        reactions=OrderedDict(
+            [
+                (
+                    "r",
+                    SBMLReaction(
+                        id="r",
+                        reversible=True,
+                        reactants=[SBMLSpeciesReference("A")],
+                        products=[SBMLSpeciesReference("B")],
+                        kinetic_law=SBMLKineticLaw("kf * A / (Km + A) - kr * B"),
+                    ),
+                )
+            ]
+        ),
+    )
+    sct = build_species_composition_table(model)
+    bngl, _ = generate_bngl(
+        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+    )
+
+    reaction_line = next(line for line in bngl.splitlines() if line.startswith("  r:"))
+    assert " M_A() -> M_B() " in reaction_line
+    assert " <-> " not in reaction_line
+    assert "kf * _c_A() / (Km + _c_A()) - kr * _c_B()" in reaction_line
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    cpp.parse_string(bngl)
+
+
 def test_playground_writer_wraps_time_only_rates_in_live_functions():
     from bionetgen.atomizer.modern import (
         SBMLKineticLaw,
