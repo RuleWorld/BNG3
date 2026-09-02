@@ -1485,6 +1485,19 @@ def _rewrite_zero_argument_calls(expression: str, names: Iterable[str]) -> str:
     return result
 
 
+def _map_compartment_references(expression: str, model: SBMLModel) -> str:
+    """Map bare SBML compartment IDs to emitted BNGL volume parameters."""
+
+    result = expression
+    for compartment_id in model.compartments:
+        result = re.sub(
+            rf"\b{re.escape(str(compartment_id))}\b",
+            f"__compartment_{standardize_name(str(compartment_id))}__",
+            result,
+        )
+    return result
+
+
 def write_functions(
     model: SBMLModel,
     synthetic_rate_rule_variables: Optional[Set[str]] = None,
@@ -1552,7 +1565,8 @@ def write_functions(
             if argument and argument != safe:
                 body = re.sub(rf"\b{re.escape(argument)}\b", safe, body)
         args = ", ".join(argument_names)
-        lines.append(f"{name}({args}) = {convert_math_expression(body)}")
+        body = _map_compartment_references(convert_math_expression(body), model)
+        lines.append(f"{name}({args}) = {body}")
         if not function.arguments:
             zero_argument_functions.append(name)
         emitted_names.add(name)
@@ -1579,7 +1593,7 @@ def write_functions(
             },
             model.function_definitions,
         )
-        body = convert_math_expression(body)
+        body = _map_compartment_references(convert_math_expression(body), model)
         body = _rewrite_zero_argument_calls(body, zero_argument_functions)
         lines.append(f"{standardize_name(rule.variable)}() = {body}")
 
