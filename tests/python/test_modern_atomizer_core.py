@@ -5,6 +5,7 @@ from bionetgen.atomizer.modern import (
     add_to_dependency_graph,
     analyze_reactions,
     analyze_naming_conventions,
+    build_species_composition_table,
     defineEditDistanceMatrix,
     findLongestSubstring,
     topological_sort,
@@ -109,3 +110,27 @@ def test_playground_reaction_analysis_reports_summary():
     assert len(messages) == 1
     assert messages[0].code == "RXN001"
     assert messages[0].message == "Reaction analysis: 1 binding, 0 modification"
+
+
+def test_playground_sct_builder_reports_summary():
+    model = SBMLModel(
+        id="model",
+        species={"A": SBMLSpecies(id="A", name="A")},
+    )
+    logger.clear()
+    logger.setLevel("INFO")
+    logger.setQuietMode(True)
+    try:
+        table = build_species_composition_table(model)
+        messages = [
+            message
+            for message in logger.getMessagesByLevel("INFO")
+            if message.code == "SCT001"
+        ]
+    finally:
+        logger.clear()
+        logger.setQuietMode(False)
+
+    assert len(table.entries) == 1
+    assert len(messages) == 1
+    assert messages[0].message == "Built SCT: 1 species (1 elemental, 0 complex)"

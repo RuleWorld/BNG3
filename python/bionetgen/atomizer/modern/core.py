@@ -676,6 +676,14 @@ def build_species_composition_table(
             weight=weights.get(species_id, 1),
         )
 
+    elemental_count = sum(entry.is_elemental for entry in entries.values())
+    from .helpers import logger
+
+    logger.info(
+        "SCT001",
+        f"Built SCT: {len(entries)} species "
+        f"({elemental_count} elemental, {len(entries) - elemental_count} complex)",
+    )
     table = SpeciesCompositionTable(
         entries=entries,
         dependencies=dependencies,
