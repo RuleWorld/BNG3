@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-02
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 90c36849e9d24feb4ad1d720cad218aef184ed22
-**Checklist refresh base:** 90c36849e9d24feb4ad1d720cad218aef184ed22 (public exact-head semantic checkpoint for Atomizer SCT diagnostics)
-**Latest workflow checkpoint:** 90c36849e9d24feb4ad1d720cad218aef184ed22 (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33592851760, CodeQL run 33592851732, formatting run 33592851748)
+**Audited semantic code head:** 16fee366755b73a4691d6c854e901471f8399b1c
+**Checklist refresh base:** 16fee366755b73a4691d6c854e901471f8399b1c (public exact-head semantic checkpoint for Atomizer lifecycle diagnostics)
+**Latest workflow checkpoint:** 16fee366755b73a4691d6c854e901471f8399b1c (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33593502778, CodeQL run 33593502821, formatting run 33593502779)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -661,6 +661,35 @@ completion gate.
   were queued when read back. This closes only the SCT-diagnostic facade;
   broader Atomizer core/parser/writer/SBML behavior and independent parity
   remain open.
+- [x] Playground `src/lib/atomizer/index.ts:56-58,80-84,104-194,453-458` at
+  reference `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` configures the shared
+  logger, emits the successful conversion lifecycle diagnostics `ATM003` through
+  `ATM009` (including exact model and artifact counts), emits `ATM010` on
+  conversion failure, and clears logger state from `clear()`. The tests-first
+  BNG3 port is `16fee366755b73a4691d6c854e901471f8399b1c` in
+  `python/bionetgen/atomizer/modern/__init__.py` and
+  `tests/python/test_modern_atomizer.py`. The red-first command
+  `PYTHONPATH=build/cpp:python python -m pytest
+  tests/python/test_modern_atomizer.py -q -k lifecycle_diagnostics` reported
+  `1 failed, 43 deselected` because the expected ATM messages were absent; the
+  repaired command reports `1 passed, 43 deselected`. The modern Atomizer glob
+  reports `90 passed`; the full Python gate reports `265 passed, 27 skipped, 9
+  warnings`; Ruff passes; Black reports the two changed files unchanged; and
+  exact-tree `ctest --test-dir build --output-on-failure` reports `185/185`.
+  The native `build/cpp/bng_cpp` artifact is unchanged at SHA-256
+  `8e80832c8a347a303fcfb21fa8c4c35a98b13ffd8967cc9192f964784287a7f3`.
+  Exact public PR/ref head readback is
+  `16fee366755b73a4691d6c854e901471f8399b1c`; hosted CI run
+  [33593502778](https://github.com/RuleWorld/BNG3/actions/runs/33593502778),
+  CodeQL run
+  [33593502821](https://github.com/RuleWorld/BNG3/actions/runs/33593502821),
+  and formatting run
+  [33593502779](https://github.com/RuleWorld/BNG3/actions/runs/33593502779)
+  were queued when read back. This closes only the facade's logger side
+  effects: `AtomizerResult.log` remains the existing `List[str]` compatibility
+  field rather than source `LogMessage[]`, and BNG3's synchronous parser has no
+  source `initialize()`/`ATM001`-`ATM002` lifecycle; broader Atomizer
+  parser/writer/SBML and independent parity gaps remain open.
 - [x] Fresh external-Perl Tier-P NET parity at semantic head `88f4e54` used
   `BNG2_PERL=/private/tmp/bng2-oracle.TToh58/source/bng2/BNG2.pl` from source
   revision `fde0cd6a522c9f988d5495db31c70ce0f98e744b`. The exact command
