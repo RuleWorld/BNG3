@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-01
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 413523620b1903f7152a27ee6441b0b4d07b933b
-**Checklist refresh base:** 85f2aff31865f9dfaba2147e6bccd8e791157a3f (documentation-only independent-oracle evidence refresh; semantic code remains 7977966724246626a7c22c99489d99074427d8d6)
-**Latest workflow checkpoint:** 85f2aff31865f9dfaba2147e6bccd8e791157a3f (exact-head CI [33583845197](https://github.com/RuleWorld/BNG3/actions/runs/33583845197), Formatting patch [33583845090](https://github.com/RuleWorld/BNG3/actions/runs/33583845090), and CodeQL [33583845085](https://github.com/RuleWorld/BNG3/actions/runs/33583845085) were queued at readback; not completion evidence)
+**Audited semantic code head:** f1eeebf91b2bcc976e0c2c49f54261bcfda9bcc5
+**Checklist refresh base:** 2c9d3beca483c4dd61dcb23eaf2c4b517692653d (public exact-head Atomizer writer checkpoint; semantic code head f1eeebf91b2bcc976e0c2c49f54261bcfda9bcc5 is pending this documentation refresh)
+**Latest workflow checkpoint:** 2c9d3beca483c4dd61dcb23eaf2c4b517692653d (hosted runs for this exact public head were read back separately; current semantic checkpoint requires fresh hosted checks after push)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -1273,6 +1273,18 @@ completion gate.
   Atomizer suite reports `78 passed`, and the full Python gate reports `253
   passed, 27 skipped, 8 warnings`. This does not close broader function,
   parser, or independent SBML/BNGL parity.
+- [x] Playground `src/lib/atomizer/writer/bnglWriter.ts` at reference main
+  `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` keeps time-only reaction rates
+  live by wrapping rates that contain `time()` but no species/observable
+  marker in generated zero-argument functions. The tests-first BNG3 port is
+  `f1eeebf91b2bcc976e0c2c49f54261bcfda9bcc5` in
+  `python/bionetgen/atomizer/modern/writer.py`; the red-first output was
+  `light: 0 -> M_B() 2 + time()`, and the repaired contract is
+  `tests/python/test_modern_atomizer.py::test_playground_writer_wraps_time_only_rates_in_live_functions`.
+  The focused modern Atomizer suite reports `79 passed`, the full Python gate
+  reports `254 passed, 27 skipped, 9 warnings`, and exact-head Release/Ninja
+  CTest reports `185/185`. This closes only the bounded time-rate writer
+  slice; broader writer/parser/SBML parity remains open.
 - [ ] Complete or explicitly govern remaining modern reference modules:
   atomization/core, parser/bngXmlParser and parser/sbmlParser,
   validation/units, writer/bnglWriter, writer/eventActions, and
