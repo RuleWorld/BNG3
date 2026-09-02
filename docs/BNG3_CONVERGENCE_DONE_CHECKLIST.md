@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-02
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** d288387395d9537be7bd93933c79dbb112d6a9fc
-**Checklist refresh base:** d288387395d9537be7bd93933c79dbb112d6a9fc (public exact-head semantic checkpoint for BNG-XML conversion diagnostics)
-**Latest workflow checkpoint:** d288387395d9537be7bd93933c79dbb112d6a9fc (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33595883009, CodeQL run 33595882979, formatting run 33595882989)
+**Audited semantic code head:** 29b7687a1c49617715cacba1e0985e7b8568d5b9
+**Checklist refresh base:** 29b7687a1c49617715cacba1e0985e7b8568d5b9 (public exact-head semantic checkpoint for the reversible nonlinear-rate fallback)
+**Latest workflow checkpoint:** 29b7687a1c49617715cacba1e0985e7b8568d5b9 (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33596704800, CodeQL run 33596704673, formatting run 33596704771)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -830,6 +830,34 @@ completion gate.
   were queued. This closes only fallback-converter observability; BNG-XML
   semantic round trips, schema validation, and independent format parity remain
   open.
+- [x] Playground `src/lib/atomizer/writer/bnglWriter.ts:3321-3647` and
+  `3683-3864` at the pinned reference preserve a reversible SBML net rate as
+  one irreversible functional rule when reactant neutralization would corrupt
+  a saturation-like denominator (`split_rxn` fallback). The tests-first BNG3
+  port is `29b7687a1c49617715cacba1e0985e7b8568d5b9` in
+  `python/bionetgen/atomizer/modern/writer.py`, with the source-derived
+  regression `tests/python/test_modern_atomizer.py::test_playground_writer_falls_back_for_unsplittable_reversible_nonlinear_rate`.
+  The red-first command
+  `PYTHONPATH=build/cpp:python python -m pytest
+  tests/python/test_modern_atomizer.py -k
+  unsplittable_reversible_nonlinear_rate -q` reported `1 failed, 49
+  deselected, 2 warnings` because BNG3 emitted `<->` and stripped the
+  denominator-sensitive direction; the repaired command reported `1 passed,
+  49 deselected, 1 warning` and retained the full net expression on `->`. The
+  complete modern Atomizer gate reports `97 passed`; the full Python gate
+  reports `272 passed, 27 skipped, 8 warnings`; Ruff and Black pass; exact-tree
+  CTest reports `185/185`; provenance and corpus-manifest checks pass with the
+  baseline still pending maintainer approval; the exception ledger reports
+  `0 active`; and validation smoke reports `4 passed, 15 skipped`. The native
+  `build/cpp/bng_cpp` artifact remains SHA-256
+  `8e80832c8a347a303fcfb21fa8c4c35a98b13ffd8967cc9192f964784287a7f3`.
+  Exact public PR/ref head readback is
+  `29b7687a1c49617715cacba1e0985e7b8568d5b9`; hosted CI
+  [33596704800](https://github.com/RuleWorld/BNG3/actions/runs/33596704800),
+  CodeQL [33596704673](https://github.com/RuleWorld/BNG3/actions/runs/33596704673),
+  and formatting [33596704771](https://github.com/RuleWorld/BNG3/actions/runs/33596704771)
+  were queued. This closes only the source-shaped reversible-rate fallback;
+  broader writer/parser/SBML and independent parity remain open.
 - [x] Fresh external-Perl Tier-P NET parity at semantic head `88f4e54` used
   `BNG2_PERL=/private/tmp/bng2-oracle.TToh58/source/bng2/BNG2.pl` from source
   revision `fde0cd6a522c9f988d5495db31c70ce0f98e744b`. The exact command
