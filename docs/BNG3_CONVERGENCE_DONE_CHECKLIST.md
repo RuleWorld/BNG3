@@ -5,7 +5,7 @@
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
 **Audited semantic code head:** 413523620b1903f7152a27ee6441b0b4d07b933b
-**Checklist refresh base:** 4ed849f98f80b9139e0df018f8835025aa6b6410 (CI validation-governance checkpoint; semantic code head remains 413523620b1903f7152a27ee6441b0b4d07b933b)
+**Checklist refresh base:** 1ff6d7bb9f0199ac8be09fa35174e0cd81e8a548 (legacy function-cycle checkpoint; semantic code head remains 413523620b1903f7152a27ee6441b0b4d07b933b)
 **Latest workflow checkpoint:** 0e2642aa239c569f66eb550db6c0952219060142 (fail-closed missing-reference repair)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -121,6 +121,22 @@ completion gate.
   `tests/cpp/test_nfsim_ast_adapter.cpp`. This closes that accepted source
   slice only; independent full NFsim energy parity, benchmark provenance, and
   the remaining evaluator reconciliation gates stay open.
+- [x] The applicable legacy function-dependency-cycle repair from the
+  user-owned non-main source commit
+  `dca95a6aa80e249f1adf981037b61bf020f7b5ad` is ported exactly in
+  `legacy/perl/Perl2/ParamList.pm` and covered by the source-derived
+  `tests/python/test_legacy_function_cycles.py`. The red-first fixture now
+  fails cleanly with `Function dependency cycle` rather than Perl deep
+  recursion; the focused test reports `1 passed`, the Perl syntax check
+  reports `syntax OK`, and the full Python suite reports `242 passed, 27
+  skipped, 8 warnings`. This qualifies only the bounded cycle-detection slice;
+  the remaining legacy/API deletion, serializer, parser, and independent
+  BNG2 parity work stays open. Public branch and PR #2 read back to exact
+  code head `1ff6d7bb9f0199ac8be09fa35174e0cd81e8a548`; CI
+  [33580037044](https://github.com/RuleWorld/BNG3/actions/runs/33580037044),
+  formatting [33580037040](https://github.com/RuleWorld/BNG3/actions/runs/33580037040),
+  and CodeQL [33580037037](https://github.com/RuleWorld/BNG3/actions/runs/33580037037)
+  were queued at readback, so they are not completion evidence.
 - [x] The latest CI truthfulness repair checkpoint is
   `e7cd59bd793a30d31bf2b8822725e05ba097b3d0`; it makes weekly C++/Perl
   cross-validation fail closed on engine, output, or corpus errors and adds
