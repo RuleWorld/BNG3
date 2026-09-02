@@ -281,7 +281,8 @@ class SBMLParser:
     ) -> SBMLModel:
         compartments = SBMLParser._parse_xml_compartments(model)
         species = SBMLParser._parse_xml_species(model)
-        parameters = SBMLParser._parse_xml_parameters(model)
+        parameter_warnings: List[Dict[str, Any]] = []
+        parameters = SBMLParser._parse_xml_parameters(model, parameter_warnings)
         reactions = SBMLParser._parse_xml_reactions(model)
         rules = SBMLParser._parse_xml_rules(model)
         functions = SBMLParser._parse_xml_functions(model)
@@ -331,6 +332,7 @@ class SBMLParser:
             ),
         )
         result.import_warnings.extend(apply_unit_scaling(result))
+        result.import_warnings.extend(parameter_warnings)
         for reaction_id, reaction in result.reactions.items():
             for reference in [*reaction.reactants, *reaction.products]:
                 value = reference.stoichiometry
@@ -519,9 +521,14 @@ class SBMLParser:
         )
         for warning in result.import_warnings:
             code = {
-                "dropped": "SBM020",
-                "approximated": "SBM021",
-            }.get(warning.get("severity"), "SBM022")
+                "duplicateParameter": "SBM010",
+            }.get(
+                warning.get("category"),
+                {
+                    "dropped": "SBM020",
+                    "approximated": "SBM021",
+                }.get(warning.get("severity"), "SBM022"),
+            )
             count = warning.get("count", 1)
             suffix = f" (x{count})" if count > 1 else ""
             logger.warning(
@@ -621,13 +628,15 @@ class SBMLParser:
         return result
 
     @staticmethod
-    def _parse_xml_parameters(model: Any) -> Dict[str, SBMLParameter]:
+    def _parse_xml_parameters(
+        model: Any, warnings: Optional[List[Dict[str, Any]]] = None
+    ) -> Dict[str, SBMLParameter]:
         result: Dict[str, SBMLParameter] = OrderedDict()
         for item in SBMLParser._xml_items(model, "listOfParameters", "parameter"):
             item_id = str(_attribute(item, "id", "") or "")
             if not item_id:
                 continue
-            result[item_id] = SBMLParameter(
+            parameter = SBMLParameter(
                 id=item_id,
                 name=str(_attribute(item, "name", item_id) or item_id),
                 value=_float(_attribute(item, "value"), 0),
@@ -635,6 +644,36 @@ class SBMLParser:
                 constant=_bool(_attribute(item, "constant"), True),
                 scope="global",
             )
+            existing = result.get(item_id)
+            if existing is not None:
+                values_match = (
+                    math.isfinite(existing.value)
+                    and math.isfinite(parameter.value)
+                    and abs(existing.value - parameter.value) <= 1e-12
+                )
+                if values_match:
+                    # Match the reference parser: duplicate declarations with
+                    # the same value are one parameter, not a silent overwrite.
+                    continue
+                suffix = 2
+                remapped_id = f"{item_id}_{suffix}"
+                while remapped_id in result:
+                    suffix += 1
+                    remapped_id = f"{item_id}_{suffix}"
+                parameter.id = remapped_id
+                if warnings is not None:
+                    warnings.append(
+                        {
+                            "category": "duplicateParameter",
+                            "message": (
+                                f'Duplicate parameter id "{item_id}" remapped '
+                                f'to "{remapped_id}"'
+                            ),
+                            "count": 1,
+                            "severity": "approximated",
+                        }
+                    )
+            result[parameter.id] = parameter
         return result
 
     @staticmethod

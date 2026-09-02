@@ -247,6 +247,54 @@ def test_playground_parser_preserves_annotations_initial_assignments_and_rates()
     assert model.reactions["bind"].kinetic_law["math"] == "kf * A * B"
 
 
+def test_playground_parser_disambiguates_duplicate_global_parameters():
+    """Mirror the reference parser's duplicate-id recovery contract."""
+
+    from bionetgen.atomizer.modern import SBMLParser
+    from bionetgen.atomizer.modern.helpers import logger
+
+    sbml = """<?xml version="1.0"?>
+    <sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+          level="3" version="1">
+      <model id="duplicate_parameters">
+        <listOfParameters>
+          <parameter id="k" name="shared_rate" value="2"/>
+          <parameter id="k" name="same_value_alias" value="2"/>
+          <parameter id="k" name="different_rate" value="3"/>
+        </listOfParameters>
+      </model>
+    </sbml>
+    """
+
+    logger.clear()
+    logger.setLevel("WARNING")
+    logger.setQuietMode(True)
+    try:
+        model = SBMLParser().parse(sbml)
+        messages = logger.getMessagesByLevel("WARNING")
+    finally:
+        logger.clear()
+        logger.setLevel("WARNING")
+        logger.setQuietMode(False)
+
+    assert list(model.parameters) == ["k", "k_2"]
+    assert model.parameters["k"].value == pytest.approx(2)
+    assert model.parameters["k_2"].value == pytest.approx(3)
+    duplicate_warnings = [
+        warning
+        for warning in model.import_warnings
+        if warning["category"] == "duplicateParameter"
+    ]
+    assert len(duplicate_warnings) == 1
+    assert (
+        'Duplicate parameter id "k" remapped to "k_2"'
+        in duplicate_warnings[0]["message"]
+    )
+    assert len(messages) == 1
+    assert messages[0].code == "SBM010"
+    assert messages[0].message.endswith('Duplicate parameter id "k" remapped to "k_2"')
+
+
 def test_playground_parser_reports_model_summary():
     from bionetgen.atomizer.modern import SBMLParser
     from bionetgen.atomizer.modern.helpers import logger
