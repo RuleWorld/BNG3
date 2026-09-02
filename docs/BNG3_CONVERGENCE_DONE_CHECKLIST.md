@@ -387,9 +387,18 @@ completion gate.
   repairs now cover the four recorded signatures (`ead6b8e`, `418db22`,
   `7705c48`, and `d7536f5` respectively); the full differential command still
   needs a fresh terminal run against the approved independent oracle.
-- [ ] Separate local Debug/ASan evidence has not yet been rerun for 5f6da07;
-  prior 0f83347 evidence was supplemental memory-safety coverage, not a
-  substitute for hosted sanitizer and leak/UBSan gates.
+- [x] Exact historical BNG3 checkpoint `5f6da0747beda7d5c4d1728b2aa9caf6f3883dfa`
+  was rebuilt in detached worktree `/private/tmp/bng3-asan-5f6da07` with the
+  CI sanitizer flags and `BUILD_PYTHON_BINDINGS=OFF`, `BUILD_CLI=ON`, and
+  `BUILD_TESTS=ON`. The exact local recipe used AppleClang 21.0.0 arm64,
+  CMake 4.4.3, and Ninja 1.13.2; `cmake --build build-clang --parallel 4`
+  completed, and `ASAN_OPTIONS=detect_leaks=0 ctest --test-dir build-clang
+  --output-on-failure` reports `100% tests passed out of 161`. The resulting
+  `build-clang/cpp/bng_cpp` artifact has SHA-256
+  `891c7f4203af9d9cdddeb8e565489dfec5ed9742990cab15a463579e71828d54`.
+  The requested Ubuntu/GCC-12 compiler was unavailable on this macOS host,
+  so this is supplemental historical Clang-ASan evidence only; hosted Ubuntu
+  ASan, UBSan/leak, Release, and cross-platform gates remain open.
 - [x] Fresh local Debug/ASan validation at BNG3 head
   `3fc1ea546117fe9844d3bed3bd962fcf781cb6ab` configured the exact CI sanitizer
   flags in a separate `/private/tmp/bng3-asan-f1ee` tree: CMake 4.4.3, Ninja,
