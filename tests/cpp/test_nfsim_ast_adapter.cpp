@@ -446,6 +446,7 @@ end reaction rules
     const auto xml = bng::io::XmlWriter::write(*model);
     CHECK(xml.find("<EnergyPattern id=\"EP1\" pattern=\"M(sp~up)\" expression=\"Gup\">") !=
           std::string::npos);
+    CHECK(xml.find("energyIncludeReverse=\"1\"") != std::string::npos);
     CHECK(xml.find("<StateChange site=\"RR1_RP1_M1_C1\" finalState=\"up\"/>") !=
           std::string::npos);
 
@@ -472,6 +473,65 @@ end reaction rules
     REQUIRE(xmlSystem->getEnergyFunction() != nullptr);
     CHECK(xmlSystem->getEnergyFunction()->getNumPatterns() == 2);
     CHECK(xmlSystem->getAllReactions().size() == 3);
+    delete xmlSystem;
+
+    std::error_code error;
+    std::filesystem::remove(xmlPath, error);
+}
+
+TEST_CASE("NFsim XML bridge preserves one-way Arrhenius direction") {
+    // Source-derived from BNG2's one-way reaction contract: a one-way
+    // Arrhenius state change must not acquire an implicit reverse reaction.
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    phi 0.25
+    Ea 0.0
+    Gup 1.0
+    Gdn 0.0
+    RT 1.0
+end parameters
+begin molecule types
+    M(sp~up~dn)
+end molecule types
+begin seed species
+    M(sp~dn) 1
+end seed species
+begin energy patterns
+    M(sp~up) Gup
+    M(sp~dn) Gdn
+end energy patterns
+begin reaction rules
+    M(sp~dn) -> M(sp~up) Arrhenius(phi,Ea)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    const auto xml = bng::io::XmlWriter::write(*model);
+    CHECK(xml.find("energyIncludeReverse=\"0\"") != std::string::npos);
+
+    int directTraversalLimit = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 100, false, directTraversalLimit);
+    REQUIRE(direct != nullptr);
+    REQUIRE(direct->getEnergyFunction() != nullptr);
+    CHECK(direct->getAllReactions().size() == 1);
+    delete direct;
+
+    const auto token = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto xmlPath = std::filesystem::temp_directory_path() /
+                         ("bng3-one-way-energy-state-" + std::to_string(token) + ".xml");
+    std::ofstream xmlFile(xmlPath);
+    REQUIRE(xmlFile.good());
+    xmlFile << xml;
+    xmlFile.close();
+
+    int xmlTraversalLimit = 0;
+    auto* xmlSystem = NFinput::initializeFromXML(
+        xmlPath.string(), false, 100, false, xmlTraversalLimit);
+    REQUIRE(xmlSystem != nullptr);
+    REQUIRE(xmlSystem->getEnergyFunction() != nullptr);
+    CHECK(xmlSystem->getEnergyFunction()->getNumPatterns() == 2);
+    CHECK(xmlSystem->getAllReactions().size() == 1);
     delete xmlSystem;
 
     std::error_code error;

@@ -2481,6 +2481,18 @@ bool NFinput::initReactionRules(
 
 					if(rateLawType=="Arrhenius")
 					{
+						bool includeArrheniusReverse = true;
+						if (pRxnRule->Attribute("energyIncludeReverse")) {
+							try {
+								includeArrheniusReverse =
+										NFutil::convertToInt(
+												pRxnRule->Attribute("energyIncludeReverse")) != 0;
+							} catch (std::runtime_error &e1) {
+								cerr << "Error!! energyIncludeReverse for ReactionRule "
+								     << rxnName << " was not set properly. Quitting." << endl;
+								return false;
+							}
+						}
 						// Energy-based rule: expand into multiple BasicRxnClass instances
 						// using the Sekar rule expansion algorithm.
 						//
@@ -2556,7 +2568,8 @@ bool NFinput::initReactionRules(
 							if (!NFinput::createExpandedStateChangeReactions(
 									rxnName, rule_phi, Ea0, arrheniusStateMoleculeType,
 									arrheniusStateComponent, arrheniusStateFrom, arrheniusStateTo,
-									s, blockSameComplexBinding, verbose, reaction_count, true)) {
+									s, blockSameComplexBinding, verbose, reaction_count,
+									includeArrheniusReverse)) {
 								delete ts;
 								return false;
 							}
@@ -2590,7 +2603,7 @@ bool NFinput::initReactionRules(
 						if(!NFinput::createExpandedBindingReactions(
 								rxnName, rule_phi, Ea0, mt1, addBondSite1, mt2, addBondSite2,
 								s, parameter, allowedStates, blockSameComplexBinding, verbose, reaction_count,
-								true))
+								includeArrheniusReverse))
 						{
 							return false;
 						}

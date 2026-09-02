@@ -1695,8 +1695,19 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
     const auto writeRule = [&](const ast::ReactionRule& rule,
                                const std::string& rrId,
                                const ast::Expression* rate) {
+        const bool isArrheniusRate =
+            rate != nullptr && rate->kind() == ast::ExpressionKind::Function &&
+            lowercase(rate->name()) == "arrhenius" && rate->args().size() >= 2;
         xml << "      <ReactionRule id=\"" << rrId
-            << "\" name=\"" << escapeXml(rule.getRuleName()) << "\">\n";
+            << "\" name=\"" << escapeXml(rule.getRuleName()) << "\"";
+        if (isArrheniusRate) {
+            // BNG2 represents a bidirectional Arrhenius rule with one rate
+            // law; retain the directionality explicitly for BNG3's XML
+            // compatibility loader while leaving older XML unchanged.
+            xml << " energyIncludeReverse=\""
+                << (rule.isBidirectional() ? "1" : "0") << "\"";
+        }
+        xml << ">\n";
 
         xml << "        <ListOfReactantPatterns>\n";
         for (std::size_t index = 0; index < rule.getReactants().size(); ++index) {
