@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-02
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** c00c9bace01dbbc7c0e5fa4969cfaed9e35f2879
-**Checklist refresh base:** c00c9bace01dbbc7c0e5fa4969cfaed9e35f2879 (public exact-head semantic checkpoint for the Atomizer qualifier-resource API)
-**Latest workflow checkpoint:** c00c9bace01dbbc7c0e5fa4969cfaed9e35f2879 (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33591261066, CodeQL run 33591261064, formatting run 33591261083)
+**Audited semantic code head:** 50da22fcba58782fa4d258294262ba89cf137198
+**Checklist refresh base:** 50da22fcba58782fa4d258294262ba89cf137198 (public exact-head semantic checkpoint for Atomizer annotation identifier helpers)
+**Latest workflow checkpoint:** 50da22fcba58782fa4d258294262ba89cf137198 (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33591493598, CodeQL run 33591493608, formatting run 33591493576)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -528,6 +528,33 @@ completion gate.
   and formatting run
   [33591261083](https://github.com/RuleWorld/BNG3/actions/runs/33591261083)
   were queued when read back. This closes only the qualifier-resource helper
+  facade; the remaining parser, annotation, writer, SBML, and independent
+  parity gaps remain open.
+- [x] Playground `src/lib/atomizer/parser/sbmlParser.ts:2721-2750` at
+  reference `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` exposes
+  `extractUniProtIds` and `extractGOTerms`, matching identifier substrings,
+  preserving source order, and normalizing GO matches to `GO:<digits>`. The
+  tests-first BNG3 port is `50da22fcba58782fa4d258294262ba89cf137198` in
+  `python/bionetgen/atomizer/modern/parser.py` and the modern facade; its
+  red-first focused test failed because both camelCase names were absent (and
+  the existing GO extractor returned no match), while the repaired command
+  `PYTHONPATH=build/cpp:python python -m pytest
+  tests/python/test_modern_atomizer_annotations.py -q -k annotation_id_helpers`
+  reports `1 passed, 7 deselected, 1 warning`. The modern Atomizer suite
+  reports `86 passed, 1 warning`; the full Python gate reports `261 passed, 27
+  skipped, 9 warnings`; exact-tree Release/Ninja CTest reports `185/185`;
+  Ruff passes; and Black reports `186 files would be left unchanged`. This
+  Python-only checkpoint leaves the native `build/cpp/bng_cpp` artifact
+  unchanged at SHA-256
+  `8e80832c8a347a303fcfb21fa8c4c35a98b13ffd8967cc9192f964784287a7f3`.
+  Exact public PR/ref head readback is
+  `50da22fcba58782fa4d258294262ba89cf137198`; hosted CI run
+  [33591493598](https://github.com/RuleWorld/BNG3/actions/runs/33591493598),
+  CodeQL run
+  [33591493608](https://github.com/RuleWorld/BNG3/actions/runs/33591493608),
+  and formatting run
+  [33591493576](https://github.com/RuleWorld/BNG3/actions/runs/33591493576)
+  were queued when read back. This closes only the parser identifier-helper
   facade; the remaining parser, annotation, writer, SBML, and independent
   parity gaps remain open.
 - [x] Fresh external-Perl Tier-P NET parity at semantic head `88f4e54` used
