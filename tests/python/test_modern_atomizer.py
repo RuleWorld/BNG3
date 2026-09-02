@@ -483,6 +483,39 @@ def test_playground_atomizer_generates_flat_and_atomized_bngl():
     assert "~P" in atomized.bngl
 
 
+def test_playground_atomizer_reports_lifecycle_diagnostics():
+    from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.atomizer.modern.helpers import logger
+
+    logger.clear()
+    try:
+        result = Atomizer(
+            atomize=False,
+            log_level="INFO",
+            quiet_mode=True,
+        ).atomize(SBML_FIXTURE)
+        messages = [
+            message
+            for message in logger.getMessages()
+            if message.code.startswith("ATM")
+        ]
+    finally:
+        logger.clear()
+        logger.setLevel("WARNING")
+        logger.setQuietMode(False)
+
+    assert result.success is True
+    assert [(message.code, message.message) for message in messages] == [
+        ("ATM003", "Parsing SBML model..."),
+        ("ATM004", 'Model "Playground fixture": 4 species, 2 reactions'),
+        ("ATM005", "Building species composition table..."),
+        ("ATM006", "Found 4 molecule types"),
+        ("ATM007", "Found 4 seed species"),
+        ("ATM008", "Generating BNGL model..."),
+        ("ATM009", "BNGL generation complete"),
+    ]
+
+
 def test_playground_math_rewrites_match_writer_contract():
     from bionetgen.atomizer.modern import convert_math_expression
 

@@ -169,6 +169,7 @@ DEFAULT_ATOMIZER_OPTIONS: Dict[str, Any] = {
     "annotation": False,
     "atomize": False,
     "quiet_mode": False,
+    "log_level": "WARNING",
     "actions": "",
     "t_end": 10,
     "n_steps": 100,
@@ -189,16 +190,33 @@ class Atomizer:
         self.model = None
         self.sct = None
         self.databases: Dict[str, Any] = {}
+        self._configure_logger()
+
+    def _configure_logger(self) -> None:
+        level = self.options.get("logLevel", self.options.get("log_level", "WARNING"))
+        quiet_mode = self.options.get(
+            "quietMode", self.options.get("quiet_mode", False)
+        )
+        logger.setLevel(str(level).upper())
+        logger.setQuietMode(bool(quiet_mode))
 
     def set_options(self, options: Mapping[str, Any]) -> None:
         self.options.update(options)
+        self._configure_logger()
 
     def get_options(self) -> Dict[str, Any]:
         return dict(self.options)
 
     def atomize(self, sbml_string: str) -> AtomizerResult:
         try:
+            logger.info("ATM003", "Parsing SBML model...")
             self.model = self.parser.parse(sbml_string)
+            logger.info(
+                "ATM004",
+                f'Model "{self.model.name}": {len(self.model.species)} species, '
+                f"{len(self.model.reactions)} reactions",
+            )
+            logger.info("ATM005", "Building species composition table...")
             self.sct = build_species_composition_table(
                 self.model,
                 use_id=bool(self.options.get("use_id", False)),
@@ -207,9 +225,17 @@ class Atomizer:
                 naming_patterns=self.options.get("naming_patterns"),
             )
             disambiguated = disambiguate_colliding_species(self.sct, self.model)
+            if disambiguated > 0:
+                logger.info(
+                    "ATM008",
+                    f"Disambiguated {disambiguated} colliding species (isoform collapse)",
+                )
             molecule_types = get_molecule_types(self.sct)
+            logger.info("ATM006", f"Found {len(molecule_types)} molecule types")
             reconcile_sct(self.sct, molecule_types)
             seed_species = get_seed_species(self.sct, self.model)
+            logger.info("ATM007", f"Found {len(seed_species)} seed species")
+            logger.info("ATM008", "Generating BNGL model...")
             bngl, observable_map = generate_bngl(
                 self.model,
                 self.sct,
@@ -220,6 +246,7 @@ class Atomizer:
                 t_end=float(self.options.get("t_end", 10) or 10),
                 n_steps=int(self.options.get("n_steps", 100) or 100),
             )
+            logger.info("ATM009", "BNGL generation complete")
             self.databases = {
                 "model": self.model,
                 "sct": self.sct,
@@ -243,6 +270,7 @@ class Atomizer:
                 success=True,
             )
         except Exception as exc:
+            logger.error("ATM010", f"Atomization failed: {exc}")
             return AtomizerResult(
                 bngl="",
                 database=self.databases,
@@ -302,6 +330,7 @@ class Atomizer:
         self.model = None
         self.sct = None
         self.databases = {}
+        logger.clear()
 
     def _annotation_data(self) -> Dict[str, Any]:
         if self.model is None:
