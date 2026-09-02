@@ -5,7 +5,7 @@
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
 **Audited semantic code head:** 413523620b1903f7152a27ee6441b0b4d07b933b
-**Checklist refresh base:** d1602bab0215c72352a21b10d0f6c54f396c88dd (legacy pattern/XML checkpoint; semantic code head remains 413523620b1903f7152a27ee6441b0b4d07b933b)
+**Checklist refresh base:** 7b6feae0c4052ad249a5b166e9b8c7f14347cf0a (legacy symmetry checkpoint; semantic code head remains 413523620b1903f7152a27ee6441b0b4d07b933b)
 **Latest workflow checkpoint:** 0e2642aa239c569f66eb550db6c0952219060142 (fail-closed missing-reference repair)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -171,6 +171,24 @@ completion gate.
   [33580739835](https://github.com/RuleWorld/BNG3/actions/runs/33580739835),
   formatting [33580739836](https://github.com/RuleWorld/BNG3/actions/runs/33580739836),
   and CodeQL [33580739837](https://github.com/RuleWorld/BNG3/actions/runs/33580739837)
+  were queued at readback, so they are not completion evidence.
+- [x] The legacy reactant-pattern symmetry correction from source commit
+  `dca95a6aa80e249f1adf981037b61bf020f7b5ad` is ported in
+  `legacy/perl/Perl2/RxnRule.pm`. Aggregate-graph automorphisms are now
+  filtered to preserve complete reactant-pattern boundaries before statistical
+  factor calculation. The exact `issue_090_implicit_bonds` source fixture is
+  covered by `tests/python/test_legacy_symmetry_factor.py`; red-first output
+  was `0.25*_rateLaw1`, and the repaired output is `0.5*_rateLaw1`. Focused
+  legacy coverage reports `1 passed`, all touched Perl modules report `syntax
+  OK`, exact-tree CTest reports `185/185`, and the full Python suite reports
+  `246 passed, 27 skipped, 8 warnings`. This qualifies only the bounded
+  symmetry-factor slice; complete legacy/API retirement, broader reaction
+  parity, and independent BNG2 evidence remain open. Public branch and PR #2
+  read back to exact code head
+  `7b6feae0c4052ad249a5b166e9b8c7f14347cf0a`; CI
+  [33581009534](https://github.com/RuleWorld/BNG3/actions/runs/33581009534),
+  formatting [33581009537](https://github.com/RuleWorld/BNG3/actions/runs/33581009537),
+  and CodeQL [33581009550](https://github.com/RuleWorld/BNG3/actions/runs/33581009550)
   were queued at readback, so they are not completion evidence.
 - [x] The latest CI truthfulness repair checkpoint is
   `e7cd59bd793a30d31bf2b8822725e05ba097b3d0`; it makes weekly C++/Perl
