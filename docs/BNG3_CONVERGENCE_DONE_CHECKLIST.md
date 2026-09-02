@@ -1256,6 +1256,23 @@ completion gate.
   `splitReversibleRate` writer facades are ported at 7e91acc with
   source-derived coverage in tests/python/test_modern_atomizer_writer_facade.py
   and tests/python/test_modern_atomizer_writer_rate_helpers.py.
+- [x] Playground `src/lib/atomizer/writer/bnglWriter.ts` at reference main
+  `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` maps bare compartment IDs in
+  function definitions and assignment-rule bodies to emitted BNGL volume
+  parameters. BNG3 ports this bounded `mapCompartments` behavior at `5760be1`
+  with source-derived coverage in
+  `tests/python/test_modern_atomizer_writer_parameters.py`; the focused modern
+  Atomizer suite reports `77 passed`, and the full Python suite reports
+  `252 passed, 27 skipped, 8 warnings`. Broader writer, parser, SBML, and
+  independent round-trip parity remain open.
+- [x] The same Playground writer reference stably topologically orders
+  assignment-rule functions before dependent rules, with cycles falling back
+  to source order. BNG3 ports this bounded behavior at `5adb545` with the
+  source-derived dependency-order contract in
+  `tests/python/test_modern_atomizer_writer_parameters.py`; the focused modern
+  Atomizer suite reports `78 passed`, and the full Python gate reports `253
+  passed, 27 skipped, 8 warnings`. This does not close broader function,
+  parser, or independent SBML/BNGL parity.
 - [ ] Complete or explicitly govern remaining modern reference modules:
   atomization/core, parser/bngXmlParser and parser/sbmlParser,
   validation/units, writer/bnglWriter, writer/eventActions, and
