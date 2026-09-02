@@ -2005,6 +2005,30 @@ completion gate.
   reports `254 passed, 27 skipped, 9 warnings`, and exact-head Release/Ninja
   CTest reports `185/185`. This closes only the bounded time-rate writer
   slice; broader writer/parser/SBML parity remains open.
+- [x] Playground `src/lib/atomizer/parser/sbmlParser.ts:1331-1353` at
+  reference `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` coalesces duplicate
+  global parameter declarations when their values match and remaps conflicting
+  IDs to the next available suffix while emitting `SBM010`. The tests-first
+  BNG3 port is `18e8d8fad1871fdda826c395af878ada5614382b` in
+  `python/bionetgen/atomizer/modern/parser.py`, with the contract in
+  `tests/python/test_modern_atomizer.py::test_playground_parser_disambiguates_duplicate_global_parameters`.
+  The red-first focused command
+  `env PYTHONPATH=python:build/cpp python -m pytest tests/python/test_modern_atomizer.py -q -k duplicate_global_parameters`
+  reported `1 failed, 51 deselected`; the repaired command reports `1 passed,
+  51 deselected`. The modern Atomizer glob reports `102 passed`, the full
+  Python gate reports `277 passed, 27 skipped, 8 warnings` in `10.26s`, exact
+  CTest reports `190/190`, Ruff passes, and Black reports `186 files would be
+  left unchanged`. This Python-only checkpoint leaves the native
+  `build/cpp/bng_cpp` artifact unchanged at SHA-256
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`.
+  Exact public PR/ref head readback is
+  `18e8d8fad1871fdda826c395af878ada5614382b`; hosted CI
+  [33697399722](https://github.com/RuleWorld/BNG3/actions/runs/33697399722),
+  CodeQL [33697399666](https://github.com/RuleWorld/BNG3/actions/runs/33697399666),
+  and formatting [33697400186](https://github.com/RuleWorld/BNG3/actions/runs/33697400186)
+  were queued at readback. This closes only duplicate-ID parser recovery;
+  formula aliasing for same-valued duplicate names and broader parser/SBML
+  parity remain open.
 - [ ] Complete or explicitly govern remaining modern reference modules:
   atomization/core, parser/bngXmlParser and parser/sbmlParser,
   validation/units, writer/bnglWriter, writer/eventActions, and
