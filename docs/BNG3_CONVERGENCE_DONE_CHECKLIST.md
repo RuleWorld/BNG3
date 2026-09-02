@@ -5,8 +5,8 @@
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
 **Audited semantic code head:** c5429140e7436770bcb996d17a2fbdd9d0db2de9
-**Checklist refresh base:** c5429140e7436770bcb996d17a2fbdd9d0db2de9 (public exact-head compartment-factor normalization checkpoint)
-**Latest workflow checkpoint:** c5429140e7436770bcb996d17a2fbdd9d0db2de9 (hosted checks read back 2026-09-01; all listed PR checks remain pending: CI run 33588500334, matrix run 33588500343, formatting run 33588500425)
+**Checklist refresh base:** c67235c8a62956dc4f68030536fde89f821f9bdc (public exact-head checklist checkpoint after compartment-factor normalization)
+**Latest workflow checkpoint:** c67235c8a62956dc4f68030536fde89f821f9bdc (hosted checks read back 2026-09-01; all listed PR checks remain pending: CI run 33588612806, matrix run 33588612812, formatting run 33588612827)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
