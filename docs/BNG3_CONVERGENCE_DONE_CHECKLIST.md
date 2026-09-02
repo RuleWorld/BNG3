@@ -5,8 +5,8 @@
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
 **Audited semantic code head:** f1eeebf91b2bcc976e0c2c49f54261bcfda9bcc5
-**Checklist refresh base:** 2c9d3beca483c4dd61dcb23eaf2c4b517692653d (public exact-head Atomizer writer checkpoint; semantic code head f1eeebf91b2bcc976e0c2c49f54261bcfda9bcc5 is pending this documentation refresh)
-**Latest workflow checkpoint:** 2c9d3beca483c4dd61dcb23eaf2c4b517692653d (hosted runs for this exact public head were read back separately; current semantic checkpoint requires fresh hosted checks after push)
+**Checklist refresh base:** 3fc1ea546117fe9844d3bed3bd962fcf781cb6ab (public exact-head Atomizer time-rate and writer-parity checkpoint)
+**Latest workflow checkpoint:** 3fc1ea546117fe9844d3bed3bd962fcf781cb6ab (hosted checks read back 2026-09-01; all listed PR checks remain pending: CI run 33586429433, matrix run 33586429536, formatting run 33586429520)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -390,6 +390,18 @@ completion gate.
 - [ ] Separate local Debug/ASan evidence has not yet been rerun for 5f6da07;
   prior 0f83347 evidence was supplemental memory-safety coverage, not a
   substitute for hosted sanitizer and leak/UBSan gates.
+- [x] Fresh local Debug/ASan validation at BNG3 head
+  `3fc1ea546117fe9844d3bed3bd962fcf781cb6ab` configured the exact CI sanitizer
+  flags in a separate `/private/tmp/bng3-asan-f1ee` tree: CMake 4.4.3, Ninja,
+  AppleClang 21.0.0, `BUILD_PYTHON_BINDINGS=OFF`, `BUILD_CLI=ON`, and
+  `BUILD_TESTS=ON`. `cmake --build /private/tmp/bng3-asan-f1ee --parallel 4`
+  completed, and
+  `ASAN_OPTIONS=detect_leaks=0 ctest --test-dir /private/tmp/bng3-asan-f1ee --output-on-failure`
+  reported `100% tests passed out of 185` in 20.87 seconds. The temporary
+  `cpp/bng_cpp` artifact has SHA-256
+  `753a245ab667454234f55aa07ff7b501b118f05260986e71c02b6fd9f684a299`.
+  This is supplementary local arm64 evidence only; hosted Ubuntu ASan,
+  UBSan/leak, Release, and cross-platform gates remain open.
 - [x] Fresh external-Perl Tier-P NET parity at semantic head `88f4e54` used
   `BNG2_PERL=/private/tmp/bng2-oracle.TToh58/source/bng2/BNG2.pl` from source
   revision `fde0cd6a522c9f988d5495db31c70ce0f98e744b`. The exact command
