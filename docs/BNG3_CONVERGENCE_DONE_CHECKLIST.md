@@ -1,12 +1,12 @@
 # BNG3 Convergence: Definition of Done and Remaining Checklist
 
 **Status:** Active; not complete
-**Last audited:** 2026-09-02
+**Last audited:** 2026-09-01
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
 **Audited semantic code head:** 413523620b1903f7152a27ee6441b0b4d07b933b
-**Checklist refresh base:** 7977966724246626a7c22c99489d99074427d8d6 (legacy Macro numeric-comparison checkpoint; semantic code head remains 413523620b1903f7152a27ee6441b0b4d07b933b)
-**Latest workflow checkpoint:** 7977966724246626a7c22c99489d99074427d8d6 (exact-head CI, Formatting patch, and CodeQL runs queued; not completion evidence)
+**Checklist refresh base:** b82e08cfd859a54ba8a7669dbea17dd4f10755e6 (documentation-only source-reconciliation checkpoint; semantic code remains 7977966724246626a7c22c99489d99074427d8d6)
+**Latest workflow checkpoint:** b82e08cfd859a54ba8a7669dbea17dd4f10755e6 (exact-head CI [33583204767](https://github.com/RuleWorld/BNG3/actions/runs/33583204767), Formatting patch [33583204792](https://github.com/RuleWorld/BNG3/actions/runs/33583204792), and CodeQL [33583204997](https://github.com/RuleWorld/BNG3/actions/runs/33583204997) were queued at readback; not completion evidence)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -397,6 +397,21 @@ completion gate.
   `4 passed, 190 deselected, 3 warnings` in `4.87s`. This qualifies the
   selected four-model subset only; full Tier-NF corpus and three-way evidence
   remain open.
+- [x] An independent accepted-cutoff NFsim oracle was built from source
+  revision `3b046fc1b9f76719d92be22279b24992cdae7c35` in the isolated
+  worktree `/private/tmp/bng3-nfsim-3b046` with Release/Ninja, executable-only,
+  and LTO-disabled settings. The exact configure/build recipe was
+  `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+  -DNFSIM_BUILD_EXECUTABLE=ON -DNFSIM_BUILD_LIBRARY=OFF
+  -DNFSIM_ENABLE_LTO=OFF` followed by `cmake --build build --parallel 4`;
+  the build completed at `[92/92] Linking CXX executable NFsim` with only
+  pre-existing legacy muParser/C++11 warnings. Using that binary as
+  `NFSIM_BIN` against the BNG3 semantic checkpoint `7977966` (the current
+  public `b82e08c` adds documentation only), the exact selected NF command
+  completed `10 passed, 184 deselected, 3 warnings` in `138.03s`. This is
+  independent accepted-cutoff evidence for the selected validation slice;
+  it does not close the full Tier-NF corpus, distributional gate, broader
+  direct-NFsim parity, or energy/provenance qualification.
 - [x] The full NFsim AST adapter executable passes 118 test cases and 1280
   assertions on `2c498af`. It covers compact energy evaluation, cached compact
   rate factors, specialized reverse propensities, sparse selector ordering,
