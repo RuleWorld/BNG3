@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-02
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 6b71ecc613f670667328cd49fa451196e0cebe29
-**Checklist refresh base:** 6b71ecc613f670667328cd49fa451196e0cebe29 (public exact-head semantic checkpoint for Atomizer event step rounding)
-**Latest workflow checkpoint:** 6b71ecc613f670667328cd49fa451196e0cebe29 (hosted checks read back 2026-09-02; all listed PR checks remain pending: CI run 33589168226, matrix run 33589168215, formatting run 33589168250)
+**Audited semantic code head:** 7323ae8685d83343204c38fa3a6bc4b055affc40
+**Checklist refresh base:** 7323ae8685d83343204c38fa3a6bc4b055affc40 (public exact-head semantic checkpoint for Atomizer dependency-cycle diagnostics)
+**Latest workflow checkpoint:** 7323ae8685d83343204c38fa3a6bc4b055affc40 (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33590840330, CodeQL run 33590840321, formatting run 33590840350)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -478,6 +478,31 @@ completion gate.
   were pending when read back. This closes only nonnegative half-tie step
   rounding; broader event semantics and Atomizer writer/event parity remain
   open.
+- [x] Playground `src/lib/atomizer/atomization/core.ts:32-44,73-103` at
+  reference `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` reports dependency
+  cycles as bounded `DEP001` warnings with the traversed path and suppresses
+  further messages after `ATOMIZER_DEP_CYCLE_LOG_LIMIT`. The tests-first BNG3
+  port is `7323ae8685d83343204c38fa3a6bc4b055affc40` in
+  `python/bionetgen/atomizer/modern/core.py`; its red-first focused test
+  observed the expected sorted order but `0` warnings, and the repaired
+  command `PYTHONPATH=build/cpp:python python -m pytest
+  tests/python/test_modern_atomizer_core.py -q -k dependency_cycles` reports
+  `1 passed, 3 deselected, 1 warning`. The modern Atomizer suite reports `84
+  passed, 1 warning`; the full Python gate reports `259 passed, 27 skipped, 9
+  warnings`; exact-tree Release/Ninja CTest reports `185/185`; Ruff passes;
+  and Black reports `186 files would be left unchanged`. This Python-only
+  checkpoint leaves the native `build/cpp/bng_cpp` artifact unchanged at
+  SHA-256 `8e80832c8a347a303fcfb21fa8c4c35a98b13ffd8967cc9192f964784287a7f3`.
+  Exact public PR/ref head readback is
+  `7323ae8685d83343204c38fa3a6bc4b055affc40`; hosted CI run
+  [33590840330](https://github.com/RuleWorld/BNG3/actions/runs/33590840330),
+  CodeQL run
+  [33590840321](https://github.com/RuleWorld/BNG3/actions/runs/33590840321),
+  and formatting run
+  [33590840350](https://github.com/RuleWorld/BNG3/actions/runs/33590840350)
+  were queued when read back. This closes only dependency-cycle diagnostics;
+  the remaining modern core, parser, writer, SBML, and independent parity
+  gaps remain open.
 - [x] Fresh external-Perl Tier-P NET parity at semantic head `88f4e54` used
   `BNG2_PERL=/private/tmp/bng2-oracle.TToh58/source/bng2/BNG2.pl` from source
   revision `fde0cd6a522c9f988d5495db31c70ce0f98e744b`. The exact command
