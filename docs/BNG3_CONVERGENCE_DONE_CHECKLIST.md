@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-02
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 1de39f4d3bb040dc5a2844c7432aadba5595d4c6
-**Checklist refresh base:** 1de39f4d3bb040dc5a2844c7432aadba5595d4c6 (public exact-head checkpoint for deletion parity, action-aware ODE validation, and OdeIntegrator function-scan caching)
-**Latest workflow checkpoint:** 1de39f4d3bb040dc5a2844c7432aadba5595d4c6 (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33692044194, CodeQL run 33692044135, formatting run 33692044130)
+**Audited semantic code head:** 5a1594f39d0d51b1220e7f5278302cad253fed3f
+**Checklist refresh base:** 5a1594f39d0d51b1220e7f5278302cad253fed3f (public exact-head checkpoint for the NFsim XML energy-pattern/state-change bridge and Arrhenius directionality)
+**Latest workflow checkpoint:** 5a1594f39d0d51b1220e7f5278302cad253fed3f (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33696240656, CodeQL run 33696240923, formatting run 33696240801)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -1476,6 +1476,49 @@ completion gate.
   had the equivalent allocation-free extraction. The source ODE allocation
   portion is reconciled separately with BNG3's newer ODE matching/cache path;
   independent benchmarks and full Macro/legacy parity remain open.
+- [x] The NFsim XML energy bridge is implemented at semantic code head
+  `567b39105bebaf9dd090104a584da9f9f424088a` and its Arrhenius directionality
+  repair is at `5a1594f39d0d51b1220e7f5278302cad253fed3f`. The source contract
+  is diagnostic BNG2 revision `fde0cd6a522c9f988d5495db31c70ce0f98e744b`
+  (`bng2/Perl2/BNGOutput.pm:619-630`, `EnergyPattern.pm:146-164`, and
+  `RxnRule.pm:1737-1919`) plus the accepted NFsim energy source cutoff
+  `3b046fc1b9f76719d92be22279b24992cdae7c35` (`src/NFinput/NFinput_energy.cpp`);
+  no later NFsim source was imported. `XmlWriter` now emits BNG2-shaped
+  `<ListOfEnergyPatterns>`/`EPn`/nested pattern graphs, preserving omitted
+  bond `numberOfBonds="0"` semantics from the source pattern instead of the
+  AST wildcard serializer. The XML loader routes explicit Arrhenius
+  `StateChange` operations through the existing energy expansion helper,
+  continues to later reaction rules, applies XML rate/match metadata, and
+  carries BNG3-generated one-way directionality with
+  `energyIncludeReverse="0"`; files without that attribute retain the legacy
+  reverse-on default. Red-first executions were
+  `ctest --test-dir build -R '^NFsim XML bridge preserves energy patterns$'
+  --output-on-failure` (7 failed assertions),
+  `ctest --test-dir build -R '^NFsim XML bridge expands Arrhenius state
+  changes$' --output-on-failure` (1 failed assertion, XML had 0 reactions),
+  and the one-way direction test (2 failed assertions). Final focused bridge
+  coverage reports `3/3`, the adjacent energy/Arrhenius selection reports
+  `17/17`, `ctest --test-dir build --output-on-failure` reports `190/190`, and
+  `env PYTHONPATH=python:build/cpp python -m pytest -q tests/python` reports
+  `276 passed, 27 skipped, 8 warnings` in `10.22s`. The rebuilt
+  `build/cpp/bng_cpp` digest is
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`, and
+  the final temporary `isingspin_energy` XML digest is
+  `c5d60e576023b06cb620b7a2f0794ff34a88642c9869eefa170e48fc4ba35f0d`.
+  A paired BNG3 direct-versus-forced-in-memory-XML `isingspin_energy` harness
+  using seeds `1..200`, `t_end=1.0`, `20` output steps, and four workers
+  reports `200/200` runs, `different_runs=0`, `max_per_run_diff=0.0`, and
+  `max_final_abs_diff=0.0`; output is retained in
+  `/private/tmp/bng3-energy-final-ensemble.log`. This closes only BNG3
+  direct/XML semantic parity. The independently built accepted-cutoff NFsim
+  binary `/private/tmp/bng3-nfsim-3b046/build/NFsim` (source
+  `3b046fc1b9f76719d92be22279b24992cdae7c35`, SHA-256
+  `c30a80b6ff9cf1fae04bc9f45556c4d5fa9c3b00d053fb6abade80436ee46394`) still
+  skips XML Arrhenius state-change expansion and leaves `0 reactions`; its
+  fixed-seed comparison differs by at most `8` and its 200-run comparison
+  had `60/105` points outside `3` pooled SE, worst `z=53.88` at `Misaligned`.
+  Independent NFsim energy parity, legacy XML without the direction marker,
+  broader evaluator coverage, and benchmark/provenance approval remain open.
 
 ## 2. Independent validation and provenance spine
 
