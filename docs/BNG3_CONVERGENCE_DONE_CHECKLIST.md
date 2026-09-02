@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-02
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 16fee366755b73a4691d6c854e901471f8399b1c
-**Checklist refresh base:** 16fee366755b73a4691d6c854e901471f8399b1c (public exact-head semantic checkpoint for Atomizer lifecycle diagnostics)
-**Latest workflow checkpoint:** 16fee366755b73a4691d6c854e901471f8399b1c (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33593502778, CodeQL run 33593502821, formatting run 33593502779)
+**Audited semantic code head:** a288a235fd7d2c1a317d2db8fe2e3e01f695cb70
+**Checklist refresh base:** a288a235fd7d2c1a317d2db8fe2e3e01f695cb70 (public exact-head semantic checkpoint for the Atomizer large-model flat fast path)
+**Latest workflow checkpoint:** a288a235fd7d2c1a317d2db8fe2e3e01f695cb70 (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33595341449, CodeQL run 33595341429, formatting run 33595341400)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -690,6 +690,123 @@ completion gate.
   field rather than source `LogMessage[]`, and BNG3's synchronous parser has no
   source `initialize()`/`ATM001`-`ATM002` lifecycle; broader Atomizer
   parser/writer/SBML and independent parity gaps remain open.
+- [x] Playground `src/lib/atomizer/parser/sbmlParser.ts:1529-1534` at
+  reference `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` emits the `SBM004`
+  parsed-model summary before returning the structured model. The tests-first
+  BNG3 port is `6b4e96182ab9032bc61ee58c42afbda3bfed9bfb` in
+  `python/bionetgen/atomizer/modern/parser.py`; the red-first command
+  `PYTHONPATH=build/cpp:python python -m pytest
+  tests/python/test_modern_atomizer.py -q -k parser_reports_model_summary`
+  reported `1 failed, 44 deselected, 2 warnings` because no summary was
+  logged, and the repaired command reported `1 passed, 44 deselected, 1
+  warning`. The following modern Atomizer suite reports `91 passed`; the full
+  Python gate reports `266 passed, 27 skipped, 9 warnings`; Ruff and Black
+  pass; and exact-tree `ctest --test-dir build --output-on-failure` reports
+  `185/185`. The native `build/cpp/bng_cpp` artifact remains SHA-256
+  `8e80832c8a347a303fcfb21fa8c4c35a98b13ffd8967cc9192f964784287a7f3`.
+  Exact public checkpoint readback is `6b4e96182ab9032bc61ee58c42afbda3bfed9bfb`;
+  CI [33593884993](https://github.com/RuleWorld/BNG3/actions/runs/33593884993),
+  CodeQL [33593884974](https://github.com/RuleWorld/BNG3/actions/runs/33593884974),
+  and formatting [33593884986](https://github.com/RuleWorld/BNG3/actions/runs/33593884986)
+  were queued. This closes only the parser summary diagnostic; parser
+  extraction parity and independent SBML/BNGL parity remain open.
+- [x] Playground `src/lib/atomizer/parser/sbmlParser.ts:1531-1534` at the
+  same pinned reference maps import-warning severities to `SBM020` dropped,
+  `SBM021` approximated, and `SBM022` informational diagnostics, preserving
+  category brackets and repeated-warning counts. The tests-first BNG3 port is
+  `6476e4271edb652f5dee8bbe03f2df9fdd5543dd`; its red-first command
+  `PYTHONPATH=build/cpp:python python -m pytest
+  tests/python/test_modern_atomizer.py -q -k parser_emits_import_warning_codes_and_counts`
+  reported `1 failed, 45 deselected, 2 warnings`, and the repaired command
+  reported `1 passed, 45 deselected, 1 warning`. The modern suite then reports
+  `92 passed`; the full Python gate reports `267 passed, 27 skipped, 9
+  warnings`; Ruff and Black pass; and CTest remains `185/185`. Exact public
+  head readback is `6476e4271edb652f5dee8bbe03f2df9fdd5543dd`; CI
+  [33594023815](https://github.com/RuleWorld/BNG3/actions/runs/33594023815),
+  CodeQL [33594023785](https://github.com/RuleWorld/BNG3/actions/runs/33594023785),
+  and formatting [33594023819](https://github.com/RuleWorld/BNG3/actions/runs/33594023819)
+  were queued. This closes only diagnostic severity/count mapping; parser
+  semantics and independent oracle coverage remain open.
+- [x] Playground `src/lib/atomizer/writer/bnglWriter.ts:58-76,3365-3369`
+  at the pinned reference reports `BNW011` when an eligible reaction has no
+  kinetic law, applies the documented fallback rate, and bounds repeated
+  logs. The tests-first BNG3 port is
+  `78430997d4f828bd8c92e7f9806c0553bbbc43a2` in
+  `python/bionetgen/atomizer/modern/writer.py`; the red-first command
+  `PYTHONPATH=build/cpp:python python -m pytest
+  tests/python/test_modern_atomizer.py -q -k reports_missing_kinetic_laws`
+  reported `1 failed, 46 deselected, 2 warnings`, and the repaired command
+  reported `1 passed, 46 deselected, 1 warning`. The modern suite reports `93
+  passed`; the full Python gate reports `268 passed, 27 skipped, 9 warnings`;
+  Ruff and Black pass; CTest reports `185/185`; and the native artifact remains
+  SHA-256 `8e80832c8a347a303fcfb21fa8c4c35a98b13ffd8967cc9192f964784287a7f3`.
+  Exact public head readback is `78430997d4f828bd8c92e7f9806c0553bbbc43a2`;
+  CI [33594217262](https://github.com/RuleWorld/BNG3/actions/runs/33594217262),
+  CodeQL [33594217315](https://github.com/RuleWorld/BNG3/actions/runs/33594217315),
+  and formatting [33594217279](https://github.com/RuleWorld/BNG3/actions/runs/33594217279)
+  were queued. This closes only missing-kinetic-law observability and does not
+  establish a scientifically validated fallback-rate policy for all models.
+- [x] Playground `src/lib/atomizer/writer/bnglWriter.ts:2280-2284` at the
+  pinned reference emits `BNW012` when non-species rate-rule targets are
+  materialized as synthetic state species. The tests-first BNG3 port is
+  `7166ef8b45c1a1ffefe6a3e8528f8bddd059daab`; the red-first focused command
+  reported `1 failed, 46 deselected, 2 warnings` with the synthetic species
+  present but no diagnostic, and the repaired command reported `1 passed, 46
+  deselected, 1 warning`. The modern suite reports `93 passed`; the full
+  Python gate reports `268 passed, 27 skipped, 9 warnings`; Ruff and Black
+  pass; CTest reports `185/185`; and exact public head readback is
+  `7166ef8b45c1a1ffefe6a3e8528f8bddd059daab`. Hosted CI
+  [33594335170](https://github.com/RuleWorld/BNG3/actions/runs/33594335170),
+  CodeQL [33594335190](https://github.com/RuleWorld/BNG3/actions/runs/33594335190),
+  and formatting [33594335172](https://github.com/RuleWorld/BNG3/actions/runs/33594335172)
+  were queued. This closes only the synthetic-rate-rule diagnostic; the
+  full rate-rule execution and independent parity gates remain open.
+- [x] Playground `src/lib/atomizer/writer/bnglWriter.ts:60-67,1639-1649,
+  1737-1740,3774-3777` at the pinned reference reports `BNW004` for
+  non-adjacent-compartment transport, bounded by the source log limit, while
+  adjacent transport remains quiet. The tests-first BNG3 port is
+  `a19d1ccdea7b698709c708d8716998fedfd20f7a`; the red-first command
+  `PYTHONPATH=build/cpp:python python -m pytest
+  tests/python/test_modern_atomizer.py -q -k reports_nonadjacent_transport_reactions`
+  reported `1 failed, 47 deselected, 2 warnings`, and the repaired command
+  reported `1 passed, 47 deselected, 1 warning`. The modern suite reports `94
+  passed`; the full Python gate reports `269 passed, 27 skipped, 9 warnings`;
+  Ruff and Black pass; CTest reports `185/185`; and the native artifact remains
+  SHA-256 `8e80832c8a347a303fcfb21fa8c4c35a98b13ffd8967cc9192f964784287a7f3`.
+  Exact public head readback is `a19d1ccdea7b698709c708d8716998fedfd20f7a`;
+  CI [33594536507](https://github.com/RuleWorld/BNG3/actions/runs/33594536507),
+  CodeQL [33594536494](https://github.com/RuleWorld/BNG3/actions/runs/33594536494),
+  and formatting [33594536626](https://github.com/RuleWorld/BNG3/actions/runs/33594536626)
+  were queued. This closes only non-adjacent transport observability; transport
+  dynamics, all writer parity, and independent SBML/BNGL parity remain open.
+- [x] Playground `src/lib/atomizer/index.ts:105-124,208-274` at the pinned
+  reference enables the flat-only large-model fast path when
+  `ATOMIZER_LARGE_FASTPATH` is enabled and any of the source thresholds
+  (`1500` species, `800` reactions, or `5000000` SBML characters) is reached;
+  it emits `ATM011` and creates one elemental molecule/seed per SBML species,
+  deliberately bypassing structure inference. The tests-first BNG3 port is
+  `a288a235fd7d2c1a317d2db8fe2e3e01f695cb70` in
+  `python/bionetgen/atomizer/modern/__init__.py` and
+  `tests/python/test_modern_atomizer.py`. The threshold-forced red-first
+  command `PYTHONPATH=build/cpp:python python -m pytest
+  tests/python/test_modern_atomizer.py -k large_flat_fast_path -q` reported
+  `1 failed, 48 deselected` because the normal SCT path emitted `ATM005`
+  instead of `ATM011`; the repaired command reported `1 passed, 48
+  deselected`. The complete modern Atomizer gate reports `95 passed`; the full
+  Python gate reports `270 passed, 27 skipped, 8 warnings`; Ruff and Black
+  pass; exact-tree CTest reports `185/185`; and the native
+  `build/cpp/bng_cpp` artifact remains SHA-256
+  `8e80832c8a347a303fcfb21fa8c4c35a98b13ffd8967cc9192f964784287a7f3`.
+  Exact public PR/ref head readback is
+  `a288a235fd7d2c1a317d2db8fe2e3e01f695cb70`; hosted CI
+  [33595341449](https://github.com/RuleWorld/BNG3/actions/runs/33595341449),
+  CodeQL [33595341429](https://github.com/RuleWorld/BNG3/actions/runs/33595341429),
+  and formatting [33595341400](https://github.com/RuleWorld/BNG3/actions/runs/33595341400)
+  were queued, while `gh pr checks 2` still reports pending jobs. This closes
+  only the source-shaped flat fast path. It deliberately does not claim large-
+  model speedup, structure-inference parity, annotation parity, or release
+  qualification; the broad Atomizer, API, SBML, Multi, NFsim, provenance,
+  packaging, and hosted terminal gates remain open.
 - [x] Fresh external-Perl Tier-P NET parity at semantic head `88f4e54` used
   `BNG2_PERL=/private/tmp/bng2-oracle.TToh58/source/bng2/BNG2.pl` from source
   revision `fde0cd6a522c9f988d5495db31c70ce0f98e744b`. The exact command
