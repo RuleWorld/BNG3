@@ -5,7 +5,7 @@
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
 **Audited semantic code head:** 413523620b1903f7152a27ee6441b0b4d07b933b
-**Checklist refresh base:** 1ff6d7bb9f0199ac8be09fa35174e0cd81e8a548 (legacy function-cycle checkpoint; semantic code head remains 413523620b1903f7152a27ee6441b0b4d07b933b)
+**Checklist refresh base:** 772adf55a8a8dafa1d49fabd940eec38fbf26187 (legacy CVODE export checkpoint; semantic code head remains 413523620b1903f7152a27ee6441b0b4d07b933b)
 **Latest workflow checkpoint:** 0e2642aa239c569f66eb550db6c0952219060142 (fail-closed missing-reference repair)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -136,6 +136,23 @@ completion gate.
   [33580037044](https://github.com/RuleWorld/BNG3/actions/runs/33580037044),
   formatting [33580037040](https://github.com/RuleWorld/BNG3/actions/runs/33580037040),
   and CodeQL [33580037037](https://github.com/RuleWorld/BNG3/actions/runs/33580037037)
+  were queued at readback, so they are not completion evidence.
+- [x] The legacy CVODE export repair from the same user-owned source commit
+  `dca95a6aa80e249f1adf981037b61bf020f7b5ad` is ported in
+  `legacy/perl/Perl2/Expression.pm`: `toCVodeString` now maps BNGL `~=` and
+  `~` to C `!=` and `!`, uses numeric arity comparison for `sum`/`avg`, and
+  reports its own CVODE diagnostic for anonymous-function expansion. The
+  source-derived `tests/python/test_legacy_cvode_export.py` passes after the
+  red-first export retained `~=`/`~`; focused legacy coverage reports `1
+  passed`, Perl syntax reports `syntax OK`, exact-tree CTest reports `185/185`,
+  and the full Python suite reports `243 passed, 27 skipped, 8 warnings`.
+  This qualifies only the bounded CVODE-export slice; complete legacy/API
+  retirement, serializer coverage, and independent BNG2 parity remain open.
+  Public branch and PR #2 read back to exact code head
+  `772adf55a8a8dafa1d49fabd940eec38fbf26187`; CI
+  [33580496563](https://github.com/RuleWorld/BNG3/actions/runs/33580496563),
+  formatting [33580496561](https://github.com/RuleWorld/BNG3/actions/runs/33580496561),
+  and CodeQL [33580496583](https://github.com/RuleWorld/BNG3/actions/runs/33580496583)
   were queued at readback, so they are not completion evidence.
 - [x] The latest CI truthfulness repair checkpoint is
   `e7cd59bd793a30d31bf2b8822725e05ba097b3d0`; it makes weekly C++/Perl
