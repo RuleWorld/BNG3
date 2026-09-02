@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-02
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 27ae8d63e5cef1a1af005b2e567a6ad5447e5f28
-**Checklist refresh base:** 27ae8d63e5cef1a1af005b2e567a6ad5447e5f28 (public exact-head semantic checkpoint for Playground-compatible SBML initial-value presence flags)
-**Latest workflow checkpoint:** 27ae8d63e5cef1a1af005b2e567a6ad5447e5f28 (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33631116459, CodeQL run 33631116350, formatting run 33631116335)
+**Audited semantic code head:** 5933584c3ae26690b35612bd589eeff37f37822a
+**Checklist refresh base:** 5933584c3ae26690b35612bd589eeff37f37822a (public exact-head checkpoint for deletion parity and action-aware ODE validation)
+**Latest workflow checkpoint:** 5933584c3ae26690b35612bd589eeff37f37822a (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33642690870, CodeQL run 33642690911, formatting run 33642690862)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -378,6 +378,39 @@ completion gate.
   for the source-derived CI contracts; the supported local reference subset
   reports `36` passes, `35` explicit exclusions, and `0` errors. This is
   truthful coverage accounting, not complete Tier-P parity.
+- [x] Exact-head deletion and ODE-validation checkpoint
+  `5933584c3ae26690b35612bd589eeff37f37822a` is grounded in diagnostic BNG2
+  source revision `fde0cd6a522c9f988d5495db31c70ce0f98e744b`: its
+  `src/core/Transformation.cpp:397-410` `DeleteBond::transform` deletes the
+  bound bond and restores two explicit `UNBOUND` endpoints, while
+  `bng2/Perl2/Component.pm:153-188` omits an unbound edge marker from the
+  serialized component. BNG3 now restores markers only for surviving endpoints
+  in `cpp/ast/ReactionRule.cpp:495-559`; deletion endpoints are excluded from
+  the restoration to prevent orphan marker-only species. The source-derived
+  regression is `tests/cpp/test_reaction_rule_expansion.cpp:103-140`.
+  Red-first focused execution reported `targetCount 2` before restoration and
+  a marker-only species after the initial broad restoration; the final focused
+  test reports `5 assertions in 1 test case`. The action-aware repair in
+  `tests/validation/test_parity_ode.py:1-43` runs the model action block through
+  the CLI, preserving setup actions that the direct API path discarded. The
+  focused Motivation NET parity reports `2 passed`; focused action-aware ODE
+  parity reports `1 passed`; full BNG2-backed smoke reports `17 passed, 2
+  skipped` (both `gene_expr` because the external oracle cannot find NFsim);
+  the complete native CTest gate reports `186/186`; Python reports `276 passed,
+  27 skipped, 9 warnings`; Ruff and Black pass. One hundred isolated
+  `Motivating_example` CLI runs all exit `0` and produce `78` species; the
+  BNG2/B3 semantic NET comparator passes, with temporary NET digests
+  `5ed6ddfd25b770bd7614f689e277d9ce6dd2371f293468bca10336d4a38d3025` and
+  `8ee09b27cda0908c2dfd8039712b5c40fe59b16196380a1cb4de2d1395b2680a`.
+  The rebuilt `build/cpp/bng_cpp` digest is
+  `0f2b5d1357ed700241bb7326adebb546f0c51d249c58a3a2bc05b14523848227`.
+  Public PR #2 readback agrees on this exact open head; CI
+  [33642690870](https://github.com/RuleWorld/BNG3/actions/runs/33642690870),
+  CodeQL [33642690911](https://github.com/RuleWorld/BNG3/actions/runs/33642690911),
+  and formatting [33642690862](https://github.com/RuleWorld/BNG3/actions/runs/33642690862)
+  were queued at readback and are not completion evidence. This closes only
+  the deletion/validator defects; broad NET/ODE parity, independent oracle
+  provenance, and the remaining checklist gaps stay open.
 - [x] The source-derived modern Atomizer gates at `4135236` report `76 passed`
   across the modern Atomizer test modules, and the full Python suite reports
   `241 passed, 27 skipped, 8 warnings`. This qualifies the Python semantic
