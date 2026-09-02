@@ -296,7 +296,7 @@ def convertMathFunction(math_string: str) -> str:
     result = _replace_calls(
         result,
         "log10",
-        lambda args: f"(ln({args[0]})/ln(10))" if args else "log10()",
+        lambda args: f"(ln({args[0]})/2.302585093)" if args else "log10()",
     )
 
     for name, operator in {

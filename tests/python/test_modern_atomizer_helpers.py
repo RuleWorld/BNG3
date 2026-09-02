@@ -41,7 +41,7 @@ def test_playground_helpers_string_and_math_contract():
     assert convertMathFunction("root(2, x)") == "((x)^(1/(2)))"
     assert convertMathFunction("log(10, x)") == "(ln(x)/ln(10))"
     assert convertMathFunction("log(x)") == "ln(x)"
-    assert convertMathFunction("log10(x)") == "(ln(x)/ln(10))"
+    assert convertMathFunction("log10(x)") == "(ln(x)/2.302585093)"
     assert convertMathFunction("gt(a, b)") == "(a > b)"
     assert convertMathFunction("and(a, b)") == "(a && b)"
     assert convertMathFunction("not(c)") == "(!c)"
