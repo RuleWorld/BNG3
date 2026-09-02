@@ -100,6 +100,46 @@ end actions
     REQUIRE(network.reactions.size() >= 1);
 }
 
+TEST_CASE("Rule expansion: deleting a bound molecule preserves a free site", "[ReactionRule]") {
+    // BNG2 serializes an unbound component without an edge marker.  A
+    // DeleteMolecules product must therefore remain the same species as the
+    // independently seeded BNG2-equivalent graph, even when the deleted bond
+    // was the component's only explicit internal unbound marker.
+    auto model = parseModel(R"(
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    DNA(p1,p2)
+    P1(dna)
+    TF(d,dna)
+    Sink()
+end molecule types
+begin seed species
+    DNA(p1!1!2,p2).TF(d!3,dna!2).TF(d!3,dna!1) 1
+    DNA(p1!1!2,p2!4).P1(dna!4).TF(d!3,dna!1).TF(d!3,dna!2) 1
+end seed species
+begin reaction rules
+    P1 -> Sink() k DeleteMolecules
+end reaction rules
+)");
+
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative(4);
+
+    std::size_t targetCount = 0;
+    for (std::size_t index = 0; index < network.species.size(); ++index) {
+        const auto text = network.species.get(index).getSpeciesGraph().toString();
+        REQUIRE_FALSE(text.empty());
+        if (text.find("DNA(p1!1!2,p2)") == 0 && text.find("TF(") != std::string::npos &&
+            text.find("P1(") == std::string::npos) {
+            ++targetCount;
+        }
+    }
+    REQUIRE(targetCount == 1);
+    REQUIRE(network.reactions.size() == 1);
+}
+
 TEST_CASE("Rule expansion: bidirectional rule decomposition", "[ReactionRule]") {
     auto model = parseModel(R"(
 begin parameters

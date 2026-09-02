@@ -492,10 +492,14 @@ std::vector<SpeciesGraph> splitIntoSpeciesGraphs(const BNGcore::PatternGraph& gr
     return products;
 }
 
-void safeDeleteNode(BNGcore::PatternGraph& graph, BNGcore::Node* node) {
+void safeDeleteNode(BNGcore::PatternGraph& graph, BNGcore::Node* node,
+                    bool restoreUnboundMarkers = false,
+                    const BNGcore::Node* moleculeBeingDeleted = nullptr) {
     if (node == nullptr) {
         return;
     }
+
+    const bool isBoundBond = isBondNode(*node) && node->get_state() == BNGcore::BOUND_STATE;
 
     std::vector<BNGcore::Node*> incoming;
     std::vector<BNGcore::Node*> outgoing;
@@ -513,6 +517,49 @@ void safeDeleteNode(BNGcore::PatternGraph& graph, BNGcore::Node* node) {
         graph.delete_edge(node, dst);
     }
     graph.delete_node(node);
+
+    // BNG2 represents a free component without an edge marker.  BNG3's
+    // in-memory species graphs use an explicit UNBOUND bond node so that the
+    // matcher can distinguish free sites from unspecified pattern sites.
+    // Restore that marker on surviving endpoints when a bound bond is removed.
+    if (restoreUnboundMarkers && isBoundBond) {
+        for (auto* component : incoming) {
+            if (!isComponentNode(*component)) {
+                continue;
+            }
+            if (moleculeBeingDeleted != nullptr) {
+                bool belongsToDeletedMolecule = false;
+                for (auto edge = component->edges_in_begin(); edge != component->edges_in_end(); ++edge) {
+                    if (*edge == moleculeBeingDeleted) {
+                        belongsToDeletedMolecule = true;
+                        break;
+                    }
+                }
+                if (belongsToDeletedMolecule) {
+                    continue;
+                }
+            }
+            bool hasBoundBond = false;
+            bool hasUnboundMarker = false;
+            for (auto edge = component->edges_out_begin(); edge != component->edges_out_end(); ++edge) {
+                if (!isBondNode(**edge)) {
+                    continue;
+                }
+                if ((*edge)->get_state() == BNGcore::BOUND_STATE) {
+                    hasBoundBond = true;
+                } else if ((*edge)->get_state() == BNGcore::UNBOUND_STATE) {
+                    hasUnboundMarker = true;
+                }
+            }
+            if (hasBoundBond || hasUnboundMarker) {
+                continue;
+            }
+            BNGcore::Node unboundNode(BNGcore::BOND_NODE_TYPE);
+            auto* marker = graph.add_node(unboundNode);
+            marker->set_state(BNGcore::UNBOUND_STATE);
+            graph.add_edge(component, marker);
+        }
+    }
 }
 
 void deleteMappedMolecule(BNGcore::Map& aggregateMap, BNGcore::Node* sourceMoleculeNode) {
@@ -533,7 +580,7 @@ void deleteMappedMolecule(BNGcore::Map& aggregateMap, BNGcore::Node* sourceMolec
             bondNodes.push_back(*edge);
         }
         for (auto* bondNode : bondNodes) {
-            safeDeleteNode(*graph, bondNode);
+            safeDeleteNode(*graph, bondNode, true, targetMolecule);
         }
         safeDeleteNode(*graph, component);
     }
@@ -2008,15 +2055,7 @@ bool ReactionRule::buildReaction(
             if (lhsComponent == nullptr || rhsComponent == nullptr || bondNode == nullptr) {
                 return false;
             }
-            safeDeleteNode(*graph, bondNode);
-            auto* lhsBond = new BNGcore::Node(BNGcore::BOND_NODE_TYPE);
-            lhsBond->set_state(BNGcore::UNBOUND_STATE);
-            graph->add_node(lhsBond);
-            graph->add_edge(lhsComponent, lhsBond);
-            auto* rhsBond = new BNGcore::Node(BNGcore::BOND_NODE_TYPE);
-            rhsBond->set_state(BNGcore::UNBOUND_STATE);
-            graph->add_node(rhsBond);
-            graph->add_edge(rhsComponent, rhsBond);
+            safeDeleteNode(*graph, bondNode, true);
             break;
         }
         case TransformOp::Type::ChangeState: {
@@ -2058,7 +2097,7 @@ bool ReactionRule::buildReaction(
                         bondNodes.push_back(*edge);
                     }
                     for (auto* bondNode : bondNodes) {
-                        safeDeleteNode(*graph, bondNode);
+                        safeDeleteNode(*graph, bondNode, true, mappedMolecule);
                     }
                     safeDeleteNode(*graph, component);
                 }
@@ -2462,7 +2501,7 @@ bool ReactionRule::buildReaction(
                             bondNodes.push_back(*edge);
                         }
                         for (auto* bondNode : bondNodes) {
-                            safeDeleteNode(aggregateGraph, bondNode);
+                            safeDeleteNode(aggregateGraph, bondNode, true, clonedMol);
                         }
                         safeDeleteNode(aggregateGraph, component);
                     }
