@@ -6,7 +6,7 @@
 **Working branch:** codex/bng3-integration-foundations
 **Audited semantic code head:** 413523620b1903f7152a27ee6441b0b4d07b933b
 **Checklist refresh base:** 4135236 (source-derived parameterized-function facade checkpoint; refresh after each checkpoint)
-**Latest workflow checkpoint:** e7cd59bd793a30d31bf2b8822725e05ba097b3d0 (fail-closed weekly cross-validation repair)
+**Latest workflow checkpoint:** 0e2642aa239c569f66eb550db6c0952219060142 (fail-closed missing-reference repair)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -111,6 +111,18 @@ completion gate.
   formatting [33575648574](https://github.com/RuleWorld/BNG3/actions/runs/33575648574),
   and CodeQL [33575648533](https://github.com/RuleWorld/BNG3/actions/runs/33575648533)
   are queued for this exact SHA; queued status is not completion evidence.
+- [x] The latest strict-reference validation checkpoint is
+  `0e2642aa239c569f66eb550db6c0952219060142`; `scripts/validate.py` now has
+  `--strict-references`, and the PR/weekly reference jobs use it while listing
+  the current 35 known exclusions explicitly. The exact local validation
+  subset reports `36` structural reference passes, `35` explicit exclusions,
+  and `0` errors; the source-derived CI contracts report `10 passed`.
+  This makes future unlisted missing `.net` oracles fail closed; it does not
+  close the excluded validation or provenance gaps. Hosted CI
+  [33577070603](https://github.com/RuleWorld/BNG3/actions/runs/33577070603),
+  formatting [33577070621](https://github.com/RuleWorld/BNG3/actions/runs/33577070621),
+  and CodeQL [33577070593](https://github.com/RuleWorld/BNG3/actions/runs/33577070593)
+  are queued for this exact SHA.
 - [x] Historical published CI-repair checkpoint is
   `9a2475a0af360d685dc41eb9bb376f6517d74b4d`; `gh api` and `gh pr view 2`
   agreed on this branch/PR source head immediately after push, and PR #2
@@ -176,6 +188,10 @@ completion gate.
   `PYTHONPATH=build/cpp:python python -m pytest tests/test_ci_contract.py -q`;
   `git diff --check` is clean. This verifies the workflow contract locally,
   not hosted execution or full weekly validation.
+- [x] The strict-reference validation gate at `0e2642a` reports `10 passed`
+  for the source-derived CI contracts; the supported local reference subset
+  reports `36` passes, `35` explicit exclusions, and `0` errors. This is
+  truthful coverage accounting, not complete Tier-P parity.
 - [x] The source-derived modern Atomizer gates at `4135236` report `76 passed`
   across the modern Atomizer test modules, and the full Python suite reports
   `241 passed, 27 skipped, 8 warnings`. This qualifies the Python semantic
@@ -1199,6 +1215,14 @@ completion gate.
   and [33575648533](https://github.com/RuleWorld/BNG3/actions/runs/33575648533)
   were queued at readback. This repair does not check the final hosted gate,
   weekly corpus, independent oracle, or release-candidate requirements.
+- [x] Strict-reference validation checkpoint
+  `0e2642aa239c569f66eb550db6c0952219060142` is wired into the PR and weekly
+  reference jobs, with the current exclusions explicit. Hosted CI
+  [33577070603](https://github.com/RuleWorld/BNG3/actions/runs/33577070603),
+  formatting [33577070621](https://github.com/RuleWorld/BNG3/actions/runs/33577070621),
+  and CodeQL [33577070593](https://github.com/RuleWorld/BNG3/actions/runs/33577070593)
+  were queued at readback. Queued status is not completion evidence, and the
+  35 exclusions remain validation gaps.
 - [ ] Every required job emits a terminal summary with counts, failures,
   skips, exception budget, corpus/source revision, and artifact digests.
 - [ ] Required jobs fail when a claimed oracle, corpus, validator, or compiler
