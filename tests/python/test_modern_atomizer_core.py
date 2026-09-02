@@ -3,12 +3,19 @@
 from bionetgen.atomizer.modern import (
     addToDependencyGraph,
     add_to_dependency_graph,
+    analyze_reactions,
     analyze_naming_conventions,
     defineEditDistanceMatrix,
     findLongestSubstring,
     topological_sort,
 )
 from bionetgen.atomizer.modern.helpers import logger
+from bionetgen.atomizer.modern.types import (
+    SBMLModel,
+    SBMLReaction,
+    SBMLSpecies,
+    SBMLSpeciesReference,
+)
 
 
 def test_dependency_graph_insertion_is_unique_and_accepts_scalar_or_list():
@@ -70,3 +77,35 @@ def test_playground_naming_analysis_reports_summary():
     assert len(messages) == 1
     assert messages[0].code == "NAM001"
     assert messages[0].message == "Naming analysis: 1 similar pairs, 1 classifications"
+
+
+def test_playground_reaction_analysis_reports_summary():
+    model = SBMLModel(
+        id="model",
+        species={
+            "A": SBMLSpecies(id="A", name="A"),
+            "B": SBMLSpecies(id="B", name="B"),
+            "AB": SBMLSpecies(id="AB", name="AB"),
+        },
+        reactions={
+            "bind": SBMLReaction(
+                id="bind",
+                reactants=[SBMLSpeciesReference("A"), SBMLSpeciesReference("B")],
+                products=[SBMLSpeciesReference("AB")],
+            )
+        },
+    )
+    logger.clear()
+    logger.setLevel("INFO")
+    logger.setQuietMode(True)
+    try:
+        result = analyze_reactions(model)
+        messages = logger.getMessagesByLevel("INFO")
+    finally:
+        logger.clear()
+        logger.setQuietMode(False)
+
+    assert result["bindingReactions"] == {"AB": ["A", "B"]}
+    assert len(messages) == 1
+    assert messages[0].code == "RXN001"
+    assert messages[0].message == "Reaction analysis: 1 binding, 0 modification"

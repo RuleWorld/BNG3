@@ -356,6 +356,13 @@ def analyze_reactions(model: SBMLModel) -> Dict[str, object]:
             if base_name in derived_name or len(derived_name) > len(base_name):
                 modification[derived] = base
                 dependencies.setdefault(derived, set()).add(base)
+    from .helpers import logger
+
+    logger.info(
+        "RXN001",
+        f"Reaction analysis: {len(binding)} binding, "
+        f"{len(modification)} modification",
+    )
     return {
         "bindingReactions": binding,
         "modificationReactions": modification,
