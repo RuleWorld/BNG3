@@ -1700,6 +1700,7 @@ def write_reaction_rules(
     sct: SpeciesCompositionTable,
     atomize: bool,
     observable_converted_rules: Optional[Set[str]] = None,
+    time_rate_functions: Optional[List[str]] = None,
 ) -> List[str]:
     lines = []
     used_labels = set()
@@ -1834,6 +1835,41 @@ def write_reaction_rules(
                 structures,
                 prepared_math=prepared_math,
             )
+
+        # A time-only rate has no species/observable marker for BNG2's
+        # functional-rate path.  Keep it live by emitting a zero-argument
+        # function, matching the Playground writer's bounded time-rate port.
+        def needs_time_wrap(value: str) -> bool:
+            return bool(re.search(r"\btime\s*\(", value)) and not re.search(
+                r"(?:_amt\b|_c_)", value
+            )
+
+        def wrap_time_rate(value: str, suffix: str = "") -> str:
+            if time_rate_functions is None or not needs_time_wrap(value):
+                return value
+            function_name = f"_trate_{candidate}{suffix}"
+            time_rate_functions.append(f"{function_name}() = {value}")
+            return f"{function_name}()"
+
+        if arrow == "<->":
+            depth = 0
+            split_at = -1
+            for index, character in enumerate(rate):
+                if character == "(":
+                    depth += 1
+                elif character == ")":
+                    depth -= 1
+                elif character == "," and depth == 0:
+                    split_at = index
+                    break
+            if split_at >= 0:
+                forward = wrap_time_rate(rate[:split_at].strip(), "_f")
+                reverse = wrap_time_rate(rate[split_at + 1 :].strip(), "_r")
+                rate = f"{forward}, {reverse}"
+            else:
+                rate = wrap_time_rate(rate)
+        else:
+            rate = wrap_time_rate(rate)
         lines.append(
             f"{candidate}: {' + '.join(reactants) if reactants else '0'} "
             f"{arrow} {' + '.join(products) if products else '0'} {rate}"
@@ -2015,8 +2051,7 @@ def generate_bngl(
     function_lines = write_functions(
         model, synthetic_rate_rule_variables, observable_rule_variables
     )
-    if function_lines:
-        sections.append(_section("functions", function_lines))
+    time_rate_functions: List[str] = []
     sections.append(
         _section(
             "reaction rules",
@@ -2025,9 +2060,13 @@ def generate_bngl(
                 augmented_sct,
                 atomize,
                 observable_converted_rules=observable_rule_variables,
+                time_rate_functions=time_rate_functions,
             ),
         )
     )
+    function_lines.extend(time_rate_functions)
+    if function_lines:
+        sections.insert(-1, _section("functions", function_lines))
     sections.append("end model")
     model_text = "\n\n".join(section for section in sections if section != "") + "\n"
 

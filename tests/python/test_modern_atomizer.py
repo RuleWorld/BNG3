@@ -856,6 +856,48 @@ def test_playground_writer_splits_reversible_net_rates_by_direction():
     cpp.parse_string(bngl)
 
 
+def test_playground_writer_wraps_time_only_rates_in_live_functions():
+    from bionetgen.atomizer.modern import (
+        SBMLKineticLaw,
+        SBMLModel,
+        SBMLReaction,
+        SBMLSpecies,
+        SBMLSpeciesReference,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    model = SBMLModel(
+        id="time_only_rate",
+        species=OrderedDict([("B", SBMLSpecies(id="B", name="B"))]),
+        reactions=OrderedDict(
+            [
+                (
+                    "light",
+                    SBMLReaction(
+                        id="light",
+                        reactants=[],
+                        products=[SBMLSpeciesReference("B")],
+                        kinetic_law=SBMLKineticLaw("2 + time()"),
+                    ),
+                )
+            ]
+        ),
+    )
+
+    sct = build_species_composition_table(model)
+    bngl, _ = generate_bngl(
+        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+    )
+
+    assert "_trate_light() = 2 + time()" in bngl
+    assert "light: 0 -> M_B() _trate_light()" in bngl
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    cpp.parse_string(bngl)
+
+
 def test_playground_writer_removes_repeated_site_statistical_factors():
     from bionetgen.atomizer.modern import (
         SBMLKineticLaw,
