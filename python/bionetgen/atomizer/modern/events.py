@@ -361,7 +361,8 @@ def synthesize_event_actions(
 
     def steps_for(start: float, end: float) -> int:
         scale = (end - start) / total_duration if total_duration > 0 else 1
-        return max(1, round(context.base_steps * scale))
+        # JavaScript Math.round rounds nonnegative half ties upward; Python round ties to even.
+        return max(1, math.floor(context.base_steps * scale + 0.5))
 
     lines = [
         f"# {len(merged)} time-triggered SBML event(s) translated to scheduled actions.",

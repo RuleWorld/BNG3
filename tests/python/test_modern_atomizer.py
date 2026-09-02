@@ -1386,6 +1386,36 @@ def test_playground_event_actions_fold_constants_and_retain_unsupported_events()
     assert "not a simple time threshold" in result.untranslated[0][1]
 
 
+def test_playground_event_actions_use_source_half_up_step_rounding():
+    from bionetgen.atomizer.modern import SBMLEvent
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+
+    context = EventTranslationContext(
+        resolve_species_pattern=lambda _variable: None,
+        resolve_param=lambda _variable: None,
+        is_param=lambda variable: variable == "k",
+        base_t_end=2,
+        base_steps=5,
+    )
+    result = synthesize_event_actions(
+        [
+            SBMLEvent(
+                id="half_step",
+                trigger="geq(time, 1)",
+                assignments=[("k", "3")],
+            )
+        ],
+        context,
+    )
+
+    assert result.actions_block is not None
+    assert "t_end=>1, n_steps=>3" in result.actions_block
+    assert "t_end=>2, n_steps=>3" in result.actions_block
+
+
 def test_playground_atomizer_emits_event_actions_and_diagnostics_in_bngl():
     from bionetgen.atomizer.modern import (
         SBMLEvent,
