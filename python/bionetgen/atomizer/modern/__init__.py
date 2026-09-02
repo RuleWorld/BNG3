@@ -34,7 +34,13 @@ from .core import (
     similarity,
     topological_sort,
 )
-from .parser import SBMLParser, extract_go_terms, extract_uniprot_ids
+from .parser import (
+    SBMLParser,
+    extractGOTerms,
+    extractUniProtIds,
+    extract_go_terms,
+    extract_uniprot_ids,
+)
 from .multi import MultiParseResult, parse_multi_package
 from .events import (
     EventTranslationContext,
@@ -415,6 +421,8 @@ __all__ = [
     "disambiguate_colliding_species",
     "extend_function",
     "extract_go_terms",
+    "extractGOTerms",
+    "extractUniProtIds",
     "extract_uniprot_accessions",
     "extract_uniprot_ids",
     "extract_parameters",

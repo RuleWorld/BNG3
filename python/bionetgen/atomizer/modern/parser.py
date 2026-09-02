@@ -1235,28 +1235,30 @@ def extract_uniprot_ids(resources: Iterable[str]) -> List[str]:
     """Extract UniProt identifiers from MIRIAM/identifiers.org resources."""
 
     result = []
-    seen = set()
     for resource in resources:
-        match = re.search(
-            r"(?:^|[:/])uniprot[:/]([A-Za-z0-9][A-Za-z0-9_-]*)$",
-            str(resource),
-            re.IGNORECASE,
-        )
-        if match and match.group(1) not in seen:
-            seen.add(match.group(1))
+        match = re.search(r"uniprot[:/]([A-Z0-9]+)", str(resource), re.IGNORECASE)
+        if match:
             result.append(match.group(1))
     return result
 
 
 def extract_go_terms(resources: Iterable[str]) -> List[str]:
     result = []
-    seen = set()
     for resource in resources:
-        match = re.search(r"(?:^|[:/])go[:/]?(GO:\d+)$", str(resource), re.IGNORECASE)
-        if match and match.group(1) not in seen:
-            seen.add(match.group(1))
-            result.append(match.group(1))
+        match = re.search(r"GO[:/](\d+)", str(resource), re.IGNORECASE)
+        if match:
+            result.append(f"GO:{match.group(1)}")
     return result
 
 
-__all__ = ["SBMLParser", "extract_go_terms", "extract_uniprot_ids"]
+extractGOTerms = extract_go_terms
+extractUniProtIds = extract_uniprot_ids
+
+
+__all__ = [
+    "SBMLParser",
+    "extractGOTerms",
+    "extractUniProtIds",
+    "extract_go_terms",
+    "extract_uniprot_ids",
+]

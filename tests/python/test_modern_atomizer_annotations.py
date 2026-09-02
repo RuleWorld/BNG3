@@ -146,6 +146,20 @@ def test_playground_qualifier_helper_filters_resources_by_qualifier_kind():
     ]
 
 
+def test_playground_parser_annotation_id_helpers_preserve_source_matches():
+    from bionetgen.atomizer.modern import extractGOTerms, extractUniProtIds
+
+    resources = [
+        "urn:miriam:uniprot:P12345",
+        "https://identifiers.org/uniprot/Q67890",
+        "GO:0008150",
+        "https://identifiers.org/go/12345",
+    ]
+
+    assert extractUniProtIds(resources) == ["P12345", "Q67890"]
+    assert extractGOTerms(resources) == ["GO:0008150", "GO:12345"]
+
+
 def test_annotation_parser_groups_only_identity_qualifiers():
     model = _model(
         _species(
