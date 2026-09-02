@@ -99,4 +99,3 @@ end model
     )
 
     assert generated.count('matchOnce="1"') == 2
-
