@@ -5,8 +5,8 @@
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
 **Audited semantic code head:** 413523620b1903f7152a27ee6441b0b4d07b933b
-**Checklist refresh base:** 99e99506cea1733c6a7e8dfe90531ec0f826c318 (legacy graph-label checkpoint; semantic code head remains 413523620b1903f7152a27ee6441b0b4d07b933b)
-**Latest workflow checkpoint:** 0e2642aa239c569f66eb550db6c0952219060142 (fail-closed missing-reference repair)
+**Checklist refresh base:** bf2900b330868e78ca2833a6d6bd9d977859d2b9 (legacy output diagnostics checkpoint; semantic code head remains 413523620b1903f7152a27ee6441b0b4d07b933b)
+**Latest workflow checkpoint:** bf2900b330868e78ca2833a6d6bd9d977859d2b9 (exact-head CI, Formatting patch, and CodeQL runs queued; not completion evidence)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -222,6 +222,26 @@ completion gate.
   [33581519666](https://github.com/RuleWorld/BNG3/actions/runs/33581519666),
   formatting [33581519687](https://github.com/RuleWorld/BNG3/actions/runs/33581519687),
   and CodeQL [33581519622](https://github.com/RuleWorld/BNG3/actions/runs/33581519622)
+  were queued at readback, so they are not completion evidence.
+- [x] The bounded legacy diagnostic/output repairs from source commit
+  `dca95a6aa80e249f1adf981037b61bf020f7b5ad` are ported in
+  `legacy/perl/Perl2/BNGAction.pm` and `legacy/perl/Perl2/BNGOutput.pm`:
+  `retrieve` and `Writing` diagnostics are corrected, `QueryNames.m` uses an
+  explicit three-argument open with error propagation, and generated MATLAB
+  comments use `names`/`species`. The source-derived
+  `tests/python/test_legacy_output_contract.py` reports `2 passed`; all
+  touched legacy Perl modules report `syntax OK`; exact-tree CTest reports
+  `185/185`; and the full Python suite reports `250 passed, 27 skipped, 8
+  warnings`. This qualifies only the bounded output/diagnostic slice;
+  complete legacy/API retirement, serializer/parser parity, packaging, and
+  independent BNG2 evidence remain open. Public branch and PR #2 read back to
+  exact semantic code head
+  `bf2900b330868e78ca2833a6d6bd9d977859d2b9`; CI
+  [33581941200](https://github.com/RuleWorld/BNG3/actions/runs/33581941200),
+  formatting
+  [33581941209](https://github.com/RuleWorld/BNG3/actions/runs/33581941209),
+  and CodeQL
+  [33581941228](https://github.com/RuleWorld/BNG3/actions/runs/33581941228)
   were queued at readback, so they are not completion evidence.
 - [x] The latest CI truthfulness repair checkpoint is
   `e7cd59bd793a30d31bf2b8822725e05ba097b3d0`; it makes weekly C++/Perl
