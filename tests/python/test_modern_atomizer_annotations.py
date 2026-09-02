@@ -119,6 +119,33 @@ def test_annotation_parser_handles_reference_uri_forms_and_uniprot_extraction():
     assert extract_uniprot_accessions(model) == {"s1": ["P12345", "Q67890"]}
 
 
+def test_playground_qualifier_helper_filters_resources_by_qualifier_kind():
+    from bionetgen.atomizer.modern import getAnnotationsByQualifier
+
+    annotations = [
+        AnnotationInfo(
+            qualifier_type=1,
+            biological_qualifier=0,
+            resources=["urn:miriam:uniprot:P12345"],
+        ),
+        AnnotationInfo(
+            qualifier_type=1,
+            biological_qualifier=1,
+            resources=["urn:miriam:uniprot:Q67890"],
+        ),
+        AnnotationInfo(
+            qualifier_type=0,
+            model_qualifier=2,
+            resources=["https://identifiers.org/pubmed/12345"],
+        ),
+    ]
+
+    assert getAnnotationsByQualifier(annotations, 0) == ["urn:miriam:uniprot:P12345"]
+    assert getAnnotationsByQualifier(annotations, 2, is_biological=False) == [
+        "https://identifiers.org/pubmed/12345"
+    ]
+
+
 def test_annotation_parser_groups_only_identity_qualifiers():
     model = _model(
         _species(

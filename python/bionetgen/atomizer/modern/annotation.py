@@ -14,7 +14,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Mapping, Optional, Tuple
 
-from .types import SBMLModel, SBMLSpecies
+from .types import AnnotationInfo, SBMLModel, SBMLSpecies
 
 BIOLOGICAL_QUALIFIER_NAMES = {
     0: "BQB_IS",
@@ -192,6 +192,26 @@ def get_annotations_by_qualifier(
         ]
         if annotations:
             result[species_id] = annotations
+    return result
+
+
+def get_annotations_by_qualifier_resources(
+    annotations: Iterable[AnnotationInfo], qualifier: int, is_biological: bool = True
+) -> List[str]:
+    """Return raw resources matching a Playground qualifier enum value."""
+
+    result: List[str] = []
+    for annotation in annotations:
+        if (
+            is_biological
+            and annotation.qualifier_type == 1
+            and annotation.biological_qualifier == qualifier
+        ) or (
+            not is_biological
+            and annotation.qualifier_type == 0
+            and annotation.model_qualifier == qualifier
+        ):
+            result.extend(annotation.resources)
     return result
 
 
@@ -376,11 +396,17 @@ __all__ = [
     "compute_annotation_stats",
     "extract_uniprot_accessions",
     "find_equivalent_species",
+    "getAnnotationsByQualifier",
     "get_all_annotations",
     "get_annotations_by_database",
     "get_annotations_by_qualifier",
+    "get_annotations_by_qualifier_resources",
     "get_canonical_species",
     "get_equivalence",
     "parse_resource_uri",
     "parse_species_annotations",
 ]
+
+
+# Keep the exact public name exported by the TypeScript parser.
+getAnnotationsByQualifier = get_annotations_by_qualifier_resources
