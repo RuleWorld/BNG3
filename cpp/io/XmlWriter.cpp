@@ -1339,6 +1339,7 @@ std::string XmlWriter::write(const ast::Model& model, const engine::GeneratedNet
     xml << writeReactionRules(model);
     xml << writeObservables(model);
     xml << writeFunctions(model);
+    xml << writeEnergyPatterns(model);
 
     xml << "  </model>\n";
     xml << "</sbml>\n";
@@ -2179,6 +2180,37 @@ std::string XmlWriter::writeFunctions(const ast::Model& model) {
     }
 
     xml << "    </ListOfFunctions>\n";
+    return xml.str();
+}
+
+std::string XmlWriter::writeEnergyPatterns(const ast::Model& model) {
+    if (model.getEnergyPatterns().empty()) return {};
+
+    std::ostringstream xml;
+    xml << "    <ListOfEnergyPatterns>\n";
+
+    for (std::size_t index = 0; index < model.getEnergyPatterns().size(); ++index) {
+        const auto& energyPattern = model.getEnergyPatterns()[index];
+        const auto id = "EP" + std::to_string(index + 1);
+        const auto patternId = id + "_P1";
+        // The AST graph marks an omitted bond as a wildcard for matching, but
+        // its legacy string serializer cannot preserve that distinction.  The
+        // source pattern retains BNG2's XML-facing 0/?/+ bond semantics.
+        auto parsed = parsePattern(energyPattern.getPattern());
+        canonicalizeParsedPattern(parsed);
+        const auto patternText = patternToBngl(parsed, false);
+
+        xml << "      <EnergyPattern id=\"" << id
+            << "\" pattern=\"" << escapeXml(patternText)
+            << "\" expression=\"" << escapeXml(energyPattern.getExpression().toString())
+            << "\">\n";
+        xml << "        <Pattern id=\"" << patternId << "\">\n";
+        xml << patternToXml(parsed, patternId, "          ");
+        xml << "        </Pattern>\n";
+        xml << "      </EnergyPattern>\n";
+    }
+
+    xml << "    </ListOfEnergyPatterns>\n";
     return xml.str();
 }
 

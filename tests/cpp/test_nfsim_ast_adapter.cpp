@@ -339,6 +339,145 @@ end seed species
     CHECK(xml.find("site2=") != std::string::npos);
 }
 
+TEST_CASE("NFsim XML bridge preserves energy patterns") {
+    // Source-derived from BNG2 BNGOutput.pm::writeXML and
+    // EnergyPattern.pm::toXML: energy patterns must retain the canonical
+    // pattern string plus the nested molecule/component/bond graph consumed
+    // by NFsim's XML energy parser.
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    phi 0.5
+    Ea 0.0
+    Gbind 1.0
+    Gfree 0.0
+    RT 1.0
+end parameters
+begin molecule types
+    A(b)
+    B(a)
+end molecule types
+begin seed species
+    A(b) 1
+    B(a) 1
+end seed species
+begin energy patterns
+    B(a!1).A(b!1) Gbind
+    A(b) Gfree
+end energy patterns
+begin reaction rules
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,Ea)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    REQUIRE(model->getEnergyPatterns().size() == 2);
+    const auto& energyPattern = model->getEnergyPatterns().front();
+    CHECK(energyPattern.getGraph().toString() == "A(b!1).B(a!1)");
+
+    const auto xml = bng::io::XmlWriter::write(*model);
+    CHECK(xml.find("<ListOfEnergyPatterns>") != std::string::npos);
+    CHECK(xml.find(
+              "<EnergyPattern id=\"EP1\" pattern=\"A(b!1).B(a!1)\" expression=\"Gbind\">") !=
+          std::string::npos);
+    CHECK(xml.find("<Pattern id=\"EP1_P1\">") != std::string::npos);
+    CHECK(xml.find("<Molecule id=\"EP1_P1_M1\" name=\"A\">") !=
+          std::string::npos);
+    CHECK(xml.find("<Component id=\"EP1_P1_M1_C1\" name=\"b\" numberOfBonds=\"1\"/>") !=
+          std::string::npos);
+    CHECK(xml.find("<Bond id=\"EP1_P1_B1\" site1=\"EP1_P1_M1_C1\" site2=\"EP1_P1_M2_C1\"/>") !=
+          std::string::npos);
+    CHECK(xml.find(
+              "<EnergyPattern id=\"EP2\" pattern=\"A(b)\" expression=\"Gfree\">") !=
+          std::string::npos);
+    CHECK(xml.find("<Component id=\"EP2_P1_M1_C1\" name=\"b\" numberOfBonds=\"0\"/>") !=
+          std::string::npos);
+
+    const auto token = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto xmlPath = std::filesystem::temp_directory_path() /
+                         ("bng3-energy-pattern-" + std::to_string(token) + ".xml");
+    std::ofstream xmlFile(xmlPath);
+    REQUIRE(xmlFile.good());
+    xmlFile << xml;
+    xmlFile.close();
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::initializeFromXML(
+        xmlPath.string(), false, 100, false, suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getEnergyFunction() != nullptr);
+    CHECK(system->getEnergyFunction()->getNumPatterns() == 2);
+    CHECK(system->getAllReactions().size() == 2);
+    delete system;
+
+    std::error_code error;
+    std::filesystem::remove(xmlPath, error);
+}
+
+TEST_CASE("NFsim XML bridge expands Arrhenius state changes") {
+    // Source-derived from BNG2 RxnRule.pm::toXML: a reversible Arrhenius
+    // state-change rule is emitted once because the same rate law supplies
+    // both directions.  NFsim must then use the EnergyFunction expansion
+    // rather than silently dropping the rule.
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    phi 0.5
+    Ea 0.0
+    Gup 1.0
+    Gdn 0.0
+    RT 1.0
+end parameters
+begin molecule types
+    M(sp~up~dn)
+end molecule types
+begin seed species
+    M(sp~dn) 1
+end seed species
+begin energy patterns
+    M(sp~up) Gup
+    M(sp~dn) Gdn
+end energy patterns
+begin reaction rules
+    M(sp~dn) <-> M(sp~up) Arrhenius(phi,Ea)
+    M(sp~up) -> M(sp~dn) 0.25
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    const auto xml = bng::io::XmlWriter::write(*model);
+    CHECK(xml.find("<EnergyPattern id=\"EP1\" pattern=\"M(sp~up)\" expression=\"Gup\">") !=
+          std::string::npos);
+    CHECK(xml.find("<StateChange site=\"RR1_RP1_M1_C1\" finalState=\"up\"/>") !=
+          std::string::npos);
+
+    int directTraversalLimit = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 100, false, directTraversalLimit);
+    REQUIRE(direct != nullptr);
+    REQUIRE(direct->getEnergyFunction() != nullptr);
+    CHECK(direct->getAllReactions().size() == 3);
+    delete direct;
+
+    const auto token = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto xmlPath = std::filesystem::temp_directory_path() /
+                         ("bng3-energy-state-change-" + std::to_string(token) + ".xml");
+    std::ofstream xmlFile(xmlPath);
+    REQUIRE(xmlFile.good());
+    xmlFile << xml;
+    xmlFile.close();
+
+    int xmlTraversalLimit = 0;
+    auto* xmlSystem = NFinput::initializeFromXML(
+        xmlPath.string(), false, 100, false, xmlTraversalLimit);
+    REQUIRE(xmlSystem != nullptr);
+    REQUIRE(xmlSystem->getEnergyFunction() != nullptr);
+    CHECK(xmlSystem->getEnergyFunction()->getNumPatterns() == 2);
+    CHECK(xmlSystem->getAllReactions().size() == 3);
+    delete xmlSystem;
+
+    std::error_code error;
+    std::filesystem::remove(xmlPath, error);
+}
+
 TEST_CASE("XML writer canonicalizes seed species like BNG2") {
     // BNG2 parses and quasi-canonicalizes seed SpeciesGraphs before writeXML.
     // The graph serializer sorts molecules/components and renumbers bonds;

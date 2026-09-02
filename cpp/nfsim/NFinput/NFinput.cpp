@@ -1436,6 +1436,41 @@ bool validateXmlProductFilters(
 	return true;
 }
 
+bool findReactantComponentState(
+		TiXmlElement *pListOfReactantPatterns, const string &componentId,
+		string &state)
+{
+	if (!pListOfReactantPatterns) return false;
+	for (TiXmlElement *pReactant =
+			pListOfReactantPatterns->FirstChildElement("ReactantPattern");
+			pReactant != NULL;
+			pReactant = pReactant->NextSiblingElement("ReactantPattern")) {
+		TiXmlElement *pListOfMolecules =
+				pReactant->FirstChildElement("ListOfMolecules");
+		if (!pListOfMolecules) continue;
+		for (TiXmlElement *pMolecule =
+				pListOfMolecules->FirstChildElement("Molecule");
+				pMolecule != NULL;
+				pMolecule = pMolecule->NextSiblingElement("Molecule")) {
+			TiXmlElement *pListOfComponents =
+					pMolecule->FirstChildElement("ListOfComponents");
+			if (!pListOfComponents) continue;
+			for (TiXmlElement *pComponent =
+					pListOfComponents->FirstChildElement("Component");
+					pComponent != NULL;
+					pComponent = pComponent->NextSiblingElement("Component")) {
+				if (pComponent->Attribute("id") &&
+						componentId == pComponent->Attribute("id") &&
+						pComponent->Attribute("state")) {
+					state = pComponent->Attribute("state");
+					return true;
+				}
+			}
+		}
+	}
+	return false;
+}
+
 } // namespace
 
 bool NFinput::initReactionRules(
@@ -1593,9 +1628,14 @@ bool NFinput::initReactionRules(
 		
 
 
-				///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-				vector<Compartment*> productCompartments;
-				//Read in the list of operations we need to perform in this rule
+					///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+					vector<Compartment*> productCompartments;
+					string arrheniusStateComponent;
+					string arrheniusStateFrom;
+					string arrheniusStateTo;
+					MoleculeType *arrheniusStateMoleculeType = NULL;
+					int arrheniusStateChangeCount = 0;
+					//Read in the list of operations we need to perform in this rule
 				TiXmlElement *pListOfOperations = pRxnRule->FirstChildElement("ListOfOperations");
 				if ( !pListOfOperations )
 				{
@@ -1972,6 +2012,13 @@ bool NFinput::initReactionRules(
 						     << rxnName << "'. Quitting." << endl;
 						return false;
 					}
+
+					++arrheniusStateChangeCount;
+					arrheniusStateTo = finalState;
+					arrheniusStateComponent = c->symPermutationName;
+					arrheniusStateMoleculeType = c->t->getMoleculeType();
+					findReactantComponentState(
+							pListOfReactantPatterns, site, arrheniusStateFrom);
 
 					//handle both increment and decrement states first...
 					if(finalState=="PLUS") {
@@ -2441,7 +2488,7 @@ bool NFinput::initReactionRules(
 						//   forward (_R1):         has AddBond op  -> addBondSite1/2 populated
 						//   reverse (_reverse__R1): has DeleteBond  -> addBondSite1/2 empty
 						// The forward expansion creates BOTH directions, so skip the reverse.
-						if (addBondSite1.empty()) {
+						if (addBondSite1.empty() && arrheniusStateChangeCount == 0) {
 							if(verbose)
 								cout << "\t\t\tSkipping reverse Arrhenius rule '" << rxnName
 								     << "' -- reverse already created by forward expansion." << endl;
@@ -2492,6 +2539,41 @@ bool NFinput::initReactionRules(
 								     << "' for Arrhenius rule " << rxnName << endl;
 								return false;
 							}
+						}
+
+						if (addBondSite1.empty()) {
+							if (arrheniusStateChangeCount != 1 ||
+									arrheniusStateMoleculeType == NULL ||
+									arrheniusStateFrom.empty() || arrheniusStateTo.empty() ||
+									arrheniusStateTo == "PLUS" || arrheniusStateTo == "MINUS") {
+								cerr << "Arrhenius state-change rule " << rxnName
+								     << " needs one explicit source and destination state." << endl;
+								delete ts;
+								return false;
+							}
+
+							const std::size_t firstNewReaction = s->getAllReactions().size();
+							if (!NFinput::createExpandedStateChangeReactions(
+									rxnName, rule_phi, Ea0, arrheniusStateMoleculeType,
+									arrheniusStateComponent, arrheniusStateFrom, arrheniusStateTo,
+									s, blockSameComplexBinding, verbose, reaction_count, true)) {
+								delete ts;
+								return false;
+							}
+							const auto reactions = s->getAllReactions();
+							for (std::size_t reactionIndex = firstNewReaction;
+									reactionIndex < reactions.size(); ++reactionIndex) {
+								auto *reaction = reactions[reactionIndex];
+								reaction->setTotalRateFlag(totalRateFlag);
+								for (std::size_t reactantIndex = 0;
+										reactantIndex < matchOnceList.size(); ++reactantIndex) {
+									reaction->setMatchOnce(
+										static_cast<unsigned int>(reactantIndex),
+										matchOnceList[reactantIndex]);
+								}
+							}
+							delete ts;
+							continue;
 						}
 
 
