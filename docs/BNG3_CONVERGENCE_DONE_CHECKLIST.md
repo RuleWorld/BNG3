@@ -846,7 +846,17 @@ completion gate.
 - [ ] NET comparisons are graph-aware and preserve species/reaction
   multiplicity, stoichiometry, rates, compartments, observables, and
   duplicates.
-- [ ] NET validation performs actual write/read/write idempotence.
+- [x] NET validation performs actual write/read/write idempotence at BNG3
+  checkpoint `845bc8c`: `tests/validation/test_export_formats.py` now writes
+  a generated `.net`, creates a separate `readFile`/`writeNetwork` BNGL source,
+  reads that exact file through `runner.run_cli_path`, and compares the two
+  graph-aware parses. The source-derived BNG2 read/write contract is represented
+  by `tests/validation/Validate/michment.bngl` and
+  `tests/validation/Validate/michment_cont.bngl`; the exact local gate
+  `PYTHONPATH=python:build/cpp python -m pytest tests/validation/test_export_formats.py -q`
+  reports `12 passed` (four XML, four SBML, and four actual NET round trips).
+  This closes the validator-contract gap, not complete independent Tier-P
+  NET parity.
 - [ ] Deterministic trajectories align explicit time points and compare all
   contracted observables/species at approved absolute and relative tolerances.
 - [ ] Expression/rate-law validation compares direct expression vectors/RHS,
