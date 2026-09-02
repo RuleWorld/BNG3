@@ -1489,6 +1489,7 @@ def write_functions(
     model: SBMLModel,
     synthetic_rate_rule_variables: Optional[Set[str]] = None,
     skip_assignment_rules: Optional[Set[str]] = None,
+    keep_parameterized: bool = False,
 ) -> List[str]:
     lines = []
     zero_argument_functions = []
@@ -1537,14 +1538,23 @@ def write_functions(
 
     for function_id, function in model.function_definitions.items():
         name = standardize_name(function.name or function_id)
-        if function.arguments:
+        if function.arguments and not keep_parameterized:
             # BNG2/BNGL function blocks do not consistently support
             # argument-taking SBML definitions.  Inline those definitions at
             # call sites, as the Playground writer does.
             continue
-        args = ", ".join(standardize_name(argument) for argument in function.arguments)
-        lines.append(f"{name}({args}) = {convert_math_expression(function.math)}")
-        zero_argument_functions.append(name)
+        argument_names = []
+        body = function.math
+        for index, argument in enumerate(function.arguments):
+            base = standardize_name(argument or f"arg{index + 1}")
+            safe = f"_farg{index}_{base}"
+            argument_names.append(safe)
+            if argument and argument != safe:
+                body = re.sub(rf"\b{re.escape(argument)}\b", safe, body)
+        args = ", ".join(argument_names)
+        lines.append(f"{name}({args}) = {convert_math_expression(body)}")
+        if not function.arguments:
+            zero_argument_functions.append(name)
         emitted_names.add(name)
     for rule in model.rules:
         if not rule.variable or rule.type != "assignment":

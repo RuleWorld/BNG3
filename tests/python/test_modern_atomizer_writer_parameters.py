@@ -3,9 +3,12 @@
 from collections import OrderedDict
 
 from bionetgen.atomizer.modern import (
+    SBMLFunctionDefinition,
+    SBMLModel,
     SBMLParameter,
     curateParameters,
     curate_parameters,
+    write_functions,
 )
 from bionetgen.atomizer.modern.helpers import logger
 
@@ -39,3 +42,19 @@ def test_curate_parameters_camel_case_alias_matches_snake_case():
     parameters = {"k": SBMLParameter(id="k", value=3)}
 
     assert curateParameters(parameters) == curate_parameters(parameters)
+
+
+def test_write_functions_can_retain_parameterized_definitions_on_request():
+    """Mirror Playground writeFunctions(..., keepParameterized=true)."""
+
+    model = SBMLModel(
+        id="parameterized",
+        function_definitions={
+            "f": SBMLFunctionDefinition(id="f", arguments=["x"], math="x + 1")
+        },
+    )
+
+    assert write_functions(model) == []
+    assert write_functions(model, keep_parameterized=True) == [
+        "f(_farg0_x) = _farg0_x + 1"
+    ]
