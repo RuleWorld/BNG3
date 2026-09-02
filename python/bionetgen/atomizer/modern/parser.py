@@ -517,6 +517,18 @@ class SBMLParser:
             f"Parsed SBML model: {len(result.species)} species, "
             f"{len(result.reactions)} reactions",
         )
+        for warning in result.import_warnings:
+            code = {
+                "dropped": "SBM020",
+                "approximated": "SBM021",
+            }.get(warning.get("severity"), "SBM022")
+            count = warning.get("count", 1)
+            suffix = f" (x{count})" if count > 1 else ""
+            logger.warning(
+                code,
+                f"[{warning.get('category', 'unknown')}] "
+                f"{warning.get('message', '')}{suffix}",
+            )
         return result
 
     @staticmethod

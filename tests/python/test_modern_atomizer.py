@@ -269,6 +269,43 @@ def test_playground_parser_reports_model_summary():
     ]
 
 
+def test_playground_parser_emits_import_warning_codes_and_counts():
+    from bionetgen.atomizer.modern import SBMLParser
+    from bionetgen.atomizer.modern.helpers import logger
+
+    sbml = """<?xml version="1.0"?>
+    <sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+          level="3" version="1">
+      <model id="warning_fixture">
+        <listOfConstraints>
+          <constraint><math formula="1"/></constraint>
+          <constraint><math formula="2"/></constraint>
+        </listOfConstraints>
+      </model>
+    </sbml>
+    """
+
+    logger.clear()
+    logger.setLevel("WARNING")
+    logger.setQuietMode(True)
+    try:
+        model = SBMLParser().parse(sbml)
+        warnings = logger.getMessagesByLevel("WARNING")
+    finally:
+        logger.clear()
+        logger.setLevel("WARNING")
+        logger.setQuietMode(False)
+
+    assert len(model.import_warnings) == 1
+    assert [(message.code, message.message) for message in warnings] == [
+        (
+            "SBM022",
+            "[constraint] 2 SBML constraint element(s) present; "
+            "constraints are not enforced during simulation. (x2)",
+        )
+    ]
+
+
 def test_playground_parser_surfaces_fast_and_reaction_conversion_diagnostics():
     from bionetgen.atomizer.modern import SBMLParser
 
