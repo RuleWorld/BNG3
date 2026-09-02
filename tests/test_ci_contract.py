@@ -7,6 +7,7 @@ import re
 REPO = Path(__file__).resolve().parents[1]
 PYPROJECT = REPO / "pyproject.toml"
 CI_WORKFLOW = REPO / ".github" / "workflows" / "ci.yml"
+WEEKLY_WORKFLOW = REPO / ".github" / "workflows" / "weekly.yml"
 
 
 def test_pull_request_runs_keep_exact_head_evidence_available():
@@ -29,6 +30,16 @@ def _workflow_job(name: str) -> str:
 
 def _python_test_job() -> str:
     return _workflow_job("python-test")
+
+
+def _workflow_job_from(path: Path, name: str) -> str:
+    workflow = path.read_text(encoding="utf-8")
+    match = re.search(
+        rf"(?ms)^  {re.escape(name)}:\n(?P<body>.*?)(?=^  [a-z0-9-]+:\n|\Z)",
+        workflow,
+    )
+    assert match, f"{path.name} must define a {name} job"
+    return match.group("body")
 
 
 def test_pull_request_exercises_clean_source_distribution_install():
@@ -108,3 +119,14 @@ def test_msvc_parser_headers_clear_windows_macros_before_antlr():
     parser_include = source.index('#include "PatternGraphBuilder.hpp"')
     prefix = source[:parser_include]
     assert '#include "parser/antlr_compat.hpp"' in prefix
+
+
+def test_weekly_cross_validation_fails_closed_on_engine_or_output_errors():
+    """The claimed C++/Perl gate must not turn failed models into skips."""
+
+    job = _workflow_job_from(WEEKLY_WORKFLOW, "cross-validation")
+    assert "set -euo pipefail" in job
+    assert "SKIP" not in job
+    assert "| Failed |" in job
+    assert "[ \"$FAIL\" -gt 0 ]" in job
+    assert job.count("FAIL=$((FAIL + 1))") >= 3
