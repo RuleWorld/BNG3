@@ -48,6 +48,17 @@ def run_cli(bng_cpp: Path, model_name: str, work_dir: Path, *, timeout: int = 18
     if src is None:
         return None, None, f"model {model_name!r} not found on disk"
 
+    return run_cli_path(bng_cpp, src, work_dir, timeout=timeout)
+
+
+def run_cli_path(
+    bng_cpp: Path, source_path: Path, work_dir: Path, *, timeout: int = 180
+):
+    """Run bng_cpp on an explicit BNGL source path in an isolated directory."""
+    src = Path(source_path)
+    if not src.is_file():
+        return None, None, f"model source {str(src)!r} not found on disk"
+
     work_dir.mkdir(parents=True, exist_ok=True)
     local = work_dir / src.name
     shutil.copy2(src, local)
