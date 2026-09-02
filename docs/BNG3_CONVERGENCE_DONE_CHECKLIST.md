@@ -1,11 +1,11 @@
 # BNG3 Convergence: Definition of Done and Remaining Checklist
 
 **Status:** Active; not complete
-**Last audited:** 2026-09-01
+**Last audited:** 2026-09-02
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 88f4e548ed8b7ef43cfc57aa62ad7b7914205613
-**Checklist refresh base:** 88f4e54 (source-derived sparse-selector cached-propensity checkpoint; refresh after each checkpoint)
+**Audited semantic code head:** 7241746a50ed0f87f23ad93eda38b2a9e7cca180
+**Checklist refresh base:** 7241746 (source-derived guarded release-LTO checkpoint; refresh after each checkpoint)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -82,6 +82,15 @@ completion gate.
 - [x] The latest public code/test checkpoint is
   `88f4e548ed8b7ef43cfc57aa62ad7b7914205613`; `gh api` and `gh pr view 2`
   agree on the exact public branch/PR head after push.
+- [x] The latest local semantic checkpoint is
+  `7241746a50ed0f87f23ad93eda38b2a9e7cca180`; it ports the accepted-cutoff
+  NFsim `301bfbeb5ec5007532f713f488ff9954da9ebe1f` guarded Release-LTO probe
+  and applies the detected IPO property to embedded NFsim and its built
+  consumers. The source-derived CMake contract is
+  `tests/cpp/test_release_lto.cmake`.
+- [x] The latest public semantic code/test checkpoint is
+  `7241746a50ed0f87f23ad93eda38b2a9e7cca180`; exact `gh api` branch and
+  `gh pr view 2` readback agree, and PR #2 remains open.
 - [x] Historical published CI-repair checkpoint is
   `9a2475a0af360d685dc41eb9bb376f6517d74b4d`; `gh api` and `gh pr view 2`
   agreed on this branch/PR source head immediately after push, and PR #2
@@ -133,6 +142,16 @@ completion gate.
   `PYTHONPATH=build/cpp:python python -m pytest tests/test_ci_contract.py -q`
   reports `7 passed`. These local results do not substitute for terminal
   hosted checks or independent full-corpus parity.
+- [x] Exact-head local gates pass at `7241746`: the default Release/Ninja
+  build with `NFSIM_ENABLE_LTO=ON` completes and `ctest --test-dir build
+  --output-on-failure` reports `100% tests passed out of 185`, including the
+  source-derived LTO contract; the same contract passes with explicit
+  `NFSIM_ENABLE_LTO=OFF`; the optional `BUILD_NFSIM_CLI=ON` standalone NFsim
+  target also builds and passes that contract; Python reports `240 passed,
+  27 skipped, 8 warnings`; the CI contracts report `7 passed`; Black reports
+  `178 files would be left unchanged`; Ruff and `git diff --check` pass.
+  These local results do not substitute for terminal hosted checks or
+  independent full-corpus parity.
 - [x] Diagnostic independent BNG2 execution is now available from an isolated
   clone of source revision `fde0cd6a522c9f988d5495db31c70ce0f98e744b` using
   the repository's `bng2/Makefile`; the arm64 `run_network` artifact has
@@ -809,6 +828,13 @@ completion gate.
   `NFsim sparse selector reuses cached propensities in implicit batches` in
   `tests/cpp/test_nfsim_ast_adapter.cpp`, implemented at `88f4e54` and green
   in the exact-head `184/184` CTest gate.
+- [x] BNG3 carries the accepted-cutoff NFsim
+  `301bfbeb5ec5007532f713f488ff9954da9ebe1f` guarded Release-LTO build
+  capability at `7241746`: `CheckIPOSupported` controls the embedded
+  `nfsim_core` and each built consumer, with explicit ON/OFF and optional
+  standalone-NFsim contract coverage. This is build/performance evidence
+  only; reproducible speedup, memory, and cross-platform benchmark evidence
+  remain open.
 - [x] BNG3 carries source-derived compact reverse propensity specialization
   and factorization guards (`dbadea6`), plus indexed cross-type partner
   endpoint propagation and a dense type-invariant membership-decision cache
@@ -1114,6 +1140,17 @@ completion gate.
   were queued for this exact SHA. Queued or partial results are not
   completion evidence; the next checklist documentation head requires a
   fresh exact-head readback.
+- [ ] Current public semantic checkpoint
+  `7241746a50ed0f87f23ad93eda38b2a9e7cca180` has not yet acquired a terminal
+  hosted check set. At exact-head readback, CI run
+  [33574600510](https://github.com/RuleWorld/BNG3/actions/runs/33574600510),
+  formatting patch run
+  [33574600516](https://github.com/RuleWorld/BNG3/actions/runs/33574600516),
+  and CodeQL run
+  [33574600570](https://github.com/RuleWorld/BNG3/actions/runs/33574600570)
+  were queued for this exact SHA. Queued or partial results are not
+  completion evidence; the next checklist documentation head requires a
+  fresh exact-head readback.
 - [ ] Every required job emits a terminal summary with counts, failures,
   skips, exception budget, corpus/source revision, and artifact digests.
 - [ ] Required jobs fail when a claimed oracle, corpus, validator, or compiler
@@ -1263,7 +1300,8 @@ These are known unchecked requirements, not reasons to claim completion:
   binding rejection (`bd29714`), candidate bitset/mapping-slot indexing
   (`401becf`), deferred multi-product propensity accounting (`6c681269`),
   sparse selector integration (`a97c02e`) and cached implicit sparse-batch
-  old-propensity reuse (`88f4e54`, source `4bb24b3`), indexed cross-type partner
+  old-propensity reuse (`88f4e54`, source `4bb24b3`), guarded Release-LTO
+  configuration (`7241746`, source `301bfbeb`), indexed cross-type partner
   endpoint/decision refresh (`bb3ae014`), source-derived pure-context
   complex counting (`bb14a207`), sparse type-invariant membership-decision
   indexing (`fbfda3f`), and endpoint-refined membership refresh decisions

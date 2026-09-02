@@ -19,7 +19,7 @@ cmake --build build                  # bng_cpp and, when enabled, bindings
 pip install -e .                     # scikit-build-core package build
 cmake -B build -DBUILD_NFSIM_CLI=ON  # BNG3 standalone NFsim CLI/smoke executable
 ```
-Dependencies are fetched by CMake FetchContent (ANTLR4 4.13.1, SUNDIALS
+Dependencies are fetched by CMake FetchContent (ANTLR4 4.13.2, SUNDIALS
 7.6.0, Catch2, pybind11, and ExprTk while the expression work order remains
 open). A clean build needs network access or a populated dependency cache.
 
@@ -84,6 +84,10 @@ them pass by widening tolerances or hiding skips. The Python API is
   factorized contexts; retain materialized expansion as the compatibility
   fallback until broader energy parity, provenance, and direct-NFsim gates
   pass.
+- Release builds default `NFSIM_ENABLE_LTO=ON`; CMake must probe IPO support
+  before applying it to embedded NFsim and its consumers. Keep the explicit
+  ON/OFF contract green, and do not treat LTO build success as benchmark or
+  parity evidence.
 - Non-main `akutuva21/bionetgen` branches are source inputs, not merge bases:
   inspect exact branch/PR tips and diffs, port relevant behavior with
   source-derived tests first, and classify each source commit as equivalent,
