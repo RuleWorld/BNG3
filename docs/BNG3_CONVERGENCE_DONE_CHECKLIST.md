@@ -5,7 +5,7 @@
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
 **Audited semantic code head:** 413523620b1903f7152a27ee6441b0b4d07b933b
-**Checklist refresh base:** 772adf55a8a8dafa1d49fabd940eec38fbf26187 (legacy CVODE export checkpoint; semantic code head remains 413523620b1903f7152a27ee6441b0b4d07b933b)
+**Checklist refresh base:** d1602bab0215c72352a21b10d0f6c54f396c88dd (legacy pattern/XML checkpoint; semantic code head remains 413523620b1903f7152a27ee6441b0b4d07b933b)
 **Latest workflow checkpoint:** 0e2642aa239c569f66eb550db6c0952219060142 (fail-closed missing-reference repair)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -153,6 +153,24 @@ completion gate.
   [33580496563](https://github.com/RuleWorld/BNG3/actions/runs/33580496563),
   formatting [33580496561](https://github.com/RuleWorld/BNG3/actions/runs/33580496561),
   and CodeQL [33580496583](https://github.com/RuleWorld/BNG3/actions/runs/33580496583)
+  were queued at readback, so they are not completion evidence.
+- [x] The legacy pattern-modifier/XML repair from the same user-owned source
+  commit `dca95a6aa80e249f1adf981037b61bf020f7b5ad` is ported in
+  `legacy/perl/Perl2/Molecule.pm` and `legacy/perl/Perl2/SpeciesGraph.pm`:
+  graph-level `{MatchOnce|Fixed}` modifiers now survive molecule parsing when
+  adjacent to the final molecule or separated by whitespace, and XML
+  quantifier relations escape `<`, `>`, `<=`, and `>=`. The exact source
+  fixtures are covered by `tests/python/test_legacy_pattern_xml.py`; focused
+  coverage reports `2 passed`, both touched Perl modules report `syntax OK`,
+  exact-tree CTest reports `185/185`, and the full Python suite reports `245
+  passed, 27 skipped, 8 warnings`. This qualifies only the bounded
+  pattern/XML slice; complete legacy/API retirement, all serializer/parser
+  compatibility, and independent BNG2 parity remain open. Public branch and
+  PR #2 read back to exact code head
+  `d1602bab0215c72352a21b10d0f6c54f396c88dd`; CI
+  [33580739835](https://github.com/RuleWorld/BNG3/actions/runs/33580739835),
+  formatting [33580739836](https://github.com/RuleWorld/BNG3/actions/runs/33580739836),
+  and CodeQL [33580739837](https://github.com/RuleWorld/BNG3/actions/runs/33580739837)
   were queued at readback, so they are not completion evidence.
 - [x] The latest CI truthfulness repair checkpoint is
   `e7cd59bd793a30d31bf2b8822725e05ba097b3d0`; it makes weekly C++/Perl
