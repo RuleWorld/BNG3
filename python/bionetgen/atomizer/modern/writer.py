@@ -918,12 +918,41 @@ def _rate_for_reaction(
         if not species.has_only_substance_units
     }
 
+    # BNG2-exported elementary SBML laws may carry the reaction compartment as
+    # a leading volume factor (for example ``cell * k * A``).  The Playground
+    # writer removes that factor before normalizing explicit reactant factors;
+    # otherwise the emitted BNGL rate constant is multiplied by the volume a
+    # second time.  Restrict this bounded cleanup to elementary laws that
+    # actually mention a reactant, so zero-order fluxes retain their volume
+    # semantics.
+    nonlinear = bool(re.search(r"\b(?:Sat|MM|Hill)\s*\(", math)) or "/" in math
+    if (
+        not nonlinear
+        and reactants
+        and any(
+            re.search(rf"\b{re.escape(standardize_name(species_id))}\b", math)
+            for species_id in reactants
+        )
+    ):
+        for compartment_id in model.compartments:
+            standardized = standardize_name(str(compartment_id))
+            math = re.sub(
+                rf"^\s*__compartment_{re.escape(standardized)}__\s*\*\s*",
+                "",
+                math,
+            )
+            math = re.sub(
+                rf"^\s*{re.escape(str(compartment_id))}\b\s*\*\s*",
+                "",
+                math,
+            )
+        math = math.strip() or "1"
+
     # The Playground writer keeps nonlinear laws intact and maps their species
     # operands to concentration functions (or amount observables for Sat/MM/
     # Hill).  Only elementary mass-action factors are removed before that
     # mapping; stripping a substrate from a saturation or rational law changes
     # its biology.
-    nonlinear = bool(re.search(r"\b(?:Sat|MM|Hill)\s*\(", math)) or "/" in math
     if nonlinear:
         return apply_conversion(
             bngl_function(
