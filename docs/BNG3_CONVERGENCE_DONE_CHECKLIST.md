@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-02
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 7323ae8685d83343204c38fa3a6bc4b055affc40
-**Checklist refresh base:** 7323ae8685d83343204c38fa3a6bc4b055affc40 (public exact-head semantic checkpoint for Atomizer dependency-cycle diagnostics)
-**Latest workflow checkpoint:** 7323ae8685d83343204c38fa3a6bc4b055affc40 (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33590840330, CodeQL run 33590840321, formatting run 33590840350)
+**Audited semantic code head:** c00c9bace01dbbc7c0e5fa4969cfaed9e35f2879
+**Checklist refresh base:** c00c9bace01dbbc7c0e5fa4969cfaed9e35f2879 (public exact-head semantic checkpoint for the Atomizer qualifier-resource API)
+**Latest workflow checkpoint:** c00c9bace01dbbc7c0e5fa4969cfaed9e35f2879 (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33591261066, CodeQL run 33591261064, formatting run 33591261083)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -503,6 +503,33 @@ completion gate.
   were queued when read back. This closes only dependency-cycle diagnostics;
   the remaining modern core, parser, writer, SBML, and independent parity
   gaps remain open.
+- [x] Playground `src/lib/atomizer/parser/sbmlParser.ts:2703-2721` at
+  reference `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` exposes
+  `getAnnotationsByQualifier`, filtering raw annotation resources by the
+  biological/model qualifier kind and numeric qualifier. The tests-first BNG3
+  port is `c00c9bace01dbbc7c0e5fa4969cfaed9e35f2879` in
+  `python/bionetgen/atomizer/modern/annotation.py` and the modern package
+  facade; its red-first focused test failed at import because the public name
+  was absent, and the repaired command
+  `PYTHONPATH=build/cpp:python python -m pytest
+  tests/python/test_modern_atomizer_annotations.py -q -k qualifier_helper`
+  reports `1 passed, 6 deselected, 1 warning`. The modern Atomizer suite
+  reports `85 passed, 1 warning`; the full Python gate reports `260 passed, 27
+  skipped, 9 warnings`; exact-tree Release/Ninja CTest reports `185/185`;
+  Ruff passes; and Black reports `186 files would be left unchanged`. This
+  Python-only checkpoint leaves the native `build/cpp/bng_cpp` artifact
+  unchanged at SHA-256
+  `8e80832c8a347a303fcfb21fa8c4c35a98b13ffd8967cc9192f964784287a7f3`.
+  Exact public PR/ref head readback is
+  `c00c9bace01dbbc7c0e5fa4969cfaed9e35f2879`; hosted CI run
+  [33591261066](https://github.com/RuleWorld/BNG3/actions/runs/33591261066),
+  CodeQL run
+  [33591261064](https://github.com/RuleWorld/BNG3/actions/runs/33591261064),
+  and formatting run
+  [33591261083](https://github.com/RuleWorld/BNG3/actions/runs/33591261083)
+  were queued when read back. This closes only the qualifier-resource helper
+  facade; the remaining parser, annotation, writer, SBML, and independent
+  parity gaps remain open.
 - [x] Fresh external-Perl Tier-P NET parity at semantic head `88f4e54` used
   `BNG2_PERL=/private/tmp/bng2-oracle.TToh58/source/bng2/BNG2.pl` from source
   revision `fde0cd6a522c9f988d5495db31c70ce0f98e744b`. The exact command
