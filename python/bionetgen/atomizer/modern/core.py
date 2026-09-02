@@ -193,6 +193,13 @@ def analyze_naming_conventions(
         modification = conventions.get(key)
         if modification:
             pair_classification.setdefault(modification, []).append(pair)
+    from .helpers import logger
+
+    logger.info(
+        "NAM001",
+        f"Naming analysis: {len(pairs)} similar pairs, "
+        f"{len(pair_classification)} classifications",
+    )
     return {
         "pairClassification": pair_classification,
         "keys": keys,

@@ -3,6 +3,7 @@
 from bionetgen.atomizer.modern import (
     addToDependencyGraph,
     add_to_dependency_graph,
+    analyze_naming_conventions,
     defineEditDistanceMatrix,
     findLongestSubstring,
     topological_sort,
@@ -53,3 +54,19 @@ def test_playground_topological_sort_reports_dependency_cycles():
     assert len(warnings) == 1
     assert warnings[0].code == "DEP001"
     assert "A -> B -> A" in warnings[0].message
+
+
+def test_playground_naming_analysis_reports_summary():
+    logger.clear()
+    logger.setLevel("INFO")
+    logger.setQuietMode(True)
+    try:
+        analyze_naming_conventions(["A", "A_P"])
+        messages = logger.getMessagesByLevel("INFO")
+    finally:
+        logger.clear()
+        logger.setQuietMode(False)
+
+    assert len(messages) == 1
+    assert messages[0].code == "NAM001"
+    assert messages[0].message == "Naming analysis: 1 similar pairs, 1 classifications"
