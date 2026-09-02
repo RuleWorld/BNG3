@@ -1,12 +1,12 @@
 # BNG3 Convergence: Definition of Done and Remaining Checklist
 
 **Status:** Active; not complete
-**Last audited:** 2026-09-01
+**Last audited:** 2026-09-02
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** c5429140e7436770bcb996d17a2fbdd9d0db2de9
-**Checklist refresh base:** c67235c8a62956dc4f68030536fde89f821f9bdc (public exact-head checklist checkpoint after compartment-factor normalization)
-**Latest workflow checkpoint:** c67235c8a62956dc4f68030536fde89f821f9bdc (hosted checks read back 2026-09-01; all listed PR checks remain pending: CI run 33588612806, matrix run 33588612812, formatting run 33588612827)
+**Audited semantic code head:** 6b71ecc613f670667328cd49fa451196e0cebe29
+**Checklist refresh base:** 6b71ecc613f670667328cd49fa451196e0cebe29 (public exact-head semantic checkpoint for Atomizer event step rounding)
+**Latest workflow checkpoint:** 6b71ecc613f670667328cd49fa451196e0cebe29 (hosted checks read back 2026-09-02; all listed PR checks remain pending: CI run 33589168226, matrix run 33589168215, formatting run 33589168250)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -446,6 +446,38 @@ completion gate.
   elementary internal-factor slice; remaining source factor placement,
   zero-order/nonlinear normalization, and broader writer/parser/SBML parity
   remain open.
+- [x] Playground `src/lib/atomizer/writer/eventActions.ts:293-294` at reference
+  `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` uses JavaScript
+  `Math.max(1, Math.round(...))` for scheduled event phase steps. The
+  tests-first BNG3 port is
+  `6b71ecc613f670667328cd49fa451196e0cebe29` in
+  `python/bionetgen/atomizer/modern/events.py`: red-first Python banker's
+  rounding emitted `n_steps=>2` for both half-step phases, while the repaired
+  source-compatible contract emits `n_steps=>3` for both. The regression is
+  `tests/python/test_modern_atomizer.py::test_playground_event_actions_use_source_half_up_step_rounding`;
+  `PYTHONPATH=build/cpp:python python -m pytest
+  tests/python/test_modern_atomizer.py -q -k half_up_step_rounding` reports
+  `1 passed, 42 deselected, 1 warning`; the modern Atomizer command
+  `PYTHONPATH=build/cpp:python python -m pytest
+  tests/python/test_modern_atomizer*.py -q` reports `83 passed, 1 warning`,
+  and `PYTHONPATH=build/cpp:python python -m pytest tests/python -q` reports
+  `258 passed, 27 skipped, 9 warnings` in `10.53s`. The exact-tree command
+  `ctest --test-dir build --output-on-failure` reports `185/185`; `ruff check
+  --no-cache python/ tests/python/ scripts/` passes; and
+  `black --check python/ tests/python/ scripts/` reports `186 files would be
+  left unchanged`. This Python-only checkpoint changes no native artifact; the
+  existing `build/cpp/bng_cpp` smoke artifact remains SHA-256
+  `8e80832c8a347a303fcfb21fa8c4c35a98b13ffd8967cc9192f964784287a7f3`.
+  Exact public head readback is
+  `6b71ecc613f670667328cd49fa451196e0cebe29`; hosted CI run
+  [33589168226](https://github.com/RuleWorld/BNG3/actions/runs/33589168226),
+  matrix run
+  [33589168215](https://github.com/RuleWorld/BNG3/actions/runs/33589168215),
+  and formatting run
+  [33589168250](https://github.com/RuleWorld/BNG3/actions/runs/33589168250)
+  were pending when read back. This closes only nonnegative half-tie step
+  rounding; broader event semantics and Atomizer writer/event parity remain
+  open.
 - [x] Fresh external-Perl Tier-P NET parity at semantic head `88f4e54` used
   `BNG2_PERL=/private/tmp/bng2-oracle.TToh58/source/bng2/BNG2.pl` from source
   revision `fde0cd6a522c9f988d5495db31c70ce0f98e744b`. The exact command
