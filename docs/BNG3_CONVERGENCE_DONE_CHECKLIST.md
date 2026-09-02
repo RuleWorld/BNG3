@@ -284,6 +284,21 @@ completion gate.
   formatting [33577070621](https://github.com/RuleWorld/BNG3/actions/runs/33577070621),
   and CodeQL [33577070593](https://github.com/RuleWorld/BNG3/actions/runs/33577070593)
   are queued for this exact SHA.
+- [x] Exact-head strict-reference validation at semantic code checkpoint
+  `277e0b66a3bb911ed2faf1f069975cdb2108c592` used
+  `PYTHONPATH=python:build/cpp python scripts/validate.py --bng-cpp
+  build/cpp/bng_cpp --strict-references --skip-file
+  tests/validation/reference_exclusions.json --skip-profile pull_request
+  --verbose` and reports `40` passes, `0` failures, `0` errors, and `31`
+  explicit skips. The current `build/cpp/bng_cpp` artifact has SHA-256
+  `8e80832c8a347a303fcfb21fa8c4c35a98b13ffd8967cc9192f964784287a7f3`.
+  This is current local structural NET evidence only; the 31 explicitly
+  excluded models, independent-oracle/provenance requirements, and complete
+  Tier-P/Tier-NF parity remain open. The semantic checkpoint's hosted CI
+  [33592147684](https://github.com/RuleWorld/BNG3/actions/runs/33592147684),
+  CodeQL [33592147712](https://github.com/RuleWorld/BNG3/actions/runs/33592147712),
+  and formatting [33592147725](https://github.com/RuleWorld/BNG3/actions/runs/33592147725)
+  were queued at exact-head readback.
 - [x] Historical published CI-repair checkpoint is
   `9a2475a0af360d685dc41eb9bb376f6517d74b4d`; `gh api` and `gh pr view 2`
   agreed on this branch/PR source head immediately after push, and PR #2
