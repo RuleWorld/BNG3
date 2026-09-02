@@ -5,7 +5,9 @@ from bionetgen.atomizer.modern import (
     add_to_dependency_graph,
     defineEditDistanceMatrix,
     findLongestSubstring,
+    topological_sort,
 )
+from bionetgen.atomizer.modern.helpers import logger
 
 
 def test_dependency_graph_insertion_is_unique_and_accepts_scalar_or_list():
@@ -31,3 +33,23 @@ def test_edit_distance_result_keeps_full_matrix_and_legacy_two_value_unpacking()
 
 def test_longest_substring_alias_matches_playground_name():
     assert findLongestSubstring("abc", "zbcx") == "bc"
+
+
+def test_playground_topological_sort_reports_dependency_cycles():
+    logger.clear()
+    logger.setLevel("WARNING")
+    logger.setQuietMode(True)
+    try:
+        sorted_species = topological_sort(
+            ["A", "B", "C"],
+            {"A": {"B"}, "B": {"A"}, "C": {"A"}},
+        )
+        warnings = logger.getMessagesByLevel("WARNING")
+    finally:
+        logger.clear()
+        logger.setQuietMode(False)
+
+    assert sorted_species == ["B", "A", "C"]
+    assert len(warnings) == 1
+    assert warnings[0].code == "DEP001"
+    assert "A -> B -> A" in warnings[0].message

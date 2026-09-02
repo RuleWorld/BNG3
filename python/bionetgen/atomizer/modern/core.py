@@ -9,6 +9,7 @@ silently guessed.
 
 from __future__ import annotations
 
+import os
 import re
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -38,6 +39,20 @@ from .types import (
     get_kinetic_math,
     standardize_name,
 )
+
+_DEP_CYCLE_LOG_LIMIT = int(os.environ.get("ATOMIZER_DEP_CYCLE_LOG_LIMIT", "20"))
+_dep_cycle_log_count = 0
+
+
+def _log_dependency_cycle(message: str) -> None:
+    global _dep_cycle_log_count
+    from .helpers import logger
+
+    if _DEP_CYCLE_LOG_LIMIT < 0 or _dep_cycle_log_count < _DEP_CYCLE_LOG_LIMIT:
+        logger.warning("DEP001", message)
+    elif _dep_cycle_log_count == _DEP_CYCLE_LOG_LIMIT:
+        logger.warning("DEP001", "Additional dependency cycle logs suppressed.")
+    _dep_cycle_log_count += 1
 
 
 def levenshtein(left: str, right: str) -> int:
@@ -349,15 +364,19 @@ def topological_sort(
     visited: Set[str] = set()
     visiting: Set[str] = set()
 
-    def visit(species_id: str) -> None:
+    def visit(species_id: str, path: Optional[List[str]] = None) -> None:
         if species_id in visited:
             return
         if species_id in visiting:
+            _log_dependency_cycle(
+                f"Dependency cycle detected: {' -> '.join(path or [])} -> {species_id}"
+            )
             return
         visiting.add(species_id)
+        current_path = [*(path or []), species_id]
         for dependency in dependencies.get(species_id, set()):
             if dependency in species_ids:
-                visit(dependency)
+                visit(dependency, current_path)
         visiting.remove(species_id)
         visited.add(species_id)
         sorted_species.append(species_id)
