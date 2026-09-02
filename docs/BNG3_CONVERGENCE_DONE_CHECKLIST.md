@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-01
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** f1eeebf91b2bcc976e0c2c49f54261bcfda9bcc5
-**Checklist refresh base:** 3fc1ea546117fe9844d3bed3bd962fcf781cb6ab (public exact-head Atomizer time-rate and writer-parity checkpoint)
-**Latest workflow checkpoint:** 3fc1ea546117fe9844d3bed3bd962fcf781cb6ab (hosted checks read back 2026-09-01; all listed PR checks remain pending: CI run 33586429433, matrix run 33586429536, formatting run 33586429520)
+**Audited semantic code head:** 19a90ed83fad4529bb8e85e1a538e00ade274cb2
+**Checklist refresh base:** dedf9e88c3a7783205029caad88536d4d5627cf0 (public exact-head local-ASan documentation checkpoint; current semantic writer checkpoint is pending this documentation refresh)
+**Latest workflow checkpoint:** dedf9e88c3a7783205029caad88536d4d5627cf0 (hosted checks read back 2026-09-01; all listed PR checks remain pending: CI run 33586907337, matrix run 33586907341, formatting run 33586907351)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -402,6 +402,18 @@ completion gate.
   `753a245ab667454234f55aa07ff7b501b118f05260986e71c02b6fd9f684a299`.
   This is supplementary local arm64 evidence only; hosted Ubuntu ASan,
   UBSan/leak, Release, and cross-platform gates remain open.
+- [x] Playground `src/lib/atomizer/writer/bnglWriter.ts:3386-3414` at reference
+  `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` removes a leading compartment
+  volume factor before mass-action normalization. The tests-first BNG3 port is
+  `19a90ed83fad4529bb8e85e1a538e00ade274cb2`: the red-first output was
+  `r: M_A()@cell -> M_P()@cell __compartment_cell__ * k`, while the repaired
+  contract is
+  `tests/python/test_modern_atomizer.py::test_playground_writer_strips_leading_compartment_factor_from_mass_action`
+  with `r: M_A()@cell -> M_P()@cell k`. The modern Atomizer suite reports `80
+  passed`, the full Python gate reports `255 passed, 27 skipped, 9 warnings`,
+  and exact-tree CTest reports `185/185`. This closes only the bounded
+  elementary leading-factor slice; nonlinear and broader rate normalization
+  parity remain open.
 - [x] Fresh external-Perl Tier-P NET parity at semantic head `88f4e54` used
   `BNG2_PERL=/private/tmp/bng2-oracle.TToh58/source/bng2/BNG2.pl` from source
   revision `fde0cd6a522c9f988d5495db31c70ce0f98e744b`. The exact command
