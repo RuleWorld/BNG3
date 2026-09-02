@@ -263,7 +263,9 @@ def _reaction_species(references: Iterable[object]) -> List[str]:
 
 def _has_saturation_rate(reaction: SBMLReaction) -> bool:
     math = get_kinetic_math(reaction.kinetic_law).lower()
-    return any(token in math for token in ("sat", "mm", "hill")) or "/" in math
+    if any(token in math for token in ("sat", "mm", "hill")):
+        return True
+    return "/" in math and "+" in math and math.count("*") >= 2
 
 
 def classify_reaction(reaction: SBMLReaction) -> ReactionPattern:

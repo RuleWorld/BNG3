@@ -6,6 +6,7 @@ from bionetgen.atomizer.modern import (
     analyze_reactions,
     analyze_naming_conventions,
     build_species_composition_table,
+    classify_reaction,
     defineEditDistanceMatrix,
     findLongestSubstring,
     topological_sort,
@@ -13,6 +14,7 @@ from bionetgen.atomizer.modern import (
 from bionetgen.atomizer.modern.helpers import logger
 from bionetgen.atomizer.modern.types import (
     SBMLModel,
+    SBMLKineticLaw,
     SBMLReaction,
     SBMLSpecies,
     SBMLSpeciesReference,
@@ -110,6 +112,24 @@ def test_playground_reaction_analysis_reports_summary():
     assert len(messages) == 1
     assert messages[0].code == "RXN001"
     assert messages[0].message == "Reaction analysis: 1 binding, 0 modification"
+
+
+def test_reaction_classification_requires_reference_saturation_shape():
+    simple_quotient = SBMLReaction(
+        id="simple_quotient",
+        reactants=[SBMLSpeciesReference("A"), SBMLSpeciesReference("B")],
+        products=[SBMLSpeciesReference("B")],
+        kinetic_law=SBMLKineticLaw("k / K"),
+    )
+    saturation = SBMLReaction(
+        id="saturation",
+        reactants=[SBMLSpeciesReference("A"), SBMLSpeciesReference("B")],
+        products=[SBMLSpeciesReference("B")],
+        kinetic_law=SBMLKineticLaw("(vmax * A * B) / (Km + B)"),
+    )
+
+    assert classify_reaction(simple_quotient).type == "binding"
+    assert classify_reaction(saturation).type == "catalysis"
 
 
 def test_playground_sct_builder_reports_summary():
