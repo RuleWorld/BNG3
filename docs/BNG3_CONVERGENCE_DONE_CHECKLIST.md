@@ -4,8 +4,8 @@
 **Last audited:** 2026-09-02
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 7241746a50ed0f87f23ad93eda38b2a9e7cca180
-**Checklist refresh base:** 7241746 (source-derived guarded release-LTO checkpoint; refresh after each checkpoint)
+**Audited semantic code head:** 413523620b1903f7152a27ee6441b0b4d07b933b
+**Checklist refresh base:** 4135236 (source-derived parameterized-function facade checkpoint; refresh after each checkpoint)
 **Latest workflow checkpoint:** e7cd59bd793a30d31bf2b8822725e05ba097b3d0 (fail-closed weekly cross-validation repair)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -92,6 +92,15 @@ completion gate.
 - [x] The latest public semantic code/test checkpoint is
   `7241746a50ed0f87f23ad93eda38b2a9e7cca180`; exact `gh api` branch and
   `gh pr view 2` readback agree, and PR #2 remains open.
+- [x] The latest local semantic checkpoint is
+  `413523620b1903f7152a27ee6441b0b4d07b933b`; it ports Playground commit
+  `9bbad7b63968c18ccd1936c664e681360dd0b014` by adding an opt-in
+  `keep_parameterized` path to `modern.write_functions`, with sanitized
+  formal arguments and source-derived coverage in
+  `tests/python/test_modern_atomizer_writer_parameters.py`.
+- [x] The latest public semantic code/test checkpoint is
+  `413523620b1903f7152a27ee6441b0b4d07b933b`; exact `gh api` branch and
+  `gh pr view 2` readback agree, and PR #2 remains open.
 - [x] The latest CI truthfulness repair checkpoint is
   `e7cd59bd793a30d31bf2b8822725e05ba097b3d0`; it makes weekly C++/Perl
   cross-validation fail closed on engine, output, or corpus errors and adds
@@ -167,6 +176,11 @@ completion gate.
   `PYTHONPATH=build/cpp:python python -m pytest tests/test_ci_contract.py -q`;
   `git diff --check` is clean. This verifies the workflow contract locally,
   not hosted execution or full weekly validation.
+- [x] The source-derived modern Atomizer gates at `4135236` report `76 passed`
+  across the modern Atomizer test modules, and the full Python suite reports
+  `241 passed, 27 skipped, 8 warnings`. This qualifies the Python semantic
+  checkpoint only; independent oracle parity, full writer coverage, and
+  hosted checks remain open.
 - [x] Diagnostic independent BNG2 execution is now available from an isolated
   clone of source revision `fde0cd6a522c9f988d5495db31c70ce0f98e744b` using
   the repository's `bng2/Makefile`; the arm64 `run_network` artifact has
@@ -1163,6 +1177,16 @@ completion gate.
   [33574600516](https://github.com/RuleWorld/BNG3/actions/runs/33574600516),
   and CodeQL run
   [33574600570](https://github.com/RuleWorld/BNG3/actions/runs/33574600570)
+  were queued for this exact SHA. Queued or partial results are not
+  completion evidence; the next checklist documentation head requires a
+  fresh exact-head readback.
+- [ ] Current public semantic checkpoint
+  `413523620b1903f7152a27ee6441b0b4d07b933b` has not yet acquired a terminal
+  hosted check set. At exact-head readback, CI
+  [33576632616](https://github.com/RuleWorld/BNG3/actions/runs/33576632616),
+  formatting patch
+  [33576632625](https://github.com/RuleWorld/BNG3/actions/runs/33576632625),
+  and CodeQL [33576632624](https://github.com/RuleWorld/BNG3/actions/runs/33576632624)
   were queued for this exact SHA. Queued or partial results are not
   completion evidence; the next checklist documentation head requires a
   fresh exact-head readback.
