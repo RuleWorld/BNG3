@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-02
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** e847eaa89aae8bc6421be78f93fa261709b2cb9d
-**Checklist refresh base:** e847eaa89aae8bc6421be78f93fa261709b2cb9d (public exact-head semantic checkpoint for the constant-function ordering workaround)
-**Latest workflow checkpoint:** e847eaa89aae8bc6421be78f93fa261709b2cb9d (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33597684992, CodeQL run 33597685061, formatting run 33597685018)
+**Audited semantic code head:** 6f7573f40ff04cfaed517bbcd11c606eeca7cb87
+**Checklist refresh base:** 6f7573f40ff04cfaed517bbcd11c606eeca7cb87 (public exact-head semantic checkpoint for the source-shaped saturation classifier guard)
+**Latest workflow checkpoint:** 6f7573f40ff04cfaed517bbcd11c606eeca7cb87 (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33629097334, CodeQL run 33629097260, formatting run 33629097206)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -885,6 +885,31 @@ completion gate.
   are queued. This closes only the source-shaped BNG2 function-ordering
   workaround; broad writer/parser/SBML parity and independent validation
   remain open.
+- [x] Playground `src/lib/atomizer/atomization/core.ts:348-371` at reference
+  `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` recognizes saturation-like
+  reaction rates only for explicit `Sat`/`MM`/`Hill` terms or the source's
+  quotient-plus-two-products shape. The tests-first BNG3 repair is
+  `6f7573f40ff04cfaed517bbcd11c606eeca7cb87` in
+  `python/bionetgen/atomizer/modern/core.py`, with the source-derived
+  regression `tests/python/test_modern_atomizer_core.py::test_reaction_classification_requires_reference_saturation_shape`.
+  The red-first command
+  `PYTHONPATH=build/cpp:python python -m pytest
+  tests/python/test_modern_atomizer_core.py -k reference_saturation_shape -q`
+  reported `1 failed, 7 deselected`; the repaired command reported `1 passed,
+  7 deselected`. The focused core gate reports `8 passed`; the complete modern
+  Atomizer gate reports `99 passed`; the full Python gate reports `274 passed,
+  27 skipped, 9 warnings`; Ruff and Black pass; the native
+  `build/cpp/bng_cpp` artifact remains SHA-256
+  `8e80832c8a347a303fcfb21fa8c4c35a98b13ffd8967cc9192f964784287a7f3`.
+  Exact public PR/ref head readback is
+  `6f7573f40ff04cfaed517bbcd11c606eeca7cb87`; hosted CI
+  [33629097334](https://github.com/RuleWorld/BNG3/actions/runs/33629097334),
+  CodeQL [33629097260](https://github.com/RuleWorld/BNG3/actions/runs/33629097260),
+  and formatting
+  [33629097206](https://github.com/RuleWorld/BNG3/actions/runs/33629097206)
+  are queued. This closes only the source-shaped saturation classifier
+  guard; broader Atomizer core/writer/parser/SBML, direct-NFsim, and
+  independent parity remain open.
 - [x] Fresh external-Perl Tier-P NET parity at semantic head `88f4e54` used
   `BNG2_PERL=/private/tmp/bng2-oracle.TToh58/source/bng2/BNG2.pl` from source
   revision `fde0cd6a522c9f988d5495db31c70ce0f98e744b`. The exact command
