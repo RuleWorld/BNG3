@@ -865,6 +865,68 @@ def test_playground_writer_strips_leading_compartment_factor_from_mass_action():
     cpp.parse_string(bngl)
 
 
+def test_playground_writer_strips_internal_compartment_factor_from_mass_action():
+    from bionetgen.atomizer.modern import (
+        SBMLCompartment,
+        SBMLKineticLaw,
+        SBMLModel,
+        SBMLParameter,
+        SBMLReaction,
+        SBMLSpecies,
+        SBMLSpeciesReference,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    model = SBMLModel(
+        id="internal_compartment_factor",
+        compartments=OrderedDict(
+            [("cell", SBMLCompartment(id="cell", size=2, spatial_dimensions=3))]
+        ),
+        species=OrderedDict(
+            [
+                (
+                    "A",
+                    SBMLSpecies(
+                        id="A",
+                        name="A",
+                        compartment="cell",
+                        initial_amount=4,
+                        initial_amount_set=True,
+                    ),
+                ),
+                ("P", SBMLSpecies(id="P", name="P", compartment="cell")),
+            ]
+        ),
+        parameters=OrderedDict([("k", SBMLParameter(id="k", value=3))]),
+        reactions=OrderedDict(
+            [
+                (
+                    "r",
+                    SBMLReaction(
+                        id="r",
+                        reactants=[SBMLSpeciesReference("A")],
+                        products=[SBMLSpeciesReference("P")],
+                        kinetic_law=SBMLKineticLaw("k * A * cell"),
+                    ),
+                )
+            ]
+        ),
+    )
+    sct = build_species_composition_table(model)
+    bngl, _ = generate_bngl(
+        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+    )
+
+    reaction_line = next(line for line in bngl.splitlines() if line.startswith("  r:"))
+    assert reaction_line.endswith(" k")
+    assert "__compartment_cell__" not in reaction_line
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    cpp.parse_string(bngl)
+
+
 def test_playground_writer_splits_reversible_net_rates_by_direction():
     from bionetgen.atomizer.modern import (
         SBMLKineticLaw,

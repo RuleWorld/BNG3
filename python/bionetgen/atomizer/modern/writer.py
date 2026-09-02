@@ -937,6 +937,16 @@ def _rate_for_reaction(
         for compartment_id in model.compartments:
             standardized = standardize_name(str(compartment_id))
             math = re.sub(
+                rf"\s*\*\s*__compartment_{re.escape(standardized)}__\s*",
+                " ",
+                math,
+            )
+            math = re.sub(
+                rf"\s*\*\s*{re.escape(str(compartment_id))}\b\s*",
+                " ",
+                math,
+            )
+            math = re.sub(
                 rf"^\s*__compartment_{re.escape(standardized)}__\s*\*\s*",
                 "",
                 math,
