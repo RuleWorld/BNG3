@@ -5,8 +5,8 @@
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
 **Audited semantic code head:** 413523620b1903f7152a27ee6441b0b4d07b933b
-**Checklist refresh base:** bf2900b330868e78ca2833a6d6bd9d977859d2b9 (legacy output diagnostics checkpoint; semantic code head remains 413523620b1903f7152a27ee6441b0b4d07b933b)
-**Latest workflow checkpoint:** bf2900b330868e78ca2833a6d6bd9d977859d2b9 (exact-head CI, Formatting patch, and CodeQL runs queued; not completion evidence)
+**Checklist refresh base:** 7977966724246626a7c22c99489d99074427d8d6 (legacy Macro numeric-comparison checkpoint; semantic code head remains 413523620b1903f7152a27ee6441b0b4d07b933b)
+**Latest workflow checkpoint:** 7977966724246626a7c22c99489d99074427d8d6 (exact-head CI, Formatting patch, and CodeQL runs queued; not completion evidence)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -242,6 +242,25 @@ completion gate.
   [33581941209](https://github.com/RuleWorld/BNG3/actions/runs/33581941209),
   and CodeQL
   [33581941228](https://github.com/RuleWorld/BNG3/actions/runs/33581941228)
+  were queued at readback, so they are not completion evidence.
+- [x] The bounded legacy Macro site-count repair from source commit
+  `dca95a6aa80e249f1adf981037b61bf020f7b5ad` is ported in
+  `legacy/perl/Perl2/MacroBNGModel.pm`: the `pre_species1` duplicate-site
+  count now uses numeric `>` rather than lexicographic `gt`. The source-derived
+  `tests/python/test_legacy_macro_numeric_compare.py` failed red-first on the
+  old operator and passes after the port; the focused legacy suite reports
+  `3 passed`, the Macro C++ contracts report `2/2`, the touched Perl module
+  reports `syntax OK`, exact-tree CTest reports `185/185`, and the full Python
+  suite reports `251 passed, 27 skipped, 8 warnings`. This qualifies only the
+  bounded Macro comparison slice; complete legacy/API parity, serialization,
+  packaging, and independent BNG2 evidence remain open. Public branch and PR
+  #2 read back to exact semantic code head
+  `7977966724246626a7c22c99489d99074427d8d6`; CI
+  [33582369743](https://github.com/RuleWorld/BNG3/actions/runs/33582369743),
+  formatting
+  [33582369701](https://github.com/RuleWorld/BNG3/actions/runs/33582369701),
+  and CodeQL
+  [33582369686](https://github.com/RuleWorld/BNG3/actions/runs/33582369686)
   were queued at readback, so they are not completion evidence.
 - [x] The latest CI truthfulness repair checkpoint is
   `e7cd59bd793a30d31bf2b8822725e05ba097b3d0`; it makes weekly C++/Perl
