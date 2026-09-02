@@ -6,6 +6,7 @@
 **Working branch:** codex/bng3-integration-foundations
 **Audited semantic code head:** 7241746a50ed0f87f23ad93eda38b2a9e7cca180
 **Checklist refresh base:** 7241746 (source-derived guarded release-LTO checkpoint; refresh after each checkpoint)
+**Latest workflow checkpoint:** e7cd59bd793a30d31bf2b8822725e05ba097b3d0 (fail-closed weekly cross-validation repair)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -91,6 +92,16 @@ completion gate.
 - [x] The latest public semantic code/test checkpoint is
   `7241746a50ed0f87f23ad93eda38b2a9e7cca180`; exact `gh api` branch and
   `gh pr view 2` readback agree, and PR #2 remains open.
+- [x] The latest CI truthfulness repair checkpoint is
+  `e7cd59bd793a30d31bf2b8822725e05ba097b3d0`; it makes weekly C++/Perl
+  cross-validation fail closed on engine, output, or corpus errors and adds
+  the source-derived contract `test_weekly_cross_validation_fails_closed_on_engine_or_output_errors`.
+  The focused local contract reports `8 passed`; exact branch and PR
+  readback agree and PR #2 remains open. Hosted CI
+  [33575648537](https://github.com/RuleWorld/BNG3/actions/runs/33575648537),
+  formatting [33575648574](https://github.com/RuleWorld/BNG3/actions/runs/33575648574),
+  and CodeQL [33575648533](https://github.com/RuleWorld/BNG3/actions/runs/33575648533)
+  are queued for this exact SHA; queued status is not completion evidence.
 - [x] Historical published CI-repair checkpoint is
   `9a2475a0af360d685dc41eb9bb376f6517d74b4d`; `gh api` and `gh pr view 2`
   agreed on this branch/PR source head immediately after push, and PR #2
@@ -152,6 +163,10 @@ completion gate.
   `178 files would be left unchanged`; Ruff and `git diff --check` pass.
   These local results do not substitute for terminal hosted checks or
   independent full-corpus parity.
+- [x] The CI truthfulness repair test gate at `e7cd59b` reports `8 passed` via
+  `PYTHONPATH=build/cpp:python python -m pytest tests/test_ci_contract.py -q`;
+  `git diff --check` is clean. This verifies the workflow contract locally,
+  not hosted execution or full weekly validation.
 - [x] Diagnostic independent BNG2 execution is now available from an isolated
   clone of source revision `fde0cd6a522c9f988d5495db31c70ce0f98e744b` using
   the repository's `bng2/Makefile`; the arm64 `run_network` artifact has
@@ -1151,6 +1166,15 @@ completion gate.
   were queued for this exact SHA. Queued or partial results are not
   completion evidence; the next checklist documentation head requires a
   fresh exact-head readback.
+- [x] CI truthfulness repair checkpoint
+  `e7cd59bd793a30d31bf2b8822725e05ba097b3d0` has a source-derived local
+  fail-closed workflow contract (`8 passed`) and an exact public branch/PR
+  readback. Its CI, formatting, and CodeQL runs
+  [33575648537](https://github.com/RuleWorld/BNG3/actions/runs/33575648537),
+  [33575648574](https://github.com/RuleWorld/BNG3/actions/runs/33575648574),
+  and [33575648533](https://github.com/RuleWorld/BNG3/actions/runs/33575648533)
+  were queued at readback. This repair does not check the final hosted gate,
+  weekly corpus, independent oracle, or release-candidate requirements.
 - [ ] Every required job emits a terminal summary with counts, failures,
   skips, exception budget, corpus/source revision, and artifact digests.
 - [ ] Required jobs fail when a claimed oracle, corpus, validator, or compiler
