@@ -5,8 +5,8 @@
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
 **Audited semantic code head:** 413523620b1903f7152a27ee6441b0b4d07b933b
-**Checklist refresh base:** b82e08cfd859a54ba8a7669dbea17dd4f10755e6 (documentation-only source-reconciliation checkpoint; semantic code remains 7977966724246626a7c22c99489d99074427d8d6)
-**Latest workflow checkpoint:** b82e08cfd859a54ba8a7669dbea17dd4f10755e6 (exact-head CI [33583204767](https://github.com/RuleWorld/BNG3/actions/runs/33583204767), Formatting patch [33583204792](https://github.com/RuleWorld/BNG3/actions/runs/33583204792), and CodeQL [33583204997](https://github.com/RuleWorld/BNG3/actions/runs/33583204997) were queued at readback; not completion evidence)
+**Checklist refresh base:** 85f2aff31865f9dfaba2147e6bccd8e791157a3f (documentation-only independent-oracle evidence refresh; semantic code remains 7977966724246626a7c22c99489d99074427d8d6)
+**Latest workflow checkpoint:** 85f2aff31865f9dfaba2147e6bccd8e791157a3f (exact-head CI [33583845197](https://github.com/RuleWorld/BNG3/actions/runs/33583845197), Formatting patch [33583845090](https://github.com/RuleWorld/BNG3/actions/runs/33583845090), and CodeQL [33583845085](https://github.com/RuleWorld/BNG3/actions/runs/33583845085) were queued at readback; not completion evidence)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -291,6 +291,16 @@ completion gate.
 - [x] The small documentation grammar fix remains the only unrelated tracked
   BNG3 worktree modification. It remains intentionally unstaged and must not
   be mixed into semantic or checklist commits.
+- [x] The current checklist evidence checkpoint
+  `85f2aff31865f9dfaba2147e6bccd8e791157a3f` is the exact public branch and
+  PR #2 head read back with `gh api` and `gh pr view`; PR #2 remains open. Its
+  exact-head CI
+  [33583845197](https://github.com/RuleWorld/BNG3/actions/runs/33583845197),
+  Formatting patch
+  [33583845090](https://github.com/RuleWorld/BNG3/actions/runs/33583845090),
+  and CodeQL
+  [33583845085](https://github.com/RuleWorld/BNG3/actions/runs/33583845085)
+  were queued at readback, so none is completion evidence yet.
 - [x] Historical exact-head CTest passes `177/177` on `73757ea` (local
   Release/Ninja build; `ctest --test-dir build --output-on-failure`), including the exact
   compartment-aware dedup contract, compact ODE derivative contract, empty
