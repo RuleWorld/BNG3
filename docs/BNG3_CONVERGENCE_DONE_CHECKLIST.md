@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-02
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** a288a235fd7d2c1a317d2db8fe2e3e01f695cb70
-**Checklist refresh base:** a288a235fd7d2c1a317d2db8fe2e3e01f695cb70 (public exact-head semantic checkpoint for the Atomizer large-model flat fast path)
-**Latest workflow checkpoint:** a288a235fd7d2c1a317d2db8fe2e3e01f695cb70 (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33595341449, CodeQL run 33595341429, formatting run 33595341400)
+**Audited semantic code head:** d288387395d9537be7bd93933c79dbb112d6a9fc
+**Checklist refresh base:** d288387395d9537be7bd93933c79dbb112d6a9fc (public exact-head semantic checkpoint for BNG-XML conversion diagnostics)
+**Latest workflow checkpoint:** d288387395d9537be7bd93933c79dbb112d6a9fc (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33595883009, CodeQL run 33595882979, formatting run 33595882989)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -807,6 +807,29 @@ completion gate.
   model speedup, structure-inference parity, annotation parity, or release
   qualification; the broad Atomizer, API, SBML, Multi, NFsim, provenance,
   packaging, and hosted terminal gates remain open.
+- [x] Playground `src/lib/atomizer/parser/bngXmlParser.ts:294-315` at the
+  pinned reference emits `BNGXML002` when the BNG-SBML fallback rescales an
+  MM/Sat constant for a compartment and emits `BNGXML001` after conversion.
+  The tests-first BNG3 port is
+  `d288387395d9537be7bd93933c79dbb112d6a9fc` in
+  `python/bionetgen/atomizer/modern/bng_xml.py` and
+  `tests/python/test_modern_atomizer_annotations.py`. The red-first command
+  `PYTHONPATH=build/cpp:python python -m pytest
+  tests/python/test_modern_atomizer_annotations.py -k reports_source_diagnostics -q`
+  reported `1 failed, 8 deselected, 1 warning` because both source diagnostics
+  were absent; the repaired command reported `1 passed, 8 deselected`. The
+  complete modern Atomizer gate reports `96 passed`; the full Python gate
+  reports `271 passed, 27 skipped, 8 warnings`; Ruff and Black pass; exact-tree
+  CTest reports `185/185`; and `build/cpp/bng_cpp` remains SHA-256
+  `8e80832c8a347a303fcfb21fa8c4c35a98b13ffd8967cc9192f964784287a7f3`.
+  Exact public PR/ref head readback is
+  `d288387395d9537be7bd93933c79dbb112d6a9fc`; hosted CI
+  [33595883009](https://github.com/RuleWorld/BNG3/actions/runs/33595883009),
+  CodeQL [33595882979](https://github.com/RuleWorld/BNG3/actions/runs/33595882979),
+  and formatting [33595882989](https://github.com/RuleWorld/BNG3/actions/runs/33595882989)
+  were queued. This closes only fallback-converter observability; BNG-XML
+  semantic round trips, schema validation, and independent format parity remain
+  open.
 - [x] Fresh external-Perl Tier-P NET parity at semantic head `88f4e54` used
   `BNG2_PERL=/private/tmp/bng2-oracle.TToh58/source/bng2/BNG2.pl` from source
   revision `fde0cd6a522c9f988d5495db31c70ce0f98e744b`. The exact command
