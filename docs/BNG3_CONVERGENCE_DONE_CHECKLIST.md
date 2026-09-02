@@ -5,7 +5,7 @@
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
 **Audited semantic code head:** 413523620b1903f7152a27ee6441b0b4d07b933b
-**Checklist refresh base:** 7b6feae0c4052ad249a5b166e9b8c7f14347cf0a (legacy symmetry checkpoint; semantic code head remains 413523620b1903f7152a27ee6441b0b4d07b933b)
+**Checklist refresh base:** 4d403ecc5c1627340f9c259cb7d9be745fbb814c (legacy console checkpoint; semantic code head remains 413523620b1903f7152a27ee6441b0b4d07b933b)
 **Latest workflow checkpoint:** 0e2642aa239c569f66eb550db6c0952219060142 (fail-closed missing-reference repair)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -189,6 +189,23 @@ completion gate.
   [33581009534](https://github.com/RuleWorld/BNG3/actions/runs/33581009534),
   formatting [33581009537](https://github.com/RuleWorld/BNG3/actions/runs/33581009537),
   and CodeQL [33581009550](https://github.com/RuleWorld/BNG3/actions/runs/33581009550)
+  were queued at readback, so they are not completion evidence.
+- [x] The legacy console error-routing repair from source commit
+  `dca95a6aa80e249f1adf981037b61bf020f7b5ad` is ported in
+  `legacy/perl/Perl2/BNGUtils.pm` and `legacy/perl/Perl2/Console.pm` by
+  exporting and using `send_error` for command/action failures while retaining
+  warnings for unrecognized input. The source-derived
+  `tests/python/test_legacy_console_streams.py` proves the red-first
+  `WARNING:`/stdout behavior is replaced by `ERROR:`/stderr; focused coverage
+  reports `1 passed`, touched Perl modules report `syntax OK`, exact-tree CTest
+  reports `185/185`, and the full Python suite reports `247 passed, 27
+  skipped, 8 warnings`. This qualifies only the bounded console stream slice;
+  complete legacy/API retirement, CLI parity, and independent BNG2 evidence
+  remain open. Public branch and PR #2 read back to exact code head
+  `4d403ecc5c1627340f9c259cb7d9be745fbb814c`; CI
+  [33581281331](https://github.com/RuleWorld/BNG3/actions/runs/33581281331),
+  formatting [33581281347](https://github.com/RuleWorld/BNG3/actions/runs/33581281347),
+  and CodeQL [33581281317](https://github.com/RuleWorld/BNG3/actions/runs/33581281317)
   were queued at readback, so they are not completion evidence.
 - [x] The latest CI truthfulness repair checkpoint is
   `e7cd59bd793a30d31bf2b8822725e05ba097b3d0`; it makes weekly C++/Perl
