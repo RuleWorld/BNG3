@@ -101,6 +101,18 @@ completion gate.
 - [x] The latest public semantic code/test checkpoint is
   `413523620b1903f7152a27ee6441b0b4d07b933b`; exact `gh api` branch and
   `gh pr view 2` readback agree, and PR #2 remains open.
+- [x] A bounded audit of the Python-relevant Playground writer fixes at source
+  commits `d95fe58c65751135f76a18034039105f5eaf7f0`,
+  `98ca8f3bd215ec97babba528b9c768246f3d9b2f`,
+  `9f2044089cc30e72ea4e346ea18de69466455286`, and
+  `9bbad7b63968c18ccd1936c664e681360dd0b014` found no unported supported
+  slice: assignment-rule/seed resolution and time-rate wrapping are covered
+  by the earlier modern-writer ports, reaction-flux inlining is covered by
+  `9124fc5`, two-argument `log(base,value)` conversion is present in
+  `modern/writer.py`, and `keepParameterized` is covered by `4135236` and
+  `tests/python/test_modern_atomizer_writer_parameters.py`. This is a source
+  reconciliation note only; comprehensive writer, parser, SBML-writer, and
+  independent round-trip parity remain open.
 - [x] The latest CI truthfulness repair checkpoint is
   `e7cd59bd793a30d31bf2b8822725e05ba097b3d0`; it makes weekly C++/Perl
   cross-validation fail closed on engine, output, or corpus errors and adds
