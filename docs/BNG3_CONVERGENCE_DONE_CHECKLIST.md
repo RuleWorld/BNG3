@@ -411,6 +411,32 @@ completion gate.
   were queued at readback and are not completion evidence. This closes only
   the deletion/validator defects; broad NET/ODE parity, independent oracle
   provenance, and the remaining checklist gaps stay open.
+- [x] Fresh independent native-NFsim validation was rerun against semantic
+  head `5933584c3ae26690b35612bd589eeff37f37822a` using the absolute oracle
+  `/Users/akutuva/Documents/BioNetGen/nfsim/build/NFsim`, whose SHA-256 is
+  `7302fe29b16d1ebe86369f752f2a49d2c87ef16539faaec11b82294a9fa56d22`.
+  `test_nf_vs_native` used the committed four-model Tier-NF selection
+  (`simple_system`, `tlbr`, `motor`, `localfunc`), 200 runs per model,
+  seeds `1..200`, `t_end=50`, 50 output steps, and four isolated workers:
+  `4 passed, 1 warning in 158.85s`.
+  The current direct-vs-in-memory-XML localfunc contract reports `2 passed`,
+  and the exact seeded native endpoint contract for motor/tlbr reports
+  `2 passed` using the same oracle. This is fresh subset evidence only:
+  TQSSA has no approved fixture in this checkout, and protocol-NF,
+  three-way construction parity, and the full approved Tier-NF gate remain
+  open.
+- [x] Fresh diagnostic BNG2-backed non-slow parity at semantic head
+  `5933584c3ae26690b35612bd589eeff37f37822a` used the isolated Perl/native
+  oracle at source revision
+  `fde0cd6a522c9f988d5495db31c70ce0f98e744b` and the command
+  `env BNG2_PERL=/private/tmp/bng2-oracle.TToh58/source/bng2/BNG2.pl
+  PYTHONPATH=python:build/cpp python -m pytest -c
+  tests/validation/pytest.ini tests/validation -m "parity and not slow"
+  --bng-cpp build/cpp/bng_cpp -q`: `54 passed, 46 skipped, 94 deselected`
+  in `110.02s`. No test failed; skips remain explicit for unavailable
+  legacy/oracle inputs and assets. This improves current differential
+  evidence but does not establish complete Tier-P parity or approve the
+  diagnostic oracle as the release oracle.
 - [x] The source-derived modern Atomizer gates at `4135236` report `76 passed`
   across the modern Atomizer test modules, and the full Python suite reports
   `241 passed, 27 skipped, 8 warnings`. This qualifies the Python semantic
