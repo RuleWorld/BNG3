@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-02
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 167d6b8ab4ca6f8c709a5ab6cb894317b2f24272
-**Checklist refresh base:** 167d6b8ab4ca6f8c709a5ab6cb894317b2f24272 (public exact-head semantic checkpoint for the source-shaped component-pair bond deletion)
-**Latest workflow checkpoint:** 167d6b8ab4ca6f8c709a5ab6cb894317b2f24272 (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33630013174, CodeQL run 33630013218, formatting run 33630013175)
+**Audited semantic code head:** 27ae8d63e5cef1a1af005b2e567a6ad5447e5f28
+**Checklist refresh base:** 27ae8d63e5cef1a1af005b2e567a6ad5447e5f28 (public exact-head semantic checkpoint for Playground-compatible SBML initial-value presence flags)
+**Latest workflow checkpoint:** 27ae8d63e5cef1a1af005b2e567a6ad5447e5f28 (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33631116459, CodeQL run 33631116350, formatting run 33631116335)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -956,6 +956,34 @@ completion gate.
   are queued. This closes only the source-shaped component-pair helper;
   broader structure, parser/writer/SBML, direct-NFsim, and independent parity
   remain open.
+- [x] Playground `src/lib/atomizer/atomization/core.ts:1338-1348` at reference
+  `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` uses nullish presence semantics
+  for `initialAmountSet` and `initialConcentrationSet`: an explicit `false`
+  suppresses the corresponding value, while an unavailable flag falls back to
+  a non-zero parsed value. The tests-first BNG3 port is
+  `27ae8d63e5cef1a1af005b2e567a6ad5447e5f28` in
+  `python/bionetgen/atomizer/modern/types.py` and
+  `python/bionetgen/atomizer/modern/core.py`, with the source-derived
+  regression `tests/python/test_modern_atomizer.py::test_playground_seed_selection_honors_explicit_unset_initial_values`.
+  The red-first command
+  `env PYTHONPATH=python pytest -q tests/python/test_modern_atomizer.py -k explicit_unset_initial_values`
+  reported `1 failed, 50 deselected` after checkout import resolution; the
+  repaired command reported `1 passed, 50 deselected`. The complete modern
+  Atomizer gate reports `83 passed, 18 skipped`; the full Python gate reports
+  `276 passed, 27 skipped, 9 warnings` with `PYTHONPATH=python:build/cpp`;
+  root Release/Ninja CTest reports `185/185`; Ruff and Black pass; and
+  `build/cpp/bng_cpp` remains SHA-256
+  `8e80832c8a347a303fcfb21fa8c4c35a98b13ffd8967cc9192f964784287a7f3`.
+  Exact public PR/ref head readback is
+  `27ae8d63e5cef1a1af005b2e567a6ad5447e5f28`; hosted CI
+  [33631116459](https://github.com/RuleWorld/BNG3/actions/runs/33631116459),
+  CodeQL [33631116350](https://github.com/RuleWorld/BNG3/actions/runs/33631116350),
+  and formatting
+  [33631116335](https://github.com/RuleWorld/BNG3/actions/runs/33631116335)
+  remain queued. The no-extension full-Python invocation is not a valid
+  completion gate because it reports the known missing native backend; this
+  closes only seed-value presence semantics, while broader parser/writer/SBML,
+  direct-NFsim, provenance, and release parity remain open.
 - [x] Fresh external-Perl Tier-P NET parity at semantic head `88f4e54` used
   `BNG2_PERL=/private/tmp/bng2-oracle.TToh58/source/bng2/BNG2.pl` from source
   revision `fde0cd6a522c9f988d5495db31c70ce0f98e744b`. The exact command
