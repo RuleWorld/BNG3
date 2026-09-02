@@ -1868,6 +1868,7 @@ def test_playground_writer_materializes_non_species_rate_rule_targets():
         get_molecule_types,
         get_seed_species,
     )
+    from bionetgen.atomizer.modern.helpers import logger
 
     model = SBMLModel(
         id="synthetic_rate_rule",
@@ -1884,9 +1885,18 @@ def test_playground_writer_materializes_non_species_rate_rule_targets():
     )
 
     sct = build_species_composition_table(model)
-    bngl, _ = generate_bngl(
-        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
-    )
+    logger.clear()
+    logger.setLevel("INFO")
+    logger.setQuietMode(True)
+    try:
+        bngl, _ = generate_bngl(
+            model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+        )
+        messages = logger.getMessagesByLevel("INFO")
+    finally:
+        logger.clear()
+        logger.setLevel("WARNING")
+        logger.setQuietMode(False)
 
     pattern = "M___rate_rule_state__X"
     assert "M___rate_rule_state__X()" in bngl
@@ -1895,6 +1905,9 @@ def test_playground_writer_materializes_non_species_rate_rule_targets():
     assert "__rate_rule__X() = -k*X_amt" in bngl
     assert f"__rate_rule_in_X: 0 -> {pattern}@cell()" in bngl
     assert f"__rate_rule_out_X: {pattern}@cell() -> 0" in bngl
+    assert [(message.code, message.message) for message in messages] == [
+        ("BNW012", "Synthesized 1 rate-rule state species")
+    ]
     cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
     cpp.parse_string(bngl)
 
