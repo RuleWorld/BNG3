@@ -1504,8 +1504,7 @@ def _ordered_assignment_rules(rules: Sequence[object]) -> List[object]:
     assignment_rules = [
         rule
         for rule in rules
-        if getattr(rule, "type", "") == "assignment"
-        and getattr(rule, "variable", None)
+        if getattr(rule, "type", "") == "assignment" and getattr(rule, "variable", None)
     ]
     if len(assignment_rules) < 2:
         return assignment_rules
