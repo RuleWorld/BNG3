@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-02
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 6f7573f40ff04cfaed517bbcd11c606eeca7cb87
-**Checklist refresh base:** 6f7573f40ff04cfaed517bbcd11c606eeca7cb87 (public exact-head semantic checkpoint for the source-shaped saturation classifier guard)
-**Latest workflow checkpoint:** 6f7573f40ff04cfaed517bbcd11c606eeca7cb87 (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33629097334, CodeQL run 33629097260, formatting run 33629097206)
+**Audited semantic code head:** 5ad75244662278f18485864352fd104698115a74
+**Checklist refresh base:** 5ad75244662278f18485864352fd104698115a74 (public exact-head semantic checkpoint for the source-shaped log10 conversion)
+**Latest workflow checkpoint:** 5ad75244662278f18485864352fd104698115a74 (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33629555826, CodeQL run 33629555887, formatting run 33629555830)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -910,6 +910,27 @@ completion gate.
   are queued. This closes only the source-shaped saturation classifier
   guard; broader Atomizer core/writer/parser/SBML, direct-NFsim, and
   independent parity remain open.
+- [x] Playground `src/lib/atomizer/utils/helpers.ts:543-545` at reference
+  `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` emits the source's fixed
+  `2.302585093` denominator for `log10(x)` conversion. The tests-first BNG3
+  repair is `5ad75244662278f18485864352fd104698115a74` in
+  `python/bionetgen/atomizer/modern/helpers.py`, with the source-derived
+  contract in `tests/python/test_modern_atomizer_helpers.py::test_playground_helpers_string_and_math_contract`.
+  The red-first command
+  `PYTHONPATH=build/cpp:python python -m pytest
+  tests/python/test_modern_atomizer_helpers.py -k string_and_math -q`
+  reported `1 failed, 3 deselected`; the repaired command reported `1 passed,
+  3 deselected`. The focused helper gate reports `4 passed`; the complete
+  modern Atomizer gate reports `99
+  passed`; the full Python gate reports `274 passed, 27 skipped, 9 warnings`;
+  Ruff and Black pass. Exact public PR/ref head readback is
+  `5ad75244662278f18485864352fd104698115a74`; hosted CI
+  [33629555826](https://github.com/RuleWorld/BNG3/actions/runs/33629555826),
+  CodeQL [33629555887](https://github.com/RuleWorld/BNG3/actions/runs/33629555887),
+  and formatting
+  [33629555830](https://github.com/RuleWorld/BNG3/actions/runs/33629555830)
+  are queued. This closes only the source-shaped `log10` spelling; broader
+  expression, Atomizer, SBML, and independent parity remain open.
 - [x] Fresh external-Perl Tier-P NET parity at semantic head `88f4e54` used
   `BNG2_PERL=/private/tmp/bng2-oracle.TToh58/source/bng2/BNG2.pl` from source
   revision `fde0cd6a522c9f988d5495db31c70ce0f98e744b`. The exact command
