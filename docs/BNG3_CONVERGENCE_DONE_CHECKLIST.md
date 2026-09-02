@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-02
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 29b7687a1c49617715cacba1e0985e7b8568d5b9
-**Checklist refresh base:** 29b7687a1c49617715cacba1e0985e7b8568d5b9 (public exact-head semantic checkpoint for the reversible nonlinear-rate fallback)
-**Latest workflow checkpoint:** 29b7687a1c49617715cacba1e0985e7b8568d5b9 (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33596704800, CodeQL run 33596704673, formatting run 33596704771)
+**Audited semantic code head:** e847eaa89aae8bc6421be78f93fa261709b2cb9d
+**Checklist refresh base:** e847eaa89aae8bc6421be78f93fa261709b2cb9d (public exact-head semantic checkpoint for the constant-function ordering workaround)
+**Latest workflow checkpoint:** e847eaa89aae8bc6421be78f93fa261709b2cb9d (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33597684992, CodeQL run 33597685061, formatting run 33597685018)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -858,6 +858,33 @@ completion gate.
   and formatting [33596704771](https://github.com/RuleWorld/BNG3/actions/runs/33596704771)
   were queued. This closes only the source-shaped reversible-rate fallback;
   broader writer/parser/SBML and independent parity remain open.
+- [x] Playground `src/lib/atomizer/writer/bnglWriter.ts:1316-1385` at the
+  pinned reference inlines calls to proven constant zero-argument functions so
+  BNG2's function-block reordering cannot leave a dynamic function dependent on
+  a later constant definition. The tests-first BNG3 port is
+  `e847eaa89aae8bc6421be78f93fa261709b2cb9d` in
+  `python/bionetgen/atomizer/modern/writer.py`; the source-derived regression
+  is `tests/python/test_modern_atomizer_writer_parameters.py::test_write_functions_inlines_constant_calls_into_dynamic_bodies`.
+  The red-first command
+  `PYTHONPATH=build/cpp:python python -m pytest
+  tests/python/test_modern_atomizer_writer_parameters.py -k constant_calls -q`
+  reported `1 failed, 5 deselected, 2 warnings`; the repaired command reported
+  `1 passed, 5 deselected, 1 warning`. The focused writer/helper gate reports
+  `14 passed`; the complete modern Atomizer gate reports `98 passed`; the full
+  Python gate reports `273 passed, 27 skipped, 9 warnings`; Ruff and Black pass;
+  exact-tree CTest reports `185/185`; provenance and corpus-manifest checks pass
+  with the baseline still pending maintainer approval; the exception ledger
+  reports `0 active`; and validation smoke reports `4 passed, 15 skipped, 175
+  deselected`. The native `build/cpp/bng_cpp` artifact remains SHA-256
+  `8e80832c8a347a303fcfb21fa8c4c35a98b13ffd8967cc9192f964784287a7f3`.
+  Exact public PR/ref head readback is
+  `e847eaa89aae8bc6421be78f93fa261709b2cb9d`; hosted CI
+  [33597684992](https://github.com/RuleWorld/BNG3/actions/runs/33597684992),
+  CodeQL [33597685061](https://github.com/RuleWorld/BNG3/actions/runs/33597685061),
+  and formatting [33597685018](https://github.com/RuleWorld/BNG3/actions/runs/33597685018)
+  are queued. This closes only the source-shaped BNG2 function-ordering
+  workaround; broad writer/parser/SBML parity and independent validation
+  remain open.
 - [x] Fresh external-Perl Tier-P NET parity at semantic head `88f4e54` used
   `BNG2_PERL=/private/tmp/bng2-oracle.TToh58/source/bng2/BNG2.pl` from source
   revision `fde0cd6a522c9f988d5495db31c70ce0f98e744b`. The exact command
