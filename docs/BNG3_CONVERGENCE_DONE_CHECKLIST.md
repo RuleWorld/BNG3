@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-02
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 5ad75244662278f18485864352fd104698115a74
-**Checklist refresh base:** 5ad75244662278f18485864352fd104698115a74 (public exact-head semantic checkpoint for the source-shaped log10 conversion)
-**Latest workflow checkpoint:** 5ad75244662278f18485864352fd104698115a74 (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33629555826, CodeQL run 33629555887, formatting run 33629555830)
+**Audited semantic code head:** 167d6b8ab4ca6f8c709a5ab6cb894317b2f24272
+**Checklist refresh base:** 167d6b8ab4ca6f8c709a5ab6cb894317b2f24272 (public exact-head semantic checkpoint for the source-shaped component-pair bond deletion)
+**Latest workflow checkpoint:** 167d6b8ab4ca6f8c709a5ab6cb894317b2f24272 (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33630013174, CodeQL run 33630013218, formatting run 33630013175)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -931,6 +931,31 @@ completion gate.
   [33629555830](https://github.com/RuleWorld/BNG3/actions/runs/33629555830)
   are queued. This closes only the source-shaped `log10` spelling; broader
   expression, Atomizer, SBML, and independent parity remain open.
+- [x] Playground `src/lib/atomizer/core/structures.ts:752-765` at reference
+  `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` deletes bonds from the selected
+  molecule's component whose name matches the other supplied pair member,
+  case-insensitively. The tests-first BNG3 repair is
+  `167d6b8ab4ca6f8c709a5ab6cb894317b2f24272` in
+  `python/bionetgen/atomizer/modern/structures.py`, with the source-derived
+  regression `tests/python/test_modern_atomizer_structures.py::test_delete_bond_matches_playground_component_pair_semantics`.
+  The red-first command
+  `PYTHONPATH=build/cpp:python python -m pytest
+  tests/python/test_modern_atomizer_structures.py -k delete_bond -q` reported
+  `1 failed, 4 deselected, 2 warnings`; the repaired command reported `5
+  passed` for the focused structures file. The complete modern Atomizer gate
+  reports `100 passed`; the full Python gate reports `275 passed, 27 skipped,
+  9 warnings`; Ruff and Black pass. The native `build/cpp/bng_cpp` artifact
+  remains SHA-256
+  `8e80832c8a347a303fcfb21fa8c4c35a98b13ffd8967cc9192f964784287a7f3`.
+  Exact public PR/ref head readback is
+  `167d6b8ab4ca6f8c709a5ab6cb894317b2f24272`; hosted CI
+  [33630013174](https://github.com/RuleWorld/BNG3/actions/runs/33630013174),
+  CodeQL [33630013218](https://github.com/RuleWorld/BNG3/actions/runs/33630013218),
+  and formatting
+  [33630013175](https://github.com/RuleWorld/BNG3/actions/runs/33630013175)
+  are queued. This closes only the source-shaped component-pair helper;
+  broader structure, parser/writer/SBML, direct-NFsim, and independent parity
+  remain open.
 - [x] Fresh external-Perl Tier-P NET parity at semantic head `88f4e54` used
   `BNG2_PERL=/private/tmp/bng2-oracle.TToh58/source/bng2/BNG2.pl` from source
   revision `fde0cd6a522c9f988d5495db31c70ce0f98e744b`. The exact command
