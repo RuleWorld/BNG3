@@ -5,8 +5,8 @@
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
 **Audited semantic code head:** 19a90ed83fad4529bb8e85e1a538e00ade274cb2
-**Checklist refresh base:** dedf9e88c3a7783205029caad88536d4d5627cf0 (public exact-head local-ASan documentation checkpoint; current semantic writer checkpoint is pending this documentation refresh)
-**Latest workflow checkpoint:** dedf9e88c3a7783205029caad88536d4d5627cf0 (hosted checks read back 2026-09-01; all listed PR checks remain pending: CI run 33586907337, matrix run 33586907341, formatting run 33586907351)
+**Checklist refresh base:** 944a0adfe484bda4cfbb04d01c98cfb6209f29e4 (public exact-head compartment-factor parity checkpoint)
+**Latest workflow checkpoint:** 944a0adfe484bda4cfbb04d01c98cfb6209f29e4 (hosted checks read back 2026-09-01; all listed PR checks remain pending: CI run 33587583467, matrix run 33587583339, formatting run 33587583414)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -575,6 +575,16 @@ completion gate.
   passed, 15 skipped, and 174 deselected. The remaining skips are visible
   `run_network`/reference-oracle gaps, with sandbox process-inspection noise
   also present, and must not be treated as parity.
+- [x] Current local validation smoke at BNG3 semantic head
+  `19a90ed83fad4529bb8e85e1a538e00ade274cb2` used
+  `PYTHONPATH=build/cpp:python python -m pytest -c tests/validation/pytest.ini
+  tests/validation -m smoke --bng-cpp build/cpp/bng_cpp -q` and reports `4
+  passed, 15 skipped, 175 deselected, 1 warning` in 8.07 seconds. The local
+  `build/cpp/bng_cpp` artifact has SHA-256
+  `8e80832c8a347a303fcfb21fa8c4c35a98b13ffd8967cc9192f964784287a7f3`.
+  Skips remain explicit missing-reference/legacy-oracle and sandbox
+  `run_network`/process-inspection gaps; this is smoke evidence only, not
+  complete parity evidence.
 - [x] Non-strict provenance, corpus-manifest, generated-manifest, and exception
   ledger checks pass. The strict provenance gate remains intentionally red with
   10 pending source/oracle/compiler/Python-lock approval errors; the exception
