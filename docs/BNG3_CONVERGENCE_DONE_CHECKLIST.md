@@ -738,6 +738,21 @@ completion gate.
   by BNG3 checkpoints `b610992`, `0f83347`, and `1c03bc1`. Its BNG2 `Network3`
   memory/tfun/output fixes are not native BNG3 source and remain a separate
   legacy compatibility audit.
+- [x] The exact issue-branch tip `20fe141452e79d01fd4a669d801da59c73d38588`
+  was re-audited against the BNG3 tree. Its native changes are already
+  represented by the checkpoints above; the repeated generic-`operator!=`
+  portability patch `897e8a29a93dc42db8c1af74b0fbce968e52cb23` is likewise
+  non-applicable because BNG3 has type/member-scoped inequality operators.
+  No native issue-branch code was bulk-merged.
+- [ ] Source performance commit
+  `5fab87788a4d6253ea83fd2cb35312be0c99c725` (`Cache OdeIntegrator rate-law
+  normalization`) remains a pending performance reconciliation. BNG3 already
+  precomputes lowercase function names and caches each raw rate-law lowercase
+  conversion in `cpp/engine/OdeIntegrator.cpp`, but the source commit's
+  duplicate function-scan suppression has no red-first semantic regression or
+  paired performance gate in BNG3. Port only after such evidence exists; the
+  source branch's semantic case-insensitivity test is not sufficient because
+  BNG3 already passes that behavior.
 - [x] Sentinel ContactMap server branches were classified non-applicable to
   the current BNG3 tree, which has no `parsers/ContactMap/server.py`; their
   exact security findings remain recorded for inventory. The Sentinel Perl
