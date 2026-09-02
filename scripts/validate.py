@@ -64,7 +64,9 @@ def copy_referenced_support_files(
     return copied
 
 
-def run_validation(bng_cpp, validate_dir, verbose=False, skip_models=None):
+def run_validation(
+    bng_cpp, validate_dir, verbose=False, skip_models=None, strict_references=False
+):
     """Run bng_cpp on all .bngl files and compare against reference .net.
 
     Args:
@@ -72,6 +74,7 @@ def run_validation(bng_cpp, validate_dir, verbose=False, skip_models=None):
         validate_dir: Path to validation directory
         verbose: Whether to print detailed output
         skip_models: List of model names (without .bngl) to skip
+        strict_references: Treat an unskipped missing reference .net as an error
     """
     if skip_models is None:
         skip_models = []
@@ -94,9 +97,13 @@ def run_validation(bng_cpp, validate_dir, verbose=False, skip_models=None):
         ref_net = dat_dir / f"{model_name}.net"
 
         if not ref_net.exists():
-            results["skip"] += 1
-            if verbose:
-                details.append(f"SKIP  {model_name} (no reference .net)")
+            if strict_references:
+                results["error"] += 1
+                details.append(f"ERROR {model_name} (no reference .net)")
+            else:
+                results["skip"] += 1
+                if verbose:
+                    details.append(f"SKIP  {model_name} (no reference .net)")
             continue
 
         # Run bng_cpp to generate network
@@ -182,6 +189,11 @@ def main():
         default="",
         help="Comma-separated list of model names to skip (without .bngl extension)",
     )
+    parser.add_argument(
+        "--strict-references",
+        action="store_true",
+        help="Treat an unskipped model without a reference .net as an error",
+    )
     args = parser.parse_args()
 
     # Find bng_cpp
@@ -225,7 +237,11 @@ def main():
     print()
 
     results, details = run_validation(
-        bng_cpp, validate_dir, verbose=args.verbose, skip_models=skip_models
+        bng_cpp,
+        validate_dir,
+        verbose=args.verbose,
+        skip_models=skip_models,
+        strict_references=args.strict_references,
     )
 
     # Print details
@@ -241,7 +257,12 @@ def main():
     print(f"  PASS:  {results['pass']}")
     print(f"  FAIL:  {results['fail']}")
     print(f"  ERROR: {results['error']}")
-    print(f"  SKIP:  {results['skip']} (no reference .net)")
+    skip_note = (
+        "explicit exclusions only"
+        if args.strict_references
+        else "explicit exclusions or no reference .net"
+    )
+    print(f"  SKIP:  {results['skip']} ({skip_note})")
     print("=" * 60)
 
     if results["fail"] > 0 or results["error"] > 0:

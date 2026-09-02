@@ -3,6 +3,8 @@
 from pathlib import Path
 import re
 
+from scripts.validate import run_validation
+
 
 REPO = Path(__file__).resolve().parents[1]
 PYPROJECT = REPO / "pyproject.toml"
@@ -130,3 +132,30 @@ def test_weekly_cross_validation_fails_closed_on_engine_or_output_errors():
     assert "| Failed |" in job
     assert "[ \"$FAIL\" -gt 0 ]" in job
     assert job.count("FAIL=$((FAIL + 1))") >= 3
+
+
+def test_reference_validation_can_fail_closed_on_missing_oracles(tmp_path):
+    """A claimed reference gate must not turn a missing .net into a skip."""
+
+    validate_dir = tmp_path / "Validate"
+    (validate_dir / "DAT_validate").mkdir(parents=True)
+    (validate_dir / "missing_oracle.bngl").write_text(
+        "begin model\nend model\n", encoding="utf-8"
+    )
+
+    results, details = run_validation(
+        "unused-bng-cpp",
+        validate_dir,
+        strict_references=True,
+    )
+
+    assert results == {"pass": 0, "fail": 0, "skip": 0, "error": 1}
+    assert details == ["ERROR missing_oracle (no reference .net)"]
+
+
+def test_reference_ci_jobs_enable_strict_reference_validation():
+    """PR and weekly reference jobs must opt into the fail-closed contract."""
+
+    assert "--strict-references" in _workflow_job("validation")
+    weekly_job = _workflow_job_from(WEEKLY_WORKFLOW, "bng-validation")
+    assert "--strict-references" in weekly_job

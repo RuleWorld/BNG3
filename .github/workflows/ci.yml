@@ -190,7 +190,7 @@ jobs:
   # ═══════════════════════════════════════════════════════════════════════════
 
   validation:
-    name: Validation (${{ matrix.os }})
+    name: Validation (supported reference subset, ${{ matrix.os }})
     needs: cpp-build
     runs-on: ${{ matrix.os }}
     strategy:
@@ -224,12 +224,12 @@ jobs:
         if: "!startsWith(matrix.os, 'windows')"
         run: chmod +x build/cpp/bng_cpp*
 
-      - name: Run validation against reference .net files
+      - name: Run supported validation against reference .net files
         shell: bash
         run: |
           BNG=build/cpp/bng_cpp${{ startsWith(matrix.os, 'windows') && '.exe' || '' }}
-          SKIP="--skip michment_cont,test_sbml_flat,test_sbml_structured,Repressilator,SHP2_base_model"
-          python scripts/validate.py --bng-cpp "$BNG" $SKIP --verbose
+          SKIP="--skip ANx,egfr_net,fceri_ji,gene_expr,gene_expr_func,gene_expr_simple,hybrid_test,isomerization,nfkb_illustrating_protocols,test_MM,test_expression_xml_escaping,test_paramname,test_partial_dynamical_scaling,test_sat,test_sat_cont,test_tfun,test_tfun_expr,test_tfun_expr2,test_tfun_file,test_tfun_net_full,test_tfun_observable,test_tfun_ode_simple,test_tfun_ode_step,test_tfun_parse,test_tfun_step_sbml,test_tfun_validation,test_tfun_xml,test_write_sbml_multi,tlmr,visualize,michment_cont,test_sbml_flat,test_sbml_structured,Repressilator,SHP2_base_model"
+          python scripts/validate.py --bng-cpp "$BNG" --strict-references $SKIP --verbose
 
   # ═══════════════════════════════════════════════════════════════════════════
   # BNGL corpus parse inventory (not an NFsim simulation check)
