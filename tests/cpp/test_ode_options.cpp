@@ -104,6 +104,59 @@ end reaction rules
     REQUIRE_THAT(derivatives[0], Catch::Matchers::WithinAbs(-2.0, 1e-12));
 }
 
+TEST_CASE("OdeIntegrator preserves case-insensitive rate classification", "[OdeOptions]") {
+    // Source-derived from akutuva21/bionetgen commit
+    // 5fab87788a4d6253ea83fd2cb35312be0c99c725: caching the lowercased raw
+    // rate law and suppressing a duplicate function scan must not change the
+    // existing classification contract.
+    auto makeNetwork = [](const std::string& rateLaw) {
+        engine::GeneratedNetwork network;
+        network.species.setCheckIso(false);
+
+        ast::SpeciesGraph reactantGraph;
+        network.species.add(ast::Species(reactantGraph, 1.0));
+
+        ast::SpeciesGraph productGraph;
+        network.species.add(ast::Species(productGraph, 0.0));
+
+        network.reactions.add(ast::Rxn(
+            "R1", {0}, {1}, rateLaw, 1.0, "dummy_rule",
+            ast::Expression::number(2.0)));
+        return network;
+    };
+
+    SECTION("time keyword casing remains functional") {
+        for (const auto& rateLaw : {std::string("time"), std::string("TIME"),
+                                    std::string("Time")}) {
+            ast::Model model;
+            auto network = makeNetwork(rateLaw);
+            engine::OdeIntegrator integrator(model, network);
+
+            double state[] = {1.0, 0.0};
+            double derivatives[] = {0.0, 0.0};
+            integrator.derivs(0.0, state, derivatives);
+
+            REQUIRE_THAT(derivatives[0], Catch::Matchers::WithinAbs(-2.0, 1e-12));
+            REQUIRE_THAT(derivatives[1], Catch::Matchers::WithinAbs(2.0, 1e-12));
+        }
+    }
+
+    SECTION("mixed-case function names are matched without lowercasing") {
+        ast::Model model;
+        model.addFunction(ast::Function(
+            "rateFn", {}, ast::Expression::number(1.0)));
+        auto network = makeNetwork("RATEFN");
+        engine::OdeIntegrator integrator(model, network);
+
+        double state[] = {1.0, 0.0};
+        double derivatives[] = {0.0, 0.0};
+        integrator.derivs(0.0, state, derivatives);
+
+        REQUIRE_THAT(derivatives[0], Catch::Matchers::WithinAbs(-2.0, 1e-12));
+        REQUIRE_THAT(derivatives[1], Catch::Matchers::WithinAbs(2.0, 1e-12));
+    }
+}
+
 TEST_CASE("Observable pattern compilation preserves multi-pattern weights", "[OdeOptions]") {
     // Source-derived from akutuva21/bionetgen commit 60ac7e5f: moving
     // observable parsing outside the species loop must preserve every pattern

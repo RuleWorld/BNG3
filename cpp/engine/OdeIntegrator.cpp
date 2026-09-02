@@ -1,6 +1,7 @@
 #include "OdeIntegrator.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <fstream>
 #include <iomanip>
@@ -524,6 +525,7 @@ void OdeIntegrator::compile() {
             lowerRawRLPopulated = true;
         };
 
+        bool checkedFunctions = false;
         if (!isFunctional && rateExpr.has_value()) {
             ensureLowerRawRL();
 
@@ -555,6 +557,7 @@ void OdeIntegrator::compile() {
                     }
                     ++functionIndex;
                 }
+                checkedFunctions = true;
             }
 
             if (isFunctional) {
@@ -581,7 +584,8 @@ void OdeIntegrator::compile() {
 
         // Bug 2 fix: Also check for user-defined function references OUTSIDE the rateExpr block
         // This catches cases where rateExpr is nullopt but the rate law string references a function
-        if (!crxn.isFunctional) {
+        if (!crxn.isFunctional && !checkedFunctions) {
+            ensureLowerRawRL();
             std::size_t functionIndex = 0;
             for (const auto& func : model_.getFunctions()) {
                 if (hasWordBoundaryMatchCaseInsensitive(rawRateLaw, lowerFuncNames[functionIndex]) ||
