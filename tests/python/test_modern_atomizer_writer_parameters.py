@@ -96,3 +96,20 @@ def test_write_functions_orders_assignment_rules_by_dependencies():
         "upstream() = 2",
         "downstream() = upstream + 1",
     ]
+
+
+def test_write_functions_inlines_constant_calls_into_dynamic_bodies():
+    """Mirror Playground's BNG2 function-ordering workaround."""
+
+    model = SBMLModel(
+        id="constant-function-order",
+        function_definitions={
+            "base": SBMLFunctionDefinition(id="base", math="2"),
+            "dynamic": SBMLFunctionDefinition(id="dynamic", math="base() + time()"),
+        },
+    )
+
+    assert write_functions(model) == [
+        "base() = 2",
+        "dynamic() = (2) + time()",
+    ]

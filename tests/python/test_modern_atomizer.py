@@ -672,7 +672,7 @@ def test_playground_writer_emits_zero_argument_functions_and_assignment_rules():
     )
 
     assert "f() = k + 1" in bngl
-    assert "v() = f()" in bngl
+    assert "v() = (k + 1)" in bngl
 
 
 def test_playground_writer_emits_simple_assignment_rules_as_observables():

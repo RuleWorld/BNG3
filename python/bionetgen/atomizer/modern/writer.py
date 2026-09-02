@@ -1629,6 +1629,122 @@ def _rewrite_zero_argument_calls(expression: str, names: Iterable[str]) -> str:
     return result
 
 
+def _inline_constant_function_calls(
+    function_lines: Sequence[str], parameter_names: Iterable[str]
+) -> List[str]:
+    """Inline constant zero-argument calls before BNG2 reorders functions."""
+
+    metadata_prefixes = (
+        "__rate_rule_pos__",
+        "__rate_rule_neg__",
+        "__rate_rule__",
+        "__assign_rule__",
+    )
+
+    def canonical_name(name: str) -> str:
+        for prefix in metadata_prefixes:
+            if name.startswith(prefix):
+                return name[len(prefix) :]
+        return name
+
+    definition_pattern = re.compile(r"^(\s*)([A-Za-z_]\w*)\(\)\s*=\s*(.+?)\s*$")
+    definitions: Dict[str, str] = {}
+    for line in function_lines:
+        match = definition_pattern.match(line)
+        if match is None:
+            continue
+        name = match.group(2)
+        if name.startswith("__rate_rule_"):
+            continue
+        definitions.setdefault(canonical_name(name), match.group(3))
+    if not definitions:
+        return list(function_lines)
+
+    math_names = {
+        "exp",
+        "ln",
+        "log",
+        "log10",
+        "sin",
+        "cos",
+        "tan",
+        "asin",
+        "acos",
+        "atan",
+        "sinh",
+        "cosh",
+        "tanh",
+        "sqrt",
+        "abs",
+        "if",
+        "pow",
+        "power",
+        "floor",
+        "ceil",
+        "min",
+        "max",
+        "rint",
+        "piecewise",
+        "and",
+        "or",
+        "not",
+        "time",
+    }
+    parameter_names = set(parameter_names)
+    constant_values: Dict[str, str] = {}
+
+    def inline_known(body: str) -> str:
+        result = body
+        for _ in range(8):
+            changed = False
+            for name, value in constant_values.items():
+                result, count = re.subn(
+                    rf"\b{re.escape(name)}\(\)", f"({value})", result
+                )
+                changed = changed or count > 0
+            if not changed:
+                break
+        return result
+
+    def constant_body(body: str) -> Optional[str]:
+        if re.search(r"_c_|_amt|\btime\s*\(", body):
+            return None
+        result = inline_known(body)
+        for match in re.finditer(r"\b([A-Za-z_]\w*)\s*\(\s*\)", result):
+            if match.group(1) not in math_names:
+                return None
+        for match in re.finditer(r"\b([A-Za-z_]\w*)\b(?!\s*\()", result):
+            name = match.group(1)
+            if name not in math_names and name not in parameter_names:
+                return None
+        return result
+
+    for _ in range(8):
+        changed = False
+        for name, body in definitions.items():
+            if name in constant_values:
+                continue
+            value = constant_body(body)
+            if value is not None:
+                constant_values[name] = value
+                changed = True
+        if not changed:
+            break
+    if not constant_values:
+        return list(function_lines)
+
+    rewritten: List[str] = []
+    for line in function_lines:
+        match = definition_pattern.match(line)
+        if match is None:
+            rewritten.append(line)
+            continue
+        name = canonical_name(match.group(2))
+        body = constant_values.get(name, inline_known(match.group(3)))
+        rewritten.append(f"{match.group(1)}{match.group(2)}() = {body}")
+    return rewritten
+
+
 def _map_compartment_references(expression: str, model: SBMLModel) -> str:
     """Map bare SBML compartment IDs to emitted BNGL volume parameters."""
 
@@ -1823,7 +1939,7 @@ def write_functions(
             f"{RATE_RULE_NEG_PREFIX}{name}() = if({RATE_RULE_META_PREFIX}{name}() < 0, "
             f"-({RATE_RULE_META_PREFIX}{name}()), 0)"
         )
-    return lines
+    return _inline_constant_function_calls(lines, model.parameters)
 
 
 def _reaction_pattern(
