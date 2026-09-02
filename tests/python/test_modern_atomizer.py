@@ -1174,6 +1174,73 @@ def test_playground_writer_reports_missing_kinetic_laws():
     ]
 
 
+def test_playground_writer_reports_nonadjacent_transport_reactions():
+    from bionetgen.atomizer.modern import (
+        SBMLCompartment,
+        SBMLKineticLaw,
+        SBMLModel,
+        SBMLReaction,
+        SBMLSpecies,
+        SBMLSpeciesReference,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+    from bionetgen.atomizer.modern.helpers import logger
+
+    model = SBMLModel(
+        id="transport",
+        compartments=OrderedDict(
+            [
+                ("cyto", SBMLCompartment(id="cyto", size=1)),
+                ("nuc", SBMLCompartment(id="nuc", size=1)),
+            ]
+        ),
+        species=OrderedDict(
+            [
+                (
+                    "A",
+                    SBMLSpecies(id="A", name="A", compartment="cyto", initial_amount=1),
+                ),
+                ("B", SBMLSpecies(id="B", name="B", compartment="nuc")),
+            ]
+        ),
+        reactions=OrderedDict(
+            [
+                (
+                    "transport",
+                    SBMLReaction(
+                        id="transport",
+                        reactants=[SBMLSpeciesReference("A")],
+                        products=[SBMLSpeciesReference("B")],
+                        kinetic_law=SBMLKineticLaw("k"),
+                    ),
+                )
+            ]
+        ),
+    )
+
+    sct = build_species_composition_table(model)
+    logger.clear()
+    logger.setLevel("INFO")
+    logger.setQuietMode(True)
+    try:
+        bngl, _ = generate_bngl(
+            model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+        )
+        messages = logger.getMessagesByLevel("INFO")
+    finally:
+        logger.clear()
+        logger.setLevel("WARNING")
+        logger.setQuietMode(False)
+
+    assert "transport: M_A()@cyto -> M_B()@nuc k" in bngl
+    assert [(message.code, message.message) for message in messages] == [
+        ("BNW004", "Transport reaction transport: B moves from cyto to nuc")
+    ]
+
+
 def test_playground_writer_removes_repeated_site_statistical_factors():
     from bionetgen.atomizer.modern import (
         SBMLKineticLaw,

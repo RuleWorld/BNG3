@@ -42,6 +42,12 @@ except ValueError:
     _MISSING_KINETIC_LOG_LIMIT = 25
 _missing_kinetic_log_count = 0
 
+try:
+    _TRANSPORT_LOG_LIMIT = int(os.environ.get("BNGL_TRANSPORT_LOG_LIMIT", "40"))
+except ValueError:
+    _TRANSPORT_LOG_LIMIT = 40
+_transport_log_count = 0
+
 
 def _log_missing_kinetic(message: str) -> None:
     global _missing_kinetic_log_count
@@ -54,6 +60,16 @@ def _log_missing_kinetic(message: str) -> None:
     elif _missing_kinetic_log_count == _MISSING_KINETIC_LOG_LIMIT:
         logger.warning("BNW011", "Additional missing-kinetic-law logs suppressed.")
     _missing_kinetic_log_count += 1
+
+
+def _log_transport_info(message: str) -> None:
+    global _transport_log_count
+
+    if _TRANSPORT_LOG_LIMIT < 0 or _transport_log_count < _TRANSPORT_LOG_LIMIT:
+        logger.info("BNW004", message)
+    elif _transport_log_count == _TRANSPORT_LOG_LIMIT:
+        logger.info("BNW004", "Additional transport reaction logs suppressed.")
+    _transport_log_count += 1
 
 
 def _section(name: str, lines: Iterable[str]) -> str:
@@ -1775,6 +1791,23 @@ def _reaction_pattern(
     return "M_" + name + "()"
 
 
+def _compartments_are_adjacent(
+    first_id: Optional[str],
+    second_id: Optional[str],
+    compartments: Mapping[str, object],
+) -> bool:
+    if not first_id or not second_id:
+        return False
+    first = compartments.get(first_id)
+    second = compartments.get(second_id)
+    if first is None or second is None:
+        return False
+    return (
+        getattr(first, "outside", None) == second_id
+        or getattr(second, "outside", None) == first_id
+    )
+
+
 def write_reaction_rules(
     model: SBMLModel,
     sct: SpeciesCompositionTable,
@@ -1785,6 +1818,39 @@ def write_reaction_rules(
     lines = []
     used_labels = set()
     for reaction_id, reaction in model.reactions.items():
+        reactant_species = (
+            model.species.get(reaction.reactants[0].species)
+            if reaction.reactants
+            else None
+        )
+        reactant_compartment = (
+            getattr(reactant_species, "compartment", None)
+            if reactant_species is not None
+            else None
+        )
+        if model.compartments and reactant_compartment:
+            for reference in reaction.products:
+                if reference.species == "EmptySet":
+                    continue
+                product_species = model.species.get(reference.species)
+                product_compartment = (
+                    getattr(product_species, "compartment", None)
+                    if product_species is not None
+                    else None
+                )
+                if (
+                    product_compartment
+                    and product_compartment != reactant_compartment
+                    and not _compartments_are_adjacent(
+                        reactant_compartment,
+                        product_compartment,
+                        model.compartments,
+                    )
+                ):
+                    _log_transport_info(
+                        f"Transport reaction {reaction_id}: {reference.species} "
+                        f"moves from {reactant_compartment} to {product_compartment}"
+                    )
         for reference in [*reaction.reactants, *reaction.products]:
             if (
                 reference.species != "EmptySet"
