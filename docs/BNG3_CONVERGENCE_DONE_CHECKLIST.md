@@ -5,7 +5,7 @@
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
 **Audited semantic code head:** 413523620b1903f7152a27ee6441b0b4d07b933b
-**Checklist refresh base:** 4135236 (source-derived parameterized-function facade checkpoint; refresh after each checkpoint)
+**Checklist refresh base:** 474549232748b29789270be780503d456eccf0d2 (documentation-only refresh; semantic code head remains 413523620b1903f7152a27ee6441b0b4d07b933b)
 **Latest workflow checkpoint:** 0e2642aa239c569f66eb550db6c0952219060142 (fail-closed missing-reference repair)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -113,6 +113,14 @@ completion gate.
   `tests/python/test_modern_atomizer_writer_parameters.py`. This is a source
   reconciliation note only; comprehensive writer, parser, SBML-writer, and
   independent round-trip parity remain open.
+- [x] Accepted-cutoff NFsim commit
+  `59423016cb2b30ac2dbc058bf8ef7cc5efb6bdf3` (small-`Km` Michaelis-Menten
+  root-stability fix) is represented equivalently by BNG3 implementation
+  `4dac1c74977493718b2ef7891bddad8a07842548` and its source-derived
+  red-first regression `d7510f4f95e6af9e135b6fe361458bfb400f9251` in
+  `tests/cpp/test_nfsim_ast_adapter.cpp`. This closes that accepted source
+  slice only; independent full NFsim energy parity, benchmark provenance, and
+  the remaining evaluator reconciliation gates stay open.
 - [x] The latest CI truthfulness repair checkpoint is
   `e7cd59bd793a30d31bf2b8822725e05ba097b3d0`; it makes weekly C++/Perl
   cross-validation fail closed on engine, output, or corpus errors and adds
