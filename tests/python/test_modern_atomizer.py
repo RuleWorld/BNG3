@@ -247,6 +247,28 @@ def test_playground_parser_preserves_annotations_initial_assignments_and_rates()
     assert model.reactions["bind"].kinetic_law["math"] == "kf * A * B"
 
 
+def test_playground_parser_reports_model_summary():
+    from bionetgen.atomizer.modern import SBMLParser
+    from bionetgen.atomizer.modern.helpers import logger
+
+    logger.clear()
+    logger.setLevel("INFO")
+    logger.setQuietMode(True)
+    try:
+        model = SBMLParser().parse(SBML_FIXTURE)
+        messages = logger.getMessagesByLevel("INFO")
+    finally:
+        logger.clear()
+        logger.setLevel("WARNING")
+        logger.setQuietMode(False)
+
+    assert len(model.species) == 4
+    assert len(model.reactions) == 2
+    assert [(message.code, message.message) for message in messages] == [
+        ("SBM004", "Parsed SBML model: 4 species, 2 reactions")
+    ]
+
+
 def test_playground_parser_surfaces_fast_and_reaction_conversion_diagnostics():
     from bionetgen.atomizer.modern import SBMLParser
 

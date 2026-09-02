@@ -29,6 +29,7 @@ from .types import (
 )
 from .multi import parse_multi_package
 from .units import apply_unit_scaling
+from .helpers import logger
 
 
 def _local_name(tag: str) -> str:
@@ -511,6 +512,11 @@ class SBMLParser:
                     "severity": "info",
                 }
             )
+        logger.info(
+            "SBM004",
+            f"Parsed SBML model: {len(result.species)} species, "
+            f"{len(result.reactions)} reactions",
+        )
         return result
 
     @staticmethod
