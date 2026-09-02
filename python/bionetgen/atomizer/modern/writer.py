@@ -1498,6 +1498,56 @@ def _map_compartment_references(expression: str, model: SBMLModel) -> str:
     return result
 
 
+def _ordered_assignment_rules(rules: Sequence[object]) -> List[object]:
+    """Order assignment rules after their referenced assignment variables."""
+
+    assignment_rules = [
+        rule
+        for rule in rules
+        if getattr(rule, "type", "") == "assignment"
+        and getattr(rule, "variable", None)
+    ]
+    if len(assignment_rules) < 2:
+        return assignment_rules
+
+    by_name = {str(rule.variable): rule for rule in assignment_rules}
+    if len(by_name) != len(assignment_rules):
+        return assignment_rules
+    ordered: List[object] = []
+    visited: Set[str] = set()
+    visiting: Set[str] = set()
+    cycle = False
+
+    def visit(name: str) -> None:
+        nonlocal cycle
+        if name in visited:
+            return
+        if name in visiting:
+            cycle = True
+            return
+        visiting.add(name)
+        expression = str(getattr(by_name[name], "math", "") or "")
+        for dependency in by_name:
+            if dependency == name:
+                continue
+            raw_match = re.search(rf"\b{re.escape(dependency)}\b", expression)
+            standardized = standardize_name(dependency)
+            standardized_match = re.search(
+                rf"\b{re.escape(standardized)}\b", expression
+            )
+            if raw_match or standardized_match:
+                visit(dependency)
+        visiting.remove(name)
+        visited.add(name)
+        ordered.append(by_name[name])
+
+    for rule in assignment_rules:
+        visit(str(rule.variable))
+    if cycle:
+        return assignment_rules
+    return ordered
+
+
 def write_functions(
     model: SBMLModel,
     synthetic_rate_rule_variables: Optional[Set[str]] = None,
@@ -1570,9 +1620,7 @@ def write_functions(
         if not function.arguments:
             zero_argument_functions.append(name)
         emitted_names.add(name)
-    for rule in model.rules:
-        if not rule.variable or rule.type != "assignment":
-            continue
+    for rule in _ordered_assignment_rules(model.rules):
         if (
             rule.variable in skip_assignment_rules
             or standardize_name(rule.variable) in skip_assignment_rules
