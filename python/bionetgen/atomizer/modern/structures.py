@@ -575,20 +575,16 @@ class Species:
                 ]
 
     def delete_bond(self, molecule_pair: Iterable[str]) -> None:
-        names = set(molecule_pair)
+        names = list(molecule_pair)
         for molecule in self.molecules:
             if molecule.name not in names:
                 continue
+            partners = list(names)
+            partners.remove(molecule.name)
+            partner_names = {str(partner).lower() for partner in partners}
             for component in molecule.components:
-                component.bonds = [
-                    bond
-                    for bond in component.bonds
-                    if not any(
-                        other.name in names - {molecule.name}
-                        for other in self.molecules
-                        if other.name != molecule.name
-                    )
-                ]
+                if component.name.lower() in partner_names:
+                    component.bonds = []
 
     def append(self, species: "Species") -> None:
         incoming = species.copy()

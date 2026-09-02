@@ -49,6 +49,15 @@ def test_list_of_bonds_maps_internal_component_ids_to_public_names():
     }
 
 
+def test_delete_bond_matches_playground_component_pair_semantics():
+    species = read_from_string("A(site!1).B(bind!1)")
+
+    species.delete_bond(["A", "site"])
+
+    assert species.molecules[0].get_component("site").bonds == []
+    assert species.molecules[1].get_component("bind").bonds == ["1"]
+
+
 def test_databases_and_states_expose_reference_containers():
     databases = Databases()
     databases.add2_label_dictionary(["B", "A"], "value")
