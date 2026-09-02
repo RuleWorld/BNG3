@@ -5,7 +5,7 @@
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
 **Audited semantic code head:** 413523620b1903f7152a27ee6441b0b4d07b933b
-**Checklist refresh base:** 4d403ecc5c1627340f9c259cb7d9be745fbb814c (legacy console checkpoint; semantic code head remains 413523620b1903f7152a27ee6441b0b4d07b933b)
+**Checklist refresh base:** 99e99506cea1733c6a7e8dfe90531ec0f826c318 (legacy graph-label checkpoint; semantic code head remains 413523620b1903f7152a27ee6441b0b4d07b933b)
 **Latest workflow checkpoint:** 0e2642aa239c569f66eb550db6c0952219060142 (fail-closed missing-reference repair)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -206,6 +206,22 @@ completion gate.
   [33581281331](https://github.com/RuleWorld/BNG3/actions/runs/33581281331),
   formatting [33581281347](https://github.com/RuleWorld/BNG3/actions/runs/33581281347),
   and CodeQL [33581281317](https://github.com/RuleWorld/BNG3/actions/runs/33581281317)
+  were queued at readback, so they are not completion evidence.
+- [x] The legacy NetworkGraph synthetic-zero trimming repair from source
+  commit `dca95a6aa80e249f1adf981037b61bf020f7b5ad` is ported in
+  `legacy/perl/Perl2/Visualization/NetworkGraph.pm`. Empty rule-side zeros are
+  removed only at the `->` boundary, preserving molecule labels that begin or
+  end with `0`. The source-derived
+  `tests/python/test_legacy_network_graph_labels.py` reports `1 passed` after
+  red-first corruption of `0A`/`B0`; the touched Perl module reports `syntax
+  OK`, exact-tree CTest reports `185/185`, and the full Python suite reports
+  `248 passed, 27 skipped, 8 warnings`. This qualifies only the bounded graph
+  label slice; complete visualization/API parity, legacy retirement, and
+  independent BNG2 evidence remain open. Public branch and PR #2 read back to
+  exact code head `99e99506cea1733c6a7e8dfe90531ec0f826c318`; CI
+  [33581519666](https://github.com/RuleWorld/BNG3/actions/runs/33581519666),
+  formatting [33581519687](https://github.com/RuleWorld/BNG3/actions/runs/33581519687),
+  and CodeQL [33581519622](https://github.com/RuleWorld/BNG3/actions/runs/33581519622)
   were queued at readback, so they are not completion evidence.
 - [x] The latest CI truthfulness repair checkpoint is
   `e7cd59bd793a30d31bf2b8822725e05ba097b3d0`; it makes weekly C++/Perl
