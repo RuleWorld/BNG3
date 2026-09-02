@@ -575,6 +575,45 @@ def test_playground_atomizer_reports_lifecycle_diagnostics():
     ]
 
 
+def test_playground_atomizer_uses_large_flat_fast_path(monkeypatch):
+    from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.atomizer.modern.helpers import logger
+
+    monkeypatch.setenv("ATOMIZER_LARGE_FASTPATH", "1")
+    monkeypatch.setenv("ATOMIZER_FASTPATH_MIN_SPECIES", "1")
+    monkeypatch.setenv("ATOMIZER_FASTPATH_MIN_REACTIONS", "999999")
+    monkeypatch.setenv("ATOMIZER_FASTPATH_MIN_SBML_CHARS", "999999999")
+    logger.clear()
+    try:
+        result = Atomizer(
+            atomize=False,
+            log_level="INFO",
+            quiet_mode=True,
+        ).atomize(SBML_FIXTURE)
+        messages = [
+            message
+            for message in logger.getMessages()
+            if message.code.startswith("ATM")
+        ]
+    finally:
+        logger.clear()
+        logger.setLevel("WARNING")
+        logger.setQuietMode(False)
+
+    assert result.success is True
+    assert [(message.code, message.message) for message in messages] == [
+        ("ATM003", "Parsing SBML model..."),
+        ("ATM004", 'Model "Playground fixture": 4 species, 2 reactions'),
+        (
+            "ATM011",
+            "Large-model flat fast path enabled "
+            "(species=4, reactions=2, sbmlChars=2850)",
+        ),
+    ]
+    assert "M_A()" in result.bngl
+    assert "ATM005" not in {message.code for message in messages}
+
+
 def test_playground_math_rewrites_match_writer_contract():
     from bionetgen.atomizer.modern import convert_math_expression
 

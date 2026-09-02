@@ -9,6 +9,9 @@ the two paths can be compared during the migration.
 
 from __future__ import annotations
 
+import math
+import os
+from collections import OrderedDict
 from typing import Any, Dict, Iterable, Mapping, Optional
 
 from .core import (
@@ -207,6 +210,118 @@ class Atomizer:
     def get_options(self) -> Dict[str, Any]:
         return dict(self.options)
 
+    @staticmethod
+    def _threshold(name: str, default: float) -> float:
+        try:
+            return float(os.environ.get(name, str(default)))
+        except (TypeError, ValueError):
+            return float("nan")
+
+    def _should_use_large_flat_fast_path(self, sbml_string: str) -> bool:
+        if self.options.get("atomize"):
+            return False
+        if os.environ.get("ATOMIZER_LARGE_FASTPATH", "1") == "0":
+            return False
+        min_species = self._threshold("ATOMIZER_FASTPATH_MIN_SPECIES", 1500)
+        min_reactions = self._threshold("ATOMIZER_FASTPATH_MIN_REACTIONS", 800)
+        min_sbml_chars = self._threshold("ATOMIZER_FASTPATH_MIN_SBML_CHARS", 5000000)
+        return (
+            len(self.model.species) >= min_species
+            or len(self.model.reactions) >= min_reactions
+            or len(sbml_string) >= min_sbml_chars
+        )
+
+    @staticmethod
+    def _initial_amount_expression(species: SBMLSpecies) -> str:
+        try:
+            amount = float(species.initial_amount)
+        except (TypeError, ValueError):
+            amount = float("nan")
+        if math.isfinite(amount) and amount > 0:
+            return str(int(amount)) if amount.is_integer() else format(amount, ".15g")
+
+        try:
+            concentration = float(species.initial_concentration)
+        except (TypeError, ValueError):
+            concentration = float("nan")
+        if math.isfinite(concentration) and concentration > 0:
+            compartment = standardizeName(species.compartment or "Compartment")
+            value = (
+                str(int(concentration))
+                if concentration.is_integer()
+                else format(concentration, ".15g")
+            )
+            return f"({value} * __Avogadro__ * __compartment_{compartment}__)"
+        return "0"
+
+    @staticmethod
+    def _build_large_flat_artifacts(
+        model: SBMLModel,
+    ) -> tuple[SpeciesCompositionTable, list[Molecule], list[SeedSpeciesEntry]]:
+        entries: Dict[str, SCTEntry] = OrderedDict()
+        dependencies: Dict[str, set] = OrderedDict()
+        reverse_dependencies: Dict[str, set] = OrderedDict()
+        sorted_species = []
+        weights = []
+        molecule_types: Dict[str, Molecule] = OrderedDict()
+        seed_species = []
+        used_molecule_names = set()
+
+        def unique_molecule_name(base: str, index: int) -> str:
+            if base not in used_molecule_names:
+                used_molecule_names.add(base)
+                return base
+            candidate = index
+            while f"{base}_{candidate}" in used_molecule_names:
+                candidate += 1
+            name = f"{base}_{candidate}"
+            used_molecule_names.add(name)
+            return name
+
+        for row, (species_id, source_species) in enumerate(model.species.items(), 1):
+            base_name = standardizeName(
+                species_id or source_species.name or f"sp_{row}"
+            )
+            molecule_name = unique_molecule_name(base_name, row)
+            structure = Species()
+            structure.add_molecule(Molecule(molecule_name))
+            structure.renumber_bonds()
+
+            entries[species_id] = SCTEntry(
+                structure=structure,
+                components=[],
+                sbml_id=species_id,
+                is_elemental=True,
+                modifications={},
+                weight=0,
+                bonds=[],
+            )
+            dependencies[species_id] = set()
+            reverse_dependencies[species_id] = set()
+            sorted_species.append(species_id)
+            weights.append((species_id, 0))
+            molecule_types.setdefault(molecule_name, Molecule(molecule_name))
+            seed_species.append(
+                SeedSpeciesEntry(
+                    species=structure.copy(),
+                    concentration=Atomizer._initial_amount_expression(source_species),
+                    compartment=source_species.compartment,
+                    sbml_id=species_id,
+                )
+            )
+
+        return (
+            SpeciesCompositionTable(
+                entries=entries,
+                dependencies=dependencies,
+                reverse_dependencies=reverse_dependencies,
+                sorted_species=sorted_species,
+                weights=weights,
+            ),
+            list(molecule_types.values()),
+            seed_species,
+        )
+
     def atomize(self, sbml_string: str) -> AtomizerResult:
         try:
             logger.info("ATM003", "Parsing SBML model...")
@@ -216,6 +331,45 @@ class Atomizer:
                 f'Model "{self.model.name}": {len(self.model.species)} species, '
                 f"{len(self.model.reactions)} reactions",
             )
+            if self._should_use_large_flat_fast_path(sbml_string):
+                logger.warning(
+                    "ATM011",
+                    f"Large-model flat fast path enabled "
+                    f"(species={len(self.model.species)}, "
+                    f"reactions={len(self.model.reactions)}, "
+                    f"sbmlChars={len(sbml_string)})",
+                )
+                self.sct, molecule_types, seed_species = (
+                    self._build_large_flat_artifacts(self.model)
+                )
+                bngl, observable_map = generate_bngl(
+                    self.model,
+                    self.sct,
+                    molecule_types,
+                    seed_species,
+                    atomize=False,
+                    actions=str(self.options.get("actions", "") or ""),
+                    t_end=float(self.options.get("t_end", 10) or 10),
+                    n_steps=int(self.options.get("n_steps", 100) or 100),
+                )
+                self.databases = {
+                    "model": self.model,
+                    "sct": self.sct,
+                    "molecule_types": molecule_types,
+                    "seed_species": seed_species,
+                }
+                return AtomizerResult(
+                    bngl=bngl,
+                    database=self.databases,
+                    annotation=None,
+                    observable_map=observable_map,
+                    log=[
+                        f"Parsed SBML model: {len(self.model.species)} species, "
+                        f"{len(self.model.reactions)} reactions",
+                        "Large-model flat fast path enabled",
+                    ],
+                    success=True,
+                )
             logger.info("ATM005", "Building species composition table...")
             self.sct = build_species_composition_table(
                 self.model,
