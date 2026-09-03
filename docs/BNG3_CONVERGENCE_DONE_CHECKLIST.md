@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-02
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 7afeb80c7969e93068ba19f8d030cf193fed5769
-**Checklist refresh base:** 7afeb80c7969e93068ba19f8d030cf193fed5769 (public exact-head checkpoint for the Playground-derived Atomizer core facade exports)
-**Latest workflow checkpoint:** 7afeb80c7969e93068ba19f8d030cf193fed5769 (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33703241255, CodeQL run 33703241274, formatting run 33703241265)
+**Audited semantic code head:** 503541c25575622313c12e05c08e53861f47d4f3
+**Checklist refresh base:** 503541c25575622313c12e05c08e53861f47d4f3 (public exact-head checkpoint for the Playground-derived Atomizer writer facade exports)
+**Latest workflow checkpoint:** 503541c25575622313c12e05c08e53861f47d4f3 (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33703490651, CodeQL run 33703490479, formatting run 33703490602)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -2223,6 +2223,43 @@ completion gate.
   were queued at readback. This closes only the public core-facade export
   slice; deeper Atomizer behavior, parser/writer/SBML parity, independent
   round-trip evidence, and provenance remain open.
+- [x] Playground `src/lib/atomizer/index.ts:514-518` at reference
+  `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` re-exports the existing writer
+  functions `generateBNGL`, `bnglFunction`, and `bnglReaction`. The
+  tests-first BNG3 checkpoint is
+  `503541c25575622313c12e05c08e53861f47d4f3` in
+  `python/bionetgen/atomizer/modern/writer.py` and
+  `python/bionetgen/atomizer/modern/__init__.py`, with the source-derived
+  contract in
+  `tests/python/test_modern_atomizer_writer_rate_helpers.py::test_playground_writer_facade_exports_reference_function_names`.
+  The red-first command
+  `env PYTHONPATH=python:build/cpp python -m pytest tests/python/test_modern_atomizer_writer_rate_helpers.py -q -k writer_facade`
+  reported `1 failed, 4 deselected` because the reference spellings were
+  absent. The repaired command reports `1 passed, 4 deselected`; the writer
+  glob
+  `env PYTHONPATH=python:build/cpp python -m pytest tests/python/test_modern_atomizer_writer*.py -q`
+  reports `15 passed`; the modern Atomizer glob
+  `env PYTHONPATH=python:build/cpp python -m pytest tests/python/test_modern_atomizer*.py -q`
+  reports `110 passed`; the full Python gate
+  `env PYTHONPATH=python:build/cpp python -m pytest -q` reports
+  `285 passed, 27 skipped, 8 warnings` in `10.27s`; exact CTest
+  `ctest --test-dir build --output-on-failure` reports `190/190` in `1.60s`;
+  `ruff check python/bionetgen/atomizer/modern/writer.py python/bionetgen/atomizer/modern/__init__.py tests/python/test_modern_atomizer_writer_rate_helpers.py`
+  passes; `black --check python/bionetgen/atomizer/modern/writer.py
+  python/bionetgen/atomizer/modern/__init__.py
+  tests/python/test_modern_atomizer_writer_rate_helpers.py` reports `3 files
+  would be left unchanged`; and `git diff --check` passes. This Python-only
+  checkpoint leaves the native `build/cpp/bng_cpp` artifact unchanged at
+  SHA-256
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`.
+  Exact public branch head readback is
+  `503541c25575622313c12e05c08e53861f47d4f3`; hosted CodeQL
+  [33703490479](https://github.com/RuleWorld/BNG3/actions/runs/33703490479),
+  formatting [33703490602](https://github.com/RuleWorld/BNG3/actions/runs/33703490602),
+  and CI [33703490651](https://github.com/RuleWorld/BNG3/actions/runs/33703490651)
+  were queued at readback. This closes only the writer facade-name slice;
+  atomized/flat writer behavior, broader writer/parser/SBML parity,
+  independent round-trip evidence, and provenance remain open.
 - [ ] Complete or explicitly govern remaining modern reference modules:
   atomization/core, parser/bngXmlParser and parser/sbmlParser,
   validation/units, writer/bnglWriter, writer/eventActions, and
