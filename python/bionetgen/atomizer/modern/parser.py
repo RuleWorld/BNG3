@@ -21,6 +21,7 @@ from .types import (
     SBMLInitialAssignment,
     SBMLKineticLaw,
     SBMLModel,
+    SBMLModifierSpeciesReference,
     SBMLParameter,
     SBMLReaction,
     SBMLRule,
@@ -840,7 +841,9 @@ class SBMLParser:
                 ),
                 modifiers=(
                     [
-                        str(_attribute(reference, "species", "") or "")
+                        SBMLModifierSpeciesReference(
+                            str(_attribute(reference, "species", "") or "")
+                        )
                         for reference in _children(
                             modifier_parent, "modifierSpeciesReference"
                         )
@@ -1230,7 +1233,7 @@ class SBMLParser:
                     for i in range(item.getNumProducts())
                 ],
                 modifiers=[
-                    str(item.getModifier(i).getSpecies())
+                    SBMLModifierSpeciesReference(str(item.getModifier(i).getSpecies()))
                     for i in range(item.getNumModifiers())
                 ],
                 kinetic_law=law,

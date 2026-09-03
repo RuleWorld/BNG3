@@ -288,6 +288,32 @@ def test_playground_parser_preserves_compartment_type_reference():
     assert model.compartments["cell"].compartment_type == "cytosol"
 
 
+def test_playground_parser_preserves_modifier_species_records():
+    from bionetgen.atomizer.modern import SBMLParser
+
+    sbml = """<?xml version="1.0"?>
+    <sbml xmlns="http://www.sbml.org/sbml/level3/version1/core" level="3" version="1">
+      <model id="modifier_fixture">
+        <listOfSpecies>
+          <species id="A" compartment="cell"/>
+          <species id="E" compartment="cell"/>
+        </listOfSpecies>
+        <listOfReactions>
+          <reaction id="r">
+            <listOfModifiers>
+              <modifierSpeciesReference species="E"/>
+            </listOfModifiers>
+            <listOfProducts><speciesReference species="A"/></listOfProducts>
+          </reaction>
+        </listOfReactions>
+      </model>
+    </sbml>"""
+
+    model = SBMLParser().parse(sbml)
+
+    assert model.reactions["r"].modifiers[0].species == "E"
+
+
 def test_playground_parser_disambiguates_duplicate_global_parameters():
     """Mirror the reference parser's duplicate-id recovery contract."""
 
