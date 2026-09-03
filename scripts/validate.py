@@ -11,7 +11,9 @@ Usage:
 """
 
 import argparse
+import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -214,6 +216,56 @@ def run_validation(
     return results, details
 
 
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def write_validation_summary(
+    summary_file: Union[Path, str],
+    results: dict[str, int],
+    bng_cpp: Union[Path, str],
+    validate_dir: Union[Path, str],
+    *,
+    strict_references: bool,
+) -> None:
+    """Append an auditable reference-validation result to a Markdown file."""
+
+    summary_path = Path(summary_file)
+    bng_cpp_path = Path(bng_cpp)
+    total = sum(results.values())
+    source_revision = (
+        os.environ.get("GITHUB_SHA")
+        or os.environ.get("BNG3_SOURCE_REVISION")
+        or "unavailable"
+    )
+    skip_note = (
+        "explicit exclusions only"
+        if strict_references
+        else "explicit exclusions or no reference .net"
+    )
+    lines = [
+        "### BNG3 reference validation",
+        "",
+        f"- BNG3 source revision: `{source_revision}`",
+        f"- Validation corpus: `{Path(validate_dir)}`",
+        f"- bng_cpp: `{bng_cpp_path}`",
+        f"- bng_cpp SHA-256: `{_sha256_file(bng_cpp_path)}`",
+        f"- Skip policy: {skip_note}",
+        "",
+        "| Total | Pass | Fail | Error | Skip |",
+        "| ---: | ---: | ---: | ---: | ---: |",
+        f"| {total} | {results['pass']} | {results['fail']} | "
+        f"{results['error']} | {results['skip']} |",
+        "",
+    ]
+    with summary_path.open("a", encoding="utf-8") as stream:
+        stream.write("\n".join(lines))
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Validate bng_cpp against reference .net files"
@@ -240,6 +292,12 @@ def main():
         "--strict-references",
         action="store_true",
         help="Treat an unskipped model without a reference .net as an error",
+    )
+    parser.add_argument(
+        "--summary-file",
+        type=Path,
+        default=None,
+        help="Append an auditable Markdown result summary to this file",
     )
     args = parser.parse_args()
 
@@ -319,6 +377,19 @@ def main():
     )
     print(f"  SKIP:  {results['skip']} ({skip_note})")
     print("=" * 60)
+
+    if args.summary_file:
+        try:
+            write_validation_summary(
+                args.summary_file,
+                results,
+                bng_cpp,
+                validate_dir,
+                strict_references=args.strict_references,
+            )
+        except OSError as exc:
+            print(f"ERROR: Cannot write validation summary: {exc}")
+            sys.exit(1)
 
     if results["fail"] > 0 or results["error"] > 0:
         sys.exit(1)

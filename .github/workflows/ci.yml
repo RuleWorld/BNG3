@@ -233,7 +233,8 @@ jobs:
           BNG=build/cpp/bng_cpp${{ startsWith(matrix.os, 'windows') && '.exe' || '' }}
           python scripts/validate.py --bng-cpp "$BNG" --strict-references \
             --skip-file tests/validation/reference_exclusions.json \
-            --skip-profile pull_request --verbose
+            --skip-profile pull_request \
+            --summary-file "$GITHUB_STEP_SUMMARY" --verbose
 
   # ═══════════════════════════════════════════════════════════════════════════
   # BNGL corpus parse inventory (not an NFsim simulation check)

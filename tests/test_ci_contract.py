@@ -4,7 +4,11 @@ import json
 from pathlib import Path
 import re
 
-from scripts.validate import load_skip_models, run_validation
+from scripts.validate import (
+    load_skip_models,
+    run_validation,
+    write_validation_summary,
+)
 
 REPO = Path(__file__).resolve().parents[1]
 PYPROJECT = REPO / "pyproject.toml"
@@ -61,9 +65,7 @@ def test_pull_request_exercises_clean_source_distribution_install():
 
 def test_project_declares_click_as_runtime_dependency():
     project = PYPROJECT.read_text(encoding="utf-8")
-    dependencies = re.search(
-        r"(?ms)^dependencies\s*=\s*\[(?P<body>.*?)^\]", project
-    )
+    dependencies = re.search(r"(?ms)^dependencies\s*=\s*\[(?P<body>.*?)^\]", project)
     assert dependencies, "pyproject.toml must declare project dependencies"
     assert re.search(r"['\"]click(?:[<>=!~].*)?['\"]", dependencies.group("body"))
 
@@ -84,9 +86,9 @@ def test_python_matrix_installs_runtime_dependencies_before_no_deps_wheel():
         if re.search(r"(?:pip|python\s+-m\s+pip)\s+install", line)
     ]
     assert install_lines, "python-test must install package/test dependencies"
-    assert any(re.search(r"\bclick(?:[<>=!~].*)?\b", line) for line in install_lines), (
-        "python-test no-deps wheel path must install declared click dependency"
-    )
+    assert any(
+        re.search(r"\bclick(?:[<>=!~].*)?\b", line) for line in install_lines
+    ), "python-test no-deps wheel path must install declared click dependency"
 
 
 def test_python_tests_use_headless_isolated_matplotlib_cache():
@@ -109,9 +111,7 @@ def test_sbml_import_runs_as_a_real_isolated_ci_gate():
 def test_msvc_parser_headers_clear_windows_macros_before_antlr():
     """Windows SDK macros must not rewrite ANTLR enum members."""
 
-    compat = (REPO / "cpp" / "parser" / "antlr_compat.hpp").read_text(
-        encoding="utf-8"
-    )
+    compat = (REPO / "cpp" / "parser" / "antlr_compat.hpp").read_text(encoding="utf-8")
     assert re.search(r"#\s*undef\s+ERROR", compat)
     assert re.search(r"#\s*undef\s+TRUE", compat)
     assert re.search(r"#\s*undef\s+FALSE", compat)
@@ -132,7 +132,7 @@ def test_weekly_cross_validation_fails_closed_on_engine_or_output_errors():
     assert "set -euo pipefail" in job
     assert "SKIP" not in job
     assert "| Failed |" in job
-    assert "[ \"$FAIL\" -gt 0 ]" in job
+    assert '[ "$FAIL" -gt 0 ]' in job
     assert job.count("FAIL=$((FAIL + 1))") >= 3
 
 
@@ -161,6 +161,45 @@ def test_reference_ci_jobs_enable_strict_reference_validation():
     assert "--strict-references" in _workflow_job("validation")
     weekly_job = _workflow_job_from(WEEKLY_WORKFLOW, "bng-validation")
     assert "--strict-references" in weekly_job
+
+
+def test_reference_ci_jobs_emit_terminal_validation_summaries():
+    """PR and weekly reference jobs must publish their result table."""
+
+    assert '--summary-file "$GITHUB_STEP_SUMMARY"' in _workflow_job("validation")
+    assert '--summary-file "$GITHUB_STEP_SUMMARY"' in _workflow_job_from(
+        WEEKLY_WORKFLOW, "bng-validation"
+    )
+
+
+def test_validation_summary_records_counts_source_and_binary_digest(
+    tmp_path, monkeypatch
+):
+    """The reusable validation summary must preserve provenance and outcomes."""
+
+    bng_cpp = tmp_path / "bng_cpp"
+    bng_cpp.write_bytes(b"bng3-test-binary")
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_SHA", "source-sha-123")
+
+    write_validation_summary(
+        summary,
+        {
+            "pass": 4,
+            "fail": 1,
+            "skip": 2,
+            "error": 3,
+        },
+        bng_cpp,
+        tmp_path / "Validate",
+        strict_references=True,
+    )
+
+    text = summary.read_text(encoding="utf-8")
+    assert "source-sha-123" in text
+    assert "bng_cpp SHA-256" in text
+    assert "| 10 | 4 | 1 | 3 | 2 |" in text
+    assert "explicit exclusions only" in text
 
 
 def test_reference_exclusion_manifest_is_explicit_and_corpus_backed():

@@ -60,7 +60,8 @@ jobs:
           fi
           python scripts/validate.py --bng-cpp "$BNG" --strict-references \
             --skip-file tests/validation/reference_exclusions.json \
-            --skip-profile weekly --verbose
+            --skip-profile weekly \
+            --summary-file "$GITHUB_STEP_SUMMARY" --verbose
 
   # ═══════════════════════════════════════════════════════════════════════════
   # NFsim execution smoke test (not a statistical parity check)
