@@ -27,12 +27,71 @@ class EventTranslationContext:
     base_t_end: float = 10
     base_steps: int = 100
 
+    @property
+    def resolveSpeciesPattern(self):
+        return self.resolve_species_pattern
+
+    @resolveSpeciesPattern.setter
+    def resolveSpeciesPattern(self, value):
+        self.resolve_species_pattern = value
+
+    @property
+    def resolveParam(self):
+        return self.resolve_param
+
+    @resolveParam.setter
+    def resolveParam(self, value):
+        self.resolve_param = value
+
+    @property
+    def isParam(self):
+        return self.is_param
+
+    @isParam.setter
+    def isParam(self, value):
+        self.is_param = value
+
+    @property
+    def baseTEnd(self):
+        return self.base_t_end
+
+    @baseTEnd.setter
+    def baseTEnd(self, value):
+        self.base_t_end = value
+
+    @property
+    def baseSteps(self):
+        return self.base_steps
+
+    @baseSteps.setter
+    def baseSteps(self, value):
+        self.base_steps = value
+
+
+@dataclass
+class EventSet:
+    kind: str
+    target: str
+    value: float
+    variable: str
+
 
 @dataclass
 class EventTranslationResult:
     actions_block: Optional[str]
     converted: int
     untranslated: List[Tuple[SBMLEvent, str]]
+
+    @property
+    def actionsBlock(self):
+        return self.actions_block
+
+    @actionsBlock.setter
+    def actionsBlock(self, value):
+        self.actions_block = value
+
+
+EventActionsResult = EventTranslationResult
 
 
 def _tokenize(expression: str) -> Optional[List[str]]:
@@ -406,10 +465,18 @@ def synthesize_event_actions(
     return EventTranslationResult("\n".join(lines), len(scheduled), untranslated)
 
 
+foldNumeric = fold_numeric
+parseTimeThreshold = parse_time_threshold
+
+
 __all__ = [
+    "EventActionsResult",
+    "EventSet",
     "EventTranslationContext",
     "EventTranslationResult",
+    "foldNumeric",
     "fold_numeric",
+    "parseTimeThreshold",
     "parse_time_threshold",
     "synthesize_event_actions",
 ]

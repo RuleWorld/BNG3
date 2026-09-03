@@ -55,9 +55,13 @@ from .parser import (
 )
 from .multi import MultiParseResult, parse_multi_package
 from .events import (
+    EventActionsResult,
+    EventSet,
     EventTranslationContext,
     EventTranslationResult,
+    foldNumeric,
     fold_numeric,
+    parseTimeThreshold,
     parse_time_threshold,
     synthesize_event_actions,
 )
@@ -582,6 +586,8 @@ __all__ = [
     "DefaultDict",
     "Databases",
     "EditDistanceMatrixResult",
+    "EventActionsResult",
+    "EventSet",
     "EventTranslationContext",
     "EventTranslationResult",
     "LogMessage",
@@ -656,6 +662,7 @@ __all__ = [
     "find_longest_substring",
     "find_redundant_rules",
     "fold_numeric",
+    "foldNumeric",
     "fetch_uniprot_entry",
     "generate_bngl",
     "generateBNGL",
@@ -688,6 +695,7 @@ __all__ = [
     "read_from_string",
     "resolve_unit_factor",
     "parse_time_threshold",
+    "parseTimeThreshold",
     "parse_multi_package",
     "parse_resource_uri",
     "parse_species_annotations",
