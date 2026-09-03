@@ -607,6 +607,7 @@ class SBMLParser:
                 units=str(_attribute(item, "units", "") or ""),
                 constant=_bool(_attribute(item, "constant"), True),
                 outside=(str(_attribute(item, "outside", "") or "") or None),
+                compartment_type=_attribute(item, "compartmentType"),
                 size_set=(
                     _attribute(item, "size") is not None
                     or _attribute(item, "volume") is not None
@@ -1068,6 +1069,7 @@ class SBMLParser:
                     bool(item.getConstant()) if hasattr(item, "getConstant") else True
                 ),
                 outside=str(item.getOutside() or attrs.get("outside") or "") or None,
+                compartment_type=attrs.get("compartmentType"),
                 size_set="size" in attrs or "volume" in attrs,
             )
         return result
