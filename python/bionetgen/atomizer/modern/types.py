@@ -341,7 +341,7 @@ class AtomizerResult:
     database: Any = None
     annotation: Any = None
     observable_map: Mapping[str, str] = field(default_factory=OrderedDict)
-    log: List[str] = field(default_factory=list)
+    log: List[Any] = field(default_factory=list)
     success: bool = True
     error: Optional[str] = None
 

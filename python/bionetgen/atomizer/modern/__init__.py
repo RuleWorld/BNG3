@@ -380,11 +380,7 @@ class Atomizer:
                     database=self.databases,
                     annotation=None,
                     observable_map=observable_map,
-                    log=[
-                        f"Parsed SBML model: {len(self.model.species)} species, "
-                        f"{len(self.model.reactions)} reactions",
-                        "Large-model flat fast path enabled",
-                    ],
+                    log=logger.getMessages(),
                     success=True,
                 )
             logger.info("ATM005", "Building species composition table...")
@@ -427,17 +423,12 @@ class Atomizer:
             annotation = (
                 self._annotation_data() if self.options.get("annotation") else None
             )
-            log = [
-                f"Parsed SBML model: {len(self.model.species)} species, {len(self.model.reactions)} reactions",
-                f"Disambiguated {disambiguated} colliding species",
-                f"Found {len(molecule_types)} molecule types",
-            ]
             return AtomizerResult(
                 bngl=bngl,
                 database=self.databases,
                 annotation=annotation,
                 observable_map=observable_map,
-                log=log,
+                log=logger.getMessages(),
                 success=True,
             )
         except Exception as exc:
@@ -447,7 +438,7 @@ class Atomizer:
                 database=self.databases,
                 annotation=None,
                 observable_map={},
-                log=[],
+                log=logger.getMessages(),
                 success=False,
                 error=str(exc),
             )

@@ -896,6 +896,36 @@ def test_playground_atomizer_reports_lifecycle_diagnostics():
     ]
 
 
+def test_playground_atomizer_result_returns_structured_log_records():
+    from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.atomizer.modern.helpers import LogMessage, logger
+
+    logger.clear()
+    try:
+        result = Atomizer(log_level="INFO", quiet_mode=True).atomize(SBML_FIXTURE)
+    finally:
+        logger.clear()
+        logger.setLevel("WARNING")
+        logger.setQuietMode(False)
+
+    assert result.success is True
+    assert result.log
+    assert all(isinstance(message, LogMessage) for message in result.log)
+    assert [
+        (message.code, message.message)
+        for message in result.log
+        if message.code.startswith("ATM")
+    ] == [
+        ("ATM003", "Parsing SBML model..."),
+        ("ATM004", 'Model "Playground fixture": 4 species, 2 reactions'),
+        ("ATM005", "Building species composition table..."),
+        ("ATM006", "Found 4 molecule types"),
+        ("ATM007", "Found 4 seed species"),
+        ("ATM008", "Generating BNGL model..."),
+        ("ATM009", "BNGL generation complete"),
+    ]
+
+
 def test_playground_atomizer_facade_exposes_reference_method_names():
     from bionetgen.atomizer.modern import (
         Atomizer,
