@@ -770,11 +770,15 @@ class SBMLParser:
             local_parent = _first_child(item, "listOfParameters")
         if local_parent is not None:
             local_aliases: Dict[str, str] = {}
-            for local in _children(local_parent, "localParameter"):
+            for local_index, local in enumerate(
+                _children(local_parent, "localParameter")
+            ):
                 raw_local_id = str(_attribute(local, "id", "") or "")
                 if not raw_local_id:
                     continue
                 local_id = standardize_name(raw_local_id)
+                if local_id in local_aliases:
+                    local_id = f"{local_id}_{local_index + 1}"
                 parameter = SBMLParameter(
                     id=local_id,
                     name=str(_attribute(local, "name", local_id) or local_id),

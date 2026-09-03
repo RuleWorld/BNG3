@@ -396,6 +396,39 @@ def test_playground_parser_standardizes_parameter_ids_before_formula_aliasing():
     assert reaction.kinetic_law.math == "time_id + k"
 
 
+def test_playground_parser_suffixes_duplicate_local_parameter_ids():
+    from bionetgen.atomizer.modern import SBMLParser
+
+    sbml = """<?xml version="1.0"?>
+    <sbml xmlns="http://www.sbml.org/sbml/level3/version1/core" level="3" version="1">
+      <model id="duplicate_local_parameter">
+        <listOfReactions>
+          <reaction id="r" reversible="false">
+            <kineticLaw>
+              <listOfLocalParameters>
+                <localParameter id="time" name="time" value="5"/>
+                <localParameter id="time" name="alternate_time" value="6"/>
+              </listOfLocalParameters>
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><plus/><ci>time</ci><ci>alternate_time</ci></apply>
+              </math>
+            </kineticLaw>
+          </reaction>
+        </listOfReactions>
+      </model>
+    </sbml>
+    """
+
+    model = SBMLParser().parse(sbml)
+    reaction = model.reactions["r"]
+    assert reaction.kinetic_law is not None
+    assert [parameter.id for parameter in reaction.kinetic_law.local_parameters] == [
+        "time_id",
+        "time_id_2",
+    ]
+    assert reaction.kinetic_law.math == "time_id + time_id_2"
+
+
 def test_playground_parser_reports_model_summary():
     from bionetgen.atomizer.modern import SBMLParser
     from bionetgen.atomizer.modern.helpers import logger
