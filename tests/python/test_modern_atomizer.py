@@ -823,6 +823,41 @@ def test_playground_atomizer_reports_lifecycle_diagnostics():
     ]
 
 
+def test_playground_atomizer_facade_exposes_reference_method_names():
+    from bionetgen.atomizer.modern import (
+        Atomizer,
+        sbmlToBngl,
+        sbmlToBnglAtomized,
+        sbmlToBnglFlat,
+        sbml_to_bngl,
+        sbml_to_bngl_atomized,
+        sbml_to_bngl_flat,
+    )
+
+    method_aliases = {
+        "setOptions": "set_options",
+        "getOptions": "get_options",
+        "flatTranslation": "flat_translation",
+        "fullAtomization": "full_atomization",
+        "getModel": "get_model",
+        "getSCT": "get_sct",
+        "getUniProtIds": "get_uniprot_ids",
+        "getDatabases": "get_databases",
+        "analyzeNaming": "analyze_naming",
+        "analyzeReactionPatterns": "analyze_reaction_patterns",
+    }
+    for reference_name, python_name in method_aliases.items():
+        assert getattr(Atomizer, reference_name) is getattr(Atomizer, python_name)
+
+    function_aliases = {
+        sbmlToBngl: sbml_to_bngl,
+        sbmlToBnglFlat: sbml_to_bngl_flat,
+        sbmlToBnglAtomized: sbml_to_bngl_atomized,
+    }
+    for reference_function, python_function in function_aliases.items():
+        assert reference_function is python_function
+
+
 def test_playground_atomizer_uses_large_flat_fast_path(monkeypatch):
     from bionetgen.atomizer.modern import Atomizer
     from bionetgen.atomizer.modern.helpers import logger

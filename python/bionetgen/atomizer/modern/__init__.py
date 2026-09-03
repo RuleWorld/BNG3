@@ -529,6 +529,20 @@ class Atomizer:
         }
 
 
+# Preserve the public method spellings from the TypeScript Atomizer facade
+# alongside BNG3's snake_case Python API.
+Atomizer.setOptions = Atomizer.set_options
+Atomizer.getOptions = Atomizer.get_options
+Atomizer.flatTranslation = Atomizer.flat_translation
+Atomizer.fullAtomization = Atomizer.full_atomization
+Atomizer.getModel = Atomizer.get_model
+Atomizer.getSCT = Atomizer.get_sct
+Atomizer.getUniProtIds = Atomizer.get_uniprot_ids
+Atomizer.getDatabases = Atomizer.get_databases
+Atomizer.analyzeNaming = Atomizer.analyze_naming
+Atomizer.analyzeReactionPatterns = Atomizer.analyze_reaction_patterns
+
+
 def sbml_to_bngl(
     sbml_string: str, options: Optional[Mapping[str, Any]] = None, **kwargs: Any
 ) -> AtomizerResult:
@@ -545,6 +559,12 @@ def sbml_to_bngl_atomized(
     sbml_string: str, options: Optional[Mapping[str, Any]] = None, **kwargs: Any
 ) -> AtomizerResult:
     return Atomizer(options, atomize=True, **kwargs).full_atomization(sbml_string)
+
+
+# Preserve the TypeScript convenience-function spellings for direct callers.
+sbmlToBngl = sbml_to_bngl
+sbmlToBnglFlat = sbml_to_bngl_flat
+sbmlToBnglAtomized = sbml_to_bngl_atomized
 
 
 __all__ = [
@@ -672,6 +692,9 @@ __all__ = [
     "sbml_to_bngl",
     "sbml_to_bngl_atomized",
     "sbml_to_bngl_flat",
+    "sbmlToBngl",
+    "sbmlToBnglAtomized",
+    "sbmlToBnglFlat",
     "species_equal",
     "splitReversibleRate",
     "split_reversible_rate",
