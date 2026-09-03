@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-03
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 1662820a0222add1cd9d44e8dd64724590c4bce8
-**Checklist refresh base:** 1662820a0222add1cd9d44e8dd64724590c4bce8 (local exact-head checkpoint for initial-assignment and assignment-rule metadata parity; public synchronization is deferred by the local-only work instruction)
-**Latest workflow checkpoint:** 575246a39688e84d0bca856dd1a16da838e97159 (local-only; no hosted run was created because this checkpoint has not been pushed)
+**Audited semantic code head:** c6780bb3f7f65c46233f23750047b5c45e52afca
+**Checklist refresh base:** c6780bb3f7f65c46233f23750047b5c45e52afca (local exact-head checkpoint for structural C++/Perl validation; public synchronization is deferred by the local-only work instruction)
+**Latest workflow checkpoint:** c6780bb3f7f65c46233f23750047b5c45e52afca (local-only; no hosted run was created because this checkpoint has not been pushed)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -74,6 +74,46 @@ completion gate.
   paused. Full reverse SBML consumption of assignment metadata, complete
   writer/schema validation, independent corpus parity, and release gates
   remain open.
+
+- [x] Local-only structural C++/Perl validation checkpoint
+  `c6780bb3f7f65c46233f23750047b5c45e52afca` replaces the weekly shell
+  species-count comparison with `scripts/cross_validate.py:1-376`. Both
+  engines now receive a staged network-only model in isolated temporary
+  directories; model construction and `generate_network` are retained while
+  simulation/output actions are removed, and the generated NETs are compared
+  through `tests/validation/compare.py` graph-aware species, reaction, rate,
+  and observable-group semantics. The weekly job wiring is at
+  `.github/workflows/weekly.yml:199-225`; it installs NumPy, records the exact
+  BNG3 source revision, and emits a terminal provenance summary with both
+  engine digests. Source/oracle tests in `tests/test_ci_contract.py:134-330`
+  were red first during collection (`ModuleNotFoundError` before the new
+  runner existed) and the repaired focused command reports `20 passed in
+  0.24s`; Black (`--target-version py39`), Ruff, and `git diff --check` pass.
+  Against independent BNG2 source revision
+  `fde0cd6a522c9f988d5495db31c70ce0f98e744b` at
+  `/private/tmp/bng2-oracle.TToh58/source/bng2`, the bounded generation-only
+  matrix (`simple_system`, `test_assignment`, `test_compartment_XML`,
+  `test_sbml_flat`, `test_tfun_observable`, `test_time`) was run with
+  `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=python:build/cpp python -u
+  scripts/cross_validate.py --bng-cpp build/cpp/bng_cpp --bng-perl
+  /private/tmp/bng2-oracle.TToh58/source/bng2/BNG2.pl --models-dir
+  tests/validation/Validate --timeout 30 --model simple_system --model
+  test_assignment --model test_sbml_flat --model test_compartment_XML --model
+  test_time --model test_tfun_observable --verbose`. It reports `5` passes,
+  `0` failures, and `1` error; `test_sbml_flat` is an explicit BNG2
+  `test_sbml_flat` is an explicit BNG2
+  `sbmlTranslator` asset error. The independent and repository BNG2.pl
+  scripts both have SHA-256
+  `cf5fd82d3df9b84835d29234bd32268b87eaa985dd221bd5d39aadef744795f4`, and
+  the BNG3 native binary has SHA-256
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`.
+  A full 71-model local sweep was stopped before a terminal result because a
+  large model exceeded the efficient local loop; no full-corpus parity claim
+  is made. Full Python remains `333 passed, 27 skipped, 8 warnings`, and CTest
+  remains `190/190`; no hosted run or public SHA readback is claimed while
+  `gh` and push are paused. Independent oracle asset/build retention, full
+  cross-corpus parity, SBML translator coverage, and all broader convergence
+  gates remain open.
 
 - [x] Local-only modern-writer identifier and fixed-seed lookup checkpoint
   `0d921d6639619b99ae08f35379af07bea940a2b1` ports the pinned Playground
