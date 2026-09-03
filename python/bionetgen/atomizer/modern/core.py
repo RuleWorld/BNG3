@@ -9,6 +9,7 @@ silently guessed.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from collections import OrderedDict
@@ -203,10 +204,10 @@ def analyze_naming_conventions(
     pair_classification: Dict[str, List[Tuple[str, str]]] = OrderedDict()
     keys: List[str] = []
     for pair, difference in zip(pairs, differences):
-        key = tuple(difference)
+        key = json.dumps(difference, ensure_ascii=False, separators=(",", ":"))
         if key not in keys:
             keys.append(key)
-        modification = conventions.get(key)
+        modification = conventions.get(tuple(difference))
         if modification:
             pair_classification.setdefault(modification, []).append(pair)
     from .helpers import logger

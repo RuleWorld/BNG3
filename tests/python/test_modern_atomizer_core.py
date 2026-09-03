@@ -286,6 +286,12 @@ def test_playground_naming_analysis_reports_summary():
     assert messages[0].message == "Naming analysis: 1 similar pairs, 1 classifications"
 
 
+def test_playground_naming_analysis_returns_json_string_keys():
+    result = analyze_naming_conventions(["A", "A_P"])
+
+    assert result["keys"] == ['["+ _","+ P"]']
+
+
 def test_playground_reaction_analysis_reports_summary():
     model = SBMLModel(
         id="model",
