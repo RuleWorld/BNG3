@@ -4,8 +4,8 @@
 **Last audited:** 2026-09-03
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 983e5cd4473fddf8849fdaf9e4861fac521ecd66
-**Checklist refresh base:** 575246a39688e84d0bca856dd1a16da838e97159 (local exact-head checkpoint for reference-validation terminal summaries; public synchronization is deferred by the local-only work instruction)
+**Audited semantic code head:** 0d921d6639619b99ae08f35379af07bea940a2b1
+**Checklist refresh base:** 0d921d6639619b99ae08f35379af07bea940a2b1 (local exact-head checkpoint for modern-writer identifier and seed-lookup parity; public synchronization is deferred by the local-only work instruction)
 **Latest workflow checkpoint:** 575246a39688e84d0bca856dd1a16da838e97159 (local-only; no hosted run was created because this checkpoint has not been pushed)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -47,6 +47,33 @@ completion.
 
 These items describe the current checkpoint. They do not satisfy the full
 completion gate.
+
+- [x] Local-only modern-writer identifier and fixed-seed lookup checkpoint
+  `0d921d6639619b99ae08f35379af07bea940a2b1` ports the pinned Playground
+  `src/lib/atomizer/writer/bnglWriter.ts:80-103,1050-1060,1244-1246,1427-1446`
+  contract at source revision
+  `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c`. The Python writer now uses the
+  source's function-only reserved identifier set for function names and formal
+  arguments, rewrites calls in emitted function bodies, and adds the `$` form
+  of fixed seed patterns to the returned `pattern_to_id` lookup while keeping
+  the canonical mapping unchanged. Source-derived tests in
+  `tests/python/test_modern_atomizer_writer_parameters.py` and
+  `tests/python/test_modern_atomizer.py` were red first: the strict identifier
+  test reported `1 failed, 6 deselected` and the fixed-seed mapping test
+  reported `1 failed, 66 deselected`; the repaired focused command reported
+  `5 passed, 69 deselected in 0.69s`. The modern Atomizer gate reports `155
+  passed in 0.65s`; the full local command
+  `PYTHONPATH=python:build/cpp python -m pytest tests/python -q -p no:cacheprovider`
+  reports `330 passed, 27 skipped, 8 warnings in 15.59s`; and
+  `ctest --test-dir build --output-on-failure` reports `190/190` in `1.72s`.
+  Black (`--target-version py39`), Ruff, and `git diff --check` pass. No
+  generated artifacts were committed; the BNG3 native binary remains SHA-256
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`, and
+  the independent NFsim binary remains SHA-256
+  `c30a80b6ff9cf1fae04bc9f45556c4d5fa9c3b00d053fb6abade80436ee46394`.
+  No hosted run or public SHA readback is claimed while `gh` and push are
+  paused. Full writer/schema validation, complete SBML/SBML-Multi round trips,
+  independent corpus parity, and release gates remain open.
 
 - [x] Local-only BNG-XML fallback source-alignment checkpoint
   `983e5cd4473fddf8849fdaf9e4861fac521ecd66` aligns
