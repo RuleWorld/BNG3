@@ -961,6 +961,25 @@ def test_playground_atomizer_facade_exposes_reference_method_names():
         assert reference_function is python_function
 
 
+def test_playground_atomizer_returns_databases_container_in_result():
+    from bionetgen.atomizer.modern import Atomizer, Databases
+
+    atomizer = Atomizer(quiet_mode=True)
+    assert isinstance(atomizer.getDatabases(), Databases)
+
+    result = atomizer.atomize(SBML_FIXTURE)
+
+    assert result.success is True
+    assert isinstance(result.database, Databases)
+    assert result.database is atomizer.getDatabases()
+    assert result.database.getRawDatabase() == {}
+    assert result.database.getLabelDictionary() == {}
+    assert result.database.getTranslator() == {}
+
+    atomizer.clear()
+    assert isinstance(atomizer.getDatabases(), Databases)
+
+
 def test_playground_atomizer_uses_large_flat_fast_path(monkeypatch):
     from bionetgen.atomizer.modern import Atomizer
     from bionetgen.atomizer.modern.helpers import logger

@@ -209,7 +209,7 @@ class Atomizer:
         self.parser = SBMLParser()
         self.model = None
         self.sct = None
-        self.databases: Dict[str, Any] = {}
+        self.databases = Databases()
         self._configure_logger()
 
     def _configure_logger(self) -> None:
@@ -369,12 +369,6 @@ class Atomizer:
                     t_end=float(self.options.get("t_end", 10) or 10),
                     n_steps=int(self.options.get("n_steps", 100) or 100),
                 )
-                self.databases = {
-                    "model": self.model,
-                    "sct": self.sct,
-                    "molecule_types": molecule_types,
-                    "seed_species": seed_species,
-                }
                 return AtomizerResult(
                     bngl=bngl,
                     database=self.databases,
@@ -414,12 +408,6 @@ class Atomizer:
                 n_steps=int(self.options.get("n_steps", 100) or 100),
             )
             logger.info("ATM009", "BNGL generation complete")
-            self.databases = {
-                "model": self.model,
-                "sct": self.sct,
-                "molecule_types": molecule_types,
-                "seed_species": seed_species,
-            }
             annotation = (
                 self._annotation_data() if self.options.get("annotation") else None
             )
@@ -465,7 +453,7 @@ class Atomizer:
     def get_sct(self):
         return self.sct
 
-    def get_databases(self) -> Dict[str, Any]:
+    def get_databases(self) -> Databases:
         return self.databases
 
     def get_uniprot_ids(self, species_id: str) -> list:
@@ -491,7 +479,7 @@ class Atomizer:
     def clear(self) -> None:
         self.model = None
         self.sct = None
-        self.databases = {}
+        self.databases = Databases()
         logger.clear()
 
     def _annotation_data(self) -> Dict[str, Any]:
