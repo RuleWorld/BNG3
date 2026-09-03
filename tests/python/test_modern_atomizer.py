@@ -429,6 +429,48 @@ def test_playground_parser_suffixes_duplicate_local_parameter_ids():
     assert reaction.kinetic_law.math == "time_id + time_id_2"
 
 
+def test_playground_writer_groups_duplicate_seed_patterns():
+    from bionetgen.atomizer.modern import (
+        Molecule,
+        SBMLModel,
+        SBMLSpecies,
+        SeedSpeciesEntry,
+        Species,
+        SpeciesCompositionTable,
+        write_seed_species,
+    )
+
+    structure = Species()
+    structure.add_molecule(Molecule("A"))
+    seeds = [
+        SeedSpeciesEntry(structure.copy(), "1", "cell", "A"),
+        SeedSpeciesEntry(structure.copy(), "2", "cell", "B"),
+        SeedSpeciesEntry(structure.copy(), "3", "cell", "C"),
+        SeedSpeciesEntry(structure.copy(), "4", "cell", "D"),
+    ]
+
+    lines, species_to_pattern, pattern_to_id = write_seed_species(
+        seeds,
+        SpeciesCompositionTable(),
+        SBMLModel(
+            id="duplicate_seed",
+            species={
+                "C": SBMLSpecies(id="C", constant=True),
+                "D": SBMLSpecies(id="D", constant=True),
+            },
+        ),
+    )
+
+    assert lines == ["@cell:M_A() 1", "$@cell:M_A() 3"]
+    assert species_to_pattern == {
+        "A": "@cell:M_A()",
+        "B": "@cell:M_A()",
+        "C": "@cell:M_A()",
+        "D": "@cell:M_A()",
+    }
+    assert pattern_to_id == {"@cell:M_A()": "A"}
+
+
 def test_playground_parser_reports_model_summary():
     from bionetgen.atomizer.modern import SBMLParser
     from bionetgen.atomizer.modern.helpers import logger

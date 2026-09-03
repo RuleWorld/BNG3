@@ -1496,6 +1496,9 @@ def write_seed_species(
     lines: List[str] = []
     sbml_to_pattern: Dict[str, str] = OrderedDict()
     pattern_to_id: Dict[str, str] = OrderedDict()
+    # Playground writeSeedSpecies coalesces identical patterns while retaining
+    # separate fixed and dynamic seed declarations.
+    grouped: "OrderedDict[Tuple[bool, str], Tuple[str, object]]" = OrderedDict()
     seed_symbols = _seed_symbol_values(model, seed_species)
     for seed in seed_species:
         pattern = _pattern(seed.species, seed.compartment)
@@ -1524,10 +1527,13 @@ def write_seed_species(
                 if folded is not None
                 else _map_seed_identifiers(converted, model)
             )
-        line = f"{'$' if fixed else ''}{pattern} {concentration}"
-        lines.append(line)
+        key = (fixed, pattern)
+        if key not in grouped:
+            grouped[key] = (pattern, concentration)
         sbml_to_pattern[seed.sbml_id] = pattern
-        pattern_to_id[pattern] = seed.sbml_id
+        pattern_to_id.setdefault(pattern, seed.sbml_id)
+    for (fixed, _group_pattern), (pattern, concentration) in grouped.items():
+        lines.append(f"{'$' if fixed else ''}{pattern} {concentration}")
     return lines, sbml_to_pattern, pattern_to_id
 
 
