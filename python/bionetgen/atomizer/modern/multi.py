@@ -129,7 +129,17 @@ def _as_root(document: Union[str, Any]) -> Any:
     return document
 
 
-def _multi_namespace(root: Any) -> Optional[str]:
+def _multi_namespace(root: Any, source: Optional[str] = None) -> Optional[str]:
+    if source:
+        match = re.search(
+            r"\bxmlns:([A-Za-z0-9_]+)\s*=\s*[\"']"
+            r"(http://www\.sbml\.org/sbml/level3/version\d+/multi/version\d+)"
+            r"[\"']",
+            source,
+            re.IGNORECASE,
+        )
+        if match:
+            return match.group(2)
     for element in root.iter():
         namespace = _namespace(element.tag)
         if "/multi/" in namespace:
@@ -169,10 +179,11 @@ def _declaration(species_type: _SpeciesType, binding_sites: set) -> str:
 def parse_multi_package(document: Union[str, Any]) -> MultiParseResult:
     """Extract canonical Multi-package molecule/complex references."""
 
+    source = document if isinstance(document, str) else None
     root = _as_root(document)
     if root is None:
         return MultiParseResult()
-    namespace = _multi_namespace(root)
+    namespace = _multi_namespace(root, source)
     if namespace is None:
         return MultiParseResult()
 
