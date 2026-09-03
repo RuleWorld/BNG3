@@ -6,7 +6,7 @@
 **Working branch:** codex/bng3-integration-foundations
 **Audited semantic code head:** 871d261442be2f4808cbcabed51f6a017ba5488a
 **Checklist refresh base:** 871d261442be2f4808cbcabed51f6a017ba5488a (public exact-head checkpoint for the Playground-derived SBML parameter-alias formula normalization)
-**Latest workflow checkpoint:** 83ca824644b597d7c705b2ef28df0eefc7f279a8 (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33699449992, CodeQL run 33699450088, formatting run 33699449970)
+**Latest workflow checkpoint:** 0810dc6c6e9fda597f3ced78119d95457631dbf0 (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33700089647, CodeQL run 33700089708, formatting run 33700089720)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -2051,33 +2051,40 @@ completion gate.
   reports `254 passed, 27 skipped, 9 warnings`, and exact-head Release/Ninja
   CTest reports `185/185`. This closes only the bounded time-rate writer
   slice; broader writer/parser/SBML parity remains open.
-- [x] Playground `src/lib/atomizer/parser/sbmlParser.ts:1331-1353,1677-1719`
+- [x] Playground `src/lib/atomizer/parser/sbmlParser.ts:1331-1353,1650-1721`
   at reference `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` coalesces duplicate
-  global parameter declarations when their values match, remaps conflicting
-  IDs to the next available suffix while emitting `SBM010`, and normalizes
-  registered ID/name aliases in extracted math with local-parameter precedence.
+  global parameter declarations when their values match, canonicalizes raw
+  parameter IDs with `standardizeName`, remaps conflicting IDs to the next
+  available suffix while emitting `SBM010`, and normalizes registered ID/name
+  aliases in extracted math with local-parameter precedence.
   The tests-first BNG3 checkpoints are `18e8d8fad1871fdda826c395af878ada5614382b`
-  and `871d261442be2f4808cbcabed51f6a017ba5488a` in
+  and `871d261442be2f4808cbcabed51f6a017ba5488a` plus the parameter-ID
+  checkpoint `0810dc6c6e9fda597f3ced78119d95457631dbf0` in
   `python/bionetgen/atomizer/modern/parser.py`, with contracts in
-  `tests/python/test_modern_atomizer.py::test_playground_parser_disambiguates_duplicate_global_parameters`
-  and `tests/python/test_modern_atomizer.py::test_playground_parser_normalizes_duplicate_parameter_name_aliases_in_math`.
+  `tests/python/test_modern_atomizer.py::test_playground_parser_disambiguates_duplicate_global_parameters`,
+  `tests/python/test_modern_atomizer.py::test_playground_parser_normalizes_duplicate_parameter_name_aliases_in_math`,
+  and `tests/python/test_modern_atomizer.py::test_playground_parser_standardizes_parameter_ids_before_formula_aliasing`.
   The alias red-first command
   `env PYTHONPATH=python:build/cpp python -m pytest tests/python/test_modern_atomizer.py -q -k normalizes_duplicate`
   reported `1 failed, 52 deselected`; the repaired duplicate-focused command
-  reports `2 passed, 51 deselected`. The modern Atomizer glob reports `103
-  passed`, the full Python gate reports `278 passed, 27 skipped, 8 warnings`
-  in `9.90s`, exact CTest reports `190/190` in `1.14s`, Ruff passes, and
+  reports `2 passed, 51 deselected`. The parameter-ID red-first command
+  `env PYTHONPATH=python:build/cpp python -m pytest tests/python/test_modern_atomizer.py -q -k standardizes_parameter_ids`
+  reported `1 failed, 53 deselected`; the repaired combined command reports
+  `3 passed, 51 deselected`. The modern Atomizer glob reports `104 passed`,
+  the full Python gate reports `279 passed, 27 skipped, 8 warnings` in
+  `10.13s`, exact CTest reports `190/190` in `1.15s`, Ruff passes, and
   Black reports `186 files would be left unchanged`. This Python-only
   checkpoint leaves the native `build/cpp/bng_cpp` artifact unchanged at
   SHA-256 `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`.
   Exact public PR/ref head readback is
-  `871d261442be2f4808cbcabed51f6a017ba5488a`; hosted CI
-  [33698137348](https://github.com/RuleWorld/BNG3/actions/runs/33698137348),
-  CodeQL [33698137323](https://github.com/RuleWorld/BNG3/actions/runs/33698137323),
-  and formatting [33698137391](https://github.com/RuleWorld/BNG3/actions/runs/33698137391)
+  `0810dc6c6e9fda597f3ced78119d95457631dbf0`; hosted CI
+  [33700089647](https://github.com/RuleWorld/BNG3/actions/runs/33700089647),
+  CodeQL [33700089708](https://github.com/RuleWorld/BNG3/actions/runs/33700089708),
+  and formatting [33700089720](https://github.com/RuleWorld/BNG3/actions/runs/33700089720)
   were queued at readback. This closes duplicate-ID recovery and formula
-  alias normalization for the modern parser; broader parser/SBML parity,
-  output alias propagation, and independent round-trip evidence remain open.
+  alias normalization plus canonical parameter-ID recovery for the modern
+  parser; broader parser/SBML parity, output alias propagation, and
+  independent round-trip evidence remain open.
 - [ ] Complete or explicitly govern remaining modern reference modules:
   atomization/core, parser/bngXmlParser and parser/sbmlParser,
   validation/units, writer/bnglWriter, writer/eventActions, and
