@@ -163,6 +163,31 @@ def test_playground_data_contract_exposes_camel_case_fields():
     assert result.observable_map == {"B": "B"}
 
 
+def test_playground_data_contract_exposes_missing_sbml_record_types():
+    from bionetgen.atomizer.modern import (
+        SBMLCompartment,
+        SBMLImportWarning,
+        SBMLModifierSpeciesReference,
+    )
+
+    compartment = SBMLCompartment(id="cell", compartment_type="cytosol")
+    assert compartment.compartment_type == "cytosol"
+
+    modifier = SBMLModifierSpeciesReference("A")
+    assert modifier.species == "A"
+
+    warning = SBMLImportWarning(
+        category="event",
+        message="event dropped",
+        count=2,
+        severity="dropped",
+    )
+    assert warning.category == "event"
+    assert warning.message == "event dropped"
+    assert warning.count == 2
+    assert warning.severity == "dropped"
+
+
 def test_playground_topological_sort_reports_dependency_cycles():
     logger.clear()
     logger.setLevel("WARNING")

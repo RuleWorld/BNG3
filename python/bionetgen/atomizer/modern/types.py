@@ -26,6 +26,7 @@ class SBMLCompartment:
     units: str = ""
     constant: bool = True
     outside: Optional[str] = None
+    compartment_type: Optional[str] = None
     size_set: bool = False
 
 
@@ -70,6 +71,11 @@ class SBMLSpeciesReference:
     id: Optional[str] = None
     stoichiometry_set: bool = False
     variable_stoichiometry: bool = False
+
+
+@dataclass
+class SBMLModifierSpeciesReference:
+    species: str
 
 
 class SBMLKineticLaw(dict):
@@ -167,6 +173,14 @@ class SBMLModel:
     multi_complex_patterns: List[str] = field(default_factory=list)
     multi_seed_patterns: List[str] = field(default_factory=list)
     import_warnings: List[Dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass
+class SBMLImportWarning:
+    category: str
+    message: str
+    count: int
+    severity: str
 
 
 @dataclass
@@ -587,8 +601,10 @@ __all__ = [
     "SBMLCompartment",
     "SBMLFunctionDefinition",
     "SBMLInitialAssignment",
+    "SBMLImportWarning",
     "SBMLKineticLaw",
     "SBMLModel",
+    "SBMLModifierSpeciesReference",
     "SBMLParameter",
     "SBMLReaction",
     "SBMLRule",
