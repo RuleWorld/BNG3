@@ -64,6 +64,26 @@ def test_playground_infer_modification_returns_named_result():
     )
 
 
+def test_playground_facade_exports_camel_case_core_functions():
+    import bionetgen.atomizer.modern as modern
+
+    aliases = {
+        "buildSpeciesCompositionTable": "build_species_composition_table",
+        "disambiguateCollidingSpecies": "disambiguate_colliding_species",
+        "getMoleculeTypes": "get_molecule_types",
+        "getSeedSpecies": "get_seed_species",
+        "analyzeReactions": "analyze_reactions",
+        "analyzeNamingConventions": "analyze_naming_conventions",
+        "topologicalSort": "topological_sort",
+        "classifyReaction": "classify_reaction",
+    }
+
+    assert all(
+        hasattr(modern, camel) and getattr(modern, camel) is getattr(modern, snake)
+        for camel, snake in aliases.items()
+    )
+
+
 def test_playground_topological_sort_reports_dependency_cycles():
     logger.clear()
     logger.setLevel("WARNING")

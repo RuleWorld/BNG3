@@ -841,8 +841,16 @@ def get_seed_species(
 # Keep the public names used by the TypeScript reference available alongside
 # BNG3's snake_case spelling.
 addToDependencyGraph = add_to_dependency_graph
+analyzeNamingConventions = analyze_naming_conventions
+analyzeReactions = analyze_reactions
+buildSpeciesCompositionTable = build_species_composition_table
+classifyReaction = classify_reaction
 defineEditDistanceMatrix = define_edit_distance_matrix
+disambiguateCollidingSpecies = disambiguate_colliding_species
 findLongestSubstring = find_longest_substring
+getMoleculeTypes = get_molecule_types
+getSeedSpecies = get_seed_species
+topologicalSort = topological_sort
 
 
 __all__ = [
@@ -850,22 +858,30 @@ __all__ = [
     "ModificationInference",
     "addToDependencyGraph",
     "add_to_dependency_graph",
+    "analyzeNamingConventions",
     "analyze_naming_conventions",
+    "analyzeReactions",
     "analyze_reactions",
+    "buildSpeciesCompositionTable",
     "build_species_composition_table",
+    "classifyReaction",
     "classify_reaction",
     "compute_weights",
     "defineEditDistanceMatrix",
     "define_edit_distance_matrix",
+    "disambiguateCollidingSpecies",
     "disambiguate_colliding_species",
     "get_differences",
+    "getMoleculeTypes",
     "findLongestSubstring",
     "find_longest_substring",
+    "getSeedSpecies",
     "get_molecule_types",
     "get_seed_species",
     "infer_modification",
     "levenshtein",
     "reconcile_sct",
     "similarity",
+    "topologicalSort",
     "topological_sort",
 ]
