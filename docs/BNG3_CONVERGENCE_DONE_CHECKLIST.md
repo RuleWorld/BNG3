@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-03
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** fd6d26f2522eab3d20bc863bb91fb3423bc04730
-**Checklist refresh base:** fd6d26f2522eab3d20bc863bb91fb3423bc04730 (local exact-head checkpoint for the SBML unit-normalization contract; public synchronization is deferred by the local-only work instruction)
-**Latest workflow checkpoint:** fd6d26f2522eab3d20bc863bb91fb3423bc04730 (local-only; no hosted run was created because this checkpoint has not been pushed)
+**Audited semantic code head:** 23f698b2a6f19def72c1e19f7d373bcde3e8b4d1
+**Checklist refresh base:** 23f698b2a6f19def72c1e19f7d373bcde3e8b4d1 (local exact-head checkpoint for the SBML-Multi namespace-presence contract; public synchronization is deferred by the local-only work instruction)
+**Latest workflow checkpoint:** 23f698b2a6f19def72c1e19f7d373bcde3e8b4d1 (local-only; no hosted run was created because this checkpoint has not been pushed)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -104,6 +104,25 @@ completion gate.
   public SHA readback is claimed for this local-only checkpoint. Full SBML
   semantics, schema validation, SBML-Multi execution, independent format
   parity, and the remaining convergence gates stay open.
+
+- [x] Local-only SBML-Multi namespace-presence checkpoint
+  `23f698b2a6f19def72c1e19f7d373bcde3e8b4d1` aligns the bounded
+  Playground `src/lib/atomizer/validation/multiPackage.ts` extractor at pinned
+  source `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` with XML namespace
+  declarations that have no child Multi elements. The source-derived tests in
+  `tests/python/test_modern_atomizer_multi.py` preserve all four existing
+  contracts and add shallow singleton-site bond fallback, deep Simmune-style
+  hierarchy detection without flattening, and the missing
+  `listOfSpeciesTypes` diagnostic. The new namespace regression was red first
+  (`1 failed, 2 passed in 0.38s`), then the corrected complete file reports
+  `7 passed in 0.38s`; the pre-existing tests were restored before commit and
+  rerun. The modern Atomizer gate reports `152 passed in 0.34s`, the full
+  Python gate reports `327 passed, 27 skipped, 8 warnings in 2.80s`, and exact
+  Release/Ninja CTest reports `190/190` in `1.42s`. No generated artifacts
+  were committed, no hosted run was created, and no public SHA readback is
+  claimed for this local-only checkpoint. Multi remains diagnostic/comment-only:
+  complete species-feature/seed semantics, writer/schema validation, execution,
+  and independent SBML-Multi parity remain open.
 
 - [x] Required fast-forward pull completed before this documentation change.
 - [x] Historical semantic checkpoint
