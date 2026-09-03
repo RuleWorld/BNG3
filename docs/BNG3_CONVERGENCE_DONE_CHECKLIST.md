@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-02
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 43afe69b83b9d994b9bb103dfad304e0e3b4509c
-**Checklist refresh base:** 43afe69b83b9d994b9bb103dfad304e0e3b4509c (public exact-head checkpoint for the Playground-derived eventActions contracts)
-**Latest workflow checkpoint:** 43afe69b83b9d994b9bb103dfad304e0e3b4509c (hosted checks read back after push; CI [33707224496](https://github.com/RuleWorld/BNG3/actions/runs/33707224496), CodeQL [33707224180](https://github.com/RuleWorld/BNG3/actions/runs/33707224180), and formatting [33707224186](https://github.com/RuleWorld/BNG3/actions/runs/33707224186) remain queued)
+**Audited semantic code head:** 99e12f5920bbb5d830fee08bd9fa896dffc3cecd
+**Checklist refresh base:** 99e12f5920bbb5d830fee08bd9fa896dffc3cecd (public exact-head checkpoint for the Playground-derived structure method surface)
+**Latest workflow checkpoint:** 99e12f5920bbb5d830fee08bd9fa896dffc3cecd (hosted checks read back after push; CI [33707406164](https://github.com/RuleWorld/BNG3/actions/runs/33707406164), CodeQL [33707406204](https://github.com/RuleWorld/BNG3/actions/runs/33707406204), and formatting [33707406092](https://github.com/RuleWorld/BNG3/actions/runs/33707406092) remain queued)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -2466,6 +2466,32 @@ completion gate.
   bounded reference names and writable context/result aliases; Python keeps
   tuple-shaped untranslated diagnostics and existing scheduling internals,
   while complete event semantics and broader writer/SBML parity remain open.
+- [x] Playground `src/lib/atomizer/core/structures.ts:143-151` at reference
+  `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` exposes `Component.toString()` as
+  the rule-style string representation. The tests-first BNG3 checkpoint is
+  `99e12f5920bbb5d830fee08bd9fa896dffc3cecd` in
+  `python/bionetgen/atomizer/modern/structures.py`, with the source-derived
+  assertion in
+  `tests/python/test_modern_atomizer_structures.py::test_playground_structures_expose_camel_case_object_methods`.
+  The red-first command
+  `env PYTHONPATH=python:build/cpp python -m pytest tests/python/test_modern_atomizer_structures.py -q -k camel_case_object`
+  reported `1 failed, 5 deselected` because the alias was absent; the repaired
+  command reports `1 passed, 5 deselected`. The structure file reports `6
+  passed`; the modern Atomizer glob reports `117 passed`; the full Python gate
+  reports `292 passed, 27 skipped, 8 warnings` in `14.67s`; exact CTest reports
+  `190/190` in `1.89s`; changed-file Ruff and Black pass; and
+  `git diff --check` passes. This Python-only checkpoint leaves the native
+  `build/cpp/bng_cpp` artifact unchanged at SHA-256
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`.
+  Exact public branch and PR #2 head readback is
+  `99e12f5920bbb5d830fee08bd9fa896dffc3cecd`; hosted CI
+  [33707406164](https://github.com/RuleWorld/BNG3/actions/runs/33707406164),
+  CodeQL [33707406204](https://github.com/RuleWorld/BNG3/actions/runs/33707406204),
+  and formatting [33707406092](https://github.com/RuleWorld/BNG3/actions/runs/33707406092)
+  remain queued and are not completion evidence. This closes only the
+  remaining tested Component method-name alias; broader structure behavior,
+  repeated-site semantics, parser/writer/SBML parity, and independent
+  round-trip evidence remain open.
 - [ ] Complete or explicitly govern remaining modern reference modules:
   atomization/core, parser/bngXmlParser and parser/sbmlParser,
   validation/units, writer/bnglWriter, writer/eventActions, and
