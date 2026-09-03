@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-03
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** beb0cee6424e94b64d6014febde355e30908299f
-**Checklist refresh base:** beb0cee6424e94b64d6014febde355e30908299f (public exact-head checkpoint for the Playground-derived Atomizer option spelling boundary)
-**Latest workflow checkpoint:** beb0cee6424e94b64d6014febde355e30908299f (hosted checks read back after push; CI [33716598867](https://github.com/RuleWorld/BNG3/actions/runs/33716598867), CodeQL [33716598872](https://github.com/RuleWorld/BNG3/actions/runs/33716598872), and formatting [33716598870](https://github.com/RuleWorld/BNG3/actions/runs/33716598870) remain queued)
+**Audited semantic code head:** f64f46791db06e4204ed49e5a33cb9e923fde3cc
+**Checklist refresh base:** f64f46791db06e4204ed49e5a33cb9e923fde3cc (public exact-head checkpoint for the Playground-derived Atomizer default naming patterns)
+**Latest workflow checkpoint:** f64f46791db06e4204ed49e5a33cb9e923fde3cc (hosted checks read back after push; CI [33716982357](https://github.com/RuleWorld/BNG3/actions/runs/33716982357), CodeQL [33716982281](https://github.com/RuleWorld/BNG3/actions/runs/33716982281), and formatting [33716982433](https://github.com/RuleWorld/BNG3/actions/runs/33716982433) remain queued)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -2864,6 +2864,37 @@ completion gate.
   option spelling boundary; broader Atomizer behavior, parser/writer/SBML
   parity, independent round trips, SBML-Multi, direct-NFsim, legacy,
   packaging, release, and hosted validation gaps remain open.
+- [x] Playground `src/lib/atomizer/config/types.ts:154-228` at reference
+  `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` classifies the documented long
+  modification, binding, localization, dimerization, and trimerization name
+  patterns in `DEFAULT_NAMING_CONVENTIONS.patterns`. BNG3 ports the complete
+  pattern-map slice at `f64f46791db06e4204ed49e5a33cb9e923fde3cc` in
+  `python/bionetgen/atomizer/modern/types.py`, preserving the existing
+  tuple-key Python representation. The tests-first contract is
+  `tests/python/test_modern_atomizer_core.py::test_playground_default_naming_patterns_cover_source_words`.
+  The red-first command
+  `PYTHONPATH=python:build/cpp python -m pytest -p no:cacheprovider tests/python/test_modern_atomizer_core.py -q -k default_naming_patterns_cover_source_words`
+  reported `13 failed, 14 deselected in 0.53s`; the repaired focused command
+  reports `13 passed, 14 deselected in 0.35s`. The complete core test file
+  reports `27 passed in 0.36s`; the modern Atomizer glob reports `141 passed in
+  0.60s`; the full Python gate reports `316 passed, 27 skipped, 8 warnings`
+  in `15.38s`; exact Release/Ninja CTest reports `190/190` in `1.72s`.
+  Changed-file Ruff (`--no-cache`) passes, Black with the configured
+  `--target-version py312` reports `2 files would be left unchanged`, and
+  `git diff --check` passes. The native `build/cpp/bng_cpp` artifact remains
+  SHA-256
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`.
+  Exact public branch and PR #2 head readback is
+  `f64f46791db06e4204ed49e5a33cb9e923fde3cc`; hosted CI
+  [33716982357](https://github.com/RuleWorld/BNG3/actions/runs/33716982357),
+  CodeQL [33716982281](https://github.com/RuleWorld/BNG3/actions/runs/33716982281),
+  and formatting
+  [33716982433](https://github.com/RuleWorld/BNG3/actions/runs/33716982433)
+  remain queued and are not completion evidence. This closes only the default
+  pattern-map slice; the richer TypeScript naming-convention configuration,
+  broader Atomizer behavior, parser/writer/SBML parity, independent round
+  trips, SBML-Multi, direct-NFsim, legacy, packaging, release, and hosted
+  validation gaps remain open.
 - [ ] Complete or explicitly govern remaining modern reference modules:
   atomization/core, parser/bngXmlParser and parser/sbmlParser,
   validation/units, writer/bnglWriter, writer/eventActions, and
