@@ -5,8 +5,8 @@
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
 **Audited semantic code head:** 983e5cd4473fddf8849fdaf9e4861fac521ecd66
-**Checklist refresh base:** 983e5cd4473fddf8849fdaf9e4861fac521ecd66 (local exact-head checkpoint for the BNG-XML fallback source-alignment contract; public synchronization is deferred by the local-only work instruction)
-**Latest workflow checkpoint:** 983e5cd4473fddf8849fdaf9e4861fac521ecd66 (local-only; no hosted run was created because this checkpoint has not been pushed)
+**Checklist refresh base:** 575246a39688e84d0bca856dd1a16da838e97159 (local exact-head checkpoint for reference-validation terminal summaries; public synchronization is deferred by the local-only work instruction)
+**Latest workflow checkpoint:** 575246a39688e84d0bca856dd1a16da838e97159 (local-only; no hosted run was created because this checkpoint has not been pushed)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -71,6 +71,30 @@ completion gate.
   No hosted run or public SHA readback is claimed while public inspection and
   push are paused. Full BNG-XML schema/semantic validation, complete
   SBML/SBML-Multi round trips, and independent corpus parity remain open.
+
+- [x] Local-only reference-validation reporting checkpoint
+  `575246a39688e84d0bca856dd1a16da838e97159` adds the reusable
+  `--summary-file` contract in `scripts/validate.py` and wires the PR
+  `validation` and weekly `bng-validation` jobs to append terminal Markdown
+  summaries to `$GITHUB_STEP_SUMMARY`. The summary records the checked-out
+  BNG3 revision when `GITHUB_SHA` is available, the validation corpus, the
+  bng_cpp path and SHA-256, strict skip policy, and pass/fail/error/skip counts.
+  The tests-first command
+  `PYTHONPATH=python:build/cpp pytest -q tests/test_ci_contract.py -k 'terminal_validation_summaries or validation_summary_records_counts_source_and_binary_digest'`
+  first failed during collection because the summary writer was absent; the
+  repaired command reports `2 passed, 13 deselected in 0.06s`, and the full CI
+  contract file reports `15 passed in 0.07s`. The actual profiled local command
+  with a temporary summary artifact reports `40` pass, `0` fail, `0` error,
+  and `31` explicit skips; the artifact records bng_cpp SHA-256
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`.
+  Black, Ruff, and `git diff --check` pass; the full local command
+  `PYTHONPATH=python:build/cpp pytest -q` reports `329 passed, 27 skipped,
+  8 warnings in 3.77s`, and `ctest --test-dir build --output-on-failure`
+  reports `190/190` in `1.68s`. No generated repository artifacts were
+  committed. No hosted run or public SHA readback is claimed while public
+  inspection and push are paused. Terminal summaries for every remaining
+  required job, exception-budget/source-lock fields, complete independent
+  oracle validation, and release gates remain open.
 
 - [x] Local-only validation-harness checkpoint `21d453f25254f0d55d1374e683233629480d80b4`
   repairs the independent Perl oracle invocation in
