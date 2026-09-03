@@ -91,12 +91,16 @@ class DefaultDict(Dict[K, V], Generic[K, V]):
         return super().get(key)  # type: ignore[return-value]
 
 
+_GLOBAL_MEMO_CACHES: Dict[str, Dict[str, Any]] = {}
+
+
 def pmemoize(
     function: Callable[..., R], cache_key: Optional[str] = None
 ) -> Callable[..., R]:
-    """Memoize calls using a stable argument representation."""
+    """Memoize calls using the Playground's process-global named caches."""
 
-    cache: Dict[str, R] = {}
+    name = cache_key or f"{function.__module__}.{function.__qualname__}"
+    cache = _GLOBAL_MEMO_CACHES.setdefault(name, {})
 
     @wraps(function)
     def memoized(*args: Any, **kwargs: Any) -> R:

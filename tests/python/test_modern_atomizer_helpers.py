@@ -49,6 +49,23 @@ def test_playground_helpers_string_and_math_contract():
     assert cleanParameterValue("Infinity NaN 1E-3 Vmax_2E1") == ("1e20 0 1e-3 Vmax_2E1")
 
 
+def test_playground_pmemoize_shares_explicit_cache_keys():
+    from bionetgen.atomizer.modern import pmemoize
+
+    calls = []
+
+    def source_function(value):
+        calls.append(value)
+        return len(calls)
+
+    first = pmemoize(source_function, "test_playground_shared_pmemoize_cache")
+    second = pmemoize(source_function, "test_playground_shared_pmemoize_cache")
+
+    assert first("value") == 1
+    assert second("value") == 1
+    assert calls == ["value"]
+
+
 def test_playground_rate_rule_prefix_contract():
     from bionetgen.atomizer.modern.rate_rule_constants import (
         RATE_RULE_META_PREFIX,
