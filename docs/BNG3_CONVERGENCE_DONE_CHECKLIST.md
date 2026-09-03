@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-03
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 094f7ac62a2baae0abebfcac134f558a324a6744
-**Checklist refresh base:** 094f7ac62a2baae0abebfcac134f558a324a6744 (public exact-head checkpoint for the Playground-derived Atomizer naming-convention configuration and facade option)
-**Latest workflow checkpoint:** 094f7ac62a2baae0abebfcac134f558a324a6744 (hosted checks read back after push; CI [33767541435](https://github.com/RuleWorld/BNG3/actions/runs/33767541435), CodeQL [33767541537](https://github.com/RuleWorld/BNG3/actions/runs/33767541537), and formatting [33767541467](https://github.com/RuleWorld/BNG3/actions/runs/33767541467) remain queued)
+**Audited semantic code head:** 21d453f25254f0d55d1374e683233629480d80b4
+**Checklist refresh base:** 21d453f25254f0d55d1374e683233629480d80b4 (local exact-head checkpoint for the isolated BNG2 oracle-path repair; public synchronization is deferred by the local-only work instruction)
+**Latest workflow checkpoint:** 21d453f25254f0d55d1374e683233629480d80b4 (local-only; no hosted run was created because this checkpoint has not been pushed)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -47,6 +47,38 @@ completion.
 
 These items describe the current checkpoint. They do not satisfy the full
 completion gate.
+
+- [x] Local-only validation-harness checkpoint `21d453f25254f0d55d1374e683233629480d80b4`
+  repairs the independent Perl oracle invocation in
+  `tests/validation/oracle_perl.py`: the harness now runs BNG2 from the
+  fixture's source directory, passes an absolute source path, directs generated
+  output to the temporary work directory with `--outdir`, and derives
+  `BNGPATH` from the BNG2 script when the caller has not supplied one. The
+  source-derived regression in
+  `tests/validation/test_harness_paths.py` was red first (`1 failed, 6
+  deselected`) and then passed (`1 passed, 6 deselected in 0.05s`); the complete
+  focused path file reports `6 passed, 1 skipped in 0.66s`. The independent
+  BNG2 Perl oracle is source revision
+  `fde0cd6a522c9f988d5495db31c70ce0f98e744b` in the temporary checkout
+  `/private/tmp/bng2-oracle.TToh58/source/bng2`; the independent NFsim oracle
+  is the accepted source cutoff
+  `3b046fc1b9f76719d92be22279b24992cdae7c35`, with binary SHA-256
+  `c30a80b6ff9cf1fae04bc9f45556c4d5fa9c3b00d053fb6abade80436ee46394`;
+  the BNG3 native binary SHA-256 is
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`.
+  With those independent paths, the smoke gate reports `17 passed, 2 skipped,
+  176 deselected in 22.92s`; the two skips are `gene_expr` oracle cases because
+  this temporary BNG2 root has no `bin/NFsim`. The broader non-slow parity
+  gate reports `54 passed, 46 skipped, 95 deselected in 102.99s`; remaining
+  skips expose unsupported legacy fixtures, missing model sidecars, unsupported
+  BNG2 action/rule constructs, and the absent BNG2-side NFsim executable rather
+  than being hidden by the harness. Current local gates are Ruff/Black/diff
+  clean, full Python `320 passed, 27 skipped, 8 warnings in 3.23s`, and exact
+  Release/Ninja CTest `190/190` in `1.51s`. No generated golden/reference
+  artifacts were committed, no hosted run was created, and no public SHA
+  readback is claimed for this local-only checkpoint. Independent oracle
+  retention, complete corpus/provenance, full Tier-P/NF/X parity, and all
+  broader validation gaps remain open.
 
 - [x] Required fast-forward pull completed before this documentation change.
 - [x] Historical semantic checkpoint
