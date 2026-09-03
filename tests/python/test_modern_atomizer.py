@@ -136,6 +136,30 @@ def test_playground_species_extend_preserves_repeated_component_multiplicity():
     ]
 
 
+def test_playground_molecule_extend_updates_last_duplicate_component():
+    from bionetgen.atomizer.modern import Component, Molecule
+
+    target = Molecule("A")
+    first = Component("site", states=["first"])
+    first.set_active_state("first")
+    second = Component("site", states=["second"])
+    second.set_active_state("second")
+    target.add_component(first)
+    target.add_component(second)
+
+    incoming = Molecule("A")
+    incoming.add_component(Component("site", states=["P"]))
+
+    # The Playground Molecule.extend implementation builds a Map by name;
+    # repeated target components therefore resolve to the last occurrence.
+    target.extend(incoming)
+
+    assert [component.active_state for component in target.components] == [
+        "first",
+        "P",
+    ]
+
+
 def test_playground_species_extend_unequal_counts_only_updates_states():
     from bionetgen.atomizer.modern import Component, Molecule, Species
 

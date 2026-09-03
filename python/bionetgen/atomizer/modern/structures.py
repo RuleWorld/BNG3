@@ -199,10 +199,13 @@ class Molecule:
         return any(component.has_wildcard_bonds() for component in self.components)
 
     def extend(self, molecule: "Molecule") -> None:
+        component_map = {component.name: component for component in self.components}
         for incoming in molecule.components:
-            existing = self.get_component(incoming.name)
+            existing = component_map.get(incoming.name)
             if existing is None:
-                self.components.append(incoming.copy())
+                copied = incoming.copy()
+                self.components.append(copied)
+                component_map[copied.name] = copied
             else:
                 for bond in incoming.bonds:
                     existing.add_bond(bond)
