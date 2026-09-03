@@ -6,7 +6,7 @@
 **Working branch:** codex/bng3-integration-foundations
 **Audited semantic code head:** 871d261442be2f4808cbcabed51f6a017ba5488a
 **Checklist refresh base:** 871d261442be2f4808cbcabed51f6a017ba5488a (public exact-head checkpoint for the Playground-derived SBML parameter-alias formula normalization)
-**Latest workflow checkpoint:** 1cccd2d08d94df35734c2e812087383332328cee (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33698274017, CodeQL run 33698273996, formatting run 33698274035)
+**Latest workflow checkpoint:** e95fe022292339c82d29fb9a22d73ea8dab9f9ed (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33699047119, CodeQL run 33699047171, formatting run 33699047114)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -1233,6 +1233,21 @@ completion gate.
   ledger checks pass. The strict provenance gate remains intentionally red with
   10 pending source/oracle/compiler/Python-lock approval errors; the exception
   ledger itself is valid with 0 active entries under the CI budget check.
+- [x] Fresh provenance-spine audit at semantic head
+  `871d261442be2f4808cbcabed51f6a017ba5488a` and public checklist head
+  `e95fe022292339c82d29fb9a22d73ea8dab9f9ed` used the exact commands
+  `python scripts/validate_provenance.py`,
+  `python scripts/validate_corpus_manifest.py`,
+  `python scripts/generate_corpus_manifest.py --check`, and
+  `python -m tests.validation.exception_ledger --max-exceptions 1`. They
+  reported `provenance validation passed: 1 source lock, 0 ledger(s)`,
+  `corpus manifest validation passed: 100 model(s)`, `corpus manifest is
+  current`, and `exception ledger valid: 0 active`. The baseline remains
+  pending maintainer approval. The corresponding strict command
+  `python scripts/validate_provenance.py --require-approved` still fails with
+  exactly 10 approval/lock errors for the baseline, five sources, two oracles,
+  compiler images, and the Python lock; this is a governance blocker, not a
+  silently accepted pass.
 - [x] Historical package evidence: a no-build-isolation sdist and wheel were
   rebuilt from semantic checkpoint `ba52c20` and the wheel was installed into
   an isolated target. These artifact digests and installed-wheel test results
