@@ -2557,6 +2557,38 @@ def test_playground_writer_materializes_non_species_rate_rule_targets():
     cpp.parse_string(bngl)
 
 
+def test_playground_parser_preserves_l2_rational_stoichiometry():
+    from bionetgen.atomizer.modern import SBMLParser
+
+    sbml = """<?xml version="1.0"?>
+    <sbml xmlns="http://www.sbml.org/sbml/level2/version1"
+          level="2" version="1">
+      <model id="rational_stoichiometry">
+        <listOfSpecies>
+          <species id="A" compartment="cell"/>
+          <species id="B" compartment="cell"/>
+        </listOfSpecies>
+        <listOfReactions>
+          <reaction id="rational" reversible="false">
+            <listOfReactants>
+              <speciesReference species="A" stoichiometry="1" denominator="2"/>
+            </listOfReactants>
+            <listOfProducts>
+              <speciesReference species="B"/>
+            </listOfProducts>
+            <kineticLaw formula="k"/>
+          </reaction>
+        </listOfReactions>
+      </model>
+    </sbml>
+    """
+
+    model = SBMLParser().parse(sbml)
+
+    reference = model.reactions["rational"].reactants[0]
+    assert reference.stoichiometry == pytest.approx(0.5)
+
+
 def test_playground_atomizer_preserves_zero_stoichiometry_and_rejects_unsupported_values():
     from bionetgen.atomizer.modern import (
         SBMLParser,

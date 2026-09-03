@@ -802,6 +802,9 @@ class SBMLParser:
         stoichiometry = (
             _float(_attribute(item, "stoichiometry"), 1) if stoichiometry_set else 1
         )
+        denominator = _float(_attribute(item, "denominator"), 0)
+        if denominator not in {0, 1}:
+            stoichiometry /= denominator
         constant = _bool(_attribute(item, "constant"), True)
         stoichiometry_math_set = _first_child(item, "stoichiometryMath") is not None
         return SBMLSpeciesReference(
