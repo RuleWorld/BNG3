@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-03
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 23f698b2a6f19def72c1e19f7d373bcde3e8b4d1
-**Checklist refresh base:** 23f698b2a6f19def72c1e19f7d373bcde3e8b4d1 (local exact-head checkpoint for the SBML-Multi namespace-presence contract; public synchronization is deferred by the local-only work instruction)
-**Latest workflow checkpoint:** 23f698b2a6f19def72c1e19f7d373bcde3e8b4d1 (local-only; no hosted run was created because this checkpoint has not been pushed)
+**Audited semantic code head:** 983e5cd4473fddf8849fdaf9e4861fac521ecd66
+**Checklist refresh base:** 983e5cd4473fddf8849fdaf9e4861fac521ecd66 (local exact-head checkpoint for the BNG-XML fallback source-alignment contract; public synchronization is deferred by the local-only work instruction)
+**Latest workflow checkpoint:** 983e5cd4473fddf8849fdaf9e4861fac521ecd66 (local-only; no hosted run was created because this checkpoint has not been pushed)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -47,6 +47,30 @@ completion.
 
 These items describe the current checkpoint. They do not satisfy the full
 completion gate.
+
+- [x] Local-only BNG-XML fallback source-alignment checkpoint
+  `983e5cd4473fddf8849fdaf9e4861fac521ecd66` aligns
+  `python/bionetgen/atomizer/modern/bng_xml.py` with the pinned Playground
+  `src/lib/atomizer/parser/bngXmlParser.ts:160-172,268-294` at source revision
+  `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c`. Source-derived tests in
+  `tests/python/test_modern_atomizer_annotations.py` cover the source's
+  Expression-over-math priority and its search for the first compartmented
+  reactant when scaling MM/Sat constants. The focused red-first command
+  `PYTHONPATH=python:build/cpp pytest -q tests/python/test_modern_atomizer_annotations.py -k 'bng_xml_converter_prefers_expression_over_math or bng_xml_converter_scales_from_first_compartmented_reactant'`
+  reported `2 failed, 9 deselected in 0.39s`; after the targeted fix it
+  reported `2 passed, 9 deselected in 0.37s`. The grouped modern Atomizer
+  command covering annotations, SBML-Multi, and units reported `22 passed in
+  0.36s`; Black, Ruff, and `git diff --check` passed. The full local command
+  `PYTHONPATH=python:build/cpp pytest -q` reported `329 passed, 27 skipped,
+  8 warnings in 2.85s`, and `ctest --test-dir build --output-on-failure`
+  reported `190/190` in `1.24s`. No generated artifacts were committed; the
+  BNG3 native binary remains SHA-256
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`, and
+  the independent NFsim binary remains SHA-256
+  `c30a80b6ff9cf1fae04bc9f45556c4d5fa9c3b00d053fb6abade80436ee46394`.
+  No hosted run or public SHA readback is claimed while public inspection and
+  push are paused. Full BNG-XML schema/semantic validation, complete
+  SBML/SBML-Multi round trips, and independent corpus parity remain open.
 
 - [x] Local-only validation-harness checkpoint `21d453f25254f0d55d1374e683233629480d80b4`
   repairs the independent Perl oracle invocation in
