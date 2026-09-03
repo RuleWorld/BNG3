@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-02
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 503541c25575622313c12e05c08e53861f47d4f3
-**Checklist refresh base:** 503541c25575622313c12e05c08e53861f47d4f3 (public exact-head checkpoint for the Playground-derived Atomizer writer facade exports)
-**Latest workflow checkpoint:** 503541c25575622313c12e05c08e53861f47d4f3 (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33703490651, CodeQL run 33703490479, formatting run 33703490602)
+**Audited semantic code head:** 220b1e2455968e12a987da777740c580f973a84e
+**Checklist refresh base:** 220b1e2455968e12a987da777740c580f973a84e (public exact-head checkpoint for the Playground-derived Atomizer structure method surface)
+**Latest workflow checkpoint:** 220b1e2455968e12a987da777740c580f973a84e (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33704215073, CodeQL run 33704215158, formatting run 33704215080)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -2260,6 +2260,35 @@ completion gate.
   were queued at readback. This closes only the writer facade-name slice;
   atomized/flat writer behavior, broader writer/parser/SBML parity,
   independent round-trip evidence, and provenance remain open.
+- [x] Playground `src/lib/atomizer/core/structures.ts:19-181,191-489,490-1015`
+  at reference `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` exposes the
+  camel-case Component, Molecule, and Species method surface used by the
+  Atomizer core. The tests-first BNG3 implementation checkpoint is
+  `0663b2effcaf8814fe9702f98c4690348655f810` in
+  `python/bionetgen/atomizer/modern/structures.py`; the follow-up public
+  cleanup checkpoint `220b1e2455968e12a987da777740c580f973a84e` removes
+  redundant Action/Rule/Databases aliases without changing the tested
+  structure surface. The source-derived contract is
+  `tests/python/test_modern_atomizer_structures.py::test_playground_structures_expose_camel_case_object_methods`.
+  The red-first command
+  `env PYTHONPATH=python:build/cpp python -m pytest tests/python/test_modern_atomizer_structures.py -q -k camel_case_object`
+  reported `1 failed, 5 deselected` because `Component.addState` was absent;
+  the repaired full structures-file command reports `6 passed in 0.40s`.
+  The modern Atomizer glob reports `111 passed in 0.48s`; the full Python gate
+  reports `286 passed, 27 skipped, 8 warnings` in `10.46s`; exact CTest reports
+  `190/190` in `1.59s`; changed-file Ruff passes; changed-file Black reports
+  `2 files would be left unchanged`; and `git diff --check` passes. This
+  Python-only checkpoint leaves the native `build/cpp/bng_cpp` artifact
+  unchanged at SHA-256
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`.
+  Exact public branch head readback is
+  `220b1e2455968e12a987da777740c580f973a84e`; hosted formatting
+  [33704215080](https://github.com/RuleWorld/BNG3/actions/runs/33704215080), CI
+  [33704215073](https://github.com/RuleWorld/BNG3/actions/runs/33704215073), and
+  CodeQL [33704215158](https://github.com/RuleWorld/BNG3/actions/runs/33704215158)
+  were queued at readback. This closes only the tested public method-name
+  compatibility slice; broader structure behavior, repeated-site semantics,
+  parser/writer/SBML parity, and independent round-trip evidence remain open.
 - [ ] Complete or explicitly govern remaining modern reference modules:
   atomization/core, parser/bngXmlParser and parser/sbmlParser,
   validation/units, writer/bnglWriter, writer/eventActions, and
