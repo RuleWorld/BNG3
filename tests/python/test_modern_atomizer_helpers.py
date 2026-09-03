@@ -68,11 +68,13 @@ def test_playground_pmemoize_shares_explicit_cache_keys():
 
 def test_playground_rate_rule_prefix_contract():
     from bionetgen.atomizer.modern.rate_rule_constants import (
+        ASSIGN_RULE_META_PREFIX,
         RATE_RULE_META_PREFIX,
         SYNTH_RATE_RULE_SPECIES_PREFIX,
     )
 
     assert RATE_RULE_META_PREFIX == "__rate_rule__"
+    assert ASSIGN_RULE_META_PREFIX == "__assign_rule__"
     assert SYNTH_RATE_RULE_SPECIES_PREFIX == "__rate_rule_state__"
 
 

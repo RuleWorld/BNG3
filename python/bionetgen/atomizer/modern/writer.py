@@ -21,6 +21,7 @@ from typing import (
 
 from .events import EventTranslationContext, synthesize_event_actions
 from .rate_rule_constants import (
+    ASSIGN_RULE_META_PREFIX,
     RATE_RULE_META_PREFIX,
     RATE_RULE_NEG_PREFIX,
     RATE_RULE_POS_PREFIX,
@@ -32,6 +33,7 @@ from .types import (
     BNGL_LEXER_KEYWORDS,
     SBMLModel,
     SBMLReaction,
+    SBMLRule,
     SCTEntry,
     SeedSpeciesEntry,
     SpeciesCompositionTable,
@@ -1895,6 +1897,54 @@ def _ordered_assignment_rules(rules: Sequence[object]) -> List[object]:
     return ordered
 
 
+def _assignment_rules_for_writer(model: SBMLModel) -> List[object]:
+    """Build source-shaped assignment rules, including non-species initial assignments."""
+
+    rules = [
+        rule
+        for rule in model.rules
+        if getattr(rule, "type", "") == "assignment" and getattr(rule, "variable", None)
+    ]
+    existing = {standardize_name(str(rule.variable)) for rule in rules}
+    species_names = {standardize_name(str(species_id)) for species_id in model.species}
+    for initial_assignment in getattr(model, "initial_assignments", []) or []:
+        symbol = str(getattr(initial_assignment, "symbol", "") or "")
+        if not symbol:
+            continue
+        standardized = standardize_name(symbol)
+        if standardized in species_names or standardized in existing:
+            continue
+        rules.append(
+            SBMLRule(
+                type="assignment",
+                variable=symbol,
+                math=str(getattr(initial_assignment, "math", "") or ""),
+            )
+        )
+        existing.add(standardized)
+    return rules
+
+
+def _rewrite_assignment_rule_references(
+    expression: str, assignment_rule_variables: Iterable[str]
+) -> str:
+    """Emit assignment-rule variables as zero-argument BNGL function calls."""
+
+    result = expression
+    names = sorted(
+        {str(name) for name in assignment_rule_variables if str(name)},
+        key=len,
+        reverse=True,
+    )
+    for name in names:
+        result = re.sub(
+            rf"\b{re.escape(name)}\b(?!\s*\()",
+            f"{standardize_name(name)}()",
+            result,
+        )
+    return result
+
+
 def write_functions(
     model: SBMLModel,
     synthetic_rate_rule_variables: Optional[Set[str]] = None,
@@ -1906,11 +1956,21 @@ def write_functions(
     emitted_names: Set[str] = set()
     synthetic_rate_rule_variables = synthetic_rate_rule_variables or set()
     skip_assignment_rules = skip_assignment_rules or set()
+    assignment_rules = _assignment_rules_for_writer(model)
     assignment_rule_variables = {
-        rule.variable
-        for rule in model.rules
-        if rule.variable and rule.type in {"assignment", "rate"}
+        rule.variable for rule in assignment_rules if rule.variable
     }
+    assignment_rule_variables.update(
+        rule.variable for rule in model.rules if rule.variable and rule.type == "rate"
+    )
+    assignment_rule_variables.update(
+        standardize_name(rule.variable) for rule in assignment_rules if rule.variable
+    )
+    assignment_rule_variables.update(
+        standardize_name(rule.variable)
+        for rule in model.rules
+        if rule.variable and rule.type == "rate"
+    )
     rate_rule_variables = {
         standardize_name(rule.variable)
         for rule in model.rules
@@ -1984,7 +2044,7 @@ def write_functions(
         if not function.arguments:
             zero_argument_functions.append(name)
         emitted_names.add(name)
-    for rule in _ordered_assignment_rules(model.rules):
+    for rule in _ordered_assignment_rules(assignment_rules):
         if (
             rule.variable in skip_assignment_rules
             or standardize_name(rule.variable) in skip_assignment_rules
@@ -2006,8 +2066,12 @@ def write_functions(
             model.function_definitions,
         )
         body = _map_compartment_references(convert_math_expression(body), model)
+        body = _rewrite_assignment_rule_references(body, assignment_rule_variables)
         body = _rewrite_zero_argument_calls(body, zero_argument_functions)
         lines.append(f"{standardize_name(rule.variable)}() = {body}")
+        lines.append(
+            f"{ASSIGN_RULE_META_PREFIX}{standardize_name(rule.variable)}() = {body}"
+        )
 
     for rule in model.rules:
         if not rule.variable or rule.type != "rate":
@@ -2358,8 +2422,8 @@ def generate_bngl(
             )
     assignment_variables = {
         standardize_name(rule.variable)
-        for rule in model.rules
-        if rule.type == "assignment" and rule.variable
+        for rule in _assignment_rules_for_writer(model)
+        if rule.variable
     }
 
     # SBML rate rules may target a parameter or another model variable that
