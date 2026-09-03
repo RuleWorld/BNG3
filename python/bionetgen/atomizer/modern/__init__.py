@@ -82,11 +82,14 @@ from .structures import (
 from .types import *  # noqa: F401,F403
 from .writer import (
     BNGLGenerationResult,
+    ProcessedRate,
     ReversibleRateSplit,
     bnglFunction,
     bnglReaction,
     bngl_function,
     bngl_reaction,
+    checkMassAction,
+    check_mass_action,
     convert_math_expression,
     curateParameters,
     curate_parameters,
@@ -96,6 +99,8 @@ from .writer import (
     generate_bngl,
     inlineSBMLFunctions,
     inline_sbml_functions,
+    processReactionRate,
+    process_reaction_rate,
     splitReversibleRate,
     split_reversible_rate,
     writeCompartments,

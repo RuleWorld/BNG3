@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import math
 import os
 import re
@@ -96,6 +97,22 @@ except ValueError:
     _TRANSPORT_LOG_LIMIT = 40
 _transport_log_count = 0
 
+_ENABLE_MASS_ACTION_CHECK = (
+    os.environ.get("BNGL_ENABLE_MASS_ACTION_CHECK", "1").strip() != "0"
+)
+try:
+    _MASS_ACTION_SKIP_MIN_REACTIONS = int(
+        os.environ.get("BNGL_SKIP_MASS_ACTION_MIN_REACTIONS", "500")
+    )
+except ValueError:
+    _MASS_ACTION_SKIP_MIN_REACTIONS = 500
+try:
+    _MASS_ACTION_SKIP_EXPR_LEN = int(
+        os.environ.get("BNGL_SKIP_MASS_ACTION_EXPR_LEN", "2000")
+    )
+except ValueError:
+    _MASS_ACTION_SKIP_EXPR_LEN = 2000
+
 
 @dataclass
 class BNGLGenerationResult:
@@ -126,6 +143,27 @@ class BNGLGenerationResult:
         if index == 1:
             return self.observable_map
         raise IndexError(index)
+
+
+@dataclass(frozen=True)
+class ProcessedRate:
+    """Result of the Playground writer's unified reaction-rate pipeline."""
+
+    rate_string: str
+    force_irreversible: bool = False
+    is_split_rxn: bool = False
+
+    @property
+    def rateString(self) -> str:
+        return self.rate_string
+
+    @property
+    def forceIrreversible(self) -> bool:
+        return self.force_irreversible
+
+    @property
+    def isSplitRxn(self) -> bool:
+        return self.is_split_rxn
 
 
 def _log_missing_kinetic(message: str) -> None:
@@ -266,6 +304,10 @@ def _number(value: object) -> str:
     if number.is_integer():
         return str(int(number))
     return format(number, ".15g")
+
+
+def _factorial(value: float) -> int:
+    return math.factorial(int(value))
 
 
 def _evaluate_arithmetic(expression: str) -> Optional[float]:
@@ -1012,6 +1054,259 @@ def _has_denominator_issue(neutralized_rate: str, reactant_ids: Sequence[str]) -
     )
 
 
+def _numeric_parameter_value(value: object) -> float:
+    if isinstance(value, Mapping):
+        value = value.get("value", value.get("size"))
+    else:
+        value = getattr(value, "value", value)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float("nan")
+
+
+def _safe_numeric_expression(
+    expression: str, variables: Mapping[str, float]
+) -> Optional[float]:
+    """Evaluate the bounded arithmetic subset used by source mass-action checks."""
+
+    normalized = str(expression or "")
+    normalized = normalized.replace("^", "**")
+    normalized = normalized.replace("&&", " and ").replace("||", " or ")
+    normalized = re.sub(r"\bif\s*\(", "if_(", normalized)
+    normalized = re.sub(r"\btrue\b", "1", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"\bfalse\b", "0", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"(?<![=!<>])!(?!=)", " not ", normalized)
+    try:
+        tree = ast.parse(normalized, mode="eval")
+    except SyntaxError:
+        return None
+
+    functions = {
+        "abs": abs,
+        "acos": math.acos,
+        "asin": math.asin,
+        "atan": math.atan,
+        "ceil": math.ceil,
+        "cos": math.cos,
+        "cosh": math.cosh,
+        "exp": math.exp,
+        "floor": math.floor,
+        "ln": math.log,
+        "log": math.log10,
+        "log10": math.log10,
+        "max": max,
+        "min": min,
+        "pow": pow,
+        "rint": round,
+        "sin": math.sin,
+        "sinh": math.sinh,
+        "sqrt": math.sqrt,
+        "tan": math.tan,
+        "tanh": math.tanh,
+    }
+
+    def evaluate(node: ast.AST) -> float:
+        if isinstance(node, ast.Expression):
+            return evaluate(node.body)
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+            return float(node.value)
+        if isinstance(node, ast.Name):
+            if node.id not in variables:
+                raise ValueError(node.id)
+            return float(variables[node.id])
+        if isinstance(node, ast.UnaryOp):
+            operand = evaluate(node.operand)
+            if isinstance(node.op, ast.UAdd):
+                return operand
+            if isinstance(node.op, ast.USub):
+                return -operand
+            if isinstance(node.op, ast.Not):
+                return float(not operand)
+            raise ValueError(type(node.op).__name__)
+        if isinstance(node, ast.BinOp):
+            left = evaluate(node.left)
+            right = evaluate(node.right)
+            if isinstance(node.op, ast.Add):
+                return left + right
+            if isinstance(node.op, ast.Sub):
+                return left - right
+            if isinstance(node.op, ast.Mult):
+                return left * right
+            if isinstance(node.op, ast.Div):
+                return left / right
+            if isinstance(node.op, ast.Pow):
+                return left**right
+            raise ValueError(type(node.op).__name__)
+        if isinstance(node, ast.BoolOp):
+            if isinstance(node.op, ast.And):
+                for value in node.values:
+                    if not evaluate(value):
+                        return 0.0
+                return 1.0
+            if isinstance(node.op, ast.Or):
+                for value in node.values:
+                    if evaluate(value):
+                        return 1.0
+                return 0.0
+            raise ValueError(type(node.op).__name__)
+        if isinstance(node, ast.Compare):
+            left = evaluate(node.left)
+            for operator, comparator in zip(node.ops, node.comparators):
+                right = evaluate(comparator)
+                if isinstance(operator, ast.Gt):
+                    passed = left > right
+                elif isinstance(operator, ast.GtE):
+                    passed = left >= right
+                elif isinstance(operator, ast.Lt):
+                    passed = left < right
+                elif isinstance(operator, ast.LtE):
+                    passed = left <= right
+                elif isinstance(operator, ast.Eq):
+                    passed = left == right
+                elif isinstance(operator, ast.NotEq):
+                    passed = left != right
+                else:
+                    raise ValueError(type(operator).__name__)
+                if not passed:
+                    return 0.0
+                left = right
+            return 1.0
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            name = node.func.id
+            if name == "time":
+                if node.args:
+                    raise ValueError("time arguments")
+                return 0.0
+            if name == "if_":
+                if len(node.args) != 3:
+                    raise ValueError("if arguments")
+                return evaluate(
+                    node.args[1] if evaluate(node.args[0]) else node.args[2]
+                )
+            function = functions.get(name)
+            if function is None or node.keywords:
+                raise ValueError(name)
+            return float(function(*(evaluate(argument) for argument in node.args)))
+        raise ValueError(type(node).__name__)
+
+    try:
+        result = evaluate(tree)
+    except (ArithmeticError, TypeError, ValueError, OverflowError):
+        return None
+    return result if math.isfinite(result) else None
+
+
+def _rewrite_mass_action_symbols(
+    expression: str,
+    species_to_compartment: Mapping[str, str],
+    compartments: Optional[Mapping[str, object]] = None,
+    assignment_rule_variables: Iterable[str] = (),
+) -> str:
+    result = str(expression or "")
+    species_names = {
+        standardize_name(str(species_id)): str(compartment_id or "")
+        for species_id, compartment_id in species_to_compartment.items()
+    }
+    for name, compartment_id in sorted(
+        species_names.items(), key=lambda item: len(item[0]), reverse=True
+    ):
+        escaped = re.escape(name)
+        if compartment_id:
+            concentration = (
+                f"({name} / __compartment_{standardize_name(compartment_id)}__)"
+            )
+        else:
+            concentration = name
+        result = re.sub(
+            rf"_c_{escaped}\s*\(\s*\)", concentration, result, flags=re.IGNORECASE
+        )
+        result = re.sub(rf"\b{escaped}_amt\b", name, result, flags=re.IGNORECASE)
+    for variable in sorted(
+        {standardize_name(str(value)) for value in assignment_rule_variables},
+        key=len,
+        reverse=True,
+    ):
+        result = re.sub(rf"\b{re.escape(variable)}\s*\(\s*\)", variable, result)
+    return result
+
+
+def check_mass_action(
+    rate_expression: str,
+    divisor_expression: str,
+    volume_expression: str,
+    parameter_dict: Mapping[str, object],
+    compartments: Mapping[str, object],
+    species_to_compartment: Mapping[str, str],
+    assignment_rule_variables: Optional[Set[str]] = None,
+) -> Optional[float]:
+    """Numerically check whether a processed rate is a constant mass-action law.
+
+    This follows the pinned Playground writer's source contract: normalize amount
+    and concentration operands, evaluate the rate times volume divided by the
+    stoichiometric divisor at several positive points, and accept only a finite
+    low-variance result.
+    """
+
+    assignment_rule_variables = assignment_rule_variables or set()
+    rate = _rewrite_mass_action_symbols(
+        rate_expression, species_to_compartment, compartments, assignment_rule_variables
+    )
+    divisor = _rewrite_mass_action_symbols(
+        divisor_expression,
+        species_to_compartment,
+        compartments,
+        assignment_rule_variables,
+    )
+    volume = _rewrite_mass_action_symbols(
+        volume_expression,
+        species_to_compartment,
+        compartments,
+        assignment_rule_variables,
+    )
+    base: Dict[str, float] = {"__Avogadro__": 1.0}
+    for parameter_id, parameter in parameter_dict.items():
+        value = _numeric_parameter_value(parameter)
+        base[str(parameter_id)] = value
+        base[standardize_name(str(parameter_id))] = value
+    for compartment_id, compartment in compartments.items():
+        size = _numeric_parameter_value(getattr(compartment, "size", compartment))
+        name = standardize_name(str(compartment_id))
+        base[f"__compartment_{name}__"] = size
+        base[name] = size
+
+    species_names = sorted(
+        {standardize_name(str(species_id)) for species_id in species_to_compartment},
+        key=len,
+    )
+    assignment_names = sorted(
+        {standardize_name(str(value)) for value in assignment_rule_variables},
+        key=len,
+    )
+    samples = ((1.25, 3.5), (2.5, 11.0), (7.0, 29.0))
+    values: List[float] = []
+    for index, (volume_value, species_start) in enumerate(samples):
+        context = dict(base)
+        context["V"] = volume_value
+        for offset, name in enumerate(species_names):
+            context[name] = species_start + (offset + 1) * (index + 1)
+        for offset, name in enumerate(assignment_names):
+            context[name] = 2.0 + offset + index * 0.5
+        value = _safe_numeric_expression(
+            f"({rate}) * ({volume}) / ({divisor})", context
+        )
+        if value is None:
+            return None
+        values.append(value)
+
+    mean = sum(values) / len(values)
+    if abs(mean) < 1e-12:
+        return 0.0
+    variance = sum((value - mean) ** 2 for value in values) / len(values)
+    coefficient_of_variation = math.sqrt(variance) / (abs(mean) + 1e-60)
+    return mean if coefficient_of_variation < 1e-4 else None
+
+
 def _prepared_kinetic_math(reaction: SBMLReaction, model: SBMLModel) -> str:
     """Inline functions and substitute reaction-local parameters once."""
 
@@ -1040,6 +1335,54 @@ def _prepared_kinetic_math(reaction: SBMLReaction, model: SBMLModel) -> str:
                 math_expression,
             )
     return math_expression
+
+
+def _strip_compartment_rate_factors(
+    expression: str, model: SBMLModel, reactants: Sequence[str]
+) -> str:
+    """Remove BNG2-exported compartment factors before rate decomposition."""
+
+    result = str(expression or "")
+    if not reactants:
+        return result
+    if not any(
+        re.search(rf"\b{re.escape(standardize_name(species_id))}\b", result)
+        for species_id in reactants
+    ):
+        return result
+    for compartment_id in model.compartments:
+        standardized = standardize_name(str(compartment_id))
+        result = re.sub(
+            rf"\s*\*\s*__compartment_{re.escape(standardized)}__\s*",
+            " ",
+            result,
+        )
+        result = re.sub(
+            rf"\s*\*\s*{re.escape(str(compartment_id))}\b\s*",
+            " ",
+            result,
+        )
+        result = re.sub(
+            rf"\s*/\s*__compartment_{re.escape(standardized)}__\s*",
+            " ",
+            result,
+        )
+        result = re.sub(
+            rf"\s*/\s*{re.escape(str(compartment_id))}\b\s*",
+            " ",
+            result,
+        )
+        result = re.sub(
+            rf"^\s*__compartment_{re.escape(standardized)}__\s*\*\s*",
+            "",
+            result,
+        )
+        result = re.sub(
+            rf"^\s*{re.escape(str(compartment_id))}\b\s*\*\s*",
+            "",
+            result,
+        )
+    return result.strip() or "1"
 
 
 def _rate_for_reaction(
@@ -1077,11 +1420,14 @@ def _rate_for_reaction(
             for _ in range(max(0, int(round(reference.stoichiometry))))
         ]
     )
-    species_map = {species_id: species_id for species_id in model.species}
+    species_map = {}
+    for species_id in model.species:
+        species_map[species_id] = species_id
+        species_map[standardize_name(species_id)] = species_id
     assignment_variables = {
         rule.variable
-        for rule in model.rules
-        if rule.variable and rule.type in {"assignment", "rate"}
+        for rule in [*_assignment_rules_for_writer(model), *model.rules]
+        if rule.variable and getattr(rule, "type", "") in {"assignment", "rate"}
     }
     observable_converted_rules = observable_converted_rules or set()
     concentration_names = {
@@ -1089,6 +1435,12 @@ def _rate_for_reaction(
         for species_id, species in model.species.items()
         if not species.has_only_substance_units
     }
+    if reactant_structures is not None:
+        reactant_structures = {
+            species_id: structure
+            for species_id, structure in reactant_structures.items()
+            if species_id in reactants
+        }
 
     # BNG2-exported elementary SBML laws may carry the reaction compartment as
     # a leading volume factor (for example ``cell * k * A``).  The Playground
@@ -1107,39 +1459,7 @@ def _rate_for_reaction(
             for species_id in reactants
         )
     ):
-        for compartment_id in model.compartments:
-            standardized = standardize_name(str(compartment_id))
-            math = re.sub(
-                rf"\s*\*\s*__compartment_{re.escape(standardized)}__\s*",
-                " ",
-                math,
-            )
-            math = re.sub(
-                rf"\s*\*\s*{re.escape(str(compartment_id))}\b\s*",
-                " ",
-                math,
-            )
-            math = re.sub(
-                rf"\s*/\s*__compartment_{re.escape(standardized)}__\s*",
-                " ",
-                math,
-            )
-            math = re.sub(
-                rf"\s*/\s*{re.escape(str(compartment_id))}\b\s*",
-                " ",
-                math,
-            )
-            math = re.sub(
-                rf"^\s*__compartment_{re.escape(standardized)}__\s*\*\s*",
-                "",
-                math,
-            )
-            math = re.sub(
-                rf"^\s*{re.escape(str(compartment_id))}\b\s*\*\s*",
-                "",
-                math,
-            )
-        math = math.strip() or "1"
+        math = _strip_compartment_rate_factors(math, model, reactants)
         nonlinear = has_saturation or "/" in math
 
     # The Playground writer keeps nonlinear laws intact and maps their species
@@ -1162,9 +1482,73 @@ def _rate_for_reaction(
         )
 
     converted = convert_math_expression(math)
-    stripped = _strip_mass_action_factors(converted, reactants)
     if reactant_structures:
-        stripped = _extract_statistical_factor(stripped, reactant_structures)
+        converted = _extract_statistical_factor(converted, reactant_structures)
+    converted_rate = bngl_function(
+        converted,
+        reaction.name or reaction.id,
+        reactants,
+        list(model.compartments),
+        assignment_rule_variables=assignment_variables,
+        observable_converted_rules=observable_converted_rules,
+        species_with_conc_functions=concentration_names,
+        sbml_to_bngl_id=species_map,
+    )
+
+    counts: "OrderedDict[str, float]" = OrderedDict()
+    for species_id in reactants:
+        counts[species_id] = counts.get(species_id, 0) + 1
+    divisor_parts: List[str] = []
+    for species_id, stoichiometry in counts.items():
+        name = standardize_name(species_id)
+        if stoichiometry == 1:
+            divisor_parts.append(f"{name}_amt")
+        else:
+            divisor_parts.append(
+                f"(({name}_amt^{_number(stoichiometry)})/"
+                f"{_number(_factorial(stoichiometry))})"
+            )
+    divisor = " * ".join(divisor_parts) if divisor_parts else "1"
+    rule_compartment = reaction.compartment
+    if not rule_compartment:
+        for reference in [*reaction.reactants, *reaction.products]:
+            if reference.species == "EmptySet":
+                continue
+            species = model.species.get(reference.species)
+            if species is not None and species.compartment:
+                rule_compartment = species.compartment
+                break
+    volume = (
+        f"__compartment_{standardize_name(rule_compartment)}__"
+        if rule_compartment and counts
+        else "1"
+    )
+    parameter_values = {
+        parameter_id: getattr(parameter, "value", parameter)
+        for parameter_id, parameter in model.parameters.items()
+    }
+    if (
+        _ENABLE_MASS_ACTION_CHECK
+        and len(model.reactions) < _MASS_ACTION_SKIP_MIN_REACTIONS
+        and len(converted_rate) < _MASS_ACTION_SKIP_EXPR_LEN
+        and not re.search(r"\btime\s*\(", converted_rate)
+    ):
+        mass_action_constant = check_mass_action(
+            converted_rate,
+            divisor,
+            volume,
+            parameter_values,
+            model.compartments,
+            {
+                species_id: getattr(model.species.get(species_id), "compartment", "")
+                for species_id in model.species
+            },
+            assignment_variables,
+        )
+        if mass_action_constant is not None:
+            return apply_conversion(_number(mass_action_constant))
+
+    stripped = _strip_mass_action_factors(converted, reactants)
     return apply_conversion(
         bngl_function(
             stripped,
@@ -1176,6 +1560,116 @@ def _rate_for_reaction(
             species_with_conc_functions=concentration_names,
             sbml_to_bngl_id=species_map,
         )
+    )
+
+
+def _reaction_species_ids(
+    references: Sequence[object],
+) -> List[str]:
+    species_ids: List[str] = []
+    for reference in references:
+        species_id = getattr(reference, "species", None)
+        if species_id is None and isinstance(reference, Mapping):
+            species_id = reference.get("species")
+        if species_id in (None, "EmptySet"):
+            continue
+        stoichiometry = getattr(reference, "stoichiometry", None)
+        if stoichiometry is None and isinstance(reference, Mapping):
+            stoichiometry = reference.get("stoichiometry", 1)
+        try:
+            count = max(0, int(round(float(stoichiometry))))
+        except (TypeError, ValueError):
+            count = 0
+        species_ids.extend([str(species_id)] * count)
+    return species_ids
+
+
+def process_reaction_rate(
+    reaction: SBMLReaction,
+    reaction_id: str,
+    model: SBMLModel,
+    observable_converted_rules: Optional[Set[str]] = None,
+    reactant_structures: Optional[Mapping[str, Species]] = None,
+    conversion_factor: Optional[str] = None,
+) -> ProcessedRate:
+    """Process one SBML rate using the source-shaped reversible pipeline."""
+
+    prepared_math = _prepared_kinetic_math(reaction, model)
+    structures = reactant_structures or {}
+    if not prepared_math or not str(prepared_math).strip():
+        return ProcessedRate(
+            _rate_for_reaction(
+                reaction,
+                model,
+                conversion_factor,
+                observable_converted_rules,
+                structures,
+                prepared_math=prepared_math,
+            ),
+            force_irreversible=bool(reaction.reversible),
+        )
+
+    forward_ids = _reaction_species_ids(reaction.reactants)
+    split = (
+        _split_reversible_rate(
+            _strip_compartment_rate_factors(
+                convert_math_expression(prepared_math), model, forward_ids
+            )
+        )
+        if reaction.reversible
+        else None
+    )
+    if split is None:
+        return ProcessedRate(
+            _rate_for_reaction(
+                reaction,
+                model,
+                conversion_factor,
+                observable_converted_rules,
+                structures,
+                prepared_math=prepared_math,
+            ),
+            force_irreversible=bool(reaction.reversible),
+        )
+
+    reverse_ids = _reaction_species_ids(reaction.products)
+    forward_rate = _rate_for_reaction(
+        reaction,
+        model,
+        conversion_factor,
+        observable_converted_rules,
+        structures,
+        reactant_ids=forward_ids,
+        prepared_math=split[0],
+    )
+    reverse_rate = _rate_for_reaction(
+        reaction,
+        model,
+        conversion_factor,
+        observable_converted_rules,
+        structures,
+        reactant_ids=reverse_ids,
+        prepared_math=split[1],
+    )
+    if _has_denominator_issue(forward_rate, forward_ids) or _has_denominator_issue(
+        reverse_rate, reverse_ids
+    ):
+        return ProcessedRate(
+            _rate_for_reaction(
+                reaction,
+                model,
+                conversion_factor,
+                observable_converted_rules,
+                structures,
+                prepared_math=prepared_math,
+            ),
+            force_irreversible=True,
+            is_split_rxn=True,
+        )
+    return ProcessedRate(
+        f"{forward_rate}, {reverse_rate}",
+        force_irreversible=False,
+        is_split_rxn=False,
     )
 
 
@@ -2254,76 +2748,18 @@ def write_reaction_rules(
             for species_id, entry in sct.entries.items()
             if entry.structure is not None
         }
-        prepared_math = _prepared_kinetic_math(reaction, model)
-        split = (
-            _split_reversible_rate(convert_math_expression(prepared_math))
-            if reaction.reversible
-            else None
+        processed = process_reaction_rate(
+            reaction,
+            reaction_id,
+            model,
+            observable_converted_rules=observable_converted_rules,
+            reactant_structures=structures,
+            conversion_factor=conversion_factor,
         )
-        if split is not None:
-            forward_ids = [
-                reference.species
-                for reference in reaction.reactants
-                if reference.species != "EmptySet"
-                for _ in range(max(0, int(round(reference.stoichiometry))))
-            ]
-            reverse_ids = [
-                reference.species
-                for reference in reaction.products
-                if reference.species != "EmptySet"
-                for _ in range(max(0, int(round(reference.stoichiometry))))
-            ]
-            forward_rate = _rate_for_reaction(
-                reaction,
-                model,
-                conversion_factor,
-                observable_converted_rules,
-                {
-                    species_id: structures[species_id]
-                    for species_id in forward_ids
-                    if species_id in structures
-                },
-                reactant_ids=forward_ids,
-                prepared_math=split[0],
-            )
-            reverse_rate = _rate_for_reaction(
-                reaction,
-                model,
-                conversion_factor,
-                observable_converted_rules,
-                {
-                    species_id: structures[species_id]
-                    for species_id in reverse_ids
-                    if species_id in structures
-                },
-                reactant_ids=reverse_ids,
-                prepared_math=split[1],
-            )
-            if _has_denominator_issue(
-                forward_rate, forward_ids
-            ) or _has_denominator_issue(reverse_rate, reverse_ids):
-                rate = _rate_for_reaction(
-                    reaction,
-                    model,
-                    conversion_factor,
-                    observable_converted_rules,
-                    structures,
-                    prepared_math=prepared_math,
-                )
-                arrow = "->"
-            else:
-                rate = f"{forward_rate}, {reverse_rate}"
-                arrow = "<->"
-        else:
-            arrow = "->"
-            rate = _rate_for_reaction(
-                reaction,
-                model,
-                conversion_factor,
-                observable_converted_rules,
-                structures,
-                prepared_math=prepared_math,
-            )
+        rate = processed.rate_string
+        arrow = (
+            "<->" if reaction.reversible and not processed.force_irreversible else "->"
+        )
 
         # A time-only rate has no species/observable marker for BNG2's
         # functional-rate path.  Keep it live by emitting a zero-argument
@@ -2686,10 +3122,12 @@ def generate_bngl(
 # Preserve the TypeScript reference spelling for direct facade callers.
 bnglFunction = bngl_function
 bnglReaction = bngl_reaction
+checkMassAction = check_mass_action
 curateParameters = curate_parameters
 extendFunction = extend_function
 generateBNGL = generate_bngl
 inlineSBMLFunctions = inline_sbml_functions
+processReactionRate = process_reaction_rate
 splitReversibleRate = split_reversible_rate
 writeParameters = write_parameters
 writeCompartments = write_compartments
@@ -2702,11 +3140,14 @@ writeReactionRules = write_reaction_rules
 
 __all__ = [
     "BNGLGenerationResult",
+    "ProcessedRate",
     "bnglFunction",
     "bngl_function",
     "bnglReaction",
     "bngl_reaction",
     "convert_math_expression",
+    "checkMassAction",
+    "check_mass_action",
     "curateParameters",
     "curate_parameters",
     "extendFunction",
@@ -2715,6 +3156,8 @@ __all__ = [
     "generate_bngl",
     "inlineSBMLFunctions",
     "inline_sbml_functions",
+    "processReactionRate",
+    "process_reaction_rate",
     "ReversibleRateSplit",
     "splitReversibleRate",
     "split_reversible_rate",

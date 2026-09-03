@@ -1487,7 +1487,7 @@ def test_playground_writer_strips_leading_compartment_factor_from_mass_action():
     )
 
     reaction_line = next(line for line in bngl.splitlines() if line.startswith("  r:"))
-    assert reaction_line.endswith(" k")
+    assert reaction_line.endswith(" 3")
     assert "__compartment_cell__ * k" not in reaction_line
     cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
     cpp.parse_string(bngl)
@@ -1550,7 +1550,7 @@ def test_playground_writer_strips_internal_compartment_factor_from_mass_action(r
     )
 
     reaction_line = next(line for line in bngl.splitlines() if line.startswith("  r:"))
-    assert reaction_line.endswith(" k")
+    assert reaction_line.endswith(" 3")
     assert "__compartment_cell__" not in reaction_line
     cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
     cpp.parse_string(bngl)
@@ -1604,7 +1604,7 @@ def test_playground_writer_splits_reversible_net_rates_by_direction():
         model, sct, get_molecule_types(sct), get_seed_species(sct, model)
     )
 
-    assert "r: M_A() <-> M_B() kf, kr" in bngl
+    assert "r: M_A() <-> M_B() 0.5, 0.25" in bngl
     cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
     cpp.parse_string(bngl)
 
@@ -1877,7 +1877,7 @@ def test_playground_writer_removes_repeated_site_statistical_factors():
     )
 
     reaction_line = next(line for line in bngl.splitlines() if line.startswith("  r:"))
-    assert reaction_line.endswith(" k")
+    assert reaction_line.endswith(" 1")
     assert "2 * k" not in reaction_line
     cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
     cpp.parse_string(bngl)
@@ -1922,7 +1922,7 @@ def test_playground_writer_renames_keyword_colliding_parameters_in_rates():
     )
 
     assert "max_id 2" in bngl
-    assert "r: M_A() -> 0 max_id" in bngl
+    assert "r: M_A() -> 0 2" in bngl
     cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
     cpp.parse_string(bngl)
 

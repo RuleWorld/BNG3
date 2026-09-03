@@ -1,13 +1,48 @@
 """Source-derived contracts for Playground writer rate helpers."""
 
 from bionetgen.atomizer.modern import (
+    ProcessedRate,
     ReversibleRateSplit,
+    SBMLCompartment,
     SBMLFunctionDefinition,
+    SBMLKineticLaw,
+    SBMLModel,
+    SBMLParameter,
+    SBMLReaction,
+    SBMLSpecies,
+    SBMLSpeciesReference,
+    checkMassAction,
     inlineSBMLFunctions,
     inline_sbml_functions,
+    processReactionRate,
+    process_reaction_rate,
     splitReversibleRate,
     split_reversible_rate,
 )
+
+
+def _mass_action_model(rate: str = "k * A", reversible: bool = False) -> SBMLModel:
+    return SBMLModel(
+        id="rate_processor",
+        compartments={"cell": SBMLCompartment(id="cell", size=2)},
+        species={
+            "A": SBMLSpecies(id="A", compartment="cell"),
+            "P": SBMLSpecies(id="P", compartment="cell"),
+        },
+        parameters={
+            "k": SBMLParameter(id="k", value=3),
+            "Km": SBMLParameter(id="Km", value=2),
+        },
+        reactions={
+            "r": SBMLReaction(
+                id="r",
+                reversible=reversible,
+                reactants=[SBMLSpeciesReference("A")],
+                products=[SBMLSpeciesReference("P")],
+                kinetic_law=SBMLKineticLaw(rate),
+            )
+        },
+    )
 
 
 def test_inline_sbml_functions_substitutes_formals_simultaneously():
@@ -49,6 +84,78 @@ def test_split_reversible_rate_rejects_one_sided_and_preserves_original_input():
     result = split_reversible_rate("  kf*A  ")
 
     assert result == ReversibleRateSplit(False, "  kf*A  ", "0")
+
+
+def test_check_mass_action_matches_source_constant_and_rejects_saturation():
+    compartments = {"cell": SBMLCompartment(id="cell", size=2)}
+    species_to_compartment = {"A": "cell"}
+
+    assert (
+        checkMassAction(
+            "k * _c_A()",
+            "A_amt",
+            "__compartment_cell__",
+            {"k": 3},
+            compartments,
+            species_to_compartment,
+        )
+        == 3
+    )
+    assert (
+        checkMassAction(
+            "k * _c_A() / (Km + _c_A())",
+            "A_amt",
+            "__compartment_cell__",
+            {"k": 3, "Km": 2},
+            compartments,
+            species_to_compartment,
+        )
+        is None
+    )
+
+
+def test_process_reaction_rate_returns_source_shaped_mass_action_result():
+    model = _mass_action_model()
+
+    result = process_reaction_rate(model.reactions["r"], "r", model)
+
+    assert isinstance(result, ProcessedRate)
+    assert result.rate_string == "3"
+    assert result.rateString == result.rate_string
+    assert result.force_irreversible is False
+    assert result.forceIrreversible is False
+    assert result.is_split_rxn is False
+    assert result.isSplitRxn is False
+    assert processReactionRate(model.reactions["r"], "r", model) == result
+
+
+def test_process_reaction_rate_preserves_reversible_denominator_fallback():
+    model = _mass_action_model("kf * A / (Km + A) - kr * P", reversible=True)
+    model.parameters.update(
+        {"kf": SBMLParameter(id="kf", value=1), "kr": SBMLParameter(id="kr", value=1)}
+    )
+
+    result = process_reaction_rate(model.reactions["r"], "r", model)
+
+    assert result.force_irreversible is True
+    assert result.is_split_rxn is True
+    assert "_c_A()" in result.rate_string
+    assert "Km + _c_A()" in result.rate_string
+
+
+def test_process_reaction_rate_strips_leading_compartment_before_reversible_split():
+    model = _mass_action_model("cell * (kf * A - kr * P)", reversible=True)
+    model.parameters.update(
+        {
+            "kf": SBMLParameter(id="kf", value=0.5),
+            "kr": SBMLParameter(id="kr", value=0.25),
+        }
+    )
+
+    result = process_reaction_rate(model.reactions["r"], "r", model)
+
+    assert result.force_irreversible is False
+    assert result.rate_string == "0.5, 0.25"
 
 
 def test_playground_writer_facade_exports_reference_function_names():
