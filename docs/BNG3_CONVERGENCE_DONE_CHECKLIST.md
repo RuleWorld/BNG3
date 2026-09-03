@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-02
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** cd8d6faff52a188a3aff809bd2c7cd8bbab5bc14
-**Checklist refresh base:** cd8d6faff52a188a3aff809bd2c7cd8bbab5bc14 (public exact-head checkpoint for the Playground-derived duplicate-component extension semantics)
-**Latest workflow checkpoint:** cd8d6faff52a188a3aff809bd2c7cd8bbab5bc14 (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33701930243, CodeQL run 33701930187, formatting run 33701930296)
+**Audited semantic code head:** 33cbd138f5dca0b4a0804601948fcf3cca329631
+**Checklist refresh base:** 33cbd138f5dca0b4a0804601948fcf3cca329631 (public exact-head checkpoint for the Playground-derived named modification-inference result contract)
+**Latest workflow checkpoint:** 33cbd138f5dca0b4a0804601948fcf3cca329631 (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33702740615, CodeQL run 33702740608, formatting run 33702740639)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -2151,6 +2151,46 @@ completion gate.
   were queued at readback. This closes only the duplicate-component `extend`
   lookup slice; broader structure/core parity, repeated-site model semantics,
   and independent round-trip evidence remain open.
+- [x] Playground `src/lib/atomizer/atomization/core.ts:271-330` at reference
+  `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` returns modification inference as
+  a named `{base, modification, confidence}` result, including the empty
+  fallback result. The tests-first BNG3 checkpoint is
+  `33cbd138f5dca0b4a0804601948fcf3cca329631` in
+  `python/bionetgen/atomizer/modern/core.py`, with the facade export in
+  `python/bionetgen/atomizer/modern/__init__.py` and the source-derived
+  contract in
+  `tests/python/test_modern_atomizer_core.py::test_playground_infer_modification_returns_named_result`.
+  The red-first command
+  `env PYTHONPATH=python:build/cpp python -m pytest tests/python/test_modern_atomizer_core.py -q -k infer_modification`
+  reported `1 failed, 8 deselected` because the BNG3 result was a bare tuple
+  without named fields. The repaired command
+  `env PYTHONPATH=python:build/cpp python -m pytest tests/python/test_modern_atomizer_core.py -q -k infer_modification`
+  reports `1 passed, 8 deselected` and verifies both named-field access and
+  backward-compatible tuple unpacking. The core-plus-rulifier command
+  `env PYTHONPATH=python:build/cpp python -m pytest tests/python/test_modern_atomizer_core.py tests/python/test_modern_atomizer_rulifier.py -q`
+  reports `15 passed`; the modern Atomizer glob
+  `env PYTHONPATH=python:build/cpp python -m pytest tests/python/test_modern_atomizer*.py -q`
+  reports `108 passed`; the full Python gate
+  `env PYTHONPATH=python:build/cpp python -m pytest -q` reports
+  `283 passed, 27 skipped, 8 warnings` in `12.51s`; exact CTest
+  `ctest --test-dir build --output-on-failure` reports `190/190` in `1.52s`;
+  `ruff check python/bionetgen/atomizer/modern/core.py python/bionetgen/atomizer/modern/__init__.py tests/python/test_modern_atomizer_core.py`
+  passes; `black --check python/bionetgen/atomizer/modern/core.py
+  python/bionetgen/atomizer/modern/__init__.py
+  tests/python/test_modern_atomizer_core.py` reports `3 files would be left
+  unchanged`; and `git diff --check` passes. This
+  Python-only checkpoint leaves the native `build/cpp/bng_cpp` artifact
+  unchanged at SHA-256
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`.
+  Exact public branch head readback is
+  `33cbd138f5dca0b4a0804601948fcf3cca329631`; hosted CI
+  [33702740615](https://github.com/RuleWorld/BNG3/actions/runs/33702740615),
+  CodeQL [33702740608](https://github.com/RuleWorld/BNG3/actions/runs/33702740608),
+  and formatting
+  [33702740639](https://github.com/RuleWorld/BNG3/actions/runs/33702740639)
+  were queued at readback. This closes only the named-result API slice;
+  broader atomization/core behavior, parser/writer parity, independent
+  round-trip evidence, and provenance remain open.
 - [ ] Complete or explicitly govern remaining modern reference modules:
   atomization/core, parser/bngXmlParser and parser/sbmlParser,
   validation/units, writer/bnglWriter, writer/eventActions, and
