@@ -1,5 +1,7 @@
 """Source-derived contracts for the Playground atomization-core facade."""
 
+import pytest
+
 from bionetgen.atomizer.modern import (
     addToDependencyGraph,
     add_to_dependency_graph,
@@ -44,6 +46,22 @@ def test_edit_distance_result_keeps_full_matrix_and_legacy_two_value_unpacking()
 
 def test_longest_substring_alias_matches_playground_name():
     assert findLongestSubstring("abc", "zbcx") == "bc"
+
+
+def test_playground_infer_modification_returns_named_result():
+    from bionetgen.atomizer.modern import infer_modification
+
+    result = infer_modification("A_P", ["A"])
+
+    assert result.base == "A"
+    assert result.modification == "Phosphorylation"
+    assert result.confidence == pytest.approx(1 / 3)
+    base, modification, confidence = result
+    assert (base, modification, confidence) == (
+        result.base,
+        result.modification,
+        result.confidence,
+    )
 
 
 def test_playground_topological_sort_reports_dependency_cycles():

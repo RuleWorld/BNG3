@@ -154,6 +154,22 @@ class EditDistanceMatrixResult:
         yield self.differences
 
 
+@dataclass(frozen=True)
+class ModificationInference:
+    """Named result returned by the Playground modification heuristic."""
+
+    base: Optional[str]
+    modification: Optional[str]
+    confidence: float
+
+    def __iter__(self) -> Iterator[object]:
+        """Keep the original Python tuple-unpacking contract working."""
+
+        yield self.base
+        yield self.modification
+        yield self.confidence
+
+
 def define_edit_distance_matrix(
     species_names: Sequence[str], similarity_threshold: int = 4
 ) -> EditDistanceMatrixResult:
@@ -211,25 +227,25 @@ def infer_modification(
     species_name: str,
     base_species: Sequence[str],
     patterns: Optional[Mapping[Tuple[str, ...], str]] = None,
-) -> Tuple[Optional[str], Optional[str], float]:
+) -> ModificationInference:
     conventions = patterns or DEFAULT_NAMING_PATTERNS
     candidates = [
         candidate for candidate in base_species if len(candidate) < len(species_name)
     ]
-    best: Tuple[Optional[str], Optional[str], float] = (None, None, 0.0)
+    best = ModificationInference(None, None, 0.0)
     for candidate in candidates:
         modification = conventions.get(tuple(get_differences(candidate, species_name)))
         if modification:
             confidence = similarity(candidate, species_name)
-            if confidence > best[2]:
-                best = (candidate, modification, confidence)
-    if best[2] > 0:
+            if confidence > best.confidence:
+                best = ModificationInference(candidate, modification, confidence)
+    if best.confidence > 0:
         return best
 
     for candidate in candidates:
         common = longest_common_substring(candidate, species_name)
         confidence = len(common) / max(len(candidate), len(species_name))
-        if confidence <= max(best[2], 0.5):
+        if confidence <= max(best.confidence, 0.5):
             continue
         suffix = species_name[len(candidate) :]
         modification = None
@@ -246,7 +262,7 @@ def infer_modification(
         elif suffix.startswith("_"):
             modification = "Binding"
         if modification:
-            best = (candidate, modification, confidence)
+            best = ModificationInference(candidate, modification, confidence)
     return best
 
 
@@ -831,6 +847,7 @@ findLongestSubstring = find_longest_substring
 
 __all__ = [
     "EditDistanceMatrixResult",
+    "ModificationInference",
     "addToDependencyGraph",
     "add_to_dependency_graph",
     "analyze_naming_conventions",

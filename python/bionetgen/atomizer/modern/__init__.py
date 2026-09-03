@@ -16,6 +16,7 @@ from typing import Any, Dict, Iterable, Mapping, Optional
 
 from .core import (
     EditDistanceMatrixResult,
+    ModificationInference,
     addToDependencyGraph,
     add_to_dependency_graph,
     analyze_naming_conventions,
@@ -556,6 +557,7 @@ __all__ = [
     "Memoize",
     "MemoizeMapped",
     "Molecule",
+    "ModificationInference",
     "MultiParseResult",
     "ParsedAnnotation",
     "Rule",
