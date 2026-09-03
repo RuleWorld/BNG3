@@ -998,6 +998,37 @@ def test_playground_atomizer_facade_exposes_reference_method_names():
         assert reference_function is python_function
 
 
+def test_playground_atomizer_accepts_supported_source_option_spellings():
+    from bionetgen.atomizer.modern import Atomizer
+
+    # The TypeScript facade names these options useId, quietMode, logLevel,
+    # tEnd, and nSteps.  BNG3 retains its existing snake-case option mapping
+    # after accepting the source spellings at the public boundary.
+    atomizer = Atomizer(
+        useId=True,
+        quietMode=True,
+        logLevel="INFO",
+        tEnd=7,
+        nSteps=11,
+    )
+    options = atomizer.getOptions()
+
+    assert options["use_id"] is True
+    assert options["quiet_mode"] is True
+    assert options["log_level"] == "INFO"
+    assert options["t_end"] == 7
+    assert options["n_steps"] == 11
+    assert all(
+        name not in options
+        for name in ("useId", "quietMode", "logLevel", "tEnd", "nSteps")
+    )
+
+    atomizer.setOptions({"useId": False, "tEnd": 3})
+    options = atomizer.get_options()
+    assert options["use_id"] is False
+    assert options["t_end"] == 3
+
+
 def test_playground_atomizer_returns_databases_container_in_result():
     from bionetgen.atomizer.modern import Atomizer, Databases
 

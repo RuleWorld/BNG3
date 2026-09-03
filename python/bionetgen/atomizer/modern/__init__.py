@@ -196,6 +196,25 @@ DEFAULT_ATOMIZER_OPTIONS: Dict[str, Any] = {
     "n_steps": 100,
 }
 
+_SOURCE_OPTION_ALIASES = {
+    "useId": "use_id",
+    "quietMode": "quiet_mode",
+    "logLevel": "log_level",
+    "tEnd": "t_end",
+    "nSteps": "n_steps",
+}
+
+
+def _normalize_options(options: Mapping[str, Any]) -> Dict[str, Any]:
+    """Normalize supported Playground option names at the Python boundary."""
+    normalized = dict(options)
+    for source_name, python_name in _SOURCE_OPTION_ALIASES.items():
+        if source_name in options:
+            if python_name not in options:
+                normalized[python_name] = options[source_name]
+            normalized.pop(source_name, None)
+    return normalized
+
 
 class Atomizer:
     """Convert SBML text to BNGL using the modern atomization pipeline."""
@@ -205,8 +224,8 @@ class Atomizer:
     ) -> None:
         self.options = dict(DEFAULT_ATOMIZER_OPTIONS)
         if options:
-            self.options.update(options)
-        self.options.update(kwargs)
+            self.options.update(_normalize_options(options))
+        self.options.update(_normalize_options(kwargs))
         self.parser = SBMLParser()
         self.model = None
         self.sct = None
@@ -222,7 +241,7 @@ class Atomizer:
         logger.setQuietMode(bool(quiet_mode))
 
     def set_options(self, options: Mapping[str, Any]) -> None:
-        self.options.update(options)
+        self.options.update(_normalize_options(options))
         self._configure_logger()
 
     def get_options(self) -> Dict[str, Any]:
