@@ -4,8 +4,8 @@
 **Last audited:** 2026-09-03
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 0d921d6639619b99ae08f35379af07bea940a2b1
-**Checklist refresh base:** 0d921d6639619b99ae08f35379af07bea940a2b1 (local exact-head checkpoint for modern-writer identifier and seed-lookup parity; public synchronization is deferred by the local-only work instruction)
+**Audited semantic code head:** 1662820a0222add1cd9d44e8dd64724590c4bce8
+**Checklist refresh base:** 1662820a0222add1cd9d44e8dd64724590c4bce8 (local exact-head checkpoint for initial-assignment and assignment-rule metadata parity; public synchronization is deferred by the local-only work instruction)
 **Latest workflow checkpoint:** 575246a39688e84d0bca856dd1a16da838e97159 (local-only; no hosted run was created because this checkpoint has not been pushed)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -47,6 +47,33 @@ completion.
 
 These items describe the current checkpoint. They do not satisfy the full
 completion gate.
+
+- [x] Local-only initial-assignment writer checkpoint
+  `1662820a0222add1cd9d44e8dd64724590c4bce8` ports the pinned Playground
+  `src/lib/atomizer/writer/bnglWriter.ts:34,1592-1594,2161-2170` contract at
+  source revision `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c`. The Python writer
+  now promotes non-species SBML initial assignments into stable assignment
+  functions, skips species and duplicate assignment targets, rewrites
+  assignment-rule references as zero-argument BNGL calls, and emits the
+  `__assign_rule__` metadata functions used by the source's reverse-format
+  seam. Source-derived tests in
+  `tests/python/test_modern_atomizer_writer_parameters.py` and
+  `tests/python/test_modern_atomizer_helpers.py` were red first with three
+  assertion failures on the old writer; the repaired focused command reports
+  `10 passed in 0.42s`. The modern Atomizer gate reports `158 passed in
+  0.66s`; the full local command
+  `PYTHONPATH=python:build/cpp python -m pytest tests/python -q -p
+  no:cacheprovider` reports `333 passed, 27 skipped, 8 warnings in 15.31s`;
+  and `ctest --test-dir build --output-on-failure` reports `190/190` in
+  `1.61s`. Black (`--target-version py39`), Ruff, and `git diff --check` pass.
+  The BNG3 native binary remains SHA-256
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`, and
+  the independent accepted-cutoff NFsim binary remains SHA-256
+  `c30a80b6ff9cf1fae04bc9f45556c4d5fa9c3b00d053fb6abade80436ee46394`.
+  No hosted run or public SHA readback is claimed while `gh` and push are
+  paused. Full reverse SBML consumption of assignment metadata, complete
+  writer/schema validation, independent corpus parity, and release gates
+  remain open.
 
 - [x] Local-only modern-writer identifier and fixed-seed lookup checkpoint
   `0d921d6639619b99ae08f35379af07bea940a2b1` ports the pinned Playground
