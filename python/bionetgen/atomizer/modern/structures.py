@@ -850,6 +850,7 @@ Component.getName = Component.get_name
 Component.hasWildcardBonds = Component.has_wildcard_bonds
 Component.getRuleStr = Component.get_rule_str
 Component.getTotalStr = Component.get_total_str
+Component.toString = Component.__str__
 
 Molecule.addComponent = Molecule.add_component
 Molecule.setCompartment = Molecule.set_compartment

@@ -78,6 +78,7 @@ def test_playground_structures_expose_camel_case_object_methods():
     assert component.getName() == "site"
     assert component.getRuleStr() == "site!1~P"
     assert component.getTotalStr() == "site~P~0"
+    assert component.toString() == "site!1~P"
 
     molecule = Molecule("A")
     molecule.addComponent(component)
