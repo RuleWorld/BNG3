@@ -64,6 +64,32 @@ def test_playground_infer_modification_returns_named_result():
     )
 
 
+@pytest.mark.parametrize(
+    ("suffix", "expected"),
+    [
+        ("phos", "Phosphorylation"),
+        ("phospho", "Phosphorylation"),
+        ("_PP", "Double-Phosphorylation"),
+        ("ubiq", "Ubiquitination"),
+        ("_ub", "Ubiquitination"),
+        ("acet", "Acetylation"),
+        ("meth", "Methylation"),
+        ("active", "Activation"),
+        ("inact", "Inactivation"),
+        ("_bound", "Binding"),
+        ("_cyt", "Localization"),
+        ("_dimer", "Dimerization"),
+        ("3", "Trimerization"),
+    ],
+)
+def test_playground_default_naming_patterns_cover_source_words(suffix, expected):
+    from bionetgen.atomizer.modern import infer_modification
+
+    result = infer_modification("A" + suffix, ["A"])
+
+    assert result.modification == expected
+
+
 def test_playground_facade_exports_camel_case_core_functions():
     import bionetgen.atomizer.modern as modern
 
