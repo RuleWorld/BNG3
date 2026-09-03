@@ -1,12 +1,12 @@
 # BNG3 Convergence: Definition of Done and Remaining Checklist
 
 **Status:** Active; not complete
-**Last audited:** 2026-09-02
+**Last audited:** 2026-09-03
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 4be16b1b904087b3db0f01cd5ab2c801d7c5ddee
-**Checklist refresh base:** 4be16b1b904087b3db0f01cd5ab2c801d7c5ddee (public exact-head checkpoint for the Playground-derived structured Atomizer result log records)
-**Latest workflow checkpoint:** 4be16b1b904087b3db0f01cd5ab2c801d7c5ddee (hosted checks read back after push; CI [33712957959](https://github.com/RuleWorld/BNG3/actions/runs/33712957959), CodeQL [33712957955](https://github.com/RuleWorld/BNG3/actions/runs/33712957955), and formatting [33712957961](https://github.com/RuleWorld/BNG3/actions/runs/33712957961) remain pending)
+**Audited semantic code head:** fc65e25292927e7c3a8e02d684cda63f5921738f
+**Checklist refresh base:** fc65e25292927e7c3a8e02d684cda63f5921738f (public exact-head checkpoint for the Playground-derived Atomizer Databases result container)
+**Latest workflow checkpoint:** fc65e25292927e7c3a8e02d684cda63f5921738f (hosted checks read back after push; CI [33713386928](https://github.com/RuleWorld/BNG3/actions/runs/33713386928), CodeQL [33713386951](https://github.com/RuleWorld/BNG3/actions/runs/33713386951), and formatting [33713386952](https://github.com/RuleWorld/BNG3/actions/runs/33713386952) remain queued)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -2660,6 +2660,35 @@ completion gate.
   result-log records; the source asynchronous `initialize()` lifecycle has no
   direct synchronous Python equivalent, and broader parser/writer/SBML parity,
   independent round trips, and release validation remain open.
+- [x] Playground `src/lib/atomizer/core/structures.ts:1113-1152` and
+  `src/lib/atomizer/index.ts:43-59,129-132,184-199,375-380,453-457` at
+  reference `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` construct and return a
+  `Databases` container from the Atomizer accessor, result, and `clear()` lifecycle.
+  The tests-first BNG3 checkpoint is
+  `fc65e25292927e7c3a8e02d684cda63f5921738f` in
+  `python/bionetgen/atomizer/modern/__init__.py` and
+  `tests/python/test_modern_atomizer.py`; the prior dictionary substitution is
+  removed from both fast and normal paths, and the result/accessor now preserve
+  the same `Databases` object. The red-first command
+  `PYTHONPATH=python:build/cpp python -m pytest -p no:cacheprovider tests/python/test_modern_atomizer.py -q -k returns_databases_container`
+  reported `1 failed, 62 deselected`; the repaired focused command reports
+  `4 passed, 59 deselected`. The modern Atomizer glob reports `123 passed`; the
+  full Python gate reports `298 passed, 27 skipped, 8 warnings` in `14.98s`;
+  exact Release/Ninja CTest reports `190/190` in `1.64s`; and export validation
+  reports `12 passed` in `18.45s`. Changed-file Ruff (`--no-cache`) passes,
+  Black reports `2 files would be left unchanged`, and `git diff --check`
+  passes. The native `build/cpp/bng_cpp` artifact remains SHA-256
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`.
+  Exact public branch and PR #2 head readback is
+  `fc65e25292927e7c3a8e02d684cda63f5921738f`; hosted CI
+  [33713386928](https://github.com/RuleWorld/BNG3/actions/runs/33713386928),
+  CodeQL [33713386951](https://github.com/RuleWorld/BNG3/actions/runs/33713386951),
+  and formatting
+  [33713386952](https://github.com/RuleWorld/BNG3/actions/runs/33713386952)
+  remain queued and are not completion evidence. This closes the result
+  container shape only; the source TypeScript `Map` containers are represented
+  by existing Python mapping fields, and broader parser/writer/SBML parity,
+  independent round trips, direct-NFsim, and release validation remain open.
 - [ ] Complete or explicitly govern remaining modern reference modules:
   atomization/core, parser/bngXmlParser and parser/sbmlParser,
   validation/units, writer/bnglWriter, writer/eventActions, and
