@@ -6,7 +6,7 @@
 **Working branch:** codex/bng3-integration-foundations
 **Audited semantic code head:** 871d261442be2f4808cbcabed51f6a017ba5488a
 **Checklist refresh base:** 871d261442be2f4808cbcabed51f6a017ba5488a (public exact-head checkpoint for the Playground-derived SBML parameter-alias formula normalization)
-**Latest workflow checkpoint:** e95fe022292339c82d29fb9a22d73ea8dab9f9ed (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33699047119, CodeQL run 33699047171, formatting run 33699047114)
+**Latest workflow checkpoint:** 83ca824644b597d7c705b2ef28df0eefc7f279a8 (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33699449992, CodeQL run 33699450088, formatting run 33699449970)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
