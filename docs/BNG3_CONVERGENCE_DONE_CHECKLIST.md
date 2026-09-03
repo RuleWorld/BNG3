@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-02
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 5afc84ecbb558092fca9ff2528655c175b574707
-**Checklist refresh base:** 5afc84ecbb558092fca9ff2528655c175b574707 (public exact-head checkpoint for the Playground-derived named BNGL-generation result)
-**Latest workflow checkpoint:** 5afc84ecbb558092fca9ff2528655c175b574707 (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33704892945, CodeQL run 33704892981, formatting run 33704892921)
+**Audited semantic code head:** a2a35118bb6fa15cb772b4dfd02459dfae5d7190
+**Checklist refresh base:** a2a35118bb6fa15cb772b4dfd02459dfae5d7190 (public exact-head checkpoint for the Playground-derived Atomizer data-contract aliases)
+**Latest workflow checkpoint:** a2a35118bb6fa15cb772b4dfd02459dfae5d7190 (hosted checks read back after push; CI [33705471171](https://github.com/RuleWorld/BNG3/actions/runs/33705471171), CodeQL [33705471175](https://github.com/RuleWorld/BNG3/actions/runs/33705471175), and formatting [33705471204](https://github.com/RuleWorld/BNG3/actions/runs/33705471204) remain queued)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -2351,6 +2351,35 @@ completion gate.
   backward-compatible unpacking slice; warning-production parity, atomized and
   flat writer behavior, broader parser/SBML parity, and independent
   round-trip evidence remain open.
+- [x] Playground `src/lib/atomizer/config/types.ts:460-690` at reference
+  `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` exposes camel-case SBML,
+  species-composition-table, seed-species, and result fields, including
+  `spatialDimensions`, `initialConcentration`, `initialAmount`,
+  `hasOnlySubstanceUnits`, `stoichiometrySet`, `mathML`, `localParameters`,
+  `kineticLaw`, `useValuesFromTriggerTime`, `functionDefinitions`,
+  `speciesByCompartment`, `importWarnings`, `sbmlId`, `isElemental`,
+  `reverseDependencies`, `sortedSpecies`, and `observableMap`. The
+  tests-first BNG3 checkpoint is
+  `a2a35118bb6fa15cb772b4dfd02459dfae5d7190` in
+  `python/bionetgen/atomizer/modern/types.py`, with the source-derived
+  contract in
+  `tests/python/test_modern_atomizer_core.py::test_playground_data_contract_exposes_camel_case_fields`.
+  The red-first command
+  `env PYTHONPATH=python:build/cpp python -m pytest tests/python/test_modern_atomizer_core.py -q -k data_contract`
+  reported `1 failed, 10 deselected` because `spatialDimensions` was absent;
+  the repaired command reports `1 passed, 10 deselected`. The core file
+  reports `11 passed`, the modern Atomizer glob reports `114 passed`, and the
+  full Python gate reports `289 passed, 27 skipped, 8 warnings` in `15.63s`.
+  Exact CTest reports `190/190` in `2.54s`; changed-file Ruff and Black pass;
+  and `git diff --check` passes. This Python-only checkpoint leaves the native
+  `build/cpp/bng_cpp` artifact unchanged at SHA-256
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`.
+  Exact public branch and PR #2 head readback is
+  `a2a35118bb6fa15cb772b4dfd02459dfae5d7190`; the hosted checks listed at
+  the top remain queued and are not completion evidence. This closes only the
+  bounded data-field naming/mutability slice; broader source/Python result
+  shapes, parser/writer/SBML behavior, and independent round-trip evidence
+  remain open.
 - [ ] Complete or explicitly govern remaining modern reference modules:
   atomization/core, parser/bngXmlParser and parser/sbmlParser,
   validation/units, writer/bnglWriter, writer/eventActions, and
