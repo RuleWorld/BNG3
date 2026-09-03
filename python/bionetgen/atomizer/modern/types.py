@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
 
 from .structures import Species
 
@@ -103,7 +103,9 @@ class SBMLReaction:
     fast: bool = False
     reactants: List[SBMLSpeciesReference] = field(default_factory=list)
     products: List[SBMLSpeciesReference] = field(default_factory=list)
-    modifiers: List[str] = field(default_factory=list)
+    modifiers: List[Union[str, SBMLModifierSpeciesReference]] = field(
+        default_factory=list
+    )
     kinetic_law: Optional[Any] = None
     compartment: Optional[str] = None
     conversion_factor: Optional[str] = None

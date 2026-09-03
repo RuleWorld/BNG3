@@ -188,6 +188,18 @@ def test_playground_data_contract_exposes_missing_sbml_record_types():
     assert warning.severity == "dropped"
 
 
+def test_playground_reaction_classification_normalizes_modifier_records():
+    from bionetgen.atomizer.modern import SBMLModifierSpeciesReference
+
+    reaction = SBMLReaction(
+        id="r",
+        products=[SBMLSpeciesReference("A")],
+        modifiers=[SBMLModifierSpeciesReference("E")],
+    )
+
+    assert classify_reaction(reaction).modifiers == ["E"]
+
+
 def test_playground_topological_sort_reports_dependency_cycles():
     logger.clear()
     logger.setLevel("WARNING")

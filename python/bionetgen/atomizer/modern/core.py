@@ -287,7 +287,9 @@ def _has_saturation_rate(reaction: SBMLReaction) -> bool:
 def classify_reaction(reaction: SBMLReaction) -> ReactionPattern:
     reactants = _reaction_species(reaction.reactants)
     products = _reaction_species(reaction.products)
-    modifiers = list(reaction.modifiers)
+    modifiers = [
+        str(getattr(modifier, "species", modifier)) for modifier in reaction.modifiers
+    ]
     common = [species for species in reactants if species in products]
 
     if not reactants and products:
