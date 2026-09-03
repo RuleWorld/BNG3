@@ -6,8 +6,18 @@ import math
 import os
 import re
 from collections import OrderedDict
-from dataclasses import dataclass
-from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
+from dataclasses import dataclass, field
+from typing import (
+    Dict,
+    Iterable,
+    Iterator,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+)
 
 from .events import EventTranslationContext, synthesize_event_actions
 from .rate_rule_constants import (
@@ -47,6 +57,37 @@ try:
 except ValueError:
     _TRANSPORT_LOG_LIMIT = 40
 _transport_log_count = 0
+
+
+@dataclass
+class BNGLGenerationResult:
+    """Named result returned by the Playground BNGL generation facade."""
+
+    bngl: str
+    observable_map: Mapping[str, str]
+    warnings: List[str] = field(default_factory=list)
+
+    @property
+    def observableMap(self) -> Mapping[str, str]:
+        """Expose the TypeScript spelling without copying the map."""
+
+        return self.observable_map
+
+    def __iter__(self) -> Iterator[object]:
+        """Keep the historical Python ``bngl, observable_map = ...`` contract."""
+
+        yield self.bngl
+        yield self.observable_map
+
+    def __len__(self) -> int:
+        return 2
+
+    def __getitem__(self, index: int) -> object:
+        if index == 0:
+            return self.bngl
+        if index == 1:
+            return self.observable_map
+        raise IndexError(index)
 
 
 def _log_missing_kinetic(message: str) -> None:
@@ -2236,7 +2277,7 @@ def generate_bngl(
     actions: str = "",
     t_end: float = 10,
     n_steps: int = 100,
-) -> Tuple[str, Mapping[str, str]]:
+) -> BNGLGenerationResult:
     for rule in model.rules:
         if rule.type != "algebraic":
             continue
@@ -2508,7 +2549,12 @@ def generate_bngl(
             )
         model_text += "# ============================\n"
 
-    return model_text, observable_map
+    warnings = [
+        str(warning.get("message", ""))
+        for warning in model.import_warnings
+        if warning.get("message")
+    ]
+    return BNGLGenerationResult(model_text, observable_map, warnings)
 
 
 # Preserve the TypeScript reference spelling for direct facade callers.
@@ -2521,6 +2567,7 @@ splitReversibleRate = split_reversible_rate
 
 
 __all__ = [
+    "BNGLGenerationResult",
     "bnglFunction",
     "bngl_function",
     "bnglReaction",

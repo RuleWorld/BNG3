@@ -74,6 +74,7 @@ from .structures import (
 )
 from .types import *  # noqa: F401,F403
 from .writer import (
+    BNGLGenerationResult,
     ReversibleRateSplit,
     bnglFunction,
     bnglReaction,
@@ -573,6 +574,7 @@ __all__ = [
     "AtomicPatternResult",
     "AnnotationStats",
     "BindingException",
+    "BNGLGenerationResult",
     "BNGL_LEXER_KEYWORDS",
     "Component",
     "Counter",

@@ -56,3 +56,41 @@ def test_playground_writer_facade_exports_reference_function_names():
 
     assert modern.bnglFunction is modern.bngl_function
     assert modern.generateBNGL is modern.generate_bngl
+
+
+def test_playground_generate_bngl_returns_named_generation_result():
+    from collections import OrderedDict
+
+    from bionetgen.atomizer.modern import (
+        SBMLModel,
+        SBMLSpecies,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    model = SBMLModel(
+        id="named_generation",
+        species=OrderedDict(
+            [
+                (
+                    "A",
+                    SBMLSpecies(
+                        id="A", name="A", initial_amount=1, initial_amount_set=True
+                    ),
+                )
+            ]
+        ),
+    )
+    sct = build_species_composition_table(model)
+    result = generate_bngl(
+        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+    )
+
+    assert result.bngl.startswith("# BNGL model generated")
+    assert result.observableMap == result.observable_map
+    assert isinstance(result.warnings, list)
+    bngl, observable_map = result
+    assert bngl == result.bngl
+    assert observable_map == result.observable_map
