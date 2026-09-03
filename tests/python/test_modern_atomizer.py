@@ -271,6 +271,36 @@ def test_playground_parser_preserves_annotations_initial_assignments_and_rates()
     assert model.reactions["bind"].kinetic_law["math"] == "kf * A * B"
 
 
+def test_playground_parser_returns_source_shaped_event_assignment_records():
+    from bionetgen.atomizer.modern import SBMLEventAssignment, SBMLParser
+
+    sbml = """<?xml version="1.0"?>
+    <sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+          level="3" version="1">
+      <model id="event_assignment_records">
+        <listOfEvents>
+          <event id="e">
+            <trigger formula="time &gt; 0"/>
+            <listOfEventAssignments>
+              <eventAssignment variable="x" formula="k"/>
+            </listOfEventAssignments>
+          </event>
+        </listOfEvents>
+      </model>
+    </sbml>
+    """
+
+    model = SBMLParser().parse(sbml)
+    assignment = model.events[0].assignments[0]
+
+    assert isinstance(assignment, SBMLEventAssignment)
+    assert assignment.variable == "x"
+    assert assignment.math == "k"
+    assert assignment["variable"] == "x"
+    assert assignment["math"] == "k"
+    assert assignment == ("x", "k")
+
+
 def test_playground_parser_preserves_compartment_type_reference():
     from bionetgen.atomizer.modern import SBMLParser
 

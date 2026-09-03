@@ -128,16 +128,78 @@ class SBMLFunctionDefinition:
 
 
 @dataclass
+class SBMLEventAssignment(MappingABC[str, str]):
+    """Structured event assignment matching the Playground object contract."""
+
+    variable: str
+    math: str
+
+    _FIELDS = ("variable", "math")
+
+    def __getitem__(self, key: Union[str, int]) -> str:
+        if isinstance(key, int):
+            return (self.variable, self.math)[key]
+        if key not in self._FIELDS:
+            raise KeyError(key)
+        return getattr(self, key)
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._FIELDS)
+
+    def __len__(self) -> int:
+        return len(self._FIELDS)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return getattr(self, key, default)
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, SBMLEventAssignment):
+            return (self.variable, self.math) == (other.variable, other.math)
+        if isinstance(other, MappingABC):
+            return self.variable == other.get("variable") and self.math == other.get(
+                "math"
+            )
+        if isinstance(other, (tuple, list)):
+            return len(other) == 2 and (self.variable, self.math) == tuple(other)
+        return NotImplemented
+
+
+def coerce_event_assignment(assignment: Any) -> SBMLEventAssignment:
+    """Convert legacy tuple/list or mapping assignments to source-shaped records."""
+
+    if isinstance(assignment, SBMLEventAssignment):
+        return assignment
+    if isinstance(assignment, MappingABC):
+        return SBMLEventAssignment(
+            variable=str(assignment.get("variable", "")),
+            math=str(assignment.get("math", "")),
+        )
+    if isinstance(assignment, (tuple, list)):
+        return SBMLEventAssignment(
+            variable=str(assignment[0]) if len(assignment) > 0 else "",
+            math=str(assignment[1]) if len(assignment) > 1 else "",
+        )
+    return SBMLEventAssignment(variable="", math="")
+
+
+@dataclass
 class SBMLEvent:
     id: str
     name: str = ""
     trigger: str = ""
     delay: Optional[str] = None
     use_values_from_trigger_time: bool = True
-    assignments: List[Tuple[str, str]] = field(default_factory=list)
+    assignments: List[Union[SBMLEventAssignment, Tuple[str, str]]] = field(
+        default_factory=list
+    )
     trigger_initial_value: Optional[bool] = None
     trigger_persistent: Optional[bool] = None
     priority: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        self.assignments = [
+            coerce_event_assignment(assignment) for assignment in self.assignments
+        ]
 
 
 @dataclass
@@ -651,6 +713,7 @@ __all__ = [
     "BNGL_LEXER_KEYWORDS",
     "ReactionPattern",
     "SBMLEvent",
+    "SBMLEventAssignment",
     "SBMLCompartment",
     "SBMLFunctionDefinition",
     "SBMLInitialAssignment",

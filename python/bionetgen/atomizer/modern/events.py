@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Callable, List, Optional, Sequence, Tuple
 
@@ -301,7 +302,7 @@ def parse_time_threshold(trigger: str) -> Optional[str]:
 
 
 def _event_assignment(assignment: object) -> Tuple[str, str]:
-    if isinstance(assignment, dict):
+    if isinstance(assignment, Mapping):
         return str(assignment.get("variable", "")), str(assignment.get("math", ""))
     if isinstance(assignment, (tuple, list)) and len(assignment) >= 2:
         return str(assignment[0]), str(assignment[1])

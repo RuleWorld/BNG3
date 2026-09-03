@@ -2496,7 +2496,7 @@ def generate_bngl(
                 if getattr(event, "priority", None):
                     notes.append(f"#     priority: {event.priority}\n")
                 for assignment in event.assignments:
-                    if isinstance(assignment, dict):
+                    if isinstance(assignment, Mapping):
                         variable = assignment.get("variable", "")
                         assignment_math = assignment.get("math", "")
                     else:
