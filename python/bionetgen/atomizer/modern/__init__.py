@@ -74,6 +74,7 @@ from .structures import (
     Rule,
     Species,
     States,
+    readFromString,
     read_from_string,
 )
 from .types import *  # noqa: F401,F403
@@ -693,6 +694,7 @@ __all__ = [
     "randInt",
     "rand_int",
     "read_from_string",
+    "readFromString",
     "resolve_unit_factor",
     "parse_time_threshold",
     "parseTimeThreshold",

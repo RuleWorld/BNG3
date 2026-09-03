@@ -840,6 +840,10 @@ def read_from_string(pattern_str: str) -> Species:
     return species
 
 
+# Preserve the source module's parser helper spelling for direct callers.
+readFromString = read_from_string
+
+
 # Preserve the public method spellings from the TypeScript structures module
 # alongside BNG3's snake_case Python API.
 Component.addState = Component.add_state
@@ -890,5 +894,6 @@ __all__ = [
     "Rule",
     "Species",
     "States",
+    "readFromString",
     "read_from_string",
 ]

@@ -71,6 +71,8 @@ def test_databases_and_states_expose_reference_containers():
 
 
 def test_playground_structures_expose_camel_case_object_methods():
+    from bionetgen.atomizer.modern import readFromString
+
     component = Component("site")
     component.addState("P")
     component.addBond(1)
@@ -95,3 +97,4 @@ def test_playground_structures_expose_camel_case_object_methods():
     assert species.getMoleculeNames() == ["A"]
     assert species.getSize() == 1
     assert species.toString(True) == "A(site!1~P)@cell"
+    assert str(readFromString("A(site~P)")) == "A(site~P)"
