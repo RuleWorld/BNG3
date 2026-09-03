@@ -2512,13 +2512,16 @@ def generate_bngl(
 
 
 # Preserve the TypeScript reference spelling for direct facade callers.
+bnglFunction = bngl_function
 bnglReaction = bngl_reaction
 curateParameters = curate_parameters
+generateBNGL = generate_bngl
 inlineSBMLFunctions = inline_sbml_functions
 splitReversibleRate = split_reversible_rate
 
 
 __all__ = [
+    "bnglFunction",
     "bngl_function",
     "bnglReaction",
     "bngl_reaction",
@@ -2526,6 +2529,7 @@ __all__ = [
     "curateParameters",
     "curate_parameters",
     "extend_function",
+    "generateBNGL",
     "generate_bngl",
     "inlineSBMLFunctions",
     "inline_sbml_functions",

@@ -75,6 +75,7 @@ from .structures import (
 from .types import *  # noqa: F401,F403
 from .writer import (
     ReversibleRateSplit,
+    bnglFunction,
     bnglReaction,
     bngl_function,
     bngl_reaction,
@@ -82,6 +83,7 @@ from .writer import (
     curateParameters,
     curate_parameters,
     extend_function,
+    generateBNGL,
     generate_bngl,
     inlineSBMLFunctions,
     inline_sbml_functions,
@@ -597,6 +599,7 @@ __all__ = [
     "convertBNGXmlToBNGL",
     "convert_bng_xml_to_bngl",
     "bngl_function",
+    "bnglFunction",
     "bnglReaction",
     "bngl_reaction",
     "curateParameters",
@@ -633,6 +636,7 @@ __all__ = [
     "fold_numeric",
     "fetch_uniprot_entry",
     "generate_bngl",
+    "generateBNGL",
     "inlineSBMLFunctions",
     "inline_sbml_functions",
     "get_molecule_types",

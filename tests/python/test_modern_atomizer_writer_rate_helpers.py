@@ -49,3 +49,10 @@ def test_split_reversible_rate_rejects_one_sided_and_preserves_original_input():
     result = split_reversible_rate("  kf*A  ")
 
     assert result == ReversibleRateSplit(False, "  kf*A  ", "0")
+
+
+def test_playground_writer_facade_exports_reference_function_names():
+    import bionetgen.atomizer.modern as modern
+
+    assert modern.bnglFunction is modern.bngl_function
+    assert modern.generateBNGL is modern.generate_bngl
