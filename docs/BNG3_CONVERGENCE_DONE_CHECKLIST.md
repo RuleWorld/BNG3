@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-02
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** d58c2a6fb2ed2c478ef6a6152077bc21d0ad42bc
-**Checklist refresh base:** d58c2a6fb2ed2c478ef6a6152077bc21d0ad42bc (public exact-head checkpoint for the Playground-derived Atomizer facade names)
-**Latest workflow checkpoint:** d58c2a6fb2ed2c478ef6a6152077bc21d0ad42bc (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33704586367, CodeQL run 33704586351, formatting run 33704586407)
+**Audited semantic code head:** 5afc84ecbb558092fca9ff2528655c175b574707
+**Checklist refresh base:** 5afc84ecbb558092fca9ff2528655c175b574707 (public exact-head checkpoint for the Playground-derived named BNGL-generation result)
+**Latest workflow checkpoint:** 5afc84ecbb558092fca9ff2528655c175b574707 (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33704892945, CodeQL run 33704892981, formatting run 33704892921)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -2321,6 +2321,36 @@ completion gate.
   TypeScript async lifecycle, Databases/result object shapes, broader Atomizer
   behavior, parser/writer/SBML parity, and independent round-trip evidence
   remain open.
+- [x] Playground `src/lib/atomizer/writer/bnglWriter.ts:2114-2857` at
+  reference `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` returns the named
+  `BNGLGenerationResult` fields `bngl`, `observableMap`, and `warnings`. The
+  tests-first BNG3 checkpoint is
+  `5afc84ecbb558092fca9ff2528655c175b574707` in
+  `python/bionetgen/atomizer/modern/writer.py`, with the facade export in
+  `python/bionetgen/atomizer/modern/__init__.py` and the source-derived
+  contract in
+  `tests/python/test_modern_atomizer_writer_rate_helpers.py::test_playground_generate_bngl_returns_named_generation_result`.
+  The red-first command
+  `env PYTHONPATH=python:build/cpp python -m pytest tests/python/test_modern_atomizer_writer_rate_helpers.py -q -k named_generation`
+  reported `1 failed, 5 deselected` because `generate_bngl` returned a bare
+  tuple; the repaired command reports `1 passed, 5 deselected` and verifies
+  named fields, the camel-case map alias, warnings, and legacy two-value
+  unpacking. The writer glob reports `16 passed`; the modern Atomizer glob
+  reports `113 passed`; the full Python gate reports `288 passed, 27 skipped,
+  8 warnings` in `10.19s`; exact CTest reports `190/190` in `1.62s`;
+  changed-file Ruff passes; changed-file Black reports `3 files would be left
+  unchanged`; and `git diff --check` passes. This Python-only checkpoint
+  leaves the native `build/cpp/bng_cpp` artifact unchanged at SHA-256
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`.
+  Exact public branch head readback is
+  `5afc84ecbb558092fca9ff2528655c175b574707`; hosted formatting
+  [33704892921](https://github.com/RuleWorld/BNG3/actions/runs/33704892921), CI
+  [33704892945](https://github.com/RuleWorld/BNG3/actions/runs/33704892945), and
+  CodeQL [33704892981](https://github.com/RuleWorld/BNG3/actions/runs/33704892981)
+  were queued at readback. This closes only the named generation-result and
+  backward-compatible unpacking slice; warning-production parity, atomized and
+  flat writer behavior, broader parser/SBML parity, and independent
+  round-trip evidence remain open.
 - [ ] Complete or explicitly govern remaining modern reference modules:
   atomization/core, parser/bngXmlParser and parser/sbmlParser,
   validation/units, writer/bnglWriter, writer/eventActions, and
