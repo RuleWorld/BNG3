@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-02
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** be9d6a25a02f20bad7182b9ea8409c37fdc137e9
-**Checklist refresh base:** be9d6a25a02f20bad7182b9ea8409c37fdc137e9 (public exact-head checkpoint for the Playground-derived structured SBML import-warning records)
-**Latest workflow checkpoint:** be9d6a25a02f20bad7182b9ea8409c37fdc137e9 (hosted checks read back after push; CI [33708860933](https://github.com/RuleWorld/BNG3/actions/runs/33708860933), CodeQL [33708860926](https://github.com/RuleWorld/BNG3/actions/runs/33708860926), and formatting [33708860908](https://github.com/RuleWorld/BNG3/actions/runs/33708860908) remain queued)
+**Audited semantic code head:** eefdf3b9fb147b1d0558b7b213ecd315f98017cb
+**Checklist refresh base:** eefdf3b9fb147b1d0558b7b213ecd315f98017cb (public exact-head checkpoint for the Playground-derived structured SBML event-assignment records)
+**Latest workflow checkpoint:** eefdf3b9fb147b1d0558b7b213ecd315f98017cb (hosted checks read back after push; CI [33712428796](https://github.com/RuleWorld/BNG3/actions/runs/33712428796), CodeQL [33712428667](https://github.com/RuleWorld/BNG3/actions/runs/33712428667), and formatting [33712428660](https://github.com/RuleWorld/BNG3/actions/runs/33712428660) remain pending)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -2601,6 +2601,35 @@ completion gate.
   remain queued and are not completion evidence. This closes only the
   structured-warning data contract; complete parser diagnostics, writer/SBML
   parity, independent round trips, and release validation remain open.
+- [x] Playground `src/lib/atomizer/config/types.ts:579-594` and
+  `src/lib/atomizer/parser/sbmlParser.ts:2645-2682` at reference
+  `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` represent event assignments as
+  structured `{variable, math}` records. The tests-first BNG3 checkpoint is
+  `eefdf3b9fb147b1d0558b7b213ecd315f98017cb` in
+  `python/bionetgen/atomizer/modern/types.py`, `events.py`, and `writer.py`;
+  `SBMLEventAssignment` exposes source-shaped attributes, string-key mapping
+  access, and legacy tuple equality while event translation and diagnostics
+  accept the structured record. The red-first command
+  `PYTHONPATH=python:build/cpp python -m pytest tests/python/test_modern_atomizer.py -q -k source_shaped_event_assignment_records`
+  reported `1 failed, 60 deselected` because the public record type was absent;
+  the repaired event/record command reports `4 passed, 57 deselected`. The
+  modern regression command reports `76 passed`; the modern Atomizer glob
+  reports `121 passed`; the full Python gate reports `296 passed, 27 skipped,
+  8 warnings` in `15.30s`; exact Release/Ninja CTest reports `190/190` in
+  `1.81s`; and export validation reports `12 passed` in `18.54s`. Changed-file
+  Ruff and Black pass (`4 files would be left unchanged`), and `git diff
+  --check` passes. The native `build/cpp/bng_cpp` artifact remains SHA-256
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`.
+  Exact public branch and PR #2 head readback is
+  `eefdf3b9fb147b1d0558b7b213ecd315f98017cb`; hosted CI
+  [33712428796](https://github.com/RuleWorld/BNG3/actions/runs/33712428796),
+  CodeQL [33712428667](https://github.com/RuleWorld/BNG3/actions/runs/33712428667),
+  and formatting
+  [33712428660](https://github.com/RuleWorld/BNG3/actions/runs/33712428660)
+  remain pending and are not completion evidence. This closes only the
+  source-shaped event-assignment data contract; broader event semantics,
+  parser/writer/SBML parity, independent round trips, and release validation
+  remain open.
 - [ ] Complete or explicitly govern remaining modern reference modules:
   atomization/core, parser/bngXmlParser and parser/sbmlParser,
   validation/units, writer/bnglWriter, writer/eventActions, and
