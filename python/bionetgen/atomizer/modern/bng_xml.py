@@ -138,12 +138,11 @@ def _reaction_rate(
         ]
         if rate_type in {"MM", "Sat"} and len(arguments) >= 2:
             reactant_list = _first(reaction_rule, "ListOfReactantPatterns")
-            reactant_molecule = _first(reactant_list, "Molecule")
-            compartment = (
-                _attribute(reactant_molecule, "compartment")
-                if reactant_molecule is not None
-                else ""
-            )
+            compartment = ""
+            for reactant_molecule in _descendants(reactant_list, "Molecule"):
+                compartment = _attribute(reactant_molecule, "compartment")
+                if compartment:
+                    break
             if compartment:
                 scale = compartment
                 if "NA" in set(parameter_names):
@@ -254,7 +253,9 @@ def convert_bng_xml_to_bngl(xml: str) -> str:
         lines.append("begin functions")
         for function in functions:
             name = _attribute(function, "id", "name", default="f")
-            expression = _first(function, "Expression", "math")
+            expression = _first(function, "Expression")
+            if expression is None:
+                expression = _first(function, "math")
             lines.append(f"    function {name} = {_text(expression)}")
         lines.extend(["end functions", ""])
 

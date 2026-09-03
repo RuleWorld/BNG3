@@ -323,3 +323,47 @@ def test_bng_xml_converter_reports_source_diagnostics():
         ("BNGXML002", "Scaled MM constant for cell: (km * cell * NA)"),
         ("BNGXML001", "Converted BNG SBML to BNGL (fallback)"),
     ]
+
+
+def test_bng_xml_converter_prefers_expression_over_math():
+    from bionetgen.atomizer.modern import convert_bng_xml_to_bngl
+
+    xml = """<?xml version="1.0"?>
+    <sbml><model id="bng_xml_function_precedence">
+      <ListOfFunctions><Function id="rate">
+        <math>math_expression</math>
+        <Expression>source_expression</Expression>
+      </Function></ListOfFunctions>
+    </model></sbml>"""
+
+    bngl = convert_bng_xml_to_bngl(xml)
+
+    assert "function rate = source_expression" in bngl
+    assert "function rate = math_expression" not in bngl
+
+
+def test_bng_xml_converter_scales_from_first_compartmented_reactant():
+    from bionetgen.atomizer.modern import convert_bng_xml_to_bngl
+
+    xml = """<?xml version="1.0"?>
+    <sbml><model id="bng_xml_reactant_compartment">
+      <ListOfParameters><Parameter id="NA" value="6.02e23"/></ListOfParameters>
+      <ListOfReactionRules><ReactionRule id="r">
+        <ListOfReactantPatterns><ReactantPattern>
+          <ListOfMolecules>
+            <Molecule name="A"><ListOfComponents><Component name="x"/></ListOfComponents></Molecule>
+            <Molecule name="B" compartment="cell"><ListOfComponents><Component name="y"/></ListOfComponents></Molecule>
+          </ListOfMolecules>
+        </ReactantPattern></ListOfReactantPatterns>
+        <ListOfProductPatterns><ProductPattern>
+          <ListOfMolecules><Molecule name="C" compartment="cell"/></ListOfMolecules>
+        </ProductPattern></ListOfProductPatterns>
+        <RateLaw type="MM"><ListOfRateConstants>
+          <RateConstant value="vmax"/><RateConstant value="km"/>
+        </ListOfRateConstants></RateLaw>
+      </ReactionRule></ListOfReactionRules>
+    </model></sbml>"""
+
+    bngl = convert_bng_xml_to_bngl(xml)
+
+    assert "A(x) + B(y)@cell -> C()@cell   MM(vmax,(km * cell * NA))" in bngl
