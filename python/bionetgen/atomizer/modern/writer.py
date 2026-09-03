@@ -2623,9 +2623,17 @@ def generate_bngl(
 bnglFunction = bngl_function
 bnglReaction = bngl_reaction
 curateParameters = curate_parameters
+extendFunction = extend_function
 generateBNGL = generate_bngl
 inlineSBMLFunctions = inline_sbml_functions
 splitReversibleRate = split_reversible_rate
+writeParameters = write_parameters
+writeCompartments = write_compartments
+writeMoleculeTypes = write_molecule_types
+writeSeedSpecies = write_seed_species
+writeObservables = write_observables
+writeFunctions = write_functions
+writeReactionRules = write_reaction_rules
 
 
 __all__ = [
@@ -2637,6 +2645,7 @@ __all__ = [
     "convert_math_expression",
     "curateParameters",
     "curate_parameters",
+    "extendFunction",
     "extend_function",
     "generateBNGL",
     "generate_bngl",
@@ -2645,11 +2654,18 @@ __all__ = [
     "ReversibleRateSplit",
     "splitReversibleRate",
     "split_reversible_rate",
+    "writeCompartments",
     "write_compartments",
+    "writeFunctions",
     "write_functions",
+    "writeMoleculeTypes",
     "write_molecule_types",
+    "writeObservables",
     "write_observables",
+    "writeParameters",
     "write_parameters",
+    "writeReactionRules",
     "write_reaction_rules",
+    "writeSeedSpecies",
     "write_seed_species",
 ]

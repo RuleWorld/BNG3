@@ -58,6 +58,22 @@ def test_playground_writer_facade_exports_reference_function_names():
     assert modern.generateBNGL is modern.generate_bngl
 
 
+def test_playground_writer_facade_exports_all_implemented_writer_names():
+    import bionetgen.atomizer.modern as modern
+
+    for camel_name, snake_name in (
+        ("extendFunction", "extend_function"),
+        ("writeParameters", "write_parameters"),
+        ("writeCompartments", "write_compartments"),
+        ("writeMoleculeTypes", "write_molecule_types"),
+        ("writeSeedSpecies", "write_seed_species"),
+        ("writeObservables", "write_observables"),
+        ("writeFunctions", "write_functions"),
+        ("writeReactionRules", "write_reaction_rules"),
+    ):
+        assert getattr(modern, camel_name) is getattr(modern, snake_name)
+
+
 def test_playground_generate_bngl_returns_named_generation_result():
     from collections import OrderedDict
 

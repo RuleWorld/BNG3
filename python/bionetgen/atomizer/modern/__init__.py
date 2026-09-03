@@ -64,6 +64,7 @@ from .events import (
     fold_numeric,
     parseTimeThreshold,
     parse_time_threshold,
+    synthesizeEventActions,
     synthesize_event_actions,
 )
 from .structures import (
@@ -89,6 +90,7 @@ from .writer import (
     convert_math_expression,
     curateParameters,
     curate_parameters,
+    extendFunction,
     extend_function,
     generateBNGL,
     generate_bngl,
@@ -96,12 +98,19 @@ from .writer import (
     inline_sbml_functions,
     splitReversibleRate,
     split_reversible_rate,
+    writeCompartments,
     write_compartments,
+    writeFunctions,
     write_functions,
+    writeMoleculeTypes,
     write_molecule_types,
+    writeObservables,
     write_observables,
+    writeParameters,
     write_parameters,
+    writeReactionRules,
     write_reaction_rules,
+    writeSeedSpecies,
     write_seed_species,
 )
 from .units import apply_unit_scaling, resolve_unit_factor, unit_conversion_factor

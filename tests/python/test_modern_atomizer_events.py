@@ -10,12 +10,15 @@ def test_playground_event_actions_exposes_reference_names_and_result_fields():
         fold_numeric,
         parseTimeThreshold,
         parse_time_threshold,
+        synthesizeEventActions,
+        synthesize_event_actions,
     )
 
     assert foldNumeric is fold_numeric
     assert foldNumeric("1 + 2", lambda _identifier: None) == 3
     assert parseTimeThreshold is parse_time_threshold
     assert parseTimeThreshold("time >= 2") == "2"
+    assert synthesizeEventActions is synthesize_event_actions
 
     context = EventTranslationContext(
         resolve_species_pattern=lambda identifier: f"{identifier}()",
