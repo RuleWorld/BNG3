@@ -158,6 +158,17 @@ class BioNetGenModel:
         pla_config: str = "",
         psa_poplevel: float = 100.0,
         verbose: bool = False,
+        max_step: float = 0.0,
+        steady_state: bool = False,
+        steady_state_tol: Optional[float] = None,
+        stop_if: str = "",
+        sample_times=None,
+        max_sim_steps: int = 0,
+        output_step_interval: int = 0,
+        sparse: bool = False,
+        check_product_scale: float = 0.0,
+        equilibrate: float = 0.0,
+        traversal_limit: int = -1,
     ) -> SimResult:
         """Run a simulation using the specified method.
 
@@ -170,8 +181,8 @@ class BioNetGenModel:
         n_steps : int
             Number of output time steps.
         t_start : float
-            Start time for ODE, SSA, PLA, or PSA simulation. NF currently
-            supports only the default start time of zero.
+            Absolute start time for the simulation. NF uses this time for
+            time-dependent functions and output coordinates.
         rtol, atol : float
             Relative and absolute tolerances (ODE only).
         seed : int
@@ -182,6 +193,31 @@ class BioNetGenModel:
             Population level threshold for PSA (PSA only).
         verbose : bool
             Print progress information.
+        max_step : float
+            Maximum internal CVODE step size (ODE only; 0 disables the limit).
+        steady_state : bool
+            Stop an ODE run when the derivative norm is below the tolerance.
+        steady_state_tol : float, optional
+            Derivative tolerance for steady-state stopping.
+        stop_if : str
+            Expression evaluated at output points/events; a nonzero value stops
+            ODE/SSA simulation.
+        sample_times : sequence of float, optional
+            Strictly increasing ODE/SSA/NF output times between ``t_start``
+            and ``t_end``. If the final time is omitted, ``t_end`` is appended.
+        max_sim_steps : int
+            Maximum internal SSA reaction events (0 = unlimited).
+        output_step_interval : int
+            Output every N internal SSA reaction events when ``sample_times``
+            is not set.
+        sparse : bool
+            Request the sparse CVODE linear solver.
+        check_product_scale : float
+            Warn when an ODE species exceeds this positive threshold.
+        traversal_limit : int
+            NFsim bonded-neighborhood traversal depth. ``-1`` uses the
+            adapter's model-derived recommendation; non-negative values mirror
+            NFsim's ``-utl`` control. NF only.
 
         Returns
         -------
@@ -206,24 +242,124 @@ class BioNetGenModel:
             n_steps = operator.index(n_steps)
         except TypeError as exc:
             raise TypeError("n_steps must be a positive integer") from exc
-        if n_steps <= 0:
-            raise ValueError("n_steps must be a positive integer")
+        if n_steps < 0 or (n_steps == 0 and sample_times is None):
+            raise ValueError("n_steps must be positive unless sample_times is set")
         if not math.isfinite(float(rtol)) or rtol <= 0.0:
             raise ValueError("rtol must be finite and positive")
         if not math.isfinite(float(atol)) or atol <= 0.0:
             raise ValueError("atol must be finite and positive")
         if not math.isfinite(float(psa_poplevel)):
             raise ValueError("psa_poplevel must be finite")
+        if not math.isfinite(float(max_step)) or max_step < 0.0:
+            raise ValueError("max_step must be finite and non-negative")
+        if steady_state_tol is None:
+            steady_state_tol = atol
+        if not math.isfinite(float(steady_state_tol)) or steady_state_tol <= 0.0:
+            raise ValueError("steady_state_tol must be finite and positive")
+        if not isinstance(stop_if, str):
+            raise TypeError("stop_if must be a string")
+        if not math.isfinite(float(check_product_scale)) or check_product_scale < 0.0:
+            raise ValueError("check_product_scale must be finite and non-negative")
+        if not math.isfinite(float(equilibrate)) or equilibrate < 0.0:
+            raise ValueError("equilibrate must be finite and non-negative")
+        if isinstance(traversal_limit, bool):
+            raise TypeError("traversal_limit must be -1 or a non-negative integer")
+        try:
+            traversal_limit = operator.index(traversal_limit)
+        except TypeError as exc:
+            raise TypeError(
+                "traversal_limit must be -1 or a non-negative integer"
+            ) from exc
+        if traversal_limit < -1:
+            raise ValueError("traversal_limit must be -1 or a non-negative integer")
+        if method != "nf" and equilibrate != 0.0:
+            raise ValueError("equilibrate is supported only for method='nf'")
+        if method != "nf" and traversal_limit != -1:
+            raise ValueError("traversal_limit is supported only for method='nf'")
+        for option_name, option_value in {
+            "max_sim_steps": max_sim_steps,
+            "output_step_interval": output_step_interval,
+        }.items():
+            if isinstance(option_value, bool):
+                raise TypeError(f"{option_name} must be a non-negative integer")
+            try:
+                option_value = operator.index(option_value)
+            except TypeError as exc:
+                raise TypeError(
+                    f"{option_name} must be a non-negative integer"
+                ) from exc
+            if option_value < 0:
+                raise ValueError(f"{option_name} must be a non-negative integer")
+            if option_name == "max_sim_steps":
+                max_sim_steps = option_value
+            else:
+                output_step_interval = option_value
+
+        normalized_sample_times = []
+        if sample_times is not None:
+            try:
+                normalized_sample_times = [float(value) for value in sample_times]
+            except (TypeError, ValueError) as exc:
+                raise TypeError("sample_times must be a sequence of numbers") from exc
+            if not normalized_sample_times:
+                raise ValueError("sample_times must not be empty")
+            if any(not math.isfinite(value) for value in normalized_sample_times):
+                raise ValueError("sample_times must contain only finite values")
+            if any(
+                later <= earlier
+                for earlier, later in zip(
+                    normalized_sample_times, normalized_sample_times[1:]
+                )
+            ):
+                raise ValueError("sample_times must be strictly increasing")
+            if (
+                normalized_sample_times[0] < t_start
+                or normalized_sample_times[-1] > t_end
+            ):
+                raise ValueError("sample_times must lie between t_start and t_end")
+            if normalized_sample_times[-1] < t_end:
+                normalized_sample_times.append(float(t_end))
+        if n_steps == 0 and not normalized_sample_times:
+            raise ValueError("n_steps must be positive unless sample_times is set")
+
+        ode_only_options = (
+            max_step > 0.0 or steady_state or sparse or check_product_scale > 0.0
+        )
+        if method != "ode" and ode_only_options:
+            raise ValueError(
+                "max_step, steady-state, sparse, and check_product_scale are "
+                "supported only for method='ode'"
+            )
+        if method == "ode" and (max_sim_steps or output_step_interval):
+            raise ValueError(
+                "max_sim_steps and output_step_interval are supported only "
+                "for method='ssa'"
+            )
+        if method not in {"ode", "ssa", "nf"} and (
+            stop_if or max_sim_steps or output_step_interval
+        ):
+            raise ValueError(
+                "stop_if, max_sim_steps, and output_step_interval are supported "
+                "only for method='ode' or method='ssa'"
+            )
+        if method == "nf" and (stop_if or max_sim_steps or output_step_interval):
+            raise ValueError(
+                "stop_if, max_sim_steps, and output_step_interval are supported "
+                "only for method='ode' or method='ssa'"
+            )
 
         if method == "nf":
-            if t_start != 0.0:
-                raise ValueError("NF simulation currently supports only t_start=0.0")
             raw = _cpp.simulate_nf(
                 self._model,
                 t_end=t_end,
                 n_steps=n_steps,
+                t_start=t_start,
                 seed=seed,
                 verbose=verbose,
+                equilibrate=equilibrate,
+                source_path=self._source_path or "",
+                sample_times=normalized_sample_times,
+                traversal_limit=traversal_limit,
             )
         else:
             if self._network is None:
@@ -238,6 +374,16 @@ class BioNetGenModel:
                     t_start=t_start,
                     rtol=rtol,
                     atol=atol,
+                    method="cvode",
+                    max_step=max_step,
+                    steady_state=steady_state,
+                    steady_state_tol=steady_state_tol,
+                    stop_if=stop_if,
+                    sample_times=normalized_sample_times,
+                    max_sim_steps=max_sim_steps,
+                    output_step_interval=output_step_interval,
+                    sparse=sparse,
+                    check_product_scale=check_product_scale,
                 )
             elif method == "ssa":
                 raw = _cpp.simulate_ssa(
@@ -247,6 +393,10 @@ class BioNetGenModel:
                     n_steps=n_steps,
                     t_start=t_start,
                     seed=seed,
+                    stop_if=stop_if,
+                    sample_times=normalized_sample_times,
+                    max_sim_steps=max_sim_steps,
+                    output_step_interval=output_step_interval,
                 )
             elif method == "pla":
                 raw = _cpp.simulate_pla(

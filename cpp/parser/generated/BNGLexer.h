@@ -4,6 +4,7 @@
 #pragma once
 
 
+#include "../antlr_compat.hpp"
 #include "antlr4-runtime.h"
 
 
@@ -99,4 +100,3 @@ private:
   bool FLOATSempred(antlr4::RuleContext *_localctx, size_t predicateIndex);
 
 };
-

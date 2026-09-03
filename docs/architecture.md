@@ -106,20 +106,23 @@ python/bionetgen/
 
 ## NFSim Integration Strategy
 
-NFSim is integrated via an XML bridge rather than direct data model unification:
+The default NFSim route now constructs `NFcore::System` directly from the
+canonical AST:
 
 1. BNG C++ parses BNGL → `ast::Model`
-2. `XmlWriter::write()` serializes to BNG-XML string
-3. XML written to temp file
-4. `NFinput::initializeFromXML()` reads XML → `NFcore::System`
-5. `System::sim()` runs network-free simulation
-6. Observable values extracted after simulation
+2. `NFinput::buildSystemFromAst()` maps parameters, molecule types, species,
+   observables, functions, energy patterns, and reaction rules
+3. The model-derived universal traversal limit is applied (or an explicit
+   Python `traversal_limit`/action `utl` value is honored)
+4. `System::prepareForSimulation()` and `System::stepTo()` run the network-free
+   simulation
+5. Observable values are copied into NumPy arrays
 
-This approach was chosen because:
-- Both sides are extensively tested against the XML format
-- Avoids the complex task of unifying two different data models
-- Can be transparently replaced with direct bridge later (Phase 3)
-- Serialization overhead is negligible vs simulation time
+The in-memory XML initializer remains an explicit compatibility fallback and a
+shadow-comparison oracle while direct parity is qualified. The on-disk XML
+initializer is a last-resort compatibility path for legacy models. Direct
+construction is fail-closed: unsupported AST constructs do not silently change
+semantics by falling back unless the caller opts into XML compatibility.
 
 ## Memory Management
 

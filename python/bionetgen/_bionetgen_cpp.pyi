@@ -178,6 +178,12 @@ class OdeOptions:
     max_step: float
     steady_state: bool
     steady_state_tol: float
+    stop_if: str
+    sample_times: List[float]
+    max_sim_steps: int
+    output_step_interval: int
+    sparse: bool
+    check_product_scale: float
     def __init__(self) -> None: ...
 
 # ─── Result Type ──────────────────────────────────────────────────────────────
@@ -264,6 +270,15 @@ def simulate_ode(
     rtol: float = 1e-8,
     atol: float = 1e-8,
     method: str = "cvode",
+    max_step: float = 0.0,
+    steady_state: bool = False,
+    steady_state_tol: float = 1e-8,
+    stop_if: str = "",
+    sample_times: List[float] = [],
+    max_sim_steps: int = 0,
+    output_step_interval: int = 0,
+    sparse: bool = False,
+    check_product_scale: float = 0.0,
 ) -> Dict[str, object]:
     """Run ODE simulation on a generated network.
 
@@ -285,6 +300,24 @@ def simulate_ode(
         Absolute tolerance.
     method : str
         Integration method: "cvode", "euler", or "rk4".
+    max_step : float
+        Maximum internal CVODE step size; zero disables the limit.
+    steady_state : bool
+        Stop when the derivative norm is below ``steady_state_tol``.
+    steady_state_tol : float
+        Derivative threshold for steady-state stopping.
+    stop_if : str
+        Expression evaluated at output points; nonzero stops the run.
+    sample_times : list[float]
+        Strictly increasing output times between ``t_start`` and ``t_end``.
+    max_sim_steps : int
+        Stochastic-only option; must be zero for ``simulate_ode``.
+    output_step_interval : int
+        Stochastic-only option; must be zero for ``simulate_ode``.
+    sparse : bool
+        Request the sparse CVODE linear solver.
+    check_product_scale : float
+        Warn when a species exceeds this threshold.
 
     Returns
     -------
@@ -301,6 +334,10 @@ def simulate_ssa(
     n_steps: int = 100,
     t_start: float = 0.0,
     seed: int = 0,
+    stop_if: str = "",
+    sample_times: List[float] = [],
+    max_sim_steps: int = 0,
+    output_step_interval: int = 0,
 ) -> Dict[str, object]:
     """Run SSA (stochastic) simulation on a generated network.
 
@@ -318,6 +355,14 @@ def simulate_ssa(
         Start time.
     seed : int
         Random seed (0 = system default).
+    stop_if : str
+        Expression evaluated after each reaction; nonzero stops the run.
+    sample_times : list[float], optional
+        Strictly increasing output times between ``t_start`` and ``t_end``.
+    max_sim_steps : int
+        Maximum number of reaction events (0 = unlimited).
+    output_step_interval : int
+        Output every N reaction events when ``sample_times`` is not set.
 
     Returns
     -------
@@ -398,13 +443,16 @@ def simulate_nf(
     t_end: float = 100.0,
     n_steps: int = 100,
     seed: int = 0,
-    equilibrate: int = 0,
+    equilibrate: float = 0.0,
     verbose: bool = False,
+    source_path: str = "",
+    sample_times: List[float] = [],
+    traversal_limit: int = -1,
 ) -> Dict[str, object]:
     """Run network-free (NFSim) simulation on a model.
 
-    The model is serialized to XML and passed to the NFSim engine
-    for stochastic simulation without network enumeration.
+    The model is mapped directly to the NFSim engine for stochastic simulation
+    without network enumeration. XML is an explicit compatibility fallback.
 
     Parameters
     ----------
@@ -416,15 +464,24 @@ def simulate_nf(
         Number of output time steps.
     seed : int
         Random seed (0 = system default).
-    equilibrate : int
+    equilibrate : float
         Equilibration time before simulation (0 = none).
     verbose : bool
         Print progress information.
+    source_path : str
+        Path to the source BNGL file for resolving relative TFUN tables.
+    sample_times : list[float]
+        Strictly increasing output times between zero and ``t_end``.  If the
+        final time is omitted, ``t_end`` is appended.
+    traversal_limit : int
+        NFsim bonded-neighborhood traversal depth. ``-1`` uses the model-derived
+        recommendation; non-negative values mirror NFsim's ``-utl`` control.
 
     Returns
     -------
     dict
-        Keys: "time" (ndarray), "observables" (dict[str, ndarray]).
+        Keys: "time" (ndarray), "observables" (dict[str, ndarray]), and
+        "construction_path" ("direct", "in-memory-xml", or "on-disk-xml").
     """
     ...
 
@@ -485,6 +542,22 @@ class io:
     @staticmethod
     def write_latex(model: Model, network: GeneratedNetwork, path: str) -> None:
         """Write model to LaTeX format."""
+        ...
+
+    @staticmethod
+    def write_mex_string(
+        model: Model,
+        network: GeneratedNetwork,
+        t_start: float = 0.0,
+        t_end: float = 10.0,
+        n_steps: int = 20,
+        atol: float = 1e-6,
+        rtol: float = 1e-8,
+        max_num_steps: int = 2000,
+        max_step: float = 0.0,
+        sparse: bool = False,
+    ) -> str:
+        """Serialize a generated MEX ODE implementation."""
         ...
 
 class viz:

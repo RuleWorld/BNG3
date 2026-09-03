@@ -615,6 +615,16 @@ PatternGraph::find_canonical_order ( bool preserve_prior_order ) const
     if ( !preserve_prior_order )
         reset_index();
 
+    // Empty species graphs are valid inputs.  They have no Nauty vertex or
+    // partition array, so canonicalization is the empty label rather than an
+    // attempt to write ptn[-1].
+    if ( nodes.empty() )
+    {
+        label.clear();
+        canonical_flag = true;
+        return;
+    }
+
     //std::cout << "find_canonical_order" << std::endl;
     int   nv, m, nde;
     int   v_index, e_index;
@@ -1229,6 +1239,5 @@ PatternGraph::split_connected ( patterngraph_container_t & split_graphs )
         connected_nodes.clear();
     }
 }
-
 
 

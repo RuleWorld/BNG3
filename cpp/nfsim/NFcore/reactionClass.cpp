@@ -14,6 +14,12 @@ ReactionClass::ReactionClass(string name, double baseRate, string baseRateParame
 {
 	//cout<<"\n\ncreating reaction "<<name<<endl;
 	this->system=s;
+	// AST-created reactions do not pass through the legacy XML loader, so
+	// initialize this flag here instead of relying on a later setter.  An
+	// indeterminate value can skip ordinary membership refreshes after a fire.
+	this->useConnectivity = s != nullptr && s->getConnectivityFlag();
+	this->directProductMolecules = 0;
+	this->directProductMoleculeSetValid = false;
 	this->tagged = false;
 	this->useRuleMonkey = false;
 
@@ -199,7 +205,9 @@ ReactionClass::ReactionClass(string name, double baseRate, string baseRateParame
 
 	if ( this->transformationSet->usingSymmetryFactor() )
 	{	// new general method for handling reaction center symmetry
-		baseRate *= this->transformationSet->getSymmetryFactor();
+		// Keep the correction on the member.  The constructor argument has the
+		// same name and scaling it would discard the correction on return.
+		this->baseRate *= this->transformationSet->getSymmetryFactor();
 	}
 	else
 	{	// old method for handling symmetric binding and unbinding
@@ -237,10 +245,21 @@ ReactionClass::ReactionClass(string name, double baseRate, string baseRateParame
 	// check for population type reactants
 	isPopulationType = new bool[n_reactants];
 	matchOncePerReactant = new bool[n_reactants];
+	contextCountsPerComplex = new bool[n_reactants];
 	for( unsigned int i=0; i < n_reactants; ++i )
 	{
 		isPopulationType[i] = reactantTemplates[i]->getMoleculeType()->isPopulationType();
 		matchOncePerReactant[i] = false;
+		contextCountsPerComplex[i] = false;
+	}
+
+	if (system != 0 && system->isUsingComplex()) {
+		for (unsigned int i = 0; i < n_reactants; ++i) {
+			if (!isPopulationType[i]) {
+				contextCountsPerComplex[i] =
+					transformationSet->isPureContextReactant(i);
+			}
+		}
 	}
 
 
@@ -273,7 +292,24 @@ void ReactionClass::appendConnectedRxn(ReactionClass * rxn) {
 bool ReactionClass::isReactionConnected(ReactionClass * rxn) {
 	// First check if any of the operations share MoleculeType and components with
 	// one of the reactant templates of rxn.
-	return this->transformationSet->checkConnection(rxn);
+	if (this->transformationSet->checkConnection(rxn)) return true;
+
+	// Full membership refresh revisits every explicit reactant template in the
+	// fired rule, not only templates that carry direct transformations. Treat
+	// any compatible explicit template as connected so the fast path preserves
+	// the same reachable update set.
+	for (unsigned int i=0; i<allReactantTemplates.size(); i++) {
+		if (rxn->isTemplateCompatible(allReactantTemplates[i])) return true;
+	}
+
+	// Product templates can also create new compatible mappings, but avoid
+	// broadening synthesis rules where this would over-connect add-only paths.
+	if (n_reactants > 0) {
+		for (unsigned int i=0; i<allProductTemplates.size(); i++) {
+			if (rxn->isTemplateCompatible(allProductTemplates[i])) return true;
+		}
+	}
+	return false;
 }
 
 ReactionClass::~ReactionClass()
@@ -288,7 +324,9 @@ ReactionClass::~ReactionClass()
 	delete [] mappingSet;
 	delete [] isPopulationType;
 	delete [] matchOncePerReactant;
+	delete [] contextCountsPerComplex;
 	delete [] identicalPopCountCorrection;
+	delete directProductMolecules;
 	connectedReactions.clear();
 }
 
@@ -346,6 +384,32 @@ MoleculeType *ReactionClass::getMoleculeTypeOfReactantTemplate(int pos) const {
 	return reactantTemplates[pos]->getMoleculeType();
 }
 
+bool ReactionClass::isDirectProductMolecule(Molecule *molecule) const
+{
+	if (molecule == 0)
+		return false;
+	if (directProductMoleculeSetValid)
+		return directProductMolecules != 0 &&
+			directProductMolecules->find(molecule) !=
+			directProductMolecules->end();
+	if (!directProductMoleculeList.empty())
+		return std::find(directProductMoleculeList.begin(),
+				directProductMoleculeList.end(), molecule) !=
+			directProductMoleculeList.end();
+	for (unsigned int msIndex = 0; msIndex < n_mappingsets; ++msIndex) {
+		MappingSet *ms = mappingSet[msIndex];
+		if (ms == 0)
+			continue;
+		for (unsigned int mappingIndex = 0;
+				mappingIndex < ms->getNumOfMappings(); ++mappingIndex) {
+			Mapping *mapping = ms->get(mappingIndex);
+			if (mapping != 0 && mapping->getMolecule() == molecule)
+				return true;
+		}
+	}
+	return false;
+}
+
 
 void ReactionClass::printDetails() const {
 	cout<< name <<"  (id="<<this->rxnId<<", baseRate="<<baseRate<<",  a="<<a<<", fired="<<fireCounter<<" times )"<<endl;
@@ -381,6 +445,10 @@ void ReactionClass::fire(double random_A_number) {
 string ReactionClass::fire(double random_A_number, bool track) {
 	//cout<<endl<<">FIRE "<<getName()<<endl;
 	fireCounter++;
+	directProductMoleculeList.clear();
+	if (directProductMolecules != 0)
+		directProductMolecules->clear();
+	directProductMoleculeSetValid = false;
 
 
 	// First randomly pick the reactants to fire by selecting the MappingSets
@@ -392,6 +460,15 @@ string ReactionClass::fire(double random_A_number, bool track) {
 		++(System::NULL_EVENT_COUNTER);
 		// AS2023 - we need to return a string now that this can return 
 		// an event log if track is true
+		return string("");
+	}
+
+	/* Compact EnergyPattern binding rules can detect an occupied endpoint
+	 * before the generic product/membership pipeline.  This preserves the
+	 * transformation's null-event semantics while avoiding all work that
+	 * cannot change the state. */
+	if (!this->checkPreFireConditions(mappingSet)) {
+		++(System::NULL_EVENT_COUNTER);
 		return string("");
 	}
 
@@ -412,6 +489,37 @@ string ReactionClass::fire(double random_A_number, bool track) {
 		}
 	}
 
+	/* Save the explicitly mapped molecules before transformation and membership
+	 * refresh can recycle mapping entries.  This is the source-derived direct
+	 * endpoint identity used by incremental membership decisions. */
+	if (this->useConnectivity || this->usesIncrementalMembership()) {
+		if (this->useConnectivity) {
+			if (directProductMolecules == 0)
+				directProductMolecules = new unordered_set<Molecule *>();
+			directProductMolecules->clear();
+			directProductMoleculeSetValid = true;
+		}
+		for (unsigned int msIndex = 0; msIndex < n_mappingsets; ++msIndex) {
+			MappingSet *ms = mappingSet[msIndex];
+			if (ms == 0)
+				continue;
+			for (unsigned int mappingIndex = 0;
+					mappingIndex < ms->getNumOfMappings(); ++mappingIndex) {
+				Mapping *mapping = ms->get(mappingIndex);
+				if (mapping == 0 || mapping->getMolecule() == 0)
+					continue;
+				Molecule *molecule = mapping->getMolecule();
+				if (this->useConnectivity)
+					directProductMolecules->insert(molecule);
+				if (this->usesIncrementalMembership() &&
+						std::find(directProductMoleculeList.begin(),
+							directProductMoleculeList.end(), molecule) ==
+						directProductMoleculeList.end())
+					directProductMoleculeList.push_back(molecule);
+			}
+		}
+	}
+
 
 	// // output something if the reaction was tagged
 	// if(tagged) {
@@ -427,8 +535,21 @@ string ReactionClass::fire(double random_A_number, bool track) {
 	// }
 
 	// Generate the set of possible products that we need to update
-	// (excluding new molecules, we'll get those later --Justin)
-	this->transformationSet->getListOfProducts(mappingSet,products,traversalLimit);
+	// (excluding new molecules, we'll get those later --Justin).  A compact
+	// energy reaction can use only its explicitly mapped endpoints when every
+	// omitted dependency has been proven safe; all other reactions retain the
+	// complete bonded-neighborhood traversal.
+	bool directProductsPrepared = false;
+	if (this->canUseDirectProductList()) {
+		for (vector<Molecule *>::const_iterator it =
+				directProductMoleculeList.begin();
+			it != directProductMoleculeList.end(); ++it)
+			products.push_back(*it);
+		directProductsPrepared = true;
+	} else {
+		this->transformationSet->getListOfProducts(
+				mappingSet, products, traversalLimit);
+	}
 
 	// Loop through the products (excluding added molecules) and remove from observables
 	if (this->onTheFlyObservables) {
@@ -451,7 +572,9 @@ string ReactionClass::fire(double random_A_number, bool track) {
 					c = mappingSet[k]->get(0)->getMolecule()->getComplex();
 					for(int i=0; i<system->getNumOfSpeciesObs(); i++) {
 						matches = system->getSpeciesObs(i)->isObservable(c);
-						system->getSpeciesObs(i)->straightSubtract(matches);
+						if (matches > 0) {
+							system->getSpeciesObs(i)->subtract(matches);
+						}
 					}
 				}
 			}
@@ -469,7 +592,9 @@ string ReactionClass::fire(double random_A_number, bool track) {
 					c = addmol->getComplex();
 					for (int i=0; i < system->getNumOfSpeciesObs(); i++) {
 						matches = system->getSpeciesObs(i)->isObservable(c);
-						system->getSpeciesObs(i)->straightSubtract(matches);
+						if (matches > 0) {
+							system->getSpeciesObs(i)->subtract(matches);
+						}
 					}
 				}
 			}
@@ -530,7 +655,9 @@ string ReactionClass::fire(double random_A_number, bool track) {
 				matches = 0;
 				for ( int i=0; i < system->getNumOfSpeciesObs(); i++ ) {
 					matches = system->getSpeciesObs(i)->isObservable(c);
-					system->getSpeciesObs(i)->straightAdd(matches);
+					if (matches > 0) {
+						system->getSpeciesObs(i)->add(matches);
+					}
 				}
 			}
 
@@ -543,6 +670,11 @@ string ReactionClass::fire(double random_A_number, bool track) {
 	//  also, gather a list of typeII dependencies that will require updating
 	typeII_products.clear();
 	std::unordered_set<MoleculeType*> typeIIProductSet;
+	bool deferMembershipPropensityUpdates =
+		directProductsPrepared && this->usesIncrementalMembership() &&
+		!useConnectivity;
+	if (deferMembershipPropensityUpdates)
+		this->system->beginDeferredMembershipPropensityUpdates();
 	for ( molIter = products.begin(); molIter != products.end(); molIter++ ) {
 		Molecule * mol = *molIter;
 		MoleculeType * mt = mol->getMoleculeType();
@@ -558,9 +690,14 @@ string ReactionClass::fire(double random_A_number, bool track) {
 		//Update this molcule's reaction membership
 		//  NOTE: as a side-effect, DORreactions that depend on molecule-scoped local functions
 		//   (typeI relationship) will be updated as long as UTL is set appropriately.
-		if ( mol->isAlive() )
-			mol->updateRxnMembership(this, useConnectivity);
+		if ( mol->isAlive() ) {
+			bool directProduct = !this->usesIncrementalMembership() ||
+					this->isDirectProductMolecule(mol);
+			mol->updateRxnMembership(this, useConnectivity, directProduct);
+		}
 	}
+	if (deferMembershipPropensityUpdates)
+		this->system->endDeferredMembershipPropensityUpdates();
 
 	// update complex-scoped local functions for typeII dependencies
 	// NOTE: as a side-effect, dependent DOR reactions (via typeI molecule dependencies) will be updated

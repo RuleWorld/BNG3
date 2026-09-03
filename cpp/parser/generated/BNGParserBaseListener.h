@@ -4,6 +4,7 @@
 #pragma once
 
 
+#include "../antlr_compat.hpp"
 #include "antlr4-runtime.h"
 #include "BNGParserListener.h"
 
@@ -320,4 +321,3 @@ public:
   virtual void visitErrorNode(antlr4::tree::ErrorNode * /*node*/) override { }
 
 };
-

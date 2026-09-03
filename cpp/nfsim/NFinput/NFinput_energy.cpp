@@ -21,6 +21,7 @@
 #include <string>
 #include <vector>
 #include <iostream>
+#include <cmath>
 
 using namespace std;
 using namespace NFcore;
@@ -159,7 +160,8 @@ bool createExpandedBindingReactions(
     map<string, int> &allowedStates,
     bool blockSameComplexBinding,
     bool verbose,
-    int &reaction_count)
+    int &reaction_count,
+    bool includeReverse)
 {
     EnergyFunction *ef = s->getEnergyFunction();
     if (!ef) return false;
@@ -167,11 +169,90 @@ bool createExpandedBindingReactions(
     string mt1Name = molType1->getName();
     string mt2Name = molType2->getName();
 
-    // Run the expansion algorithm
+    /* A factorized context can be evaluated from the selected reaction
+     * mapping. Keep the legacy materialized expansion for contexts that span
+     * both reactants or whose energy pattern needs multiple conditions
+     * simultaneously; those cases need a more general representation. */
+    EnergyBindingContext compactContext;
+    bool useCompact = ef->getBindingContext(
+        mt1Name, bindSite1, mt2Name, bindSite2, compactContext);
+    if (mt1Name == mt2Name) useCompact = false;
+    if (useCompact) {
+        int contextReactant = -1;
+        for (const auto &condition : compactContext.conditions) {
+            if (contextReactant < 0) contextReactant = condition.reactantIdx;
+            if (condition.reactantIdx != contextReactant) {
+                useCompact = false;
+                break;
+            }
+        }
+
+        /* A compact term may be gated by a conjunction of occupancy
+         * predicates on the selected weighted molecule. */
+        for (const auto &term : compactContext.conditionalTerms) {
+            if (term.conditionMask == 0) {
+                useCompact = false;
+                break;
+            }
+        }
+
+        /* Restrict the initial compact path to contexts on reactant 0 so
+         * both directions use the same direct molecule mapping without
+         * changing any other Arrhenius behavior. */
+        if (contextReactant != 0) useCompact = false;
+    }
+
+    if (useCompact) {
+        for (int direction = 0; direction < 2; direction++) {
+            const bool isForward = (direction == 0);
+            if (!includeReverse && !isForward) continue;
+            TemplateMolecule *t1 = new TemplateMolecule(molType1);
+            TemplateMolecule *t2 = new TemplateMolecule(molType2);
+
+            if (isForward) {
+                t1->addEmptyComponent(bindSite1);
+                t2->addEmptyComponent(bindSite2);
+            } else {
+                TemplateMolecule::bind(t1, bindSite1, "", t2, bindSite2, "");
+            }
+
+            vector<TemplateMolecule *> templates;
+            templates.push_back(t1);
+            if (isForward) templates.push_back(t2);
+
+            TransformationSet *ts = new TransformationSet(templates);
+            if (isForward) ts->addBindingTransform(t1, bindSite1, t2, bindSite2);
+            else ts->addUnbindingTransform(t1, bindSite1, t2, bindSite2);
+            ts->setComplexBookkeeping(blockSameComplexBinding);
+            ts->finalize();
+
+            /* Pull out the activation-only term as DOR's base rate. The
+             * EnergyRxnClass supplies the context factor for each mapping. */
+            double activationRate = std::exp(-Ea0 / ef->getRT());
+            string directionName = rxnName + (isForward ? "_fwd" : "_rev");
+            EnergyRxnClass *r = new EnergyRxnClass(
+                directionName, activationRate, "", ts, 0, compactContext,
+                phi_val, ef->getRT(), isForward, s);
+
+            s->addReaction(r);
+            reaction_count++;
+
+            if (verbose) {
+                cout << "\t  Created compact "
+                     << (isForward ? "forward" : "reverse")
+                     << " rule: " << directionName
+                     << " (mapping-local Arrhenius context)" << endl;
+            }
+        }
+        return true;
+    }
+
+    // Run the legacy expansion algorithm for non-factorized contexts.
     vector<ExpandedRuleInfo> expanded = ef->expandBindingRule(
         rxnName, Ea0, phi_val, mt1Name, bindSite1, mt2Name, bindSite2);
 
     for (const auto &rule : expanded) {
+        if (!includeReverse && !rule.isForward) continue;
         TemplateMolecule *t1, *t2;
 
         if (rule.isForward) {
@@ -234,7 +315,8 @@ bool createExpandedStateChangeReactions(
     System *s,
     bool blockSameComplexBinding,
     bool verbose,
-    int &reaction_count)
+    int &reaction_count,
+    bool includeReverse)
 {
     EnergyFunction *ef = s->getEnergyFunction();
     if (!ef || !molType || stateFrom.empty() || stateTo.empty()) return false;
@@ -243,6 +325,7 @@ bool createExpandedStateChangeReactions(
         rxnName, Ea0, phi_val, molType->getName(), component, stateFrom, stateTo);
 
     for (const auto &rule : expanded) {
+        if (!includeReverse && !rule.isForward) continue;
         const string &fromState = rule.isForward ? stateFrom : stateTo;
         const string &toState = rule.isForward ? stateTo : stateFrom;
         if (molType->isEquivalentComponent(component)) return false;

@@ -77,6 +77,15 @@ def _simulation_kwargs(
     pla_config: str,
     psa_poplevel: float,
     verbose: bool,
+    max_step: float,
+    steady_state: bool,
+    steady_state_tol: Optional[float],
+    stop_if: str,
+    sample_times,
+    max_sim_steps: int,
+    output_step_interval: int,
+    sparse: bool,
+    check_product_scale: float,
 ) -> dict[str, Any]:
     return {
         "method": method,
@@ -89,6 +98,15 @@ def _simulation_kwargs(
         "pla_config": pla_config,
         "psa_poplevel": psa_poplevel,
         "verbose": verbose,
+        "max_step": max_step,
+        "steady_state": steady_state,
+        "steady_state_tol": steady_state_tol,
+        "stop_if": stop_if,
+        "sample_times": sample_times,
+        "max_sim_steps": max_sim_steps,
+        "output_step_interval": output_step_interval,
+        "sparse": sparse,
+        "check_product_scale": check_product_scale,
     }
 
 
@@ -299,6 +317,15 @@ def parameter_scan(
     pla_config: str = "",
     psa_poplevel: float = 100.0,
     verbose: bool = False,
+    max_step: float = 0.0,
+    steady_state: bool = False,
+    steady_state_tol: Optional[float] = None,
+    stop_if: str = "",
+    sample_times=None,
+    max_sim_steps: int = 0,
+    output_step_interval: int = 0,
+    sparse: bool = False,
+    check_product_scale: float = 0.0,
     parallel: int = 0,
 ) -> ScanResult:
     model = _coerce_model(model_or_path)
@@ -317,6 +344,15 @@ def parameter_scan(
         pla_config=pla_config,
         psa_poplevel=psa_poplevel,
         verbose=verbose,
+        max_step=max_step,
+        steady_state=steady_state,
+        steady_state_tol=steady_state_tol,
+        stop_if=stop_if,
+        sample_times=sample_times,
+        max_sim_steps=max_sim_steps,
+        output_step_interval=output_step_interval,
+        sparse=sparse,
+        check_product_scale=check_product_scale,
     )
 
     if parallel and parallel > 1:
@@ -361,6 +397,15 @@ def parameter_scan_2d(
     pla_config: str = "",
     psa_poplevel: float = 100.0,
     verbose: bool = False,
+    max_step: float = 0.0,
+    steady_state: bool = False,
+    steady_state_tol: Optional[float] = None,
+    stop_if: str = "",
+    sample_times=None,
+    max_sim_steps: int = 0,
+    output_step_interval: int = 0,
+    sparse: bool = False,
+    check_product_scale: float = 0.0,
     parallel: int = 0,
 ) -> ScanResult2D:
     model = _coerce_model(model_or_path)
@@ -388,6 +433,15 @@ def parameter_scan_2d(
         pla_config=pla_config,
         psa_poplevel=psa_poplevel,
         verbose=verbose,
+        max_step=max_step,
+        steady_state=steady_state,
+        steady_state_tol=steady_state_tol,
+        stop_if=stop_if,
+        sample_times=sample_times,
+        max_sim_steps=max_sim_steps,
+        output_step_interval=output_step_interval,
+        sparse=sparse,
+        check_product_scale=check_product_scale,
     )
 
     if parallel and parallel > 1:

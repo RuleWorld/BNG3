@@ -4,17 +4,17 @@ One module, every comparison. Consolidates and corrects the logic that was
 scattered across scripts/validate_*.py.
 
 Key correctness fix over the old scripts: the .net comparator keys reactions by
-their *species strings*, not by species indices. Two networks that are identical
-up to species ordering must compare equal; an extra or unmerged reaction must
-compare unequal. This detects the active blbr over-count (+26): the test network
-carries reaction tuples that the reference (Perl) merged.
+structural species identity, not by species indices or raw serialization labels.
+Two networks that are identical up to species ordering, site ordering, and bond
+numbering compare equal; an extra or unmerged reaction still compares unequal.
 """
 
 from __future__ import annotations
 
 import re
-from collections import Counter
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -26,6 +26,12 @@ def _norm(s: str) -> str:
     return _WS.sub(" ", s.strip())
 
 
+def _rate_definition_key(name: str) -> str:
+    """Normalize .net function definitions to the names used in rate fields."""
+    key = _norm(name)
+    return key[:-2] if key.endswith("()") else key
+
+
 # --------------------------------------------------------------------------- #
 # .net parsing
 # --------------------------------------------------------------------------- #
@@ -33,7 +39,7 @@ def _norm(s: str) -> str:
 class Network:
     """A parsed reaction network, comparison-ready."""
 
-    # species index (as written) -> canonical species string
+    # species index (as written) -> source species string
     species_by_index: dict[int, str]
     # multiset of (sorted reactant strings, sorted product strings, rate-key)
     reaction_multiset: Counter
@@ -46,6 +52,12 @@ class Network:
     # The reaction list before rate resolution, so we can re-key under a
     # different rate_mode without re-reading the file.
     _raw: list = field(default_factory=list)
+    # Rate-key semantics used when the parsed reaction multiset was built.
+    rate_mode: str = "value"
+    # Observable-group index -> (serialized label, species index -> weight).
+    # BNG2 and BNG3 use different labels for some groups; the indexed weighted
+    # membership is the semantic contract used by the network engine.
+    groups: dict[int, tuple[str, dict[int, float]]] = field(default_factory=dict)
 
     @property
     def n_species(self) -> int:
@@ -120,6 +132,9 @@ def _resolve_rate(token: str, rate_defs: dict[str, str], rate_mode: str) -> str:
 
 # Tokenizer for simple rate arithmetic: numbers, identifiers, operators, parens.
 _TOKEN = re.compile(r"[A-Za-z_]\w*|\d+\.?\d*(?:[eE][+-]?\d+)?|[()+\-*/^,]|\S")
+_NUMBER_TOKEN = re.compile(
+    r"(?<![A-Za-z_])(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?(?![A-Za-z_])"
+)
 
 
 def _eval_symbol(name: str, defs: dict[str, str], seen: set[str]):
@@ -174,7 +189,6 @@ def _eval_expr(expr: str, defs: dict[str, str], seen: set[str]):
 def _safe_arith(expr: str) -> float:
     """Evaluate a pure-numeric arithmetic expression with safe math functions."""
     e = expr.replace("^", "**")
-    e = re.sub(r"\bln\b", "log", e)
 
     # Check that all alphabetical tokens are allowed math functions
     for word in re.findall(r"\b[A-Za-z_]\w*\b", e):
@@ -182,6 +196,7 @@ def _safe_arith(expr: str) -> float:
             raise ValueError(f"unknown function or symbol {word!r}")
 
     ns = {
+        "ln": math.log,
         "log": math.log10,
         "log10": math.log10,
         "log2": math.log2,
@@ -211,8 +226,88 @@ def _safe_arith(expr: str) -> float:
 
 
 def _canon_expr(expr: str) -> str:
-    """Whitespace/format-insensitive canonical form for a rate expression."""
-    return re.sub(r"\s+", "", expr)
+    """Canonicalize harmless numeric and parenthesis serialization differences."""
+    result = re.sub(r"\s+", "", expr)
+
+    def strip_outer_parentheses(value: str) -> str:
+        while value.startswith("(") and value.endswith(")"):
+            depth = 0
+            encloses_all = True
+            for index, char in enumerate(value):
+                if char == "(":
+                    depth += 1
+                elif char == ")":
+                    depth -= 1
+                    if depth == 0 and index != len(value) - 1:
+                        encloses_all = False
+                        break
+            if not encloses_all or depth != 0:
+                break
+            value = value[1:-1]
+        return value
+
+    # BNG2 and BNG3 can wrap the same function argument or whole expression
+    # with different numbers of redundant parentheses.
+    result = strip_outer_parentheses(result)
+
+    def strip_negative_product_parentheses(value: str) -> str:
+        while True:
+            changed = False
+            for index in range(len(value) - 1):
+                if value[index : index + 2] != "-(":
+                    continue
+                depth = 0
+                has_top_level_product = False
+                matching = None
+                for end in range(index + 1, len(value)):
+                    char = value[end]
+                    if char == "(":
+                        depth += 1
+                    elif char == ")":
+                        depth -= 1
+                        if depth == 0:
+                            matching = end
+                            break
+                    elif char == "*" and depth == 1:
+                        has_top_level_product = True
+                if matching is not None and has_top_level_product:
+                    value = (
+                        value[:index]
+                        + "-"
+                        + value[index + 2 : matching]
+                        + value[matching + 1 :]
+                    )
+                    changed = True
+                    break
+            if not changed:
+                return value
+
+    result = strip_negative_product_parentheses(result)
+    while True:
+        changed = False
+        for index in range(len(result) - 1):
+            if result[index] == "(" and result[index + 1] == "(":
+                inner_depth = 0
+                for end in range(index + 1, len(result)):
+                    if result[end] == "(":
+                        inner_depth += 1
+                    elif result[end] == ")":
+                        inner_depth -= 1
+                        if inner_depth == 0:
+                            if end + 1 < len(result) and result[end + 1] == ")":
+                                result = result[:index] + result[index + 1 : end + 1] + result[end + 2 :]
+                                changed = True
+                            break
+                if changed:
+                    break
+        if not changed:
+            break
+
+    def normalize_number(match: re.Match[str]) -> str:
+        normalized = format(float(match.group(0)), ".15g")
+        return "0" if normalized in {"-0", "-0.0"} else normalized
+
+    return _NUMBER_TOKEN.sub(normalize_number, result)
 
 
 def split_species(s: str) -> list[str]:
@@ -263,6 +358,273 @@ def split_sites(mol: str) -> tuple[str, list[str]]:
     # Split inner by commas (sites are flat — no nested parens in BNGL site lists)
     sites = [t.strip() for t in inner.split(",")] if inner else []
     return name, sites
+
+
+@dataclass
+class _SpeciesGraph:
+    """Small labeled graph used for species identity checks.
+
+    Molecules and sites are vertices.  Molecule-site edges retain site
+    membership; site-site edges retain explicit bond connectivity.  Bond
+    numbers are deliberately absent because they are serialization labels,
+    not model identity.
+    """
+
+    header: tuple[str, tuple[str, ...]]
+    labels: list[tuple[str, ...]]
+    adjacency: list[list[tuple[int, str]]]
+
+
+def _split_species_compartment(value: str) -> tuple[str, str]:
+    """Return ``(species-compartment, body)`` for a leading ``@C::`` prefix."""
+
+    if value.startswith("@"):
+        marker = value.find("::")
+        if marker > 1:
+            return value[1:marker], value[marker + 2 :]
+    return "", value
+
+
+def _split_molecule_compartment(value: str) -> tuple[str, str]:
+    """Return ``(molecule, compartment)`` for a top-level ``@C`` suffix."""
+
+    depth = 0
+    for index in range(len(value) - 1, -1, -1):
+        char = value[index]
+        if char == ")":
+            depth += 1
+        elif char == "(":
+            depth -= 1
+        elif char == "@" and depth == 0:
+            return value[:index], value[index + 1 :]
+    return value, ""
+
+
+def _parse_species_graph(value: str) -> _SpeciesGraph | None:
+    """Parse a concrete BNGL species into a labeled graph.
+
+    This intentionally handles concrete ``.net`` species, not arbitrary BNGL
+    patterns.  Unknown site syntax remains part of a label instead of being
+    silently discarded.
+    """
+
+    value = _norm(value)
+    if not value:
+        return None
+
+    species_compartment, body = _split_species_compartment(value)
+    annotations = tuple(re.findall(r"\{[^}]*\}", body))
+    body = re.sub(r"\{[^}]*\}", "", body)
+    molecules = split_species(body)
+    if not molecules or any(not molecule.strip() for molecule in molecules):
+        return None
+
+    labels: list[tuple[str, ...]] = []
+    adjacency: list[list[tuple[int, str]]] = []
+    bonds: defaultdict[str, list[int]] = defaultdict(list)
+
+    def add_vertex(label: tuple[str, ...]) -> int:
+        labels.append(label)
+        adjacency.append([])
+        return len(labels) - 1
+
+    def add_edge(left: int, right: int, kind: str) -> None:
+        adjacency[left].append((right, kind))
+        adjacency[right].append((left, kind))
+
+    for molecule in molecules:
+        molecule, molecule_compartment = _split_molecule_compartment(molecule.strip())
+        molecule = molecule.strip()
+        if not molecule:
+            return None
+
+        is_constant = molecule.startswith("$")
+        constant = "1" if is_constant else "0"
+        if is_constant:
+            molecule = molecule[1:]
+        name, sites = split_sites(molecule)
+        if not name:
+            return None
+
+        molecule_vertex = add_vertex(
+            ("molecule", name, molecule_compartment, constant)
+        )
+        for site in sites:
+            site = site.strip()
+            if not site:
+                return None
+            if "!" in site:
+                site_body, bond = site.rsplit("!", 1)
+                if bond.isdigit() and int(bond) > 0:
+                    bond_kind = "explicit"
+                    bonds[bond].append(len(labels))
+                elif bond in ("+", "?"):
+                    bond_kind = f"wildcard:{bond}"
+                else:
+                    bond_kind = f"unknown:{bond}"
+            else:
+                site_body = site
+                bond_kind = "free"
+
+            if "~" in site_body:
+                site_name, state = site_body.split("~", 1)
+            else:
+                site_name, state = site_body, ""
+            if not site_name:
+                return None
+            site_vertex = add_vertex(("site", site_name, state, bond_kind))
+            add_edge(molecule_vertex, site_vertex, "membership")
+
+    for bond, endpoints in bonds.items():
+        if len(endpoints) == 2:
+            add_edge(endpoints[0], endpoints[1], "bond")
+        else:
+            # Preserve malformed/dangling explicit bonds without treating the
+            # numeric label itself as identity.  Valid .net files take the
+            # two-endpoint path above.
+            bond_vertex = add_vertex(("bond", str(len(endpoints))))
+            for endpoint in endpoints:
+                add_edge(bond_vertex, endpoint, "bond")
+
+    return _SpeciesGraph(
+        header=(species_compartment, annotations),
+        labels=labels,
+        adjacency=adjacency,
+    )
+
+
+def _edge_profile(graph: _SpeciesGraph, left: int, right: int) -> Counter:
+    return Counter(kind for endpoint, kind in graph.adjacency[left] if endpoint == right)
+
+
+def _refined_colors(left: _SpeciesGraph, right: _SpeciesGraph) -> tuple[list[int], list[int]]:
+    """Compute comparable Weisfeiler-Lehman colors for two labeled graphs."""
+
+    def initial(graph: _SpeciesGraph, vertex: int) -> tuple:
+        return (
+            graph.labels[vertex],
+            len(graph.adjacency[vertex]),
+            tuple(
+                sorted(
+                    (kind, graph.labels[endpoint])
+                    for endpoint, kind in graph.adjacency[vertex]
+                )
+            ),
+        )
+
+    signatures = [initial(left, i) for i in range(len(left.labels))]
+    signatures += [initial(right, i) for i in range(len(right.labels))]
+
+    def assign(values: list[tuple]) -> list[int]:
+        table = {value: index for index, value in enumerate(sorted(set(values), key=repr))}
+        return [table[value] for value in values]
+
+    colors = assign(signatures)
+    left_colors = colors[: len(left.labels)]
+    right_colors = colors[len(left.labels) :]
+    for _ in range(max(len(left.labels), len(right.labels))):
+        combined = []
+        for graph, graph_colors in ((left, left_colors), (right, right_colors)):
+            combined.extend(
+                (
+                    graph_colors[vertex],
+                    tuple(
+                        sorted(
+                            (kind, graph_colors[endpoint])
+                            for endpoint, kind in graph.adjacency[vertex]
+                        )
+                    ),
+                )
+                for vertex in range(len(graph.labels))
+            )
+        refined = assign(combined)
+        new_left = refined[: len(left.labels)]
+        new_right = refined[len(left.labels) :]
+        if new_left == left_colors and new_right == right_colors:
+            break
+        left_colors, right_colors = new_left, new_right
+    return left_colors, right_colors
+
+
+@lru_cache(maxsize=4096)
+def species_isomorphic(left: str, right: str) -> bool:
+    """Return whether two concrete species have the same labeled graph.
+
+    Molecule/site order and explicit bond numbers may differ.  Molecule names,
+    site names/states, wildcard bonds, compartments, and bond connectivity must
+    match.  The implementation uses refinement followed by constrained
+    backtracking, which keeps the symmetry-heavy ``blbr`` complexes tractable.
+    """
+
+    left_graph = _parse_species_graph(left)
+    right_graph = _parse_species_graph(right)
+    if left_graph is None or right_graph is None:
+        return _norm(left) == _norm(right)
+    if left_graph.header != right_graph.header:
+        return False
+    if len(left_graph.labels) != len(right_graph.labels):
+        return False
+
+    left_colors, right_colors = _refined_colors(left_graph, right_graph)
+    if Counter(left_colors) != Counter(right_colors):
+        return False
+    if Counter(
+        (left_graph.labels[i], len(left_graph.adjacency[i]), left_colors[i])
+        for i in range(len(left_graph.labels))
+    ) != Counter(
+        (right_graph.labels[i], len(right_graph.adjacency[i]), right_colors[i])
+        for i in range(len(right_graph.labels))
+    ):
+        return False
+
+    candidates = {
+        vertex: [
+            other
+            for other in range(len(right_graph.labels))
+            if left_colors[vertex] == right_colors[other]
+            and left_graph.labels[vertex] == right_graph.labels[other]
+            and len(left_graph.adjacency[vertex]) == len(right_graph.adjacency[other])
+        ]
+        for vertex in range(len(left_graph.labels))
+    }
+    mapping: dict[int, int] = {}
+    used: set[int] = set()
+
+    def choose_vertex() -> int:
+        remaining = [i for i in range(len(left_graph.labels)) if i not in mapping]
+        return min(
+            remaining,
+            key=lambda i: (
+                -sum(1 for endpoint, _ in left_graph.adjacency[i] if endpoint in mapping),
+                -len(left_graph.adjacency[i]),
+                len(candidates[i]),
+            ),
+        )
+
+    def compatible(vertex: int, other: int) -> bool:
+        for mapped_vertex, mapped_other in mapping.items():
+            if _edge_profile(left_graph, vertex, mapped_vertex) != _edge_profile(
+                right_graph, other, mapped_other
+            ):
+                return False
+        return True
+
+    def search() -> bool:
+        if len(mapping) == len(left_graph.labels):
+            return True
+        vertex = choose_vertex()
+        for other in candidates[vertex]:
+            if other in used or not compatible(vertex, other):
+                continue
+            mapping[vertex] = other
+            used.add(other)
+            if search():
+                return True
+            used.remove(other)
+            del mapping[vertex]
+        return False
+
+    return search()
 
 
 def normalize_molecule(mol: str) -> str:
@@ -474,6 +836,7 @@ def parse_net(path: str | Path, *, rate_mode: str = "value") -> Network | None:
     species: dict[int, str] = {}
     raw_reactions: list[tuple[list[int], list[int], str]] = []
     rate_defs: dict[str, str] = {}
+    groups: dict[str, dict[int, float]] = {}
     section = None
 
     for line in path.read_text().splitlines():
@@ -497,7 +860,10 @@ def parse_net(path: str | Path, *, rate_mode: str = "value") -> Network | None:
                 idx = int(parts[0])
             except ValueError:
                 continue
-            species[idx] = canonicalize_species(parts[1])
+            # Keep the source serialization.  Canonical strings are useful for
+            # display, but they cannot represent graph identity: bond numbers,
+            # site order, and (critically) site states are independent fields.
+            species[idx] = parts[1]
 
         elif section == "reactions":
             parts = _norm(stripped).split(" ")
@@ -517,12 +883,43 @@ def parse_net(path: str | Path, *, rate_mode: str = "value") -> Network | None:
             # "<name> <expr...>" or "<name>=<expr>".
             if "=" in stripped and len(parts) >= 1 and "=" in parts[0]:
                 name, _, expr = stripped.partition("=")
-                rate_defs[_norm(name)] = _norm(expr)
+                rate_defs[_rate_definition_key(name)] = _norm(expr)
                 continue
             if len(parts) >= 3 and parts[0].isdigit():
-                rate_defs[parts[1]] = " ".join(parts[2:])
+                rate_defs[_rate_definition_key(parts[1])] = " ".join(parts[2:])
             elif len(parts) >= 2:
-                rate_defs[parts[0]] = " ".join(parts[1:])
+                rate_defs[_rate_definition_key(parts[0])] = " ".join(parts[1:])
+
+        elif section == "groups":
+            parts = _norm(stripped).split(" ", 2)
+            if len(parts) < 3:
+                continue
+            try:
+                int(parts[0])
+            except ValueError:
+                continue
+            group_index = int(parts[0])
+            name = parts[1]
+            entries: dict[int, float] = {}
+            for item in parts[2].split(","):
+                item = item.strip()
+                if not item:
+                    continue
+                if "*" in item:
+                    weight_text, index_text = item.split("*", 1)
+                    try:
+                        weight = float(weight_text)
+                    except ValueError:
+                        continue
+                else:
+                    weight = 1.0
+                    index_text = item
+                try:
+                    index = int(index_text)
+                except ValueError:
+                    continue
+                entries[index] = entries.get(index, 0.0) + weight
+            groups[group_index] = (name, entries)
 
     if not species and not raw_reactions:
         return None
@@ -532,6 +929,8 @@ def parse_net(path: str | Path, *, rate_mode: str = "value") -> Network | None:
         reaction_multiset=Counter(),
         rate_defs=rate_defs,
         _raw=raw_reactions,
+        rate_mode=rate_mode,
+        groups=groups,
     )
     _rekey(net, rate_mode)
     return net
@@ -563,6 +962,10 @@ class NetDiff:
     species_only_test: set[str]
     reactions_only_ref: list
     reactions_only_test: list
+    groups_only_ref: set[int] = field(default_factory=set)
+    groups_only_test: set[int] = field(default_factory=set)
+    groups_changed: set[int] = field(default_factory=set)
+    groups_renamed: set[int] = field(default_factory=set)
 
     def summary(self) -> str:
         lines = [
@@ -591,66 +994,201 @@ class NetDiff:
             lines.append(f"  reactions only in ref ({len(self.reactions_only_ref)}):")
             for r, p, rate in self.reactions_only_ref[:5]:
                 lines.append(f"    {' + '.join(r)} -> {' + '.join(p)}  [{rate}]")
+        if self.groups_only_ref:
+            lines.append(
+                f"  observable groups only in ref ({len(self.groups_only_ref)}): "
+                + ", ".join(str(i) for i in sorted(self.groups_only_ref)[:5])
+            )
+        if self.groups_only_test:
+            lines.append(
+                f"  observable groups only in test ({len(self.groups_only_test)}): "
+                + ", ".join(str(i) for i in sorted(self.groups_only_test)[:5])
+            )
+        if self.groups_changed:
+            lines.append(
+                f"  observable groups changed ({len(self.groups_changed)}): "
+                + ", ".join(str(i) for i in sorted(self.groups_changed)[:5])
+            )
+        if self.groups_renamed:
+            lines.append(
+                f"  observable group labels differ ({len(self.groups_renamed)}): "
+                + ", ".join(str(i) for i in sorted(self.groups_renamed)[:5])
+            )
         return "\n".join(lines)
 
 
 def set_rate_mode(net: Network, rate_mode: str) -> Network:
     """Re-key an already-parsed Network under a different rate_mode, in place."""
+    net.rate_mode = rate_mode
     _rekey(net, rate_mode)
     return net
 
 
+def _species_index_mapping(ref: Network, test: Network) -> dict[int, int]:
+    """Find a one-to-one structural mapping from reference to test species."""
+
+    reference_indices = list(ref.species_by_index)
+    test_indices = list(test.species_by_index)
+    candidates = {
+        ref_index: [
+            test_index
+            for test_index in test_indices
+            if species_isomorphic(
+                ref.species_by_index[ref_index], test.species_by_index[test_index]
+            )
+        ]
+        for ref_index in reference_indices
+    }
+    matched_test: dict[int, int] = {}
+
+    # Kuhn matching handles duplicate/isomorphic species entries without
+    # depending on their serialized indices or input order.
+    def augment(ref_index: int, visited: set[int]) -> bool:
+        for test_index in candidates[ref_index]:
+            if test_index in visited:
+                continue
+            visited.add(test_index)
+            previous = matched_test.get(test_index)
+            if previous is None or augment(previous, visited):
+                matched_test[test_index] = ref_index
+                return True
+        return False
+
+    for ref_index in sorted(reference_indices, key=lambda i: len(candidates[i])):
+        augment(ref_index, set())
+    return {ref_index: test_index for test_index, ref_index in matched_test.items()}
+
+
+def _reaction_view(
+    net: Network,
+    species_identity: dict[int, tuple[str, int]],
+    *,
+    compare_rates: bool,
+) -> tuple[Counter, dict[tuple, tuple[tuple[str, ...], tuple[str, ...], str]]]:
+    """Build a reaction multiset keyed by structural species identities."""
+
+    counter: Counter = Counter()
+    payload: dict[tuple, tuple[tuple[str, ...], tuple[str, ...], str]] = {}
+    for reactants, products, rate in net._raw:
+        reactant_ids = tuple(
+            sorted(species_identity.get(index, ("missing", index)) for index in reactants)
+        )
+        product_ids = tuple(
+            sorted(species_identity.get(index, ("missing", index)) for index in products)
+        )
+        rate_key = _resolve_rate(rate, net.rate_defs, net.rate_mode) if compare_rates else ""
+        key = (
+            (reactant_ids, product_ids, rate_key)
+            if compare_rates
+            else (reactant_ids, product_ids)
+        )
+        counter[key] += 1
+        try:
+            reactant_names = tuple(sorted(net.species_by_index[index] for index in reactants))
+            product_names = tuple(sorted(net.species_by_index[index] for index in products))
+        except KeyError:
+            reactant_names = tuple(sorted(f"?{index}" for index in reactants))
+            product_names = tuple(sorted(f"?{index}" for index in products))
+        payload[key] = (reactant_names, product_names, rate_key)
+    return counter, payload
+
+
+def _group_view(
+    net: Network, species_identity: dict[int, tuple[str, int]]
+) -> dict[int, tuple[str, tuple[tuple[tuple[str, int], float], ...]]]:
+    """Map indexed observable groups from species indices to identities."""
+
+    view = {}
+    for group_index, (name, entries) in net.groups.items():
+        mapped: dict[tuple[str, int], float] = {}
+        for index, weight in entries.items():
+            identity = species_identity.get(index, ("missing", index))
+            mapped[identity] = mapped.get(identity, 0.0) + weight
+        view[group_index] = (name, tuple(sorted(mapped.items(), key=repr)))
+    return view
+
+
 def compare_net(ref: Network, test: Network, *, compare_rates: bool = True) -> NetDiff:
-    """Set-compare two networks by species string and reaction tuple.
+    """Compare networks by graph identity and reaction multiset.
 
-    Reactions are keyed by (reactant species strings, product species strings,
-    rate-key). The rate-key was produced at parse time according to parse_net's
-    rate_mode (default "value"): auto-generated rate-parameter NAMES are resolved
-    to their VALUE/expression, so rateLaw4 vs _rateLaw4 vs __R1_local1 do not
-    cause spurious mismatches, while a genuine difference in rate value/expression
-    still does. To compare byte-identical names instead, parse with
-    rate_mode="string".
-
-    compare_rates=False additionally drops the rate-key entirely, comparing pure
-    topology + stoichiometry. The over-count (blbr/cBNGL) is detectable even in
-    this mode, since it is a difference in reaction COUNT, not rate.
+    Molecule/site order and explicit bond numbers are serialization details.
+    Molecule names, site states, compartments, explicit connectivity,
+    stoichiometry, multiplicity, and (when enabled) rate values remain
+    significant.
     """
-    species_ref = set(ref.species_by_index.values())
-    species_test = set(test.species_by_index.values())
-
-    if compare_rates:
-        rxn_ref = ref.reaction_multiset
-        rxn_test = test.reaction_multiset
-    else:
-        rxn_ref = Counter(
-            (r, p) for (r, p, _), n in ref.reaction_multiset.items() for _ in range(n)
-        )
-        rxn_test = Counter(
-            (r, p) for (r, p, _), n in test.reaction_multiset.items() for _ in range(n)
-        )
-
+    mapping = _species_index_mapping(ref, test)
+    matched_test = set(mapping.values())
+    ref_identity = {
+        index: ("species", mapping[index]) if index in mapping else ("ref", index)
+        for index in ref.species_by_index
+    }
+    test_identity = {
+        index: ("species", index) if index in matched_test else ("test", index)
+        for index in test.species_by_index
+    }
+    rxn_ref, payload_ref = _reaction_view(
+        ref, ref_identity, compare_rates=compare_rates
+    )
+    rxn_test, payload_test = _reaction_view(
+        test, test_identity, compare_rates=compare_rates
+    )
+    groups_ref = _group_view(ref, ref_identity)
+    groups_test = _group_view(test, test_identity)
     only_ref = rxn_ref - rxn_test
     only_test = rxn_test - rxn_ref
+    groups_only_ref = set(groups_ref) - set(groups_test)
+    groups_only_test = set(groups_test) - set(groups_ref)
+    groups_changed = {
+        index
+        for index in set(groups_ref) & set(groups_test)
+        if groups_ref[index][1] != groups_test[index][1]
+    }
+    groups_renamed = {
+        index
+        for index in set(groups_ref) & set(groups_test)
+        if groups_ref[index][0] != groups_test[index][0]
+    }
 
-    def _explode(counter):
+    def _explode(counter, payload):
         out = []
         for key, n in counter.items():
-            r, p = key[0], key[1]
-            rate = key[2] if len(key) > 2 else ""
+            r, p, rate = payload[key]
             out.extend([(list(r), list(p), rate)] * n)
         return out
 
-    ok = (species_ref == species_test) and (not only_ref) and (not only_test)
+    matched_ref = set(mapping)
+    species_only_ref = {
+        ref.species_by_index[index]
+        for index in ref.species_by_index
+        if index not in matched_ref
+    }
+    species_only_test = {
+        test.species_by_index[index]
+        for index in test.species_by_index
+        if index not in matched_test
+    }
+    ok = (
+        len(mapping) == len(ref.species_by_index) == len(test.species_by_index)
+        and not only_ref
+        and not only_test
+        and not groups_only_ref
+        and not groups_only_test
+        and not groups_changed
+    )
     return NetDiff(
         ok=ok,
         n_species_ref=ref.n_species,
         n_species_test=test.n_species,
-        n_reactions_ref=ref.n_reactions,
-        n_reactions_test=test.n_reactions,
-        species_only_ref=species_ref - species_test,
-        species_only_test=species_test - species_ref,
-        reactions_only_ref=_explode(only_ref),
-        reactions_only_test=_explode(only_test),
+        n_reactions_ref=sum(rxn_ref.values()),
+        n_reactions_test=sum(rxn_test.values()),
+        species_only_ref=species_only_ref,
+        species_only_test=species_only_test,
+        reactions_only_ref=_explode(only_ref, payload_ref),
+        reactions_only_test=_explode(only_test, payload_test),
+        groups_only_ref=groups_only_ref,
+        groups_only_test=groups_only_test,
+        groups_changed=groups_changed,
+        groups_renamed=groups_renamed,
     )
 
 

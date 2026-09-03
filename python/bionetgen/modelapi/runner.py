@@ -12,6 +12,20 @@ conf = app.config["bionetgen"]
 logger = logging.getLogger(__name__)
 
 
+def _load_cpp_backend():
+    """Return the in-process backend when installed, otherwise ``None``.
+
+    Backend import availability is the only condition that permits the
+    legacy subprocess path.  Parse and execution errors must remain visible;
+    otherwise a real BNG3 failure can be silently replaced by Perl behavior.
+    """
+    try:
+        from bionetgen import _bionetgen_cpp as cpp
+    except ImportError:
+        return None
+    return cpp
+
+
 def run(inp, out=None, suppress=False, timeout=None):
     """
     Convenience function to run BNG2.pl as a library
@@ -26,14 +40,12 @@ def run(inp, out=None, suppress=False, timeout=None):
         (optional) this points to a folder to put the results
         into. If it doesn't exist, it will be created.
     """
-    # Try C++ backend first
-    try:
-        from bionetgen import _bionetgen_cpp as _cpp
-
-        model = _cpp.parse_file(inp)
-        return _cpp.execute(model, inp)
-    except (ImportError, AttributeError, Exception):
-        pass
+    # Try C++ backend first.  Only an unavailable extension permits the
+    # legacy subprocess path; backend failures are product failures.
+    cpp = _load_cpp_backend()
+    if cpp is not None:
+        model = cpp.parse_file(inp)
+        return cpp.execute(model, inp)
 
     # Fall back to the existing BNGCLI subprocess approach
     cur_dir = os.getcwd()

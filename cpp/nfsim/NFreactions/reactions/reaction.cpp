@@ -11,6 +11,84 @@
 using namespace std;
 using namespace NFcore;
 
+namespace {
+	thread_local vector<int> complexScratch;
+
+	template <typename Container>
+	int distinctComplexesOf(Container *container, int size)
+	{
+		complexScratch.clear();
+		if (static_cast<int>(complexScratch.capacity()) < size)
+			complexScratch.reserve(size);
+		for (int i = 0; i < size; ++i) {
+			MappingSet *ms = container->getMappingSetByIndex(i);
+			if (!ms || ms->getNumOfMappings() == 0) continue;
+			Mapping *mapping = ms->get(0);
+			if (mapping && mapping->getMolecule())
+				complexScratch.push_back(mapping->getMolecule()->getComplexID());
+		}
+		sort(complexScratch.begin(), complexScratch.end());
+		return static_cast<int>(unique(complexScratch.begin(), complexScratch.end()) -
+				complexScratch.begin());
+	}
+}
+
+int NFcore::countDistinctComplexes(ReactantList *rl)
+{
+	if (!rl->mayShareComplexes()) return rl->size();
+	return distinctComplexesOf(rl, rl->size());
+}
+
+int NFcore::countDistinctComplexes(ReactantTree *tree)
+{
+	if (!tree->mayShareComplexes()) return tree->size();
+	return distinctComplexesOf(tree, tree->size());
+}
+
+double NFcore::perComplexRateFactorSum(ReactantTree *tree)
+{
+	set<int> seen;
+	double sum = 0.0;
+	for (int i = 0; i < tree->size(); ++i) {
+		MappingSet *ms = tree->getMappingSetByIndex(i);
+		if (!ms || ms->getNumOfMappings() == 0) continue;
+		Mapping *mapping = ms->get(0);
+		if (!mapping || !mapping->getMolecule()) continue;
+		if (seen.insert(mapping->getMolecule()->getComplexID()).second)
+			sum += tree->getRateFactor(i);
+	}
+	return sum;
+}
+
+void NFcore::collectReactantRepresentatives(ReactantList *rl, bool perComplex,
+		vector<MappingSet*> &out, vector<int> *flatIndices)
+{
+	out.clear();
+	if (flatIndices) flatIndices->clear();
+	if (!perComplex || !rl->mayShareComplexes()) {
+		for (int i = 0; i < rl->size(); ++i) {
+			MappingSet *ms = rl->getMappingSetByIndex(i);
+			if (ms) {
+				out.push_back(ms);
+				if (flatIndices) flatIndices->push_back(i);
+			}
+		}
+		return;
+	}
+
+	set<int> seen;
+	for (int i = 0; i < rl->size(); ++i) {
+		MappingSet *ms = rl->getMappingSetByIndex(i);
+		if (!ms || ms->getNumOfMappings() == 0) continue;
+		Mapping *mapping = ms->get(0);
+		if (!mapping || !mapping->getMolecule()) continue;
+		if (seen.insert(mapping->getMolecule()->getComplexID()).second) {
+			out.push_back(ms);
+			if (flatIndices) flatIndices->push_back(i);
+		}
+	}
+}
+
 
 
 
@@ -86,6 +164,16 @@ double FunctionalRxnClass::update_a() {
 	}
 
 	a *= this->volumeConversionFactor;
+
+	// FunctionalRxnClass is constructed with baseRate=1, so the constructor's
+	// symmetry correction is otherwise lost for ordinary functional rates.
+	// TotalRate already states the complete propensity and must not receive that
+	// reaction-center correction.  This placement matches NFsim commit 1b19611:
+	// the loader sets totalRateFlag after construction and setBaseRate().
+	if (!this->totalRateFlag)
+	{
+		a *= this->baseRate;
+	}
 
 	if(a<0) {
 		cout<<"Warning!!  The function you provided for functional rxn: '"<<name<<"' evaluates\n";
@@ -195,8 +283,25 @@ double MMRxnClass::update_a()
 {
 	double S = (double)getCorrectedReactantCount(0);
 	double E = (double)getCorrectedReactantCount(1);
-	sFree=0.5*( (S-Km-E) + pow((pow( (S-Km-E),2.0) + 4.0*Km*S),  0.5) );
-	a=kcat*sFree*E/(Km+sFree);
+	const double b = S - Km - E;
+	// Solve the quadratic for free substrate without losing the small root
+	// when enzyme is in excess.  The direct ``b + sqrt(b*b + 4*Km*S)``
+	// expression rounds to zero for the tiny-Km regression from
+	// NFsim/test/MM/mm_small_km.bngl.  hypot keeps the discriminant stable,
+	// while the alternate root form avoids cancellation when b is negative.
+	const double KmS = Km * S;
+	const double discriminant = (Km >= 0.0 && S >= 0.0)
+		? std::hypot(b, 2.0 * std::sqrt(KmS))
+		: std::sqrt(b * b + 4.0 * KmS);
+	if (b < 0.0 && KmS > 0.0) {
+		sFree = (2.0 * KmS) / (discriminant - b);
+	} else {
+		sFree = 0.5 * (b + discriminant);
+	}
+	const double denominator = Km + sFree;
+	a = (denominator > 0.0 && std::isfinite(denominator))
+		? kcat * sFree * E / denominator
+		: 0.0;
 	return a;
 }
 
@@ -403,8 +508,8 @@ int BasicRxnClass::checkForEquality(Molecule *m, MappingSet* ms, int rxnIndex, R
 	/*
 	Check if mapping set clashes with any of the mapping sets already in reactantList
 	*/
-	set<int> tempSet = m->getRxnListMappingSet(rxnIndex);
-	for(set<int>::iterator it= tempSet.begin();it!= tempSet.end(); ++it){
+	const MappingIdSet& tempSet = m->getRxnListMappingSet(rxnIndex);
+	for(MappingIdSet::const_iterator it= tempSet.begin();it!= tempSet.end(); ++it){
 		MappingSet* ms2 = reactantList->getMappingSet(*it);
 		if(MappingSet::checkForEquality(ms,ms2)){
 			return *it;
@@ -524,7 +629,10 @@ bool BasicRxnClass::tryToAdd(Molecule *m, unsigned int reactantPos)
 	// }
 
 	//Here we get the standard update...
-	set<int> deleteMs = m->getRxnListMappingSet(rxnIndex);
+	MappingIdSet deleteMs = m->getRxnListMappingSet(rxnIndex);
+	if (contextCountsPerComplex[reactantPos] && m->getComplex() != 0) {
+		rl->noteMappedComplexSize(m->getComplex()->getComplexSize());
+	}
 
 	//Try to map it!
 	MappingSet *ms = rl->pushNextAvailableMappingSet();
@@ -569,7 +677,7 @@ bool BasicRxnClass::tryToAdd(Molecule *m, unsigned int reactantPos)
 		
 	}
 
-	for (set<int>::iterator it = deleteMs.begin(); it != deleteMs.end(); ++it) {
+	for (MappingIdSet::iterator it = deleteMs.begin(); it != deleteMs.end(); ++it) {
 		rl->removeMappingSet(*it);
 		m->deleteRxnListMappingId(rxnIndex, *it);
 	}
@@ -631,17 +739,17 @@ double BasicRxnClass::exactRuleMonkey_a()
 	} else if (n_reactants == 1) {
 		validCombinations = getCorrectedReactantCount(0);
 	} else if (n_reactants == 2) {
-		// Exact calculation: subtract null events
-		int size0 = getReactantCount(0);
-		int size1 = getReactantCount(1);
-		// Use raw counts here because invalid self-pairs are removed explicitly below.
-		double totalCombinations = (double)getReactantCount(0) * (double)getReactantCount(1);
+		// Enumerate one representative per complex for pure context reactants.
+		static thread_local vector<MappingSet*> reps0, reps1;
+		collectReactantRepresentatives(reactantLists[0], contextCountsPerComplex[0], reps0);
+		collectReactantRepresentatives(reactantLists[1], contextCountsPerComplex[1], reps1);
+		double totalCombinations = (double)reps0.size() * (double)reps1.size();
 		double invalidCombinations = 0;
 
-		for (int i = 0; i < size0; ++i) {
-			msPairBuffer[0] = reactantLists[0]->getMappingSet(i);
-			for (int j = 0; j < size1; ++j) {
-				msPairBuffer[1] = reactantLists[1]->getMappingSet(j);
+		for (size_t i = 0; i < reps0.size(); ++i) {
+			msPairBuffer[0] = reps0[i];
+			for (size_t j = 0; j < reps1.size(); ++j) {
+				msPairBuffer[1] = reps1[j];
 				
 				// check for collision
 				if (!transformationSet->checkMolecularity(msPairBuffer)) {
@@ -710,20 +818,10 @@ int BasicRxnClass::getCorrectedReactantCount(unsigned int reactantIndex) const
 	}
 	*/
 
-	if (matchOncePerReactant[reactantIndex] && !isPopulationType[reactantIndex]) {
-		std::set<int> uniqueComplexes;
-		ReactantList *rl = reactantLists[reactantIndex];
-		int size = rl->size();
-		for (int i = 0; i < size; ++i) {
-			MappingSet *ms = rl->getMappingSetByIndex(i);
-			if (ms && ms->getNumOfMappings() > 0) {
-				Mapping *mapping = ms->get(0);
-				if (mapping && mapping->getMolecule()) {
-					uniqueComplexes.insert(mapping->getMolecule()->getComplexID());
-				}
-			}
-		}
-		return (int)uniqueComplexes.size();
+	if ((matchOncePerReactant[reactantIndex] ||
+			contextCountsPerComplex[reactantIndex]) &&
+			!isPopulationType[reactantIndex]) {
+		return countDistinctComplexes(reactantLists[reactantIndex]);
 	}
 
 	return isPopulationType[reactantIndex] ?
@@ -742,7 +840,7 @@ void BasicRxnClass::printFullDetails() const
 
 void BasicRxnClass::pickRuleMonkeyMappingSets(double random_A_number) const
 {
-	NfsimRNG& rng = system->getRNG();
+    NfsimRNG& rng = system->getMappingRNG();
 	if (n_reactants != 2 || totalRateFlag) {
 		for(unsigned int i=0; i<n_reactants; i++) {
 			if ( isPopulationType[i] ) {
@@ -782,7 +880,7 @@ void BasicRxnClass::pickRuleMonkeyMappingSets(double random_A_number) const
 	}
 
 	// Select a valid pair
-	int selectedIndex = rng.random_int(0, validPairsBuffer.size());
+    int selectedIndex = rng.random_int(0, validPairsBuffer.size());
 	int i = validPairsBuffer[selectedIndex].first;
 	int j = validPairsBuffer[selectedIndex].second;
 
@@ -798,7 +896,7 @@ void BasicRxnClass::pickMappingSets(double random_A_number) const
 		return;
 	}
 
-	NfsimRNG& rng = system->getRNG();
+    NfsimRNG& rng = system->getMappingRNG();
 	for(unsigned int i=0; i<n_reactants; i++)
 	{
 		if ( isPopulationType[i] ) {

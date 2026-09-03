@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <unordered_set>
 
 #include "ast/Model.hpp"
 #include "generated/BNGParserBaseVisitor.h"
@@ -37,8 +38,10 @@ public:
 
 private:
     void addAction(const std::string& name, BNGParser::Action_argsContext* args);
+    void predeclareMoleculeTypes(BNGParser::ProgContext* ctx);
 
     std::unique_ptr<ast::Model> currentModel_;
+    std::unordered_set<const BNGParser::Molecule_type_defContext*> predeclaredMoleculeTypes_;
 };
 
 std::unique_ptr<ast::Model> parseModel(const std::string& sourceText);

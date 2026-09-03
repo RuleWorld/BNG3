@@ -3,6 +3,8 @@
 #include <pybind11/numpy.h>
 
 #include <cstdio>
+#include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -42,22 +44,55 @@ std::string make_temp_xml_path() {
 
 void bind_nfsim(py::module_& m) {
 
-    m.def("simulate_nf", [](Model& model, double t_end, int n_steps,
-                            int seed, int equilibrate, bool verbose) -> py::dict {
-        if (t_end < 0.0) {
-            throw std::invalid_argument("t_end must be non-negative");
+        m.def("simulate_nf", [](Model& model, double t_end, int n_steps,
+                            int seed, double equilibrate, bool verbose,
+                            const std::string& source_path,
+                            const std::vector<double>& sample_times,
+                            int traversal_limit, double t_start) -> py::dict {
+        if (!std::isfinite(t_start) || !std::isfinite(t_end)) {
+            throw std::invalid_argument("t_start and t_end must be finite");
         }
-        if (n_steps <= 0) {
-            throw std::invalid_argument("n_steps must be positive");
+        if (t_end < t_start) {
+            throw std::invalid_argument(
+                "t_end must be greater than or equal to t_start");
+        }
+        if (n_steps < 0 || (n_steps == 0 && sample_times.empty())) {
+            throw std::invalid_argument(
+                "n_steps must be positive unless sample_times is set");
+        }
+        if (!std::isfinite(equilibrate) || equilibrate < 0.0) {
+            throw std::invalid_argument(
+                "equilibrate must be finite and non-negative");
+        }
+        if (traversal_limit < -1) {
+            throw std::invalid_argument(
+                "traversal_limit must be -1 (automatic) or non-negative");
         }
 
-        // The direct adapter is deliberately fail-closed: while any section is
-        // incomplete it returns nullptr and we retain the established
-        // in-memory XML initializer as the compatibility path.  XML is only
-        // materialized on disk if that compatibility initializer also fails.
+        std::vector<double> output_times = sample_times;
+        if (!output_times.empty()) {
+            for (std::size_t index = 0; index < output_times.size(); ++index) {
+                const double time = output_times[index];
+                if (!std::isfinite(time) || time < t_start || time > t_end ||
+                    (index > 0 && time <= output_times[index - 1])) {
+                    throw std::invalid_argument(
+                        "sample_times must be finite, strictly increasing, "
+                        "and within [t_start, t_end]");
+                }
+            }
+            if (output_times.back() < t_end) {
+                output_times.push_back(t_end);
+            }
+        }
+
+        // The direct adapter is deliberately fail-closed.  XML compatibility
+        // construction is available only when the caller explicitly opts in;
+        // unsupported direct semantics must not silently change execution
+        // paths.
         TempFileGuard tmp_guard;
         int suggestedTraversalLimit = -1;
         std::unique_ptr<NFcore::System> system;
+        std::string construction_path = "direct";
 
         {
             py::gil_scoped_release release;
@@ -66,10 +101,21 @@ void bind_nfsim(py::module_& m) {
                 false,    // blockSameComplexBinding
                 -1,       // globalMoleculeLimit (unlimited)
                 verbose,
-                suggestedTraversalLimit
+                suggestedTraversalLimit,
+                fs::path(source_path)
             ));
 
             if (!system) {
+                if (std::getenv("BNG_NFSIM_REQUIRE_DIRECT") != nullptr) {
+                    throw std::runtime_error(
+                        "NFsim direct AST initialization required but unavailable");
+                }
+                if (std::getenv("BNG_NFSIM_ALLOW_XML_FALLBACK") == nullptr) {
+                    throw std::runtime_error(
+                        "NFsim direct AST initialization unavailable; XML fallback disabled "
+                        "(set BNG_NFSIM_ALLOW_XML_FALLBACK=1 to opt in)");
+                }
+                construction_path = "in-memory-xml";
                 if (verbose) {
                     std::cerr << "[bind_nfsim] Direct AST initialization unavailable; "
                                  "using compatibility XML path...\n";
@@ -88,6 +134,7 @@ void bind_nfsim(py::module_& m) {
             }
 
             if (!system) {
+                construction_path = "on-disk-xml";
                 // Preserve the historical on-disk initializer as a last-resort
                 // compatibility mode.  This branch is expected to be rare and
                 // is intentionally visible in verbose diagnostics.
@@ -123,6 +170,24 @@ void bind_nfsim(py::module_& m) {
             throw std::runtime_error("Failed to initialize NFSim system from model XML");
         }
 
+        // NFsim's XML entry point applies the parser's recommended traversal
+        // depth before preparing reactions.  The direct path must do the same
+        // or large complexes silently fall back to an unrestricted graph walk.
+        // A caller-supplied non-negative value retains the native -utl escape
+        // hatch; -1 uses the recommendation computed while building the system.
+        const int effectiveTraversalLimit =
+            traversal_limit >= 0 ? traversal_limit : suggestedTraversalLimit;
+        system->setUniversalTraversalLimit(effectiveTraversalLimit);
+        if (verbose) {
+            std::cerr << "[bind_nfsim] Universal traversal limit = "
+                      << effectiveTraversalLimit << "\n";
+        }
+
+        // NFsim evaluates time-dependent functions against the system clock.
+        // Set the absolute API start before preparation so initial propensities
+        // and later output checkpoints use the same time origin.
+        system->setCurrentTime(t_start);
+
         // Step 5: Seed per-instance RNG (after system creation, before prepareForSimulation)
         if (seed > 0) {
             system->seedRNG(static_cast<unsigned long>(seed));
@@ -137,7 +202,7 @@ void bind_nfsim(py::module_& m) {
         // Step 6: Run equilibration if requested
         if (equilibrate > 0) {
             py::gil_scoped_release release;
-            system->equilibrate(static_cast<double>(equilibrate));
+            system->equilibrate(equilibrate);
         }
 
         // Step 7: Collect observable names
@@ -147,14 +212,13 @@ void bind_nfsim(py::module_& m) {
         }
         int n_obs = static_cast<int>(obs_names.size());
 
-        // Step 8: Run simulation in steps, collecting time-series data
-        double dt = t_end / static_cast<double>(n_steps);
+        // Step 8: Run simulation in steps, collecting time-series data.
+        // NFsim's System supports arbitrary stopping times through stepTo;
+        // use that path when the caller requests explicit sample times.
         std::vector<double> time_points;
         std::vector<std::vector<double>> obs_series(n_obs);
 
-        // Record initial state
-        time_points.push_back(0.0);
-        {
+        const auto record_observables = [&]() {
             int idx = 0;
             for (auto* obs : system->getObsToOutput()) {
                 if (obs) {
@@ -162,22 +226,31 @@ void bind_nfsim(py::module_& m) {
                     idx++;
                 }
             }
-        }
+        };
 
-        // Simulate in chunks to get time-series
         {
             py::gil_scoped_release release;
-            for (int step = 1; step <= n_steps; ++step) {
-                double t_current = step * dt;
-                system->stepTo(t_current);
-
-                time_points.push_back(t_current);
-                int idx = 0;
-                for (auto* obs : system->getObsToOutput()) {
-                    if (obs) {
-                        obs_series[idx].push_back(static_cast<double>(obs->getCount()));
-                        idx++;
-                    }
+            if (output_times.empty()) {
+                const double dt = (t_end - t_start) / static_cast<double>(n_steps);
+                double t_current = t_start;
+                time_points.push_back(t_start);
+                record_observables();
+                for (int step = 1; step <= n_steps; ++step) {
+                    // Match NFsim::sim's repeated checkpoint accumulation.
+                    // Multiplication can round a final boundary differently
+                    // and change whether an event is included at that edge.
+                    t_current += dt;
+                    system->stepTo(t_current, step == n_steps);
+                    time_points.push_back(t_current);
+                    record_observables();
+                }
+            } else {
+                time_points.reserve(output_times.size());
+                for (std::size_t index = 0; index < output_times.size(); ++index) {
+                    const double time = output_times[index];
+                    system->stepTo(time, index + 1 == output_times.size());
+                    time_points.push_back(time);
+                    record_observables();
                 }
             }
         }
@@ -199,6 +272,7 @@ void bind_nfsim(py::module_& m) {
             obs_dict[py::cast(obs_names[i])] = arr;
         }
         result["observables"] = obs_dict;
+        result["construction_path"] = construction_path;
 
         return result;
     },
@@ -208,6 +282,10 @@ void bind_nfsim(py::module_& m) {
         py::arg("seed") = 0,
         py::arg("equilibrate") = 0,
         py::arg("verbose") = false,
+        py::arg("source_path") = "",
+        py::arg("sample_times") = std::vector<double>{},
+        py::arg("traversal_limit") = -1,
+        py::arg("t_start") = 0.0,
         "Run network-free (NFSim) simulation on a model.\n\n"
         "Returns a dict with 'time' (numpy array of time points) and\n"
         "'observables' (dict of name -> numpy array of values at each time point).");

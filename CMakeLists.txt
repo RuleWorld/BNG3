@@ -15,6 +15,28 @@ option(BUILD_PYTHON_BINDINGS "Build pybind11 Python module" ON)
 option(BUILD_CLI "Build bng_cpp command-line executable" ON)
 option(BUILD_NFSIM_CLI "Build NFsim command-line executable" OFF)
 option(BUILD_TESTS "Build C++ tests" ON)
+option(NFSIM_ENABLE_LTO
+    "Enable release link-time optimization when supported by the toolchain"
+    ON)
+
+# The compact NFsim energy path benefits from link-time optimization, but the
+# option must remain safe on compilers and platforms without a working IPO
+# implementation. Probe the complete C/C++ toolchain before applying Release
+# IPO properties to the embedded NFsim library and its consumers.
+set(NFSIM_IPO_SUPPORTED FALSE)
+if(NFSIM_ENABLE_LTO)
+    include(CheckIPOSupported)
+    check_ipo_supported(
+        RESULT NFSIM_IPO_RESULT
+        OUTPUT NFSIM_IPO_ERROR
+        LANGUAGES C CXX)
+    if(NFSIM_IPO_RESULT)
+        set(NFSIM_IPO_SUPPORTED TRUE)
+        message(STATUS "BNG3 release LTO enabled")
+    else()
+        message(STATUS "BNG3 release LTO disabled: ${NFSIM_IPO_ERROR}")
+    endif()
+endif()
 
 include(FetchContent)
 
@@ -122,6 +144,27 @@ endif()
 
 # C++ source
 add_subdirectory(cpp)
+
+function(_bng3_record_ipo target output)
+    if(TARGET ${target})
+        get_target_property(value ${target} INTERPROCEDURAL_OPTIMIZATION_RELEASE)
+        if(value STREQUAL "value-NOTFOUND")
+            set(value FALSE)
+        endif()
+    else()
+        set(value NOT_BUILT)
+    endif()
+    set(${output} "${value}" PARENT_SCOPE)
+endfunction()
+
+_bng3_record_ipo(nfsim_core BNG3_NFSIM_CORE_IPO)
+_bng3_record_ipo(bng_cpp BNG3_BNG_CPP_IPO)
+_bng3_record_ipo(_bionetgen_cpp BNG3_PYTHON_IPO)
+_bng3_record_ipo(NFsim BNG3_NFSIM_CLI_IPO)
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpp/lto_contract.in
+    ${CMAKE_BINARY_DIR}/bng3_lto_contract.txt
+    @ONLY)
 
 # Tests
 if(BUILD_TESTS AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpp/CMakeLists.txt)

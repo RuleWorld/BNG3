@@ -1,0 +1,325 @@
+"""Source-derived tests for modern Atomizer annotation handling.
+
+Expectations mirror the public RuleWorld/bngplayground annotation parser at
+the pinned reference revision, not the implementation under test.
+"""
+
+from __future__ import annotations
+
+from collections import OrderedDict
+from pathlib import Path
+
+from bionetgen.atomizer.modern import (
+    AnnotationInfo,
+    SBMLModel,
+    SBMLSpecies,
+    annotations_to_json,
+    compute_annotation_stats,
+    extract_uniprot_accessions,
+    find_equivalent_species,
+    get_all_annotations,
+    parse_resource_uri,
+)
+
+
+def _species(
+    species_id: str,
+    name: str,
+    annotations: list[AnnotationInfo],
+) -> SBMLSpecies:
+    return SBMLSpecies(id=species_id, name=name, annotations=annotations)
+
+
+def _model(*species: SBMLSpecies) -> SBMLModel:
+    return SBMLModel(
+        id="annotation_fixture",
+        species=OrderedDict((item.id, item) for item in species),
+    )
+
+
+def test_annotation_parser_extracts_resources_and_filters_empty_species():
+    model = _model(
+        _species(
+            "s1",
+            "Species One",
+            [
+                AnnotationInfo(
+                    qualifier_type=1,
+                    biological_qualifier=0,
+                    resources=["urn:miriam:uniprot:P12345"],
+                )
+            ],
+        ),
+        _species("s2", "Species Two", []),
+        _species(
+            "s3",
+            "Species Three",
+            [
+                AnnotationInfo(
+                    qualifier_type=1,
+                    biological_qualifier=0,
+                    resources=[
+                        "uniprot:Q98765",
+                        "https://identifiers.org/go/1234567",
+                        "https://identifiers.org/pubmed/12345",
+                    ],
+                )
+            ],
+        ),
+    )
+
+    annotations = get_all_annotations(model)
+
+    assert list(annotations) == ["s1", "s3"]
+    assert [(item.database, item.identifier) for item in annotations["s1"]] == [
+        ("uniprot", "P12345")
+    ]
+    assert [(item.database, item.identifier) for item in annotations["s3"]] == [
+        ("uniprot", "Q98765"),
+        ("go", "1234567"),
+        ("pubmed", "12345"),
+    ]
+
+
+def test_annotation_parser_handles_reference_uri_forms_and_uniprot_extraction():
+    assert parse_resource_uri("https://identifiers.org/uniprot/P99999") == (
+        "uniprot",
+        "P99999",
+    )
+    assert parse_resource_uri("urn:miriam:uniprot:P11111") == (
+        "uniprot",
+        "P11111",
+    )
+
+    model = _model(
+        _species(
+            "s1",
+            "Species One",
+            [
+                AnnotationInfo(
+                    qualifier_type=1,
+                    biological_qualifier=0,
+                    resources=["uniprot/P12345", "uniprot:Q67890"],
+                )
+            ],
+        ),
+        _species(
+            "s2",
+            "Species Two",
+            [
+                AnnotationInfo(
+                    qualifier_type=1,
+                    biological_qualifier=0,
+                    resources=["kegg.compound/C00001"],
+                )
+            ],
+        ),
+    )
+
+    assert extract_uniprot_accessions(model) == {"s1": ["P12345", "Q67890"]}
+
+
+def test_playground_qualifier_helper_filters_resources_by_qualifier_kind():
+    from bionetgen.atomizer.modern import getAnnotationsByQualifier
+
+    annotations = [
+        AnnotationInfo(
+            qualifier_type=1,
+            biological_qualifier=0,
+            resources=["urn:miriam:uniprot:P12345"],
+        ),
+        AnnotationInfo(
+            qualifier_type=1,
+            biological_qualifier=1,
+            resources=["urn:miriam:uniprot:Q67890"],
+        ),
+        AnnotationInfo(
+            qualifier_type=0,
+            model_qualifier=2,
+            resources=["https://identifiers.org/pubmed/12345"],
+        ),
+    ]
+
+    assert getAnnotationsByQualifier(annotations, 0) == ["urn:miriam:uniprot:P12345"]
+    assert getAnnotationsByQualifier(annotations, 2, is_biological=False) == [
+        "https://identifiers.org/pubmed/12345"
+    ]
+
+
+def test_playground_parser_annotation_id_helpers_preserve_source_matches():
+    from bionetgen.atomizer.modern import extractGOTerms, extractUniProtIds
+
+    resources = [
+        "urn:miriam:uniprot:P12345",
+        "https://identifiers.org/uniprot/Q67890",
+        "GO:0008150",
+        "https://identifiers.org/go/12345",
+    ]
+
+    assert extractUniProtIds(resources) == ["P12345", "Q67890"]
+    assert extractGOTerms(resources) == ["GO:0008150", "GO:12345"]
+
+
+def test_annotation_parser_groups_only_identity_qualifiers():
+    model = _model(
+        _species(
+            "s1",
+            "Long Species Name",
+            [
+                AnnotationInfo(
+                    qualifier_type=1,
+                    biological_qualifier=1,
+                    resources=["uniprot:P12345"],
+                ),
+                AnnotationInfo(
+                    qualifier_type=1,
+                    biological_qualifier=0,
+                    resources=["uniprot:P12345"],
+                ),
+            ],
+        ),
+        _species(
+            "s2",
+            "S",
+            [
+                AnnotationInfo(
+                    qualifier_type=1,
+                    biological_qualifier=3,
+                    resources=["https://identifiers.org/uniprot/P12345"],
+                )
+            ],
+        ),
+        _species(
+            "s3",
+            "Other",
+            [
+                AnnotationInfo(
+                    qualifier_type=1,
+                    biological_qualifier=1,
+                    resources=["uniprot:P12345"],
+                )
+            ],
+        ),
+    )
+
+    equivalent = find_equivalent_species(model)
+
+    assert equivalent == {"uniprot:P12345": ["s1", "s2"]}
+
+
+def test_annotation_parser_emits_reference_json_and_stats():
+    model = _model(
+        _species(
+            "s1",
+            "",
+            [
+                AnnotationInfo(
+                    qualifier_type=1,
+                    biological_qualifier=0,
+                    resources=["uniprot:P12345"],
+                )
+            ],
+        ),
+        _species("s2", "Species Two", []),
+    )
+
+    annotation_map = get_all_annotations(model)
+    payload = annotations_to_json(model, annotation_map)
+
+    assert '"name": "s1"' in payload
+    assert '"identifier": "P12345"' in payload
+    assert compute_annotation_stats(model).annotated_species == 1
+    assert compute_annotation_stats(model).annotation_count == 1
+
+
+def test_atomizer_annotation_payload_matches_reference_shape():
+    from bionetgen.atomizer.modern import Atomizer
+
+    sbml = """<?xml version="1.0"?>
+    <sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+          xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+          xmlns:bqbiol="http://biomodels.net/biology-qualifiers/"
+          level="3" version="1">
+      <model id="annotation_payload">
+        <listOfCompartments><compartment id="cell" size="1"/></listOfCompartments>
+        <listOfSpecies>
+          <species id="A" name="A" compartment="cell" initialAmount="1">
+            <annotation><rdf:RDF><rdf:Description rdf:about="#A">
+              <bqbiol:is><rdf:Bag><rdf:li rdf:resource="uniprot:P12345"/></rdf:Bag></bqbiol:is>
+            </rdf:Description></rdf:RDF></annotation>
+          </species>
+          <species id="B" name="B" compartment="cell"/>
+        </listOfSpecies>
+      </model>
+    </sbml>
+    """
+
+    result = Atomizer(annotation=True).atomize(sbml)
+
+    assert result.success is True
+    assert set(result.annotation) == {"species", "reactions", "compartments"}
+    assert set(result.annotation["species"]) == {"A"}
+    assert result.annotation["species"]["A"]["annotations"][0]["resources"] == [
+        "uniprot:P12345"
+    ]
+
+
+def test_bng_xml_converter_preserves_reference_sections_and_bonds():
+    from bionetgen.atomizer.modern import convert_bng_xml_to_bngl
+
+    xml = Path(__file__).parent / "test" / "test.xml"
+    bngl = convert_bng_xml_to_bngl(xml.read_text(encoding="utf-8"))
+
+    assert "begin parameters" in bngl
+    assert "begin molecule types" in bngl
+    assert "begin seed species" in bngl
+    assert "begin reaction rules" in bngl
+    assert "kon 10" in bngl
+    assert "X(y,p~0)" in bngl
+    assert "X(y!1,p~0).Y(x!1)" in bngl
+
+
+def test_bng_xml_converter_reports_source_diagnostics():
+    from bionetgen.atomizer.modern import convert_bng_xml_to_bngl
+    from bionetgen.atomizer.modern.helpers import logger
+
+    xml = """<?xml version="1.0"?>
+    <sbml><model id="bng_xml_diagnostics">
+      <ListOfParameters><Parameter id="NA" value="6.02e23"/></ListOfParameters>
+      <ListOfReactionRules>
+        <ReactionRule id="r">
+          <ListOfReactantPatterns><ReactantPattern>
+            <ListOfMolecules><Molecule name="A" compartment="cell">
+              <ListOfComponents><Component name="x"/></ListOfComponents>
+            </Molecule></ListOfMolecules>
+          </ReactantPattern></ListOfReactantPatterns>
+          <ListOfProductPatterns><ProductPattern>
+            <ListOfMolecules><Molecule name="B" compartment="cell"/></ListOfMolecules>
+          </ProductPattern></ListOfProductPatterns>
+          <RateLaw type="MM"><ListOfRateConstants>
+            <RateConstant value="vmax"/><RateConstant value="km"/>
+          </ListOfRateConstants></RateLaw>
+        </ReactionRule>
+      </ListOfReactionRules>
+    </model></sbml>"""
+
+    logger.clear()
+    logger.setLevel("INFO")
+    logger.setQuietMode(True)
+    try:
+        bngl = convert_bng_xml_to_bngl(xml)
+        messages = [
+            message
+            for message in logger.getMessages()
+            if message.code.startswith("BNGXML")
+        ]
+    finally:
+        logger.clear()
+        logger.setLevel("WARNING")
+        logger.setQuietMode(False)
+
+    assert "MM(vmax,(km * cell * NA))" in bngl
+    assert [(message.code, message.message) for message in messages] == [
+        ("BNGXML002", "Scaled MM constant for cell: (km * cell * NA)"),
+        ("BNGXML001", "Converted BNG SBML to BNGL (fallback)"),
+    ]

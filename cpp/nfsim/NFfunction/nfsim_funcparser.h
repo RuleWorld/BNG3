@@ -135,6 +135,28 @@ inline std::string remap_expression(const std::string& expr,
     return result;
 }
 
+// BNG2/NFsim expressions commonly spell logical conjunction and disjunction
+// as && and ||.  ExprTk deliberately reserves those characters and accepts
+// the word operators instead.  Normalize only the legacy operators here;
+// callers still observe the original expression through GetExpr().
+inline std::string normalize_legacy_logical_operators(const std::string& expr)
+{
+    std::string result;
+    result.reserve(expr.size() + 8);
+    for (std::size_t i = 0; i < expr.size();) {
+        if (expr.compare(i, 2, "&&") == 0) {
+            result += " and ";
+            i += 2;
+        } else if (expr.compare(i, 2, "||") == 0) {
+            result += " or ";
+            i += 2;
+        } else {
+            result.push_back(expr[i++]);
+        }
+    }
+    return result;
+}
+
 }  // namespace detail
 
 // ─── mu::Parser — ExprTk-based drop-in replacement ──────────────────────────
@@ -210,8 +232,10 @@ public:
     // ─── SetExpr: compile the expression ────────────────────────────────
     void SetExpr(const std::string& expr) {
         original_expr_string_ = expr;
+        const std::string normalized_expr =
+            detail::normalize_legacy_logical_operators(expr);
         // Remap underscore-prefixed identifiers before ExprTk compilation
-        expr_string_ = detail::remap_expression(expr, underscore_names_);
+        expr_string_ = detail::remap_expression(normalized_expr, underscore_names_);
         compile();
     }
 

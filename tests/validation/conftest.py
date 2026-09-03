@@ -38,8 +38,10 @@ def _discover_bng_cpp(explicit: str | None) -> Path | None:
         corpus.REPO / "build" / "cpp" / "bng_cpp",
     ]
     for c in candidates:
-        if c and Path(c).exists():
-            return Path(c)
+        if c:
+            path = Path(c).expanduser()
+            if path.exists():
+                return path.resolve()
     return None
 
 

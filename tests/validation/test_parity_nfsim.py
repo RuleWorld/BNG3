@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 
+import numpy as np
 import pytest
 
 from tests.validation import compare, corpus, oracle_nfsim, runner
@@ -53,6 +54,7 @@ def test_nf_ast_direct_matches_xml(model_name, api, work_dir, monkeypatch):
     t_end, n_steps, seed = 50.0, 50, 7
 
     monkeypatch.setenv("BNG_NFSIM_FORCE_XML", "1")
+    monkeypatch.setenv("BNG_NFSIM_ALLOW_XML_FALLBACK", "1")
     xml_traj = runner.run_api(model_name, method="nf", seed=seed, t_end=t_end, n_steps=n_steps)
 
     monkeypatch.delenv("BNG_NFSIM_FORCE_XML", raising=False)
@@ -65,3 +67,46 @@ def test_nf_ast_direct_matches_xml(model_name, api, work_dir, monkeypatch):
     assert diff.ok or diff.max_rel_err == 0.0, (
         f"ast-direct diverges from in-memory-XML [{model_name}]: {diff.summary()}"
     )
+
+
+@pytest.mark.nf
+@pytest.mark.slow
+@pytest.mark.parametrize("model_name,t_end", [("motor", 0.2), ("tlbr", 2.0)])
+def test_nf_fixed_seed_direct_matches_native_at_final_endpoint(
+    model_name, t_end, api, work_dir
+):
+    """The direct API must retain native NFsim's final endpoint event semantics."""
+    if not oracle_nfsim.nfsim_available():
+        pytest.skip("native NFsim binary not found (set NFSIM_BIN)")
+
+    # Source-derived from nfsim/test/motor and nfsim/test/tlbr.  Native
+    # System::sim includes an event whose waiting time crosses the final output
+    # boundary; this is intentionally a fixed-seed contract, not a tolerance
+    # or ensemble substitute.
+    xml_path = oracle_nfsim.write_model_xml(
+        model_name, work_dir / "native-endpoint" / f"{model_name}.xml"
+    )
+    assert xml_path is not None
+    native_path, stderr = oracle_nfsim.run_nfsim(
+        xml_path,
+        work_dir / "native-endpoint" / "run",
+        t_end=t_end,
+        n_steps=20,
+        seed=1,
+    )
+    assert native_path is not None, stderr
+    native_data, native_columns = compare.parse_gdat(native_path)
+    assert native_data is not None
+
+    direct = runner.run_api(
+        model_name,
+        method="nf",
+        t_end=t_end,
+        n_steps=20,
+        seed=1,
+    )
+
+    assert direct.columns == native_columns
+    assert direct.data.shape == native_data.shape
+    assert np.allclose(direct.data[:, 0], native_data[:, 0], rtol=0.0, atol=1e-12)
+    assert np.array_equal(direct.data[:, 1:], native_data[:, 1:])

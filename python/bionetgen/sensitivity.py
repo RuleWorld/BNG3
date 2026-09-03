@@ -96,6 +96,15 @@ def sensitivity_analysis(
     pla_config: str = "",
     psa_poplevel: float = 100.0,
     verbose: bool = False,
+    max_step: float = 0.0,
+    steady_state: bool = False,
+    steady_state_tol: Optional[float] = None,
+    stop_if: str = "",
+    sample_times=None,
+    max_sim_steps: int = 0,
+    output_step_interval: int = 0,
+    sparse: bool = False,
+    check_product_scale: float = 0.0,
     delta: float = 0.01,
     parallel: int = 0,
 ) -> SensitivityResult:
@@ -121,6 +130,15 @@ def sensitivity_analysis(
         pla_config=pla_config,
         psa_poplevel=psa_poplevel,
         verbose=verbose,
+        max_step=max_step,
+        steady_state=steady_state,
+        steady_state_tol=steady_state_tol,
+        stop_if=stop_if,
+        sample_times=sample_times,
+        max_sim_steps=max_sim_steps,
+        output_step_interval=output_step_interval,
+        sparse=sparse,
+        check_product_scale=check_product_scale,
     )
 
     if parallel and parallel > 1:

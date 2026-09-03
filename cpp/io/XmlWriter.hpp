@@ -35,6 +35,7 @@ private:
     static std::string writeReactionRules(const ast::Model& model);
     static std::string writeObservables(const ast::Model& model);
     static std::string writeFunctions(const ast::Model& model);
+    static std::string writeEnergyPatterns(const ast::Model& model);
 
     // Pattern serialization helpers
     static std::string writePatternXml(

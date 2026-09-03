@@ -7,6 +7,7 @@
 //Include stl IO and string functionality
 #include <iostream>
 #include <fstream>
+#include <cstdint>
 #include <string>
 
 //Include stl containers
@@ -15,8 +16,10 @@
 #include <queue>
 #include <map>
 #include <unordered_map>
+#include <unordered_set>
 #include <algorithm>
 #include <set>
+#include <utility>
 // Include various NFsim classes from other files
 #include "../NFscheduler/NFstream.h"
 #include "../NFutil/NFutil.hh"
@@ -94,6 +97,7 @@ namespace NFcore
 	//                           think of these as regular expressions for molecule comparison */
 
 	class ReactionClass; /* defines a reaction class, (in other words, a rxn rule) */
+	class CompactPartnerPool;
 
 	class Observable;  /* object that moniters counts of things we want to keep track of */
 
@@ -107,6 +111,193 @@ namespace NFcore
 	class ReactionSelector;
 
 	class SystemSnapshot;
+
+	/* Compact sorted membership IDs. Reaction membership is usually empty or
+	 * contains one mapping per molecule, while std::set stores tree metadata for
+	 * every reaction slot and mapping. Keep the first ID inline and allocate an
+	 * overflow array only when a reaction has multiple mappings. */
+	class MappingIdSet {
+		public:
+			class iterator {
+				friend class MappingIdSet;
+				MappingIdSet *owner;
+				unsigned int index;
+				iterator(MappingIdSet *owner, unsigned int index)
+					: owner(owner), index(index) {}
+				public:
+					iterator() : owner(0), index(0) {}
+					int& operator*() const { return owner->valueAt(index); }
+					iterator& operator++() { ++index; return *this; }
+					bool operator==(const iterator &other) const {
+						return owner == other.owner && index == other.index;
+					}
+					bool operator!=(const iterator &other) const {
+						return !(*this == other);
+					}
+			};
+
+			class const_iterator {
+				friend class MappingIdSet;
+				const MappingIdSet *owner;
+				unsigned int index;
+				const_iterator(const MappingIdSet *owner, unsigned int index)
+					: owner(owner), index(index) {}
+				public:
+					const_iterator() : owner(0), index(0) {}
+					const int& operator*() const { return owner->valueAt(index); }
+					const_iterator& operator++() { ++index; return *this; }
+					bool operator==(const const_iterator &other) const {
+						return owner == other.owner && index == other.index;
+					}
+					bool operator!=(const const_iterator &other) const {
+						return !(*this == other);
+					}
+			};
+
+			MappingIdSet()
+				: firstId(-1), extraIds(0), extraSize(0), extraCapacity(0) {}
+			MappingIdSet(const MappingIdSet &other)
+				: firstId(other.firstId), extraIds(0),
+				  extraSize(other.extraSize), extraCapacity(0) {
+				if (extraSize > 0) {
+					extraCapacity = extraSize;
+					extraIds = new int[extraCapacity];
+					for (unsigned int i = 0; i < extraSize; ++i)
+						extraIds[i] = other.extraIds[i];
+				}
+			}
+			~MappingIdSet() { delete [] extraIds; }
+
+			MappingIdSet& operator=(const MappingIdSet &other) {
+				if (this == &other) return *this;
+				clear();
+				firstId = other.firstId;
+				if (other.extraSize > 0) {
+					extraCapacity = other.extraSize;
+					extraSize = other.extraSize;
+					extraIds = new int[extraCapacity];
+					for (unsigned int i = 0; i < extraSize; ++i)
+						extraIds[i] = other.extraIds[i];
+				}
+				return *this;
+			}
+
+			bool empty() const { return firstId < 0; }
+			size_t size() const {
+				return empty() ? 0 : static_cast<size_t>(extraSize + 1);
+			}
+			iterator begin() { return iterator(this, 0); }
+			iterator end() {
+				return iterator(this, static_cast<unsigned int>(size()));
+			}
+			const_iterator begin() const { return const_iterator(this, 0); }
+			const_iterator end() const {
+				return const_iterator(this, static_cast<unsigned int>(size()));
+			}
+			void clear() {
+				firstId = -1;
+				extraSize = 0;
+				delete [] extraIds;
+				extraIds = 0;
+				extraCapacity = 0;
+			}
+
+			pair<iterator, bool> insert(int id) {
+				if (empty()) {
+					firstId = id;
+					return make_pair(iterator(this, 0), true);
+				}
+				if (id == firstId)
+					return make_pair(iterator(this, 0), false);
+				if (id < firstId) {
+					int oldFirstId = firstId;
+					firstId = id;
+					insertExtra(oldFirstId);
+					return make_pair(iterator(this, 0), true);
+				}
+				unsigned int position = lowerBoundExtra(id);
+				if (position < extraSize && extraIds[position] == id)
+					return make_pair(iterator(this, position + 1), false);
+				insertExtraAt(position, id);
+				return make_pair(iterator(this, position + 1), true);
+			}
+
+			size_t erase(int id) {
+				if (empty()) return 0;
+				if (id == firstId) {
+					if (extraSize == 0) {
+						firstId = -1;
+						return 1;
+					}
+					firstId = extraIds[0];
+					for (unsigned int i = 1; i < extraSize; ++i)
+						extraIds[i - 1] = extraIds[i];
+					--extraSize;
+					return 1;
+				}
+				if (id < firstId) return 0;
+				unsigned int position = lowerBoundExtra(id);
+				if (position == extraSize || extraIds[position] != id)
+					return 0;
+				for (unsigned int i = position + 1; i < extraSize; ++i)
+					extraIds[i - 1] = extraIds[i];
+				--extraSize;
+				return 1;
+			}
+
+		private:
+			int& valueAt(unsigned int index) {
+				return index == 0 ? firstId : extraIds[index - 1];
+			}
+			const int& valueAt(unsigned int index) const {
+				return index == 0 ? firstId : extraIds[index - 1];
+			}
+			unsigned int lowerBoundExtra(int id) const {
+				unsigned int position = 0;
+				while (position < extraSize && extraIds[position] < id)
+					++position;
+				return position;
+			}
+			void ensureExtraCapacity(unsigned int required) {
+				if (required <= extraCapacity) return;
+				unsigned int newCapacity = extraCapacity == 0 ? 2 : extraCapacity * 2;
+				while (newCapacity < required) newCapacity *= 2;
+				int *newIds = new int[newCapacity];
+				for (unsigned int i = 0; i < extraSize; ++i)
+					newIds[i] = extraIds[i];
+				delete [] extraIds;
+				extraIds = newIds;
+				extraCapacity = newCapacity;
+			}
+			void insertExtraAt(unsigned int position, int id) {
+				ensureExtraCapacity(extraSize + 1);
+				for (unsigned int i = extraSize; i > position; --i)
+					extraIds[i] = extraIds[i - 1];
+				extraIds[position] = id;
+				++extraSize;
+			}
+			void insertExtra(int id) {
+				insertExtraAt(lowerBoundExtra(id), id);
+			}
+
+			int firstId;
+			int *extraIds;
+			unsigned int extraSize;
+			unsigned int extraCapacity;
+	};
+
+	/* Endpoint state changes exposed by compact EnergyPattern reactions. */
+	struct IncrementalMembershipChange {
+		IncrementalMembershipChange() :
+				moleculeType1(0), componentIndex1(-1), isBoundAfter1(false),
+				moleculeType2(0), componentIndex2(-1), isBoundAfter2(false) {}
+		MoleculeType *moleculeType1;
+		int componentIndex1;
+		bool isBoundAfter1;
+		MoleculeType *moleculeType2;
+		int componentIndex2;
+		bool isBoundAfter2;
+	};
 
 
 	//exception for the handling of local functions and mapping sets
@@ -249,6 +440,8 @@ namespace NFcore
 			bool isOutputtingBinary() { return useBinaryOutput; };
 			double getCurrentTime() const { return current_time; };
 			double * getCurrentTimePtr() { return &current_time; };
+			/* Set the absolute simulation time before prepareForSimulation(). */
+			void setCurrentTime(double time);
 			int getGlobalMoleculeLimit() const { return globalMoleculeLimit; };
 
 			void setHasTimeDependentFunctions(bool val) { hasTimeDependentFunctions = val; }
@@ -390,6 +583,16 @@ namespace NFcore
 			//double calculateMeanCount(MoleculeType *m);
 
 			void update_A_tot(ReactionClass *r, double old_a, double new_a);
+			void beginDeferredMembershipPropensityUpdates();
+			void deferMembershipPropensityUpdate(ReactionClass *r, double oldA);
+			void deferCompactPartnerPoolUpdate(
+					CompactPartnerPool *pool, int oldPoolSize, int newPoolSize);
+			void endDeferredMembershipPropensityUpdates();
+			bool isDeferringMembershipPropensityUpdates() const {
+				return deferringMembershipPropensityUpdates;
+			}
+			void updateCompactPartnerPoolBatch(
+					CompactPartnerPool *pool, int oldPoolSize, int newPoolSize);
 
 
 
@@ -416,10 +619,12 @@ namespace NFcore
 			 * a file divided equally throughout the elapsed time  */
 			double sim(double time, long int sampleTimes, bool verbose);
 
-			/* run the simulation up until the stopping time (but not exceding the stopping time. This
-			 * will not output anything to file (so must be done manually) and returns the current time
-			 * of the simulation, which will always be less than the stopping time */
+			/* Run up to, but not across, the stopping time without file output. */
 			double stepTo(double stoppingTime);
+			/* API compatibility form: native System::sim may fire the pending event
+			 * that crosses its final output endpoint; ordinary stepTo callers retain
+			 * the exclusive boundary above. */
+			double stepTo(double stoppingTime, bool includeEndpointEvent);
 
 			void singleStep();
 
@@ -448,9 +653,16 @@ namespace NFcore
 			void updateSystemWithNewParameters();
 			void printAllParameters();
 
-			// RNG management for thread-safe, deterministic simulations
-			void seedRNG(unsigned long seed) { rng_.seed(seed); }
-			NfsimRNG& getRNG() { return rng_; }
+            // RNG management for thread-safe, deterministic simulations.
+            // Current NFsim keeps legacy global draws for molecule/mapping
+            // selection, so preserve that source split in a second
+            // per-System stream without reintroducing shared global state.
+            void seedRNG(unsigned long seed) {
+                rng_.seed(seed);
+                mapping_rng_.seed(seed);
+            }
+            NfsimRNG& getRNG() { return rng_; }
+            NfsimRNG& getMappingRNG() { return mapping_rng_; }
 
 	        NFstream& getOutputFileStream();
 	        NFstream& getReactionFileStream();
@@ -613,6 +825,8 @@ namespace NFcore
 			double a_tot;        /*< the sum of all a's (propensities) of all reactions */
 			double current_time; /*< keeps track of the simulation time */
 			ReactionClass * nextReaction;  /*< keeps track of the next reaction to fire */
+			bool pendingStepEventValid = false; /*< cached waiting-time draw for stepTo() */
+			double pendingStepEventTime = 0.0; /*< absolute event time for cached stepTo() draw */
 			// max CPU time for simulation
 			double max_cpu_time;
 
@@ -622,6 +836,10 @@ namespace NFcore
 			double recompute_A_tot();
 			double getNextRxn();
 			double getMaxCpuTime() const { return max_cpu_time; };
+			void invalidateStepToCache() {
+				pendingStepEventValid = false;
+				pendingStepEventTime = 0.0;
+			}
 
 
 			///////////////////////////////////////////////////////////////////////////
@@ -653,12 +871,29 @@ namespace NFcore
 
 			//Data structure that performs the selection of the next reaction class
 			ReactionSelector * selector;
+			struct DeferredCompactPartnerPoolUpdate {
+				DeferredCompactPartnerPoolUpdate() :
+						pool(0), oldPoolSize(0), newPoolSize(0) {}
+				CompactPartnerPool *pool;
+				int oldPoolSize;
+				int newPoolSize;
+			};
+			bool deferringMembershipPropensityUpdates = false;
+			vector<ReactionClass *> deferredMembershipReactions;
+			vector<double> deferredMembershipOldPropensities;
+			vector<DeferredCompactPartnerPoolUpdate>
+					deferredCompactPartnerPoolUpdates;
+			unsigned long long deferredMembershipUpdateGeneration = 0;
 
 			// To look up connected reactions quickly
 			vector <vector <bool> > connectedReactions;
 
-			// Per-instance random number generator for thread safety
-			NfsimRNG rng_;
+            // Per-instance random number generator for thread safety
+            NfsimRNG rng_;
+
+            // Source-compatible stream for legacy molecule/mapping selection
+            // draws that remain separate from the System reaction stream.
+            NfsimRNG mapping_rng_;
 
 			// AS2023 - sets the default log buffer size to 10000 firings.
 			int log_buffer_size = 10000;
@@ -809,6 +1044,15 @@ namespace NFcore
 			int getMoleculeCount() const;
 
 			int getReactionCount() const { return reactions.size(); };
+			/* Mapping storage is dense only over reaction registrations that can
+			 * attach a MappingSet to a molecule.  Compact EnergyPattern
+			 * partner-side registrations use a shared pool instead. */
+			int getReactionMappingIndex(int reactionIndex) const {
+				return reactionMappingIndices[reactionIndex];
+			};
+			int getReactionMappingCount() const {
+				return reactionMappingCount;
+			};
 			int getRxnIndex(ReactionClass * rxn, int rxnPosition);
 
 
@@ -816,6 +1060,7 @@ namespace NFcore
 			//Functions to generate molecules, remove molecules at the beginning
 			//or during a running simulation
 			Molecule *genDefaultMolecule(Compartment *c = 0);
+			CompactPartnerPool *getOrCreateCompactPartnerPool(int componentIndex);
 
 			void removeAllMolecules();
 
@@ -829,6 +1074,7 @@ namespace NFcore
 
 			//Adds the basic components that this MoleculeType needs to reference
 			void addReactionClass(ReactionClass * r, int rPosition);
+			bool canSkipIndirectMembership(ReactionClass *firedReaction) const;
 			void addMolObs(MoleculesObservable * mo) { molObs.push_back(mo); }; //could add check here to make sure observable is of this type
 			int createComplex(Molecule *m) { return (system->getAllComplexes()).createComplex(m); };
 			void addTemplateMolecule(TemplateMolecule *t);
@@ -842,12 +1088,15 @@ namespace NFcore
 
 
 			/* updates a molecules membership (assumes molecule is of type this) */
-			void updateRxnMembership(Molecule * m);
+			void updateRxnMembership(Molecule * m,
+					ReactionClass *firedReaction = 0,
+					bool directProduct = false);
 			/* Updates only molecule membership in connected reactions.
 			 * The connected reactions are inferred at the simulation start.
 			 * Arvind Rasi Subramaniam
 			 */
-			void updateConnectedRxnMembership(Molecule * m, ReactionClass * r);
+			void updateConnectedRxnMembership(Molecule * m, ReactionClass * r,
+					bool directProduct = false);
 
 			/* auto populate with default molecules */
 			void populateWithDefaultMolecules(int moleculeCount);
@@ -953,6 +1202,20 @@ namespace NFcore
 
 			vector <ReactionClass *> reactions; /* List of reactions that this type can be involved with */
 			vector <int> reactionPositions;   /* the position in the reaction for this type of molecule */
+			vector <int> reactionMappingIndices;
+			int reactionMappingCount;
+			vector <CompactPartnerPool *> compactPartnerPools;
+
+			/* Static candidate index for weighted simple EnergyPattern reactions.
+			 * Each bitset is ordered by reaction index, so iterating set bits keeps
+			 * the native reaction order without scanning every registered reaction. */
+			vector<vector<std::uint64_t> > compactEnergyCenterCandidateBits;
+			vector<vector<std::uint64_t> > compactEnergyContextCandidateBits;
+			vector<vector<std::uint64_t> > compactPartnerCandidateBits;
+			vector<vector<unsigned int> > compactPartnerReactionIndices;
+			vector<unsigned int> compactEnergyContextMinimumRequiredBits;
+			vector<std::uint64_t> nonCompactMembershipCandidateBits;
+			bool hasCompactEnergyMembershipIndex;
 
 			vector <int> indexOfDORrxns;
 
@@ -963,6 +1226,21 @@ namespace NFcore
 															so that they are easy to delete from memory at the end */
 
 			ReactionClass *rxn; /*used so we don't need to redeclare this at every call to updateRxnMembership */
+
+			/* Cache direct-product membership decisions when every reaction on this
+			 * molecule type proves that its decision is type-invariant.  Dense
+			 * decisions use one byte per reaction; sparse decisions retain only the
+			 * ordered affected reaction indices. */
+			struct DirectMembershipDecisionCacheEntry {
+				DirectMembershipDecisionCacheEntry() : useReactionIndices(false) {}
+				std::vector<unsigned char> decisions;
+				std::vector<unsigned int> reactionIndices;
+				bool useReactionIndices;
+			};
+			std::unordered_map<ReactionClass *, DirectMembershipDecisionCacheEntry>
+				directMembershipDecisionCache;
+			std::unordered_map<ReactionClass *, bool>
+				directMembershipDecisionCacheSafe;
 
 
 
@@ -1037,6 +1315,7 @@ namespace NFcore
 			///////////////////////////////////////////////////////////////////////
 			int getComponentState(int cIndex) const { return component[cIndex]; };
 			int getComponentIndexOfBond(int cIndex) const { return indexOfBond[cIndex]; };
+			std::uint64_t getBoundComponentMask() const { return boundComponentMask; };
 			void setComponentState(int cIndex, int newValue);
 			void setComponentState(string cName, int newValue);
 
@@ -1057,30 +1336,46 @@ namespace NFcore
 
 			int getRxnListMappingId(int rxnIndex) { 
 				//return rxnListMappingId[rxnIndex];
-				return (rxnListMappingId2[rxnIndex].size() > 0) ? *rxnListMappingId2[rxnIndex].begin() : -1;  //JJT: changing to handle multiple mappings per reaction
+				int mappingIndex = parentMoleculeType->getReactionMappingIndex(
+						rxnIndex);
+				if (mappingIndex < 0) return -1;
+				return (rxnListMappingId2[mappingIndex].size() > 0) ?
+					*rxnListMappingId2[mappingIndex].begin() : -1;  //JJT: changing to handle multiple mappings per reaction
 			};
 
-			set<int> getRxnListMappingSet(int rxnIndex){
-
-				return rxnListMappingId2[rxnIndex];
+			const MappingIdSet& getRxnListMappingSet(int rxnIndex) const {
+				int mappingIndex = parentMoleculeType->getReactionMappingIndex(
+						rxnIndex);
+				if (mappingIndex < 0) {
+					static const MappingIdSet empty;
+					return empty;
+				}
+				return rxnListMappingId2[mappingIndex];
 			}
 
 			bool setRxnListMappingId(int rxnIndex, int rxnListMappingId) {
-					if(rxnListMappingId == -1){
-						this->rxnListMappingId2[rxnIndex].clear();
-						//this->rxnListMappingId3[rxnIndex].clear();
-						return true;
-					}
-					else{
-						pair<std::set<int>::iterator,bool> it = this->rxnListMappingId2[rxnIndex].insert(rxnListMappingId); //JJT: using a set* instead of int* to deal with multiple mappings per reaction
-						return it.second; //JJT:  return whether it is a new insert or not
-					}
+				int mappingIndex = parentMoleculeType->getReactionMappingIndex(
+						rxnIndex);
+				if (mappingIndex < 0) return rxnListMappingId == -1;
+				if(rxnListMappingId == -1){
+					this->rxnListMappingId2[mappingIndex].clear();
+					//this->rxnListMappingId3[rxnIndex].clear();
+					return true;
+				}
+				else{
+					pair<MappingIdSet::iterator,bool> it =
+						this->rxnListMappingId2[mappingIndex].insert(rxnListMappingId); //JJT: using a compact set instead of int* to deal with multiple mappings per reaction
+					return it.second; //JJT:  return whether it is a new insert or not
+				}
 			};
 
 
 
 			void deleteRxnListMappingId(int rxnIndex, int rxnListMappingId){
-				rxnListMappingId2[rxnIndex].erase(rxnListMappingId);
+				int mappingIndex = parentMoleculeType->getReactionMappingIndex(
+						rxnIndex);
+				if (mappingIndex >= 0)
+					rxnListMappingId2[mappingIndex].erase(rxnListMappingId);
 			}
 
 			/* set functions for states, bonds, and complexes */
@@ -1115,7 +1410,8 @@ namespace NFcore
 
 			/* function that tells this molecule that it changed states or bonds
 			 * and it should update its reaction membership */
-			void updateRxnMembership(ReactionClass * r, bool useConnectivity);
+			void updateRxnMembership(ReactionClass * r, bool useConnectivity,
+					bool directProduct = false);
 			void removeFromObservables();
 			void addToObservables();
 
@@ -1196,6 +1492,7 @@ namespace NFcore
 			int numOfComponents;
 			Molecule **bond;
 			int *indexOfBond; /* gives the index of the component that is bonded to this molecule */
+			std::uint64_t boundComponentMask;
 
 
 			//////////// keep track of local function values
@@ -1207,7 +1504,7 @@ namespace NFcore
 
 
 			//Used to keep track of which reactions this molecule is in...
-			set<int>* rxnListMappingId2;
+			MappingIdSet* rxnListMappingId2;
 			map<vector<Molecule *>, int>* rxnListMappingId3;
 			int nReactions;
 
@@ -1226,6 +1523,113 @@ namespace NFcore
 
 
 
+
+
+	/* Simple compact EnergyPattern forward rules with the same partner
+	 * molecule/component have identical partner-side eligibility.  Keep that
+	 * eligibility once per molecule type instead of allocating one MappingSet
+	 * and one pointer list per reaction.  MappingSets used by the reaction
+	 * transformation itself remain per-reaction scratch objects. */
+	class CompactPartnerPool {
+		public:
+			CompactPartnerPool() : molecules(), positions(),
+					lastRefreshedMolecule(0), lastRefreshMatches(false),
+					hasLastRefresh(false), registeredReactions(),
+					compactPartnerPoolBatchable(true) {}
+
+			int size() const { return static_cast<int>(molecules.size()); }
+			void registerReaction(ReactionClass *reaction, bool batchable) {
+				if (reaction == 0) return;
+				registeredReactions.push_back(reaction);
+				compactPartnerPoolBatchable =
+						compactPartnerPoolBatchable && batchable;
+			}
+			const std::vector<ReactionClass *> &getRegisteredReactions() const {
+				return registeredReactions;
+			}
+			bool supportsBatchUpdate() const {
+				return !registeredReactions.empty() &&
+						compactPartnerPoolBatchable;
+			}
+			Molecule *getByIndex(unsigned int index) const {
+				return index < molecules.size() ? molecules[index] : 0;
+			}
+			bool contains(Molecule *molecule, unsigned int moleculeSlot) const {
+				if (moleculeSlot >= positions.size()) return false;
+				int position = positions[moleculeSlot];
+				return position >= 0 &&
+						static_cast<unsigned int>(position) < molecules.size() &&
+						molecules[position] == molecule;
+			}
+			bool add(Molecule *molecule, unsigned int moleculeSlot) {
+				invalidateRefreshCache();
+				return addRaw(molecule, moleculeSlot);
+			}
+			bool remove(Molecule *molecule, unsigned int moleculeSlot) {
+				invalidateRefreshCache();
+				return removeRaw(molecule, moleculeSlot);
+			}
+			bool refresh(Molecule *molecule, unsigned int moleculeSlot,
+					bool matches) {
+				if (molecule == 0) return false;
+				if (hasLastRefresh && lastRefreshedMolecule == molecule &&
+						lastRefreshMatches == matches)
+					return false;
+				lastRefreshedMolecule = molecule;
+				lastRefreshMatches = matches;
+				hasLastRefresh = true;
+				return matches ? addRaw(molecule, moleculeSlot)
+						: removeRaw(molecule, moleculeSlot);
+			}
+
+		private:
+			void invalidateRefreshCache() {
+				hasLastRefresh = false;
+				lastRefreshedMolecule = 0;
+			}
+			void ensurePositionCapacity(unsigned int moleculeSlot) {
+				if (moleculeSlot >= positions.size())
+					positions.resize(static_cast<size_t>(moleculeSlot) + 1, -1);
+			}
+			bool addRaw(Molecule *molecule, unsigned int moleculeSlot) {
+				if (molecule == 0) return false;
+				ensurePositionCapacity(moleculeSlot);
+				int position = positions[moleculeSlot];
+				if (position >= 0) return false;
+				positions[moleculeSlot] = static_cast<int>(molecules.size());
+				molecules.push_back(molecule);
+				return true;
+			}
+			bool removeRaw(Molecule *molecule, unsigned int moleculeSlot) {
+				if (moleculeSlot >= positions.size()) return false;
+				int storedPosition = positions[moleculeSlot];
+				if (storedPosition < 0 ||
+						static_cast<unsigned int>(storedPosition) >= molecules.size() ||
+						molecules[storedPosition] != molecule)
+					return false;
+				unsigned int position = static_cast<unsigned int>(storedPosition);
+				unsigned int last = static_cast<unsigned int>(molecules.size() - 1);
+				if (position != last) {
+					Molecule *replacement = molecules[last];
+					molecules[position] = replacement;
+					positions[static_cast<unsigned int>(replacement->getMolListId())] =
+							static_cast<int>(position);
+				}
+				molecules.pop_back();
+				positions[moleculeSlot] = -1;
+				return true;
+			}
+			std::vector<Molecule *> molecules;
+			/* MoleculeList assigns a stable slot ID to every molecule object.  A
+			 * dense reverse index avoids one unordered_map node and allocation per
+			 * eligible partner while retaining O(1) membership updates. */
+			std::vector<int> positions;
+			Molecule *lastRefreshedMolecule;
+			bool lastRefreshMatches;
+			bool hasLastRefresh;
+			std::vector<ReactionClass *> registeredReactions;
+			bool compactPartnerPoolBatchable;
+	};
 
 
 	//!  Abstract Base Class that defines the interface for all reaction rules.
@@ -1286,7 +1690,7 @@ namespace NFcore
 
 			void setTraversalLimit(int limit) { this->traversalLimit = limit; };
 
-			double get_a() const { return a; };
+			virtual double get_a() const { return a; };
 			virtual void printDetails() const;
 			void fire(double random_A_number);
 			// AS2023 - additional call sig to use with reaction firing tracking. The call
@@ -1310,9 +1714,78 @@ namespace NFcore
 			virtual void init() = 0; //called when the reaction is added to the system
 			virtual void prepareForSimulation() = 0; //called once everything is added to the system
 			virtual bool tryToAdd(Molecule *m, unsigned int reactantPos) = 0;
+			/* Membership refresh callers already walk a MoleculeType's reaction
+			 * vector, so the local reaction-list index is available without the
+			 * system-wide rxnId/position lookup. */
+			virtual bool tryToAddWithIndex(Molecule *m, unsigned int reactantPos,
+					int rxnIndex) {
+				(void)rxnIndex;
+				return tryToAdd(m, reactantPos);
+			}
+			/* Same membership update as tryToAdd(), with a conservative indication
+			 * of whether the reaction's propensity may have changed. */
+			virtual bool tryToAddAndReportChange(
+					Molecule *m, unsigned int reactantPos) {
+				tryToAdd(m, reactantPos);
+				return true;
+			}
+			virtual bool tryToAddAndReportChangeWithIndex(
+					Molecule *m, unsigned int reactantPos, int rxnIndex) {
+				(void)rxnIndex;
+				return tryToAddAndReportChange(m, reactantPos);
+			}
 			virtual void remove(Molecule *m, unsigned int reactantPos) = 0;
 
 			virtual double update_a() = 0;
+			virtual bool usesIncrementalMembership() const { return false; }
+			virtual bool membershipDecisionIsTypeInvariant() const { return false; }
+			virtual bool getIncrementalMembershipChange(
+					IncrementalMembershipChange &change) const {
+				(void)change;
+				return false;
+			}
+			virtual bool getCompactMembershipIndexInfo(
+					unsigned int reactantPos,
+					int &reactionCenterComponent,
+					std::uint64_t &contextComponentMask,
+					unsigned int &minimumContextComponents) const {
+				(void)reactantPos;
+				(void)reactionCenterComponent;
+				(void)contextComponentMask;
+				(void)minimumContextComponents;
+				return false;
+			}
+			virtual bool supportsSparseSelection() const { return false; }
+			/* Whether the product list can be limited to explicitly mapped
+			 * molecules for this firing. */
+			virtual bool canUseDirectProductList() const { return false; }
+			virtual bool canSkipIndirectMembership(
+					ReactionClass *firedReaction) const {
+				(void)firedReaction;
+				return false;
+			}
+			virtual bool shouldUpdateMembership(
+					Molecule *m, ReactionClass *firedReaction,
+					bool directProduct) const {
+				(void)m;
+				(void)firedReaction;
+				(void)directProduct;
+				return true;
+			}
+			virtual bool shouldUpdateMembershipForChange(
+					Molecule *m,
+					const IncrementalMembershipChange &change) const {
+				(void)m;
+				(void)change;
+				return true;
+			}
+			/* Give specialized reactions a chance to reject a stale mapping before
+			 * product preparation and membership work.  The default preserves the
+			 * legacy transformation-time checks. */
+			virtual bool checkPreFireConditions(MappingSet **mappingSets) const {
+				(void)mappingSets;
+				return true;
+			}
 
 
 
@@ -1323,12 +1796,50 @@ namespace NFcore
 			virtual int getReactantCount(unsigned int reactantIndex) const = 0;
 			virtual int getCorrectedReactantCount(unsigned int reactantIndex) const = 0;
 			virtual void printFullDetails() const = 0;
+			/* Optional shared partner-pool hooks used by compact EnergyPattern
+			 * reactions.  Legacy reaction classes retain the ordinary path. */
+			virtual bool getCompactPartnerPoolInfo(
+					unsigned int reactantPos, int &partnerComponent) const {
+				(void)reactantPos;
+				(void)partnerComponent;
+				return false;
+			}
+			virtual bool refreshCompactPartnerPool(
+					Molecule *m, unsigned int reactantPos) {
+				(void)m;
+				(void)reactantPos;
+				return false;
+			}
+			virtual bool supportsCompactPartnerPoolUpdate() const { return false; }
+			virtual bool supportsCompactPartnerPoolScale() const { return false; }
+			virtual CompactPartnerPool *getCompactPartnerPool() const { return 0; }
+			virtual double getCompactPartnerPoolCoefficient() const { return 0.0; }
+			virtual double update_a_for_compact_partner_pool(int poolSize) {
+				(void)poolSize;
+				return update_a();
+			}
+			/* Whether membership mutations can defer update_a() until all direct
+			 * products from the current compact EnergyPattern event are processed. */
+			virtual bool supportsDeferredMembershipUpdate() const { return false; }
+			/* Mark this reaction once per deferred membership batch. */
+			bool markDeferredMembershipUpdate(unsigned long long generation) {
+				if (deferredMembershipUpdateGeneration == generation)
+					return false;
+				deferredMembershipUpdateGeneration = generation;
+				return true;
+			}
+			bool hasDeferredMembershipUpdate(unsigned long long generation) const {
+				return deferredMembershipUpdateGeneration == generation;
+			}
 
 			void setMatchOnce(unsigned int reactantIndex, bool val) {
 				if (reactantIndex < n_reactants) matchOncePerReactant[reactantIndex] = val;
 			}
 			bool getMatchOnce(unsigned int reactantIndex) const {
 				return (reactantIndex < n_reactants) ? matchOncePerReactant[reactantIndex] : false;
+			}
+			bool getCountsPerComplex(unsigned int reactantIndex) const {
+				return (reactantIndex < n_reactants) ? contextCountsPerComplex[reactantIndex] : false;
 			}
 
 
@@ -1370,6 +1881,7 @@ namespace NFcore
 			// Called from within Transformation Set to check connectivity
 			bool areMoleculeTypeAndComponentPresent(MoleculeType * mt, int cIndex);
 			bool isTemplateCompatible(TemplateMolecule * t);
+			bool isDirectProductMolecule(Molecule *molecule) const;
 
 		protected:
 			virtual void pickMappingSets(double randNumber) const=0;
@@ -1391,6 +1903,7 @@ namespace NFcore
 			string baseRateParameterName;
 			double a;
 			unsigned int fireCounter;
+			unsigned long long deferredMembershipUpdateGeneration = 0;
 
 			unsigned int traversalLimit;
 
@@ -1414,6 +1927,17 @@ namespace NFcore
 
 			list <Molecule *> products;
 			list <Molecule *>::iterator molIter;
+			/* Preserve the molecules explicitly selected by the fired mapping sets.
+			 * Membership refresh can recycle those mappings while rebuilding the
+			 * reactant trees, so the direct-product decision must not depend on the
+			 * mapping arrays after transformation. */
+			vector <Molecule *> directProductMoleculeList;
+			/* The BNG3 direct-product vector is also needed in stable mapping order
+			 * by compact energy reactions.  Allocate the hash lookup lazily for the
+			 * connectivity path, mirroring nfsim commit 2b3c643 without replacing
+			 * the ordered adapter representation. */
+			unordered_set <Molecule *> *directProductMolecules;
+			bool directProductMoleculeSetValid;
 
 			// remember the molecule type of each product molecule a with typeII dependencies
 			list <MoleculeType *> typeII_products;
@@ -1436,6 +1960,9 @@ namespace NFcore
 
 			/* flag for MatchOnce */
 			bool *matchOncePerReactant;
+
+			/* flag for pure context reactants counted once per complex */
+			bool *contextCountsPerComplex;
 
 			/* if population reactants are identical, this is the discrete
 			 * count correction for calculating the ratelaw

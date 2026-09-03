@@ -13,6 +13,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "parser/antlr_compat.hpp"
 #include <antlr4-runtime.h>
 
 #include "core/List.hpp"
@@ -994,7 +995,39 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
                 continue;
             }
             if (isModelFunction) {
-                // No-arg model function — write directly as function name
+                // No-arg model function — write directly as function name.
+                // A model-function forward rate can still be reversible; do
+                // not skip derivation of a complex reverse rate when taking
+                // this early path.
+                if (rule.isBidirectional() && rule.getRates().size() > 1) {
+                    const auto& reverseRateExprObj = rule.getRates()[1];
+                    const std::string reverseRateExpr = reverseRateExprObj.toString();
+                    bool reverseIsModelFunction = false;
+                    if (reverseRateExprObj.kind() == ast::ExpressionKind::Function ||
+                        reverseRateExprObj.kind() == ast::ExpressionKind::ObservableRef) {
+                        for (const auto& function : model.getFunctions()) {
+                            if (function.getName() == reverseRateExprObj.name()) {
+                                reverseIsModelFunction = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!reverseIsModelFunction && !isSimpleExpression(reverseRateExpr)) {
+                        const bool reverseAsFunction = referencesObservables(reverseRateExpr);
+                        const std::string reverseParamName =
+                            (reverseAsFunction ? "_rateLaw" : "rateLaw") +
+                            std::to_string(rateLawCounter++);
+                        derived.emplace(
+                            "_reverse__" + ruleName,
+                            DerivedRateInfo {
+                                reverseParamName,
+                                reverseRateExpr,
+                                reverseRateExprObj,
+                                true,
+                                reverseAsFunction
+                            });
+                    }
+                }
                 continue;
             }
         }
@@ -1569,13 +1602,50 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
 
     out << "begin groups\n";
     std::size_t groupIndex = 1;
+
+    struct CachedObservablePattern {
+        BNGcore::PatternGraph graph;
+        std::string compartment;
+    };
+    struct ParsedPatternInfo {
+        const BNGcore::PatternGraph* graph;
+        std::string compartment;
+        bool hasMoleculeCompartment;
+    };
+    std::unordered_map<std::string, CachedObservablePattern> parsedObservableCache;
+
     for (const auto& observable : model.getObservables()) {
         out << "    " << groupIndex++ << " " << observable.getName() << " ";
         bool firstEntry = true;
+
+        std::vector<ParsedPatternInfo> parsedPatterns;
+        parsedPatterns.reserve(observable.getPatterns().size());
+        for (const auto& patternText : observable.getPatterns()) {
+            auto cacheIt = parsedObservableCache.find(patternText);
+            if (cacheIt == parsedObservableCache.end()) {
+                auto parsed = parseObservablePatternWithCompartment(patternText, model);
+                cacheIt = parsedObservableCache.emplace(
+                    patternText,
+                    CachedObservablePattern {std::move(parsed.first), std::move(parsed.second)})
+                              .first;
+            }
+
+            const auto& pattern = cacheIt->second.graph;
+            bool hasMoleculeCompartment = false;
+            for (auto it = pattern.begin(); it != pattern.end(); ++it) {
+                if (!(*it)->get_compartment().empty()) {
+                    hasMoleculeCompartment = true;
+                    break;
+                }
+            }
+            parsedPatterns.push_back({&pattern, cacheIt->second.compartment, hasMoleculeCompartment});
+        }
+
         for (std::size_t speciesIndex = 0; speciesIndex < network.species.size(); ++speciesIndex) {
             std::size_t weight = 0;
-            for (const auto& patternText : observable.getPatterns()) {
-                auto [pattern, patternCompartment] = parseObservablePatternWithCompartment(patternText, model);
+            for (const auto& parsedPattern : parsedPatterns) {
+                const auto& pattern = *parsedPattern.graph;
+                const auto& patternCompartment = parsedPattern.compartment;
 
                 // Compartment matching strategy:
                 // 1. Molecule-level compartment (e.g., SARM()@Cyt) -- compartment is
@@ -1584,14 +1654,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
                 // 2. Species-level prefix compartment (e.g., @PM:L) -- no compartment
                 //    on pattern molecule nodes. Need species-level filter.
                 // Detect which case by checking if any pattern molecule node has a compartment.
-                bool patternHasMoleculeCompartment = false;
-                for (auto it = pattern.begin(); it != pattern.end(); ++it) {
-                    if (!(*it)->get_compartment().empty()) {
-                        patternHasMoleculeCompartment = true;
-                        break;
-                    }
-                }
-                if (!patternCompartment.empty() && !patternHasMoleculeCompartment) {
+                if (!patternCompartment.empty() && !parsedPattern.hasMoleculeCompartment) {
                     // Species-level prefix compartment -- filter at species level
                     const auto& speciesCompartment = network.species.get(speciesIndex).getCompartment();
                     if (speciesCompartment != patternCompartment) {

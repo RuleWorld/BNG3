@@ -56,6 +56,9 @@
 #include "../NFfunction/NFfunction.hh"
 #include "../NFutil/NFutil.hh"
 #include "NFinput_energy.hh"
+
+#include "parser/antlr_compat.hpp"
+
 #include "PatternGraphBuilder.hpp"
 #include "BNGLexer.h"
 #include "BNGParser.h"
@@ -360,6 +363,15 @@ std::string expressionForNfsim(const bng::ast::Expression& expression) {
     return {};
 }
 
+// NFsim's legacy CompositeFunction reserves reactant_1 through reactant_9 for
+// the current reaction's mapping counts.  They are not model functions or
+// observables, even though the BNGL expression grammar represents the call as
+// a function-shaped reference.
+bool isReactantCountReference(const std::string& name) {
+    return name.size() == 10 && name.compare(0, 9, "reactant_") == 0 &&
+           name.back() >= '1' && name.back() <= '9';
+}
+
 bool expandDynamicRateExpression(
     const bng::ast::Expression& expression,
     const bng::ast::Model& model,
@@ -368,11 +380,32 @@ bool expandDynamicRateExpression(
     std::set<std::string>& functionCounterReferences,
     std::set<std::string>& parameterReferences,
     std::vector<const bng::ast::Expression*>& tableFunctions,
+    std::set<std::string>* localFunctionReferences,
+    std::set<std::string>* localFunctionArgumentNames,
     bool& usesTime,
     std::set<std::string>& activeFunctions,
     std::string& expanded,
     std::string& diagnostic) {
     using bng::ast::ExpressionKind;
+
+    const auto preserveScopedModelFunctionCall =
+        [&](const bng::ast::Function& function,
+            const bng::ast::Expression& call,
+            std::string& result) {
+            if (localFunctionReferences == nullptr ||
+                localFunctionArgumentNames == nullptr ||
+                function.getArgs().size() != 1 || call.args().size() != 1 ||
+                call.args().front().kind() != ExpressionKind::Identifier) {
+                diagnostic = "dynamic rates require one scope identifier for "
+                             "argument-bearing model function '" + function.getName() + "'";
+                return false;
+            }
+            const auto& argument = call.args().front().name();
+            localFunctionReferences->insert(function.getName());
+            localFunctionArgumentNames->insert(argument);
+            result = function.getName() + "(" + argument + ")";
+            return true;
+        };
 
     const auto expandModelFunction = [&](const bng::ast::Function& function,
                                          std::string& result) {
@@ -389,7 +422,8 @@ bool expandDynamicRateExpression(
         std::string body;
         const bool ok = expandDynamicRateExpression(
             function.getExpression(), model, parameters, observableReferences,
-            functionCounterReferences, parameterReferences, tableFunctions, usesTime,
+            functionCounterReferences, parameterReferences, tableFunctions,
+            localFunctionReferences, localFunctionArgumentNames, usesTime,
             activeFunctions, body, diagnostic);
         activeFunctions.erase(function.getName());
         if (ok) result = "(" + body + ")";
@@ -427,6 +461,11 @@ bool expandDynamicRateExpression(
             expanded = name;
             return true;
         }
+        if (isReactantCountReference(name)) {
+            functionCounterReferences.insert(name);
+            expanded = name;
+            return true;
+        }
         if (const auto* function = getModelFunction(model, name)) {
             if (!expressionHasModelFunctionReference(
                     function->getExpression(), expressionHasModelFunctionReference)) {
@@ -452,7 +491,8 @@ bool expandDynamicRateExpression(
         std::string operand;
         if (!expandDynamicRateExpression(
                 expression.args().front(), model, parameters, observableReferences,
-                functionCounterReferences, parameterReferences, tableFunctions, usesTime,
+                functionCounterReferences, parameterReferences, tableFunctions,
+                localFunctionReferences, localFunctionArgumentNames, usesTime,
                 activeFunctions, operand, diagnostic)) {
             return false;
         }
@@ -468,11 +508,13 @@ bool expandDynamicRateExpression(
         std::string rhs;
         if (!expandDynamicRateExpression(
                 expression.args()[0], model, parameters, observableReferences,
-                functionCounterReferences, parameterReferences, tableFunctions, usesTime,
+                functionCounterReferences, parameterReferences, tableFunctions,
+                localFunctionReferences, localFunctionArgumentNames, usesTime,
                 activeFunctions, lhs, diagnostic) ||
             !expandDynamicRateExpression(
                 expression.args()[1], model, parameters, observableReferences,
-                functionCounterReferences, parameterReferences, tableFunctions, usesTime,
+                functionCounterReferences, parameterReferences, tableFunctions,
+                localFunctionReferences, localFunctionArgumentNames, usesTime,
                 activeFunctions, rhs, diagnostic)) {
             return false;
         }
@@ -491,11 +533,18 @@ bool expandDynamicRateExpression(
             expanded = lowerName;
             return true;
         }
+        if (isReactantCountReference(name)) {
+            if (!expression.args().empty()) {
+                diagnostic = name + "() takes no arguments";
+                return false;
+            }
+            functionCounterReferences.insert(name);
+            expanded = name + "()";
+            return true;
+        }
         if (const auto* function = getModelFunction(model, name)) {
             if (!expression.args().empty()) {
-                diagnostic = "dynamic rates cannot call zero-argument model function '" +
-                             name + "' with arguments";
-                return false;
+                return preserveScopedModelFunctionCall(*function, expression, expanded);
             }
             if (!expressionHasModelFunctionReference(
                     function->getExpression(), expressionHasModelFunctionReference)) {
@@ -522,7 +571,8 @@ bool expandDynamicRateExpression(
             if (!expandDynamicRateExpression(
                     expression.args()[index], model, parameters, observableReferences,
                     functionCounterReferences, parameterReferences, tableFunctions,
-                    usesTime, activeFunctions, argument, diagnostic)) {
+                    localFunctionReferences, localFunctionArgumentNames, usesTime,
+                    activeFunctions, argument, diagnostic)) {
                 return false;
             }
             output << argument;
@@ -533,11 +583,18 @@ bool expandDynamicRateExpression(
     }
     case ExpressionKind::ObservableRef: {
         const auto& name = expression.name();
+        if (isReactantCountReference(name)) {
+            if (!expression.args().empty()) {
+                diagnostic = name + "() takes no arguments";
+                return false;
+            }
+            functionCounterReferences.insert(name);
+            expanded = name + "()";
+            return true;
+        }
         if (const auto* function = getModelFunction(model, name)) {
             if (!expression.args().empty()) {
-                diagnostic = "dynamic rates cannot call zero-argument model function '" +
-                             name + "' with arguments";
-                return false;
+                return preserveScopedModelFunctionCall(*function, expression, expanded);
             }
             if (!expressionHasModelFunctionReference(
                     function->getExpression(), expressionHasModelFunctionReference)) {
@@ -983,6 +1040,14 @@ bool collectLocalFunctionReferences(
             }
             return true;
         }
+        if (hasModelObservable(model, expression.name())) {
+            // BNGL permits a zero-argument observable in a local function
+            // without an explicit call, e.g. ``k*Total + 0*Scoped(x)``.
+            // NFsim's legacy local-function constructor treats this as a
+            // global-scope observable reference.
+            addReference(expression.name(), "Observable");
+            return true;
+        }
         diagnostic = "unknown local-function identifier '" + expression.name() + "'";
         return false;
     case ExpressionKind::Unary:
@@ -1213,17 +1278,31 @@ bool addMoleculeTypesFromAst(const bng::ast::Model& model, System* s,
                              std::map<std::string, int>& allowedStates,
                              bool verbose) {
     try {
+        std::vector<const bng::ast::MoleculeType*> moleculeTypes;
+        moleculeTypes.reserve(model.getMoleculeTypes().size());
         for (const auto& moleculeType : model.getMoleculeTypes()) {
+            moleculeTypes.push_back(&moleculeType);
+        }
+        std::sort(moleculeTypes.begin(), moleculeTypes.end(),
+                  [](const auto* left, const auto* right) {
+                      return left->getName() < right->getName();
+                  });
+
+        for (const auto* moleculeTypePtr : moleculeTypes) {
+            const auto& moleculeType = *moleculeTypePtr;
             const std::string& typeName = moleculeType.getName();
             if (typeName.empty()) {
                 std::cerr << "[nfsim/ast] molecule type is missing a name\n";
                 return false;
             }
+            // Null is an NFsim keyword, not a constructible molecule type.
+            // It is accepted in product positions as the degradation sink,
+            // but NFsim rejects it in reactant and observable patterns.
             const std::string normalizedName = lowerCase(typeName);
-            if (normalizedName == "null" || normalizedName == "trash") {
+            if (normalizedName == "null") {
                 if (verbose) {
-                    std::cerr << "[nfsim/ast] skipping molecule type '" << typeName
-                              << "'\n";
+                    std::cerr << "[nfsim/ast] skipping reserved molecule type '"
+                              << typeName << "'\n";
                 }
                 continue;
             }
@@ -1290,15 +1369,24 @@ bool addMoleculeTypesFromAst(const bng::ast::Model& model, System* s,
                 bool hasNegativeInteger = false;
                 int maximumState = -1;
                 for (const auto& state : component.allowedStates) {
+                    // `?` is a pattern wildcard, never a constructible
+                    // state.  NFinput::initMoleculeTypes also keeps PLUS and
+                    // MINUS out of the string-state count so an otherwise
+                    // numeric component remains an integer site; they are
+                    // transition sentinels consumed by the rule builder.
+                    if (state == "?") {
+                        continue;
+                    }
                     int integerValue = 0;
                     if (parseIntegerState(state, integerValue)) {
                         hasIntegerState = true;
                         hasNegativeInteger = hasNegativeInteger || integerValue < 0;
                         maximumState = std::max(maximumState, integerValue);
                     } else {
-                        hasStringState = true;
                         if (state == "PLUS" || state == "MINUS") {
                             hasPlusMinusState = true;
+                        } else {
+                            hasStringState = true;
                         }
                     }
                 }
@@ -1323,6 +1411,9 @@ bool addMoleculeTypesFromAst(const bng::ast::Model& model, System* s,
                                   << "' are labels, not integer increments\n";
                     }
                     for (const auto& state : component.allowedStates) {
+                        if (state == "?") {
+                            continue;
+                        }
                         if (std::find(states.begin(), states.end(), state) == states.end()) {
                             states.push_back(state);
                         }
@@ -1585,8 +1676,8 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
         std::string diagnostic;
         if (!expandDynamicRateExpression(
                 function.getExpression(), model, parameters, observableReferences,
-                functionReferences, parameterReferences, tableFunctions, usesTime,
-                activeFunctions, expandedExpression, diagnostic)) {
+                functionReferences, parameterReferences, tableFunctions, nullptr, nullptr,
+                usesTime, activeFunctions, expandedExpression, diagnostic)) {
             std::cerr << "[nfsim/ast] cannot map function '" << function.getName()
                       << "': " << diagnostic << "\n";
             return false;
@@ -1790,6 +1881,10 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
 
         std::vector<std::string> functionsCalled;
         for (const auto& dependency : function.functionReferences) {
+            if (isReactantCountReference(dependency)) {
+                functionsCalled.push_back(dependency);
+                continue;
+            }
             const auto* target = getModelFunction(model, dependency);
             const auto targetPending = std::find_if(
                 pending.begin(), pending.end(),
@@ -1916,6 +2011,71 @@ std::string graphStateToken(const BNGcore::Node& node) {
 
 std::string graphBondToken(const BNGcore::Node& node) {
     return node.get_state().get_BNG2_string();
+}
+
+std::string graphSortState(const GraphComponent& component) {
+    const auto state = graphStateToken(*component.node);
+    // buildPatternGraph represents an omitted seed state as the graph
+    // wildcard `?`; BNG2's source SpeciesGraph represents that same input as
+    // an undefined state for quasi-canonical ordering.
+    return state == "?" ? std::string() : state;
+}
+
+std::size_t graphComponentBondCount(const GraphComponent& component) {
+    return static_cast<std::size_t>(std::count_if(
+        component.bonds.begin(), component.bonds.end(), [](const auto* bond) {
+            return graphBondToken(*bond) != "!-";
+        }));
+}
+
+bool graphComponentLess(const GraphComponent& left,
+                        const GraphComponent& right) {
+    if (left.name != right.name) return left.name < right.name;
+    const auto leftState = graphSortState(left);
+    const auto rightState = graphSortState(right);
+    if (leftState != rightState) {
+        if (leftState.empty() != rightState.empty()) return leftState.empty();
+        return leftState < rightState;
+    }
+    // BNG2's cmp_component puts components with more edges first after name
+    // and state comparisons.
+    const auto leftBondCount = graphComponentBondCount(left);
+    const auto rightBondCount = graphComponentBondCount(right);
+    if (leftBondCount != rightBondCount) {
+        return leftBondCount > rightBondCount;
+    }
+    return false;
+}
+
+bool graphMoleculeLess(const GraphMolecule& left,
+                       const GraphMolecule& right) {
+    if (left.name != right.name) return left.name < right.name;
+    if (left.components.size() != right.components.size()) {
+        return left.components.size() < right.components.size();
+    }
+
+    const auto leftCompartment = left.node->get_compartment();
+    const auto rightCompartment = right.node->get_compartment();
+    if (leftCompartment.empty() != rightCompartment.empty()) {
+        return leftCompartment.empty();
+    }
+    if (leftCompartment != rightCompartment) return leftCompartment < rightCompartment;
+
+    for (std::size_t index = 0; index < left.components.size(); ++index) {
+        if (graphComponentLess(left.components[index], right.components[index])) return true;
+        if (graphComponentLess(right.components[index], left.components[index])) return false;
+    }
+    return false;
+}
+
+std::vector<GraphMolecule> canonicalizeSeedGraphMolecules(
+    std::vector<GraphMolecule> molecules) {
+    for (auto& molecule : molecules) {
+        std::stable_sort(molecule.components.begin(), molecule.components.end(),
+                         graphComponentLess);
+    }
+    std::stable_sort(molecules.begin(), molecules.end(), graphMoleculeLess);
+    return molecules;
 }
 
 bool parseObservablePattern(const std::string& text,
@@ -2756,6 +2916,7 @@ bool addDynamicReactionRateFunction(
     std::size_t ordinal,
     GlobalFunction*& global,
     CompositeFunction*& composite,
+    std::vector<std::string>& localFunctionArgumentNames,
     std::string& diagnostic);
 
 enum class SymmetricReactionExpansionResult {
@@ -2945,9 +3106,14 @@ SymmetricReactionExpansionResult addSymmetricStateChangeReactionRulesFromAst(
 
     GlobalFunction* dynamicGlobal = nullptr;
     CompositeFunction* dynamicComposite = nullptr;
+    std::vector<std::string> dynamicLocalFunctionArguments;
     if (!staticRate && !addDynamicReactionRateFunction(
                            rule.getRates().front(), model, parameters, system, sourcePath,
-                           rateOrdinal, dynamicGlobal, dynamicComposite, rateDiagnostic)) {
+                           rateOrdinal, dynamicGlobal, dynamicComposite,
+                           dynamicLocalFunctionArguments, rateDiagnostic)) {
+        return SymmetricReactionExpansionResult::NotApplicable;
+    }
+    if (!dynamicLocalFunctionArguments.empty()) {
         return SymmetricReactionExpansionResult::NotApplicable;
     }
 
@@ -3147,9 +3313,14 @@ SymmetricReactionExpansionResult addSymmetricBondReactionRulesFromAst(
 
     GlobalFunction* dynamicGlobal = nullptr;
     CompositeFunction* dynamicComposite = nullptr;
+    std::vector<std::string> dynamicLocalFunctionArguments;
     if (!staticRate && !addDynamicReactionRateFunction(
                            rule.getRates().front(), model, parameters, system, sourcePath,
-                           rateOrdinal, dynamicGlobal, dynamicComposite, rateDiagnostic)) {
+                           rateOrdinal, dynamicGlobal, dynamicComposite,
+                           dynamicLocalFunctionArguments, rateDiagnostic)) {
+        return SymmetricReactionExpansionResult::NotApplicable;
+    }
+    if (!dynamicLocalFunctionArguments.empty()) {
         return SymmetricReactionExpansionResult::NotApplicable;
     }
 
@@ -3294,12 +3465,16 @@ bool addDynamicReactionRateFunction(
     std::size_t ordinal,
     GlobalFunction*& global,
     CompositeFunction*& composite,
+    std::vector<std::string>& localFunctionArgumentNamesOut,
     std::string& diagnostic) {
     global = nullptr;
     composite = nullptr;
+    localFunctionArgumentNamesOut.clear();
 
     std::set<std::string> observableReferences;
     std::set<std::string> functionReferences;
+    std::set<std::string> localFunctionReferences;
+    std::set<std::string> localFunctionArgumentNames;
     std::set<std::string> parameterReferences;
     std::vector<const bng::ast::Expression*> tableFunctions;
     bool usesTime = false;
@@ -3307,7 +3482,8 @@ bool addDynamicReactionRateFunction(
     std::string expandedExpression;
     if (!expandDynamicRateExpression(
             expression, model, parameters, observableReferences,
-            functionReferences, parameterReferences, tableFunctions, usesTime,
+            functionReferences, parameterReferences, tableFunctions,
+            &localFunctionReferences, &localFunctionArgumentNames, usesTime,
             activeFunctions, expandedExpression, diagnostic)) {
         return false;
     }
@@ -3317,6 +3493,7 @@ bool addDynamicReactionRateFunction(
     }
 
     if (!usesTime && observableReferences.empty() && functionReferences.empty() &&
+        localFunctionReferences.empty() &&
         tableFunctions.empty()) {
         diagnostic = "rate expression is not a supported dynamic function";
         return false;
@@ -3342,7 +3519,7 @@ bool addDynamicReactionRateFunction(
 
     std::vector<std::string> parameterNames(
         parameterReferences.begin(), parameterReferences.end());
-    if (!functionReferences.empty()) {
+    if (!functionReferences.empty() || !localFunctionReferences.empty()) {
         // CompositeFunction can depend on live observable values only through
         // GlobalFunction objects.  Materialize a zero-argument alias for each
         // direct observable, then rewrite the generated expression to refer to
@@ -3380,9 +3557,22 @@ bool addDynamicReactionRateFunction(
         }
 
         for (const auto& dependency : functionReferences) {
+            if (isReactantCountReference(dependency)) {
+                // CompositeFunction binds reactant_N at preparation time from
+                // the current reaction mapping. It is not a System global,
+                // even though the source-shaped expression retains the name.
+                continue;
+            }
             if (system->getGlobalFunctionByName(dependency) == nullptr) {
                 diagnostic = "dynamic reaction rates only support references to base global "
                              "functions; '" + dependency + "' is composite or unavailable";
+                return false;
+            }
+        }
+        for (const auto& dependency : localFunctionReferences) {
+            if (system->getLocalFunctionByName(dependency) == nullptr) {
+                diagnostic = "dynamic reaction rate references unavailable local function '" +
+                             dependency + "'";
                 return false;
             }
         }
@@ -3392,7 +3582,11 @@ bool addDynamicReactionRateFunction(
             (void)observableName;
             functionsCalled.push_back(aliasName);
         }
-        std::vector<std::string> argumentNames;
+        functionsCalled.insert(
+            functionsCalled.end(), localFunctionReferences.begin(),
+            localFunctionReferences.end());
+        std::vector<std::string> argumentNames(
+            localFunctionArgumentNames.begin(), localFunctionArgumentNames.end());
         const auto compositeExpression = replaceNamedReferences(
             expandedExpression, observableAliases);
         auto candidate = std::make_unique<CompositeFunction>(
@@ -3410,6 +3604,7 @@ bool addDynamicReactionRateFunction(
         }
         composite = candidate.release();
         composite->finalizeInitialization(system);
+        localFunctionArgumentNamesOut = std::move(argumentNames);
         if (usesTime) {
             composite->setCounterFromTime(system);
             system->setHasTimeDependentFunctions(true);
@@ -3603,7 +3798,7 @@ bool addDirectArrheniusBinding(const bng::ast::ReactionRule& rule, System* syste
                                const std::map<std::string, double>& parameters,
                                bool blockSameComplexBinding, bool verbose,
                                int& suggestedTraversalLimit) {
-    if (!rule.isBidirectional() || rule.getRates().size() != 1 ||
+    if (rule.getRates().size() != 1 ||
         !isArrheniusExpression(rule.getRates().front())) {
         return false;
     }
@@ -3689,7 +3884,7 @@ bool addDirectArrheniusBinding(const bng::ast::ReactionRule& rule, System* syste
     if (!createExpandedBindingReactions(
             rule.getRuleName(), phi, activationEnergy, moleculeType1, site1,
             moleculeType2, site2, system, unusedParameters, unusedStates,
-            blockSameComplexBinding, verbose, reactionCount)) {
+            blockSameComplexBinding, verbose, reactionCount, rule.isBidirectional())) {
         return false;
     }
 
@@ -3713,7 +3908,7 @@ bool addDirectArrheniusStateChange(const bng::ast::ReactionRule& rule, System* s
                                    const std::map<std::string, double>& parameters,
                                    bool blockSameComplexBinding, bool verbose,
                                    int& suggestedTraversalLimit) {
-    if (!rule.isBidirectional() || rule.getRates().size() != 1 ||
+    if (rule.getRates().size() != 1 ||
         !isArrheniusExpression(rule.getRates().front())) {
         return false;
     }
@@ -3789,7 +3984,7 @@ bool addDirectArrheniusStateChange(const bng::ast::ReactionRule& rule, System* s
     if (!createExpandedStateChangeReactions(
             rule.getRuleName(), phi, activationEnergy, moleculeType, component,
             stateFrom, stateChange->newState, system, blockSameComplexBinding,
-            verbose, reactionCount)) {
+            verbose, reactionCount, rule.isBidirectional())) {
         return false;
     }
 
@@ -3822,6 +4017,7 @@ bool isDiscardMolecule(const GraphMolecule& molecule) {
 struct DirectProductMolecule {
     TemplateMolecule* templateMolecule = nullptr;
     MoleculeCreator* creator = nullptr;
+    std::vector<std::string> runtimeComponentNames;
 };
 
 bool buildDirectProductMolecule(const bng::ast::SpeciesGraph& pattern,
@@ -3866,6 +4062,8 @@ bool buildDirectProductMolecule(const bng::ast::SpeciesGraph& pattern,
     }
 
     std::vector<std::pair<int, int>> componentStates;
+    std::vector<std::string> runtimeComponentNames;
+    std::map<std::string, std::size_t> symmetricComponentUse;
     std::set<int> specifiedComponents;
     for (const auto& component : molecule.components) {
         if (component.bonds.size() > 1) {
@@ -3900,22 +4098,36 @@ bool buildDirectProductMolecule(const bng::ast::SpeciesGraph& pattern,
                     delete templateMolecule;
                     return false;
                 }
-                if (endpoints[0].first == endpoints[1].first) {
-                    diagnostic = "intra-molecule product bonds are not yet supported";
-                    delete templateMolecule;
-                    return false;
-                }
+                // NFsim's legacy XML loader permits a product bond whose two
+                // endpoints are on the same newly created molecule.  The
+                // TransformationSet supports this mapping by assigning the
+                // second endpoint the next mapping slot, so keep the graph
+                // edge and let the product-bond transform install it.
             }
         }
+        std::string runtimeName = component.name;
         if (moleculeType->isEquivalentComponent(component.name)) {
-            diagnostic = "symmetric product components require permutation expansion";
-            delete templateMolecule;
-            return false;
+            std::vector<std::string> equivalentNames;
+            if (!getEquivalentNames(moleculeType, component.name, equivalentNames)) {
+                diagnostic = "could not resolve symmetric product component '" +
+                             component.name + "'";
+                delete templateMolecule;
+                return false;
+            }
+            auto& useCount = symmetricComponentUse[component.name];
+            if (useCount >= equivalentNames.size()) {
+                diagnostic = "too many symmetric product components named '" +
+                             component.name + "'";
+                delete templateMolecule;
+                return false;
+            }
+            runtimeName = equivalentNames[useCount++];
         }
+        runtimeComponentNames.push_back(runtimeName);
 
         int componentIndex = -1;
         try {
-            componentIndex = moleculeType->getCompIndexFromName(component.name);
+            componentIndex = moleculeType->getCompIndexFromName(runtimeName);
         } catch (const std::exception& error) {
             diagnostic = error.what();
             delete templateMolecule;
@@ -3929,7 +4141,7 @@ bool buildDirectProductMolecule(const bng::ast::SpeciesGraph& pattern,
 
         const std::string state = graphStateToken(*component.node);
         const int stateValue = componentStateValue(
-            moleculeType, component.name, state, diagnostic);
+            moleculeType, runtimeName, state, diagnostic);
         if (stateValue == -2) {
             delete templateMolecule;
             return false;
@@ -3937,7 +4149,7 @@ bool buildDirectProductMolecule(const bng::ast::SpeciesGraph& pattern,
         if (stateValue >= 0) {
             componentStates.emplace_back(componentIndex, stateValue);
             try {
-                templateMolecule->addComponentConstraint(component.name, stateValue);
+                templateMolecule->addComponentConstraint(runtimeName, stateValue);
             } catch (const std::exception& error) {
                 diagnostic = error.what();
                 delete templateMolecule;
@@ -3947,6 +4159,7 @@ bool buildDirectProductMolecule(const bng::ast::SpeciesGraph& pattern,
     }
 
     result.templateMolecule = templateMolecule;
+    result.runtimeComponentNames = std::move(runtimeComponentNames);
     result.creator = new MoleculeCreator(
         templateMolecule, moleculeType, componentStates, compartment);
     return true;
@@ -4179,28 +4392,65 @@ bool addObservablesFromAst(const bng::ast::Model& model, System* s,
     return true;
 }
 
-bool addSpeciesFromAst(const bng::ast::Model& model, System* s,
-                       const std::map<std::string, double>& parameters, bool verbose) {
+bool addSpeciesFromAstWithOverrides(
+    const bng::ast::Model& model, System* s,
+    const std::map<std::string, double>& parameters, bool verbose,
+    const SeedAmountOverrides& seedAmountOverrides) {
     if (s == nullptr) return false;
 
     for (const auto& seed : model.getSeedSpecies()) {
-        const auto molecules = collectGraphMolecules(seed.getGraph());
+        const auto molecules = canonicalizeSeedGraphMolecules(
+            collectGraphMolecules(seed.getGraph()));
         if (molecules.empty()) {
             std::cerr << "[nfsim/ast] seed species '" << seed.getPattern()
                       << "' contains no molecule graph\n";
             return false;
         }
-        // NFsim treats $Trash() (and the corresponding Trash molecule type) as
-        // a discard seed.  The molecule-type builder omits this sentinel, so
-        // consume an all-trash seed here instead of reporting an unknown type.
-        if (std::all_of(molecules.begin(), molecules.end(), [](const auto& molecule) {
-                return lowerCase(molecule.name) == "trash";
-            })) {
+        // A declared Null()/Trash() is an ordinary molecule in BNGL.  Only
+        // fixed discard seeds (the `$Null`/`$Trash` convention) or an
+        // undeclared discard name are sentinels; preserving this distinction
+        // matters for models that use Null as a catalyst or observable.
+        const bool allDiscard = std::all_of(
+            molecules.begin(), molecules.end(), isDiscardMolecule);
+        const bool hasUndeclaredDiscard = std::any_of(
+            molecules.begin(), molecules.end(), [&](const auto& molecule) {
+                for (int index = 0; index < s->getNumOfMoleculeTypes(); ++index) {
+                    if (s->getMoleculeType(index)->getName() == molecule.name) return false;
+                }
+                return true;
+            });
+        if (allDiscard && (seed.isConstant() || hasUndeclaredDiscard)) {
             continue;
         }
         std::string diagnostic;
         int count = 0;
-        if (!parseSeedAmount(seed, parameters, count, diagnostic)) {
+        std::vector<std::string> overrideKeys = {
+            seed.getPattern(), seed.getGraph().get_BNG2_string()};
+        if (!seed.getCompartment().empty()) {
+            const auto& compartment = seed.getCompartment();
+            overrideKeys.push_back("@" + compartment + "::" + seed.getPattern());
+            overrideKeys.push_back("@" + compartment + ":" + seed.getPattern());
+            overrideKeys.push_back(
+                "@" + compartment + "::" + seed.getGraph().get_BNG2_string());
+        }
+
+        auto overrideIt = seedAmountOverrides.end();
+        for (const auto& key : overrideKeys) {
+            overrideIt = seedAmountOverrides.find(key);
+            if (overrideIt != seedAmountOverrides.end()) break;
+        }
+        if (overrideIt != seedAmountOverrides.end()) {
+            const double amount = overrideIt->second;
+            if (!std::isfinite(amount) || amount < 0.0 ||
+                amount > static_cast<double>(std::numeric_limits<int>::max()) ||
+                std::floor(amount) != amount) {
+                std::cerr << "[nfsim/ast] cannot map seed species '"
+                          << seed.getPattern()
+                          << "': action concentration must be a nonnegative integer\n";
+                return false;
+            }
+            count = static_cast<int>(amount);
+        } else if (!parseSeedAmount(seed, parameters, count, diagnostic)) {
             std::cerr << "[nfsim/ast] cannot map seed species '" << seed.getPattern()
                       << "': " << diagnostic << "\n";
             return false;
@@ -4250,8 +4500,12 @@ bool addSpeciesFromAst(const bng::ast::Model& model, System* s,
         const int copies = foundPopulation ? 1 : count;
         std::vector<std::vector<Molecule*>> generated(
             molecules.size(), std::vector<Molecule*>());
-        for (int copy = 0; copy < copies; ++copy) {
-            for (std::size_t moleculeIndex = 0; moleculeIndex < molecules.size(); ++moleculeIndex) {
+        // Match NFinput::initStartSpecies' allocation order: all copies of a
+        // molecule position are allocated before advancing to the next
+        // position.  The order is observable through MoleculeList IDs and is
+        // part of the seeded NFsim mapping stream for repeated molecules.
+        for (std::size_t moleculeIndex = 0; moleculeIndex < molecules.size(); ++moleculeIndex) {
+            for (int copy = 0; copy < copies; ++copy) {
                 auto* moleculeType = s->getMoleculeTypeByName(molecules[moleculeIndex].name);
                 auto* molecule = moleculeType->genDefaultMolecule(compartments[moleculeIndex]);
                 generated[moleculeIndex].push_back(molecule);
@@ -4272,7 +4526,9 @@ bool addSpeciesFromAst(const bng::ast::Model& model, System* s,
                         runtimeNames[moleculeIndex][componentIndex], stateValue);
                 }
             }
+        }
 
+        for (int copy = 0; copy < copies; ++copy) {
             std::unordered_set<BNGcore::Node*> processedBonds;
             for (std::size_t moleculeIndex = 0; moleculeIndex < molecules.size(); ++moleculeIndex) {
                 for (std::size_t componentIndex = 0;
@@ -4290,6 +4546,13 @@ bool addSpeciesFromAst(const bng::ast::Model& model, System* s,
                                 }
                             }
                         }
+                        // The legacy XML species reader treats a one-ended
+                        // numeric bond as seed metadata (numberOfBonds=1),
+                        // not as a runtime bond.  This occurs in the bundled
+                        // RNA NFsim fixtures.  Preserve the same open-site
+                        // runtime representation while still rejecting an
+                        // impossible multi-ended bond.
+                        if (endpoints.size() == 1) continue;
                         if (endpoints.size() != 2) {
                             std::cerr << "[nfsim/ast] seed species has an incomplete bound bond\n";
                             return false;
@@ -4297,9 +4560,9 @@ bool addSpeciesFromAst(const bng::ast::Model& model, System* s,
                         const auto [firstMolecule, firstComponent] = endpoints[0];
                         const auto [secondMolecule, secondComponent] = endpoints[1];
                         Molecule::bind(
-                            generated[firstMolecule].back(),
+                            generated[firstMolecule][copy],
                             runtimeNames[firstMolecule][firstComponent],
-                            generated[secondMolecule].back(),
+                            generated[secondMolecule][copy],
                             runtimeNames[secondMolecule][secondComponent]);
                     }
                 }
@@ -4327,6 +4590,13 @@ bool addSpeciesFromAst(const bng::ast::Model& model, System* s,
         }
     }
     return true;
+}
+
+bool addSpeciesFromAst(const bng::ast::Model& model, System* s,
+                       const std::map<std::string, double>& parameters, bool verbose) {
+    static const SeedAmountOverrides noOverrides;
+    return addSpeciesFromAstWithOverrides(
+        model, s, parameters, verbose, noOverrides);
 }
 
 bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
@@ -4357,8 +4627,7 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
         const auto& originalRule = model.getReactionRules()[originalRuleOrdinal];
         const auto& originalRates = originalRule.getRates();
         const bool directArrhenius =
-            originalRule.isBidirectional() && originalRates.size() == 1 &&
-            isArrheniusExpression(originalRates.front());
+            originalRates.size() == 1 && isArrheniusExpression(originalRates.front());
         if ((!originalRule.isBidirectional() && originalRates.size() != 1) ||
             (originalRule.isBidirectional() && originalRates.size() != 2 &&
              !directArrhenius)) {
@@ -4372,7 +4641,7 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 hasReactionModifierPrefix(originalRule, "include_") ||
                 hasReactionModifierPrefix(originalRule, "exclude_") ||
                 hasReactionModifier(originalRule, "moveconnected")) {
-                std::cerr << "[nfsim/ast] direct Arrhenius binding uses an unsupported modifier\n";
+                std::cerr << "[nfsim/ast] direct Arrhenius reaction uses an unsupported modifier\n";
                 return false;
             }
             const bool onlyStateChange =
@@ -4439,11 +4708,16 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 (rates.front().kind() == bng::ast::ExpressionKind::ObservableRef ||
                  rates.front().kind() == bng::ast::ExpressionKind::Function) &&
                 rates.front().args().size() == rateFunction->getArgs().size();
-            const bool functionProductRate =
+            const bool explicitFunctionProductRate =
                 !rates.empty() &&
                 rates.front().kind() == bng::ast::ExpressionKind::Function &&
                 lowerCase(rates.front().name()) == "functionproduct" &&
                 rates.front().args().size() == 2;
+            const bool rawFunctionProductShape =
+                !rates.empty() &&
+                rates.front().kind() == bng::ast::ExpressionKind::Binary &&
+                rates.front().name() == "*" && rates.front().args().size() == 2;
+            bool functionProductRate = explicitFunctionProductRate;
             FunctionProductOperand functionProductOperand1;
             FunctionProductOperand functionProductOperand2;
             if (functionProductRate) {
@@ -4458,6 +4732,22 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                               << "' cannot use FunctionProduct: " << productDiagnostic
                               << "\n";
                     return false;
+                }
+            } else if (rawFunctionProductShape) {
+                // BNG2 emits a raw multiplication for DOR2 local functions
+                // (for example, rateA(x)*rateB(y)), while the explicit
+                // FunctionProduct form is also accepted as a bounded bridge.
+                // Recognize only the exact two one-argument local-function
+                // shape so ordinary arithmetic still follows the generic
+                // dynamic-rate path.
+                std::string productDiagnostic;
+                if (parseFunctionProductOperand(
+                        model, rates.front().args()[0], functionProductOperand1,
+                        productDiagnostic) &&
+                    parseFunctionProductOperand(
+                        model, rates.front().args()[1], functionProductOperand2,
+                        productDiagnostic)) {
+                    functionProductRate = true;
                 }
             }
             const auto hasRateScope = [&](const std::string& argument) {
@@ -4476,7 +4766,37 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 !functionProductRate ||
                 (hasRateScope(functionProductOperand1.argument) &&
                  hasRateScope(functionProductOperand2.argument));
-            if ((rule.hasScopePrefix() && !localFunctionRate && !functionProductRate) ||
+            const auto hasScopedModelFunctionCall =
+                [&](const auto& expression, const auto& self) -> bool {
+                using ExpressionKind = bng::ast::ExpressionKind;
+                if ((expression.kind() == ExpressionKind::Function ||
+                     expression.kind() == ExpressionKind::ObservableRef) &&
+                    !expression.args().empty()) {
+                    const auto* function = getModelFunction(model, expression.name());
+                    if (function != nullptr &&
+                        function->getArgs().size() == expression.args().size() &&
+                        std::all_of(
+                            expression.args().begin(), expression.args().end(),
+                            [&](const auto& argument) {
+                                return argument.kind() == ExpressionKind::Identifier &&
+                                       hasRateScope(argument.name());
+                            })) {
+                        return true;
+                    }
+                }
+                return std::any_of(
+                    expression.args().begin(), expression.args().end(),
+                    [&](const auto& child) { return self(child, self); });
+            };
+            // A species-scoped rule may put a local-function call inside
+            // arithmetic (for example ``kr*(1-pOn(x))``).  That is not the
+            // narrow ``f(x)`` localFunctionRate shape, but the generic dynamic
+            // adapter can preserve and bind the scoped argument as a DOR rate.
+            const bool dynamicScopedFunctionAvailable =
+                !rates.empty() &&
+                hasScopedModelFunctionCall(rates.front(), hasScopedModelFunctionCall);
+            if ((rule.hasScopePrefix() && !localFunctionRate && !functionProductRate &&
+                 !dynamicScopedFunctionAvailable) ||
                 (localFunctionRate && !localFunctionScopeAvailable) ||
                 (functionProductRate && !functionProductScopeAvailable) || rates.empty() ||
                 (reactantPatterns.empty() && productPatterns.empty())) {
@@ -4594,7 +4914,15 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
             // Null/Trash are NFsim's degradation sentinels, not real molecule
             // types.  The XML loader drops these product entries and keeps the
             // corresponding DeleteMolecule operation.
-            if (isDiscardMolecule(productMolecules[productRef.moleculeIndex])) {
+            const auto& productMolecule = productMolecules[productRef.moleculeIndex];
+            bool declaredProductType = false;
+            for (int index = 0; index < s->getNumOfMoleculeTypes(); ++index) {
+                if (s->getMoleculeType(index)->getName() == productMolecule.name) {
+                    declaredProductType = true;
+                    break;
+                }
+            }
+            if (isDiscardMolecule(productMolecule) && !declaredProductType) {
                 return true;
             }
             if (!addedProductIndexes.emplace(productRef, directProducts.size()).second) {
@@ -4622,7 +4950,7 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 }
             }
         }
-        if (ok && reactantPatterns.empty()) {
+        if (ok && reactantPatterns.empty() && addMoleculeTemplates.empty()) {
             for (std::size_t patternIndex = 0;
                  patternIndex < productPatterns.size() && ok; ++patternIndex) {
                 const auto molecules = collectGraphMolecules(
@@ -4771,7 +5099,7 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                         bng::ast::ReactionRule::ComponentRef{
                             productRef.patternIndex, productRef.moleculeIndex, componentIndex},
                         std::make_pair(operationProduct.templateMolecule,
-                                       graphMolecule.components[componentIndex].name));
+                                       operationProduct.runtimeComponentNames.at(componentIndex)));
                 }
             }
         }
@@ -4896,6 +5224,12 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                     ok = false;
                     break;
                 }
+                // A product bond to an existing molecule requires the
+                // reactant site to be available.  New-molecule binding uses a
+                // deferred transform and cannot preflight this condition
+                // after the product molecule is created, so encode the
+                // availability on the reactant template itself.
+                existingTemplate->addEmptyComponent(existingName);
                 if (!transformationSet->addNewMoleculeBindingTransform(
                         existingTemplate, existingName,
                         added->second.first, added->second.second)) {
@@ -4986,6 +5320,7 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
         std::vector<std::string> functionProductArguments2;
         std::size_t functionProductPattern1 = reactantRoots.size();
         std::size_t functionProductPattern2 = reactantRoots.size();
+        std::size_t localFunctionPattern = reactantRoots.size();
         const auto mapFunctionProductArgument =
             [&](const FunctionProductOperand& operand,
                 std::vector<std::string>& argumentNames,
@@ -5025,6 +5360,54 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 argumentNames.push_back(operand.argument);
                 return true;
             };
+        const auto mapLocalFunctionArgument = [&](const std::string& argumentName) {
+            std::size_t matchingPattern = reactantRoots.size();
+            int matchingScope = LocalFunction::MOLECULE;
+            for (std::size_t patternIndex = 0;
+                 patternIndex < reactantRoots.size(); ++patternIndex) {
+                if (patternIndex >= rule.getReactants().size()) continue;
+                if (!hasScopedArgument(
+                        rule.getReactants()[patternIndex], argumentName)) {
+                    continue;
+                }
+                if (matchingPattern != reactantRoots.size()) {
+                    diagnostic = "a local-function scope identifier refers to multiple reactants";
+                    return false;
+                }
+                matchingPattern = patternIndex;
+                if (hasSpeciesScopedArgument(
+                        rule.getReactants()[patternIndex], argumentName)) {
+                    matchingScope = LocalFunction::SPECIES;
+                }
+            }
+            if (matchingPattern == reactantRoots.size()) {
+                diagnostic = "local-function scope identifier '" + argumentName +
+                             "' has no matching reactant";
+                return false;
+            }
+            if (localFunctionPattern == reactantRoots.size()) {
+                localFunctionPattern = matchingPattern;
+            } else if (localFunctionPattern != matchingPattern) {
+                diagnostic = "local-function scope identifiers must refer to one reactant";
+                return false;
+            }
+            if (reactantRoots[matchingPattern]->getMoleculeType()->isPopulationType()) {
+                diagnostic = "local functions cannot scope population reactants";
+                return false;
+            }
+            if (std::find(
+                    localFunctionArgumentNames.begin(), localFunctionArgumentNames.end(),
+                    argumentName) != localFunctionArgumentNames.end()) {
+                return true;
+            }
+            if (!transformationSet->addLocalFunctionReference(
+                    reactantRoots[matchingPattern], argumentName, matchingScope)) {
+                diagnostic = "could not add local-function scope reference";
+                return false;
+            }
+            localFunctionArgumentNames.push_back(argumentName);
+            return true;
+        };
         if (functionProductRate) {
             ok = mapFunctionProductArgument(
                      functionProductOperand1, functionProductArguments1,
@@ -5045,45 +5428,10 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                     ok = false;
                     break;
                 }
-                std::size_t matchingPattern = reactantRoots.size();
-                int matchingScope = LocalFunction::MOLECULE;
-                for (std::size_t patternIndex = 0;
-                     patternIndex < reactantRoots.size(); ++patternIndex) {
-                    if (patternIndex >= rule.getReactants().size()) continue;
-                    if (!hasScopedArgument(
-                            rule.getReactants()[patternIndex], argument.name())) {
-                        continue;
-                    }
-                    if (matchingPattern != reactantRoots.size()) {
-                        diagnostic = "a local-function scope identifier refers to multiple reactants";
-                        ok = false;
-                        break;
-                    }
-                    matchingPattern = patternIndex;
-                    if (hasSpeciesScopedArgument(
-                            rule.getReactants()[patternIndex], argument.name())) {
-                        matchingScope = LocalFunction::SPECIES;
-                    }
-                }
-                if (!ok) break;
-                if (matchingPattern == reactantRoots.size()) {
-                    diagnostic = "local-function scope identifier '" + argument.name() +
-                                 "' has no matching reactant";
+                if (!mapLocalFunctionArgument(argument.name())) {
                     ok = false;
                     break;
                 }
-                if (reactantRoots[matchingPattern]->getMoleculeType()->isPopulationType()) {
-                    diagnostic = "local functions cannot scope population reactants";
-                    ok = false;
-                    break;
-                }
-                if (!transformationSet->addLocalFunctionReference(
-                        reactantRoots[matchingPattern], argument.name(), matchingScope)) {
-                    diagnostic = "could not add local-function scope reference";
-                    ok = false;
-                    break;
-                }
-                localFunctionArgumentNames.push_back(argument.name());
             }
         }
         if (!ok) {
@@ -5094,8 +5442,6 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
             cleanupDirectProducts();
             return false;
         }
-
-        transformationSet->finalize();
 
         const auto& rate = rates.front();
         ReactionClass* reaction = nullptr;
@@ -5139,6 +5485,7 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 delete transformationSet;
                 return false;
             }
+            transformationSet->finalize();
             reaction = new MMRxnClass(rule.getRuleName(), kcat, km, transformationSet, s);
         } else if (saturationRate || hillRate) {
             if (reactantRoots.empty()) {
@@ -5170,9 +5517,11 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 constants.push_back(value);
             }
             if (saturationRate) {
+                transformationSet->finalize();
                 reaction = new SatRxnClass(
                     rule.getRuleName(), std::move(constants), transformationSet, s);
             } else {
+                transformationSet->finalize();
                 reaction = new HillRxnClass(
                     rule.getRuleName(), constants[0], constants[1], constants[2],
                     transformationSet, s);
@@ -5187,6 +5536,7 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 delete transformationSet;
                 return false;
             }
+            transformationSet->finalize();
             reaction = new DOR2RxnClass(
                 rule.getRuleName(), 1.0, "", transformationSet, composite1, composite2,
                 functionProductArguments1, functionProductArguments2, s);
@@ -5198,6 +5548,7 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 delete transformationSet;
                 return false;
             }
+            transformationSet->finalize();
             reaction = new DORRxnClass(
                 rule.getRuleName(), 1.0, "", transformationSet, composite,
                 localFunctionArgumentNames, s);
@@ -5212,6 +5563,7 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 delete transformationSet;
                 return false;
             }
+            transformationSet->finalize();
             if (global != nullptr) {
                 reaction = new FunctionalRxnClass(
                     rule.getRuleName(), global, transformationSet, s);
@@ -5238,27 +5590,46 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                     parameters.count(rate.name()) != 0) {
                     rateParameterName = rate.name();
                 }
+                transformationSet->finalize();
                 reaction = new BasicRxnClass(
                     rule.getRuleName(), 0.0, "", transformationSet, s);
                 reaction->setBaseRate(rateValue, rateParameterName);
             } else {
                 GlobalFunction* dynamicGlobal = nullptr;
                 CompositeFunction* dynamicComposite = nullptr;
+                std::vector<std::string> dynamicLocalFunctionArguments;
                 if (!addDynamicReactionRateFunction(
                         rate, model, parameters, s, sourcePath,
                         originalRuleOrdinal * 2 + directionOrdinal,
-                        dynamicGlobal, dynamicComposite, diagnostic)) {
+                        dynamicGlobal, dynamicComposite, dynamicLocalFunctionArguments,
+                        diagnostic)) {
                     std::cerr << "[nfsim/ast] cannot map reaction '" << rule.getRuleName()
                               << "': " << diagnostic << "\n";
                     delete transformationSet;
                     return false;
                 }
+                for (const auto& argumentName : dynamicLocalFunctionArguments) {
+                    if (!mapLocalFunctionArgument(argumentName)) {
+                        std::cerr << "[nfsim/ast] cannot map reaction '"
+                                  << rule.getRuleName() << "': " << diagnostic << "\n";
+                        delete transformationSet;
+                        return false;
+                    }
+                }
+                transformationSet->finalize();
                 if (dynamicGlobal != nullptr) {
                     reaction = new FunctionalRxnClass(
                         rule.getRuleName(), dynamicGlobal, transformationSet, s);
                 } else if (dynamicComposite != nullptr) {
-                    reaction = new FunctionalRxnClass(
-                        rule.getRuleName(), dynamicComposite, transformationSet, s);
+                    if (dynamicLocalFunctionArguments.empty()) {
+                        reaction = new FunctionalRxnClass(
+                            rule.getRuleName(), dynamicComposite, transformationSet, s);
+                    } else {
+                        reaction = new DORRxnClass(
+                            rule.getRuleName(), 1.0, "", transformationSet,
+                            dynamicComposite, dynamicLocalFunctionArguments, s);
+                        dynamicComposite->setGlobalObservableDependency(reaction, s);
+                    }
                 } else {
                     std::cerr << "[nfsim/ast] dynamic reaction rate produced no function\n";
                     delete transformationSet;
@@ -5271,6 +5642,66 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
         if (hasReactionModifier(rule, "matchonce")) {
             for (std::size_t index = 0; index < reactantRoots.size(); ++index) {
                 reaction->setMatchOnce(static_cast<unsigned int>(index), true);
+            }
+        }
+
+        // Match NFinput::initReactionRules: a zero-order synthesis rate is
+        // converted from concentration/time to molecule-count/time using the
+        // product compartment volume and NumberPerQuantityUnit.  The factor is
+        // kept on functional reactions for update_a(); elementary rates must be
+        // scaled once before they enter the live reaction list.
+        if (reactantRoots.empty()) {
+            Compartment* productCompartment = nullptr;
+            bool allSameCompartment = true;
+            for (const auto& product : collectRuleGraphMolecules(productPatterns)) {
+                const auto& molecule = product.molecule;
+                bool declaredProductType = false;
+                for (int index = 0; index < s->getNumOfMoleculeTypes(); ++index) {
+                    if (s->getMoleculeType(index)->getName() == molecule.name) {
+                        declaredProductType = true;
+                        break;
+                    }
+                }
+                if (isDiscardMolecule(molecule) && !declaredProductType) {
+                    continue;
+                }
+
+                const std::string compartmentName = graphMoleculeCompartment(
+                    productPatterns[product.patternIndex], molecule);
+                if (compartmentName.empty()) continue;
+                Compartment* compartment = nullptr;
+                if (!resolveCompartment(s, compartmentName, compartment, diagnostic)) {
+                    std::cerr << "[nfsim/ast] cannot map reaction '"
+                              << rule.getRuleName() << "': " << diagnostic << "\n";
+                    delete reaction;
+                    delete transformationSet;
+                    cleanupDirectProducts();
+                    return false;
+                }
+                if (productCompartment == nullptr) {
+                    productCompartment = compartment;
+                } else if (productCompartment != compartment) {
+                    allSameCompartment = false;
+                    std::cerr << "[nfsim/ast] warning: zero-order synthesis ('"
+                              << rule.getRuleName()
+                              << "') has products in different compartments; "
+                                 "volume scaling may be incorrect\n";
+                    break;
+                }
+            }
+
+            double volumeConversion = 1.0;
+            if (productCompartment != nullptr && allSameCompartment) {
+                volumeConversion = productCompartment->getSize();
+                const double numberPerQuantity = s->getNumberPerQuantityUnit();
+                if (numberPerQuantity > 0.0) {
+                    volumeConversion *= numberPerQuantity;
+                }
+            }
+            reaction->volumeConversionFactor = volumeConversion;
+            if (reaction->getRxnType() != ReactionClass::OBS_DEPENDENT_RXN) {
+                reaction->setBaseRate(
+                    reaction->getBaseRate() * volumeConversion, "");
             }
         }
 
@@ -5299,6 +5730,38 @@ System* buildSystemFromAst(const bng::ast::Model& model,
                            bool verbose,
                            int& suggestedTraversalLimit,
                            const std::filesystem::path& sourcePath) {
+    // Preserve the historical API contract: before the direct adapter grew a
+    // separate complex-bookkeeping flag, this argument controlled both the
+    // System constructor and same-complex binding checks.
+    static const SeedAmountOverrides noOverrides;
+    return buildSystemFromAstWithSeedOverrides(
+        model, blockSameComplexBinding, blockSameComplexBinding,
+        globalMoleculeLimit, verbose, suggestedTraversalLimit, sourcePath,
+        noOverrides);
+}
+
+System* buildSystemFromAst(const bng::ast::Model& model,
+                           bool useComplex,
+                           bool blockSameComplexBinding,
+                           int globalMoleculeLimit,
+                           bool verbose,
+                           int& suggestedTraversalLimit,
+                           const std::filesystem::path& sourcePath) {
+    static const SeedAmountOverrides noOverrides;
+    return buildSystemFromAstWithSeedOverrides(
+        model, useComplex, blockSameComplexBinding, globalMoleculeLimit,
+        verbose, suggestedTraversalLimit, sourcePath, noOverrides);
+}
+
+System* buildSystemFromAstWithSeedOverrides(
+    const bng::ast::Model& model,
+    bool useComplex,
+    bool blockSameComplexBinding,
+    int globalMoleculeLimit,
+    bool verbose,
+    int& suggestedTraversalLimit,
+    const std::filesystem::path& sourcePath,
+    const SeedAmountOverrides& seedAmountOverrides) {
     // Migration escape hatch used by the parity gate: force the XML path.
     if (std::getenv("BNG_NFSIM_FORCE_XML")) {
         if (verbose) std::cerr << "[nfsim/ast] BNG_NFSIM_FORCE_XML set -> XML path\n";
@@ -5307,7 +5770,7 @@ System* buildSystemFromAst(const bng::ast::Model& model,
 
     const std::string& name = model.getModelName();
     System* s = new System(name.empty() ? "model" : name,
-                           blockSameComplexBinding, globalMoleculeLimit);
+                           useComplex, globalMoleculeLimit);
     // The CLI enables complex-scoped local functions by default.  The direct
     // AST entry point has no separate -nocslf argument, so preserve that
     // default explicitly instead of leaving the legacy System flag unset.
@@ -5329,7 +5792,8 @@ System* buildSystemFromAst(const bng::ast::Model& model,
              addObservablesFromAst(model, s, parameters, verbose, suggestedTraversalLimit) &&
              addFunctionsFromAst(model, s, parameters, verbose, sourcePath) &&
              addEnergyPatternsFromAst(model, s, parameters, verbose) &&
-             addSpeciesFromAst(model, s, parameters, verbose) &&
+             addSpeciesFromAstWithOverrides(
+                 model, s, parameters, verbose, seedAmountOverrides) &&
              addReactionRulesFromAst(model, s, parameters, blockSameComplexBinding,
                                      verbose, suggestedTraversalLimit, sourcePath);
     } catch (const std::exception& error) {

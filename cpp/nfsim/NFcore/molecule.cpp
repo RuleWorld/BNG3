@@ -39,6 +39,7 @@ Molecule::Molecule(MoleculeType * parentMoleculeType, int listId, Compartment * 
 		bond[b]=0; indexOfBond[b]=NOBOND;
 		hasVisitedBond[b] = false;
 	}
+	boundComponentMask = 0;
 
 
 	hasVisitedMolecule = false;
@@ -86,7 +87,9 @@ void Molecule::prepareForSimulation()
 {
 	if(isPrepared) return;
 	nReactions = parentMoleculeType->getReactionCount();
-	this->rxnListMappingId2 = new set<int>[nReactions];
+	int mappingCount = parentMoleculeType->getReactionMappingCount();
+	this->rxnListMappingId2 = mappingCount > 0
+			? new MappingIdSet[mappingCount] : 0;
 
 	isPrepared = true;
 
@@ -116,6 +119,7 @@ void Molecule::setUpLocalFunctionList()
 		}
 	}
 }
+
 
 
 
@@ -162,13 +166,16 @@ LocalFunction * Molecule::getLocalFunction(int localFunctionIndex) {
 
 
 
-void Molecule::updateRxnMembership(ReactionClass * r, bool useConnectivity)
+void Molecule::updateRxnMembership(ReactionClass * r, bool useConnectivity,
+		bool directProduct)
 {
 	if (useConnectivity) {
-		parentMoleculeType->updateConnectedRxnMembership(this, r);
+		parentMoleculeType->updateConnectedRxnMembership(
+				this, r, directProduct);
 	}
 	else {
-		parentMoleculeType->updateRxnMembership(this);
+		parentMoleculeType->updateRxnMembership(
+				this, r, directProduct);
 	}
 }
 
@@ -203,9 +210,9 @@ void Molecule::updateDORRxnValues()
 			//If we are in this reaction, then we have to update our value...
 			if(getRxnListMappingId(rxnIndex)>=0) {
 				//iterate over all mappings
-				set<int> tempSet = getRxnListMappingSet(rxnIndex);
+				const MappingIdSet& tempSet = getRxnListMappingSet(rxnIndex);
 				//iterate over all agent-mappings  for the same reaction
-				for(set<int>::iterator it= tempSet.begin();it!= tempSet.end(); ++it){
+				for(MappingIdSet::const_iterator it= tempSet.begin();it!= tempSet.end(); ++it){
 
 				//Careful here!  remember to update the propensity of this
 				//reaction in the system after we notify of the rate factor change!
@@ -480,6 +487,10 @@ void Molecule::bind(Molecule *m1, int cIndex1, Molecule *m2, int cIndex2)
 
 	m1->indexOfBond[cIndex1] = cIndex2;
 	m2->indexOfBond[cIndex2] = cIndex1;
+	if (cIndex1 < 64)
+		m1->boundComponentMask |= (std::uint64_t(1) << cIndex1);
+	if (cIndex2 < 64)
+		m2->boundComponentMask |= (std::uint64_t(1) << cIndex2);
 
 	//Handle Complexes
 	if(m1->useComplex)
@@ -530,6 +541,12 @@ vector<int> Molecule::unbind(Molecule *m1, int cIndex)
 
 	m1->indexOfBond[cIndex] = NOINDEX;
 	m2->indexOfBond[cIndex2] = NOINDEX;
+	if (cIndex < 64)
+		m1->boundComponentMask &=
+				~(std::uint64_t(1) << cIndex);
+	if (cIndex2 < 64)
+		m2->boundComponentMask &=
+				~(std::uint64_t(1) << cIndex2);
 
 	//Handle Complexes
 	if(m1->useComplex)
@@ -774,6 +791,3 @@ void Molecule::printMoleculeList(list <Molecule *> &members)
 		cout<<"_u"<<(*molIter)->getUniqueID()<<endl;
 	}
 }
-
-
-

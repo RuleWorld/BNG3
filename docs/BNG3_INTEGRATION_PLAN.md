@@ -3,10 +3,10 @@
 **Status:** Active implementation; convergence foundation and direct NFsim migration in progress
 **Plan date:** 2026-08-28
 **Scope:** BioNetGen, NFsim, and PyBioNetGen convergence into one maintained BNG3 codebase
-**Last progress update:** 2026-08-29
+**Last progress update:** 2026-08-31
 **Implementation:** The current branch owns the active port; this document remains the authoritative backlog and completion contract. Section 11 is not yet satisfied.
 
-## Implementation progress checkpoint — 2026-08-29
+## Implementation progress checkpoint — 2026-08-31
 
 The branch `codex/bng3-integration-foundations` has advanced from the initial
 foundation into source-led semantic porting. The individual BioNetGen and
@@ -35,34 +35,149 @@ Completed slices now present in BNG3 include:
 - Validation improvements that key network reactions by species content and
   pool independent stochastic-ensemble standard errors. This does not relax
   scientific thresholds or replace structural parity with string matching.
+- Protocol and parameter-scan actions with explicit value/range precedence,
+  per-point state isolation, final-observable `.scan` output, and strict
+  sensitivity `.gsc`/`.csc` artifacts. Native parameter scans now preserve
+  legacy POSIX process-isolated batches, with an explicit serial fallback on
+  Windows where embedded fork isolation is unavailable.
+- Legacy NFsim zero-order synthesis semantics, including explicit product
+  operations, compartment-volume/NumberPerQuantityUnit scaling, and direct/XML
+  parity; partial parameter-scan ranges now preserve explicit-list behavior.
+- Legacy NFsim compatibility flags are now parsed through a bounded in-process
+  adapter, complex bookkeeping is separated from ring-blocking semantics, and
+  the Michaelis-Menten propensity uses a cancellation-safe tiny-Km root.
+- BNGL models without a molecule-types block now infer component multiplicity
+  and numeric state ranges across all patterns before graph materialization.
+- Native integer-state transition syntax (`~^[N]`, `~++`, and `~--`) now
+  expands into bounded canonical BNGL rules, and loose actions inside a
+  `begin model` block are accepted for legacy fixtures.
+- Native NFsim DOR2 local-function products now remain bounded end-to-end:
+  raw `fA(x)*fB(y)` rates map directly, serialize as `FunctionProduct`, and
+  legacy composite `Function` rate laws are accepted by the XML loader.
+- Generated XML rate functions now retain scoped local-function arguments and
+  object references for arithmetic expressions around local calls. Direct
+  NFsim also accepts the legacy one-ended numeric seed-bond metadata used by
+  the RNA fixtures, and maps intramolecular bonds on newly created products.
+- Python scan and sensitivity forwarding for sample times, stopping, solver
+  limits, sparse/check controls, and parallel worker payloads.
+- NFsim's model-derived universal traversal limit is now applied on the public
+  Python binding path, while action-level `utl` values remain explicit and are
+  reported in verbose mode. On the large `models/tlbr` fixture, one seeded
+  50-time-unit run measured about 24.9 seconds before this fix and 2.7 seconds
+  after it.
+- Modern SymPy ODE export through the canonical C++ MEX writer, strict action
+  method validation, and explicit compatibility errors for unsupported
+  simulator types or missing RoadRunner.
+- Playground-derived modern SBML import now normalizes declared unit
+  definitions before BNGL seed emission, records auditable import warnings,
+  and conservatively extracts canonical SBML-Multi molecule/complex
+  references as commented diagnostics. Multi structures are intentionally not
+  injected into the simulated network until an end-to-end oracle is approved.
+- Uniform SBML conversion factors are now folded into generated reaction fluxes;
+  reactions with mixed per-species factors remain explicitly unscaled and
+  diagnostic because one BNGL rule cannot represent species-specific flux
+  scalars.
+- SBML rate rules now become positive/negative source/sink rules driven by
+  explicit rate-rule functions. Targets absent from `listOfSpecies` are
+  materialized as amount-only synthetic state species, while algebraic rules
+  remain explicit dropped constraints.
+- SBML stoichiometry is now handled without silent integer coercion: explicit
+  zero references are omitted, fixed integer references are preserved, and
+  fractional, negative, or non-finite references cause the affected reaction
+  to be omitted with an explicit provenance warning. Variable or
+  `stoichiometryMath` references with a finite nonnegative integer value are
+  retained as a documented fixed-value approximation.
+- SBML `fast="true"` reactions and reaction-level `conversionFactor`
+  declarations are retained in the typed model and surfaced as explicit
+  approximations when BNGL cannot preserve their semantics.
+- SBML events, algebraic rules, constraints, and declared Level 3 packages
+  now produce counted import diagnostics; qualitative-only `qual` models fail
+  closed instead of emitting a misleading kinetic network.
+- The pure-XML MathML fallback now preserves rational and e-notation
+  constants, canonical SBML time/Avogadro symbols, constants, roots/log bases,
+  and user-function applies before BNGL expression conversion.
+- BNGL keyword-colliding parameters are renamed consistently in rate laws,
+  and generated observables are keyed by SBML IDs so display-name changes do
+  not create undefined rate references.
+- SBML constant and boundary-condition species now emit fixed (`$`) BNGL
+  seeds, preserving their non-dynamic status through the modern writer.
+- Expression-valued SBML initial seeds are constant-folded when their
+  parameters, compartments, functions, and initial values resolve numerically;
+  unresolved values retain safe emitted identifiers.
+- Simple SBML assignment rules composed of species sums now emit BNGL
+  `Molecules` observables (with amount aliases), and reaction/rate-rule
+  references resolve those observables without generating undefined functions.
+- Non-finite SBML parameter values are curated to finite BNGL literals
+  (`NaN`→`0`, infinities→signed `1e20`) with an explicit import diagnostic.
+- Repeated component names in reactant patterns now remove matching leading
+  statistical multiplicity factors, leaving BNGL pattern matching to carry the
+  combinatorics.
+- Assignment and rate-rule expressions that reference reaction IDs now inline
+  the corresponding kinetic flux, covering SBML `rateOf`-style dependencies.
+- Parameterized SBML functions are now inlined through either their SBML ID or
+  declared name, preserving models whose identifiers differ from display names.
+- Non-finite SBML compartment sizes now default to unit volume in both the
+  emitted parameter and compartment declarations, keeping generated BNGL
+  finite and parseable.
+- Reversible SBML net rates are now split into forward and reverse BNGL laws
+  at top-level additive operators; unsplittable reversible laws degrade to a
+  valid irreversible rule instead of duplicating a net flux.
+- Legacy runner boundaries that preserve C++ parse/execution failures and do
+  not return an empty successful result when neither backend is available.
 
 Local evidence at this checkpoint:
 
-- CTest: 105/105 tests passed.
-- Python suite: 101 passed, 27 skipped.
-- Black check: 150 files unchanged; Ruff passed.
-- Targeted mypy over the validation comparator/oracle modules: no issues.
+- CTest: 124/124 tests passed.
+- Fast Python suite (`-m 'not slow'`): 155 passed, 27 skipped.
+- Full Python suite: 192 passed, 27 skipped.
+- Focused modern Playground atomizer suite: 34 passed, including declared
+  unit scaling, canonical SBML-Multi extraction, conversion-factor
+  diagnostics, materialized species rate-rule synthesis, stoichiometry
+  safeguards, fast-reaction handling, unsupported-package diagnostics, and
+  MathML numeric/function handling, identifier-safe rate/observable mapping,
+  fixed-seed preservation, expression-seed folding, assignment-rule
+  observable aliases, non-finite parameter curation, repeated-site
+  statistical-factor handling, reaction-flux inlining, and non-finite
+  compartment-size curation, and reversible net-rate splitting.
+- Current direct-vs-in-memory-XML NFsim shadow suite: 4/4 passed with the
+  rebuilt native NFsim executable after the latest adapter slices.
+- Current fixed-seed Tier-NF gate: all 4 models × 200 native-oracle runs, plus
+  the four direct-vs-XML checks, passed 8/8 in 250.07s using eight isolated
+  workers after the traversal-limit fix.
+- Native `t_dor2.bngl` DOR2 smoke: 114 reactions and 113 events; seeded direct
+  AST output was byte-identical to standalone NFsim using both generated XML
+  and the original BNG2 XML fixture.
+- Ruff passed with `--no-cache`; the repository Ruff cache is not writable in
+  this checkout.
+- The deterministic validation command reports 71 models: 40 passes, 0
+  mismatches, 1 explicit error, and 30 skips.
 - Native NFsim/API seeded ensemble smoke tests passed for `simple_system` and
   `localfunc` at 200 runs. The larger `motor` diagnostic was not completed
   within the local runtime budget and is not counted as evidence.
+- Direct RNA fixture smoke now passes for both `rna_synthesis3.bngl` and
+  `rna_synthesis4.bngl`; `IfTest/ifTest.bngl`, `t4.bngl`, and `t5.bngl` remain
+  explicit parse/fixture failures and are not silently admitted to the gate.
+- The complex `AN_chemotaxis/an2.bngl` model constructs through both direct and
+  forced-XML paths, but seeded trajectories differ from the historical BNG2
+  XML at later times. This is a diagnostic canonicalization/RNG-order mismatch,
+  not a parity pass, and is excluded from the completion claim.
 
-The exact validation command currently reports 71 models, 32 passes, 4
-failures, and 35 skips. The remaining failures are deliberately visible:
+The sole validation error is deliberately visible:
 
-- `Motivating_example_cBNGL`: two cross-compartment binding reactions still
-  need source-faithful rejection or product-compartment handling.
-- `blbr`: reaction count is now the BNG2 value of 92; remaining text differs
-  in canonical bond-label orientation and needs structural comparison aligned
-  with BNG2 `SpeciesList::lookup(check_iso)` semantics.
-- `test_network_gen` and `tlbr`: reaction counts match; canonical species
-  labels still differ and require an explicit graph-equivalence audit rather
-  than ad hoc string normalization.
+- `test_sbml_structured`: the C++ flat SBML reader rejects
+  `atomize=>1` explicitly because structured SBML still requires the Python
+  atomizer path. The historical reference uses different inferred molecule
+  naming/topology, so the oracle is not weakened and the error remains a
+  tracked P5 gap.
 
-Hosted CI has not been rerun for this checkpoint because the branch has not
-been pushed after these changes. Earlier PR results predate the current link,
-engine, and adapter fixes and must not be reported as current evidence. No
-CodeQL workflow is configured in the checked tree; adding it to the required
-CI contract remains open.
+Hosted CI run `33396166182` passed for pushed head `6d99118`, including the C++
+Linux/macOS/Windows builds, ASan, validation, integration tests, and the
+complete Python platform matrix. The legacy Ubuntu Python 3.9/3.10 jobs also
+passed after seeding an isolated Matplotlib bundled-font cache. The direct
+AST-vs-in-memory-XML NFsim shadow gate passed 4/4 models, and the current
+fixed-seed native NFsim gate passed all 4 models × 200 runs locally after the
+traversal-limit fix. Checkpoint `94d6079` is pushed and its hosted CI is
+currently running; no result from that run is counted until it completes.
 
 ## Completion charter — port everything
 
@@ -146,7 +261,7 @@ trail in the repository.
 ### Initial starting checkpoint
 
 The public branch `codex/bng3-integration-foundations` and PR
-`RuleWorld/BNG3#1` contain the initial provenance, CI, validation, expression,
+`RuleWorld/BNG3#2` contain the initial provenance, CI, validation, expression,
 and bounded direct-NFsim foundation. Before changing code, verify their live
 heads with `gh`; do not assume the PR description is current.
 
@@ -263,18 +378,19 @@ The work therefore starts from an incomplete convergence, not from four empty re
 
 | Area | Current condition | Planning consequence |
 |---|---|---|
-| Source provenance | No single lock file records all imported source revisions and reconciliation status. | Freeze and record the common ground before further convergence. |
+| Source provenance | `provenance/upstreams.lock.yml` records the observed source revisions, but maintainer approval and oracle artifacts remain pending. | Review and approve the lock before using it as a release cutoff. |
 | Direct NFsim bridge | `NFinput_fromAst.cpp` now maps a substantial typed subset: options, parameters, compartments, molecule types, functions, observables, seed species, rules, transformations, filters, dynamic rates, and symmetry. | Keep unsupported forms explicit and finish independent BNG2/NFsim differential coverage before declaring the adapter complete. |
 | Active NFsim path | The direct adapter and XML bridge both exist; XML remains needed for shadow comparison and compatibility while direct parity is incomplete. | Keep the XML path as a temporary comparator, then remove it from the default runtime only after the Tier-NF gate passes. |
-| Graph identity | BioNetGen network canonicalization and NFsim complex identity remain different scientific contracts; several current `.net` failures are label-orientation differences. | Use the individual BNG2/NFsim implementations as authority and compare graph identity structurally, without forcing one unproven high-level labeling algorithm onto both engines. |
+| Graph identity | Structural `.net` comparison now passes the available deterministic models; BNG2/NFsim identity contracts still need broader differential coverage. | Expand independent corpus coverage without replacing graph comparison with string matching. |
 | Expression evaluation | Several dynamic global, local, TFUN, composite, and bounded rate forms are direct; the full shared expression contract is not complete. | Preserve fail-closed behavior for unsupported forms and define one expression contract before removing specialized evaluators. |
+| SBML units and Multi package | The modern Playground-derived parser now scales declared quantities and extracts canonical single-level Multi structures as explicit reference diagnostics; Multi output is not yet simulated. | Add independent unit/round-trip oracles and an approved end-to-end Multi execution path before claiming full Tier-X support. |
 | Python convergence | Legacy `core`, `modelapi`, `network`, and `simulator` trees remain. | Inventory public compatibility before deletion; use contract tests to govern removal. |
 | Golden references | The validation corpus and BNG2 `.net` references are present, but a reviewed provenance-complete release golden bundle is not frozen. | Build provenance-aware oracle generation before using parity as a release claim. |
 | Stochastic parity | Seeded determinism and 200-run local smoke comparisons are covered for selected NFsim models; the full distributional gate is not complete. | Keep fixed ensembles and pooled independent-ensemble error rules; execution success is insufficient. |
-| RuleHub integration | The local corpus loader does not use a pinned RuleHub snapshot. | Add an exact RuleHub revision and generated selection manifest. |
-| CI truthfulness | Local C++/Python/lint/type gates pass, but exact network validation still has four visible failures and hosted CI has not been rerun on the current unpushed branch. No CodeQL workflow is present. | Make required CI honest and green, add security coverage, and rerun it on the exact pushed SHA before claiming completion. |
+| RuleHub integration | A pinned RuleHub revision and selection manifest are committed, but both remain pending maintainer approval. | Approve selectors and external tier membership before release use. |
+| CI truthfulness | Local C++/Python/Ruff gates pass; deterministic validation has one explicit structured-SBML error; hosted CI run `33362472735` is green on `05bbc88`. The separate CodeQL result and the structured-SBML disposition remain open. | Read back CodeQL on the exact head, resolve or govern the SBML gap, and keep required checks tied to the final release SHA. |
 | Documentation | The architecture document, unification spec, analysis notes, and live implementation disagree in places. | Add documentation consistency checks and name one governing decision record. |
-| Packaging | Shared-extension static linking was corrected locally and the Python/CLI smoke paths pass; current hosted wheel evidence is stale. | Re-run clean wheel, CLI, import, and embedded-data gates on the current SHA. |
+| Packaging | Shared-extension static linking was corrected locally; hosted Python matrix wheel, import, CLI, and test jobs pass on `05bbc88`. Release-only wheel/publish jobs remain unrun on this PR. | Re-run clean release wheel, CLI, import, and embedded-data gates on the exact release candidate. |
 
 ### 2.3 Source revisions observed on 2026-08-28
 
@@ -663,15 +779,15 @@ Use Jules Playground as a valuable independently implemented differential target
 
 Each phase has deliverables and an exit gate. Later phases may prepare in parallel, but deletion and authority changes follow the stated dependencies.
 
-### Current phase status — 2026-08-29
+### Current phase status — 2026-08-30
 
 | Phase | Status | Evidence and next gate |
 |---|---|---|
 | 0 — authority/common ground | In progress | Individual BNG2/NFsim source paths are being used for semantic decisions; the accepted source lock, complete reconciliation ledger, owners, and RuleHub selection manifest remain open. |
-| 1 — honest green CI | In progress | Local CTest, Python, formatting, Ruff, and targeted mypy pass; exact network validation has 4 visible failures, hosted CI is stale for this branch, and CodeQL is not yet configured. |
-| 2 — independent validation | In progress | BNG2 `.net` corpus comparison, native NFsim seeded smoke ensembles, pooled-error comparator coverage, and provenance scaffolding exist; the reviewed golden bundle and complete independent-oracle gate remain open. |
-| 4 — semantic core | In progress | BNG2-derived deletion, bond-cardinality, product-molecularity, symmetry, compartment, and dynamic-rate slices are implemented; canonical graph-label parity and remaining cBNGL behavior are open. |
-| 5 — direct NFsim | In progress | Typed AST-to-NFsim construction and direct-vs-XML tests cover a substantial subset; full Tier-NF coverage, native-oracle parity, and XML-path retirement remain open. |
+| 1 — honest green CI | In progress | Local CTest 124/124, Python 155 passed/27 skipped, and Ruff pass; deterministic validation has one explicit structured-SBML error, and the current hosted platform matrix is still running. |
+| 2 — independent validation | In progress | Structural BNG2 `.net` comparison, a fixed 4-model × 200-seed native NFsim gate, pooled-error comparator coverage, and provenance scaffolding exist; the reviewed golden bundle and broader independent-oracle gate remain open. |
+| 4 — semantic core | In progress | BNG2-derived deletion, bond-cardinality, product-molecularity, symmetry, compartment, dynamic-rate, protocol, scan, and sensitivity slices are implemented; broader source differential coverage remains open. |
+| 5 — direct NFsim | In progress | Typed AST-to-NFsim construction, scoped XML rate preservation, legacy DOR2/RNA compatibility, intramolecular product bonds, traversal-limit handling, direct-vs-XML tests, and the full 4-model × 200-seed native Tier-NF gate now cover additional behavior; the AN2 mismatch, protocol NF support, and XML-path retirement remain open. |
 | 6–8 — consolidation/release | Not started | Dependent on the authority, parity, packaging, CI, and provenance exit gates above. |
 
 ### Phase 0 — Establish authority and freeze the common ground

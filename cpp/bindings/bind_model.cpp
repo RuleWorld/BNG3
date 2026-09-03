@@ -158,6 +158,8 @@ void bind_model(py::module_& m) {
         })
         .def_property_readonly("model_name", &Model::getModelName)
         .def_property_readonly("version", &Model::getVersion)
+        .def("set_model_name", &Model::setModelName,
+             py::arg("name"))
         .def("set_parameter", [](Model& model, const std::string& name, double value) {
             auto& params = model.getParameters();
             if (!params.contains(name)) {

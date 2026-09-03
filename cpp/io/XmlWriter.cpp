@@ -6,6 +6,7 @@
 #include <cctype>
 #include <cmath>
 #include <map>
+#include <numeric>
 #include <regex>
 #include <set>
 #include <stdexcept>
@@ -70,6 +71,11 @@ struct ParsedReactionFilter {
     std::size_t patternIndex = 0;
     std::vector<std::string> patterns;
 };
+
+bool isReactantCountReference(const std::string& name) {
+    return name.size() == 10 && name.compare(0, 9, "reactant_") == 0 &&
+           name.back() >= '1' && name.back() <= '9';
+}
 
 std::string trimText(std::string value) {
     const auto first = value.find_first_not_of(" \t\r\n");
@@ -409,6 +415,197 @@ ParsedPattern parsePattern(const std::string& text) {
     return pattern;
 }
 
+bool parsedComponentLess(const ParsedComponent& left,
+                         const ParsedComponent& right) {
+    if (left.name != right.name) return left.name < right.name;
+
+    const bool leftHasState = !left.state.empty();
+    const bool rightHasState = !right.state.empty();
+    if (leftHasState != rightHasState) return !leftHasState;
+    if (leftHasState && left.state != right.state) {
+        return left.state < right.state;
+    }
+
+    // BNG2's cmp_component puts components with more edges first after
+    // comparing name and state.  Labels are deliberately not compared: they
+    // are attributes, not part of the quasi-canonical ordering contract.
+    if (left.bonds.size() != right.bonds.size()) {
+        return left.bonds.size() > right.bonds.size();
+    }
+    return false;
+}
+
+bool parsedMoleculeLess(const ParsedMolecule& left,
+                        const ParsedMolecule& right) {
+    if (left.name != right.name) return left.name < right.name;
+    if (left.components.size() != right.components.size()) {
+        return left.components.size() < right.components.size();
+    }
+
+    // BNG2 puts an explicitly compartmented molecule after an unassigned one,
+    // then compares compartment names lexically.
+    const bool leftHasCompartment = !left.compartment.empty();
+    const bool rightHasCompartment = !right.compartment.empty();
+    if (leftHasCompartment != rightHasCompartment) return !leftHasCompartment;
+    if (leftHasCompartment && left.compartment != right.compartment) {
+        return left.compartment < right.compartment;
+    }
+
+    for (std::size_t index = 0; index < left.components.size(); ++index) {
+        const auto& leftComponent = left.components[index];
+        const auto& rightComponent = right.components[index];
+        if (parsedComponentLess(leftComponent, rightComponent)) return true;
+        if (parsedComponentLess(rightComponent, leftComponent)) return false;
+    }
+    return false;
+}
+
+void canonicalizeParsedPattern(ParsedPattern& pattern) {
+    if (pattern.molecules.empty()) return;
+
+    // Keep old component indices long enough to remap ParsedBond endpoints
+    // after BNG2's component and molecule sorts.
+    auto sourceMolecules = std::move(pattern.molecules);
+    std::vector<std::vector<int>> componentOrder(sourceMolecules.size());
+    std::vector<std::vector<int>> componentMap(sourceMolecules.size());
+    for (std::size_t moleculeIndex = 0;
+         moleculeIndex < sourceMolecules.size(); ++moleculeIndex) {
+        auto& order = componentOrder[moleculeIndex];
+        order.resize(sourceMolecules[moleculeIndex].components.size());
+        std::iota(order.begin(), order.end(), 0);
+        std::stable_sort(order.begin(), order.end(), [&](int left, int right) {
+            const auto& leftComponent = sourceMolecules[moleculeIndex].components[left];
+            const auto& rightComponent = sourceMolecules[moleculeIndex].components[right];
+            if (parsedComponentLess(leftComponent, rightComponent)) return true;
+            if (parsedComponentLess(rightComponent, leftComponent)) return false;
+            return left < right;
+        });
+
+        auto& map = componentMap[moleculeIndex];
+        map.resize(order.size());
+        std::vector<ParsedComponent> sortedComponents;
+        sortedComponents.reserve(order.size());
+        for (std::size_t newIndex = 0; newIndex < order.size(); ++newIndex) {
+            map[order[newIndex]] = static_cast<int>(newIndex);
+            sortedComponents.push_back(
+                std::move(sourceMolecules[moleculeIndex].components[order[newIndex]]));
+        }
+        sourceMolecules[moleculeIndex].components = std::move(sortedComponents);
+    }
+
+    std::vector<int> moleculeOrder(sourceMolecules.size());
+    std::iota(moleculeOrder.begin(), moleculeOrder.end(), 0);
+    std::stable_sort(moleculeOrder.begin(), moleculeOrder.end(),
+                     [&](int left, int right) {
+        if (parsedMoleculeLess(sourceMolecules[left], sourceMolecules[right])) return true;
+        if (parsedMoleculeLess(sourceMolecules[right], sourceMolecules[left])) return false;
+        return left < right;
+    });
+
+    std::vector<int> moleculeMap(sourceMolecules.size());
+    pattern.molecules.reserve(sourceMolecules.size());
+    for (std::size_t newIndex = 0; newIndex < moleculeOrder.size(); ++newIndex) {
+        const auto oldIndex = moleculeOrder[newIndex];
+        moleculeMap[oldIndex] = static_cast<int>(newIndex);
+        pattern.molecules.push_back(std::move(sourceMolecules[oldIndex]));
+    }
+
+    std::vector<ParsedBond> remappedBonds;
+    remappedBonds.reserve(pattern.bonds.size());
+    for (const auto& bond : pattern.bonds) {
+        if (bond.mol1 < 0 || bond.mol2 < 0 ||
+            static_cast<std::size_t>(bond.mol1) >= moleculeMap.size() ||
+            static_cast<std::size_t>(bond.mol2) >= moleculeMap.size() ||
+            bond.comp1 < 0 || bond.comp2 < 0 ||
+            static_cast<std::size_t>(bond.comp1) >= componentMap[bond.mol1].size() ||
+            static_cast<std::size_t>(bond.comp2) >= componentMap[bond.mol2].size()) {
+            continue;
+        }
+
+        ParsedBond remapped = bond;
+        remapped.mol1 = moleculeMap[bond.mol1];
+        remapped.comp1 = componentMap[bond.mol1][bond.comp1];
+        remapped.mol2 = moleculeMap[bond.mol2];
+        remapped.comp2 = componentMap[bond.mol2][bond.comp2];
+        if (remapped.mol2 < remapped.mol1 ||
+            (remapped.mol2 == remapped.mol1 && remapped.comp2 < remapped.comp1)) {
+            std::swap(remapped.mol1, remapped.mol2);
+            std::swap(remapped.comp1, remapped.comp2);
+        }
+        remappedBonds.push_back(remapped);
+    }
+    std::sort(remappedBonds.begin(), remappedBonds.end(), [](const ParsedBond& left,
+                                                              const ParsedBond& right) {
+        if (left.mol1 != right.mol1) return left.mol1 < right.mol1;
+        if (left.comp1 != right.comp1) return left.comp1 < right.comp1;
+        if (left.mol2 != right.mol2) return left.mol2 < right.mol2;
+        if (left.comp2 != right.comp2) return left.comp2 < right.comp2;
+        return left.id < right.id;
+    });
+
+    // BNG2 rebuilds complete edge IDs in endpoint order.  Map any dangling
+    // numeric edge labels after complete bonds so their XML bond counts remain
+    // visible without inventing a second endpoint.
+    std::map<int, int> canonicalBondIds;
+    int nextBondId = 1;
+    for (const auto& bond : remappedBonds) {
+        canonicalBondIds.emplace(bond.id, nextBondId++);
+    }
+    for (auto& molecule : pattern.molecules) {
+        for (auto& component : molecule.components) {
+            for (auto& bondId : component.bonds) {
+                if (bondId < 0) continue;
+                auto [it, inserted] = canonicalBondIds.emplace(bondId, nextBondId);
+                if (inserted) ++nextBondId;
+                bondId = it->second;
+            }
+        }
+    }
+
+    for (auto& bond : remappedBonds) {
+        bond.id = canonicalBondIds.at(bond.id);
+    }
+    pattern.bonds = std::move(remappedBonds);
+}
+
+std::string patternToBngl(const ParsedPattern& pattern, bool constant) {
+    std::ostringstream result;
+    if (!pattern.compartment.empty()) {
+        result << "@" << pattern.compartment << "::";
+    }
+    if (constant) result << "$";
+
+    for (std::size_t moleculeIndex = 0;
+         moleculeIndex < pattern.molecules.size(); ++moleculeIndex) {
+        if (moleculeIndex != 0) result << ".";
+        const auto& molecule = pattern.molecules[moleculeIndex];
+        result << molecule.name;
+        if (!molecule.label.empty()) result << "%" << molecule.label;
+        if (!molecule.components.empty()) {
+            result << "(";
+            for (std::size_t componentIndex = 0;
+                 componentIndex < molecule.components.size(); ++componentIndex) {
+                if (componentIndex != 0) result << ",";
+                const auto& component = molecule.components[componentIndex];
+                result << component.name;
+                if (!component.state.empty()) result << "~" << component.state;
+                if (!component.label.empty()) result << "%" << component.label;
+                for (const int bondId : component.bonds) {
+                    if (bondId == -1) result << "!?";
+                    else if (bondId == -2) result << "!+";
+                    else result << "!" << bondId;
+                }
+            }
+            result << ")";
+        }
+        if (!molecule.compartment.empty() &&
+            molecule.compartment != pattern.compartment) {
+            result << "@" << molecule.compartment;
+        }
+    }
+    return result.str();
+}
+
 std::string patternToXml(const ParsedPattern& pattern, const std::string& idPrefix,
                          const std::string& indent) {
     std::ostringstream xml;
@@ -483,14 +680,81 @@ bool modelHasFunction(const ast::Model& model, const std::string& name) {
                        [&](const auto& function) { return function.getName() == name; });
 }
 
+const ast::Function* findModelFunction(const ast::Model& model,
+                                       const std::string& name) {
+    const auto found = std::find_if(
+        model.getFunctions().begin(), model.getFunctions().end(),
+        [&](const auto& function) { return function.getName() == name; });
+    return found == model.getFunctions().end() ? nullptr : &*found;
+}
+
+bool isBoundedLocalFunctionCall(const ast::Model& model,
+                                const ast::Expression& expression) {
+    using ast::ExpressionKind;
+    if (expression.kind() != ExpressionKind::Function &&
+        expression.kind() != ExpressionKind::ObservableRef) {
+        return false;
+    }
+    const auto* function = findModelFunction(model, expression.name());
+    return function != nullptr && function->getArgs().size() == 1 &&
+           expression.args().size() == 1 &&
+           expression.args().front().kind() == ExpressionKind::Identifier;
+}
+
+bool isBoundedRawLocalFunctionProduct(const ast::Model& model,
+                                      const ast::Expression& expression) {
+    return expression.kind() == ast::ExpressionKind::Binary &&
+           expression.name() == "*" && expression.args().size() == 2 &&
+           isBoundedLocalFunctionCall(model, expression.args()[0]) &&
+           isBoundedLocalFunctionCall(model, expression.args()[1]);
+}
+
 struct GeneratedRateFunction {
     std::string name;
     const ast::Expression* expression = nullptr;
+    std::vector<std::string> arguments;
     std::string expandedExpression;
     std::map<std::string, std::string> references;
     const ast::Expression* tableFunction = nullptr;
     std::map<std::string, std::string> observableAliases;
 };
+
+bool collectDynamicRateArguments(const ast::Expression& expression,
+                                 const ast::Model& model,
+                                 std::vector<std::string>& arguments,
+                                 std::set<std::string>& seen,
+                                 std::string& diagnostic) {
+    using ast::ExpressionKind;
+
+    if (expression.kind() == ExpressionKind::Function ||
+        expression.kind() == ExpressionKind::ObservableRef) {
+        const auto* function = findModelFunction(model, expression.name());
+        if (function != nullptr && !expression.args().empty()) {
+            if (function->getArgs().size() != expression.args().size()) {
+                diagnostic = "dynamic reaction rate function '" + expression.name() +
+                             "' received the wrong number of arguments";
+                return false;
+            }
+            for (const auto& argument : expression.args()) {
+                if (argument.kind() != ExpressionKind::Identifier) {
+                    diagnostic = "dynamic reaction rate local function arguments must be identifiers";
+                    return false;
+                }
+                if (seen.insert(argument.name()).second) {
+                    arguments.push_back(argument.name());
+                }
+            }
+        }
+    }
+
+    for (const auto& child : expression.args()) {
+        if (!collectDynamicRateArguments(
+                child, model, arguments, seen, diagnostic)) {
+            return false;
+        }
+    }
+    return true;
+}
 
 std::string lowercaseName(std::string value);
 
@@ -575,6 +839,8 @@ void collectFunctionReferences(const ast::Expression& expression,
         const auto& name = expression.name();
         if (localNames.count(name) != 0) {
             addFunctionReference(references, name, "Local");
+        } else if (isReactantCountReference(name)) {
+            addFunctionReference(references, name, "Function");
         } else if (name == "time" || name == "t") {
             addFunctionReference(references, name, "Time");
         } else if (model.getParameters().contains(name)) {
@@ -593,6 +859,9 @@ void collectFunctionReferences(const ast::Expression& expression,
         if ((expression.name() == "time" || expression.name() == "t") &&
             expression.args().empty()) {
             addFunctionReference(references, expression.name(), "Time");
+        } else if (isReactantCountReference(expression.name()) &&
+                   expression.args().empty()) {
+            addFunctionReference(references, expression.name(), "Function");
         } else if (modelHasFunction(model, expression.name())) {
             addFunctionReference(references, expression.name(), "Function");
         } else if (expression.args().empty() &&
@@ -607,7 +876,9 @@ void collectFunctionReferences(const ast::Expression& expression,
         }
         return;
     case ExpressionKind::ObservableRef:
-        if (modelHasFunction(model, expression.name())) {
+        if (isReactantCountReference(expression.name()) && expression.args().empty()) {
+            addFunctionReference(references, expression.name(), "Function");
+        } else if (modelHasFunction(model, expression.name())) {
             addFunctionReference(references, expression.name(), "Function");
         } else {
             addFunctionReference(references, expression.name(), "Observable");
@@ -806,6 +1077,15 @@ bool expandDynamicRateExpression(
             expanded = lowerName;
             return true;
         }
+        if (isReactantCountReference(name)) {
+            if (!expression.args().empty()) {
+                diagnostic = name + "() takes no arguments";
+                return false;
+            }
+            addFunctionReference(references, name, "Function");
+            expanded = name + "()";
+            return true;
+        }
         if (const auto* function = findFunction(name)) {
             if (!expression.args().empty()) {
                 diagnostic = "dynamic rates cannot call zero-argument model function '" +
@@ -843,6 +1123,15 @@ bool expandDynamicRateExpression(
     }
     case ExpressionKind::ObservableRef: {
         const auto& name = expression.name();
+        if (isReactantCountReference(name)) {
+            if (!expression.args().empty()) {
+                diagnostic = name + "() takes no arguments";
+                return false;
+            }
+            addFunctionReference(references, name, "Function");
+            expanded = name + "()";
+            return true;
+        }
         if (const auto* function = findFunction(name)) {
             if (!expression.args().empty()) {
                 diagnostic = "dynamic rates cannot call zero-argument model function '" +
@@ -977,11 +1266,39 @@ bool modelContainsFunction(const ast::Model& model, const std::string& name) {
                        [&](const auto& function) { return function.getName() == name; });
 }
 
+bool expressionContainsModelFunctionReference(const ast::Expression& expression,
+                                               const ast::Model& model) {
+    const bool namedExpression =
+        expression.kind() == ast::ExpressionKind::Identifier ||
+        expression.kind() == ast::ExpressionKind::Function ||
+        expression.kind() == ast::ExpressionKind::ObservableRef;
+    if (namedExpression && modelContainsFunction(model, expression.name())) return true;
+    return std::any_of(
+        expression.args().begin(), expression.args().end(),
+        [&](const auto& child) {
+            return expressionContainsModelFunctionReference(child, model);
+        });
+}
+
 bool needsGeneratedDynamicRateFunction(const ast::Model& model,
                                        const ast::Expression& rate) {
+    if (isBoundedRawLocalFunctionProduct(model, rate)) return false;
     const bool isCall = rate.kind() == ast::ExpressionKind::Function ||
                         rate.kind() == ast::ExpressionKind::ObservableRef;
-    if (isCall && modelContainsFunction(model, rate.name())) return false;
+    if (isCall && modelContainsFunction(model, rate.name())) {
+        // NFsim's XML loader represents a plain scoped LocalFunction rate
+        // through a composite wrapper (see nfsim/test/testSuite/t3.xml).
+        // Keep the direct AST path on the declared local function, but
+        // generate the compatibility wrapper for serialized XML when the
+        // function takes local scope arguments.  Nested model functions are
+        // already represented as CompositeFunctions and cannot be referenced
+        // from another composite wrapper, so retain their direct name.
+        // Zero-argument model functions are valid global function rates and
+        // need no wrapper.
+        const auto* function = findModelFunction(model, rate.name());
+        return function != nullptr && !function->getArgs().empty() &&
+               !expressionContainsModelFunctionReference(function->getExpression(), model);
+    }
     if (isCall) {
         const auto name = lowercaseName(rate.name());
         if ((name == "functionproduct" && rate.args().size() == 2) ||
@@ -1022,6 +1339,7 @@ std::string XmlWriter::write(const ast::Model& model, const engine::GeneratedNet
     xml << writeReactionRules(model);
     xml << writeObservables(model);
     xml << writeFunctions(model);
+    xml << writeEnergyPatterns(model);
 
     xml << "  </model>\n";
     xml << "</sbml>\n";
@@ -1048,7 +1366,18 @@ std::string XmlWriter::writeMoleculeTypes(const ast::Model& model) {
     std::ostringstream xml;
     xml << "    <ListOfMoleculeTypes>\n";
 
+    std::vector<const ast::MoleculeType*> moleculeTypes;
+    moleculeTypes.reserve(model.getMoleculeTypes().size());
     for (const auto& mt : model.getMoleculeTypes()) {
+        moleculeTypes.push_back(&mt);
+    }
+    std::sort(moleculeTypes.begin(), moleculeTypes.end(),
+              [](const auto* left, const auto* right) {
+                  return left->getName() < right->getName();
+              });
+
+    for (const auto* mtPtr : moleculeTypes) {
+        const auto& mt = *mtPtr;
         xml << "      <MoleculeType id=\"" << escapeXml(mt.getName()) << "\">\n";
         xml << "        <ListOfComponentTypes>\n";
 
@@ -1058,6 +1387,14 @@ std::string XmlWriter::writeMoleculeTypes(const ast::Model& model) {
                 xml << ">\n";
                 xml << "            <ListOfAllowedStates>\n";
                 for (const auto& state : comp.allowedStates) {
+                    // `?` is a pattern wildcard, not a constructible state.
+                    // NFinput::initMoleculeTypes ignores PLUS/MINUS while
+                    // classifying numeric sites, but treats an emitted `?`
+                    // as a string state and therefore changes the runtime
+                    // representation of inferred integer components.
+                    if (state == "?") {
+                        continue;
+                    }
                     xml << "              <AllowedState id=\"" << escapeXml(state) << "\"/>\n";
                 }
                 xml << "            </ListOfAllowedStates>\n";
@@ -1120,15 +1457,27 @@ std::string XmlWriter::writeSpecies(const ast::Model& model, const engine::Gener
             const auto& seed = model.getSeedSpecies()[i];
             std::string spId = "S" + std::to_string(i + 1);
 
+            // BNG2 parses seed species as concrete SpeciesGraphs and applies
+            // its quasi-canonical molecule/component ordering before XML
+            // serialization.  Canonicalize the parsed raw seed rather than
+            // serializing the AST graph directly: pattern graphs retain
+            // wildcard states for omitted seed states and their molecule
+            // nodes do not carry every source-level compartment spelling.
+            auto parsed = parsePattern(seed.getPattern());
+            if (!seed.getCompartment().empty()) {
+                parsed.compartment = seed.getCompartment();
+            }
+            canonicalizeParsedPattern(parsed);
+            const std::string patternStr = patternToBngl(parsed, seed.isConstant());
+
             auto amountValue = seed.getAmount().evaluate([&](const std::string& name) {
                 return model.getParameters().evaluate(name);
             }, 0.0);
 
             xml << "      <Species id=\"" << spId
                 << "\" concentration=\"" << amountValue
-                << "\" name=\"" << escapeXml(seed.getPattern()) << "\">\n";
+                << "\" name=\"" << escapeXml(patternStr) << "\">\n";
 
-            auto parsed = parsePattern(seed.getPattern());
             xml << patternToXml(parsed, spId, "        ");
 
             xml << "      </Species>\n";
@@ -1218,11 +1567,23 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
                                   const ast::Expression& rate) {
         const bool isCall = rate.kind() == ast::ExpressionKind::Function ||
                             rate.kind() == ast::ExpressionKind::ObservableRef;
-        const bool isFunctionProduct =
+        const bool explicitFunctionProduct =
             isCall && lowercase(rate.name()) == "functionproduct" && rate.args().size() == 2;
+        const bool rawLocalFunctionProduct =
+            isBoundedRawLocalFunctionProduct(model, rate);
+        const bool isFunctionProduct = explicitFunctionProduct || rawLocalFunctionProduct;
         const auto* declaredFunction = modelFunction(rate.name());
         const bool generatedRateFunction =
             needsGeneratedDynamicRateFunction(model, rate);
+        std::vector<std::string> generatedArguments;
+        if (generatedRateFunction) {
+            std::set<std::string> seenArguments;
+            std::string diagnostic;
+            if (!collectDynamicRateArguments(
+                    rate, model, generatedArguments, seenArguments, diagnostic)) {
+                throw std::runtime_error(diagnostic);
+            }
+        }
         std::string type = "Ele";
         if (generatedRateFunction) {
             type = "Function";
@@ -1242,7 +1603,8 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
         }
 
         xml << "        <RateLaw id=\"" << rrId << "_RateLaw\" type=\"" << type
-            << "\" totalrate=\"0\"";
+            << "\" totalrate=\""
+            << (hasModifier(rule.getModifiers(), "TotalRate") ? "1" : "0") << "\"";
         if (type == "FunctionProduct") {
             const auto writeOperand = [&](const ast::Expression& operand,
                                            const char* functionAttribute,
@@ -1289,14 +1651,19 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
                                            : rate.name();
             xml << " name=\"" << escapeXml(functionName) << "\">\n";
             xml << "          <ListOfArguments>\n";
-            if (declaredFunction != nullptr) {
-                for (std::size_t index = 0; index < declaredFunction->getArgs().size(); ++index) {
-                    const auto& argument = declaredFunction->getArgs()[index];
-                    const auto value = scopedMoleculeId(rule, rrId, argument);
-                    xml << "            <Argument id=\"" << escapeXml(argument)
-                        << "\" type=\"ObjectReference\" value=\""
-                        << escapeXml(value) << "\"/>\n";
+            const auto& arguments = declaredFunction != nullptr
+                ? declaredFunction->getArgs()
+                : generatedArguments;
+            for (const auto& argument : arguments) {
+                const auto value = scopedMoleculeId(rule, rrId, argument);
+                if (value.empty()) {
+                    throw std::runtime_error(
+                        "dynamic rate argument '" + argument +
+                        "' has no scoped reactant");
                 }
+                xml << "            <Argument id=\"" << escapeXml(argument)
+                    << "\" type=\"ObjectReference\" value=\""
+                    << escapeXml(value) << "\"/>\n";
             }
             xml << "          </ListOfArguments>\n";
             xml << "        </RateLaw>\n";
@@ -1328,8 +1695,19 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
     const auto writeRule = [&](const ast::ReactionRule& rule,
                                const std::string& rrId,
                                const ast::Expression* rate) {
+        const bool isArrheniusRate =
+            rate != nullptr && rate->kind() == ast::ExpressionKind::Function &&
+            lowercase(rate->name()) == "arrhenius" && rate->args().size() >= 2;
         xml << "      <ReactionRule id=\"" << rrId
-            << "\" name=\"" << escapeXml(rule.getRuleName()) << "\">\n";
+            << "\" name=\"" << escapeXml(rule.getRuleName()) << "\"";
+        if (isArrheniusRate) {
+            // BNG2 represents a bidirectional Arrhenius rule with one rate
+            // law; retain the directionality explicitly for BNG3's XML
+            // compatibility loader while leaving older XML unchanged.
+            xml << " energyIncludeReverse=\""
+                << (rule.isBidirectional() ? "1" : "0") << "\"";
+        }
+        xml << ">\n";
 
         xml << "        <ListOfReactantPatterns>\n";
         for (std::size_t index = 0; index < rule.getReactants().size(); ++index) {
@@ -1592,12 +1970,30 @@ std::string XmlWriter::writeFunctions(const ast::Model& model) {
                                        ? name.substr(generatedPrefix.size())
                                        : name;
         std::string diagnostic;
+        std::set<std::string> localArguments;
+        if (!collectDynamicRateArguments(
+                expression, model, generated.arguments, localArguments,
+                diagnostic)) {
+            throw std::runtime_error(diagnostic);
+        }
         std::set<std::string> activeFunctions;
         std::vector<const ast::Expression*> tableFunctions;
-        if (!expandDynamicRateExpression(
-                expression, model, generated.references, tableFunctions,
-                activeFunctions, generated.expandedExpression, diagnostic)) {
-            throw std::runtime_error(diagnostic);
+        if (generated.arguments.empty()) {
+            if (!expandDynamicRateExpression(
+                    expression, model, generated.references, tableFunctions,
+                    activeFunctions, generated.expandedExpression, diagnostic)) {
+                throw std::runtime_error(diagnostic);
+            }
+        } else {
+            collectTableFunctions(expression, tableFunctions);
+            const std::set<std::string> localNames(
+                generated.arguments.begin(), generated.arguments.end());
+            for (const auto& argument : generated.arguments) {
+                addFunctionReference(generated.references, argument, "Local");
+            }
+            collectFunctionReferences(
+                expression, model, localNames, generated.references);
+            generated.expandedExpression = expressionForXml(expression);
         }
         if (tableFunctions.size() > 1) {
             throw std::runtime_error(
@@ -1759,11 +2155,27 @@ std::string XmlWriter::writeFunctions(const ast::Model& model) {
                 xml << " file=\"" << escapeXml(table->tableFilePath()) << "\"";
             }
         }
+        if (!generated.arguments.empty()) {
+            xml << " args=\"";
+            for (std::size_t index = 0; index < generated.arguments.size(); ++index) {
+                if (index != 0) xml << ",";
+                xml << escapeXml(generated.arguments[index]);
+            }
+            xml << "\"";
+        }
         xml << ">\n";
         auto references = generated.references;
         for (const auto& [observableName, aliasName] : generated.observableAliases) {
             references.erase(observableName);
             addFunctionReference(references, aliasName, "Function");
+        }
+        if (!generated.arguments.empty()) {
+            xml << "        <ListOfArguments>\n";
+            for (const auto& argument : generated.arguments) {
+                xml << "          <Argument id=\"" << escapeXml(argument)
+                    << "\"/>\n";
+            }
+            xml << "        </ListOfArguments>\n";
         }
         xml << "        <ListOfReferences>\n";
         for (const auto& [referenceName, referenceType] : references) {
@@ -1779,6 +2191,37 @@ std::string XmlWriter::writeFunctions(const ast::Model& model) {
     }
 
     xml << "    </ListOfFunctions>\n";
+    return xml.str();
+}
+
+std::string XmlWriter::writeEnergyPatterns(const ast::Model& model) {
+    if (model.getEnergyPatterns().empty()) return {};
+
+    std::ostringstream xml;
+    xml << "    <ListOfEnergyPatterns>\n";
+
+    for (std::size_t index = 0; index < model.getEnergyPatterns().size(); ++index) {
+        const auto& energyPattern = model.getEnergyPatterns()[index];
+        const auto id = "EP" + std::to_string(index + 1);
+        const auto patternId = id + "_P1";
+        // The AST graph marks an omitted bond as a wildcard for matching, but
+        // its legacy string serializer cannot preserve that distinction.  The
+        // source pattern retains BNG2's XML-facing 0/?/+ bond semantics.
+        auto parsed = parsePattern(energyPattern.getPattern());
+        canonicalizeParsedPattern(parsed);
+        const auto patternText = patternToBngl(parsed, false);
+
+        xml << "      <EnergyPattern id=\"" << id
+            << "\" pattern=\"" << escapeXml(patternText)
+            << "\" expression=\"" << escapeXml(energyPattern.getExpression().toString())
+            << "\">\n";
+        xml << "        <Pattern id=\"" << patternId << "\">\n";
+        xml << patternToXml(parsed, patternId, "          ");
+        xml << "        </Pattern>\n";
+        xml << "      </EnergyPattern>\n";
+    }
+
+    xml << "    </ListOfEnergyPatterns>\n";
     return xml.str();
 }
 
