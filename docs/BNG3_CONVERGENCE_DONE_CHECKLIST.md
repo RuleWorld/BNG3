@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-03
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 0b611ec6b72e1390ff1b48f923ae756574e3afbc
-**Checklist refresh base:** 0b611ec6b72e1390ff1b48f923ae756574e3afbc (public exact-head checkpoint for the Playground-derived SBML-Multi result field and complex-pattern records)
-**Latest workflow checkpoint:** 0b611ec6b72e1390ff1b48f923ae756574e3afbc (hosted checks read back after push; CI [33714138583](https://github.com/RuleWorld/BNG3/actions/runs/33714138583), CodeQL [33714138588](https://github.com/RuleWorld/BNG3/actions/runs/33714138588), and formatting [33714138602](https://github.com/RuleWorld/BNG3/actions/runs/33714138602) remain queued)
+**Audited semantic code head:** 6ff6911d643a02d3ee9d064c762471fe50d9972f
+**Checklist refresh base:** 6ff6911d643a02d3ee9d064c762471fe50d9972f (public exact-head checkpoint for the Playground-derived lossy MathML import diagnostics)
+**Latest workflow checkpoint:** 6ff6911d643a02d3ee9d064c762471fe50d9972f (hosted checks read back after push; CI [33715166102](https://github.com/RuleWorld/BNG3/actions/runs/33715166102), CodeQL [33715166047](https://github.com/RuleWorld/BNG3/actions/runs/33715166047), and formatting [33715166057](https://github.com/RuleWorld/BNG3/actions/runs/33715166057) remain queued)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -2746,6 +2746,36 @@ completion gate.
   Multi result-record shape; seed patterns remain unconstructed, extracted
   structures remain commented diagnostics, full Multi writer/schema and
   simulation validation remain open.
+- [x] Playground `src/lib/atomizer/parser/sbmlParser.ts:1963-1989,2083-2109`
+  at reference `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` records explicit,
+  deduplicated diagnostics for lossy `<cn>/<sep/>`, `<infinity>`,
+  `<notanumber>`, `<factorial>`, `<gcd>`, and `<lcm>` MathML constructs. The
+  tests-first BNG3 checkpoint is
+  `6ff6911d643a02d3ee9d064c762471fe50d9972f` in
+  `python/bionetgen/atomizer/modern/parser.py` and
+  `tests/python/test_modern_atomizer.py`. The red-first command
+  `PYTHONPATH=python:build/cpp python -m pytest -p no:cacheprovider tests/python/test_modern_atomizer.py -q -k lossy_mathml_constants_and_operators`
+  reported `1 failed, 63 deselected in 0.52s`; the repaired focused command
+  reports `1 passed, 63 deselected in 0.40s`. The modern Atomizer glob reports
+  `126 passed in 0.58s`; the full Python gate reports
+  `301 passed, 27 skipped, 8 warnings` in `14.85s`; exact Release/Ninja CTest
+  reports `190/190` in `1.46s`; and export validation reports `12 passed` in
+  `18.29s`. Changed-file Ruff (`--no-cache`) passes, Black with the configured
+  `--target-version py312` reports `2 files would be left unchanged`, and
+  `git diff --check` passes. The native `build/cpp/bng_cpp` artifact remains
+  SHA-256
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`.
+  Exact public branch and PR #2 head readback is
+  `6ff6911d643a02d3ee9d064c762471fe50d9972f`; hosted CI
+  [33715166102](https://github.com/RuleWorld/BNG3/actions/runs/33715166102),
+  CodeQL [33715166047](https://github.com/RuleWorld/BNG3/actions/runs/33715166047),
+  and formatting
+  [33715166057](https://github.com/RuleWorld/BNG3/actions/runs/33715166057)
+  remain queued and are not completion evidence. This closes only the
+  explicit diagnostics slice; complete MathML translation, schema and
+  round-trip coverage, remaining parser/writer/SBML parity, SBML-Multi,
+  direct-NFsim, legacy, packaging, release, and hosted validation gaps remain
+  open.
 - [ ] Complete or explicitly govern remaining modern reference modules:
   atomization/core, parser/bngXmlParser and parser/sbmlParser,
   validation/units, writer/bnglWriter, writer/eventActions, and
