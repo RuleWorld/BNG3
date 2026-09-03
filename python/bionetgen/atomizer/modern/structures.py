@@ -878,22 +878,6 @@ Species.toString = Species.to_string
 Species.extractAtomicPatterns = Species.extract_atomic_patterns
 Species.listOfBonds = Species.list_of_bonds
 
-Action.setAction = Action.set_action
-Action.toString = Action.__str__
-Rule.addReactant = Rule.add_reactant
-Rule.addProduct = Rule.add_product
-Rule.addReactantList = Rule.add_reactant_list
-Rule.addProductList = Rule.add_product_list
-Rule.addRate = Rule.add_rate
-Rule.addMapping = Rule.add_mapping
-Rule.addMappingList = Rule.add_mapping_list
-Rule.addActionList = Rule.add_action_list
-Rule.toString = Rule.__str__
-Databases.getRawDatabase = Databases.get_raw_database
-Databases.getLabelDictionary = Databases.get_label_dictionary
-Databases.add2LabelDictionary = Databases.add2_label_dictionary
-Databases.getTranslator = Databases.get_translator
-
 
 __all__ = [
     "Action",
