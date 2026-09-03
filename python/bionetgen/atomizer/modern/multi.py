@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple, Union
 
 from .types import SBMLImportWarning
 
@@ -70,14 +70,49 @@ class _SpeciesType:
     bonds: List[Tuple[str, str]] = field(default_factory=list)
 
 
+class MultiComplexPattern(NamedTuple):
+    """Reference-shaped Multi complex record with legacy tuple behavior."""
+
+    type_id: str
+    pattern: str
+
+    @property
+    def typeId(self) -> str:
+        return self.type_id
+
+
 @dataclass
 class MultiParseResult:
     present: bool = False
     deep: bool = False
     bngl_molecule_types: List[str] = field(default_factory=list)
-    complex_patterns: List[Tuple[str, str]] = field(default_factory=list)
+    complex_patterns: List[MultiComplexPattern] = field(default_factory=list)
     seed_patterns: List[Tuple[str, str]] = field(default_factory=list)
     warnings: List[SBMLImportWarning] = field(default_factory=list)
+
+    @property
+    def bnglMoleculeTypes(self) -> List[str]:
+        return self.bngl_molecule_types
+
+    @bnglMoleculeTypes.setter
+    def bnglMoleculeTypes(self, value: List[str]) -> None:
+        self.bngl_molecule_types = value
+
+    @property
+    def complexPatterns(self) -> List[MultiComplexPattern]:
+        return self.complex_patterns
+
+    @complexPatterns.setter
+    def complexPatterns(self, value: List[MultiComplexPattern]) -> None:
+        self.complex_patterns = value
+
+    @property
+    def seedPatterns(self) -> List[Tuple[str, str]]:
+        return self.seed_patterns
+
+    @seedPatterns.setter
+    def seedPatterns(self, value: List[Tuple[str, str]]) -> None:
+        self.seed_patterns = value
 
 
 def _warning(message: str, severity: str = "approximated") -> SBMLImportWarning:
@@ -293,7 +328,7 @@ def parse_multi_package(document: Union[str, Any]) -> MultiParseResult:
         for type_id in molecule_type_ids
     ]
 
-    complex_patterns: List[Tuple[str, str]] = []
+    complex_patterns: List[MultiComplexPattern] = []
     unresolved = 0
     for type_id in top_types:
         top = species_types[type_id]
@@ -345,7 +380,7 @@ def parse_multi_package(document: Union[str, Any]) -> MultiParseResult:
             molecules.append(
                 f"{species_types[instance.type_id].name}({','.join(labels)})"
             )
-        complex_patterns.append((type_id, ".".join(molecules)))
+        complex_patterns.append(MultiComplexPattern(type_id, ".".join(molecules)))
 
     warnings = []
     if unresolved:
