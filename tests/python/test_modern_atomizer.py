@@ -731,6 +731,43 @@ def test_playground_parser_preserves_mathml_numeric_and_function_semantics():
     assert rules["clock"] == "time * (2 * 10^(3))"
 
 
+def test_playground_parser_reports_lossy_mathml_constants_and_operators():
+    from bionetgen.atomizer.modern import SBMLParser
+
+    sbml = """<?xml version="1.0"?>
+    <sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+          xmlns:math="http://www.w3.org/1998/Math/MathML"
+          level="3" version="1">
+      <model id="lossy_mathml">
+        <listOfRules>
+          <assignmentRule variable="infinite">
+            <math:math><math:infinity/></math:math>
+          </assignmentRule>
+          <assignmentRule variable="factorial_value">
+            <math:math><math:apply><math:factorial/><math:ci>x</math:ci></math:apply></math:math>
+          </assignmentRule>
+        </listOfRules>
+      </model>
+    </sbml>
+    """
+
+    model = SBMLParser().parse(sbml)
+    warnings = [
+        warning for warning in model.import_warnings if warning.category == "mathml"
+    ]
+
+    assert {(warning.message, warning.severity) for warning in warnings} == {
+        (
+            "<infinity> constant encountered in math; emitted as a large finite value.",
+            "approximated",
+        ),
+        (
+            "<factorial> used in math; emitted as factorial(x), which the engine may not support.",
+            "approximated",
+        ),
+    }
+
+
 def test_playground_sct_infers_complexes_and_named_modifications():
     from bionetgen.atomizer.modern import SBMLParser
     from bionetgen.atomizer.modern import build_species_composition_table

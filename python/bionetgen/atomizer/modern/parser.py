@@ -274,6 +274,55 @@ class SBMLParser:
         return _mathml_to_formula(math_element)
 
     @staticmethod
+    def _mathml_import_warnings(root: Any) -> List[Dict[str, Any]]:
+        """Collect the source parser's diagnostics for lossy MathML constructs."""
+
+        messages: "OrderedDict[str, int]" = OrderedDict()
+
+        def add(message: str) -> None:
+            messages[message] = messages.get(message, 0) + 1
+
+        for math_element in root.iter():
+            if _local_name(math_element.tag).lower() != "math":
+                continue
+            for element in math_element.iter():
+                tag = _local_name(element.tag).lower()
+                if tag == "infinity":
+                    add(
+                        "<infinity> constant encountered in math; emitted as a large finite value."
+                    )
+                elif tag == "notanumber":
+                    add(
+                        "<notanumber> constant encountered in math; cannot be represented."
+                    )
+                elif tag == "factorial":
+                    add(
+                        "<factorial> used in math; emitted as factorial(x), which the engine may not support."
+                    )
+                elif tag in {"gcd", "lcm"}:
+                    add(
+                        f"<{tag}> used in math; the engine does not provide it. Emitted as {tag}(...)."
+                    )
+                elif tag == "cn" and any(
+                    _local_name(child.tag).lower() == "sep" for child in list(element)
+                ):
+                    number_type = str(_attribute(element, "type", "") or "").lower()
+                    if number_type != "rational":
+                        add(
+                            "<cn> with <sep/> and unspecified type treated as rational."
+                        )
+
+        return [
+            {
+                "category": "mathml",
+                "message": message,
+                "count": count,
+                "severity": "approximated",
+            }
+            for message, count in messages.items()
+        ]
+
+    @staticmethod
     def _xml_items(model: Any, container: str, item: str) -> List[Any]:
         parent = _first_child(model, container)
         return list(_children(parent, item)) if parent is not None else []
@@ -387,6 +436,7 @@ class SBMLParser:
                 SBMLParser._xml_items(model, "listOfConstraints", "constraint")
             ),
         )
+        result.import_warnings.extend(SBMLParser._mathml_import_warnings(root))
         result.import_warnings.extend(apply_unit_scaling(result))
         result.import_warnings.extend(parameter_warnings)
         for reaction_id, reaction in result.reactions.items():
