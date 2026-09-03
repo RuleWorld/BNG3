@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-02
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** bb3c116aeebcccbc8a7f123b2cc62d563308f57e
-**Checklist refresh base:** bb3c116aeebcccbc8a7f123b2cc62d563308f57e (public exact-head checkpoint for the Playground-derived SBML parameter-alias, duplicate-local-ID, and seed-pattern normalization)
-**Latest workflow checkpoint:** bb3c116aeebcccbc8a7f123b2cc62d563308f57e (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33701338055, CodeQL run 33701338037, formatting run 33701338204)
+**Audited semantic code head:** cd8d6faff52a188a3aff809bd2c7cd8bbab5bc14
+**Checklist refresh base:** cd8d6faff52a188a3aff809bd2c7cd8bbab5bc14 (public exact-head checkpoint for the Playground-derived duplicate-component extension semantics)
+**Latest workflow checkpoint:** cd8d6faff52a188a3aff809bd2c7cd8bbab5bc14 (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33701930243, CodeQL run 33701930187, formatting run 33701930296)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -2123,6 +2123,34 @@ completion gate.
   were queued at readback. This closes only duplicate seed-pattern grouping;
   broader writer/parser/SBML parity, fixed-seed provenance, and independent
   round-trip evidence remain open.
+- [x] Playground `src/lib/atomizer/core/structures.ts:337-360` at reference
+  `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` builds a component-name `Map`
+  before `Molecule.extend`; when a molecule contains repeated component names,
+  the last existing component is the mapped target, while absent components are
+  deep-copied and registered. The tests-first BNG3 checkpoint is
+  `cd8d6faff52a188a3aff809bd2c7cd8bbab5bc14` in
+  `python/bionetgen/atomizer/modern/structures.py`, with the source-derived
+  contract in
+  `tests/python/test_modern_atomizer.py::test_playground_molecule_extend_updates_last_duplicate_component`.
+  The red-first command
+  `env PYTHONPATH=python:build/cpp python -m pytest tests/python/test_modern_atomizer.py -q -k updates_last_duplicate_component`
+  reported `1 failed, 56 deselected` because Python updated the first duplicate;
+  the repaired command reports `1 passed, 56 deselected`. The related structure
+  contract command reports `6 passed, 51 deselected`, the modern Atomizer glob
+  reports `107 passed`, the full Python gate reports `282 passed, 27 skipped,
+  8 warnings` in `9.95s`, exact CTest reports `190/190` in `1.15s`, changed-file
+  Ruff passes, changed-file Black reports `2 files would be left unchanged`,
+  and `git diff --check` passes. This Python-only checkpoint leaves the native
+  `build/cpp/bng_cpp` artifact unchanged at SHA-256
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`.
+  Exact public branch head readback is
+  `cd8d6faff52a188a3aff809bd2c7cd8bbab5bc14`; hosted CodeQL
+  [33701930187](https://github.com/RuleWorld/BNG3/actions/runs/33701930187), CI
+  [33701930243](https://github.com/RuleWorld/BNG3/actions/runs/33701930243), and
+  formatting [33701930296](https://github.com/RuleWorld/BNG3/actions/runs/33701930296)
+  were queued at readback. This closes only the duplicate-component `extend`
+  lookup slice; broader structure/core parity, repeated-site model semantics,
+  and independent round-trip evidence remain open.
 - [ ] Complete or explicitly govern remaining modern reference modules:
   atomization/core, parser/bngXmlParser and parser/sbmlParser,
   validation/units, writer/bnglWriter, writer/eventActions, and
