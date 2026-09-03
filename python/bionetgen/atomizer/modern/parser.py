@@ -26,6 +26,7 @@ from .types import (
     SBMLRule,
     SBMLSpecies,
     SBMLSpeciesReference,
+    standardize_name,
 )
 from .multi import parse_multi_package
 from .units import apply_unit_scaling
@@ -276,18 +277,71 @@ class SBMLParser:
         return list(_children(parent, item)) if parent is not None else []
 
     @staticmethod
+    def _register_alias(
+        aliases: Dict[str, str], alias_raw: Any, canonical_id: str
+    ) -> None:
+        """Register the source parser's direct, collapsed, and BNGL aliases."""
+
+        direct = str(alias_raw or "").strip()
+        if not direct:
+            return
+        candidates = (direct, re.sub(r"\s+", " ", direct), standardize_name(direct))
+        seen = set()
+        for alias in candidates:
+            key = str(alias or "").strip()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            existing = aliases.get(key)
+            if existing is None or existing == canonical_id:
+                aliases[key] = canonical_id
+
+    @staticmethod
+    def _normalize_formula_identifiers(
+        formula: Any, *alias_maps: Optional[Dict[str, str]]
+    ) -> str:
+        """Rewrite reference aliases without touching longer identifiers."""
+
+        normalized = str(formula or "")
+        if not normalized:
+            return normalized
+        ordered_aliases = []
+        for aliases in alias_maps:
+            if aliases is None:
+                continue
+            ordered_aliases.extend(
+                (alias, canonical)
+                for alias, canonical in aliases.items()
+                if alias and canonical and alias != canonical
+            )
+        ordered_aliases.sort(key=lambda item: len(item[0]), reverse=True)
+        for alias, canonical in ordered_aliases:
+            pattern = re.compile(
+                rf"(^|[^A-Za-z0-9_]){re.escape(alias)}(?=$|[^A-Za-z0-9_])"
+            )
+            normalized = pattern.sub(
+                lambda match: f"{match.group(1)}{canonical}", normalized
+            )
+        return normalized
+
+    @staticmethod
     def _parse_xml_model(
         root: Any, model: Any, declared_packages: Optional[Iterable[str]] = None
     ) -> SBMLModel:
         compartments = SBMLParser._parse_xml_compartments(model)
         species = SBMLParser._parse_xml_species(model)
         parameter_warnings: List[Dict[str, Any]] = []
-        parameters = SBMLParser._parse_xml_parameters(model, parameter_warnings)
-        reactions = SBMLParser._parse_xml_reactions(model)
-        rules = SBMLParser._parse_xml_rules(model)
-        functions = SBMLParser._parse_xml_functions(model)
-        events = SBMLParser._parse_xml_events(model)
-        initial_assignments = SBMLParser._parse_xml_initial_assignments(model)
+        parameter_aliases: Dict[str, str] = {}
+        parameters = SBMLParser._parse_xml_parameters(
+            model, parameter_warnings, parameter_aliases
+        )
+        reactions = SBMLParser._parse_xml_reactions(model, parameter_aliases)
+        rules = SBMLParser._parse_xml_rules(model, parameter_aliases)
+        functions = SBMLParser._parse_xml_functions(model, parameter_aliases)
+        events = SBMLParser._parse_xml_events(model, parameter_aliases)
+        initial_assignments = SBMLParser._parse_xml_initial_assignments(
+            model, parameter_aliases
+        )
         species_by_compartment: Dict[str, List[str]] = OrderedDict()
         for species_id, item in species.items():
             species_by_compartment.setdefault(item.compartment, []).append(species_id)
@@ -629,7 +683,9 @@ class SBMLParser:
 
     @staticmethod
     def _parse_xml_parameters(
-        model: Any, warnings: Optional[List[Dict[str, Any]]] = None
+        model: Any,
+        warnings: Optional[List[Dict[str, Any]]] = None,
+        aliases: Optional[Dict[str, str]] = None,
     ) -> Dict[str, SBMLParameter]:
         result: Dict[str, SBMLParameter] = OrderedDict()
         for item in SBMLParser._xml_items(model, "listOfParameters", "parameter"):
@@ -654,6 +710,8 @@ class SBMLParser:
                 if values_match:
                     # Match the reference parser: duplicate declarations with
                     # the same value are one parameter, not a silent overwrite.
+                    if aliases is not None:
+                        SBMLParser._register_alias(aliases, parameter.name, existing.id)
                     continue
                 suffix = 2
                 remapped_id = f"{item_id}_{suffix}"
@@ -674,6 +732,9 @@ class SBMLParser:
                         }
                     )
             result[parameter.id] = parameter
+            if aliases is not None:
+                SBMLParser._register_alias(aliases, parameter.id, parameter.id)
+                SBMLParser._register_alias(aliases, parameter.name, parameter.id)
         return result
 
     @staticmethod
@@ -695,7 +756,9 @@ class SBMLParser:
         )
 
     @staticmethod
-    def _parse_xml_kinetic_law(item: Any) -> Optional[SBMLKineticLaw]:
+    def _parse_xml_kinetic_law(
+        item: Any, parameter_aliases: Optional[Dict[str, str]] = None
+    ) -> Optional[SBMLKineticLaw]:
         if item is None:
             return None
         math = SBMLParser._xml_math(item)
@@ -704,21 +767,27 @@ class SBMLParser:
         if local_parent is None:
             local_parent = _first_child(item, "listOfParameters")
         if local_parent is not None:
+            local_aliases: Dict[str, str] = {}
             for local in _children(local_parent, "localParameter"):
                 local_id = str(_attribute(local, "id", "") or "")
                 if not local_id:
                     continue
-                local_parameters.append(
-                    SBMLParameter(
-                        id=local_id,
-                        name=str(_attribute(local, "name", local_id) or local_id),
-                        value=_float(_attribute(local, "value"), 0),
-                        units=str(_attribute(local, "units", "") or ""),
-                        scope="local",
-                    )
+                parameter = SBMLParameter(
+                    id=local_id,
+                    name=str(_attribute(local, "name", local_id) or local_id),
+                    value=_float(_attribute(local, "value"), 0),
+                    units=str(_attribute(local, "units", "") or ""),
+                    scope="local",
                 )
+                local_parameters.append(parameter)
+                SBMLParser._register_alias(local_aliases, parameter.id, parameter.id)
+                SBMLParser._register_alias(local_aliases, parameter.name, parameter.id)
+        else:
+            local_aliases = {}
         return SBMLKineticLaw(
-            math=math,
+            math=SBMLParser._normalize_formula_identifiers(
+                math, local_aliases, parameter_aliases
+            ),
             math_ml=(
                 ET.tostring(_first_child(item, "math"), encoding="unicode")
                 if _first_child(item, "math") is not None
@@ -728,7 +797,9 @@ class SBMLParser:
         )
 
     @staticmethod
-    def _parse_xml_reactions(model: Any) -> Dict[str, SBMLReaction]:
+    def _parse_xml_reactions(
+        model: Any, parameter_aliases: Optional[Dict[str, str]] = None
+    ) -> Dict[str, SBMLReaction]:
         result: Dict[str, SBMLReaction] = OrderedDict()
         for item in SBMLParser._xml_items(model, "listOfReactions", "reaction"):
             item_id = str(_attribute(item, "id", "") or "")
@@ -769,7 +840,7 @@ class SBMLParser:
                     else []
                 ),
                 kinetic_law=SBMLParser._parse_xml_kinetic_law(
-                    _first_child(item, "kineticLaw")
+                    _first_child(item, "kineticLaw"), parameter_aliases
                 ),
                 compartment=(
                     str(_attribute(item, "compartment"))
@@ -781,7 +852,9 @@ class SBMLParser:
         return result
 
     @staticmethod
-    def _parse_xml_rules(model: Any) -> List[SBMLRule]:
+    def _parse_xml_rules(
+        model: Any, parameter_aliases: Optional[Dict[str, str]] = None
+    ) -> List[SBMLRule]:
         result: List[SBMLRule] = []
         parent = _first_child(model, "listOfRules")
         if parent is None:
@@ -802,13 +875,17 @@ class SBMLParser:
                         if _attribute(item, "variable") is not None
                         else None
                     ),
-                    math=SBMLParser._xml_math(item),
+                    math=SBMLParser._normalize_formula_identifiers(
+                        SBMLParser._xml_math(item), parameter_aliases
+                    ),
                 )
             )
         return result
 
     @staticmethod
-    def _parse_xml_functions(model: Any) -> Dict[str, SBMLFunctionDefinition]:
+    def _parse_xml_functions(
+        model: Any, parameter_aliases: Optional[Dict[str, str]] = None
+    ) -> Dict[str, SBMLFunctionDefinition]:
         result: Dict[str, SBMLFunctionDefinition] = OrderedDict()
         for item in SBMLParser._xml_items(
             model, "listOfFunctionDefinitions", "functionDefinition"
@@ -835,13 +912,17 @@ class SBMLParser:
             result[item_id] = SBMLFunctionDefinition(
                 id=item_id,
                 name=str(_attribute(item, "name", item_id) or item_id),
-                math=_mathml_to_formula(body),
+                math=SBMLParser._normalize_formula_identifiers(
+                    _mathml_to_formula(body), parameter_aliases
+                ),
                 arguments=arguments,
             )
         return result
 
     @staticmethod
-    def _parse_xml_events(model: Any) -> List[SBMLEvent]:
+    def _parse_xml_events(
+        model: Any, parameter_aliases: Optional[Dict[str, str]] = None
+    ) -> List[SBMLEvent]:
         result: List[SBMLEvent] = []
         for index, item in enumerate(
             SBMLParser._xml_items(model, "listOfEvents", "event")
@@ -854,7 +935,9 @@ class SBMLParser:
                     assignments.append(
                         (
                             str(_attribute(assignment, "variable", "") or ""),
-                            SBMLParser._xml_math(assignment),
+                            SBMLParser._normalize_formula_identifiers(
+                                SBMLParser._xml_math(assignment), parameter_aliases
+                            ),
                         )
                     )
             priority = _first_child(item, "priority")
@@ -870,8 +953,14 @@ class SBMLParser:
                         )
                         or f"event_{index + 1}"
                     ),
-                    trigger=SBMLParser._xml_math(trigger),
-                    delay=SBMLParser._xml_math(_first_child(item, "delay")) or None,
+                    trigger=SBMLParser._normalize_formula_identifiers(
+                        SBMLParser._xml_math(trigger), parameter_aliases
+                    ),
+                    delay=SBMLParser._normalize_formula_identifiers(
+                        SBMLParser._xml_math(_first_child(item, "delay")),
+                        parameter_aliases,
+                    )
+                    or None,
                     use_values_from_trigger_time=_bool(
                         _attribute(item, "useValuesFromTriggerTime"), True
                     ),
@@ -886,13 +975,18 @@ class SBMLParser:
                         if trigger is not None
                         else None
                     ),
-                    priority=SBMLParser._xml_math(priority) or None,
+                    priority=SBMLParser._normalize_formula_identifiers(
+                        SBMLParser._xml_math(priority), parameter_aliases
+                    )
+                    or None,
                 )
             )
         return result
 
     @staticmethod
-    def _parse_xml_initial_assignments(model: Any) -> List[SBMLInitialAssignment]:
+    def _parse_xml_initial_assignments(
+        model: Any, parameter_aliases: Optional[Dict[str, str]] = None
+    ) -> List[SBMLInitialAssignment]:
         result: List[SBMLInitialAssignment] = []
         for item in SBMLParser._xml_items(
             model, "listOfInitialAssignments", "initialAssignment"
@@ -901,7 +995,10 @@ class SBMLParser:
             if symbol is not None:
                 result.append(
                     SBMLInitialAssignment(
-                        symbol=str(symbol), math=SBMLParser._xml_math(item)
+                        symbol=str(symbol),
+                        math=SBMLParser._normalize_formula_identifiers(
+                            SBMLParser._xml_math(item), parameter_aliases
+                        ),
                     )
                 )
         return result

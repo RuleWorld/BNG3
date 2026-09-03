@@ -295,6 +295,69 @@ def test_playground_parser_disambiguates_duplicate_global_parameters():
     assert messages[0].message.endswith('Duplicate parameter id "k" remapped to "k_2"')
 
 
+def test_playground_parser_normalizes_duplicate_parameter_name_aliases_in_math():
+    """Reference aliases must follow the canonical parameter through every math field."""
+
+    from bionetgen.atomizer.modern import SBMLParser
+
+    sbml = """<?xml version="1.0"?>
+    <sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+          level="3" version="1">
+      <model id="parameter_aliases">
+        <listOfParameters>
+          <parameter id="k" name="shared_rate" value="2"/>
+          <parameter id="k" name="same_value_alias" value="2"/>
+          <parameter id="k" name="different_rate" value="3"/>
+          <parameter id="rate" name="global_rate" value="5"/>
+        </listOfParameters>
+        <listOfInitialAssignments>
+          <initialAssignment symbol="x" formula="different_rate"/>
+        </listOfInitialAssignments>
+        <listOfRules>
+          <assignmentRule variable="x" formula="shared_rate + different_rate"/>
+        </listOfRules>
+        <listOfFunctionDefinitions>
+          <functionDefinition id="f">
+            <math><ci>same_value_alias</ci></math>
+          </functionDefinition>
+        </listOfFunctionDefinitions>
+        <listOfEvents>
+          <event id="e">
+            <trigger formula="shared_rate &gt; 0"/>
+            <delay formula="different_rate"/>
+            <listOfEventAssignments>
+              <eventAssignment variable="x" formula="same_value_alias"/>
+            </listOfEventAssignments>
+          </event>
+        </listOfEvents>
+        <listOfReactions>
+          <reaction id="r">
+            <kineticLaw formula="shared_rate + same_value_alias + different_rate"/>
+          </reaction>
+          <reaction id="local_alias_precedence">
+            <kineticLaw formula="rate">
+              <listOfLocalParameters>
+                <localParameter id="local_rate" name="rate" value="7"/>
+              </listOfLocalParameters>
+            </kineticLaw>
+          </reaction>
+        </listOfReactions>
+      </model>
+    </sbml>
+    """
+
+    model = SBMLParser().parse(sbml)
+
+    assert model.initial_assignments[0].math == "k_2"
+    assert model.rules[0].math == "k + k_2"
+    assert model.function_definitions["f"].math == "k"
+    assert model.events[0].trigger == "k > 0"
+    assert model.events[0].delay == "k_2"
+    assert model.events[0].assignments == [("x", "k")]
+    assert model.reactions["r"].kinetic_law.math == "k + k + k_2"
+    assert model.reactions["local_alias_precedence"].kinetic_law.math == "local_rate"
+
+
 def test_playground_parser_reports_model_summary():
     from bionetgen.atomizer.modern import SBMLParser
     from bionetgen.atomizer.modern.helpers import logger
