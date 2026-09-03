@@ -565,7 +565,10 @@ def test_playground_writer_groups_duplicate_seed_patterns():
         "C": "@cell:M_A()",
         "D": "@cell:M_A()",
     }
-    assert pattern_to_id == {"@cell:M_A()": "A"}
+    assert pattern_to_id == {
+        "@cell:M_A()": "A",
+        "$@cell:M_A()": "C",
+    }
 
 
 def test_playground_parser_reports_model_summary():

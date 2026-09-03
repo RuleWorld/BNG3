@@ -62,6 +62,68 @@ def test_write_functions_can_retain_parameterized_definitions_on_request():
     ]
 
 
+def test_write_functions_sanitizes_strict_parser_identifiers_and_calls():
+    """Mirror Playground writeFunctions identifier and call sanitization."""
+
+    model = SBMLModel(
+        id="strict-function-identifiers",
+        function_definitions=OrderedDict(
+            [
+                (
+                    "function",
+                    SBMLFunctionDefinition(
+                        id="function",
+                        name="function",
+                        arguments=[
+                            "param",
+                            "mod",
+                            "parameter",
+                            "modifier",
+                            "substrate",
+                        ],
+                        math=(
+                            "function_1(param, mod) + "
+                            "function_2(parameter, modifier) + "
+                            "function(parameter, modifier, substrate)"
+                        ),
+                    ),
+                ),
+                (
+                    "function_1",
+                    SBMLFunctionDefinition(
+                        id="function_1",
+                        name="function_1",
+                        arguments=["param", "mod"],
+                        math="param * mod",
+                    ),
+                ),
+                (
+                    "function_2",
+                    SBMLFunctionDefinition(
+                        id="function_2",
+                        name="function_2",
+                        arguments=["parameter", "modifier"],
+                        math="parameter * modifier",
+                    ),
+                ),
+            ]
+        ),
+    )
+
+    assert write_functions(model, keep_parameterized=True) == [
+        (
+            "function_id(_farg0_param_id, _farg1_mod_id, "
+            "_farg2_parameter_id, _farg3_modifier_id, _farg4_substrate_id) = "
+            "function_1(_farg0_param_id, _farg1_mod_id) + "
+            "function_2(_farg2_parameter_id, _farg3_modifier_id) + "
+            "function_id(_farg2_parameter_id, _farg3_modifier_id, _farg4_substrate_id)"
+        ),
+        "function_1(_farg0_param_id, _farg1_mod_id) = _farg0_param_id * _farg1_mod_id",
+        "function_2(_farg0_parameter_id, _farg1_modifier_id) = "
+        "_farg0_parameter_id * _farg1_modifier_id",
+    ]
+
+
 def test_write_functions_maps_compartment_references_in_function_bodies():
     """Mirror Playground mapCompartments for definitions and assignment rules."""
 

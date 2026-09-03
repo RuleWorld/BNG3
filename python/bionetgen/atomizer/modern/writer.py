@@ -42,6 +42,41 @@ from .types import (
 
 _PROTECTED_BUILTIN_OPERANDS = frozenset({"time", "_pi", "_e", "true", "false"})
 
+# Function identifiers and formal arguments have a narrower reserved-word
+# contract than general SBML/BNGL names.  Keep this aligned with the
+# Playground writer: these names are legal SBML identifiers but collide with
+# strict BNGL parser tokens when emitted in a functions block.
+_BNGL_FUNCTION_IDENTIFIER_RESERVED = frozenset(
+    {
+        "function",
+        "functions",
+        "parameter",
+        "param",
+        "modifier",
+        "mod",
+        "substrate",
+        "model",
+        "begin",
+        "end",
+        "reaction",
+        "reactions",
+        "rule",
+        "rules",
+    }
+)
+
+
+def _sanitize_function_identifier(value: str) -> str:
+    """Return the Playground-safe identifier used in a functions block."""
+
+    standardized = standardize_name(value)
+    if not standardized:
+        return "unnamed"
+    if standardized.lower() in _BNGL_FUNCTION_IDENTIFIER_RESERVED:
+        return f"{standardized}_id"
+    return standardized
+
+
 _MISSING_KINETIC_RATE_FALLBACK = (
     os.environ.get("BNGL_MISSING_KINETIC_RATE", "1").strip() or "1"
 )
@@ -1574,6 +1609,11 @@ def write_seed_species(
             grouped[key] = (pattern, concentration)
         sbml_to_pattern[seed.sbml_id] = pattern
         pattern_to_id.setdefault(pattern, seed.sbml_id)
+        if fixed:
+            # Keep the canonical lookup and the seed-declaration lookup in
+            # sync.  The Playground emits '$' only on fixed seed lines but
+            # accepts both spellings when resolving the returned mapping.
+            pattern_to_id.setdefault(f"${pattern}", seed.sbml_id)
     for (fixed, _group_pattern), (pattern, concentration) in grouped.items():
         lines.append(f"{'$' if fixed else ''}{pattern} {concentration}")
     return lines, sbml_to_pattern, pattern_to_id
@@ -1876,6 +1916,13 @@ def write_functions(
         for rule in model.rules
         if rule.variable and rule.type in {"assignment", "rate"}
     }
+    function_name_map = OrderedDict(
+        (
+            str(function_id),
+            _sanitize_function_identifier(str(function_id)),
+        )
+        for function_id in model.function_definitions
+    )
     species_map = {species_id: species_id for species_id in model.species}
     for variable in synthetic_rate_rule_variables:
         # Synthetic rate-rule state species use the SBML variable as their
@@ -1907,7 +1954,9 @@ def write_functions(
         lines.append(f"{function_name}() = {body}")
 
     for function_id, function in model.function_definitions.items():
-        name = standardize_name(function.name or function_id)
+        name = function_name_map.get(
+            str(function_id), _sanitize_function_identifier(str(function_id))
+        )
         if function.arguments and not keep_parameterized:
             # BNG2/BNGL function blocks do not consistently support
             # argument-taking SBML definitions.  Inline those definitions at
@@ -1915,8 +1964,16 @@ def write_functions(
             continue
         argument_names = []
         body = function.math
+        for raw_function_name, safe_function_name in function_name_map.items():
+            if raw_function_name == safe_function_name:
+                continue
+            body = re.sub(
+                rf"\b{re.escape(raw_function_name)}\b(?=\s*\()",
+                safe_function_name,
+                body,
+            )
         for index, argument in enumerate(function.arguments):
-            base = standardize_name(argument or f"arg{index + 1}")
+            base = _sanitize_function_identifier(argument or f"arg{index + 1}")
             safe = f"_farg{index}_{base}"
             argument_names.append(safe)
             if argument and argument != safe:
