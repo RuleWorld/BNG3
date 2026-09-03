@@ -84,6 +84,85 @@ def test_playground_facade_exports_camel_case_core_functions():
     )
 
 
+def test_playground_data_contract_exposes_camel_case_fields():
+    from bionetgen.atomizer.modern import (
+        AtomizerResult,
+        SBMLCompartment,
+        SBMLEvent,
+        SBMLKineticLaw,
+        SBMLModel,
+        SBMLParameter,
+        SBMLReaction,
+        SBMLSpecies,
+        SBMLSpeciesReference,
+    )
+
+    compartment = SBMLCompartment(id="cell", spatial_dimensions=2, size_set=True)
+    assert compartment.spatialDimensions == 2
+    assert compartment.sizeSet is True
+    compartment.sizeSet = False
+    assert compartment.size_set is False
+
+    parameter = SBMLParameter(id="k", value=2)
+    species = SBMLSpecies(
+        id="A",
+        initial_concentration=3,
+        initial_amount=4,
+        has_only_substance_units=True,
+        initial_amount_set=True,
+        initial_concentration_set=False,
+        sbo_term="SBO:0000252",
+        conversion_factor="cf",
+        species_type="simple",
+    )
+    assert species.initialConcentration == 3
+    assert species.initialAmount == 4
+    assert species.hasOnlySubstanceUnits is True
+    assert species.initialAmountSet is True
+    assert species.initialConcentrationSet is False
+    assert species.sboTerm == "SBO:0000252"
+    assert species.conversionFactor == "cf"
+    assert species.speciesType == "simple"
+
+    reference = SBMLSpeciesReference(
+        "A", stoichiometry_set=True, variable_stoichiometry=True
+    )
+    assert reference.stoichiometrySet is True
+    assert reference.variableStoichiometry is True
+
+    kinetic_law = SBMLKineticLaw("k * A", "<math/>")
+    reaction = SBMLReaction(id="r", kinetic_law=kinetic_law, conversion_factor="cf")
+    assert kinetic_law.mathML == "<math/>"
+    assert kinetic_law.localParameters == kinetic_law.local_parameters
+    assert reaction.kineticLaw is kinetic_law
+    assert reaction.conversionFactor == "cf"
+
+    event = SBMLEvent(
+        id="e",
+        use_values_from_trigger_time=False,
+        trigger_initial_value=False,
+        trigger_persistent=True,
+    )
+    assert event.useValuesFromTriggerTime is False
+    assert event.triggerInitialValue is False
+    assert event.triggerPersistent is True
+
+    model = SBMLModel(
+        id="m",
+        function_definitions={"f": object()},
+        species_by_compartment={"cell": ["A"]},
+        import_warnings=[{"category": "test"}],
+    )
+    assert model.functionDefinitions is model.function_definitions
+    assert model.speciesByCompartment is model.species_by_compartment
+    assert model.importWarnings is model.import_warnings
+
+    result = AtomizerResult("bngl", observable_map={"A": "A"})
+    assert result.observableMap is result.observable_map
+    result.observableMap = {"B": "B"}
+    assert result.observable_map == {"B": "B"}
+
+
 def test_playground_topological_sort_reports_dependency_cycles():
     logger.clear()
     logger.setLevel("WARNING")

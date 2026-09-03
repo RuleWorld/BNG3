@@ -217,6 +217,71 @@ class AtomizerResult:
     error: Optional[str] = None
 
 
+def _alias_property(target: str) -> property:
+    """Create a writable camel-case view over a snake_case data field."""
+
+    return property(
+        lambda instance: getattr(instance, target),
+        lambda instance, value: setattr(instance, target, value),
+    )
+
+
+# Preserve the public field spellings from the TypeScript config contracts
+# alongside BNG3's snake_case Python data model.
+AnnotationInfo.qualifierType = _alias_property("qualifier_type")
+AnnotationInfo.biologicalQualifier = _alias_property("biological_qualifier")
+AnnotationInfo.modelQualifier = _alias_property("model_qualifier")
+
+SBMLCompartment.spatialDimensions = _alias_property("spatial_dimensions")
+SBMLCompartment.sizeSet = _alias_property("size_set")
+
+SBMLSpecies.initialConcentration = _alias_property("initial_concentration")
+SBMLSpecies.initialAmount = _alias_property("initial_amount")
+SBMLSpecies.substanceUnits = _alias_property("substance_units")
+SBMLSpecies.hasOnlySubstanceUnits = _alias_property("has_only_substance_units")
+SBMLSpecies.boundaryCondition = _alias_property("boundary_condition")
+SBMLSpecies.initialAmountSet = _alias_property("initial_amount_set")
+SBMLSpecies.initialConcentrationSet = _alias_property("initial_concentration_set")
+SBMLSpecies.sboTerm = _alias_property("sbo_term")
+SBMLSpecies.conversionFactor = _alias_property("conversion_factor")
+SBMLSpecies.speciesType = _alias_property("species_type")
+
+SBMLSpeciesReference.stoichiometrySet = _alias_property("stoichiometry_set")
+SBMLSpeciesReference.variableStoichiometry = _alias_property("variable_stoichiometry")
+
+SBMLKineticLaw.mathML = _alias_property("math_ml")
+SBMLKineticLaw.localParameters = _alias_property("local_parameters")
+
+SBMLReaction.kineticLaw = _alias_property("kinetic_law")
+SBMLReaction.conversionFactor = _alias_property("conversion_factor")
+
+SBMLEvent.useValuesFromTriggerTime = _alias_property("use_values_from_trigger_time")
+SBMLEvent.triggerInitialValue = _alias_property("trigger_initial_value")
+SBMLEvent.triggerPersistent = _alias_property("trigger_persistent")
+
+SBMLModel.functionDefinitions = _alias_property("function_definitions")
+SBMLModel.speciesByCompartment = _alias_property("species_by_compartment")
+SBMLModel.substanceUnits = _alias_property("substance_units")
+SBMLModel.timeUnits = _alias_property("time_units")
+SBMLModel.volumeUnits = _alias_property("volume_units")
+SBMLModel.areaUnits = _alias_property("area_units")
+SBMLModel.lengthUnits = _alias_property("length_units")
+SBMLModel.extentUnits = _alias_property("extent_units")
+SBMLModel.conversionFactor = _alias_property("conversion_factor")
+SBMLModel.constraintCount = _alias_property("constraint_count")
+SBMLModel.multiMoleculeTypes = _alias_property("multi_molecule_types")
+SBMLModel.multiComplexPatterns = _alias_property("multi_complex_patterns")
+SBMLModel.multiSeedPatterns = _alias_property("multi_seed_patterns")
+SBMLModel.importWarnings = _alias_property("import_warnings")
+
+SCTEntry.sbmlId = _alias_property("sbml_id")
+SCTEntry.isElemental = _alias_property("is_elemental")
+SpeciesCompositionTable.reverseDependencies = _alias_property("reverse_dependencies")
+SpeciesCompositionTable.sortedSpecies = _alias_property("sorted_species")
+SeedSpeciesEntry.sbmlId = _alias_property("sbml_id")
+AtomizerResult.observableMap = _alias_property("observable_map")
+
+
 DEFAULT_NAMING_PATTERNS = {
     ("+ p",): "Phosphorylation",
     ("+ P",): "Phosphorylation",
