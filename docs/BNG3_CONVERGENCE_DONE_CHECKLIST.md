@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-03
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** eecbdce646d06a9bd4c117379ee191b0dc6a1cc5
-**Checklist refresh base:** eecbdce646d06a9bd4c117379ee191b0dc6a1cc5 (public exact-head checkpoint for the Playground-derived Atomizer pmemoize cache-sharing contract)
-**Latest workflow checkpoint:** eecbdce646d06a9bd4c117379ee191b0dc6a1cc5 (hosted checks read back after push; CI [33717664851](https://github.com/RuleWorld/BNG3/actions/runs/33717664851), CodeQL [33717664913](https://github.com/RuleWorld/BNG3/actions/runs/33717664913), and formatting [33717664952](https://github.com/RuleWorld/BNG3/actions/runs/33717664952) remain queued)
+**Audited semantic code head:** 094f7ac62a2baae0abebfcac134f558a324a6744
+**Checklist refresh base:** 094f7ac62a2baae0abebfcac134f558a324a6744 (public exact-head checkpoint for the Playground-derived Atomizer naming-convention configuration and facade option)
+**Latest workflow checkpoint:** 094f7ac62a2baae0abebfcac134f558a324a6744 (hosted checks read back after push; CI [33767541435](https://github.com/RuleWorld/BNG3/actions/runs/33767541435), CodeQL [33767541537](https://github.com/RuleWorld/BNG3/actions/runs/33767541537), and formatting [33767541467](https://github.com/RuleWorld/BNG3/actions/runs/33767541467) remain queued)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -670,6 +670,38 @@ completion gate.
   qualified-name representation rather than JavaScript `fn.toString()`, and
   argument serialization remains Python-specific, so broader helper parity
   remains open.
+- [x] Playground `src/lib/atomizer/config/types.ts:93-152,329-393` and
+  `src/lib/atomizer/index.ts:130-150,390-397` at reference
+  `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` expose the complete default
+  `NamingConventions` data and accept a custom `namingConventions` option in
+  the Atomizer facade. BNG3 matches the configuration fields, camel-case
+  compatibility views, custom pattern resolution, default option, and facade
+  wiring at `094f7ac62a2baae0abebfcac134f558a324a6744`. The tests-first
+  contracts are
+  `tests/python/test_modern_atomizer_core.py::test_playground_naming_conventions_export_and_custom_patterns_contract`
+  and
+  `tests/python/test_modern_atomizer.py::test_playground_atomizer_uses_source_naming_conventions_option`.
+  The red-first command
+  `PYTHONPATH=python:build/cpp python -m pytest -p no:cacheprovider tests/python/test_modern_atomizer_core.py tests/python/test_modern_atomizer.py -q -k 'naming_conventions_export_and_custom_patterns_contract or uses_source_naming_conventions_option'`
+  reported `2 failed, 94 deselected in 0.60s`; the repaired focused command
+  reports `2 passed, 94 deselected in 0.32s`. The modern Atomizer glob reports
+  `145 passed in 0.42s`; the full Python gate reports `320 passed, 27 skipped,
+  8 warnings` in `10.28s`; exact Release/Ninja CTest reports `190/190` in
+  `1.25s`. Changed-file Ruff passes, Black with the configured
+  `--target-version py312` reports `5 files would be left unchanged`, and
+  `git diff --check` passes. The native `build/cpp/bng_cpp` artifact remains
+  SHA-256
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`.
+  Exact public branch and PR #2 head readback is
+  `094f7ac62a2baae0abebfcac134f558a324a6744`; hosted CI
+  [33767541435](https://github.com/RuleWorld/BNG3/actions/runs/33767541435),
+  CodeQL [33767541537](https://github.com/RuleWorld/BNG3/actions/runs/33767541537),
+  and formatting
+  [33767541467](https://github.com/RuleWorld/BNG3/actions/runs/33767541467)
+  remain queued and are not completion evidence. This closes the default and
+  custom naming-configuration slice only; user-structure equivalences,
+  broader Atomizer core/parser/writer/SBML behavior, and independent parity
+  remain open.
 - [x] Playground `src/lib/atomizer/atomization/core.ts:227-265` at reference
   `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` emits an `INFO`-level `NAM001`
   summary after naming-convention analysis, reporting similar-pair and
