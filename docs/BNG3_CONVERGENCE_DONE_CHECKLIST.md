@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-02
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 667935b327409f07f74bb81fc7066b8295947b95
-**Checklist refresh base:** 667935b327409f07f74bb81fc7066b8295947b95 (public exact-head checkpoint for the Playground-derived SBML record contracts)
-**Latest workflow checkpoint:** 667935b327409f07f74bb81fc7066b8295947b95 (hosted checks read back after push; CI [33705751711](https://github.com/RuleWorld/BNG3/actions/runs/33705751711), CodeQL [33705751714](https://github.com/RuleWorld/BNG3/actions/runs/33705751714), and formatting [33705751719](https://github.com/RuleWorld/BNG3/actions/runs/33705751719) remain queued)
+**Audited semantic code head:** b9df8db49d574ccb5fc1f35bddf649073bd975ef
+**Checklist refresh base:** b9df8db49d574ccb5fc1f35bddf649073bd975ef (public exact-head checkpoint for the Playground-derived SBML modifier-record normalization)
+**Latest workflow checkpoint:** b9df8db49d574ccb5fc1f35bddf649073bd975ef (hosted checks read back after push; CI [33706954325](https://github.com/RuleWorld/BNG3/actions/runs/33706954325), CodeQL [33706954333](https://github.com/RuleWorld/BNG3/actions/runs/33706954333), and formatting [33706954323](https://github.com/RuleWorld/BNG3/actions/runs/33706954323) remain queued)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -2408,6 +2408,35 @@ completion gate.
   bounded record-type contract; parser warning instances remain dictionary
   shaped, modifier/reaction behavior remains broader work, and complete
   parser/writer/SBML parity and independent round-trip evidence remain open.
+- [x] Playground `src/lib/atomizer/atomization/core.ts:376-390` at reference
+  `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` maps each
+  `SBMLModifierSpeciesReference` through its `species` field before returning
+  a reaction pattern. The tests-first BNG3 checkpoint is
+  `b9df8db49d574ccb5fc1f35bddf649073bd975ef` in
+  `python/bionetgen/atomizer/modern/core.py` and
+  `python/bionetgen/atomizer/modern/types.py`, with the source-derived
+  contract in
+  `tests/python/test_modern_atomizer_core.py::test_playground_reaction_classification_normalizes_modifier_records`.
+  The red-first command
+  `env PYTHONPATH=python:build/cpp python -m pytest tests/python/test_modern_atomizer_core.py -q -k normalizes_modifier_records`
+  reported `1 failed, 12 deselected` because the record object leaked into
+  `ReactionPattern.modifiers`; the repaired command reports `1 passed, 12
+  deselected`. The core file reports `13 passed`, the modern Atomizer glob
+  reports `116 passed`, and the full Python gate reports `291 passed, 27
+  skipped, 8 warnings` in `15.30s`. Exact CTest reports `190/190` in `1.92s`;
+  changed-file Ruff and Black pass; and `git diff --check` passes. This
+  Python-only checkpoint leaves the native `build/cpp/bng_cpp` artifact
+  unchanged at SHA-256
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`.
+  Exact public branch and PR #2 head readback is
+  `b9df8db49d574ccb5fc1f35bddf649073bd975ef`; hosted CI
+  [33706954325](https://github.com/RuleWorld/BNG3/actions/runs/33706954325),
+  CodeQL [33706954333](https://github.com/RuleWorld/BNG3/actions/runs/33706954333),
+  and formatting [33706954323](https://github.com/RuleWorld/BNG3/actions/runs/33706954323)
+  remain queued and are not completion evidence. This closes only object
+  modifier normalization in reaction classification; the parser still emits
+  legacy string modifiers for compatibility, and broader reaction/parser,
+  writer/SBML, and independent round-trip parity remain open.
 - [ ] Complete or explicitly govern remaining modern reference modules:
   atomization/core, parser/bngXmlParser and parser/sbmlParser,
   validation/units, writer/bnglWriter, writer/eventActions, and
