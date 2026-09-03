@@ -76,6 +76,7 @@ def test_playground_facade_exports_camel_case_core_functions():
         "analyzeNamingConventions": "analyze_naming_conventions",
         "topologicalSort": "topological_sort",
         "classifyReaction": "classify_reaction",
+        "reconcileSCT": "reconcile_sct",
     }
 
     assert all(

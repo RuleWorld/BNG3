@@ -852,6 +852,7 @@ disambiguateCollidingSpecies = disambiguate_colliding_species
 findLongestSubstring = find_longest_substring
 getMoleculeTypes = get_molecule_types
 getSeedSpecies = get_seed_species
+reconcileSCT = reconcile_sct
 topologicalSort = topological_sort
 
 
@@ -883,6 +884,7 @@ __all__ = [
     "infer_modification",
     "levenshtein",
     "reconcile_sct",
+    "reconcileSCT",
     "similarity",
     "topologicalSort",
     "topological_sort",
