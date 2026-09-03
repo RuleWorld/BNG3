@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-02
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 4c84b37c302e4a4ec9d59cf40c106729b8085e97
-**Checklist refresh base:** 4c84b37c302e4a4ec9d59cf40c106729b8085e97 (public exact-head checkpoint for the Playground-derived structure parser helper)
-**Latest workflow checkpoint:** 4c84b37c302e4a4ec9d59cf40c106729b8085e97 (hosted checks read back after push; CI [33707604898](https://github.com/RuleWorld/BNG3/actions/runs/33707604898), CodeQL [33707604817](https://github.com/RuleWorld/BNG3/actions/runs/33707604817), and formatting [33707604823](https://github.com/RuleWorld/BNG3/actions/runs/33707604823) remain queued)
+**Audited semantic code head:** 753e57b42b9562ca1f2b6e06c948579d6e4f0b82
+**Checklist refresh base:** 753e57b42b9562ca1f2b6e06c948579d6e4f0b82 (public exact-head checkpoint for the Playground-derived SBML parser records)
+**Latest workflow checkpoint:** 753e57b42b9562ca1f2b6e06c948579d6e4f0b82 (hosted checks read back after push; CI [33707948107](https://github.com/RuleWorld/BNG3/actions/runs/33707948107), CodeQL [33707948104](https://github.com/RuleWorld/BNG3/actions/runs/33707948104), and formatting [33707948098](https://github.com/RuleWorld/BNG3/actions/runs/33707948098) remain queued)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -2434,8 +2434,9 @@ completion gate.
   CodeQL [33706954333](https://github.com/RuleWorld/BNG3/actions/runs/33706954333),
   and formatting [33706954323](https://github.com/RuleWorld/BNG3/actions/runs/33706954323)
   remain queued and are not completion evidence. This closes only object
-  modifier normalization in reaction classification; the parser still emits
-  legacy string modifiers for compatibility, and broader reaction/parser,
+  modifier normalization in reaction classification; constructors and
+  downstream classification retain legacy string compatibility while the XML
+  parser now emits source-shaped records, and broader reaction/parser,
   writer/SBML, and independent round-trip parity remain open.
 - [x] Playground `src/lib/atomizer/writer/eventActions.ts:30-44,138-158,178-207`
   at reference `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` exposes the
@@ -2519,6 +2520,58 @@ completion gate.
   source-compatible helper spelling; broader parser semantics, structure
   behavior, writer/SBML parity, and independent round-trip evidence remain
   open.
+- [x] Playground `src/lib/atomizer/parser/sbmlParser.ts:1559-1570` at
+  reference `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` preserves an SBML
+  compartment's `compartmentType` reference when extracting the model. The
+  tests-first BNG3 checkpoint is
+  `e25766e2867adf07925bdedf0244b370f9f43b95` in
+  `python/bionetgen/atomizer/modern/parser.py`, with the source-derived XML
+  contract in
+  `tests/python/test_modern_atomizer.py::test_playground_parser_preserves_compartment_type_reference`.
+  The red-first command
+  `env PYTHONPATH=python:build/cpp python -m pytest tests/python/test_modern_atomizer.py -q -k preserves_compartment_type_reference`
+  reported `1 failed, 58 deselected` because the parsed field was `None`; the
+  repaired command reports `1 passed, 58 deselected`. The parser subset reports
+  `14 passed, 46 deselected`; the modern Atomizer glob reports `118 passed`;
+  the full Python gate reports `293 passed, 27 skipped, 8 warnings` in
+  `15.04s`; exact CTest reports `190/190` in `2.08s`; changed-file Ruff and
+  Black pass; and `git diff --check` passes. This Python-only checkpoint
+  leaves the native `build/cpp/bng_cpp` artifact unchanged at SHA-256
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`.
+  Exact public branch and PR #2 head readback is
+  `e25766e2867adf07925bdedf0244b370f9f43b95`; hosted CI
+  [33707794248](https://github.com/RuleWorld/BNG3/actions/runs/33707794248),
+  CodeQL [33707794247](https://github.com/RuleWorld/BNG3/actions/runs/33707794247),
+  and formatting [33707794244](https://github.com/RuleWorld/BNG3/actions/runs/33707794244)
+  remain queued and are not completion evidence. This closes only the
+  compartment-type extraction slice; broader SBML parser behavior, writer
+  parity, and independent round-trip evidence remain open.
+- [x] Playground `src/lib/atomizer/parser/sbmlParser.ts:2339-2346` at
+  reference `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` extracts reaction
+  modifiers as `SBMLModifierSpeciesReference` records. The tests-first BNG3
+  checkpoint is `753e57b42b9562ca1f2b6e06c948579d6e4f0b82` in
+  `python/bionetgen/atomizer/modern/parser.py`, with the source-derived XML
+  contract in
+  `tests/python/test_modern_atomizer.py::test_playground_parser_preserves_modifier_species_records`.
+  The red-first command
+  `env PYTHONPATH=python:build/cpp python -m pytest tests/python/test_modern_atomizer.py -q -k preserves_modifier_species_records`
+  reported `1 failed, 59 deselected` because the parser returned a bare string;
+  the repaired command reports `1 passed, 59 deselected`. The parser subset
+  reports `14 passed, 46 deselected`; the modern Atomizer glob reports `119
+  passed`; the full Python gate reports `294 passed, 27 skipped, 8 warnings`
+  in `15.04s`; exact CTest reports `190/190` in `2.01s`; changed-file Ruff
+  and Black pass; and `git diff --check` passes. This Python-only checkpoint
+  leaves the native `build/cpp/bng_cpp` artifact unchanged at SHA-256
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`.
+  Exact public branch and PR #2 head readback is
+  `753e57b42b9562ca1f2b6e06c948579d6e4f0b82`; hosted CI
+  [33707948107](https://github.com/RuleWorld/BNG3/actions/runs/33707948107),
+  CodeQL [33707948104](https://github.com/RuleWorld/BNG3/actions/runs/33707948104),
+  and formatting [33707948098](https://github.com/RuleWorld/BNG3/actions/runs/33707948098)
+  remain queued and are not completion evidence. This closes only XML parser
+  modifier-record extraction; constructor compatibility is retained, while
+  broader reaction/parser, writer/SBML, and independent round-trip parity
+  remain open.
 - [ ] Complete or explicitly govern remaining modern reference modules:
   atomization/core, parser/bngXmlParser and parser/sbmlParser,
   validation/units, writer/bnglWriter, writer/eventActions, and
