@@ -13,6 +13,8 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+from .types import SBMLImportWarning
+
 
 def _local_name(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
@@ -75,16 +77,13 @@ class MultiParseResult:
     bngl_molecule_types: List[str] = field(default_factory=list)
     complex_patterns: List[Tuple[str, str]] = field(default_factory=list)
     seed_patterns: List[Tuple[str, str]] = field(default_factory=list)
-    warnings: List[Dict[str, Any]] = field(default_factory=list)
+    warnings: List[SBMLImportWarning] = field(default_factory=list)
 
 
-def _warning(message: str, severity: str = "approximated") -> Dict[str, Any]:
-    return {
-        "category": "package:multi",
-        "message": message,
-        "count": 1,
-        "severity": severity,
-    }
+def _warning(message: str, severity: str = "approximated") -> SBMLImportWarning:
+    return SBMLImportWarning(
+        category="package:multi", message=message, count=1, severity=severity
+    )
 
 
 def _as_root(document: Union[str, Any]) -> Any:
