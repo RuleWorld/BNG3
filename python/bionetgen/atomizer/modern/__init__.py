@@ -189,6 +189,7 @@ DEFAULT_ATOMIZER_OPTIONS: Dict[str, Any] = {
     "use_id": False,
     "annotation": False,
     "atomize": False,
+    "naming_conventions": DEFAULT_NAMING_CONVENTIONS,
     "quiet_mode": False,
     "log_level": "WARNING",
     "actions": "",
@@ -198,6 +199,7 @@ DEFAULT_ATOMIZER_OPTIONS: Dict[str, Any] = {
 
 _SOURCE_OPTION_ALIASES = {
     "useId": "use_id",
+    "namingConventions": "naming_conventions",
     "quietMode": "quiet_mode",
     "logLevel": "log_level",
     "tEnd": "t_end",
@@ -403,7 +405,9 @@ class Atomizer:
                 use_id=bool(self.options.get("use_id", False)),
                 use_annotations=bool(self.options.get("annotation", False)),
                 atomize=bool(self.options.get("atomize", False)),
-                naming_patterns=self.options.get("naming_patterns"),
+                naming_conventions=self.options.get(
+                    "naming_conventions", self.options.get("naming_patterns")
+                ),
             )
             disambiguated = disambiguate_colliding_species(self.sct, self.model)
             if disambiguated > 0:
@@ -490,7 +494,8 @@ class Atomizer:
         if self.model is None:
             return None
         return analyze_naming_conventions(
-            [item.name or item_id for item_id, item in self.model.species.items()]
+            [item.name or item_id for item_id, item in self.model.species.items()],
+            self.options.get("naming_conventions", self.options.get("naming_patterns")),
         )
 
     def analyze_reaction_patterns(self):
@@ -584,6 +589,8 @@ __all__ = [
     "Counter",
     "CycleError",
     "DefaultDict",
+    "DEFAULT_ATOMIZER_OPTIONS",
+    "DEFAULT_NAMING_CONVENTIONS",
     "Databases",
     "EditDistanceMatrixResult",
     "EventActionsResult",
@@ -596,6 +603,7 @@ __all__ = [
     "MemoizeMapped",
     "Molecule",
     "ModificationInference",
+    "NamingConventions",
     "MultiParseResult",
     "ParsedAnnotation",
     "Rule",

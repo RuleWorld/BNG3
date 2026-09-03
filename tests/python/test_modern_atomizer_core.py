@@ -90,6 +90,92 @@ def test_playground_default_naming_patterns_cover_source_words(suffix, expected)
     assert result.modification == expected
 
 
+def test_playground_naming_conventions_export_and_custom_patterns_contract():
+    from bionetgen.atomizer.modern import (
+        DEFAULT_ATOMIZER_OPTIONS,
+        DEFAULT_NAMING_CONVENTIONS,
+        NamingConventions,
+    )
+
+    assert isinstance(DEFAULT_NAMING_CONVENTIONS, NamingConventions)
+    assert DEFAULT_ATOMIZER_OPTIONS["naming_conventions"] is (
+        DEFAULT_NAMING_CONVENTIONS
+    )
+    assert DEFAULT_NAMING_CONVENTIONS.modificationList is (
+        DEFAULT_NAMING_CONVENTIONS.modification_list
+    )
+    assert DEFAULT_NAMING_CONVENTIONS.reactionSite is (
+        DEFAULT_NAMING_CONVENTIONS.reaction_site
+    )
+    assert DEFAULT_NAMING_CONVENTIONS.reactionState is (
+        DEFAULT_NAMING_CONVENTIONS.reaction_state
+    )
+    assert DEFAULT_NAMING_CONVENTIONS.modification_list == [
+        "Phosphorylation",
+        "Double-Phosphorylation",
+        "Triple-Phosphorylation",
+        "Dephosphorylation",
+        "Ubiquitination",
+        "Deubiquitination",
+        "Acetylation",
+        "Deacetylation",
+        "Methylation",
+        "Demethylation",
+        "Activation",
+        "Inactivation",
+        "Binding",
+        "Unbinding",
+        "Localization",
+        "Translocation",
+        "Dimerization",
+        "Trimerization",
+        "Oligomerization",
+        "Cleavage",
+        "Synthesis",
+        "Degradation",
+    ]
+    assert DEFAULT_NAMING_CONVENTIONS.reaction_site == [
+        "phospho",
+        "phos",
+        "p",
+        "ub",
+        "ubiq",
+        "ac",
+        "acet",
+        "me",
+        "methyl",
+        "act",
+        "active",
+        "inact",
+        "inactive",
+    ]
+    assert DEFAULT_NAMING_CONVENTIONS.reaction_state == [
+        "P",
+        "PP",
+        "PPP",
+        "U",
+        "UU",
+        "Ac",
+        "Me",
+        "MeMe",
+        "A",
+        "I",
+        "0",
+        "1",
+    ]
+    assert DEFAULT_NAMING_CONVENTIONS.definitions == [
+        {"rsi": 0, "rst": 0},
+        {"rsi": 0, "rst": 1},
+        {"rsi": 1, "rst": 2},
+    ]
+
+    custom = NamingConventions(patterns={("+ _", "+ P"): "Custom"})
+    result = analyze_naming_conventions(["A", "A_P"], custom)
+
+    assert result["pairClassification"] == {"Custom": [("A", "A_P")]}
+    assert result["patterns"] == custom.patterns
+
+
 def test_playground_facade_exports_camel_case_core_functions():
     import bionetgen.atomizer.modern as modern
 

@@ -346,6 +346,17 @@ class AtomizerResult:
     error: Optional[str] = None
 
 
+@dataclass
+class NamingConventions:
+    """Playground naming-convention configuration with Python-native keys."""
+
+    modification_list: List[str] = field(default_factory=list)
+    reaction_site: List[str] = field(default_factory=list)
+    reaction_state: List[str] = field(default_factory=list)
+    definitions: List[Dict[str, int]] = field(default_factory=list)
+    patterns: Mapping[Tuple[str, ...], str] = field(default_factory=OrderedDict)
+
+
 def _alias_property(target: str) -> property:
     """Create a writable camel-case view over a snake_case data field."""
 
@@ -409,6 +420,9 @@ SpeciesCompositionTable.reverseDependencies = _alias_property("reverse_dependenc
 SpeciesCompositionTable.sortedSpecies = _alias_property("sorted_species")
 SeedSpeciesEntry.sbmlId = _alias_property("sbml_id")
 AtomizerResult.observableMap = _alias_property("observable_map")
+NamingConventions.modificationList = _alias_property("modification_list")
+NamingConventions.reactionSite = _alias_property("reaction_site")
+NamingConventions.reactionState = _alias_property("reaction_state")
 
 
 DEFAULT_NAMING_PATTERNS = {
@@ -463,6 +477,69 @@ DEFAULT_NAMING_PATTERNS = {
     ("+ 3",): "Trimerization",
     ("+ _", "+ t", "+ r", "+ i", "+ m"): "Trimerization",
 }
+
+
+DEFAULT_NAMING_CONVENTIONS = NamingConventions(
+    modification_list=[
+        "Phosphorylation",
+        "Double-Phosphorylation",
+        "Triple-Phosphorylation",
+        "Dephosphorylation",
+        "Ubiquitination",
+        "Deubiquitination",
+        "Acetylation",
+        "Deacetylation",
+        "Methylation",
+        "Demethylation",
+        "Activation",
+        "Inactivation",
+        "Binding",
+        "Unbinding",
+        "Localization",
+        "Translocation",
+        "Dimerization",
+        "Trimerization",
+        "Oligomerization",
+        "Cleavage",
+        "Synthesis",
+        "Degradation",
+    ],
+    reaction_site=[
+        "phospho",
+        "phos",
+        "p",
+        "ub",
+        "ubiq",
+        "ac",
+        "acet",
+        "me",
+        "methyl",
+        "act",
+        "active",
+        "inact",
+        "inactive",
+    ],
+    reaction_state=[
+        "P",
+        "PP",
+        "PPP",
+        "U",
+        "UU",
+        "Ac",
+        "Me",
+        "MeMe",
+        "A",
+        "I",
+        "0",
+        "1",
+    ],
+    definitions=[
+        {"rsi": 0, "rst": 0},
+        {"rsi": 0, "rst": 1},
+        {"rsi": 1, "rst": 2},
+    ],
+    patterns=DEFAULT_NAMING_PATTERNS,
+)
 
 
 _SBML_TO_BNGL_TRANSLATION = {
@@ -742,6 +819,7 @@ __all__ = [
     "AnnotationInfo",
     "AtomizerResult",
     "BNGL_LEXER_KEYWORDS",
+    "NamingConventions",
     "ReactionPattern",
     "SBMLEvent",
     "SBMLEventAssignment",
@@ -760,6 +838,7 @@ __all__ = [
     "SCTEntry",
     "SeedSpeciesEntry",
     "SpeciesCompositionTable",
+    "DEFAULT_NAMING_CONVENTIONS",
     "DEFAULT_NAMING_PATTERNS",
     "get_kinetic_math",
     "standardize_name",

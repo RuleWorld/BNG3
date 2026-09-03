@@ -29,7 +29,8 @@ from typing import (
 
 from .structures import Component, Molecule, Species, read_from_string
 from .types import (
-    DEFAULT_NAMING_PATTERNS,
+    DEFAULT_NAMING_CONVENTIONS,
+    NamingConventions,
     ReactionPattern,
     SBMLModel,
     SBMLReaction,
@@ -43,6 +44,21 @@ from .types import (
 
 _DEP_CYCLE_LOG_LIMIT = int(os.environ.get("ATOMIZER_DEP_CYCLE_LOG_LIMIT", "20"))
 _dep_cycle_log_count = 0
+
+NamingPatternConfig = Union[
+    Mapping[Tuple[str, ...], str],
+    NamingConventions,
+]
+
+
+def _resolve_naming_patterns(
+    patterns: Optional[NamingPatternConfig],
+) -> Mapping[Tuple[str, ...], str]:
+    if patterns is None:
+        return DEFAULT_NAMING_CONVENTIONS.patterns
+    if isinstance(patterns, NamingConventions):
+        return patterns.patterns
+    return patterns
 
 
 def _log_dependency_cycle(message: str) -> None:
@@ -195,10 +211,10 @@ def define_edit_distance_matrix(
 
 def analyze_naming_conventions(
     species_names: Sequence[str],
-    patterns: Optional[Mapping[Tuple[str, ...], str]] = None,
+    patterns: Optional[NamingPatternConfig] = None,
     similarity_threshold: int = 4,
 ) -> Dict[str, object]:
-    conventions = patterns or DEFAULT_NAMING_PATTERNS
+    conventions = _resolve_naming_patterns(patterns)
     distance_result = define_edit_distance_matrix(species_names, similarity_threshold)
     pairs, differences = distance_result
     pair_classification: Dict[str, List[Tuple[str, str]]] = OrderedDict()
@@ -227,9 +243,9 @@ def analyze_naming_conventions(
 def infer_modification(
     species_name: str,
     base_species: Sequence[str],
-    patterns: Optional[Mapping[Tuple[str, ...], str]] = None,
+    patterns: Optional[NamingPatternConfig] = None,
 ) -> ModificationInference:
-    conventions = patterns or DEFAULT_NAMING_PATTERNS
+    conventions = _resolve_naming_patterns(patterns)
     candidates = [
         candidate for candidate in base_species if len(candidate) < len(species_name)
     ]
@@ -585,7 +601,8 @@ def build_species_composition_table(
     use_id: bool = False,
     use_annotations: bool = True,
     atomize: bool = False,
-    naming_patterns: Optional[Mapping[Tuple[str, ...], str]] = None,
+    naming_patterns: Optional[NamingPatternConfig] = None,
+    naming_conventions: Optional[NamingConventions] = None,
     **_: object,
 ) -> SpeciesCompositionTable:
     species_ids = list(model.species.keys())
@@ -603,9 +620,12 @@ def build_species_composition_table(
             names_to_ids[item.name] = species_id
         names_to_ids.setdefault(species_id, species_id)
 
+    naming_config = (
+        naming_conventions if naming_conventions is not None else naming_patterns
+    )
     naming = analyze_naming_conventions(
         [model.species[species_id].name or species_id for species_id in species_ids],
-        naming_patterns,
+        naming_config,
     )
     for pairs in naming["pairClassification"].values():
         for base_name, derived_name in pairs:
@@ -646,7 +666,7 @@ def build_species_composition_table(
             is_elemental = False
             base_name = model.species.get(base_id, SBMLSpecies(base_id)).name or base_id
             _, modification, _confidence = infer_modification(
-                item_name, [base_name], naming_patterns
+                item_name, [base_name], naming_config
             )
             if modification:
                 modifications_info["state"] = modification
@@ -663,7 +683,7 @@ def build_species_composition_table(
                     model.species.get(base_id, SBMLSpecies(base_id)).name or base_id
                 )
                 _, modification, _confidence = infer_modification(
-                    item_name, [base_name], naming_patterns
+                    item_name, [base_name], naming_config
                 )
                 if modification:
                     modifications_info["state"] = modification

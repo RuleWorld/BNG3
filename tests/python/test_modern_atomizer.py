@@ -1020,13 +1020,34 @@ def test_playground_atomizer_accepts_supported_source_option_spellings():
     assert options["n_steps"] == 11
     assert all(
         name not in options
-        for name in ("useId", "quietMode", "logLevel", "tEnd", "nSteps")
+        for name in (
+            "useId",
+            "namingConventions",
+            "quietMode",
+            "logLevel",
+            "tEnd",
+            "nSteps",
+        )
     )
 
     atomizer.setOptions({"useId": False, "tEnd": 3})
     options = atomizer.get_options()
     assert options["use_id"] is False
     assert options["t_end"] == 3
+
+
+def test_playground_atomizer_uses_source_naming_conventions_option():
+    from bionetgen.atomizer.modern import Atomizer, NamingConventions
+
+    conventions = NamingConventions(patterns={("+ _", "+ P"): "Custom"})
+    atomizer = Atomizer(namingConventions=conventions, quiet_mode=True)
+
+    assert atomizer.getOptions()["naming_conventions"] is conventions
+    result = atomizer.atomize(SBML_FIXTURE)
+    analysis = atomizer.analyzeNaming()
+
+    assert result.success is True
+    assert analysis["pairClassification"] == {"Custom": [("A", "A_P")]}
 
 
 def test_playground_atomizer_returns_databases_container_in_result():
