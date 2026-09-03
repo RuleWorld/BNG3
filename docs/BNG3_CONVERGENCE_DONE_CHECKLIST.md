@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-03
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** c6780bb3f7f65c46233f23750047b5c45e52afca
-**Checklist refresh base:** c6780bb3f7f65c46233f23750047b5c45e52afca (local exact-head checkpoint for structural C++/Perl validation; public synchronization is deferred by the local-only work instruction)
-**Latest workflow checkpoint:** c6780bb3f7f65c46233f23750047b5c45e52afca (local-only; no hosted run was created because this checkpoint has not been pushed)
+**Audited semantic code head:** 700cbdeb0d539e8a84c9a68c628386b0b9f33437 (local exact head; public synchronization is deferred by the local-only work instruction)
+**Checklist refresh base:** 700cbdeb0d539e8a84c9a68c628386b0b9f33437 (local exact-head checkpoint for unified Atomizer rate processing; public synchronization is deferred by the local-only work instruction)
+**Latest workflow checkpoint:** 700cbdeb0d539e8a84c9a68c628386b0b9f33437 (local-only; no hosted run was created because this checkpoint has not been pushed)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -74,6 +74,37 @@ completion gate.
   paused. Full reverse SBML consumption of assignment metadata, complete
   writer/schema validation, independent corpus parity, and release gates
   remain open.
+
+- [x] Local-only unified Atomizer rate-processing checkpoint
+  `700cbdeb0d539e8a84c9a68c628386b0b9f33437` ports the pinned Playground
+  `src/lib/atomizer/writer/bnglWriter.ts:2972-3091,3321-3647,3683-3864`
+  contract at source revision
+  `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c`. The Python writer now exposes
+  a source-shaped `ProcessedRate` result and `processReactionRate` facade,
+  performs a bounded safe numerical mass-action check after concentration/
+  amount normalization, folds only finite low-variance constants, cleans
+  compartment factors before reversible splitting, and preserves nonlinear
+  and denominator-sensitive rates as functional fallbacks. The tests-first
+  red command failed during collection with
+  `ImportError: cannot import name 'ProcessedRate'`; the repaired focused
+  command
+  `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=python:build/cpp python -m pytest
+  tests/python/test_modern_atomizer_writer_rate_helpers.py -q
+  -p no:cacheprovider` reports `11 passed in 0.25s`. The touched modern
+  writer/parameter/rate tests report `86 passed in 0.35s`; the full local
+  command
+  `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=python:build/cpp python -m pytest
+  tests/python -q -p no:cacheprovider` reports `337 passed, 27 skipped, 8
+  warnings in 10.90s`; the CI contract file reports `20 passed in 0.28s`;
+  and exact-tree `ctest --test-dir build --output-on-failure` reports
+  `190/190` in `1.42s`. Black (`--target-version py39`), Ruff, and
+  `git diff --check` pass. The BNG3 native `build/cpp/bng_cpp` artifact
+  remains SHA-256
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`.
+  No hosted run or public SHA readback is claimed while `gh` and push are
+  paused. The bounded evaluator does not close full function/rate-law,
+  SBML/schema, independent corpus, round-trip, SBML-Multi, direct-NFsim,
+  packaging, release, or hosted validation gates.
 
 - [x] Local-only structural C++/Perl validation checkpoint
   `c6780bb3f7f65c46233f23750047b5c45e52afca` replaces the weekly shell
