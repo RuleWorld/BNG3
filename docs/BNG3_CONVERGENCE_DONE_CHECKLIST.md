@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-03
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 655810d5e2ea65dc25204f234333a30f170229b1
-**Checklist refresh base:** 655810d5e2ea65dc25204f234333a30f170229b1 (public exact-head checkpoint for the Playground-derived Atomizer naming-analysis result shape)
-**Latest workflow checkpoint:** 655810d5e2ea65dc25204f234333a30f170229b1 (hosted checks read back after push; CI [33717241703](https://github.com/RuleWorld/BNG3/actions/runs/33717241703), CodeQL [33717241701](https://github.com/RuleWorld/BNG3/actions/runs/33717241701), and formatting [33717241763](https://github.com/RuleWorld/BNG3/actions/runs/33717241763) remain queued)
+**Audited semantic code head:** eecbdce646d06a9bd4c117379ee191b0dc6a1cc5
+**Checklist refresh base:** eecbdce646d06a9bd4c117379ee191b0dc6a1cc5 (public exact-head checkpoint for the Playground-derived Atomizer pmemoize cache-sharing contract)
+**Latest workflow checkpoint:** eecbdce646d06a9bd4c117379ee191b0dc6a1cc5 (hosted checks read back after push; CI [33717664851](https://github.com/RuleWorld/BNG3/actions/runs/33717664851), CodeQL [33717664913](https://github.com/RuleWorld/BNG3/actions/runs/33717664913), and formatting [33717664952](https://github.com/RuleWorld/BNG3/actions/runs/33717664952) remain queued)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -640,6 +640,36 @@ completion gate.
   were queued when read back. This closes only the parser identifier-helper
   facade; the remaining parser, annotation, writer, SBML, and independent
   parity gaps remain open.
+- [x] Playground `src/lib/atomizer/utils/helpers.ts:172-190` at reference
+  `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` keeps memoization caches in
+  process-global storage keyed by the explicit `cacheKey`, so separately
+  wrapped functions share a named cache. BNG3 matches that explicit-key
+  contract at `eecbdce646d06a9bd4c117379ee191b0dc6a1cc5` in
+  `python/bionetgen/atomizer/modern/helpers.py`. The tests-first contract is
+  `tests/python/test_modern_atomizer_helpers.py::test_playground_pmemoize_shares_explicit_cache_keys`.
+  The red-first command
+  `PYTHONPATH=python:build/cpp python -m pytest -p no:cacheprovider tests/python/test_modern_atomizer_helpers.py -q -k pmemoize_shares_explicit_cache_keys`
+  reported `1 failed, 4 deselected in 0.24s`; the repaired focused command
+  reports `1 passed, 4 deselected in 0.24s`. The complete helper test file
+  reports `5 passed in 0.24s`; the modern Atomizer glob reports `143 passed in
+  0.46s`; the full Python gate reports `318 passed, 27 skipped, 8 warnings`
+  in `11.21s`; exact Release/Ninja CTest reports `190/190` in `1.32s`.
+  Changed-file Ruff (`--no-cache`) passes, Black with the configured
+  `--target-version py312` reports `2 files would be left unchanged`, and
+  `git diff --check` passes. The native `build/cpp/bng_cpp` artifact remains
+  SHA-256
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`.
+  Exact public branch and PR #2 head readback is
+  `eecbdce646d06a9bd4c117379ee191b0dc6a1cc5`; hosted CI
+  [33717664851](https://github.com/RuleWorld/BNG3/actions/runs/33717664851),
+  CodeQL [33717664913](https://github.com/RuleWorld/BNG3/actions/runs/33717664913),
+  and formatting
+  [33717664952](https://github.com/RuleWorld/BNG3/actions/runs/33717664952)
+  remain queued and are not completion evidence. This closes only explicit
+  named-cache sharing; BNG3's default function key uses Python's module and
+  qualified-name representation rather than JavaScript `fn.toString()`, and
+  argument serialization remains Python-specific, so broader helper parity
+  remains open.
 - [x] Playground `src/lib/atomizer/atomization/core.ts:227-265` at reference
   `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` emits an `INFO`-level `NAM001`
   summary after naming-convention analysis, reporting similar-pair and
