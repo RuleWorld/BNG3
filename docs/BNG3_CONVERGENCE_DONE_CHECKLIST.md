@@ -6,7 +6,7 @@
 **Working branch:** codex/bng3-integration-foundations
 **Audited semantic code head:** 871d261442be2f4808cbcabed51f6a017ba5488a
 **Checklist refresh base:** 871d261442be2f4808cbcabed51f6a017ba5488a (public exact-head checkpoint for the Playground-derived SBML parameter-alias formula normalization)
-**Latest workflow checkpoint:** 871d261442be2f4808cbcabed51f6a017ba5488a (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33698137348, CodeQL run 33698137323, formatting run 33698137391)
+**Latest workflow checkpoint:** 1cccd2d08d94df35734c2e812087383332328cee (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33698274017, CodeQL run 33698273996, formatting run 33698274035)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -1075,6 +1075,21 @@ completion gate.
   independent accepted-cutoff evidence for the selected validation slice;
   it does not close the full Tier-NF corpus, distributional gate, broader
   direct-NFsim parity, or energy/provenance qualification.
+- [x] Fresh selected Tier-NF independent evidence at semantic head
+  `871d261442be2f4808cbcabed51f6a017ba5488a` used the accepted-cutoff source
+  revision `3b046fc1b9f76719d92be22279b24992cdae7c35` and binary
+  `/private/tmp/bng3-nfsim-3b046/build/NFsim` (SHA-256
+  `c30a80b6ff9cf1fae04bc9f45556c4d5fa9c3b00d053fb6abade80436ee46394`). The
+  exact command
+  `env NFSIM_BIN=/private/tmp/bng3-nfsim-3b046/build/NFsim BNG_CPP=/Users/akutuva/Documents/BioNetGen/BNG3/build/cpp/bng_cpp PYTHONPATH=python:build/cpp python -m pytest tests/validation -m nf -q`
+  completed `10 passed, 184 deselected, 3 warnings` in `135.81s`. It covers
+  the selected `localfunc`, `motor`, `simple_system`, and `tlbr` native
+  ensembles, direct/XML shadow checks, and fixed-seed endpoint checks. The
+  three warnings are the known zero-denominator invalid-divide diagnostic at
+  `tests/validation/compare.py:1278` for the affected localfunc/motor/
+  simple_system comparisons. This qualifies the selected slice only; full
+  Tier-NF, broader direct-NFsim three-way parity, and energy/provenance gates
+  remain open.
 - [x] The full NFsim AST adapter executable passes 118 test cases and 1280
   assertions on `2c498af`. It covers compact energy evaluation, cached compact
   rate factors, specialized reverse propensities, sparse selector ordering,
