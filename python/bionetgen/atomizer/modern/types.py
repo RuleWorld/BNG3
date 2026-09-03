@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
+from typing import Any, Dict, Iterator, List, Mapping, Optional, Tuple, Union
 
 from .structures import Species
 
@@ -146,6 +147,57 @@ class SBMLInitialAssignment:
 
 
 @dataclass
+class SBMLImportWarning(MappingABC[str, Any]):
+    """Structured import diagnostic matching the Playground record contract.
+
+    The mapping view preserves BNG3's existing ``warning["category"]`` and
+    ``warning.get(...)`` callers while exposing the source-shaped attributes.
+    """
+
+    category: str
+    message: str
+    count: int
+    severity: str
+
+    _FIELDS = ("category", "message", "count", "severity")
+
+    def __getitem__(self, key: str) -> Any:
+        if key not in self._FIELDS:
+            raise KeyError(key)
+        return getattr(self, key)
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._FIELDS)
+
+    def __len__(self) -> int:
+        return len(self._FIELDS)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return getattr(self, key, default)
+
+
+def coerce_import_warning(warning: Any) -> SBMLImportWarning:
+    """Convert legacy dictionary diagnostics to source-shaped records."""
+
+    if isinstance(warning, SBMLImportWarning):
+        return warning
+    if isinstance(warning, Mapping):
+        try:
+            count = int(warning.get("count", 1))
+        except (TypeError, ValueError):
+            count = 1
+        return SBMLImportWarning(
+            category=str(warning.get("category", "import")),
+            message=str(warning.get("message", "")),
+            count=count,
+            severity=str(warning.get("severity", "info")),
+        )
+    return SBMLImportWarning(
+        category="import", message=str(warning), count=1, severity="info"
+    )
+
+
+@dataclass
 class SBMLModel:
     id: str
     name: str = ""
@@ -174,15 +226,14 @@ class SBMLModel:
     multi_molecule_types: List[str] = field(default_factory=list)
     multi_complex_patterns: List[str] = field(default_factory=list)
     multi_seed_patterns: List[str] = field(default_factory=list)
-    import_warnings: List[Dict[str, Any]] = field(default_factory=list)
+    import_warnings: List[Union[Dict[str, Any], SBMLImportWarning]] = field(
+        default_factory=list
+    )
 
-
-@dataclass
-class SBMLImportWarning:
-    category: str
-    message: str
-    count: int
-    severity: str
+    def __post_init__(self) -> None:
+        self.import_warnings = [
+            coerce_import_warning(warning) for warning in self.import_warnings
+        ]
 
 
 @dataclass

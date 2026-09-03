@@ -35,6 +35,7 @@ from .types import (
     SCTEntry,
     SeedSpeciesEntry,
     SpeciesCompositionTable,
+    coerce_import_warning,
     get_kinetic_math,
     standardize_name,
 )
@@ -2548,6 +2549,10 @@ def generate_bngl(
                 "# Multi structures are not yet fed into the simulated network.\n"
             )
         model_text += "# ============================\n"
+
+    model.import_warnings = [
+        coerce_import_warning(warning) for warning in model.import_warnings
+    ]
 
     warnings = [
         str(warning.get("message", ""))

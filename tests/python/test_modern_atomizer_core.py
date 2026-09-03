@@ -188,6 +188,29 @@ def test_playground_data_contract_exposes_missing_sbml_record_types():
     assert warning.severity == "dropped"
 
 
+def test_playground_parser_returns_structured_import_warning_records():
+    from bionetgen.atomizer.modern import SBMLImportWarning, SBMLParser
+
+    sbml = """<?xml version="1.0"?>
+    <sbml xmlns="http://www.sbml.org/sbml/level3/version1/core" level="3" version="1">
+      <model id="warning_records">
+        <listOfConstraints>
+          <constraint><math formula="1"/></constraint>
+        </listOfConstraints>
+      </model>
+    </sbml>
+    """
+
+    model = SBMLParser().parse(sbml)
+
+    assert model.import_warnings
+    warning = model.import_warnings[0]
+    assert isinstance(warning, SBMLImportWarning)
+    assert warning.category == "constraint"
+    assert warning["category"] == warning.category
+    assert warning.get("severity") == warning.severity
+
+
 def test_playground_reaction_classification_normalizes_modifier_records():
     from bionetgen.atomizer.modern import SBMLModifierSpeciesReference
 

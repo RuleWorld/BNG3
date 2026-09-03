@@ -21,6 +21,7 @@ from .types import (
     SBMLInitialAssignment,
     SBMLKineticLaw,
     SBMLModel,
+    coerce_import_warning,
     SBMLModifierSpeciesReference,
     SBMLParameter,
     SBMLReaction,
@@ -569,6 +570,9 @@ class SBMLParser:
                     "severity": "info",
                 }
             )
+        result.import_warnings = [
+            coerce_import_warning(warning) for warning in result.import_warnings
+        ]
         logger.info(
             "SBM004",
             f"Parsed SBML model: {len(result.species)} species, "
