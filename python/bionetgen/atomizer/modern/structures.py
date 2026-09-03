@@ -840,6 +840,61 @@ def read_from_string(pattern_str: str) -> Species:
     return species
 
 
+# Preserve the public method spellings from the TypeScript structures module
+# alongside BNG3's snake_case Python API.
+Component.addState = Component.add_state
+Component.addStates = Component.add_states
+Component.addBond = Component.add_bond
+Component.setActiveState = Component.set_active_state
+Component.getName = Component.get_name
+Component.hasWildcardBonds = Component.has_wildcard_bonds
+Component.getRuleStr = Component.get_rule_str
+Component.getTotalStr = Component.get_total_str
+
+Molecule.addComponent = Molecule.add_component
+Molecule.setCompartment = Molecule.set_compartment
+Molecule.getComponentById = Molecule.get_component_by_id
+Molecule.getBondNumbers = Molecule.get_bond_numbers
+Molecule.getComponent = Molecule.get_component
+Molecule.removeComponent = Molecule.remove_component
+Molecule.removeComponents = Molecule.remove_components
+Molecule.addBond = Molecule.add_bond
+Molecule.getComponentWithBonds = Molecule.get_component_with_bonds
+Molecule.hasWildcardBonds = Molecule.has_wildcard_bonds
+Molecule.toString = Molecule.to_string
+
+Species.getBondNumbers = Species.get_bond_numbers
+Species.getMoleculeById = Species.get_molecule_by_id
+Species.addMolecule = Species.add_molecule
+Species.addCompartment = Species.add_compartment
+Species.deleteMolecule = Species.delete_molecule
+Species.getMolecule = Species.get_molecule
+Species.getSize = Species.get_size
+Species.getMoleculeNames = Species.get_molecule_names
+Species.hasWildCardBonds = Species.has_wildcard_bonds
+Species.updateBonds = Species.update_bonds
+Species.deleteBond = Species.delete_bond
+Species.toString = Species.to_string
+Species.extractAtomicPatterns = Species.extract_atomic_patterns
+Species.listOfBonds = Species.list_of_bonds
+
+Action.setAction = Action.set_action
+Action.toString = Action.__str__
+Rule.addReactant = Rule.add_reactant
+Rule.addProduct = Rule.add_product
+Rule.addReactantList = Rule.add_reactant_list
+Rule.addProductList = Rule.add_product_list
+Rule.addRate = Rule.add_rate
+Rule.addMapping = Rule.add_mapping
+Rule.addMappingList = Rule.add_mapping_list
+Rule.addActionList = Rule.add_action_list
+Rule.toString = Rule.__str__
+Databases.getRawDatabase = Databases.get_raw_database
+Databases.getLabelDictionary = Databases.get_label_dictionary
+Databases.add2LabelDictionary = Databases.add2_label_dictionary
+Databases.getTranslator = Databases.get_translator
+
+
 __all__ = [
     "Action",
     "AtomicPatternResult",

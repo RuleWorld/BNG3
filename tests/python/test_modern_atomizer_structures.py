@@ -68,3 +68,29 @@ def test_databases_and_states_expose_reference_containers():
     states = States("phosphorylation", "p1")
     assert states.name == "phosphorylation"
     assert states.idx == "p1"
+
+
+def test_playground_structures_expose_camel_case_object_methods():
+    component = Component("site")
+    component.addState("P")
+    component.addBond(1)
+
+    assert component.getName() == "site"
+    assert component.getRuleStr() == "site!1~P"
+    assert component.getTotalStr() == "site~P~0"
+
+    molecule = Molecule("A")
+    molecule.addComponent(component)
+    molecule.setCompartment("cell")
+
+    assert molecule.getComponent("site") is component
+    assert molecule.getBondNumbers() == [1]
+    assert molecule.toString(True) == "A(site!1~P)@cell"
+
+    species = Species()
+    species.addMolecule(molecule)
+
+    assert species.getMolecule("A") is molecule
+    assert species.getMoleculeNames() == ["A"]
+    assert species.getSize() == 1
+    assert species.toString(True) == "A(site!1~P)@cell"
