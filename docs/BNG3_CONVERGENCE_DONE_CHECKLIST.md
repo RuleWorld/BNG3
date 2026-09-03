@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-02
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 6871518f50a3d1cb6b66490d7ba31f3cfe6531ab
-**Checklist refresh base:** 6871518f50a3d1cb6b66490d7ba31f3cfe6531ab (public exact-head checkpoint for the Playground-derived SBML parameter-alias and duplicate-local-ID normalization)
-**Latest workflow checkpoint:** 6871518f50a3d1cb6b66490d7ba31f3cfe6531ab (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33700655331, CodeQL run 33700655336, formatting run 33700655365)
+**Audited semantic code head:** bb3c116aeebcccbc8a7f123b2cc62d563308f57e
+**Checklist refresh base:** bb3c116aeebcccbc8a7f123b2cc62d563308f57e (public exact-head checkpoint for the Playground-derived SBML parameter-alias, duplicate-local-ID, and seed-pattern normalization)
+**Latest workflow checkpoint:** bb3c116aeebcccbc8a7f123b2cc62d563308f57e (hosted checks read back 2026-09-02; all listed PR checks remain queued: CI run 33701338055, CodeQL run 33701338037, formatting run 33701338204)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -2094,6 +2094,35 @@ completion gate.
   alias normalization plus canonical and duplicate-local parameter-ID recovery
   for the modern parser; broader parser/SBML parity, output alias propagation,
   and independent round-trip evidence remain open.
+- [x] Playground `src/lib/atomizer/writer/bnglWriter.ts:1025-1065` at
+  reference `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` groups seed declarations
+  by canonical emitted pattern and fixedness, retains the first concentration
+  for each group, and maps every source species ID to that grouped pattern.
+  The tests-first BNG3 checkpoint is
+  `bb3c116aeebcccbc8a7f123b2cc62d563308f57e` in
+  `python/bionetgen/atomizer/modern/writer.py`, with the source-derived
+  contract in
+  `tests/python/test_modern_atomizer.py::test_playground_writer_groups_duplicate_seed_patterns`.
+  The red-first command
+  `env PYTHONPATH=python:build/cpp python -m pytest tests/python/test_modern_atomizer.py -q -k groups_duplicate_seed_patterns`
+  reported `1 failed, 55 deselected` because BNG3 emitted two identical seed
+  declarations; the repaired command reports `1 passed, 55 deselected`. The
+  contract also verifies that fixed and dynamic groups remain separate. The
+  modern Atomizer glob reports `106 passed`, the full Python gate reports
+  `281 passed, 27 skipped, 8 warnings` in `10.17s`, exact CTest reports
+  `190/190` in `1.44s`, changed-file Ruff passes, and changed-file Black
+  reports `2 files would be left unchanged`. This Python-only checkpoint
+  leaves the native `build/cpp/bng_cpp` artifact unchanged at SHA-256
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`.
+  Exact public PR/ref head readback is
+  `bb3c116aeebcccbc8a7f123b2cc62d563308f57e`; hosted CodeQL
+  [33701338037](https://github.com/RuleWorld/BNG3/actions/runs/33701338037),
+  CI [33701338055](https://github.com/RuleWorld/BNG3/actions/runs/33701338055),
+  and formatting
+  [33701338204](https://github.com/RuleWorld/BNG3/actions/runs/33701338204)
+  were queued at readback. This closes only duplicate seed-pattern grouping;
+  broader writer/parser/SBML parity, fixed-seed provenance, and independent
+  round-trip evidence remain open.
 - [ ] Complete or explicitly govern remaining modern reference modules:
   atomization/core, parser/bngXmlParser and parser/sbmlParser,
   validation/units, writer/bnglWriter, writer/eventActions, and
