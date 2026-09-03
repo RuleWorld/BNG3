@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-03
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 21d453f25254f0d55d1374e683233629480d80b4
-**Checklist refresh base:** 21d453f25254f0d55d1374e683233629480d80b4 (local exact-head checkpoint for the isolated BNG2 oracle-path repair; public synchronization is deferred by the local-only work instruction)
-**Latest workflow checkpoint:** 21d453f25254f0d55d1374e683233629480d80b4 (local-only; no hosted run was created because this checkpoint has not been pushed)
+**Audited semantic code head:** fd6d26f2522eab3d20bc863bb91fb3423bc04730
+**Checklist refresh base:** fd6d26f2522eab3d20bc863bb91fb3423bc04730 (local exact-head checkpoint for the SBML unit-normalization contract; public synchronization is deferred by the local-only work instruction)
+**Latest workflow checkpoint:** fd6d26f2522eab3d20bc863bb91fb3423bc04730 (local-only; no hosted run was created because this checkpoint has not been pushed)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -79,6 +79,31 @@ completion gate.
   readback is claimed for this local-only checkpoint. Independent oracle
   retention, complete corpus/provenance, full Tier-P/NF/X parity, and all
   broader validation gaps remain open.
+
+- [x] Local-only SBML unit-normalization checkpoint
+  `fd6d26f2522eab3d20bc863bb91fb3423bc04730` completes the bounded
+  Playground `src/lib/atomizer/validation/units.ts` contract at pinned source
+  `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c`. Source-derived tests in
+  `tests/python/test_modern_atomizer_units.py` cover the full multiplier/scale/
+  exponent product, base/unknown-unit no-ops, global and kinetic-law-local
+  parameters, dimensional compartment defaults for volume/area/length,
+  amount/concentration scaling, audit warnings, and the source's finite-value
+  guard. The red-first command
+  `PYTHONPATH=python:build/cpp python -m pytest -p no:cacheprovider
+  tests/python/test_modern_atomizer_units.py -q` reported `1 failed, 3
+  passed in 0.37s` because a non-finite parameter was coerced to zero; the
+  targeted fix preserves the non-finite value and the repaired command reports
+  `4 passed in 0.23s`. The modern Atomizer gate reports `149 passed in 0.31s`,
+  the full Python gate reports `324 passed, 27 skipped, 8 warnings in 2.63s`,
+  exact Release/Ninja CTest reports `190/190` in `1.22s`, and Ruff/Black pass.
+  The independent NFsim binary remains SHA-256
+  `c30a80b6ff9cf1fae04bc9f45556c4d5fa9c3b00d053fb6abade80436ee46394`, and
+  the BNG3 native binary remains SHA-256
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`.
+  No generated artifacts were committed, no hosted run was created, and no
+  public SHA readback is claimed for this local-only checkpoint. Full SBML
+  semantics, schema validation, SBML-Multi execution, independent format
+  parity, and the remaining convergence gates stay open.
 
 - [x] Required fast-forward pull completed before this documentation change.
 - [x] Historical semantic checkpoint
