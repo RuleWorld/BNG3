@@ -689,9 +689,10 @@ class SBMLParser:
     ) -> Dict[str, SBMLParameter]:
         result: Dict[str, SBMLParameter] = OrderedDict()
         for item in SBMLParser._xml_items(model, "listOfParameters", "parameter"):
-            item_id = str(_attribute(item, "id", "") or "")
-            if not item_id:
+            raw_id = str(_attribute(item, "id", "") or "")
+            if not raw_id:
                 continue
+            item_id = standardize_name(raw_id)
             parameter = SBMLParameter(
                 id=item_id,
                 name=str(_attribute(item, "name", item_id) or item_id),
@@ -733,6 +734,7 @@ class SBMLParser:
                     )
             result[parameter.id] = parameter
             if aliases is not None:
+                SBMLParser._register_alias(aliases, raw_id, parameter.id)
                 SBMLParser._register_alias(aliases, parameter.id, parameter.id)
                 SBMLParser._register_alias(aliases, parameter.name, parameter.id)
         return result
@@ -769,9 +771,10 @@ class SBMLParser:
         if local_parent is not None:
             local_aliases: Dict[str, str] = {}
             for local in _children(local_parent, "localParameter"):
-                local_id = str(_attribute(local, "id", "") or "")
-                if not local_id:
+                raw_local_id = str(_attribute(local, "id", "") or "")
+                if not raw_local_id:
                     continue
+                local_id = standardize_name(raw_local_id)
                 parameter = SBMLParameter(
                     id=local_id,
                     name=str(_attribute(local, "name", local_id) or local_id),
@@ -780,6 +783,7 @@ class SBMLParser:
                     scope="local",
                 )
                 local_parameters.append(parameter)
+                SBMLParser._register_alias(local_aliases, raw_local_id, parameter.id)
                 SBMLParser._register_alias(local_aliases, parameter.id, parameter.id)
                 SBMLParser._register_alias(local_aliases, parameter.name, parameter.id)
         else:
