@@ -1248,6 +1248,22 @@ completion gate.
   exactly 10 approval/lock errors for the baseline, five sources, two oracles,
   compiler images, and the Python lock; this is a governance blocker, not a
   silently accepted pass.
+- [x] Fresh external-Perl Tier-P network parity at semantic head
+  `871d261442be2f4808cbcabed51f6a017ba5488a` used
+  `BNG2_PERL=/private/tmp/bng2-oracle.TToh58/source/bng2/BNG2.pl` from source
+  revision `fde0cd6a522c9f988d5495db31c70ce0f98e744b` and the exact command
+  `env BNG2_PERL=/private/tmp/bng2-oracle.TToh58/source/bng2/BNG2.pl NFSIM_BIN=/private/tmp/bng3-nfsim-3b046/build/NFsim PYTHONPATH=python:build/cpp python -m pytest -c tests/validation/pytest.ini tests/validation -m "parity and not slow" --bng-cpp build/cpp/bng_cpp -q`.
+  It completed `54 passed, 46 skipped, 94 deselected` in `103.14s`. The skips
+  remain explicit BNG2 fixture failures or missing references/support assets,
+  including legacy syntax, missing NFsim/run_network support, and the sandbox
+  `ps` restriction; they are not parity passes. The current exception ledger
+  is empty, so these remain environment/capability limitations rather than
+  silently admitted expected failures.
+- [x] Fresh export-format validation at the same semantic head used
+  `PYTHONPATH=python:build/cpp python -m pytest -c tests/validation/pytest.ini
+  tests/validation -m export --bng-cpp build/cpp/bng_cpp -q` and completed
+  `12 passed, 182 deselected` in `12.18s`. This is export-format evidence only;
+  SBML-Multi, broader writer parity, and release qualification remain open.
 - [x] Historical package evidence: a no-build-isolation sdist and wheel were
   rebuilt from semantic checkpoint `ba52c20` and the wheel was installed into
   an isolated target. These artifact digests and installed-wheel test results
