@@ -94,7 +94,7 @@ jobs:
 
       - name: Run NFsim once per XML model with a fixed seed
         run: |
-          set -u
+          set -euo pipefail
           NFSIM=build/cpp/NFsim
           PASS=0
           FAIL=0
@@ -113,10 +113,16 @@ jobs:
             fi
           done < <(find models -type f -name '*.xml' -print0)
 
+          SOURCE_REVISION="${BNG3_SOURCE_REVISION:-${GITHUB_SHA:-unknown}}"
+          NFSIM_DIGEST=$(sha256sum "$NFSIM" | cut -d ' ' -f 1)
           {
             echo "### NFsim Execution Smoke"
             echo ""
             echo "This check verifies fixed-seed execution only; it is not statistical parity evidence."
+            echo ""
+            echo "| Source revision | NFsim SHA-256 |"
+            echo "| --- | --- |"
+            echo "| `$SOURCE_REVISION` | `$NFSIM_DIGEST` |"
             echo ""
             echo "| Total | Passed | Failed |"
             echo "| ---: | ---: | ---: |"
@@ -126,6 +132,8 @@ jobs:
           if [ "$TOTAL" -eq 0 ] || [ "$FAIL" -gt 0 ]; then
             exit 1
           fi
+        env:
+          BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
 
   # ═══════════════════════════════════════════════════════════════════════════
   # Python Full Test Suite (all optional deps)

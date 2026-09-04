@@ -131,6 +131,26 @@ def test_msvc_parser_headers_clear_windows_macros_before_antlr():
     assert '#include "parser/antlr_compat.hpp"' in prefix
 
 
+def test_corpus_parse_inventory_emits_source_and_binary_provenance():
+    """Parser inventory summaries must identify the tested source and binary."""
+
+    job = _workflow_job("corpus-parse")
+    assert "set -euo pipefail" in job
+    assert "BNG3_SOURCE_REVISION" in job
+    assert "bng_cpp SHA-256" in job
+    assert "GITHUB_STEP_SUMMARY" in job
+
+
+def test_weekly_nfsim_smoke_emits_source_and_binary_provenance():
+    """NFsim smoke summaries must identify the tested source and executable."""
+
+    job = _workflow_job_from(WEEKLY_WORKFLOW, "nfsim-execution-smoke")
+    assert "set -euo pipefail" in job
+    assert "BNG3_SOURCE_REVISION" in job
+    assert "NFsim SHA-256" in job
+    assert "GITHUB_STEP_SUMMARY" in job
+
+
 def test_weekly_cross_validation_fails_closed_on_engine_or_output_errors():
     """The claimed C++/Perl gate must fail through the runner, not skip."""
 

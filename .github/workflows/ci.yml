@@ -262,7 +262,7 @@ jobs:
 
       - name: Inventory parser coverage
         run: |
-          set -eu
+          set -euo pipefail
           PASS=0
           UNSUPPORTED=0
           TOTAL=0
@@ -283,15 +283,23 @@ jobs:
             echo "ERROR: no BNGL models were discovered"
             exit 1
           fi
+          SOURCE_REVISION="${BNG3_SOURCE_REVISION:-${GITHUB_SHA:-unknown}}"
+          BNG_CPP_DIGEST=$(sha256sum build/cpp/bng_cpp | cut -d ' ' -f 1)
           {
             echo "### BNGL Corpus Parse Inventory"
             echo ""
             echo "This check inventories parser acceptance only; it does not run NFsim."
             echo ""
+            echo "| Source revision | bng_cpp SHA-256 |"
+            echo "| --- | --- |"
+            echo "| `$SOURCE_REVISION` | `$BNG_CPP_DIGEST` |"
+            echo ""
             echo "| Total | Parsed | Unsupported |"
             echo "| ---: | ---: | ---: |"
             echo "| $TOTAL | $PASS | $UNSUPPORTED |"
           } | tee -a "$GITHUB_STEP_SUMMARY"
+        env:
+          BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
 
   # ═══════════════════════════════════════════════════════════════════════════
   # Python Package Build & Test (full matrix)
