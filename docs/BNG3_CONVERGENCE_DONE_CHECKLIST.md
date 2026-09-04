@@ -4,7 +4,7 @@
 **Last audited:** 2026-09-03
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 1106ddf273f7c3f76b01d339a0d62a58e09175b4 (local exact head; public synchronization is deferred by the local-only work instruction)
+**Audited semantic code head:** ccb3ef9efd069bb9375a39ddb64b1861909b4aa8 (local exact head; public synchronization is deferred by the local-only work instruction)
 **Checklist refresh base:** ce4575f5c31b94ded5dfac1842a9c8e438f608d4 (local exact-head CI provenance-summary checkpoint; public synchronization is deferred by the local-only work instruction)
 **Latest workflow checkpoint:** ce4575f5c31b94ded5dfac1842a9c8e438f608d4 (local-only; no hosted run was created because this checkpoint has not been pushed)
 **PR:** RuleWorld/BNG3#2
@@ -151,6 +151,22 @@ completion gate.
   reports `5 passed in 4.62s`. Ruff, Black (`1 file would be left
   unchanged`), and `git diff --check` pass. This fixes validation scope only;
   complete deterministic/stochastic corpus parity, direct expression-vector
+  and RHS parity, NFsim, SBML, Atomizer, round-trip, release, and hosted gates
+  remain open.
+
+- [x] Local-only validation-artifact selection checkpoint
+  `ccb3ef9efd069bb9375a39ddb64b1861909b4aa8` makes the CLI validation runner
+  select `<model>.net` and `<model>.gdat` before any suffixed action artifacts,
+  and return no artifact when multiple non-preferred candidates are ambiguous.
+  This removes filesystem-iteration-order dependence observed for action-heavy
+  models such as `gene_expr`, which emit burn-in, SSA, and NF trajectories in
+  one run. Source-derived harness tests in
+  `tests/validation/test_harness_paths.py` report `2 passed, 7 deselected in
+  0.10s`. The independent BNG2-backed ODE and emitted-rate-network gates report
+  `8 passed in 5.03s`, and the export-format gate reports `12 passed in
+  12.94s`; Ruff, Black on the focused harness test, and `git diff --check`
+  pass. This closes artifact selection determinism only; complete trajectory
+  selection policy, independent stochastic ensembles, direct expression-vector
   and RHS parity, NFsim, SBML, Atomizer, round-trip, release, and hosted gates
   remain open.
 
