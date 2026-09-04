@@ -4,7 +4,7 @@
 **Last audited:** 2026-09-03
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** b75e724b8bbd1301b6643c1ca1fe94683ebc827b (local exact head; public synchronization is deferred by the local-only work instruction)
+**Audited semantic code head:** 1106ddf273f7c3f76b01d339a0d62a58e09175b4 (local exact head; public synchronization is deferred by the local-only work instruction)
 **Checklist refresh base:** ce4575f5c31b94ded5dfac1842a9c8e438f608d4 (local exact-head CI provenance-summary checkpoint; public synchronization is deferred by the local-only work instruction)
 **Latest workflow checkpoint:** ce4575f5c31b94ded5dfac1842a9c8e438f608d4 (local-only; no hosted run was created because this checkpoint has not been pushed)
 **PR:** RuleWorld/BNG3#2
@@ -138,6 +138,21 @@ completion gate.
   slices; direct expression-vector/RHS parity, complete writer/schema and
   round-trip parity, independent corpus coverage, SBML-Multi, direct-NFsim,
   packaging, release, and hosted gates remain open.
+
+- [x] Local-only deterministic ODE gate hygiene checkpoint
+  `1106ddf273f7c3f76b01d339a0d62a58e09175b4` removes `gene_expr` from
+  `tests/validation/test_parity_ode.py`: its action block contains SSA and
+  NF simulations, not a deterministic ODE simulation, so its randomly sampled
+  `.gdat` outputs cannot be compared as ODE trajectories. The stochastic
+  model remains covered by the separate stochastic validation path. Before
+  this repair the action-aware gate reported a real but invalid comparison
+  failure for `gene_expr`; the corrected independent BNG2-backed command
+  `PYTHONDONTWRITEBYTECODE=1 BNG2_PERL=/private/tmp/bng2-oracle.TToh58/source/bng2/BNG2.pl PYTHONPATH=python:build/cpp python -m pytest -c tests/validation/pytest.ini tests/validation/test_parity_ode.py -q -p no:cacheprovider`
+  reports `5 passed in 4.62s`. Ruff, Black (`1 file would be left
+  unchanged`), and `git diff --check` pass. This fixes validation scope only;
+  complete deterministic/stochastic corpus parity, direct expression-vector
+  and RHS parity, NFsim, SBML, Atomizer, round-trip, release, and hosted gates
+  remain open.
 
 - [x] Local-only CI provenance-summary checkpoint
   `ce4575f5c31b94ded5dfac1842a9c8e438f608d4` adds source-revision and binary
