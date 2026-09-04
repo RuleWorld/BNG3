@@ -4,7 +4,7 @@
 **Last audited:** 2026-09-03
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 700cbdeb0d539e8a84c9a68c628386b0b9f33437 (local exact head; public synchronization is deferred by the local-only work instruction)
+**Audited semantic code head:** b75e724b8bbd1301b6643c1ca1fe94683ebc827b (local exact head; public synchronization is deferred by the local-only work instruction)
 **Checklist refresh base:** ce4575f5c31b94ded5dfac1842a9c8e438f608d4 (local exact-head CI provenance-summary checkpoint; public synchronization is deferred by the local-only work instruction)
 **Latest workflow checkpoint:** ce4575f5c31b94ded5dfac1842a9c8e438f608d4 (local-only; no hosted run was created because this checkpoint has not been pushed)
 **PR:** RuleWorld/BNG3#2
@@ -105,6 +105,39 @@ completion gate.
   paused. The bounded evaluator does not close full function/rate-law,
   SBML/schema, independent corpus, round-trip, SBML-Multi, direct-NFsim,
   packaging, release, or hosted validation gates.
+
+- [x] Local-only modern writer facade and scoped-local-parameter checkpoint
+  `b75e724b8bbd1301b6643c1ca1fe94683ebc827b` ports the pinned Playground
+  `src/lib/atomizer/writer/bnglWriter.ts:1654-1810,1998-2050,3683-3915`
+  entry-point split at source revision
+  `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c`. BNG3 now exposes distinct
+  `writeReactionRulesFlat`, `writeReactionRulesAtomized`, and
+  `writeReactionRulesFlat_V2` facades while reusing the existing validated
+  rate-processing path, and carries the source
+  `config/types.ts:350-393` `replaceLocParams` option through BNGL generation.
+  When local parameters are preserved, the writer emits stable reaction-scoped
+  names and declarations, including rate-rule/assignment-flux paths; the
+  default value-replacement behavior remains unchanged. The source-derived
+  tests were red first against the previous exact head, failing during
+  collection with `ImportError: cannot import name 'writeReactionRulesAtomized'`;
+  the repaired focused writer/facade command reports `14 passed in 0.43s`.
+  The action-aware expression validation repair now compares emitted rate
+  networks against independent BNG2 rather than mislabeling solver-trajectory
+  drift as direct RHS parity; its exact command reports `3 passed in 0.55s`
+  using BNG2 source revision
+  `fde0cd6a522c9f988d5495db31c70ce0f98e744b` at
+  `/private/tmp/bng2-oracle.TToh58/source/bng2/BNG2.pl` (SHA-256
+  `cf5fd82d3df9b84835d29234bd32268b87eaa985dd221bd5d39aadef744795f4`).
+  Exact-head local gates report `340 passed, 27 skipped, 8 warnings` for
+  `tests/python`, `190/190` for Release/Ninja CTest, `189 files would be left
+  unchanged` for Black, and Ruff plus `git diff --check` pass. The native
+  `build/cpp/bng_cpp` artifact remains SHA-256
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`.
+  No hosted run or public SHA readback is claimed under local-only mode. This
+  closes only the bounded writer-entry/local-parameter and emitted-rate-network
+  slices; direct expression-vector/RHS parity, complete writer/schema and
+  round-trip parity, independent corpus coverage, SBML-Multi, direct-NFsim,
+  packaging, release, and hosted gates remain open.
 
 - [x] Local-only CI provenance-summary checkpoint
   `ce4575f5c31b94ded5dfac1842a9c8e438f608d4` adds source-revision and binary
