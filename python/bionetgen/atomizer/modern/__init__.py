@@ -114,7 +114,13 @@ from .writer import (
     writeParameters,
     write_parameters,
     writeReactionRules,
+    writeReactionRulesAtomized,
+    writeReactionRulesFlat,
+    writeReactionRulesFlat_V2,
     write_reaction_rules,
+    write_reaction_rules_atomized,
+    write_reaction_rules_flat,
+    write_reaction_rules_flat_v2,
     writeSeedSpecies,
     write_seed_species,
 )
@@ -209,6 +215,7 @@ DEFAULT_ATOMIZER_OPTIONS: Dict[str, Any] = {
     "actions": "",
     "t_end": 10,
     "n_steps": 100,
+    "replace_loc_params": True,
 }
 
 _SOURCE_OPTION_ALIASES = {
@@ -218,6 +225,7 @@ _SOURCE_OPTION_ALIASES = {
     "logLevel": "log_level",
     "tEnd": "t_end",
     "nSteps": "n_steps",
+    "replaceLocParams": "replace_loc_params",
 }
 
 
@@ -404,6 +412,9 @@ class Atomizer:
                     actions=str(self.options.get("actions", "") or ""),
                     t_end=float(self.options.get("t_end", 10) or 10),
                     n_steps=int(self.options.get("n_steps", 100) or 100),
+                    replace_loc_params=bool(
+                        self.options.get("replace_loc_params", True)
+                    ),
                 )
                 return AtomizerResult(
                     bngl=bngl,
@@ -444,6 +455,7 @@ class Atomizer:
                 actions=str(self.options.get("actions", "") or ""),
                 t_end=float(self.options.get("t_end", 10) or 10),
                 n_steps=int(self.options.get("n_steps", 100) or 100),
+                replace_loc_params=bool(self.options.get("replace_loc_params", True)),
             )
             logger.info("ATM009", "BNGL generation complete")
             annotation = (
@@ -688,6 +700,14 @@ __all__ = [
     "fetch_uniprot_entry",
     "generate_bngl",
     "generateBNGL",
+    "write_reaction_rules",
+    "writeReactionRules",
+    "write_reaction_rules_flat",
+    "writeReactionRulesFlat",
+    "write_reaction_rules_atomized",
+    "writeReactionRulesAtomized",
+    "write_reaction_rules_flat_v2",
+    "writeReactionRulesFlat_V2",
     "inlineSBMLFunctions",
     "inline_sbml_functions",
     "get_molecule_types",

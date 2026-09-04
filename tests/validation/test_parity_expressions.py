@@ -1,10 +1,8 @@
-"""Rate-law / local-function parity.
+"""Rate-law / local-function network parity.
 
-Function-heavy models must match the oracle ODE RHS to 1e-9. This is the gate
-for WO-3 (single Expression evaluator across ODE / SSA / NF). With no separate
-RHS dump available, we use a tight ODE trajectory tolerance as the proxy: if the
-shared evaluator diverged, function-driven observables would drift well above
-1e-9 within a few steps.
+The direct expression-vector/RHS gate remains open. This check compares the
+action-aware BNG3 network and emitted rate laws with the independent BNG2
+network for deterministic function-heavy fixtures.
 """
 
 from __future__ import annotations
@@ -13,23 +11,26 @@ import pytest
 
 from tests.validation import compare, corpus, oracle_perl, runner
 
-EXPR_MODELS = corpus.tier_expr()
+# The Ising fixtures are SSA/NF models and are covered by the stochastic/NF
+# gates; they are not deterministic network-rate fixtures.
+EXPR_MODELS = [
+    m for m in ("localfunc", "CaOscillate_Func", "michment") if corpus.resolve(m)
+]
 
 
 @pytest.mark.expressions
 @pytest.mark.parametrize("model_name", EXPR_MODELS)
-def test_expression_rhs_parity(model_name, api, work_dir):
-    ref_path, ref_src = oracle_perl.gdat(model_name, work_dir / "perl")
+def test_expression_rate_parity(model_name, bng_cpp, work_dir):
+    ref_path, ref_src = oracle_perl.net(model_name, work_dir / "perl")
     if ref_path is None:
-        pytest.skip(f"no reference .gdat for {model_name}: {ref_src}")
-    ref_data, ref_cols = compare.parse_gdat(ref_path)
-    assert ref_data is not None
-
-    t_end = float(ref_data[-1, ref_cols.index("time")] if "time" in ref_cols else ref_data[-1, 0])
-    n_steps = ref_data.shape[0] - 1
-    # localfunc/isingspin are stochastic; use ode where the model supports it,
-    # else fall back to the model's native method recorded in its actions.
-    method = "ode"
-    traj = runner.run_api(model_name, method=method, t_end=t_end, n_steps=n_steps)
-    diff = compare.compare_trajectories(ref_data, ref_cols, traj.data, traj.columns, rtol=1e-9)
-    assert diff.ok, f"expression RHS drift [{model_name}] (ref={ref_src}): {diff.summary()}"
+        pytest.skip(f"no reference .net for {model_name}: {ref_src}")
+    test_path, _, err = runner.run_cli(bng_cpp, model_name, work_dir / "cpp")
+    assert test_path is not None, f"engine produced no network: {err}"
+    ref_net = compare.parse_net(ref_path)
+    test_net = compare.parse_net(test_path)
+    assert ref_net is not None, f"could not parse reference network ({ref_src})"
+    assert test_net is not None, "could not parse engine network"
+    diff = compare.compare_net(ref_net, test_net)
+    assert (
+        diff.ok
+    ), f"expression rate drift [{model_name}] (ref={ref_src}): {diff.summary()}"

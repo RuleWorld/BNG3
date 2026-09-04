@@ -1307,7 +1307,12 @@ def check_mass_action(
     return mean if coefficient_of_variation < 1e-4 else None
 
 
-def _prepared_kinetic_math(reaction: SBMLReaction, model: SBMLModel) -> str:
+def _prepared_kinetic_math(
+    reaction: SBMLReaction,
+    model: SBMLModel,
+    replace_loc_params: bool = True,
+    reaction_id: Optional[str] = None,
+) -> str:
     """Inline functions and substitute reaction-local parameters once."""
 
     math_expression = extend_function(
@@ -1329,9 +1334,14 @@ def _prepared_kinetic_math(reaction: SBMLReaction, model: SBMLModel) -> str:
         if parameter_value is None and isinstance(parameter, Mapping):
             parameter_value = parameter.get("value")
         if parameter_id:
+            replacement = (
+                _curated_parameter_value(model, str(parameter_id), parameter_value)
+                if replace_loc_params
+                else standardize_name(f"{reaction_id or reaction.id}_{parameter_id}")
+            )
             math_expression = re.sub(
                 rf"\b{re.escape(str(parameter_id))}\b",
-                _curated_parameter_value(model, str(parameter_id), parameter_value),
+                replacement,
                 math_expression,
             )
     return math_expression
@@ -1385,6 +1395,31 @@ def _strip_compartment_rate_factors(
     return result.strip() or "1"
 
 
+def _local_parameter_entries(model: SBMLModel) -> List[Tuple[str, object]]:
+    """Return source-scoped local parameters under stable BNGL identifiers."""
+
+    entries: "OrderedDict[str, object]" = OrderedDict()
+    for reaction_id, reaction in model.reactions.items():
+        kinetic_law = reaction.kinetic_law
+        local_parameters = (
+            kinetic_law.get("localParameters", [])
+            if isinstance(kinetic_law, Mapping)
+            else getattr(kinetic_law, "local_parameters", [])
+        )
+        for parameter in local_parameters or []:
+            parameter_id = getattr(parameter, "id", None)
+            if parameter_id is None and isinstance(parameter, Mapping):
+                parameter_id = parameter.get("id")
+            if not parameter_id:
+                continue
+            parameter_value = getattr(parameter, "value", None)
+            if parameter_value is None and isinstance(parameter, Mapping):
+                parameter_value = parameter.get("value")
+            name = standardize_name(f"{reaction_id}_{parameter_id}")
+            entries.setdefault(name, parameter_value)
+    return list(entries.items())
+
+
 def _rate_for_reaction(
     reaction: SBMLReaction,
     model: SBMLModel,
@@ -1393,6 +1428,7 @@ def _rate_for_reaction(
     reactant_structures: Optional[Mapping[str, Species]] = None,
     reactant_ids: Optional[Sequence[str]] = None,
     prepared_math: Optional[str] = None,
+    replace_loc_params: bool = True,
 ) -> str:
     def apply_conversion(rate: str) -> str:
         if conversion_factor is None:
@@ -1402,7 +1438,11 @@ def _rate_for_reaction(
     math = (
         prepared_math
         if prepared_math is not None
-        else _prepared_kinetic_math(reaction, model)
+        else _prepared_kinetic_math(
+            reaction,
+            model,
+            replace_loc_params=replace_loc_params,
+        )
     )
     if not math or not str(math).strip():
         _log_missing_kinetic(
@@ -1591,10 +1631,16 @@ def process_reaction_rate(
     observable_converted_rules: Optional[Set[str]] = None,
     reactant_structures: Optional[Mapping[str, Species]] = None,
     conversion_factor: Optional[str] = None,
+    replace_loc_params: bool = True,
 ) -> ProcessedRate:
     """Process one SBML rate using the source-shaped reversible pipeline."""
 
-    prepared_math = _prepared_kinetic_math(reaction, model)
+    prepared_math = _prepared_kinetic_math(
+        reaction,
+        model,
+        replace_loc_params=replace_loc_params,
+        reaction_id=reaction_id,
+    )
     structures = reactant_structures or {}
     if not prepared_math or not str(prepared_math).strip():
         return ProcessedRate(
@@ -1605,6 +1651,7 @@ def process_reaction_rate(
                 observable_converted_rules,
                 structures,
                 prepared_math=prepared_math,
+                replace_loc_params=replace_loc_params,
             ),
             force_irreversible=bool(reaction.reversible),
         )
@@ -1628,6 +1675,7 @@ def process_reaction_rate(
                 observable_converted_rules,
                 structures,
                 prepared_math=prepared_math,
+                replace_loc_params=replace_loc_params,
             ),
             force_irreversible=bool(reaction.reversible),
         )
@@ -1641,6 +1689,7 @@ def process_reaction_rate(
         structures,
         reactant_ids=forward_ids,
         prepared_math=split[0],
+        replace_loc_params=replace_loc_params,
     )
     reverse_rate = _rate_for_reaction(
         reaction,
@@ -1650,6 +1699,7 @@ def process_reaction_rate(
         structures,
         reactant_ids=reverse_ids,
         prepared_math=split[1],
+        replace_loc_params=replace_loc_params,
     )
     if _has_denominator_issue(forward_rate, forward_ids) or _has_denominator_issue(
         reverse_rate, reverse_ids
@@ -1662,6 +1712,7 @@ def process_reaction_rate(
                 observable_converted_rules,
                 structures,
                 prepared_math=prepared_math,
+                replace_loc_params=replace_loc_params,
             ),
             force_irreversible=True,
             is_split_rxn=True,
@@ -1726,6 +1777,7 @@ def _inline_reaction_fluxes(
     observable_converted_rules: Set[str],
     species_with_conc_functions: Set[str],
     sbml_to_bngl_id: Mapping[str, str],
+    replace_loc_params: bool = True,
 ) -> str:
     """Inline reaction IDs used as SBML ``rateOf`` expressions."""
 
@@ -1767,9 +1819,14 @@ def _inline_reaction_fluxes(
             if parameter_value is None and isinstance(parameter, Mapping):
                 parameter_value = parameter.get("value")
             if parameter_id:
+                replacement = (
+                    _curated_parameter_value(model, str(parameter_id), parameter_value)
+                    if replace_loc_params
+                    else standardize_name(f"{reaction_id}_{parameter_id}")
+                )
                 math_expression = re.sub(
                     rf"\b{re.escape(str(parameter_id))}\b",
-                    _curated_parameter_value(model, str(parameter_id), parameter_value),
+                    replacement,
                     math_expression,
                 )
         try:
@@ -1855,7 +1912,9 @@ def _conversion_factor_for_reaction(
 
 
 def write_parameters(
-    model: SBMLModel, assignment_variables: Optional[Set[str]] = None
+    model: SBMLModel,
+    assignment_variables: Optional[Set[str]] = None,
+    include_local_parameters: bool = False,
 ) -> List[str]:
     assignment_variables = assignment_variables or set()
     lines = ["__Avogadro__ 1"]
@@ -1872,6 +1931,9 @@ def write_parameters(
         lines.append(
             f"{name} {_curated_parameter_value(model, parameter_id, parameter.value)}"
         )
+    if include_local_parameters:
+        for name, value in _local_parameter_entries(model):
+            lines.append(f"{name} {_curated_parameter_value(model, name, value)}")
     return lines
 
 
@@ -2444,6 +2506,7 @@ def write_functions(
     synthetic_rate_rule_variables: Optional[Set[str]] = None,
     skip_assignment_rules: Optional[Set[str]] = None,
     keep_parameterized: bool = False,
+    replace_loc_params: bool = True,
 ) -> List[str]:
     lines = []
     zero_argument_functions = []
@@ -2552,6 +2615,7 @@ def write_functions(
                 skip_assignment_rules,
                 concentration_names,
                 species_map,
+                replace_loc_params,
             ),
             {
                 parameter_id: parameter.value
@@ -2578,6 +2642,7 @@ def write_functions(
                 skip_assignment_rules,
                 concentration_names,
                 species_map,
+                replace_loc_params,
             ),
             {},
             model.function_definitions,
@@ -2641,6 +2706,7 @@ def write_reaction_rules(
     atomize: bool,
     observable_converted_rules: Optional[Set[str]] = None,
     time_rate_functions: Optional[List[str]] = None,
+    replace_loc_params: bool = True,
 ) -> List[str]:
     lines = []
     used_labels = set()
@@ -2755,6 +2821,7 @@ def write_reaction_rules(
             observable_converted_rules=observable_converted_rules,
             reactant_structures=structures,
             conversion_factor=conversion_factor,
+            replace_loc_params=replace_loc_params,
         )
         rate = processed.rate_string
         arrow = (
@@ -2826,6 +2893,92 @@ def write_reaction_rules(
     return lines
 
 
+def _reaction_rules_section(
+    model: SBMLModel,
+    sct: SpeciesCompositionTable,
+    atomize: bool,
+    observable_converted_rules: Optional[Set[str]] = None,
+    time_rate_functions: Optional[List[str]] = None,
+    replace_loc_params: bool = True,
+) -> str:
+    """Render the shared reaction-rule implementation as a BNGL section."""
+
+    return _section(
+        "reaction rules",
+        write_reaction_rules(
+            model,
+            sct,
+            atomize,
+            observable_converted_rules=observable_converted_rules,
+            time_rate_functions=time_rate_functions,
+            replace_loc_params=replace_loc_params,
+        ),
+    )
+
+
+def write_reaction_rules_flat(
+    model: SBMLModel,
+    sct: SpeciesCompositionTable,
+    observable_converted_rules: Optional[Set[str]] = None,
+    time_rate_functions: Optional[List[str]] = None,
+    replace_loc_params: bool = True,
+) -> str:
+    """Render the Playground flat reaction-rule writer entry point.
+
+    The Python port receives the already selected species-composition table;
+    the table is elemental for flat translation and structured for atomized
+    translation.  Both source writer variants therefore share the one
+    validation and rate-processing implementation below.
+    """
+
+    return _reaction_rules_section(
+        model,
+        sct,
+        atomize=False,
+        observable_converted_rules=observable_converted_rules,
+        time_rate_functions=time_rate_functions,
+        replace_loc_params=replace_loc_params,
+    )
+
+
+def write_reaction_rules_atomized(
+    model: SBMLModel,
+    sct: SpeciesCompositionTable,
+    observable_converted_rules: Optional[Set[str]] = None,
+    time_rate_functions: Optional[List[str]] = None,
+    replace_loc_params: bool = True,
+) -> str:
+    """Render the Playground atomized reaction-rule writer entry point."""
+
+    return _reaction_rules_section(
+        model,
+        sct,
+        atomize=True,
+        observable_converted_rules=observable_converted_rules,
+        time_rate_functions=time_rate_functions,
+        replace_loc_params=replace_loc_params,
+    )
+
+
+def write_reaction_rules_flat_v2(
+    model: SBMLModel,
+    sct: SpeciesCompositionTable,
+    observable_converted_rules: Optional[Set[str]] = None,
+    time_rate_functions: Optional[List[str]] = None,
+    replace_loc_params: bool = True,
+) -> str:
+    """Render the patched Playground flat writer used by BNGL generation."""
+
+    return _reaction_rules_section(
+        model,
+        sct,
+        atomize=False,
+        observable_converted_rules=observable_converted_rules,
+        time_rate_functions=time_rate_functions,
+        replace_loc_params=replace_loc_params,
+    )
+
+
 def generate_bngl(
     model: SBMLModel,
     sct: SpeciesCompositionTable,
@@ -2835,6 +2988,7 @@ def generate_bngl(
     actions: str = "",
     t_end: float = 10,
     n_steps: int = 100,
+    replace_loc_params: bool = True,
 ) -> BNGLGenerationResult:
     for rule in model.rules:
         if rule.type != "algebraic":
@@ -2948,7 +3102,14 @@ def generate_bngl(
         f"# Species: {len(model.species)}, Reactions: {len(model.reactions)}",
         "",
         "begin model",
-        _section("parameters", write_parameters(model, assignment_variables)),
+        _section(
+            "parameters",
+            write_parameters(
+                model,
+                assignment_variables,
+                include_local_parameters=not replace_loc_params,
+            ),
+        ),
     ]
     if model.compartments:
         sections.append(_section("compartments", write_compartments(model)))
@@ -2980,19 +3141,22 @@ def generate_bngl(
     if observable_lines:
         sections.append(_section("observables", observable_lines))
     function_lines = write_functions(
-        model, synthetic_rate_rule_variables, observable_rule_variables
+        model,
+        synthetic_rate_rule_variables,
+        observable_rule_variables,
+        replace_loc_params=replace_loc_params,
     )
     time_rate_functions: List[str] = []
+    reaction_rules = (
+        write_reaction_rules_atomized if atomize else write_reaction_rules_flat_v2
+    )
     sections.append(
-        _section(
-            "reaction rules",
-            write_reaction_rules(
-                model,
-                augmented_sct,
-                atomize,
-                observable_converted_rules=observable_rule_variables,
-                time_rate_functions=time_rate_functions,
-            ),
+        reaction_rules(
+            model,
+            augmented_sct,
+            observable_converted_rules=observable_rule_variables,
+            time_rate_functions=time_rate_functions,
+            replace_loc_params=replace_loc_params,
         )
     )
     function_lines.extend(time_rate_functions)
@@ -3136,6 +3300,9 @@ writeSeedSpecies = write_seed_species
 writeObservables = write_observables
 writeFunctions = write_functions
 writeReactionRules = write_reaction_rules
+writeReactionRulesFlat = write_reaction_rules_flat
+writeReactionRulesAtomized = write_reaction_rules_atomized
+writeReactionRulesFlat_V2 = write_reaction_rules_flat_v2
 
 
 __all__ = [
@@ -3173,6 +3340,12 @@ __all__ = [
     "write_parameters",
     "writeReactionRules",
     "write_reaction_rules",
+    "writeReactionRulesFlat",
+    "write_reaction_rules_flat",
+    "writeReactionRulesAtomized",
+    "write_reaction_rules_atomized",
+    "writeReactionRulesFlat_V2",
+    "write_reaction_rules_flat_v2",
     "writeSeedSpecies",
     "write_seed_species",
 ]

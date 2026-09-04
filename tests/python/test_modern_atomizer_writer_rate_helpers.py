@@ -1,5 +1,7 @@
 """Source-derived contracts for Playground writer rate helpers."""
 
+import pytest
+
 from bionetgen.atomizer.modern import (
     ProcessedRate,
     ReversibleRateSplit,
@@ -18,6 +20,12 @@ from bionetgen.atomizer.modern import (
     process_reaction_rate,
     splitReversibleRate,
     split_reversible_rate,
+    writeReactionRulesAtomized,
+    writeReactionRulesFlat,
+    writeReactionRulesFlat_V2,
+    write_reaction_rules_atomized,
+    write_reaction_rules_flat,
+    write_reaction_rules_flat_v2,
 )
 
 
@@ -179,6 +187,65 @@ def test_playground_writer_facade_exports_all_implemented_writer_names():
         ("writeReactionRules", "write_reaction_rules"),
     ):
         assert getattr(modern, camel_name) is getattr(modern, snake_name)
+
+
+def test_playground_writer_exposes_distinct_reaction_rule_entry_points():
+    from bionetgen.atomizer.modern import build_species_composition_table
+
+    model = _mass_action_model()
+    sct = build_species_composition_table(model, atomize=False)
+
+    flat = write_reaction_rules_flat(model, sct)
+    atomized = write_reaction_rules_atomized(model, sct)
+    flat_v2 = write_reaction_rules_flat_v2(model, sct)
+
+    assert flat.startswith("begin reaction rules\n")
+    assert flat.endswith("\nend reaction rules")
+    assert "r: M_A()@cell -> M_P()@cell 3" in flat
+    assert atomized == flat
+    assert flat_v2 == flat
+    assert writeReactionRulesFlat is write_reaction_rules_flat
+    assert writeReactionRulesAtomized is write_reaction_rules_atomized
+    assert writeReactionRulesFlat_V2 is write_reaction_rules_flat_v2
+
+
+def test_playground_writer_can_preserve_scoped_local_parameter_names():
+    from bionetgen.atomizer.modern import (
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    model = _mass_action_model("local_rate * A")
+    model.reactions["r"].kinetic_law = SBMLKineticLaw(
+        "local_rate * A",
+        local_parameters=[SBMLParameter(id="local_rate", value=7, scope="local")],
+    )
+    from bionetgen.atomizer.modern import build_species_composition_table
+
+    sct = build_species_composition_table(model, atomize=False)
+    result = generate_bngl(
+        model,
+        sct,
+        get_molecule_types(sct),
+        get_seed_species(sct, model),
+        replace_loc_params=False,
+    )
+
+    assert "r_local_rate 7" in result.bngl
+    assert "r: M_A()@cell -> M_P()@cell r_local_rate" in result.bngl
+    assert "r: M_A()@cell -> M_P()@cell 7" not in result.bngl
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    cpp.parse_string(result.bngl)
+
+
+def test_playground_atomizer_accepts_replace_local_parameters_option():
+    from bionetgen.atomizer.modern import Atomizer
+
+    atomizer = Atomizer(replaceLocParams=False)
+
+    assert atomizer.getOptions()["replace_loc_params"] is False
+    assert "replaceLocParams" not in atomizer.getOptions()
 
 
 def test_playground_generate_bngl_returns_named_generation_result():
