@@ -81,6 +81,21 @@ def test_explicit_bng_cpp_path_is_anchored_to_discovery_directory(
     assert conftest._discover_bng_cpp("bin/bng_cpp") == binary.resolve()
 
 
+def test_cli_output_selection_prefers_model_stem_over_action_artifacts(tmp_path):
+    preferred = tmp_path / "model.gdat"
+    preferred.touch()
+    (tmp_path / "model_burnin.gdat").touch()
+
+    assert runner._select_cli_output(tmp_path, "model", ".gdat") == preferred
+
+
+def test_cli_output_selection_fails_closed_on_ambiguous_artifacts(tmp_path):
+    (tmp_path / "model_burnin.gdat").touch()
+    (tmp_path / "model_equil.gdat").touch()
+
+    assert runner._select_cli_output(tmp_path, "model", ".gdat") is None
+
+
 def test_api_ensemble_parallel_workers_preserve_seed_order():
     runs = runner.run_api_ensemble(
         "simple_system",

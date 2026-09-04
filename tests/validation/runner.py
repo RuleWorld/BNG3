@@ -77,9 +77,18 @@ def run_cli_path(
     if proc.returncode != 0:
         return None, None, proc.stderr or proc.stdout
 
-    net = next(iter(work_dir.glob("*.net")), None)
-    gdat = next(iter(work_dir.glob("*.gdat")), None)
+    net = _select_cli_output(work_dir, src.stem, ".net")
+    gdat = _select_cli_output(work_dir, src.stem, ".gdat")
     return net, gdat, proc.stderr
+
+
+def _select_cli_output(work_dir: Path, model_stem: str, suffix: str):
+    """Select a CLI artifact without depending on filesystem iteration order."""
+    preferred = work_dir / f"{model_stem}{suffix}"
+    if preferred.is_file():
+        return preferred
+    candidates = sorted(work_dir.glob(f"*{suffix}"))
+    return candidates[0] if len(candidates) == 1 else None
 
 
 # --------------------------------------------------------------------------- #
