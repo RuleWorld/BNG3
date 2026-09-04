@@ -136,6 +136,29 @@ completion gate.
   direct-NFsim three-way parity, and energy/provenance/release gates remain
   open.
 
+- [x] Fresh independent BNG2 differential evidence at exact integration head
+  `0fd370bcb200a6c83211d0c4d3b83b6f39e89865` used BNG2 source revision
+  `fde0cd6a522c9f988d5495db31c70ce0f98e744b` from
+  `/private/tmp/bng2-oracle.TToh58/source/bng2/BNG2.pl`; the oracle script
+  SHA-256 is `cf5fd82d3df9b84835d29234bd32268b87eaa985dd221bd5d39aadef744795f4`.
+  The exact command
+  `PYTHONDONTWRITEBYTECODE=1 BNG2_PERL=/private/tmp/bng2-oracle.TToh58/source/bng2/BNG2.pl PYTHONPATH=python:build/cpp python -m pytest -c tests/validation/pytest.ini tests/validation -m "parity and not slow" --bng-cpp /Users/akutuva/Documents/BioNetGen/BNG3/build/cpp/bng_cpp -q -p no:cacheprovider`
+  completed `54 passed, 46 skipped, 95 deselected in 109.06s`, with no
+  assertion failures. The skips are explicit missing-reference, legacy-syntax,
+  missing-asset, missing-NFsim, missing-test-data, or sandbox-`ps` conditions;
+  this is a refreshed external subset result, not full Tier-P qualification.
+
+- [x] Zero-baseline trajectory comparisons now fail closed at
+  `5a7e31866c9c5cc87caa1ec7735b6b5c3ea76080`: exact zero/zero comparisons
+  produce finite zero error, while nonzero differences at an exact zero
+  baseline produce infinite error instead of NaN and a false pass. Tests-first
+  evidence was `2 failed, 4 passed` on the old comparator; the repaired focused
+  command reports `6 passed in 0.06s`, and accepted-cutoff direct/XML NF checks
+  report `4 passed, 6 deselected in 4.19s` without the prior divide warnings.
+  Ruff, focused Black, and `git diff --check` pass. This hardens comparator
+  truthfulness only; it does not expand the independent corpus or close the
+  remaining parity, provenance, or release gates.
+
 - [x] Local-only structural C++/Perl validation checkpoint
   `c6780bb3f7f65c46233f23750047b5c45e52afca` replaces the weekly shell
   species-count comparison with `scripts/cross_validate.py:1-376`. Both
