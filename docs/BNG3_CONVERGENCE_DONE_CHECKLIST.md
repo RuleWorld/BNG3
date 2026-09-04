@@ -120,6 +120,22 @@ completion gate.
   jobs; terminal summaries and fail-closed behavior for every required CI,
   validation, release, and hosted job remain open.
 
+- [x] Fresh accepted-cutoff Tier-NF evidence at the current exact integration
+  head `6cd401e470b46a528b3e6578d698bc879a41ad0a` used the independent NFsim
+  source cutoff `3b046fc1b9f76719d92be22279b24992cdae7c35` and binary
+  `/private/tmp/bng3-nfsim-3b046/build/NFsim` (SHA-256
+  `c30a80b6ff9cf1fae04bc9f45556c4d5fa9c3b00d053fb6abade80436ee46394`). The
+  exact command
+  `PYTHONDONTWRITEBYTECODE=1 NFSIM_BIN=/private/tmp/bng3-nfsim-3b046/build/NFsim BNG_CPP=/Users/akutuva/Documents/BioNetGen/BNG3/build/cpp/bng_cpp PYTHONPATH=python:build/cpp python -m pytest -c tests/validation/pytest.ini tests/validation -m nf --bng-cpp /Users/akutuva/Documents/BioNetGen/BNG3/build/cpp/bng_cpp -q -p no:cacheprovider`
+  completed `10 passed, 185 deselected, 3 warnings in 151.88s`. It covers the
+  selected `localfunc`, `motor`, `simple_system`, and `tlbr` native ensembles,
+  direct/XML shadow checks, and fixed-seed endpoint checks. The warnings are
+  the known zero-denominator invalid-divide diagnostic at
+  `tests/validation/compare.py:1278`. This qualifies the selected slice at
+  the current exact integration head only; full Tier-NF coverage, broader
+  direct-NFsim three-way parity, and energy/provenance/release gates remain
+  open.
+
 - [x] Local-only structural C++/Perl validation checkpoint
   `c6780bb3f7f65c46233f23750047b5c45e52afca` replaces the weekly shell
   species-count comparison with `scripts/cross_validate.py:1-376`. Both
