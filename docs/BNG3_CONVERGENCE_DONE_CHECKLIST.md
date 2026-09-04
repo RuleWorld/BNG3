@@ -5,8 +5,8 @@
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
 **Audited semantic code head:** 700cbdeb0d539e8a84c9a68c628386b0b9f33437 (local exact head; public synchronization is deferred by the local-only work instruction)
-**Checklist refresh base:** 700cbdeb0d539e8a84c9a68c628386b0b9f33437 (local exact-head checkpoint for unified Atomizer rate processing; public synchronization is deferred by the local-only work instruction)
-**Latest workflow checkpoint:** 700cbdeb0d539e8a84c9a68c628386b0b9f33437 (local-only; no hosted run was created because this checkpoint has not been pushed)
+**Checklist refresh base:** ce4575f5c31b94ded5dfac1842a9c8e438f608d4 (local exact-head CI provenance-summary checkpoint; public synchronization is deferred by the local-only work instruction)
+**Latest workflow checkpoint:** ce4575f5c31b94ded5dfac1842a9c8e438f608d4 (local-only; no hosted run was created because this checkpoint has not been pushed)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -105,6 +105,20 @@ completion gate.
   paused. The bounded evaluator does not close full function/rate-law,
   SBML/schema, independent corpus, round-trip, SBML-Multi, direct-NFsim,
   packaging, release, or hosted validation gates.
+
+- [x] Local-only CI provenance-summary checkpoint
+  `ce4575f5c31b94ded5dfac1842a9c8e438f608d4` adds source-revision and binary
+  SHA-256 tables to the PR BNGL corpus-parse inventory and weekly NFsim
+  execution-smoke summaries in `.github/workflows/ci.yml` and
+  `.github/workflows/weekly.yml`. Both scripts now use `set -euo pipefail`.
+  Source-derived workflow contracts were red first: the focused command
+  reported `2 failed, 20 deselected`; after the workflow repair the full
+  `tests/test_ci_contract.py` command reports `22 passed in 0.20s`. Ruff,
+  Black, and `git diff --check` pass. `actionlint` was unavailable locally;
+  no hosted run or public SHA readback is claimed under the local-only
+  instruction. This closes only terminal provenance for these two inventory
+  jobs; terminal summaries and fail-closed behavior for every required CI,
+  validation, release, and hosted job remain open.
 
 - [x] Local-only structural C++/Perl validation checkpoint
   `c6780bb3f7f65c46233f23750047b5c45e52afca` replaces the weekly shell
