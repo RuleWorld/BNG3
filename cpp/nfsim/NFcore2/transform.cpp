@@ -2,6 +2,27 @@
 #include <limits>
 #include <stdexcept>
 namespace NFcore2 {
+namespace {
+FeatureId bondFeature(const SimulationState& state, MoleculeTypeId type, std::uint32_t component) {
+    const std::vector<FeatureDescriptor>& features = state.model().features();
+    for (std::size_t i = 0; i < features.size(); ++i) {
+        if (features[i].kind == FEATURE_MOLECULE_BOND &&
+            features[i].owner == type.value() && features[i].index == component)
+            return FeatureId(static_cast<std::uint32_t>(i));
+    }
+    return FeatureId();
+}
+
+void reportBondDelta(const SimulationState& state, const MoleculeRef& left,
+                     std::uint32_t left_slot, const MoleculeRef& right,
+                     std::uint32_t right_slot, FeatureId primary,
+                     FeatureDelta& delta) {
+    FeatureId left_feature = primary.valid() ? primary : bondFeature(state, left.type, left_slot);
+    FeatureId right_feature = bondFeature(state, right.type, right_slot);
+    if (left_feature.valid()) delta.add(left_feature);
+    if (right_feature.valid() && right_feature != left_feature) delta.add(right_feature);
+}
+}
 void TransformProgram::execute(SimulationState&s,ScaffoldStore&sc,MatchContext&c,FeatureDelta&d)const{for(std::size_t i=0;i<code_.size();++i){const TransformInstruction&x=code_[i];MoleculeRef r=c.moleculeAt(x.target);switch(x.opcode){
 case TRANSFORM_SET_STATE_WORD:s.molecules(r.type).setStateWord(r.handle,(std::uint16_t)x.a,x.value);d.add(x.feature.valid()?x.feature:FeatureId(x.b));break;
 case TRANSFORM_ADD_STATE_WORD:{
@@ -20,7 +41,7 @@ case TRANSFORM_POPULATION_ADD:s.populations().addTo(PopulationId(x.a),(std::int6
 case TRANSFORM_BIND:{MoleculeRef q=c.moleculeAt(x.other);
  if(!r.valid()||!q.valid())throw std::out_of_range("bind target missing");
  if(s.molecules(r.type).bondRef(r.handle,(std::uint16_t)x.a).valid()||s.molecules(q.type).bondRef(q.handle,(std::uint16_t)x.b).valid())throw std::logic_error("cannot bind occupied site");
- s.molecules(r.type).setBondRef(r.handle,(std::uint16_t)x.a,q);s.molecules(q.type).setBondRef(q.handle,(std::uint16_t)x.b,r);if(x.feature.valid())d.add(x.feature);break;}
+ s.molecules(r.type).setBondRef(r.handle,(std::uint16_t)x.a,q);s.molecules(q.type).setBondRef(q.handle,(std::uint16_t)x.b,r);reportBondDelta(s,r,x.a,q,x.b,x.feature,d);break;}
 case TRANSFORM_UNBIND:{
  MoleculeRef q=s.molecules(r.type).bondRef(r.handle,(std::uint16_t)x.a);
  if(!q.valid()){if(x.feature.valid())d.add(x.feature);break;}
@@ -40,7 +61,7 @@ case TRANSFORM_UNBIND:{
  }
  s.molecules(r.type).setBondRef(r.handle,(std::uint16_t)x.a,MoleculeRef());
  s.molecules(q.type).setBondRef(q.handle,(std::uint16_t)partner_slot,MoleculeRef());
- if(x.feature.valid())d.add(x.feature);break;}
+ reportBondDelta(s,r,x.a,q,partner_slot,x.feature,d);break;}
 case TRANSFORM_CREATE_MOLECULE:{MoleculeTypeId t(x.a);MoleculeHandle h=s.molecules(t).create();c.setMoleculeAt(x.target,MoleculeRef(t,h));if(x.feature.valid())d.add(x.feature);break;}
 case TRANSFORM_DELETE_MOLECULE:if(r.valid())s.eraseMolecule(r);if(x.feature.valid())d.add(x.feature);break;
 case TRANSFORM_END:return;default:throw std::logic_error("invalid transform opcode");}}}

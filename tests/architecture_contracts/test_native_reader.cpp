@@ -128,6 +128,7 @@ TEST_CASE("native NFcore2 lowering executes a reciprocal binding transform") {
           NFcore2::MoleculeRef(NFcore2::MoleculeTypeId(1), b));
     CHECK(state.molecules(NFcore2::MoleculeTypeId(1)).bondRef(b, 0) ==
           NFcore2::MoleculeRef(NFcore2::MoleculeTypeId(0), a));
-    REQUIRE(delta.changed.size() == 1);
+    REQUIRE(delta.changed.size() == 2);
     CHECK(delta.changed[0].value() == 3);
+    CHECK(delta.changed[1].value() == 5);
 }
