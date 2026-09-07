@@ -30,7 +30,8 @@ struct LegacyPredicateIR {
     std::uint32_t b;
     std::uint64_t mask;
     std::uint64_t value;
-    LegacyPredicateIR() : kind(LEGACY_PRED_UNSUPPORTED), target(0), a(0), b(0), mask(0), value(0) {}
+    bool has_partner_component;
+    LegacyPredicateIR() : kind(LEGACY_PRED_UNSUPPORTED), target(0), a(0), b(0), mask(0), value(0), has_partner_component(false) {}
 };
 
 enum LegacyTransformKind {

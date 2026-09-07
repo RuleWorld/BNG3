@@ -32,7 +32,7 @@ MatchInstruction lowerPredicate(const LegacyPredicateIR& p) {
         case LEGACY_PRED_SCAFFOLD_FREE: op=MATCH_SCAFFOLD_FREE; break;
         default: throw std::logic_error("unsupported legacy predicate reached lowerer");
     }
-    MatchInstruction x(op); x.target=p.target; x.a=p.a; x.b=p.b; x.mask=p.mask; x.value=p.value; return x;
+    MatchInstruction x(op); x.target=p.target; x.a=p.a; x.b=p.b; x.mask=p.mask; x.value=p.value; x.check_partner_component=p.has_partner_component; return x;
 }
 
 TransformInstruction lowerTransform(const LegacyTransformIR& t) {
@@ -69,7 +69,7 @@ std::string LegacyLowerer::matcherSignature(const LegacyRuleIR& r) {
     for (std::size_t i=0;i<r.predicates.size();++i) {
         const LegacyPredicateIR& p=r.predicates[i];
         os << static_cast<int>(p.kind) << ':' << p.target << ':' << p.a << ':' << p.b << ':'
-           << p.mask << ':' << p.value << ';';
+           << p.mask << ':' << p.value << ':' << p.has_partner_component << ';';
     }
     return os.str();
 }

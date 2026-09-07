@@ -4,6 +4,7 @@
 #include "../NFreactions/transformations/transformationSet.hh"
 #include "../NFreactions/transformations/transformation.hh"
 #include "nfsim_transform_decoder.hh"
+#include <algorithm>
 #include <stdexcept>
 namespace NFcore2 {
 using namespace NFcore;
@@ -17,6 +18,8 @@ NativeReactionHeader NativeNFsimSystemReader::reactionHeader(std::size_t i) cons
     ReactionClass* r=system_.getReaction(static_cast<int>(i));NativeReactionHeader h;h.name=r->getName();h.base_rate=r->getBaseRate();h.coordinate=static_cast<std::uint32_t>(i);h.parameter_index=static_cast<std::uint32_t>(i);
     h.uses_local_function = r->getRxnType() != ReactionClass::BASIC_RXN;
     h.uses_connected_to = r->getNumOfReactants() == 0;
+    std::vector<TemplateMolecule*> roots;
+    for (int p = 0; p < r->getNumOfReactants(); ++p) roots.push_back(r->getReactantTemplate(p));
     for (int p = 0; p < r->getNumOfReactants(); ++p) {
         auto* mt = r->getMoleculeTypeOfReactantTemplate(p);
         if (!mt) throw std::logic_error("NFsim reactant without molecule type");
@@ -24,12 +27,18 @@ NativeReactionHeader NativeNFsimSystemReader::reactionHeader(std::size_t i) cons
         auto* root = r->getReactantTemplate(p);
         TemplateMolecule::RootLocalConstraints constraints;
         if (!root || !root->collectRootLocalConstraints(constraints)) h.uses_connected_to = true;
+        for (const auto& bond : constraints.bonds) {
+            if (std::find(roots.begin(), roots.end(), bond.partner) == roots.end())
+                h.uses_connected_to = true;
+        }
     }
     TransformationSet* ts=r->getTransformationSet();if(ts)for(int p=0;p<r->getNumOfReactants();++p)for(int x=0;x<ts->getNumOfTransformations(p);++x)if(ts->getTransformation(p,x)->getType()==TransformationFactory::LOCAL_FUNCTION_REFERENCE)h.uses_local_function=true;
     return h;
 }
 void NativeNFsimSystemReader::collectDependencies(std::size_t i,std::vector<NativeDependencySnapshot>& out) const{
     ReactionClass* r=system_.getReaction(static_cast<int>(i));
+    std::vector<TemplateMolecule*> roots;
+    for (int p = 0; p < r->getNumOfReactants(); ++p) roots.push_back(r->getReactantTemplate(p));
     for (int p = 0; p < r->getNumOfReactants(); ++p) {
         auto* root = r->getReactantTemplate(p);
         TemplateMolecule::RootLocalConstraints constraints;
@@ -44,6 +53,20 @@ void NativeNFsimSystemReader::collectDependencies(std::size_t i,std::vector<Nati
         for (auto c : constraints.occupied) append(NATIVE_BOND_BOUND, c, -1);
         for (auto c : constraints.states) append(NATIVE_STATE_REQUIRED, c.first, c.second);
         for (auto c : constraints.exclusions) append(NATIVE_STATE_EXCLUDED, c.first, c.second);
+        for (const auto& bond : constraints.bonds) {
+            auto partner = std::find(roots.begin(), roots.end(), bond.partner);
+            if (partner == roots.end()) {
+                append(NATIVE_TOPOLOGY, bond.component, -1);
+                continue;
+            }
+            NativeDependencySnapshot value;
+            value.kind = NATIVE_BOND_TO;
+            value.reactant = static_cast<std::uint16_t>(p);
+            value.component = static_cast<std::uint32_t>(bond.component);
+            value.partner_reactant = static_cast<std::uint16_t>(partner - roots.begin());
+            value.partner_component = static_cast<std::uint32_t>(bond.partner_component);
+            out.push_back(value);
+        }
     }
 }
 void NativeNFsimSystemReader::collectTransforms(std::size_t i,std::vector<NativeTransformSnapshot>& out) const{

@@ -48,11 +48,19 @@ namespace NFcore
 		~TemplateMolecule();
 
 
-        // Exact root-only view for semantic adapters. False means graph,
-        // compartment or symmetric-site constraints require richer lowering.
+        // Exact root-only view for semantic adapters. Direct links to another
+        // reaction root are retained; internal graph, compartment, or
+        // symmetric-site constraints require richer lowering.
+        struct RootBondConstraint {
+            int component;
+            TemplateMolecule* partner;
+            int partner_component;
+            RootBondConstraint() : component(-1), partner(0), partner_component(-1) {}
+        };
         struct RootLocalConstraints {
             std::vector<int> empty, occupied;
             std::vector<std::pair<int, int>> states, exclusions;
+            std::vector<RootBondConstraint> bonds;
         };
         bool collectRootLocalConstraints(RootLocalConstraints& output) const;
 

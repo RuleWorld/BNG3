@@ -84,6 +84,15 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                     p=predicate(LEGACY_PRED_STATE_NOT_EQUAL,d.reactant,d.component);p.value=static_cast<std::uint64_t>(d.state);r.predicates.push_back(p);break;
                 case NATIVE_BOND_FREE:r.predicates.push_back(predicate(LEGACY_PRED_BOND_FREE,d.reactant,d.component));break;
                 case NATIVE_BOND_BOUND:r.predicates.push_back(predicate(LEGACY_PRED_BOND_PRESENT,d.reactant,d.component));break;
+                case NATIVE_BOND_TO:
+                    if (d.partner_reactant >= nr.reactant_types.size()) throw std::out_of_range("NFsim adapter bond partner reactant");
+                    validateComponent(source,reactantType(source,nr,d.partner_reactant),d.partner_component);
+                    p=predicate(LEGACY_PRED_BOND_TO,d.reactant,d.component);
+                    p.b=d.partner_reactant;
+                    p.value=d.partner_component;
+                    p.has_partner_component=true;
+                    r.predicates.push_back(p);
+                    break;
                 case NATIVE_TOPOLOGY:
                 case NATIVE_PARTNER_STATE_REQUIRED:
                 case NATIVE_PARTNER_STATE_EXCLUDED:

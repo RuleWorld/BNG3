@@ -60,6 +60,26 @@ TEST(NFsimAdapter_BondFreeAndBoundBecomeLocalPredicates){
     EXPECT_EQ(x.predicates[0].kind,LEGACY_PRED_BOND_FREE); EXPECT_EQ(x.predicates[1].kind,LEGACY_PRED_BOND_PRESENT);
 }
 
+TEST(NFsimAdapter_DirectBondToPreservesPartnerReactantAndComponent){
+    NativeModelSnapshot n;
+    n.molecule_types.push_back(mol("A",2));
+    n.molecule_types.push_back(mol("B",3));
+    NativeReactionSnapshot r=rxn();
+    r.reactant_types.push_back(0); r.reactant_types.push_back(1);
+    NativeDependencySnapshot d=dep(NATIVE_BOND_TO,0,1);
+    d.partner_reactant=1; d.partner_component=2;
+    r.dependencies.push_back(d); n.rules.push_back(r);
+    LegacyRuleIR x=NFsimSnapshotAdapter::toLegacy(n).rules[0];
+    EXPECT_EQ(x.predicates.size(),1u);
+    EXPECT_EQ(x.predicates[0].kind,LEGACY_PRED_BOND_TO);
+    EXPECT_EQ(x.predicates[0].target,0u);
+    EXPECT_EQ(x.predicates[0].a,1u);
+    EXPECT_EQ(x.predicates[0].b,1u);
+    EXPECT_EQ(x.predicates[0].value,2u);
+    EXPECT_TRUE(x.predicates[0].has_partner_component);
+    EXPECT_FALSE(x.uses_connected_to);
+}
+
 TEST(NFsimAdapter_InternalTopologyIsConservativeFallback){
     NativeModelSnapshot n;n.molecule_types.push_back(mol("R",2));NativeReactionSnapshot r=rxn();r.dependencies.push_back(dep(NATIVE_TOPOLOGY,0,0));n.rules.push_back(r);
     LegacyRuleIR x=NFsimSnapshotAdapter::toLegacy(n).rules[0];
