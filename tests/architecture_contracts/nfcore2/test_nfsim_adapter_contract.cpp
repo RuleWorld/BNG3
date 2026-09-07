@@ -73,6 +73,8 @@ TEST(NFsimAdapter_DirectBondToPreservesPartnerReactantAndComponent){
     EXPECT_EQ(x.predicates.size(),3u);
     EXPECT_EQ(x.predicates[0].kind,LEGACY_PRED_TYPE_EXISTS);
     EXPECT_EQ(x.predicates[1].kind,LEGACY_PRED_TYPE_EXISTS);
+    EXPECT_EQ(x.predicates[0].a,0u);
+    EXPECT_EQ(x.predicates[1].a,1u);
     EXPECT_EQ(x.predicates[2].kind,LEGACY_PRED_BOND_TO);
     EXPECT_EQ(x.predicates[2].target,0u);
     EXPECT_EQ(x.predicates[2].a,1u);
@@ -153,6 +155,7 @@ TEST(NFsimAdapter_EmptyReactantPatternStillRequiresLiveType){
     EXPECT_EQ(x.predicates.size(),1u);
     EXPECT_EQ(x.predicates[0].kind,LEGACY_PRED_TYPE_EXISTS);
     EXPECT_EQ(x.predicates[0].target,0u);
+    EXPECT_EQ(x.predicates[0].a,0u);
 }
 
 TEST(NFsimAdapter_RejectsDependencyReactantOutOfRange){

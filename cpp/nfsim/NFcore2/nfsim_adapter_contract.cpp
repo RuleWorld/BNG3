@@ -78,6 +78,7 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
             LegacyPredicateIR exists;
             exists.kind = LEGACY_PRED_TYPE_EXISTS;
             exists.target = static_cast<std::uint16_t>(reactant);
+            exists.a = nr.reactant_types[reactant];
             r.predicates.push_back(exists);
         }
 

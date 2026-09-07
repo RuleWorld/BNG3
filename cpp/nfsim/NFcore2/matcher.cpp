@@ -3,7 +3,7 @@
 namespace NFcore2 {
 bool MatcherProgram::evaluate(const SimulationState&s,const ScaffoldStore&sc,const MatchContext&c)const{
  for(std::size_t i=0;i<code_.size();++i){const MatchInstruction&x=code_[i];MoleculeRef r=c.moleculeAt(x.target);switch(x.opcode){
- case MATCH_TYPE_EXISTS: if(!r.valid()||!s.molecules(r.type).alive(r.handle))return false;break;
+ case MATCH_TYPE_EXISTS: if(!r.valid()||!s.molecules(r.type).alive(r.handle))return false; if(x.a!=MoleculeTypeId::invalid_value()&&r.type.value()!=x.a)return false;break;
  case MATCH_STATE_MASK: if(!r.valid()||((s.molecules(r.type).stateWord(r.handle,(std::uint16_t)x.a)&x.mask)!=x.value))return false;break;
  case MATCH_STATE_NOT_EQUAL: if(!r.valid()||s.molecules(r.type).stateWord(r.handle,(std::uint16_t)x.a)==x.value)return false;break;
  case MATCH_BOND_PRESENT: if(!r.valid()||!s.molecules(r.type).bondRef(r.handle,(std::uint16_t)x.a).valid())return false;break;

@@ -5,7 +5,7 @@
 #include <vector>
 namespace NFcore2 {
 enum MatchOpcode { MATCH_TYPE_EXISTS, MATCH_STATE_MASK, MATCH_STATE_NOT_EQUAL, MATCH_BOND_PRESENT, MATCH_BOND_FREE, MATCH_BOND_TO, MATCH_POPULATION_AT_LEAST, MATCH_SCAFFOLD_STATE, MATCH_SCAFFOLD_FREE, MATCH_END };
-struct MatchInstruction { std::uint16_t opcode; std::uint16_t target; std::uint32_t a,b; std::uint64_t mask,value; bool check_partner_component; MatchInstruction(std::uint16_t op=MATCH_END):opcode(op),target(0),a(0),b(0),mask(0),value(0),check_partner_component(false){} };
+struct MatchInstruction { std::uint16_t opcode; std::uint16_t target; std::uint32_t a,b; std::uint64_t mask,value; bool check_partner_component; MatchInstruction(std::uint16_t op=MATCH_END):opcode(op),target(0),a(op==MATCH_TYPE_EXISTS?MoleculeTypeId::invalid_value():0),b(0),mask(0),value(0),check_partner_component(false){} };
 struct MatchContext {
     MoleculeTypeId type; MoleculeHandle molecule; ScaffoldId scaffold; std::uint32_t coordinate; std::vector<MoleculeRef> reactants;
     MoleculeRef moleculeAt(std::size_t i) const { if(i<reactants.size()) return reactants[i]; if(i==0) return MoleculeRef(type,molecule); return MoleculeRef(); }
