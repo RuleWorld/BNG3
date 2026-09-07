@@ -46,6 +46,16 @@ The test executable now covers lowering and execution for each family, feature
 invalidation metadata, model-image metadata, and transform decoder payload
 survival.
 
+The post-fix validation set is also green:
+
+```text
+cmake --build build --parallel 4
+ctest --test-dir build --output-on-failure       # 251/251 passed
+tests/energy/tests/python                         # 58 passed
+tests/python tests/test_ci_contract.py            # 362 passed, 27 skipped
+audit_architecture_contracts.py                   # passed; no failures
+```
+
 ## Bounded direct support
 
 Population molecule types receive a population feature and a `PopulationStore`
@@ -90,4 +100,3 @@ The port remains fail-closed for semantics not proven by these contracts:
 
 These cases retain explicit fallback reasons. No NFsim, NFnext, Rasi, or uORP
 parity claim follows from this checkpoint.
-

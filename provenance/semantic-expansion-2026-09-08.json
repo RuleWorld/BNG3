@@ -8,7 +8,14 @@
   ],
   "test_first": {
     "red_build": "bng3_nfcore2_reference_tests reported missing population, compartment, move, species-delete, and rate-law contracts before implementation",
-    "focused_green": "ctest --test-dir build --output-on-failure -R architecture_nfcore2_reference"
+    "focused_green": "ctest --test-dir build --output-on-failure -R architecture_nfcore2_reference",
+    "full_validation": {
+      "build": "cmake --build build --parallel 4",
+      "ctest": "251 passed",
+      "energy_python": "58 passed",
+      "main_python": "362 passed, 27 skipped",
+      "architecture_audit": "passed with zero failures"
+    }
   },
   "contracts": [
     {
