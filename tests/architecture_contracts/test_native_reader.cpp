@@ -66,3 +66,68 @@ TEST_CASE("native NFcore2 reader does not treat synthesis as an empty supported 
     REQUIRE(snapshot.rules.size() == 1);
     CHECK(snapshot.rules[0].uses_connected_to);
 }
+
+TEST_CASE("native NFcore2 lowering executes the real state-rule adapter path") {
+    auto system = systemFor("flip: A(s~U)->A(s~P) 2");
+    const auto lowered = NFcore2::lowerLegacyNFsim(*system);
+    REQUIRE(lowered.rules.size() == 1);
+    CHECK(lowered.supported_rule_count == 1);
+    CHECK(lowered.fallback_rule_count == 0);
+    REQUIRE(lowered.executable.metadata().ruleFamilies().size() == 1);
+    CHECK(lowered.executable.metadata().ruleFamilies()[0].members.size() == 1);
+
+    NFcore2::SimulationState state(lowered.executable.metadata());
+    const NFcore2::MoleculeHandle molecule =
+        state.molecules(NFcore2::MoleculeTypeId(0)).create();
+    NFcore2::MatchContext context;
+    context.setMoleculeAt(0, NFcore2::MoleculeRef(
+        NFcore2::MoleculeTypeId(0), molecule));
+    NFcore2::ScaffoldStore scaffolds;
+    const auto& family = lowered.executable.metadata().ruleFamilies()[0];
+    CHECK(lowered.executable.matchers().at(family.matcher).evaluate(
+        state, scaffolds, context));
+    NFcore2::FeatureDelta delta;
+    lowered.executable.transforms().at(family.transform).execute(
+        state, scaffolds, context, delta);
+    CHECK(state.molecules(NFcore2::MoleculeTypeId(0)).stateWord(molecule, 0) == 1);
+    REQUIRE(delta.changed.size() == 1);
+    CHECK(delta.changed[0].value() == 0);
+}
+
+TEST_CASE("native NFcore2 lowering keeps unresolved topology on legacy fallback") {
+    auto system = systemFor("flip: A(s~U,b!1).B(a!1)->A(s~P,b!1).B(a!1) 2");
+    const auto lowered = NFcore2::lowerLegacyNFsim(*system);
+    REQUIRE(lowered.rules.size() == 1);
+    CHECK(lowered.supported_rule_count == 0);
+    CHECK(lowered.fallback_rule_count == 1);
+    CHECK(lowered.rules[0].reason == NFcore2::LOWERING_CONNECTED_TO);
+}
+
+TEST_CASE("native NFcore2 lowering executes a reciprocal binding transform") {
+    auto system = systemFor("bind: A(b)+B(a)->A(b!1).B(a!1) 3");
+    const auto lowered = NFcore2::lowerLegacyNFsim(*system);
+    REQUIRE(lowered.supported_rule_count == 1);
+    REQUIRE(lowered.executable.metadata().ruleFamilies().size() == 1);
+
+    NFcore2::SimulationState state(lowered.executable.metadata());
+    const NFcore2::MoleculeHandle a =
+        state.molecules(NFcore2::MoleculeTypeId(0)).create();
+    const NFcore2::MoleculeHandle b =
+        state.molecules(NFcore2::MoleculeTypeId(1)).create();
+    NFcore2::MatchContext context;
+    context.setMoleculeAt(0, NFcore2::MoleculeRef(NFcore2::MoleculeTypeId(0), a));
+    context.setMoleculeAt(1, NFcore2::MoleculeRef(NFcore2::MoleculeTypeId(1), b));
+    NFcore2::ScaffoldStore scaffolds;
+    const auto& family = lowered.executable.metadata().ruleFamilies()[0];
+    CHECK(lowered.executable.matchers().at(family.matcher).evaluate(
+        state, scaffolds, context));
+    NFcore2::FeatureDelta delta;
+    lowered.executable.transforms().at(family.transform).execute(
+        state, scaffolds, context, delta);
+    CHECK(state.molecules(NFcore2::MoleculeTypeId(0)).bondRef(a, 1) ==
+          NFcore2::MoleculeRef(NFcore2::MoleculeTypeId(1), b));
+    CHECK(state.molecules(NFcore2::MoleculeTypeId(1)).bondRef(b, 0) ==
+          NFcore2::MoleculeRef(NFcore2::MoleculeTypeId(0), a));
+    REQUIRE(delta.changed.size() == 1);
+    CHECK(delta.changed[0].value() == 3);
+}

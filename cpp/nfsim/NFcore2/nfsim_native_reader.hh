@@ -15,4 +15,8 @@ private:
     NFcore::System& system_;
 };
 NativeModelSnapshot snapshotLegacyNFsim(NFcore::System& system);
+// Build the executable NFcore2 representation from the real NFsim object
+// graph. Unsupported legacy semantics remain represented in the returned
+// per-rule fallback records; callers must route those rules to NFsim.
+LegacyLoweringResult lowerLegacyNFsim(NFcore::System& system);
 }

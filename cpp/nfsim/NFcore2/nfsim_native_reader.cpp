@@ -52,4 +52,11 @@ void NativeNFsimSystemReader::collectTransforms(std::size_t i,std::vector<Native
     out=NFsimTransformDecoder::decode(views);
 }
 NativeModelSnapshot snapshotLegacyNFsim(System& system){NativeNFsimSystemReader reader(system);return readNFsimSystem(reader);}
+LegacyLoweringResult lowerLegacyNFsim(System& system){
+    const NativeModelSnapshot snapshot=snapshotLegacyNFsim(system);
+    const LegacyModelIR legacy=NFsimSnapshotAdapter::toLegacy(snapshot);
+    LegacyLoweringResult result=LegacyLowerer::lower(legacy);
+    result.executable.validate();
+    return result;
+}
 }
