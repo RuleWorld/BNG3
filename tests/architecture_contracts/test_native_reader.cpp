@@ -6,6 +6,7 @@
 #include "parser/BNGAstVisitor.hpp"
 #include "nfsim_native_reader.hh"
 #include "legacy_bridge.hh"
+#include "engine.hh"
 
 namespace {
 std::unique_ptr<NFcore::System> systemFor(const std::string& rule) {
@@ -60,11 +61,22 @@ TEST_CASE("native NFcore2 reader rejects unresolved internal graph topology") {
     CHECK(snapshot.rules[0].uses_connected_to);
 }
 
-TEST_CASE("native NFcore2 reader does not treat synthesis as an empty supported rule") {
+TEST_CASE("native NFcore2 reader captures zero-reactant synthesis") {
     auto system = systemFor("birth: 0 -> B(a) 1");
     auto snapshot = NFcore2::snapshotLegacyNFsim(*system);
     REQUIRE(snapshot.rules.size() == 1);
-    CHECK(snapshot.rules[0].uses_connected_to);
+    CHECK_FALSE(snapshot.rules[0].uses_connected_to);
+    REQUIRE(snapshot.rules[0].transforms.size() == 1);
+    CHECK(snapshot.rules[0].transforms[0].kind == NFcore2::NATIVE_ADD);
+    CHECK(snapshot.rules[0].transforms[0].added_molecule_type == 1);
+
+    const auto lowered = NFcore2::lowerLegacyNFsim(*system);
+    REQUIRE(lowered.supported_rule_count == 1);
+    NFcore2::Engine engine(lowered.executable);
+    NFcore2::MatchContext context;
+    NFcore2::FeatureDelta delta;
+    CHECK(engine.fire(lowered.rules[0].family, lowered.rules[0].member, context, delta));
+    CHECK(engine.state().molecules(NFcore2::MoleculeTypeId(1)).liveCount() == 1);
 }
 
 TEST_CASE("native NFcore2 lowering executes the real state-rule adapter path") {
