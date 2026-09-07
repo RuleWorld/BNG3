@@ -1,0 +1,1295 @@
+{
+  "schema": 1,
+  "files": [
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/README.md",
+      "source_sha256": "849d5be003a764ddb181c825224ddbeb1d75824164ca8314fac8793ede9184e1",
+      "destination": "tests/energy/README.md",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/SHA256SUMS",
+      "source_sha256": "5e42176a885943e292a5791f2626740dd915f28b02b52e9ce59bef71039b3a6c",
+      "destination": "tests/energy/SHA256SUMS",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/bng3_energy_validation_tests_additions.patch",
+      "source_sha256": "44cf65ceb662ed49856315d757f9bbc4027ee88284c154d742688aa3b5e18cf3",
+      "destination": "tests/energy/bng3_energy_validation_tests_additions.patch",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/bng3_energy_validation_tests_additions_root_copy.patch",
+      "source_sha256": "44cf65ceb662ed49856315d757f9bbc4027ee88284c154d742688aa3b5e18cf3",
+      "destination": "tests/energy/bng3_energy_validation_tests_additions_root_copy.patch",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/cmake/energy_tests.cmake",
+      "source_sha256": "fa91e6fdeee6dae120b7e0963cba8bed01867a0cfc0bfdd3ab30279f0b44e5cc",
+      "destination": "tests/energy/cmake/energy_tests.cmake",
+      "adapted": true
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/docs/CI_SNIPPET.yml",
+      "source_sha256": "cb3ed6f6393534adedd3ba0506d53c07072cf1328ac4b3a4f07a6b0052c5c980",
+      "destination": "tests/energy/docs/CI_SNIPPET.yml",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/docs/EXPECTED_RED_CONTRACTS.md",
+      "source_sha256": "d65780b10b126237aae9a1c1bf9824dded069044c9a0c420d1553868d9caffb6",
+      "destination": "tests/energy/docs/EXPECTED_RED_CONTRACTS.md",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/docs/INTEGRATION_NOTES.md",
+      "source_sha256": "30e7332b5a8ad4574d58e6216e91aa87caa3fcc90e18dc4798927defba3df6e6",
+      "destination": "tests/energy/docs/INTEGRATION_NOTES.md",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/docs/TESTING_STRATEGY.md",
+      "source_sha256": "f4d259b376fe92abfbd50cf3c89204ef3bc9d76b129188539423440a152c56f6",
+      "destination": "tests/energy/docs/TESTING_STRATEGY.md",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/docs/TEST_INVENTORY.md",
+      "source_sha256": "4f885d9fd64f3dce178e2762970d87c1da93defcdfea239f59c4e0ba4c377d6e",
+      "destination": "tests/energy/docs/TEST_INVENTORY.md",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/docs/VALIDATION_MATRIX.md",
+      "source_sha256": "fae22bea36461d363ed12ca2bc3d6c398d610e96358b3bf6e6d2077b6d9b599f",
+      "destination": "tests/energy/docs/VALIDATION_MATRIX.md",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/fixtures/energy/bound_mixed_reverse.bngl",
+      "source_sha256": "029a7b5c13205139a5ff9ce5a4f78a0ae926564a334127c8489e6369416ca0b6",
+      "destination": "tests/energy/fixtures/energy/bound_mixed_reverse.bngl",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/fixtures/energy/constant_binding.bngl",
+      "source_sha256": "21c1e75649e3b38eeb9fbf017ddd8896a9aaa746f70e859ca3af6ae794779da9",
+      "destination": "tests/energy/fixtures/energy/constant_binding.bngl",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/fixtures/energy/correlated_two_hop_fallback.bngl",
+      "source_sha256": "b7f1d6630a4c7a4d9b6586cadb68c7bdefeaed320599629dd223f3f1b6737a5e",
+      "destination": "tests/energy/fixtures/energy/correlated_two_hop_fallback.bngl",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/fixtures/energy/mixed_reactant_state_context.bngl",
+      "source_sha256": "7ca670b2f301cd0dd1b50e50a6a67e32782ec7212f0b9e25b54cfe6b4169250c",
+      "destination": "tests/energy/fixtures/energy/mixed_reactant_state_context.bngl",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/fixtures/energy/no_relevant_factor.bngl",
+      "source_sha256": "3470113c2cf49a6af94ed9423f49c1bd2d679d927e27e42a2fbb428837167082",
+      "destination": "tests/energy/fixtures/energy/no_relevant_factor.bngl",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/fixtures/energy/reactant0_state_context.bngl",
+      "source_sha256": "3edc8d54c7fed7d50889985654001cc3b451856bd97dba94be1a26fd68c35055",
+      "destination": "tests/energy/fixtures/energy/reactant0_state_context.bngl",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/fixtures/energy/reactant1_state_context.bngl",
+      "source_sha256": "b58dce7cd0e4adbd7cabcf469ecf5d5fa07e99dbce882b489e4c7b93dd6e2b9c",
+      "destination": "tests/energy/fixtures/energy/reactant1_state_context.bngl",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/fixtures/energy/same_type_binding.bngl",
+      "source_sha256": "2ff6f98c141cc341d0103b088bf420a8735fb631995aa43e0193261f176e0870",
+      "destination": "tests/energy/fixtures/energy/same_type_binding.bngl",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/fixtures/energy/shared_predicate_factors.bngl",
+      "source_sha256": "01abc5e6dc5c5e98edce42f01b7ab9add077319a257c48ff5dedd246ce72d5d6",
+      "destination": "tests/energy/fixtures/energy/shared_predicate_factors.bngl",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/fixtures/energy/state_change_local_context.bngl",
+      "source_sha256": "3b82c8a93318f4a956e94a751904912e4c066e07598a4fc0102b02e18020cb20",
+      "destination": "tests/energy/fixtures/energy/state_change_local_context.bngl",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/fixtures/energy/symmetric_sites.bngl",
+      "source_sha256": "9acd5e3798b6b92fab73fdbeee45967bfea2608d7ba8ff3355b9756995174fce",
+      "destination": "tests/energy/fixtures/energy/symmetric_sites.bngl",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/fixtures/energy/validation_manifest.json",
+      "source_sha256": "2d4ae9d2d7071bd3c0cd0b99184e626a08173b977b1a3ffaeb2b0422f68962c5",
+      "destination": "tests/energy/fixtures/energy/validation_manifest.json",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/fixtures/energy/validation_policy.json",
+      "source_sha256": "0a9c6891990be6db1d098b919cc90b56df8c58d37ac317d3a7cfac326ba43279",
+      "destination": "tests/energy/fixtures/energy/validation_policy.json",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/run_selfcheck.sh",
+      "source_sha256": "05194d817ecf948facc5ee7b212486e8908a10b69a98c81e1f3bb588082257fa",
+      "destination": "tests/energy/run_selfcheck.sh",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/scripts/__init__.py",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "destination": "tests/energy/scripts/__init__.py",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/scripts/compare_numeric_tables.py",
+      "source_sha256": "71cf94d0b0486b6a9f96c2f003463646ee748d59520a5eafaa6b444ffbe250a7",
+      "destination": "tests/energy/scripts/compare_numeric_tables.py",
+      "adapted": true
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/scripts/energy_performance_gate.py",
+      "source_sha256": "18c7a895baeb420d48d5a114a12cc1a802380c28df2325e80b13b40ddcfcac7e",
+      "destination": "tests/energy/scripts/energy_performance_gate.py",
+      "adapted": true
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/scripts/energy_semantic_oracle.py",
+      "source_sha256": "dea0c6796181a423922aa142a7564958afc55b5d2358ee674ef329bd8d3bc8d5",
+      "destination": "tests/energy/scripts/energy_semantic_oracle.py",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/scripts/exact_output_parity.py",
+      "source_sha256": "b252586f7415f192ea99b37327e1035167fae47bbe85bee562bad999e3ea4cb4",
+      "destination": "tests/energy/scripts/exact_output_parity.py",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/scripts/generate_boolean_context_fixture.py",
+      "source_sha256": "261570afd232e08cefe371417b0c5eed985f042849ff177d561b3dfabad88df4",
+      "destination": "tests/energy/scripts/generate_boolean_context_fixture.py",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/scripts/measure_command.py",
+      "source_sha256": "da4d90c003e186b8959d7efb4b7f876e4bc1ffe605f56d6e581edc93860e5234",
+      "destination": "tests/energy/scripts/measure_command.py",
+      "adapted": true
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/scripts/nf_energy_statistical_parity.py",
+      "source_sha256": "8f1360e6cfe5376914fde87e474a908cf43da50d4b7d8320665f14df8503fcdf",
+      "destination": "tests/energy/scripts/nf_energy_statistical_parity.py",
+      "adapted": true
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/scripts/run_energy_validation.py",
+      "source_sha256": "8b41e916522421cba94b15f8c3c25ecb1fce206dcbc8c16f190b59a4f8dd011c",
+      "destination": "tests/energy/scripts/run_energy_validation.py",
+      "adapted": true
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/energy_test_helpers.hpp",
+      "source_sha256": "f85d6a4b7f081217c99111cbb600137dd691bc2f2167467b2d5da53ae525e8b4",
+      "destination": "tests/energy/tests/cpp/energy_test_helpers.hpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/future_ast_native_pattern_descriptor.cpp",
+      "source_sha256": "5a994ae2e582ea690e460d92baa613b8852ac523a6db8f66407f28a23aae6aa2",
+      "destination": "tests/energy/tests/cpp/future_ast_native_pattern_descriptor.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/future_barrier_driving_syntax.cpp",
+      "source_sha256": "09f3f7feeecaf3d0e3901182a20645a7c4b1b7f65ee2c1e734d1981713f00029",
+      "destination": "tests/energy/tests/cpp/future_barrier_driving_syntax.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/future_batch_nf_api.cpp",
+      "source_sha256": "7c8db55e23af9cd019297b7812039def5eeba9b0d6e7e417111aa250d8c97af1",
+      "destination": "tests/energy/tests/cpp/future_batch_nf_api.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/future_blueprint_concurrency.cpp",
+      "source_sha256": "d0b9bd0528e0e12c546168ef8307b26182ada2628676ee4e0d2ecc91b0d40d83",
+      "destination": "tests/energy/tests/cpp/future_blueprint_concurrency.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/future_compiled_blueprint.cpp",
+      "source_sha256": "37cd26b42c76d6e6841e0f9e5e28502a2470a95d90a20a847469937e0d70f59f",
+      "destination": "tests/energy/tests/cpp/future_compiled_blueprint.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/future_compiled_model_cache.cpp",
+      "source_sha256": "c1dbaa718af56389497a6d977c81570556a5435c8b27cc256933820c9383d116",
+      "destination": "tests/energy/tests/cpp/future_compiled_model_cache.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/future_compiled_model_determinism.cpp",
+      "source_sha256": "fa172e2d61efb94e9826eb798f1731edc4d859fc9a5e2762b477722b92cf5ada",
+      "destination": "tests/energy/tests/cpp/future_compiled_model_determinism.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/future_compound_graph_rewrite.cpp",
+      "source_sha256": "3575b65f04700ac17e441eae9deee76578fdb1fe7a75d33313cfee542f11c212",
+      "destination": "tests/energy/tests/cpp/future_compound_graph_rewrite.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/future_dependency_graph.cpp",
+      "source_sha256": "0e8e772326c002d9157aedeb6418ea29c102ef819ff6bdff5e339983ff0aaf04",
+      "destination": "tests/energy/tests/cpp/future_dependency_graph.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/future_dependency_graph_property.cpp",
+      "source_sha256": "370db9dda4283b64656748e6d9acae06ac5bb8d30773261e380a9ba09ec38233",
+      "destination": "tests/energy/tests/cpp/future_dependency_graph_property.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/future_direct_xml_energy_parity.cpp",
+      "source_sha256": "20dbb33967504ab4230e5d2b850fab8bc2bc18583809d66d92e67288999b6e93",
+      "destination": "tests/energy/tests/cpp/future_direct_xml_energy_parity.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/future_dynamic_energy_expression_policy.cpp",
+      "source_sha256": "dcc754104a0e2df905d1054c15c9cba79263f07bbfa6e9e8ecbe7404c3ce1f3c",
+      "destination": "tests/energy/tests/cpp/future_dynamic_energy_expression_policy.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/future_energy_context_evaluator.cpp",
+      "source_sha256": "630c60739a75a1cfb2a4262a21c75d1a791d8887dd847fa3658003cb9c16c67c",
+      "destination": "tests/energy/tests/cpp/future_energy_context_evaluator.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/future_energy_context_weights.cpp",
+      "source_sha256": "47e1b1c0063b27a788cdd13e110e391075ef9666858b199450993831e798cc7d",
+      "destination": "tests/energy/tests/cpp/future_energy_context_weights.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/future_energy_context_weights_numeric.cpp",
+      "source_sha256": "ef53d720a98a6dae0c1cccee8c5bc29e00d84606ed016488f7161762371197d0",
+      "destination": "tests/energy/tests/cpp/future_energy_context_weights_numeric.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/future_energy_factor_index.cpp",
+      "source_sha256": "22b1b74f119c933cd9446ed581c2329618b753fd248b12a9bef66ebe90539474",
+      "destination": "tests/energy/tests/cpp/future_energy_factor_index.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/future_energy_feature_flag.cpp",
+      "source_sha256": "b6bc2f196435d977602cf4ffe379a1c1ca6362fb658264cfed736fed007531ee",
+      "destination": "tests/energy/tests/cpp/future_energy_feature_flag.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/future_energy_lowering_plan.cpp",
+      "source_sha256": "34f9c3ba691b1f0e901299e702f14175ed566d8bb7f509c8f99d091890c9cedb",
+      "destination": "tests/energy/tests/cpp/future_energy_lowering_plan.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/future_energy_pattern_compiler.cpp",
+      "source_sha256": "8f2deb30d2a760e2331a1b41f226034ad7b3a2d13ee7dace8f6d7842f9826e47",
+      "destination": "tests/energy/tests/cpp/future_energy_pattern_compiler.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/future_energy_pattern_store.cpp",
+      "source_sha256": "8d6d6f190ec70ea977a070d3a9933815286ddb6cf5f852c72e80df6a6e4c998a",
+      "destination": "tests/energy/tests/cpp/future_energy_pattern_store.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/future_energy_plan_canonicalization.cpp",
+      "source_sha256": "6709c63bab52ec92d4960f568ec81fd874fba14b2b1706e0dd35bc1711ce0918",
+      "destination": "tests/energy/tests/cpp/future_energy_plan_canonicalization.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/future_energy_runtime_event_weights.cpp",
+      "source_sha256": "9af6b144fcc6692f48a33786bbfc46cc375d11384278e46007628f8c33ceeef5",
+      "destination": "tests/energy/tests/cpp/future_energy_runtime_event_weights.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/future_energy_serialization_roundtrip.cpp",
+      "source_sha256": "df80ee873171dc8553caf3a3e761a650abec702e9e917411dda78fac53fd5037",
+      "destination": "tests/energy/tests/cpp/future_energy_serialization_roundtrip.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/future_indexed_rule_family.cpp",
+      "source_sha256": "d3750b6d01c5af677750810e0b0d91f6faf68084201322e9fae368d4d0b6727a",
+      "destination": "tests/energy/tests/cpp/future_indexed_rule_family.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/future_legacy_binding_compatibility.cpp",
+      "source_sha256": "33d3606c86c59d7d155c0bff63a838b28f240a18664b5eafe861698ed9fdaeff",
+      "destination": "tests/energy/tests/cpp/future_legacy_binding_compatibility.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/future_molecularity_energy.cpp",
+      "source_sha256": "8efa4cd49d51f614a0ad66169e1bc9d60b14444b9faad78a1ca7180b67569162",
+      "destination": "tests/energy/tests/cpp/future_molecularity_energy.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/future_parameter_rebinding.cpp",
+      "source_sha256": "17c4436016959b4aa3af5a4fcbd660af7bf6a8bc3881843d0b18dd8278d53007",
+      "destination": "tests/energy/tests/cpp/future_parameter_rebinding.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/future_reaction_build_batch.cpp",
+      "source_sha256": "ec03a0e06be25ea1932726dc48eb64b6ad82eb5f821c70e8dbf4f37d257aeee0",
+      "destination": "tests/energy/tests/cpp/future_reaction_build_batch.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/future_runtime_invalidation.cpp",
+      "source_sha256": "e1eb617d96806be78f7ce5742b153fa41758e4c9d2a31e4ce2d0ca1007fb4b7c",
+      "destination": "tests/energy/tests/cpp/future_runtime_invalidation.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/future_runtime_model_contracts.cpp",
+      "source_sha256": "d18fe514ef620ea69cac083830a4216b5074a8beb634e7a7b05f5aed7ee1c0f2",
+      "destination": "tests/energy/tests/cpp/future_runtime_model_contracts.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/future_runtime_reverse_context.cpp",
+      "source_sha256": "ffdf0867651f139c2cbb9e2c20645af2cfad7c1885f21afd7bc771a3243698e9",
+      "destination": "tests/energy/tests/cpp/future_runtime_reverse_context.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/future_thermodynamic_constraints.cpp",
+      "source_sha256": "8e40b6783fb70f5e10250fa649fab8d1fc5c4d601ac20b2b2fe20e4d7ad5a33f",
+      "destination": "tests/energy/tests/cpp/future_thermodynamic_constraints.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/fuzz_energy_delta_plan.cpp",
+      "source_sha256": "3c50c2c208857761d6fc5826d61eaa5739e8dbeb34771e9ffd7bd43c6a2dd63e",
+      "destination": "tests/energy/tests/cpp/fuzz_energy_delta_plan.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/standalone_energy_delta_plan_smoke.cpp",
+      "source_sha256": "1f8bac643b1a9f16a99e00790d60647a951b3dcc851c7d2bc08879d7a708b7ec",
+      "destination": "tests/energy/tests/cpp/standalone_energy_delta_plan_smoke.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/test_compiled_model_contracts.cpp",
+      "source_sha256": "14a418c080ab77febf4dfc8c73c654cbdfc24646e4dd518997e8a098872d952c",
+      "destination": "tests/energy/tests/cpp/test_compiled_model_contracts.cpp",
+      "adapted": true
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/test_compiled_rate_law_contracts.cpp",
+      "source_sha256": "32c1861d42de119fe761069d51d25a02b854b7176f33ef08d89ac6b444b640eb",
+      "destination": "tests/energy/tests/cpp/test_compiled_rate_law_contracts.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/test_energy_compiler_phase1.cpp",
+      "source_sha256": "78faa5370053bbbabbbd52005645854bde25ab924d220dd1ae259712553fdd1d",
+      "destination": "tests/energy/tests/cpp/test_energy_compiler_phase1.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/test_energy_delta_plan_edge_cases.cpp",
+      "source_sha256": "6bef27c4727ddc10755c71dbdf265d17e12467332e9d0c6383cce472ed12ed93",
+      "destination": "tests/energy/tests/cpp/test_energy_delta_plan_edge_cases.cpp",
+      "adapted": true
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/cpp/test_energy_delta_plan_property.cpp",
+      "source_sha256": "ee17b20b97678cb0e9cb0e103d0ef58c8e5633650213017b43c184e98804e0a2",
+      "destination": "tests/energy/tests/cpp/test_energy_delta_plan_property.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/python/test_cmake_inventory.py",
+      "source_sha256": "4e492c29c61154c0c72b880e0a497a5c56c1868523d85b8f77187e07a1cefb8d",
+      "destination": "tests/energy/tests/python/test_cmake_inventory.py",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/python/test_compare_numeric_tables.py",
+      "source_sha256": "8615da7de8fd12de008500a84f3a9e3a6c578dd8aff99d6cf459e997981f8fe2",
+      "destination": "tests/energy/tests/python/test_compare_numeric_tables.py",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/python/test_env_isolation.py",
+      "source_sha256": "1244f8030565eb9a98d7b2d176e31ac040eebbbcf85370f570efa04039e444f9",
+      "destination": "tests/energy/tests/python/test_env_isolation.py",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/python/test_exact_output_parity.py",
+      "source_sha256": "40ad15cf3acc7be507022dfecfc60b921fbc78052ec2ea1c5b754904f87fd617",
+      "destination": "tests/energy/tests/python/test_exact_output_parity.py",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/python/test_fixture_generator.py",
+      "source_sha256": "f448acbd2c651f2bf02c9fe703f406f9e691ae114d80e8eabe42f39017d85f84",
+      "destination": "tests/energy/tests/python/test_fixture_generator.py",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/python/test_performance_gate.py",
+      "source_sha256": "c3e813edd2b0b7de2fe6114c53f63c6354a904cf1394839de9d68b83c64b5ca5",
+      "destination": "tests/energy/tests/python/test_performance_gate.py",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/python/test_semantic_oracle.py",
+      "source_sha256": "145f9aa46c989624eec9c1cafbea0e5737bfa04b1144b2e915a3fbda7608893f",
+      "destination": "tests/energy/tests/python/test_semantic_oracle.py",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/python/test_statistical_parity_metrics.py",
+      "source_sha256": "61c6b88758bb2b1829ce3ccb04bc871b393c5adb7bcefb045082f5c1fd7621eb",
+      "destination": "tests/energy/tests/python/test_statistical_parity_metrics.py",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/python/test_validation_manifest.py",
+      "source_sha256": "dae27f765ec48fb5100026e1df25762f7a3b21b50d4c3be74706c4a548fad2e2",
+      "destination": "tests/energy/tests/python/test_validation_manifest.py",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/tests/python/test_validation_policy.py",
+      "source_sha256": "cd657552e9476663c8e294a034cf2e3d3811294883171abc012c179a227346fe",
+      "destination": "tests/energy/tests/python/test_validation_policy.py",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/implementation_phase1/source/cpp/compile/CompiledModel.cpp",
+      "source_sha256": "13535dba53b6e41f41cf85c052573d206f055e90df277857281bc075ece390ca",
+      "destination": "cpp/compile/CompiledModel.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/implementation_phase1/source/cpp/compile/CompiledModel.hpp",
+      "source_sha256": "1ce14b63f03649781aa2cebc3805155a2ed3399a52d64f22647cc69f45586c9a",
+      "destination": "cpp/compile/CompiledModel.hpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/implementation_phase1/source/cpp/compile/CompiledRateLaw.cpp",
+      "source_sha256": "8106b2ceb3d67967d0bd0267813ec8d2d4279691d808798a6c798972b67de040",
+      "destination": "cpp/compile/CompiledRateLaw.cpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/implementation_phase1/source/cpp/compile/CompiledRateLaw.hpp",
+      "source_sha256": "a2e904be685bb513605ac54d5fd37d26156548875b38c165a312938bb5aaa377",
+      "destination": "cpp/compile/CompiledRateLaw.hpp",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/implementation_phase1/source/cpp/compile/CompiledRule.cpp",
+      "source_sha256": "e0e8616f79b93996788c21d79d6afc550cf8d2296665394fc03bf479894a570e",
+      "destination": "cpp/compile/CompiledRule.cpp",
+      "adapted": true
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/implementation_phase1/source/cpp/compile/CompiledRule.hpp",
+      "source_sha256": "9e1e4e02d26dd8900d42363ff0b8fb7d4576c74a5ff5a30dba3ef010a57f98e7",
+      "destination": "cpp/compile/CompiledRule.hpp",
+      "adapted": true
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/implementation_phase1/source/cpp/compile/energy/EnergyDeltaPlan.cpp",
+      "source_sha256": "82fbbc3604932cd67027ca191c3bac5d2548db3d5ffdddf1e4cccab93494f636",
+      "destination": "cpp/compile/energy/EnergyDeltaPlan.cpp",
+      "adapted": true
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/implementation_phase1/source/cpp/compile/energy/EnergyDeltaPlan.hpp",
+      "source_sha256": "cc1ca48986aacd449df640a474e88b1bb33b84f1e8623f8491f818eb25ff85a2",
+      "destination": "cpp/compile/energy/EnergyDeltaPlan.hpp",
+      "adapted": true
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/CMakeLists.txt",
+      "source_sha256": "2fbe7396f55081ac50ff2f2a4408c109b60e0796e323989b5af553e56ccf77ed",
+      "destination": "tests/architecture_contracts/nfcore2/CMakeLists.upstream.txt",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/FUTURE_SPEC_README.md",
+      "source_sha256": "f67e83ba96a26331d9493d715e102d7833203d94c3b5d761580129adb22a0940",
+      "destination": "tests/architecture_contracts/nfcore2/FUTURE_SPEC_README.md",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/bench_nfcore2.cpp",
+      "source_sha256": "b540f8208394a4aa3a56d31927ae86a685e1c84e440e1184b1cbe3b29793cfcd",
+      "destination": "tests/architecture_contracts/nfcore2/bench_nfcore2.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/future_spec/test_batch_trajectory_spec.cpp",
+      "source_sha256": "c0f9602d4a850a5d79df09fede93ff10b0238d10d097d7b44bb2a15c898bfbe5",
+      "destination": "tests/architecture_contracts/nfcore2/future_spec/test_batch_trajectory_spec.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/future_spec/test_compiler_frontend_spec.cpp",
+      "source_sha256": "93fd17a923fbc518ab465e3aba4537fcbc9b303f4c7bcd4f47f5819af59aa548",
+      "destination": "tests/architecture_contracts/nfcore2/future_spec/test_compiler_frontend_spec.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/future_spec/test_connectivity_components_spec.cpp",
+      "source_sha256": "af30cf901d6cd52ffa72ec68c2d2e6ebfb92026238fa6e9890105350c25603d9",
+      "destination": "tests/architecture_contracts/nfcore2/future_spec/test_connectivity_components_spec.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/future_spec/test_expression_rate_dag_spec.cpp",
+      "source_sha256": "f357186a0f2922275de5551ddcab4f45f66915fb330bb054d1f954cc657caa27",
+      "destination": "tests/architecture_contracts/nfcore2/future_spec/test_expression_rate_dag_spec.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/future_spec/test_generic_graph_fallback_spec.cpp",
+      "source_sha256": "48c31a5d80e5b56f0bfbd9b7de075c0a749dadd9d380dde6456dd1a25a8c36de",
+      "destination": "tests/architecture_contracts/nfcore2/future_spec/test_generic_graph_fallback_spec.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/future_spec/test_gpu_kernel_spec.cpp",
+      "source_sha256": "957f6eef6fc52845f343270c99aa8242801f3bb8a0e4687afac0c1ca13bcf15b",
+      "destination": "tests/architecture_contracts/nfcore2/future_spec/test_gpu_kernel_spec.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/future_spec/test_model_image_mmap_spec.cpp",
+      "source_sha256": "7aa3301049e25d948b94fb4dee155647a49d6fe6c7b65c8cc4d712a7e47d9db3",
+      "destination": "tests/architecture_contracts/nfcore2/future_spec/test_model_image_mmap_spec.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/future_spec/test_population_hybrid_spec.cpp",
+      "source_sha256": "e7f8b55b50e8c33bbafc18b36e142028ce1e58b4d8b63523ef368dec14f6310b",
+      "destination": "tests/architecture_contracts/nfcore2/future_spec/test_population_hybrid_spec.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/future_spec/test_profiler_metrics_spec.cpp",
+      "source_sha256": "e39d3b6f08863e367a24c7402fc012e7a5af21cc027bef5b5260729e515ba292",
+      "destination": "tests/architecture_contracts/nfcore2/future_spec/test_profiler_metrics_spec.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/future_spec/test_reference_differential_spec.cpp",
+      "source_sha256": "93cac630e50b418e5dc543229c3cd6f4134ae74dc1effbc77d243844b3e78bc9",
+      "destination": "tests/architecture_contracts/nfcore2/future_spec/test_reference_differential_spec.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/future_spec/test_reproducibility_rng_spec.cpp",
+      "source_sha256": "44122e556004bd8db33aa33af281eb0bac8b08c6ceedbf7fd72a1945a6db0b5b",
+      "destination": "tests/architecture_contracts/nfcore2/future_spec/test_reproducibility_rng_spec.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/future_spec/test_scaffold_lowering_spec.cpp",
+      "source_sha256": "ff065632a5f9c3ce3c50e560cff050dba86dae7a7383d204a2e1f95d9fa890b6",
+      "destination": "tests/architecture_contracts/nfcore2/future_spec/test_scaffold_lowering_spec.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/future_spec/test_scaling_acceptance_spec.cpp",
+      "source_sha256": "feb78273a672eea88da47684c45ff2bc31a26708205f718025dc20863c87a409",
+      "destination": "tests/architecture_contracts/nfcore2/future_spec/test_scaling_acceptance_spec.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/future_spec/test_snapshot_fork_spec.cpp",
+      "source_sha256": "066c2660bd0d5dda5af5aa22ac6a0ad70c52209ef7da4c8fc964413e5c1a931f",
+      "destination": "tests/architecture_contracts/nfcore2/future_spec/test_snapshot_fork_spec.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/future_spec/test_specialization_simd_jit_spec.cpp",
+      "source_sha256": "786770e7e379d1d0c163492280adb9d161b7480873ccd5cf74db3fcfd74839c9",
+      "destination": "tests/architecture_contracts/nfcore2/future_spec/test_specialization_simd_jit_spec.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/test_compiled_scheduler.cpp",
+      "source_sha256": "488f19961878583b65d84fecf8c8af34f85d9495481ca0c28fe695939ffaf12a",
+      "destination": "tests/architecture_contracts/nfcore2/test_compiled_scheduler.cpp",
+      "adapted": true
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/test_dependency_exhaustive.cpp",
+      "source_sha256": "82dfec1e16d0cf13fac57f1032e21e70a2a3032d04c7180993bc66f4123ae083",
+      "destination": "tests/architecture_contracts/nfcore2/test_dependency_exhaustive.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/test_exhaustive_matcher_matrix.cpp",
+      "source_sha256": "752141f58db8c41d660aae01336677814261999800d933a3673f40e429a5480c",
+      "destination": "tests/architecture_contracts/nfcore2/test_exhaustive_matcher_matrix.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/test_graph_state_machine_extended.cpp",
+      "source_sha256": "efa4dfdb2df07c4264418623b3856a62f6d801241cec149124af05d86fc41d44",
+      "destination": "tests/architecture_contracts/nfcore2/test_graph_state_machine_extended.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/test_harness.hh",
+      "source_sha256": "f2b695d85b938d50e904d2fc32bd0a88f1fd94a35915d99548bb76196c71bd6e",
+      "destination": "tests/architecture_contracts/nfcore2/test_harness.hh",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/test_ids_state.cpp",
+      "source_sha256": "c4bdc20ef8eeee81b509094f14c29aed3ac4ea85319eff224f54c340e2f83c71",
+      "destination": "tests/architecture_contracts/nfcore2/test_ids_state.cpp",
+      "adapted": true
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/test_main.cpp",
+      "source_sha256": "d0c97f4e871dae0860ccd672f6f3ee593d9057192c8fce20f0e7af2a5c141ce2",
+      "destination": "tests/architecture_contracts/nfcore2/test_main.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/test_model_image_shadow.cpp",
+      "source_sha256": "b697428f6394e9f9c33d2c472d1622dcfe97c55364395d98cff8c5e2167ed124",
+      "destination": "tests/architecture_contracts/nfcore2/test_model_image_shadow.cpp",
+      "adapted": true
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/test_nfcore2.cpp",
+      "source_sha256": "c5d42dffedf27f6cf0a07e6c9ef94e1078feab808cc7d6c5a53a601b79ac2a9c",
+      "destination": "tests/architecture_contracts/nfcore2/test_nfcore2.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/test_nfsim_adapter_contract.cpp",
+      "source_sha256": "b908322fddf3ad4685eeb137dff5d7ff820b880c5a682ddf8b56a2d4635b7a91",
+      "destination": "tests/architecture_contracts/nfcore2/test_nfsim_adapter_contract.cpp",
+      "adapted": true
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/test_nfsim_system_reader.cpp",
+      "source_sha256": "c0e4bd3e7a171c017c73dd93c7dd3388dd91532f1facaba1b1493028e6d6d486",
+      "destination": "tests/architecture_contracts/nfcore2/test_nfsim_system_reader.cpp",
+      "adapted": true
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/test_nfsim_transform_decoder.cpp",
+      "source_sha256": "8b07abf175efe9496c6847027fe89d3cad9ea66f61243fb42c952bd961265f8e",
+      "destination": "tests/architecture_contracts/nfcore2/test_nfsim_transform_decoder.cpp",
+      "adapted": true
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/test_randomized_invariants.cpp",
+      "source_sha256": "4ad0853116b4307a9c396f66e0029f41a22dd51564408be674c43cc6b6a3c312",
+      "destination": "tests/architecture_contracts/nfcore2/test_randomized_invariants.cpp",
+      "adapted": true
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/test_rule_family_stress.cpp",
+      "source_sha256": "6c29631d98fc7d1437dc5a2778173f07ff3f98bb3779cbb1206903c58fc21ebc",
+      "destination": "tests/architecture_contracts/nfcore2/test_rule_family_stress.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/test_rule_legacy.cpp",
+      "source_sha256": "60c30d069f837d01c9c07fbf3ffd64abe9e2f6fcef50e7488719b2e24a412df9",
+      "destination": "tests/architecture_contracts/nfcore2/test_rule_legacy.cpp",
+      "adapted": true
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/test_scaffold_matcher.cpp",
+      "source_sha256": "fa99708b9c1cc41fbfa008f0eacbfa71a77601c85d20783b271f87df7cdd4132",
+      "destination": "tests/architecture_contracts/nfcore2/test_scaffold_matcher.cpp",
+      "adapted": true
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/test_scaffold_reference_model.cpp",
+      "source_sha256": "d92af028ec9c5a57e50191c97f2d4204b0e6af75f5b9ae467714c7ab54c01ab1",
+      "destination": "tests/architecture_contracts/nfcore2/test_scaffold_reference_model.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/test_scheduler_reference_model.cpp",
+      "source_sha256": "1e35a7d11e71032594c2d1ac85c25cf2ae5c55d4ae7c4197114c0784d8137bec",
+      "destination": "tests/architecture_contracts/nfcore2/test_scheduler_reference_model.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/test_shadow_semantic_matrix.cpp",
+      "source_sha256": "492a7690ffd72c08f6e3a859adc853b55303b33866bac5f369c2ee22b4ae9186",
+      "destination": "tests/architecture_contracts/nfcore2/test_shadow_semantic_matrix.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/test_transform_engine.cpp",
+      "source_sha256": "4e08e9d2779e04ca18a3d62538e57d8e471d5d8dd2f7f165de30059c3d5489af",
+      "destination": "tests/architecture_contracts/nfcore2/test_transform_engine.cpp",
+      "adapted": true
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/test_validation_dependency.cpp",
+      "source_sha256": "2dc3cd4c7e4b980fedb3573affd628362473e27a2e60926ab5ae6318394081cd",
+      "destination": "tests/architecture_contracts/nfcore2/test_validation_dependency.cpp",
+      "adapted": true
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/src/NFcore2/compiled_model.cpp",
+      "source_sha256": "75b35a7cc07d7551e4a18893381be47b43e2389c04253c99af5e944c0bb5d77b",
+      "destination": "tests/architecture_contracts/nfcore2/reference/compiled_model.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/src/NFcore2/compiled_model.hh",
+      "source_sha256": "6dc3414281714be384f7b3d4179833ccd13d9c691fe1bb55b82d7fcef0010447",
+      "destination": "tests/architecture_contracts/nfcore2/reference/compiled_model.hh",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/src/NFcore2/engine.cpp",
+      "source_sha256": "531eea3821369420f9860ca105a8757f6dec154806cd87b356f882ed873dde74",
+      "destination": "tests/architecture_contracts/nfcore2/reference/engine.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/src/NFcore2/engine.hh",
+      "source_sha256": "3982e4de651f3d7d38194ca6895955b45c91575c9e3b446090a37e86e8f5fa3e",
+      "destination": "tests/architecture_contracts/nfcore2/reference/engine.hh",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/src/NFcore2/executable_model.cpp",
+      "source_sha256": "6269ac4552aeaa6e1194cb22e85077b9190eb29ba369bf9d45f28d3c66e62d8e",
+      "destination": "tests/architecture_contracts/nfcore2/reference/executable_model.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/src/NFcore2/executable_model.hh",
+      "source_sha256": "116d04d0ac94f127158aae66c3f810832da08ef1cd9828668887ca698a8d0712",
+      "destination": "tests/architecture_contracts/nfcore2/reference/executable_model.hh",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/src/NFcore2/ids.hh",
+      "source_sha256": "dcad6c3fd6c493b61dd527f3d01e4f4f7c96d84e9bf3ca571a6bd0ef7ab5ea35",
+      "destination": "tests/architecture_contracts/nfcore2/reference/ids.hh",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/src/NFcore2/legacy_bridge.cpp",
+      "source_sha256": "92e2957038cf34629bf1dc107ca0b86377ac09ffda33ea96005ad30ef5b4d5ce",
+      "destination": "tests/architecture_contracts/nfcore2/reference/legacy_bridge.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/src/NFcore2/legacy_bridge.hh",
+      "source_sha256": "2341616b7c8eb31a7800129d6f5be03f836168ec3d93cacc660c81b21252288f",
+      "destination": "tests/architecture_contracts/nfcore2/reference/legacy_bridge.hh",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/src/NFcore2/matcher.cpp",
+      "source_sha256": "c439e6dc8fff399449fbf2a4b5e93437b884e1fe17ea4b892606e97a0dfdd0d6",
+      "destination": "tests/architecture_contracts/nfcore2/reference/matcher.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/src/NFcore2/matcher.hh",
+      "source_sha256": "1919527219f0e508d7a9676d9eddf9cf0745a1dd2f535d8443f53b607b43e71f",
+      "destination": "tests/architecture_contracts/nfcore2/reference/matcher.hh",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/src/NFcore2/model_image.cpp",
+      "source_sha256": "d2872e5d519be8adfdad9a8683b46f63a9408df6d19e6d56285cf667b5005080",
+      "destination": "tests/architecture_contracts/nfcore2/reference/model_image.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/src/NFcore2/model_image.hh",
+      "source_sha256": "d32a5856decf203b5a754e0f21db0aa89e1a8c3acb8251b9ac88ff8c067a0012",
+      "destination": "tests/architecture_contracts/nfcore2/reference/model_image.hh",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/src/NFcore2/nfsim_adapter_contract.cpp",
+      "source_sha256": "43c6ffe5f52f5f4f9e8600e4ba8289c0f01552d7b66e0b890a9f6c9ba67039e6",
+      "destination": "tests/architecture_contracts/nfcore2/reference/nfsim_adapter_contract.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/src/NFcore2/nfsim_adapter_contract.hh",
+      "source_sha256": "55473981033dc2ebde2b8aa60151e0d8fec49d624f2f3101fdbdf37947ee9361",
+      "destination": "tests/architecture_contracts/nfcore2/reference/nfsim_adapter_contract.hh",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/src/NFcore2/nfsim_native_reader.cpp",
+      "source_sha256": "8237a26ff2ad1296264d316b0a27d54405718f70f398229a41c05fc2ad7673f7",
+      "destination": "tests/architecture_contracts/nfcore2/reference/nfsim_native_reader.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/src/NFcore2/nfsim_native_reader.hh",
+      "source_sha256": "9564466f38e7a1fac890d5262944f1b5511f0ea7918df35e0719113f95d9bdef",
+      "destination": "tests/architecture_contracts/nfcore2/reference/nfsim_native_reader.hh",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/src/NFcore2/nfsim_system_reader.cpp",
+      "source_sha256": "02db864b9b7c05e89f5c035e08ca73de74ab5356c0754e4599af40c4ecc0a306",
+      "destination": "tests/architecture_contracts/nfcore2/reference/nfsim_system_reader.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/src/NFcore2/nfsim_system_reader.hh",
+      "source_sha256": "04551f11ba2c97e3c050fb58cb6bd08160681834cc5dd56924e40f5a43c49a63",
+      "destination": "tests/architecture_contracts/nfcore2/reference/nfsim_system_reader.hh",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/src/NFcore2/nfsim_transform_decoder.cpp",
+      "source_sha256": "a4c78ee1784afbc0b0df41f2b49aa4445d2ac2897e31a04cff7473a93eb94f6e",
+      "destination": "tests/architecture_contracts/nfcore2/reference/nfsim_transform_decoder.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/src/NFcore2/nfsim_transform_decoder.hh",
+      "source_sha256": "ace634622e74c9cb8f481d062c5d03dc2e23783265b32aa9f5d77d0272350cd8",
+      "destination": "tests/architecture_contracts/nfcore2/reference/nfsim_transform_decoder.hh",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/src/NFcore2/rule_compiler.cpp",
+      "source_sha256": "7d4c026b9815ed859930c3706c6334e3c7ed195d0049f0332d9fc564d3b645b1",
+      "destination": "tests/architecture_contracts/nfcore2/reference/rule_compiler.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/src/NFcore2/rule_compiler.hh",
+      "source_sha256": "5cd3f0e941bc802c4d1832e9ae5ffd526ca6aa8f668c2a74a0559157f15b99fd",
+      "destination": "tests/architecture_contracts/nfcore2/reference/rule_compiler.hh",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/src/NFcore2/scaffold.cpp",
+      "source_sha256": "7f081d3a6e1f12918c84b6ca9592587c0292987c0df00dbe7f0cdc3a8a972824",
+      "destination": "tests/architecture_contracts/nfcore2/reference/scaffold.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/src/NFcore2/scaffold.hh",
+      "source_sha256": "2f83fd9d44043855a4ce726e99f769edd3037e547e70385b72202aa24b934b35",
+      "destination": "tests/architecture_contracts/nfcore2/reference/scaffold.hh",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/src/NFcore2/scheduler.cpp",
+      "source_sha256": "9828ed8e80476c7a2694774dc1d7a28243bfa27d2c9ce226b99f31520d37b21c",
+      "destination": "tests/architecture_contracts/nfcore2/reference/scheduler.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/src/NFcore2/scheduler.hh",
+      "source_sha256": "376157e6575fb15977af4855276553e3f1c3476fbd68f8d830f9023e8314b5fc",
+      "destination": "tests/architecture_contracts/nfcore2/reference/scheduler.hh",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/src/NFcore2/shadow.cpp",
+      "source_sha256": "ee33be0633e5a42875b7a437a7e9ca07d45370a7b0f976ce22c405e0a556ab05",
+      "destination": "tests/architecture_contracts/nfcore2/reference/shadow.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/src/NFcore2/shadow.hh",
+      "source_sha256": "ff22790ca2e0f5b168c21d0ab1c4edd99d9d4af928d6faf216d55a57c5732c9f",
+      "destination": "tests/architecture_contracts/nfcore2/reference/shadow.hh",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/src/NFcore2/simulation_state.cpp",
+      "source_sha256": "ff1f7c7161b0a1fc5a7cf99947b827f93b95816f780f13c7de13cdfc693e77c5",
+      "destination": "tests/architecture_contracts/nfcore2/reference/simulation_state.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/src/NFcore2/simulation_state.hh",
+      "source_sha256": "debba5fb7fc716da2862f541fdf50dc3b5b4c8ed06add6d3c591432d15a1e5cb",
+      "destination": "tests/architecture_contracts/nfcore2/reference/simulation_state.hh",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/src/NFcore2/transform.cpp",
+      "source_sha256": "53505f6b5a264d6c918bc756531b59e13afc7d8f937058d35c4e2bcbb25f40b3",
+      "destination": "tests/architecture_contracts/nfcore2/reference/transform.cpp",
+      "adapted": false
+    },
+    {
+      "source": "1/nfsim-nfcore2-complete-handoff-20260906/src/NFcore2/transform.hh",
+      "source_sha256": "eb308161727161dda8cc3eda551b8dc6f02960b236fa9a979d4e31cee87bbcad",
+      "destination": "tests/architecture_contracts/nfcore2/reference/transform.hh",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/tests/future_contract/CMakeLists.txt",
+      "source_sha256": "9ad7f652c62a9113857fc0a754d39866ea1d5f2ec897956341f315cf28ee91bc",
+      "destination": "tests/architecture_contracts/nfnext/future_contract/CMakeLists.upstream.txt",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/tests/future_contract/README.md",
+      "source_sha256": "4cfda0ecf24e6bc4fb742c6a9a3d24142e3a336bca214d7b94bf0caa220c8946",
+      "destination": "tests/architecture_contracts/nfnext/future_contract/README.md",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/tests/future_contract/contract_test.hpp",
+      "source_sha256": "d013066e75685c02f0f00e8887aee49295fef995b0dddb7238c74cf55e382cd7",
+      "destination": "tests/architecture_contracts/nfnext/future_contract/contract_test.hpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/tests/future_contract/test_backend_equivalence_contract.cpp",
+      "source_sha256": "dcb77571d242167ace7f2fce3bc44f0a809c939fff7cf80815808e79c95f5f92",
+      "destination": "tests/architecture_contracts/nfnext/future_contract/test_backend_equivalence_contract.cpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/tests/future_contract/test_cache_contract.cpp",
+      "source_sha256": "d98ceb6cea27ad9677e4b500eccf09256673230d9fd18a5ad0ac893f84689e6c",
+      "destination": "tests/architecture_contracts/nfnext/future_contract/test_cache_contract.cpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/tests/future_contract/test_codegen_accelerator_contract.cpp",
+      "source_sha256": "640a6a363993b0433b3819087b36d7f8d1b2bb1b7c32e63e291acfb4bb1cdc3a",
+      "destination": "tests/architecture_contracts/nfnext/future_contract/test_codegen_accelerator_contract.cpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/tests/future_contract/test_compartment_rate_contract.cpp",
+      "source_sha256": "d42c1cffa6b8bd5dc92395dceb78c818603a0d047b75c9782a62d20d0862c1e8",
+      "destination": "tests/architecture_contracts/nfnext/future_contract/test_compartment_rate_contract.cpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/tests/future_contract/test_dependency_scheduler_contract.cpp",
+      "source_sha256": "79aa798b162c74d090c242f2c99737c36f6e80d46336840b53b932693a36ac72",
+      "destination": "tests/architecture_contracts/nfnext/future_contract/test_dependency_scheduler_contract.cpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/tests/future_contract/test_differential_oracle_contract.cpp",
+      "source_sha256": "fb56efef7254c4806ddd61835b8cc9541e39efaf688dc3df717492644ad54225",
+      "destination": "tests/architecture_contracts/nfnext/future_contract/test_differential_oracle_contract.cpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/tests/future_contract/test_fuzz_metamorphic_contract.cpp",
+      "source_sha256": "d6a9d8543f2f34c83ba3a20ef23a489eb98c8d995d346bb9fa1c3acd6f37efe9",
+      "destination": "tests/architecture_contracts/nfnext/future_contract/test_fuzz_metamorphic_contract.cpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/tests/future_contract/test_generic_matcher_contract.cpp",
+      "source_sha256": "0a9abed6db5d03000cff74fd9207043c3c97a74e4c598006d5d9e3624b9402f7",
+      "destination": "tests/architecture_contracts/nfnext/future_contract/test_generic_matcher_contract.cpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/tests/future_contract/test_lattice_interval_contract.cpp",
+      "source_sha256": "b4b5392cb9c12a610a19877cad144a266a88726f97f191e8d6a2cb8b5e62bf7c",
+      "destination": "tests/architecture_contracts/nfnext/future_contract/test_lattice_interval_contract.cpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/tests/future_contract/test_memory_arena_contract.cpp",
+      "source_sha256": "a0827b5b19e89f5c43c41c60eb28298fd65b4e8afa6ba60b70448657e17b49d4",
+      "destination": "tests/architecture_contracts/nfnext/future_contract/test_memory_arena_contract.cpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/tests/future_contract/test_nfir_canonicalization_contract.cpp",
+      "source_sha256": "c7703dcf09d178656a463cf81bb10585954c666d21042d16dec832940df1281c",
+      "destination": "tests/architecture_contracts/nfnext/future_contract/test_nfir_canonicalization_contract.cpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/tests/future_contract/test_observable_function_contract.cpp",
+      "source_sha256": "cc02107466fb583b266d090d59287aaec41cb7af7d8fc98ca946b5ea048ddc13",
+      "destination": "tests/architecture_contracts/nfnext/future_contract/test_observable_function_contract.cpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/tests/future_contract/test_population_hybrid_contract.cpp",
+      "source_sha256": "67fa59697d0020301622228556e83f3b43c3ce10bd6243be6c09531ca64d770f",
+      "destination": "tests/architecture_contracts/nfnext/future_contract/test_population_hybrid_contract.cpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/tests/future_contract/test_rasi_translation_contract.cpp",
+      "source_sha256": "2d3b440199a8d144ce4d062a85f171d30451701205793f01d254efacb58acf8b",
+      "destination": "tests/architecture_contracts/nfnext/future_contract/test_rasi_translation_contract.cpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/tests/future_contract/test_rng_replay_concurrency_contract.cpp",
+      "source_sha256": "db5a7ded33fe67e3a3830b8d224c1ca797285e87fb89949abc608c300df7b0f3",
+      "destination": "tests/architecture_contracts/nfnext/future_contract/test_rng_replay_concurrency_contract.cpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/tests/future_contract/test_rule_family_contract.cpp",
+      "source_sha256": "7a95b8f1a791037b6d242130d1384be3d3da969291509b9b336cdd6a2f982072",
+      "destination": "tests/architecture_contracts/nfnext/future_contract/test_rule_family_contract.cpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/tests/future_contract/test_scaling_stress_contract.cpp",
+      "source_sha256": "fa8286747bda6333ae051407b6d5dc1c35ab6e33644f0e73a2da412ab5da5a62",
+      "destination": "tests/architecture_contracts/nfnext/future_contract/test_scaling_stress_contract.cpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/tests/future_contract/test_transformations_contract.cpp",
+      "source_sha256": "4a937e24b8c7396428a94b7d4893e4b73b406e4c8f7beab8eb218c97389059de",
+      "destination": "tests/architecture_contracts/nfnext/future_contract/test_transformations_contract.cpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/tests/future_contract/test_xml_adapter_contract.cpp",
+      "source_sha256": "a2600e35f2d4b7321c95e5ec573308a39a10e207f87ccd92e1ac2735d01632f1",
+      "destination": "tests/architecture_contracts/nfnext/future_contract/test_xml_adapter_contract.cpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/tests/meta/test_contract_coverage.py",
+      "source_sha256": "e053c29b92b41ce140fa422fba752c75edfff03c675368fc6352dc9ef50845c0",
+      "destination": "tests/architecture_contracts/nfnext/meta/test_contract_coverage.py",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/tests/meta/test_no_silent_skip.py",
+      "source_sha256": "f0fa15bc33a350a53ea20a91e79e4277989c33579f2238e651ad599a48d32c6f",
+      "destination": "tests/architecture_contracts/nfnext/meta/test_no_silent_skip.py",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/tests/meta/test_test_budget.py",
+      "source_sha256": "d22ffa65fc061b863ce0ffb536b0911a655867f6ac9b5fe361c44a5b587e064c",
+      "destination": "tests/architecture_contracts/nfnext/meta/test_test_budget.py",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/tests/test_nfnext.cpp",
+      "source_sha256": "1dd6507085930403cb6c8283fd942d929b14530ebe0ca2b7f9aae54f2c4e0516",
+      "destination": "tests/architecture_contracts/nfnext/test_nfnext.cpp",
+      "adapted": true
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/tests/test_observable_terms.cpp",
+      "source_sha256": "2dc5d13fa9eb0ddcdf9792a67a53408d22e738a1ae2b5a3a81b5d347a1477558",
+      "destination": "tests/architecture_contracts/nfnext/test_observable_terms.cpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/tests/test_population_backend.cpp",
+      "source_sha256": "cc576bf10a22ab8a2dbf3059ee6698cb39c4e5c7cbbbbffa9ac6ce68c624a48c",
+      "destination": "tests/architecture_contracts/nfnext/test_population_backend.cpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/tests/test_randomized_oracles.cpp",
+      "source_sha256": "61951b832e1cb2c0a5dd6459cf7e7bb7eb0815198b45afd2e1751897b76cbfc6",
+      "destination": "tests/architecture_contracts/nfnext/test_randomized_oracles.cpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/tests/test_semantic_validation.cpp",
+      "source_sha256": "574ffca08826e271415aeefec823148dfd1a72fce382843a7e6e4028616d975e",
+      "destination": "tests/architecture_contracts/nfnext/test_semantic_validation.cpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/tests/test_stateset.cpp",
+      "source_sha256": "173591a0bd2de27a88885eef4f7223fc08608be3ee1520cd930854d1a00bc697",
+      "destination": "tests/architecture_contracts/nfnext/test_stateset.cpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/src/cache.cpp",
+      "source_sha256": "c1fc052363bef02e0ba8e8b7433b6b284d848daa51ac75048e4697dede8d768e",
+      "destination": "tests/architecture_contracts/nfnext/reference/src/cache.cpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/src/compiler.cpp",
+      "source_sha256": "a12832fdbe5e3a202a16873f1dd7de01f74042f48f5914a19e877a96d5a2a4fa",
+      "destination": "tests/architecture_contracts/nfnext/reference/src/compiler.cpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/src/generic_state.cpp",
+      "source_sha256": "fbfe49ec9e3de0c1983a58075ad7871c22998405b0dea65d1f5eba610fba336d",
+      "destination": "tests/architecture_contracts/nfnext/reference/src/generic_state.cpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/src/lattice.cpp",
+      "source_sha256": "0b82438846e122b8fd3a869f6195dd1e88a1705610c5de6cf78e0143c38c7c44",
+      "destination": "tests/architecture_contracts/nfnext/reference/src/lattice.cpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/src/nfir.cpp",
+      "source_sha256": "fff856b7b3f3fb9dc6adef9bf040cd6cba48078f53c78be8b9dab98e7bc13c14",
+      "destination": "tests/architecture_contracts/nfnext/reference/src/nfir.cpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/src/rule_family.cpp",
+      "source_sha256": "864f67add15164058b37c676f18bc069bd9e9b990ce0be385219c426a53eee5d",
+      "destination": "tests/architecture_contracts/nfnext/reference/src/rule_family.cpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/src/trajectory.cpp",
+      "source_sha256": "f817d51547a43a1373ddd5717178b6d8012b19d7b9399851798875e264cc6e5c",
+      "destination": "tests/architecture_contracts/nfnext/reference/src/trajectory.cpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/include/nfnext/cache.hpp",
+      "source_sha256": "130324931feb43bb198efbadc5105c47accc42015e01b0b894bbb090df60eb23",
+      "destination": "tests/architecture_contracts/nfnext/reference/include/nfnext/cache.hpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/include/nfnext/compiled_model.hpp",
+      "source_sha256": "eea439269227cf30ab1883434898733c5765a77c1011bbd98b4f00cb1b5efb71",
+      "destination": "tests/architecture_contracts/nfnext/reference/include/nfnext/compiled_model.hpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/include/nfnext/compiler.hpp",
+      "source_sha256": "fa2ee300c959ed3aedad009d29f5cb5575377320ff37df887980f4a667b1c48c",
+      "destination": "tests/architecture_contracts/nfnext/reference/include/nfnext/compiler.hpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/include/nfnext/counter_rng.hpp",
+      "source_sha256": "7ce5a9ab2eb1c95fd73352dee2ea340a2bf556a859b0444f5a61334d1eaefb7c",
+      "destination": "tests/architecture_contracts/nfnext/reference/include/nfnext/counter_rng.hpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/include/nfnext/fenwick.hpp",
+      "source_sha256": "c27d1bd7b6ab31e05dde7f6e6c4a698b9981bd3976f8e6403c97663a67a60a9e",
+      "destination": "tests/architecture_contracts/nfnext/reference/include/nfnext/fenwick.hpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/include/nfnext/generic_state.hpp",
+      "source_sha256": "c24fbe006818053a48e7bd5b051bc9b29fb11ce8cc27cc230a14a1653b333b02",
+      "destination": "tests/architecture_contracts/nfnext/reference/include/nfnext/generic_state.hpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/include/nfnext/lattice.hpp",
+      "source_sha256": "b429dcca3b62a6df93456ef235f2cbe0ff653dadfb5513a74e82fc937be59a95",
+      "destination": "tests/architecture_contracts/nfnext/reference/include/nfnext/lattice.hpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/include/nfnext/nfir.hpp",
+      "source_sha256": "ec89cd38c616fcb18f920c5a718d1a9572efe7bc3030c8a81eccf86241b1ab20",
+      "destination": "tests/architecture_contracts/nfnext/reference/include/nfnext/nfir.hpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/include/nfnext/rule_family.hpp",
+      "source_sha256": "db0c3257d51e210229033a347fe5170c1258932a15ef28f529abe8b026f28be1",
+      "destination": "tests/architecture_contracts/nfnext/reference/include/nfnext/rule_family.hpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/include/nfnext/scheduler.hpp",
+      "source_sha256": "295707eba33ce3b2e7e131a19a8efb74a5d93e17c1002aac037e8b92062735a5",
+      "destination": "tests/architecture_contracts/nfnext/reference/include/nfnext/scheduler.hpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/include/nfnext/soa_arena.hpp",
+      "source_sha256": "deaf43285bbc32ffd26d48805298e67f151205bf6fea14bfa40fc3ae05d074be",
+      "destination": "tests/architecture_contracts/nfnext/reference/include/nfnext/soa_arena.hpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/include/nfnext/trajectory.hpp",
+      "source_sha256": "cf5eeb386cbee840e6e859f3800463b77b28d49731742c6b11861b2c8add9097",
+      "destination": "tests/architecture_contracts/nfnext/reference/include/nfnext/trajectory.hpp",
+      "adapted": false
+    },
+    {
+      "source": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/include/nfnext/types.hpp",
+      "source_sha256": "a801678766f444528c0e0a57c45751dedf52679f3ce2102150b10d5f4abb4ce9",
+      "destination": "tests/architecture_contracts/nfnext/reference/include/nfnext/types.hpp",
+      "adapted": false
+    }
+  ]
+}

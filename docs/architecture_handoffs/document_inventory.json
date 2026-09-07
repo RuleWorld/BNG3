@@ -1,0 +1,197 @@
+[
+  {
+    "archive_path": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/CONTEXT_IMPLEMENTATION_VALIDATION_HANDOFF.md",
+    "sha256": "593e474b0272f5ffde101c1e0d85b6f8107fddc861f1681a475390b1fceb70f1",
+    "reference": "docs/architecture_handoffs/0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/CONTEXT_IMPLEMENTATION_VALIDATION_HANDOFF.md"
+  },
+  {
+    "archive_path": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/FILE_MANIFEST.txt",
+    "sha256": "fefba2871ee9fb429d16bade6813681ff8812e5385b7f437168caa80ab6ba931",
+    "reference": "docs/architecture_handoffs/0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/FILE_MANIFEST.txt"
+  },
+  {
+    "archive_path": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/SELF_CHECK_RESULT.txt",
+    "sha256": "f2090549b5f0790147f16ed1dad2c6223491f5f18f9532d39e45832ce851edd3",
+    "reference": "docs/architecture_handoffs/0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/SELF_CHECK_RESULT.txt"
+  },
+  {
+    "archive_path": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/SHA256SUMS.txt",
+    "sha256": "f2f338436ce02bfc6aacbc9b0ee4072fd073863ebc4d3660f7b3dd876e7fac36",
+    "reference": "docs/architecture_handoffs/0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/SHA256SUMS.txt"
+  },
+  {
+    "archive_path": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/implementation_phase1/README.md",
+    "sha256": "6d7327615aeba028a0a5517e12b1dea8b79fde436005b7ed406da8c0f3b30d8b",
+    "reference": "docs/architecture_handoffs/0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/implementation_phase1/README.md"
+  },
+  {
+    "archive_path": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/implementation_phase1/VALIDATION.md",
+    "sha256": "6dd0d4c80a9dabefafa3d454aaba3fcce998a60bdb135a092404615569af5e65",
+    "reference": "docs/architecture_handoffs/0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/implementation_phase1/VALIDATION.md"
+  },
+  {
+    "archive_path": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/implementation_phase1/source/BNG3_ENERGY_COMPILER_PLAN.md",
+    "sha256": "614c6d2d1dd153ab4847360963592a1849e0424c146e191b44f8b98053b1688c",
+    "reference": "docs/architecture_handoffs/0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/implementation_phase1/source/BNG3_ENERGY_COMPILER_PLAN.md"
+  },
+  {
+    "archive_path": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/reference_docs/BNG3_ENERGY_COMPILER_PLAN_earlier_copy.md",
+    "sha256": "614c6d2d1dd153ab4847360963592a1849e0424c146e191b44f8b98053b1688c",
+    "reference": "docs/architecture_handoffs/0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/implementation_phase1/source/BNG3_ENERGY_COMPILER_PLAN.md"
+  },
+  {
+    "archive_path": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/README.md",
+    "sha256": "849d5be003a764ddb181c825224ddbeb1d75824164ca8314fac8793ede9184e1",
+    "reference": "docs/architecture_handoffs/0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/README.md"
+  },
+  {
+    "archive_path": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/docs/EXPECTED_RED_CONTRACTS.md",
+    "sha256": "d65780b10b126237aae9a1c1bf9824dded069044c9a0c420d1553868d9caffb6",
+    "reference": "docs/architecture_handoffs/0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/docs/EXPECTED_RED_CONTRACTS.md"
+  },
+  {
+    "archive_path": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/docs/INTEGRATION_NOTES.md",
+    "sha256": "30e7332b5a8ad4574d58e6216e91aa87caa3fcc90e18dc4798927defba3df6e6",
+    "reference": "docs/architecture_handoffs/0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/docs/INTEGRATION_NOTES.md"
+  },
+  {
+    "archive_path": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/docs/TESTING_STRATEGY.md",
+    "sha256": "f4d259b376fe92abfbd50cf3c89204ef3bc9d76b129188539423440a152c56f6",
+    "reference": "docs/architecture_handoffs/0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/docs/TESTING_STRATEGY.md"
+  },
+  {
+    "archive_path": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/docs/TEST_INVENTORY.md",
+    "sha256": "4f885d9fd64f3dce178e2762970d87c1da93defcdfea239f59c4e0ba4c377d6e",
+    "reference": "docs/architecture_handoffs/0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/docs/TEST_INVENTORY.md"
+  },
+  {
+    "archive_path": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/docs/VALIDATION_MATRIX.md",
+    "sha256": "fae22bea36461d363ed12ca2bc3d6c398d610e96358b3bf6e6d2077b6d9b599f",
+    "reference": "docs/architecture_handoffs/0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/docs/VALIDATION_MATRIX.md"
+  },
+  {
+    "archive_path": "1/nfsim-nfcore2-complete-handoff-20260906/COMPLETE_NFCORE2_HANDOFF.md",
+    "sha256": "57b72703678768f5bc7353b30d794168948d90b2668dae336177ba92d8ea7f37",
+    "reference": "docs/architecture_handoffs/1/nfsim-nfcore2-complete-handoff-20260906/COMPLETE_NFCORE2_HANDOFF.md"
+  },
+  {
+    "archive_path": "1/nfsim-nfcore2-complete-handoff-20260906/README.md",
+    "sha256": "58acc1ac3b69f4dc206e516d2060e2fdd56c8707490fa16237474d6aa486b558",
+    "reference": "docs/architecture_handoffs/1/nfsim-nfcore2-complete-handoff-20260906/README.md"
+  },
+  {
+    "archive_path": "1/nfsim-nfcore2-complete-handoff-20260906/history/NFCORE2_IMPLEMENTATION_STATUS.md",
+    "sha256": "c3f3ca1f9912b3865bd01edc236109cd17b2fd2481c08d8cf49930cc4daf78b9",
+    "reference": "docs/architecture_handoffs/1/nfsim-nfcore2-complete-handoff-20260906/history/NFCORE2_IMPLEMENTATION_STATUS.md"
+  },
+  {
+    "archive_path": "1/nfsim-nfcore2-complete-handoff-20260906/history/NFCORE2_MAX_TESTING_STATUS.md",
+    "sha256": "5a2c886bdac729e820cce3dc364cf30207b61c9dde5337952da291b28ff6635e",
+    "reference": "docs/architecture_handoffs/1/nfsim-nfcore2-complete-handoff-20260906/history/NFCORE2_MAX_TESTING_STATUS.md"
+  },
+  {
+    "archive_path": "1/nfsim-nfcore2-complete-handoff-20260906/history/NFCORE2_NATIVE_ADAPTER_STATUS.md",
+    "sha256": "3f3817e7c6ac1e78815fb12de474d6f04294f32b6a701358fad5a05440565298",
+    "reference": "docs/architecture_handoffs/1/nfsim-nfcore2-complete-handoff-20260906/history/NFCORE2_NATIVE_ADAPTER_STATUS.md"
+  },
+  {
+    "archive_path": "1/nfsim-nfcore2-complete-handoff-20260906/history/NFCORE2_TDD_STATUS.md",
+    "sha256": "656f61c66a0b5b8551ff15bb9a8e3fb260b605fa31313c5c4c4c58bdf324402f",
+    "reference": "docs/architecture_handoffs/1/nfsim-nfcore2-complete-handoff-20260906/history/NFCORE2_TDD_STATUS.md"
+  },
+  {
+    "archive_path": "1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/FUTURE_SPEC_README.md",
+    "sha256": "f67e83ba96a26331d9493d715e102d7833203d94c3b5d761580129adb22a0940",
+    "reference": "docs/architecture_handoffs/1/nfsim-nfcore2-complete-handoff-20260906/tests/NFcore2/FUTURE_SPEC_README.md"
+  },
+  {
+    "archive_path": "2/nfnext-complete-handoff/CURRENT_WORK/doc/NFNEXT_IMPLEMENTATION_STATUS.md",
+    "sha256": "d371deff15e401cffdbd00edf4ceea8447deb9f84053b778143684480ec5a0e1",
+    "reference": "docs/architecture_handoffs/2/nfnext-complete-handoff/CURRENT_WORK/doc/NFNEXT_IMPLEMENTATION_STATUS.md"
+  },
+  {
+    "archive_path": "2/nfnext-complete-handoff/CURRENT_WORK/doc/NFSIM_NEXTGEN_ARCHITECTURE.md",
+    "sha256": "d0db0e92ec9549b706e4876fd74b1647b59bb610dae6bc57c089c651c896139c",
+    "reference": "docs/architecture_handoffs/2/nfnext-complete-handoff/CURRENT_WORK/doc/NFSIM_NEXTGEN_ARCHITECTURE.md"
+  },
+  {
+    "archive_path": "2/nfnext-complete-handoff/CURRENT_WORK/nextgen/tests/future_contract/README.md",
+    "sha256": "4cfda0ecf24e6bc4fb742c6a9a3d24142e3a336bca214d7b94bf0caa220c8946",
+    "reference": "docs/architecture_handoffs/2/nfnext-complete-handoff/CURRENT_WORK/nextgen/tests/future_contract/README.md"
+  },
+  {
+    "archive_path": "2/nfnext-complete-handoff/CURRENT_WORK_FILE_INVENTORY.txt",
+    "sha256": "bfff77b8fbf2c42b529ae62cf8e2ecf912af5b3380cdaa1a9a7db7a205b56713",
+    "reference": "docs/architecture_handoffs/2/nfnext-complete-handoff/CURRENT_WORK_FILE_INVENTORY.txt"
+  },
+  {
+    "archive_path": "2/nfnext-complete-handoff/NFNEXT_COMPLETE_CONTEXT_AND_HANDOFF.md",
+    "sha256": "67b426d0244273137fd65081bd92f460d2b49c2c55db8696ad2743149935e24d",
+    "reference": "docs/architecture_handoffs/2/nfnext-complete-handoff/NFNEXT_COMPLETE_CONTEXT_AND_HANDOFF.md"
+  },
+  {
+    "archive_path": "2/nfnext-complete-handoff/REFERENCE_SNAPSHOTS/initial_executable_prototype/NFNEXT_BENCHMARK.txt",
+    "sha256": "a3893e63fb81afa3b69c23c3a26becef75531a269eab9f4fa3dff598c28bd155",
+    "reference": "docs/architecture_handoffs/2/nfnext-complete-handoff/REFERENCE_SNAPSHOTS/initial_executable_prototype/NFNEXT_BENCHMARK.txt"
+  },
+  {
+    "archive_path": "2/nfnext-complete-handoff/REFERENCE_SNAPSHOTS/initial_executable_prototype/NFNEXT_IMPLEMENTATION_STATUS.md",
+    "sha256": "d371deff15e401cffdbd00edf4ceea8447deb9f84053b778143684480ec5a0e1",
+    "reference": "docs/architecture_handoffs/2/nfnext-complete-handoff/CURRENT_WORK/doc/NFNEXT_IMPLEMENTATION_STATUS.md"
+  },
+  {
+    "archive_path": "2/nfnext-complete-handoff/REFERENCE_SNAPSHOTS/initial_executable_prototype/doc/NFNEXT_IMPLEMENTATION_STATUS.md",
+    "sha256": "d371deff15e401cffdbd00edf4ceea8447deb9f84053b778143684480ec5a0e1",
+    "reference": "docs/architecture_handoffs/2/nfnext-complete-handoff/CURRENT_WORK/doc/NFNEXT_IMPLEMENTATION_STATUS.md"
+  },
+  {
+    "archive_path": "2/nfnext-complete-handoff/REFERENCE_SNAPSHOTS/initial_executable_prototype/doc/NFSIM_NEXTGEN_ARCHITECTURE.md",
+    "sha256": "d0db0e92ec9549b706e4876fd74b1647b59bb610dae6bc57c089c651c896139c",
+    "reference": "docs/architecture_handoffs/2/nfnext-complete-handoff/CURRENT_WORK/doc/NFSIM_NEXTGEN_ARCHITECTURE.md"
+  },
+  {
+    "archive_path": "2/nfnext-complete-handoff/SURVIVING_ARTIFACTS/current_sparse_prototype_dir/NFNEXT_BENCHMARK.txt",
+    "sha256": "a3893e63fb81afa3b69c23c3a26becef75531a269eab9f4fa3dff598c28bd155",
+    "reference": "docs/architecture_handoffs/2/nfnext-complete-handoff/REFERENCE_SNAPSHOTS/initial_executable_prototype/NFNEXT_BENCHMARK.txt"
+  },
+  {
+    "archive_path": "2/nfnext-complete-handoff/SURVIVING_ARTIFACTS/current_sparse_prototype_dir/NFNEXT_IMPLEMENTATION_STATUS.md",
+    "sha256": "d371deff15e401cffdbd00edf4ceea8447deb9f84053b778143684480ec5a0e1",
+    "reference": "docs/architecture_handoffs/2/nfnext-complete-handoff/CURRENT_WORK/doc/NFNEXT_IMPLEMENTATION_STATUS.md"
+  },
+  {
+    "archive_path": "2/nfnext-complete-handoff/SURVIVING_ARTIFACTS/current_sparse_prototype_dir/NFNEXT_TESTING_MANIFEST.md",
+    "sha256": "5fe804bca4fffd44977a2cfc3c4c9e968c6ca31373ec34154ef2a8a6da9e628a",
+    "reference": "docs/architecture_handoffs/2/nfnext-complete-handoff/SURVIVING_ARTIFACTS/current_sparse_prototype_dir/NFNEXT_TESTING_MANIFEST.md"
+  },
+  {
+    "archive_path": "2/nfnext-complete-handoff/SURVIVING_ARTIFACTS/current_sparse_prototype_dir/doc/NFSIM_NEXTGEN_ARCHITECTURE.md",
+    "sha256": "d0db0e92ec9549b706e4876fd74b1647b59bb610dae6bc57c089c651c896139c",
+    "reference": "docs/architecture_handoffs/2/nfnext-complete-handoff/CURRENT_WORK/doc/NFSIM_NEXTGEN_ARCHITECTURE.md"
+  },
+  {
+    "archive_path": "2/nfnext-complete-handoff/SURVIVING_ARTIFACTS/current_sparse_prototype_dir/nextgen/tests/future_contract/README.md",
+    "sha256": "4cfda0ecf24e6bc4fb742c6a9a3d24142e3a336bca214d7b94bf0caa220c8946",
+    "reference": "docs/architecture_handoffs/2/nfnext-complete-handoff/CURRENT_WORK/nextgen/tests/future_contract/README.md"
+  },
+  {
+    "archive_path": "2/nfnext-complete-handoff/SURVIVING_ARTIFACTS/current_testing_suite_dir/README_APPLY.md",
+    "sha256": "ca65920dff25f577cd06173823302077615f50dd78bab4c8906a03b8d838baf4",
+    "reference": "docs/architecture_handoffs/2/nfnext-complete-handoff/SURVIVING_ARTIFACTS/current_testing_suite_dir/README_APPLY.md"
+  },
+  {
+    "archive_path": "2/nfnext-complete-handoff/SURVIVING_ARTIFACTS/current_testing_suite_dir/TESTING_MANIFEST.md",
+    "sha256": "5fe804bca4fffd44977a2cfc3c4c9e968c6ca31373ec34154ef2a8a6da9e628a",
+    "reference": "docs/architecture_handoffs/2/nfnext-complete-handoff/SURVIVING_ARTIFACTS/current_sparse_prototype_dir/NFNEXT_TESTING_MANIFEST.md"
+  },
+  {
+    "archive_path": "2/nfnext-complete-handoff/SURVIVING_ARTIFACTS/current_testing_suite_dir/nextgen/tests/future_contract/README.md",
+    "sha256": "4cfda0ecf24e6bc4fb742c6a9a3d24142e3a336bca214d7b94bf0caa220c8946",
+    "reference": "docs/architecture_handoffs/2/nfnext-complete-handoff/CURRENT_WORK/nextgen/tests/future_contract/README.md"
+  },
+  {
+    "archive_path": "2/nfnext-complete-handoff/VALIDATION_CURRENT.txt",
+    "sha256": "e37b471210f6c40abbb6d09a3358b4724127924e65d32292585404178a1564d4",
+    "reference": "docs/architecture_handoffs/2/nfnext-complete-handoff/VALIDATION_CURRENT.txt"
+  }
+]

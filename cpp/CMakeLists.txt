@@ -56,6 +56,14 @@ target_include_directories(bng_parser PUBLIC
 )
 target_link_libraries(bng_parser PUBLIC antlr4_static bng_ast)
 
+# Execution-facing metadata; no NFsim runtime path is switched by this library.
+add_library(bng_compile STATIC
+    compile/energy/EnergyDeltaPlan.cpp
+    compile/CompiledRateLaw.cpp
+    compile/CompiledRule.cpp
+    compile/CompiledModel.cpp)
+target_link_libraries(bng_compile PUBLIC bng_ast)
+
 # =============================================================================
 # bng_engine (simulators, I/O writers, actions, console)
 # =============================================================================
@@ -186,7 +194,7 @@ target_include_directories(nfsim_core PUBLIC
 )
 target_compile_definitions(nfsim_core PUBLIC TIXML_USE_STL NFSIM_USE_EXPRTK)
 target_include_directories(nfsim_core PRIVATE ${exprtk_SOURCE_DIR})
-target_link_libraries(nfsim_core PUBLIC bng_parser)
+target_link_libraries(nfsim_core PUBLIC bng_parser bng_compile)
 if(MSVC)
     target_compile_options(nfsim_core PRIVATE /bigobj)
 else()
@@ -208,11 +216,48 @@ endif()
 # =============================================================================
 # bionetgen_core — combined static library for all C++ components
 # =============================================================================
+# Direct ports of the supplied experimental compiler/runtime implementations.
+add_library(bng_nfcore2 STATIC
+    nfsim/NFcore2/compiled_model.cpp
+    nfsim/NFcore2/engine.cpp
+    nfsim/NFcore2/executable_model.cpp
+    nfsim/NFcore2/legacy_bridge.cpp
+    nfsim/NFcore2/matcher.cpp
+    nfsim/NFcore2/model_image.cpp
+    nfsim/NFcore2/nfsim_adapter_contract.cpp
+    nfsim/NFcore2/nfsim_native_reader.cpp
+    nfsim/NFcore2/nfsim_system_reader.cpp
+    nfsim/NFcore2/nfsim_transform_decoder.cpp
+    nfsim/NFcore2/rule_compiler.cpp
+    nfsim/NFcore2/scaffold.cpp
+    nfsim/NFcore2/scheduler.cpp
+    nfsim/NFcore2/shadow.cpp
+    nfsim/NFcore2/simulation_state.cpp
+    nfsim/NFcore2/transform.cpp
+)
+target_include_directories(bng_nfcore2 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/nfsim/NFcore2)
+target_link_libraries(bng_nfcore2 PUBLIC nfsim_core)
+find_package(Threads REQUIRED)
+add_library(bng_nfnext STATIC
+    nfnext/src/cache.cpp
+    nfnext/src/compiler.cpp
+    nfnext/src/generic_state.cpp
+    nfnext/src/lattice.cpp
+    nfnext/src/nfir.cpp
+    nfnext/src/rule_family.cpp
+    nfnext/src/trajectory.cpp
+)
+target_include_directories(bng_nfnext PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/nfnext/include)
+target_link_libraries(bng_nfnext PUBLIC Threads::Threads)
+
 add_library(bionetgen_core INTERFACE)
 target_link_libraries(bionetgen_core INTERFACE
     bng_engine
     bng_parser
     bng_ast
+    bng_compile
+    bng_nfcore2
+    bng_nfnext
     bng_core
     nauty
     nfsim_core

@@ -271,6 +271,7 @@ namespace NFcore
 			// AS2023 - alternative call sig to store a log of the transform
 			virtual void apply(Mapping *m, MappingSet **ms, string & logstr);
 			virtual int getComponentIndex() const {return cIndex;};
+            int getFinalStateValue() const { return newValue; }
 			virtual TemplateMolecule * getTemplateMolecule() const {return this->tm;};
 		protected:
 			int cIndex;
@@ -287,6 +288,8 @@ namespace NFcore
 			// AS2023 - alternative call sig to store a log of the transform
 			virtual void apply(Mapping *m, MappingSet **ms, string & logstr);
 			virtual int getComponentIndex() const {return cIndex;};
+            int getOtherReactantIndex() const { return otherReactantIndex; }
+            int getOtherMappingIndex() const { return otherMappingIndex; }
 
 			virtual bool checkForNullCondition(Mapping *m, MappingSet **ms);
 			virtual TemplateMolecule * getTemplateMolecule() const {return this->tm;};

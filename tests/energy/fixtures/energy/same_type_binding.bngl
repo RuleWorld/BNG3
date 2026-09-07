@@ -1,0 +1,23 @@
+begin model
+begin parameters
+  G 2
+  phi 0.5
+  Ea 1
+end parameters
+begin molecule types
+  A(x,s~U~P)
+end molecule types
+begin seed species
+  A(x,s~U) 25
+  A(x,s~P) 25
+end seed species
+begin energy patterns
+  A(x!1,s~P).A(x!1) G
+end energy patterns
+begin observables
+  Molecules Dimer A(x!1).A(x!1)
+end observables
+begin reaction rules
+  A(x) + A(x) <-> A(x!1).A(x!1) Arrhenius(phi,Ea)
+end reaction rules
+end model

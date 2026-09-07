@@ -1,0 +1,25 @@
+begin model
+begin parameters
+  G 2
+  phi 0.5
+  Ea 1
+end parameters
+begin molecule types
+  A(x,s~U~P)
+  B(y)
+end molecule types
+begin seed species
+  A(x,s~U) 25
+  A(x,s~P) 25
+  B(y) 50
+end seed species
+begin energy patterns
+  A(x!1,s~P).B(y!1) G
+end energy patterns
+begin observables
+  Molecules AB A(x!1).B(y!1)
+end observables
+begin reaction rules
+  A(x) + B(y) <-> A(x!1).B(y!1) Arrhenius(phi,Ea)
+end reaction rules
+end model

@@ -1,0 +1,25 @@
+{
+  "semantic": {
+    "delta_g_atol": 1e-12,
+    "arrhenius_rtol": 1e-12,
+    "exhaustive_condition_limit": 12
+  },
+  "stochastic": {
+    "default_seed_count": 1024,
+    "small_finite_state_seed_count": 4096,
+    "mean_z_max": 5.0,
+    "variance_ratio_low": 0.80,
+    "variance_ratio_high": 1.25,
+    "small_support_tv_max": 0.075,
+    "broad_support_ks_max": 0.075,
+    "max_tv_support": 32
+  },
+  "performance": {
+    "disabled_runtime_ratio_max": 1.02,
+    "nonenergy_runtime_ratio_max": 1.03,
+    "predicate_count_for_class_gate": 6,
+    "min_reaction_class_reduction": 16.0,
+    "predicate_count_for_construction_gate": 8,
+    "min_construction_speedup": 4.0
+  }
+}

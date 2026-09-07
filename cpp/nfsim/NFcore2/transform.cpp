@@ -1,0 +1,47 @@
+#include "transform.hh"
+#include <limits>
+#include <stdexcept>
+namespace NFcore2 {
+void TransformProgram::execute(SimulationState&s,ScaffoldStore&sc,MatchContext&c,FeatureDelta&d)const{for(std::size_t i=0;i<code_.size();++i){const TransformInstruction&x=code_[i];MoleculeRef r=c.moleculeAt(x.target);switch(x.opcode){
+case TRANSFORM_SET_STATE_WORD:s.molecules(r.type).setStateWord(r.handle,(std::uint16_t)x.a,x.value);d.add(x.feature.valid()?x.feature:FeatureId(x.b));break;
+case TRANSFORM_ADD_STATE_WORD:{
+ std::uint64_t old=s.molecules(r.type).stateWord(r.handle,(std::uint16_t)x.a); std::int64_t delta=static_cast<std::int64_t>(x.value);
+ if(delta<0){std::uint64_t mag=static_cast<std::uint64_t>(-(delta+1))+1u;if(old<mag)throw std::overflow_error("state underflow");s.molecules(r.type).setStateWord(r.handle,(std::uint16_t)x.a,old-mag);}
+ else {std::uint64_t add=static_cast<std::uint64_t>(delta);if(old>std::numeric_limits<std::uint64_t>::max()-add)throw std::overflow_error("state overflow");s.molecules(r.type).setStateWord(r.handle,(std::uint16_t)x.a,old+add);}
+ if(x.feature.valid())d.add(x.feature);break;}
+case TRANSFORM_SET_SCAFFOLD_STATE:sc.setState(c.scaffold,c.coordinate+x.a,(std::uint8_t)x.value);d.add(x.feature.valid()?x.feature:FeatureId(x.b));break;
+case TRANSFORM_MOVE_OCCUPANT:{
+ if(x.a>std::numeric_limits<std::uint32_t>::max()-c.coordinate||x.b>std::numeric_limits<std::uint32_t>::max()-c.coordinate)throw std::out_of_range("scaffold offset overflow");
+ std::uint32_t from=c.coordinate+x.a,to=c.coordinate+x.b;MoleculeHandle h=sc.occupant(c.scaffold,from);
+ if(!h.valid())throw std::logic_error("cannot move empty scaffold occupant");
+ if(from!=to&&sc.occupant(c.scaffold,to).valid())throw std::logic_error("cannot overwrite scaffold occupant");
+ sc.setOccupant(c.scaffold,from,MoleculeHandle());sc.setOccupant(c.scaffold,to,h);c.coordinate=to;d.add(x.feature.valid()?x.feature:FeatureId((std::uint32_t)x.value));break;}
+case TRANSFORM_POPULATION_ADD:s.populations().addTo(PopulationId(x.a),(std::int64_t)x.value);d.add(x.feature.valid()?x.feature:FeatureId(x.b));break;
+case TRANSFORM_BIND:{MoleculeRef q=c.moleculeAt(x.other);
+ if(!r.valid()||!q.valid())throw std::out_of_range("bind target missing");
+ if(s.molecules(r.type).bondRef(r.handle,(std::uint16_t)x.a).valid()||s.molecules(q.type).bondRef(q.handle,(std::uint16_t)x.b).valid())throw std::logic_error("cannot bind occupied site");
+ s.molecules(r.type).setBondRef(r.handle,(std::uint16_t)x.a,q);s.molecules(q.type).setBondRef(q.handle,(std::uint16_t)x.b,r);if(x.feature.valid())d.add(x.feature);break;}
+case TRANSFORM_UNBIND:{
+ MoleculeRef q=s.molecules(r.type).bondRef(r.handle,(std::uint16_t)x.a);
+ if(!q.valid()){if(x.feature.valid())d.add(x.feature);break;}
+ if(!s.molecules(q.type).alive(q.handle))throw std::logic_error("unbind partner is stale");
+ std::uint32_t partner_slot=x.b;
+ if(partner_slot==TRANSFORM_INFER_PARTNER_SLOT){
+  partner_slot=TRANSFORM_INFER_PARTNER_SLOT;
+  const MoleculeStore& ps=s.molecules(q.type);
+  for(std::uint32_t slot=0;slot<ps.bondSlotCount();++slot){
+   MoleculeRef back=ps.bondRef(q.handle,(std::uint16_t)slot);
+   if(back==r){partner_slot=slot;break;}
+  }
+  if(partner_slot==TRANSFORM_INFER_PARTNER_SLOT)throw std::logic_error("cannot infer reciprocal bond slot");
+ } else {
+  if(partner_slot>=s.molecules(q.type).bondSlotCount())throw std::out_of_range("unbind partner slot out of range");
+  if(!(s.molecules(q.type).bondRef(q.handle,(std::uint16_t)partner_slot)==r))throw std::logic_error("unbind reciprocal bond mismatch");
+ }
+ s.molecules(r.type).setBondRef(r.handle,(std::uint16_t)x.a,MoleculeRef());
+ s.molecules(q.type).setBondRef(q.handle,(std::uint16_t)partner_slot,MoleculeRef());
+ if(x.feature.valid())d.add(x.feature);break;}
+case TRANSFORM_CREATE_MOLECULE:{MoleculeTypeId t(x.a);MoleculeHandle h=s.molecules(t).create();c.setMoleculeAt(x.target,MoleculeRef(t,h));if(x.feature.valid())d.add(x.feature);break;}
+case TRANSFORM_DELETE_MOLECULE:if(r.valid())s.eraseMolecule(r);if(x.feature.valid())d.add(x.feature);break;
+case TRANSFORM_END:return;default:throw std::logic_error("invalid transform opcode");}}}
+}

@@ -48,6 +48,14 @@ namespace NFcore
 		~TemplateMolecule();
 
 
+        // Exact root-only view for semantic adapters. False means graph,
+        // compartment or symmetric-site constraints require richer lowering.
+        struct RootLocalConstraints {
+            std::vector<int> empty, occupied;
+            std::vector<std::pair<int, int>> states, exclusions;
+        };
+        bool collectRootLocalConstraints(RootLocalConstraints& output) const;
+
 		/* get functions */
 		MoleculeType *getMoleculeType() const {return moleculeType;};
 		string getMoleculeTypeName() const;

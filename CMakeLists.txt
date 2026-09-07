@@ -169,4 +169,6 @@ configure_file(
 # Tests
 if(BUILD_TESTS AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpp/CMakeLists.txt)
     add_subdirectory(tests/cpp)
+    add_subdirectory(tests/energy)
+    add_subdirectory(tests/architecture_contracts)
 endif()

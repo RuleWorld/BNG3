@@ -1685,6 +1685,12 @@ namespace NFcore
 			int getRxnType() const { return reactionType; };
 
 			MoleculeType *getMoleculeTypeOfReactantTemplate(int pos) const;
+            TemplateMolecule* getReactantTemplate(int pos) const {
+                return pos >= 0 && static_cast<unsigned int>(pos) < n_reactants
+                    ? reactantTemplates[pos] : nullptr;
+            }
+            TransformationSet* getTransformationSet() const { return transformationSet; }
+
 			void setBaseRate(double newBaseRate,string newBaseRateName);
 			void resetBaseRateFromSystemParamter();
 

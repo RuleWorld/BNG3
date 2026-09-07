@@ -1,0 +1,31 @@
+cmake_minimum_required(VERSION 3.5)
+project(NFcore2Tests CXX)
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../../src/NFcore2)
+file(GLOB NFCORE2_SRC ${CMAKE_CURRENT_SOURCE_DIR}/../../src/NFcore2/*.cpp)
+# NativeNFsimSystemReader is compiled by the full NFsim tree; standalone tests exercise
+# its parser-independent reader/decoder layers without importing the legacy object graph.
+list(REMOVE_ITEM NFCORE2_SRC ${CMAKE_CURRENT_SOURCE_DIR}/../../src/NFcore2/nfsim_native_reader.cpp)
+set(NFCORE2_TEST_SRC
+    test_main.cpp
+    test_ids_state.cpp
+    test_scaffold_matcher.cpp
+    test_transform_engine.cpp
+    test_compiled_scheduler.cpp
+    test_rule_legacy.cpp
+    test_model_image_shadow.cpp
+    test_validation_dependency.cpp
+    test_randomized_invariants.cpp
+    test_nfsim_adapter_contract.cpp
+    test_nfsim_system_reader.cpp
+  test_nfsim_transform_decoder.cpp
+  test_exhaustive_matcher_matrix.cpp
+  test_scaffold_reference_model.cpp
+  test_scheduler_reference_model.cpp
+  test_rule_family_stress.cpp
+  test_dependency_exhaustive.cpp
+  test_shadow_semantic_matrix.cpp
+  test_graph_state_machine_extended.cpp
+)
+add_executable(nfcore2_tests ${NFCORE2_TEST_SRC} ${NFCORE2_SRC})

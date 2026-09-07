@@ -31,8 +31,11 @@
 #include <vector>
 #include <map>
 #include <set>
+#include <tuple>
 #include <cstdint>
 #include <cmath>
+
+#include "compile/energy/EnergyDeltaPlan.hpp"
 
 namespace NFcore {
 
@@ -151,6 +154,21 @@ namespace NFcore {
         const EnergyPatternInfo& getPattern(int i) const { return patterns[i]; }
 
         /*
+         * Compile energy semantics into the backend-neutral local delta-G IR.
+         * Unsupported topologies return MaterializedFallback; callers must
+         * retain the existing Sekar expansion path in that case.
+         */
+        bng::compile::energy::EnergyDeltaPlan compileBindingDeltaPlan(
+            const std::string &molType1, const std::string &bindSite1,
+            const std::string &molType2, const std::string &bindSite2
+        ) const;
+
+        bng::compile::energy::EnergyDeltaPlan compileStateChangeDeltaPlan(
+            const std::string &molType, const std::string &comp,
+            const std::string &stateFrom, const std::string &stateTo
+        ) const;
+
+        /*
          * Build the compact context descriptor used by the incremental
          * binding path. A false return leaves the caller free to use the
          * materialized expansion for unsupported context topologies.
@@ -200,10 +218,16 @@ namespace NFcore {
         ) const;
 
     private:
+        using BindingPatternKey =
+            std::tuple<std::string, std::string, std::string, std::string>;
+        using StatePatternKey = std::pair<std::string, std::string>;
+
         double phi;   // Default distribution parameter (typically 0.5)
         double RT;    // Gas constant × Temperature
 
         std::vector<EnergyPatternInfo> patterns;
+        std::map<BindingPatternKey, std::vector<int>> bindingPatternIndex;
+        std::map<StatePatternKey, std::vector<int>> statePatternIndex;
 
         /*
          * Find energy patterns that overlap with a binding reaction center.
