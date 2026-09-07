@@ -70,13 +70,15 @@ TEST(NFsimAdapter_DirectBondToPreservesPartnerReactantAndComponent){
     d.partner_reactant=1; d.partner_component=2;
     r.dependencies.push_back(d); n.rules.push_back(r);
     LegacyRuleIR x=NFsimSnapshotAdapter::toLegacy(n).rules[0];
-    EXPECT_EQ(x.predicates.size(),1u);
-    EXPECT_EQ(x.predicates[0].kind,LEGACY_PRED_BOND_TO);
-    EXPECT_EQ(x.predicates[0].target,0u);
-    EXPECT_EQ(x.predicates[0].a,1u);
-    EXPECT_EQ(x.predicates[0].b,1u);
-    EXPECT_EQ(x.predicates[0].value,2u);
-    EXPECT_TRUE(x.predicates[0].has_partner_component);
+    EXPECT_EQ(x.predicates.size(),3u);
+    EXPECT_EQ(x.predicates[0].kind,LEGACY_PRED_TYPE_EXISTS);
+    EXPECT_EQ(x.predicates[1].kind,LEGACY_PRED_TYPE_EXISTS);
+    EXPECT_EQ(x.predicates[2].kind,LEGACY_PRED_BOND_TO);
+    EXPECT_EQ(x.predicates[2].target,0u);
+    EXPECT_EQ(x.predicates[2].a,1u);
+    EXPECT_EQ(x.predicates[2].b,1u);
+    EXPECT_EQ(x.predicates[2].value,2u);
+    EXPECT_TRUE(x.predicates[2].has_partner_component);
     EXPECT_FALSE(x.uses_connected_to);
 }
 
@@ -139,6 +141,18 @@ TEST(NFsimAdapter_MoveCompartmentRemainsUnsupported){
 TEST(NFsimAdapter_PreservesRateParameterCoordinateAndName){
     NativeModelSnapshot n;n.molecule_types.push_back(mol("R",1));NativeReactionSnapshot r=rxn();r.name="elong_42";r.base_rate=3.5;r.parameter_index=9;r.coordinate=42;n.rules.push_back(r);
     LegacyRuleIR x=NFsimSnapshotAdapter::toLegacy(n).rules[0];EXPECT_EQ(x.name,std::string("elong_42"));EXPECT_EQ(x.rate,3.5);EXPECT_EQ(x.parameter_index,9u);EXPECT_EQ(x.coordinate,42u);
+}
+
+TEST(NFsimAdapter_EmptyReactantPatternStillRequiresLiveType){
+    NativeModelSnapshot n;
+    n.molecule_types.push_back(mol("R",1));
+    NativeReactionSnapshot r=rxn();
+    r.reactant_types.push_back(0);
+    n.rules.push_back(r);
+    LegacyRuleIR x=NFsimSnapshotAdapter::toLegacy(n).rules[0];
+    EXPECT_EQ(x.predicates.size(),1u);
+    EXPECT_EQ(x.predicates[0].kind,LEGACY_PRED_TYPE_EXISTS);
+    EXPECT_EQ(x.predicates[0].target,0u);
 }
 
 TEST(NFsimAdapter_RejectsDependencyReactantOutOfRange){

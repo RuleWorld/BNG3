@@ -72,6 +72,15 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
         LegacyRuleIR r; r.name=nr.name; r.rate=nr.base_rate; r.parameter_index=nr.parameter_index; r.coordinate=nr.coordinate;
         r.uses_local_function=nr.uses_local_function; r.uses_connected_to=nr.uses_connected_to;
 
+        // Root templates with no state, bond, or occupancy constraint still
+        // require a live molecule at every mapped reactant position.
+        for (std::size_t reactant = 0; reactant < nr.reactant_types.size(); ++reactant) {
+            LegacyPredicateIR exists;
+            exists.kind = LEGACY_PRED_TYPE_EXISTS;
+            exists.target = static_cast<std::uint16_t>(reactant);
+            r.predicates.push_back(exists);
+        }
+
         for (std::size_t di=0;di<nr.dependencies.size();++di) {
             const NativeDependencySnapshot& d=nr.dependencies[di];
             std::uint32_t type=reactantType(source,nr,d.reactant);
