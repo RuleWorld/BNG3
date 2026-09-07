@@ -46,12 +46,17 @@ The test executable now covers lowering and execution for each family, feature
 invalidation metadata, model-image metadata, and transform decoder payload
 survival.
 
+An independent literal oracle and JSON fixture cover all six family IDs under
+`tests/energy/tests/python/test_nfcore2_semantic_expansion_oracle.py` and
+`tests/energy/fixtures/semantic/nfcore2_semantic_expansion.json`. The oracle
+does not import NFcore2 implementation code.
+
 The post-fix validation set is also green:
 
 ```text
 cmake --build build --parallel 4
 ctest --test-dir build --output-on-failure       # 251/251 passed
-tests/energy/tests/python                         # 58 passed
+tests/energy/tests/python                         # 65 passed
 tests/python tests/test_ci_contract.py            # 362 passed, 27 skipped
 audit_architecture_contracts.py                   # passed; no failures
 ```

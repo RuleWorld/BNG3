@@ -12,7 +12,7 @@
     "full_validation": {
       "build": "cmake --build build --parallel 4",
       "ctest": "251 passed",
-      "energy_python": "58 passed",
+      "energy_python": "65 passed",
       "main_python": "362 passed, 27 skipped",
       "architecture_audit": "passed with zero failures"
     }
@@ -21,32 +21,38 @@
     {
       "id": "population-transforms",
       "status": "direct-bounded",
-      "tests": ["NFsimAdapter_PopulationTransformsLowerToSignedPopulationDelta", "NFsimAdapter_PopulationRuleExecutesAgainstPopulationStore"]
+      "tests": ["NFsimAdapter_PopulationTransformsLowerToSignedPopulationDelta", "NFsimAdapter_PopulationRuleExecutesAgainstPopulationStore"],
+      "oracle": "tests/energy/tests/python/test_nfcore2_semantic_expansion_oracle.py::test_population_transform_oracle"
     },
     {
       "id": "root-graph-connectedTo",
       "status": "direct-root-bounded-fallback-internal",
-      "tests": ["NFsimAdapter_RootInternalTopologyAndPartnerStateLowerDirectly", "NFsimAdapter_ConnectedToPredicateUsesGraphSearchForRootReactants"]
+      "tests": ["NFsimAdapter_RootInternalTopologyAndPartnerStateLowerDirectly", "NFsimAdapter_ConnectedToPredicateUsesGraphSearchForRootReactants"],
+      "oracle": "tests/energy/tests/python/test_nfcore2_semantic_expansion_oracle.py::test_connected_to_graph_oracle"
     },
     {
       "id": "synthesis",
       "status": "direct-particle-and-population-bounded",
-      "tests": ["NFsimAdapter_SynthesisCreatesAddedMoleculeFromZeroReactants", "NFsimAdapter_SynthesisRuleCreatesMoleculeInEngine"]
+      "tests": ["NFsimAdapter_SynthesisCreatesAddedMoleculeFromZeroReactants", "NFsimAdapter_SynthesisRuleCreatesMoleculeInEngine"],
+      "oracle": "tests/energy/tests/python/test_nfcore2_semantic_expansion_oracle.py::test_synthesis_oracle"
     },
     {
       "id": "compartments-moves",
       "status": "direct-root-local-bounded",
-      "tests": ["NFsimAdapter_CompartmentPredicateAndMoveLowerDirectly", "NFsimAdapter_CompartmentRuleMatchesAndMovesMolecule"]
+      "tests": ["NFsimAdapter_CompartmentPredicateAndMoveLowerDirectly", "NFsimAdapter_CompartmentRuleMatchesAndMovesMolecule"],
+      "oracle": "tests/energy/tests/python/test_nfcore2_semantic_expansion_oracle.py::test_compartment_move_oracle"
     },
     {
       "id": "local-function-dor",
       "status": "direct-descriptor-bounded-fallback-general",
-      "tests": ["NFsimAdapter_LocalFunctionAndDORRateLawsCarryExecutableDescriptors", "NFsimAdapter_LocalFunctionAndDORRatesEvaluateFromMatchedState"]
+      "tests": ["NFsimAdapter_LocalFunctionAndDORRateLawsCarryExecutableDescriptors", "NFsimAdapter_LocalFunctionAndDORRatesEvaluateFromMatchedState"],
+      "oracle": "tests/energy/tests/python/test_nfcore2_semantic_expansion_oracle.py::test_local_and_dor_rate_oracle"
     },
     {
       "id": "whole-species-deletion",
       "status": "direct-connected-component-bounded",
-      "tests": ["NFsimAdapter_DeleteWholeSpeciesRemovesConnectedComponent", "Transform_DeleteCompleteSpeciesErasesEveryConnectedMolecule"]
+      "tests": ["NFsimAdapter_DeleteWholeSpeciesRemovesConnectedComponent", "Transform_DeleteCompleteSpeciesErasesEveryConnectedMolecule"],
+      "oracle": "tests/energy/tests/python/test_nfcore2_semantic_expansion_oracle.py::test_whole_species_deletion_oracle"
     }
   ],
   "remaining_fallbacks": [
