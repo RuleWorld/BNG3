@@ -101,6 +101,7 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                     p.b=d.partner_reactant;
                     p.value=d.partner_component;
                     p.has_partner_component=true;
+                    p.partner_feature=fmap.bond[reactantType(source,nr,d.partner_reactant)][d.partner_component];
                     r.predicates.push_back(p);
                     break;
                 case NATIVE_TOPOLOGY:

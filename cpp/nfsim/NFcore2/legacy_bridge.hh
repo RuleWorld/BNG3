@@ -31,6 +31,7 @@ struct LegacyPredicateIR {
     std::uint64_t mask;
     std::uint64_t value;
     bool has_partner_component;
+    FeatureId partner_feature;
     LegacyPredicateIR() : kind(LEGACY_PRED_UNSUPPORTED), target(0), a(0), b(0), mask(0), value(0), has_partner_component(false) {}
 };
 

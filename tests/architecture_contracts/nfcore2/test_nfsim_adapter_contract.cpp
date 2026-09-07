@@ -84,6 +84,25 @@ TEST(NFsimAdapter_DirectBondToPreservesPartnerReactantAndComponent){
     EXPECT_FALSE(x.uses_connected_to);
 }
 
+TEST(NFsimAdapter_DirectBondToInvalidatesBothBondFeatures){
+    NativeModelSnapshot n;
+    n.molecule_types.push_back(mol("A",2));
+    n.molecule_types.push_back(mol("B",3));
+    NativeReactionSnapshot r=rxn();
+    r.reactant_types.push_back(0); r.reactant_types.push_back(1);
+    NativeDependencySnapshot d=dep(NATIVE_BOND_TO,0,1);
+    d.partner_reactant=1; d.partner_component=2;
+    r.dependencies.push_back(d); n.rules.push_back(r);
+    LegacyLoweringResult lowered=LegacyLowerer::lower(NFsimSnapshotAdapter::toLegacy(n));
+    EXPECT_EQ(lowered.supported_rule_count,1u);
+    const DependencyIndex& index=lowered.executable.metadata().dependencies();
+    std::pair<const MatcherId*,const MatcherId*> source=index.dependents(FeatureId(3));
+    std::pair<const MatcherId*,const MatcherId*> partner=index.dependents(FeatureId(9));
+    EXPECT_TRUE(source.first!=source.second);
+    EXPECT_TRUE(partner.first!=partner.second);
+    EXPECT_EQ(*source.first,*partner.first);
+}
+
 TEST(NFsimAdapter_InternalTopologyIsConservativeFallback){
     NativeModelSnapshot n;n.molecule_types.push_back(mol("R",2));NativeReactionSnapshot r=rxn();r.dependencies.push_back(dep(NATIVE_TOPOLOGY,0,0));n.rules.push_back(r);
     LegacyRuleIR x=NFsimSnapshotAdapter::toLegacy(n).rules[0];
