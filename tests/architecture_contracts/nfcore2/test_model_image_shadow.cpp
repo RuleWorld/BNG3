@@ -464,3 +464,20 @@ TEST(ModelImage_RoundTripNewMatcherAndTransformOpcodes){
     const std::vector<TransformInstruction>& c=b.transforms().at(TransformProgramId(0)).code();
     EXPECT_EQ(c[0].opcode,TRANSFORM_ADD_STATE_WORD);EXPECT_EQ(c[1].opcode,TRANSFORM_UNBIND);EXPECT_EQ(c[1].b,TRANSFORM_INFER_PARTNER_SLOT);
 }
+
+TEST(ModelImage_RoundTripBondToReciprocalComponentCheck){
+    ExecutableModel e;
+    MoleculeTypeDescriptor a;a.name="A";a.bond_slots=2;
+    MoleculeTypeDescriptor b;b.name="B";b.bond_slots=2;
+    e.buildMetadata().addMoleculeType(a);e.buildMetadata().addMoleculeType(b);
+    MatcherProgram p;
+    MatchInstruction x(MATCH_BOND_TO);x.target=0;x.a=1;x.b=1;x.value=0;x.check_partner_component=true;
+    p.add(x);p.add(MatchInstruction(MATCH_END));
+    e.buildMatchers().add(p);
+    ExecutableModel roundtrip=readBytes(writeBytes(e));
+    const std::vector<MatchInstruction>& code=roundtrip.matchers().at(MatcherId(0)).code();
+    EXPECT_EQ(code.size(),2u);
+    EXPECT_EQ(code[0].opcode,MATCH_BOND_TO);
+    EXPECT_TRUE(code[0].check_partner_component);
+    EXPECT_EQ(code[0].value,0u);
+}
