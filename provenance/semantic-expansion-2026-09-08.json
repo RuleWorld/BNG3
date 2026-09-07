@@ -1,0 +1,51 @@
+{
+  "checkpoint": "semantic-expansion-2026-09-08",
+  "branch": "codex/bng3-energy-validation-port",
+  "inputs": [
+    "/Users/akutuva/Downloads/BNG3_energy_compiler_validation_complete_handoff_2026-09-07.zip",
+    "/Users/akutuva/Downloads/nfsim-nfcore2-complete-handoff-20260906.zip",
+    "/Users/akutuva/Downloads/NFnext_Rasi_complete_code_tests_context_patches_2026-09-06.zip"
+  ],
+  "test_first": {
+    "red_build": "bng3_nfcore2_reference_tests reported missing population, compartment, move, species-delete, and rate-law contracts before implementation",
+    "focused_green": "ctest --test-dir build --output-on-failure -R architecture_nfcore2_reference"
+  },
+  "contracts": [
+    {
+      "id": "population-transforms",
+      "status": "direct-bounded",
+      "tests": ["NFsimAdapter_PopulationTransformsLowerToSignedPopulationDelta", "NFsimAdapter_PopulationRuleExecutesAgainstPopulationStore"]
+    },
+    {
+      "id": "root-graph-connectedTo",
+      "status": "direct-root-bounded-fallback-internal",
+      "tests": ["NFsimAdapter_RootInternalTopologyAndPartnerStateLowerDirectly", "NFsimAdapter_ConnectedToPredicateUsesGraphSearchForRootReactants"]
+    },
+    {
+      "id": "synthesis",
+      "status": "direct-particle-and-population-bounded",
+      "tests": ["NFsimAdapter_SynthesisCreatesAddedMoleculeFromZeroReactants", "NFsimAdapter_SynthesisRuleCreatesMoleculeInEngine"]
+    },
+    {
+      "id": "compartments-moves",
+      "status": "direct-root-local-bounded",
+      "tests": ["NFsimAdapter_CompartmentPredicateAndMoveLowerDirectly", "NFsimAdapter_CompartmentRuleMatchesAndMovesMolecule"]
+    },
+    {
+      "id": "local-function-dor",
+      "status": "direct-descriptor-bounded-fallback-general",
+      "tests": ["NFsimAdapter_LocalFunctionAndDORRateLawsCarryExecutableDescriptors", "NFsimAdapter_LocalFunctionAndDORRatesEvaluateFromMatchedState"]
+    },
+    {
+      "id": "whole-species-deletion",
+      "status": "direct-connected-component-bounded",
+      "tests": ["NFsimAdapter_DeleteWholeSpeciesRemovesConnectedComponent", "Transform_DeleteCompleteSpeciesErasesEveryConnectedMolecule"]
+    }
+  ],
+  "remaining_fallbacks": [
+    "arbitrary internal graph variables and symmetric sites",
+    "general local-function and DOR/DOR2 expression evaluation",
+    "compartment hierarchy, volume scaling, and species-carrying moves",
+    "conditional deletion"
+  ]
+}

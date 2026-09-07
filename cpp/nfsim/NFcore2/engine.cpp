@@ -1,5 +1,6 @@
 #include "engine.hh"
 #include <algorithm>
+#include <stdexcept>
 namespace NFcore2 {
 std::vector<MatcherId> Engine::affectedMatchers(const FeatureDelta& d) const {
     std::vector<MatcherId> out; const DependencyIndex& dep=state_.model().dependencies();
@@ -17,5 +18,12 @@ bool Engine::fire(RuleFamilyId f,std::uint32_t member,MatchContext& c,FeatureDel
     if(!executable_.matchers().at(fam.matcher).evaluate(state_,scaffolds_,c)){++counters_.rejected_fires;return false;}
     d.clear();executable_.transforms().at(fam.transform).execute(state_,scaffolds_,c,d);
     ++counters_.events;counters_.feature_deltas += static_cast<std::uint64_t>(d.changed.size());return true;
+}
+double Engine::evaluateRate(RuleFamilyId f, std::uint32_t member,
+                            const MatchContext& context) const {
+    const RuleFamilyDescriptor& family = state_.model().ruleFamilies().at(f.value());
+    if (member >= family.members.size()) throw std::out_of_range("family member");
+    return family.members[member].rate_law.evaluate(
+        state_, context, family.members[member].rate);
 }
 }

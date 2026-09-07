@@ -8,6 +8,7 @@ namespace NFcore
 {
 
 	class MoleculeCreator;
+	class MoleculeType;
 	class SpeciesCreator;
 	class Mapping;
 	class Transformation;
@@ -358,6 +359,7 @@ namespace NFcore
 			void apply_and_map( MappingSet * ms, string & logstr );
 			// is this a population type?
 			bool isPopulationType() const;
+			MoleculeType * getMoleculeType() const;
 			// get pointer to population molecule
 			Molecule * get_population_pointer() const;
 			virtual TemplateMolecule * getTemplateMolecule() const {return this->tm;};
@@ -448,6 +450,7 @@ namespace NFcore
 			virtual TemplateMolecule * getTemplateMolecule() const {return this->tm;};
 
 			bool isMoveConnected() const { return moveConnected; }
+			string getNewCompartmentId() const;
 
 		protected:
 			Compartment * newCompartment;

@@ -18,6 +18,8 @@ public:
     MoleculeHandle create();
     bool erase(MoleculeHandle handle);
     bool alive(MoleculeHandle handle) const;
+    std::uint32_t compartment(MoleculeHandle handle) const;
+    void setCompartment(MoleculeHandle handle, std::uint32_t compartment);
     std::uint64_t stateWord(MoleculeHandle handle, std::uint16_t word) const;
     void setStateWord(MoleculeHandle handle, std::uint16_t word, std::uint64_t value);
     MoleculeHandle bond(MoleculeHandle handle, std::uint16_t slot) const;
@@ -35,6 +37,7 @@ private:
     std::vector<std::uint32_t> free_;
     std::vector<std::uint64_t> states_;
     std::vector<MoleculeRef> bonds_;
+    std::vector<std::uint32_t> compartments_;
     std::size_t live_count_;
 };
 
@@ -58,6 +61,7 @@ public:
     double time() const { return time_; }
     void setTime(double value);
     bool eraseMolecule(MoleculeRef ref);
+    std::vector<MoleculeRef> eraseSpecies(MoleculeRef ref);
 private:
     const CompiledModel& model_;
     std::vector<MoleculeStore> molecule_stores_;

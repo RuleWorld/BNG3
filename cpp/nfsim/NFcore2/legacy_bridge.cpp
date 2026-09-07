@@ -3,8 +3,36 @@
 #include <sstream>
 #include <stdexcept>
 #include <algorithm>
+#include <cmath>
 
 namespace NFcore2 {
+
+double RateLawDescriptor::evaluate(const SimulationState& state,
+                                   const MatchContext& context,
+                                   double base_rate) const {
+    if (kind == LEGACY_RATE_CONSTANT) return base_rate;
+    const MoleculeRef left = context.moleculeAt(target);
+    if (!left.valid()) throw std::out_of_range("rate-law target missing");
+    const double left_value = static_cast<double>(
+        state.molecules(left.type).stateWord(left.handle, static_cast<std::uint16_t>(component)));
+    double result = base_rate;
+    if (kind == LEGACY_RATE_LOCAL_LINEAR)
+        result = base_rate * (offset + slope * left_value);
+    if (kind == LEGACY_RATE_DOR_PRODUCT) {
+        const MoleculeRef right = context.moleculeAt(partner_target);
+        if (!right.valid()) throw std::out_of_range("DOR partner target missing");
+        const double right_value = static_cast<double>(
+            state.molecules(right.type).stateWord(right.handle, static_cast<std::uint16_t>(partner_component)));
+        result = base_rate * weight * (offset + slope * left_value) *
+            (offset + slope * right_value);
+    } else if (kind != LEGACY_RATE_LOCAL_LINEAR) {
+        throw std::logic_error("unknown rate-law kind");
+    }
+    if (!std::isfinite(result) || result < 0.0)
+        throw std::domain_error("rate law produced invalid propensity");
+    return result;
+}
+
 namespace {
 
 LoweringFallbackReason unsupportedReason(const LegacyRuleIR& r) {
@@ -28,6 +56,8 @@ MatchInstruction lowerPredicate(const LegacyPredicateIR& p) {
         case LEGACY_PRED_BOND_FREE: op=MATCH_BOND_FREE; break;
         case LEGACY_PRED_BOND_TO: op=MATCH_BOND_TO; break;
         case LEGACY_PRED_POPULATION_AT_LEAST: op=MATCH_POPULATION_AT_LEAST; break;
+        case LEGACY_PRED_COMPARTMENT: op=MATCH_COMPARTMENT; break;
+        case LEGACY_PRED_CONNECTED_TO: op=MATCH_CONNECTED_TO; break;
         case LEGACY_PRED_SCAFFOLD_STATE: op=MATCH_SCAFFOLD_STATE; break;
         case LEGACY_PRED_SCAFFOLD_FREE: op=MATCH_SCAFFOLD_FREE; break;
         default: throw std::logic_error("unsupported legacy predicate reached lowerer");
@@ -47,6 +77,8 @@ TransformInstruction lowerTransform(const LegacyTransformIR& t) {
         case LEGACY_TRANSFORM_UNBIND: op=TRANSFORM_UNBIND; break;
         case LEGACY_TRANSFORM_CREATE_MOLECULE: op=TRANSFORM_CREATE_MOLECULE; break;
         case LEGACY_TRANSFORM_DELETE_MOLECULE: op=TRANSFORM_DELETE_MOLECULE; break;
+        case LEGACY_TRANSFORM_DELETE_SPECIES: op=TRANSFORM_DELETE_SPECIES; break;
+        case LEGACY_TRANSFORM_MOVE_MOLECULE: op=TRANSFORM_MOVE_MOLECULE; break;
         default: throw std::logic_error("unsupported legacy transform reached lowerer");
     }
     TransformInstruction x(op); x.target=t.target; x.other=t.other; x.a=t.a; x.b=t.b; x.feature=t.changed_feature;
@@ -81,6 +113,10 @@ std::string LegacyLowerer::transformSignature(const LegacyRuleIR& r) {
         os << static_cast<int>(t.kind) << ':' << t.target << ':' << t.other << ':' << t.a << ':' << t.b << ':'
            << t.value << ':' << t.changed_feature.value() << ';';
     }
+    os << "rate:" << static_cast<int>(r.rate_law.kind) << ':' << r.rate_law.target << ':'
+       << r.rate_law.partner_target << ':' << r.rate_law.component << ':'
+       << r.rate_law.partner_component << ':' << r.rate_law.offset << ':'
+       << r.rate_law.slope << ':' << r.rate_law.weight << ';';
     return os.str();
 }
 
@@ -124,7 +160,7 @@ LegacyLoweringResult LegacyLowerer::lower(const LegacyModelIR& legacy) {
         } else tid=ti->second;
 
         RuleInstanceIR x; x.name=r.name; x.matcher_signature=ms; x.transform_signature=ts;
-        x.matcher=mid; x.transform=tid; x.rate=r.rate; x.parameter_index=r.parameter_index; x.coordinate=r.coordinate;
+        x.matcher=mid; x.transform=tid; x.rate=r.rate; x.rate_law=r.rate_law; x.parameter_index=r.parameter_index; x.coordinate=r.coordinate;
         instances.push_back(x); original_index.push_back(i); ++out.supported_rule_count;
     }
 
@@ -148,11 +184,19 @@ LegacyLoweringResult LegacyLowerer::lower(const LegacyModelIR& legacy) {
                 const LegacyPredicateIR& p=legacy.rules[ri].predicates[pi];
                 if (fd.kind==FEATURE_MOLECULE_STATE && (p.kind==LEGACY_PRED_STATE_MASK || p.kind==LEGACY_PRED_STATE_NOT_EQUAL) && fd.index==p.a) reads=true;
                 else if (fd.kind==FEATURE_MOLECULE_BOND && (p.kind==LEGACY_PRED_BOND_PRESENT || p.kind==LEGACY_PRED_BOND_FREE || p.kind==LEGACY_PRED_BOND_TO) && fd.index==p.a) reads=true;
+                else if (fd.kind==FEATURE_MOLECULE_BOND && p.kind==LEGACY_PRED_CONNECTED_TO) reads=true;
                 if (p.kind==LEGACY_PRED_BOND_TO && p.partner_feature.valid() && FeatureId(static_cast<std::uint32_t>(fi))==p.partner_feature) reads=true;
                 else if (fd.kind==FEATURE_POPULATION && p.kind==LEGACY_PRED_POPULATION_AT_LEAST && fd.owner==p.a) reads=true;
+                else if (fd.kind==FEATURE_MOLECULE_COMPARTMENT && p.kind==LEGACY_PRED_COMPARTMENT && fd.owner==p.target) reads=true;
+                else if (fd.kind==FEATURE_MOLECULE_EXISTENCE && p.kind==LEGACY_PRED_TYPE_EXISTS && fd.owner==p.a) reads=true;
                 else if (fd.kind==FEATURE_SCAFFOLD_OCCUPANCY && p.kind==LEGACY_PRED_SCAFFOLD_FREE) reads=true;
                 else if (fd.kind==FEATURE_SCAFFOLD_OCCUPANCY && p.kind==LEGACY_PRED_SCAFFOLD_STATE) reads=true;
             }
+            const RateLawDescriptor& law=legacy.rules[ri].rate_law;
+            if (fd.kind==FEATURE_MOLECULE_STATE &&
+                ((law.kind==LEGACY_RATE_LOCAL_LINEAR && fd.index==law.component) ||
+                 (law.kind==LEGACY_RATE_DOR_PRODUCT &&
+                  (fd.index==law.component || fd.index==law.partner_component)))) reads=true;
             if (reads) deps[fi].push_back(metadata.ruleFamilies().at(out.rules[ri].family.value()).matcher);
         }
     }

@@ -15,9 +15,11 @@ MoleculeHandle MoleculeStore::create() {
         generation_.push_back(1); alive_.push_back(1);
         states_.resize((slot + 1) * state_words_, 0);
         bonds_.resize((slot + 1) * bond_slots_);
+        compartments_.resize(slot + 1, 0);
     }
     for (std::uint16_t i=0;i<state_words_;++i) states_[slot*state_words_+i]=0;
     for (std::uint16_t i=0;i<bond_slots_;++i) bonds_[slot*bond_slots_+i]=MoleculeRef();
+    compartments_[slot] = 0;
     ++live_count_;
     return MoleculeHandle(slot, generation_[slot]);
 }
@@ -30,6 +32,14 @@ bool MoleculeStore::erase(MoleculeHandle h) {
 }
 bool MoleculeStore::alive(MoleculeHandle h) const {
     return h.slot < alive_.size() && alive_[h.slot] && generation_[h.slot] == h.generation;
+}
+std::uint32_t MoleculeStore::compartment(MoleculeHandle h) const {
+    requireAlive(h);
+    return compartments_.at(h.slot);
+}
+void MoleculeStore::setCompartment(MoleculeHandle h, std::uint32_t compartment) {
+    requireAlive(h);
+    compartments_.at(h.slot) = compartment;
 }
 void MoleculeStore::requireAlive(MoleculeHandle h) const { if (!alive(h)) throw std::out_of_range("stale molecule handle"); }
 std::uint64_t MoleculeStore::stateWord(MoleculeHandle h, std::uint16_t w) const {
@@ -86,10 +96,33 @@ bool SimulationState::eraseMolecule(MoleculeRef ref) {
     return source.erase(ref.handle);
 }
 
+std::vector<MoleculeRef> SimulationState::eraseSpecies(MoleculeRef ref) {
+    std::vector<MoleculeRef> component;
+    if (!ref.valid() || !molecules(ref.type).alive(ref.handle)) return component;
+    component.push_back(ref);
+    for (std::size_t i = 0; i < component.size(); ++i) {
+        const MoleculeRef current = component[i];
+        const MoleculeStore& store = molecules(current.type);
+        for (std::uint16_t slot = 0; slot < store.bondSlotCount(); ++slot) {
+            const MoleculeRef partner = store.bondRef(current.handle, slot);
+            if (!partner.valid() || !molecules(partner.type).alive(partner.handle)) continue;
+            bool seen = false;
+            for (std::size_t j = 0; j < component.size(); ++j)
+                if (component[j] == partner) { seen = true; break; }
+            if (!seen) component.push_back(partner);
+        }
+    }
+    for (std::size_t i = 0; i < component.size(); ++i) eraseMolecule(component[i]);
+    return component;
+}
+
 SimulationState::SimulationState(const CompiledModel& model) : model_(model), time_(0.0) {
     const std::vector<MoleculeTypeDescriptor>& types=model.moleculeTypes();
     molecule_stores_.reserve(types.size());
-    for (std::size_t i=0;i<types.size();++i) molecule_stores_.push_back(MoleculeStore(types[i]));
+    for (std::size_t i=0;i<types.size();++i) {
+        molecule_stores_.push_back(MoleculeStore(types[i]));
+        if (types[i].population) populations_.add(0);
+    }
 }
 
 } // namespace NFcore2

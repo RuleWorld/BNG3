@@ -18,6 +18,7 @@ struct RuleInstanceIR {
     double rate;
     std::uint32_t parameter_index;
     std::uint32_t coordinate;
+    RateLawDescriptor rate_law;
 };
 
 struct RuleFamilyCompilation {

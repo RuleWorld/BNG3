@@ -34,6 +34,21 @@ TEST(Transform_UnbindFreeSiteIsIdempotent){ ExecutableModel e=makeExec();Simulat
 TEST(Transform_CreateMoleculeWritesContextTarget){ ExecutableModel e=makeExec();SimulationState s(e.metadata());ScaffoldStore sc;MatchContext c;TransformProgram p;TransformInstruction x(TRANSFORM_CREATE_MOLECULE);x.target=2;x.a=1;p.add(x);FeatureDelta d;p.execute(s,sc,c,d);EXPECT_TRUE(c.moleculeAt(2).valid());EXPECT_EQ(c.moleculeAt(2).type,MoleculeTypeId(1));EXPECT_EQ(s.molecules(MoleculeTypeId(1)).liveCount(),1u); }
 TEST(Transform_DeleteMoleculeInvalidatesHandle){ ExecutableModel e=makeExec();SimulationState s(e.metadata());ScaffoldStore sc;MoleculeHandle a=s.molecules(MoleculeTypeId(0)).create();MatchContext c;c.setMoleculeAt(0,MoleculeRef(MoleculeTypeId(0),a));TransformProgram p;TransformInstruction x(TRANSFORM_DELETE_MOLECULE);x.target=0;p.add(x);FeatureDelta d;p.execute(s,sc,c,d);EXPECT_FALSE(s.molecules(MoleculeTypeId(0)).alive(a)); }
 TEST(Transform_DeleteMoleculeClearsReciprocalBonds){ ExecutableModel e=makeExec();SimulationState s(e.metadata());ScaffoldStore sc;MoleculeHandle a=s.molecules(MoleculeTypeId(0)).create(),b=s.molecules(MoleculeTypeId(1)).create();s.molecules(MoleculeTypeId(0)).setBondRef(a,0,MoleculeRef(MoleculeTypeId(1),b));s.molecules(MoleculeTypeId(1)).setBondRef(b,1,MoleculeRef(MoleculeTypeId(0),a));MatchContext c;c.setMoleculeAt(0,MoleculeRef(MoleculeTypeId(0),a));TransformProgram p;TransformInstruction x(TRANSFORM_DELETE_MOLECULE);x.target=0;p.add(x);FeatureDelta d;p.execute(s,sc,c,d);EXPECT_FALSE(s.molecules(MoleculeTypeId(1)).bondRef(b,1).valid()); }
+TEST(Transform_DeleteCompleteSpeciesErasesEveryConnectedMolecule){
+    ExecutableModel e=makeExec();SimulationState s(e.metadata());ScaffoldStore sc;
+    MoleculeHandle a=s.molecules(MoleculeTypeId(0)).create(),b=s.molecules(MoleculeTypeId(1)).create();
+    s.molecules(MoleculeTypeId(0)).setBondRef(a,0,MoleculeRef(MoleculeTypeId(1),b));
+    s.molecules(MoleculeTypeId(1)).setBondRef(b,1,MoleculeRef(MoleculeTypeId(0),a));
+    MatchContext c;c.setMoleculeAt(0,MoleculeRef(MoleculeTypeId(0),a));TransformProgram p;
+    p.add(TransformInstruction(TRANSFORM_DELETE_SPECIES));FeatureDelta d;p.execute(s,sc,c,d);
+    EXPECT_FALSE(s.molecules(MoleculeTypeId(0)).alive(a));EXPECT_FALSE(s.molecules(MoleculeTypeId(1)).alive(b));
+}
+TEST(Transform_MoveMoleculeUpdatesCompartmentAndFeatureDelta){
+    ExecutableModel e=makeExec();SimulationState s(e.metadata());ScaffoldStore sc;
+    MoleculeHandle a=s.molecules(MoleculeTypeId(0)).create();s.molecules(MoleculeTypeId(0)).setCompartment(a,2);
+    MatchContext c;c.setMoleculeAt(0,MoleculeRef(MoleculeTypeId(0),a));TransformProgram p;TransformInstruction x(TRANSFORM_MOVE_MOLECULE);x.target=0;x.a=3;x.feature=FeatureId(0);p.add(x);FeatureDelta d;p.execute(s,sc,c,d);
+    EXPECT_EQ(s.molecules(MoleculeTypeId(0)).compartment(a),3u);EXPECT_EQ(d.changed.size(),1u);EXPECT_EQ(d.changed[0],FeatureId(0));
+}
 TEST(Transform_EndStopsLaterInstructions){ ExecutableModel e=makeExec();SimulationState s(e.metadata());ScaffoldStore sc;MoleculeHandle a=s.molecules(MoleculeTypeId(0)).create();MatchContext c;c.setMoleculeAt(0,MoleculeRef(MoleculeTypeId(0),a));TransformProgram p;p.add(TransformInstruction(TRANSFORM_END));TransformInstruction x(TRANSFORM_SET_STATE_WORD);x.value=99;p.add(x);FeatureDelta d;p.execute(s,sc,c,d);EXPECT_EQ(s.molecules(MoleculeTypeId(0)).stateWord(a,0),0ull); }
 
 TEST(Engine_AffectedMatchersDeduplicatesAcrossDuplicateDeltas){ ExecutableModel e=makeExec();MatcherId m0=e.buildMatchers().add(MatcherProgram()),m1=e.buildMatchers().add(MatcherProgram());std::vector<std::vector<MatcherId> > deps(e.metadata().features().size());deps[1].push_back(m0);deps[1].push_back(m1);deps[2].push_back(m0);e.buildMetadata().setFeatureDependencies(deps);Engine eng(e);FeatureDelta d;d.add(FeatureId(1));d.add(FeatureId(2));d.add(FeatureId(1));std::vector<MatcherId> out=eng.affectedMatchers(d);EXPECT_EQ(out.size(),2u);EXPECT_EQ(out[0],m0);EXPECT_EQ(out[1],m1); }

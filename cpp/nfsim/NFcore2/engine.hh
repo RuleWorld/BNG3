@@ -36,6 +36,7 @@ public:
     std::vector<MatcherId> affectedMatchers(const FeatureDelta& delta) const;
     std::vector<RuleFamilyId> affectedFamilies(const FeatureDelta& delta) const;
     bool fire(RuleFamilyId family, std::uint32_t member, MatchContext& context, FeatureDelta& delta);
+    double evaluateRate(RuleFamilyId family, std::uint32_t member, const MatchContext& context) const;
 private:
     const ExecutableModel& executable_;
     SimulationState state_;

@@ -40,6 +40,8 @@ namespace NFcore
 
 			// get the template molecule
 			TemplateMolecule * getTemplateMolecule () const { return template_molecule; };
+			// get the type created by this transformation
+			MoleculeType * getMoleculeType () const { return molecule_type; };
 
 			// check if this is a population type
 			bool isPopulationType () const { return population_type; }

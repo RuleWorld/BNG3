@@ -1,5 +1,6 @@
 #pragma once
 #include "ids.hh"
+#include "rate_law.hh"
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -11,7 +12,9 @@ enum FeatureKind {
     FEATURE_MOLECULE_BOND,
     FEATURE_SCAFFOLD_OCCUPANCY,
     FEATURE_POPULATION,
-    FEATURE_TIME
+    FEATURE_TIME,
+    FEATURE_MOLECULE_EXISTENCE,
+    FEATURE_MOLECULE_COMPARTMENT
 };
 
 struct FeatureDescriptor {
@@ -27,13 +30,15 @@ struct MoleculeTypeDescriptor {
     std::string name;
     std::uint16_t state_words;
     std::uint16_t bond_slots;
-    MoleculeTypeDescriptor() : state_words(1), bond_slots(0) {}
+    bool population;
+    MoleculeTypeDescriptor() : state_words(1), bond_slots(0), population(false) {}
 };
 
 struct RuleMember {
     double rate;
     std::uint32_t parameter_index;
     std::uint32_t coordinate;
+    RateLawDescriptor rate_law;
     RuleMember() : rate(0.0), parameter_index(0), coordinate(0) {}
 };
 

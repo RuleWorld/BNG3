@@ -5,8 +5,8 @@
 namespace NFcore2 {
 class ModelImage {
 public:
-    // Version 2 persists the reciprocal-component bit on MATCH_BOND_TO.
-    static const std::uint32_t FORMAT_VERSION = 2;
+    // Version 3 adds population/compartment descriptors and executable rate-law metadata.
+    static const std::uint32_t FORMAT_VERSION = 3;
     static void write(const ExecutableModel& model, std::ostream& out);
     static ExecutableModel read(std::istream& in);
     static void writeFile(const ExecutableModel& model, const std::string& path);

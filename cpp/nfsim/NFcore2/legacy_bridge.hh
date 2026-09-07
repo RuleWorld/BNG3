@@ -18,6 +18,8 @@ enum LegacyPredicateKind {
     LEGACY_PRED_BOND_FREE,
     LEGACY_PRED_BOND_TO,
     LEGACY_PRED_POPULATION_AT_LEAST,
+    LEGACY_PRED_COMPARTMENT,
+    LEGACY_PRED_CONNECTED_TO,
     LEGACY_PRED_SCAFFOLD_STATE,
     LEGACY_PRED_SCAFFOLD_FREE,
     LEGACY_PRED_UNSUPPORTED
@@ -45,6 +47,8 @@ enum LegacyTransformKind {
     LEGACY_TRANSFORM_UNBIND,
     LEGACY_TRANSFORM_CREATE_MOLECULE,
     LEGACY_TRANSFORM_DELETE_MOLECULE,
+    LEGACY_TRANSFORM_DELETE_SPECIES,
+    LEGACY_TRANSFORM_MOVE_MOLECULE,
     LEGACY_TRANSFORM_UNSUPPORTED
 };
 
@@ -65,6 +69,7 @@ struct LegacyRuleIR {
     std::vector<LegacyPredicateIR> predicates;
     std::vector<LegacyTransformIR> transforms;
     double rate;
+    RateLawDescriptor rate_law;
     std::uint32_t parameter_index;
     std::uint32_t coordinate;
     bool uses_local_function;

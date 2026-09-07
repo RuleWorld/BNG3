@@ -30,7 +30,7 @@ RuleFamilyCompilation RuleFamilyCompiler::compile(const std::vector<RuleInstance
             out.families.push_back(f);
         } else fi=it->second;
         RuleFamilyDescriptor& f=out.families[fi];
-        RuleMember m; m.rate=in[i].rate; m.parameter_index=in[i].parameter_index; m.coordinate=in[i].coordinate;
+        RuleMember m; m.rate=in[i].rate; m.rate_law=in[i].rate_law; m.parameter_index=in[i].parameter_index; m.coordinate=in[i].coordinate;
         if(!f.members.empty() && f.members[0].rate != m.rate) f.uniform_rate=false;
         const std::uint32_t mi=static_cast<std::uint32_t>(f.members.size());
         f.members.push_back(m);

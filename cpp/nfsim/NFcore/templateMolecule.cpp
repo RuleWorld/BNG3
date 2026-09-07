@@ -2130,7 +2130,7 @@ bool TemplateMolecule::isMoleculeTypeAndComponentPresent(MoleculeType * mt, int 
 
 // Keep extraction transactional: unsupported graph constraints are not weakened.
 bool NFcore::TemplateMolecule::collectRootLocalConstraints(RootLocalConstraints& output) const {
-    if (n_connectedTo || n_symComps || compartment) return false;
+    if (n_symComps) return false;
     RootLocalConstraints result;
     for (int i = 0; i < n_emptyComps; ++i) result.empty.push_back(emptyComps[i]);
     for (int i = 0; i < n_occupiedComps; ++i) result.occupied.push_back(occupiedComps[i]);
@@ -2146,6 +2146,11 @@ bool NFcore::TemplateMolecule::collectRootLocalConstraints(RootLocalConstraints&
         bond.partner_component = bondPartnerCompIndex[i];
         result.bonds.push_back(bond);
     }
+    for (int i = 0; i < n_connectedTo; ++i) {
+        if (!connectedTo[i]) return false;
+        result.connected_to.push_back(connectedTo[i]);
+    }
+    result.compartment = getCompartmentId();
     output = std::move(result);
     return true;
 }

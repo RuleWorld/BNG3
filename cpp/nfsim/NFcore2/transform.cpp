@@ -22,6 +22,19 @@ void reportBondDelta(const SimulationState& state, const MoleculeRef& left,
     if (left_feature.valid()) delta.add(left_feature);
     if (right_feature.valid() && right_feature != left_feature) delta.add(right_feature);
 }
+
+void reportMoleculeFeatures(const SimulationState& state, MoleculeTypeId type,
+                            FeatureDelta& delta) {
+    const std::vector<FeatureDescriptor>& features = state.model().features();
+    for (std::size_t i = 0; i < features.size(); ++i) {
+        if (features[i].owner != type.value()) continue;
+        if (features[i].kind == FEATURE_MOLECULE_STATE ||
+            features[i].kind == FEATURE_MOLECULE_BOND ||
+            features[i].kind == FEATURE_MOLECULE_EXISTENCE ||
+            features[i].kind == FEATURE_MOLECULE_COMPARTMENT)
+            delta.add(FeatureId(static_cast<std::uint32_t>(i)));
+    }
+}
 }
 void TransformProgram::execute(SimulationState&s,ScaffoldStore&sc,MatchContext&c,FeatureDelta&d)const{for(std::size_t i=0;i<code_.size();++i){const TransformInstruction&x=code_[i];MoleculeRef r=c.moleculeAt(x.target);switch(x.opcode){
 case TRANSFORM_SET_STATE_WORD:s.molecules(r.type).setStateWord(r.handle,(std::uint16_t)x.a,x.value);d.add(x.feature.valid()?x.feature:FeatureId(x.b));break;
@@ -64,5 +77,7 @@ case TRANSFORM_UNBIND:{
  reportBondDelta(s,r,x.a,q,partner_slot,x.feature,d);break;}
 case TRANSFORM_CREATE_MOLECULE:{MoleculeTypeId t(x.a);MoleculeHandle h=s.molecules(t).create();c.setMoleculeAt(x.target,MoleculeRef(t,h));if(x.feature.valid())d.add(x.feature);break;}
 case TRANSFORM_DELETE_MOLECULE:if(r.valid())s.eraseMolecule(r);if(x.feature.valid())d.add(x.feature);break;
+case TRANSFORM_DELETE_SPECIES:{std::vector<MoleculeRef> removed=s.eraseSpecies(r);for(std::size_t j=0;j<removed.size();++j)reportMoleculeFeatures(s,removed[j].type,d);if(x.feature.valid())d.add(x.feature);break;}
+case TRANSFORM_MOVE_MOLECULE:if(!r.valid())throw std::out_of_range("move target missing");s.molecules(r.type).setCompartment(r.handle,x.a);if(x.feature.valid())d.add(x.feature);break;
 case TRANSFORM_END:return;default:throw std::logic_error("invalid transform opcode");}}}
 }
