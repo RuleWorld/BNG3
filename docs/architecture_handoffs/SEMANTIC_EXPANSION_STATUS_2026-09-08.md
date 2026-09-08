@@ -46,6 +46,10 @@ The test executable now covers lowering and execution for each family, feature
 invalidation metadata, model-image metadata, and transform decoder payload
 survival.
 
+Post-checkpoint hardening also covers zero-reactant population synthesis,
+molecule-type keyed compartment invalidation for nonzero reactant positions,
+and rejection of species-deletion transforms without a mapped reactant.
+
 An independent literal oracle and JSON fixture cover all six family IDs under
 `tests/energy/tests/python/test_nfcore2_semantic_expansion_oracle.py` and
 `tests/energy/fixtures/semantic/nfcore2_semantic_expansion.json`. The oracle
@@ -65,7 +69,8 @@ audit_architecture_contracts.py                   # passed; no failures
 
 Population molecule types receive a population feature and a `PopulationStore`
 entry. Increment/decrement transforms lower to checked signed deltas, including
-underflow/overflow protection.
+underflow/overflow protection. Zero-reactant population synthesis uses the
+explicit added molecule type rather than an inferred reactant position.
 
 Root-local state, bond, and compartment constraints are lowered directly.
 Root-to-root topology uses exact bond matching; root `connectedTo` uses a graph
@@ -81,7 +86,9 @@ component and removes every molecule while invalidating reciprocal bonds.
 
 Compartment IDs use a stable FNV-1a hash of the legacy compartment identifier,
 so the snapshot is parser-independent. A root-local compartment predicate and a
-single-molecule move are executable and report compartment feature changes.
+single-molecule move are executable and report compartment feature changes;
+dependency ownership follows the molecule type even when the reactant position
+differs. Species deletion requires a mapped reactant before it can execute.
 
 The rate-law descriptor supports a constant law, a local linear law over one
 state word, and a product law over two matched state words (the bounded DOR

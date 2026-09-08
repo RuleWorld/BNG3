@@ -17,6 +17,11 @@
       "architecture_audit": "passed with zero failures"
     }
   },
+  "hardening": [
+    "zero-reactant population synthesis resolves the explicit added molecule type",
+    "compartment invalidation keys dependencies by molecule type owner",
+    "species deletion rejects transforms without a mapped reactant"
+  ],
   "contracts": [
     {
       "id": "population-transforms",
