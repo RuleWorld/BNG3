@@ -11,6 +11,7 @@ namespace NFcore
 	//Forward Declarations
 	class TransformationSet;
 	class MappingSet;
+	class System;
 
 
 	//!  Maintains a list of MappingSets needed by ReactionClass
@@ -41,7 +42,8 @@ namespace NFcore
 				also be told what its reactionIndex is in the reaction and the TransformationSet of the
 				reaction so that it can populate itself with MappingSets.
 			 */
-			ReactantList(unsigned int reactantIndex, TransformationSet *ts, unsigned int init_capacity);
+			ReactantList(unsigned int reactantIndex, TransformationSet *ts,
+					unsigned int init_capacity, System *system = 0);
 
 
 			/*!
@@ -129,6 +131,9 @@ namespace NFcore
 
 			/*! The transformation set of the ReactionClass that owns this list */
 			TransformationSet *ts;
+
+			/*! The System used to attribute opt-in profiling counters */
+			System *system;
 
 			/*! The index of the reactant that this list maintains */
 			unsigned int reactantIndex;

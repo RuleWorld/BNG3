@@ -12,6 +12,7 @@ namespace NFcore
 	class TransformationSet;
 	class MappingSet;
 	class ReactantContainer;
+	class System;
 
 
 	//!  Maintains a tree of MappingSets needed by Distribution of Rates Reactions
@@ -38,7 +39,8 @@ namespace NFcore
 				at the given reactant index.  The tree will be initialized such that it can immediately
 				hold the number of objects specified by the init_capacity.
 			*/
-			ReactantTree(unsigned int reactantIndex, TransformationSet *ts, unsigned int init_capacity);
+			ReactantTree(unsigned int reactantIndex, TransformationSet *ts,
+					unsigned int init_capacity, System *system = 0);
 
 
 			/*!
@@ -163,6 +165,7 @@ namespace NFcore
 
 			bool anyMultiMoleculeComplex;
 			TransformationSet *ts;       //Keeps track of the set of transformations
+			System *system;              //System used for opt-in profiling
 			unsigned int reactantIndex;  //the index of the tree
 
 			//Basic tree parameters and constants

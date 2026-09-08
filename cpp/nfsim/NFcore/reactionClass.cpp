@@ -579,6 +579,11 @@ string ReactionClass::fire(double random_A_number, bool track) {
 
 	// Loop through the products (excluding added molecules) and remove from observables
 	if (this->onTheFlyObservables) {
+		bool profileObservables = system->isProfileReactionActive();
+		ProfileTime profileObservablesStart = profileObservables
+			? profileNow() : ProfileTime();
+		unsigned long long profileObservableMolecules = profileObservables
+			? static_cast<unsigned long long>(products.size()) : 0;
 		std::unordered_set<int> updatedComplexIds;
 
 		// molecule observables..
@@ -625,6 +630,10 @@ string ReactionClass::fire(double random_A_number, bool track) {
 				}
 			}
 		}
+		if (profileObservables)
+			system->recordProfileObservableRemoval(
+					profileElapsedSeconds(profileObservablesStart),
+					profileObservableMolecules);
 	}
 
 	// Through the MappingSet, transform all the molecules as neccessary
@@ -657,11 +666,27 @@ string ReactionClass::fire(double random_A_number, bool track) {
 			if ( productComplexSet.insert(complex).second )
 				productComplexes.push_back(complex);
 		}
+		if (system->isProfileReactionActive()) {
+			unsigned long long productComplexMolecules = 0;
+			for (std::unordered_set<Complex*>::const_iterator it = productComplexSet.begin();
+					it != productComplexSet.end(); ++it) {
+				productComplexMolecules +=
+						static_cast<unsigned long long>((*it)->getComplexSize());
+			}
+			system->recordProfileAffectedComplexes(
+					static_cast<unsigned long long>(productComplexSet.size()),
+					productComplexMolecules);
+		}
 	}
 
 
 	// If we're handling observables on the fly, tell each molecule to add itself to observables.
 	if (onTheFlyObservables) {
+		bool profileObservables = system->isProfileReactionActive();
+		ProfileTime profileObservablesStart = profileObservables
+			? profileNow() : ProfileTime();
+		unsigned long long profileObservableMolecules = profileObservables
+			? static_cast<unsigned long long>(products.size()) : 0;
 
 		// molecule observables..
 		for ( molIter = products.begin(); molIter != products.end(); molIter++ ) {
@@ -690,12 +715,19 @@ string ReactionClass::fire(double random_A_number, bool track) {
 			// NOTE: we don't need to handle added population types separately since they are
 			//  among the product molecules
 		}
+		if (profileObservables)
+			system->recordProfileObservableAddition(
+					profileElapsedSeconds(profileObservablesStart),
+					profileObservableMolecules);
 	}
 
 	// Now update reaction membership, functions, and update any DOR Groups
 	//  also, gather a list of typeII dependencies that will require updating
 	typeII_products.clear();
 	std::unordered_set<MoleculeType*> typeIIProductSet;
+	bool profileMembership = system->isProfileReactionActive();
+	ProfileTime profileMembershipStart = profileMembership
+		? profileNow() : ProfileTime();
 	bool deferMembershipPropensityUpdates =
 		directProductsPrepared && this->usesIncrementalMembership() &&
 		!useConnectivity;
@@ -724,6 +756,9 @@ string ReactionClass::fire(double random_A_number, bool track) {
 	}
 	if (deferMembershipPropensityUpdates)
 		this->system->endDeferredMembershipPropensityUpdates();
+	if (profileMembership)
+		system->recordProfileMembershipPhase(
+				profileElapsedSeconds(profileMembershipStart));
 
 	// update complex-scoped local functions for typeII dependencies
 	// NOTE: as a side-effect, dependent DOR reactions (via typeI molecule dependencies) will be updated
@@ -746,10 +781,14 @@ string ReactionClass::fire(double random_A_number, bool track) {
 		Molecule * mol;
 		for ( molIter = products.begin(); molIter != products.end(); molIter++ ) {
 			mol = *molIter;
-			if ( allMols.insert(mol).second ) {
+			bool isNewComponent = allMols.insert(mol).second;
+			system->recordProfileLocalFunctionComponentCandidate(!isNewComponent);
+			if ( isNewComponent ) {
 				// remember everything connected to this molecule so we don't
 				// evaluate this connected set multiple times.
 				list<Molecule*> connectedMols;
+				ProfileConnectivityScope profileConnectivityScope(
+						system, PROFILE_CONNECTIVITY_LOCAL_FUNCTION);
 				mol->traverseBondedNeighborhood( connectedMols, ReactionClass::NO_LIMIT );
 				for ( list<Molecule*>::iterator cm = connectedMols.begin(); cm != connectedMols.end(); ++cm )
 					allMols.insert(*cm);

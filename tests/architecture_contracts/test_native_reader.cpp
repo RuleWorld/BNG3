@@ -64,6 +64,49 @@ std::unique_ptr<NFcore::System> moveConnectedSystem() {
     return system;
 }
 
+std::unique_ptr<NFcore::System> symmetricGraphSystem() {
+    auto model = bng::parser::parseModel(R"(
+begin molecule types
+ A(x~U~P,x~U~P)
+ B(y)
+end molecule types
+begin seed species
+ A(x~U!1,x~U).B(y!1) 1
+end seed species
+begin reaction rules
+ flip: A(x~U!1,x~U).B(y!1) -> A(x~P!1,x~U).B(y!1) 1
+end reaction rules
+)");
+    REQUIRE(model);
+    int traversal = 0;
+    auto system = std::unique_ptr<NFcore::System>(
+        NFinput::buildSystemFromAst(*model, false, 100, false, traversal));
+    REQUIRE(system);
+    return system;
+}
+
+std::unique_ptr<NFcore::System> symmetricSystem() {
+    auto model = bng::parser::parseModel(R"(
+begin molecule types
+ A(x,x)
+ B(y)
+end molecule types
+begin seed species
+ A(x,x) 20
+ B(y) 20
+end seed species
+begin reaction rules
+ bind: A(x) + B(y) -> A(x!1).B(y!1) 1
+end reaction rules
+)");
+    REQUIRE(model);
+    int traversal = 0;
+    auto system = std::unique_ptr<NFcore::System>(
+        NFinput::buildSystemFromAst(*model, false, 100, false, traversal));
+    REQUIRE(system);
+    return system;
+}
+
 std::unique_ptr<NFcore::System> stateGraphSystem() {
     auto model = bng::parser::parseModel(
         "begin molecule types\n A(s~U~P,b)\n B(a,s~U~P)\nend molecule types\n"
@@ -148,6 +191,31 @@ TEST_CASE("native NFcore2 reader captures internal graph topology") {
     REQUIRE(snapshot.rules[0].graph_patterns.size() == 1);
     CHECK(snapshot.rules[0].graph_patterns[0].nodes.size() == 2);
     CHECK(snapshot.rules[0].graph_patterns[0].edges.size() == 1);
+}
+
+TEST_CASE("native NFcore2 reader rejects unsupported symmetric internal graph automorphisms") {
+    auto system = symmetricGraphSystem();
+    const auto snapshot = NFcore2::snapshotLegacyNFsim(*system);
+    REQUIRE(snapshot.rules.size() >= 1);
+    const auto lowered = NFcore2::lowerLegacyNFsim(*system);
+    CHECK(lowered.supported_rule_count == 0);
+    CHECK(lowered.fallback_rule_count == snapshot.rules.size());
+    for (const auto& rule : lowered.rules) {
+        CHECK_FALSE(rule.supported());
+        CHECK(rule.reason == NFcore2::LOWERING_CONNECTED_TO);
+    }
+}
+
+TEST_CASE("native NFcore2 reader preserves symmetric component automorphisms") {
+    auto system = symmetricSystem();
+    const auto snapshot = NFcore2::snapshotLegacyNFsim(*system);
+    REQUIRE(snapshot.rules.size() >= 1);
+    for (const auto& rule : snapshot.rules) CHECK_FALSE(rule.uses_connected_to);
+    const auto lowered = NFcore2::lowerLegacyNFsim(*system);
+    CHECK(lowered.supported_rule_count == snapshot.rules.size());
+    CHECK(lowered.fallback_rule_count == 0);
+    REQUIRE(lowered.rules.size() == snapshot.rules.size());
+    for (const auto& rule : lowered.rules) CHECK(rule.supported());
 }
 
 TEST_CASE("native NFcore2 reader preserves internal graph-node state constraints") {

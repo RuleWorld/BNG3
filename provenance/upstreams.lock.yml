@@ -16,8 +16,8 @@
   "sources": {
     "bng3": {
       "repository": "https://github.com/RuleWorld/BNG3.git",
-      "branch": "codex/bng3-energy-validation-port",
-      "revision": "93158885f692023521185accf0afb4451906c4fe",
+      "branch": "main",
+      "revision": "ae3400efece53e9cc713b1701aaa814e3317c5da",
       "role": "destination-and-future-authority",
       "status": "observed",
       "evidence": {
@@ -74,6 +74,17 @@
       "branch": "main",
       "revision": "43b09a5346402986d48b1defba5eaec0ae2f7802",
       "role": "python-and-atomizer-reconciliation-source",
+      "status": "observed",
+      "evidence": {
+        "kind": "local-checkout",
+        "checked_at": "2026-09-08"
+      }
+    },
+    "bngplayground": {
+      "repository": "https://github.com/RuleWorld/bngplayground.git",
+      "branch": "codex/atomizer-roundtrip-parity",
+      "revision": "ba781d690512b964711a3ca2df059be95e01561d",
+      "role": "independent Atomizer and Playground implementation reference",
       "status": "observed",
       "evidence": {
         "kind": "local-checkout",

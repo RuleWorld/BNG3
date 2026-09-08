@@ -1,6 +1,6 @@
 {
   "checkpoint": "semantic-expansion-2026-09-08",
-  "branch": "codex/bng3-energy-validation-port",
+  "branch": "main",
   "inputs": [
     "/Users/akutuva/Downloads/BNG3_energy_compiler_validation_complete_handoff_2026-09-07.zip",
     "/Users/akutuva/Downloads/nfsim-nfcore2-complete-handoff-20260906.zip",

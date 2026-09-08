@@ -1041,6 +1041,22 @@ bool TemplateMolecule::isSymMapValid()
 
 bool TemplateMolecule::compare(Molecule *m, ReactantContainer *rc, MappingSet *ms, bool holdMolClearToEnd, vector<MappingSet*> *symmetricMappingSet)
 {
+	System *profileSystem = 0;
+	if (m != 0 && m->getMoleculeType() != 0)
+		profileSystem = m->getMoleculeType()->getSystem();
+	ProfileConnectivityScope profileConnectivityScope(
+			profileSystem, PROFILE_CONNECTIVITY_MATCHING);
+	struct ProfileCompareScope {
+		System *system;
+		bool enabled;
+		ProfileCompareScope(System *s) : system(s), enabled(false) {
+			enabled = system != 0 && system->isProfileReactionActive();
+			if (enabled) system->beginProfileTemplateCompare();
+		}
+		~ProfileCompareScope() {
+			if (enabled) system->endProfileTemplateCompare();
+		}
+	} profileCompareScope(profileSystem);
 
 	// Track if we're in a nested disjoint match to prevent counter reset
 	bool head = false;

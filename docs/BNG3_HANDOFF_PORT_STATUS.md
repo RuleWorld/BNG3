@@ -37,6 +37,13 @@ The archival documents are retained under `docs/architecture_handoffs/`. The exa
 - The validated NFsim single-reactant product-collection fast path from
   source revision `7d0f5bf954a11a90167861edac016697cb66d139` is ported with
   a behavior regression test.
+- The latest opt-in NFsim execution-profiler lineage from source commits
+  `33e9c9b`, `35c7b88`, `8c737fb`, and `2ce8449` is ported into the embedded
+  NFsim runtime. `-profile [filename]` emits the source-compatible v4
+  tab-separated report; phase, reaction, membership, template, connectivity,
+  binding, transformation, product, observable, mapping, and component-reuse
+  counters are instrumented. This is diagnostic evidence only, with profiling
+  disabled by default and no optimization or parity claim.
 - The energy validation harness, fixtures, Python gates, C++ contracts, architecture inventories, and CI hooks are under `tests/energy/` and `tests/architecture_contracts/`.
 - Future and unavailable contracts remain opt-in or classified as `blocked-api`, `design-only`, `reference`, or `auxiliary`; empty future bodies are inventory findings, not passing tests.
 - The expanded goal keeps five full-parity ceilings explicit and fail-closed:

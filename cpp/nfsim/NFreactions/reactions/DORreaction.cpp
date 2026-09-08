@@ -153,14 +153,14 @@ DORRxnClass::DORRxnClass(
 
 	//Set up the reactant tree
 	//reactantTree = new ReactantTree(this->DORreactantIndex,transformationSet,4);
-	reactantTree = new ReactantTree(this->DORreactantIndex,transformationSet,32);
+	reactantTree = new ReactantTree(this->DORreactantIndex,transformationSet,32,this->system);
 	msPairBuffer = new MappingSet*[2];
 
 	//Set up the reactantLists
 	reactantLists = new ReactantList *[n_reactants];
 	for(unsigned int r=0; r<n_reactants; r++) {
 		if((signed)r!=this->DORreactantIndex)
-			reactantLists[r]=(new ReactantList(r,transformationSet,25));
+			reactantLists[r]=(new ReactantList(r,transformationSet,25,this->system));
 	}
 
 	//Initialize a to zero
@@ -210,13 +210,13 @@ DORRxnClass::DORRxnClass(
 	}
 
 	reactionType = ReactionClass::DOR_RXN;
-	reactantTree = new ReactantTree(dorReactantIndex,transformationSet,32);
+	reactantTree = new ReactantTree(dorReactantIndex,transformationSet,32,this->system);
 	msPairBuffer = new MappingSet *[n_reactants > 2 ? n_reactants : 2];
 	reactantLists = new ReactantList *[n_reactants];
 	for (unsigned int r=0; r<n_reactants; r++) {
 		reactantLists[r] = 0;
 		if ((int)r != dorReactantIndex)
-			reactantLists[r] = new ReactantList(r,transformationSet,25);
+			reactantLists[r] = new ReactantList(r,transformationSet,25,this->system);
 	}
 	a = 0;
 }
@@ -253,14 +253,15 @@ DORRxnClass::DORRxnClass(
 
 	reactionType = ReactionClass::DOR_RXN;
 	reactantTree = new ReactantTree(
-			dorReactantIndex, transformationSet, reactantTreeInitialCapacity);
+			dorReactantIndex, transformationSet, reactantTreeInitialCapacity,
+			this->system);
 	msPairBuffer = new MappingSet *[n_reactants > 2 ? n_reactants : 2];
 	reactantLists = new ReactantList *[n_reactants];
 	for (unsigned int r=0; r<n_reactants; r++) {
 		reactantLists[r] = 0;
 		if ((int)r != dorReactantIndex && allocateReactantLists)
 			reactantLists[r] = new ReactantList(
-					r, transformationSet, reactantListInitialCapacity);
+					r, transformationSet, reactantListInitialCapacity, this->system);
 	}
 	a = 0;
 }
@@ -1149,7 +1150,7 @@ EnergyRxnClass::EnergyRxnClass(
 	if (!simpleMembership && n_reactants > 1 && reactantLists[1] == 0) {
 		/* Unsupported contexts still need the ordinary partner list because the
 		 * compact path is deliberately conservative. */
-		reactantLists[1] = new ReactantList(1, transformationSet, 25);
+		reactantLists[1] = new ReactantList(1, transformationSet, 25, this->system);
 	}
 
 	/* Cache the small Arrhenius factor table once.  Membership updates still
@@ -2043,15 +2044,15 @@ DOR2RxnClass::DOR2RxnClass(
 	this->reactionType = ReactionClass::DOR2_RXN;
 
 	//Set up the reactant trees
-	reactantTree1 = new ReactantTree(this->DORreactantIndex1,transformationSet,32);
-	reactantTree2 = new ReactantTree(this->DORreactantIndex2,transformationSet,32);
+	reactantTree1 = new ReactantTree(this->DORreactantIndex1,transformationSet,32,this->system);
+	reactantTree2 = new ReactantTree(this->DORreactantIndex2,transformationSet,32,this->system);
 	msPairBuffer = new MappingSet*[2];
 
 	//Set up the reactantLists
 	reactantLists = new ReactantList *[n_reactants];
 	for (unsigned int r=0; r<n_reactants; r++) {
 		if( (signed)r!=this->DORreactantIndex1  &&  (signed)r!=this->DORreactantIndex2 )
-			reactantLists[r]=(new ReactantList(r,transformationSet,25));
+			reactantLists[r]=(new ReactantList(r,transformationSet,25,this->system));
 	}
 
 	//Initialize a to zero

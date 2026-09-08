@@ -106,6 +106,12 @@ void Complex::mergeWithList(Complex * c)
 {
     if(c==this) return;
 
+	bool profile = system != 0 && system->isProfileReactionActive();
+	ProfileTime profileStart = profile ? profileNow() : ProfileTime();
+	unsigned long long moleculesTouched = profile
+		? static_cast<unsigned long long>(this->getComplexSize()) +
+		  static_cast<unsigned long long>(c->getComplexSize()) : 0;
+
 	// turn off canonical flag
 	this->unsetCanonical();
 	c->unsetCanonical();
@@ -114,6 +120,10 @@ void Complex::mergeWithList(Complex * c)
 	c->refactorToNewComplex(this->ID_complex);
     this->complexMembers.splice(complexMembers.end(),c->complexMembers);
 	(system->getAllComplexes()).notifyThatComplexIsAvailable(c->getComplexID());
+
+	if (profile)
+		system->recordProfileComplexMaintenance(profileElapsedSeconds(profileStart),
+				moleculesTouched);
 }
 
 
@@ -139,11 +149,20 @@ void Complex::updateComplexMembership(Molecule * m)
 	//optimization
 	if(m->getComplexID()!=this->ID_complex) { cerr<< "ERROR IN COMPLEX!!! "<<endl; return; }
 
+	bool profile = system != 0 && system->isProfileReactionActive();
+	ProfileConnectivityScope profileConnectivityScope(
+			system, PROFILE_CONNECTIVITY_COMPLEX_MAINTENANCE);
+	ProfileTime profileStart = profile ? profileNow() : ProfileTime();
+	unsigned long long complexSizeBefore = profile
+		? static_cast<unsigned long long>(this->getComplexSize()) : 0;
+
 	unsetCanonical();
 
 	//Get list of things this molecule is still connected to
     list <Molecule *> members;
 	m->traverseBondedNeighborhood(members, ReactionClass::NO_LIMIT);
+	unsigned long long membersVisited = profile
+		? static_cast<unsigned long long>(members.size()) : 0;
 
 	//counter++;
 	//cout<<"traversing neighborhood: "<<counter<<endl;
@@ -157,6 +176,10 @@ void Complex::updateComplexMembership(Molecule * m)
 	if(members.size()==(unsigned)this->getComplexSize())
 	{
 		//cout<<"still in same complex, so no new complex"<<endl;
+		if (profile)
+			system->recordProfileComplexMaintenance(
+					profileElapsedSeconds(profileStart),
+					complexSizeBefore + membersVisited);
 		return;
 	}
 
@@ -183,6 +206,10 @@ void Complex::updateComplexMembership(Molecule * m)
 	//
 
 	//done!
+	if (profile)
+		system->recordProfileComplexMaintenance(
+				profileElapsedSeconds(profileStart),
+				complexSizeBefore + membersVisited);
 }
 
 
@@ -205,6 +232,9 @@ string Complex::getCanonicalLabel ( )
  */
 void Complex::generateCanonicalLabel ( )
 {
+	bool profile = system != 0 && system->isProfileReactionActive();
+	ProfileTime profileStart = profile ? profileNow() : ProfileTime();
+
     #if DEBUG_NAUTY==1
     std::cout << "find_canonical_order" << std::endl;
     #endif
@@ -212,9 +242,12 @@ void Complex::generateCanonicalLabel ( )
     // handle special case: complexes with 0 members
     if ( complexMembers.size() == 0 )
     {   // set canonical label
-        canonical_label = string("");
-        is_canonical = true;
-        return;
+		canonical_label = string("");
+		is_canonical = true;
+		if (profile)
+			system->recordProfileCanonicalLabel(
+					profileElapsedSeconds(profileStart), 0, 0, false);
+		return;
     }
 
     // stringstream object where label is constructed
@@ -436,7 +469,10 @@ void Complex::generateCanonicalLabel ( )
         delete *node_iter;
 
     // set canonical label
-    canonical_label = labelstream.str();
-    is_canonical = true;
+	canonical_label = labelstream.str();
+	is_canonical = true;
+	if (profile)
+		system->recordProfileCanonicalLabel(profileElapsedSeconds(profileStart),
+				static_cast<unsigned long long>(nv),
+				static_cast<unsigned long long>(nde), nauty_required);
 }
-
