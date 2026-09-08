@@ -104,6 +104,31 @@ TEST(NFsimAdapter_DirectBondToInvalidatesBothBondFeatures){
     EXPECT_EQ(*source.first,*partner.first);
 }
 
+TEST(NFsimAdapter_StateDependencyKeysMoleculeTypeOwner){
+    NativeModelSnapshot n;
+    n.molecule_types.push_back(mol("A",1));
+    n.molecule_types.push_back(mol("B",1));
+    NativeReactionSnapshot left=rxn();
+    left.reactant_types.push_back(0);
+    left.dependencies.push_back(dep(NATIVE_STATE_REQUIRED,0,0,1));
+    NativeReactionSnapshot right=rxn();
+    right.name="right";
+    right.reactant_types.push_back(1);
+    right.dependencies.push_back(dep(NATIVE_STATE_REQUIRED,0,0,1));
+    n.rules.push_back(left);
+    n.rules.push_back(right);
+
+    LegacyLoweringResult lowered=LegacyLowerer::lower(NFsimSnapshotAdapter::toLegacy(n));
+    const DependencyIndex& index=lowered.executable.metadata().dependencies();
+    std::pair<const MatcherId*,const MatcherId*> leftDependents=index.dependents(FeatureId(0));
+    std::pair<const MatcherId*,const MatcherId*> rightDependents=index.dependents(FeatureId(2));
+    EXPECT_TRUE(leftDependents.first!=leftDependents.second);
+    EXPECT_TRUE(rightDependents.first!=rightDependents.second);
+    EXPECT_EQ(rightDependents.second-rightDependents.first,1);
+    EXPECT_EQ(leftDependents.second-leftDependents.first,1);
+    EXPECT_NE(*leftDependents.first,*rightDependents.first);
+}
+
 TEST(NFsimAdapter_InternalTopologyIsConservativeFallback){
     NativeModelSnapshot n;n.molecule_types.push_back(mol("R",2));NativeReactionSnapshot r=rxn();r.dependencies.push_back(dep(NATIVE_TOPOLOGY,0,0));n.rules.push_back(r);
     LegacyRuleIR x=NFsimSnapshotAdapter::toLegacy(n).rules[0];

@@ -2,6 +2,7 @@
 #include "executable_model.hh"
 #include "rule_compiler.hh"
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -28,13 +29,17 @@ enum LegacyPredicateKind {
 struct LegacyPredicateIR {
     LegacyPredicateKind kind;
     std::uint16_t target;
+    // Molecule type owning the target component.  Older hand-authored IR may
+    // leave this unset; the lowerer then retains its conservative index-only
+    // dependency behavior.
+    std::uint32_t owner;
     std::uint32_t a;
     std::uint32_t b;
     std::uint64_t mask;
     std::uint64_t value;
     bool has_partner_component;
     FeatureId partner_feature;
-    LegacyPredicateIR() : kind(LEGACY_PRED_UNSUPPORTED), target(0), a(0), b(0), mask(0), value(0), has_partner_component(false) {}
+    LegacyPredicateIR() : kind(LEGACY_PRED_UNSUPPORTED), target(0), owner(std::numeric_limits<std::uint32_t>::max()), a(0), b(0), mask(0), value(0), has_partner_component(false) {}
 };
 
 enum LegacyTransformKind {

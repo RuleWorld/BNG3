@@ -38,8 +38,10 @@ void validateComponent(const NativeModelSnapshot& m,std::uint32_t type,std::uint
         throw std::out_of_range("NFsim adapter component index");
 }
 
-LegacyPredicateIR predicate(LegacyPredicateKind k,std::uint16_t target,std::uint32_t component) {
-    LegacyPredicateIR p; p.kind=k; p.target=target; p.a=component; return p;
+LegacyPredicateIR predicate(LegacyPredicateKind k,std::uint16_t target,
+                            std::uint32_t component,
+                            std::uint32_t owner=std::numeric_limits<std::uint32_t>::max()) {
+    LegacyPredicateIR p; p.kind=k; p.target=target; p.owner=owner; p.a=component; return p;
 }
 LegacyTransformIR transform(LegacyTransformKind k,std::uint16_t target,std::uint32_t component,FeatureId f) {
     LegacyTransformIR t; t.kind=k; t.target=target; t.a=component; t.changed_feature=f; return t;
@@ -132,15 +134,15 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
             LegacyPredicateIR p;
             switch(d.kind) {
                 case NATIVE_STATE_REQUIRED:
-                    p=predicate(LEGACY_PRED_STATE_MASK,d.reactant,d.component);p.mask=~std::uint64_t(0);p.value=static_cast<std::uint64_t>(d.state);r.predicates.push_back(p);break;
+                    p=predicate(LEGACY_PRED_STATE_MASK,d.reactant,d.component,type);p.mask=~std::uint64_t(0);p.value=static_cast<std::uint64_t>(d.state);r.predicates.push_back(p);break;
                 case NATIVE_STATE_EXCLUDED:
-                    p=predicate(LEGACY_PRED_STATE_NOT_EQUAL,d.reactant,d.component);p.value=static_cast<std::uint64_t>(d.state);r.predicates.push_back(p);break;
-                case NATIVE_BOND_FREE:r.predicates.push_back(predicate(LEGACY_PRED_BOND_FREE,d.reactant,d.component));break;
-                case NATIVE_BOND_BOUND:r.predicates.push_back(predicate(LEGACY_PRED_BOND_PRESENT,d.reactant,d.component));break;
+                    p=predicate(LEGACY_PRED_STATE_NOT_EQUAL,d.reactant,d.component,type);p.value=static_cast<std::uint64_t>(d.state);r.predicates.push_back(p);break;
+                case NATIVE_BOND_FREE:r.predicates.push_back(predicate(LEGACY_PRED_BOND_FREE,d.reactant,d.component,type));break;
+                case NATIVE_BOND_BOUND:r.predicates.push_back(predicate(LEGACY_PRED_BOND_PRESENT,d.reactant,d.component,type));break;
                 case NATIVE_BOND_TO:
                     if (d.partner_reactant >= nr.reactant_types.size()) throw std::out_of_range("NFsim adapter bond partner reactant");
                     validateComponent(source,reactantType(source,nr,d.partner_reactant),d.partner_component);
-                    p=predicate(LEGACY_PRED_BOND_TO,d.reactant,d.component);
+                    p=predicate(LEGACY_PRED_BOND_TO,d.reactant,d.component,type);
                     p.b=d.partner_reactant;
                     p.value=d.partner_component;
                     p.has_partner_component=true;
@@ -149,7 +151,7 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                     break;
                 case NATIVE_TOPOLOGY:
                     if (d.partner_reactant < nr.reactant_types.size()) {
-                        p=predicate(d.partner_component==NATIVE_INFER_PARTNER_COMPONENT?LEGACY_PRED_CONNECTED_TO:LEGACY_PRED_BOND_TO,d.reactant,d.component);
+                        p=predicate(d.partner_component==NATIVE_INFER_PARTNER_COMPONENT?LEGACY_PRED_CONNECTED_TO:LEGACY_PRED_BOND_TO,d.reactant,d.component,type);
                         p.b=d.partner_reactant;
                         if (d.partner_component==NATIVE_INFER_PARTNER_COMPONENT) r.predicates.push_back(p);
                         else {
@@ -165,7 +167,7 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                     if (d.partner_reactant < nr.reactant_types.size()) {
                         const std::uint32_t partner_type=reactantType(source,nr,d.partner_reactant);
                         validateComponent(source,partner_type,d.partner_state_component);
-                        p=predicate(d.kind==NATIVE_PARTNER_STATE_REQUIRED?LEGACY_PRED_STATE_MASK:LEGACY_PRED_STATE_NOT_EQUAL,d.partner_reactant,d.partner_state_component);
+                        p=predicate(d.kind==NATIVE_PARTNER_STATE_REQUIRED?LEGACY_PRED_STATE_MASK:LEGACY_PRED_STATE_NOT_EQUAL,d.partner_reactant,d.partner_state_component,partner_type);
                         p.mask=~std::uint64_t(0); p.value=static_cast<std::uint64_t>(d.state); r.predicates.push_back(p);
                     } else r.uses_connected_to=true;
                     break;

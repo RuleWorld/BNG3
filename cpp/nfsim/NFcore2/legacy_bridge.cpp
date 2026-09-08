@@ -104,7 +104,7 @@ std::string LegacyLowerer::matcherSignature(const LegacyRuleIR& r) {
     std::ostringstream os;
     for (std::size_t i=0;i<r.predicates.size();++i) {
         const LegacyPredicateIR& p=r.predicates[i];
-        os << static_cast<int>(p.kind) << ':' << p.target << ':' << p.a << ':' << p.b << ':'
+        os << static_cast<int>(p.kind) << ':' << p.target << ':' << p.owner << ':' << p.a << ':' << p.b << ':'
            << p.mask << ':' << p.value << ':' << p.has_partner_component << ';';
     }
     return os.str();
@@ -186,8 +186,8 @@ LegacyLoweringResult LegacyLowerer::lower(const LegacyModelIR& legacy) {
             bool reads=false;
             for (std::size_t pi=0;pi<legacy.rules[ri].predicates.size();++pi) {
                 const LegacyPredicateIR& p=legacy.rules[ri].predicates[pi];
-                if (fd.kind==FEATURE_MOLECULE_STATE && (p.kind==LEGACY_PRED_STATE_MASK || p.kind==LEGACY_PRED_STATE_NOT_EQUAL) && fd.index==p.a) reads=true;
-                else if (fd.kind==FEATURE_MOLECULE_BOND && (p.kind==LEGACY_PRED_BOND_PRESENT || p.kind==LEGACY_PRED_BOND_FREE || p.kind==LEGACY_PRED_BOND_TO) && fd.index==p.a) reads=true;
+                if (fd.kind==FEATURE_MOLECULE_STATE && (p.kind==LEGACY_PRED_STATE_MASK || p.kind==LEGACY_PRED_STATE_NOT_EQUAL) && fd.index==p.a && (p.owner==std::numeric_limits<std::uint32_t>::max() || fd.owner==p.owner)) reads=true;
+                else if (fd.kind==FEATURE_MOLECULE_BOND && (p.kind==LEGACY_PRED_BOND_PRESENT || p.kind==LEGACY_PRED_BOND_FREE || p.kind==LEGACY_PRED_BOND_TO) && fd.index==p.a && (p.owner==std::numeric_limits<std::uint32_t>::max() || fd.owner==p.owner)) reads=true;
                 else if (fd.kind==FEATURE_MOLECULE_BOND && p.kind==LEGACY_PRED_CONNECTED_TO) reads=true;
                 if (p.kind==LEGACY_PRED_BOND_TO && p.partner_feature.valid() && FeatureId(static_cast<std::uint32_t>(fi))==p.partner_feature) reads=true;
                 else if (fd.kind==FEATURE_POPULATION && p.kind==LEGACY_PRED_POPULATION_AT_LEAST && fd.owner==p.a) reads=true;
