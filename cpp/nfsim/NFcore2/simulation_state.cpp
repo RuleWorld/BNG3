@@ -13,7 +13,7 @@ MoleculeHandle MoleculeStore::create() {
     else {
         slot = static_cast<std::uint32_t>(generation_.size());
         generation_.push_back(1); alive_.push_back(1);
-        states_.resize((slot + 1) * state_words_, 0);
+        states_.resize((static_cast<std::size_t>(slot) + 1u) * static_cast<std::size_t>(state_words_), 0);
         bonds_.resize((slot + 1) * bond_slots_);
         compartments_.resize(slot + 1, 0);
     }
