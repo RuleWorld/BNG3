@@ -11,15 +11,16 @@
     "focused_green": "ctest --test-dir build --output-on-failure -R architecture_nfcore2_reference",
     "full_validation": {
       "build": "cmake --build build --parallel 4",
-      "ctest": "251 passed",
+      "ctest": "255 passed",
       "energy_python": "65 passed",
-      "main_python": "362 passed, 27 skipped",
+      "main_python": "340 passed, 27 skipped",
       "architecture_audit": "passed with zero failures"
     }
   },
   "hardening": [
     "zero-reactant population synthesis resolves the explicit added molecule type",
     "compartment invalidation keys dependencies by molecule type owner",
+    "state and bond invalidation keys dependencies by molecule type owner",
     "species deletion rejects transforms without a mapped reactant"
   ],
   "contracts": [

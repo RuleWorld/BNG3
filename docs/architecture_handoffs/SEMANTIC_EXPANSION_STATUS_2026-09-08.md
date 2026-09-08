@@ -39,7 +39,7 @@ After implementation, the focused CTest target passed:
 
 ```text
 ctest --test-dir build --output-on-failure -R architecture_nfcore2_reference
-1/1 Test #250: architecture_nfcore2_reference ... Passed
+1/1 Test #254: architecture_nfcore2_reference ... Passed
 ```
 
 The test executable now covers lowering and execution for each family, feature
@@ -48,7 +48,8 @@ survival.
 
 Post-checkpoint hardening also covers zero-reactant population synthesis,
 molecule-type keyed compartment invalidation for nonzero reactant positions,
-and rejection of species-deletion transforms without a mapped reactant.
+owner-scoped state/bond invalidation across molecule types, and rejection of
+species-deletion transforms without a mapped reactant.
 
 An independent literal oracle and JSON fixture cover all six family IDs under
 `tests/energy/tests/python/test_nfcore2_semantic_expansion_oracle.py` and
@@ -59,9 +60,9 @@ The post-fix validation set is also green:
 
 ```text
 cmake --build build --parallel 4
-ctest --test-dir build --output-on-failure       # 251/251 passed
+ctest --test-dir build --output-on-failure       # 255/255 passed
 tests/energy/tests/python                         # 65 passed
-tests/python tests/test_ci_contract.py            # 362 passed, 27 skipped
+full Python suite                                    # 340 passed, 27 skipped
 audit_architecture_contracts.py                   # passed; no failures
 ```
 
