@@ -64,6 +64,9 @@ public:
     bool eraseMolecule(MoleculeRef ref);
     std::vector<MoleculeRef> eraseSpecies(MoleculeRef ref);
     std::vector<MoleculeRef> connectedComponent(MoleculeRef ref) const;
+    double compartmentSize(std::uint32_t id) const;
+    double transportVolumeRatio(std::uint32_t source, std::uint32_t destination) const;
+    void moveMolecule(MoleculeRef ref, std::uint32_t destination);
     void moveSpecies(MoleculeRef ref, std::uint32_t destination);
     bool wouldEraseSplitSpecies(MoleculeRef ref) const;
 private:

@@ -204,6 +204,24 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                     binding.kind = RATE_EXPRESSION_CONSTANT;
                     if (!std::isfinite(binding.value))
                         throw std::invalid_argument("expression constant binding is not finite");
+                } else if (nativeBinding.kind == NATIVE_RATE_EXPRESSION_REACTANT_COUNT) {
+                    if (binding.target >= nr.reactant_types.size())
+                        throw std::out_of_range("reactant-count binding target");
+                    binding.kind = RATE_EXPRESSION_REACTANT_COUNT;
+                } else if (nativeBinding.kind == NATIVE_RATE_EXPRESSION_SPECIES_MOLECULE_COUNT) {
+                    if (binding.target >= nr.reactant_types.size())
+                        throw std::out_of_range("species-scope binding target");
+                    const std::uint32_t scopeType = reactantType(source, nr, binding.target);
+                    if (source.molecule_types[scopeType].population)
+                        throw std::invalid_argument("species-scope binding cannot read a population type");
+                    binding.kind = RATE_EXPRESSION_SPECIES_MOLECULE_COUNT;
+                } else if (nativeBinding.kind == NATIVE_RATE_EXPRESSION_COMPARTMENT_VOLUME) {
+                    if (binding.target >= nr.reactant_types.size())
+                        throw std::out_of_range("compartment-volume binding target");
+                    const std::uint32_t compartmentType = reactantType(source, nr, binding.target);
+                    if (source.molecule_types[compartmentType].population)
+                        throw std::invalid_argument("compartment-volume binding cannot read a population type");
+                    binding.kind = RATE_EXPRESSION_COMPARTMENT_VOLUME;
                 } else {
                     throw std::invalid_argument("unknown expression binding kind");
                 }

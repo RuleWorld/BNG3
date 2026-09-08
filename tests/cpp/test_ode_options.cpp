@@ -157,6 +157,36 @@ TEST_CASE("OdeIntegrator preserves case-insensitive rate classification", "[OdeO
     }
 }
 
+TEST_CASE("OdeIntegrator keeps function-name matching bounded", "[OdeOptions]") {
+    auto model = parser::parseModel(R"(
+begin parameters
+    rateFnExtra 3
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 1
+end seed species
+begin functions
+    rateFn() = 2
+end functions
+begin reaction rules
+    X() -> 0 rateFnExtra
+end reaction rules
+)");
+
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    engine::OdeIntegrator integrator(*model, network);
+
+    double state[] = {1.0};
+    double derivatives[] = {0.0};
+    integrator.derivs(0.0, state, derivatives);
+
+    REQUIRE_THAT(derivatives[0], Catch::Matchers::WithinAbs(-3.0, 1e-12));
+}
+
 TEST_CASE("Observable pattern compilation preserves multi-pattern weights", "[OdeOptions]") {
     // Source-derived from akutuva21/bionetgen commit 60ac7e5f: moving
     // observable parsing outside the species loop must preserve every pattern

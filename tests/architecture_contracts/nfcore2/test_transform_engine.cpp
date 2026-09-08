@@ -91,6 +91,43 @@ TEST(Transform_MoveMoleculeUpdatesCompartmentAndFeatureDelta){
     MatchContext c;c.setMoleculeAt(0,MoleculeRef(MoleculeTypeId(0),a));TransformProgram p;TransformInstruction x(TRANSFORM_MOVE_MOLECULE);x.target=0;x.a=3;x.feature=FeatureId(0);p.add(x);FeatureDelta d;p.execute(s,sc,c,d);
     EXPECT_EQ(s.molecules(MoleculeTypeId(0)).compartment(a),3u);EXPECT_EQ(d.changed.size(),1u);EXPECT_EQ(d.changed[0],FeatureId(0));
 }
+TEST(Transform_MoveMoleculeRejectsUnknownDestinationAtomically){
+    ExecutableModel e=makeExec();
+    CompartmentDescriptor source; source.id=2; source.size=10.0;
+    CompartmentDescriptor destination; destination.id=3; destination.size=5.0;
+    e.buildMetadata().addCompartment(source); e.buildMetadata().addCompartment(destination);
+    SimulationState s(e.metadata()); ScaffoldStore sc;
+    MoleculeHandle a=s.molecules(MoleculeTypeId(0)).create();
+    s.molecules(MoleculeTypeId(0)).setCompartment(a,2);
+    MatchContext c; c.setMoleculeAt(0,MoleculeRef(MoleculeTypeId(0),a));
+    TransformProgram p; TransformInstruction x(TRANSFORM_MOVE_MOLECULE); x.target=0; x.a=99; p.add(x);
+    FeatureDelta d;
+    EXPECT_THROW(p.execute(s,sc,c,d),std::out_of_range);
+    EXPECT_EQ(s.molecules(MoleculeTypeId(0)).compartment(a),2u); EXPECT_TRUE(d.changed.empty());
+}
+TEST(SimulationState_CompartmentVolumeAndTransportRatioAreValidated){
+    ExecutableModel e=makeExec();
+    CompartmentDescriptor source; source.id=2; source.size=10.0;
+    CompartmentDescriptor destination; destination.id=3; destination.size=5.0;
+    CompartmentDescriptor invalid; invalid.id=4; invalid.size=0.0;
+    CompartmentDescriptor surface; surface.id=5; surface.dimensions=2; surface.size=1.0;
+    e.buildMetadata().addCompartment(source); e.buildMetadata().addCompartment(destination); e.buildMetadata().addCompartment(invalid); e.buildMetadata().addCompartment(surface);
+    SimulationState s(e.metadata());
+    EXPECT_NEAR(s.compartmentSize(2),10.0,1e-12);
+    EXPECT_NEAR(s.transportVolumeRatio(2,3),0.5,1e-12);
+    EXPECT_THROW(s.compartmentSize(99),std::out_of_range);
+    EXPECT_THROW(s.transportVolumeRatio(2,99),std::out_of_range);
+    EXPECT_THROW(s.transportVolumeRatio(99,99),std::out_of_range);
+    EXPECT_THROW(s.compartmentSize(4),std::domain_error);
+    EXPECT_THROW(s.transportVolumeRatio(4,2),std::domain_error);
+    EXPECT_THROW(s.transportVolumeRatio(2,5),std::invalid_argument);
+}
+TEST(Transform_MoveSpeciesRejectsUnknownDestinationAtomically){
+    ExecutableModel e=makeExec(); CompartmentDescriptor source; source.id=2; source.size=10.0; CompartmentDescriptor destination; destination.id=3; destination.size=5.0; e.buildMetadata().addCompartment(source); e.buildMetadata().addCompartment(destination);
+    SimulationState s(e.metadata()); ScaffoldStore sc; MoleculeHandle a=s.molecules(MoleculeTypeId(0)).create(); s.molecules(MoleculeTypeId(0)).setCompartment(a,2);
+    MatchContext c; c.setMoleculeAt(0,MoleculeRef(MoleculeTypeId(0),a)); TransformProgram p; TransformInstruction x(TRANSFORM_MOVE_SPECIES); x.target=0; x.a=99; p.add(x); FeatureDelta d;
+    EXPECT_THROW(p.execute(s,sc,c,d),std::out_of_range); EXPECT_EQ(s.molecules(MoleculeTypeId(0)).compartment(a),2u); EXPECT_TRUE(d.changed.empty());
+}
 TEST(Transform_EndStopsLaterInstructions){ ExecutableModel e=makeExec();SimulationState s(e.metadata());ScaffoldStore sc;MoleculeHandle a=s.molecules(MoleculeTypeId(0)).create();MatchContext c;c.setMoleculeAt(0,MoleculeRef(MoleculeTypeId(0),a));TransformProgram p;p.add(TransformInstruction(TRANSFORM_END));TransformInstruction x(TRANSFORM_SET_STATE_WORD);x.value=99;p.add(x);FeatureDelta d;p.execute(s,sc,c,d);EXPECT_EQ(s.molecules(MoleculeTypeId(0)).stateWord(a,0),0ull); }
 
 TEST(Engine_AffectedMatchersDeduplicatesAcrossDuplicateDeltas){ ExecutableModel e=makeExec();MatcherId m0=e.buildMatchers().add(MatcherProgram()),m1=e.buildMatchers().add(MatcherProgram());std::vector<std::vector<MatcherId> > deps(e.metadata().features().size());deps[1].push_back(m0);deps[1].push_back(m1);deps[2].push_back(m0);e.buildMetadata().setFeatureDependencies(deps);Engine eng(e);FeatureDelta d;d.add(FeatureId(1));d.add(FeatureId(2));d.add(FeatureId(1));std::vector<MatcherId> out=eng.affectedMatchers(d);EXPECT_EQ(out.size(),2u);EXPECT_EQ(out[0],m0);EXPECT_EQ(out[1],m1); }

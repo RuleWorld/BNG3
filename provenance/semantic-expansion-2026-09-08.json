@@ -7,19 +7,20 @@
     "/Users/akutuva/Downloads/NFnext_Rasi_complete_code_tests_context_patches_2026-09-06.zip"
   ],
   "test_first": {
-    "red_build": "bng3_nfcore2_reference_tests reported missing population, graph, compartment, move, species-delete, conditional-delete, and rate-law contracts before implementation",
+    "red_build": "bng3_nfcore2_reference_tests reported missing population, graph, compartment, move, species-delete, conditional-delete, and rate-law contracts before implementation; the added volume-scope tests initially lacked compartment lookup APIs",
     "focused_green": "ctest --test-dir build --output-on-failure -R 'native-port|architecture_nfcore2_reference' (14 native-port tests plus the NFcore2 reference target)",
     "full_validation": {
       "build": "cmake --build build --parallel 4",
-      "ctest": "273 passed",
+      "ctest": "276 passed",
       "energy_python": "66 passed",
-      "main_python": "427 passed, 144 skipped",
+      "main_python": "348 passed, 27 skipped (tests/python current-main regression)",
+      "validation_smoke": "4 passed, 14 skipped (legacy run_network and standalone NFsim oracle unavailable)",
       "architecture_audit": "passed with zero failures",
       "sanitizers": {
         "build": "ASan/UBSan Debug build in build-asan",
         "energy": "energy_sanitizer_smoke passed",
-        "nfcore2": "422 passed, 0 failed",
-        "native_reader": "14 test cases, 126 assertions",
+        "nfcore2": "431 passed, 0 failed",
+        "native_reader": "16 test cases, 152 assertions",
         "nfnext": "PASS",
         "leaks": "LeakSanitizer unavailable on macOS"
       }
@@ -82,6 +83,8 @@
         "NFsimAdapter_LocalFunctionAndDORRateLawsCarryExecutableDescriptors",
         "NFsimAdapter_LocalFunctionAndDORRatesEvaluateFromMatchedState",
         "NFsimAdapter_GeneralExpressionRateResolvesNamedLocalAndConstantBindings",
+        "NFsimAdapter_GeneralExpressionRateResolvesReactantAndSpeciesScopes",
+        "NFsimAdapter_GeneralExpressionRateResolvesCompartmentVolume",
         "native NFcore2 reader keeps local DOR rules on compatibility fallback"
       ],
       "oracle": "tests/energy/tests/python/test_nfcore2_semantic_expansion_oracle.py::test_local_and_dor_rate_oracle"
@@ -122,23 +125,27 @@
     {
       "id": "general-local-dor-evaluation",
       "status": "direct-named-binding-bounded-fallback-native-objects",
-      "implemented": "Parsed arithmetic/conditional expressions resolve named matched-state and finite-constant bindings plus time and built-ins.",
+      "implemented": "Parsed arithmetic/conditional expressions resolve named matched-state, finite-constant, reactant-count, connected-species-count, and compartment-volume bindings plus time and built-ins.",
       "tests": [
         "NFsimAdapter_GeneralExpressionRateResolvesNamedLocalAndConstantBindings",
-        "NFsimAdapter_LocalFunctionAndDORRatesEvaluateFromMatchedState"
+        "NFsimAdapter_LocalFunctionAndDORRatesEvaluateFromMatchedState",
+        "NFsimAdapter_GeneralExpressionRateResolvesReactantAndSpeciesScopes",
+        "NFsimAdapter_GeneralExpressionRateResolvesCompartmentVolume"
       ],
       "remaining": "Native LocalFunction/DOR object scopes, observables, function DAGs, TFUN counters, and complete DOR2 composition remain compatibility fallbacks."
     },
     {
       "id": "compartment-hierarchy-species-carrying-moves",
       "status": "direct-parent-ancestry-and-atomic-species-move-bounded",
-      "implemented": "Known parent-linked compartments support ancestry predicates and MoveConnected relocates a validated connected species atomically.",
+      "implemented": "Known parent-linked compartments support ancestry predicates, positive volume lookup, same-dimension transport ratios, and atomic connected-species relocation; direct moves reject unknown destinations before mutation.",
       "tests": [
         "NFsimAdapter_CompartmentInsideRejectsUnknownIdentity",
         "NFsimAdapter_SpeciesMoveRejectsUnknownDestinationAtomically",
+        "SimulationState_CompartmentVolumeAndTransportRatioAreValidated",
+        "Transform_MoveMoleculeRejectsUnknownDestinationAtomically",
         "native NFcore2 reader executes MoveConnected species relocation"
       ],
-      "remaining": "Volume/region scaling, dimension conversion, and topology-changing transport remain fail-closed."
+      "remaining": "Automatic volume/region scaling, dimension conversion, and topology-changing transport with spatial-count conversion remain fail-closed."
     },
     {
       "id": "conditional-deletion",
@@ -147,7 +154,8 @@
       "tests": [
         "Transform_ConditionalDeleteNoOpsWhenSpeciesWouldSplit",
         "Transform_ConditionalDeleteCycleKeepsSpeciesConnected",
-        "Transform_ConditionalDeleteRejectsAsymmetricRuntimeGraph"
+        "Transform_ConditionalDeleteRejectsAsymmetricRuntimeGraph",
+        "NFsimAdapter_UnsupportedRemovalSpellingFailsClosed"
       ],
       "remaining": "Native conditional spellings with unresolved ownership or post-delete invalidation remain fail-closed."
     }
@@ -155,8 +163,8 @@
   "remaining_fallback_details": [
     "Native negative expressions, molecularity constraints, richer child constraints, and unbounded connectedTo remain fail-closed; only finite symmetric equivalent-site automorphisms are direct.",
     "Native LocalFunction/DOR object scopes, observables, function DAGs, TFUN counters, and complete DOR2 composition remain compatibility fallbacks.",
-    "Compartment volume/region scaling, dimension conversion, and topology-changing transport remain fail-closed.",
-    "Native conditional-deletion spellings whose component ownership or post-delete invalidation cannot be established remain fail-closed.",
+    "Positive compartment-volume bindings and same-dimension transport ratios are direct; automatic volume/region scaling, dimension conversion, and topology-changing transport remain fail-closed.",
+    "Native conditional-deletion spellings whose component ownership or post-delete invalidation cannot be established remain fail-closed; unknown removal codes are explicit fallbacks.",
     "Independent seeded trajectory, propensity, and failure-classification parity against NFsim/BNG2/Rasi/uORF oracles is not claimed."
   ]
 }

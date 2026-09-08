@@ -29,8 +29,21 @@ double RateLawDescriptor::evaluate(const SimulationState& state,
                         throw std::domain_error("expression binding is not finite");
                     return binding.value;
                 }
+                if (binding.kind == RATE_EXPRESSION_REACTANT_COUNT) {
+                    if (binding.target >= context.reactant_counts.size())
+                        throw std::out_of_range("expression reactant-count binding missing");
+                    return static_cast<double>(context.reactant_counts[binding.target]);
+                }
                 const MoleculeRef ref = context.moleculeAt(binding.target);
                 if (!ref.valid()) throw std::out_of_range("expression binding reactant missing");
+                if (binding.kind == RATE_EXPRESSION_SPECIES_MOLECULE_COUNT) {
+                    const std::vector<MoleculeRef> members = state.connectedComponent(ref);
+                    return static_cast<double>(members.size());
+                }
+                if (binding.kind == RATE_EXPRESSION_COMPARTMENT_VOLUME) {
+                    return state.compartmentSize(
+                        state.molecules(ref.type).compartment(ref.handle));
+                }
                 if (binding.component > std::numeric_limits<std::uint16_t>::max())
                     throw std::out_of_range("expression binding state component overflow");
                 return static_cast<double>(state.molecules(ref.type).stateWord(

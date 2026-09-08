@@ -1,7 +1,7 @@
 # NFcore2 semantic expansion checkpoint
 
 This checkpoint extends the tests-first NFsim/NFcore2 port on
-`codex/bng3-energy-validation-port`. It carries the six earlier semantic
+`main`. It carries the six earlier semantic
 families forward and opens four formerly explicit ceilings:
 
 - population transforms;
@@ -19,6 +19,8 @@ The additional ceiling work is deliberately finite and fail-closed:
 - parsed local/DOR expressions with time, named state bindings, constants,
   conditionals, arithmetic, and built-in functions;
 - parent-linked compartment ancestry and atomic connected-species movement;
+- finite local-function/DOR expression scopes for reactant counts,
+  connected-species counts, and compartment volumes;
 - conditional single-molecule deletion that is suppressed when it would split
   a connected species, with conservative invalidation and malformed-bond
   rejection.
@@ -43,7 +45,8 @@ Before each implementation slice, assertions were added to
 `tests/architecture_contracts/nfcore2/test_nfsim_adapter_contract.cpp`,
 `test_transform_engine.cpp`, and `test_model_image_shadow.cpp`. RED evidence
 covered missing graph constraints, named expression bindings, atomic move
-validation, and conditional deletion invalidation/reciprocity. Earlier RED
+validation, volume lookup/transport validation, and conditional deletion
+invalidation/reciprocity. Earlier RED
 evidence also covered population deltas, compartment metadata, move and
 species-delete opcodes, and local/DOR rate-law fields.
 
@@ -69,8 +72,11 @@ complete species deletion, population decrement, internal graph topology,
 compartment hierarchy metadata, and species-carrying MoveConnected. Internal
 graph-node state, free/bound-site, and compartment constraints are retained
 through lowering and model-image round trips. Native local/DOR function objects
-and unsupported symmetric/connectedTo forms remain on the compatibility path
-until their scope and dependency extraction are proven independently.
+and unsupported connectedTo forms remain on the compatibility path until their
+scope and dependency extraction are proven independently. The executable
+NFcore2 slice resolves explicit reactant-count, connected-species-count, and
+positive compartment-volume bindings; it does not claim native object-level
+LocalFunction/DOR evaluation.
 
 An independent literal oracle and JSON fixture cover all six family IDs under
 `tests/energy/tests/python/test_nfcore2_semantic_expansion_oracle.py` and
@@ -81,18 +87,17 @@ The post-fix validation set is also green:
 
 ```text
 cmake --build build --parallel 4
-ctest --test-dir build --output-on-failure       # 273/273 passed
+ctest --test-dir build --output-on-failure       # 276/276 passed
 tests/energy/tests/python                         # 66 passed
-full Python suite                                    # 427 passed, 144 skipped
+tests/python                                       # 348 passed, 27 skipped
+tests/validation -m smoke                         # 4 passed, 14 skipped
 audit_architecture_contracts.py                   # passed; no failures
 ```
 
-Sanitizer validation also passed on the current macOS toolchain. The isolated
-ASan/UBSan build ran `energy_sanitizer_smoke`, the NFcore2 reference executable
-(`422 passed, 0 failed`), the standalone native-reader suite (`14` test cases,
-`126` assertions), and the NFnext reference executable (`PASS`).
-LeakSanitizer detection is unavailable on this platform, so leak coverage is
-not claimed here.
+The repository sanitizer smoke executable also passed as CTest test
+`energy_sanitizer_smoke`. No separate ASan/UBSan NFcore2 rebuild was present
+for this checkpoint. LeakSanitizer detection is unavailable on this platform,
+so leak coverage is not claimed here.
 
 ## Bounded direct support
 
@@ -104,9 +109,10 @@ explicit added molecule type rather than an inferred reactant position.
 Root-local state, bond, and compartment constraints are lowered directly.
 Finite graph expressions use exact backtracking over live molecules, preserving
 anchors, multiple internal bonds, state values, exact compartments, free/bound
-sites, and reciprocal-bond requirements. Root `connectedTo` uses a graph search
-over live reciprocal bonds. Malformed, symmetric, or unbounded forms fail
-closed. Zero-reactant rules are eligible for synthesis/population lowering
+sites, and reciprocal-bond requirements. Finite symmetric equivalent-site
+constraints use injective candidate assignment; malformed, negative,
+molecularity, richer-child, or unbounded forms fail closed. Root `connectedTo`
+uses a graph search over live reciprocal bonds. Zero-reactant rules are eligible for synthesis/population lowering
 rather than being classified as graph fallback.
 
 Particle synthesis creates the requested molecule type and publishes it in the
@@ -117,18 +123,21 @@ component and removes every molecule while invalidating reciprocal bonds.
 Compartment IDs use a stable FNV-1a hash of the legacy compartment identifier,
 so the snapshot is parser-independent. A root-local compartment predicate,
 ancestry predicate, single-molecule move, and atomic connected-species move are
-executable and report compartment feature changes; unknown destinations are
-rejected before mutation, while legacy scalar IDs are retained when no
-hierarchy table exists. Dependency ownership follows the molecule type even
-when the reactant position differs. Species deletion requires a mapped
-reactant before it can execute.
+executable and report compartment feature changes; positive volume lookup and
+same-dimension transport ratios are validated, and unknown destinations are
+rejected before mutation. Legacy scalar IDs are retained when no hierarchy
+table exists. Dependency ownership follows the molecule type even when the
+reactant position differs. Species deletion requires a mapped reactant before
+it can execute.
 
 The rate-law descriptor supports constant, local-linear, DOR-product, and
 parsed expression laws. Expressions can bind arbitrary names to matched state
-words or finite constants and can use time, conditionals, arithmetic, and the
-BNG expression built-ins. Results are checked for finite, non-negative
-propensities. Rate-law fields participate in rule-family signatures and
-state-feature dependencies, and model-image version 4 preserves the metadata.
+words, finite constants, reactant counts, connected-species molecule counts,
+or positive compartment volumes and can use time, conditionals, arithmetic,
+and the BNG expression built-ins. Results are checked for finite,
+non-negative propensities. Rate-law fields participate in rule-family
+signatures and state-feature dependencies, and model-image version 5
+preserves the metadata.
 
 ## Deliberate remaining fallbacks
 
@@ -136,15 +145,18 @@ The broader unresolved goal remains: arbitrary internal graph expressions, gener
 
 The port remains fail-closed for semantics not proven by these contracts:
 
-- native symmetric-component automorphisms, negative graph expressions,
-  molecularity constraints, unsupported child constraints, and malformed or
-  unbounded `connectedTo` forms;
+- richer native graph automorphisms beyond finite symmetric equivalent-site
+  assignment, negative graph expressions, molecularity constraints,
+  unsupported child constraints, and malformed or unbounded `connectedTo`
+  forms;
 - native local-function/DOR object evaluation with observable/complex scopes,
   function DAGs, TFUN counters, or complete DOR2 composition;
-- compartment volume/region scaling, dimension conversion, and transport that
-  changes species topology while carrying spatial counts;
+- compartment volume/region scaling beyond explicit volume bindings, dimension
+  conversion, and transport that changes species topology while carrying
+  spatial counts;
 - native conditional-deletion spellings whose component ownership or
-  post-delete invalidation cannot be established;
+  post-delete invalidation cannot be established; unknown removal codes remain
+  explicit lowering fallbacks;
 - independent full NFsim/BNG2 parity, including seeded trajectories,
   propensity distributions, and failure classifications against independently
   built oracle binaries.

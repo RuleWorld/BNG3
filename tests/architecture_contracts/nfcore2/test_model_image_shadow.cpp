@@ -594,6 +594,10 @@ TEST(ModelImage_RoundTripCompartmentGraphAndExpressionMetadata){
     member.rate_law.expression="s0 + time"; member.rate_law.expression_components.push_back(0);
     RateExpressionBinding binding; binding.kind=RATE_EXPRESSION_CONSTANT; binding.name="k"; binding.value=3.0;
     member.rate_law.expression_bindings.push_back(binding);
+    RateExpressionBinding count; count.kind=RATE_EXPRESSION_REACTANT_COUNT; count.name="rc"; count.target=1;
+    member.rate_law.expression_bindings.push_back(count);
+    RateExpressionBinding volume; volume.kind=RATE_EXPRESSION_COMPARTMENT_VOLUME; volume.name="vol"; volume.target=0;
+    member.rate_law.expression_bindings.push_back(volume);
     family.members.push_back(member); e.buildMetadata().addRuleFamily(family);
     e.buildMetadata().setFeatureDependencies(std::vector<std::vector<MatcherId> >());
 
@@ -609,7 +613,11 @@ TEST(ModelImage_RoundTripCompartmentGraphAndExpressionMetadata){
     EXPECT_EQ(restoredMember.rate_law.kind,LEGACY_RATE_EXPRESSION);
     EXPECT_EQ(restoredMember.rate_law.expression,std::string("s0 + time"));
     EXPECT_EQ(restoredMember.rate_law.expression_components.size(),1u);
-    EXPECT_EQ(restoredMember.rate_law.expression_bindings.size(),1u);
+    EXPECT_EQ(restoredMember.rate_law.expression_bindings.size(),3u);
     EXPECT_EQ(restoredMember.rate_law.expression_bindings[0].name,std::string("k"));
     EXPECT_EQ(restoredMember.rate_law.expression_bindings[0].value,3.0);
+    EXPECT_EQ(restoredMember.rate_law.expression_bindings[1].kind,RATE_EXPRESSION_REACTANT_COUNT);
+    EXPECT_EQ(restoredMember.rate_law.expression_bindings[1].target,1u);
+    EXPECT_EQ(restoredMember.rate_law.expression_bindings[2].kind,RATE_EXPRESSION_COMPARTMENT_VOLUME);
+    EXPECT_EQ(restoredMember.rate_law.expression_bindings[2].target,0u);
 }

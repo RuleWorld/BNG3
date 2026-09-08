@@ -128,6 +128,52 @@ std::vector<MoleculeRef> SimulationState::connectedComponent(MoleculeRef ref) co
     return component;
 }
 
+double SimulationState::compartmentSize(std::uint32_t id) const {
+    for (const auto& compartment : model_.compartments()) {
+        if (compartment.id != id) continue;
+        if (!std::isfinite(compartment.size) || compartment.size <= 0.0)
+            throw std::domain_error("compartment volume must be finite and positive");
+        return compartment.size;
+    }
+    throw std::out_of_range("compartment is unknown");
+}
+
+double SimulationState::transportVolumeRatio(std::uint32_t source,
+                                             std::uint32_t destination) const {
+    if (model_.compartments().empty()) return 1.0;
+    const CompartmentDescriptor* sourceDescriptor = nullptr;
+    const CompartmentDescriptor* destinationDescriptor = nullptr;
+    for (const auto& compartment : model_.compartments()) {
+        if (compartment.id == source) sourceDescriptor = &compartment;
+        if (compartment.id == destination) destinationDescriptor = &compartment;
+    }
+    if (!sourceDescriptor || !destinationDescriptor)
+        throw std::out_of_range("transport compartment is unknown");
+    if (source == destination) {
+        (void)compartmentSize(source);
+        return 1.0;
+    }
+    if (sourceDescriptor->dimensions != destinationDescriptor->dimensions)
+        throw std::invalid_argument("transport dimensions do not match");
+    const double sourceSize = compartmentSize(source);
+    const double destinationSize = compartmentSize(destination);
+    const double ratio = destinationSize / sourceSize;
+    if (!std::isfinite(ratio) || ratio <= 0.0)
+        throw std::domain_error("transport volume ratio is invalid");
+    return ratio;
+}
+
+void SimulationState::moveMolecule(MoleculeRef ref, std::uint32_t destination) {
+    if (!ref.valid() || !molecules(ref.type).alive(ref.handle))
+        throw std::out_of_range("move target missing");
+    if (!model_.compartments().empty()) {
+        if (!model_.hasCompartment(destination))
+            throw std::out_of_range("move destination compartment is unknown");
+        (void)compartmentSize(destination);
+    }
+    molecules(ref.type).setCompartment(ref.handle, destination);
+}
+
 void SimulationState::moveSpecies(MoleculeRef ref, std::uint32_t destination) {
     if (!ref.valid() || !molecules(ref.type).alive(ref.handle))
         throw std::out_of_range("move target missing");
@@ -136,6 +182,7 @@ void SimulationState::moveSpecies(MoleculeRef ref, std::uint32_t destination) {
     // destinations before mutating any member so the move is atomic.
     if (!model_.compartments().empty() && !model_.hasCompartment(destination))
         throw std::out_of_range("move destination compartment is unknown");
+    if (!model_.compartments().empty()) (void)compartmentSize(destination);
     const std::vector<MoleculeRef> members = connectedComponent(ref);
     for (const auto& member : members)
         if (!member.valid() || !molecules(member.type).alive(member.handle))

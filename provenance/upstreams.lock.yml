@@ -17,7 +17,7 @@
     "bng3": {
       "repository": "https://github.com/RuleWorld/BNG3.git",
       "branch": "main",
-      "revision": "c78f3303b92c7438e08c006f66e188fe4c9b2d80",
+      "revision": "979e7cb448b37c2cd6f73d2bbaad37ae0364e08f",
       "role": "destination-and-future-authority",
       "status": "observed",
       "evidence": {
@@ -28,7 +28,7 @@
     "bionetgen": {
       "repository": "https://github.com/RuleWorld/bionetgen.git",
       "branch": "master",
-      "revision": "d132702da784237aa10576c7373f691ffdc05071",
+      "revision": "e0a5c6d9e6c4730f66102e48d0d0a598337083e7",
       "role": "reconciliation-source-and-bng2-oracle-lineage",
       "status": "observed",
       "evidence": {

@@ -19,7 +19,7 @@ The archival documents are retained under `docs/architecture_handoffs/`. The exa
 - Energy compiler types and `EnergyDeltaPlan` are in `cpp/compile/` and connected to the real NFsim energy bridge.
 - NFcore2 source is in `cpp/nfsim/NFcore2/`; its native reader is adapted to the real BNG3 reaction, template, transformation, and energy APIs.
 - NFnext source is in `cpp/nfnext/` and is built as an isolated library so its prototype contracts remain testable without being presented as the NFsim replacement.
-- Root-local NFsim introspection and conservative dependency collection are implemented in the existing NFsim classes. Unsupported richer topology and broader transport cases fail closed; bounded graph matching, synthesis, root-local moves, and species-carrying `MoveConnected` execute directly.
+- Root-local NFsim introspection and conservative dependency collection are implemented in the existing NFsim classes. Unsupported richer topology and broader transport cases fail closed; bounded graph matching, synthesis, root-local moves, and species-carrying `MoveConnected` execute directly. Explicit rate bindings resolve reactant counts, connected-species molecule counts, and positive compartment volumes.
 - Symmetric graph automorphisms now lower through the native reader as finite equivalent-site candidate sets. The matcher assigns candidates injectively, checks state and occupancy constraints, and verifies reciprocal bonds; malformed candidate or partner payloads remain rejected.
 - The staged semantic layer now has typed symbols/rate-law references, structured
   feature diagnostics, an immutable `compile::Document` protocol split, and a
@@ -54,7 +54,8 @@ The archival documents are retained under `docs/architecture_handoffs/`. The exa
   and independent full NFsim/BNG2 parity. Bounded direct contracts now cover
   graph state/bond/compartment constraints, finite symmetric automorphisms,
   expression bindings, hierarchy
-  metadata, species-carrying `MoveConnected`, and conditional deletion; these
+  metadata, species-carrying `MoveConnected`, explicit volume/transport
+  validation, and conditional deletion; these
   do not imply the broader ceilings.
 - An opt-in `BUILD_BNGSIM_ADAPTER` path maps a generated BNG3 network directly
   into an external BNGsim `NetworkModel`, with strict dependency, observable,
@@ -82,16 +83,22 @@ The archival documents are retained under `docs/architecture_handoffs/`. The exa
 ## Evidence at this checkpoint
 
 - The direct-port build completed after adapting the BNG3 APIs.
-- Full Release/Ninja CTest passed all `273/273` tests, including `58/58`
+- Full Release/Ninja CTest passed all `276/276` tests, including `58/58`
   tests under the exact `energy` label, one NFcore2 and one NFnext
   architecture-reference test, and the 14 native-port semantic tests.
-  The NFcore2 reference suite passed 422/422; the native-reader suite
-  passed 14 cases and 126 assertions.
+  The NFcore2 reference suite passed 431/431; the native-reader suite
+  passed 16 cases and 152 assertions.
 - The imported energy Python self-tests passed `66/66` under the repository's
   intended `PYTHONPATH=tests/energy` environment.
-- The full BNG3 Python and validation suites passed `427/427` with `144`
-  expected skips under the base Anaconda 3.14 environment; the skips are
-  environment- or oracle-gated and remain visible.
+- The fresh current-main BNG3 Python regression suite passed `348` tests with
+  `27` expected skips under the base Anaconda 3.14 environment.
+- The validation smoke gate passed `4` checks with `14` visible skips; the
+  skipped parity checks require the unavailable legacy `run_network` helper
+  or an independently built native NFsim oracle.
+- Current ASan/UBSan focused checks passed the NFcore2 reference (`431/431`)
+  and ODE/observable/solver regressions (`10/10`).
+- BNG2 `master` was rebuilt from merged main revision `e0a5c6d9` and its CTest
+  suite passed `81/81`.
 - The isolated batch CLI tests passed `2/2`, covering private generated
   outputs and child failure propagation.
 - The architecture inventory audit is required to pass before each checkpoint; it verifies that every imported C++ contract is classified and that executable dispositions name a CMake target.

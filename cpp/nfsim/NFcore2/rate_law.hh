@@ -18,7 +18,10 @@ enum RateLawKind {
 
 enum RateExpressionBindingKind {
     RATE_EXPRESSION_STATE = 0,
-    RATE_EXPRESSION_CONSTANT = 1
+    RATE_EXPRESSION_CONSTANT = 1,
+    RATE_EXPRESSION_REACTANT_COUNT = 2,
+    RATE_EXPRESSION_SPECIES_MOLECULE_COUNT = 3,
+    RATE_EXPRESSION_COMPARTMENT_VOLUME = 4
 };
 
 struct RateExpressionBinding {
@@ -31,8 +34,9 @@ struct RateExpressionBinding {
         : kind(RATE_EXPRESSION_CONSTANT), target(0), component(0), value(0.0) {}
 };
 
-// Bounded, source-derived rate descriptors.  Constant rates retain the old
-// path; the two dynamic forms are evaluated against the matched root slots.
+// Bounded, source-derived rate descriptors. Constant rates retain the old
+// path; dynamic bindings are evaluated against the matched root slots and
+// simulation context.
 struct RateLawDescriptor {
     RateLawKind kind;
     std::uint16_t target;
