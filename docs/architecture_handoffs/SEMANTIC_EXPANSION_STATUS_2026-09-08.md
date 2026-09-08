@@ -66,6 +66,12 @@ full Python suite                                    # 340 passed, 27 skipped
 audit_architecture_contracts.py                   # passed; no failures
 ```
 
+Sanitizer validation also passed on the current macOS toolchain. The isolated
+ASan/UBSan build ran `energy_sanitizer_smoke`, the NFcore2 reference executable
+(`406 passed, 0 failed`), and the NFnext reference executable (`PASS`).
+LeakSanitizer detection is unavailable on this platform, so leak coverage is
+not claimed here.
+
 ## Bounded direct support
 
 Population molecule types receive a population feature and a `PopulationStore`

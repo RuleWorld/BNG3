@@ -2165,6 +2165,15 @@ completion gate.
   combinations fail closed and are listed in the capability matrix.
 - [ ] Adapter ownership, destruction/lifecycle, memory ownership, diagnostics,
   seed handling, options, and error propagation are documented and tested.
+- [x] Bounded NFcore2 semantic-expansion checkpoint `4acf9aa` adds tests-first
+  direct support for population transforms, root-local graph/`connectedTo`,
+  synthesis, root-local compartments/moves, bounded local-function/DOR rate
+  descriptors, and whole-species deletion. The independent literal oracle and
+  fixture are recorded in `provenance/semantic-expansion-2026-09-08.json`;
+  current native reference checks report NFcore2 `406/406` and NFnext `PASS`,
+  with ASan/UBSan clean on macOS. This closes only the bounded forms; general
+  internal graph, function/DOR expression, hierarchy, species-carrying move,
+  and conditional-deletion semantics remain fail-closed below.
 
 ### 5.2 Three-way evidence
 

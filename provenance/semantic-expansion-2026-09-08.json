@@ -14,7 +14,14 @@
       "ctest": "255 passed",
       "energy_python": "65 passed",
       "main_python": "340 passed, 27 skipped",
-      "architecture_audit": "passed with zero failures"
+      "architecture_audit": "passed with zero failures",
+      "sanitizers": {
+        "build": "ASan/UBSan Debug build in build-asan",
+        "energy": "energy_sanitizer_smoke passed",
+        "nfcore2": "406 passed, 0 failed",
+        "nfnext": "PASS",
+        "leaks": "LeakSanitizer unavailable on macOS"
+      }
     }
   },
   "hardening": [
