@@ -118,7 +118,7 @@ def test_bngir_preserves_model_and_simulation_protocol_actions():
 
 
 def test_bngir_round_trip_preserves_compartments_energy_and_population_types():
-    source = r'''
+    source = r"""
 version("2.2")
 begin model
 begin compartments
@@ -136,7 +136,7 @@ begin energy patterns
     bind: X(site~p) 1.0
 end energy patterns
 end model
-'''
+"""
     model = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(source))
     restored = bionetgen.from_bngir(model.to_bngir())
 

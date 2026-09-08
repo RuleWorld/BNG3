@@ -13,7 +13,6 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
-
 FORMAT = "BNGIR"
 VERSION = "0.1"
 
@@ -172,7 +171,10 @@ def _payload(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, Any]
         "protocol": {
             "actions": [
                 *[_action(action, "model") for action in native.actions],
-                *[_action(action, "simulation_protocol") for action in native.protocol_actions],
+                *[
+                    _action(action, "simulation_protocol")
+                    for action in native.protocol_actions
+                ],
             ],
         },
     }
@@ -212,11 +214,15 @@ def _load_document(document: str | Mapping[str, Any]) -> Mapping[str, Any]:
     features = _require_mapping(root.get("features"), "features")
     for feature_kind in ("required", "used"):
         values = features.get(feature_kind, [])
-        if not isinstance(values, list) or not all(isinstance(item, str) for item in values):
+        if not isinstance(values, list) or not all(
+            isinstance(item, str) for item in values
+        ):
             raise ValueError(f"BNGIR features.{feature_kind} must be a string array")
         unknown = sorted(set(values) - _FEATURES)
         if unknown:
-            raise ValueError(f"unsupported required BNGIR features: {', '.join(unknown)}")
+            raise ValueError(
+                f"unsupported required BNGIR features: {', '.join(unknown)}"
+            )
     _require_mapping(root.get("model"), "model")
     protocol = _require_mapping(root.get("protocol", {}), "protocol")
     actions = protocol.get("actions", [])
@@ -241,7 +247,7 @@ def _load_document(document: str | Mapping[str, Any]) -> Mapping[str, Any]:
 
 
 def _quote_action_value(value: Any) -> str:
-    escaped = str(value).replace('\\', '\\\\').replace('"', '\\"')
+    escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
     return f'"{escaped}"'
 
 
@@ -304,7 +310,9 @@ def _as_bngl(root: Mapping[str, Any]) -> str:
         for item in molecule_types:
             components = []
             for component in item.get("components", []):
-                states = "".join(f"~{state}" for state in component.get("allowed_states", []))
+                states = "".join(
+                    f"~{state}" for state in component.get("allowed_states", [])
+                )
                 components.append(f"{component['name']}{states}")
             suffix = f"({','.join(components)})" if components else "()"
             population = " population" if item.get("population") else ""
@@ -326,7 +334,9 @@ def _as_bngl(root: Mapping[str, Any]) -> str:
     if observables:
         lines += ["begin observables"]
         for item in observables:
-            lines.append(f"  {item['type']} {item['name']} {','.join(item['patterns'])}")
+            lines.append(
+                f"  {item['type']} {item['name']} {','.join(item['patterns'])}"
+            )
         lines += ["end observables"]
     functions = model.get("functions", [])
     if functions:
@@ -359,8 +369,12 @@ def _as_bngl(root: Mapping[str, Any]) -> str:
                 line += " " + " ".join(item["modifiers"])
             lines.append(line)
         lines += ["end reaction rules"]
-    actions = list(_require_mapping(root.get("protocol", {}), "protocol").get("actions", []))
-    model_actions = [action for action in actions if action.get("scope", "model") == "model"]
+    actions = list(
+        _require_mapping(root.get("protocol", {}), "protocol").get("actions", [])
+    )
+    model_actions = [
+        action for action in actions if action.get("scope", "model") == "model"
+    ]
     protocol_actions = [
         action for action in actions if action.get("scope") == "simulation_protocol"
     ]
