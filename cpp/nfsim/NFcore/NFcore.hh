@@ -34,6 +34,7 @@
 #include "templateMolecule.hh"
 #include "observable.hh"
 #include "energyPattern.hh"
+#include "profile.hh"
 
 #define DEBUG 0   			// Set to 1 to display all debug messages
 #define BASIC_MESSAGE 0		// Set to 1 to display basic messages (eg runtime)
@@ -454,6 +455,7 @@ namespace NFcore
 			
 			/* Compartment management for cBNGL */
 			Compartment * getCompartment(string id) const;
+			const map<string, Compartment*>& getCompartments() const { return compartments; }
 			void addCompartment(Compartment* comp);
 			int getNumCompartments() const { return compartments.size(); }
 			Compartment * getDefaultCompartment() const;  // For backwards compatibility
@@ -663,6 +665,106 @@ namespace NFcore
             }
             NfsimRNG& getRNG() { return rng_; }
             NfsimRNG& getMappingRNG() { return mapping_rng_; }
+
+			// Opt-in instrumentation for profiling irregular reaction work.
+			void enableProfiling(const string &outputPath) { profiler.enable(outputPath); }
+			bool isProfilingEnabled() const { return profiler.isEnabled(); }
+			void resetProfiling() { profiler.reset(); }
+			void recordProfilePhase(const string &phase, clock_t elapsed) {
+				profiler.recordPhase(phase, elapsed);
+			}
+			void beginProfileReactionFire(int rxnId, const string &rxnName) {
+				profiler.beginReactionFire(rxnId, rxnName);
+			}
+			void recordProfileReactionFire(int rxnId, const string &rxnName,
+					clock_t elapsed, bool nullEvent) {
+				profiler.recordReactionFire(rxnId, rxnName, elapsed, nullEvent);
+			}
+			void recordProfileMatchCandidate() { profiler.recordMatchCandidate(); }
+			void recordProfileMembershipUpdate() { profiler.recordMembershipUpdate(); }
+			void recordProfileMembershipPhase(double elapsed) {
+				profiler.recordMembershipPhase(elapsed);
+			}
+			bool isProfileReactionActive() const { return profiler.isReactionActive(); }
+			void beginProfileTemplateCompare() { profiler.beginTemplateCompare(); }
+			void endProfileTemplateCompare() { profiler.endTemplateCompare(); }
+			void recordProfileConnectivity(double elapsed,
+					unsigned long long moleculesVisited,
+					unsigned long long edgeVisits) {
+				profiler.recordConnectivity(elapsed, moleculesVisited, edgeVisits,
+						profiler.getConnectivityContext());
+			}
+			void recordProfileConnectivity(double elapsed,
+					unsigned long long moleculesVisited,
+					unsigned long long edgeVisits,
+					unsigned long long minimumMoleculeId,
+					unsigned long long maximumMoleculeId,
+					unsigned long long componentSignature) {
+				profiler.recordConnectivity(elapsed, moleculesVisited, edgeVisits,
+						profiler.getConnectivityContext(), minimumMoleculeId,
+						maximumMoleculeId, componentSignature);
+			}
+			ProfileConnectivityContext beginProfileConnectivityContext(
+					ProfileConnectivityContext context) {
+				return profiler.beginConnectivityContext(context);
+			}
+			void endProfileConnectivityContext(ProfileConnectivityContext previous) {
+				profiler.endConnectivityContext(previous);
+			}
+			ProfileConnectivityContext getProfileConnectivityContext() const {
+				return profiler.getConnectivityContext();
+			}
+			void recordProfileTopologyMutation() { profiler.recordTopologyMutation(); }
+			void recordProfileLocalFunctionComponentCandidate(bool alreadyCovered) {
+				profiler.recordLocalFunctionComponentCandidate(alreadyCovered);
+			}
+			void recordProfileBind(double elapsed) { profiler.recordBind(elapsed); }
+			void recordProfileUnbind(double elapsed) { profiler.recordUnbind(elapsed); }
+			void recordProfileComplexMaintenance(double elapsed,
+					unsigned long long moleculesTouched) {
+				profiler.recordComplexMaintenance(elapsed, moleculesTouched);
+			}
+			void recordProfileAffectedComplexes(unsigned long long complexes,
+					unsigned long long molecules) {
+				profiler.recordAffectedComplexes(complexes, molecules);
+			}
+			void recordProfileCanonicalLabel(double elapsed,
+					unsigned long long nodes,
+					unsigned long long edges, bool nautyCalled) {
+				profiler.recordCanonicalLabel(elapsed, nodes, edges, nautyCalled);
+			}
+			void recordProfileMappingPush() { profiler.recordMappingPush(); }
+			void recordProfileMappingPop() { profiler.recordMappingPop(); }
+			void recordProfileMappingRemove() { profiler.recordMappingRemove(); }
+			void recordProfileMappingConfirm() { profiler.recordMappingConfirm(); }
+			void recordProfileReactantListExpansion(unsigned long long expandedSlots,
+					double elapsed) {
+				profiler.recordReactantListExpansion(expandedSlots, elapsed);
+			}
+			void recordProfileReactantTreeExpansion(unsigned long long expandedSlots,
+					double elapsed) {
+				profiler.recordReactantTreeExpansion(expandedSlots, elapsed);
+			}
+			void recordProfileTransformation(double elapsed) {
+				profiler.recordTransformation(elapsed);
+			}
+			void recordProfileProductPreparation(double elapsed,
+					unsigned long long moleculesPrepared) {
+				profiler.recordProductPreparation(elapsed, moleculesPrepared);
+			}
+			void recordProfileProductCollection(double elapsed,
+					unsigned long long moleculesAdded) {
+				profiler.recordProductCollection(elapsed, moleculesAdded);
+			}
+			void recordProfileObservableRemoval(double elapsed,
+					unsigned long long molecules) {
+				profiler.recordObservableRemoval(elapsed, molecules);
+			}
+			void recordProfileObservableAddition(double elapsed,
+					unsigned long long molecules) {
+				profiler.recordObservableAddition(elapsed, molecules);
+			}
+			bool writeProfile() const { return profiler.write(); }
 
 	        NFstream& getOutputFileStream();
 	        NFstream& getReactionFileStream();
@@ -895,6 +997,8 @@ namespace NFcore
             // draws that remain separate from the System reaction stream.
             NfsimRNG mapping_rng_;
 
+			NFsimProfile profiler;
+
 			// AS2023 - sets the default log buffer size to 10000 firings.
 			int log_buffer_size = 10000;
 
@@ -913,6 +1017,25 @@ namespace NFcore
 			// NETGEN -- moved to ComplexList class
 			//vector <Complex *>::iterator complexIter;      /* to iterate over allComplexes */
 			vector <GlobalFunction *>::iterator functionIter; /* to iterate over Global Functions */
+	};
+
+	class ProfileConnectivityScope
+	{
+		System *system;
+		ProfileConnectivityContext previous;
+		bool enabled;
+
+	public:
+		ProfileConnectivityScope(System *s, ProfileConnectivityContext context)
+			: system(s), previous(PROFILE_CONNECTIVITY_OTHER), enabled(false) {
+			enabled = system != 0 && system->isProfileReactionActive();
+			if (enabled)
+				previous = system->beginProfileConnectivityContext(context);
+		}
+		~ProfileConnectivityScope() {
+			if (enabled)
+				system->endProfileConnectivityContext(previous);
+		}
 	};
 
 
@@ -1685,6 +1808,12 @@ namespace NFcore
 			int getRxnType() const { return reactionType; };
 
 			MoleculeType *getMoleculeTypeOfReactantTemplate(int pos) const;
+            TemplateMolecule* getReactantTemplate(int pos) const {
+                return pos >= 0 && static_cast<unsigned int>(pos) < n_reactants
+                    ? reactantTemplates[pos] : nullptr;
+            }
+            TransformationSet* getTransformationSet() const { return transformationSet; }
+
 			void setBaseRate(double newBaseRate,string newBaseRateName);
 			void resetBaseRateFromSystemParamter();
 

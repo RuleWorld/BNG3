@@ -1,0 +1,35 @@
+# Future NFnext contract tests.
+# These are intentionally OFF by default. They are executable specifications for
+# architecture that is not fully implemented yet. Turning this option on should
+# produce RED failures at missing contracts, then turn green subsystem-by-subsystem.
+
+set(NFNEXT_FUTURE_CONTRACT_SOURCES
+    test_nfir_canonicalization_contract.cpp
+    test_rule_family_contract.cpp
+    test_dependency_scheduler_contract.cpp
+    test_generic_matcher_contract.cpp
+    test_transformations_contract.cpp
+    test_lattice_interval_contract.cpp
+    test_population_hybrid_contract.cpp
+    test_observable_function_contract.cpp
+    test_xml_adapter_contract.cpp
+    test_cache_contract.cpp
+    test_rng_replay_concurrency_contract.cpp
+    test_differential_oracle_contract.cpp
+    test_compartment_rate_contract.cpp
+    test_backend_equivalence_contract.cpp
+    test_memory_arena_contract.cpp
+    test_scaling_stress_contract.cpp
+    test_fuzz_metamorphic_contract.cpp
+    test_codegen_accelerator_contract.cpp
+    test_rasi_translation_contract.cpp)
+
+foreach(src IN LISTS NFNEXT_FUTURE_CONTRACT_SOURCES)
+    get_filename_component(name "${src}" NAME_WE)
+    add_executable("${name}" "${src}")
+    target_link_libraries("${name}" PRIVATE nfnext)
+    target_include_directories("${name}" PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_compile_features("${name}" PRIVATE cxx_std_17)
+    add_test(NAME "${name}" COMMAND "${name}")
+    set_tests_properties("${name}" PROPERTIES LABELS "future-contract;red-until-implemented")
+endforeach()

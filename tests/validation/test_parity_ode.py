@@ -6,13 +6,13 @@ import pytest
 
 from tests.validation import compare, corpus, oracle_perl, runner
 
-# Deterministic ODE models suitable for tight numeric comparison.
+# Deterministic ODE models suitable for tight numeric comparison.  Models with
+# only stochastic actions belong in test_parity_stochastic.py, not here.
 ODE_MODELS = [
     "Motivating_example",
     "CaOscillate_Func",
     "Repressilator",
     "egfr_net",
-    "gene_expr",
     "michment",
 ]
 ODE_MODELS = [m for m in ODE_MODELS if corpus.resolve(m) is not None]

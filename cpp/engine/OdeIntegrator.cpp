@@ -20,6 +20,7 @@
 #include "io/NetWriter.hpp"
 #include "ast/ReactionRule.hpp"
 #include "ast/Function.hpp"
+#include "compile/CompiledRateLaw.hpp"
 
 // SUNDIALS/CVODE includes (v7.x API)
 #include "sundials/sundials_context.h"
@@ -215,6 +216,35 @@ void OdeIntegrator::compile() {
         lowerFuncNames.push_back(std::move(name));
     }
 
+    std::unordered_map<std::string, bng::compile::RateLawKind> typedRateKinds;
+    for (const auto& rule : model_.getReactionRules()) {
+        if (!rule.getRates().empty()) {
+            typedRateKinds.emplace(
+                rule.getRuleName(),
+                bng::compile::CompiledRateLaw::compile(rule.getRates().front()).kind);
+        }
+    }
+    const auto typedRateKindForOrigin = [&](std::string origin)
+        -> std::optional<bng::compile::RateLawKind> {
+        auto find = [&](const std::string& candidate)
+            -> std::optional<bng::compile::RateLawKind> {
+            const auto it = typedRateKinds.find(candidate);
+            if (it == typedRateKinds.end()) return std::nullopt;
+            return it->second;
+        };
+        if (auto kind = find(origin)) return kind;
+        if (origin.rfind("_reverse__", 0) == 0) {
+            origin = origin.substr(std::string("_reverse__").size());
+        } else if (!origin.empty() && origin.front() == '_') {
+            origin.erase(origin.begin());
+        }
+        if (origin.size() > std::string("_reverse").size() &&
+            origin.rfind("_reverse") == origin.size() - std::string("_reverse").size()) {
+            origin.erase(origin.size() - std::string("_reverse").size());
+        }
+        return find(origin);
+    };
+
     std::size_t rxnIndex = 0;
     for (const auto& rxn : network_.reactions.all()) {
         CompiledReaction crxn;
@@ -368,7 +398,25 @@ void OdeIntegrator::compile() {
         bool isSatMMHill = false;
         bool isMM = false;  // True when rate law is MM (Michaelis-Menten), not Sat
         std::size_t kwLen = 0;
-        {
+        if (const auto typedKind = typedRateKindForOrigin(originRuleName)) {
+            switch (*typedKind) {
+            case bng::compile::RateLawKind::Saturation:
+                isSatMMHill = true;
+                kwLen = 3;
+                break;
+            case bng::compile::RateLawKind::MichaelisMenten:
+                isSatMMHill = true;
+                isMM = true;
+                kwLen = 2;
+                break;
+            case bng::compile::RateLawKind::Hill:
+                isSatMMHill = true;
+                kwLen = 4;
+                break;
+            default:
+                break;
+            }
+        } else {
             std::string rlLower = rawRateLaw;
             std::transform(rlLower.begin(), rlLower.end(), rlLower.begin(), ::tolower);
             // Trim leading whitespace

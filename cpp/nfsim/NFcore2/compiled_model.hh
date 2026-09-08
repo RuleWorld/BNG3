@@ -1,0 +1,97 @@
+#pragma once
+#include "ids.hh"
+#include "rate_law.hh"
+#include <cstdint>
+#include <limits>
+#include <string>
+#include <vector>
+
+namespace NFcore2 {
+
+enum FeatureKind {
+    FEATURE_MOLECULE_STATE,
+    FEATURE_MOLECULE_BOND,
+    FEATURE_SCAFFOLD_OCCUPANCY,
+    FEATURE_POPULATION,
+    FEATURE_TIME,
+    FEATURE_MOLECULE_EXISTENCE,
+    FEATURE_MOLECULE_COMPARTMENT
+};
+
+struct FeatureDescriptor {
+    FeatureKind kind;
+    std::uint32_t owner;
+    std::uint32_t index;
+    FeatureDescriptor() : kind(FEATURE_MOLECULE_STATE), owner(0), index(0) {}
+    FeatureDescriptor(FeatureKind k, std::uint32_t o, std::uint32_t i)
+        : kind(k), owner(o), index(i) {}
+};
+
+struct MoleculeTypeDescriptor {
+    std::string name;
+    std::uint16_t state_words;
+    std::uint16_t bond_slots;
+    bool population;
+    MoleculeTypeDescriptor() : state_words(1), bond_slots(0), population(false) {}
+};
+
+struct CompartmentDescriptor {
+    std::uint32_t id;
+    std::uint32_t parent;
+    int dimensions;
+    double size;
+    CompartmentDescriptor() : id(0), parent(std::numeric_limits<std::uint32_t>::max()), dimensions(3), size(0.0) {}
+};
+
+struct RuleMember {
+    double rate;
+    std::uint32_t parameter_index;
+    std::uint32_t coordinate;
+    RateLawDescriptor rate_law;
+    RuleMember() : rate(0.0), parameter_index(0), coordinate(0) {}
+};
+
+struct RuleFamilyDescriptor {
+    std::string name;
+    MatcherId matcher;
+    TransformProgramId transform;
+    std::vector<RuleMember> members;
+    bool uniform_rate;
+    RuleFamilyDescriptor() : uniform_rate(false) {}
+};
+
+struct DependencyIndex {
+    std::vector<std::uint32_t> offsets;
+    std::vector<MatcherId> matchers;
+    void build(std::size_t feature_count,
+               const std::vector<std::vector<MatcherId> >& adjacency);
+    std::pair<const MatcherId*, const MatcherId*> dependents(FeatureId feature) const;
+};
+
+class CompiledModel {
+public:
+    MoleculeTypeId addMoleculeType(const MoleculeTypeDescriptor& descriptor);
+    void addCompartment(const CompartmentDescriptor& descriptor);
+    FeatureId addFeature(const FeatureDescriptor& descriptor);
+    RuleFamilyId addRuleFamily(const RuleFamilyDescriptor& descriptor);
+    void setFeatureDependencies(const std::vector<std::vector<MatcherId> >& adjacency);
+
+    const std::vector<MoleculeTypeDescriptor>& moleculeTypes() const { return molecule_types_; }
+    const std::vector<CompartmentDescriptor>& compartments() const { return compartments_; }
+    bool hasCompartment(std::uint32_t id) const;
+    bool compartmentInside(std::uint32_t child, std::uint32_t ancestor) const;
+    const std::vector<FeatureDescriptor>& features() const { return features_; }
+    const std::vector<RuleFamilyDescriptor>& ruleFamilies() const { return rule_families_; }
+    const DependencyIndex& dependencies() const { return dependencies_; }
+    const std::vector<RuleFamilyId>& familiesForMatcher(MatcherId matcher) const;
+
+private:
+    std::vector<MoleculeTypeDescriptor> molecule_types_;
+    std::vector<CompartmentDescriptor> compartments_;
+    std::vector<FeatureDescriptor> features_;
+    std::vector<RuleFamilyDescriptor> rule_families_;
+    DependencyIndex dependencies_;
+    std::vector<std::vector<RuleFamilyId> > matcher_families_;
+};
+
+} // namespace NFcore2

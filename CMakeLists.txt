@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.14)
 project(BioNetGen LANGUAGES C CXX)
 
+find_package(Threads REQUIRED)
+
 if(MINGW OR CMAKE_COMPILER_IS_GNUCXX)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++" CACHE STRING "" FORCE)
     set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -static-libgcc -static-libstdc++" CACHE STRING "" FORCE)
@@ -15,6 +17,13 @@ option(BUILD_PYTHON_BINDINGS "Build pybind11 Python module" ON)
 option(BUILD_CLI "Build bng_cpp command-line executable" ON)
 option(BUILD_NFSIM_CLI "Build NFsim command-line executable" OFF)
 option(BUILD_TESTS "Build C++ tests" ON)
+option(BUILD_BNGSIM_ADAPTER
+    "Build optional direct GeneratedNetwork to BNGsim adapter"
+    OFF)
+set(BNGSIM_INCLUDE_DIR "" CACHE PATH
+    "BNGsim include directory for the optional direct adapter")
+set(BNGSIM_LIBRARY "" CACHE FILEPATH
+    "BNGsim library for the optional direct adapter")
 option(NFSIM_ENABLE_LTO
     "Enable release link-time optimization when supported by the toolchain"
     ON)
@@ -110,6 +119,24 @@ set(SUNDIALS_INDEX_SIZE 64 CACHE INTERNAL "")
 
 FetchContent_MakeAvailable(sundials)
 
+# BNGsim remains an evaluated, opt-in solver candidate. Do not make the
+# authoritative BNG3 build depend on its external shared library.
+if(BUILD_BNGSIM_ADAPTER)
+    if(NOT BNGSIM_INCLUDE_DIR OR NOT EXISTS "${BNGSIM_INCLUDE_DIR}/bngsim/model_builder.hpp")
+        message(FATAL_ERROR
+            "BUILD_BNGSIM_ADAPTER requires BNGSIM_INCLUDE_DIR containing bngsim/model_builder.hpp")
+    endif()
+    if(NOT BNGSIM_LIBRARY OR NOT EXISTS "${BNGSIM_LIBRARY}")
+        message(FATAL_ERROR
+            "BUILD_BNGSIM_ADAPTER requires BNGSIM_LIBRARY pointing to a built BNGsim library")
+    endif()
+
+    add_library(bngsim_external UNKNOWN IMPORTED GLOBAL)
+    set_target_properties(bngsim_external PROPERTIES
+        IMPORTED_LOCATION "${BNGSIM_LIBRARY}"
+        INTERFACE_INCLUDE_DIRECTORIES "${BNGSIM_INCLUDE_DIR}")
+endif()
+
 # --- ExprTk (header-only expression parser for NFsim) ---
 FetchContent_Declare(
     exprtk
@@ -169,4 +196,6 @@ configure_file(
 # Tests
 if(BUILD_TESTS AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpp/CMakeLists.txt)
     add_subdirectory(tests/cpp)
+    add_subdirectory(tests/energy)
+    add_subdirectory(tests/architecture_contracts)
 endif()

@@ -86,7 +86,7 @@ def _parameter_value(parameter: Any) -> float:
         value = float(value)
     except (TypeError, ValueError):
         return 0.0
-    return value if math.isfinite(value) else 0.0
+    return value
 
 
 def _set_parameter_value(parameter: Any, value: float) -> None:

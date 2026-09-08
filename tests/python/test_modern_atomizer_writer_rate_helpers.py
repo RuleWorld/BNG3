@@ -1,13 +1,56 @@
 """Source-derived contracts for Playground writer rate helpers."""
 
+import pytest
+
 from bionetgen.atomizer.modern import (
+    ProcessedRate,
     ReversibleRateSplit,
+    SBMLCompartment,
     SBMLFunctionDefinition,
+    SBMLKineticLaw,
+    SBMLModel,
+    SBMLParameter,
+    SBMLReaction,
+    SBMLSpecies,
+    SBMLSpeciesReference,
+    checkMassAction,
     inlineSBMLFunctions,
     inline_sbml_functions,
+    processReactionRate,
+    process_reaction_rate,
     splitReversibleRate,
     split_reversible_rate,
+    writeReactionRulesAtomized,
+    writeReactionRulesFlat,
+    writeReactionRulesFlat_V2,
+    write_reaction_rules_atomized,
+    write_reaction_rules_flat,
+    write_reaction_rules_flat_v2,
 )
+
+
+def _mass_action_model(rate: str = "k * A", reversible: bool = False) -> SBMLModel:
+    return SBMLModel(
+        id="rate_processor",
+        compartments={"cell": SBMLCompartment(id="cell", size=2)},
+        species={
+            "A": SBMLSpecies(id="A", compartment="cell"),
+            "P": SBMLSpecies(id="P", compartment="cell"),
+        },
+        parameters={
+            "k": SBMLParameter(id="k", value=3),
+            "Km": SBMLParameter(id="Km", value=2),
+        },
+        reactions={
+            "r": SBMLReaction(
+                id="r",
+                reversible=reversible,
+                reactants=[SBMLSpeciesReference("A")],
+                products=[SBMLSpeciesReference("P")],
+                kinetic_law=SBMLKineticLaw(rate),
+            )
+        },
+    )
 
 
 def test_inline_sbml_functions_substitutes_formals_simultaneously():
@@ -51,11 +94,158 @@ def test_split_reversible_rate_rejects_one_sided_and_preserves_original_input():
     assert result == ReversibleRateSplit(False, "  kf*A  ", "0")
 
 
+def test_check_mass_action_matches_source_constant_and_rejects_saturation():
+    compartments = {"cell": SBMLCompartment(id="cell", size=2)}
+    species_to_compartment = {"A": "cell"}
+
+    assert (
+        checkMassAction(
+            "k * _c_A()",
+            "A_amt",
+            "__compartment_cell__",
+            {"k": 3},
+            compartments,
+            species_to_compartment,
+        )
+        == 3
+    )
+    assert (
+        checkMassAction(
+            "k * _c_A() / (Km + _c_A())",
+            "A_amt",
+            "__compartment_cell__",
+            {"k": 3, "Km": 2},
+            compartments,
+            species_to_compartment,
+        )
+        is None
+    )
+
+
+def test_process_reaction_rate_returns_source_shaped_mass_action_result():
+    model = _mass_action_model()
+
+    result = process_reaction_rate(model.reactions["r"], "r", model)
+
+    assert isinstance(result, ProcessedRate)
+    assert result.rate_string == "3"
+    assert result.rateString == result.rate_string
+    assert result.force_irreversible is False
+    assert result.forceIrreversible is False
+    assert result.is_split_rxn is False
+    assert result.isSplitRxn is False
+    assert processReactionRate(model.reactions["r"], "r", model) == result
+
+
+def test_process_reaction_rate_preserves_reversible_denominator_fallback():
+    model = _mass_action_model("kf * A / (Km + A) - kr * P", reversible=True)
+    model.parameters.update(
+        {"kf": SBMLParameter(id="kf", value=1), "kr": SBMLParameter(id="kr", value=1)}
+    )
+
+    result = process_reaction_rate(model.reactions["r"], "r", model)
+
+    assert result.force_irreversible is True
+    assert result.is_split_rxn is True
+    assert "_c_A()" in result.rate_string
+    assert "Km + _c_A()" in result.rate_string
+
+
+def test_process_reaction_rate_strips_leading_compartment_before_reversible_split():
+    model = _mass_action_model("cell * (kf * A - kr * P)", reversible=True)
+    model.parameters.update(
+        {
+            "kf": SBMLParameter(id="kf", value=0.5),
+            "kr": SBMLParameter(id="kr", value=0.25),
+        }
+    )
+
+    result = process_reaction_rate(model.reactions["r"], "r", model)
+
+    assert result.force_irreversible is False
+    assert result.rate_string == "0.5, 0.25"
+
+
 def test_playground_writer_facade_exports_reference_function_names():
     import bionetgen.atomizer.modern as modern
 
     assert modern.bnglFunction is modern.bngl_function
     assert modern.generateBNGL is modern.generate_bngl
+
+
+def test_playground_writer_facade_exports_all_implemented_writer_names():
+    import bionetgen.atomizer.modern as modern
+
+    for camel_name, snake_name in (
+        ("extendFunction", "extend_function"),
+        ("writeParameters", "write_parameters"),
+        ("writeCompartments", "write_compartments"),
+        ("writeMoleculeTypes", "write_molecule_types"),
+        ("writeSeedSpecies", "write_seed_species"),
+        ("writeObservables", "write_observables"),
+        ("writeFunctions", "write_functions"),
+        ("writeReactionRules", "write_reaction_rules"),
+    ):
+        assert getattr(modern, camel_name) is getattr(modern, snake_name)
+
+
+def test_playground_writer_exposes_distinct_reaction_rule_entry_points():
+    from bionetgen.atomizer.modern import build_species_composition_table
+
+    model = _mass_action_model()
+    sct = build_species_composition_table(model, atomize=False)
+
+    flat = write_reaction_rules_flat(model, sct)
+    atomized = write_reaction_rules_atomized(model, sct)
+    flat_v2 = write_reaction_rules_flat_v2(model, sct)
+
+    assert flat.startswith("begin reaction rules\n")
+    assert flat.endswith("\nend reaction rules")
+    assert "r: M_A()@cell -> M_P()@cell 3" in flat
+    assert atomized == flat
+    assert flat_v2 == flat
+    assert writeReactionRulesFlat is write_reaction_rules_flat
+    assert writeReactionRulesAtomized is write_reaction_rules_atomized
+    assert writeReactionRulesFlat_V2 is write_reaction_rules_flat_v2
+
+
+def test_playground_writer_can_preserve_scoped_local_parameter_names():
+    from bionetgen.atomizer.modern import (
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    model = _mass_action_model("local_rate * A")
+    model.reactions["r"].kinetic_law = SBMLKineticLaw(
+        "local_rate * A",
+        local_parameters=[SBMLParameter(id="local_rate", value=7, scope="local")],
+    )
+    from bionetgen.atomizer.modern import build_species_composition_table
+
+    sct = build_species_composition_table(model, atomize=False)
+    result = generate_bngl(
+        model,
+        sct,
+        get_molecule_types(sct),
+        get_seed_species(sct, model),
+        replace_loc_params=False,
+    )
+
+    assert "r_local_rate 7" in result.bngl
+    assert "r: M_A()@cell -> M_P()@cell r_local_rate" in result.bngl
+    assert "r: M_A()@cell -> M_P()@cell 7" not in result.bngl
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    cpp.parse_string(result.bngl)
+
+
+def test_playground_atomizer_accepts_replace_local_parameters_option():
+    from bionetgen.atomizer.modern import Atomizer
+
+    atomizer = Atomizer(replaceLocParams=False)
+
+    assert atomizer.getOptions()["replace_loc_params"] is False
+    assert "replaceLocParams" not in atomizer.getOptions()
 
 
 def test_playground_generate_bngl_returns_named_generation_result():

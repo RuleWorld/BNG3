@@ -1,0 +1,734 @@
+{
+  "schema": 1,
+  "note": "Declarations are inventory, not executed or passed tests. Reference suites do not establish BNG3 or native NFsim parity.",
+  "contracts": [
+    {
+      "path": "tests/energy/tests/cpp/future_ast_native_pattern_descriptor.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 1,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/future_barrier_driving_syntax.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 2,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/future_batch_nf_api.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 1,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/future_blueprint_concurrency.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 1,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/future_compiled_blueprint.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 2,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/future_compiled_model_cache.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 6,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/future_compiled_model_determinism.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 2,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/future_compound_graph_rewrite.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 2,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/future_dependency_graph.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 4,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/future_dependency_graph_property.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 1,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/future_direct_xml_energy_parity.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 1,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/future_dynamic_energy_expression_policy.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 2,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/future_energy_context_evaluator.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 7,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/future_energy_context_weights.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 2,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/future_energy_context_weights_numeric.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 3,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/future_energy_factor_index.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 3,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/future_energy_feature_flag.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 2,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/future_energy_lowering_plan.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 7,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/future_energy_pattern_compiler.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 8,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/future_energy_pattern_store.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 3,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/future_energy_plan_canonicalization.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 5,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/future_energy_runtime_event_weights.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 1,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/future_energy_serialization_roundtrip.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 2,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/future_indexed_rule_family.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 8,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/future_legacy_binding_compatibility.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 3,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/future_molecularity_energy.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 1,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/future_parameter_rebinding.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 4,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/future_reaction_build_batch.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 5,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/future_runtime_invalidation.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 2,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/future_runtime_model_contracts.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 6,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/future_runtime_reverse_context.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 1,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/future_thermodynamic_constraints.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 9,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/fuzz_energy_delta_plan.cpp",
+      "status": "auxiliary",
+      "target": null,
+      "declared_cases": 0,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/standalone_energy_delta_plan_smoke.cpp",
+      "status": "auxiliary",
+      "target": null,
+      "declared_cases": 0,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/test_compiled_model_contracts.cpp",
+      "status": "required",
+      "target": "test_energy_compiler_contracts",
+      "declared_cases": 10,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/test_pattern_descriptor_contracts.cpp",
+      "status": "required",
+      "target": "test_energy_compiler_contracts",
+      "declared_cases": 5,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/test_compiled_rate_law_contracts.cpp",
+      "status": "required",
+      "target": "test_energy_compiler_contracts",
+      "declared_cases": 4,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/test_energy_compiler_original.cpp",
+      "status": "required",
+      "target": "test_energy_compiler_original",
+      "declared_cases": 5,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/test_energy_compiler_phase1.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 5,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/test_energy_delta_plan_edge_cases.cpp",
+      "status": "required",
+      "target": "test_energy_compiler_contracts",
+      "declared_cases": 18,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/test_energy_delta_plan_property.cpp",
+      "status": "required",
+      "target": "test_energy_compiler_contracts",
+      "declared_cases": 1,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/bench_nfcore2.cpp",
+      "status": "auxiliary",
+      "target": null,
+      "declared_cases": 0,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/future_spec/test_batch_trajectory_spec.cpp",
+      "status": "design-only",
+      "target": null,
+      "declared_cases": 14,
+      "empty_bodies": 14
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/future_spec/test_compiler_frontend_spec.cpp",
+      "status": "design-only",
+      "target": null,
+      "declared_cases": 17,
+      "empty_bodies": 17
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/future_spec/test_connectivity_components_spec.cpp",
+      "status": "design-only",
+      "target": null,
+      "declared_cases": 14,
+      "empty_bodies": 14
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/future_spec/test_expression_rate_dag_spec.cpp",
+      "status": "design-only",
+      "target": null,
+      "declared_cases": 16,
+      "empty_bodies": 16
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/future_spec/test_generic_graph_fallback_spec.cpp",
+      "status": "design-only",
+      "target": null,
+      "declared_cases": 17,
+      "empty_bodies": 17
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/future_spec/test_gpu_kernel_spec.cpp",
+      "status": "design-only",
+      "target": null,
+      "declared_cases": 10,
+      "empty_bodies": 10
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/future_spec/test_model_image_mmap_spec.cpp",
+      "status": "design-only",
+      "target": null,
+      "declared_cases": 15,
+      "empty_bodies": 15
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/future_spec/test_population_hybrid_spec.cpp",
+      "status": "design-only",
+      "target": null,
+      "declared_cases": 13,
+      "empty_bodies": 13
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/future_spec/test_profiler_metrics_spec.cpp",
+      "status": "design-only",
+      "target": null,
+      "declared_cases": 14,
+      "empty_bodies": 14
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/future_spec/test_reference_differential_spec.cpp",
+      "status": "design-only",
+      "target": null,
+      "declared_cases": 20,
+      "empty_bodies": 20
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/future_spec/test_reproducibility_rng_spec.cpp",
+      "status": "design-only",
+      "target": null,
+      "declared_cases": 13,
+      "empty_bodies": 13
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/future_spec/test_scaffold_lowering_spec.cpp",
+      "status": "design-only",
+      "target": null,
+      "declared_cases": 16,
+      "empty_bodies": 16
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/future_spec/test_scaling_acceptance_spec.cpp",
+      "status": "design-only",
+      "target": null,
+      "declared_cases": 14,
+      "empty_bodies": 14
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/future_spec/test_snapshot_fork_spec.cpp",
+      "status": "design-only",
+      "target": null,
+      "declared_cases": 14,
+      "empty_bodies": 14
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/future_spec/test_specialization_simd_jit_spec.cpp",
+      "status": "design-only",
+      "target": null,
+      "declared_cases": 12,
+      "empty_bodies": 12
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/test_compiled_scheduler.cpp",
+      "status": "reference",
+      "target": "bng3_nfcore2_reference_tests",
+      "declared_cases": 42,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/test_dependency_exhaustive.cpp",
+      "status": "reference",
+      "target": "bng3_nfcore2_reference_tests",
+      "declared_cases": 5,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/test_exhaustive_matcher_matrix.cpp",
+      "status": "reference",
+      "target": "bng3_nfcore2_reference_tests",
+      "declared_cases": 7,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/test_graph_state_machine_extended.cpp",
+      "status": "reference",
+      "target": "bng3_nfcore2_reference_tests",
+      "declared_cases": 5,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/test_ids_state.cpp",
+      "status": "reference",
+      "target": "bng3_nfcore2_reference_tests",
+      "declared_cases": 39,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/test_main.cpp",
+      "status": "reference",
+      "target": "bng3_nfcore2_reference_tests",
+      "declared_cases": 0,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/test_model_image_shadow.cpp",
+      "status": "reference",
+      "target": "bng3_nfcore2_reference_tests",
+      "declared_cases": 46,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/test_nfcore2.cpp",
+      "status": "auxiliary",
+      "target": null,
+      "declared_cases": 0,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/test_nfsim_adapter_contract.cpp",
+      "status": "reference",
+      "target": "bng3_nfcore2_reference_tests",
+      "declared_cases": 25,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/test_nfsim_pattern_lowering.cpp",
+      "status": "reference",
+      "target": "bng3_nfcore2_reference_tests",
+      "declared_cases": 3,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/test_nfsim_system_reader.cpp",
+      "status": "reference",
+      "target": "bng3_nfcore2_reference_tests",
+      "declared_cases": 14,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/test_nfsim_transform_decoder.cpp",
+      "status": "reference",
+      "target": "bng3_nfcore2_reference_tests",
+      "declared_cases": 12,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/test_randomized_invariants.cpp",
+      "status": "reference",
+      "target": "bng3_nfcore2_reference_tests",
+      "declared_cases": 8,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/test_rule_family_stress.cpp",
+      "status": "reference",
+      "target": "bng3_nfcore2_reference_tests",
+      "declared_cases": 7,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/test_rule_legacy.cpp",
+      "status": "reference",
+      "target": "bng3_nfcore2_reference_tests",
+      "declared_cases": 48,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/test_scaffold_matcher.cpp",
+      "status": "reference",
+      "target": "bng3_nfcore2_reference_tests",
+      "declared_cases": 39,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/test_scaffold_reference_model.cpp",
+      "status": "reference",
+      "target": "bng3_nfcore2_reference_tests",
+      "declared_cases": 7,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/test_scheduler_reference_model.cpp",
+      "status": "reference",
+      "target": "bng3_nfcore2_reference_tests",
+      "declared_cases": 6,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/test_shadow_semantic_matrix.cpp",
+      "status": "reference",
+      "target": "bng3_nfcore2_reference_tests",
+      "declared_cases": 9,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/test_transform_engine.cpp",
+      "status": "reference",
+      "target": "bng3_nfcore2_reference_tests",
+      "declared_cases": 32,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/test_validation_dependency.cpp",
+      "status": "reference",
+      "target": "bng3_nfcore2_reference_tests",
+      "declared_cases": 28,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfnext/future_contract/test_backend_equivalence_contract.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 22,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfnext/future_contract/test_cache_contract.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 27,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfnext/future_contract/test_codegen_accelerator_contract.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 19,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfnext/future_contract/test_compartment_rate_contract.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 24,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfnext/future_contract/test_dependency_scheduler_contract.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 15,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfnext/future_contract/test_differential_oracle_contract.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 23,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfnext/future_contract/test_fuzz_metamorphic_contract.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 24,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfnext/future_contract/test_generic_matcher_contract.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 20,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfnext/future_contract/test_lattice_interval_contract.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 20,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfnext/future_contract/test_memory_arena_contract.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 21,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfnext/future_contract/test_nfir_canonicalization_contract.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 22,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfnext/future_contract/test_observable_function_contract.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 22,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfnext/future_contract/test_population_hybrid_contract.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 19,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfnext/future_contract/test_rasi_translation_contract.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 26,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfnext/future_contract/test_rng_replay_concurrency_contract.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 25,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfnext/future_contract/test_rule_family_contract.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 16,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfnext/future_contract/test_scaling_stress_contract.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 22,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfnext/future_contract/test_transformations_contract.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 20,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfnext/future_contract/test_xml_adapter_contract.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 37,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfnext/test_nfnext.cpp",
+      "status": "reference",
+      "target": "bng3_nfnext_reference_tests",
+      "declared_cases": 0,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfnext/test_observable_terms.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 0,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfnext/test_population_backend.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 0,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfnext/test_randomized_oracles.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 0,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfnext/test_semantic_validation.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 0,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfnext/test_stateset.cpp",
+      "status": "blocked-api",
+      "target": null,
+      "declared_cases": 0,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/energy_fuzz_smoke.cpp",
+      "status": "auxiliary",
+      "target": "energy_sanitizer_smoke",
+      "declared_cases": 0,
+      "empty_bodies": 0
+    }
+  ]
+}

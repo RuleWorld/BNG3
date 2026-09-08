@@ -445,6 +445,32 @@ void ReactionClass::fire(double random_A_number) {
 string ReactionClass::fire(double random_A_number, bool track) {
 	//cout<<endl<<">FIRE "<<getName()<<endl;
 	fireCounter++;
+	struct ProfileScope {
+		System *system;
+		int rxnId;
+		const string *rxnName;
+		clock_t start;
+		int nullEventsBefore;
+		bool enabled;
+
+		ProfileScope(System *s, int id, const string &name)
+			: system(s), rxnId(id), rxnName(&name), start(0),
+			  nullEventsBefore(System::NULL_EVENT_COUNTER), enabled(false) {
+			enabled = system != 0 && system->isProfilingEnabled();
+			if (enabled) {
+				start = clock();
+				system->beginProfileReactionFire(rxnId, *rxnName);
+			}
+		}
+
+		~ProfileScope() {
+			if (enabled) {
+				system->recordProfileReactionFire(
+						rxnId, *rxnName, clock() - start,
+						System::NULL_EVENT_COUNTER > nullEventsBefore);
+			}
+		}
+	} profileScope(system, rxnId, name);
 	directProductMoleculeList.clear();
 	if (directProductMolecules != 0)
 		directProductMolecules->clear();

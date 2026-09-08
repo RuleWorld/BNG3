@@ -8,6 +8,7 @@ namespace NFcore
 {
 
 	class MoleculeCreator;
+	class MoleculeType;
 	class SpeciesCreator;
 	class Mapping;
 	class Transformation;
@@ -271,6 +272,7 @@ namespace NFcore
 			// AS2023 - alternative call sig to store a log of the transform
 			virtual void apply(Mapping *m, MappingSet **ms, string & logstr);
 			virtual int getComponentIndex() const {return cIndex;};
+            int getFinalStateValue() const { return newValue; }
 			virtual TemplateMolecule * getTemplateMolecule() const {return this->tm;};
 		protected:
 			int cIndex;
@@ -287,6 +289,8 @@ namespace NFcore
 			// AS2023 - alternative call sig to store a log of the transform
 			virtual void apply(Mapping *m, MappingSet **ms, string & logstr);
 			virtual int getComponentIndex() const {return cIndex;};
+            int getOtherReactantIndex() const { return otherReactantIndex; }
+            int getOtherMappingIndex() const { return otherMappingIndex; }
 
 			virtual bool checkForNullCondition(Mapping *m, MappingSet **ms);
 			virtual TemplateMolecule * getTemplateMolecule() const {return this->tm;};
@@ -355,6 +359,7 @@ namespace NFcore
 			void apply_and_map( MappingSet * ms, string & logstr );
 			// is this a population type?
 			bool isPopulationType() const;
+			MoleculeType * getMoleculeType() const;
 			// get pointer to population molecule
 			Molecule * get_population_pointer() const;
 			virtual TemplateMolecule * getTemplateMolecule() const {return this->tm;};
@@ -445,6 +450,7 @@ namespace NFcore
 			virtual TemplateMolecule * getTemplateMolecule() const {return this->tm;};
 
 			bool isMoveConnected() const { return moveConnected; }
+			string getNewCompartmentId() const;
 
 		protected:
 			Compartment * newCompartment;

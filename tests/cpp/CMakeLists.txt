@@ -15,6 +15,14 @@ add_test(
         -P ${CMAKE_CURRENT_SOURCE_DIR}/test_bng_cpp_action_errors.cmake
 )
 
+add_executable(test_batch_runner test_batch_runner.cpp)
+target_compile_definitions(test_batch_runner PRIVATE
+    BNG_CPP_PATH="$<TARGET_FILE:bng_cpp>"
+)
+target_link_libraries(test_batch_runner PRIVATE Catch2::Catch2WithMain Catch2::Catch2)
+add_dependencies(test_batch_runner bng_cpp)
+catch_discover_tests(test_batch_runner)
+
 # localfunc_test
 add_executable(localfunc_test localfunc_test.cpp)
 target_include_directories(localfunc_test PRIVATE
@@ -188,6 +196,17 @@ target_link_libraries(test_nfsim_reactant_tree PRIVATE
     bng_parser)
 catch_discover_tests(test_nfsim_reactant_tree)
 
+# test_nfsim_profile
+add_executable(test_nfsim_profile test_nfsim_profile.cpp)
+target_include_directories(test_nfsim_profile PRIVATE
+    ${CMAKE_SOURCE_DIR}/cpp
+    ${CMAKE_SOURCE_DIR}/cpp/nfsim
+)
+target_link_libraries(test_nfsim_profile PRIVATE
+    Catch2::Catch2WithMain Catch2::Catch2
+    nfsim_core)
+catch_discover_tests(test_nfsim_profile)
+
 # test_sbml_reader
 add_executable(test_sbml_reader test_sbml_reader.cpp)
 target_include_directories(test_sbml_reader PRIVATE
@@ -199,3 +218,14 @@ target_include_directories(test_sbml_reader PRIVATE
 target_link_libraries(test_sbml_reader PRIVATE
     Catch2::Catch2WithMain Catch2::Catch2 bionetgen_core)
 catch_discover_tests(test_sbml_reader)
+
+if(BUILD_BNGSIM_ADAPTER)
+    add_executable(test_bngsim_adapter test_bngsim_adapter.cpp)
+    target_include_directories(test_bngsim_adapter PRIVATE
+        ${CMAKE_SOURCE_DIR}/cpp
+        ${BNGSIM_INCLUDE_DIR}
+    )
+    target_link_libraries(test_bngsim_adapter PRIVATE
+        Catch2::Catch2WithMain Catch2::Catch2 bng_engine)
+    catch_discover_tests(test_bngsim_adapter)
+endif()

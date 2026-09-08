@@ -1,0 +1,159 @@
+{
+  "checkpoint": "semantic-expansion-2026-09-08",
+  "branch": "codex/bng3-energy-validation-port",
+  "inputs": [
+    "/Users/akutuva/Downloads/BNG3_energy_compiler_validation_complete_handoff_2026-09-07.zip",
+    "/Users/akutuva/Downloads/nfsim-nfcore2-complete-handoff-20260906.zip",
+    "/Users/akutuva/Downloads/NFnext_Rasi_complete_code_tests_context_patches_2026-09-06.zip"
+  ],
+  "test_first": {
+    "red_build": "bng3_nfcore2_reference_tests reported missing population, graph, compartment, move, species-delete, conditional-delete, and rate-law contracts before implementation",
+    "focused_green": "ctest --test-dir build --output-on-failure -R 'native-port|architecture_nfcore2_reference' (14 native-port tests plus the NFcore2 reference target)",
+    "full_validation": {
+      "build": "cmake --build build --parallel 4",
+      "ctest": "273 passed",
+      "energy_python": "66 passed",
+      "main_python": "427 passed, 144 skipped",
+      "architecture_audit": "passed with zero failures",
+      "sanitizers": {
+        "build": "ASan/UBSan Debug build in build-asan",
+        "energy": "energy_sanitizer_smoke passed",
+        "nfcore2": "422 passed, 0 failed",
+        "native_reader": "14 test cases, 126 assertions",
+        "nfnext": "PASS",
+        "leaks": "LeakSanitizer unavailable on macOS"
+      }
+    }
+  },
+  "hardening": [
+    "zero-reactant population synthesis resolves the explicit added molecule type",
+    "compartment invalidation keys dependencies by molecule type owner",
+    "state and bond invalidation keys dependencies by molecule type owner",
+    "species deletion rejects transforms without a mapped reactant",
+    "direct NFsim capability preflight rejects population maps",
+    "resolved expressions retain lexical local-function references",
+    "value Pattern retains multiple bonds while NFsim rejects unsupported lowering"
+  ],
+  "contracts": [
+    {
+      "id": "population-transforms",
+      "status": "direct-bounded",
+      "tests": [
+        "NFsimAdapter_PopulationTransformsLowerToSignedPopulationDelta",
+        "NFsimAdapter_PopulationRuleExecutesAgainstPopulationStore",
+        "native NFcore2 reader captures population decrement"
+      ],
+      "oracle": "tests/energy/tests/python/test_nfcore2_semantic_expansion_oracle.py::test_population_transform_oracle"
+    },
+    {
+      "id": "root-graph-connectedTo",
+      "status": "direct-graph-bounded-fallback-richer",
+      "tests": [
+        "NFsimAdapter_RootInternalTopologyAndPartnerStateLowerDirectly",
+        "NFsimAdapter_ConnectedToPredicateUsesGraphSearchForRootReactants",
+        "native NFcore2 reader preserves internal graph-node state constraints"
+      ],
+      "oracle": "tests/energy/tests/python/test_nfcore2_semantic_expansion_oracle.py::test_connected_to_graph_oracle"
+    },
+    {
+      "id": "synthesis",
+      "status": "direct-particle-and-population-bounded",
+      "tests": [
+        "NFsimAdapter_SynthesisCreatesAddedMoleculeFromZeroReactants",
+        "NFsimAdapter_SynthesisRuleCreatesMoleculeInEngine"
+      ],
+      "oracle": "tests/energy/tests/python/test_nfcore2_semantic_expansion_oracle.py::test_synthesis_oracle"
+    },
+    {
+      "id": "compartments-moves",
+      "status": "direct-hierarchy-and-species-move-bounded",
+      "tests": [
+        "NFsimAdapter_CompartmentPredicateAndMoveLowerDirectly",
+        "NFsimAdapter_CompartmentRuleMatchesAndMovesMolecule",
+        "native NFcore2 reader captures a root-local compartment move",
+        "native NFcore2 reader executes MoveConnected species relocation"
+      ],
+      "oracle": "tests/energy/tests/python/test_nfcore2_semantic_expansion_oracle.py::test_compartment_move_oracle"
+    },
+    {
+      "id": "local-function-dor",
+      "status": "direct-expression-and-descriptor-bounded-fallback-native-local",
+      "tests": [
+        "NFsimAdapter_LocalFunctionAndDORRateLawsCarryExecutableDescriptors",
+        "NFsimAdapter_LocalFunctionAndDORRatesEvaluateFromMatchedState",
+        "NFsimAdapter_GeneralExpressionRateResolvesNamedLocalAndConstantBindings",
+        "native NFcore2 reader keeps local DOR rules on compatibility fallback"
+      ],
+      "oracle": "tests/energy/tests/python/test_nfcore2_semantic_expansion_oracle.py::test_local_and_dor_rate_oracle"
+    },
+    {
+      "id": "whole-species-deletion",
+      "status": "direct-connected-component-bounded",
+      "tests": [
+        "NFsimAdapter_DeleteWholeSpeciesRemovesConnectedComponent",
+        "Transform_DeleteCompleteSpeciesErasesEveryConnectedMolecule",
+        "native NFcore2 reader captures complete species deletion"
+      ],
+      "oracle": "tests/energy/tests/python/test_nfcore2_semantic_expansion_oracle.py::test_whole_species_deletion_oracle"
+    }
+  ],
+  "remaining_fallbacks": [
+    "arbitrary internal graph expressions",
+    "general local-function/DOR evaluation",
+    "compartment hierarchy/species-carrying moves",
+    "conditional deletion",
+    "independent full NFsim/BNG2 parity"
+  ],
+  "expanded_ceilings": [
+    {
+      "id": "arbitrary-graph-expressions",
+      "status": "direct-finite-bounded-fallback-richer",
+      "implemented": "Exact backtracking supports anchored/unanchored nodes, multiple reciprocal bonds, state, compartment, free-site, and bound-site constraints.",
+      "tests": [
+        "NFsimAdapter_ArbitraryGraphExpressionPreservesFreeAndBoundSiteConstraints",
+        "NFsimAdapter_RejectsMalformedGraphEdge",
+        "NFsimAdapter_ArbitraryGraphExpressionRejectsAsymmetricRuntimeBond"
+      ],
+      "remaining": "Native symmetric automorphisms, negative/molecularity forms, and unbounded connectedTo remain fail-closed."
+    },
+    {
+      "id": "general-local-dor-evaluation",
+      "status": "direct-named-binding-bounded-fallback-native-objects",
+      "implemented": "Parsed arithmetic/conditional expressions resolve named matched-state and finite-constant bindings plus time and built-ins.",
+      "tests": [
+        "NFsimAdapter_GeneralExpressionRateResolvesNamedLocalAndConstantBindings",
+        "NFsimAdapter_LocalFunctionAndDORRatesEvaluateFromMatchedState"
+      ],
+      "remaining": "Native LocalFunction/DOR object scopes, observables, function DAGs, TFUN counters, and complete DOR2 composition remain compatibility fallbacks."
+    },
+    {
+      "id": "compartment-hierarchy-species-carrying-moves",
+      "status": "direct-parent-ancestry-and-atomic-species-move-bounded",
+      "implemented": "Known parent-linked compartments support ancestry predicates and MoveConnected relocates a validated connected species atomically.",
+      "tests": [
+        "NFsimAdapter_CompartmentInsideRejectsUnknownIdentity",
+        "NFsimAdapter_SpeciesMoveRejectsUnknownDestinationAtomically",
+        "native NFcore2 reader executes MoveConnected species relocation"
+      ],
+      "remaining": "Volume/region scaling, dimension conversion, and topology-changing transport remain fail-closed."
+    },
+    {
+      "id": "conditional-deletion",
+      "status": "direct-reciprocal-and-split-safe-bounded-fallback-native-spellings",
+      "implemented": "Conditional deletion no-ops on malformed or split species and erases the requested molecule with reciprocal invalidation when safe.",
+      "tests": [
+        "Transform_ConditionalDeleteNoOpsWhenSpeciesWouldSplit",
+        "Transform_ConditionalDeleteCycleKeepsSpeciesConnected",
+        "Transform_ConditionalDeleteRejectsAsymmetricRuntimeGraph"
+      ],
+      "remaining": "Native conditional spellings with unresolved ownership or post-delete invalidation remain fail-closed."
+    }
+  ],
+  "remaining_fallback_details": [
+    "Native symmetric/internal graph automorphisms, negative expressions, molecularity constraints, and unbounded connectedTo remain fail-closed.",
+    "Native LocalFunction/DOR object scopes, observables, function DAGs, TFUN counters, and complete DOR2 composition remain compatibility fallbacks.",
+    "Compartment volume/region scaling, dimension conversion, and topology-changing transport remain fail-closed.",
+    "Native conditional-deletion spellings whose component ownership or post-delete invalidation cannot be established remain fail-closed.",
+    "Independent seeded trajectory, propensity, and failure-classification parity against NFsim/BNG2/Rasi/uORF oracles is not claimed."
+  ]
+}

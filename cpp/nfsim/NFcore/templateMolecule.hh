@@ -48,6 +48,31 @@ namespace NFcore
 		~TemplateMolecule();
 
 
+        // Exact root-only view for semantic adapters. Direct links to another
+        // reaction root and root-local compartment constraints are retained;
+        // symmetric-site and malformed graph constraints require richer
+        // lowering.
+        struct RootBondConstraint {
+            int component;
+            TemplateMolecule* partner;
+            int partner_component;
+            RootBondConstraint() : component(-1), partner(0), partner_component(-1) {}
+        };
+        struct RootLocalConstraints {
+            std::vector<int> empty, occupied;
+            std::vector<std::pair<int, int>> states, exclusions;
+            std::vector<RootBondConstraint> bonds;
+            std::vector<TemplateMolecule*> connected_to;
+            std::string compartment;
+        };
+        bool collectRootLocalConstraints(RootLocalConstraints& output) const;
+        int getBondConstraintCount() const { return n_bonds; }
+        TemplateMolecule* getBondPartner(int index) const { return (index >= 0 && index < n_bonds) ? bondPartner[index] : 0; }
+        int getBondComponent(int index) const { return (index >= 0 && index < n_bonds) ? bondComp[index] : -1; }
+        int getBondPartnerComponent(int index) const { return (index >= 0 && index < n_bonds) ? bondPartnerCompIndex[index] : -1; }
+        int getConnectedToCount() const { return n_connectedTo; }
+        TemplateMolecule* getConnectedTo(int index) const { return (index >= 0 && index < n_connectedTo) ? connectedTo[index] : 0; }
+
 		/* get functions */
 		MoleculeType *getMoleculeType() const {return moleculeType;};
 		string getMoleculeTypeName() const;

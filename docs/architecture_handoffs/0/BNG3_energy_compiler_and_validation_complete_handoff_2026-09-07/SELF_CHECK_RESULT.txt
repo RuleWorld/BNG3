@@ -1,0 +1,10 @@
+Final validation-suite self-check executed during packaging on 2026-09-07.
+
+Command:
+  cd validation_suite && ./run_selfcheck.sh
+
+Result:
+  40 passed in 0.83s
+  energy validation suite self-check passed
+
+This self-check validates the Python-side testing/validation infrastructure contained in the bundle. It is not a substitute for a full BNG3 CMake build, CTest run, sanitizer matrix, or independent NFsim/BNG2 oracle validation; see CONTEXT_IMPLEMENTATION_VALIDATION_HANDOFF.md for limitations.

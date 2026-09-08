@@ -6,12 +6,16 @@ paths must be anchored before execution begins.
 
 from __future__ import annotations
 
+import subprocess
+
 import pytest
 
-from tests.validation import conftest, oracle_nfsim, runner
+from tests.validation import conftest, oracle_nfsim, oracle_perl, runner
 
 
-def test_configured_nfsim_path_is_anchored_to_discovery_directory(tmp_path, monkeypatch):
+def test_configured_nfsim_path_is_anchored_to_discovery_directory(
+    tmp_path, monkeypatch
+):
     binary = tmp_path / "bin" / "NFsim"
     binary.parent.mkdir()
     binary.touch()
@@ -34,13 +38,62 @@ def test_unconfigured_nfsim_requires_an_explicit_oracle(monkeypatch):
     assert oracle_nfsim._nfsim_bin() is None
 
 
-def test_explicit_bng_cpp_path_is_anchored_to_discovery_directory(tmp_path, monkeypatch):
+def test_perl_oracle_anchors_bng_root_and_keeps_fixture_relative_files(
+    tmp_path, monkeypatch
+):
+    fixture_dir = tmp_path / "fixtures"
+    fixture_dir.mkdir()
+    source = fixture_dir / "model.bngl"
+    source.write_text("begin model\nend model\n", encoding="utf-8")
+    bng2 = tmp_path / "bng2" / "BNG2.pl"
+    bng2.parent.mkdir()
+    bng2.write_text("", encoding="utf-8")
+    work_dir = tmp_path / "work"
+
+    monkeypatch.setenv("BNG2_PERL", str(bng2))
+    monkeypatch.delenv("BNGPATH", raising=False)
+    monkeypatch.setattr(oracle_perl.corpus, "resolve", lambda _name: source)
+
+    def fake_run(command, *, cwd, env, **_kwargs):
+        assert cwd == str(fixture_dir)
+        assert env["BNGPATH"] == str(bng2.parent)
+        assert command[2:4] == ["--outdir", str(work_dir)]
+        assert command[4] == str(source)
+        work_dir.mkdir(exist_ok=True)
+        (work_dir / "model.net").write_text("net\n", encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(oracle_perl.subprocess, "run", fake_run)
+    net, gdat, _error = oracle_perl.run_perl("model", work_dir)
+
+    assert net == work_dir / "model.net"
+    assert gdat is None
+
+
+def test_explicit_bng_cpp_path_is_anchored_to_discovery_directory(
+    tmp_path, monkeypatch
+):
     binary = tmp_path / "bin" / "bng_cpp"
     binary.parent.mkdir()
     binary.touch()
     monkeypatch.chdir(tmp_path)
 
     assert conftest._discover_bng_cpp("bin/bng_cpp") == binary.resolve()
+
+
+def test_cli_output_selection_prefers_model_stem_over_action_artifacts(tmp_path):
+    preferred = tmp_path / "model.gdat"
+    preferred.touch()
+    (tmp_path / "model_burnin.gdat").touch()
+
+    assert runner._select_cli_output(tmp_path, "model", ".gdat") == preferred
+
+
+def test_cli_output_selection_fails_closed_on_ambiguous_artifacts(tmp_path):
+    (tmp_path / "model_burnin.gdat").touch()
+    (tmp_path / "model_equil.gdat").touch()
+
+    assert runner._select_cli_output(tmp_path, "model", ".gdat") is None
 
 
 def test_api_ensemble_parallel_workers_preserve_seed_order():

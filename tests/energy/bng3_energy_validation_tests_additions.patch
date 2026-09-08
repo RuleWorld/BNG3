@@ -1,0 +1,4458 @@
+diff --git a/cmake/energy_tests.cmake b/cmake/energy_tests.cmake
+new file mode 100644
+index 0000000..27d0556
+--- /dev/null
++++ b/cmake/energy_tests.cmake
+@@ -0,0 +1,87 @@
++# Include from tests/cpp/CMakeLists.txt after Catch2 and bionetgen_core are available.
++option(BNG_ENABLE_FUTURE_ENERGY_CONTRACTS "Build RED contracts for planned energy/compiler APIs" OFF)
++option(BNG_BUILD_ENERGY_FUZZERS "Build libFuzzer targets for energy compiler" OFF)
++
++set(BNG_ENERGY_CURRENT_TEST_SOURCES
++    test_energy_compiler_phase1.cpp
++    test_energy_delta_plan_edge_cases.cpp
++    test_energy_delta_plan_property.cpp
++    test_compiled_rate_law_contracts.cpp
++    test_compiled_model_contracts.cpp
++)
++
++add_executable(test_energy_compiler_contracts ${BNG_ENERGY_CURRENT_TEST_SOURCES})
++target_include_directories(test_energy_compiler_contracts PRIVATE
++    ${CMAKE_SOURCE_DIR}/cpp
++    ${CMAKE_SOURCE_DIR}/cpp/parser
++    ${CMAKE_SOURCE_DIR}/cpp/parser/generated
++    ${CMAKE_CURRENT_SOURCE_DIR}
++    ${exprtk_SOURCE_DIR}
++)
++target_link_libraries(test_energy_compiler_contracts PRIVATE
++    Catch2::Catch2WithMain Catch2::Catch2 bionetgen_core bng_parser)
++catch_discover_tests(test_energy_compiler_contracts
++    TEST_PREFIX "energy::"
++    PROPERTIES LABELS "energy;compiler")
++
++if(BNG_ENABLE_FUTURE_ENERGY_CONTRACTS)
++    set(BNG_ENERGY_FUTURE_TEST_SOURCES
++        future_dependency_graph.cpp
++        future_dependency_graph_property.cpp
++        future_energy_pattern_compiler.cpp
++        future_energy_lowering_plan.cpp
++        future_energy_pattern_store.cpp
++        future_energy_context_weights.cpp
++        future_energy_context_evaluator.cpp
++        future_energy_context_weights_numeric.cpp
++        future_energy_plan_canonicalization.cpp
++        future_thermodynamic_constraints.cpp
++        future_indexed_rule_family.cpp
++        future_compiled_model_cache.cpp
++        future_compiled_model_determinism.cpp
++        future_ast_native_pattern_descriptor.cpp
++        future_reaction_build_batch.cpp
++        future_runtime_model_contracts.cpp
++        future_energy_runtime_event_weights.cpp
++        future_compiled_blueprint.cpp
++        future_batch_nf_api.cpp
++        future_legacy_binding_compatibility.cpp
++        future_barrier_driving_syntax.cpp
++        future_direct_xml_energy_parity.cpp
++        future_energy_serialization_roundtrip.cpp
++        future_compound_graph_rewrite.cpp
++        future_energy_factor_index.cpp
++        future_parameter_rebinding.cpp
++        future_dynamic_energy_expression_policy.cpp
++        future_blueprint_concurrency.cpp
++        future_runtime_invalidation.cpp
++        future_runtime_reverse_context.cpp
++        future_molecularity_energy.cpp
++        future_energy_feature_flag.cpp
++    )
++    add_executable(test_energy_future_contracts ${BNG_ENERGY_FUTURE_TEST_SOURCES})
++    target_include_directories(test_energy_future_contracts PRIVATE
++        ${CMAKE_SOURCE_DIR}/cpp
++        ${CMAKE_SOURCE_DIR}/cpp/nfsim
++        ${CMAKE_SOURCE_DIR}/cpp/nfsim/NFcore
++        ${CMAKE_SOURCE_DIR}/cpp/nfsim/NFinput
++        ${CMAKE_CURRENT_SOURCE_DIR}
++        ${exprtk_SOURCE_DIR}
++    )
++    target_compile_definitions(test_energy_future_contracts PRIVATE
++        BNG_ENERGY_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures/energy")
++    target_link_libraries(test_energy_future_contracts PRIVATE
++        Catch2::Catch2WithMain Catch2::Catch2 bionetgen_core bng_parser)
++    catch_discover_tests(test_energy_future_contracts
++        TEST_PREFIX "energy-future::"
++        PROPERTIES LABELS "energy;energy-future")
++endif()
++
++if(BNG_BUILD_ENERGY_FUZZERS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
++    add_executable(fuzz_energy_delta_plan fuzz_energy_delta_plan.cpp)
++    target_include_directories(fuzz_energy_delta_plan PRIVATE
++        ${CMAKE_SOURCE_DIR}/cpp ${CMAKE_CURRENT_SOURCE_DIR})
++    target_link_libraries(fuzz_energy_delta_plan PRIVATE bionetgen_core)
++    target_compile_options(fuzz_energy_delta_plan PRIVATE -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer)
++    target_link_options(fuzz_energy_delta_plan PRIVATE -fsanitize=fuzzer,address,undefined)
++endif()
+diff --git a/docs/energy_validation/EXPECTED_RED_CONTRACTS.md b/docs/energy_validation/EXPECTED_RED_CONTRACTS.md
+new file mode 100644
+index 0000000..e5a51a4
+--- /dev/null
++++ b/docs/energy_validation/EXPECTED_RED_CONTRACTS.md
+@@ -0,0 +1,31 @@
++# Intentional RED contracts
++
++These tests are specifications for proposed APIs and are excluded unless
++`BNG_ENABLE_FUTURE_ENERGY_CONTRACTS=ON`.
++
++They should be enabled one subsystem at a time as implementation lands.
++
++- `future_dependency_graph*`: `compile/dependency/DependencyGraph.hpp`
++- `future_energy_pattern_compiler`: generalized `EnergyPatternCompiler`
++- `future_energy_lowering_plan`: backend-neutral lowering policy
++- `future_energy_pattern_store`: versioned/orientation-safe plan cache
++- `future_energy_context_weights`: tested aggregation math
++- `future_thermodynamic_constraints`: cycle/rank/gauge analysis
++- `future_indexed_rule_family`: parametric rule-family IR
++- `future_compiled_model_cache`: concurrent immutable model cache
++- `future_ast_native_pattern_descriptor`: direct `SpeciesGraph` compilation
++- `future_reaction_build_batch`: transactional NFsim construction
++- `future_runtime_*`: generalized mapping-local/pair-factorized NFsim reactions
++- `future_compiled_blueprint`, `future_batch_nf_api`, `future_blueprint_concurrency`:
++  compile-once/many-trajectory execution
++- `future_parameter_rebinding`: parameter-safe blueprint reuse
++- `future_dynamic_energy_expression_policy`: explicit policy for dynamic energies
++- `future_energy_serialization_roundtrip`: no energy loss through compatibility writers
++- `future_direct_xml_energy_parity`: direct AST vs XML semantic parity
++- `future_compound_graph_rewrite`: energy delta of a general graph edit
++- `future_energy_factor_index`: sublinear candidate discovery
++- `future_barrier_driving_syntax`: deliberately last; parser syntax must not be enabled
++  until existing eBNGL semantics and runtime parity are complete.
++
++A RED contract becoming green is not enough to enable a feature by default; the
++promotion matrix in `docs/VALIDATION_MATRIX.md` still applies.
+diff --git a/docs/energy_validation/INTEGRATION_NOTES.md b/docs/energy_validation/INTEGRATION_NOTES.md
+new file mode 100644
+index 0000000..52e1b43
+--- /dev/null
++++ b/docs/energy_validation/INTEGRATION_NOTES.md
+@@ -0,0 +1,16 @@
++# Integration notes
++
++The suite assumes the phase-1 compiler patch (or equivalent interfaces) is present for the non-future C++ tests.
++The future contracts are OFF by default and intentionally reference APIs that are not yet guaranteed to exist.
++
++Recommended integration order:
++
++1. Apply the current compiler implementation.
++2. Copy this suite into the repository with `install_tests_into_bng3.sh`.
++3. Include `cmake/energy_tests.cmake` from `tests/cpp/CMakeLists.txt`.
++4. Build/run only label `energy` first.
++5. Implement one future subsystem.
++6. Move its `future_*.cpp` file(s) from the future target to the required target once green.
++7. Keep `BNG_NFSIM_GENERAL_ENERGY` default-off until the stochastic/oracle/performance gates pass.
++
++The suite is deliberately stricter about fallback than optimization. A false-positive fallback costs speed; a false-negative dependency or unsafe lowering changes the stochastic process.
+diff --git a/docs/energy_validation/TESTING_STRATEGY.md b/docs/energy_validation/TESTING_STRATEGY.md
+new file mode 100644
+index 0000000..ee845b0
+--- /dev/null
++++ b/docs/energy_validation/TESTING_STRATEGY.md
+@@ -0,0 +1,53 @@
++# Proposed-improvement testing strategy
++
++## 1. Separate semantic correctness from RNG identity
++
++A generalized energy backend can represent the same continuous-time Markov chain with fewer reaction classes.
++That changes how random variates are consumed. Therefore:
++
++- Require byte-identical trajectories only when reaction-class structure and draw order are unchanged.
++- Otherwise require exact local rates, total propensities, event probabilities and transformations, followed by a multi-seed distributional gate.
++
++This prevents rejecting a correct optimization merely because its internal random-number bookkeeping differs, while still requiring a stronger semantic proof than endpoint plots.
++
++## 2. Fail closed
++
++Every compiler/runtime test has a complementary fallback test. Unknown state, ambiguous same-type mapping, correlated topology, predicate overflow, malformed legacy factor or failed reverse construction must preserve correctness by selecting materialized expansion/full invalidation rather than inventing a partial optimization.
++
++## 3. Exhaust small local contexts
++
++For <=12 predicates, enumerate all 2^N context masks and compare:
++
++- delta G,
++- forward Arrhenius factor,
++- reverse Arrhenius factor,
++- mapping-local propensity,
++- pair-aggregated propensity.
++
++This is cheap and is the strongest test of the local factorization math.
++
++## 4. Property/fuzz tests
++
++- 10,000 deterministic randomized EnergyDeltaPlans per normal CTest run.
++- libFuzzer target for malformed/random condition/term combinations.
++- 2,000 randomized dependency-index cases checking that the indexed result is always a superset of a literal scan.
++- TSAN stress for compile-once cache.
++
++## 5. Model corpus
++
++The fixture manifest intentionally contains one model per topology rather than relying on a single complicated Ising model. This makes failures localizable.
++
++Add the existing `models/isingspin_energy.bngl` as the real-world state-change regression, plus Rasi/uORF only for scaling and non-energy-regression gates.
++
++## 6. Promotion thresholds
++
++Generalized backend default-on candidate only if:
++
++- all deterministic/compiler/runtime tests pass;
++- unsupported corpus remains exactly on fallback;
++- independent NFsim/BNG2 oracle cases pass;
++- 1024-seed stochastic gates pass (4096 for small finite-state models);
++- disabled overhead <=2%; non-energy overhead <=3%;
++- >=6 independent context predicates achieve >=16x reaction-class reduction;
++- >=8 predicates achieve >=4x construction speedup target;
++- ASan/UBSan clean; TSAN clean for cache/batch paths.
+diff --git a/docs/energy_validation/TEST_INVENTORY.md b/docs/energy_validation/TEST_INVENTORY.md
+new file mode 100644
+index 0000000..8a14f6a
+--- /dev/null
++++ b/docs/energy_validation/TEST_INVENTORY.md
+@@ -0,0 +1,91 @@
++# Test inventory
++
++- C++ contract files: **39**
++- C++ `TEST_CASE`s: **139**
++- Python test files: **10**
++- Python tests: **40**
++- Energy fixtures/policies: **13**
++- Validation/oracle scripts: **9**
++
++## C++ contracts
++
++- `tests/cpp/future_ast_native_pattern_descriptor.cpp` — 1 cases
++- `tests/cpp/future_barrier_driving_syntax.cpp` — 2 cases
++- `tests/cpp/future_batch_nf_api.cpp` — 1 cases
++- `tests/cpp/future_blueprint_concurrency.cpp` — 1 cases
++- `tests/cpp/future_compiled_blueprint.cpp` — 2 cases
++- `tests/cpp/future_compiled_model_cache.cpp` — 6 cases
++- `tests/cpp/future_compiled_model_determinism.cpp` — 2 cases
++- `tests/cpp/future_compound_graph_rewrite.cpp` — 2 cases
++- `tests/cpp/future_dependency_graph.cpp` — 4 cases
++- `tests/cpp/future_dependency_graph_property.cpp` — 1 cases
++- `tests/cpp/future_direct_xml_energy_parity.cpp` — 1 cases
++- `tests/cpp/future_dynamic_energy_expression_policy.cpp` — 2 cases
++- `tests/cpp/future_energy_context_evaluator.cpp` — 7 cases
++- `tests/cpp/future_energy_context_weights.cpp` — 2 cases
++- `tests/cpp/future_energy_context_weights_numeric.cpp` — 3 cases
++- `tests/cpp/future_energy_factor_index.cpp` — 3 cases
++- `tests/cpp/future_energy_feature_flag.cpp` — 2 cases
++- `tests/cpp/future_energy_lowering_plan.cpp` — 7 cases
++- `tests/cpp/future_energy_pattern_compiler.cpp` — 8 cases
++- `tests/cpp/future_energy_pattern_store.cpp` — 3 cases
++- `tests/cpp/future_energy_plan_canonicalization.cpp` — 5 cases
++- `tests/cpp/future_energy_runtime_event_weights.cpp` — 1 cases
++- `tests/cpp/future_energy_serialization_roundtrip.cpp` — 2 cases
++- `tests/cpp/future_indexed_rule_family.cpp` — 8 cases
++- `tests/cpp/future_legacy_binding_compatibility.cpp` — 3 cases
++- `tests/cpp/future_molecularity_energy.cpp` — 1 cases
++- `tests/cpp/future_parameter_rebinding.cpp` — 4 cases
++- `tests/cpp/future_reaction_build_batch.cpp` — 5 cases
++- `tests/cpp/future_runtime_invalidation.cpp` — 2 cases
++- `tests/cpp/future_runtime_model_contracts.cpp` — 6 cases
++- `tests/cpp/future_runtime_reverse_context.cpp` — 1 cases
++- `tests/cpp/future_thermodynamic_constraints.cpp` — 9 cases
++- `tests/cpp/fuzz_energy_delta_plan.cpp` — 0 cases
++- `tests/cpp/standalone_energy_delta_plan_smoke.cpp` — 0 cases
++- `tests/cpp/test_compiled_model_contracts.cpp` — 6 cases
++- `tests/cpp/test_compiled_rate_law_contracts.cpp` — 4 cases
++- `tests/cpp/test_energy_compiler_phase1.cpp` — 5 cases
++- `tests/cpp/test_energy_delta_plan_edge_cases.cpp` — 16 cases
++- `tests/cpp/test_energy_delta_plan_property.cpp` — 1 cases
++
++## Python self-tests
++
++- `tests/python/test_cmake_inventory.py` — 2 tests
++- `tests/python/test_compare_numeric_tables.py` — 5 tests
++- `tests/python/test_env_isolation.py` — 2 tests
++- `tests/python/test_exact_output_parity.py` — 2 tests
++- `tests/python/test_fixture_generator.py` — 3 tests
++- `tests/python/test_performance_gate.py` — 5 tests
++- `tests/python/test_semantic_oracle.py` — 5 tests
++- `tests/python/test_statistical_parity_metrics.py` — 12 tests
++- `tests/python/test_validation_manifest.py` — 2 tests
++- `tests/python/test_validation_policy.py` — 2 tests
++
++## Fixtures and policy
++
++- `fixtures/energy/bound_mixed_reverse.bngl`
++- `fixtures/energy/constant_binding.bngl`
++- `fixtures/energy/correlated_two_hop_fallback.bngl`
++- `fixtures/energy/mixed_reactant_state_context.bngl`
++- `fixtures/energy/no_relevant_factor.bngl`
++- `fixtures/energy/reactant0_state_context.bngl`
++- `fixtures/energy/reactant1_state_context.bngl`
++- `fixtures/energy/same_type_binding.bngl`
++- `fixtures/energy/shared_predicate_factors.bngl`
++- `fixtures/energy/state_change_local_context.bngl`
++- `fixtures/energy/symmetric_sites.bngl`
++- `fixtures/energy/validation_manifest.json`
++- `fixtures/energy/validation_policy.json`
++
++## Scripts
++
++- `scripts/__init__.py`
++- `scripts/compare_numeric_tables.py`
++- `scripts/energy_performance_gate.py`
++- `scripts/energy_semantic_oracle.py`
++- `scripts/exact_output_parity.py`
++- `scripts/generate_boolean_context_fixture.py`
++- `scripts/measure_command.py`
++- `scripts/nf_energy_statistical_parity.py`
++- `scripts/run_energy_validation.py`
+diff --git a/docs/energy_validation/VALIDATION_MATRIX.md b/docs/energy_validation/VALIDATION_MATRIX.md
+new file mode 100644
+index 0000000..6d81fa9
+--- /dev/null
++++ b/docs/energy_validation/VALIDATION_MATRIX.md
+@@ -0,0 +1,64 @@
++# Energy/compiler validation matrix
++
++| ID | Layer | Contract | Gate |
++|---|---|---|---|
++| E001 | EnergyDeltaPlan | conjunction masks compute literal ΔG | exact, 1e-12 |
++| E002 | EnergyDeltaPlan | invalid masks rejected | exact |
++| E003 | EnergyDeltaPlan | >63 predicates fail closed | exact |
++| E004 | EnergyDeltaPlan | forward/reverse Arrhenius factors satisfy ratio | exact, 1e-12 |
++| E005 | EnergyDeltaPlan | lookup table equals direct evaluation | exhaustive |
++| E006 | Energy compiler | shared predicates deduplicate | exact |
++| E007 | Energy compiler | context on reactant 1 preserved | exact |
++| E008 | Energy compiler | mixed-reactant context preserved | exact |
++| E009 | Energy compiler | state predicates preserved | exact |
++| E010 | Energy compiler | one-hop partner-state preserved | exact |
++| E011 | Energy compiler | correlated/ambiguous topology falls back | exact |
++| E012 | Energy compiler | same-type reactants do not alias orientation | exact |
++| E013 | Compatibility | old EnergyBindingContext only for representable occupancy predicates | exact |
++| E014 | Legacy bridge | malformed factor becomes opaque/global fallback | exact |
++| D001 | Dependency | state edit invalidates only matching factor/rules | exact |
++| D002 | Dependency | bond edit invalidates both endpoint dependencies | exact |
++| D003 | Dependency | add/delete molecule conservatively invalidates type-dependent factors | exact |
++| D004 | Dependency | unresolved AST refs cause conservative global invalidation | exact |
++| D005 | Dependency | AST-native descriptor equals source pattern meaning | exact |
++| D006 | Dependency | no normal-path reparsing of BNGL strings | structural |
++| C001 | Cache | repeated compile returns same immutable object | exact |
++| C002 | Cache | A+B and B+A plans remain orientation-sensitive | exact |
++| C003 | Cache | energy-store version bump invalidates plans | exact |
++| C004 | Cache | concurrent lookup compiles once | exact/race-free |
++| L001 | Lowering | constant ΔG -> constant backend | exact |
++| L002 | Lowering | one-reactant predicates -> mapping-local backend | exact |
++| L003 | Lowering | two-reactant predicates -> pair-factorized backend | exact |
++| L004 | Lowering | unsupported topology -> materialized fallback | exact |
++| L005 | Lowering | opt-in flag does not alter unsupported/default behavior | exact |
++| R001 | Runtime | staged reversible build commits atomically | exact |
++| R002 | Runtime | failed reverse build leaves system unchanged | exact |
++| R003 | Runtime | pair aggregation propensity equals literal pair enumeration | exhaustive |
++| R004 | Runtime | mapping-local weighted propensity equals literal mapping sum | exhaustive |
++| R005 | Runtime | initial propensity generalized == materialized | 1e-12 |
++| R006 | Runtime | selected physical event weights equal materialized classes | 1e-12 |
++| R007 | Runtime | molecularity/null-event behavior preserved | exact |
++| R008 | Runtime | symmetric sites preserve multiplicity | exact |
++| R009 | Runtime | same-type reactants remain safe | exact/fallback |
++| T001 | Thermodynamics | barrier shift changes kinetics but not equilibrium ratio | 1e-12 |
++| T002 | Thermodynamics | driving work changes cycle affinity | 1e-12 |
++| T003 | Thermodynamics | tree has zero cycle rank | exact |
++| T004 | Thermodynamics | one independent loop has cycle rank 1 | exact |
++| T005 | Thermodynamics | gauge dimension equals connected components | exact |
++| I001 | Indexed IR | affine index mapping | exact |
++| I002 | Indexed IR | boundary indices are correct | exact |
++| I003 | Indexed IR | affected-index query is local | exact |
++| I004 | Indexed IR | invalid/out-of-domain index rejected | exact |
++| S001 | Stochastic | endpoint mean parity | <=5 pooled SE |
++| S002 | Stochastic | endpoint variance parity | ratio 0.80–1.25 |
++| S003 | Stochastic | categorical/discrete TV distance | <=0.075 |
++| S004 | Stochastic | unchanged RNG structure -> byte parity | exact SHA |
++| P001 | Performance | disabled feature overhead | <=2% median |
++| P002 | Performance | generalized non-energy overhead | <=3% median |
++| P003 | Performance | >=6 predicates reduce class count >=16x | required |
++| P004 | Performance | >=8 predicates construction speedup >=4x | target gate |
++| P005 | Performance | no materialized exponential memory growth | monotonic bound |
++| X001 | Robustness | ASan/UBSan on energy corpus | zero findings |
++| X002 | Robustness | randomized mask oracle | 10k generated cases |
++| X003 | Robustness | randomized pattern compiler oracle | 1k small graphs |
++| X004 | Robustness | cache TSAN/concurrency stress | zero races |
+diff --git a/scripts/__init__.py b/scripts/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/scripts/compare_numeric_tables.py b/scripts/compare_numeric_tables.py
+new file mode 100755
+index 0000000..bf3ea46
+--- /dev/null
++++ b/scripts/compare_numeric_tables.py
+@@ -0,0 +1,47 @@
++#!/usr/bin/env python3
++"""Compare BNG/NFsim-style whitespace or CSV numeric tables by named column."""
++from __future__ import annotations
++import argparse, csv, json, math, re
++from pathlib import Path
++
++
++def load_table(path: Path) -> tuple[list[str], list[list[float]]]:
++    lines=[ln.strip() for ln in path.read_text(encoding='utf-8').splitlines() if ln.strip() and not ln.lstrip().startswith('#')]
++    if not lines: raise ValueError(f'{path}: empty table')
++    comma=',' in lines[0]
++    split=(lambda s:[x.strip() for x in s.split(',')]) if comma else (lambda s:re.split(r'\s+',s.strip()))
++    header=split(lines[0])
++    rows=[]
++    for i,line in enumerate(lines[1:],2):
++        fields=split(line)
++        if len(fields)!=len(header): raise ValueError(f'{path}:{i}: expected {len(header)} columns, got {len(fields)}')
++        rows.append([float(x) for x in fields])
++    return header,rows
++
++
++def compare(a:Path,b:Path,atol:float=0.0,rtol:float=0.0)->dict:
++    ha,ra=load_table(a);hb,rb=load_table(b)
++    failures=[]
++    if ha!=hb: failures.append({'kind':'header','a':ha,'b':hb}); return {'passed':False,'failures':failures}
++    if len(ra)!=len(rb): failures.append({'kind':'row_count','a':len(ra),'b':len(rb)}); return {'passed':False,'failures':failures}
++    max_abs=0.0;max_rel=0.0
++    for i,(xa,xb) in enumerate(zip(ra,rb)):
++        for j,(va,vb) in enumerate(zip(xa,xb)):
++            if not math.isfinite(va) or not math.isfinite(vb):
++                if va == vb:
++                    continue
++                failures.append({'kind':'nonfinite','row':i,'column':ha[j],'a':va,'b':vb})
++                continue
++            diff=abs(va-vb); scale=max(abs(va),abs(vb)); rel=diff/scale if scale else 0.0
++            max_abs=max(max_abs,diff);max_rel=max(max_rel,rel)
++            if diff>atol+rtol*scale:
++                failures.append({'kind':'value','row':i,'column':ha[j],'a':va,'b':vb,'abs':diff,'rel':rel})
++                if len(failures)>=100: break
++        if len(failures)>=100: break
++    return {'passed':not failures,'rows':len(ra),'columns':ha,'max_abs':max_abs,'max_rel':max_rel,'failures':failures}
++
++
++def main()->int:
++    p=argparse.ArgumentParser();p.add_argument('a',type=Path);p.add_argument('b',type=Path);p.add_argument('--atol',type=float,default=0);p.add_argument('--rtol',type=float,default=0)
++    x=p.parse_args();r=compare(x.a,x.b,x.atol,x.rtol);print(json.dumps(r,indent=2));return 0 if r['passed'] else 1
++if __name__=='__main__':raise SystemExit(main())
+diff --git a/scripts/energy_performance_gate.py b/scripts/energy_performance_gate.py
+new file mode 100755
+index 0000000..a4c9bbe
+--- /dev/null
++++ b/scripts/energy_performance_gate.py
+@@ -0,0 +1,52 @@
++#!/usr/bin/env python3
++"""Machine-readable performance promotion gate.
++
++Input JSONs are expected to contain medians for identical benchmark cases.
++No timing is done here; keeping measurement and policy separate makes the gate
++reusable across CI hardware and local Rasi/uORF benchmark runners.
++"""
++from __future__ import annotations
++import argparse, json, math
++from pathlib import Path
++
++
++def evaluate(base: dict, candidate: dict) -> dict:
++    failures = []
++    for label, value in [
++        ("baseline disabled", base["disabled_median_s"]),
++        ("baseline nonenergy", base["nonenergy_median_s"]),
++        ("baseline construction", base["energy_construction_median_s"]),
++        ("candidate disabled", candidate["disabled_median_s"]),
++        ("candidate nonenergy", candidate["nonenergy_median_s"]),
++        ("candidate construction", candidate["energy_construction_median_s"]),
++    ]:
++        if not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
++            raise ValueError(f"{label} timing must be finite and positive")
++    disabled_ratio = candidate["disabled_median_s"] / base["disabled_median_s"]
++    nonenergy_ratio = candidate["nonenergy_median_s"] / base["nonenergy_median_s"]
++    class_reduction = base["energy_reaction_classes"] / max(candidate["energy_reaction_classes"], 1)
++    construction_speedup = base["energy_construction_median_s"] / candidate["energy_construction_median_s"]
++    if disabled_ratio > 1.02: failures.append(f"disabled overhead {disabled_ratio:.4f} > 1.02")
++    if nonenergy_ratio > 1.03: failures.append(f"non-energy overhead {nonenergy_ratio:.4f} > 1.03")
++    if int(base.get("energy_predicates", 0)) >= 6 and class_reduction < 16.0:
++        failures.append(f"class reduction {class_reduction:.2f}x < 16x")
++    if int(base.get("energy_predicates", 0)) >= 8 and construction_speedup < 4.0:
++        failures.append(f"construction speedup {construction_speedup:.2f}x < 4x")
++    return {
++        "passed": not failures,
++        "disabled_ratio": disabled_ratio,
++        "nonenergy_ratio": nonenergy_ratio,
++        "class_reduction": class_reduction,
++        "construction_speedup": construction_speedup,
++        "failures": failures,
++    }
++
++
++def main() -> int:
++    p=argparse.ArgumentParser(); p.add_argument("baseline",type=Path); p.add_argument("candidate",type=Path)
++    args=p.parse_args()
++    report=evaluate(json.loads(args.baseline.read_text()), json.loads(args.candidate.read_text()))
++    print(json.dumps(report,indent=2,sort_keys=True))
++    return 0 if report["passed"] else 1
++
++if __name__ == "__main__": raise SystemExit(main())
+diff --git a/scripts/energy_semantic_oracle.py b/scripts/energy_semantic_oracle.py
+new file mode 100755
+index 0000000..cc765cd
+--- /dev/null
++++ b/scripts/energy_semantic_oracle.py
+@@ -0,0 +1,51 @@
++#!/usr/bin/env python3
++"""Backend-independent literal oracle for local energy plans."""
++from __future__ import annotations
++import argparse, json, math
++from pathlib import Path
++
++
++def delta_g(base: float, mask: int, terms: list[dict]) -> float:
++    value = float(base)
++    for term in terms:
++        req = int(term["mask"])
++        if req <= 0:
++            raise ValueError("term mask must be positive")
++        if mask & req == req:
++            value += float(term["energy"])
++    return value
++
++
++def arrhenius(delta: float, phi: float, rt: float, forward: bool) -> float:
++    if not math.isfinite(rt) or rt <= 0:
++        raise ValueError("RT must be finite and positive")
++    slope = phi if forward else phi - 1.0
++    return math.exp(-slope * delta / rt)
++
++
++def enumerate_plan(case: dict) -> list[dict]:
++    n = int(case["condition_count"])
++    if n < 0 or n > 20:
++        raise ValueError("oracle enumeration capped at 20 conditions")
++    rows = []
++    for mask in range(1 << n):
++        dg = delta_g(case.get("base", 0.0), mask, case.get("terms", []))
++        rows.append({
++            "mask": mask,
++            "delta_g": dg,
++            "forward_factor": arrhenius(dg, case["phi"], case["RT"], True),
++            "reverse_factor": arrhenius(dg, case["phi"], case["RT"], False),
++        })
++    return rows
++
++
++def main() -> int:
++    p = argparse.ArgumentParser()
++    p.add_argument("case", type=Path)
++    args = p.parse_args()
++    case = json.loads(args.case.read_text(encoding="utf-8"))
++    print(json.dumps(enumerate_plan(case), indent=2))
++    return 0
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/scripts/exact_output_parity.py b/scripts/exact_output_parity.py
+new file mode 100755
+index 0000000..0dfa92d
+--- /dev/null
++++ b/scripts/exact_output_parity.py
+@@ -0,0 +1,24 @@
++#!/usr/bin/env python3
++"""Exact file/trajectory parity gate for cases expected to preserve RNG structure."""
++from __future__ import annotations
++import argparse, hashlib, json
++from pathlib import Path
++
++
++def sha256(path: Path) -> str:
++    h=hashlib.sha256()
++    with path.open('rb') as f:
++        for chunk in iter(lambda:f.read(1<<20),b''): h.update(chunk)
++    return h.hexdigest()
++
++
++def compare(a: Path,b: Path)->dict:
++    ha,hb=sha256(a),sha256(b)
++    return {"passed":ha==hb,"a":str(a),"b":str(b),"sha256_a":ha,"sha256_b":hb,
++            "size_a":a.stat().st_size,"size_b":b.stat().st_size}
++
++
++def main()->int:
++    p=argparse.ArgumentParser();p.add_argument('a',type=Path);p.add_argument('b',type=Path);args=p.parse_args()
++    r=compare(args.a,args.b);print(json.dumps(r,indent=2));return 0 if r['passed'] else 1
++if __name__=='__main__':raise SystemExit(main())
+diff --git a/scripts/generate_boolean_context_fixture.py b/scripts/generate_boolean_context_fixture.py
+new file mode 100755
+index 0000000..0ca248f
+--- /dev/null
++++ b/scripts/generate_boolean_context_fixture.py
+@@ -0,0 +1,53 @@
++#!/usr/bin/env python3
++"""Generate a binding-energy model with N independent occupancy predicates.
++
++This is designed to expose exponential materialized expansion. A generalized
++factorized implementation should keep the reaction-class count O(1) in N.
++"""
++from __future__ import annotations
++import argparse
++from pathlib import Path
++
++
++def generate(n: int) -> str:
++    if n < 1 or n > 40:
++        raise ValueError("n must be in [1,40]")
++    a_sites = ["x"] + [f"c{i}" for i in range(n)]
++    params = "\n".join(f"  G{i} {0.1*(i+1):.6g}" for i in range(n))
++    moltypes = [f"  A({','.join(a_sites)})", "  B(y)"] + [f"  C{i}(z)" for i in range(n)]
++    # Seed A already carries all context bonds, so all context predicates are present.
++    a_seed_sites = ["x"] + [f"c{i}!{i+2}" for i in range(n)]
++    seed_complex = [f"A({','.join(a_seed_sites)})"] + [f"C{i}(z!{i+2})" for i in range(n)]
++    energy = []
++    for i in range(n):
++        energy.append(f"  A(x!1,c{i}!2).B(y!1).C{i}(z!2) G{i}")
++    return f'''begin model
++begin parameters
++  phi 0.5
++  Ea 1
++{params}
++end parameters
++begin molecule types
++{chr(10).join(moltypes)}
++end molecule types
++begin seed species
++  {'.'.join(seed_complex)} 100
++  B(y) 100
++end seed species
++begin energy patterns
++{chr(10).join(energy)}
++end energy patterns
++begin observables
++  Molecules Bound A(x!1).B(y!1)
++end observables
++begin reaction rules
++  A(x) + B(y) <-> A(x!1).B(y!1) Arrhenius(phi,Ea)
++end reaction rules
++end model
++'''
++
++
++def main() -> int:
++    p=argparse.ArgumentParser(); p.add_argument("n",type=int); p.add_argument("output",type=Path)
++    a=p.parse_args(); a.output.write_text(generate(a.n),encoding="utf-8"); return 0
++if __name__ == "__main__": raise SystemExit(main())
+diff --git a/scripts/measure_command.py b/scripts/measure_command.py
+new file mode 100755
+index 0000000..d6c1831
+--- /dev/null
++++ b/scripts/measure_command.py
+@@ -0,0 +1,21 @@
++#!/usr/bin/env python3
++"""Repeat a command and emit median wall time + child RSS for performance gates."""
++from __future__ import annotations
++import argparse,json,resource,statistics,subprocess,time
++
++
++def measure(cmd:list[str],repeats:int)->dict:
++    walls=[];rss=[]
++    for _ in range(repeats):
++        before=resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
++        t=time.perf_counter();p=subprocess.run(cmd,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,text=True);walls.append(time.perf_counter()-t)
++        after=resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss;rss.append(max(0,after-before))
++        if p.returncode: raise RuntimeError(f'command failed ({p.returncode}): {p.stderr}')
++    return {'command':cmd,'repeats':repeats,'wall_s':walls,'median_wall_s':statistics.median(walls),'rss_delta_platform_units':rss,'max_rss_delta_platform_units':max(rss)}
++
++
++def main()->int:
++    p=argparse.ArgumentParser();p.add_argument('--repeats',type=int,default=5);p.add_argument('cmd',nargs=argparse.REMAINDER);a=p.parse_args();
++    if not a.cmd: p.error('missing command')
++    print(json.dumps(measure(a.cmd,a.repeats),indent=2));return 0
++if __name__=='__main__':raise SystemExit(main())
+diff --git a/scripts/nf_energy_statistical_parity.py b/scripts/nf_energy_statistical_parity.py
+new file mode 100755
+index 0000000..180476d
+--- /dev/null
++++ b/scripts/nf_energy_statistical_parity.py
+@@ -0,0 +1,260 @@
++#!/usr/bin/env python3
++"""Statistical equivalence gate for legacy vs generalized NF energy lowering.
++
++The script runs the same BNGL model under identical seeds with the generalized
++energy backend disabled/enabled. It does NOT require byte-identical trajectories
++when lowering changes reaction aggregation/RNG consumption. Instead it gates
++observable distributions at every sampled time point.
++"""
++from __future__ import annotations
++
++import argparse
++import contextlib
++import json
++import math
++import os
++from dataclasses import asdict, dataclass
++from pathlib import Path
++from typing import Iterable, Mapping, Sequence
++
++import numpy as np
++
++
++@dataclass(frozen=True)
++class Thresholds:
++    mean_z: float = 5.0
++    variance_ratio_low: float = 0.80
++    variance_ratio_high: float = 1.25
++    tv: float = 0.075
++    ks: float = 0.075
++    max_tv_support: int = 32
++
++
++@dataclass
++class PointMetrics:
++    observable: str
++    time_index: int
++    time: float
++    n: int
++    legacy_mean: float
++    general_mean: float
++    pooled_se_z: float
++    paired_se_z: float
++    variance_ratio: float
++    tv: float | None
++    ks: float
++    support_size: int
++    shape_metric: str
++    passed: bool
++
++
++@contextlib.contextmanager
++def generalized_energy(enabled: bool):
++    key = "BNG_NFSIM_GENERAL_ENERGY"
++    old = os.environ.get(key)
++    try:
++        if enabled:
++            os.environ[key] = "1"
++        else:
++            os.environ.pop(key, None)
++        yield
++    finally:
++        if old is None:
++            os.environ.pop(key, None)
++        else:
++            os.environ[key] = old
++
++
++def _variance_ratio(a: np.ndarray, b: np.ndarray) -> float:
++    va = float(np.var(a, ddof=1)) if len(a) > 1 else 0.0
++    vb = float(np.var(b, ddof=1)) if len(b) > 1 else 0.0
++    if va == 0.0 and vb == 0.0:
++        return 1.0
++    if va == 0.0:
++        return math.inf
++    return vb / va
++
++
++def _pooled_se_z(a: np.ndarray, b: np.ndarray) -> float:
++    if len(a) != len(b) or len(a) < 2:
++        return math.inf
++    va = float(np.var(a, ddof=1))
++    vb = float(np.var(b, ddof=1))
++    se = math.sqrt(va / len(a) + vb / len(b))
++    diff = abs(float(np.mean(a) - np.mean(b)))
++    if se == 0.0:
++        return 0.0 if diff == 0.0 else math.inf
++    return diff / se
++
++
++def _paired_se_z(a: np.ndarray, b: np.ndarray) -> float:
++    if len(a) != len(b) or len(a) < 2:
++        return math.inf
++    d = b - a
++    sd = float(np.std(d, ddof=1))
++    diff = abs(float(np.mean(d)))
++    if sd == 0.0:
++        return 0.0 if diff == 0.0 else math.inf
++    return diff / (sd / math.sqrt(len(d)))
++
++
++def _empirical_tv(a: np.ndarray, b: np.ndarray) -> float:
++    # Appropriate for the count-valued NFsim observables used by this gate.
++    if len(a) == 0 or len(b) == 0:
++        return math.inf
++    values = np.union1d(a, b)
++    pa = np.array([(a == x).mean() for x in values], dtype=float)
++    pb = np.array([(b == x).mean() for x in values], dtype=float)
++    return float(0.5 * np.abs(pa - pb).sum())
++
++
++
++def _ks_distance(a: np.ndarray, b: np.ndarray) -> float:
++    if len(a) == 0 or len(b) == 0:
++        return math.inf
++    values = np.union1d(a, b)
++    sa = np.sort(a)
++    sb = np.sort(b)
++    cdfa = np.searchsorted(sa, values, side="right") / len(sa)
++    cdfb = np.searchsorted(sb, values, side="right") / len(sb)
++    return float(np.max(np.abs(cdfa - cdfb)))
++
++def compare_point(
++    legacy: Sequence[float],
++    general: Sequence[float],
++    *,
++    observable: str = "obs",
++    time_index: int = 0,
++    time: float = 0.0,
++    thresholds: Thresholds = Thresholds(),
++) -> PointMetrics:
++    a = np.asarray(legacy, dtype=float)
++    b = np.asarray(general, dtype=float)
++    if a.shape != b.shape or a.ndim != 1:
++        raise ValueError("legacy/general samples must be equal-length 1D arrays")
++    if len(a) < 2:
++        raise ValueError("at least two seeds are required for a statistical parity point")
++    if not np.isfinite(a).all() or not np.isfinite(b).all():
++        raise ValueError("statistical parity samples must be finite")
++    z = _pooled_se_z(a, b)
++    pz = _paired_se_z(a, b)
++    vr = _variance_ratio(a, b)
++    support_size = int(np.union1d(a, b).size)
++    ks = _ks_distance(a, b)
++    if support_size <= thresholds.max_tv_support:
++        tv = _empirical_tv(a, b)
++        shape_ok = tv <= thresholds.tv
++        shape_metric = "tv"
++    else:
++        tv = None
++        shape_ok = ks <= thresholds.ks
++        shape_metric = "ks"
++    passed = (
++        z <= thresholds.mean_z
++        and thresholds.variance_ratio_low <= vr <= thresholds.variance_ratio_high
++        and shape_ok
++    )
++    return PointMetrics(
++        observable=observable,
++        time_index=time_index,
++        time=float(time),
++        n=len(a),
++        legacy_mean=float(a.mean()),
++        general_mean=float(b.mean()),
++        pooled_se_z=z,
++        paired_se_z=pz,
++        variance_ratio=vr,
++        tv=tv,
++        ks=ks,
++        support_size=support_size,
++        shape_metric=shape_metric,
++        passed=passed,
++    )
++
++
++def compare_trajectories(
++    legacy: Mapping[str, np.ndarray],
++    general: Mapping[str, np.ndarray],
++    times: Sequence[float],
++    thresholds: Thresholds = Thresholds(),
++) -> list[PointMetrics]:
++    if set(legacy) != set(general):
++        raise ValueError("observable sets differ")
++    metrics: list[PointMetrics] = []
++    for name in sorted(legacy):
++        a = np.asarray(legacy[name], dtype=float)
++        b = np.asarray(general[name], dtype=float)
++        if a.shape != b.shape or a.ndim != 2:
++            raise ValueError(f"{name}: expected equal [seed,time] matrices")
++        if a.shape[1] != len(times):
++            raise ValueError(f"{name}: time dimension mismatch")
++        for j, t in enumerate(times):
++            metrics.append(compare_point(
++                a[:, j], b[:, j], observable=name, time_index=j, time=float(t),
++                thresholds=thresholds))
++    return metrics
++
++
++def _run_model(model_path: Path, seeds: Iterable[int], t_end: float, n_steps: int, enabled: bool):
++    import bionetgen
++
++    matrices: dict[str, list[np.ndarray]] = {}
++    times = None
++    with generalized_energy(enabled):
++        for seed in seeds:
++            model = bionetgen.load(model_path)
++            result = model.simulate(method="nf", t_end=t_end, n_steps=n_steps, seed=int(seed))
++            current_times = np.asarray(result.time, dtype=float)
++            if times is None:
++                times = current_times
++            elif not np.array_equal(times, current_times):
++                raise RuntimeError("time grids differ across seeds")
++            for name, values in result.observables.items():
++                matrices.setdefault(name, []).append(np.asarray(values, dtype=float))
++    return np.asarray(times), {k: np.stack(v, axis=0) for k, v in matrices.items()}
++
++
++def run_gate(model_path: Path, seeds: Sequence[int], t_end: float, n_steps: int,
++             thresholds: Thresholds = Thresholds()) -> dict:
++    times0, legacy = _run_model(model_path, seeds, t_end, n_steps, False)
++    times1, general = _run_model(model_path, seeds, t_end, n_steps, True)
++    if not np.array_equal(times0, times1):
++        raise RuntimeError("legacy/general time grids differ")
++    metrics = compare_trajectories(legacy, general, times0, thresholds)
++    failures = [m for m in metrics if not m.passed]
++    return {
++        "model": str(model_path),
++        "seed_count": len(seeds),
++        "thresholds": asdict(thresholds),
++        "passed": not failures,
++        "failure_count": len(failures),
++        "points": [asdict(m) for m in metrics],
++    }
++
++
++def main() -> int:
++    p = argparse.ArgumentParser()
++    p.add_argument("model", type=Path)
++    p.add_argument("--seeds", type=int, default=1024, help="Use seeds 1..N")
++    p.add_argument("--t-end", type=float, default=20.0)
++    p.add_argument("--n-steps", type=int, default=20)
++    p.add_argument("--mean-z", type=float, default=5.0)
++    p.add_argument("--variance-low", type=float, default=0.80)
++    p.add_argument("--variance-high", type=float, default=1.25)
++    p.add_argument("--tv", type=float, default=0.075)
++    p.add_argument("--ks", type=float, default=0.075)
++    p.add_argument("--max-tv-support", type=int, default=32)
++    p.add_argument("--json", type=Path)
++    args = p.parse_args()
++
++    thresholds = Thresholds(args.mean_z, args.variance_low, args.variance_high, args.tv, args.ks, args.max_tv_support)
++    report = run_gate(args.model, list(range(1, args.seeds + 1)), args.t_end, args.n_steps, thresholds)
++    text = json.dumps(report, indent=2, sort_keys=True)
++    if args.json:
++        args.json.write_text(text + "\n", encoding="utf-8")
++    print(text)
++    return 0 if report["passed"] else 1
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/scripts/run_energy_validation.py b/scripts/run_energy_validation.py
+new file mode 100755
+index 0000000..9f7b558
+--- /dev/null
++++ b/scripts/run_energy_validation.py
+@@ -0,0 +1,25 @@
++#!/usr/bin/env python3
++"""Small orchestration wrapper for local/CI energy validation."""
++from __future__ import annotations
++import argparse, json, subprocess, sys
++from pathlib import Path
++
++
++def run(cmd:list[str])->dict:
++    p=subprocess.run(cmd,text=True,capture_output=True)
++    return {"command":cmd,"returncode":p.returncode,"stdout":p.stdout,"stderr":p.stderr,"passed":p.returncode==0}
++
++
++def main()->int:
++    ap=argparse.ArgumentParser();ap.add_argument('--build',type=Path,required=True);ap.add_argument('--source',type=Path,default=Path('.'))
++    ap.add_argument('--future',action='store_true');ap.add_argument('--python-only',action='store_true');args=ap.parse_args()
++    results=[]
++    if not args.python_only:
++        results.append(run(['ctest','--test-dir',str(args.build),'--output-on-failure','-L','energy']))
++        if args.future:
++            results.append(run(['ctest','--test-dir',str(args.build),'--output-on-failure','-L','energy-future']))
++    results.append(run([sys.executable,'-m','pytest','-q',str(args.source/'tests/python')]))
++    report={"passed":all(r['passed'] for r in results),"steps":results}
++    print(json.dumps(report,indent=2))
++    return 0 if report['passed'] else 1
++if __name__=='__main__':raise SystemExit(main())
+diff --git a/tests/cpp/energy_test_helpers.hpp b/tests/cpp/energy_test_helpers.hpp
+new file mode 100644
+index 0000000..15a6499
+--- /dev/null
++++ b/tests/cpp/energy_test_helpers.hpp
+@@ -0,0 +1,60 @@
++#pragma once
++
++#include <algorithm>
++#include <cmath>
++#include <cstdint>
++#include <functional>
++#include <limits>
++#include <numeric>
++#include <random>
++#include <string>
++#include <utility>
++#include <vector>
++
++namespace bng3_test {
++
++inline bool nearly_equal(double a, double b, double atol = 1e-12, double rtol = 1e-12) {
++    if (std::isnan(a) || std::isnan(b)) return false;
++    if (std::isinf(a) || std::isinf(b)) return a == b;
++    const double scale = std::max(std::fabs(a), std::fabs(b));
++    return std::fabs(a - b) <= atol + rtol * scale;
++}
++
++inline double literal_delta_g(
++    double base,
++    std::uint64_t mask,
++    const std::vector<std::pair<double, std::uint64_t>>& terms) {
++    double value = base;
++    for (const auto& term : terms) {
++        if ((mask & term.second) == term.second) value += term.first;
++    }
++    return value;
++}
++
++inline double arrhenius_factor(double delta_g, double phi, double rt, bool forward) {
++    const double slope = forward ? phi : (phi - 1.0);
++    return std::exp(-slope * delta_g / rt);
++}
++
++inline std::vector<std::uint64_t> all_masks(std::size_t n) {
++    std::vector<std::uint64_t> masks;
++    const std::uint64_t total = std::uint64_t{1} << n;
++    masks.reserve(static_cast<std::size_t>(total));
++    for (std::uint64_t mask = 0; mask < total; ++mask) masks.push_back(mask);
++    return masks;
++}
++
++inline std::mt19937_64 deterministic_rng() {
++    return std::mt19937_64(0xB1A3E5ULL);
++}
++
++inline double total_variation_distance(
++    const std::vector<double>& p,
++    const std::vector<double>& q) {
++    if (p.size() != q.size()) return std::numeric_limits<double>::infinity();
++    double sum = 0.0;
++    for (std::size_t i = 0; i < p.size(); ++i) sum += std::fabs(p[i] - q[i]);
++    return 0.5 * sum;
++}
++
++} // namespace bng3_test
+diff --git a/tests/cpp/future_ast_native_pattern_descriptor.cpp b/tests/cpp/future_ast_native_pattern_descriptor.cpp
+new file mode 100644
+index 0000000..71fc0c3
+--- /dev/null
++++ b/tests/cpp/future_ast_native_pattern_descriptor.cpp
+@@ -0,0 +1,29 @@
++// RED CONTRACT: canonical AST graph must be the primary dependency source.
++#include <catch2/catch_test_macros.hpp>
++#include "compile/PatternDescriptor.hpp"
++#include "parser/BNGAstVisitor.hpp"
++
++TEST_CASE("PatternDescriptor is constructed from SpeciesGraph without reparsing source text") {
++    auto model = bng::parser::parseModel(R"BNG(
++begin molecule types
++ A(x~U~P,y)
++ B(z)
++end molecule types
++begin seed species
++ A(x~U,y) 1
++ B(z) 1
++end seed species
++begin reaction rules
++ r: A(x~U,y) + B(z) -> A(x~P,y!1).B(z!1) 1
++end reaction rules
++)BNG");
++    REQUIRE(model);
++    const auto& rule = model->getReactionRules().all().front();
++    REQUIRE_FALSE(rule.getReactantPatterns().empty());
++    const auto descriptor = bng::compile::PatternDescriptor::fromSpeciesGraph(
++        rule.getReactantPatterns().front());
++    CHECK(descriptor.moleculeCount() == 1);
++    CHECK(descriptor.hasSite("A","x"));
++    CHECK(descriptor.hasSite("A","y"));
++    CHECK(descriptor.stateConstraint("A","x") == "U");
++}
+diff --git a/tests/cpp/future_barrier_driving_syntax.cpp b/tests/cpp/future_barrier_driving_syntax.cpp
+new file mode 100644
+index 0000000..1f62b50
+--- /dev/null
++++ b/tests/cpp/future_barrier_driving_syntax.cpp
+@@ -0,0 +1,40 @@
++// RED CONTRACT: parser/API semantics for future thermodynamic language extensions.
++// Keep disabled until syntax is deliberately chosen and documented.
++#include <catch2/catch_test_macros.hpp>
++#include "parser/BNGAstVisitor.hpp"
++
++TEST_CASE("barrier pattern parses as transition-state contribution, not state free energy") {
++    auto model = bng::parser::parseModel(R"BNG(
++begin parameters
++ Gbar 2
++end parameters
++begin molecule types
++ A(s~U~P)
++end molecule types
++begin barrier patterns
++ A(s~U) -> A(s~P) Gbar
++end barrier patterns
++end model
++)BNG");
++    REQUIRE(model);
++    REQUIRE(model->getBarrierPatterns().size() == 1);
++    CHECK(model->getBarrierPatterns()[0].expression().toString() == "Gbar");
++}
++
++TEST_CASE("driving reservoir annotates reversible rule with signed chemical work") {
++    auto model = bng::parser::parseModel(R"BNG(
++begin parameters
++ muATP 20
++end parameters
++begin molecule types
++ A(s~U~P)
++end molecule types
++begin reaction rules
++ A(s~U) <-> A(s~P) Arrhenius(0.5,1) driven_by(muATP)
++end reaction rules
++end model
++)BNG");
++    REQUIRE(model);
++    REQUIRE(model->getReactionRules().size() == 1);
++    CHECK(model->getReactionRules()[0].drivingWorkExpression().toString() == "muATP");
++}
+diff --git a/tests/cpp/future_batch_nf_api.cpp b/tests/cpp/future_batch_nf_api.cpp
+new file mode 100644
+index 0000000..010ed2d
+--- /dev/null
++++ b/tests/cpp/future_batch_nf_api.cpp
+@@ -0,0 +1,30 @@
++// RED CONTRACT: batch trajectory API should be equivalent to repeated scalar NF calls.
++#include <catch2/catch_test_macros.hpp>
++#include "bindings/NfBatchRunner.hpp"
++#include "parser/BNGAstVisitor.hpp"
++
++TEST_CASE("batched independent trajectories equal scalar calls for each seed") {
++    auto model = bng::parser::parseModel(R"BNG(
++begin molecule types
++ A(x)
++end molecule types
++begin seed species
++ A(x) 100
++end seed species
++begin observables
++ Molecules A_total A()
++end observables
++begin reaction rules
++ A(x)->0 0.1
++end reaction rules
++)BNG");
++    REQUIRE(model);
++    const std::vector<unsigned long> seeds = {1,42,2026,424242};
++    auto batch = bng::runtime::simulateNfBatch(*model, 10.0, 10, seeds);
++    REQUIRE(batch.size() == seeds.size());
++    for (std::size_t i=0;i<seeds.size();++i) {
++        auto scalar = bng::runtime::simulateNf(*model,10.0,10,seeds[i]);
++        CHECK(batch[i].time == scalar.time);
++        CHECK(batch[i].observables == scalar.observables);
++    }
++}
+diff --git a/tests/cpp/future_blueprint_concurrency.cpp b/tests/cpp/future_blueprint_concurrency.cpp
+new file mode 100644
+index 0000000..baf288e
+--- /dev/null
++++ b/tests/cpp/future_blueprint_concurrency.cpp
+@@ -0,0 +1,30 @@
++// RED CONTRACT: immutable blueprint + per-trajectory mutable state must be thread-safe.
++#include <future>
++#include <vector>
++#include <catch2/catch_test_macros.hpp>
++#include "compile/CompiledNfBlueprint.hpp"
++#include "parser/BNGAstVisitor.hpp"
++
++TEST_CASE("concurrent trajectory instantiation has no shared mutable simulation state") {
++    auto model=bng::parser::parseModel(R"BNG(
++begin molecule types
++ A(x)
++end molecule types
++begin seed species
++ A(x) 1000
++end seed species
++begin reaction rules
++ A(x)->0 0.1
++end reaction rules
++)BNG");
++    REQUIRE(model);
++    auto bp=bng::compile::CompiledNfBlueprint::compile(*model);
++    std::vector<std::future<int>> jobs;
++    for (int seed=1;seed<=16;++seed) jobs.push_back(std::async(std::launch::async,[&,seed]{
++        auto s=bp.instantiate(seed); s->stepTo(10.0,true); return s->getGlobalEventCounter();
++    }));
++    std::vector<int> concurrent; for(auto& j:jobs) concurrent.push_back(j.get());
++    std::vector<int> serial;
++    for (int seed=1;seed<=16;++seed) { auto s=bp.instantiate(seed); s->stepTo(10.0,true); serial.push_back(s->getGlobalEventCounter()); }
++    CHECK(concurrent==serial);
++}
+diff --git a/tests/cpp/future_compiled_blueprint.cpp b/tests/cpp/future_compiled_blueprint.cpp
+new file mode 100644
+index 0000000..bd40c33
+--- /dev/null
++++ b/tests/cpp/future_compiled_blueprint.cpp
+@@ -0,0 +1,54 @@
++// RED CONTRACT: parse/compile once, instantiate many independent NFsim systems.
++#include <catch2/catch_test_macros.hpp>
++#include "compile/CompiledNfBlueprint.hpp"
++#include "parser/BNGAstVisitor.hpp"
++
++TEST_CASE("NF blueprint is immutable and creates independent trajectory state") {
++    auto model = bng::parser::parseModel(R"BNG(
++begin molecule types
++ A(x)
++ B(y)
++end molecule types
++begin seed species
++ A(x) 10
++ B(y) 10
++end seed species
++begin reaction rules
++ A(x)+B(y)->A(x!1).B(y!1) 1
++end reaction rules
++)BNG");
++    REQUIRE(model);
++    const auto blueprint = bng::compile::CompiledNfBlueprint::compile(*model);
++    auto a = blueprint.instantiate(1);
++    auto b = blueprint.instantiate(2);
++    REQUIRE(a);
++    REQUIRE(b);
++    CHECK(a.get() != b.get());
++    CHECK(blueprint.structuralHash() == blueprint.structuralHash());
++    a->stepTo(1.0);
++    CHECK(b->getCurrentTime() == 0.0);
++}
++
++TEST_CASE("parameter-only instantiation does not rebuild structural matcher tables") {
++    auto model = bng::parser::parseModel(R"BNG(
++begin parameters
++ k 1
++end parameters
++begin molecule types
++ A(x)
++end molecule types
++begin seed species
++ A(x) 10
++end seed species
++begin reaction rules
++ A(x)->A(x) k
++end reaction rules
++)BNG");
++    REQUIRE(model);
++    auto blueprint = bng::compile::CompiledNfBlueprint::compile(*model);
++    const auto structuralBuilds = blueprint.structuralBuildCount();
++    auto a = blueprint.instantiate(1, {{"k",1.0}});
++    auto b = blueprint.instantiate(2, {{"k",2.0}});
++    REQUIRE(a); REQUIRE(b);
++    CHECK(blueprint.structuralBuildCount() == structuralBuilds);
++}
+diff --git a/tests/cpp/future_compiled_model_cache.cpp b/tests/cpp/future_compiled_model_cache.cpp
+new file mode 100644
+index 0000000..95ac896
+--- /dev/null
++++ b/tests/cpp/future_compiled_model_cache.cpp
+@@ -0,0 +1,85 @@
++// RED CONTRACT: immutable compile-once cache, including concurrency.
++#include <atomic>
++#include <future>
++#include <stdexcept>
++#include <thread>
++#include <vector>
++#include <catch2/catch_test_macros.hpp>
++#include "compile/cache/CompiledModelCache.hpp"
++
++using namespace bng::compile::cache;
++
++TEST_CASE("same fingerprint compiles exactly once") {
++    CompiledModelCache cache;
++    std::atomic<int> builds{0};
++    auto builder = [&] {
++        ++builds;
++        return std::make_shared<const FakeCompiledModel>("m");
++    };
++    auto a = cache.getOrCompile<FakeCompiledModel>("sha256:model", builder);
++    auto b = cache.getOrCompile<FakeCompiledModel>("sha256:model", builder);
++    CHECK(a.get() == b.get());
++    CHECK(builds.load() == 1);
++    CHECK(cache.hits() == 1);
++    CHECK(cache.misses() == 1);
++}
++
++TEST_CASE("concurrent lookup publishes one immutable compiled object") {
++    CompiledModelCache cache;
++    std::atomic<int> builds{0};
++    std::vector<std::shared_ptr<const FakeCompiledModel>> results(32);
++    std::vector<std::thread> threads;
++    for (int i=0;i<32;++i) threads.emplace_back([&,i]{
++        results[i] = cache.getOrCompile<FakeCompiledModel>("same", [&]{
++            ++builds;
++            return std::make_shared<const FakeCompiledModel>("same");
++        });
++    });
++    for (auto& t : threads) t.join();
++    for (const auto& p : results) CHECK(p.get() == results.front().get());
++    CHECK(builds.load() == 1);
++}
++
++TEST_CASE("different fingerprints never alias compiled objects") {
++    CompiledModelCache cache;
++    auto a=cache.getOrCompile<FakeCompiledModel>("a",[]{return std::make_shared<const FakeCompiledModel>("a");});
++    auto b=cache.getOrCompile<FakeCompiledModel>("b",[]{return std::make_shared<const FakeCompiledModel>("b");});
++    REQUIRE(a); REQUIRE(b);
++    CHECK(a.get()!=b.get());
++}
++
++TEST_CASE("failed builder does not poison cache entry") {
++    CompiledModelCache cache;
++    int attempts=0;
++    CHECK_THROWS(cache.getOrCompile<FakeCompiledModel>("x",[&]()->std::shared_ptr<const FakeCompiledModel>{
++        ++attempts; throw std::runtime_error("compile failed");
++    }));
++    auto ok=cache.getOrCompile<FakeCompiledModel>("x",[&]{++attempts;return std::make_shared<const FakeCompiledModel>("x");});
++    REQUIRE(ok);
++    CHECK(attempts==2);
++}
++
++TEST_CASE("weakly-held expired compiled object can be rebuilt") {
++    CompiledModelCache cache;
++    int builds=0;
++    {
++        auto a=cache.getOrCompile<FakeCompiledModel>("x",[&]{++builds;return std::make_shared<const FakeCompiledModel>("x");});
++        REQUIRE(a);
++    }
++    cache.pruneExpired();
++    auto b=cache.getOrCompile<FakeCompiledModel>("x",[&]{++builds;return std::make_shared<const FakeCompiledModel>("x");});
++    REQUIRE(b);
++    CHECK(builds==2);
++}
++
++TEST_CASE("parallel compilation of different keys does not serialize all builders") {
++    CompiledModelCache cache;
++    std::atomic<int> entered{0};
++    auto compile=[&](const std::string& key){return cache.getOrCompile<FakeCompiledModel>(key,[&]{
++        ++entered; while(entered.load()<2) std::this_thread::yield();
++        return std::make_shared<const FakeCompiledModel>(key);
++    });};
++    auto f1=std::async(std::launch::async,[&]{return compile("a");});
++    auto f2=std::async(std::launch::async,[&]{return compile("b");});
++    REQUIRE(f1.get()); REQUIRE(f2.get());
++}
+diff --git a/tests/cpp/future_compiled_model_determinism.cpp b/tests/cpp/future_compiled_model_determinism.cpp
+new file mode 100644
+index 0000000..4f08ca8
+--- /dev/null
++++ b/tests/cpp/future_compiled_model_determinism.cpp
+@@ -0,0 +1,61 @@
++// RED CONTRACT: compiler hashes are stable to formatting but preserve execution-significant ordering.
++#include <catch2/catch_test_macros.hpp>
++#include "compile/CompiledModel.hpp"
++#include "parser/BNGAstVisitor.hpp"
++
++TEST_CASE("whitespace and comments do not change compiled structural hash") {
++    auto a=bng::parser::parseModel(R"BNG(
++begin molecule types
++ A(x)
++end molecule types
++begin seed species
++ A(x) 1
++end seed species
++begin reaction rules
++ r: A(x)->0 1
++end reaction rules
++)BNG");
++    auto b=bng::parser::parseModel(R"BNG(
++# comment
++begin molecule types
++    A( x )
++end molecule types
++begin seed species
++ A(x)    1
++end seed species
++begin reaction rules
++ r: A(x) -> 0  1   # comment
++end reaction rules
++)BNG");
++    REQUIRE(a);REQUIRE(b);
++    CHECK(bng::compile::CompiledModel(*a).structuralHash()==bng::compile::CompiledModel(*b).structuralHash());
++}
++
++TEST_CASE("reaction ordering remains structural-hash significant") {
++    const char* first=R"BNG(
++begin molecule types
++ A(x~U~P)
++end molecule types
++begin seed species
++ A(x~U) 1
++end seed species
++begin reaction rules
++ r1: A(x~U)->A(x~P) 1
++ r2: A(x~P)->A(x~U) 2
++end reaction rules
++)BNG";
++    const char* second=R"BNG(
++begin molecule types
++ A(x~U~P)
++end molecule types
++begin seed species
++ A(x~U) 1
++end seed species
++begin reaction rules
++ r2: A(x~P)->A(x~U) 2
++ r1: A(x~U)->A(x~P) 1
++end reaction rules
++)BNG";
++    auto a=bng::parser::parseModel(first),b=bng::parser::parseModel(second);REQUIRE(a);REQUIRE(b);
++    CHECK(bng::compile::CompiledModel(*a).structuralHash()!=bng::compile::CompiledModel(*b).structuralHash());
++}
+diff --git a/tests/cpp/future_compound_graph_rewrite.cpp b/tests/cpp/future_compound_graph_rewrite.cpp
+new file mode 100644
+index 0000000..a77e4a5
+--- /dev/null
++++ b/tests/cpp/future_compound_graph_rewrite.cpp
+@@ -0,0 +1,56 @@
++// RED CONTRACT: energy compilation is defined for graph rewrites, not only special-case binding/state rules.
++#include <algorithm>
++#include <catch2/catch_test_macros.hpp>
++#include "compile/CompiledModel.hpp"
++#include "compile/energy/EnergyPatternCompiler.hpp"
++#include "parser/BNGAstVisitor.hpp"
++
++TEST_CASE("compound bond-plus-state rewrite exposes union mutation signature") {
++    auto model=bng::parser::parseModel(R"BNG(
++begin molecule types
++ A(x,s~U~P)
++ B(y)
++end molecule types
++begin seed species
++ A(x,s~U) 1
++ B(y) 1
++end seed species
++begin reaction rules
++ r: A(x,s~U)+B(y) -> A(x!1,s~P).B(y!1) 1
++end reaction rules
++)BNG");
++    REQUIRE(model);
++    bng::compile::CompiledModel compiled(*model);
++    REQUIRE(compiled.rules().size()==1);
++    const auto& m=compiled.rules()[0].mutations();
++    CHECK(std::any_of(m.begin(),m.end(),[](const auto& x){return x.kind==bng::compile::MutationKind::AddBond;}));
++    CHECK(std::any_of(m.begin(),m.end(),[](const auto& x){return x.kind==bng::compile::MutationKind::ChangeState;}));
++}
++
++TEST_CASE("compound rewrite energy plan contains all factors affected by either edit") {
++    auto model=bng::parser::parseModel(R"BNG(
++begin parameters
++ Gbind 1
++ GP 2
++end parameters
++begin molecule types
++ A(x,s~U~P)
++ B(y)
++end molecule types
++begin seed species
++ A(x,s~U) 1
++ B(y) 1
++end seed species
++begin energy patterns
++ A(x!1).B(y!1) Gbind
++ A(s~P) GP
++end energy patterns
++begin reaction rules
++ r: A(x,s~U)+B(y) -> A(x!1,s~P).B(y!1) 1
++end reaction rules
++)BNG");
++    REQUIRE(model);
++    auto plan=bng::compile::energy::EnergyPatternCompiler::fromModel(*model)
++        .compileRule(model->getReactionRules().front());
++    REQUIRE(plan.affectedFactorIndices().size()==2);
++}
+diff --git a/tests/cpp/future_dependency_graph.cpp b/tests/cpp/future_dependency_graph.cpp
+new file mode 100644
+index 0000000..011407a
+--- /dev/null
++++ b/tests/cpp/future_dependency_graph.cpp
+@@ -0,0 +1,56 @@
++// RED CONTRACT: enable only after compile/dependency/DependencyGraph.hpp lands.
++#include <algorithm>
++#include <catch2/catch_test_macros.hpp>
++
++#include "compile/dependency/DependencyGraph.hpp"
++
++using namespace bng::compile::dependency;
++
++TEST_CASE("state mutation invalidates only factors that depend on that state") {
++    DependencyGraph graph;
++    const SiteKey ax{"A", "x"};
++    const SiteKey ay{"A", "y"};
++    graph.addEnergyFactorDependency(0, ax, DependencyKind::State);
++    graph.addEnergyFactorDependency(1, ay, DependencyKind::State);
++    graph.addRuleDependency(10, 0);
++    graph.addRuleDependency(11, 1);
++
++    const auto affected = graph.affectedRules(MutationKey::state(ax));
++    CHECK(affected == std::vector<std::size_t>{10});
++}
++
++TEST_CASE("bond mutation invalidates both endpoint-dependent factors") {
++    DependencyGraph graph;
++    const SiteKey ax{"A", "x"};
++    const SiteKey by{"B", "y"};
++    graph.addEnergyFactorDependency(3, ax, DependencyKind::Bond);
++    graph.addEnergyFactorDependency(4, by, DependencyKind::Bond);
++    graph.addRuleDependency(20, 3);
++    graph.addRuleDependency(21, 4);
++
++    const auto affected = graph.affectedRules(MutationKey::bond(ax, by));
++    CHECK(affected == std::vector<std::size_t>{20, 21});
++}
++
++TEST_CASE("unresolved mutation triggers conservative full invalidation") {
++    DependencyGraph graph;
++    graph.registerRule(1);
++    graph.registerRule(2);
++    graph.registerRule(3);
++    graph.markConservativeGlobalDependency();
++    CHECK(graph.affectedRules(MutationKey::unknown()) ==
++          std::vector<std::size_t>{1, 2, 3});
++}
++
++TEST_CASE("molecule deletion invalidates all factors involving that molecule type") {
++    DependencyGraph graph;
++    graph.addEnergyFactorDependency(0, {"A", "x"}, DependencyKind::State);
++    graph.addEnergyFactorDependency(1, {"A", "y"}, DependencyKind::Bond);
++    graph.addEnergyFactorDependency(2, {"B", "z"}, DependencyKind::State);
++    graph.addRuleDependency(30, 0);
++    graph.addRuleDependency(31, 1);
++    graph.addRuleDependency(32, 2);
++
++    CHECK(graph.affectedRules(MutationKey::deleteMolecule("A")) ==
++          std::vector<std::size_t>{30, 31});
++}
+diff --git a/tests/cpp/future_dependency_graph_property.cpp b/tests/cpp/future_dependency_graph_property.cpp
+new file mode 100644
+index 0000000..4d7838f
+--- /dev/null
++++ b/tests/cpp/future_dependency_graph_property.cpp
+@@ -0,0 +1,30 @@
++// RED CONTRACT: randomized dependency graph must never produce a false negative.
++#include <random>
++#include <set>
++#include <catch2/catch_test_macros.hpp>
++#include "compile/dependency/DependencyGraph.hpp"
++
++TEST_CASE("randomized dependency index is a superset of literal dependency scan") {
++    using namespace bng::compile::dependency;
++    std::mt19937 rng(123456);
++    for (int trial=0;trial<2000;++trial) {
++        DependencyGraph g;
++        struct F { SiteKey site; DependencyKind kind; std::size_t rule; };
++        std::vector<F> literal;
++        for (std::size_t i=0;i<50;++i) {
++            SiteKey s{std::string(1,char('A'+(rng()%4))), "s"+std::to_string(rng()%8)};
++            auto kind=(rng()%2)?DependencyKind::State:DependencyKind::Bond;
++            g.addEnergyFactorDependency(i,s,kind);
++            g.addRuleDependency(100+i,i);
++            literal.push_back({s,kind,100+i});
++        }
++        SiteKey changed{std::string(1,char('A'+(rng()%4))), "s"+std::to_string(rng()%8)};
++        auto mutation=MutationKey::state(changed);
++        const auto indexed=g.affectedRules(mutation);
++        std::set<std::size_t> got(indexed.begin(),indexed.end());
++        for (const auto& f:literal) {
++            if (f.kind==DependencyKind::State && f.site==changed)
++                CHECK(got.count(f.rule)==1);
++        }
++    }
++}
+diff --git a/tests/cpp/future_direct_xml_energy_parity.cpp b/tests/cpp/future_direct_xml_energy_parity.cpp
+new file mode 100644
+index 0000000..1bd0670
+--- /dev/null
++++ b/tests/cpp/future_direct_xml_energy_parity.cpp
+@@ -0,0 +1,51 @@
++// RED/REGRESSION CONTRACT: direct AST and compatibility XML paths must interpret energy semantics identically.
++#include <memory>
++#include <numeric>
++#include <catch2/catch_approx.hpp>
++#include <catch2/catch_test_macros.hpp>
++#include "NFcore/NFcore.hh"
++#include "NFinput/NFinput.hh"
++#include "NFinput/NFinput_fromAst.hh"
++#include "parser/BNGAstVisitor.hpp"
++
++namespace {
++double total_a(const NFcore::System& s) {
++    double a=0; for (auto* r:s.getAllReactions()) a+=r->get_a(); return a;
++}
++}
++
++TEST_CASE("direct AST and in-memory XML agree for energy state change") {
++    auto model=bng::parser::parseModel(R"BNG(
++begin model
++begin parameters
++ GU 0.5
++ GP 2
++ phi 0.4
++ Ea 1
++end parameters
++begin molecule types
++ A(s~U~P)
++end molecule types
++begin seed species
++ A(s~U) 100
++end seed species
++begin energy patterns
++ A(s~U) GU
++ A(s~P) GP
++end energy patterns
++begin reaction rules
++ A(s~U) <-> A(s~P) Arrhenius(phi,Ea)
++end reaction rules
++end model
++)BNG");
++    REQUIRE(model);
++    int dlim=-1,xlim=-1;
++    std::unique_ptr<NFcore::System> direct(NFinput::buildSystemFromAst(*model,false,-1,false,dlim,{}));
++    std::unique_ptr<NFcore::System> xml(NFinput::initializeFromModel(model.get(),false,-1,false,xlim));
++    REQUIRE(direct); REQUIRE(xml);
++    direct->setUniversalTraversalLimit(dlim); xml->setUniversalTraversalLimit(xlim);
++    direct->seedRNG(424242); xml->seedRNG(424242);
++    direct->prepareForSimulation(); xml->prepareForSimulation();
++    CHECK(direct->getAllReactions().size()==xml->getAllReactions().size());
++    CHECK(total_a(*direct)==Catch::Approx(total_a(*xml)).epsilon(1e-12));
++}
+diff --git a/tests/cpp/future_dynamic_energy_expression_policy.cpp b/tests/cpp/future_dynamic_energy_expression_policy.cpp
+new file mode 100644
+index 0000000..3e3a9a3
+--- /dev/null
++++ b/tests/cpp/future_dynamic_energy_expression_policy.cpp
+@@ -0,0 +1,44 @@
++// RED CONTRACT: dynamic state-energy expressions must be explicitly supported or explicitly rejected.
++#include <catch2/catch_test_macros.hpp>
++#include <catch2/matchers/catch_matchers_string.hpp>
++#include "compile/energy/EnergyPatternCompiler.hpp"
++#include "parser/BNGAstVisitor.hpp"
++
++TEST_CASE("parameter-only energy expression is compile-time bindable") {
++    auto model=bng::parser::parseModel(R"BNG(
++begin parameters
++ G0 1
++ scale 2
++end parameters
++begin molecule types
++ A(s~U~P)
++end molecule types
++begin energy patterns
++ A(s~P) G0*scale
++end energy patterns
++end model
++)BNG");
++    REQUIRE(model);
++    const auto result=bng::compile::energy::EnergyPatternCompiler::fromModel(*model).diagnostics();
++    CHECK(result.dynamicEnergyFactorCount==0);
++    CHECK(result.parameterDependentFactorCount==1);
++}
++
++TEST_CASE("time-dependent energy factor is never silently frozen at construction time") {
++    auto model=bng::parser::parseModel(R"BNG(
++begin parameters
++ G0 1
++end parameters
++begin molecule types
++ A(s~U~P)
++end molecule types
++begin energy patterns
++ A(s~P) G0*time
++end energy patterns
++end model
++)BNG");
++    REQUIRE(model);
++    const auto compiler=bng::compile::energy::EnergyPatternCompiler::fromModel(*model);
++    CHECK_THROWS_WITH(compiler.requireStaticStateEnergies(),
++        Catch::Matchers::ContainsSubstring("time-dependent energy"));
++}
+diff --git a/tests/cpp/future_energy_context_evaluator.cpp b/tests/cpp/future_energy_context_evaluator.cpp
+new file mode 100644
+index 0000000..6a1dde8
+--- /dev/null
++++ b/tests/cpp/future_energy_context_evaluator.cpp
+@@ -0,0 +1,56 @@
++// RED CONTRACT: backend-neutral evaluation of compiled local predicates.
++#include <catch2/catch_test_macros.hpp>
++#include "compile/energy/EnergyContextEvaluator.hpp"
++
++using namespace bng::compile::energy;
++
++TEST_CASE("state predicate evaluates selected reactant state") {
++    LocalContextSnapshot s;
++    s.setState(0,"A","x","P");
++    EnergyCondition c; c.kind=ConditionKind::State;c.reactantIndex=0;c.moleculeType="A";c.componentName="x";c.expectedState="P";
++    CHECK(evaluateCondition(c,s));
++    c.expectedState="U";CHECK_FALSE(evaluateCondition(c,s));
++}
++
++TEST_CASE("occupancy-only bond predicate ignores partner identity") {
++    LocalContextSnapshot s;
++    s.setBond(0,"A","x","C","z");
++    EnergyCondition c;c.kind=ConditionKind::Bond;c.reactantIndex=0;c.moleculeType="A";c.componentName="x";c.expectedBound=true;
++    CHECK(evaluateCondition(c,s));
++    c.expectedBound=false;CHECK_FALSE(evaluateCondition(c,s));
++}
++
++TEST_CASE("partner-specific bond predicate requires exact type and component") {
++    LocalContextSnapshot s;s.setBond(0,"A","x","C","z");
++    EnergyCondition c;c.kind=ConditionKind::Bond;c.reactantIndex=0;c.moleculeType="A";c.componentName="x";c.expectedBound=true;c.partnerType="C";c.partnerComponent="z";
++    CHECK(evaluateCondition(c,s));
++    c.partnerComponent="other";CHECK_FALSE(evaluateCondition(c,s));
++}
++
++TEST_CASE("unbound predicate is true only for an open site") {
++    LocalContextSnapshot s;s.setUnbound(0,"A","x");
++    EnergyCondition c;c.kind=ConditionKind::Bond;c.reactantIndex=0;c.moleculeType="A";c.componentName="x";c.expectedBound=false;
++    CHECK(evaluateCondition(c,s));
++}
++
++TEST_CASE("one-hop partner-state predicate evaluates bonded molecule state") {
++    LocalContextSnapshot s;
++    s.setBond(0,"A","x","C","z");
++    s.setPartnerState(0,"A","x","C","q","P");
++    EnergyCondition c;c.kind=ConditionKind::Bond;c.reactantIndex=0;c.moleculeType="A";c.componentName="x";c.expectedBound=true;c.partnerType="C";c.partnerComponent="z";c.expectedState="P";
++    CHECK(evaluateCondition(c,s));
++}
++
++TEST_CASE("missing molecule or component never weakens predicate to true") {
++    LocalContextSnapshot s;
++    EnergyCondition c;c.kind=ConditionKind::State;c.reactantIndex=0;c.moleculeType="A";c.componentName="x";c.expectedState="P";
++    CHECK_FALSE(evaluateCondition(c,s));
++}
++
++TEST_CASE("context mask bit ordering follows compiled condition ordering exactly") {
++    LocalContextSnapshot s;s.setState(0,"A","x","P");s.setUnbound(1,"B","y");
++    EnergyCondition a;a.kind=ConditionKind::State;a.reactantIndex=0;a.moleculeType="A";a.componentName="x";a.expectedState="P";
++    EnergyCondition b;b.kind=ConditionKind::Bond;b.reactantIndex=1;b.moleculeType="B";b.componentName="y";b.expectedBound=false;
++    CHECK(evaluateContextMask({a,b},s)==0b11);
++    b.expectedBound=true;CHECK(evaluateContextMask({a,b},s)==0b01);
++}
+diff --git a/tests/cpp/future_energy_context_weights.cpp b/tests/cpp/future_energy_context_weights.cpp
+new file mode 100644
+index 0000000..fd5d839
+--- /dev/null
++++ b/tests/cpp/future_energy_context_weights.cpp
+@@ -0,0 +1,38 @@
++// RED CONTRACT: backend-neutral aggregation math used by EnergyPairRxnClass.
++#include <catch2/catch_approx.hpp>
++#include <catch2/catch_test_macros.hpp>
++#include "compile/energy/EnergyContextWeights.hpp"
++
++using namespace bng::compile::energy;
++
++TEST_CASE("pair-context aggregate propensity equals literal pair sum") {
++    EnergyCondition a, b;
++    a.kind = ConditionKind::State; a.reactantIndex = 0; a.moleculeType="A"; a.componentName="s"; a.expectedState="P";
++    b.kind = ConditionKind::State; b.reactantIndex = 1; b.moleculeType="B"; b.componentName="t"; b.expectedState="P";
++    auto p = EnergyDeltaPlan::factorized(0.0, {a,b}, {{2.0, 3, 0}});
++    REQUIRE(p.has_value());
++
++    // Three A mappings: two masks 0, one mask 1. Four B mappings: one mask 0, three mask 2.
++    const std::vector<std::uint64_t> left = {0,0,1};
++    const std::vector<std::uint64_t> right = {0,2,2,2};
++    const double base_rate = 0.7;
++    EnergyContextWeights weights(*p, 0.5, 1.0, true);
++    const double aggregate = weights.pairPropensity(left, right, base_rate);
++
++    double literal = 0.0;
++    for (auto l : left) for (auto r : right)
++        literal += base_rate * *p->tryArrheniusFactor(l | r, 0.5, 1.0, true);
++    CHECK(aggregate == Catch::Approx(literal).epsilon(1e-12));
++}
++
++TEST_CASE("mapping-local aggregate equals literal weighted mapping sum") {
++    EnergyCondition a;
++    a.kind = ConditionKind::State; a.reactantIndex=0; a.moleculeType="A"; a.componentName="s"; a.expectedState="P";
++    auto p = EnergyDeltaPlan::factorized(1.0, {a}, {{2.0,1,0}});
++    REQUIRE(p.has_value());
++    const std::vector<std::uint64_t> mappings = {0,1,1,0,1};
++    EnergyContextWeights weights(*p, 0.3, 2.0, true);
++    double literal = 0.0;
++    for (auto mask : mappings) literal += *p->tryArrheniusFactor(mask, 0.3, 2.0, true);
++    CHECK(weights.mappingSum(mappings) == Catch::Approx(literal).epsilon(1e-12));
++}
+diff --git a/tests/cpp/future_energy_context_weights_numeric.cpp b/tests/cpp/future_energy_context_weights_numeric.cpp
+new file mode 100644
+index 0000000..9183562
+--- /dev/null
++++ b/tests/cpp/future_energy_context_weights_numeric.cpp
+@@ -0,0 +1,32 @@
++// RED CONTRACT: aggregation math remains numerically stable across sparse/large pools.
++#include <cmath>
++#include <catch2/catch_test_macros.hpp>
++#include "compile/energy/EnergyContextWeights.hpp"
++
++using namespace bng::compile::energy;
++
++TEST_CASE("empty mapping pool has zero propensity") {
++    EnergyCondition c;c.kind=ConditionKind::State;c.reactantIndex=0;c.moleculeType="A";c.componentName="s";c.expectedState="P";
++    auto p=EnergyDeltaPlan::factorized(0,{c},{{1,1,0}});REQUIRE(p);
++    EnergyContextWeights w(*p,0.5,1,true);
++    CHECK(w.mappingSum({})==0.0);
++    CHECK(w.pairPropensity({}, {0,1},1.0)==0.0);
++}
++
++TEST_CASE("large category counts use wide arithmetic and finite double propensity") {
++    EnergyCondition a,b;a.kind=ConditionKind::State;a.reactantIndex=0;a.moleculeType="A";a.componentName="s";a.expectedState="P";b=a;b.reactantIndex=1;b.moleculeType="B";b.componentName="t";
++    auto p=EnergyDeltaPlan::factorized(0,{a,b},{{1,3,0}});REQUIRE(p);
++    EnergyContextWeights w(*p,0.5,2,true);
++    std::vector<ContextCategory> left={{0,3000000000ULL},{1,2000000000ULL}};
++    std::vector<ContextCategory> right={{0,4000000000ULL},{2,1000000000ULL}};
++    const double value=w.pairPropensityFromCategories(left,right,1e-12);
++    CHECK(std::isfinite(value));
++    CHECK(value>0);
++}
++
++TEST_CASE("zero base rate remains zero regardless of energy factor") {
++    EnergyCondition c;c.kind=ConditionKind::State;c.reactantIndex=0;c.moleculeType="A";c.componentName="s";c.expectedState="P";
++    auto p=EnergyDeltaPlan::factorized(-100,{c},{{-100,1,0}});REQUIRE(p);
++    EnergyContextWeights w(*p,0.5,1,true);
++    CHECK(w.pairPropensity({1},{0},0.0)==0.0);
++}
+diff --git a/tests/cpp/future_energy_factor_index.cpp b/tests/cpp/future_energy_factor_index.cpp
+new file mode 100644
+index 0000000..053c30f
+--- /dev/null
++++ b/tests/cpp/future_energy_factor_index.cpp
+@@ -0,0 +1,31 @@
++// RED CONTRACT: inverted energy-factor index must be complete and selective.
++#include <set>
++#include <catch2/catch_test_macros.hpp>
++#include "compile/energy/EnergyPatternStore.hpp"
++
++using namespace bng::compile::energy;
++
++TEST_CASE("binding-center index returns same candidates independent of endpoint order") {
++    EnergyPatternStore s;
++    s.addFactor(PatternDescriptor::parse("A(x!1).B(y!1)"),1,"ab");
++    s.addFactor(PatternDescriptor::parse("A(z!1).C(q!1)"),2,"ac");
++    CHECK(s.candidateFactorsForBinding("A","x","B","y")==
++          s.candidateFactorsForBinding("B","y","A","x"));
++}
++
++TEST_CASE("binding-center index excludes unrelated factors") {
++    EnergyPatternStore s;
++    for (int i=0;i<1000;++i)
++        s.addFactor(PatternDescriptor::parse("X"+std::to_string(i)+"(a!1).Y"+std::to_string(i)+"(b!1)"),1,"noise");
++    s.addFactor(PatternDescriptor::parse("A(x!1).B(y!1)"),1,"target");
++    const auto candidates=s.candidateFactorsForBinding("A","x","B","y");
++    REQUIRE(candidates.size()==1);
++    CHECK(s.factor(candidates[0]).label=="target");
++}
++
++TEST_CASE("duplicate center occurrence does not duplicate candidate factor") {
++    EnergyPatternStore s;
++    s.addFactor(PatternDescriptor::parse("A(x!1,x!2).B(y!1,y!2)"),1,"multi");
++    const auto candidates=s.candidateFactorsForBinding("A","x","B","y");
++    CHECK(candidates.size()==1);
++}
+diff --git a/tests/cpp/future_energy_feature_flag.cpp b/tests/cpp/future_energy_feature_flag.cpp
+new file mode 100644
+index 0000000..2ff7e98
+--- /dev/null
++++ b/tests/cpp/future_energy_feature_flag.cpp
+@@ -0,0 +1,32 @@
++// RED CONTRACT: experimental backend opt-in must have unambiguous environment parsing.
++#include <cstdlib>
++#include <catch2/catch_test_macros.hpp>
++#include "compile/energy/EnergyFeatureFlags.hpp"
++
++TEST_CASE("general energy backend is disabled when environment variable is absent") {
++#ifdef _WIN32
++    _putenv_s("BNG_NFSIM_GENERAL_ENERGY","");
++#else
++    unsetenv("BNG_NFSIM_GENERAL_ENERGY");
++#endif
++    CHECK_FALSE(bng::compile::energy::generalEnergyEnabled());
++}
++
++TEST_CASE("only explicit truthy values enable experimental backend") {
++    for(const char* value:{"1","true","TRUE","yes"}){
++#ifdef _WIN32
++        _putenv_s("BNG_NFSIM_GENERAL_ENERGY",value);
++#else
++        setenv("BNG_NFSIM_GENERAL_ENERGY",value,1);
++#endif
++        CHECK(bng::compile::energy::generalEnergyEnabled());
++    }
++    for(const char* value:{"0","false","FALSE","no",""}){
++#ifdef _WIN32
++        _putenv_s("BNG_NFSIM_GENERAL_ENERGY",value);
++#else
++        setenv("BNG_NFSIM_GENERAL_ENERGY",value,1);
++#endif
++        CHECK_FALSE(bng::compile::energy::generalEnergyEnabled());
++    }
++}
+diff --git a/tests/cpp/future_energy_lowering_plan.cpp b/tests/cpp/future_energy_lowering_plan.cpp
+new file mode 100644
+index 0000000..542ccb1
+--- /dev/null
++++ b/tests/cpp/future_energy_lowering_plan.cpp
+@@ -0,0 +1,62 @@
++// RED CONTRACT: backend-neutral lowering selector.
++#include <catch2/catch_test_macros.hpp>
++#include "compile/energy/EnergyLoweringPlan.hpp"
++
++using namespace bng::compile::energy;
++
++TEST_CASE("constant deltaG selects constant lowering") {
++    auto plan = EnergyDeltaPlan::constant(1.0);
++    CHECK(selectEnergyLowering(plan, EnergyTopology::StateChange) ==
++          EnergyLoweringKind::Constant);
++}
++
++TEST_CASE("one-reactant context selects mapping-local lowering") {
++    EnergyCondition c;
++    c.kind = ConditionKind::State;
++    c.reactantIndex = 0;
++    c.moleculeType = "A";
++    c.componentName = "s";
++    c.expectedState = "P";
++    auto plan = EnergyDeltaPlan::factorized(0.0, {c}, {{1.0, 1, 0}});
++    REQUIRE(plan.has_value());
++    CHECK(selectEnergyLowering(*plan, EnergyTopology::StateChange) ==
++          EnergyLoweringKind::MappingLocal);
++}
++
++TEST_CASE("mixed disconnected binding context selects pair aggregation") {
++    EnergyCondition a, b;
++    a.kind = ConditionKind::State; a.reactantIndex = 0; a.moleculeType = "A"; a.componentName = "s"; a.expectedState = "P";
++    b.kind = ConditionKind::State; b.reactantIndex = 1; b.moleculeType = "B"; b.componentName = "t"; b.expectedState = "P";
++    auto plan = EnergyDeltaPlan::factorized(0.0, {a,b}, {{2.0, 3, 0}});
++    REQUIRE(plan.has_value());
++    CHECK(selectEnergyLowering(*plan, EnergyTopology::DisconnectedBinding) ==
++          EnergyLoweringKind::PairFactorized);
++}
++
++TEST_CASE("unrepresentable topology always selects materialized fallback") {
++    CHECK(selectEnergyLowering(EnergyDeltaPlan::materializedFallback(), EnergyTopology::DisconnectedBinding) ==
++          EnergyLoweringKind::Materialized);
++}
++
++TEST_CASE("63 predicates remain factorized but policy may reject expensive table lowering") {
++    std::vector<EnergyCondition> cs;
++    for(int i=0;i<63;++i){EnergyCondition c;c.kind=ConditionKind::Bond;c.reactantIndex=0;c.moleculeType="A";c.componentName="c"+std::to_string(i);cs.push_back(c);}
++    auto p=EnergyDeltaPlan::factorized(0,cs,{{1,1,0}});REQUIRE(p);
++    CHECK(selectEnergyLowering(*p,EnergyTopology::StateChange)==EnergyLoweringKind::MappingLocal);
++    CHECK_FALSE(p->buildArrheniusTable(0.5,1,true,8).has_value());
++}
++
++TEST_CASE("same-type disconnected binding is never sent to unsafe orientation-dependent lowering") {
++    EnergyCondition c;c.kind=ConditionKind::State;c.reactantIndex=0;c.moleculeType="A";c.componentName="s";c.expectedState="P";
++    auto p=EnergyDeltaPlan::factorized(0,{c},{{1,1,0}});REQUIRE(p);
++    const auto decision=selectEnergyLowering(*p,EnergyTopology::SameTypeDisconnectedBinding);
++    CHECK((decision==EnergyLoweringKind::PairFactorized || decision==EnergyLoweringKind::Materialized));
++}
++
++TEST_CASE("connected reverse topology never uses disconnected pair counting") {
++    EnergyCondition a,b;
++    a.kind=ConditionKind::State;a.reactantIndex=0;a.moleculeType="A";a.componentName="s";a.expectedState="P";
++    b.kind=ConditionKind::State;b.reactantIndex=1;b.moleculeType="B";b.componentName="t";b.expectedState="P";
++    auto p=EnergyDeltaPlan::factorized(0,{a,b},{{1,3,0}});REQUIRE(p);
++    CHECK(selectEnergyLowering(*p,EnergyTopology::ConnectedUnbinding)!=EnergyLoweringKind::PairFactorized);
++}
+diff --git a/tests/cpp/future_energy_pattern_compiler.cpp b/tests/cpp/future_energy_pattern_compiler.cpp
+new file mode 100644
+index 0000000..c256546
+--- /dev/null
++++ b/tests/cpp/future_energy_pattern_compiler.cpp
+@@ -0,0 +1,100 @@
++// RED CONTRACT: generalized energy-pattern compiler.
++#include <algorithm>
++#include <catch2/catch_approx.hpp>
++#include <catch2/catch_test_macros.hpp>
++
++#include "compile/energy/EnergyPatternCompiler.hpp"
++#include "compile/PatternDescriptor.hpp"
++
++using namespace bng::compile::energy;
++
++TEST_CASE("shared context predicate is deduplicated across energy factors") {
++    EnergyPatternCompiler compiler;
++    compiler.addFactor(PatternDescriptor::parse("A(b!1,c!2).B(a!1).C(x!2)"), 1.0, "e1");
++    compiler.addFactor(PatternDescriptor::parse("A(b!1,c!2,d!3).B(a!1).C(x!2).D(x!3)"), 2.0, "e2");
++
++    auto plan = compiler.compileBinding("A", "b", "B", "a");
++    REQUIRE(plan.isFactorized());
++    // A.c--C.x appears in both factors but must occupy one predicate bit.
++    const auto count_c = std::count_if(plan.conditions().begin(), plan.conditions().end(), [](const auto& c) {
++        return c.moleculeType == "A" && c.componentName == "c";
++    });
++    CHECK(count_c == 1);
++}
++
++TEST_CASE("binding context on reactant one retains reactant orientation") {
++    EnergyPatternCompiler compiler;
++    compiler.addFactor(PatternDescriptor::parse("A(b!1).B(a!1,c~P)"), 2.0, "e");
++    auto plan = compiler.compileBinding("A", "b", "B", "a");
++    REQUIRE(plan.isFactorized());
++    REQUIRE(plan.conditions().size() == 1);
++    CHECK(plan.conditions()[0].reactantIndex == 1);
++    CHECK(plan.conditions()[0].expectedState == "P");
++}
++
++TEST_CASE("mixed-reactant context compiles without materializing boolean combinations") {
++    EnergyPatternCompiler compiler;
++    compiler.addFactor(PatternDescriptor::parse("A(b!1,s~P).B(a!1,t~P)"), 3.0, "mixed");
++    auto plan = compiler.compileBinding("A", "b", "B", "a");
++    REQUIRE(plan.isFactorized());
++    CHECK_FALSE(plan.singleReactantIndex().has_value());
++    REQUIRE(plan.conditions().size() == 2);
++    CHECK(plan.tryDeltaG(0b11).value() == Catch::Approx(3.0));
++    CHECK(plan.tryDeltaG(0b01).value() == Catch::Approx(0.0));
++}
++
++TEST_CASE("one-hop bonded-partner state is represented explicitly") {
++    EnergyPatternCompiler compiler;
++    compiler.addFactor(PatternDescriptor::parse("A(b!1,c!2).B(a!1).C(x!2,s~P)"), 4.0, "partner_state");
++    auto plan = compiler.compileBinding("A", "b", "B", "a");
++    REQUIRE(plan.isFactorized());
++    const auto partner = std::find_if(plan.conditions().begin(), plan.conditions().end(), [](const auto& c) {
++        return c.partnerType == "C" && c.expectedState == "P";
++    });
++    REQUIRE(partner != plan.conditions().end());
++}
++
++TEST_CASE("correlated two-hop topology fails closed to materialization") {
++    EnergyPatternCompiler compiler;
++    compiler.addFactor(PatternDescriptor::parse(
++        "A(b!1,c!2).B(a!1).C(x!2,y!3).D(z!3,s~P)"), 5.0, "two_hop");
++    auto plan = compiler.compileBinding("A", "b", "B", "a");
++    CHECK_FALSE(plan.isExecutable());
++}
++
++TEST_CASE("state transition uses signed to-minus-from energy contributions") {
++    EnergyPatternCompiler compiler;
++    compiler.addFactor(PatternDescriptor::parse("A(s~U,c!1).C(x!1)"), 0.5, "U");
++    compiler.addFactor(PatternDescriptor::parse("A(s~P,c!1).C(x!1)"), 2.0, "P");
++    auto plan = compiler.compileStateChange("A", "s", "U", "P");
++    REQUIRE(plan.isFactorized());
++    CHECK(plan.tryDeltaG(1).value() == Catch::Approx(1.5));
++}
++
++TEST_CASE("63 independent predicates fit bitmask representation but 64 fail closed") {
++    auto makeCompiler=[](int n){
++        EnergyPatternCompiler compiler;
++        for(int i=0;i<n;++i){
++            compiler.addFactor(PatternDescriptor::parse(
++                "A(x!1,c"+std::to_string(i)+"!2).B(y!1).C"+std::to_string(i)+"(z!2)"),
++                1.0,"e"+std::to_string(i));
++        }
++        return compiler;
++    };
++    auto c63=makeCompiler(63); auto p63=c63.compileBinding("A","x","B","y");
++    CHECK(p63.isFactorized());
++    CHECK(p63.conditions().size()==63);
++    auto c64=makeCompiler(64); auto p64=c64.compileBinding("A","x","B","y");
++    CHECK_FALSE(p64.isExecutable());
++}
++
++TEST_CASE("deduplicated predicate retains provenance from every contributing factor") {
++    EnergyPatternCompiler compiler;
++    compiler.addFactor(PatternDescriptor::parse("A(x!1,c!2).B(y!1).C(z!2)"),1,"e1");
++    compiler.addFactor(PatternDescriptor::parse("A(x!1,c!2,d~P).B(y!1).C(z!2)"),2,"e2");
++    auto p=compiler.compileBinding("A","x","B","y");
++    REQUIRE(p.isFactorized());
++    const auto it=std::find_if(p.conditions().begin(),p.conditions().end(),[](const auto& c){return c.componentName=="c";});
++    REQUIRE(it!=p.conditions().end());
++    CHECK(it->sourceFactorIndices.size()==2);
++}
+diff --git a/tests/cpp/future_energy_pattern_store.cpp b/tests/cpp/future_energy_pattern_store.cpp
+new file mode 100644
+index 0000000..361ea3d
+--- /dev/null
++++ b/tests/cpp/future_energy_pattern_store.cpp
+@@ -0,0 +1,33 @@
++// RED CONTRACT: versioned compiled-plan cache.
++#include <catch2/catch_test_macros.hpp>
++#include "compile/energy/EnergyPatternStore.hpp"
++
++using namespace bng::compile::energy;
++
++TEST_CASE("binding plan cache is orientation-sensitive") {
++    EnergyPatternStore store;
++    store.addFactor(PatternDescriptor::parse("A(x!1,s~P).B(y!1)"), 1.0, "e");
++    const auto& ab = store.bindingPlan("A", "x", "B", "y");
++    const auto& ba = store.bindingPlan("B", "y", "A", "x");
++    REQUIRE(ab.conditions().size() == 1);
++    REQUIRE(ba.conditions().size() == 1);
++    CHECK(ab.conditions()[0].reactantIndex == 0);
++    CHECK(ba.conditions()[0].reactantIndex == 1);
++}
++
++TEST_CASE("adding a factor invalidates cached plans via store version") {
++    EnergyPatternStore store;
++    const auto version0 = store.version();
++    store.addFactor(PatternDescriptor::parse("A(x!1).B(y!1)"), 1.0, "e1");
++    CHECK(store.version() > version0);
++    const auto first = store.bindingPlanRevision("A", "x", "B", "y");
++    store.addFactor(PatternDescriptor::parse("A(x!1,s~P).B(y!1)"), 2.0, "e2");
++    const auto second = store.bindingPlanRevision("A", "x", "B", "y");
++    CHECK(second > first);
++}
++
++TEST_CASE("opaque factor forces conservative fallback for potentially overlapping center") {
++    EnergyPatternStore store;
++    store.addOpaqueFactor("legacy-unrepresentable");
++    CHECK_FALSE(store.bindingPlan("A", "x", "B", "y").isExecutable());
++}
+diff --git a/tests/cpp/future_energy_plan_canonicalization.cpp b/tests/cpp/future_energy_plan_canonicalization.cpp
+new file mode 100644
+index 0000000..316be6b
+--- /dev/null
++++ b/tests/cpp/future_energy_plan_canonicalization.cpp
+@@ -0,0 +1,48 @@
++// RED CONTRACT: canonical energy plans for stable caching/provenance.
++#include <algorithm>
++#include <catch2/catch_test_macros.hpp>
++#include "compile/energy/EnergyPlanCanonicalizer.hpp"
++
++using namespace bng::compile::energy;
++
++namespace {
++EnergyCondition state(int r,const char* m,const char* c,const char* v){EnergyCondition x;x.kind=ConditionKind::State;x.reactantIndex=r;x.moleculeType=m;x.componentName=c;x.expectedState=v;return x;}
++}
++
++TEST_CASE("duplicate terms with same predicate mask combine by energy sum") {
++    auto p=EnergyDeltaPlan::factorized(0,{state(0,"A","s","P")},{{1,1,0},{2,1,1}});REQUIRE(p);
++    auto c=canonicalizeEnergyPlan(*p);
++    REQUIRE(c.terms().size()==1);
++    CHECK(c.terms()[0].energyValue==3.0);
++}
++
++TEST_CASE("zero-energy terms are removed") {
++    auto p=EnergyDeltaPlan::factorized(0,{state(0,"A","s","P")},{{0,1,0},{2,1,1}});REQUIRE(p);
++    auto c=canonicalizeEnergyPlan(*p);
++    REQUIRE(c.terms().size()==1);
++    CHECK(c.terms()[0].energyValue==2.0);
++}
++
++TEST_CASE("unused predicates are pruned and masks remapped") {
++    auto p=EnergyDeltaPlan::factorized(0,{state(0,"A","a","P"),state(0,"A","b","P"),state(0,"A","c","P")},{{2,0b101,0}});REQUIRE(p);
++    auto c=canonicalizeEnergyPlan(*p);
++    CHECK(c.conditions().size()==2);
++    REQUIRE(c.terms().size()==1);
++    CHECK(c.terms()[0].conditionMask==0b11);
++}
++
++TEST_CASE("predicate ordering is deterministic by semantic key") {
++    auto a=state(1,"B","z","P"),b=state(0,"A","x","U");
++    auto p1=EnergyDeltaPlan::factorized(0,{a,b},{{1,1,0},{2,2,1}});REQUIRE(p1);
++    auto p2=EnergyDeltaPlan::factorized(0,{b,a},{{2,1,1},{1,2,0}});REQUIRE(p2);
++    CHECK(energyPlanFingerprint(canonicalizeEnergyPlan(*p1))==energyPlanFingerprint(canonicalizeEnergyPlan(*p2)));
++}
++
++TEST_CASE("factor provenance does not alter semantic execution fingerprint") {
++    auto c=state(0,"A","s","P");c.sourceFactorIndices={1,2};
++    auto d=c;d.sourceFactorIndices={8,9};
++    auto p1=EnergyDeltaPlan::factorized(0,{c},{{2,1,1}});auto p2=EnergyDeltaPlan::factorized(0,{d},{{2,1,9}});
++    REQUIRE(p1);REQUIRE(p2);
++    CHECK(energyExecutionFingerprint(*p1)==energyExecutionFingerprint(*p2));
++    CHECK(energyProvenanceFingerprint(*p1)!=energyProvenanceFingerprint(*p2));
++}
+diff --git a/tests/cpp/future_energy_runtime_event_weights.cpp b/tests/cpp/future_energy_runtime_event_weights.cpp
+new file mode 100644
+index 0000000..74edf3b
+--- /dev/null
++++ b/tests/cpp/future_energy_runtime_event_weights.cpp
+@@ -0,0 +1,23 @@
++// RED CONTRACT: test physical-event weight parity independently of RNG stream shape.
++#include <catch2/catch_approx.hpp>
++#include <catch2/catch_test_macros.hpp>
++#include "compile/energy/EnergyContextWeights.hpp"
++
++using namespace bng::compile::energy;
++
++TEST_CASE("category aggregation preserves each physical pair's normalized selection weight") {
++    EnergyCondition a, b;
++    a.kind=ConditionKind::State; a.reactantIndex=0; a.moleculeType="A"; a.componentName="s"; a.expectedState="P";
++    b.kind=ConditionKind::State; b.reactantIndex=1; b.moleculeType="B"; b.componentName="t"; b.expectedState="P";
++    auto plan = EnergyDeltaPlan::factorized(0.25, {a,b}, {{2.0,3,0}, {-0.5,1,1}});
++    REQUIRE(plan.has_value());
++
++    const std::vector<std::uint64_t> left = {0,1,1,0};
++    const std::vector<std::uint64_t> right = {0,2,2};
++    EnergyContextWeights weights(*plan, 0.4, 2.478, true);
++    const auto normalized = weights.literalPairProbabilities(left, right);
++    const auto grouped = weights.expandedPairProbabilities(left, right);
++    REQUIRE(normalized.size() == grouped.size());
++    for (std::size_t i=0;i<normalized.size();++i)
++        CHECK(grouped[i] == Catch::Approx(normalized[i]).epsilon(1e-12));
++}
+diff --git a/tests/cpp/future_energy_serialization_roundtrip.cpp b/tests/cpp/future_energy_serialization_roundtrip.cpp
+new file mode 100644
+index 0000000..7d4b792
+--- /dev/null
++++ b/tests/cpp/future_energy_serialization_roundtrip.cpp
+@@ -0,0 +1,53 @@
++// RED CONTRACT: every serializer used as a compatibility path must preserve energy patterns.
++#include <catch2/catch_test_macros.hpp>
++#include "io/BnglWriter.hpp"
++#include "io/XmlWriter.hpp"
++#include "parser/BNGAstVisitor.hpp"
++
++TEST_CASE("BNGL roundtrip preserves energy-pattern count and structural fingerprints") {
++    auto first=bng::parser::parseModel(R"BNG(
++begin model
++begin parameters
++ G 2
++end parameters
++begin molecule types
++ A(x~U~P)
++end molecule types
++begin energy patterns
++ A(x~P) G
++end energy patterns
++end model
++)BNG");
++    REQUIRE(first); REQUIRE(first->getEnergyPatterns().size()==1);
++    const std::string text=bng::io::BnglWriter::write(*first);
++    auto second=bng::parser::parseModel(text);
++    REQUIRE(second); REQUIRE(second->getEnergyPatterns().size()==1);
++    CHECK(second->getEnergyPatterns()[0].getGraph().fingerprint()==
++          first->getEnergyPatterns()[0].getGraph().fingerprint());
++    CHECK(second->getEnergyPatterns()[0].getExpression().toString()==
++          first->getEnergyPatterns()[0].getExpression().toString());
++}
++
++TEST_CASE("XML writer emits every energy pattern exactly once") {
++    auto model=bng::parser::parseModel(R"BNG(
++begin model
++begin parameters
++ G1 1
++ G2 2
++end parameters
++begin molecule types
++ A(x~U~P)
++end molecule types
++begin energy patterns
++ A(x~U) G1
++ A(x~P) G2
++end energy patterns
++end model
++)BNG");
++    REQUIRE(model);
++    const auto xml=bng::io::XmlWriter::write(*model);
++    CHECK(xml.find("ListOfEnergyPatterns")!=std::string::npos);
++    CHECK(std::count(xml.begin(),xml.end(),'\0')==0);
++    CHECK(xml.find("G1")!=std::string::npos);
++    CHECK(xml.find("G2")!=std::string::npos);
++}
+diff --git a/tests/cpp/future_indexed_rule_family.cpp b/tests/cpp/future_indexed_rule_family.cpp
+new file mode 100644
+index 0000000..23003a1
+--- /dev/null
++++ b/tests/cpp/future_indexed_rule_family.cpp
+@@ -0,0 +1,64 @@
++// RED CONTRACT: parametric/indexed rule-family IR for Rasi/genome models.
++#include <catch2/catch_test_macros.hpp>
++#include "compile/indexed/IndexedRuleFamily.hpp"
++
++using namespace bng::compile::indexed;
++
++TEST_CASE("affine indexed expression evaluates exactly across domain") {
++    IndexDomain d{"i", 1, 1000};
++    IndexedExpression e = IndexedExpression::affine("i", 2, -1);
++    CHECK(e.evaluate({{"i",1}}) == 1);
++    CHECK(e.evaluate({{"i",500}}) == 999);
++    CHECK(e.evaluate({{"i",1000}}) == 1999);
++}
++
++TEST_CASE("local genome mutation affects only neighboring indexed rules") {
++    IndexedRuleFamily family("elongation", {IndexDomain{"i", 1, 9999}});
++    family.addReadSite(IndexedSite{"ribosome", IndexedExpression::variable("i")});
++    family.addReadSite(IndexedSite{"mrna", IndexedExpression::affine("i",1,1)});
++    const auto affected = family.affectedInstances(IndexedSiteInstance{"mrna", 5000});
++    CHECK(affected.size() <= 2);
++    CHECK(affected.count({{"i",4999}}) == 1);
++}
++
++TEST_CASE("boundary query never generates out-of-domain rule instance") {
++    IndexedRuleFamily family("move", {IndexDomain{"i", 1, 10}});
++    family.addReadSite(IndexedSite{"x", IndexedExpression::affine("i",1,1)});
++    const auto affected = family.affectedInstances(IndexedSiteInstance{"x",1});
++    for (const auto& assignment : affected) {
++        CHECK(assignment.at("i") >= 1);
++        CHECK(assignment.at("i") <= 10);
++    }
++}
++
++TEST_CASE("two index domains have Cartesian logical size without eager materialization") {
++    IndexedRuleFamily family("pair", {IndexDomain{"i",1,1000},IndexDomain{"j",1,1000}});
++    CHECK(family.logicalInstanceCount()==1000000);
++    CHECK(family.materializedInstanceCount()==0);
++}
++
++TEST_CASE("inverse affine dependency query returns exact source index") {
++    IndexedRuleFamily family("shift", {IndexDomain{"i",1,100}});
++    family.addReadSite(IndexedSite{"x",IndexedExpression::affine("i",2,1)});
++    auto affected=family.affectedInstances(IndexedSiteInstance{"x",51});
++    REQUIRE(affected.size()==1);
++    CHECK(affected.begin()->at("i")==25);
++}
++
++TEST_CASE("nonintegral inverse affine dependency has no affected instance") {
++    IndexedRuleFamily family("shift", {IndexDomain{"i",1,100}});
++    family.addReadSite(IndexedSite{"x",IndexedExpression::affine("i",2,0)});
++    CHECK(family.affectedInstances(IndexedSiteInstance{"x",51}).empty());
++}
++
++TEST_CASE("invalid index domain is rejected") {
++    CHECK_THROWS(IndexDomain("i",10,1));
++}
++
++TEST_CASE("multiple read expressions deduplicate same affected instance") {
++    IndexedRuleFamily family("dup", {IndexDomain{"i",1,10}});
++    family.addReadSite(IndexedSite{"x",IndexedExpression::variable("i")});
++    family.addReadSite(IndexedSite{"x",IndexedExpression::variable("i")});
++    auto affected=family.affectedInstances(IndexedSiteInstance{"x",5});
++    CHECK(affected.size()==1);
++}
+diff --git a/tests/cpp/future_legacy_binding_compatibility.cpp b/tests/cpp/future_legacy_binding_compatibility.cpp
+new file mode 100644
+index 0000000..1ec911d
+--- /dev/null
++++ b/tests/cpp/future_legacy_binding_compatibility.cpp
+@@ -0,0 +1,23 @@
++// RED CONTRACT: old compact EnergyBindingContext is only a compatibility lowering.
++#include <catch2/catch_test_macros.hpp>
++#include "compile/energy/EnergyLoweringPlan.hpp"
++
++using namespace bng::compile::energy;
++
++TEST_CASE("plain occupancy predicate is legacy compact representable") {
++    EnergyCondition c; c.kind=ConditionKind::Bond; c.reactantIndex=0; c.moleculeType="A"; c.componentName="c"; c.expectedBound=true;
++    auto p=EnergyDeltaPlan::factorized(0,{c},{{1,1,0}}); REQUIRE(p);
++    CHECK(isLegacyBindingContextRepresentable(*p));
++}
++
++TEST_CASE("state predicate is not legacy compact representable") {
++    EnergyCondition c; c.kind=ConditionKind::State; c.reactantIndex=0; c.moleculeType="A"; c.componentName="s"; c.expectedState="P";
++    auto p=EnergyDeltaPlan::factorized(0,{c},{{1,1,0}}); REQUIRE(p);
++    CHECK_FALSE(isLegacyBindingContextRepresentable(*p));
++}
++
++TEST_CASE("partner-specific bond predicate is not legacy compact representable") {
++    EnergyCondition c; c.kind=ConditionKind::Bond; c.reactantIndex=0; c.moleculeType="A"; c.componentName="c"; c.expectedBound=true; c.partnerType="C"; c.partnerComponent="x";
++    auto p=EnergyDeltaPlan::factorized(0,{c},{{1,1,0}}); REQUIRE(p);
++    CHECK_FALSE(isLegacyBindingContextRepresentable(*p));
++}
+diff --git a/tests/cpp/future_molecularity_energy.cpp b/tests/cpp/future_molecularity_energy.cpp
+new file mode 100644
+index 0000000..84b9119
+--- /dev/null
++++ b/tests/cpp/future_molecularity_energy.cpp
+@@ -0,0 +1,44 @@
++// RED CONTRACT: pair-factorized energy propensity must retain NFsim molecularity checks.
++#include <memory>
++#include <catch2/catch_test_macros.hpp>
++#include "NFcore/NFcore.hh"
++#include "NFinput/NFinput_fromAst.hh"
++#include "parser/BNGAstVisitor.hpp"
++
++TEST_CASE("blockSameComplexBinding prevents intra-complex energy binding") {
++    auto model=bng::parser::parseModel(R"BNG(
++begin model
++begin parameters
++ G 2
++ phi 0.5
++ Ea 1
++end parameters
++begin molecule types
++ A(x,c,s~U~P)
++ B(y,d,t~U~P)
++ C(a,b)
++end molecule types
++begin seed species
++ A(x,c!1,s~P).C(a!1,b!2).B(y,d!2,t~P) 1
++end seed species
++begin energy patterns
++ A(x!1,s~P).B(y!1,t~P) G
++end energy patterns
++begin reaction rules
++ A(x)+B(y)<->A(x!1).B(y!1) Arrhenius(phi,Ea)
++end reaction rules
++end model
++)BNG");
++    REQUIRE(model);
++#ifdef _WIN32
++    _putenv_s("BNG_NFSIM_GENERAL_ENERGY","1");
++#else
++    setenv("BNG_NFSIM_GENERAL_ENERGY","1",1);
++#endif
++    int lim=-1; std::unique_ptr<NFcore::System> s(NFinput::buildSystemFromAst(*model,true,-1,false,lim,{}));
++    REQUIRE(s); s->setUniversalTraversalLimit(lim); s->prepareForSimulation();
++    double total=0; for(auto*r:s->getAllReactions()) total+=r->get_a();
++    // Only reverse is impossible initially because A.x/B.y are unbound; forward
++    // must also be blocked because both endpoints already belong to the same complex.
++    CHECK(total==0.0);
++}
+diff --git a/tests/cpp/future_parameter_rebinding.cpp b/tests/cpp/future_parameter_rebinding.cpp
+new file mode 100644
+index 0000000..82a5710
+--- /dev/null
++++ b/tests/cpp/future_parameter_rebinding.cpp
+@@ -0,0 +1,137 @@
++// RED CONTRACT: compile-once structure must not freeze trajectory-specific energy parameters.
++#include <catch2/catch_test_macros.hpp>
++#include "compile/CompiledNfBlueprint.hpp"
++#include "parser/BNGAstVisitor.hpp"
++
++TEST_CASE("energy parameter rebinding changes rates without rebuilding structural blueprint") {
++    auto model=bng::parser::parseModel(R"BNG(
++begin model
++begin parameters
++ G 1
++ phi 0.5
++ Ea 1
++end parameters
++begin molecule types
++ A(s~U~P)
++end molecule types
++begin seed species
++ A(s~U) 100
++end seed species
++begin energy patterns
++ A(s~P) G
++end energy patterns
++begin reaction rules
++ A(s~U)<->A(s~P) Arrhenius(phi,Ea)
++end reaction rules
++end model
++)BNG");
++    REQUIRE(model);
++    auto bp=bng::compile::CompiledNfBlueprint::compile(*model);
++    const auto builds=bp.structuralBuildCount();
++    auto one=bp.instantiate(1,{{"G",1.0}});
++    auto two=bp.instantiate(1,{{"G",2.0}});
++    REQUIRE(one); REQUIRE(two);
++    CHECK(bp.structuralBuildCount()==builds);
++    CHECK(one->getAllReactions()[0]->get_a()!=two->getAllReactions()[0]->get_a());
++}
++
++TEST_CASE("phi rebinding changes forward/reverse partition without changing compiled graph") {
++    auto model=bng::parser::parseModel(R"BNG(
++begin model
++begin parameters
++ G 2
++ phi 0.25
++ Ea 1
++end parameters
++begin molecule types
++ A(s~U~P)
++end molecule types
++begin seed species
++ A(s~U) 100
++end seed species
++begin energy patterns
++ A(s~P) G
++end energy patterns
++begin reaction rules
++ A(s~U)<->A(s~P) Arrhenius(phi,Ea)
++end reaction rules
++end model
++)BNG");
++    REQUIRE(model);
++    auto bp=bng::compile::CompiledNfBlueprint::compile(*model);
++    const auto hash=bp.structuralHash();
++    auto a=bp.instantiate(1,{{"phi",0.25}});
++    auto b=bp.instantiate(1,{{"phi",0.75}});
++    REQUIRE(a); REQUIRE(b);
++    CHECK(bp.structuralHash()==hash);
++    CHECK(a->getAllReactions()[0]->get_a()!=b->getAllReactions()[0]->get_a());
++}
++
++TEST_CASE("same seed and same parameter binding from shared blueprint is deterministic") {
++    auto model=bng::parser::parseModel(R"BNG(
++begin parameters
++ k 1
++end parameters
++begin molecule types
++ A(x)
++end molecule types
++begin seed species
++ A(x) 100
++end seed species
++begin reaction rules
++ A(x)->0 k
++end reaction rules
++)BNG");
++    REQUIRE(model);
++    auto bp=bng::compile::CompiledNfBlueprint::compile(*model);
++    auto a=bp.instantiate(424242,{{"k",1.5}});
++    auto b=bp.instantiate(424242,{{"k",1.5}});
++    REQUIRE(a); REQUIRE(b);
++    a->stepTo(5.0,true); b->stepTo(5.0,true);
++    CHECK(a->getGlobalEventCounter()==b->getGlobalEventCounter());
++}
++
++TEST_CASE("structural hash ignores numeric parameter values but includes parameter dependency identity") {
++    auto m1=bng::parser::parseModel(R"BNG(
++begin parameters
++ G 1
++end parameters
++begin molecule types
++ A(s~U~P)
++end molecule types
++begin energy patterns
++ A(s~P) G
++end energy patterns
++end model
++)BNG");
++    auto m2=bng::parser::parseModel(R"BNG(
++begin parameters
++ G 99
++end parameters
++begin molecule types
++ A(s~U~P)
++end molecule types
++begin energy patterns
++ A(s~P) G
++end energy patterns
++end model
++)BNG");
++    auto m3=bng::parser::parseModel(R"BNG(
++begin parameters
++ H 1
++end parameters
++begin molecule types
++ A(s~U~P)
++end molecule types
++begin energy patterns
++ A(s~P) H
++end energy patterns
++end model
++)BNG");
++    REQUIRE(m1);REQUIRE(m2);REQUIRE(m3);
++    auto b1=bng::compile::CompiledNfBlueprint::compile(*m1);
++    auto b2=bng::compile::CompiledNfBlueprint::compile(*m2);
++    auto b3=bng::compile::CompiledNfBlueprint::compile(*m3);
++    CHECK(b1.structuralHash()==b2.structuralHash());
++    CHECK(b1.structuralHash()!=b3.structuralHash());
++}
+diff --git a/tests/cpp/future_reaction_build_batch.cpp b/tests/cpp/future_reaction_build_batch.cpp
+new file mode 100644
+index 0000000..0861491
+--- /dev/null
++++ b/tests/cpp/future_reaction_build_batch.cpp
+@@ -0,0 +1,48 @@
++// RED CONTRACT: transactional NFsim reaction construction.
++#include <catch2/catch_test_macros.hpp>
++#include "NFinput/ReactionBuildBatch.hh"
++
++using namespace NFinput;
++
++TEST_CASE("staged reactions commit together") {
++    FakeSystem system;
++    ReactionBuildBatch batch(system);
++    batch.stage(std::make_unique<FakeReaction>("forward"));
++    batch.stage(std::make_unique<FakeReaction>("reverse"));
++    CHECK(system.reactionCount() == 0);
++    batch.commit();
++    CHECK(system.reactionCount() == 2);
++}
++
++TEST_CASE("destruction without commit rolls back all staged reactions") {
++    FakeSystem system;
++    {
++        ReactionBuildBatch batch(system);
++        batch.stage(std::make_unique<FakeReaction>("forward"));
++        CHECK(system.reactionCount() == 0);
++    }
++    CHECK(system.reactionCount() == 0);
++    CHECK(FakeReaction::liveCount() == 0);
++}
++
++TEST_CASE("reverse construction failure cannot leave half reversible rule") {
++    FakeSystem system;
++    const bool ok = buildReversibleTransactionally(system,
++        []{ return std::make_unique<FakeReaction>("forward"); },
++        []() -> std::unique_ptr<FakeReaction> { return nullptr; });
++    CHECK_FALSE(ok);
++    CHECK(system.reactionCount() == 0);
++}
++
++TEST_CASE("double commit is rejected rather than double-registering reactions") {
++    FakeSystem system; ReactionBuildBatch batch(system);
++    batch.stage(std::make_unique<FakeReaction>("r")); batch.commit();
++    CHECK_THROWS(batch.commit());
++    CHECK(system.reactionCount()==1);
++}
++
++TEST_CASE("staging after commit is rejected") {
++    FakeSystem system; ReactionBuildBatch batch(system); batch.commit();
++    CHECK_THROWS(batch.stage(std::make_unique<FakeReaction>("late")));
++    CHECK(system.reactionCount()==0);
++}
+diff --git a/tests/cpp/future_runtime_invalidation.cpp b/tests/cpp/future_runtime_invalidation.cpp
+new file mode 100644
+index 0000000..dfda291
+--- /dev/null
++++ b/tests/cpp/future_runtime_invalidation.cpp
+@@ -0,0 +1,101 @@
++// RED CONTRACT: context-only changes must refresh weighted propensities without stale mappings.
++#include <cstdlib>
++#include <memory>
++#include <catch2/catch_approx.hpp>
++#include <catch2/catch_test_macros.hpp>
++#include "NFcore/NFcore.hh"
++#include "NFinput/NFinput_fromAst.hh"
++#include "parser/BNGAstVisitor.hpp"
++
++namespace {
++std::unique_ptr<NFcore::System> build(std::unique_ptr<bng::ast::Model>& model, bool generalized) {
++#ifdef _WIN32
++    _putenv_s("BNG_NFSIM_GENERAL_ENERGY", generalized?"1":"");
++#else
++    if(generalized) setenv("BNG_NFSIM_GENERAL_ENERGY","1",1); else unsetenv("BNG_NFSIM_GENERAL_ENERGY");
++#endif
++    int limit=-1;
++    std::unique_ptr<NFcore::System> s(NFinput::buildSystemFromAst(*model,false,-1,false,limit,{}));
++    REQUIRE(s); s->setUniversalTraversalLimit(limit); s->seedRNG(1); s->prepareForSimulation(); return s;
++}
++double total_a(const NFcore::System& s){double x=0;for(auto*r:s.getAllReactions())x+=r->get_a();return x;}
++}
++
++TEST_CASE("state-only context mutation refreshes generalized binding factor") {
++    auto source=R"BNG(
++begin model
++begin parameters
++ G 4
++ phi 0.5
++ Ea 1
++end parameters
++begin molecule types
++ A(x,s~U~P)
++ B(y)
++end molecule types
++begin seed species
++ A(x,s~U) 1
++ B(y) 10
++end seed species
++begin energy patterns
++ A(x!1,s~P).B(y!1) G
++end energy patterns
++begin reaction rules
++ A(x)+B(y)<->A(x!1).B(y!1) Arrhenius(phi,Ea)
++end reaction rules
++end model
++)BNG";
++    auto m0=bng::parser::parseModel(source); auto m1=bng::parser::parseModel(source);
++    REQUIRE(m0); REQUIRE(m1);
++    auto legacy=build(m0,false); auto general=build(m1,true);
++    auto mutate=[](NFcore::System& s){
++        auto* mt=s.getMoleculeTypeByName("A"); REQUIRE(mt);
++        auto* m=mt->getMolecule(0); REQUIRE(m);
++        const int ci=mt->getCompIndexFromName("s");
++        m->setComponentState(ci,mt->getStateValueFromName(ci,"P"));
++        mt->updateRxnMembership(m);
++        s.updateAllReactionPropensities();
++    };
++    mutate(*legacy); mutate(*general);
++    CHECK(total_a(*general)==Catch::Approx(total_a(*legacy)).epsilon(1e-12));
++}
++
++TEST_CASE("one-hop partner-state mutation refreshes owning reaction propensity") {
++    auto source=R"BNG(
++begin model
++begin parameters
++ G 4
++ phi 0.5
++ Ea 1
++end parameters
++begin molecule types
++ A(x,c)
++ B(y)
++ C(z,s~U~P)
++end molecule types
++begin seed species
++ A(x,c!1).C(z!1,s~U) 1
++ B(y) 10
++end seed species
++begin energy patterns
++ A(x!1,c!2).B(y!1).C(z!2,s~P) G
++end energy patterns
++begin reaction rules
++ A(x)+B(y)<->A(x!1).B(y!1) Arrhenius(phi,Ea)
++end reaction rules
++end model
++)BNG";
++    auto m0=bng::parser::parseModel(source); auto m1=bng::parser::parseModel(source);
++    REQUIRE(m0); REQUIRE(m1);
++    auto legacy=build(m0,false); auto general=build(m1,true);
++    auto mutate=[](NFcore::System& s){
++        auto* mt=s.getMoleculeTypeByName("C"); REQUIRE(mt);
++        auto* m=mt->getMolecule(0); REQUIRE(m);
++        const int ci=mt->getCompIndexFromName("s");
++        m->setComponentState(ci,mt->getStateValueFromName(ci,"P"));
++        mt->updateRxnMembership(m);
++        s.updateAllReactionPropensities();
++    };
++    mutate(*legacy); mutate(*general);
++    CHECK(total_a(*general)==Catch::Approx(total_a(*legacy)).epsilon(1e-12));
++}
+diff --git a/tests/cpp/future_runtime_model_contracts.cpp b/tests/cpp/future_runtime_model_contracts.cpp
+new file mode 100644
+index 0000000..48be01b
+--- /dev/null
++++ b/tests/cpp/future_runtime_model_contracts.cpp
+@@ -0,0 +1,109 @@
++// RED CONTRACT: end-to-end generalized energy lowering through direct AST -> NFsim.
++#include <cstdlib>
++#include <filesystem>
++#include <fstream>
++#include <memory>
++#include <numeric>
++#include <sstream>
++#include <string>
++
++#include <catch2/catch_approx.hpp>
++#include <catch2/catch_test_macros.hpp>
++
++#include "NFcore/NFcore.hh"
++#include "NFinput/NFinput_fromAst.hh"
++#include "parser/BNGAstVisitor.hpp"
++
++namespace fs = std::filesystem;
++
++namespace {
++class ScopedGeneralEnergy {
++public:
++    explicit ScopedGeneralEnergy(bool enabled) {
++#ifdef _WIN32
++        _putenv_s("BNG_NFSIM_GENERAL_ENERGY", enabled ? "1" : "");
++#else
++        if (enabled) setenv("BNG_NFSIM_GENERAL_ENERGY", "1", 1);
++        else unsetenv("BNG_NFSIM_GENERAL_ENERGY");
++#endif
++    }
++    ~ScopedGeneralEnergy() {
++#ifdef _WIN32
++        _putenv_s("BNG_NFSIM_GENERAL_ENERGY", "");
++#else
++        unsetenv("BNG_NFSIM_GENERAL_ENERGY");
++#endif
++    }
++};
++
++std::string slurp(const fs::path& path) {
++    std::ifstream in(path);
++    REQUIRE(in.good());
++    std::ostringstream s; s << in.rdbuf(); return s.str();
++}
++
++std::unique_ptr<NFcore::System> build(const fs::path& path, bool generalized) {
++    ScopedGeneralEnergy mode(generalized);
++    auto model = bng::parser::parseModel(slurp(path));
++    REQUIRE(model);
++    int suggested = -1;
++    std::unique_ptr<NFcore::System> sys(NFinput::buildSystemFromAst(
++        *model, false, -1, false, suggested, path));
++    REQUIRE(sys);
++    sys->setUniversalTraversalLimit(suggested);
++    sys->seedRNG(424242);
++    sys->prepareForSimulation();
++    return sys;
++}
++
++double total_propensity(const NFcore::System& system) {
++    double sum = 0.0;
++    for (auto* r : system.getAllReactions()) sum += r->get_a();
++    return sum;
++}
++}
++
++TEST_CASE("generalized state-context lowering preserves initial total propensity") {
++    const fs::path fixture = fs::path(BNG_ENERGY_FIXTURE_DIR) / "state_change_local_context.bngl";
++    auto legacy = build(fixture, false);
++    auto general = build(fixture, true);
++    CHECK(total_propensity(*general) == Catch::Approx(total_propensity(*legacy)).epsilon(1e-12));
++    CHECK(general->getAllReactions().size() <= legacy->getAllReactions().size());
++}
++
++TEST_CASE("reactant-1 binding context lowers without changing initial propensity") {
++    const fs::path fixture = fs::path(BNG_ENERGY_FIXTURE_DIR) / "reactant1_state_context.bngl";
++    auto legacy = build(fixture, false);
++    auto general = build(fixture, true);
++    CHECK(total_propensity(*general) == Catch::Approx(total_propensity(*legacy)).epsilon(1e-12));
++}
++
++TEST_CASE("mixed-reactant binding context lowers by category aggregation") {
++    const fs::path fixture = fs::path(BNG_ENERGY_FIXTURE_DIR) / "mixed_reactant_state_context.bngl";
++    auto legacy = build(fixture, false);
++    auto general = build(fixture, true);
++    CHECK(total_propensity(*general) == Catch::Approx(total_propensity(*legacy)).epsilon(1e-12));
++    CHECK(general->getAllReactions().size() < legacy->getAllReactions().size());
++}
++
++TEST_CASE("correlated topology remains on materialized fallback") {
++    const fs::path fixture = fs::path(BNG_ENERGY_FIXTURE_DIR) / "correlated_two_hop_fallback.bngl";
++    auto legacy = build(fixture, false);
++    auto general = build(fixture, true);
++    CHECK(general->getAllReactions().size() == legacy->getAllReactions().size());
++    CHECK(total_propensity(*general) == Catch::Approx(total_propensity(*legacy)).epsilon(1e-12));
++}
++
++TEST_CASE("same-type binding cannot corrupt orientation-sensitive context") {
++    const fs::path fixture = fs::path(BNG_ENERGY_FIXTURE_DIR) / "same_type_binding.bngl";
++    auto legacy = build(fixture, false);
++    auto general = build(fixture, true);
++    CHECK(total_propensity(*general) == Catch::Approx(total_propensity(*legacy)).epsilon(1e-12));
++}
++
++TEST_CASE("symmetric-site multiplicity is unchanged by generalized lowering") {
++    const fs::path fixture = fs::path(BNG_ENERGY_FIXTURE_DIR) / "symmetric_sites.bngl";
++    auto legacy = build(fixture, false);
++    auto general = build(fixture, true);
++    CHECK(total_propensity(*general) == Catch::Approx(total_propensity(*legacy)).epsilon(1e-12));
++}
+diff --git a/tests/cpp/future_runtime_reverse_context.cpp b/tests/cpp/future_runtime_reverse_context.cpp
+new file mode 100644
+index 0000000..016e27a
+--- /dev/null
++++ b/tests/cpp/future_runtime_reverse_context.cpp
+@@ -0,0 +1,28 @@
++// RED CONTRACT: connected reverse/unbinding path evaluates endpoint context exactly.
++#include <filesystem>
++#include <fstream>
++#include <memory>
++#include <sstream>
++#include <catch2/catch_approx.hpp>
++#include <catch2/catch_test_macros.hpp>
++#include "NFcore/NFcore.hh"
++#include "NFinput/NFinput_fromAst.hh"
++#include "parser/BNGAstVisitor.hpp"
++
++TEST_CASE("bound mixed-context reverse propensity matches materialized oracle") {
++    std::ifstream in(std::filesystem::path(BNG_ENERGY_FIXTURE_DIR)/"bound_mixed_reverse.bngl");
++    REQUIRE(in.good()); std::ostringstream ss; ss<<in.rdbuf();
++    auto build=[&](bool on){
++#ifdef _WIN32
++        _putenv_s("BNG_NFSIM_GENERAL_ENERGY",on?"1":"");
++#else
++        if(on)setenv("BNG_NFSIM_GENERAL_ENERGY","1",1);else unsetenv("BNG_NFSIM_GENERAL_ENERGY");
++#endif
++        auto model=bng::parser::parseModel(ss.str()); REQUIRE(model); int lim=-1;
++        std::unique_ptr<NFcore::System> s(NFinput::buildSystemFromAst(*model,false,-1,false,lim,{}));
++        REQUIRE(s);s->setUniversalTraversalLimit(lim);s->prepareForSimulation();return s;
++    };
++    auto legacy=build(false),general=build(true);
++    double a0=0,a1=0;for(auto*r:legacy->getAllReactions())a0+=r->get_a();for(auto*r:general->getAllReactions())a1+=r->get_a();
++    CHECK(a1==Catch::Approx(a0).epsilon(1e-12));
++}
+diff --git a/tests/cpp/future_thermodynamic_constraints.cpp b/tests/cpp/future_thermodynamic_constraints.cpp
+new file mode 100644
+index 0000000..85c11ad
+--- /dev/null
++++ b/tests/cpp/future_thermodynamic_constraints.cpp
+@@ -0,0 +1,112 @@
++// RED CONTRACT: thermodynamic graph diagnostics.
++#include <catch2/catch_approx.hpp>
++#include <catch2/catch_test_macros.hpp>
++#include "compile/energy/ThermodynamicConstraints.hpp"
++
++using namespace bng::compile::energy;
++
++TEST_CASE("tree has no cycle constraints and one gauge freedom per component") {
++    ThermodynamicGraph g;
++    g.addState("A"); g.addState("B"); g.addState("C");
++    g.addReversibleEdge("A","B",1.0,0.0);
++    g.addReversibleEdge("B","C",2.0,0.0);
++    const auto a = analyzeThermodynamics(g);
++    CHECK(a.connectedComponents == 1);
++    CHECK(a.cycleRank == 0);
++    CHECK(a.gaugeDegreesOfFreedom == 1);
++    CHECK(a.isEquilibriumCompatible);
++}
++
++TEST_CASE("one triangle has one fundamental cycle") {
++    ThermodynamicGraph g;
++    g.addReversibleEdge("A","B",1.0,0.0);
++    g.addReversibleEdge("B","C",2.0,0.0);
++    g.addReversibleEdge("C","A",-3.0,0.0);
++    const auto a = analyzeThermodynamics(g);
++    CHECK(a.cycleRank == 1);
++    REQUIRE(a.cycleAffinities.size() == 1);
++    CHECK(a.cycleAffinities[0] == Catch::Approx(0.0).margin(1e-12));
++    CHECK(a.isEquilibriumCompatible);
++}
++
++TEST_CASE("driving work produces nonzero cycle affinity") {
++    ThermodynamicGraph g;
++    g.addReversibleEdge("A","B",1.0,0.0);
++    g.addReversibleEdge("B","C",2.0,0.5);
++    g.addReversibleEdge("C","A",-3.0,0.0);
++    const auto a = analyzeThermodynamics(g);
++    REQUIRE(a.cycleAffinities.size() == 1);
++    CHECK(std::fabs(a.cycleAffinities[0]) > 1e-12);
++    CHECK_FALSE(a.isEquilibriumCompatible);
++}
++
++TEST_CASE("barrier modifier changes kinetics but not equilibrium ratio") {
++    ThermodynamicRate r;
++    r.stateDeltaG = 2.0;
++    r.activationBarrier = 5.0;
++    r.barrierModifier = 3.0;
++    r.phi = 0.4;
++    r.RT = 2.0;
++    const auto shifted = r.rates();
++    r.barrierModifier = 0.0;
++    const auto base = r.rates();
++    CHECK(shifted.forward < base.forward);
++    CHECK(shifted.reverse < base.reverse);
++    CHECK(shifted.forward / shifted.reverse ==
++          Catch::Approx(base.forward / base.reverse).epsilon(1e-12));
++}
++
++TEST_CASE("cycle rank obeys E minus V plus connected-components") {
++    ThermodynamicGraph g;
++    g.addReversibleEdge("A","B",1,0);
++    g.addReversibleEdge("B","C",1,0);
++    g.addReversibleEdge("C","A",-2,0);
++    g.addReversibleEdge("C","D",1,0);
++    g.addReversibleEdge("D","A",-1,0);
++    auto a=analyzeThermodynamics(g);
++    CHECK(a.cycleRank==2);
++}
++
++TEST_CASE("disconnected components contribute independent gauge freedoms") {
++    ThermodynamicGraph g;
++    g.addReversibleEdge("A","B",1,0);
++    g.addReversibleEdge("X","Y",2,0);
++    auto a=analyzeThermodynamics(g);
++    CHECK(a.connectedComponents==2);
++    CHECK(a.gaugeDegreesOfFreedom==2);
++    CHECK(a.cycleRank==0);
++}
++
++TEST_CASE("equilibrium state potentials reproduce edge free-energy differences") {
++    ThermodynamicGraph g;
++    g.addReversibleEdge("A","B",1,0);
++    g.addReversibleEdge("B","C",2,0);
++    g.addReversibleEdge("C","A",-3,0);
++    auto a=analyzeThermodynamics(g);
++    REQUIRE(a.isEquilibriumCompatible);
++    CHECK(a.statePotential.at("B")-a.statePotential.at("A") == Catch::Approx(1.0));
++    CHECK(a.statePotential.at("C")-a.statePotential.at("B") == Catch::Approx(2.0));
++}
++
++TEST_CASE("pure barrier changes do not contribute to cycle affinity") {
++    ThermodynamicGraph g;
++    g.addReversibleEdge("A","B",1,0,/*barrierModifier=*/100);
++    g.addReversibleEdge("B","C",2,0,/*barrierModifier=*/-7);
++    g.addReversibleEdge("C","A",-3,0,/*barrierModifier=*/2);
++    auto a=analyzeThermodynamics(g);
++    REQUIRE(a.cycleAffinities.size()==1);
++    CHECK(a.cycleAffinities[0] == Catch::Approx(0.0).margin(1e-12));
++}
++
++TEST_CASE("reversing driven edge reverses its contribution to cycle affinity") {
++    ThermodynamicGraph g1,g2;
++    g1.addReversibleEdge("A","B",0,1.5);
++    g1.addReversibleEdge("B","C",0,0);
++    g1.addReversibleEdge("C","A",0,0);
++    g2.addReversibleEdge("B","A",0,1.5);
++    g2.addReversibleEdge("A","C",0,0);
++    g2.addReversibleEdge("C","B",0,0);
++    auto a1=analyzeThermodynamics(g1),a2=analyzeThermodynamics(g2);
++    REQUIRE(a1.cycleAffinities.size()==1); REQUIRE(a2.cycleAffinities.size()==1);
++    CHECK(a1.cycleAffinities[0] == Catch::Approx(-a2.cycleAffinities[0]).epsilon(1e-12));
++}
+diff --git a/tests/cpp/fuzz_energy_delta_plan.cpp b/tests/cpp/fuzz_energy_delta_plan.cpp
+new file mode 100644
+index 0000000..85c3592
+--- /dev/null
++++ b/tests/cpp/fuzz_energy_delta_plan.cpp
+@@ -0,0 +1,39 @@
++// libFuzzer target for EnergyDeltaPlan. Build separately with -fsanitize=fuzzer,address,undefined.
++#include <cstddef>
++#include <cstdint>
++#include <cstdlib>
++#include <vector>
++#include "compile/energy/EnergyDeltaPlan.hpp"
++#include "energy_test_helpers.hpp"
++
++extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size) {
++    using namespace bng::compile::energy;
++    if (size < 4) return 0;
++    const std::size_t ncond = 1 + (data[0] % 8);
++    const std::size_t nterm = 1 + (data[1] % 24);
++    std::vector<EnergyCondition> conditions(ncond);
++    for (std::size_t i=0;i<ncond;++i) {
++        conditions[i].kind = (i & 1) ? ConditionKind::State : ConditionKind::Bond;
++        conditions[i].reactantIndex = int(i & 1);
++        conditions[i].moleculeType = (i & 1) ? "B" : "A";
++        conditions[i].componentName = "s" + std::to_string(i);
++        conditions[i].expectedState = (i & 1) ? "P" : "";
++    }
++    const std::uint64_t valid = (std::uint64_t{1} << ncond) - 1;
++    std::vector<EnergyTerm> terms;
++    std::vector<std::pair<double,std::uint64_t>> literal;
++    for (std::size_t i=0;i<nterm;++i) {
++        const std::uint8_t b = data[(2+i) % size];
++        const double energy = (double(int(b)-128))/16.0;
++        const std::uint64_t mask = 1 + (std::uint64_t(data[(3+i) % size]) % valid);
++        terms.push_back({energy,mask,i}); literal.push_back({energy,mask});
++    }
++    auto plan = EnergyDeltaPlan::factorized(0.125,conditions,terms);
++    if (!plan) std::abort();
++    for (std::uint64_t mask=0;mask<=valid;++mask) {
++        auto dg=plan->tryDeltaG(mask);
++        if (!dg || !bng3_test::nearly_equal(*dg,bng3_test::literal_delta_g(0.125,mask,literal)))
++            std::abort();
++    }
++    return 0;
++}
+diff --git a/tests/cpp/standalone_energy_delta_plan_smoke.cpp b/tests/cpp/standalone_energy_delta_plan_smoke.cpp
+new file mode 100644
+index 0000000..d5430a8
+--- /dev/null
++++ b/tests/cpp/standalone_energy_delta_plan_smoke.cpp
+@@ -0,0 +1,21 @@
++#include <cassert>
++#include <cmath>
++#include <cstdint>
++#include <vector>
++#include "compile/energy/EnergyDeltaPlan.hpp"
++
++int main() {
++    using namespace bng::compile::energy;
++    EnergyCondition a; a.kind=ConditionKind::Bond; a.reactantIndex=0; a.moleculeType="A"; a.componentName="x";
++    EnergyCondition b=a; b.kind=ConditionKind::State; b.componentName="s"; b.expectedState="P";
++    auto plan=EnergyDeltaPlan::factorized(0.5,{a,b},{{1.0,1,0},{2.0,2,1},{4.0,3,2}});
++    assert(plan && plan->isFactorized());
++    assert(std::fabs(*plan->tryDeltaG(0)-0.5)<1e-12);
++    assert(std::fabs(*plan->tryDeltaG(1)-1.5)<1e-12);
++    assert(std::fabs(*plan->tryDeltaG(2)-2.5)<1e-12);
++    assert(std::fabs(*plan->tryDeltaG(3)-7.5)<1e-12);
++    const auto table=plan->buildArrheniusTable(0.5,1.0,true,8);
++    assert(table && table->size()==4);
++    assert(std::fabs((*table)[3]-std::exp(-3.75))<1e-12);
++    return 0;
++}
+diff --git a/tests/cpp/test_compiled_model_contracts.cpp b/tests/cpp/test_compiled_model_contracts.cpp
+new file mode 100644
+index 0000000..58f0500
+--- /dev/null
++++ b/tests/cpp/test_compiled_model_contracts.cpp
+@@ -0,0 +1,137 @@
++#include <algorithm>
++#include <catch2/catch_test_macros.hpp>
++
++#include "compile/CompiledModel.hpp"
++#include "parser/BNGAstVisitor.hpp"
++
++TEST_CASE("CompiledModel preserves source rule ordering and energy-factor provenance") {
++    auto model = bng::parser::parseModel(R"BNG(
++begin parameters
++  e1 1
++  e2 2
++end parameters
++begin molecule types
++  A(x~U~P,y)
++  B(z)
++end molecule types
++begin energy patterns
++  ep1: A(x~P) e1
++  ep2: A(y!1).B(z!1) e2
++end energy patterns
++begin seed species
++  A(x~U,y) 10
++  B(z) 10
++end seed species
++begin reaction rules
++  phos: A(x~U) -> A(x~P) 1
++  bind: A(y) + B(z) -> A(y!1).B(z!1) 2
++end reaction rules
++)BNG");
++    REQUIRE(model != nullptr);
++    const bng::compile::CompiledModel compiled(*model);
++    REQUIRE(compiled.rules().size() == 2);
++    CHECK(compiled.rules()[0].name() == "phos");
++    CHECK(compiled.rules()[1].name() == "bind");
++    REQUIRE(compiled.energyFactors().size() == 2);
++    CHECK(compiled.energyFactors()[0].label == "ep1");
++    CHECK(compiled.energyFactors()[1].label == "ep2");
++    CHECK_FALSE(compiled.energyFactors()[0].structuralFingerprint.empty());
++    CHECK_FALSE(compiled.energyFactors()[1].structuralFingerprint.empty());
++}
++
++TEST_CASE("CompiledRule reports both endpoints of a bond mutation") {
++    auto model = bng::parser::parseModel(R"BNG(
++begin molecule types
++  A(x)
++  B(y)
++end molecule types
++begin seed species
++  A(x) 1
++  B(y) 1
++end seed species
++begin reaction rules
++  r: A(x) + B(y) -> A(x!1).B(y!1) 1
++end reaction rules
++)BNG");
++    REQUIRE(model != nullptr);
++    const bng::compile::CompiledModel compiled(*model);
++    REQUIRE(compiled.rules().size() == 1);
++    CHECK(compiled.rules()[0].affectedComponents().size() == 2);
++}
++
++TEST_CASE("state change contributes exactly one affected component") {
++    auto model=bng::parser::parseModel(R"BNG(
++begin molecule types
++ A(s~U~P)
++end molecule types
++begin seed species
++ A(s~U) 1
++end seed species
++begin reaction rules
++ flip: A(s~U)->A(s~P) 1
++end reaction rules
++)BNG");
++    REQUIRE(model);
++    bng::compile::CompiledModel c(*model);
++    REQUIRE(c.rules().size()==1);
++    REQUIRE(c.rules()[0].mutations().size()==1);
++    CHECK(c.rules()[0].mutations()[0].kind==bng::compile::MutationKind::ChangeState);
++    CHECK(c.rules()[0].affectedComponents().size()==1);
++}
++
++TEST_CASE("unbinding reports both affected bond endpoints") {
++    auto model=bng::parser::parseModel(R"BNG(
++begin molecule types
++ A(x)
++ B(y)
++end molecule types
++begin seed species
++ A(x!1).B(y!1) 1
++end seed species
++begin reaction rules
++ unbind: A(x!1).B(y!1)->A(x)+B(y) 1
++end reaction rules
++)BNG");
++    REQUIRE(model);
++    bng::compile::CompiledModel c(*model);
++    const auto& r=c.rules().front();
++    CHECK(std::any_of(r.mutations().begin(),r.mutations().end(),[](const auto&m){return m.kind==bng::compile::MutationKind::DeleteBond;}));
++    CHECK(r.affectedComponents().size()==2);
++}
++
++TEST_CASE("molecule deletion is retained in mutation signature without fake component dependency") {
++    auto model=bng::parser::parseModel(R"BNG(
++begin molecule types
++ A(x)
++end molecule types
++begin seed species
++ A(x) 1
++end seed species
++begin reaction rules
++ die: A(x)->0 1
++end reaction rules
++)BNG");
++    REQUIRE(model);
++    bng::compile::CompiledModel c(*model);
++    const auto& r=c.rules().front();
++    CHECK(std::any_of(r.mutations().begin(),r.mutations().end(),[](const auto&m){return m.kind==bng::compile::MutationKind::DeleteMolecule;}));
++}
++
++TEST_CASE("bidirectional source rule remains marked bidirectional and retains both rates") {
++    auto model=bng::parser::parseModel(R"BNG(
++begin molecule types
++ A(s~U~P)
++end molecule types
++begin seed species
++ A(s~U) 1
++end seed species
++begin reaction rules
++ flip: A(s~U)<->A(s~P) 1,2
++end reaction rules
++)BNG");
++    REQUIRE(model);
++    bng::compile::CompiledModel c(*model);
++    REQUIRE(c.rules().size()==1);
++    CHECK(c.rules()[0].isBidirectional());
++    CHECK(c.rules()[0].rateLaws().size()==2);
++}
+diff --git a/tests/cpp/test_compiled_rate_law_contracts.cpp b/tests/cpp/test_compiled_rate_law_contracts.cpp
+new file mode 100644
+index 0000000..1a432a2
+--- /dev/null
++++ b/tests/cpp/test_compiled_rate_law_contracts.cpp
+@@ -0,0 +1,40 @@
++#include <catch2/catch_test_macros.hpp>
++
++#include "compile/CompiledRateLaw.hpp"
++#include "parser/BNGAstVisitor.hpp"
++
++TEST_CASE("rate-law classifier recognizes all supported top-level families") {
++    struct Case { const char* expr; bng::compile::RateLawKind expected; };
++    const Case cases[] = {
++        {"Arrhenius(phi,Ea)", bng::compile::RateLawKind::ArrheniusEnergy},
++        {"Sat(k0,K)", bng::compile::RateLawKind::Saturation},
++        {"MM(kcat,Km)", bng::compile::RateLawKind::MichaelisMenten},
++        {"Hill(Vmax,Kh,n)", bng::compile::RateLawKind::Hill},
++        {"FunctionProduct(k,f)", bng::compile::RateLawKind::FunctionProduct},
++    };
++    for (const auto& c : cases) {
++        INFO(c.expr);
++        const auto rate = bng::compile::CompiledRateLaw::compile(bng::parser::parseExpression(c.expr));
++        CHECK(rate.kind == c.expected);
++        CHECK(rate.sourceExpression.size() > 0);
++    }
++}
++
++TEST_CASE("nested arithmetic containing Arrhenius is not misclassified as top-level Arrhenius") {
++    const auto rate = bng::compile::CompiledRateLaw::compile(
++        bng::parser::parseExpression("2*Arrhenius(phi,Ea)"));
++    CHECK(rate.kind != bng::compile::RateLawKind::ArrheniusEnergy);
++}
++
++TEST_CASE("rate-law classifier is case-insensitive for builtin families") {
++    const auto a=bng::compile::CompiledRateLaw::compile(bng::parser::parseExpression("ARRHENIUS(phi,Ea)"));
++    const auto h=bng::compile::CompiledRateLaw::compile(bng::parser::parseExpression("Hybrid(k1,k2)"));
++    CHECK(a.kind==bng::compile::RateLawKind::ArrheniusEnergy);
++    CHECK(h.kind==bng::compile::RateLawKind::Hybrid);
++}
++
++TEST_CASE("unknown top-level function remains generic expression") {
++    const auto r=bng::compile::CompiledRateLaw::compile(bng::parser::parseExpression("custom_rate(k)"));
++    CHECK(r.kind==bng::compile::RateLawKind::Expression);
++    CHECK_FALSE(r.isEnergyCoupled());
++}
+diff --git a/tests/cpp/test_energy_compiler_phase1.cpp b/tests/cpp/test_energy_compiler_phase1.cpp
+new file mode 100644
+index 0000000..9a81829
+--- /dev/null
++++ b/tests/cpp/test_energy_compiler_phase1.cpp
+@@ -0,0 +1,176 @@
++#include <algorithm>
++#include <cmath>
++#include <cstdint>
++#include <string>
++#include <vector>
++
++#include <catch2/catch_approx.hpp>
++#include <catch2/catch_test_macros.hpp>
++
++#include "compile/CompiledModel.hpp"
++#include "compile/CompiledRule.hpp"
++#include "compile/energy/EnergyDeltaPlan.hpp"
++#include "NFcore/energyPattern.hh"
++#include "parser/BNGAstVisitor.hpp"
++
++TEST_CASE("EnergyDeltaPlan evaluates conjunctive local factors") {
++    using namespace bng::compile::energy;
++
++    EnergyCondition c;
++    c.kind = ConditionKind::Bond;
++    c.reactantIndex = 0;
++    c.moleculeType = "A";
++    c.componentName = "c";
++    c.expectedBound = true;
++    c.partnerType = "C";
++    c.partnerComponent = "x";
++
++    EnergyCondition d = c;
++    d.componentName = "d";
++    d.partnerType = "D";
++
++    std::vector<EnergyTerm> terms {
++        {1.0, std::uint64_t{1} << 0, 1},
++        {2.0, std::uint64_t{1} << 1, 2},
++        {4.0, (std::uint64_t{1} << 0) | (std::uint64_t{1} << 1), 3},
++    };
++    auto plan = EnergyDeltaPlan::factorized(0.5, {c, d}, terms);
++    REQUIRE(plan.has_value());
++    REQUIRE(plan->isFactorized());
++    CHECK(plan->singleReactantIndex() == 0);
++    CHECK(plan->tryDeltaG(0).value() == Catch::Approx(0.5));
++    CHECK(plan->tryDeltaG(1).value() == Catch::Approx(1.5));
++    CHECK(plan->tryDeltaG(2).value() == Catch::Approx(2.5));
++    CHECK(plan->tryDeltaG(3).value() == Catch::Approx(7.5));
++
++    const auto factors = plan->buildArrheniusTable(0.5, 1.0, true, 8);
++    REQUIRE(factors.has_value());
++    REQUIRE(factors->size() == 4);
++    CHECK((*factors)[3] == Catch::Approx(std::exp(-3.75)));
++}
++
++TEST_CASE("EnergyFunction compiles binding context into EnergyDeltaPlan") {
++    NFcore::EnergyFunction energy(0.5, 1.0);
++
++    NFcore::EnergyPatternInfo pattern;
++    pattern.id = "A_context_B";
++    pattern.energyValue = 2.0;
++
++    NFcore::EpMolecule moleculeA;
++    moleculeA.typeName = "A";
++    moleculeA.xmlId = "a";
++    moleculeA.components.push_back({"b", "b", true, ""});
++    moleculeA.components.push_back({"c", "c", true, ""});
++
++    NFcore::EpMolecule moleculeB;
++    moleculeB.typeName = "B";
++    moleculeB.xmlId = "b";
++    moleculeB.components.push_back({"a", "a", true, ""});
++
++    NFcore::EpMolecule moleculeC;
++    moleculeC.typeName = "C";
++    moleculeC.xmlId = "c";
++    moleculeC.components.push_back({"x", "x", true, ""});
++
++    pattern.molecules = {moleculeA, moleculeB, moleculeC};
++    pattern.bonds.push_back({0, 0, 1, 0});
++    pattern.bonds.push_back({0, 1, 2, 0});
++    energy.addEnergyPattern(pattern);
++
++    const auto plan = energy.compileBindingDeltaPlan("A", "b", "B", "a");
++    REQUIRE(plan.isFactorized());
++    CHECK(plan.baseEnergy() == Catch::Approx(0.0));
++    REQUIRE(plan.conditions().size() == 1);
++    CHECK(plan.conditions()[0].reactantIndex == 0);
++    CHECK(plan.conditions()[0].moleculeType == "A");
++    CHECK(plan.conditions()[0].componentName == "c");
++    CHECK(plan.conditions()[0].partnerType == "C");
++    CHECK(plan.conditions()[0].partnerComponent == "x");
++    REQUIRE(plan.terms().size() == 1);
++    CHECK(plan.terms()[0].energyValue == Catch::Approx(2.0));
++    CHECK(plan.terms()[0].conditionMask == 1);
++    CHECK(plan.tryDeltaG(0).value() == Catch::Approx(0.0));
++    CHECK(plan.tryDeltaG(1).value() == Catch::Approx(2.0));
++
++    // Existing NFsim compatibility API must be a view of the same plan.
++    NFcore::EnergyBindingContext legacy;
++    REQUIRE(energy.getBindingContext("A", "b", "B", "a", legacy));
++    CHECK(legacy.baseEnergy == Catch::Approx(plan.baseEnergy()));
++    REQUIRE(legacy.conditionalTerms.size() == plan.terms().size());
++    CHECK(legacy.conditionalTerms[0].energyValue ==
++          Catch::Approx(plan.terms()[0].energyValue));
++    CHECK(legacy.conditionalTerms[0].conditionMask == plan.terms()[0].conditionMask);
++}
++
++TEST_CASE("EnergyFunction compiles signed state-change delta plan") {
++    NFcore::EnergyFunction energy(0.5, 1.0);
++
++    auto makePattern = [](const std::string& id, const std::string& state, double value) {
++        NFcore::EnergyPatternInfo pattern;
++        pattern.id = id;
++        pattern.energyValue = value;
++
++        NFcore::EpMolecule moleculeM;
++        moleculeM.typeName = "M";
++        moleculeM.xmlId = id + "_m";
++        moleculeM.components.push_back({"s", "", false, state});
++        moleculeM.components.push_back({"c", id + "_c", true, ""});
++
++        NFcore::EpMolecule moleculeC;
++        moleculeC.typeName = "C";
++        moleculeC.xmlId = id + "_c";
++        moleculeC.components.push_back({"x", id + "_m", true, ""});
++
++        pattern.molecules = {moleculeM, moleculeC};
++        pattern.bonds.push_back({0, 1, 1, 0});
++        return pattern;
++    };
++
++    energy.addEnergyPattern(makePattern("up", "up", 2.0));
++    energy.addEnergyPattern(makePattern("down", "down", 0.5));
++
++    const auto plan = energy.compileStateChangeDeltaPlan("M", "s", "down", "up");
++    REQUIRE(plan.isFactorized());
++    REQUIRE(plan.conditions().size() == 1);
++    REQUIRE(plan.terms().size() == 2);
++    CHECK(plan.tryDeltaG(0).value() == Catch::Approx(0.0));
++    CHECK(plan.tryDeltaG(1).value() == Catch::Approx(1.5));
++}
++
++
++TEST_CASE("CompiledRateLaw types existing Arrhenius syntax without changing it") {
++    const auto expression = bng::parser::parseExpression("Arrhenius(phi,Ea)");
++    const auto rate = bng::compile::CompiledRateLaw::compile(expression);
++    CHECK(rate.kind == bng::compile::RateLawKind::ArrheniusEnergy);
++    CHECK(rate.isEnergyCoupled());
++    CHECK(rate.arguments.size() == 2);
++}
++
++TEST_CASE("CompiledModel derives a mutation signature from ReactionRule operations") {
++    auto model = bng::parser::parseModel(R"BNG(
++begin molecule types
++    A(b)
++    B(a)
++end molecule types
++begin seed species
++    A(b) 1
++    B(a) 1
++end seed species
++begin reaction rules
++    bind: A(b) + B(a) -> A(b!1).B(a!1) 1
++end reaction rules
++)BNG");
++    REQUIRE(model != nullptr);
++
++    const bng::compile::CompiledModel compiled(*model);
++    REQUIRE(compiled.rules().size() == 1);
++    const auto& rule = compiled.rules().front();
++    CHECK(rule.name() == "bind");
++
++    const bool hasAddBond = std::any_of(
++        rule.mutations().begin(), rule.mutations().end(), [](const auto& mutation) {
++            return mutation.kind == bng::compile::MutationKind::AddBond;
++        });
++    CHECK(hasAddBond);
++    CHECK(rule.affectedComponents().size() == 2);
++}
+diff --git a/tests/cpp/test_energy_delta_plan_edge_cases.cpp b/tests/cpp/test_energy_delta_plan_edge_cases.cpp
+new file mode 100644
+index 0000000..57fbc39
+--- /dev/null
++++ b/tests/cpp/test_energy_delta_plan_edge_cases.cpp
+@@ -0,0 +1,191 @@
++#include <cmath>
++#include <cstdint>
++#include <limits>
++#include <vector>
++
++#include <catch2/catch_approx.hpp>
++#include <catch2/catch_test_macros.hpp>
++
++#include "compile/energy/EnergyDeltaPlan.hpp"
++#include "energy_test_helpers.hpp"
++
++using bng::compile::energy::ConditionKind;
++using bng::compile::energy::EnergyCondition;
++using bng::compile::energy::EnergyDeltaPlan;
++using bng::compile::energy::EnergyDeltaStrategy;
++using bng::compile::energy::EnergyTerm;
++
++namespace {
++EnergyCondition bound_condition(int reactant, const char* molecule, const char* component) {
++    EnergyCondition c;
++    c.kind = ConditionKind::Bond;
++    c.reactantIndex = reactant;
++    c.moleculeType = molecule;
++    c.componentName = component;
++    c.expectedBound = true;
++    return c;
++}
++}
++
++TEST_CASE("constant EnergyDeltaPlan accepts only mask zero") {
++    const auto plan = EnergyDeltaPlan::constant(2.25);
++    REQUIRE(plan.isConstant());
++    REQUIRE(plan.isExecutable());
++    CHECK(plan.validConditionMask() == 0);
++    CHECK(plan.maskIsValid(0));
++    CHECK_FALSE(plan.maskIsValid(1));
++    REQUIRE(plan.tryDeltaG(0).has_value());
++    CHECK(*plan.tryDeltaG(0) == Catch::Approx(2.25));
++    CHECK_FALSE(plan.tryDeltaG(1).has_value());
++}
++
++TEST_CASE("materialized fallback is never directly executable") {
++    const auto plan = EnergyDeltaPlan::materializedFallback();
++    CHECK(plan.strategy() == EnergyDeltaStrategy::MaterializedFallback);
++    CHECK_FALSE(plan.isExecutable());
++    CHECK_FALSE(plan.tryDeltaG(0).has_value());
++    CHECK_FALSE(plan.tryArrheniusFactor(0, 0.5, 2.478, true).has_value());
++    CHECK_FALSE(plan.buildArrheniusTable(0.5, 2.478, true).has_value());
++}
++
++TEST_CASE("factorized plan rejects zero and out-of-range term masks") {
++    const auto c0 = bound_condition(0, "A", "x");
++    const auto c1 = bound_condition(0, "A", "y");
++
++    CHECK_FALSE(EnergyDeltaPlan::factorized(0.0, {c0, c1}, {{1.0, 0, 0}}).has_value());
++    CHECK_FALSE(EnergyDeltaPlan::factorized(0.0, {c0, c1}, {{1.0, 4, 0}}).has_value());
++}
++
++TEST_CASE("factorized plan rejects nonfinite energy and excessive predicate count") {
++    std::vector<EnergyCondition> conditions;
++    for (int i = 0; i < 64; ++i) conditions.push_back(bound_condition(0, "A", "x"));
++
++    CHECK_FALSE(EnergyDeltaPlan::factorized(
++        std::numeric_limits<double>::infinity(), {}, {}).has_value());
++    CHECK_FALSE(EnergyDeltaPlan::factorized(0.0, conditions, {{1.0, 1, 0}}, 63).has_value());
++}
++
++TEST_CASE("mixed-reactant predicates have no single reactant index") {
++    auto c0 = bound_condition(0, "A", "x");
++    auto c1 = bound_condition(1, "B", "y");
++    auto plan = EnergyDeltaPlan::factorized(0.0, {c0, c1}, {{1.0, 1, 0}, {2.0, 2, 1}});
++    REQUIRE(plan.has_value());
++    CHECK_FALSE(plan->singleReactantIndex().has_value());
++    CHECK(plan->predicateMaskForReactant(0) == 1);
++    CHECK(plan->predicateMaskForReactant(1) == 2);
++}
++
++TEST_CASE("Arrhenius forward reverse factor ratio is exp(-deltaG/RT)") {
++    auto c = bound_condition(0, "A", "x");
++    auto plan = EnergyDeltaPlan::factorized(1.0, {c}, {{2.0, 1, 0}});
++    REQUIRE(plan.has_value());
++
++    for (std::uint64_t mask : {std::uint64_t{0}, std::uint64_t{1}}) {
++        const double dg = *plan->tryDeltaG(mask);
++        const double fwd = *plan->tryArrheniusFactor(mask, 0.37, 2.478, true);
++        const double rev = *plan->tryArrheniusFactor(mask, 0.37, 2.478, false);
++        CHECK(fwd / rev == Catch::Approx(std::exp(-dg / 2.478)).epsilon(1e-12));
++    }
++}
++
++TEST_CASE("lookup table equals direct evaluation for every context") {
++    std::vector<EnergyCondition> conditions;
++    for (int i = 0; i < 5; ++i) conditions.push_back(bound_condition(0, "A", "s"));
++    std::vector<EnergyTerm> terms = {
++        {1.0, 1, 0}, {-0.5, 2, 1}, {2.0, 4, 2}, {3.0, 3, 3}, {-1.0, 0b10101, 4},
++    };
++    auto plan = EnergyDeltaPlan::factorized(0.25, conditions, terms);
++    REQUIRE(plan.has_value());
++
++    const auto table = plan->buildArrheniusTable(0.4, 2.0, true, 8);
++    REQUIRE(table.has_value());
++    REQUIRE(table->size() == 32);
++    for (std::uint64_t mask = 0; mask < 32; ++mask) {
++        REQUIRE(plan->tryArrheniusFactor(mask, 0.4, 2.0, true).has_value());
++        CHECK((*table)[mask] == Catch::Approx(*plan->tryArrheniusFactor(mask, 0.4, 2.0, true)).epsilon(1e-12));
++    }
++}
++
++TEST_CASE("factorized plan validates predicate payloads rather than weakening them") {
++    EnergyCondition badBond = bound_condition(0, "A", "x");
++    badBond.partnerType = "B"; // missing partner component
++    CHECK_FALSE(EnergyDeltaPlan::factorized(0.0, {badBond}, {{1.0,1,0}}).has_value());
++
++    EnergyCondition badState;
++    badState.kind = ConditionKind::State;
++    badState.reactantIndex = 0;
++    badState.moleculeType = "A";
++    badState.componentName = "s";
++    CHECK_FALSE(EnergyDeltaPlan::factorized(0.0, {badState}, {{1.0,1,0}}).has_value());
++
++    EnergyCondition badReactant = bound_condition(-1, "A", "x");
++    CHECK_FALSE(EnergyDeltaPlan::factorized(0.0, {badReactant}, {{1.0,1,0}}).has_value());
++}
++
++TEST_CASE("Arrhenius evaluation rejects invalid thermodynamic numerics") {
++    auto c = bound_condition(0, "A", "x");
++    auto plan = EnergyDeltaPlan::factorized(0.0, {c}, {{1.0,1,0}});
++    REQUIRE(plan);
++    CHECK_FALSE(plan->tryArrheniusFactor(0, 0.5, 0.0, true).has_value());
++    CHECK_FALSE(plan->tryArrheniusFactor(0, 0.5, -1.0, true).has_value());
++    CHECK_FALSE(plan->tryArrheniusFactor(0, std::numeric_limits<double>::infinity(), 1.0, true).has_value());
++}
++
++TEST_CASE("Arrhenius overflow fails closed rather than returning infinity") {
++    auto c = bound_condition(0, "A", "x");
++    auto plan = EnergyDeltaPlan::factorized(-1e308, {c}, {{1.0,1,0}});
++    REQUIRE(plan);
++    CHECK_FALSE(plan->tryArrheniusFactor(1, 1.0, 1e-300, true).has_value());
++}
++
++TEST_CASE("lookup table obeys explicit local-context size budget") {
++    std::vector<EnergyCondition> conditions;
++    for (int i=0;i<9;++i) conditions.push_back(bound_condition(0,"A","x"));
++    auto plan = EnergyDeltaPlan::factorized(0.0, conditions, {{1.0,1,0}});
++    REQUIRE(plan);
++    CHECK_FALSE(plan->buildArrheniusTable(0.5,1.0,true,8).has_value());
++    CHECK(plan->buildArrheniusTable(0.5,1.0,true,9).has_value());
++}
++
++TEST_CASE("nonfinite constant energy becomes materialized fallback") {
++    const auto inf = EnergyDeltaPlan::constant(std::numeric_limits<double>::infinity());
++    const auto nan = EnergyDeltaPlan::constant(std::numeric_limits<double>::quiet_NaN());
++    CHECK_FALSE(inf.isExecutable());
++    CHECK_FALSE(nan.isExecutable());
++}
++
++TEST_CASE("empty factorized term list collapses to constant plan") {
++    auto plan = EnergyDeltaPlan::factorized(1.25, {}, {});
++    REQUIRE(plan.has_value());
++    CHECK(plan->isConstant());
++    CHECK(plan->tryDeltaG(0).value() == Catch::Approx(1.25));
++}
++
++TEST_CASE("predicate mask for absent reactant is zero") {
++    auto c = bound_condition(0, "A", "x");
++    auto plan = EnergyDeltaPlan::factorized(0.0, {c}, {{1.0,1,0}});
++    REQUIRE(plan);
++    CHECK(plan->predicateMaskForReactant(42) == 0);
++}
++
++TEST_CASE("phi limiting cases have expected Arrhenius behavior") {
++    auto c = bound_condition(0, "A", "x");
++    auto plan = EnergyDeltaPlan::factorized(0.0, {c}, {{2.0,1,0}});
++    REQUIRE(plan);
++    // phi=0 assigns all delta-G dependence to the reverse barrier.
++    CHECK(plan->tryArrheniusFactor(1, 0.0, 1.0, true).value() == Catch::Approx(1.0));
++    CHECK(plan->tryArrheniusFactor(1, 0.0, 1.0, false).value() == Catch::Approx(std::exp(2.0)));
++    // phi=1 assigns all delta-G dependence to the forward barrier.
++    CHECK(plan->tryArrheniusFactor(1, 1.0, 1.0, true).value() == Catch::Approx(std::exp(-2.0)));
++    CHECK(plan->tryArrheniusFactor(1, 1.0, 1.0, false).value() == Catch::Approx(1.0));
++}
++
++TEST_CASE("negative deltaG favors forward rate in correct ratio") {
++    auto c = bound_condition(0, "A", "x");
++    auto plan = EnergyDeltaPlan::factorized(0.0, {c}, {{-3.0,1,0}});
++    REQUIRE(plan);
++    const auto f=plan->tryArrheniusFactor(1,0.5,1.0,true);
++    const auto r=plan->tryArrheniusFactor(1,0.5,1.0,false);
++    REQUIRE(f); REQUIRE(r);
++    CHECK(*f / *r == Catch::Approx(std::exp(3.0)).epsilon(1e-12));
++}
+diff --git a/tests/cpp/test_energy_delta_plan_property.cpp b/tests/cpp/test_energy_delta_plan_property.cpp
+new file mode 100644
+index 0000000..aa8d0d7
+--- /dev/null
++++ b/tests/cpp/test_energy_delta_plan_property.cpp
+@@ -0,0 +1,63 @@
++#include <algorithm>
++#include <cmath>
++#include <cstdint>
++#include <random>
++#include <vector>
++
++#include <catch2/catch_approx.hpp>
++#include <catch2/catch_test_macros.hpp>
++
++#include "compile/energy/EnergyDeltaPlan.hpp"
++#include "energy_test_helpers.hpp"
++
++TEST_CASE("randomized EnergyDeltaPlan agrees with literal conjunction oracle") {
++    using namespace bng::compile::energy;
++    auto rng = bng3_test::deterministic_rng();
++    std::uniform_real_distribution<double> energy(-5.0, 5.0);
++    std::uniform_real_distribution<double> phi_dist(0.0, 1.0);
++    std::uniform_int_distribution<int> ncond_dist(1, 8);
++    std::uniform_int_distribution<int> nterm_dist(1, 24);
++
++    for (int trial = 0; trial < 10000; ++trial) {
++        const int ncond = ncond_dist(rng);
++        std::vector<EnergyCondition> conditions;
++        for (int i = 0; i < ncond; ++i) {
++            EnergyCondition c;
++            c.kind = (i % 2 == 0) ? ConditionKind::Bond : ConditionKind::State;
++            c.reactantIndex = i % 2;
++            c.moleculeType = (i % 2 == 0) ? "A" : "B";
++            c.componentName = "s" + std::to_string(i);
++            c.expectedBound = (i % 3 != 0);
++            c.expectedState = (i % 2 == 0) ? "" : ((i % 3 == 0) ? "P" : "U");
++            conditions.push_back(c);
++        }
++
++        const std::uint64_t valid = (std::uint64_t{1} << ncond) - 1;
++        std::vector<EnergyTerm> terms;
++        std::vector<std::pair<double, std::uint64_t>> literal;
++        const int nterm = nterm_dist(rng);
++        std::uniform_int_distribution<std::uint64_t> mask_dist(1, valid);
++        for (int i = 0; i < nterm; ++i) {
++            const double e = energy(rng);
++            const std::uint64_t mask = mask_dist(rng);
++            terms.push_back({e, mask, static_cast<std::size_t>(i)});
++            literal.push_back({e, mask});
++        }
++
++        const double base = energy(rng);
++        auto plan = EnergyDeltaPlan::factorized(base, conditions, terms);
++        REQUIRE(plan.has_value());
++        const double phi = phi_dist(rng);
++        const double rt = 0.25 + std::fabs(energy(rng));
++
++        for (std::uint64_t mask = 0; mask <= valid; ++mask) {
++            const double expected = bng3_test::literal_delta_g(base, mask, literal);
++            REQUIRE(plan->tryDeltaG(mask).has_value());
++            CHECK(*plan->tryDeltaG(mask) == Catch::Approx(expected).margin(1e-12));
++            CHECK(*plan->tryArrheniusFactor(mask, phi, rt, true) ==
++                  Catch::Approx(bng3_test::arrhenius_factor(expected, phi, rt, true)).epsilon(1e-12));
++            CHECK(*plan->tryArrheniusFactor(mask, phi, rt, false) ==
++                  Catch::Approx(bng3_test::arrhenius_factor(expected, phi, rt, false)).epsilon(1e-12));
++        }
++    }
++}
+diff --git a/tests/fixtures/energy/bound_mixed_reverse.bngl b/tests/fixtures/energy/bound_mixed_reverse.bngl
+new file mode 100644
+index 0000000..09b4dda
+--- /dev/null
++++ b/tests/fixtures/energy/bound_mixed_reverse.bngl
+@@ -0,0 +1,23 @@
++begin model
++begin parameters
++  G 3
++  phi 0.5
++  Ea 1
++end parameters
++begin molecule types
++  A(x,s~U~P)
++  B(y,t~U~P)
++end molecule types
++begin seed species
++  A(x!1,s~P).B(y!1,t~P) 40
++end seed species
++begin energy patterns
++  A(x!1,s~P).B(y!1,t~P) G
++end energy patterns
++begin observables
++  Molecules AB A(x!1).B(y!1)
++end observables
++begin reaction rules
++  A(x) + B(y) <-> A(x!1).B(y!1) Arrhenius(phi,Ea)
++end reaction rules
++end model
+diff --git a/tests/fixtures/energy/constant_binding.bngl b/tests/fixtures/energy/constant_binding.bngl
+new file mode 100644
+index 0000000..cbb25c4
+--- /dev/null
++++ b/tests/fixtures/energy/constant_binding.bngl
+@@ -0,0 +1,24 @@
++begin model
++begin parameters
++  G 2
++  phi 0.5
++  Ea 1
++end parameters
++begin molecule types
++  A(x)
++  B(y)
++end molecule types
++begin seed species
++  A(x) 50
++  B(y) 50
++end seed species
++begin energy patterns
++  A(x!1).B(y!1) G
++end energy patterns
++begin observables
++  Molecules AB A(x!1).B(y!1)
++end observables
++begin reaction rules
++  A(x) + B(y) <-> A(x!1).B(y!1) Arrhenius(phi,Ea)
++end reaction rules
++end model
+diff --git a/tests/fixtures/energy/correlated_two_hop_fallback.bngl b/tests/fixtures/energy/correlated_two_hop_fallback.bngl
+new file mode 100644
+index 0000000..e23b412
+--- /dev/null
++++ b/tests/fixtures/energy/correlated_two_hop_fallback.bngl
+@@ -0,0 +1,26 @@
++begin model
++begin parameters
++  G 4
++  phi 0.5
++  Ea 1
++end parameters
++begin molecule types
++  A(x,c)
++  B(y)
++  C(z,q)
++  D(w,s~U~P)
++end molecule types
++begin seed species
++  A(x,c!1).C(z!1,q!2).D(w!2,s~P) 20
++  B(y) 20
++end seed species
++begin energy patterns
++  A(x!1,c!2).B(y!1).C(z!2,q!3).D(w!3,s~P) G
++end energy patterns
++begin observables
++  Molecules AB A(x!1).B(y!1)
++end observables
++begin reaction rules
++  A(x) + B(y) <-> A(x!1).B(y!1) Arrhenius(phi,Ea)
++end reaction rules
++end model
+diff --git a/tests/fixtures/energy/mixed_reactant_state_context.bngl b/tests/fixtures/energy/mixed_reactant_state_context.bngl
+new file mode 100644
+index 0000000..f661c3c
+--- /dev/null
++++ b/tests/fixtures/energy/mixed_reactant_state_context.bngl
+@@ -0,0 +1,26 @@
++begin model
++begin parameters
++  G 3
++  phi 0.5
++  Ea 1
++end parameters
++begin molecule types
++  A(x,s~U~P)
++  B(y,t~U~P)
++end molecule types
++begin seed species
++  A(x,s~U) 20
++  A(x,s~P) 20
++  B(y,t~U) 20
++  B(y,t~P) 20
++end seed species
++begin energy patterns
++  A(x!1,s~P).B(y!1,t~P) G
++end energy patterns
++begin observables
++  Molecules AB A(x!1).B(y!1)
++end observables
++begin reaction rules
++  A(x) + B(y) <-> A(x!1).B(y!1) Arrhenius(phi,Ea)
++end reaction rules
++end model
+diff --git a/tests/fixtures/energy/no_relevant_factor.bngl b/tests/fixtures/energy/no_relevant_factor.bngl
+new file mode 100644
+index 0000000..b72fc0d
+--- /dev/null
++++ b/tests/fixtures/energy/no_relevant_factor.bngl
+@@ -0,0 +1,24 @@
++begin model
++begin parameters
++  G 2
++  phi 0.5
++  Ea 1
++end parameters
++begin molecule types
++  A(x,s~U~P)
++  B(y)
++end molecule types
++begin seed species
++  A(x,s~U) 50
++  B(y) 50
++end seed species
++begin energy patterns
++  A(s~P) G
++end energy patterns
++begin observables
++  Molecules AB A(x!1).B(y!1)
++end observables
++begin reaction rules
++  A(x) + B(y) <-> A(x!1).B(y!1) Arrhenius(phi,Ea)
++end reaction rules
++end model
+diff --git a/tests/fixtures/energy/reactant0_state_context.bngl b/tests/fixtures/energy/reactant0_state_context.bngl
+new file mode 100644
+index 0000000..ca67d9d
+--- /dev/null
++++ b/tests/fixtures/energy/reactant0_state_context.bngl
+@@ -0,0 +1,25 @@
++begin model
++begin parameters
++  G 2
++  phi 0.5
++  Ea 1
++end parameters
++begin molecule types
++  A(x,s~U~P)
++  B(y)
++end molecule types
++begin seed species
++  A(x,s~U) 25
++  A(x,s~P) 25
++  B(y) 50
++end seed species
++begin energy patterns
++  A(x!1,s~P).B(y!1) G
++end energy patterns
++begin observables
++  Molecules AB A(x!1).B(y!1)
++end observables
++begin reaction rules
++  A(x) + B(y) <-> A(x!1).B(y!1) Arrhenius(phi,Ea)
++end reaction rules
++end model
+diff --git a/tests/fixtures/energy/reactant1_state_context.bngl b/tests/fixtures/energy/reactant1_state_context.bngl
+new file mode 100644
+index 0000000..bd4861b
+--- /dev/null
++++ b/tests/fixtures/energy/reactant1_state_context.bngl
+@@ -0,0 +1,25 @@
++begin model
++begin parameters
++  G 2
++  phi 0.5
++  Ea 1
++end parameters
++begin molecule types
++  A(x)
++  B(y,s~U~P)
++end molecule types
++begin seed species
++  A(x) 50
++  B(y,s~U) 25
++  B(y,s~P) 25
++end seed species
++begin energy patterns
++  A(x!1).B(y!1,s~P) G
++end energy patterns
++begin observables
++  Molecules AB A(x!1).B(y!1)
++end observables
++begin reaction rules
++  A(x) + B(y) <-> A(x!1).B(y!1) Arrhenius(phi,Ea)
++end reaction rules
++end model
+diff --git a/tests/fixtures/energy/same_type_binding.bngl b/tests/fixtures/energy/same_type_binding.bngl
+new file mode 100644
+index 0000000..735384d
+--- /dev/null
++++ b/tests/fixtures/energy/same_type_binding.bngl
+@@ -0,0 +1,23 @@
++begin model
++begin parameters
++  G 2
++  phi 0.5
++  Ea 1
++end parameters
++begin molecule types
++  A(x,s~U~P)
++end molecule types
++begin seed species
++  A(x,s~U) 25
++  A(x,s~P) 25
++end seed species
++begin energy patterns
++  A(x!1,s~P).A(x!1) G
++end energy patterns
++begin observables
++  Molecules Dimer A(x!1).A(x!1)
++end observables
++begin reaction rules
++  A(x) + A(x) <-> A(x!1).A(x!1) Arrhenius(phi,Ea)
++end reaction rules
++end model
+diff --git a/tests/fixtures/energy/shared_predicate_factors.bngl b/tests/fixtures/energy/shared_predicate_factors.bngl
+new file mode 100644
+index 0000000..d089d45
+--- /dev/null
++++ b/tests/fixtures/energy/shared_predicate_factors.bngl
+@@ -0,0 +1,28 @@
++begin model
++begin parameters
++  G1 1
++  G2 2
++  phi 0.5
++  Ea 1
++end parameters
++begin molecule types
++  A(x,c,d)
++  B(y)
++  C(z)
++  D(w)
++end molecule types
++begin seed species
++  A(x,c!1,d!2).C(z!1).D(w!2) 50
++  B(y) 50
++end seed species
++begin energy patterns
++  A(x!1,c!2).B(y!1).C(z!2) G1
++  A(x!1,c!2,d!3).B(y!1).C(z!2).D(w!3) G2
++end energy patterns
++begin observables
++  Molecules AB A(x!1).B(y!1)
++end observables
++begin reaction rules
++  A(x) + B(y) <-> A(x!1).B(y!1) Arrhenius(phi,Ea)
++end reaction rules
++end model
+diff --git a/tests/fixtures/energy/state_change_local_context.bngl b/tests/fixtures/energy/state_change_local_context.bngl
+new file mode 100644
+index 0000000..a75fd1b
+--- /dev/null
++++ b/tests/fixtures/energy/state_change_local_context.bngl
+@@ -0,0 +1,25 @@
++begin model
++begin parameters
++  GU 0.5
++  GP 2
++  phi 0.4
++  Ea 1
++end parameters
++begin molecule types
++  A(s~U~P,c)
++  C(x)
++end molecule types
++begin seed species
++  A(s~U,c!1).C(x!1) 50
++end seed species
++begin energy patterns
++  A(s~U,c!1).C(x!1) GU
++  A(s~P,c!1).C(x!1) GP
++end energy patterns
++begin observables
++  Molecules AP A(s~P)
++end observables
++begin reaction rules
++  A(s~U) <-> A(s~P) Arrhenius(phi,Ea)
++end reaction rules
++end model
+diff --git a/tests/fixtures/energy/symmetric_sites.bngl b/tests/fixtures/energy/symmetric_sites.bngl
+new file mode 100644
+index 0000000..4827e2c
+--- /dev/null
++++ b/tests/fixtures/energy/symmetric_sites.bngl
+@@ -0,0 +1,24 @@
++begin model
++begin parameters
++  G 1
++  phi 0.5
++  Ea 1
++end parameters
++begin molecule types
++  A(x,x)
++  B(y)
++end molecule types
++begin seed species
++  A(x,x) 20
++  B(y) 20
++end seed species
++begin energy patterns
++  A(x!1,x).B(y!1) G
++end energy patterns
++begin observables
++  Molecules Bound A(x!1).B(y!1)
++end observables
++begin reaction rules
++  A(x) + B(y) <-> A(x!1).B(y!1) Arrhenius(phi,Ea)
++end reaction rules
++end model
+diff --git a/tests/fixtures/energy/validation_manifest.json b/tests/fixtures/energy/validation_manifest.json
+new file mode 100644
+index 0000000..5fcad26
+--- /dev/null
++++ b/tests/fixtures/energy/validation_manifest.json
+@@ -0,0 +1,15 @@
++{
++  "source_checkpoint": "3bc7b4ff131f8927421bc8eae170e3b248b75318",
++  "models": [
++    {"file":"constant_binding.bngl","expected":"constant_or_legacy_compact","exact_seed_parity_candidate":true},
++    {"file":"reactant0_state_context.bngl","expected":"mapping_local_generalized","exact_seed_parity_candidate":false},
++    {"file":"reactant1_state_context.bngl","expected":"mapping_local_generalized","exact_seed_parity_candidate":false},
++    {"file":"mixed_reactant_state_context.bngl","expected":"pair_factorized","exact_seed_parity_candidate":false},
++    {"file":"state_change_local_context.bngl","expected":"mapping_local_generalized","exact_seed_parity_candidate":false},
++    {"file":"shared_predicate_factors.bngl","expected":"deduplicated_factorized","exact_seed_parity_candidate":false},
++    {"file":"correlated_two_hop_fallback.bngl","expected":"materialized_fallback","exact_seed_parity_candidate":true},
++    {"file":"same_type_binding.bngl","expected":"safe_generalized_or_fallback","exact_seed_parity_candidate":false},
++    {"file":"symmetric_sites.bngl","expected":"multiplicity_safe","exact_seed_parity_candidate":false},
++    {"file":"no_relevant_factor.bngl","expected":"no_energy_delta","exact_seed_parity_candidate":true}
++  ]
++}
+diff --git a/tests/fixtures/energy/validation_policy.json b/tests/fixtures/energy/validation_policy.json
+new file mode 100644
+index 0000000..17c23d5
+--- /dev/null
++++ b/tests/fixtures/energy/validation_policy.json
+@@ -0,0 +1,25 @@
++{
++  "semantic": {
++    "delta_g_atol": 1e-12,
++    "arrhenius_rtol": 1e-12,
++    "exhaustive_condition_limit": 12
++  },
++  "stochastic": {
++    "default_seed_count": 1024,
++    "small_finite_state_seed_count": 4096,
++    "mean_z_max": 5.0,
++    "variance_ratio_low": 0.80,
++    "variance_ratio_high": 1.25,
++    "small_support_tv_max": 0.075,
++    "broad_support_ks_max": 0.075,
++    "max_tv_support": 32
++  },
++  "performance": {
++    "disabled_runtime_ratio_max": 1.02,
++    "nonenergy_runtime_ratio_max": 1.03,
++    "predicate_count_for_class_gate": 6,
++    "min_reaction_class_reduction": 16.0,
++    "predicate_count_for_construction_gate": 8,
++    "min_construction_speedup": 4.0
++  }
++}
+diff --git a/tests/python/test_cmake_inventory.py b/tests/python/test_cmake_inventory.py
+new file mode 100644
+index 0000000..949dcb1
+--- /dev/null
++++ b/tests/python/test_cmake_inventory.py
+@@ -0,0 +1,19 @@
++from pathlib import Path
++import re
++
++ROOT=Path(__file__).resolve().parents[2]
++
++
++def test_every_cpp_contract_is_referenced_by_cmake_or_is_standalone_fuzzer():
++    cmake=(ROOT/'cmake'/'energy_tests.cmake').read_text()
++    cpp={p.name for p in (ROOT/'tests'/'cpp').glob('*.cpp')}
++    exempt={'standalone_energy_delta_plan_smoke.cpp'}
++    missing=sorted(name for name in cpp-exempt if name not in cmake)
++    assert not missing, missing
++
++
++def test_cmake_does_not_reference_missing_cpp_files():
++    cmake=(ROOT/'cmake'/'energy_tests.cmake').read_text()
++    names=set(re.findall(r'\b(?:test|future|fuzz)_[A-Za-z0-9_]+\.cpp\b',cmake))
++    missing=sorted(name for name in names if not (ROOT/'tests'/'cpp'/name).exists())
++    assert not missing, missing
+diff --git a/tests/python/test_compare_numeric_tables.py b/tests/python/test_compare_numeric_tables.py
+new file mode 100644
+index 0000000..9001832
+--- /dev/null
++++ b/tests/python/test_compare_numeric_tables.py
+@@ -0,0 +1,27 @@
++from pathlib import Path
++from scripts import compare_numeric_tables as cmp
++
++
++def test_whitespace_tables_compare_exactly(tmp_path:Path):
++    a=tmp_path/'a.gdat';b=tmp_path/'b.gdat';text='time A B\n0 1 2\n1 3 4\n';a.write_text(text);b.write_text(text)
++    assert cmp.compare(a,b)['passed']
++
++
++def test_csv_supported(tmp_path:Path):
++    a=tmp_path/'a.csv';b=tmp_path/'b.csv';a.write_text('time,A\n0,1\n');b.write_text('time,A\n0,1.0000001\n')
++    assert cmp.compare(a,b,rtol=1e-6)['passed']
++
++
++def test_header_mismatch_fails(tmp_path:Path):
++    a=tmp_path/'a';b=tmp_path/'b';a.write_text('time A\n0 1\n');b.write_text('time B\n0 1\n')
++    assert not cmp.compare(a,b)['passed']
++
++
++def test_numeric_difference_reports_location(tmp_path:Path):
++    a=tmp_path/'a';b=tmp_path/'b';a.write_text('time A\n0 1\n');b.write_text('time A\n0 2\n')
++    r=cmp.compare(a,b);assert not r['passed'];assert r['failures'][0]['column']=='A'
++
++
++def test_nonfinite_mismatch_fails_explicitly(tmp_path:Path):
++    a=tmp_path/'a';b=tmp_path/'b';a.write_text('time A\n0 inf\n');b.write_text('time A\n0 1\n')
++    r=cmp.compare(a,b);assert not r['passed'];assert r['failures'][0]['kind']=='nonfinite'
+diff --git a/tests/python/test_env_isolation.py b/tests/python/test_env_isolation.py
+new file mode 100644
+index 0000000..e122fd1
+--- /dev/null
++++ b/tests/python/test_env_isolation.py
+@@ -0,0 +1,20 @@
++from __future__ import annotations
++import os
++from pathlib import Path
++
++from scripts import nf_energy_statistical_parity as parity
++
++
++def test_generalized_energy_context_restores_absent_environment():
++    os.environ.pop("BNG_NFSIM_GENERAL_ENERGY",None)
++    with parity.generalized_energy(True):
++        assert os.environ["BNG_NFSIM_GENERAL_ENERGY"]=="1"
++    assert "BNG_NFSIM_GENERAL_ENERGY" not in os.environ
++
++
++def test_generalized_energy_context_restores_existing_environment():
++    os.environ["BNG_NFSIM_GENERAL_ENERGY"]="custom"
++    with parity.generalized_energy(False):
++        assert "BNG_NFSIM_GENERAL_ENERGY" not in os.environ
++    assert os.environ["BNG_NFSIM_GENERAL_ENERGY"]=="custom"
++    os.environ.pop("BNG_NFSIM_GENERAL_ENERGY",None)
+diff --git a/tests/python/test_exact_output_parity.py b/tests/python/test_exact_output_parity.py
+new file mode 100644
+index 0000000..4a6f434
+--- /dev/null
++++ b/tests/python/test_exact_output_parity.py
+@@ -0,0 +1,12 @@
++from pathlib import Path
++from scripts import exact_output_parity as parity
++
++
++def test_same_bytes_pass(tmp_path: Path):
++    a=tmp_path/'a';b=tmp_path/'b';a.write_bytes(b'abc');b.write_bytes(b'abc')
++    assert parity.compare(a,b)['passed']
++
++
++def test_different_bytes_fail_even_same_size(tmp_path: Path):
++    a=tmp_path/'a';b=tmp_path/'b';a.write_bytes(b'abc');b.write_bytes(b'abd')
++    assert not parity.compare(a,b)['passed']
+diff --git a/tests/python/test_fixture_generator.py b/tests/python/test_fixture_generator.py
+new file mode 100644
+index 0000000..4b16797
+--- /dev/null
++++ b/tests/python/test_fixture_generator.py
+@@ -0,0 +1,25 @@
++from __future__ import annotations
++from pathlib import Path
++import pytest
++
++from scripts import generate_boolean_context_fixture as gen
++
++
++def test_generated_model_has_requested_number_of_energy_patterns():
++    text=gen.generate(8)
++    block=text.split("begin energy patterns",1)[1].split("end energy patterns",1)[0]
++    lines=[x for x in block.splitlines() if x.strip()]
++    assert len(lines)==8
++    assert "c7" in text and "C7" in text
++
++
++def test_generator_rejects_unreasonable_sizes():
++    with pytest.raises(ValueError): gen.generate(0)
++    with pytest.raises(ValueError): gen.generate(41)
++
++
++def test_generated_context_sizes_cover_scaling_gate_points():
++    for n in (1,6,8,12):
++        text=gen.generate(n)
++        block=text.split('begin energy patterns',1)[1].split('end energy patterns',1)[0]
++        assert len([x for x in block.splitlines() if x.strip()])==n
+diff --git a/tests/python/test_performance_gate.py b/tests/python/test_performance_gate.py
+new file mode 100644
+index 0000000..e6b3e29
+--- /dev/null
++++ b/tests/python/test_performance_gate.py
+@@ -0,0 +1,46 @@
++from __future__ import annotations
++from pathlib import Path
++
++from scripts import energy_performance_gate as gate
++
++
++def base():
++    return {"disabled_median_s":1.0,"nonenergy_median_s":1.0,"energy_reaction_classes":256,
++            "energy_construction_median_s":8.0,"energy_predicates":8}
++
++
++def test_good_candidate_passes():
++    c={"disabled_median_s":1.01,"nonenergy_median_s":1.02,"energy_reaction_classes":2,
++       "energy_construction_median_s":1.0}
++    r=gate.evaluate(base(),c)
++    assert r["passed"]
++    assert r["class_reduction"]==128
++    assert r["construction_speedup"]==8
++
++
++def test_disabled_regression_fails():
++    c={"disabled_median_s":1.03,"nonenergy_median_s":1.0,"energy_reaction_classes":2,
++       "energy_construction_median_s":1.0}
++    assert not gate.evaluate(base(),c)["passed"]
++
++
++def test_exponential_class_reduction_gate_fails():
++    c={"disabled_median_s":1.0,"nonenergy_median_s":1.0,"energy_reaction_classes":32,
++       "energy_construction_median_s":1.0}
++    r=gate.evaluate(base(),c)
++    assert not r["passed"]
++    assert r["class_reduction"]==8
++
++
++def test_small_context_does_not_require_large_context_reduction_thresholds():
++    b=base();b['energy_predicates']=4
++    c={"disabled_median_s":1.0,"nonenergy_median_s":1.0,"energy_reaction_classes":128,
++       "energy_construction_median_s":7.0}
++    assert gate.evaluate(b,c)['passed']
++
++
++def test_invalid_zero_timing_is_rejected():
++    import pytest
++    c={"disabled_median_s":1.0,"nonenergy_median_s":1.0,"energy_reaction_classes":1,
++       "energy_construction_median_s":0.0}
++    with pytest.raises(ValueError): gate.evaluate(base(),c)
+diff --git a/tests/python/test_semantic_oracle.py b/tests/python/test_semantic_oracle.py
+new file mode 100644
+index 0000000..72e2946
+--- /dev/null
++++ b/tests/python/test_semantic_oracle.py
+@@ -0,0 +1,41 @@
++from __future__ import annotations
++import math
++from pathlib import Path
++import pytest
++
++from scripts import energy_semantic_oracle as oracle
++
++
++def test_conjunctive_literal_delta_g():
++    terms=[{"energy":1.0,"mask":1},{"energy":2.0,"mask":2},{"energy":4.0,"mask":3}]
++    assert oracle.delta_g(0.5,0,terms)==0.5
++    assert oracle.delta_g(0.5,1,terms)==1.5
++    assert oracle.delta_g(0.5,2,terms)==2.5
++    assert oracle.delta_g(0.5,3,terms)==7.5
++
++
++def test_arrhenius_ratio_is_boltzmann_factor():
++    dg=3.2; phi=0.37; rt=2.478
++    f=oracle.arrhenius(dg,phi,rt,True); r=oracle.arrhenius(dg,phi,rt,False)
++    assert f/r == pytest.approx(math.exp(-dg/rt), rel=1e-12)
++
++
++def test_zero_term_mask_is_invalid():
++    with pytest.raises(ValueError):
++        oracle.delta_g(0,0,[{"energy":1,"mask":0}])
++
++
++def test_enumeration_size_is_power_of_two():
++    case={"condition_count":5,"base":0,"terms":[{"energy":1,"mask":1}],"phi":0.5,"RT":1}
++    assert len(oracle.enumerate_plan(case))==32
++
++
++def test_random_literal_enumeration_satisfies_forward_reverse_ratio():
++    import random
++    random.seed(123)
++    for _ in range(2000):
++        n=random.randint(1,8);valid=(1<<n)-1
++        terms=[{"energy":random.uniform(-5,5),"mask":random.randint(1,valid)} for _ in range(random.randint(1,20))]
++        case={"condition_count":n,"base":random.uniform(-2,2),"terms":terms,"phi":random.random(),"RT":random.uniform(.2,5)}
++        for row in oracle.enumerate_plan(case):
++            assert row['forward_factor']/row['reverse_factor'] == pytest.approx(math.exp(-row['delta_g']/case['RT']),rel=1e-12)
+diff --git a/tests/python/test_statistical_parity_metrics.py b/tests/python/test_statistical_parity_metrics.py
+new file mode 100644
+index 0000000..8c73f36
+--- /dev/null
++++ b/tests/python/test_statistical_parity_metrics.py
+@@ -0,0 +1,103 @@
++from __future__ import annotations
++from pathlib import Path
++import numpy as np
++
++from scripts import nf_energy_statistical_parity as parity
++
++
++def test_identical_samples_pass_all_metrics():
++    x = np.array([0,1,1,2,3,5,8,13], dtype=float)
++    m = parity.compare_point(x, x)
++    assert m.passed
++    assert m.pooled_se_z == 0.0
++    assert m.paired_se_z == 0.0
++    assert m.variance_ratio == 1.0
++    assert m.tv == 0.0
++
++
++def test_large_mean_shift_fails():
++    rng = np.random.default_rng(1)
++    a = rng.poisson(10, 4096)
++    b = rng.poisson(20, 4096)
++    m = parity.compare_point(a, b)
++    assert not m.passed
++    assert m.pooled_se_z > 5
++
++
++def test_variance_shift_fails_even_with_matched_mean():
++    rng = np.random.default_rng(2)
++    a = rng.normal(0, 1, 4096)
++    b = rng.normal(0, 2, 4096)
++    m = parity.compare_point(a, b)
++    assert not m.passed
++    assert not (0.80 <= m.variance_ratio <= 1.25)
++
++
++def test_tv_detects_distribution_shape_change():
++    a = np.repeat([0, 2], 2048)
++    b = np.repeat([1, 1], 2048)
++    m = parity.compare_point(a, b)
++    assert m.tv > 0.075
++    assert not m.passed
++
++
++def test_zero_variance_equal_is_well_defined():
++    a = np.ones(32)
++    m = parity.compare_point(a, a)
++    assert m.variance_ratio == 1.0
++    assert m.pooled_se_z == 0.0
++
++
++def test_zero_variance_unequal_fails():
++    a = np.zeros(32); b = np.ones(32)
++    m = parity.compare_point(a, b)
++    assert not m.passed
++    assert np.isinf(m.pooled_se_z)
++
++
++def test_trajectory_comparison_checks_every_time_and_observable():
++    times = [0.0, 1.0, 2.0]
++    a = {"A": np.array([[1,2,3],[1,2,3],[1,2,3]], float),
++         "B": np.array([[0,1,1],[0,1,1],[0,1,1]], float)}
++    metrics = parity.compare_trajectories(a, a, times)
++    assert len(metrics) == 6
++    assert all(m.passed for m in metrics)
++
++
++def test_nonfinite_samples_are_rejected():
++    import pytest
++    with pytest.raises(ValueError, match="finite"):
++        parity.compare_point([1.0, np.nan], [1.0, 2.0])
++
++
++def test_single_seed_is_rejected_for_distributional_gate():
++    import pytest
++    with pytest.raises(ValueError, match="two seeds"):
++        parity.compare_point([1.0], [1.0])
++
++
++def test_small_support_uses_tv_shape_gate():
++    x=np.tile(np.array([0,1,2,3]),256)
++    m=parity.compare_point(x,x)
++    assert m.shape_metric=="tv"
++    assert m.tv==0.0
++    assert m.ks==0.0
++
++
++def test_broad_support_uses_ks_instead_of_sparse_empirical_tv():
++    a=np.arange(1024,dtype=float)
++    b=np.arange(1024,dtype=float)
++    m=parity.compare_point(a,b)
++    assert m.support_size>32
++    assert m.shape_metric=="ks"
++    assert m.tv is None
++    assert m.ks==0.0
++
++
++def test_ks_detects_broad_distribution_shift():
++    a=np.arange(1024,dtype=float)
++    b=np.arange(1024,dtype=float)+500
++    m=parity.compare_point(a,b)
++    assert m.shape_metric=="ks"
++    assert m.ks>0.075
++    assert not m.passed
+diff --git a/tests/python/test_validation_manifest.py b/tests/python/test_validation_manifest.py
+new file mode 100644
+index 0000000..465e113
+--- /dev/null
++++ b/tests/python/test_validation_manifest.py
+@@ -0,0 +1,22 @@
++from __future__ import annotations
++import json
++from pathlib import Path
++
++ROOT=Path(__file__).resolve().parents[2]
++
++
++def test_manifest_references_existing_unique_fixtures():
++    path=ROOT/"fixtures"/"energy"/"validation_manifest.json"
++    manifest=json.loads(path.read_text())
++    files=[m["file"] for m in manifest["models"]]
++    assert len(files)==len(set(files))
++    for f in files:
++        assert (path.parent/f).is_file(), f
++
++
++def test_manifest_contains_required_strategy_classes():
++    manifest=json.loads((ROOT/"fixtures"/"energy"/"validation_manifest.json").read_text())
++    strategies={m["expected"] for m in manifest["models"]}
++    assert "pair_factorized" in strategies
++    assert "materialized_fallback" in strategies
++    assert "mapping_local_generalized" in strategies
+diff --git a/tests/python/test_validation_policy.py b/tests/python/test_validation_policy.py
+new file mode 100644
+index 0000000..0e52f3e
+--- /dev/null
++++ b/tests/python/test_validation_policy.py
+@@ -0,0 +1,23 @@
++from pathlib import Path
++import json
++from scripts.nf_energy_statistical_parity import Thresholds
++
++ROOT=Path(__file__).resolve().parents[2]
++POLICY=json.loads((ROOT/'fixtures/energy/validation_policy.json').read_text())
++
++
++def test_policy_matches_statistical_harness_defaults():
++    t=Thresholds();s=POLICY['stochastic']
++    assert t.mean_z==s['mean_z_max']
++    assert t.variance_ratio_low==s['variance_ratio_low']
++    assert t.variance_ratio_high==s['variance_ratio_high']
++    assert t.tv==s['small_support_tv_max']
++    assert t.ks==s['broad_support_ks_max']
++    assert t.max_tv_support==s['max_tv_support']
++
++
++def test_policy_has_stricter_large_context_performance_gate_than_disabled_overhead():
++    p=POLICY['performance']
++    assert p['predicate_count_for_class_gate']>=6
++    assert p['min_reaction_class_reduction']>=16
++    assert p['disabled_runtime_ratio_max']<=1.02

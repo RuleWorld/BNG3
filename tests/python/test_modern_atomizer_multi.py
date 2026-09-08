@@ -1,4 +1,4 @@
-"""Source-derived tests for conservative SBML-Multi discovery boundaries."""
+"""Source-derived tests for the bounded Playground SBML-Multi extractor."""
 
 from __future__ import annotations
 
@@ -102,3 +102,99 @@ def test_parse_multi_package_matches_reference_result_field_names_and_patterns()
     assert pattern.typeId == "ABType"
     assert pattern.pattern == "A(bind!1).A(bind!1)"
     assert result.seedPatterns == []
+
+
+def _shallow_multi_xml(component: str = "bind") -> str:
+    return f"""<?xml version="1.0"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1">
+  <model id="shallow">
+    <listOfSpecies>
+      <species id="AB" multi:speciesType="ABType"/>
+    </listOfSpecies>
+    <multi:listOfSpeciesTypes>
+      <multi:bindingSiteSpeciesType id="bindSite" name="bind"/>
+      <multi:speciesType id="AType" name="A">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance id="bind1" speciesType="bindSite" name="bind"/>
+        </multi:listOfSpeciesTypeInstances>
+      </multi:speciesType>
+      <multi:speciesType id="ABType" name="ABComplex">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance id="A1" speciesType="AType"/>
+          <multi:speciesTypeInstance id="A2" speciesType="AType"/>
+        </multi:listOfSpeciesTypeInstances>
+        <multi:listOfSpeciesTypeComponentIndexes>
+          <multi:speciesTypeComponentIndex id="bind1_1" component="{component}" identifyingParent="A1"/>
+          <multi:speciesTypeComponentIndex id="bind1_2" component="{component}" identifyingParent="A2"/>
+        </multi:listOfSpeciesTypeComponentIndexes>
+        <multi:listOfInSpeciesTypeBonds>
+          <multi:inSpeciesTypeBond bindingSite1="bind1_1" bindingSite2="bind1_2"/>
+        </multi:listOfInSpeciesTypeBonds>
+      </multi:speciesType>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+
+
+def test_playground_multi_resolves_single_site_bonds_with_component_fallback():
+    result = parse_multi_package(_shallow_multi_xml(component="not_the_site_id"))
+
+    assert result.present is True
+    assert result.deep is False
+    assert result.bngl_molecule_types == ["A(bind)"]
+    assert [(item.type_id, item.pattern) for item in result.complex_patterns] == [
+        ("ABType", "A(bind!1).A(bind!1)")
+    ]
+    assert not any("could not be resolved" in item.message for item in result.warnings)
+
+
+def test_playground_multi_detects_deep_hierarchy_without_flattening():
+    xml = """<?xml version="1.0"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1">
+  <model id="deep">
+    <listOfSpecies><species id="complex" multi:speciesType="complexType"/></listOfSpecies>
+    <multi:listOfSpeciesTypes>
+      <multi:bindingSiteSpeciesType id="bst_1" name="site"/>
+      <multi:speciesType id="mol_1" name="mol_1">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance id="site_1" speciesType="bst_1" name="site"/>
+        </multi:listOfSpeciesTypeInstances>
+      </multi:speciesType>
+      <multi:speciesType id="cps_1" name="cps_1">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance id="mol_instance" speciesType="mol_1"/>
+        </multi:listOfSpeciesTypeInstances>
+      </multi:speciesType>
+      <multi:speciesType id="complexType" name="complex">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance id="cps_instance" speciesType="cps_1"/>
+        </multi:listOfSpeciesTypeInstances>
+      </multi:speciesType>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+
+    result = parse_multi_package(xml)
+
+    assert result.present is True
+    assert result.deep is True
+    assert result.bngl_molecule_types == []
+    assert result.complex_patterns == []
+    assert "multi-layer hierarchy" in result.warnings[0].message
+    assert "complex" in result.warnings[0].message
+
+
+def test_playground_multi_reports_missing_species_type_list():
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1">
+  <model id="missing"/>
+</sbml>"""
+
+    result = parse_multi_package(xml)
+
+    assert result.present is True
+    assert result.deep is False
+    assert result.warnings[0].severity == "info"
+    assert "no listOfSpeciesTypes" in result.warnings[0].message

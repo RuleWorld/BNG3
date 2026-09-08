@@ -60,6 +60,23 @@ public:
         std::size_t multiplicity = 1;  // Number of Ullmann maps that collapse to this embedding
     };
 
+    // Per-expansion state. Caches and iteration bookkeeping belong to an
+    // execution context, not to the immutable rule definition.
+    class ExecutionState {
+    public:
+        ExecutionState();
+        ~ExecutionState();
+        ExecutionState(ExecutionState&&) noexcept;
+        ExecutionState& operator=(ExecutionState&&) noexcept;
+        ExecutionState(const ExecutionState&) = delete;
+        ExecutionState& operator=(const ExecutionState&) = delete;
+
+    private:
+        friend class ReactionRule;
+        struct Impl;
+        std::unique_ptr<Impl> impl_;
+    };
+
     ReactionRule(
         std::string ruleName,
         std::string label,
@@ -96,7 +113,13 @@ public:
 
     void initialize();
     void clearPatternMatchCache() const;
+    void clearPatternMatchCache(ExecutionState& state) const;
+    std::unique_ptr<ExecutionState> createExecutionState() const;
     std::vector<EmbeddingResult> findEmbeddings(std::size_t patternIndex, const SpeciesList& speciesList) const;
+    std::vector<EmbeddingResult> findEmbeddings(
+        std::size_t patternIndex,
+        const SpeciesList& speciesList,
+        ExecutionState& state) const;
     std::size_t expandRule(
         SpeciesList& speciesList,
         RxnList& rxnList,
@@ -104,12 +127,24 @@ public:
         const std::function<bool(const SpeciesGraph&)>& productFilter = {},
         std::size_t speciesBoundary = std::numeric_limits<std::size_t>::max(),
         const Model* model = nullptr) const;
+    std::size_t expandRule(
+        SpeciesList& speciesList,
+        RxnList& rxnList,
+        std::size_t currentIteration,
+        ExecutionState& state,
+        const std::function<bool(const SpeciesGraph&)>& productFilter = {},
+        std::size_t speciesBoundary = std::numeric_limits<std::size_t>::max(),
+        const Model* model = nullptr) const;
 
 private:
+    ExecutionState& compatibilityState() const;
+    void prepareExecutionState(ExecutionState& state) const;
+
     std::vector<EmbeddingResult> findEmbeddingsForSpecies(
         std::size_t patternIndex,
         const SpeciesList& speciesList,
         const std::vector<std::size_t>& candidateSpecies,
+        ExecutionState& state,
         const Model* model = nullptr) const;
 
     bool buildReaction(
@@ -134,12 +169,7 @@ private:
     std::vector<std::pair<ComponentRef, ComponentRef>> moleculeMappings_;
     std::map<ComponentRef, ComponentRef> componentMappings_;
     std::vector<std::vector<ReactionCenterRef>> reactionCenter_;
-    mutable std::vector<std::vector<EmbeddingResult>> patternMatches_;
-    mutable bool matchesInitialized_ = false;
-    mutable bool synthesisApplied_ = false;
-    mutable std::size_t lastSpeciesListCapacity_ = 0;
-    mutable std::unique_ptr<ReactionRule> reverseRule_;
-    mutable std::vector<std::size_t> lastProcessedInIteration_;
+    mutable std::unique_ptr<ExecutionState> compatibilityState_;
     bool hasScopePrefix_ = false;  // true if rule uses %x:: scope prefix syntax
 
     // Tag-based component mapping: product ComponentRef → reactant ComponentRef

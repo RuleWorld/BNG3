@@ -12,6 +12,7 @@
 #include "ast/Compartment.hpp"
 #include "ast/EnergyPattern.hpp"
 #include "ast/Expression.hpp"
+#include "ast/PopulationMap.hpp"
 
 namespace py = pybind11;
 using namespace bng::ast;
@@ -120,10 +121,27 @@ void bind_model(py::module_& m) {
 
     py::class_<Compartment>(m, "Compartment")
         .def_property_readonly("name", &Compartment::getName)
+        .def_property_readonly("volume", &Compartment::getVolume)
         .def_property_readonly("dimension", &Compartment::getDimension)
+        .def_property_readonly("parent", &Compartment::getParent)
         .def("__repr__", [](const Compartment& c) {
             return "<Compartment '" + c.getName() + "'>";
         });
+
+    py::class_<EnergyPattern>(m, "EnergyPattern")
+        .def_property_readonly("label", &EnergyPattern::getLabel)
+        .def_property_readonly("pattern", &EnergyPattern::getPattern)
+        .def_property_readonly("expression", &EnergyPattern::getExpression,
+                               py::return_value_policy::reference_internal)
+        .def("__repr__", [](const EnergyPattern& p) {
+            return "<EnergyPattern '" + p.getPattern() + "'>";
+        });
+
+    py::class_<PopulationMap>(m, "PopulationMap")
+        .def_readonly("label", &PopulationMap::label)
+        .def_readonly("pattern", &PopulationMap::patternText)
+        .def_readonly("function", &PopulationMap::populationFunction)
+        .def_readonly("args", &PopulationMap::functionArgs);
 
     py::class_<Action>(m, "Action")
         .def_readonly("name", &Action::name)
@@ -150,14 +168,23 @@ void bind_model(py::module_& m) {
             py::return_value_policy::reference_internal)
         .def_property_readonly("functions", &Model::getFunctions,
                                py::return_value_policy::reference_internal)
+        .def_property_readonly("energy_patterns", &Model::getEnergyPatterns,
+                               py::return_value_policy::reference_internal)
+        .def_property_readonly("population_maps", &Model::getPopulationMaps,
+                               py::return_value_policy::reference_internal)
         .def_property_readonly("compartments",
             py::overload_cast<>(&Model::getCompartments, py::const_),
             py::return_value_policy::reference_internal)
         .def_property_readonly("actions", [](const Model& m) {
             return m.getActions();
         })
+        .def_property_readonly("protocol_actions", [](const Model& m) {
+            return m.getSimulationProtocol();
+        })
         .def_property_readonly("model_name", &Model::getModelName)
         .def_property_readonly("version", &Model::getVersion)
+        .def_property_readonly("substance_units", &Model::getSubstanceUnits)
+        .def_property_readonly("options", &Model::getOptions)
         .def("set_model_name", &Model::setModelName,
              py::arg("name"))
         .def("set_parameter", [](Model& model, const std::string& name, double value) {

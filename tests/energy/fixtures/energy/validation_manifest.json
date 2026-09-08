@@ -1,0 +1,15 @@
+{
+  "source_checkpoint": "3bc7b4ff131f8927421bc8eae170e3b248b75318",
+  "models": [
+    {"file":"constant_binding.bngl","expected":"constant_or_legacy_compact","exact_seed_parity_candidate":true},
+    {"file":"reactant0_state_context.bngl","expected":"mapping_local_generalized","exact_seed_parity_candidate":false},
+    {"file":"reactant1_state_context.bngl","expected":"mapping_local_generalized","exact_seed_parity_candidate":false},
+    {"file":"mixed_reactant_state_context.bngl","expected":"pair_factorized","exact_seed_parity_candidate":false},
+    {"file":"state_change_local_context.bngl","expected":"mapping_local_generalized","exact_seed_parity_candidate":false},
+    {"file":"shared_predicate_factors.bngl","expected":"deduplicated_factorized","exact_seed_parity_candidate":false},
+    {"file":"correlated_two_hop_fallback.bngl","expected":"materialized_fallback","exact_seed_parity_candidate":true},
+    {"file":"same_type_binding.bngl","expected":"safe_generalized_or_fallback","exact_seed_parity_candidate":false},
+    {"file":"symmetric_sites.bngl","expected":"multiplicity_safe","exact_seed_parity_candidate":false},
+    {"file":"no_relevant_factor.bngl","expected":"no_energy_delta","exact_seed_parity_candidate":true}
+  ]
+}

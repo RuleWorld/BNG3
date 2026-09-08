@@ -4,9 +4,9 @@
 **Last audited:** 2026-09-03
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** 094f7ac62a2baae0abebfcac134f558a324a6744
-**Checklist refresh base:** 094f7ac62a2baae0abebfcac134f558a324a6744 (public exact-head checkpoint for the Playground-derived Atomizer naming-convention configuration and facade option)
-**Latest workflow checkpoint:** 094f7ac62a2baae0abebfcac134f558a324a6744 (hosted checks read back after push; CI [33767541435](https://github.com/RuleWorld/BNG3/actions/runs/33767541435), CodeQL [33767541537](https://github.com/RuleWorld/BNG3/actions/runs/33767541537), and formatting [33767541467](https://github.com/RuleWorld/BNG3/actions/runs/33767541467) remain queued)
+**Audited semantic code head:** ccb3ef9efd069bb9375a39ddb64b1861909b4aa8 (local exact head; public synchronization is deferred by the local-only work instruction)
+**Checklist refresh base:** ce4575f5c31b94ded5dfac1842a9c8e438f608d4 (local exact-head CI provenance-summary checkpoint; public synchronization is deferred by the local-only work instruction)
+**Latest workflow checkpoint:** ce4575f5c31b94ded5dfac1842a9c8e438f608d4 (local-only; no hosted run was created because this checkpoint has not been pushed)
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -47,6 +47,372 @@ completion.
 
 These items describe the current checkpoint. They do not satisfy the full
 completion gate.
+
+- [x] Local-only initial-assignment writer checkpoint
+  `1662820a0222add1cd9d44e8dd64724590c4bce8` ports the pinned Playground
+  `src/lib/atomizer/writer/bnglWriter.ts:34,1592-1594,2161-2170` contract at
+  source revision `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c`. The Python writer
+  now promotes non-species SBML initial assignments into stable assignment
+  functions, skips species and duplicate assignment targets, rewrites
+  assignment-rule references as zero-argument BNGL calls, and emits the
+  `__assign_rule__` metadata functions used by the source's reverse-format
+  seam. Source-derived tests in
+  `tests/python/test_modern_atomizer_writer_parameters.py` and
+  `tests/python/test_modern_atomizer_helpers.py` were red first with three
+  assertion failures on the old writer; the repaired focused command reports
+  `10 passed in 0.42s`. The modern Atomizer gate reports `158 passed in
+  0.66s`; the full local command
+  `PYTHONPATH=python:build/cpp python -m pytest tests/python -q -p
+  no:cacheprovider` reports `333 passed, 27 skipped, 8 warnings in 15.31s`;
+  and `ctest --test-dir build --output-on-failure` reports `190/190` in
+  `1.61s`. Black (`--target-version py39`), Ruff, and `git diff --check` pass.
+  The BNG3 native binary remains SHA-256
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`, and
+  the independent accepted-cutoff NFsim binary remains SHA-256
+  `c30a80b6ff9cf1fae04bc9f45556c4d5fa9c3b00d053fb6abade80436ee46394`.
+  No hosted run or public SHA readback is claimed while `gh` and push are
+  paused. Full reverse SBML consumption of assignment metadata, complete
+  writer/schema validation, independent corpus parity, and release gates
+  remain open.
+
+- [x] Local-only unified Atomizer rate-processing checkpoint
+  `700cbdeb0d539e8a84c9a68c628386b0b9f33437` ports the pinned Playground
+  `src/lib/atomizer/writer/bnglWriter.ts:2972-3091,3321-3647,3683-3864`
+  contract at source revision
+  `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c`. The Python writer now exposes
+  a source-shaped `ProcessedRate` result and `processReactionRate` facade,
+  performs a bounded safe numerical mass-action check after concentration/
+  amount normalization, folds only finite low-variance constants, cleans
+  compartment factors before reversible splitting, and preserves nonlinear
+  and denominator-sensitive rates as functional fallbacks. The tests-first
+  red command failed during collection with
+  `ImportError: cannot import name 'ProcessedRate'`; the repaired focused
+  command
+  `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=python:build/cpp python -m pytest
+  tests/python/test_modern_atomizer_writer_rate_helpers.py -q
+  -p no:cacheprovider` reports `11 passed in 0.25s`. The touched modern
+  writer/parameter/rate tests report `86 passed in 0.35s`; the full local
+  command
+  `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=python:build/cpp python -m pytest
+  tests/python -q -p no:cacheprovider` reports `337 passed, 27 skipped, 8
+  warnings in 10.90s`; the CI contract file reports `20 passed in 0.28s`;
+  and exact-tree `ctest --test-dir build --output-on-failure` reports
+  `190/190` in `1.42s`. Black (`--target-version py39`), Ruff, and
+  `git diff --check` pass. The BNG3 native `build/cpp/bng_cpp` artifact
+  remains SHA-256
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`.
+  No hosted run or public SHA readback is claimed while `gh` and push are
+  paused. The bounded evaluator does not close full function/rate-law,
+  SBML/schema, independent corpus, round-trip, SBML-Multi, direct-NFsim,
+  packaging, release, or hosted validation gates.
+
+- [x] Local-only modern writer facade and scoped-local-parameter checkpoint
+  `b75e724b8bbd1301b6643c1ca1fe94683ebc827b` ports the pinned Playground
+  `src/lib/atomizer/writer/bnglWriter.ts:1654-1810,1998-2050,3683-3915`
+  entry-point split at source revision
+  `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c`. BNG3 now exposes distinct
+  `writeReactionRulesFlat`, `writeReactionRulesAtomized`, and
+  `writeReactionRulesFlat_V2` facades while reusing the existing validated
+  rate-processing path, and carries the source
+  `config/types.ts:350-393` `replaceLocParams` option through BNGL generation.
+  When local parameters are preserved, the writer emits stable reaction-scoped
+  names and declarations, including rate-rule/assignment-flux paths; the
+  default value-replacement behavior remains unchanged. The source-derived
+  tests were red first against the previous exact head, failing during
+  collection with `ImportError: cannot import name 'writeReactionRulesAtomized'`;
+  the repaired focused writer/facade command reports `14 passed in 0.43s`.
+  The action-aware expression validation repair now compares emitted rate
+  networks against independent BNG2 rather than mislabeling solver-trajectory
+  drift as direct RHS parity; its exact command reports `3 passed in 0.55s`
+  using BNG2 source revision
+  `fde0cd6a522c9f988d5495db31c70ce0f98e744b` at
+  `/private/tmp/bng2-oracle.TToh58/source/bng2/BNG2.pl` (SHA-256
+  `cf5fd82d3df9b84835d29234bd32268b87eaa985dd221bd5d39aadef744795f4`).
+  Exact-head local gates report `340 passed, 27 skipped, 8 warnings` for
+  `tests/python`, `190/190` for Release/Ninja CTest, `189 files would be left
+  unchanged` for Black, and Ruff plus `git diff --check` pass. The native
+  `build/cpp/bng_cpp` artifact remains SHA-256
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`.
+  No hosted run or public SHA readback is claimed under local-only mode. This
+  closes only the bounded writer-entry/local-parameter and emitted-rate-network
+  slices; direct expression-vector/RHS parity, complete writer/schema and
+  round-trip parity, independent corpus coverage, SBML-Multi, direct-NFsim,
+  packaging, release, and hosted gates remain open.
+
+- [x] Local-only deterministic ODE gate hygiene checkpoint
+  `1106ddf273f7c3f76b01d339a0d62a58e09175b4` removes `gene_expr` from
+  `tests/validation/test_parity_ode.py`: its action block contains SSA and
+  NF simulations, not a deterministic ODE simulation, so its randomly sampled
+  `.gdat` outputs cannot be compared as ODE trajectories. The stochastic
+  model remains covered by the separate stochastic validation path. Before
+  this repair the action-aware gate reported a real but invalid comparison
+  failure for `gene_expr`; the corrected independent BNG2-backed command
+  `PYTHONDONTWRITEBYTECODE=1 BNG2_PERL=/private/tmp/bng2-oracle.TToh58/source/bng2/BNG2.pl PYTHONPATH=python:build/cpp python -m pytest -c tests/validation/pytest.ini tests/validation/test_parity_ode.py -q -p no:cacheprovider`
+  reports `5 passed in 4.62s`. Ruff, Black (`1 file would be left
+  unchanged`), and `git diff --check` pass. This fixes validation scope only;
+  complete deterministic/stochastic corpus parity, direct expression-vector
+  and RHS parity, NFsim, SBML, Atomizer, round-trip, release, and hosted gates
+  remain open.
+
+- [x] Local-only validation-artifact selection checkpoint
+  `ccb3ef9efd069bb9375a39ddb64b1861909b4aa8` makes the CLI validation runner
+  select `<model>.net` and `<model>.gdat` before any suffixed action artifacts,
+  and return no artifact when multiple non-preferred candidates are ambiguous.
+  This removes filesystem-iteration-order dependence observed for action-heavy
+  models such as `gene_expr`, which emit burn-in, SSA, and NF trajectories in
+  one run. Source-derived harness tests in
+  `tests/validation/test_harness_paths.py` report `2 passed, 7 deselected in
+  0.10s`. The independent BNG2-backed ODE and emitted-rate-network gates report
+  `8 passed in 5.03s`, and the export-format gate reports `12 passed in
+  12.94s`; Ruff, Black on the focused harness test, and `git diff --check`
+  pass. This closes artifact selection determinism only; complete trajectory
+  selection policy, independent stochastic ensembles, direct expression-vector
+  and RHS parity, NFsim, SBML, Atomizer, round-trip, release, and hosted gates
+  remain open.
+
+- [x] Local-only CI provenance-summary checkpoint
+  `ce4575f5c31b94ded5dfac1842a9c8e438f608d4` adds source-revision and binary
+  SHA-256 tables to the PR BNGL corpus-parse inventory and weekly NFsim
+  execution-smoke summaries in `.github/workflows/ci.yml` and
+  `.github/workflows/weekly.yml`. Both scripts now use `set -euo pipefail`.
+  Source-derived workflow contracts were red first: the focused command
+  reported `2 failed, 20 deselected`; after the workflow repair the full
+  `tests/test_ci_contract.py` command reports `22 passed in 0.20s`. Ruff,
+  Black, and `git diff --check` pass. `actionlint` was unavailable locally;
+  no hosted run or public SHA readback is claimed under the local-only
+  instruction. This closes only terminal provenance for these two inventory
+  jobs; terminal summaries and fail-closed behavior for every required CI,
+  validation, release, and hosted job remain open.
+
+- [x] Fresh accepted-cutoff Tier-NF evidence at the current exact integration
+  head `6cd401e470b46a528b3e6578d698bc879a41ad0a` used the independent NFsim
+  source cutoff `3b046fc1b9f76719d92be22279b24992cdae7c35` and binary
+  `/private/tmp/bng3-nfsim-3b046/build/NFsim` (SHA-256
+  `c30a80b6ff9cf1fae04bc9f45556c4d5fa9c3b00d053fb6abade80436ee46394`). The
+  exact command
+  `PYTHONDONTWRITEBYTECODE=1 NFSIM_BIN=/private/tmp/bng3-nfsim-3b046/build/NFsim BNG_CPP=/Users/akutuva/Documents/BioNetGen/BNG3/build/cpp/bng_cpp PYTHONPATH=python:build/cpp python -m pytest -c tests/validation/pytest.ini tests/validation -m nf --bng-cpp /Users/akutuva/Documents/BioNetGen/BNG3/build/cpp/bng_cpp -q -p no:cacheprovider`
+  completed `10 passed, 185 deselected, 3 warnings in 151.88s`. It covers the
+  selected `localfunc`, `motor`, `simple_system`, and `tlbr` native ensembles,
+  direct/XML shadow checks, and fixed-seed endpoint checks. The warnings are
+  the known zero-denominator invalid-divide diagnostic at
+  `tests/validation/compare.py:1278`. This qualifies the selected slice at
+  the current exact integration head only; full Tier-NF coverage, broader
+  direct-NFsim three-way parity, and energy/provenance/release gates remain
+  open.
+
+- [x] Fresh independent BNG2 differential evidence at exact integration head
+  `0fd370bcb200a6c83211d0c4d3b83b6f39e89865` used BNG2 source revision
+  `fde0cd6a522c9f988d5495db31c70ce0f98e744b` from
+  `/private/tmp/bng2-oracle.TToh58/source/bng2/BNG2.pl`; the oracle script
+  SHA-256 is `cf5fd82d3df9b84835d29234bd32268b87eaa985dd221bd5d39aadef744795f4`.
+  The exact command
+  `PYTHONDONTWRITEBYTECODE=1 BNG2_PERL=/private/tmp/bng2-oracle.TToh58/source/bng2/BNG2.pl PYTHONPATH=python:build/cpp python -m pytest -c tests/validation/pytest.ini tests/validation -m "parity and not slow" --bng-cpp /Users/akutuva/Documents/BioNetGen/BNG3/build/cpp/bng_cpp -q -p no:cacheprovider`
+  completed `54 passed, 46 skipped, 95 deselected in 109.06s`, with no
+  assertion failures. The skips are explicit missing-reference, legacy-syntax,
+  missing-asset, missing-NFsim, missing-test-data, or sandbox-`ps` conditions;
+  this is a refreshed external subset result, not full Tier-P qualification.
+
+- [x] Zero-baseline trajectory comparisons now fail closed at
+  `5a7e31866c9c5cc87caa1ec7735b6b5c3ea76080`: exact zero/zero comparisons
+  produce finite zero error, while nonzero differences at an exact zero
+  baseline produce infinite error instead of NaN and a false pass. Tests-first
+  evidence was `2 failed, 4 passed` on the old comparator; the repaired focused
+  command reports `6 passed in 0.06s`, and accepted-cutoff direct/XML NF checks
+  report `4 passed, 6 deselected in 4.19s` without the prior divide warnings.
+  Ruff, focused Black, and `git diff --check` pass. This hardens comparator
+  truthfulness only; it does not expand the independent corpus or close the
+  remaining parity, provenance, or release gates.
+
+- [x] Local-only structural C++/Perl validation checkpoint
+  `c6780bb3f7f65c46233f23750047b5c45e52afca` replaces the weekly shell
+  species-count comparison with `scripts/cross_validate.py:1-376`. Both
+  engines now receive a staged network-only model in isolated temporary
+  directories; model construction and `generate_network` are retained while
+  simulation/output actions are removed, and the generated NETs are compared
+  through `tests/validation/compare.py` graph-aware species, reaction, rate,
+  and observable-group semantics. The weekly job wiring is at
+  `.github/workflows/weekly.yml:199-225`; it installs NumPy, records the exact
+  BNG3 source revision, and emits a terminal provenance summary with both
+  engine digests. Source/oracle tests in `tests/test_ci_contract.py:134-330`
+  were red first during collection (`ModuleNotFoundError` before the new
+  runner existed) and the repaired focused command reports `20 passed in
+  0.24s`; Black (`--target-version py39`), Ruff, and `git diff --check` pass.
+  Against independent BNG2 source revision
+  `fde0cd6a522c9f988d5495db31c70ce0f98e744b` at
+  `/private/tmp/bng2-oracle.TToh58/source/bng2`, the bounded generation-only
+  matrix (`simple_system`, `test_assignment`, `test_compartment_XML`,
+  `test_sbml_flat`, `test_tfun_observable`, `test_time`) was run with
+  `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=python:build/cpp python -u
+  scripts/cross_validate.py --bng-cpp build/cpp/bng_cpp --bng-perl
+  /private/tmp/bng2-oracle.TToh58/source/bng2/BNG2.pl --models-dir
+  tests/validation/Validate --timeout 30 --model simple_system --model
+  test_assignment --model test_sbml_flat --model test_compartment_XML --model
+  test_time --model test_tfun_observable --verbose`. It reports `5` passes,
+  `0` failures, and `1` error; `test_sbml_flat` is an explicit BNG2
+  `test_sbml_flat` is an explicit BNG2
+  `sbmlTranslator` asset error. The independent and repository BNG2.pl
+  scripts both have SHA-256
+  `cf5fd82d3df9b84835d29234bd32268b87eaa985dd221bd5d39aadef744795f4`, and
+  the BNG3 native binary has SHA-256
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`.
+  A full 71-model local sweep was stopped before a terminal result because a
+  large model exceeded the efficient local loop; no full-corpus parity claim
+  is made. Full Python remains `333 passed, 27 skipped, 8 warnings`, and CTest
+  remains `190/190`; no hosted run or public SHA readback is claimed while
+  `gh` and push are paused. Independent oracle asset/build retention, full
+  cross-corpus parity, SBML translator coverage, and all broader convergence
+  gates remain open.
+
+- [x] Local-only modern-writer identifier and fixed-seed lookup checkpoint
+  `0d921d6639619b99ae08f35379af07bea940a2b1` ports the pinned Playground
+  `src/lib/atomizer/writer/bnglWriter.ts:80-103,1050-1060,1244-1246,1427-1446`
+  contract at source revision
+  `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c`. The Python writer now uses the
+  source's function-only reserved identifier set for function names and formal
+  arguments, rewrites calls in emitted function bodies, and adds the `$` form
+  of fixed seed patterns to the returned `pattern_to_id` lookup while keeping
+  the canonical mapping unchanged. Source-derived tests in
+  `tests/python/test_modern_atomizer_writer_parameters.py` and
+  `tests/python/test_modern_atomizer.py` were red first: the strict identifier
+  test reported `1 failed, 6 deselected` and the fixed-seed mapping test
+  reported `1 failed, 66 deselected`; the repaired focused command reported
+  `5 passed, 69 deselected in 0.69s`. The modern Atomizer gate reports `155
+  passed in 0.65s`; the full local command
+  `PYTHONPATH=python:build/cpp python -m pytest tests/python -q -p no:cacheprovider`
+  reports `330 passed, 27 skipped, 8 warnings in 15.59s`; and
+  `ctest --test-dir build --output-on-failure` reports `190/190` in `1.72s`.
+  Black (`--target-version py39`), Ruff, and `git diff --check` pass. No
+  generated artifacts were committed; the BNG3 native binary remains SHA-256
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`, and
+  the independent NFsim binary remains SHA-256
+  `c30a80b6ff9cf1fae04bc9f45556c4d5fa9c3b00d053fb6abade80436ee46394`.
+  No hosted run or public SHA readback is claimed while `gh` and push are
+  paused. Full writer/schema validation, complete SBML/SBML-Multi round trips,
+  independent corpus parity, and release gates remain open.
+
+- [x] Local-only BNG-XML fallback source-alignment checkpoint
+  `983e5cd4473fddf8849fdaf9e4861fac521ecd66` aligns
+  `python/bionetgen/atomizer/modern/bng_xml.py` with the pinned Playground
+  `src/lib/atomizer/parser/bngXmlParser.ts:160-172,268-294` at source revision
+  `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c`. Source-derived tests in
+  `tests/python/test_modern_atomizer_annotations.py` cover the source's
+  Expression-over-math priority and its search for the first compartmented
+  reactant when scaling MM/Sat constants. The focused red-first command
+  `PYTHONPATH=python:build/cpp pytest -q tests/python/test_modern_atomizer_annotations.py -k 'bng_xml_converter_prefers_expression_over_math or bng_xml_converter_scales_from_first_compartmented_reactant'`
+  reported `2 failed, 9 deselected in 0.39s`; after the targeted fix it
+  reported `2 passed, 9 deselected in 0.37s`. The grouped modern Atomizer
+  command covering annotations, SBML-Multi, and units reported `22 passed in
+  0.36s`; Black, Ruff, and `git diff --check` passed. The full local command
+  `PYTHONPATH=python:build/cpp pytest -q` reported `329 passed, 27 skipped,
+  8 warnings in 2.85s`, and `ctest --test-dir build --output-on-failure`
+  reported `190/190` in `1.24s`. No generated artifacts were committed; the
+  BNG3 native binary remains SHA-256
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`, and
+  the independent NFsim binary remains SHA-256
+  `c30a80b6ff9cf1fae04bc9f45556c4d5fa9c3b00d053fb6abade80436ee46394`.
+  No hosted run or public SHA readback is claimed while public inspection and
+  push are paused. Full BNG-XML schema/semantic validation, complete
+  SBML/SBML-Multi round trips, and independent corpus parity remain open.
+
+- [x] Local-only reference-validation reporting checkpoint
+  `575246a39688e84d0bca856dd1a16da838e97159` adds the reusable
+  `--summary-file` contract in `scripts/validate.py` and wires the PR
+  `validation` and weekly `bng-validation` jobs to append terminal Markdown
+  summaries to `$GITHUB_STEP_SUMMARY`. The summary records the checked-out
+  BNG3 revision when `GITHUB_SHA` is available, the validation corpus, the
+  bng_cpp path and SHA-256, strict skip policy, and pass/fail/error/skip counts.
+  The tests-first command
+  `PYTHONPATH=python:build/cpp pytest -q tests/test_ci_contract.py -k 'terminal_validation_summaries or validation_summary_records_counts_source_and_binary_digest'`
+  first failed during collection because the summary writer was absent; the
+  repaired command reports `2 passed, 13 deselected in 0.06s`, and the full CI
+  contract file reports `15 passed in 0.07s`. The actual profiled local command
+  with a temporary summary artifact reports `40` pass, `0` fail, `0` error,
+  and `31` explicit skips; the artifact records bng_cpp SHA-256
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`.
+  Black, Ruff, and `git diff --check` pass; the full local command
+  `PYTHONPATH=python:build/cpp pytest -q` reports `329 passed, 27 skipped,
+  8 warnings in 3.77s`, and `ctest --test-dir build --output-on-failure`
+  reports `190/190` in `1.68s`. No generated repository artifacts were
+  committed. No hosted run or public SHA readback is claimed while public
+  inspection and push are paused. Terminal summaries for every remaining
+  required job, exception-budget/source-lock fields, complete independent
+  oracle validation, and release gates remain open.
+
+- [x] Local-only validation-harness checkpoint `21d453f25254f0d55d1374e683233629480d80b4`
+  repairs the independent Perl oracle invocation in
+  `tests/validation/oracle_perl.py`: the harness now runs BNG2 from the
+  fixture's source directory, passes an absolute source path, directs generated
+  output to the temporary work directory with `--outdir`, and derives
+  `BNGPATH` from the BNG2 script when the caller has not supplied one. The
+  source-derived regression in
+  `tests/validation/test_harness_paths.py` was red first (`1 failed, 6
+  deselected`) and then passed (`1 passed, 6 deselected in 0.05s`); the complete
+  focused path file reports `6 passed, 1 skipped in 0.66s`. The independent
+  BNG2 Perl oracle is source revision
+  `fde0cd6a522c9f988d5495db31c70ce0f98e744b` in the temporary checkout
+  `/private/tmp/bng2-oracle.TToh58/source/bng2`; the independent NFsim oracle
+  is the accepted source cutoff
+  `3b046fc1b9f76719d92be22279b24992cdae7c35`, with binary SHA-256
+  `c30a80b6ff9cf1fae04bc9f45556c4d5fa9c3b00d053fb6abade80436ee46394`;
+  the BNG3 native binary SHA-256 is
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`.
+  With those independent paths, the smoke gate reports `17 passed, 2 skipped,
+  176 deselected in 22.92s`; the two skips are `gene_expr` oracle cases because
+  this temporary BNG2 root has no `bin/NFsim`. The broader non-slow parity
+  gate reports `54 passed, 46 skipped, 95 deselected in 102.99s`; remaining
+  skips expose unsupported legacy fixtures, missing model sidecars, unsupported
+  BNG2 action/rule constructs, and the absent BNG2-side NFsim executable rather
+  than being hidden by the harness. Current local gates are Ruff/Black/diff
+  clean, full Python `320 passed, 27 skipped, 8 warnings in 3.23s`, and exact
+  Release/Ninja CTest `190/190` in `1.51s`. No generated golden/reference
+  artifacts were committed, no hosted run was created, and no public SHA
+  readback is claimed for this local-only checkpoint. Independent oracle
+  retention, complete corpus/provenance, full Tier-P/NF/X parity, and all
+  broader validation gaps remain open.
+
+- [x] Local-only SBML unit-normalization checkpoint
+  `fd6d26f2522eab3d20bc863bb91fb3423bc04730` completes the bounded
+  Playground `src/lib/atomizer/validation/units.ts` contract at pinned source
+  `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c`. Source-derived tests in
+  `tests/python/test_modern_atomizer_units.py` cover the full multiplier/scale/
+  exponent product, base/unknown-unit no-ops, global and kinetic-law-local
+  parameters, dimensional compartment defaults for volume/area/length,
+  amount/concentration scaling, audit warnings, and the source's finite-value
+  guard. The red-first command
+  `PYTHONPATH=python:build/cpp python -m pytest -p no:cacheprovider
+  tests/python/test_modern_atomizer_units.py -q` reported `1 failed, 3
+  passed in 0.37s` because a non-finite parameter was coerced to zero; the
+  targeted fix preserves the non-finite value and the repaired command reports
+  `4 passed in 0.23s`. The modern Atomizer gate reports `149 passed in 0.31s`,
+  the full Python gate reports `324 passed, 27 skipped, 8 warnings in 2.63s`,
+  exact Release/Ninja CTest reports `190/190` in `1.22s`, and Ruff/Black pass.
+  The independent NFsim binary remains SHA-256
+  `c30a80b6ff9cf1fae04bc9f45556c4d5fa9c3b00d053fb6abade80436ee46394`, and
+  the BNG3 native binary remains SHA-256
+  `949bfff3ea4581a5158df1aa107c21687ef6b848e4692c66215483f315e87d82`.
+  No generated artifacts were committed, no hosted run was created, and no
+  public SHA readback is claimed for this local-only checkpoint. Full SBML
+  semantics, schema validation, SBML-Multi execution, independent format
+  parity, and the remaining convergence gates stay open.
+
+- [x] Local-only SBML-Multi namespace-presence checkpoint
+  `23f698b2a6f19def72c1e19f7d373bcde3e8b4d1` aligns the bounded
+  Playground `src/lib/atomizer/validation/multiPackage.ts` extractor at pinned
+  source `1914b8ccc8c2d4da2b1c1bb2b90b2bfc98224f6c` with XML namespace
+  declarations that have no child Multi elements. The source-derived tests in
+  `tests/python/test_modern_atomizer_multi.py` preserve all four existing
+  contracts and add shallow singleton-site bond fallback, deep Simmune-style
+  hierarchy detection without flattening, and the missing
+  `listOfSpeciesTypes` diagnostic. The new namespace regression was red first
+  (`1 failed, 2 passed in 0.38s`), then the corrected complete file reports
+  `7 passed in 0.38s`; the pre-existing tests were restored before commit and
+  rerun. The modern Atomizer gate reports `152 passed in 0.34s`, the full
+  Python gate reports `327 passed, 27 skipped, 8 warnings in 2.80s`, and exact
+  Release/Ninja CTest reports `190/190` in `1.42s`. No generated artifacts
+  were committed, no hosted run was created, and no public SHA readback is
+  claimed for this local-only checkpoint. Multi remains diagnostic/comment-only:
+  complete species-feature/seed semantics, writer/schema validation, execution,
+  and independent SBML-Multi parity remain open.
 
 - [x] Required fast-forward pull completed before this documentation change.
 - [x] Historical semantic checkpoint
@@ -1799,6 +2165,20 @@ completion gate.
   combinations fail closed and are listed in the capability matrix.
 - [ ] Adapter ownership, destruction/lifecycle, memory ownership, diagnostics,
   seed handling, options, and error propagation are documented and tested.
+- [x] Bounded NFcore2 semantic-expansion checkpoint on
+  `codex/bng3-energy-validation-port` adds tests-first
+  direct support for population transforms, root-local graph/`connectedTo`,
+  synthesis, root-local compartments/moves, bounded local-function/DOR rate
+  descriptors, and whole-species deletion. The independent literal oracle and
+  fixture are recorded in `provenance/semantic-expansion-2026-09-08.json`;
+  the current CTest run reports `269/269` with twelve parser-backed native
+  reader cases, while the reference executables report NFcore2 `408/408` and
+  NFnext `PASS`. The current macOS ASan/UBSan run also passes the energy smoke,
+  NFcore2/NFnext references, and all twelve native-reader cases. This closes
+  only the bounded forms; arbitrary internal graph expressions, general
+  local-function/DOR evaluation, compartment hierarchy/species-carrying moves,
+  conditional deletion, and independent full NFsim/BNG2 parity remain
+  intentional fail-closed ceilings below.
 
 ### 5.2 Three-way evidence
 

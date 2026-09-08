@@ -300,6 +300,11 @@ namespace NFcore
 			 */
 			int getNumOfAddMoleculeTransforms() const { return addMoleculeTransformations.size(); };
 
+			/* Return the standalone molecule-creation transform at index. */
+			AddMoleculeTransform *getAddMoleculeTransform(unsigned int index) const {
+				return addMoleculeTransformations.at(index);
+			};
+
 			/*
 			 * If AddMolecule is a population, returns a pointer to the population object,
 			 *  otherwise returns null.  --Justin

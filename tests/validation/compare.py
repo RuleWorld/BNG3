@@ -1275,7 +1275,10 @@ def compare_trajectories(
         rv = ref[ridx, ref_cols.index(c)]
         tv = test[tidx, test_cols.index(c)]
         denom = np.maximum(np.abs(rv), atol)
-        rel = np.abs(tv - rv) / denom
+        abs_diff = np.abs(tv - rv)
+        rel = np.zeros_like(abs_diff, dtype=float)
+        np.divide(abs_diff, denom, out=rel, where=denom != 0)
+        rel[(denom == 0) & (abs_diff != 0)] = np.inf
         cmax = float(np.max(rel))
         if cmax > worst:
             worst, worst_col = cmax, c

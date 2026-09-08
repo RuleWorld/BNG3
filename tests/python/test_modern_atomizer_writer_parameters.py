@@ -5,6 +5,7 @@ from collections import OrderedDict
 from bionetgen.atomizer.modern import (
     SBMLCompartment,
     SBMLFunctionDefinition,
+    SBMLInitialAssignment,
     SBMLModel,
     SBMLParameter,
     SBMLRule,
@@ -62,6 +63,68 @@ def test_write_functions_can_retain_parameterized_definitions_on_request():
     ]
 
 
+def test_write_functions_sanitizes_strict_parser_identifiers_and_calls():
+    """Mirror Playground writeFunctions identifier and call sanitization."""
+
+    model = SBMLModel(
+        id="strict-function-identifiers",
+        function_definitions=OrderedDict(
+            [
+                (
+                    "function",
+                    SBMLFunctionDefinition(
+                        id="function",
+                        name="function",
+                        arguments=[
+                            "param",
+                            "mod",
+                            "parameter",
+                            "modifier",
+                            "substrate",
+                        ],
+                        math=(
+                            "function_1(param, mod) + "
+                            "function_2(parameter, modifier) + "
+                            "function(parameter, modifier, substrate)"
+                        ),
+                    ),
+                ),
+                (
+                    "function_1",
+                    SBMLFunctionDefinition(
+                        id="function_1",
+                        name="function_1",
+                        arguments=["param", "mod"],
+                        math="param * mod",
+                    ),
+                ),
+                (
+                    "function_2",
+                    SBMLFunctionDefinition(
+                        id="function_2",
+                        name="function_2",
+                        arguments=["parameter", "modifier"],
+                        math="parameter * modifier",
+                    ),
+                ),
+            ]
+        ),
+    )
+
+    assert write_functions(model, keep_parameterized=True) == [
+        (
+            "function_id(_farg0_param_id, _farg1_mod_id, "
+            "_farg2_parameter_id, _farg3_modifier_id, _farg4_substrate_id) = "
+            "function_1(_farg0_param_id, _farg1_mod_id) + "
+            "function_2(_farg2_parameter_id, _farg3_modifier_id) + "
+            "function_id(_farg2_parameter_id, _farg3_modifier_id, _farg4_substrate_id)"
+        ),
+        "function_1(_farg0_param_id, _farg1_mod_id) = _farg0_param_id * _farg1_mod_id",
+        "function_2(_farg0_parameter_id, _farg1_modifier_id) = "
+        "_farg0_parameter_id * _farg1_modifier_id",
+    ]
+
+
 def test_write_functions_maps_compartment_references_in_function_bodies():
     """Mirror Playground mapCompartments for definitions and assignment rules."""
 
@@ -78,6 +141,7 @@ def test_write_functions_maps_compartment_references_in_function_bodies():
     assert write_functions(model) == [
         "rate() = __compartment_cytosol__ * k",
         "flux() = __compartment_cytosol__ * 3",
+        "__assign_rule__flux() = __compartment_cytosol__ * 3",
     ]
 
 
@@ -94,8 +158,54 @@ def test_write_functions_orders_assignment_rules_by_dependencies():
 
     assert write_functions(model) == [
         "upstream() = 2",
-        "downstream() = upstream + 1",
+        "__assign_rule__upstream() = 2",
+        "downstream() = (2) + 1",
+        "__assign_rule__downstream() = (2) + 1",
     ]
+
+
+def test_write_functions_emits_non_species_initial_assignments_in_dependency_order():
+    """Mirror generateBNGL's initial-assignment-to-function contract."""
+
+    model = SBMLModel(
+        id="ordered-initial-assignments",
+        initial_assignments=[
+            SBMLInitialAssignment(symbol="downstream", math="upstream + 1"),
+            SBMLInitialAssignment(symbol="upstream", math="2"),
+        ],
+    )
+
+    assert write_functions(model) == [
+        "upstream() = 2",
+        "__assign_rule__upstream() = 2",
+        "downstream() = (2) + 1",
+        "__assign_rule__downstream() = (2) + 1",
+    ]
+
+
+def test_generate_bngl_maps_parameter_initial_assignment_to_function():
+    """An initial assignment supersedes a parameter literal in BNGL output."""
+
+    from bionetgen.atomizer.modern import (
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    model = SBMLModel(
+        id="parameter-initial-assignment",
+        parameters={"flux": SBMLParameter(id="flux", value=1)},
+        initial_assignments=[SBMLInitialAssignment(symbol="flux", math="2 + 3")],
+    )
+    sct = build_species_composition_table(model)
+
+    bngl, _ = generate_bngl(
+        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+    )
+
+    assert "  flux 1" not in bngl
+    assert "  flux() = 2 + 3" in bngl
 
 
 def test_write_functions_inlines_constant_calls_into_dynamic_bodies():

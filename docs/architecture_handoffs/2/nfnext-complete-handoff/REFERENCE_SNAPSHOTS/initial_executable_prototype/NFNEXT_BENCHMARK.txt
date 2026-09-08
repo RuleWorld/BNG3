@@ -1,0 +1,13 @@
+expanded_rules=9401
+compiled_families=1
+collapsed_rules=9401
+dependency_features=2
+backend=2
+compile_seconds=0.012945
+events=1000000
+initiations=341
+hops=999659
+terminations=0
+null_events=0
+simulation_seconds=0.221730
+events_per_second=4509984.399648

@@ -3,6 +3,7 @@
 # The BNGL writer and the reverse SBML writer must recognize the same
 # synthetic names. Keep the source-defined prefixes in one module so a later
 # writer port cannot silently change only one side of the round trip.
+ASSIGN_RULE_META_PREFIX = "__assign_rule__"
 RATE_RULE_META_PREFIX = "__rate_rule__"
 SYNTH_RATE_RULE_SPECIES_PREFIX = "__rate_rule_state__"
 
@@ -13,6 +14,7 @@ RATE_RULE_POS_PREFIX = "__rate_rule_pos__"
 RATE_RULE_NEG_PREFIX = "__rate_rule_neg__"
 
 __all__ = [
+    "ASSIGN_RULE_META_PREFIX",
     "RATE_RULE_META_PREFIX",
     "RATE_RULE_NEG_PREFIX",
     "RATE_RULE_POS_PREFIX",

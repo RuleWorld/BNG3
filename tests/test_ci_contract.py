@@ -4,7 +4,17 @@ import json
 from pathlib import Path
 import re
 
-from scripts.validate import load_skip_models, run_validation
+from scripts.validate import (
+    load_skip_models,
+    run_validation,
+    write_validation_summary,
+)
+from scripts.cross_validate import (
+    compare_network_files,
+    _network_only_text,
+    run_cross_validation,
+    write_cross_validation_summary,
+)
 
 REPO = Path(__file__).resolve().parents[1]
 PYPROJECT = REPO / "pyproject.toml"
@@ -61,9 +71,7 @@ def test_pull_request_exercises_clean_source_distribution_install():
 
 def test_project_declares_click_as_runtime_dependency():
     project = PYPROJECT.read_text(encoding="utf-8")
-    dependencies = re.search(
-        r"(?ms)^dependencies\s*=\s*\[(?P<body>.*?)^\]", project
-    )
+    dependencies = re.search(r"(?ms)^dependencies\s*=\s*\[(?P<body>.*?)^\]", project)
     assert dependencies, "pyproject.toml must declare project dependencies"
     assert re.search(r"['\"]click(?:[<>=!~].*)?['\"]", dependencies.group("body"))
 
@@ -84,9 +92,9 @@ def test_python_matrix_installs_runtime_dependencies_before_no_deps_wheel():
         if re.search(r"(?:pip|python\s+-m\s+pip)\s+install", line)
     ]
     assert install_lines, "python-test must install package/test dependencies"
-    assert any(re.search(r"\bclick(?:[<>=!~].*)?\b", line) for line in install_lines), (
-        "python-test no-deps wheel path must install declared click dependency"
-    )
+    assert any(
+        re.search(r"\bclick(?:[<>=!~].*)?\b", line) for line in install_lines
+    ), "python-test no-deps wheel path must install declared click dependency"
 
 
 def test_python_tests_use_headless_isolated_matplotlib_cache():
@@ -109,9 +117,7 @@ def test_sbml_import_runs_as_a_real_isolated_ci_gate():
 def test_msvc_parser_headers_clear_windows_macros_before_antlr():
     """Windows SDK macros must not rewrite ANTLR enum members."""
 
-    compat = (REPO / "cpp" / "parser" / "antlr_compat.hpp").read_text(
-        encoding="utf-8"
-    )
+    compat = (REPO / "cpp" / "parser" / "antlr_compat.hpp").read_text(encoding="utf-8")
     assert re.search(r"#\s*undef\s+ERROR", compat)
     assert re.search(r"#\s*undef\s+TRUE", compat)
     assert re.search(r"#\s*undef\s+FALSE", compat)
@@ -125,15 +131,126 @@ def test_msvc_parser_headers_clear_windows_macros_before_antlr():
     assert '#include "parser/antlr_compat.hpp"' in prefix
 
 
+def test_corpus_parse_inventory_emits_source_and_binary_provenance():
+    """Parser inventory summaries must identify the tested source and binary."""
+
+    job = _workflow_job("corpus-parse")
+    assert "set -euo pipefail" in job
+    assert "BNG3_SOURCE_REVISION" in job
+    assert "bng_cpp SHA-256" in job
+    assert "GITHUB_STEP_SUMMARY" in job
+
+
+def test_weekly_nfsim_smoke_emits_source_and_binary_provenance():
+    """NFsim smoke summaries must identify the tested source and executable."""
+
+    job = _workflow_job_from(WEEKLY_WORKFLOW, "nfsim-execution-smoke")
+    assert "set -euo pipefail" in job
+    assert "BNG3_SOURCE_REVISION" in job
+    assert "NFsim SHA-256" in job
+    assert "GITHUB_STEP_SUMMARY" in job
+
+
 def test_weekly_cross_validation_fails_closed_on_engine_or_output_errors():
-    """The claimed C++/Perl gate must not turn failed models into skips."""
+    """The claimed C++/Perl gate must fail through the runner, not skip."""
 
     job = _workflow_job_from(WEEKLY_WORKFLOW, "cross-validation")
     assert "set -euo pipefail" in job
     assert "SKIP" not in job
-    assert "| Failed |" in job
-    assert "[ \"$FAIL\" -gt 0 ]" in job
-    assert job.count("FAIL=$((FAIL + 1))") >= 3
+    assert "python scripts/cross_validate.py" in job
+    assert "--bng-cpp build/cpp/bng_cpp" in job
+    assert "--bng-perl legacy/perl/BNG2.pl" in job
+    assert "pip install numpy" in job
+    assert "|| true" not in job
+
+
+def test_cross_validation_rejects_same_count_different_networks(tmp_path):
+    """The independent oracle comparison must inspect reaction topology."""
+
+    reference = tmp_path / "reference.net"
+    test = tmp_path / "test.net"
+    reference.write_text(
+        """begin species
+1 A() 1
+2 B() 0
+end species
+begin reactions
+0 1 2 k
+end reactions
+""",
+        encoding="utf-8",
+    )
+    test.write_text(
+        """begin species
+1 A() 1
+2 C() 0
+end species
+begin reactions
+0 1 2 k
+end reactions
+""",
+        encoding="utf-8",
+    )
+
+    diff = compare_network_files(reference, test)
+
+    assert diff is not None
+    assert diff.ok is False
+    assert diff.n_species_ref == diff.n_species_test == 2
+    assert diff.n_reactions_ref == diff.n_reactions_test == 1
+
+
+def test_cross_validation_missing_engine_output_is_an_error(tmp_path):
+    """A successful engine exit without a network cannot become a pass."""
+
+    models = tmp_path / "Validate"
+    models.mkdir()
+    (models / "model.bngl").write_text("begin model\nend model\n", encoding="utf-8")
+    no_output = tmp_path / "no_output.sh"
+    no_output.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    no_output.chmod(0o755)
+
+    results, details = run_cross_validation(
+        no_output,
+        no_output,
+        models,
+        model_names=["model"],
+    )
+
+    assert results == {"pass": 0, "fail": 0, "error": 1}
+    assert details == ["ERROR model (missing C++ .net)"]
+
+
+def test_cross_validation_stages_generation_without_simulation_actions():
+    """Network parity must not accidentally execute a model's simulations."""
+
+    staged = _network_only_text("""begin parameters
+k 1
+end parameters
+begin actions
+setParameter(\"k\", 2)
+generate_network({overwrite=>1})
+simulate_ode({t_end=>10,n_steps=>10})
+end actions
+""")
+
+    assert 'setParameter("k", 2)' in staged
+    assert "simulate_ode" not in staged
+    assert staged.endswith(
+        'begin actions\n  setParameter("k", 2)\n'
+        "  generate_network({overwrite=>1})\nend actions\n"
+    )
+
+
+def test_weekly_cross_validation_uses_structural_oracle_runner():
+    """C++/Perl validation must compare typed networks, not section counts."""
+
+    job = _workflow_job_from(WEEKLY_WORKFLOW, "cross-validation")
+    assert "python scripts/cross_validate.py" in job
+    assert "--bng-perl legacy/perl/BNG2.pl" in job
+    assert '--summary-file "$GITHUB_STEP_SUMMARY"' in job
+    assert "grep -c" not in job
+    assert "species counts" not in job
 
 
 def test_reference_validation_can_fail_closed_on_missing_oracles(tmp_path):
@@ -161,6 +278,74 @@ def test_reference_ci_jobs_enable_strict_reference_validation():
     assert "--strict-references" in _workflow_job("validation")
     weekly_job = _workflow_job_from(WEEKLY_WORKFLOW, "bng-validation")
     assert "--strict-references" in weekly_job
+
+
+def test_reference_ci_jobs_emit_terminal_validation_summaries():
+    """PR and weekly reference jobs must publish their result table."""
+
+    assert '--summary-file "$GITHUB_STEP_SUMMARY"' in _workflow_job("validation")
+    assert '--summary-file "$GITHUB_STEP_SUMMARY"' in _workflow_job_from(
+        WEEKLY_WORKFLOW, "bng-validation"
+    )
+
+
+def test_validation_summary_records_counts_source_and_binary_digest(
+    tmp_path, monkeypatch
+):
+    """The reusable validation summary must preserve provenance and outcomes."""
+
+    bng_cpp = tmp_path / "bng_cpp"
+    bng_cpp.write_bytes(b"bng3-test-binary")
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_SHA", "source-sha-123")
+
+    write_validation_summary(
+        summary,
+        {
+            "pass": 4,
+            "fail": 1,
+            "skip": 2,
+            "error": 3,
+        },
+        bng_cpp,
+        tmp_path / "Validate",
+        strict_references=True,
+    )
+
+    text = summary.read_text(encoding="utf-8")
+    assert "source-sha-123" in text
+    assert "bng_cpp SHA-256" in text
+    assert "| 10 | 4 | 1 | 3 | 2 |" in text
+    assert "explicit exclusions only" in text
+    assert text.count("| ---: | ---: | ---: | ---: | ---: |") == 1
+
+
+def test_cross_validation_summary_records_both_engines_without_duplicate_header(
+    tmp_path, monkeypatch
+):
+    """The structural cross-check summary must be auditable and well formed."""
+
+    bng_cpp = tmp_path / "bng_cpp"
+    bng_cpp.write_bytes(b"bng3-test-binary")
+    bng_perl = tmp_path / "BNG2.pl"
+    bng_perl.write_text("#!/usr/bin/perl\n", encoding="utf-8")
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_SHA", "source-sha-456")
+
+    write_cross_validation_summary(
+        summary,
+        {"pass": 3, "fail": 1, "error": 2},
+        bng_cpp,
+        bng_perl,
+        tmp_path / "Validate",
+    )
+
+    text = summary.read_text(encoding="utf-8")
+    assert "source-sha-456" in text
+    assert "BNG2 oracle SHA-256" in text
+    assert "bng_cpp SHA-256" in text
+    assert "| 6 | 3 | 1 | 2 |" in text
+    assert text.count("| ---: | ---: | ---: | ---: |") == 1
 
 
 def test_reference_exclusion_manifest_is_explicit_and_corpus_backed():

@@ -51,7 +51,10 @@ def _bng2_path() -> Path | None:
 
 
 def perl_available() -> bool:
-    return _bng2_path() is not None and shutil.which(os.environ.get("PERL", "perl")) is not None
+    return (
+        _bng2_path() is not None
+        and shutil.which(os.environ.get("PERL", "perl")) is not None
+    )
 
 
 def run_perl(model_name: str, work_dir: Path, *, timeout: int = 300):
@@ -64,15 +67,25 @@ def run_perl(model_name: str, work_dir: Path, *, timeout: int = 300):
         return None, None, f"model {model_name!r} not on disk"
 
     work_dir.mkdir(parents=True, exist_ok=True)
-    local = work_dir / src.name
-    shutil.copy2(src, local)
+    src = Path(src).resolve()
+    env = os.environ.copy()
+    if not env.get("BNGPATH"):
+        env["BNGPATH"] = str(bng2.parent)
+    command = [
+        os.environ.get("PERL", "perl"),
+        str(bng2),
+        "--outdir",
+        str(work_dir),
+        str(src),
+    ]
     try:
         proc = subprocess.run(
-            [os.environ.get("PERL", "perl"), str(bng2), str(local)],
-            cwd=str(work_dir),
+            command,
+            cwd=str(src.parent),
             capture_output=True,
             text=True,
             timeout=timeout,
+            env=env,
         )
     except subprocess.TimeoutExpired:
         return None, None, f"perl timeout after {timeout}s"

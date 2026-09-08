@@ -1,0 +1,40 @@
+# Illustrative jobs to splice into .github/workflows/ci.yml.
+# Paths/installation commands may need adjustment to BNG3's existing workflow.
+energy-contracts:
+  strategy:
+    matrix:
+      os: [ubuntu-latest, macos-latest]
+      build_type: [Debug, Release]
+  runs-on: ${{ matrix.os }}
+  steps:
+    - uses: actions/checkout@v4
+    - name: Configure
+      run: cmake -S . -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+    - name: Build energy contracts
+      run: cmake --build build --target test_energy_compiler_contracts -j 2
+    - name: Run energy contracts
+      run: ctest --test-dir build --output-on-failure -L energy
+    - name: Python validation harness self-tests
+      run: python -m pytest -q tests/python/test_*energy* tests/python/test_*parity* tests/python/test_*performance*
+
+energy-sanitizers:
+  runs-on: ubuntu-latest
+  steps:
+    - uses: actions/checkout@v4
+    - name: Configure ASan/UBSan
+      run: >-
+        cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug
+        -DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer'
+        -DCMAKE_EXE_LINKER_FLAGS='-fsanitize=address,undefined'
+    - run: cmake --build build-asan --target test_energy_compiler_contracts -j 2
+    - run: ctest --test-dir build-asan --output-on-failure -L energy
+
+# Do not make this required until the corresponding implementation lands.
+energy-future-red-contracts:
+  if: ${{ false }}
+  runs-on: ubuntu-latest
+  steps:
+    - uses: actions/checkout@v4
+    - run: cmake -S . -B build -DBNG_ENABLE_FUTURE_ENERGY_CONTRACTS=ON
+    - run: cmake --build build --target test_energy_future_contracts -j 2
+    - run: ctest --test-dir build --output-on-failure -L energy-future

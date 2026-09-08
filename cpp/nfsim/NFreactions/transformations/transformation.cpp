@@ -1,5 +1,6 @@
 
 #include "transformation.hh"
+#include "moleculeCreator.hh"
 #include "../../NFcore/compartment.hh"
 
 using namespace std;
@@ -330,6 +331,12 @@ AddMoleculeTransform::isPopulationType() const
 	return mc->isPopulationType();
 };
 
+MoleculeType *
+AddMoleculeTransform::getMoleculeType() const
+{
+	return mc ? mc->getMoleculeType() : NULL;
+}
+
 
 // get pointer to population molecule
 Molecule *
@@ -637,6 +644,11 @@ void MoveTransformation::apply(Mapping *m, MappingSet **ms, string &logstr)
             + to_string(primaryMol->getUniqueID())
             + ",\"" + (newCompartment ? newCompartment->getId() : "") + "\"],\n";
     }
+}
+
+string MoveTransformation::getNewCompartmentId() const
+{
+    return newCompartment ? newCompartment->getId() : string();
 }
 
 NFcore::Transformation * TransformationFactory::genMoveTransform(Compartment * newCompartment, bool moveConnected)

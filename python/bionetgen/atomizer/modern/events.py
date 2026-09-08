@@ -468,6 +468,7 @@ def synthesize_event_actions(
 
 foldNumeric = fold_numeric
 parseTimeThreshold = parse_time_threshold
+synthesizeEventActions = synthesize_event_actions
 
 
 __all__ = [
@@ -479,5 +480,6 @@ __all__ = [
     "fold_numeric",
     "parseTimeThreshold",
     "parse_time_threshold",
+    "synthesizeEventActions",
     "synthesize_event_actions",
 ]
