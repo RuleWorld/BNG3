@@ -337,6 +337,9 @@ int DORRxnClass::checkForCollision(Molecule *m, MappingSet* ms, int rxnIndex){
 }
 
 bool DORRxnClass::tryToAdd(Molecule *m, unsigned int reactantPos) {
+	if (system != 0 && system->isProfilingEnabled())
+		system->recordProfileMatchCandidate();
+
 	if(DEBUG_MESSAGE)cout<<endl<<endl<<"adding molecule to DORRxnClass"<<endl;
 	if(DEBUG_MESSAGE)m->printDetails();
 	if (contextCountsPerComplex[reactantPos] && m->getComplex() != 0) {
@@ -2137,6 +2140,9 @@ void DOR2RxnClass::remove(Molecule *m, unsigned int reactantPos)
 
 
 bool DOR2RxnClass::tryToAdd(Molecule *m, unsigned int reactantPos) {
+	if (system != 0 && system->isProfilingEnabled())
+		system->recordProfileMatchCandidate();
+
 
 	// adding molecule to DOR2RxnClass
 	//if(DEBUG_MESSAGE)m->printDetails();

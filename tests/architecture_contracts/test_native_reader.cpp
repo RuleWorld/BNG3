@@ -64,6 +64,20 @@ std::unique_ptr<NFcore::System> moveConnectedSystem() {
     return system;
 }
 
+std::unique_ptr<NFcore::System> stateGraphSystem() {
+    auto model = bng::parser::parseModel(
+        "begin molecule types\n A(s~U~P,b)\n B(a,s~U~P)\nend molecule types\n"
+        "begin seed species\n A(s~U,b!1).B(a!1,s~P) 1\nend seed species\n"
+        "begin reaction rules\n flip: A(s~U,b!1).B(a!1,s~P) -> "
+        "A(s~P,b!1).B(a!1,s~P) 2\nend reaction rules\n");
+    REQUIRE(model);
+    int traversal = 0;
+    auto system = std::unique_ptr<NFcore::System>(
+        NFinput::buildSystemFromAst(*model, false, 100, false, traversal));
+    REQUIRE(system);
+    return system;
+}
+
 std::unique_ptr<NFcore::System> localFunctionSystem() {
     auto model = bng::parser::parseModel(R"(
 begin parameters
@@ -126,11 +140,47 @@ TEST_CASE("native NFcore2 reader resolves both halves of a binding transform") {
     CHECK(rule.transforms[0].reactant != rule.transforms[0].other_reactant);
 }
 
-TEST_CASE("native NFcore2 reader rejects unresolved internal graph topology") {
+TEST_CASE("native NFcore2 reader captures internal graph topology") {
     auto system = systemFor("flip: A(s~U,b!1).B(a!1)->A(s~P,b!1).B(a!1) 2");
     auto snapshot = NFcore2::snapshotLegacyNFsim(*system);
     REQUIRE(snapshot.rules.size() == 1);
-    CHECK(snapshot.rules[0].uses_connected_to);
+    CHECK_FALSE(snapshot.rules[0].uses_connected_to);
+    REQUIRE(snapshot.rules[0].graph_patterns.size() == 1);
+    CHECK(snapshot.rules[0].graph_patterns[0].nodes.size() == 2);
+    CHECK(snapshot.rules[0].graph_patterns[0].edges.size() == 1);
+}
+
+TEST_CASE("native NFcore2 reader preserves internal graph-node state constraints") {
+    auto system = stateGraphSystem();
+    const auto snapshot = NFcore2::snapshotLegacyNFsim(*system);
+    REQUIRE(snapshot.rules.size() == 1);
+    REQUIRE(snapshot.rules[0].graph_patterns.size() == 1);
+    const auto& graph = snapshot.rules[0].graph_patterns[0];
+    const auto childNode = std::find_if(graph.nodes.begin(), graph.nodes.end(), [](const auto& node) {
+        return node.molecule_type == 1;
+    });
+    REQUIRE(childNode != graph.nodes.end());
+    CHECK(childNode->state_component == 1);
+    CHECK(childNode->state == 1);
+
+    const auto lowered = NFcore2::lowerLegacyNFsim(*system);
+    REQUIRE(lowered.supported_rule_count == 1);
+    NFcore2::Engine engine(lowered.executable);
+    const auto a = engine.state().molecules(NFcore2::MoleculeTypeId(0)).create();
+    const auto b = engine.state().molecules(NFcore2::MoleculeTypeId(1)).create();
+    engine.state().molecules(NFcore2::MoleculeTypeId(0)).setBondRef(
+        a, 1, NFcore2::MoleculeRef(NFcore2::MoleculeTypeId(1), b));
+    engine.state().molecules(NFcore2::MoleculeTypeId(1)).setBondRef(
+        b, 0, NFcore2::MoleculeRef(NFcore2::MoleculeTypeId(0), a));
+    engine.state().molecules(NFcore2::MoleculeTypeId(1)).setStateWord(b, 1, 1);
+    NFcore2::MatchContext context;
+    context.setMoleculeAt(0, NFcore2::MoleculeRef(NFcore2::MoleculeTypeId(0), a));
+    const auto& family = lowered.executable.metadata().ruleFamilies()[0];
+    CHECK(lowered.executable.matchers().at(family.matcher).evaluate(
+        engine.state(), engine.scaffolds(), context));
+    engine.state().molecules(NFcore2::MoleculeTypeId(1)).setStateWord(b, 1, 0);
+    CHECK_FALSE(lowered.executable.matchers().at(family.matcher).evaluate(
+        engine.state(), engine.scaffolds(), context));
 }
 
 TEST_CASE("native NFcore2 reader captures zero-reactant synthesis") {
@@ -179,16 +229,13 @@ TEST_CASE("native NFcore2 lowering executes the real state-rule adapter path") {
     CHECK(delta.changed[0].value() == 0);
 }
 
-TEST_CASE("native NFcore2 lowering keeps unresolved topology on legacy fallback") {
+TEST_CASE("native NFcore2 lowering executes internal graph topology") {
     auto system = systemFor("flip: A(s~U,b!1).B(a!1)->A(s~P,b!1).B(a!1) 2");
     const auto lowered = NFcore2::lowerLegacyNFsim(*system);
     REQUIRE(lowered.rules.size() == 1);
-    CHECK(lowered.supported_rule_count == 0);
-    CHECK(lowered.fallback_rule_count == 1);
-    CHECK_FALSE(lowered.rules[0].supported());
-    CHECK((lowered.rules[0].reason == NFcore2::LOWERING_UNSUPPORTED_TRANSFORM ||
-           lowered.rules[0].reason == NFcore2::LOWERING_CONNECTED_TO ||
-           lowered.rules[0].reason == NFcore2::LOWERING_TOPOLOGY_CHANGE));
+    CHECK(lowered.supported_rule_count == 1);
+    CHECK(lowered.fallback_rule_count == 0);
+    CHECK(lowered.rules[0].supported());
 }
 
 TEST_CASE("native NFcore2 reader keeps local DOR rules on compatibility fallback") {
@@ -254,6 +301,34 @@ TEST_CASE("native NFcore2 reader captures a root-local compartment move") {
           NFcore2::nativeCompartmentId("c2"));
 }
 
+TEST_CASE("native NFcore2 reader exports compartment hierarchy metadata") {
+    auto model = bng::parser::parseModel(R"(
+begin compartments
+ cell 3 10.0
+ cyto 3 2.0 cell
+end compartments
+begin molecule types
+ A(site)
+end molecule types
+begin seed species
+ @cyto:A(site) 1
+end seed species
+begin reaction rules
+ r: @cyto:A(site) -> @cell:A(site) 1
+end reaction rules
+)");
+    REQUIRE(model);
+    int traversal=0;
+    auto system=std::unique_ptr<NFcore::System>(NFinput::buildSystemFromAst(*model,false,100,false,traversal));
+    REQUIRE(system);
+    const auto snapshot=NFcore2::snapshotLegacyNFsim(*system);
+    REQUIRE(snapshot.compartments.size()==2);
+    auto child=std::find_if(snapshot.compartments.begin(),snapshot.compartments.end(),[](const auto& c){return c.id==NFcore2::nativeCompartmentId("cyto");});
+    REQUIRE(child!=snapshot.compartments.end());
+    CHECK(child->parent==NFcore2::nativeCompartmentId("cell"));
+    CHECK(child->size==2.0);
+}
+
 TEST_CASE("native NFcore2 reader captures complete species deletion") {
     auto system = systemFor("kill: A(s~U) -> 0 1");
     const auto snapshot = NFcore2::snapshotLegacyNFsim(*system);
@@ -295,7 +370,7 @@ TEST_CASE("native NFcore2 reader captures population decrement") {
     CHECK(engine.state().populations().value(NFcore2::PopulationId(0)) == 4);
 }
 
-TEST_CASE("native NFcore2 reader preserves MoveConnected as a fail-closed ceiling") {
+TEST_CASE("native NFcore2 reader executes MoveConnected species relocation") {
     auto system = moveConnectedSystem();
     const auto snapshot = NFcore2::snapshotLegacyNFsim(*system);
     REQUIRE(snapshot.rules.size() == 1);
@@ -307,8 +382,18 @@ TEST_CASE("native NFcore2 reader preserves MoveConnected as a fail-closed ceilin
     REQUIRE(move != snapshot.rules[0].transforms.end());
     CHECK(move->move_connected);
     const auto lowered = NFcore2::lowerLegacyNFsim(*system);
-    CHECK(lowered.supported_rule_count == 0);
-    CHECK(lowered.fallback_rule_count == 1);
-    CHECK_FALSE(lowered.rules[0].supported());
-    CHECK(lowered.rules[0].reason == NFcore2::LOWERING_CONNECTED_TO);
+    CHECK(lowered.supported_rule_count == 1);
+    CHECK(lowered.fallback_rule_count == 0);
+    NFcore2::Engine engine(lowered.executable);
+    auto a = engine.state().molecules(NFcore2::MoleculeTypeId(0)).create();
+    auto b = engine.state().molecules(NFcore2::MoleculeTypeId(1)).create();
+    engine.state().molecules(NFcore2::MoleculeTypeId(0)).setCompartment(a, NFcore2::nativeCompartmentId("c1"));
+    engine.state().molecules(NFcore2::MoleculeTypeId(1)).setCompartment(b, NFcore2::nativeCompartmentId("c1"));
+    engine.state().molecules(NFcore2::MoleculeTypeId(0)).setBondRef(a, 0, NFcore2::MoleculeRef(NFcore2::MoleculeTypeId(1), b));
+    engine.state().molecules(NFcore2::MoleculeTypeId(1)).setBondRef(b, 0, NFcore2::MoleculeRef(NFcore2::MoleculeTypeId(0), a));
+    NFcore2::MatchContext context; context.setMoleculeAt(0, NFcore2::MoleculeRef(NFcore2::MoleculeTypeId(0), a));
+    NFcore2::FeatureDelta delta;
+    REQUIRE(engine.fire(lowered.rules[0].family, lowered.rules[0].member, context, delta));
+    CHECK(engine.state().molecules(NFcore2::MoleculeTypeId(0)).compartment(a) == NFcore2::nativeCompartmentId("c2"));
+    CHECK(engine.state().molecules(NFcore2::MoleculeTypeId(1)).compartment(b) == NFcore2::nativeCompartmentId("c2"));
 }

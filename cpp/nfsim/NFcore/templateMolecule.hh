@@ -66,6 +66,12 @@ namespace NFcore
             std::string compartment;
         };
         bool collectRootLocalConstraints(RootLocalConstraints& output) const;
+        int getBondConstraintCount() const { return n_bonds; }
+        TemplateMolecule* getBondPartner(int index) const { return (index >= 0 && index < n_bonds) ? bondPartner[index] : 0; }
+        int getBondComponent(int index) const { return (index >= 0 && index < n_bonds) ? bondComp[index] : -1; }
+        int getBondPartnerComponent(int index) const { return (index >= 0 && index < n_bonds) ? bondPartnerCompIndex[index] : -1; }
+        int getConnectedToCount() const { return n_connectedTo; }
+        TemplateMolecule* getConnectedTo(int index) const { return (index >= 0 && index < n_connectedTo) ? connectedTo[index] : 0; }
 
 		/* get functions */
 		MoleculeType *getMoleculeType() const {return moleculeType;};

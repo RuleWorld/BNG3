@@ -107,7 +107,7 @@ TEST(NFsimAdapter_DirectBondToInvalidatesBothBondFeatures){
 TEST(NFsimAdapter_StateDependencyKeysMoleculeTypeOwner){
     NativeModelSnapshot n;
     n.molecule_types.push_back(mol("A",1));
-    n.molecule_types.push_back(mol("B",1));
+    n.molecule_types.push_back(mol("B",2));
     NativeReactionSnapshot left=rxn();
     left.reactant_types.push_back(0);
     left.dependencies.push_back(dep(NATIVE_STATE_REQUIRED,0,0,1));
@@ -207,7 +207,7 @@ TEST(NFsimAdapter_MoveCompartmentLowersDirectly){
     EXPECT_EQ(NFsimSnapshotAdapter::toLegacy(n).rules[0].transforms[0].kind,LEGACY_TRANSFORM_MOVE_MOLECULE);
 }
 
-TEST(NFsimAdapter_MoveConnectedRemainsFailClosed){
+TEST(NFsimAdapter_MoveConnectedLowersToSpeciesMove){
     NativeModelSnapshot n;
     n.molecule_types.push_back(mol("R",1));
     NativeReactionSnapshot r=rxn();
@@ -217,9 +217,9 @@ TEST(NFsimAdapter_MoveConnectedRemainsFailClosed){
     r.transforms.push_back(move);
     n.rules.push_back(r);
     LegacyLoweringResult lowered=LegacyLowerer::lower(NFsimSnapshotAdapter::toLegacy(n));
-    EXPECT_EQ(lowered.supported_rule_count,0u);
-    EXPECT_EQ(lowered.fallback_rule_count,1u);
-    EXPECT_EQ(lowered.rules[0].reason,LOWERING_UNSUPPORTED_TRANSFORM);
+    EXPECT_EQ(lowered.supported_rule_count,1u);
+    EXPECT_EQ(lowered.fallback_rule_count,0u);
+    EXPECT_TRUE(lowered.rules[0].supported());
 }
 
 TEST(NFsimAdapter_PopulationTransformsLowerToSignedPopulationDelta){
@@ -456,4 +456,146 @@ TEST(NFsimAdapter_UnbindingCanRequestReciprocalPartnerInference){
     NativeModelSnapshot n;n.molecule_types.push_back(mol("A",2));NativeReactionSnapshot r=rxn();NativeTransformSnapshot t=tr(NATIVE_UNBINDING,0,1);t.other_component=NATIVE_INFER_PARTNER_COMPONENT;r.transforms.push_back(t);n.rules.push_back(r);
     LegacyRuleIR x=NFsimSnapshotAdapter::toLegacy(n).rules[0];
     EXPECT_EQ(x.transforms[0].kind,LEGACY_TRANSFORM_UNBIND);EXPECT_EQ(x.transforms[0].b,TRANSFORM_INFER_PARTNER_SLOT);EXPECT_TRUE(x.topology_change_is_local);
+}
+
+TEST(NFsimAdapter_ArbitraryGraphExpressionMatchesInternalChain){
+    NativeModelSnapshot n;
+    n.molecule_types.push_back(mol("A",1));
+    n.molecule_types.push_back(mol("B",2));
+    n.molecule_types.push_back(mol("C",1));
+    NativeReactionSnapshot r=rxn();
+    r.reactant_types.push_back(0);
+    NativeGraphPatternSnapshot g;
+    NativeGraphNodeSnapshot a; a.molecule_type=0; a.reactant=0;
+    NativeGraphNodeSnapshot b; b.molecule_type=1;
+    NativeGraphNodeSnapshot c; c.molecule_type=2;
+    g.nodes={a,b,c};
+    NativeGraphEdgeSnapshot ab; ab.first_node=0; ab.first_component=0; ab.second_node=1; ab.second_component=0;
+    NativeGraphEdgeSnapshot bc; bc.first_node=1; bc.first_component=1; bc.second_node=2; bc.second_component=0;
+    g.edges={ab,bc};
+    r.graph_patterns.push_back(g); n.rules.push_back(r);
+    LegacyLoweringResult lowered=LegacyLowerer::lower(NFsimSnapshotAdapter::toLegacy(n));
+    EXPECT_EQ(lowered.supported_rule_count,1u);
+    Engine engine(lowered.executable);
+    MoleculeHandle ah=engine.state().molecules(MoleculeTypeId(0)).create();
+    MoleculeHandle bh=engine.state().molecules(MoleculeTypeId(1)).create();
+    MoleculeHandle ch=engine.state().molecules(MoleculeTypeId(2)).create();
+    engine.state().molecules(MoleculeTypeId(0)).setBondRef(ah,0,MoleculeRef(MoleculeTypeId(1),bh));
+    engine.state().molecules(MoleculeTypeId(1)).setBondRef(bh,0,MoleculeRef(MoleculeTypeId(0),ah));
+    engine.state().molecules(MoleculeTypeId(1)).setBondRef(bh,1,MoleculeRef(MoleculeTypeId(2),ch));
+    engine.state().molecules(MoleculeTypeId(2)).setBondRef(ch,0,MoleculeRef(MoleculeTypeId(1),bh));
+    MatchContext context; context.setMoleculeAt(0,MoleculeRef(MoleculeTypeId(0),ah));
+    EXPECT_TRUE(lowered.executable.matchers().at(lowered.executable.metadata().ruleFamilies()[0].matcher).evaluate(engine.state(),engine.scaffolds(),context));
+}
+
+TEST(NFsimAdapter_ArbitraryGraphExpressionPreservesFreeAndBoundSiteConstraints){
+    NativeModelSnapshot n; n.molecule_types.push_back(mol("A",2));
+    NativeReactionSnapshot r=rxn(); r.reactant_types.push_back(0);
+    NativeGraphPatternSnapshot g; NativeGraphNodeSnapshot node; node.molecule_type=0; node.reactant=0;
+    node.free_components.push_back(0); node.bound_components.push_back(1); g.nodes.push_back(node); r.graph_patterns.push_back(g); n.rules.push_back(r);
+    LegacyRuleIR lowered=NFsimSnapshotAdapter::toLegacy(n).rules[0];
+    EXPECT_EQ(lowered.graph_patterns.size(),1u);
+    EXPECT_EQ(lowered.graph_patterns[0].nodes[0].free_components.size(),1u);
+    EXPECT_EQ(lowered.graph_patterns[0].nodes[0].bound_components.size(),1u);
+}
+
+TEST(NFsimAdapter_ArbitraryGraphExpressionRejectsAsymmetricRuntimeBond){
+    NativeModelSnapshot n; n.molecule_types.push_back(mol("A",1)); n.molecule_types.push_back(mol("B",1));
+    NativeReactionSnapshot r=rxn(); r.reactant_types.push_back(0);
+    NativeGraphPatternSnapshot g; NativeGraphNodeSnapshot a; a.molecule_type=0; a.reactant=0; NativeGraphNodeSnapshot b; b.molecule_type=1;
+    g.nodes={a,b}; NativeGraphEdgeSnapshot edge; edge.first_node=0; edge.first_component=0; edge.second_node=1; edge.second_component=0; g.edges.push_back(edge); r.graph_patterns.push_back(g); n.rules.push_back(r);
+    LegacyLoweringResult lowered=LegacyLowerer::lower(NFsimSnapshotAdapter::toLegacy(n)); Engine engine(lowered.executable);
+    const MoleculeHandle ah=engine.state().molecules(MoleculeTypeId(0)).create(); const MoleculeHandle bh=engine.state().molecules(MoleculeTypeId(1)).create();
+    engine.state().molecules(MoleculeTypeId(0)).setBondRef(ah,0,MoleculeRef(MoleculeTypeId(1),bh));
+    MatchContext context; context.setMoleculeAt(0,MoleculeRef(MoleculeTypeId(0),ah));
+    EXPECT_FALSE(lowered.executable.matchers().at(lowered.executable.metadata().ruleFamilies()[0].matcher).evaluate(engine.state(),engine.scaffolds(),context));
+}
+
+TEST(NFsimAdapter_RejectsMalformedGraphEdge){
+    NativeModelSnapshot n; n.molecule_types.push_back(mol("A",1));
+    NativeReactionSnapshot r=rxn(); r.reactant_types.push_back(0);
+    NativeGraphPatternSnapshot g; NativeGraphNodeSnapshot node; node.molecule_type=0; node.reactant=0; g.nodes.push_back(node);
+    NativeGraphEdgeSnapshot edge; edge.first_node=0; edge.second_node=2; g.edges.push_back(edge); r.graph_patterns.push_back(g); n.rules.push_back(r);
+    EXPECT_THROW(NFsimSnapshotAdapter::toLegacy(n),std::invalid_argument);
+}
+
+TEST(NFsimAdapter_GeneralExpressionRateEvaluatesTimeAndBothDORReactants){
+    NativeModelSnapshot n; n.molecule_types.push_back(mol("A",1)); n.molecule_types.push_back(mol("B",1));
+    NativeReactionSnapshot r=rxn(); r.base_rate=1.0; r.reactant_types={0,1};
+    r.rate_law=NATIVE_RATE_EXPRESSION; r.rate_expression="if(s0 > 2, s0 * s1 + time, 0)";
+    r.rate_expression_components={0,0}; n.rules.push_back(r);
+    LegacyLoweringResult lowered=LegacyLowerer::lower(NFsimSnapshotAdapter::toLegacy(n));
+    Engine engine(lowered.executable); MoleculeHandle a=engine.state().molecules(MoleculeTypeId(0)).create(); MoleculeHandle b=engine.state().molecules(MoleculeTypeId(1)).create();
+    engine.state().molecules(MoleculeTypeId(0)).setStateWord(a,0,3); engine.state().molecules(MoleculeTypeId(1)).setStateWord(b,0,4); engine.state().setTime(2.0);
+    MatchContext context; context.setMoleculeAt(0,MoleculeRef(MoleculeTypeId(0),a)); context.setMoleculeAt(1,MoleculeRef(MoleculeTypeId(1),b));
+    EXPECT_NEAR(engine.evaluateRate(lowered.rules[0].family,lowered.rules[0].member,context),14.0,1e-12);
+}
+
+TEST(NFsimAdapter_GeneralExpressionRateResolvesNamedLocalAndConstantBindings){
+    NativeModelSnapshot n; n.molecule_types.push_back(mol("A",1)); n.molecule_types.push_back(mol("B",1));
+    NativeReactionSnapshot r=rxn(); r.base_rate=2.0; r.reactant_types={0,1};
+    r.rate_law=NATIVE_RATE_EXPRESSION; r.rate_expression="k * (left + right) + time";
+    r.rate_expression_bindings.push_back(NativeRateExpressionBindingSnapshot::state("left",0,0));
+    r.rate_expression_bindings.push_back(NativeRateExpressionBindingSnapshot::state("right",1,0));
+    r.rate_expression_bindings.push_back(NativeRateExpressionBindingSnapshot::constant("k",3.0));
+    n.rules.push_back(r);
+    LegacyLoweringResult lowered=LegacyLowerer::lower(NFsimSnapshotAdapter::toLegacy(n));
+    Engine engine(lowered.executable); MoleculeHandle a=engine.state().molecules(MoleculeTypeId(0)).create(); MoleculeHandle b=engine.state().molecules(MoleculeTypeId(1)).create();
+    engine.state().molecules(MoleculeTypeId(0)).setStateWord(a,0,2); engine.state().molecules(MoleculeTypeId(1)).setStateWord(b,0,4); engine.state().setTime(1.0);
+    MatchContext context; context.setMoleculeAt(0,MoleculeRef(MoleculeTypeId(0),a)); context.setMoleculeAt(1,MoleculeRef(MoleculeTypeId(1),b));
+    EXPECT_NEAR(engine.evaluateRate(lowered.rules[0].family,lowered.rules[0].member,context),38.0,1e-12);
+}
+
+TEST(NFsimAdapter_CompartmentInsideRejectsUnknownIdentity){
+    NativeModelSnapshot n; n.molecule_types.push_back(mol("A",1));
+    NativeCompartmentSnapshot root; root.id=17; n.compartments.push_back(root);
+    NativeReactionSnapshot r=rxn(); r.reactant_types.push_back(0); NativeDependencySnapshot d=dep(NATIVE_COMPARTMENT_REQUIRED,0,0); d.compartment=99; d.compartment_ancestry=true; r.dependencies.push_back(d); n.rules.push_back(r);
+    LegacyLoweringResult lowered=LegacyLowerer::lower(NFsimSnapshotAdapter::toLegacy(n));
+    Engine engine(lowered.executable); MoleculeHandle a=engine.state().molecules(MoleculeTypeId(0)).create(); engine.state().molecules(MoleculeTypeId(0)).setCompartment(a,99);
+    MatchContext context; context.setMoleculeAt(0,MoleculeRef(MoleculeTypeId(0),a));
+    EXPECT_FALSE(lowered.executable.matchers().at(lowered.executable.metadata().ruleFamilies()[0].matcher).evaluate(engine.state(),engine.scaffolds(),context));
+}
+
+TEST(NFsimAdapter_CompartmentHierarchyPredicateAndSpeciesMove){
+    NativeModelSnapshot n; n.molecule_types.push_back(mol("A",1)); n.molecule_types.push_back(mol("B",1));
+    NativeCompartmentSnapshot root; root.id=nativeCompartmentId("cell");
+    NativeCompartmentSnapshot child; child.id=nativeCompartmentId("cyto"); child.parent=root.id; child.size=2.0; root.size=10.0;
+    n.compartments={root,child};
+    NativeReactionSnapshot r=rxn(); r.reactant_types.push_back(0);
+    NativeDependencySnapshot d=dep(NATIVE_COMPARTMENT_REQUIRED,0,0); d.compartment=child.id; d.compartment_ancestry=true; r.dependencies.push_back(d);
+    NativeTransformSnapshot t=tr(NATIVE_MOVE,0); t.destination_compartment=root.id; t.move_connected=true; r.transforms.push_back(t); n.rules.push_back(r);
+    LegacyLoweringResult lowered=LegacyLowerer::lower(NFsimSnapshotAdapter::toLegacy(n));
+    EXPECT_EQ(lowered.supported_rule_count,1u);
+    Engine engine(lowered.executable); MoleculeHandle a=engine.state().molecules(MoleculeTypeId(0)).create(); MoleculeHandle b=engine.state().molecules(MoleculeTypeId(1)).create();
+    engine.state().molecules(MoleculeTypeId(0)).setCompartment(a,child.id); engine.state().molecules(MoleculeTypeId(1)).setCompartment(b,child.id);
+    engine.state().molecules(MoleculeTypeId(0)).setBondRef(a,0,MoleculeRef(MoleculeTypeId(1),b)); engine.state().molecules(MoleculeTypeId(1)).setBondRef(b,0,MoleculeRef(MoleculeTypeId(0),a));
+    MatchContext context; context.setMoleculeAt(0,MoleculeRef(MoleculeTypeId(0),a)); FeatureDelta delta;
+    EXPECT_TRUE(engine.fire(lowered.rules[0].family,lowered.rules[0].member,context,delta));
+    EXPECT_EQ(engine.state().molecules(MoleculeTypeId(0)).compartment(a),root.id); EXPECT_EQ(engine.state().molecules(MoleculeTypeId(1)).compartment(b),root.id);
+}
+
+TEST(NFsimAdapter_SpeciesMoveRejectsUnknownDestinationAtomically){
+    NativeModelSnapshot n; n.molecule_types.push_back(mol("A",1)); n.molecule_types.push_back(mol("B",1));
+    NativeCompartmentSnapshot root; root.id=17; n.compartments.push_back(root);
+    NativeReactionSnapshot r=rxn(); r.reactant_types.push_back(0); NativeTransformSnapshot t=tr(NATIVE_MOVE,0); t.destination_compartment=99; t.move_connected=true; r.transforms.push_back(t); n.rules.push_back(r);
+    LegacyLoweringResult lowered=LegacyLowerer::lower(NFsimSnapshotAdapter::toLegacy(n));
+    Engine engine(lowered.executable); MoleculeHandle a=engine.state().molecules(MoleculeTypeId(0)).create(); MoleculeHandle b=engine.state().molecules(MoleculeTypeId(1)).create();
+    engine.state().molecules(MoleculeTypeId(0)).setCompartment(a,17); engine.state().molecules(MoleculeTypeId(1)).setCompartment(b,17);
+    engine.state().molecules(MoleculeTypeId(0)).setBondRef(a,0,MoleculeRef(MoleculeTypeId(1),b)); engine.state().molecules(MoleculeTypeId(1)).setBondRef(b,0,MoleculeRef(MoleculeTypeId(0),a));
+    MatchContext context; context.setMoleculeAt(0,MoleculeRef(MoleculeTypeId(0),a)); FeatureDelta delta;
+    EXPECT_THROW(engine.fire(lowered.rules[0].family,lowered.rules[0].member,context,delta),std::out_of_range);
+    EXPECT_EQ(engine.state().molecules(MoleculeTypeId(0)).compartment(a),17u); EXPECT_EQ(engine.state().molecules(MoleculeTypeId(1)).compartment(b),17u);
+}
+
+TEST(NFsimAdapter_ConditionalDeletionKeepsSpeciesIntactWhenItWouldSplit){
+    NativeModelSnapshot n; n.molecule_types.push_back(mol("A",1)); n.molecule_types.push_back(mol("B",2)); n.molecule_types.push_back(mol("C",1));
+    NativeReactionSnapshot r=rxn(); r.reactant_types.push_back(1); NativeTransformSnapshot t=tr(NATIVE_REMOVE,0); t.removal_type=NATIVE_DELETE_MOLECULE_CONDITIONAL; r.transforms.push_back(t); n.rules.push_back(r);
+    LegacyLoweringResult lowered=LegacyLowerer::lower(NFsimSnapshotAdapter::toLegacy(n)); EXPECT_EQ(lowered.supported_rule_count,1u);
+    Engine engine(lowered.executable); MoleculeHandle a=engine.state().molecules(MoleculeTypeId(0)).create(); MoleculeHandle b=engine.state().molecules(MoleculeTypeId(1)).create(); MoleculeHandle c=engine.state().molecules(MoleculeTypeId(2)).create();
+    engine.state().molecules(MoleculeTypeId(0)).setBondRef(a,0,MoleculeRef(MoleculeTypeId(1),b));
+    engine.state().molecules(MoleculeTypeId(1)).setBondRef(b,0,MoleculeRef(MoleculeTypeId(0),a)); engine.state().molecules(MoleculeTypeId(1)).setBondRef(b,1,MoleculeRef(MoleculeTypeId(2),c));
+    engine.state().molecules(MoleculeTypeId(2)).setBondRef(c,0,MoleculeRef(MoleculeTypeId(1),b));
+    MatchContext context; context.setMoleculeAt(0,MoleculeRef(MoleculeTypeId(1),b)); FeatureDelta delta;
+    EXPECT_TRUE(engine.fire(lowered.rules[0].family,lowered.rules[0].member,context,delta));
+    EXPECT_TRUE(engine.state().molecules(MoleculeTypeId(0)).alive(a)); EXPECT_TRUE(engine.state().molecules(MoleculeTypeId(1)).alive(b)); EXPECT_TRUE(engine.state().molecules(MoleculeTypeId(2)).alive(c));
 }

@@ -26,6 +26,7 @@ public:
     MoleculeRef bondRef(MoleculeHandle handle, std::uint16_t slot) const;
     void setBond(MoleculeHandle handle, std::uint16_t slot, MoleculeHandle other);
     void setBondRef(MoleculeHandle handle, std::uint16_t slot, MoleculeRef other);
+    std::vector<MoleculeHandle> liveHandles() const;
     std::size_t liveCount() const { return live_count_; }
     std::uint16_t bondSlotCount() const { return bond_slots_; }
 private:
@@ -62,6 +63,9 @@ public:
     void setTime(double value);
     bool eraseMolecule(MoleculeRef ref);
     std::vector<MoleculeRef> eraseSpecies(MoleculeRef ref);
+    std::vector<MoleculeRef> connectedComponent(MoleculeRef ref) const;
+    void moveSpecies(MoleculeRef ref, std::uint32_t destination);
+    bool wouldEraseSplitSpecies(MoleculeRef ref) const;
 private:
     const CompiledModel& model_;
     std::vector<MoleculeStore> molecule_stores_;

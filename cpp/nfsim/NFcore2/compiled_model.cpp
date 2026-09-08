@@ -32,6 +32,35 @@ MoleculeTypeId CompiledModel::addMoleculeType(const MoleculeTypeDescriptor& d) {
     molecule_types_.push_back(d);
     return MoleculeTypeId(static_cast<std::uint32_t>(molecule_types_.size() - 1));
 }
+void CompiledModel::addCompartment(const CompartmentDescriptor& d) {
+    if (!std::isfinite(d.size) || d.size < 0.0)
+        throw std::invalid_argument("compartment size must be finite and nonnegative");
+    for (std::size_t i = 0; i < compartments_.size(); ++i)
+        if (compartments_[i].id == d.id)
+            throw std::invalid_argument("duplicate compartment id");
+    compartments_.push_back(d);
+}
+bool CompiledModel::hasCompartment(std::uint32_t id) const {
+    for (const auto& compartment : compartments_)
+        if (compartment.id == id) return true;
+    return false;
+}
+bool CompiledModel::compartmentInside(std::uint32_t child, std::uint32_t ancestor) const {
+    if (!hasCompartment(child) || !hasCompartment(ancestor)) return false;
+    if (child == ancestor) return true;
+    std::uint32_t current = child;
+    for (std::size_t depth = 0; depth <= compartments_.size(); ++depth) {
+        std::uint32_t parent = std::numeric_limits<std::uint32_t>::max();
+        bool found = false;
+        for (std::size_t i = 0; i < compartments_.size(); ++i) {
+            if (compartments_[i].id == current) { parent = compartments_[i].parent; found = true; break; }
+        }
+        if (!found || parent == std::numeric_limits<std::uint32_t>::max()) return false;
+        if (parent == ancestor) return true;
+        current = parent;
+    }
+    throw std::logic_error("compartment hierarchy contains a cycle");
+}
 FeatureId CompiledModel::addFeature(const FeatureDescriptor& d) {
     features_.push_back(d);
     return FeatureId(static_cast<std::uint32_t>(features_.size() - 1));

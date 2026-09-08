@@ -1,8 +1,8 @@
 # NFcore2 semantic expansion checkpoint
 
 This checkpoint extends the tests-first NFsim/NFcore2 port on
-`codex/bng3-energy-validation-port`. It covers six semantic families that were
-previously represented only by fallback records:
+`codex/bng3-energy-validation-port`. It carries the six earlier semantic
+families forward and opens four formerly explicit ceilings:
 
 - population transforms;
 - root-local graph and `connectedTo` predicates;
@@ -10,6 +10,18 @@ previously represented only by fallback records:
 - root-local compartments and molecule moves;
 - bounded local-function and DOR rate-law descriptors;
 - complete species deletion.
+
+The additional ceiling work is deliberately finite and fail-closed:
+
+- arbitrary finite internal graph expressions with anchored and unanchored
+  nodes, multiple exact bonds, state, compartment, free-site, and bound-site
+  constraints;
+- parsed local/DOR expressions with time, named state bindings, constants,
+  conditionals, arithmetic, and built-in functions;
+- parent-linked compartment ancestry and atomic connected-species movement;
+- conditional single-molecule deletion that is suppressed when it would split
+  a connected species, with conservative invalidation and malformed-bond
+  rejection.
 
 ## Inputs and authority
 
@@ -27,19 +39,19 @@ instructions. The active user request and the authoritative `AGENTS.md` and
 
 ## Tests-first evidence
 
-Before implementation, the new adapter and transform assertions were added to
-`tests/architecture_contracts/nfcore2/test_nfsim_adapter_contract.cpp` and
-`test_transform_engine.cpp`. The first build was intentionally RED: the
-compiler reported missing population deltas, compartment metadata, move and
-species-delete opcodes, and local/DOR rate-law fields. Those errors established
-that the requested contracts were absent from the branch rather than merely
-untested.
+Before each implementation slice, assertions were added to
+`tests/architecture_contracts/nfcore2/test_nfsim_adapter_contract.cpp`,
+`test_transform_engine.cpp`, and `test_model_image_shadow.cpp`. RED evidence
+covered missing graph constraints, named expression bindings, atomic move
+validation, and conditional deletion invalidation/reciprocity. Earlier RED
+evidence also covered population deltas, compartment metadata, move and
+species-delete opcodes, and local/DOR rate-law fields.
 
 After implementation, the focused CTest target passed:
 
 ```text
 ctest --test-dir build --output-on-failure -R 'native-port|architecture_nfcore2_reference'
-12/12 native-port tests ... Passed
+14/14 native-port tests ... Passed
 architecture_nfcore2_reference ... Passed
 ```
 
@@ -53,8 +65,12 @@ owner-scoped state/bond invalidation across molecule types, and rejection of
 species-deletion transforms without a mapped reactant.
 
 The native reader now has direct parser-backed contracts for root-local moves,
-complete species deletion, population decrement, and MoveConnected. The latter
-is retained in the snapshot but remains an explicit non-executable fallback.
+complete species deletion, population decrement, internal graph topology,
+compartment hierarchy metadata, and species-carrying MoveConnected. Internal
+graph-node state, free/bound-site, and compartment constraints are retained
+through lowering and model-image round trips. Native local/DOR function objects
+and unsupported symmetric/connectedTo forms remain on the compatibility path
+until their scope and dependency extraction are proven independently.
 
 An independent literal oracle and JSON fixture cover all six family IDs under
 `tests/energy/tests/python/test_nfcore2_semantic_expansion_oracle.py` and
@@ -65,7 +81,7 @@ The post-fix validation set is also green:
 
 ```text
 cmake --build build --parallel 4
-ctest --test-dir build --output-on-failure       # 269/269 passed
+ctest --test-dir build --output-on-failure       # 273/273 passed
 tests/energy/tests/python                         # 66 passed
 full Python suite                                    # 427 passed, 144 skipped
 audit_architecture_contracts.py                   # passed; no failures
@@ -73,8 +89,8 @@ audit_architecture_contracts.py                   # passed; no failures
 
 Sanitizer validation also passed on the current macOS toolchain. The isolated
 ASan/UBSan build ran `energy_sanitizer_smoke`, the NFcore2 reference executable
-(`408 passed, 0 failed`), the standalone native-reader suite (`12` test cases,
-`107` assertions), and the NFnext reference executable (`PASS`).
+(`422 passed, 0 failed`), the standalone native-reader suite (`14` test cases,
+`126` assertions), and the NFnext reference executable (`PASS`).
 LeakSanitizer detection is unavailable on this platform, so leak coverage is
 not claimed here.
 
@@ -86,11 +102,12 @@ underflow/overflow protection. Zero-reactant population synthesis uses the
 explicit added molecule type rather than an inferred reactant position.
 
 Root-local state, bond, and compartment constraints are lowered directly.
-Root-to-root topology uses exact bond matching; root `connectedTo` uses a graph
-search over live reciprocal or non-stale bond references. The native reader
-now retains root-local connected-to and compartment data. Zero-reactant rules
-are eligible for synthesis/population lowering rather than being classified as
-graph fallback.
+Finite graph expressions use exact backtracking over live molecules, preserving
+anchors, multiple internal bonds, state values, exact compartments, free/bound
+sites, and reciprocal-bond requirements. Root `connectedTo` uses a graph search
+over live reciprocal bonds. Malformed, symmetric, or unbounded forms fail
+closed. Zero-reactant rules are eligible for synthesis/population lowering
+rather than being classified as graph fallback.
 
 Particle synthesis creates the requested molecule type and publishes it in the
 transform context. Population `AddMoleculeTransform` is decoded as a signed
@@ -98,35 +115,43 @@ population increment. Complete species removal walks the live connected
 component and removes every molecule while invalidating reciprocal bonds.
 
 Compartment IDs use a stable FNV-1a hash of the legacy compartment identifier,
-so the snapshot is parser-independent. A root-local compartment predicate and a
-single-molecule move are executable and report compartment feature changes;
-dependency ownership follows the molecule type even when the reactant position
-differs. Species deletion requires a mapped reactant before it can execute.
+so the snapshot is parser-independent. A root-local compartment predicate,
+ancestry predicate, single-molecule move, and atomic connected-species move are
+executable and report compartment feature changes; unknown destinations are
+rejected before mutation, while legacy scalar IDs are retained when no
+hierarchy table exists. Dependency ownership follows the molecule type even
+when the reactant position differs. Species deletion requires a mapped
+reactant before it can execute.
 
-The rate-law descriptor supports a constant law, a local linear law over one
-state word, and a product law over two matched state words (the bounded DOR
-shape). Results are checked for finite, non-negative propensities. Rate-law
-fields participate in rule-family signatures and state-feature dependencies.
+The rate-law descriptor supports constant, local-linear, DOR-product, and
+parsed expression laws. Expressions can bind arbitrary names to matched state
+words or finite constants and can use time, conditionals, arithmetic, and the
+BNG expression built-ins. Results are checked for finite, non-negative
+propensities. Rate-law fields participate in rule-family signatures and
+state-feature dependencies, and model-image version 4 preserves the metadata.
 
 ## Deliberate remaining fallbacks
 
+The broader unresolved goal remains: arbitrary internal graph expressions, general local-function/DOR evaluation, compartment hierarchy/species-carrying moves, conditional deletion, and independent full NFsim/BNG2 parity. The bounded contracts above are the proven subset of each ceiling.
+
 The port remains fail-closed for semantics not proven by these contracts:
 
-- arbitrary internal graph expressions, including symmetric components and
-  malformed `connectedTo` references;
-- general local-function/DOR evaluation, including full expression graphs,
-  time-dependent functions, observable scopes, and DOR2 composition;
-- compartment hierarchy/species-carrying moves, including volume/region
-  scaling and moves that carry or transform an entire connected species;
-- conditional deletion modes and any deletion rule whose component ownership
-  cannot be established;
+- native symmetric-component automorphisms, negative graph expressions,
+  molecularity constraints, unsupported child constraints, and malformed or
+  unbounded `connectedTo` forms;
+- native local-function/DOR object evaluation with observable/complex scopes,
+  function DAGs, TFUN counters, or complete DOR2 composition;
+- compartment volume/region scaling, dimension conversion, and transport that
+  changes species topology while carrying spatial counts;
+- native conditional-deletion spellings whose component ownership or
+  post-delete invalidation cannot be established;
 - independent full NFsim/BNG2 parity, including seeded trajectories,
   propensity distributions, and failure classifications against independently
   built oracle binaries.
 
-These five broader ceilings are intentional in this checkpoint. They are
-tracked as explicit fail-closed contracts so future work cannot silently
-replace the compatibility path with an approximation.
+These residual ceilings are intentional in this checkpoint. They are tracked as
+explicit fail-closed contracts so future work cannot silently replace the
+compatibility path with an approximation.
 
-These cases retain explicit fallback reasons. No NFsim, NFnext, Rasi, or uORP
+These cases retain explicit fallback reasons. No NFsim, NFnext, Rasi, or uORF
 parity claim follows from this checkpoint.

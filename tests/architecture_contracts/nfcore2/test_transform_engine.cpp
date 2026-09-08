@@ -43,6 +43,48 @@ TEST(Transform_DeleteCompleteSpeciesErasesEveryConnectedMolecule){
     p.add(TransformInstruction(TRANSFORM_DELETE_SPECIES));FeatureDelta d;p.execute(s,sc,c,d);
     EXPECT_FALSE(s.molecules(MoleculeTypeId(0)).alive(a));EXPECT_FALSE(s.molecules(MoleculeTypeId(1)).alive(b));
 }
+TEST(Transform_ConditionalDeleteReportsEveryAffectedSpeciesMember){
+    ExecutableModel e=makeExec();
+    MoleculeTypeDescriptor c;c.name="C";c.state_words=1;c.bond_slots=3;e.buildMetadata().addMoleculeType(c);
+    MoleculeTypeDescriptor d;d.name="D";d.state_words=1;d.bond_slots=1;e.buildMetadata().addMoleculeType(d);
+    for(unsigned owner=0; owner<4; ++owner) e.buildMetadata().addFeature(FeatureDescriptor(FEATURE_MOLECULE_EXISTENCE,owner,0));
+    Engine engine(e); auto a=engine.state().molecules(MoleculeTypeId(0)).create(); auto b=engine.state().molecules(MoleculeTypeId(1)).create(); auto c0=engine.state().molecules(MoleculeTypeId(2)).create(); auto d0=engine.state().molecules(MoleculeTypeId(3)).create();
+    engine.state().molecules(MoleculeTypeId(0)).setBondRef(a,0,MoleculeRef(MoleculeTypeId(1),b));
+    engine.state().molecules(MoleculeTypeId(1)).setBondRef(b,0,MoleculeRef(MoleculeTypeId(0),a)); engine.state().molecules(MoleculeTypeId(1)).setBondRef(b,1,MoleculeRef(MoleculeTypeId(2),c0));
+    engine.state().molecules(MoleculeTypeId(2)).setBondRef(c0,0,MoleculeRef(MoleculeTypeId(1),b)); engine.state().molecules(MoleculeTypeId(2)).setBondRef(c0,1,MoleculeRef(MoleculeTypeId(3),d0));
+    engine.state().molecules(MoleculeTypeId(3)).setBondRef(d0,0,MoleculeRef(MoleculeTypeId(2),c0));
+    // A-B-C-D chain: deleting B would split A from C-D, so conditional delete is a no-op.
+    MatchContext context; context.setMoleculeAt(0,MoleculeRef(MoleculeTypeId(1),b)); TransformProgram p; TransformInstruction x(TRANSFORM_DELETE_MOLECULE_CONDITIONAL); x.target=0; p.add(x); FeatureDelta delta; p.execute(engine.state(),engine.scaffolds(),context,delta);
+    EXPECT_TRUE(engine.state().molecules(MoleculeTypeId(1)).alive(b));
+    EXPECT_TRUE(delta.changed.empty());
+}
+TEST(Transform_ConditionalDeleteReportsIndirectMemberWhenCycleKeepsSpeciesConnected){
+    ExecutableModel e=makeExec();
+    MoleculeTypeDescriptor c;c.name="C";c.state_words=1;c.bond_slots=3;e.buildMetadata().addMoleculeType(c);
+    MoleculeTypeDescriptor d;d.name="D";d.state_words=1;d.bond_slots=1;e.buildMetadata().addMoleculeType(d);
+    for(unsigned owner=0; owner<4; ++owner) e.buildMetadata().addFeature(FeatureDescriptor(FEATURE_MOLECULE_EXISTENCE,owner,0));
+    Engine engine(e); auto a=engine.state().molecules(MoleculeTypeId(0)).create(); auto b=engine.state().molecules(MoleculeTypeId(1)).create(); auto c0=engine.state().molecules(MoleculeTypeId(2)).create(); auto d0=engine.state().molecules(MoleculeTypeId(3)).create();
+    engine.state().molecules(MoleculeTypeId(0)).setBondRef(a,0,MoleculeRef(MoleculeTypeId(1),b)); engine.state().molecules(MoleculeTypeId(0)).setBondRef(a,1,MoleculeRef(MoleculeTypeId(2),c0));
+    engine.state().molecules(MoleculeTypeId(1)).setBondRef(b,0,MoleculeRef(MoleculeTypeId(0),a)); engine.state().molecules(MoleculeTypeId(1)).setBondRef(b,1,MoleculeRef(MoleculeTypeId(2),c0));
+    engine.state().molecules(MoleculeTypeId(2)).setBondRef(c0,0,MoleculeRef(MoleculeTypeId(0),a)); engine.state().molecules(MoleculeTypeId(2)).setBondRef(c0,1,MoleculeRef(MoleculeTypeId(1),b)); engine.state().molecules(MoleculeTypeId(2)).setBondRef(c0,2,MoleculeRef(MoleculeTypeId(3),d0));
+    engine.state().molecules(MoleculeTypeId(1)).setBondRef(b,1,MoleculeRef(MoleculeTypeId(2),c0));
+    engine.state().molecules(MoleculeTypeId(3)).setBondRef(d0,0,MoleculeRef(MoleculeTypeId(2),c0));
+    MatchContext context; context.setMoleculeAt(0,MoleculeRef(MoleculeTypeId(0),a)); TransformProgram p; TransformInstruction x(TRANSFORM_DELETE_MOLECULE_CONDITIONAL); x.target=0; p.add(x); FeatureDelta delta; p.execute(engine.state(),engine.scaffolds(),context,delta);
+    EXPECT_FALSE(engine.state().molecules(MoleculeTypeId(0)).alive(a));
+    EXPECT_TRUE(engine.state().molecules(MoleculeTypeId(3)).alive(d0));
+    EXPECT_TRUE(std::find(delta.changed.begin(),delta.changed.end(),FeatureId(11)) != delta.changed.end());
+}
+TEST(Transform_ConditionalDeleteRejectsAsymmetricRuntimeGraph){
+    ExecutableModel e=makeExec();
+    MoleculeTypeDescriptor c;c.name="C";c.state_words=1;c.bond_slots=1;e.buildMetadata().addMoleculeType(c);
+    Engine engine(e); auto a=engine.state().molecules(MoleculeTypeId(0)).create(); auto b=engine.state().molecules(MoleculeTypeId(1)).create(); auto c0=engine.state().molecules(MoleculeTypeId(2)).create();
+    engine.state().molecules(MoleculeTypeId(0)).setBondRef(a,0,MoleculeRef(MoleculeTypeId(1),b)); engine.state().molecules(MoleculeTypeId(0)).setBondRef(a,1,MoleculeRef(MoleculeTypeId(2),c0));
+    // The B->C edge is one-way. A conditional deletion must fail closed even
+    // though the directed traversal would otherwise see one remaining piece.
+    engine.state().molecules(MoleculeTypeId(1)).setBondRef(b,0,MoleculeRef(MoleculeTypeId(2),c0));
+    MatchContext context; context.setMoleculeAt(0,MoleculeRef(MoleculeTypeId(0),a)); TransformProgram p; TransformInstruction x(TRANSFORM_DELETE_MOLECULE_CONDITIONAL); x.target=0; p.add(x); FeatureDelta delta; p.execute(engine.state(),engine.scaffolds(),context,delta);
+    EXPECT_TRUE(engine.state().molecules(MoleculeTypeId(0)).alive(a)); EXPECT_TRUE(delta.changed.empty());
+}
 TEST(Transform_MoveMoleculeUpdatesCompartmentAndFeatureDelta){
     ExecutableModel e=makeExec();SimulationState s(e.metadata());ScaffoldStore sc;
     MoleculeHandle a=s.molecules(MoleculeTypeId(0)).create();s.molecules(MoleculeTypeId(0)).setCompartment(a,2);

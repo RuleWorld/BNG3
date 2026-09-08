@@ -29,6 +29,8 @@ public:
         std::vector<NativeDependencySnapshot>& out) const = 0;
     virtual void collectTransforms(std::size_t reaction_index,
         std::vector<NativeTransformSnapshot>& out) const = 0;
+    virtual void collectCompartments(std::vector<NativeCompartmentSnapshot>&) const {}
+    virtual void collectGraphPatterns(std::size_t, std::vector<NativeGraphPatternSnapshot>&) const {}
 };
 
 NativeModelSnapshot readNFsimSystem(const NFsimSystemReader& reader);

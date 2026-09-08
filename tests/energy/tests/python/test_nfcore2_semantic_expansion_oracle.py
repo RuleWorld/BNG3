@@ -95,5 +95,5 @@ def test_expanded_goal_keeps_broader_ceilings_explicit_and_fail_closed():
     status = STATUS.read_text()
     for ceiling in expected:
         assert ceiling in status
-    assert "No NFsim, NFnext, Rasi, or uORP" in status
+    assert "No NFsim, NFnext, Rasi, or uORF" in status
     assert "parity claim" in status

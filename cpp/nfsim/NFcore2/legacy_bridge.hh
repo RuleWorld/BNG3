@@ -20,6 +20,7 @@ enum LegacyPredicateKind {
     LEGACY_PRED_BOND_TO,
     LEGACY_PRED_POPULATION_AT_LEAST,
     LEGACY_PRED_COMPARTMENT,
+    LEGACY_PRED_COMPARTMENT_INSIDE,
     LEGACY_PRED_CONNECTED_TO,
     LEGACY_PRED_SCAFFOLD_STATE,
     LEGACY_PRED_SCAFFOLD_FREE,
@@ -54,6 +55,8 @@ enum LegacyTransformKind {
     LEGACY_TRANSFORM_DELETE_MOLECULE,
     LEGACY_TRANSFORM_DELETE_SPECIES,
     LEGACY_TRANSFORM_MOVE_MOLECULE,
+    LEGACY_TRANSFORM_MOVE_SPECIES,
+    LEGACY_TRANSFORM_DELETE_MOLECULE_CONDITIONAL,
     LEGACY_TRANSFORM_UNSUPPORTED
 };
 
@@ -73,6 +76,7 @@ struct LegacyRuleIR {
     std::string name;
     std::vector<LegacyPredicateIR> predicates;
     std::vector<LegacyTransformIR> transforms;
+    std::vector<GraphPattern> graph_patterns;
     double rate;
     RateLawDescriptor rate_law;
     std::uint32_t parameter_index;
@@ -88,8 +92,13 @@ struct LegacyRuleIR {
 
 struct LegacyModelIR {
     std::vector<MoleculeTypeDescriptor> molecule_types;
+    std::vector<CompartmentDescriptor> compartments;
     std::vector<FeatureDescriptor> features;
     std::vector<LegacyRuleIR> rules;
+
+    void addCompartment(const CompartmentDescriptor& descriptor) {
+        compartments.push_back(descriptor);
+    }
 };
 
 enum LoweringFallbackReason {

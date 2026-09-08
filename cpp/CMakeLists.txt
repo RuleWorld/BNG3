@@ -141,6 +141,7 @@ endif()
 set(NFSIM_DIR ${CMAKE_CURRENT_SOURCE_DIR}/nfsim)
 
 file(GLOB NFSIM_CORE_SRC "${NFSIM_DIR}/NFcore/*.cpp")
+list(FILTER NFSIM_CORE_SRC EXCLUDE REGEX ".*/profile\\.cpp$")
 file(GLOB NFSIM_CORE_MOLLISTS "${NFSIM_DIR}/NFcore/moleculeLists/*.cpp")
 file(GLOB NFSIM_CORE_RXNSEL "${NFSIM_DIR}/NFcore/reactionSelector/*.cpp")
 file(GLOB NFSIM_INPUT_SRC "${NFSIM_DIR}/NFinput/*.cpp")
@@ -161,6 +162,7 @@ file(GLOB NFSIM_NAUTY_C "${NFSIM_DIR}/nauty24/*.c")
 # Exclude NFsim.cpp (main) and NFtest sources from the library
 set(NFSIM_LIB_SOURCES
     ${NFSIM_CORE_SRC}
+    ${NFSIM_DIR}/NFcore/profile.cpp
     ${NFSIM_CORE_MOLLISTS}
     ${NFSIM_CORE_RXNSEL}
     ${NFSIM_INPUT_SRC}

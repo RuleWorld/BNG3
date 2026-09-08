@@ -540,3 +540,52 @@ TEST(ModelImage_RoundTripPopulationAndRateLawMetadata){
     EXPECT_EQ(restored.rate_law.slope,0.25);
     EXPECT_EQ(restored.rate_law.weight,3.0);
 }
+
+TEST(ModelImage_RoundTripCompartmentGraphAndExpressionMetadata){
+    ExecutableModel e;
+    MoleculeTypeDescriptor a; a.name="A"; a.bond_slots=1;
+    MoleculeTypeDescriptor b; b.name="B"; b.bond_slots=1;
+    e.buildMetadata().addMoleculeType(a); e.buildMetadata().addMoleculeType(b);
+    CompartmentDescriptor root; root.id=10; root.size=20.0;
+    CompartmentDescriptor child; child.id=11; child.parent=10; child.size=5.0;
+    e.buildMetadata().addCompartment(root); e.buildMetadata().addCompartment(child);
+
+    MatcherProgram matcher;
+    GraphPattern graph;
+    GraphNodePattern left; left.molecule_type=0; left.anchor_reactant=0;
+    GraphNodePattern right; right.molecule_type=1; right.compartment=11;
+    right.free_components.push_back(0);
+    graph.nodes.push_back(left); graph.nodes.push_back(right);
+    GraphEdgePattern edge; edge.first_node=0; edge.first_component=0; edge.second_node=1; edge.second_component=0;
+    graph.edges.push_back(edge);
+    const std::uint32_t graphId=matcher.addGraphPattern(graph);
+    MatchInstruction graphInstruction(MATCH_GRAPH); graphInstruction.a=graphId;
+    matcher.add(graphInstruction); matcher.add(MatchInstruction(MATCH_END));
+    const MatcherId matcherId=e.buildMatchers().add(matcher);
+
+    TransformProgram transform; transform.add(TransformInstruction(TRANSFORM_END));
+    const TransformProgramId transformId=e.buildTransforms().add(transform);
+    RuleFamilyDescriptor family; family.name="graph-expression"; family.matcher=matcherId; family.transform=transformId;
+    RuleMember member; member.rate=2.0; member.rate_law.kind=LEGACY_RATE_EXPRESSION;
+    member.rate_law.expression="s0 + time"; member.rate_law.expression_components.push_back(0);
+    RateExpressionBinding binding; binding.kind=RATE_EXPRESSION_CONSTANT; binding.name="k"; binding.value=3.0;
+    member.rate_law.expression_bindings.push_back(binding);
+    family.members.push_back(member); e.buildMetadata().addRuleFamily(family);
+    e.buildMetadata().setFeatureDependencies(std::vector<std::vector<MatcherId> >());
+
+    ExecutableModel roundtrip=readBytes(writeBytes(e));
+    EXPECT_EQ(roundtrip.metadata().compartments().size(),2u);
+    EXPECT_EQ(roundtrip.metadata().compartments()[1].parent,10u);
+    const MatcherProgram& restored=roundtrip.matchers().at(matcherId);
+    EXPECT_EQ(restored.graphPatterns().size(),1u);
+    EXPECT_EQ(restored.graphPatterns()[0].edges.size(),1u);
+    EXPECT_EQ(restored.graphPatterns()[0].nodes[1].compartment,11u);
+    EXPECT_EQ(restored.graphPatterns()[0].nodes[1].free_components.size(),1u);
+    const RuleMember& restoredMember=roundtrip.metadata().ruleFamilies()[0].members[0];
+    EXPECT_EQ(restoredMember.rate_law.kind,LEGACY_RATE_EXPRESSION);
+    EXPECT_EQ(restoredMember.rate_law.expression,std::string("s0 + time"));
+    EXPECT_EQ(restoredMember.rate_law.expression_components.size(),1u);
+    EXPECT_EQ(restoredMember.rate_law.expression_bindings.size(),1u);
+    EXPECT_EQ(restoredMember.rate_law.expression_bindings[0].name,std::string("k"));
+    EXPECT_EQ(restoredMember.rate_law.expression_bindings[0].value,3.0);
+}

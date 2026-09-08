@@ -60,6 +60,13 @@ void MoleculeStore::setBond(MoleculeHandle h, std::uint16_t s, MoleculeHandle ot
 void MoleculeStore::setBondRef(MoleculeHandle h, std::uint16_t s, MoleculeRef other) {
     requireAlive(h); if (s>=bond_slots_) throw std::out_of_range("bond slot"); bonds_[h.slot*bond_slots_+s]=other;
 }
+std::vector<MoleculeHandle> MoleculeStore::liveHandles() const {
+    std::vector<MoleculeHandle> out;
+    out.reserve(live_count_);
+    for (std::uint32_t slot = 0; slot < generation_.size(); ++slot)
+        if (alive_[slot]) out.push_back(MoleculeHandle(slot, generation_[slot]));
+    return out;
+}
 
 PopulationId PopulationStore::add(std::int64_t initial) {
     if (initial < 0) throw std::invalid_argument("population count cannot be negative");
@@ -97,6 +104,12 @@ bool SimulationState::eraseMolecule(MoleculeRef ref) {
 }
 
 std::vector<MoleculeRef> SimulationState::eraseSpecies(MoleculeRef ref) {
+    std::vector<MoleculeRef> component = connectedComponent(ref);
+    for (std::size_t i = 0; i < component.size(); ++i) eraseMolecule(component[i]);
+    return component;
+}
+
+std::vector<MoleculeRef> SimulationState::connectedComponent(MoleculeRef ref) const {
     std::vector<MoleculeRef> component;
     if (!ref.valid() || !molecules(ref.type).alive(ref.handle)) return component;
     component.push_back(ref);
@@ -112,8 +125,66 @@ std::vector<MoleculeRef> SimulationState::eraseSpecies(MoleculeRef ref) {
             if (!seen) component.push_back(partner);
         }
     }
-    for (std::size_t i = 0; i < component.size(); ++i) eraseMolecule(component[i]);
     return component;
+}
+
+void SimulationState::moveSpecies(MoleculeRef ref, std::uint32_t destination) {
+    if (!ref.valid() || !molecules(ref.type).alive(ref.handle))
+        throw std::out_of_range("move target missing");
+    // Models without an explicit compartment table retain the historical
+    // scalar-id behavior. Once a hierarchy is present, reject unknown
+    // destinations before mutating any member so the move is atomic.
+    if (!model_.compartments().empty() && !model_.hasCompartment(destination))
+        throw std::out_of_range("move destination compartment is unknown");
+    const std::vector<MoleculeRef> members = connectedComponent(ref);
+    for (const auto& member : members)
+        if (!member.valid() || !molecules(member.type).alive(member.handle))
+            throw std::logic_error("species contains a stale molecule");
+    for (const auto& member : members)
+        molecules(member.type).setCompartment(member.handle, destination);
+}
+
+bool SimulationState::wouldEraseSplitSpecies(MoleculeRef ref) const {
+    if (!ref.valid() || !molecules(ref.type).alive(ref.handle)) return false;
+    const MoleculeStore& source = molecules(ref.type);
+    const auto reciprocallyBound = [&](MoleculeRef from, std::uint16_t slot,
+                                      MoleculeRef partner) {
+        if (!partner.valid() || !molecules(partner.type).alive(partner.handle)) return false;
+        const MoleculeStore& partnerStore = molecules(partner.type);
+        for (std::uint16_t partnerSlot = 0; partnerSlot < partnerStore.bondSlotCount(); ++partnerSlot)
+            if (partnerStore.bondRef(partner.handle, partnerSlot) == from) return true;
+        (void)slot;
+        return false;
+    };
+    std::vector<MoleculeRef> neighbors;
+    for (std::uint16_t slot = 0; slot < source.bondSlotCount(); ++slot) {
+        MoleculeRef p = source.bondRef(ref.handle, slot);
+        if (!p.valid()) continue;
+        if (!reciprocallyBound(ref, slot, p)) return true;
+        neighbors.push_back(p);
+    }
+    if (neighbors.size() < 2) return false;
+    std::size_t components = 0;
+    std::vector<MoleculeRef> assigned;
+    for (const auto& neighbor : neighbors) {
+        bool known = false; for (const auto& x : assigned) if (x == neighbor) { known = true; break; }
+        if (known) continue;
+        ++components;
+        std::vector<MoleculeRef> pending(1, neighbor); assigned.push_back(neighbor);
+        for (std::size_t i = 0; i < pending.size(); ++i) {
+            const MoleculeRef cur = pending[i];
+            const MoleculeStore& store = molecules(cur.type);
+            for (std::uint16_t slot = 0; slot < store.bondSlotCount(); ++slot) {
+                MoleculeRef p = store.bondRef(cur.handle, slot);
+                if (!p.valid() || p == ref) continue;
+                if (!molecules(p.type).alive(p.handle)) return true;
+                if (!reciprocallyBound(cur, slot, p)) return true;
+                bool k = false; for (const auto& x : assigned) if (x == p) { k = true; break; }
+                if (!k) { assigned.push_back(p); pending.push_back(p); }
+            }
+        }
+    }
+    return components > 1;
 }
 
 SimulationState::SimulationState(const CompiledModel& model) : model_(model), time_(0.0) {

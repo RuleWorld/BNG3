@@ -19,7 +19,7 @@ The archival documents are retained under `docs/architecture_handoffs/`. The exa
 - Energy compiler types and `EnergyDeltaPlan` are in `cpp/compile/` and connected to the real NFsim energy bridge.
 - NFcore2 source is in `cpp/nfsim/NFcore2/`; its native reader is adapted to the real BNG3 reaction, template, transformation, and energy APIs.
 - NFnext source is in `cpp/nfnext/` and is built as an isolated library so its prototype contracts remain testable without being presented as the NFsim replacement.
-- Root-local NFsim introspection and conservative dependency collection are implemented in the existing NFsim classes. Unsupported internal topology and broader transport cases fail closed; bounded synthesis and root-local moves execute directly.
+- Root-local NFsim introspection and conservative dependency collection are implemented in the existing NFsim classes. Unsupported richer topology and broader transport cases fail closed; bounded graph matching, synthesis, root-local moves, and species-carrying `MoveConnected` execute directly.
 - The staged semantic layer now has typed symbols/rate-law references, structured
   feature diagnostics, an immutable `compile::Document` protocol split, and a
   value-like `compile::Pattern` with explicit BNGcore and NFsim
@@ -39,11 +39,13 @@ The archival documents are retained under `docs/architecture_handoffs/`. The exa
   a behavior regression test.
 - The energy validation harness, fixtures, Python gates, C++ contracts, architecture inventories, and CI hooks are under `tests/energy/` and `tests/architecture_contracts/`.
 - Future and unavailable contracts remain opt-in or classified as `blocked-api`, `design-only`, `reference`, or `auxiliary`; empty future bodies are inventory findings, not passing tests.
-- The expanded goal keeps five broader ceilings explicit and fail-closed:
-  arbitrary internal graph expressions; general local-function/DOR evaluation;
-  compartment hierarchy/species-carrying moves; conditional deletion; and
-  independent full NFsim/BNG2 parity. These are tracked as open contracts,
-  not implied by the bounded semantic checkpoint.
+- The expanded goal keeps five full-parity ceilings explicit and fail-closed:
+  richer internal graph expressions; full local-function/DOR evaluation;
+  volume-aware compartment scaling and transport; complete deletion semantics;
+  and independent full NFsim/BNG2 parity. Bounded direct contracts now cover
+  graph state/bond/compartment constraints, expression bindings, hierarchy
+  metadata, species-carrying `MoveConnected`, and conditional deletion; these
+  do not imply the broader ceilings.
 - An opt-in `BUILD_BNGSIM_ADAPTER` path maps a generated BNG3 network directly
   into an external BNGsim `NetworkModel`, with strict dependency, observable,
   index, and rate-reference checks. It remains OFF by default; this checkout
@@ -52,11 +54,14 @@ The archival documents are retained under `docs/architecture_handoffs/`. The exa
 
   The adapter spike was also built and tested against BNGsim commit
   `49dc939035f5a272da663f8c9586e3c9f0e1c041` in an isolated build. Its focused
-  suite passed `7/7`, covering direct mapping, fail-closed composite rates,
+  suite passed `8/8`, covering direct mapping, fail-closed composite rates,
   functional rates, unsupported semantic surfaces, pattern-weighted
-  observables, inline TFUN rates, relative-TFUN provenance rejection, and
-  bounded CVODE decay parity. BNGsim's own managed suite passed `6/6`. This
-  remains feasibility evidence, not a solver-selection decision.
+  observables, inline and absolute-file TFUN rates, relative-TFUN provenance
+  rejection, and bounded CVODE decay parity. BNGsim's own managed suite passed
+  `6/6`; the optional BNG3 build passed `278/278` including the adapter tests.
+  This remains feasibility evidence, not a solver-selection decision.
+  The scope and non-selection decision are recorded in
+  `docs/adr/0002-bngsim-adapter-scope.md`.
 - Python now exposes deterministic, source-free BNGIR JSON v0.1 through
   `BioNetGenModel.to_bngir()`, `to_bngir()`, `from_bngir()`, and
   `semantic_equal()`. The published schema is
@@ -67,10 +72,11 @@ The archival documents are retained under `docs/architecture_handoffs/`. The exa
 ## Evidence at this checkpoint
 
 - The direct-port build completed after adapting the BNG3 APIs.
-- Full Release/Ninja CTest passed all `269/269` tests, including `58/58`
+- Full Release/Ninja CTest passed all `273/273` tests, including `58/58`
   tests under the exact `energy` label, one NFcore2 and one NFnext
-  architecture-reference test, the 12 native-port semantic tests, and the
-  sanitizer smoke test.
+  architecture-reference test, and the 14 native-port semantic tests.
+  The NFcore2 reference suite passed 422/422; the native-reader suite
+  passed 14 cases and 126 assertions.
 - The imported energy Python self-tests passed `66/66` under the repository's
   intended `PYTHONPATH=tests/energy` environment.
 - The full BNG3 Python and validation suites passed `427/427` with `144`

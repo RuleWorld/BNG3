@@ -196,6 +196,17 @@ target_link_libraries(test_nfsim_reactant_tree PRIVATE
     bng_parser)
 catch_discover_tests(test_nfsim_reactant_tree)
 
+# test_nfsim_profile
+add_executable(test_nfsim_profile test_nfsim_profile.cpp)
+target_include_directories(test_nfsim_profile PRIVATE
+    ${CMAKE_SOURCE_DIR}/cpp
+    ${CMAKE_SOURCE_DIR}/cpp/nfsim
+)
+target_link_libraries(test_nfsim_profile PRIVATE
+    Catch2::Catch2WithMain Catch2::Catch2
+    nfsim_core)
+catch_discover_tests(test_nfsim_profile)
+
 # test_sbml_reader
 add_executable(test_sbml_reader test_sbml_reader.cpp)
 target_include_directories(test_sbml_reader PRIVATE

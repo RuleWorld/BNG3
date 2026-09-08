@@ -1,5 +1,6 @@
 #include "nfsim_native_reader.hh"
 #include "../NFcore/NFcore.hh"
+#include "../NFcore/compartment.hh"
 #include "../NFcore/templateMolecule.hh"
 #include "../NFreactions/transformations/transformationSet.hh"
 #include "../NFreactions/transformations/transformation.hh"
@@ -8,6 +9,8 @@
 #include <algorithm>
 #include <limits>
 #include <stdexcept>
+#include <map>
+#include <queue>
 namespace NFcore2 {
 using namespace NFcore;
 NativeNFsimSystemReader::NativeNFsimSystemReader(System& s):system_(s){}
@@ -24,15 +27,17 @@ NativeReactionHeader NativeNFsimSystemReader::reactionHeader(std::size_t i) cons
     h.uses_connected_to = false;
     std::vector<TemplateMolecule*> roots;
     for (int p = 0; p < r->getNumOfReactants(); ++p) roots.push_back(r->getReactantTemplate(p));
+    std::vector<NativeGraphPatternSnapshot> graphPatterns;
+    collectGraphPatterns(i, graphPatterns);
     for (int p = 0; p < r->getNumOfReactants(); ++p) {
         auto* mt = r->getMoleculeTypeOfReactantTemplate(p);
         if (!mt) throw std::logic_error("NFsim reactant without molecule type");
         h.reactant_types.push_back(static_cast<std::uint32_t>(mt->getTypeID()));
         auto* root = r->getReactantTemplate(p);
         TemplateMolecule::RootLocalConstraints constraints;
-        if (!root || !root->collectRootLocalConstraints(constraints)) h.uses_connected_to = true;
+        if (!root || (!root->collectRootLocalConstraints(constraints) && graphPatterns.empty())) h.uses_connected_to = true;
         for (const auto& bond : constraints.bonds) {
-            if (std::find(roots.begin(), roots.end(), bond.partner) == roots.end())
+            if (std::find(roots.begin(), roots.end(), bond.partner) == roots.end() && graphPatterns.empty())
                 h.uses_connected_to = true;
         }
         for (TemplateMolecule* connected : constraints.connected_to) {
@@ -43,10 +48,93 @@ NativeReactionHeader NativeNFsimSystemReader::reactionHeader(std::size_t i) cons
     TransformationSet* ts=r->getTransformationSet();if(ts)for(int p=0;p<r->getNumOfReactants();++p)for(int x=0;x<ts->getNumOfTransformations(p);++x)if(ts->getTransformation(p,x)->getType()==TransformationFactory::LOCAL_FUNCTION_REFERENCE)h.uses_local_function=true;
     return h;
 }
+void NativeNFsimSystemReader::collectGraphPatterns(std::size_t i,std::vector<NativeGraphPatternSnapshot>& out) const {
+    ReactionClass* r=system_.getReaction(static_cast<int>(i));
+    std::vector<TemplateMolecule*> roots;
+    for (int p=0;p<r->getNumOfReactants();++p) roots.push_back(r->getReactantTemplate(p));
+    std::map<TemplateMolecule*,std::size_t> indices;
+    std::queue<TemplateMolecule*> pending;
+    NativeGraphPatternSnapshot graph;
+    auto appendNode = [&](TemplateMolecule* molecule, std::uint16_t reactant) {
+        if (!molecule || !molecule->getMoleculeType()) { out.clear(); return false; }
+        TemplateMolecule::RootLocalConstraints constraints;
+        if (!molecule->collectRootLocalConstraints(constraints)) { out.clear(); return false; }
+        // Root-local constraints are emitted separately as dependency
+        // predicates. Internal graph nodes need their own exact state
+        // constraint here; silently dropping child constraints would widen
+        // the graph match.
+        if (reactant == std::numeric_limits<std::uint16_t>::max() &&
+            (!constraints.exclusions.empty() || !constraints.connected_to.empty() ||
+             constraints.states.size() > 1)) {
+            out.clear(); return false;
+        }
+        NativeGraphNodeSnapshot node;
+        node.molecule_type=static_cast<std::uint32_t>(molecule->getMoleculeType()->getTypeID());
+        node.reactant=reactant;
+        if (!constraints.compartment.empty())
+            node.compartment=nativeCompartmentId(constraints.compartment);
+        for (const auto component : constraints.empty)
+            node.free_components.push_back(static_cast<std::uint32_t>(component));
+        for (const auto component : constraints.occupied)
+            node.bound_components.push_back(static_cast<std::uint32_t>(component));
+        if (reactant == std::numeric_limits<std::uint16_t>::max() && !constraints.states.empty()) {
+            if (constraints.states.front().first < 0 || constraints.states.front().second < 0) {
+                out.clear(); return false;
+            }
+            node.state_component=static_cast<std::uint32_t>(constraints.states.front().first);
+            node.state=constraints.states.front().second;
+        }
+        indices[molecule]=graph.nodes.size();
+        graph.nodes.push_back(node);
+        pending.push(molecule);
+        return true;
+    };
+    for (std::size_t p=0;p<roots.size();++p) {
+        TemplateMolecule* root=roots[p];
+        if (!root || root->getN_symComps()!=0) { out.clear(); return; }
+        if (indices.find(root)==indices.end()) {
+            if (!appendNode(root, static_cast<std::uint16_t>(p))) return;
+        }
+    }
+    while (!pending.empty()) {
+        TemplateMolecule* current=pending.front(); pending.pop();
+        const std::size_t currentIndex=indices[current];
+        for (int b=0;b<current->getBondConstraintCount();++b) {
+            TemplateMolecule* partner=current->getBondPartner(b);
+            const int partnerComponent=current->getBondPartnerComponent(b);
+            const int component=current->getBondComponent(b);
+            if (!partner || component<0 || partnerComponent<0 || partner->getN_symComps()!=0) { out.clear(); return; }
+            auto found=indices.find(partner);
+            if (found==indices.end()) {
+                if (!appendNode(partner, std::numeric_limits<std::uint16_t>::max())) return;
+                found=indices.find(partner);
+            }
+            const std::size_t partnerIndex=found->second;
+            if (currentIndex < partnerIndex) {
+                NativeGraphEdgeSnapshot edge; edge.first_node=currentIndex; edge.first_component=static_cast<std::uint32_t>(component); edge.second_node=partnerIndex; edge.second_component=static_cast<std::uint32_t>(partnerComponent); graph.edges.push_back(edge);
+            }
+        }
+    }
+    if (graph.edges.empty() || graph.nodes.size() <= roots.size()) { return; }
+    out.push_back(graph);
+}
+
+void NativeNFsimSystemReader::collectCompartments(std::vector<NativeCompartmentSnapshot>& out) const {
+    out.clear();
+    const auto& compartments=system_.getCompartments();
+    for (const auto& entry : compartments) {
+        Compartment* c=entry.second;
+        NativeCompartmentSnapshot snapshot; snapshot.id=nativeCompartmentId(c->getId()); snapshot.dimensions=c->getSpatialDimensions(); snapshot.size=c->getSize();
+        snapshot.parent=c->getParent() ? nativeCompartmentId(c->getParent()->getId()) : std::numeric_limits<std::uint32_t>::max();
+        out.push_back(snapshot);
+    }
+}
 void NativeNFsimSystemReader::collectDependencies(std::size_t i,std::vector<NativeDependencySnapshot>& out) const{
     ReactionClass* r=system_.getReaction(static_cast<int>(i));
     std::vector<TemplateMolecule*> roots;
     for (int p = 0; p < r->getNumOfReactants(); ++p) roots.push_back(r->getReactantTemplate(p));
+    std::vector<NativeGraphPatternSnapshot> graphPatterns;
+    collectGraphPatterns(i, graphPatterns);
     for (int p = 0; p < r->getNumOfReactants(); ++p) {
         auto* root = r->getReactantTemplate(p);
         TemplateMolecule::RootLocalConstraints constraints;
@@ -64,7 +152,9 @@ void NativeNFsimSystemReader::collectDependencies(std::size_t i,std::vector<Nati
         for (const auto& bond : constraints.bonds) {
             auto partner = std::find(roots.begin(), roots.end(), bond.partner);
             if (partner == roots.end()) {
-                append(NATIVE_TOPOLOGY, bond.component, -1);
+                // The captured graph carries this internal relation. Adding
+                // an unresolved topology marker would force fallback again.
+                if (graphPatterns.empty()) append(NATIVE_TOPOLOGY, bond.component, -1);
                 continue;
             }
             NativeDependencySnapshot value;

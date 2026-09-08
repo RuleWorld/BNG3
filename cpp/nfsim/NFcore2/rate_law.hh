@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
+#include <vector>
 
 namespace NFcore2 {
 
@@ -10,7 +12,23 @@ struct MatchContext;
 enum RateLawKind {
     LEGACY_RATE_CONSTANT = 0,
     LEGACY_RATE_LOCAL_LINEAR = 1,
-    LEGACY_RATE_DOR_PRODUCT = 2
+    LEGACY_RATE_DOR_PRODUCT = 2,
+    LEGACY_RATE_EXPRESSION = 3
+};
+
+enum RateExpressionBindingKind {
+    RATE_EXPRESSION_STATE = 0,
+    RATE_EXPRESSION_CONSTANT = 1
+};
+
+struct RateExpressionBinding {
+    RateExpressionBindingKind kind;
+    std::string name;
+    std::uint16_t target;
+    std::uint32_t component;
+    double value;
+    RateExpressionBinding()
+        : kind(RATE_EXPRESSION_CONSTANT), target(0), component(0), value(0.0) {}
 };
 
 // Bounded, source-derived rate descriptors.  Constant rates retain the old
@@ -24,6 +42,9 @@ struct RateLawDescriptor {
     double offset;
     double slope;
     double weight;
+    std::string expression;
+    std::vector<std::uint32_t> expression_components;
+    std::vector<RateExpressionBinding> expression_bindings;
     RateLawDescriptor()
         : kind(LEGACY_RATE_CONSTANT), target(0), partner_target(1), component(0),
           partner_component(0), offset(0.0), slope(0.0), weight(1.0) {}

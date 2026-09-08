@@ -2,6 +2,7 @@
 #include "ids.hh"
 #include "rate_law.hh"
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -34,6 +35,14 @@ struct MoleculeTypeDescriptor {
     MoleculeTypeDescriptor() : state_words(1), bond_slots(0), population(false) {}
 };
 
+struct CompartmentDescriptor {
+    std::uint32_t id;
+    std::uint32_t parent;
+    int dimensions;
+    double size;
+    CompartmentDescriptor() : id(0), parent(std::numeric_limits<std::uint32_t>::max()), dimensions(3), size(0.0) {}
+};
+
 struct RuleMember {
     double rate;
     std::uint32_t parameter_index;
@@ -62,11 +71,15 @@ struct DependencyIndex {
 class CompiledModel {
 public:
     MoleculeTypeId addMoleculeType(const MoleculeTypeDescriptor& descriptor);
+    void addCompartment(const CompartmentDescriptor& descriptor);
     FeatureId addFeature(const FeatureDescriptor& descriptor);
     RuleFamilyId addRuleFamily(const RuleFamilyDescriptor& descriptor);
     void setFeatureDependencies(const std::vector<std::vector<MatcherId> >& adjacency);
 
     const std::vector<MoleculeTypeDescriptor>& moleculeTypes() const { return molecule_types_; }
+    const std::vector<CompartmentDescriptor>& compartments() const { return compartments_; }
+    bool hasCompartment(std::uint32_t id) const;
+    bool compartmentInside(std::uint32_t child, std::uint32_t ancestor) const;
     const std::vector<FeatureDescriptor>& features() const { return features_; }
     const std::vector<RuleFamilyDescriptor>& ruleFamilies() const { return rule_families_; }
     const DependencyIndex& dependencies() const { return dependencies_; }
@@ -74,6 +87,7 @@ public:
 
 private:
     std::vector<MoleculeTypeDescriptor> molecule_types_;
+    std::vector<CompartmentDescriptor> compartments_;
     std::vector<FeatureDescriptor> features_;
     std::vector<RuleFamilyDescriptor> rule_families_;
     DependencyIndex dependencies_;

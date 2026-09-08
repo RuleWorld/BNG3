@@ -88,6 +88,12 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
         fmap.compartment[ti]=FeatureId(static_cast<std::uint32_t>(out.features.size()));
         out.features.push_back(FeatureDescriptor(FEATURE_MOLECULE_COMPARTMENT,static_cast<std::uint32_t>(ti),0));
     }
+    for (const auto& compartment : source.compartments) {
+        CompartmentDescriptor d;
+        d.id=compartment.id; d.parent=compartment.parent;
+        d.dimensions=compartment.dimensions; d.size=compartment.size;
+        out.compartments.push_back(d);
+    }
 
     for (std::size_t ri=0;ri<source.rules.size();++ri) {
         const NativeReactionSnapshot& nr=source.rules[ri];
@@ -95,7 +101,85 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
         LegacyRuleIR r; r.name=nr.name; r.rate=nr.base_rate; r.parameter_index=nr.parameter_index; r.coordinate=nr.coordinate;
         r.uses_local_function=nr.uses_local_function; r.uses_connected_to=nr.uses_connected_to;
 
-        if (nr.rate_law == NATIVE_RATE_LOCAL_LINEAR) {
+        for (const auto& nativeGraph : nr.graph_patterns) {
+            GraphPattern graph;
+            graph.nodes.reserve(nativeGraph.nodes.size());
+            for (const auto& node : nativeGraph.nodes) {
+                if (node.molecule_type >= source.molecule_types.size())
+                    throw std::out_of_range("NFsim graph molecule type");
+                if (node.reactant != std::numeric_limits<std::uint16_t>::max()) {
+                    if (node.reactant >= nr.reactant_types.size() || nr.reactant_types[node.reactant] != node.molecule_type)
+                        throw std::invalid_argument("NFsim graph anchor does not match reactant");
+                }
+                if (node.state_component != std::numeric_limits<std::uint32_t>::max())
+                    validateComponent(source, node.molecule_type, node.state_component);
+                GraphNodePattern outNode;
+                outNode.molecule_type=node.molecule_type;
+                outNode.anchor_reactant=node.reactant;
+                outNode.state_component=node.state_component;
+                outNode.compartment=node.compartment;
+                outNode.free_components=node.free_components;
+                outNode.bound_components=node.bound_components;
+                outNode.state_value=node.state;
+                for (const auto component : outNode.free_components)
+                    validateComponent(source, node.molecule_type, component);
+                for (const auto component : outNode.bound_components)
+                    validateComponent(source, node.molecule_type, component);
+                graph.nodes.push_back(outNode);
+            }
+            if (graph.nodes.empty()) throw std::invalid_argument("NFsim graph expression has no nodes");
+            for (const auto& edge : nativeGraph.edges) {
+                if (edge.first_node >= graph.nodes.size() || edge.second_node >= graph.nodes.size() || edge.first_node == edge.second_node)
+                    throw std::invalid_argument("NFsim graph edge node out of range");
+                validateComponent(source, graph.nodes[edge.first_node].molecule_type, edge.first_component);
+                validateComponent(source, graph.nodes[edge.second_node].molecule_type, edge.second_component);
+                GraphEdgePattern outEdge;
+                outEdge.first_node=edge.first_node; outEdge.first_component=edge.first_component;
+                outEdge.second_node=edge.second_node; outEdge.second_component=edge.second_component;
+                graph.edges.push_back(outEdge);
+            }
+            r.graph_patterns.push_back(graph);
+        }
+
+        if (nr.rate_law == NATIVE_RATE_EXPRESSION) {
+            if (nr.rate_expression.empty()) throw std::invalid_argument("expression rate law requires an expression");
+            if (nr.rate_expression_components.size() > nr.reactant_types.size()) throw std::invalid_argument("expression rate-law component map exceeds reactants");
+            for (std::size_t component = 0; component < nr.rate_expression_components.size(); ++component) {
+                const std::uint32_t type = reactantType(source, nr, component);
+                if (source.molecule_types[type].population)
+                    throw std::invalid_argument("expression rate law cannot read a population type state");
+                validateComponent(source, type, nr.rate_expression_components[component]);
+            }
+            r.rate_law.kind=LEGACY_RATE_EXPRESSION;
+            r.rate_law.expression=nr.rate_expression;
+            r.rate_law.expression_components=nr.rate_expression_components;
+            for (const auto& nativeBinding : nr.rate_expression_bindings) {
+                RateExpressionBinding binding;
+                binding.name = nativeBinding.name;
+                binding.target = nativeBinding.reactant;
+                binding.component = nativeBinding.component;
+                binding.value = nativeBinding.value;
+                if (binding.name.empty()) throw std::invalid_argument("expression binding name is empty");
+                for (const auto& prior : r.rate_law.expression_bindings)
+                    if (prior.name == binding.name)
+                        throw std::invalid_argument("duplicate expression binding name");
+                if (nativeBinding.kind == NATIVE_RATE_EXPRESSION_STATE) {
+                    binding.kind = RATE_EXPRESSION_STATE;
+                    const std::uint32_t type = reactantType(source, nr, binding.target);
+                    if (source.molecule_types[type].population)
+                        throw std::invalid_argument("expression binding cannot read a population type state");
+                    validateComponent(source, type, binding.component);
+                } else if (nativeBinding.kind == NATIVE_RATE_EXPRESSION_CONSTANT) {
+                    binding.kind = RATE_EXPRESSION_CONSTANT;
+                    if (!std::isfinite(binding.value))
+                        throw std::invalid_argument("expression constant binding is not finite");
+                } else {
+                    throw std::invalid_argument("unknown expression binding kind");
+                }
+                r.rate_law.expression_bindings.push_back(binding);
+            }
+            r.uses_local_function=false;
+        } else if (nr.rate_law == NATIVE_RATE_LOCAL_LINEAR) {
             if (nr.reactant_types.empty()) throw std::invalid_argument("local rate law requires a reactant");
             const std::uint32_t type = reactantType(source,nr,0);
             validateComponent(source,type,nr.local_state_component);
@@ -186,7 +270,7 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                     } else r.uses_connected_to=true;
                     break;
                 case NATIVE_COMPARTMENT_REQUIRED:
-                    p=predicate(LEGACY_PRED_COMPARTMENT,d.reactant,type);p.value=d.compartment;r.predicates.push_back(p);break;
+                    p=predicate(d.compartment_ancestry ? LEGACY_PRED_COMPARTMENT_INSIDE : LEGACY_PRED_COMPARTMENT,d.reactant,type);p.value=d.compartment;r.predicates.push_back(p);break;
                 default:r.uses_connected_to=true;break;
             }
         }
@@ -225,6 +309,7 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                     r.changes_topology=true;
                     if (x.removal_type==NATIVE_DELETE_MOLECULE_ONLY) {t=transform(LEGACY_TRANSFORM_DELETE_MOLECULE,x.reactant,0,fmap.existence[type]);r.transforms.push_back(t);r.topology_change_is_local=true;}
                     else if (x.removal_type==NATIVE_DELETE_COMPLETE_SPECIES) {t=transform(LEGACY_TRANSFORM_DELETE_SPECIES,x.reactant,0,FeatureId());r.transforms.push_back(t);r.topology_change_is_local=true;}
+                    else if (x.removal_type==NATIVE_DELETE_MOLECULE_CONDITIONAL) {t=transform(LEGACY_TRANSFORM_DELETE_MOLECULE_CONDITIONAL,x.reactant,0,fmap.existence[type]);r.transforms.push_back(t);r.topology_change_is_local=true;}
                     else {t.kind=LEGACY_TRANSFORM_UNSUPPORTED;r.transforms.push_back(t);r.topology_change_is_local=false;}
                     break;
                 case NATIVE_EMPTY: break;
@@ -246,9 +331,11 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                     t.a=populationIndex(source,type);t.value=-(x.population_delta==0?1:x.population_delta);r.transforms.push_back(t);break;
                 case NATIVE_MOVE:
                     if (x.move_connected) {
-                        t.kind=LEGACY_TRANSFORM_UNSUPPORTED;
+                        t=transform(LEGACY_TRANSFORM_MOVE_SPECIES,x.reactant,0,fmap.compartment[type]);
+                        t.a=x.destination_compartment;
                         r.transforms.push_back(t);
-                        r.topology_change_is_local=false;
+                        r.changes_topology=true;
+                        r.topology_change_is_local=true;
                     } else {
                         t=transform(LEGACY_TRANSFORM_MOVE_MOLECULE,x.reactant,0,fmap.compartment[type]);
                         t.a=x.destination_compartment;

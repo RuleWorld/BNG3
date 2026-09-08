@@ -5,6 +5,7 @@
 namespace NFcore2 {
 NativeModelSnapshot readNFsimSystem(const NFsimSystemReader& reader) {
     NativeModelSnapshot out;
+    reader.collectCompartments(out.compartments);
     const std::size_t mt_count=reader.moleculeTypeCount();
     out.molecule_types.reserve(mt_count);
     std::set<std::string> names;
@@ -26,6 +27,7 @@ NativeModelSnapshot readNFsimSystem(const NFsimSystemReader& reader) {
         r.reactant_types=h.reactant_types;r.uses_local_function=h.uses_local_function;r.uses_connected_to=h.uses_connected_to;
         reader.collectDependencies(i,r.dependencies);
         reader.collectTransforms(i,r.transforms);
+        reader.collectGraphPatterns(i,r.graph_patterns);
         out.rules.push_back(r);
     }
     return out;

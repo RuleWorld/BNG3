@@ -98,6 +98,8 @@ disconnected-pattern references before creating `TemplateMolecule` objects.
 The adapter exists independently of the still-gated full Model-to-NFsim parity
 migration.
 
+The NFcore2 semantic expansion now carries finite graph expressions through matching and model-image serialization, resolves named local/DOR expression bindings, validates parent-linked compartment ancestry, and applies atomic species-carrying moves plus fail-closed conditional deletion. Native parser surfaces that require richer automorphisms, observable/function-scope evaluation, volume-aware transport, or unproven deletion spellings remain explicit compatibility fallbacks.
+
 ### Network-Free Path
 
 ```
@@ -196,6 +198,8 @@ elementary/function rate references, and pattern-weighted observables.
 It was tested against BNGsim commit
 `49dc939035f5a272da663f8c9586e3c9f0e1c041`; this evidence does not choose a
 long-term network solver.
+The scope and non-selection decision are recorded in
+[ADR 0002](adr/0002-bngsim-adapter-scope.md).
 
 ### BNGIR document boundary
 

@@ -4,6 +4,9 @@
 
 #include <memory>
 #include <cmath>
+#include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <stdexcept>
 
@@ -235,6 +238,48 @@ end reaction rules
     REQUIRE(result.n_times() == 2);
     CHECK_THAT(result.species_data().back(),
                Catch::Matchers::WithinAbs(std::exp(-3.0), 1e-6));
+}
+
+TEST_CASE("BNGsim adapter maps absolute-file TFUN function rates", "[bngsim]") {
+    const auto suffix = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto tablePath = std::filesystem::temp_directory_path() /
+                           ("bng3_bngsim_adapter_tfun_" + std::to_string(suffix) + ".dat");
+    {
+        std::ofstream table(tablePath);
+        REQUIRE(table.good());
+        table << "# time rate__tfun0\n0 2\n1 4\n";
+    }
+
+    const std::string modelText =
+        "begin molecule types\n"
+        "    X()\n"
+        "end molecule types\n"
+        "begin seed species\n"
+        "    X() 1\n"
+        "end seed species\n"
+        "begin functions\n"
+        "    rate() = TFUN('" + tablePath.string() + "', time)\n"
+        "end functions\n"
+        "begin reaction rules\n"
+        "    X() -> 0 rate\n"
+        "end reaction rules\n";
+    auto model = parser::parseModel(modelText);
+    REQUIRE(model != nullptr);
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    auto adapted = engine::buildBngsimNetwork(*model, network);
+
+    bngsim::TimeSpec times;
+    times.t_start = 0.0;
+    times.t_end = 1.0;
+    times.n_points = 2;
+    bngsim::CvodeSimulator solver(*adapted);
+    const auto result = solver.run(times);
+    CHECK_THAT(result.species_data().back(),
+               Catch::Matchers::WithinAbs(std::exp(-3.0), 1e-6));
+
+    std::error_code error;
+    std::filesystem::remove(tablePath, error);
 }
 
 TEST_CASE("BNGsim adapter rejects relative TFUN provenance", "[bngsim]") {

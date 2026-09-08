@@ -11,6 +11,8 @@ public:
     virtual NativeReactionHeader reactionHeader(std::size_t index) const;
     virtual void collectDependencies(std::size_t reaction_index,std::vector<NativeDependencySnapshot>& out) const;
     virtual void collectTransforms(std::size_t reaction_index,std::vector<NativeTransformSnapshot>& out) const;
+    virtual void collectCompartments(std::vector<NativeCompartmentSnapshot>& out) const;
+    virtual void collectGraphPatterns(std::size_t reaction_index,std::vector<NativeGraphPatternSnapshot>& out) const;
 private:
     NFcore::System& system_;
 };
