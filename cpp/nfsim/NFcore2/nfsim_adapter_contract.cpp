@@ -120,6 +120,20 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
         // Root templates with no state, bond, or occupancy constraint still
         // require a live molecule at every mapped reactant position.
         for (std::size_t reactant = 0; reactant < nr.reactant_types.size(); ++reactant) {
+            // Population types are represented by PopulationStore entries, not
+            // particle handles. Requiring a TYPE_EXISTS particle predicate
+            // would make every population rule unmatchable in the direct
+            // engine; match the population store count instead.
+            if (nr.reactant_types[reactant] < source.molecule_types.size() &&
+                source.molecule_types[nr.reactant_types[reactant]].population) {
+                LegacyPredicateIR population;
+                population.kind = LEGACY_PRED_POPULATION_AT_LEAST;
+                population.target = static_cast<std::uint16_t>(reactant);
+                population.a = populationIndex(source, nr.reactant_types[reactant]);
+                population.value = 1;
+                r.predicates.push_back(population);
+                continue;
+            }
             LegacyPredicateIR exists;
             exists.kind = LEGACY_PRED_TYPE_EXISTS;
             exists.target = static_cast<std::uint16_t>(reactant);
@@ -231,7 +245,16 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                     t=transform(LEGACY_TRANSFORM_POPULATION_ADD,x.reactant,0,fmap.population[type]);
                     t.a=populationIndex(source,type);t.value=-(x.population_delta==0?1:x.population_delta);r.transforms.push_back(t);break;
                 case NATIVE_MOVE:
-                    t=transform(LEGACY_TRANSFORM_MOVE_MOLECULE,x.reactant,0,fmap.compartment[type]);t.a=x.destination_compartment;r.transforms.push_back(t);break;
+                    if (x.move_connected) {
+                        t.kind=LEGACY_TRANSFORM_UNSUPPORTED;
+                        r.transforms.push_back(t);
+                        r.topology_change_is_local=false;
+                    } else {
+                        t=transform(LEGACY_TRANSFORM_MOVE_MOLECULE,x.reactant,0,fmap.compartment[type]);
+                        t.a=x.destination_compartment;
+                        r.transforms.push_back(t);
+                    }
+                    break;
                 default:t.kind=LEGACY_TRANSFORM_UNSUPPORTED;r.transforms.push_back(t);break;
             }
         }

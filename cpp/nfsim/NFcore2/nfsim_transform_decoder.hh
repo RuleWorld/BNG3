@@ -16,7 +16,8 @@ struct NFsimPublicTransformView {
     std::int64_t population_delta;
     std::uint32_t added_molecule_type;
     std::uint32_t destination_compartment;
-    NFsimPublicTransformView():kind(NATIVE_EMPTY),reactant(0),component(0),final_state(0),removal_type(-1),other_reactant(-1),other_mapping_index(-1),second_binding_half(false),population_delta(0),added_molecule_type(0),destination_compartment(0){}
+    bool move_connected;
+    NFsimPublicTransformView():kind(NATIVE_EMPTY),reactant(0),component(0),final_state(0),removal_type(-1),other_reactant(-1),other_mapping_index(-1),second_binding_half(false),population_delta(0),added_molecule_type(0),destination_compartment(0),move_connected(false){}
 };
 class NFsimTransformDecoder {
 public:

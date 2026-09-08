@@ -19,7 +19,7 @@ The archival documents are retained under `docs/architecture_handoffs/`. The exa
 - Energy compiler types and `EnergyDeltaPlan` are in `cpp/compile/` and connected to the real NFsim energy bridge.
 - NFcore2 source is in `cpp/nfsim/NFcore2/`; its native reader is adapted to the real BNG3 reaction, template, transformation, and energy APIs.
 - NFnext source is in `cpp/nfnext/` and is built as an isolated library so its prototype contracts remain testable without being presented as the NFsim replacement.
-- Root-local NFsim introspection and conservative dependency collection are implemented in the existing NFsim classes. Unsupported topology and synthesis cases fail closed.
+- Root-local NFsim introspection and conservative dependency collection are implemented in the existing NFsim classes. Unsupported internal topology and broader transport cases fail closed; bounded synthesis and root-local moves execute directly.
 - The staged semantic layer now has typed symbols/rate-law references, structured
   feature diagnostics, an immutable `compile::Document` protocol split, and a
   value-like `compile::Pattern` with explicit BNGcore and NFsim
@@ -52,9 +52,11 @@ The archival documents are retained under `docs/architecture_handoffs/`. The exa
 
   The adapter spike was also built and tested against BNGsim commit
   `49dc939035f5a272da663f8c9586e3c9f0e1c041` in an isolated build. Its focused
-  suite passed `3/3`, covering direct mapping, fail-closed composite rates,
-  functional rates, and bounded CVODE decay parity. This remains feasibility
-  evidence, not a solver-selection decision.
+  suite passed `7/7`, covering direct mapping, fail-closed composite rates,
+  functional rates, unsupported semantic surfaces, pattern-weighted
+  observables, inline TFUN rates, relative-TFUN provenance rejection, and
+  bounded CVODE decay parity. BNGsim's own managed suite passed `6/6`. This
+  remains feasibility evidence, not a solver-selection decision.
 - Python now exposes deterministic, source-free BNGIR JSON v0.1 through
   `BioNetGenModel.to_bngir()`, `to_bngir()`, `from_bngir()`, and
   `semantic_equal()`. The published schema is
@@ -65,18 +67,27 @@ The archival documents are retained under `docs/architecture_handoffs/`. The exa
 ## Evidence at this checkpoint
 
 - The direct-port build completed after adapting the BNG3 APIs.
-- Full Release/Ninja CTest passed all `264/264` tests, including `58/58`
+- Full Release/Ninja CTest passed all `269/269` tests, including `58/58`
   tests under the exact `energy` label, one NFcore2 and one NFnext
-  architecture-reference test, and the sanitizer smoke test.
+  architecture-reference test, the 12 native-port semantic tests, and the
+  sanitizer smoke test.
 - The imported energy Python self-tests passed `66/66` under the repository's
   intended `PYTHONPATH=tests/energy` environment.
-- The full BNG3 Python regression suite passed `348/348` with `27` expected
-  skips under the base Anaconda 3.14 environment; the narrower `exth17`
-  environment is missing optional collection dependencies.
+- The full BNG3 Python and validation suites passed `427/427` with `144`
+  expected skips under the base Anaconda 3.14 environment; the skips are
+  environment- or oracle-gated and remain visible.
 - The isolated batch CLI tests passed `2/2`, covering private generated
   outputs and child failure propagation.
 - The architecture inventory audit is required to pass before each checkpoint; it verifies that every imported C++ contract is classified and that executable dispositions name a CMake target.
 - The existing BNG3 Python regression suite and the imported Python harness self-tests are separate gates. They must be rerun after later source or build-system changes.
+- A pinned native NFsim oracle was built in an isolated temporary tree from
+  source revision `a6f9fa945c9d6e1e122e789c952260112c93f157`. The NF validation
+  gate passed `4/4` 200-run stochastic comparisons, `4/4` direct-versus-
+  in-memory-XML trajectory comparisons, and `2/2` fixed-seed endpoint checks.
+- Against the 41 checked-in DAT `.net` fixtures with resolvable BNG3 sources,
+  the bounded comparison passed `36/41`; five fixtures require unavailable
+  legacy actions/input files or do not emit a network. This is evidence for
+  the available subset, not release-level BNG2 parity.
 
 ## Required next gates
 

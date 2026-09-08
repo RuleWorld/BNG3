@@ -5,6 +5,7 @@
 #include <memory>
 #include <cmath>
 #include <string>
+#include <stdexcept>
 
 #include <bngsim/bngsim.hpp>
 
@@ -131,4 +132,131 @@ end reaction rules
     REQUIRE(result.n_times() == 2);
     CHECK_THAT(result.species_data().back(),
                Catch::Matchers::WithinAbs(std::exp(-0.2), 1e-6));
+}
+
+TEST_CASE("BNGsim adapter rejects unsupported semantic surfaces", "[bngsim]") {
+    auto model = parser::parseModel(R"(
+begin model
+begin compartments
+    CYT 3 1
+end compartments
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 1
+end seed species
+end model
+)");
+    REQUIRE(model != nullptr);
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+
+    REQUIRE_THROWS_WITH(
+        engine::buildBngsimNetwork(*model, network),
+        Catch::Matchers::ContainsSubstring("compartments require a volume-aware bridge"));
+}
+
+TEST_CASE("BNGsim adapter preserves BNGL observable matching semantics", "[bngsim]") {
+    auto model = parser::parseModel(R"(
+begin molecule types
+    A(b)
+    B(a)
+end molecule types
+begin seed species
+    A(b!1).B(a!1) 2
+    A(b) 3
+end seed species
+begin observables
+    Molecules A_molecules A()
+    Molecules A_free A(b)
+    Molecules A_bound A(b!+)
+    Species A_complex A(b!1).B(a!1)
+end observables
+)");
+    REQUIRE(model != nullptr);
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    auto adapted = engine::buildBngsimNetwork(*model, network);
+
+    REQUIRE(adapted->n_observables() == 4);
+    const auto findObservable = [&](const std::string& name) -> const bngsim::Observable& {
+        for (const auto& observable : adapted->observables()) {
+            if (observable.name == name) return observable;
+        }
+        throw std::runtime_error("missing BNGsim observable");
+    };
+    CHECK(findObservable("A_molecules").entries.size() == 2);
+    CHECK(findObservable("A_free").entries.size() == 1);
+    CHECK(findObservable("A_bound").entries.size() == 1);
+    CHECK(findObservable("A_complex").entries.size() == 1);
+    CHECK(findObservable("A_complex").entries.front().factor == 1.0);
+
+    bngsim::TimeSpec times;
+    times.t_start = 0.0;
+    times.t_end = 0.1;
+    times.n_points = 2;
+    bngsim::CvodeSimulator solver(*adapted);
+    const auto result = solver.run(times);
+    REQUIRE(result.n_observables() == 4);
+    REQUIRE(result.observable_data().size() >= 4);
+    CHECK(result.observable_data()[0] == 5.0);
+    CHECK(result.observable_data()[1] == 3.0);
+    CHECK(result.observable_data()[2] == 2.0);
+    CHECK(result.observable_data()[3] == 2.0);
+}
+
+TEST_CASE("BNGsim adapter maps inline TFUN function rates", "[bngsim]") {
+    auto model = parser::parseModel(R"(
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 1
+end seed species
+begin functions
+    rate() = TFUN([0, 1], [2, 4], time)
+end functions
+begin reaction rules
+    X() -> 0 rate
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    auto adapted = engine::buildBngsimNetwork(*model, network);
+
+    bngsim::TimeSpec times;
+    times.t_start = 0.0;
+    times.t_end = 1.0;
+    times.n_points = 2;
+    bngsim::CvodeSimulator solver(*adapted);
+    const auto result = solver.run(times);
+    REQUIRE(result.n_times() == 2);
+    CHECK_THAT(result.species_data().back(),
+               Catch::Matchers::WithinAbs(std::exp(-3.0), 1e-6));
+}
+
+TEST_CASE("BNGsim adapter rejects relative TFUN provenance", "[bngsim]") {
+    auto model = parser::parseModel(R"(
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 1
+end seed species
+begin functions
+    rate() = TFUN('forcing.dat', time)
+end functions
+begin reaction rules
+    X() -> 0 rate
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+
+    REQUIRE_THROWS_WITH(
+        engine::buildBngsimNetwork(*model, network),
+        Catch::Matchers::ContainsSubstring("relative table path requires source-directory provenance"));
 }

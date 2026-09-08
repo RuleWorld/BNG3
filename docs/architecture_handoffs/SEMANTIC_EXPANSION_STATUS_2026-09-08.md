@@ -38,8 +38,9 @@ untested.
 After implementation, the focused CTest target passed:
 
 ```text
-ctest --test-dir build --output-on-failure -R architecture_nfcore2_reference
-1/1 Test #254: architecture_nfcore2_reference ... Passed
+ctest --test-dir build --output-on-failure -R 'native-port|architecture_nfcore2_reference'
+12/12 native-port tests ... Passed
+architecture_nfcore2_reference ... Passed
 ```
 
 The test executable now covers lowering and execution for each family, feature
@@ -51,6 +52,10 @@ molecule-type keyed compartment invalidation for nonzero reactant positions,
 owner-scoped state/bond invalidation across molecule types, and rejection of
 species-deletion transforms without a mapped reactant.
 
+The native reader now has direct parser-backed contracts for root-local moves,
+complete species deletion, population decrement, and MoveConnected. The latter
+is retained in the snapshot but remains an explicit non-executable fallback.
+
 An independent literal oracle and JSON fixture cover all six family IDs under
 `tests/energy/tests/python/test_nfcore2_semantic_expansion_oracle.py` and
 `tests/energy/fixtures/semantic/nfcore2_semantic_expansion.json`. The oracle
@@ -60,15 +65,16 @@ The post-fix validation set is also green:
 
 ```text
 cmake --build build --parallel 4
-ctest --test-dir build --output-on-failure       # 264/264 passed
+ctest --test-dir build --output-on-failure       # 269/269 passed
 tests/energy/tests/python                         # 66 passed
-full Python suite                                    # 340 passed, 27 skipped
+full Python suite                                    # 427 passed, 144 skipped
 audit_architecture_contracts.py                   # passed; no failures
 ```
 
 Sanitizer validation also passed on the current macOS toolchain. The isolated
 ASan/UBSan build ran `energy_sanitizer_smoke`, the NFcore2 reference executable
-(`406 passed, 0 failed`), and the NFnext reference executable (`PASS`).
+(`408 passed, 0 failed`), the standalone native-reader suite (`12` test cases,
+`107` assertions), and the NFnext reference executable (`PASS`).
 LeakSanitizer detection is unavailable on this platform, so leak coverage is
 not claimed here.
 
@@ -114,8 +120,6 @@ The port remains fail-closed for semantics not proven by these contracts:
   scaling and moves that carry or transform an entire connected species;
 - conditional deletion modes and any deletion rule whose component ownership
   cannot be established;
-- native reader extraction of arbitrary local/DOR function parameters beyond
-  the bounded snapshot descriptors.
 - independent full NFsim/BNG2 parity, including seeded trajectories,
   propensity distributions, and failure classifications against independently
   built oracle binaries.

@@ -8,17 +8,18 @@
   ],
   "test_first": {
     "red_build": "bng3_nfcore2_reference_tests reported missing population, compartment, move, species-delete, and rate-law contracts before implementation",
-    "focused_green": "ctest --test-dir build --output-on-failure -R architecture_nfcore2_reference",
+    "focused_green": "ctest --test-dir build --output-on-failure -R 'native-port|architecture_nfcore2_reference' (12 native-port tests plus the NFcore2 reference target)",
     "full_validation": {
       "build": "cmake --build build --parallel 4",
-      "ctest": "264 passed",
+      "ctest": "269 passed",
       "energy_python": "66 passed",
-      "main_python": "340 passed, 27 skipped",
+      "main_python": "427 passed, 144 skipped",
       "architecture_audit": "passed with zero failures",
       "sanitizers": {
         "build": "ASan/UBSan Debug build in build-asan",
         "energy": "energy_sanitizer_smoke passed",
-        "nfcore2": "406 passed, 0 failed",
+        "nfcore2": "408 passed, 0 failed",
+        "native_reader": "12 test cases, 107 assertions",
         "nfnext": "PASS",
         "leaks": "LeakSanitizer unavailable on macOS"
       }
@@ -37,7 +38,7 @@
     {
       "id": "population-transforms",
       "status": "direct-bounded",
-      "tests": ["NFsimAdapter_PopulationTransformsLowerToSignedPopulationDelta", "NFsimAdapter_PopulationRuleExecutesAgainstPopulationStore"],
+      "tests": ["NFsimAdapter_PopulationTransformsLowerToSignedPopulationDelta", "NFsimAdapter_PopulationRuleExecutesAgainstPopulationStore", "native NFcore2 reader captures population decrement"],
       "oracle": "tests/energy/tests/python/test_nfcore2_semantic_expansion_oracle.py::test_population_transform_oracle"
     },
     {
@@ -55,19 +56,19 @@
     {
       "id": "compartments-moves",
       "status": "direct-root-local-bounded",
-      "tests": ["NFsimAdapter_CompartmentPredicateAndMoveLowerDirectly", "NFsimAdapter_CompartmentRuleMatchesAndMovesMolecule"],
+      "tests": ["NFsimAdapter_CompartmentPredicateAndMoveLowerDirectly", "NFsimAdapter_CompartmentRuleMatchesAndMovesMolecule", "native NFcore2 reader captures a root-local compartment move", "native NFcore2 reader preserves MoveConnected as a fail-closed ceiling"],
       "oracle": "tests/energy/tests/python/test_nfcore2_semantic_expansion_oracle.py::test_compartment_move_oracle"
     },
     {
       "id": "local-function-dor",
       "status": "direct-descriptor-bounded-fallback-general",
-      "tests": ["NFsimAdapter_LocalFunctionAndDORRateLawsCarryExecutableDescriptors", "NFsimAdapter_LocalFunctionAndDORRatesEvaluateFromMatchedState"],
+      "tests": ["NFsimAdapter_LocalFunctionAndDORRateLawsCarryExecutableDescriptors", "NFsimAdapter_LocalFunctionAndDORRatesEvaluateFromMatchedState", "native NFcore2 reader keeps local DOR rules on compatibility fallback"],
       "oracle": "tests/energy/tests/python/test_nfcore2_semantic_expansion_oracle.py::test_local_and_dor_rate_oracle"
     },
     {
       "id": "whole-species-deletion",
       "status": "direct-connected-component-bounded",
-      "tests": ["NFsimAdapter_DeleteWholeSpeciesRemovesConnectedComponent", "Transform_DeleteCompleteSpeciesErasesEveryConnectedMolecule"],
+      "tests": ["NFsimAdapter_DeleteWholeSpeciesRemovesConnectedComponent", "Transform_DeleteCompleteSpeciesErasesEveryConnectedMolecule", "native NFcore2 reader captures complete species deletion"],
       "oracle": "tests/energy/tests/python/test_nfcore2_semantic_expansion_oracle.py::test_whole_species_deletion_oracle"
     }
   ],

@@ -102,8 +102,65 @@ void NativeNFsimSystemReader::collectDependencies(std::size_t i,std::vector<Nati
     }
 }
 void NativeNFsimSystemReader::collectTransforms(std::size_t i,std::vector<NativeTransformSnapshot>& out) const{
-    ReactionClass* r=system_.getReaction(static_cast<int>(i));TransformationSet* ts=r->getTransformationSet();if(!ts)return;std::vector<std::vector<NFsimPublicTransformView> > views(static_cast<std::size_t>(std::max(1,r->getNumOfReactants())));
-    for(int p=0;p<r->getNumOfReactants();++p){for(int x=0;x<ts->getNumOfTransformations(p);++x){Transformation* t=ts->getTransformation(p,x);NFsimPublicTransformView v;v.kind=t->getType();v.reactant=static_cast<std::uint16_t>(p);int ci=-1;switch(t->getType()){case TransformationFactory::STATE_CHANGE:case TransformationFactory::BINDING:case TransformationFactory::UNBINDING:case TransformationFactory::EMPTY:case TransformationFactory::INCREMENT_STATE:case TransformationFactory::DECREMENT_STATE:ci=t->getComponentIndex();break;default:break;}v.component=ci<0?0u:static_cast<std::uint32_t>(ci);if(t->getType()==TransformationFactory::STATE_CHANGE){StateChangeTransform* q=dynamic_cast<StateChangeTransform*>(t);if(!q)throw std::logic_error("state transform type mismatch");v.final_state=q->getFinalStateValue();}else if(t->getType()==TransformationFactory::BINDING){BindingTransform* q=dynamic_cast<BindingTransform*>(t);if(!q)throw std::logic_error("binding transform type mismatch");v.other_reactant=q->getOtherReactantIndex();v.other_mapping_index=q->getOtherMappingIndex();}else if(t->getType()==TransformationFactory::EMPTY && ci>=0){v.second_binding_half=true;}else if(t->getType()==TransformationFactory::REMOVE){v.removal_type=t->getRemovalType();}else if(t->getType()==TransformationFactory::ADD){AddMoleculeTransform* q=dynamic_cast<AddMoleculeTransform*>(t);if(q){if(q->isPopulationType()){v.kind=TransformationFactory::INCREMENT_POPULATION;v.population_delta=1;}else if(q->getMoleculeType()){v.added_molecule_type=static_cast<std::uint32_t>(q->getMoleculeType()->getTypeID());}}}else if(t->getType()==TransformationFactory::DECREMENT_POPULATION){v.population_delta=1;}else if(t->getType()==TransformationFactory::MOVE){MoveTransformation* q=dynamic_cast<MoveTransformation*>(t);if(q)v.destination_compartment=nativeCompartmentId(q->getNewCompartmentId());}views[static_cast<std::size_t>(p)].push_back(v);}}
+    ReactionClass* r=system_.getReaction(static_cast<int>(i));
+    TransformationSet* ts=r->getTransformationSet();
+    if(!ts)return;
+    std::vector<std::vector<NFsimPublicTransformView> > views(
+        static_cast<std::size_t>(std::max(1,r->getNumOfReactants())));
+    for(int p=0;p<r->getNumOfReactants();++p){
+        for(int x=0;x<ts->getNumOfTransformations(p);++x){
+            Transformation* t=ts->getTransformation(p,x);
+            NFsimPublicTransformView v;
+            v.kind=t->getType();
+            v.reactant=static_cast<std::uint16_t>(p);
+            int ci=-1;
+            switch(t->getType()){
+                case TransformationFactory::STATE_CHANGE:
+                case TransformationFactory::BINDING:
+                case TransformationFactory::UNBINDING:
+                case TransformationFactory::EMPTY:
+                case TransformationFactory::INCREMENT_STATE:
+                case TransformationFactory::DECREMENT_STATE:
+                    ci=t->getComponentIndex(); break;
+                default: break;
+            }
+            v.component=ci<0?0u:static_cast<std::uint32_t>(ci);
+            if(t->getType()==TransformationFactory::STATE_CHANGE){
+                StateChangeTransform* q=dynamic_cast<StateChangeTransform*>(t);
+                if(!q)throw std::logic_error("state transform type mismatch");
+                v.final_state=q->getFinalStateValue();
+            }else if(t->getType()==TransformationFactory::BINDING){
+                BindingTransform* q=dynamic_cast<BindingTransform*>(t);
+                if(!q)throw std::logic_error("binding transform type mismatch");
+                v.other_reactant=q->getOtherReactantIndex();
+                v.other_mapping_index=q->getOtherMappingIndex();
+            }else if(t->getType()==TransformationFactory::EMPTY && ci>=0){
+                v.second_binding_half=true;
+            }else if(t->getType()==TransformationFactory::REMOVE){
+                v.removal_type=t->getRemovalType();
+            }else if(t->getType()==TransformationFactory::ADD){
+                AddMoleculeTransform* q=dynamic_cast<AddMoleculeTransform*>(t);
+                if(q){
+                    if(q->isPopulationType()){
+                        v.kind=TransformationFactory::INCREMENT_POPULATION;
+                        v.population_delta=1;
+                    }else if(q->getMoleculeType()){
+                        v.added_molecule_type=static_cast<std::uint32_t>(
+                            q->getMoleculeType()->getTypeID());
+                    }
+                }
+            }else if(t->getType()==TransformationFactory::DECREMENT_POPULATION){
+                v.population_delta=1;
+            }else if(t->getType()==TransformationFactory::MOVE){
+                MoveTransformation* q=dynamic_cast<MoveTransformation*>(t);
+                if(q){
+                    v.destination_compartment=nativeCompartmentId(q->getNewCompartmentId());
+                    v.move_connected=q->isMoveConnected();
+                }
+            }
+            views[static_cast<std::size_t>(p)].push_back(v);
+        }
+    }
     for (int x = 0; x < ts->getNumOfAddMoleculeTransforms(); ++x) {
         AddMoleculeTransform* add = ts->getAddMoleculeTransform(static_cast<unsigned int>(x));
         if (!add || !add->getMoleculeType())

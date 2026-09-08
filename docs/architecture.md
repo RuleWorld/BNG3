@@ -183,12 +183,16 @@ semantics by falling back unless the caller opts into XML compatibility.
 An independent solver bridge is available only when configured explicitly with
 `BUILD_BNGSIM_ADAPTER=ON`, `BNGSIM_INCLUDE_DIR`, and `BNGSIM_LIBRARY`. It maps
 the generated network directly to BNGsim without writing a `.net` file, and
-rejects wildcard observables and non-reference rate expressions before solver
-construction. The default build does not require BNGsim; the optional path
-therefore does not establish NFsim/BNG2 parity.
+compiles BNGL `Molecules`/`Species` observable patterns with the same
+BNGcore/Ullmann semantics used by the native network path, and lowers bounded
+inline/absolute-path TFUN expressions to BNGsim table functions. It rejects
+non-reference rate expressions, unsupported TFUN provenance, and unsupported
+model/protocol surfaces before solver construction. The default build does not
+require BNGsim; the optional path therefore does not establish NFsim/BNG2
+parity.
 
 The evaluated adapter preserves generated species, statistical factors, direct
-elementary/function rate references, and exact generated-species observables.
+elementary/function rate references, and pattern-weighted observables.
 It was tested against BNGsim commit
 `49dc939035f5a272da663f8c9586e3c9f0e1c041`; this evidence does not choose a
 long-term network solver.

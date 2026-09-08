@@ -84,8 +84,10 @@ struct NativeTransformSnapshot {
     std::uint32_t added_molecule_type;
     std::int64_t population_delta;
     std::uint32_t destination_compartment;
+    bool move_connected;
     NativeTransformSnapshot() : kind(NATIVE_EMPTY), reactant(0), other_reactant(0), component(0),
-        other_component(0), new_value(0), removal_type(-1), added_molecule_type(0), population_delta(0), destination_compartment(0) {}
+        other_component(0), new_value(0), removal_type(-1), added_molecule_type(0), population_delta(0),
+        destination_compartment(0), move_connected(false) {}
 };
 
 struct NativeMoleculeTypeSnapshot {

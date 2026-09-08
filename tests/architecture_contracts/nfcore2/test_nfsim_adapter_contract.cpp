@@ -207,6 +207,21 @@ TEST(NFsimAdapter_MoveCompartmentLowersDirectly){
     EXPECT_EQ(NFsimSnapshotAdapter::toLegacy(n).rules[0].transforms[0].kind,LEGACY_TRANSFORM_MOVE_MOLECULE);
 }
 
+TEST(NFsimAdapter_MoveConnectedRemainsFailClosed){
+    NativeModelSnapshot n;
+    n.molecule_types.push_back(mol("R",1));
+    NativeReactionSnapshot r=rxn();
+    r.reactant_types.push_back(0);
+    NativeTransformSnapshot move=tr(NATIVE_MOVE,0);
+    move.move_connected=true;
+    r.transforms.push_back(move);
+    n.rules.push_back(r);
+    LegacyLoweringResult lowered=LegacyLowerer::lower(NFsimSnapshotAdapter::toLegacy(n));
+    EXPECT_EQ(lowered.supported_rule_count,0u);
+    EXPECT_EQ(lowered.fallback_rule_count,1u);
+    EXPECT_EQ(lowered.rules[0].reason,LOWERING_UNSUPPORTED_TRANSFORM);
+}
+
 TEST(NFsimAdapter_PopulationTransformsLowerToSignedPopulationDelta){
     NativeModelSnapshot n;n.molecule_types.push_back(mol("ATP",0,true));
     NativeReactionSnapshot r=rxn();
