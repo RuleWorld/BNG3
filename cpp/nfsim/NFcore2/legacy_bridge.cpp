@@ -10,7 +10,11 @@ namespace NFcore2 {
 double RateLawDescriptor::evaluate(const SimulationState& state,
                                    const MatchContext& context,
                                    double base_rate) const {
-    if (kind == LEGACY_RATE_CONSTANT) return base_rate;
+    if (kind == LEGACY_RATE_CONSTANT) {
+        if (!std::isfinite(base_rate) || base_rate < 0.0)
+            throw std::domain_error("constant rate produced invalid propensity");
+        return base_rate;
+    }
     const MoleculeRef left = context.moleculeAt(target);
     if (!left.valid()) throw std::out_of_range("rate-law target missing");
     const double left_value = static_cast<double>(

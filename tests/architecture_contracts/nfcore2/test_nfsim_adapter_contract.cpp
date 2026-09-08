@@ -302,6 +302,12 @@ TEST(NFsimAdapter_LocalFunctionAndDORRatesEvaluateFromMatchedState){
     EXPECT_NEAR(engine.evaluateRate(lowered.rules[1].family,lowered.rules[1].member,context),6.0,1e-12);
 }
 
+TEST(NFsimAdapter_ConstantRateEvaluationRejectsInvalidPropensity){
+    CompiledModel model;SimulationState state(model);MatchContext context;RateLawDescriptor law;
+    EXPECT_THROW(law.evaluate(state,context,-1.0),std::domain_error);
+    EXPECT_THROW(law.evaluate(state,context,std::numeric_limits<double>::infinity()),std::domain_error);
+}
+
 TEST(NFsimAdapter_PreservesRateParameterCoordinateAndName){
     NativeModelSnapshot n;n.molecule_types.push_back(mol("R",1));NativeReactionSnapshot r=rxn();r.name="elong_42";r.base_rate=3.5;r.parameter_index=9;r.coordinate=42;n.rules.push_back(r);
     LegacyRuleIR x=NFsimSnapshotAdapter::toLegacy(n).rules[0];EXPECT_EQ(x.name,std::string("elong_42"));EXPECT_EQ(x.rate,3.5);EXPECT_EQ(x.parameter_index,9u);EXPECT_EQ(x.coordinate,42u);
