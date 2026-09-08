@@ -170,7 +170,7 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                     } else r.uses_connected_to=true;
                     break;
                 case NATIVE_COMPARTMENT_REQUIRED:
-                    p=predicate(LEGACY_PRED_COMPARTMENT,d.reactant,0);p.value=d.compartment;r.predicates.push_back(p);break;
+                    p=predicate(LEGACY_PRED_COMPARTMENT,d.reactant,type);p.value=d.compartment;r.predicates.push_back(p);break;
                 default:r.uses_connected_to=true;break;
             }
         }

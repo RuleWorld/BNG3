@@ -300,6 +300,31 @@ TEST(NFsimAdapter_CompartmentRuleMatchesAndMovesMolecule){
     EXPECT_EQ(engine.state().molecules(MoleculeTypeId(0)).compartment(handle),3u);
 }
 
+TEST(NFsimAdapter_CompartmentDependencyUsesMoleculeTypeOwner){
+    NativeModelSnapshot n;
+    n.molecule_types.push_back(mol("A",1));
+    n.molecule_types.push_back(mol("R",1));
+    NativeReactionSnapshot r=rxn();
+    r.reactant_types.push_back(1);
+    NativeDependencySnapshot c=dep(NATIVE_COMPARTMENT_REQUIRED,0,0);
+    c.compartment=2;
+    r.dependencies.push_back(c);
+    NativeTransformSnapshot move=tr(NATIVE_MOVE,0);
+    move.destination_compartment=3;
+    r.transforms.push_back(move);
+    n.rules.push_back(r);
+
+    LegacyLoweringResult lowered=LegacyLowerer::lower(NFsimSnapshotAdapter::toLegacy(n));
+    Engine engine(lowered.executable);
+    MoleculeHandle handle=engine.state().molecules(MoleculeTypeId(1)).create();
+    engine.state().molecules(MoleculeTypeId(1)).setCompartment(handle,2);
+    MatchContext context;
+    context.setMoleculeAt(0,MoleculeRef(MoleculeTypeId(1),handle));
+    FeatureDelta delta;
+    EXPECT_TRUE(engine.fire(lowered.rules[0].family,lowered.rules[0].member,context,delta));
+    EXPECT_EQ(engine.affectedFamilies(delta).size(),1u);
+}
+
 TEST(NFsimAdapter_LocalFunctionAndDORRateLawsCarryExecutableDescriptors){
     NativeModelSnapshot n;n.molecule_types.push_back(mol("R",1));n.molecule_types.push_back(mol("S",1));
     NativeReactionSnapshot local=rxn();local.reactant_types.push_back(0);local.rate_law=NATIVE_RATE_LOCAL_LINEAR;local.local_offset=1.0;local.local_slope=0.5;local.local_state_component=0;

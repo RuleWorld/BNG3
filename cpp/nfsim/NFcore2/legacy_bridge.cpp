@@ -191,7 +191,7 @@ LegacyLoweringResult LegacyLowerer::lower(const LegacyModelIR& legacy) {
                 else if (fd.kind==FEATURE_MOLECULE_BOND && p.kind==LEGACY_PRED_CONNECTED_TO) reads=true;
                 if (p.kind==LEGACY_PRED_BOND_TO && p.partner_feature.valid() && FeatureId(static_cast<std::uint32_t>(fi))==p.partner_feature) reads=true;
                 else if (fd.kind==FEATURE_POPULATION && p.kind==LEGACY_PRED_POPULATION_AT_LEAST && fd.owner==p.a) reads=true;
-                else if (fd.kind==FEATURE_MOLECULE_COMPARTMENT && p.kind==LEGACY_PRED_COMPARTMENT && fd.owner==p.target) reads=true;
+                else if (fd.kind==FEATURE_MOLECULE_COMPARTMENT && p.kind==LEGACY_PRED_COMPARTMENT && fd.owner==p.a) reads=true;
                 else if (fd.kind==FEATURE_MOLECULE_EXISTENCE && p.kind==LEGACY_PRED_TYPE_EXISTS && fd.owner==p.a) reads=true;
                 else if (fd.kind==FEATURE_SCAFFOLD_OCCUPANCY && p.kind==LEGACY_PRED_SCAFFOLD_FREE) reads=true;
                 else if (fd.kind==FEATURE_SCAFFOLD_OCCUPANCY && p.kind==LEGACY_PRED_SCAFFOLD_STATE) reads=true;
