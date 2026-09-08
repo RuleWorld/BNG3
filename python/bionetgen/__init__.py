@@ -60,6 +60,7 @@ else:
 
 
 from bionetgen.result import SimResult
+from bionetgen.bngir import from_bngir, semantic_equal, to_bngir
 from bionetgen.scan import ScanResult, ScanResult2D, parameter_scan, parameter_scan_2d
 from bionetgen.sensitivity import SensitivityResult, sensitivity_analysis
 from bionetgen.core.exc import BNGError
@@ -132,5 +133,8 @@ __all__ = [
     "sbml_to_bngl",
     "ModelBuilder",
     "BioNetGenError",
+    "to_bngir",
+    "from_bngir",
+    "semantic_equal",
     "__version__",
 ]

@@ -17,7 +17,7 @@
     "bng3": {
       "repository": "https://github.com/RuleWorld/BNG3.git",
       "branch": "codex/bng3-energy-validation-port",
-      "revision": "21825746f70edddd0903e6852f3a29446c485e9f",
+      "revision": "93158885f692023521185accf0afb4451906c4fe",
       "role": "destination-and-future-authority",
       "status": "observed",
       "evidence": {

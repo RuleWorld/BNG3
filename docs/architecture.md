@@ -193,6 +193,15 @@ It was tested against BNGsim commit
 `49dc939035f5a272da663f8c9586e3c9f0e1c041`; this evidence does not choose a
 long-term network solver.
 
+### BNGIR document boundary
+
+Python exposes deterministic, source-free BNGIR JSON v0.1 for the semantic
+model and a separately scoped action protocol. The schema is versioned under
+`provenance/schemas/bngir-0.1.schema.json`; generated networks, solver state,
+and caches are excluded. Deserialization reconstructs supported model-only
+documents and fails closed for population-map reconstruction or unsupported
+protocol forms.
+
 ## Memory Management
 
 - C++ `Model` is heap-allocated, owned by Python via `std::unique_ptr` + pybind11 holder

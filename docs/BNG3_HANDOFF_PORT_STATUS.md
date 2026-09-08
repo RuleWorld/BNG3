@@ -55,6 +55,12 @@ The archival documents are retained under `docs/architecture_handoffs/`. The exa
   suite passed `3/3`, covering direct mapping, fail-closed composite rates,
   functional rates, and bounded CVODE decay parity. This remains feasibility
   evidence, not a solver-selection decision.
+- Python now exposes deterministic, source-free BNGIR JSON v0.1 through
+  `BioNetGenModel.to_bngir()`, `to_bngir()`, `from_bngir()`, and
+  `semantic_equal()`. The published schema is
+  `provenance/schemas/bngir-0.1.schema.json`; protocol actions retain their
+  model versus simulation scope, while population-map reconstruction remains
+  explicitly fail-closed. Its focused Python contract suite passes `8/8`.
 
 ## Evidence at this checkpoint
 
@@ -64,7 +70,7 @@ The archival documents are retained under `docs/architecture_handoffs/`. The exa
   architecture-reference test, and the sanitizer smoke test.
 - The imported energy Python self-tests passed `66/66` under the repository's
   intended `PYTHONPATH=tests/energy` environment.
-- The full BNG3 Python regression suite passed `340/340` with `27` expected
+- The full BNG3 Python regression suite passed `348/348` with `27` expected
   skips under the base Anaconda 3.14 environment; the narrower `exth17`
   environment is missing optional collection dependencies.
 - The isolated batch CLI tests passed `2/2`, covering private generated
