@@ -136,12 +136,12 @@ TEST(NFsimAdapter_UnbindingTransformUsesKnownPartnerComponent){
 }
 
 TEST(NFsimAdapter_DeleteSingleMoleculeIsLocalDelete){
-    NativeModelSnapshot n;n.molecule_types.push_back(mol("R",1));NativeReactionSnapshot r=rxn();NativeTransformSnapshot t=tr(NATIVE_REMOVE,0);t.removal_type=NATIVE_DELETE_MOLECULE_ONLY;r.transforms.push_back(t);n.rules.push_back(r);
+    NativeModelSnapshot n;n.molecule_types.push_back(mol("R",1));NativeReactionSnapshot r=rxn();r.reactant_types.push_back(0);NativeTransformSnapshot t=tr(NATIVE_REMOVE,0);t.removal_type=NATIVE_DELETE_MOLECULE_ONLY;r.transforms.push_back(t);n.rules.push_back(r);
     LegacyRuleIR x=NFsimSnapshotAdapter::toLegacy(n).rules[0];EXPECT_EQ(x.transforms[0].kind,LEGACY_TRANSFORM_DELETE_MOLECULE);EXPECT_TRUE(x.topology_change_is_local);
 }
 
 TEST(NFsimAdapter_DeleteWholeSpeciesLowersToSpeciesDelete){
-    NativeModelSnapshot n;n.molecule_types.push_back(mol("R",1));NativeReactionSnapshot r=rxn();NativeTransformSnapshot t=tr(NATIVE_REMOVE,0);t.removal_type=NATIVE_DELETE_COMPLETE_SPECIES;r.transforms.push_back(t);n.rules.push_back(r);
+    NativeModelSnapshot n;n.molecule_types.push_back(mol("R",1));NativeReactionSnapshot r=rxn();r.reactant_types.push_back(0);NativeTransformSnapshot t=tr(NATIVE_REMOVE,0);t.removal_type=NATIVE_DELETE_COMPLETE_SPECIES;r.transforms.push_back(t);n.rules.push_back(r);
     LegacyRuleIR x=NFsimSnapshotAdapter::toLegacy(n).rules[0];EXPECT_TRUE(x.changes_topology);EXPECT_TRUE(x.topology_change_is_local);EXPECT_EQ(x.transforms[0].kind,LEGACY_TRANSFORM_DELETE_SPECIES);
 }
 
@@ -154,6 +154,17 @@ TEST(NFsimAdapter_DeleteWholeSpeciesRemovesConnectedComponent){
     MatchContext context;context.setMoleculeAt(0,MoleculeRef(MoleculeTypeId(0),a));FeatureDelta delta;
     EXPECT_TRUE(engine.fire(lowered.rules[0].family,lowered.rules[0].member,context,delta));
     EXPECT_FALSE(engine.state().molecules(MoleculeTypeId(0)).alive(a));EXPECT_FALSE(engine.state().molecules(MoleculeTypeId(1)).alive(b));
+}
+
+TEST(NFsimAdapter_WholeSpeciesDeletionRequiresReactant){
+    NativeModelSnapshot n;
+    n.molecule_types.push_back(mol("R",1));
+    NativeReactionSnapshot r=rxn();
+    NativeTransformSnapshot t=tr(NATIVE_REMOVE,0);
+    t.removal_type=NATIVE_DELETE_COMPLETE_SPECIES;
+    r.transforms.push_back(t);
+    n.rules.push_back(r);
+    EXPECT_THROW(NFsimSnapshotAdapter::toLegacy(n),std::invalid_argument);
 }
 
 TEST(NFsimAdapter_IncrementAndDecrementStateLowerToCheckedAdd){

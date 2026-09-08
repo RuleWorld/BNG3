@@ -177,6 +177,8 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
 
         for (std::size_t xi=0;xi<nr.transforms.size();++xi) {
             const NativeTransformSnapshot& x=nr.transforms[xi];
+            if (x.kind == NATIVE_REMOVE && nr.reactant_types.empty())
+                throw std::invalid_argument("NFsim molecule removal requires a reactant");
             const bool zero_reactant_population_transform =
                 nr.reactant_types.empty() &&
                 (x.kind == NATIVE_INCREMENT_POPULATION ||
