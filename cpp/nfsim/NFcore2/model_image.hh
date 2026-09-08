@@ -5,8 +5,8 @@
 namespace NFcore2 {
 class ModelImage {
 public:
-    // Version 4 adds graph-node compartment and bond-constraint payloads.
-    static const std::uint32_t FORMAT_VERSION = 4;
+    // Version 5 adds symmetric graph automorphism constraints.
+    static const std::uint32_t FORMAT_VERSION = 5;
     static void write(const ExecutableModel& model, std::ostream& out);
     static ExecutableModel read(std::istream& in);
     static void writeFile(const ExecutableModel& model, const std::string& path);

@@ -20,6 +20,7 @@ The archival documents are retained under `docs/architecture_handoffs/`. The exa
 - NFcore2 source is in `cpp/nfsim/NFcore2/`; its native reader is adapted to the real BNG3 reaction, template, transformation, and energy APIs.
 - NFnext source is in `cpp/nfnext/` and is built as an isolated library so its prototype contracts remain testable without being presented as the NFsim replacement.
 - Root-local NFsim introspection and conservative dependency collection are implemented in the existing NFsim classes. Unsupported richer topology and broader transport cases fail closed; bounded graph matching, synthesis, root-local moves, and species-carrying `MoveConnected` execute directly.
+- Symmetric graph automorphisms now lower through the native reader as finite equivalent-site candidate sets. The matcher assigns candidates injectively, checks state and occupancy constraints, and verifies reciprocal bonds; malformed candidate or partner payloads remain rejected.
 - The staged semantic layer now has typed symbols/rate-law references, structured
   feature diagnostics, an immutable `compile::Document` protocol split, and a
   value-like `compile::Pattern` with explicit BNGcore and NFsim
@@ -47,10 +48,12 @@ The archival documents are retained under `docs/architecture_handoffs/`. The exa
 - The energy validation harness, fixtures, Python gates, C++ contracts, architecture inventories, and CI hooks are under `tests/energy/` and `tests/architecture_contracts/`.
 - Future and unavailable contracts remain opt-in or classified as `blocked-api`, `design-only`, `reference`, or `auxiliary`; empty future bodies are inventory findings, not passing tests.
 - The expanded goal keeps five full-parity ceilings explicit and fail-closed:
-  richer internal graph expressions; full local-function/DOR evaluation;
+  richer internal graph expressions beyond the now-supported finite symmetric
+  automorphism slice; full local-function/DOR evaluation;
   volume-aware compartment scaling and transport; complete deletion semantics;
   and independent full NFsim/BNG2 parity. Bounded direct contracts now cover
-  graph state/bond/compartment constraints, expression bindings, hierarchy
+  graph state/bond/compartment constraints, finite symmetric automorphisms,
+  expression bindings, hierarchy
   metadata, species-carrying `MoveConnected`, and conditional deletion; these
   do not imply the broader ceilings.
 - An opt-in `BUILD_BNGSIM_ADAPTER` path maps a generated BNG3 network directly

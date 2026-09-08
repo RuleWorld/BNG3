@@ -56,12 +56,26 @@ namespace NFcore
             int component;
             TemplateMolecule* partner;
             int partner_component;
-            RootBondConstraint() : component(-1), partner(0), partner_component(-1) {}
+            std::string partner_component_name;
+            bool partner_component_symmetric;
+            RootBondConstraint() : component(-1), partner(0), partner_component(-1), partner_component_symmetric(false) {}
+        };
+        struct RootSymmetricConstraint {
+            std::string component_name;
+            std::string unique_id;
+            int state_constraint;
+            int bond_state;
+            TemplateMolecule* partner;
+            std::string partner_component_name;
+            int partner_component;
+            bool partner_component_symmetric;
+            RootSymmetricConstraint() : state_constraint(-1), bond_state(-1), partner(0), partner_component(-1), partner_component_symmetric(false) {}
         };
         struct RootLocalConstraints {
             std::vector<int> empty, occupied;
             std::vector<std::pair<int, int>> states, exclusions;
             std::vector<RootBondConstraint> bonds;
+            std::vector<RootSymmetricConstraint> symmetric;
             std::vector<TemplateMolecule*> connected_to;
             std::string compartment;
         };

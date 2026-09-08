@@ -162,6 +162,13 @@ std::string LegacyLowerer::matcherSignature(const LegacyRuleIR& r) {
             for (const auto component : node.free_components) os << 'f' << component << ',';
             os << ':';
             for (const auto component : node.bound_components) os << 'b' << component << ',';
+            for (const auto& symmetric : node.symmetric_constraints) {
+                os << ":s" << symmetric.state_value << ':' << symmetric.bond_state << ':'
+                   << symmetric.partner_node << ':' << symmetric.partner_symmetric << ':';
+                for (const auto component : symmetric.components) os << component << ',';
+                os << '/';
+                for (const auto component : symmetric.partner_components) os << component << ',';
+            }
             os << ';';
         }
         for (const auto& edge : graph.edges)

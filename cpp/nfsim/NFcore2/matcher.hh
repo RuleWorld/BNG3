@@ -5,6 +5,17 @@
 #include <vector>
 #include <limits>
 namespace NFcore2 {
+struct SymmetricConstraintPattern {
+    // Concrete equivalent component indices that may satisfy this occurrence.
+    std::vector<std::uint32_t> components;
+    int state_value;
+    int bond_state; // -1 any, 0 free, 1 occupied
+    std::uint32_t partner_node;
+    std::vector<std::uint32_t> partner_components;
+    bool partner_symmetric;
+    SymmetricConstraintPattern() : state_value(-1), bond_state(-1),
+        partner_node(std::numeric_limits<std::uint32_t>::max()), partner_symmetric(false) {}
+};
 struct GraphNodePattern {
     std::uint32_t molecule_type;
     std::uint16_t anchor_reactant;
@@ -12,6 +23,7 @@ struct GraphNodePattern {
     std::uint32_t compartment;
     std::vector<std::uint32_t> free_components;
     std::vector<std::uint32_t> bound_components;
+    std::vector<SymmetricConstraintPattern> symmetric_constraints;
     int state_value;
     GraphNodePattern() : molecule_type(0), anchor_reactant(std::numeric_limits<std::uint16_t>::max()),
         state_component(std::numeric_limits<std::uint32_t>::max()),

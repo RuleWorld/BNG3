@@ -100,6 +100,30 @@ TEST(ModelImage_RoundTripMatcherBytecode){
     EXPECT_EQ(c[1].opcode,MATCH_END);
 }
 
+TEST(ModelImage_RoundTripSymmetricGraphConstraints){
+    ExecutableModel e;
+    MoleculeTypeDescriptor a; a.name="A"; a.state_words=2; a.bond_slots=2;
+    MoleculeTypeDescriptor b; b.name="B"; b.state_words=1; b.bond_slots=1;
+    e.buildMetadata().addMoleculeType(a); e.buildMetadata().addMoleculeType(b);
+    MatcherProgram matcher;
+    GraphPattern graph;
+    GraphNodePattern left; left.molecule_type=0; left.anchor_reactant=0;
+    SymmetricConstraintPattern bound; bound.components={0,1}; bound.bond_state=1; bound.partner_node=1; bound.partner_components={0};
+    SymmetricConstraintPattern free; free.components={0,1}; free.bond_state=0;
+    left.symmetric_constraints={bound,free};
+    GraphNodePattern right; right.molecule_type=1; right.anchor_reactant=1;
+    graph.nodes={left,right}; matcher.addGraphPattern(graph); matcher.add(MatchInstruction(MATCH_END));
+    e.buildMatchers().add(matcher);
+    ExecutableModel roundtrip=readBytes(writeBytes(e));
+    const GraphPattern& restored=roundtrip.matchers().at(MatcherId(0)).graphPatterns()[0];
+    EXPECT_EQ(restored.nodes.size(),2u);
+    EXPECT_EQ(restored.nodes[0].symmetric_constraints.size(),2u);
+    EXPECT_EQ(restored.nodes[0].symmetric_constraints[0].components.size(),2u);
+    EXPECT_EQ(restored.nodes[0].symmetric_constraints[0].partner_node,1u);
+    EXPECT_EQ(restored.nodes[0].symmetric_constraints[0].partner_components[0],0u);
+    EXPECT_EQ(restored.nodes[0].symmetric_constraints[1].bond_state,0);
+}
+
 TEST(ModelImage_RoundTripTransformBytecode){
     ExecutableModel a=imageModel();
     ExecutableModel b=readBytes(writeBytes(a));

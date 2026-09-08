@@ -126,6 +126,17 @@ struct NativeGraphNodeSnapshot {
     std::uint32_t compartment;
     std::vector<std::uint32_t> free_components;
     std::vector<std::uint32_t> bound_components;
+    struct SymmetricConstraint {
+        std::vector<std::uint32_t> components;
+        int state;
+        int bond_state;
+        std::uint32_t partner_node;
+        std::vector<std::uint32_t> partner_components;
+        bool partner_symmetric;
+        SymmetricConstraint() : state(-1), bond_state(-1),
+            partner_node(std::numeric_limits<std::uint32_t>::max()), partner_symmetric(false) {}
+    };
+    std::vector<SymmetricConstraint> symmetric_constraints;
     int state;
     NativeGraphNodeSnapshot() : molecule_type(0), reactant(std::numeric_limits<std::uint16_t>::max()),
         state_component(std::numeric_limits<std::uint32_t>::max()),

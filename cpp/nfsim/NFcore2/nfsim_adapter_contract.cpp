@@ -125,6 +125,37 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                     validateComponent(source, node.molecule_type, component);
                 for (const auto component : outNode.bound_components)
                     validateComponent(source, node.molecule_type, component);
+                for (const auto& nativeSymmetric : node.symmetric_constraints) {
+                    if (nativeSymmetric.components.empty() || nativeSymmetric.state < -1 ||
+                        (nativeSymmetric.bond_state != -1 && nativeSymmetric.bond_state != 0 &&
+                         nativeSymmetric.bond_state != 1))
+                        throw std::invalid_argument("NFsim symmetric graph constraint is malformed");
+                    SymmetricConstraintPattern symmetric;
+                    symmetric.state_value = nativeSymmetric.state;
+                    symmetric.bond_state = nativeSymmetric.bond_state;
+                    symmetric.partner_node = nativeSymmetric.partner_node;
+                    symmetric.partner_symmetric = nativeSymmetric.partner_symmetric;
+                    for (const auto component : nativeSymmetric.components) {
+                        validateComponent(source, node.molecule_type, component);
+                        symmetric.components.push_back(component);
+                    }
+                    if (symmetric.partner_node != std::numeric_limits<std::uint32_t>::max()) {
+                        if (symmetric.partner_node >= nativeGraph.nodes.size() ||
+                            symmetric.partner_node == graph.nodes.size())
+                            throw std::invalid_argument("NFsim symmetric graph partner node out of range");
+                    }
+                    if (symmetric.partner_symmetric && nativeSymmetric.partner_components.empty())
+                        throw std::invalid_argument("NFsim symmetric graph partner class is empty");
+                    if (symmetric.partner_node != std::numeric_limits<std::uint32_t>::max()) {
+                        const std::uint32_t partnerType = nativeGraph.nodes[symmetric.partner_node].molecule_type;
+                        for (const auto component : nativeSymmetric.partner_components)
+                            validateComponent(source, partnerType, component);
+                    } else if (!nativeSymmetric.partner_components.empty()) {
+                        throw std::invalid_argument("NFsim symmetric graph partner component without partner node");
+                    }
+                    symmetric.partner_components = nativeSymmetric.partner_components;
+                    outNode.symmetric_constraints.push_back(symmetric);
+                }
                 graph.nodes.push_back(outNode);
             }
             if (graph.nodes.empty()) throw std::invalid_argument("NFsim graph expression has no nodes");

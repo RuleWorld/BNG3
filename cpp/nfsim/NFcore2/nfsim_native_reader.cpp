@@ -54,7 +54,27 @@ void NativeNFsimSystemReader::collectGraphPatterns(std::size_t i,std::vector<Nat
     for (int p=0;p<r->getNumOfReactants();++p) roots.push_back(r->getReactantTemplate(p));
     std::map<TemplateMolecule*,std::size_t> indices;
     std::queue<TemplateMolecule*> pending;
+    struct PendingSymmetric {
+        std::size_t node;
+        std::size_t constraint;
+        TemplateMolecule* partner;
+    };
+    std::vector<PendingSymmetric> pendingSymmetric;
     NativeGraphPatternSnapshot graph;
+    auto equivalentComponents = [](MoleculeType* type, const std::string& name,
+                                   std::vector<std::uint32_t>& out) {
+        if (!type || !type->isEquivalentComponent(name)) return false;
+        int* components = 0;
+        int count = 0;
+        type->getEquivalencyClass(components, count, name);
+        if (!components || count <= 0) return false;
+        out.clear();
+        for (int i = 0; i < count; ++i) {
+            if (components[i] < 0 || components[i] >= type->getNumOfComponents()) return false;
+            out.push_back(static_cast<std::uint32_t>(components[i]));
+        }
+        return true;
+    };
     auto appendNode = [&](TemplateMolecule* molecule, std::uint16_t reactant) {
         if (!molecule || !molecule->getMoleculeType()) { out.clear(); return false; }
         TemplateMolecule::RootLocalConstraints constraints;
@@ -84,6 +104,44 @@ void NativeNFsimSystemReader::collectGraphPatterns(std::size_t i,std::vector<Nat
             node.state_component=static_cast<std::uint32_t>(constraints.states.front().first);
             node.state=constraints.states.front().second;
         }
+        for (const auto& symmetric : constraints.symmetric) {
+            if (symmetric.state_constraint < -1 ||
+                (symmetric.bond_state != TemplateMolecule::NO_CONSTRAINT &&
+                 symmetric.bond_state != TemplateMolecule::EMPTY &&
+                 symmetric.bond_state != TemplateMolecule::OCCUPIED)) {
+                out.clear(); return false;
+            }
+            NativeGraphNodeSnapshot::SymmetricConstraint native;
+            if (!equivalentComponents(molecule->getMoleculeType(), symmetric.component_name,
+                                      native.components)) {
+                out.clear(); return false;
+            }
+            native.state = symmetric.state_constraint;
+            native.bond_state = symmetric.bond_state;
+            if (symmetric.partner) {
+                MoleculeType* partnerType = symmetric.partner->getMoleculeType();
+                if (!partnerType) { out.clear(); return false; }
+                if (symmetric.partner_component >= 0) {
+                    if (symmetric.partner_component >= partnerType->getNumOfComponents()) {
+                        out.clear(); return false;
+                    }
+                    native.partner_components.push_back(static_cast<std::uint32_t>(symmetric.partner_component));
+                } else if (symmetric.partner_component_symmetric) {
+                    if (!equivalentComponents(partnerType, symmetric.partner_component_name,
+                                              native.partner_components)) {
+                        out.clear(); return false;
+                    }
+                    native.partner_symmetric = true;
+                } else {
+                    out.clear(); return false;
+                }
+            }
+            const std::size_t nodeIndex = graph.nodes.size();
+            const std::size_t constraintIndex = node.symmetric_constraints.size();
+            node.symmetric_constraints.push_back(native);
+            if (symmetric.partner)
+                pendingSymmetric.push_back(PendingSymmetric{nodeIndex, constraintIndex, symmetric.partner});
+        }
         indices[molecule]=graph.nodes.size();
         graph.nodes.push_back(node);
         pending.push(molecule);
@@ -91,7 +149,7 @@ void NativeNFsimSystemReader::collectGraphPatterns(std::size_t i,std::vector<Nat
     };
     for (std::size_t p=0;p<roots.size();++p) {
         TemplateMolecule* root=roots[p];
-        if (!root || root->getN_symComps()!=0) { out.clear(); return; }
+        if (!root) { out.clear(); return; }
         if (indices.find(root)==indices.end()) {
             if (!appendNode(root, static_cast<std::uint16_t>(p))) return;
         }
@@ -99,23 +157,77 @@ void NativeNFsimSystemReader::collectGraphPatterns(std::size_t i,std::vector<Nat
     while (!pending.empty()) {
         TemplateMolecule* current=pending.front(); pending.pop();
         const std::size_t currentIndex=indices[current];
+        TemplateMolecule::RootLocalConstraints currentConstraints;
+        if (!current->collectRootLocalConstraints(currentConstraints)) { out.clear(); return; }
         for (int b=0;b<current->getBondConstraintCount();++b) {
             TemplateMolecule* partner=current->getBondPartner(b);
             const int partnerComponent=current->getBondPartnerComponent(b);
             const int component=current->getBondComponent(b);
-            if (!partner || component<0 || partnerComponent<0 || partner->getN_symComps()!=0) { out.clear(); return; }
+            if (!partner || component<0) { out.clear(); return; }
             auto found=indices.find(partner);
             if (found==indices.end()) {
                 if (!appendNode(partner, std::numeric_limits<std::uint16_t>::max())) return;
                 found=indices.find(partner);
             }
             const std::size_t partnerIndex=found->second;
-            if (currentIndex < partnerIndex) {
+            if (partnerComponent >= 0 && currentIndex < partnerIndex) {
                 NativeGraphEdgeSnapshot edge; edge.first_node=currentIndex; edge.first_component=static_cast<std::uint32_t>(component); edge.second_node=partnerIndex; edge.second_component=static_cast<std::uint32_t>(partnerComponent); graph.edges.push_back(edge);
+            } else if (partnerComponent < 0) {
+                // NFsim stores the reverse half of a bond to a symmetric site
+                // as a regular bond with only the generic partner name. Lift
+                // that half into an explicit symmetric occupancy constraint on
+                // the partner node so the native matcher cannot widen the
+                // pattern to an arbitrary occupied equivalent site.
+                TemplateMolecule::RootLocalConstraints partnerConstraints;
+                const std::string& partnerComponentName = currentConstraints.bonds[static_cast<std::size_t>(b)].partner_component_name;
+                if (!partner->collectRootLocalConstraints(partnerConstraints) ||
+                    !partner->getMoleculeType() ||
+                    !partner->getMoleculeType()->isEquivalentComponent(partnerComponentName)) {
+                    out.clear(); return;
+                }
+                std::vector<std::uint32_t> candidates;
+                if (!equivalentComponents(partner->getMoleculeType(), partnerComponentName, candidates)) {
+                    out.clear(); return;
+                }
+                bool alreadyCaptured = false;
+                for (const auto& existing : graph.nodes[partnerIndex].symmetric_constraints) {
+                    if (existing.partner_node == currentIndex && existing.bond_state == TemplateMolecule::OCCUPIED &&
+                        existing.partner_components.size() == 1 && existing.partner_components[0] == static_cast<std::uint32_t>(component)) {
+                        alreadyCaptured = true; break;
+                    }
+                }
+                if (!alreadyCaptured) {
+                    NativeGraphNodeSnapshot::SymmetricConstraint reverse;
+                    reverse.components = candidates;
+                    reverse.bond_state = TemplateMolecule::OCCUPIED;
+                    reverse.partner_node = static_cast<std::uint32_t>(currentIndex);
+                    reverse.partner_components.push_back(static_cast<std::uint32_t>(component));
+                    graph.nodes[partnerIndex].symmetric_constraints.push_back(reverse);
+                }
+            }
+        }
+        for (const auto& symmetric : currentConstraints.symmetric) {
+            if (!symmetric.partner) continue;
+            auto found = indices.find(symmetric.partner);
+            if (found == indices.end()) {
+                if (!appendNode(symmetric.partner, std::numeric_limits<std::uint16_t>::max())) return;
             }
         }
     }
-    if (graph.edges.empty() || graph.nodes.size() <= roots.size()) { return; }
+    for (const auto& pendingConstraint : pendingSymmetric) {
+        auto found = indices.find(pendingConstraint.partner);
+        if (found == indices.end() || pendingConstraint.node >= graph.nodes.size() ||
+            pendingConstraint.constraint >= graph.nodes[pendingConstraint.node].symmetric_constraints.size() ||
+            found->second == pendingConstraint.node) {
+            out.clear(); return;
+        }
+        graph.nodes[pendingConstraint.node].symmetric_constraints[pendingConstraint.constraint].partner_node =
+            static_cast<std::uint32_t>(found->second);
+    }
+    bool hasSymmetricConstraint = false;
+    for (const auto& node : graph.nodes)
+        if (!node.symmetric_constraints.empty()) { hasSymmetricConstraint = true; break; }
+    if (!hasSymmetricConstraint && graph.edges.empty()) { return; }
     out.push_back(graph);
 }
 

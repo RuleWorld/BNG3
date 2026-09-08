@@ -23,6 +23,50 @@ bool graphMatch(const SimulationState& s, const GraphPattern& graph, const Match
   for (std::size_t j=0;j<i;++j) if (mapping[j]==ref) return false;
   mapping[i]=ref; used[i]=true;
  }
+ auto symmetricOk = [&](std::size_t i, MoleculeRef ref, bool requirePartners) {
+  const GraphNodePattern& n = graph.nodes[i];
+  if (n.symmetric_constraints.empty()) return true;
+  const MoleculeStore& store = s.molecules(ref.type);
+  std::vector<bool> assigned(store.bondSlotCount(), false);
+  std::function<bool(std::size_t)> choose = [&](std::size_t which) {
+   if (which == n.symmetric_constraints.size()) return true;
+   const SymmetricConstraintPattern& constraint = n.symmetric_constraints[which];
+   for (const auto component : constraint.components) {
+    if (component > std::numeric_limits<std::uint16_t>::max() ||
+        component >= store.bondSlotCount() || assigned[component]) continue;
+    if (constraint.state_value >= 0 &&
+        store.stateWord(ref.handle, static_cast<std::uint16_t>(component)) !=
+            static_cast<std::uint64_t>(constraint.state_value)) continue;
+    const MoleculeRef bond = store.bondRef(ref.handle, static_cast<std::uint16_t>(component));
+    if (constraint.bond_state == 0 && bond.valid()) continue;
+    if (constraint.bond_state == 1 && !bond.valid()) continue;
+    if (constraint.partner_node != std::numeric_limits<std::uint32_t>::max()) {
+     if (constraint.partner_node >= mapping.size()) return false;
+     const MoleculeRef partner = mapping[constraint.partner_node];
+     if (!partner.valid()) {
+      if (requirePartners) continue;
+     } else {
+      if (!bond.valid() || !(bond == partner) || constraint.partner_components.empty()) continue;
+      const MoleculeStore& partnerStore = s.molecules(partner.type);
+      bool reciprocal = false;
+      for (const auto partnerComponent : constraint.partner_components) {
+       if (partnerComponent > std::numeric_limits<std::uint16_t>::max() ||
+           partnerComponent >= partnerStore.bondSlotCount()) return false;
+       if (partnerStore.bondRef(partner.handle, static_cast<std::uint16_t>(partnerComponent)) == ref) {
+        reciprocal = true; break;
+       }
+      }
+      if (!reciprocal) continue;
+     }
+    }
+    assigned[component] = true;
+    if (choose(which + 1)) return true;
+    assigned[component] = false;
+   }
+   return false;
+  };
+  return choose(0);
+ };
  auto nodeOk = [&](std::size_t i, MoleculeRef ref) {
   const GraphNodePattern& n=graph.nodes[i];
   if (!ref.valid() || ref.type.value()!=n.molecule_type || !s.molecules(ref.type).alive(ref.handle)) return false;
@@ -43,6 +87,7 @@ bool graphMatch(const SimulationState& s, const GraphPattern& graph, const Match
       s.molecules(ref.type).stateWord(ref.handle, static_cast<std::uint16_t>(n.state_component)) != static_cast<std::uint64_t>(n.state_value)) return false;
   if (n.state_component != std::numeric_limits<std::uint32_t>::max() &&
       n.state_component > std::numeric_limits<std::uint16_t>::max()) return false;
+  if (!symmetricOk(i, ref, false)) return false;
   for (const auto& e: graph.edges) {
    std::size_t other=std::numeric_limits<std::size_t>::max(); std::uint32_t slot=0;
    if (e.first_node==i) { other=e.second_node; slot=e.first_component; }
@@ -54,7 +99,11 @@ bool graphMatch(const SimulationState& s, const GraphPattern& graph, const Match
  };
  std::function<bool(std::size_t)> search = [&](std::size_t next) {
   while (next<graph.nodes.size() && used[next]) ++next;
-  if (next==graph.nodes.size()) return true;
+  if (next==graph.nodes.size()) {
+   for (std::size_t i=0; i<graph.nodes.size(); ++i)
+    if (!nodeOk(i, mapping[i]) || !symmetricOk(i, mapping[i], true)) return false;
+   return true;
+  }
   const auto handles=s.molecules(MoleculeTypeId(graph.nodes[next].molecule_type)).liveHandles();
   for (const auto& h: handles) {
    MoleculeRef ref(MoleculeTypeId(graph.nodes[next].molecule_type),h);

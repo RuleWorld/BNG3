@@ -107,14 +107,17 @@
   "expanded_ceilings": [
     {
       "id": "arbitrary-graph-expressions",
-      "status": "direct-finite-bounded-fallback-richer",
-      "implemented": "Exact backtracking supports anchored/unanchored nodes, multiple reciprocal bonds, state, compartment, free-site, and bound-site constraints.",
+      "status": "direct-finite-symmetric-bounded-fallback-richer",
+      "implemented": "Exact backtracking supports anchored/unanchored nodes, multiple reciprocal bonds, state, compartment, free-site, bound-site, and finite symmetric equivalent-site constraints with injective assignment.",
       "tests": [
         "NFsimAdapter_ArbitraryGraphExpressionPreservesFreeAndBoundSiteConstraints",
+        "NFsimAdapter_SymmetricGraphAutomorphismMatchesDistinctEquivalentSites",
+        "native NFcore2 reader preserves symmetric internal graph automorphisms",
+        "ModelImage_RoundTripSymmetricGraphConstraints",
         "NFsimAdapter_RejectsMalformedGraphEdge",
         "NFsimAdapter_ArbitraryGraphExpressionRejectsAsymmetricRuntimeBond"
       ],
-      "remaining": "Native symmetric automorphisms, negative/molecularity forms, and unbounded connectedTo remain fail-closed."
+      "remaining": "Negative/molecularity forms, richer child constraints, and unbounded connectedTo remain fail-closed; broader automorphism expressions remain outside the finite candidate slice."
     },
     {
       "id": "general-local-dor-evaluation",
@@ -150,7 +153,7 @@
     }
   ],
   "remaining_fallback_details": [
-    "Native symmetric/internal graph automorphisms, negative expressions, molecularity constraints, and unbounded connectedTo remain fail-closed.",
+    "Native negative expressions, molecularity constraints, richer child constraints, and unbounded connectedTo remain fail-closed; only finite symmetric equivalent-site automorphisms are direct.",
     "Native LocalFunction/DOR object scopes, observables, function DAGs, TFUN counters, and complete DOR2 composition remain compatibility fallbacks.",
     "Compartment volume/region scaling, dimension conversion, and topology-changing transport remain fail-closed.",
     "Native conditional-deletion spellings whose component ownership or post-delete invalidation cannot be established remain fail-closed.",

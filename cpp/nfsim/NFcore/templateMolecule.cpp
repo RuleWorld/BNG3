@@ -2146,7 +2146,6 @@ bool TemplateMolecule::isMoleculeTypeAndComponentPresent(MoleculeType * mt, int 
 
 // Keep extraction transactional: unsupported graph constraints are not weakened.
 bool NFcore::TemplateMolecule::collectRootLocalConstraints(RootLocalConstraints& output) const {
-    if (n_symComps) return false;
     RootLocalConstraints result;
     for (int i = 0; i < n_emptyComps; ++i) result.empty.push_back(emptyComps[i]);
     for (int i = 0; i < n_occupiedComps; ++i) result.occupied.push_back(occupiedComps[i]);
@@ -2155,12 +2154,28 @@ bool NFcore::TemplateMolecule::collectRootLocalConstraints(RootLocalConstraints&
     for (int i = 0; i < n_compStateExclusion; ++i)
         result.exclusions.emplace_back(compStateExclusion_Comp[i], compStateExclusion_Exclusion[i]);
     for (int i = 0; i < n_bonds; ++i) {
-        if (!bondPartner[i] || bondPartnerCompIndex[i] < 0) return false;
+        if (!bondPartner[i]) return false;
         RootBondConstraint bond;
         bond.component = bondComp[i];
         bond.partner = bondPartner[i];
         bond.partner_component = bondPartnerCompIndex[i];
+        bond.partner_component_name = bondPartnerCompName[i];
+        bond.partner_component_symmetric = bondPartnerCompIndex[i] < 0;
         result.bonds.push_back(bond);
+    }
+    for (int i = 0; i < n_symComps; ++i) {
+        if (symCompName[i].empty()) return false;
+        RootSymmetricConstraint symmetric;
+        symmetric.component_name = symCompName[i];
+        symmetric.unique_id = symCompUniqueId[i];
+        symmetric.state_constraint = symCompStateConstraint[i];
+        symmetric.bond_state = symCompBoundState[i];
+        symmetric.partner = symBondPartner[i];
+        symmetric.partner_component_name = symBondPartnerCompName[i];
+        symmetric.partner_component = symBondPartnerCompIndex[i];
+        symmetric.partner_component_symmetric = symBondPartnerCompIndex[i] < 0 && symBondPartner[i] != 0;
+        if (symmetric.partner_component_symmetric && symmetric.partner_component_name.empty()) return false;
+        result.symmetric.push_back(symmetric);
     }
     for (int i = 0; i < n_connectedTo; ++i) {
         if (!connectedTo[i]) return false;

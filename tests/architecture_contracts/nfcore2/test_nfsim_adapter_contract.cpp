@@ -499,6 +499,48 @@ TEST(NFsimAdapter_ArbitraryGraphExpressionPreservesFreeAndBoundSiteConstraints){
     EXPECT_EQ(lowered.graph_patterns[0].nodes[0].bound_components.size(),1u);
 }
 
+TEST(NFsimAdapter_SymmetricGraphAutomorphismMatchesDistinctEquivalentSites){
+    NativeModelSnapshot n;
+    n.molecule_types.push_back(mol("A",2));
+    n.molecule_types.push_back(mol("B",1));
+    NativeReactionSnapshot r=rxn(); r.reactant_types={0,1};
+    NativeGraphPatternSnapshot g;
+    NativeGraphNodeSnapshot a; a.molecule_type=0; a.reactant=0;
+    NativeGraphNodeSnapshot b; b.molecule_type=1; b.reactant=1;
+    NativeGraphNodeSnapshot::SymmetricConstraint bound;
+    bound.components={0,1}; bound.bond_state=1; bound.partner_node=1; bound.partner_components={0};
+    NativeGraphNodeSnapshot::SymmetricConstraint free;
+    free.components={0,1}; free.bond_state=0;
+    a.symmetric_constraints={bound,free};
+    g.nodes={a,b}; r.graph_patterns.push_back(g); n.rules.push_back(r);
+    LegacyLoweringResult lowered=LegacyLowerer::lower(NFsimSnapshotAdapter::toLegacy(n));
+    EXPECT_EQ(lowered.supported_rule_count,1u);
+    Engine engine(lowered.executable);
+    MoleculeHandle ah=engine.state().molecules(MoleculeTypeId(0)).create();
+    MoleculeHandle bh=engine.state().molecules(MoleculeTypeId(1)).create();
+    MoleculeStore& as=engine.state().molecules(MoleculeTypeId(0));
+    MoleculeStore& bs=engine.state().molecules(MoleculeTypeId(1));
+    as.setBondRef(ah,0,MoleculeRef(MoleculeTypeId(1),bh));
+    bs.setBondRef(bh,0,MoleculeRef(MoleculeTypeId(0),ah));
+    MatchContext context; context.setMoleculeAt(0,MoleculeRef(MoleculeTypeId(0),ah));
+    context.setMoleculeAt(1,MoleculeRef(MoleculeTypeId(1),bh));
+    const MatcherId matcher=lowered.executable.metadata().ruleFamilies()[0].matcher;
+    EXPECT_TRUE(lowered.executable.matchers().at(matcher).evaluate(engine.state(),engine.scaffolds(),context));
+    MoleculeHandle extra=engine.state().molecules(MoleculeTypeId(1)).create();
+    as.setBondRef(ah,1,MoleculeRef(MoleculeTypeId(1),extra));
+    bs.setBondRef(extra,0,MoleculeRef(MoleculeTypeId(0),ah));
+    EXPECT_FALSE(lowered.executable.matchers().at(matcher).evaluate(engine.state(),engine.scaffolds(),context));
+}
+
+TEST(NFsimAdapter_RejectsMalformedSymmetricGraphConstraint){
+    NativeModelSnapshot n; n.molecule_types.push_back(mol("A",2));
+    NativeReactionSnapshot r=rxn(); r.reactant_types.push_back(0);
+    NativeGraphPatternSnapshot g; NativeGraphNodeSnapshot node; node.molecule_type=0; node.reactant=0;
+    NativeGraphNodeSnapshot::SymmetricConstraint malformed; malformed.bond_state=1;
+    node.symmetric_constraints.push_back(malformed); g.nodes.push_back(node); r.graph_patterns.push_back(g); n.rules.push_back(r);
+    EXPECT_THROW(NFsimSnapshotAdapter::toLegacy(n),std::invalid_argument);
+}
+
 TEST(NFsimAdapter_ArbitraryGraphExpressionRejectsAsymmetricRuntimeBond){
     NativeModelSnapshot n; n.molecule_types.push_back(mol("A",1)); n.molecule_types.push_back(mol("B",1));
     NativeReactionSnapshot r=rxn(); r.reactant_types.push_back(0);

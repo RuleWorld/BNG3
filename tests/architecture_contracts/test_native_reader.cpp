@@ -193,17 +193,24 @@ TEST_CASE("native NFcore2 reader captures internal graph topology") {
     CHECK(snapshot.rules[0].graph_patterns[0].edges.size() == 1);
 }
 
-TEST_CASE("native NFcore2 reader rejects unsupported symmetric internal graph automorphisms") {
+TEST_CASE("native NFcore2 reader preserves symmetric internal graph automorphisms") {
     auto system = symmetricGraphSystem();
     const auto snapshot = NFcore2::snapshotLegacyNFsim(*system);
     REQUIRE(snapshot.rules.size() >= 1);
     const auto lowered = NFcore2::lowerLegacyNFsim(*system);
-    CHECK(lowered.supported_rule_count == 0);
-    CHECK(lowered.fallback_rule_count == snapshot.rules.size());
-    for (const auto& rule : lowered.rules) {
-        CHECK_FALSE(rule.supported());
-        CHECK(rule.reason == NFcore2::LOWERING_CONNECTED_TO);
-    }
+    CHECK(lowered.supported_rule_count == snapshot.rules.size());
+    CHECK(lowered.fallback_rule_count == 0);
+    for (const auto& rule : lowered.rules) CHECK(rule.supported());
+    REQUIRE(snapshot.rules[0].graph_patterns.size() >= 1);
+    const auto& graph = snapshot.rules[0].graph_patterns[0];
+    REQUIRE(graph.nodes.size() == 2);
+    REQUIRE(graph.nodes[0].symmetric_constraints.size() >= 1);
+    CHECK(graph.nodes[0].symmetric_constraints[0].components.size() == 2);
+    REQUIRE(graph.edges.size() == 1);
+    CHECK(graph.edges[0].first_node == 0);
+    CHECK(graph.edges[0].first_component == 0);
+    CHECK(graph.edges[0].second_node == 1);
+    CHECK(graph.edges[0].second_component == 0);
 }
 
 TEST_CASE("native NFcore2 reader preserves symmetric component automorphisms") {
