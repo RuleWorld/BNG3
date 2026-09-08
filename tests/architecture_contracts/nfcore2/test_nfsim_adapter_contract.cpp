@@ -195,6 +195,29 @@ TEST(NFsimAdapter_PopulationRuleExecutesAgainstPopulationStore){
     EXPECT_EQ(engine.state().populations().value(PopulationId(0)),3ll);
 }
 
+TEST(NFsimAdapter_ZeroReactantPopulationSynthesisUsesAddedType){
+    NativeModelSnapshot n;
+    n.molecule_types.push_back(mol("A",1));
+    n.molecule_types.push_back(mol("P",0,true));
+    NativeReactionSnapshot r=rxn();
+    NativeTransformSnapshot t=tr(NATIVE_INCREMENT_POPULATION,0);
+    t.added_molecule_type=1;
+    t.population_delta=4;
+    r.transforms.push_back(t);
+    n.rules.push_back(r);
+
+    LegacyModelIR legacy=NFsimSnapshotAdapter::toLegacy(n);
+    EXPECT_EQ(legacy.rules[0].transforms.size(),1u);
+    EXPECT_EQ(legacy.rules[0].transforms[0].kind,LEGACY_TRANSFORM_POPULATION_ADD);
+    EXPECT_EQ(legacy.rules[0].transforms[0].a,0u);
+    EXPECT_EQ(legacy.rules[0].transforms[0].value,4ll);
+
+    LegacyLoweringResult lowered=LegacyLowerer::lower(legacy);
+    Engine engine(lowered.executable);MatchContext context;FeatureDelta delta;
+    EXPECT_TRUE(engine.fire(lowered.rules[0].family,lowered.rules[0].member,context,delta));
+    EXPECT_EQ(engine.state().populations().value(PopulationId(0)),4ll);
+}
+
 TEST(NFsimAdapter_RootInternalTopologyAndPartnerStateLowerDirectly){
     NativeModelSnapshot n;n.molecule_types.push_back(mol("A",2));n.molecule_types.push_back(mol("B",2));
     NativeReactionSnapshot r=rxn();r.reactant_types.push_back(0);r.reactant_types.push_back(1);

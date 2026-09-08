@@ -177,13 +177,22 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
 
         for (std::size_t xi=0;xi<nr.transforms.size();++xi) {
             const NativeTransformSnapshot& x=nr.transforms[xi];
-            const bool has_reactant = x.kind != NATIVE_ADD;
+            const bool zero_reactant_population_transform =
+                nr.reactant_types.empty() &&
+                (x.kind == NATIVE_INCREMENT_POPULATION ||
+                 x.kind == NATIVE_DECREMENT_POPULATION);
+            const bool has_reactant =
+                x.kind != NATIVE_ADD && !zero_reactant_population_transform;
             std::uint32_t type = 0;
             if (has_reactant) {
                 type=reactantType(source,nr,x.reactant);
                 if (x.kind!=NATIVE_EMPTY && x.kind!=NATIVE_LOCAL_FUNCTION_REFERENCE && x.kind!=NATIVE_MOVE &&
                     x.kind!=NATIVE_INCREMENT_POPULATION && x.kind!=NATIVE_DECREMENT_POPULATION)
                     validateComponent(source,type,x.component);
+            } else if (zero_reactant_population_transform) {
+                type = x.added_molecule_type;
+                if (type >= source.molecule_types.size())
+                    throw std::out_of_range("NFsim population transform molecule type");
             }
             LegacyTransformIR t;
             switch(x.kind) {
