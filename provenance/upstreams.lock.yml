@@ -17,7 +17,7 @@
     "bng3": {
       "repository": "https://github.com/RuleWorld/BNG3.git",
       "branch": "codex/bng3-energy-validation-port",
-      "revision": "4acf9aa384c9ab1674ca00b86b4debd83e39aa3d",
+      "revision": "21825746f70edddd0903e6852f3a29446c485e9f",
       "role": "destination-and-future-authority",
       "status": "observed",
       "evidence": {
@@ -55,6 +55,17 @@
       "status": "observed",
       "evidence": {
         "kind": "local-checkout",
+        "checked_at": "2026-09-08"
+      }
+    },
+    "bngsim": {
+      "repository": "https://github.com/lanl/bngsim.git",
+      "branch": "main",
+      "revision": "49dc939035f5a272da663f8c9586e3c9f0e1c041",
+      "role": "evaluated-network-backend-candidate",
+      "status": "observed",
+      "evidence": {
+        "kind": "remote-head",
         "checked_at": "2026-09-08"
       }
     },

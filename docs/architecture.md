@@ -180,6 +180,19 @@ initializer is a last-resort compatibility path for legacy models. Direct
 construction is fail-closed: unsupported AST constructs do not silently change
 semantics by falling back unless the caller opts into XML compatibility.
 
+An independent solver bridge is available only when configured explicitly with
+`BUILD_BNGSIM_ADAPTER=ON`, `BNGSIM_INCLUDE_DIR`, and `BNGSIM_LIBRARY`. It maps
+the generated network directly to BNGsim without writing a `.net` file, and
+rejects wildcard observables and non-reference rate expressions before solver
+construction. The default build does not require BNGsim; the optional path
+therefore does not establish NFsim/BNG2 parity.
+
+The evaluated adapter preserves generated species, statistical factors, direct
+elementary/function rate references, and exact generated-species observables.
+It was tested against BNGsim commit
+`49dc939035f5a272da663f8c9586e3c9f0e1c041`; this evidence does not choose a
+long-term network solver.
+
 ## Memory Management
 
 - C++ `Model` is heap-allocated, owned by Python via `std::unique_ptr` + pybind11 holder

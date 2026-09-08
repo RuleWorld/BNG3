@@ -44,6 +44,17 @@ The archival documents are retained under `docs/architecture_handoffs/`. The exa
   compartment hierarchy/species-carrying moves; conditional deletion; and
   independent full NFsim/BNG2 parity. These are tracked as open contracts,
   not implied by the bounded semantic checkpoint.
+- An opt-in `BUILD_BNGSIM_ADAPTER` path maps a generated BNG3 network directly
+  into an external BNGsim `NetworkModel`, with strict dependency, observable,
+  index, and rate-reference checks. It remains OFF by default; this checkout
+  has no default BNGsim dependency, so adapter tests run only in an explicitly
+  configured external build and make no broad BNGsim parity claim.
+
+  The adapter spike was also built and tested against BNGsim commit
+  `49dc939035f5a272da663f8c9586e3c9f0e1c041` in an isolated build. Its focused
+  suite passed `3/3`, covering direct mapping, fail-closed composite rates,
+  functional rates, and bounded CVODE decay parity. This remains feasibility
+  evidence, not a solver-selection decision.
 
 ## Evidence at this checkpoint
 

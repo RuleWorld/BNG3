@@ -207,3 +207,14 @@ target_include_directories(test_sbml_reader PRIVATE
 target_link_libraries(test_sbml_reader PRIVATE
     Catch2::Catch2WithMain Catch2::Catch2 bionetgen_core)
 catch_discover_tests(test_sbml_reader)
+
+if(BUILD_BNGSIM_ADAPTER)
+    add_executable(test_bngsim_adapter test_bngsim_adapter.cpp)
+    target_include_directories(test_bngsim_adapter PRIVATE
+        ${CMAKE_SOURCE_DIR}/cpp
+        ${BNGSIM_INCLUDE_DIR}
+    )
+    target_link_libraries(test_bngsim_adapter PRIVATE
+        Catch2::Catch2WithMain Catch2::Catch2 bng_engine)
+    catch_discover_tests(test_bngsim_adapter)
+endif()

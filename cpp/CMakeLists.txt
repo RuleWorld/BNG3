@@ -103,6 +103,9 @@ add_library(bng_engine STATIC
     console/Console.cpp
     cli/BatchRunner.cpp
 )
+if(BUILD_BNGSIM_ADAPTER)
+    target_sources(bng_engine PRIVATE engine/BngsimAdapter.cpp)
+endif()
 target_include_directories(bng_engine PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/nfsim/NFinput/TinyXML
@@ -127,6 +130,10 @@ target_link_libraries(bng_engine PUBLIC
 )
 target_compile_definitions(bng_engine PUBLIC BNG_CPP_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 target_compile_definitions(bng_engine PUBLIC TIXML_USE_STL)
+if(BUILD_BNGSIM_ADAPTER)
+    target_compile_definitions(bng_engine PUBLIC BNG3_HAS_BNGSIM_ADAPTER=1)
+    target_link_libraries(bng_engine PUBLIC bngsim_external)
+endif()
 
 # =============================================================================
 # nfsim_core (Network-free stochastic simulator)
