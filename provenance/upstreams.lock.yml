@@ -17,7 +17,7 @@
     "bng3": {
       "repository": "https://github.com/RuleWorld/BNG3.git",
       "branch": "main",
-      "revision": "ae3400efece53e9cc713b1701aaa814e3317c5da",
+      "revision": "c78f3303b92c7438e08c006f66e188fe4c9b2d80",
       "role": "destination-and-future-authority",
       "status": "observed",
       "evidence": {
