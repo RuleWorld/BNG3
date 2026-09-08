@@ -11,8 +11,8 @@
     "focused_green": "ctest --test-dir build --output-on-failure -R architecture_nfcore2_reference",
     "full_validation": {
       "build": "cmake --build build --parallel 4",
-      "ctest": "255 passed",
-      "energy_python": "65 passed",
+      "ctest": "264 passed",
+      "energy_python": "66 passed",
       "main_python": "340 passed, 27 skipped",
       "architecture_audit": "passed with zero failures",
       "sanitizers": {
@@ -28,7 +28,10 @@
     "zero-reactant population synthesis resolves the explicit added molecule type",
     "compartment invalidation keys dependencies by molecule type owner",
     "state and bond invalidation keys dependencies by molecule type owner",
-    "species deletion rejects transforms without a mapped reactant"
+    "species deletion rejects transforms without a mapped reactant",
+    "direct NFsim capability preflight rejects population maps",
+    "resolved expressions retain lexical local-function references",
+    "value Pattern retains multiple bonds while NFsim rejects unsupported lowering"
   ],
   "contracts": [
     {
@@ -69,9 +72,10 @@
     }
   ],
   "remaining_fallbacks": [
-    "arbitrary internal graph variables and symmetric sites",
-    "general local-function and DOR/DOR2 expression evaluation",
-    "compartment hierarchy, volume scaling, and species-carrying moves",
-    "conditional deletion"
+    "arbitrary internal graph expressions",
+    "general local-function/DOR evaluation",
+    "compartment hierarchy/species-carrying moves",
+    "conditional deletion",
+    "independent full NFsim/BNG2 parity"
   ]
 }

@@ -5,6 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[4]
 FIXTURE = ROOT / "tests/energy/fixtures/semantic/nfcore2_semantic_expansion.json"
 PROVENANCE = ROOT / "provenance/semantic-expansion-2026-09-08.json"
+STATUS = ROOT / "docs/architecture_handoffs/SEMANTIC_EXPANSION_STATUS_2026-09-08.md"
 
 
 def load_cases():
@@ -78,3 +79,21 @@ def test_whole_species_deletion_oracle():
     data = case["whole-species-deletion"]
     component = {node for node in data["initial_nodes"] if connected(data["edges"], data["root"], node)}
     assert sorted(set(data["initial_nodes"]) - component) == data["expected_remaining"]
+
+
+def test_expanded_goal_keeps_broader_ceilings_explicit_and_fail_closed():
+    _, provenance = load_cases()
+    expected = {
+        "arbitrary internal graph expressions",
+        "general local-function/DOR evaluation",
+        "compartment hierarchy/species-carrying moves",
+        "conditional deletion",
+        "independent full NFsim/BNG2 parity",
+    }
+    remaining = set(provenance["remaining_fallbacks"])
+    assert expected <= remaining
+    status = STATUS.read_text()
+    for ceiling in expected:
+        assert ceiling in status
+    assert "No NFsim, NFnext, Rasi, or uORP" in status
+    assert "parity claim" in status

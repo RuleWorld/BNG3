@@ -60,8 +60,8 @@ The post-fix validation set is also green:
 
 ```text
 cmake --build build --parallel 4
-ctest --test-dir build --output-on-failure       # 255/255 passed
-tests/energy/tests/python                         # 65 passed
+ctest --test-dir build --output-on-failure       # 264/264 passed
+tests/energy/tests/python                         # 66 passed
 full Python suite                                    # 340 passed, 27 skipped
 audit_architecture_contracts.py                   # passed; no failures
 ```
@@ -106,16 +106,23 @@ fields participate in rule-family signatures and state-feature dependencies.
 
 The port remains fail-closed for semantics not proven by these contracts:
 
-- arbitrary internal graph variables, symmetric components, and malformed
-  `connectedTo` references;
-- full NFsim local-function expression graphs, time-dependent functions,
-  observable scopes, and general DOR/DOR2 local-function evaluation;
-- compartment hierarchy, volume/region scaling, and moves that carry or
-  transform an entire connected species;
+- arbitrary internal graph expressions, including symmetric components and
+  malformed `connectedTo` references;
+- general local-function/DOR evaluation, including full expression graphs,
+  time-dependent functions, observable scopes, and DOR2 composition;
+- compartment hierarchy/species-carrying moves, including volume/region
+  scaling and moves that carry or transform an entire connected species;
 - conditional deletion modes and any deletion rule whose component ownership
   cannot be established;
 - native reader extraction of arbitrary local/DOR function parameters beyond
   the bounded snapshot descriptors.
+- independent full NFsim/BNG2 parity, including seeded trajectories,
+  propensity distributions, and failure classifications against independently
+  built oracle binaries.
+
+These five broader ceilings are intentional in this checkpoint. They are
+tracked as explicit fail-closed contracts so future work cannot silently
+replace the compatibility path with an approximation.
 
 These cases retain explicit fallback reasons. No NFsim, NFnext, Rasi, or uORP
 parity claim follows from this checkpoint.

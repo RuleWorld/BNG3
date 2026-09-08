@@ -802,6 +802,10 @@ bool TransformationSet::checkMolecularity( MappingSet ** mappingSets )
 
 bool TransformationSet::getListOfProducts(MappingSet **mappingSets, list <Molecule *> &products, int traversalLimit)
 {
+	// With one reactant, no initial products and no additions, the first
+	// traversal cannot be a duplicate and there is no later membership query.
+	const bool trackProductMembership = n_reactants > 1 || !products.empty() ||
+			!addMoleculeTransformations.empty();
 	std::unordered_set<Molecule*> product_set(products.begin(), products.end());
 	list <Molecule *>::iterator molIter;
 	for(unsigned int r=0; r<n_reactants; r++)
@@ -830,14 +834,14 @@ bool TransformationSet::getListOfProducts(MappingSet **mappingSets, list <Molecu
 			Molecule * molecule = mappingSets[r]->get(0)->getMolecule();
 
 			// is this molecule already on the product list?
-			if ( product_set.find( molecule ) == product_set.end() )
+			if ( !trackProductMembership || product_set.find( molecule ) == product_set.end() )
 			{	// Traverse neighbor and add molecules to list
 				bool was_empty = products.empty();
 				auto last = was_empty ? products.end() : std::prev(products.end());
 				molecule->traverseBondedNeighborhood(products, traversalLimit);
 				// Sync only newly appended molecules into the set
 				auto it = was_empty ? products.begin() : std::next(last);
-				for (; it != products.end(); ++it) {
+				for (; trackProductMembership && it != products.end(); ++it) {
 					product_set.insert(*it);
 				}
 				//molecule->traverseBondedNeighborhoodForUpdate(products,traversalLimit);

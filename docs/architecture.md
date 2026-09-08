@@ -1,5 +1,10 @@
 # Architecture
 
+The canonical semantic-model boundary and staged migration policy are defined
+in [ADR 0001](adr/0001-canonical-semantic-model-and-layer-boundaries.md).
+This page describes the current implementation layout; it does not imply
+that every planned semantic/backend seam is complete.
+
 ## Overview
 
 BioNetGen 3 is a monorepo combining three previously separate projects:
@@ -19,6 +24,7 @@ cpp/bindings/             ← pybind11 binding layer
     ├──► cpp/engine/      ← NetworkGenerator, OdeIntegrator, SSA
     ├──► cpp/io/          ← Writers (XML, SBML, .net, MATLAB, LaTeX, ...)
     ├──► cpp/actions/     ← ActionDispatch (execute model actions)
+    ├──► cpp/cli/         ← Isolated parallel batch orchestration
     └──► cpp/nfsim/       ← NFSim network-free engine
 ```
 
@@ -33,7 +39,7 @@ cpp/bindings/             ← pybind11 binding layer
                          NetworkGenerator::generateNative()
                                    │
                                    ▼
-                          GeneratedNetwork (SpeciesList + RxnList)
+                         GeneratedNetwork (SpeciesList + RxnList)
                                    │
                                    ▼
                          OdeIntegrator::integrate()  [CVODE / Euler / RK4 / SSA]
@@ -42,16 +48,63 @@ cpp/bindings/             ← pybind11 binding layer
                               OdeResult → numpy arrays (via pybind11)
 ```
 
+`ReactionRule` stores compiled semantic metadata only. `NetworkGenerator`
+creates one `ReactionRule::ExecutionState` per rule for matcher caches,
+iteration bookkeeping, synthesis guards, and bidirectional reverse state.
+Legacy no-state calls remain compatibility shims over a private context.
+
+The compile layer also resolves declarations into namespace-specific typed IDs
+through `SymbolTable`, builds a resolved expression tree with typed parameter,
+observable, function, lexical-local, and time references, and compiles
+rate-law and model-function references against that table. It retains typed
+rule modifiers plus parsed filter patterns alongside their source spelling.
+Unresolved expression names and malformed filters become structured errors.
+`featuresUsed(Model)` and the fail-closed `capabilitiesFor(Model, BackendKind)`
+preflight distinguish exact lowering, compatibility-only, and unsupported
+features before a backend allocates runtime state; direct NFsim rejects
+population maps instead of silently ignoring them.
+
+### Semantic compile stage
+
+```
+ast::Model → SymbolTable / diagnostics → CompiledModel
+                                      ├── CompiledRule
+                                      │    ├── typed rate-law references
+                                      │    └── typed modifiers
+                                      └── energy-factor metadata
+
+`compile::Document` now keeps this reusable compiled model separate from a
+copied `SimulationProtocol`. The AST remains the construction/compatibility
+surface; protocol actions do not become part of compiled model identity.
+```
+
+This is the migration seam toward a resolved semantic model. It is not yet a
+replacement for every legacy AST consumer; the compiled model now carries
+value-like `Pattern` records for rules, energy factors, observables, and seeds.
+Compiled model entities expose namespace-specific dense IDs, and semantic
+pattern equality ignores source-only bond numbering and formatting.
+
+`compile::Pattern` is the first concrete pattern seam. It is a
+value-like descriptor that can be built directly from a resolved
+`SpeciesGraph` (without reparsing source text) or from compact BNGL pattern
+text for compiler-side fixtures. It carries molecule, site, state, bond, label,
+and compartment constraints while keeping BNGcore graph ownership behind the
+adapter. `PatternDescriptor` remains a source-compatible alias during
+migration. Typed occurrence IDs are now part of the value contract, while
+`compile::lowerPatternToBNGcore` is an explicit graph lowering boundary with
+fingerprint parity coverage. `NFcore2::lowerPatternToNFsim` is the parallel
+NFsim boundary: it validates molecule, state, bond, compartment, and
+disconnected-pattern references before creating `TemplateMolecule` objects.
+The adapter exists independently of the still-gated full Model-to-NFsim parity
+migration.
+
 ### Network-Free Path
 
 ```
 .bngl file → ANTLR4 Parser → ast::Model
                                    │
                                    ▼
-                         XmlWriter::write() → XML string
-                                   │
-                                   ▼
-                         NFinput::initializeFromXML() → NFcore::System
+                         NFinput::buildSystemFromAst() → NFcore::System
                                    │
                                    ▼
                          System::sim() [Gillespie SSA on molecule instances]
@@ -68,7 +121,8 @@ cpp/bindings/             ← pybind11 binding layer
 | `bng_core` | PatternGraph, Node, State, Ullmann | nauty |
 | `bng_ast` | Model, Parameter, ReactionRule, Observable, ... | bng_core, ANTLR4 |
 | `bng_parser` | ANTLR4 lexer/parser, BNGAstVisitor | bng_ast, ANTLR4 |
-| `bng_engine` | NetworkGenerator, OdeIntegrator, I/O writers, Actions | bng_parser, SUNDIALS |
+| `bng_compile` | Symbol resolution, capability reports, pattern descriptors, compiled rules/rate laws, energy plans | bng_ast |
+| `bng_engine` | NetworkGenerator, OdeIntegrator, I/O writers, Actions, isolated batch CLI | bng_parser, SUNDIALS, Threads |
 | `nfsim_core` | NFcore, NFinput, NFreactions, NFfunction | TinyXML, muParser |
 | `bionetgen_core` | Interface library linking all above | All |
 
@@ -118,8 +172,10 @@ canonical AST:
    simulation
 5. Observable values are copied into NumPy arrays
 
-The in-memory XML initializer remains an explicit compatibility fallback and a
-shadow-comparison oracle while direct parity is qualified. The on-disk XML
+The explicit `NFcore2::lowerPatternToNFsim` adapter is the value-pattern seam
+for the direct path. The in-memory XML initializer remains an explicit
+compatibility fallback and a shadow-comparison oracle while direct parity is
+qualified. The on-disk XML
 initializer is a last-resort compatibility path for legacy models. Direct
 construction is fail-closed: unsupported AST constructs do not silently change
 semantics by falling back unless the caller opts into XML compatibility.

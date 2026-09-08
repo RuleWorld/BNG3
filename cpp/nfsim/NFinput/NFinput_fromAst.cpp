@@ -56,6 +56,10 @@
 #include "../NFfunction/NFfunction.hh"
 #include "../NFutil/NFutil.hh"
 #include "NFinput_energy.hh"
+#include "NFcore2/nfsim_pattern_lowering.hh"
+#include "compile/Pattern.hpp"
+#include "compile/CompiledRateLaw.hpp"
+#include "compile/Capabilities.hpp"
 
 #include "parser/antlr_compat.hpp"
 
@@ -2504,6 +2508,42 @@ bool buildTemplatePatterns(const BNGcore::PatternGraph& graph,
 
     if (runtimeAssignments != nullptr) runtimeAssignments->clear();
 
+    // Use the backend-independent value pattern for the ordinary direct path.
+    // Symmetry expansion and labeled mappings retain the established adapter
+    // below until their independent parity fixtures are complete.
+    if (!expandSymmetry && runtimeAssignments == nullptr &&
+        concreteSymmetricComponents == nullptr) {
+        const auto valuePattern = bng::compile::Pattern::fromPatternGraph(
+            graph, patternCompartment);
+        const bool hasLabels = std::any_of(
+            valuePattern.molecules().begin(), valuePattern.molecules().end(),
+            [](const auto& molecule) {
+                return std::any_of(
+                    molecule.sites.begin(), molecule.sites.end(),
+                    [](const auto& site) { return !site.label.empty(); });
+            });
+        const bool hasSymmetricComponents = std::any_of(
+            valuePattern.molecules().begin(), valuePattern.molecules().end(),
+            [&](const auto& molecule) {
+                auto* moleculeType = system->getMoleculeTypeByName(molecule.moleculeType);
+                return moleculeType != nullptr && std::any_of(
+                    molecule.sites.begin(), molecule.sites.end(),
+                    [&](const auto& site) {
+                        return moleculeType->isEquivalentComponent(site.componentName);
+                    });
+            });
+        if (!hasLabels && !hasSymmetricComponents) {
+            std::vector<TemplateMolecule*> lowered;
+            if (!NFcore2::lowerPatternToNFsim(
+                    valuePattern, *system, lowered, hasDisjointSets,
+                    suggestedTraversalLimit, diagnostic)) {
+                return false;
+            }
+            builds.push_back(std::move(lowered));
+            return true;
+        }
+    }
+
     std::vector<RuntimeNames> assignments;
     if (!makeRuntimeNameAssignments(molecules, system, expandSymmetry, assignments, diagnostic)) {
         return false;
@@ -3790,8 +3830,9 @@ bool addEnergyPatternsFromAst(const bng::ast::Model& model, System* system,
 }
 
 bool isArrheniusExpression(const bng::ast::Expression& expression) {
-    return expression.kind() == bng::ast::ExpressionKind::Function &&
-           lowerCase(expression.name()) == "arrhenius" && expression.args().size() == 2;
+    const auto rate = bng::compile::CompiledRateLaw::compile(expression);
+    return rate.kind == bng::compile::RateLawKind::ArrheniusEnergy &&
+           rate.arguments.size() == 2;
 }
 
 bool addDirectArrheniusBinding(const bng::ast::ReactionRule& rule, System* system,
@@ -4406,6 +4447,16 @@ bool addSpeciesFromAstWithOverrides(
                       << "' contains no molecule graph\n";
             return false;
         }
+        for (const auto& molecule : molecules) {
+            for (const auto& component : molecule.components) {
+                if (component.bonds.size() > 1) {
+                    std::cerr << "[nfsim/ast] seed species '" << seed.getPattern()
+                              << "' uses multiple explicit bonds on one component; "
+                                 "the direct NFsim backend rejects this shape\n";
+                    return false;
+                }
+            }
+        }
         // A declared Null()/Trash() is an ordinary molecule in BNGL.  Only
         // fixed discard seeds (the `$Null`/`$Trash` convention) or an
         // undeclared discard name are sentinels; preserving this distinction
@@ -4708,11 +4759,13 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 (rates.front().kind() == bng::ast::ExpressionKind::ObservableRef ||
                  rates.front().kind() == bng::ast::ExpressionKind::Function) &&
                 rates.front().args().size() == rateFunction->getArgs().size();
+            const auto compiledRate = rates.empty()
+                                          ? bng::compile::CompiledRateLaw{}
+                                          : bng::compile::CompiledRateLaw::compile(rates.front());
             const bool explicitFunctionProductRate =
                 !rates.empty() &&
-                rates.front().kind() == bng::ast::ExpressionKind::Function &&
-                lowerCase(rates.front().name()) == "functionproduct" &&
-                rates.front().args().size() == 2;
+                compiledRate.kind == bng::compile::RateLawKind::FunctionProduct &&
+                compiledRate.arguments.size() == 2;
             const bool rawFunctionProductShape =
                 !rates.empty() &&
                 rates.front().kind() == bng::ast::ExpressionKind::Binary &&
@@ -5446,15 +5499,13 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
         const auto& rate = rates.front();
         ReactionClass* reaction = nullptr;
         std::string rateParameterName;
+        const auto typedRate = bng::compile::CompiledRateLaw::compile(rate);
         const bool michaelisMenten =
-            rate.kind() == bng::ast::ExpressionKind::Function &&
-            (lowerCase(rate.name()) == "mm") && rate.args().size() == 2;
+            typedRate.kind == bng::compile::RateLawKind::MichaelisMenten &&
+            typedRate.arguments.size() == 2;
         const bool saturationRate =
-            rate.kind() == bng::ast::ExpressionKind::Function &&
-            lowerCase(rate.name()) == "sat";
-        const bool hillRate =
-            rate.kind() == bng::ast::ExpressionKind::Function &&
-            lowerCase(rate.name()) == "hill";
+            typedRate.kind == bng::compile::RateLawKind::Saturation;
+        const bool hillRate = typedRate.kind == bng::compile::RateLawKind::Hill;
         if ((michaelisMenten || saturationRate || hillRate) &&
             hasReactionModifier(rule, "totalrate")) {
             std::cerr << "[nfsim/ast] reaction '" << rule.getRuleName()
@@ -5766,6 +5817,15 @@ System* buildSystemFromAstWithSeedOverrides(
     if (std::getenv("BNG_NFSIM_FORCE_XML")) {
         if (verbose) std::cerr << "[nfsim/ast] BNG_NFSIM_FORCE_XML set -> XML path\n";
         return nullptr;  // caller falls back to initializeFromModel (in-memory XML)
+    }
+
+    const auto capability = bng::compile::capabilitiesFor(
+        model, bng::compile::BackendKind::NFsim);
+    if (!capability.isSupported()) {
+        for (const auto& diagnostic : capability.diagnostics()) {
+            std::cerr << "[nfsim/ast] capability error: " << diagnostic.message << "\n";
+        }
+        return nullptr;
     }
 
     const std::string& name = model.getModelName();

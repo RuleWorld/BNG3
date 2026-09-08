@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.14)
 project(BioNetGen LANGUAGES C CXX)
 
+find_package(Threads REQUIRED)
+
 if(MINGW OR CMAKE_COMPILER_IS_GNUCXX)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++" CACHE STRING "" FORCE)
     set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -static-libgcc -static-libstdc++" CACHE STRING "" FORCE)

@@ -915,6 +915,24 @@ struct ReactionRule::PatternCache {
     std::vector<PatternInfo> productInfo;
 };
 
+struct ReactionRule::ExecutionState::Impl {
+    const ReactionRule* owner = nullptr;
+    std::vector<std::vector<EmbeddingResult>> patternMatches;
+    bool matchesInitialized = false;
+    bool synthesisApplied = false;
+    std::size_t lastSpeciesListCapacity = 0;
+    std::vector<std::size_t> lastProcessedInIteration;
+    std::unique_ptr<ReactionRule> reverseRule;
+    std::unique_ptr<ExecutionState> reverseState;
+};
+
+ReactionRule::ExecutionState::ExecutionState()
+    : impl_(std::make_unique<Impl>()) {}
+
+ReactionRule::ExecutionState::~ExecutionState() = default;
+ReactionRule::ExecutionState::ExecutionState(ExecutionState&&) noexcept = default;
+ReactionRule::ExecutionState& ReactionRule::ExecutionState::operator=(ExecutionState&&) noexcept = default;
+
 ReactionRule::~ReactionRule() = default;
 ReactionRule::ReactionRule(ReactionRule&&) noexcept = default;
 ReactionRule& ReactionRule::operator=(ReactionRule&&) noexcept = default;
@@ -1022,7 +1040,44 @@ ReactionRule::getNewMoleculeBonds() const {
     return result;
 }
 
+ReactionRule::ExecutionState& ReactionRule::compatibilityState() const {
+    if (!compatibilityState_) {
+        compatibilityState_ = std::make_unique<ExecutionState>();
+    }
+    return *compatibilityState_;
+}
+
+std::unique_ptr<ReactionRule::ExecutionState> ReactionRule::createExecutionState() const {
+    return std::make_unique<ExecutionState>();
+}
+
+void ReactionRule::prepareExecutionState(ExecutionState& state) const {
+    if (!state.impl_) {
+        state.impl_ = std::make_unique<ExecutionState::Impl>();
+    }
+    if (state.impl_->owner != this) {
+        state.impl_->owner = this;
+        state.impl_->patternMatches.clear();
+        state.impl_->matchesInitialized = false;
+        state.impl_->lastSpeciesListCapacity = 0;
+        state.impl_->lastProcessedInIteration.clear();
+        state.impl_->synthesisApplied = false;
+        state.impl_->reverseRule.reset();
+        state.impl_->reverseState.reset();
+    }
+    if (state.impl_->patternMatches.size() != reactantPatterns_.size()) {
+        state.impl_->patternMatches.assign(reactantPatterns_.size(), {});
+        state.impl_->matchesInitialized = false;
+        state.impl_->lastSpeciesListCapacity = 0;
+        state.impl_->lastProcessedInIteration.clear();
+        state.impl_->synthesisApplied = false;
+    }
+}
+
 void ReactionRule::initialize() {
+    // Initialization replaces the compiled rule metadata; any legacy wrapper
+    // context is now stale and must not retain matches for the old definition.
+    compatibilityState_.reset();
     patternCache_ = std::make_unique<PatternCache>();
     patternCache_->reactantInfo = describePatterns(reactantPatterns_);
     patternCache_->productInfo = describePatterns(productPatterns_);
@@ -1033,8 +1088,6 @@ void ReactionRule::initialize() {
     productOnlyStateChanges_.clear();
     hasMoleculeTypeMismatch_ = false;
     reactionCenter_.assign(reactantPatterns_.size(), {});
-    patternMatches_.assign(reactantPatterns_.size(), {});
-    matchesInitialized_ = true;
     if (reactantPatterns_.empty()) {
         // Zero-order synthesis has no reactant-side graph to diff against, but
         // each product molecule still needs an explicit creation operation.
@@ -1375,18 +1428,29 @@ void ReactionRule::initialize() {
 std::vector<ReactionRule::EmbeddingResult> ReactionRule::findEmbeddings(
     std::size_t patternIndex,
     const SpeciesList& speciesList) const {
+    return findEmbeddings(patternIndex, speciesList, compatibilityState());
+}
+
+std::vector<ReactionRule::EmbeddingResult> ReactionRule::findEmbeddings(
+    std::size_t patternIndex,
+    const SpeciesList& speciesList,
+    ExecutionState& state) const {
+    prepareExecutionState(state);
     std::vector<std::size_t> allSpecies;
     for (std::size_t speciesIndex = 0; speciesIndex < speciesList.size(); ++speciesIndex) {
         allSpecies.push_back(speciesIndex);
     }
-    return findEmbeddingsForSpecies(patternIndex, speciesList, allSpecies);
+    return findEmbeddingsForSpecies(patternIndex, speciesList, allSpecies, state);
 }
 
 std::vector<ReactionRule::EmbeddingResult> ReactionRule::findEmbeddingsForSpecies(
     std::size_t patternIndex,
     const SpeciesList& speciesList,
     const std::vector<std::size_t>& candidateSpecies,
+    ExecutionState& state,
     const Model* model) const {
+    prepareExecutionState(state);
+    auto& execution = *state.impl_;
     std::vector<EmbeddingResult> results;
     const auto& pattern = reactantPatterns_.at(patternIndex).getGraph();
     const auto& reactantInfo = patternCache_->reactantInfo;
@@ -1395,8 +1459,8 @@ std::vector<ReactionRule::EmbeddingResult> ReactionRule::findEmbeddingsForSpecie
 
     // Build set of species already in cache to avoid re-searching them
     std::unordered_set<std::size_t> alreadySearchedSpecies;
-    if (patternIndex < patternMatches_.size()) {
-        for (const auto& existing : patternMatches_[patternIndex]) {
+    if (patternIndex < execution.patternMatches.size()) {
+        for (const auto& existing : execution.patternMatches[patternIndex]) {
             alreadySearchedSpecies.insert(existing.speciesIndex);
         }
     }
@@ -1580,18 +1644,24 @@ std::vector<ReactionRule::EmbeddingResult> ReactionRule::findEmbeddingsForSpecie
 }
 
 void ReactionRule::clearPatternMatchCache() const {
-    patternMatches_.assign(reactantPatterns_.size(), {});
-    matchesInitialized_ = false;
-    lastSpeciesListCapacity_ = 0;
+    clearPatternMatchCache(compatibilityState());
+}
+
+void ReactionRule::clearPatternMatchCache(ExecutionState& state) const {
+    prepareExecutionState(state);
+    auto& execution = *state.impl_;
+    execution.patternMatches.assign(reactantPatterns_.size(), {});
+    execution.matchesInitialized = false;
+    execution.lastSpeciesListCapacity = 0;
     // Clear iteration tracking only on full cache reset (between generate_network calls),
     // not on vector reallocation within a single generation.
-    lastProcessedInIteration_.clear();
+    execution.lastProcessedInIteration.clear();
     // Reset synthesis flag so zero-order rules fire again on re-generation
-    synthesisApplied_ = false;
+    execution.synthesisApplied = false;
     // Recursively clear the reverse rule's cache so that bidirectional rules
     // re-discover embeddings on the next generate_network call.
-    if (reverseRule_) {
-        reverseRule_->clearPatternMatchCache();
+    if (execution.reverseRule && execution.reverseState) {
+        execution.reverseRule->clearPatternMatchCache(*execution.reverseState);
     }
 }
 
@@ -1602,10 +1672,30 @@ std::size_t ReactionRule::expandRule(
     const std::function<bool(const SpeciesGraph&)>& productFilter,
     std::size_t speciesBoundary,
     const Model* model) const {
+    return expandRule(
+        speciesList,
+        rxnList,
+        currentIteration,
+        compatibilityState(),
+        productFilter,
+        speciesBoundary,
+        model);
+}
+
+std::size_t ReactionRule::expandRule(
+    SpeciesList& speciesList,
+    RxnList& rxnList,
+    std::size_t currentIteration,
+    ExecutionState& state,
+    const std::function<bool(const SpeciesGraph&)>& productFilter,
+    std::size_t speciesBoundary,
+    const Model* model) const {
+    prepareExecutionState(state);
+    auto& execution = *state.impl_;
 
     // --- Reverse rule delegation ---
     if (bidirectional_ && !rates_.empty()) {
-        if (!reverseRule_) {
+        if (!execution.reverseRule) {
             // Transform modifiers for reverse rule (Perl convention):
             // Forward's exclude_reactants → Reverse's exclude_products
             // Forward's include_reactants → Reverse's include_products
@@ -1625,7 +1715,7 @@ std::size_t ReactionRule::expandRule(
                 }
                 reverseModifiers.push_back(std::move(transformed));
             }
-            reverseRule_ = std::make_unique<ReactionRule>(
+            execution.reverseRule = std::make_unique<ReactionRule>(
                 std::string("_reverse__") + ruleName_,
                 label_.empty() ? std::string("_reverse") : std::string("_reverse__") + label_,
                 products_,
@@ -1635,16 +1725,24 @@ std::size_t ReactionRule::expandRule(
                 false,
                 productPatterns_,
                 reactantPatterns_);
-            reverseRule_->setHasScopePrefix(hasScopePrefix_);
+            execution.reverseRule->setHasScopePrefix(hasScopePrefix_);
+            execution.reverseState = execution.reverseRule->createExecutionState();
         }
-        reverseRule_->expandRule(speciesList, rxnList, currentIteration, productFilter, speciesBoundary, model);
+        execution.reverseRule->expandRule(
+            speciesList,
+            rxnList,
+            currentIteration,
+            *execution.reverseState,
+            productFilter,
+            speciesBoundary,
+            model);
     }
 
     if (reactantPatterns_.empty()) {
         // Synthesis rule (0th order): no reactants, just create products.
         // Fire once to add product species and the synthesis reaction.
-        if (!synthesisApplied_) {
-            synthesisApplied_ = true;
+        if (!execution.synthesisApplied) {
+            execution.synthesisApplied = true;
             // Build product species from product patterns
             std::vector<std::size_t> productIndices;
             std::vector<std::string> productLabels;
@@ -1689,18 +1787,18 @@ std::size_t ReactionRule::expandRule(
     }
 
     // --- Cache invalidation on vector reallocation ---
-    if (speciesList.capacity() != lastSpeciesListCapacity_) {
-        patternMatches_.assign(reactantPatterns_.size(), {});
-        matchesInitialized_ = false;
-        lastSpeciesListCapacity_ = speciesList.capacity();
-        // NOTE: Do NOT clear lastProcessedInIteration_ here.
+    if (speciesList.capacity() != execution.lastSpeciesListCapacity) {
+        execution.patternMatches.assign(reactantPatterns_.size(), {});
+        execution.matchesInitialized = false;
+        execution.lastSpeciesListCapacity = speciesList.capacity();
+        // NOTE: Do NOT clear lastProcessedInIteration here.
         // Pattern match cache uses pointers (invalidated by reallocation),
         // but iteration tracking uses species indices (still valid).
     }
 
-    if (!matchesInitialized_ || patternMatches_.size() != reactantPatterns_.size()) {
-        patternMatches_.assign(reactantPatterns_.size(), {});
-        matchesInitialized_ = false;
+    if (!execution.matchesInitialized || execution.patternMatches.size() != reactantPatterns_.size()) {
+        execution.patternMatches.assign(reactantPatterns_.size(), {});
+        execution.matchesInitialized = false;
     }
 
     // --- Collect new species (not processed by THIS RULE in current iteration) ---
@@ -1710,13 +1808,13 @@ std::size_t ReactionRule::expandRule(
     std::vector<std::size_t> newSpecies;
 
     // Ensure the vector is sized appropriately
-    if (lastProcessedInIteration_.size() < speciesBoundary) {
-        lastProcessedInIteration_.resize(speciesBoundary, static_cast<std::size_t>(-1));
+    if (execution.lastProcessedInIteration.size() < speciesBoundary) {
+        execution.lastProcessedInIteration.resize(speciesBoundary, static_cast<std::size_t>(-1));
     }
 
     for (std::size_t i = 0; i < std::min(speciesList.size(), speciesBoundary); ++i) {
-        const bool hasIter = (i < lastProcessedInIteration_.size() && lastProcessedInIteration_[i] != static_cast<std::size_t>(-1));
-        const std::size_t lastIter = hasIter ? lastProcessedInIteration_[i] : 0;
+        const bool hasIter = (i < execution.lastProcessedInIteration.size() && execution.lastProcessedInIteration[i] != static_cast<std::size_t>(-1));
+        const std::size_t lastIter = hasIter ? execution.lastProcessedInIteration[i] : 0;
 
         const bool notYetProcessed = !speciesList.get(i).rulesApplied();
         const bool notProcessedByThisRuleInCurrentIteration = (!hasIter || lastIter < currentIteration);
@@ -1749,13 +1847,13 @@ std::size_t ReactionRule::expandRule(
         std::cerr << "[DEBUG] Rule " << ruleName_ << " iter=" << currentIteration
                   << ": newSpecies={";
         for (auto idx : newSpecies) std::cerr << idx << ",";
-        std::cerr << "} trackedCapacity=" << lastProcessedInIteration_.size() << "\n";
+        std::cerr << "} trackedCapacity=" << execution.lastProcessedInIteration.size() << "\n";
     }
     if (newSpecies.empty()) {
         return 0;
     }
 
-    const bool cacheNeedsRebuild = !matchesInitialized_;
+    const bool cacheNeedsRebuild = !execution.matchesInitialized;
     const std::size_t nPatterns = reactantPatterns_.size();
     std::size_t created = 0;
 
@@ -1783,9 +1881,9 @@ std::size_t ReactionRule::expandRule(
             searchSet = newSpecies;
         }
 
-        auto newMatches = findEmbeddingsForSpecies(patternIndex, speciesList, searchSet, model);
+        auto newMatches = findEmbeddingsForSpecies(patternIndex, speciesList, searchSet, state, model);
 
-        firstNewPerPattern[patternIndex] = patternMatches_[patternIndex].size();
+        firstNewPerPattern[patternIndex] = execution.patternMatches[patternIndex].size();
 
         if (cacheNeedsRebuild && !newMatches.empty()) {
             // Partition: "old" species (processed by this rule in a previous iteration)
@@ -1793,25 +1891,25 @@ std::size_t ReactionRule::expandRule(
             // This ensures the enumeration's trigger/non-trigger split correctly
             // avoids re-enumerating already-counted combinations.
             std::stable_partition(newMatches.begin(), newMatches.end(),
-                [this](const EmbeddingResult& m) {
-                    return m.speciesIndex < lastProcessedInIteration_.size() &&
-                           lastProcessedInIteration_[m.speciesIndex] != static_cast<std::size_t>(-1);
+                [&execution](const EmbeddingResult& m) {
+                    return m.speciesIndex < execution.lastProcessedInIteration.size() &&
+                           execution.lastProcessedInIteration[m.speciesIndex] != static_cast<std::size_t>(-1);
                 });
 
             std::size_t oldCount = 0;
             for (const auto& m : newMatches) {
-                if (m.speciesIndex < lastProcessedInIteration_.size() &&
-                    lastProcessedInIteration_[m.speciesIndex] != static_cast<std::size_t>(-1)) {
+                if (m.speciesIndex < execution.lastProcessedInIteration.size() &&
+                    execution.lastProcessedInIteration[m.speciesIndex] != static_cast<std::size_t>(-1)) {
                     ++oldCount;
                 }
             }
-            firstNewPerPattern[patternIndex] = patternMatches_[patternIndex].size() + oldCount;
+            firstNewPerPattern[patternIndex] = execution.patternMatches[patternIndex].size() + oldCount;
         }
 
         if (!newMatches.empty()) {
             anyNewMatches = true;
-            patternMatches_[patternIndex].insert(
-                patternMatches_[patternIndex].end(),
+            execution.patternMatches[patternIndex].insert(
+                execution.patternMatches[patternIndex].end(),
                 std::make_move_iterator(newMatches.begin()),
                 std::make_move_iterator(newMatches.end()));
         }
@@ -1820,27 +1918,27 @@ std::size_t ReactionRule::expandRule(
     if (debug) {
         std::cerr << "[DEBUG] Rule " << ruleName_ << " after Phase 1: anyNewMatches=" << anyNewMatches << "\n";
         for (std::size_t i = 0; i < nPatterns; ++i) {
-            std::cerr << "[DEBUG]   pattern[" << i << "]: " << patternMatches_[i].size() << " total matches\n";
+            std::cerr << "[DEBUG]   pattern[" << i << "]: " << execution.patternMatches[i].size() << " total matches\n";
         }
     }
 
     if (!anyNewMatches) {
         if (debug) std::cerr << "[DEBUG] Rule " << ruleName_ << ": no new matches, returning 0\n";
-        matchesInitialized_ = true;
-        lastSpeciesListCapacity_ = speciesList.capacity();
+        execution.matchesInitialized = true;
+        execution.lastSpeciesListCapacity = speciesList.capacity();
         // Mark processed even if no matches
         for (std::size_t idx : newSpecies) {
-            if (idx >= lastProcessedInIteration_.size()) {
-                lastProcessedInIteration_.resize(idx + 1, static_cast<std::size_t>(-1));
+            if (idx >= execution.lastProcessedInIteration.size()) {
+                execution.lastProcessedInIteration.resize(idx + 1, static_cast<std::size_t>(-1));
             }
-            lastProcessedInIteration_[idx] = currentIteration;
+            execution.lastProcessedInIteration[idx] = currentIteration;
         }
         return 0;
     }
 
     // Check if all patterns have at least one match
     bool allNonEmpty = true;
-    for (const auto& matches : patternMatches_) {
+    for (const auto& matches : execution.patternMatches) {
         if (matches.empty()) {
             allNonEmpty = false;
             break;
@@ -1848,14 +1946,14 @@ std::size_t ReactionRule::expandRule(
     }
     if (!allNonEmpty) {
         if (debug) std::cerr << "[DEBUG] Rule " << ruleName_ << ": not all patterns have matches, returning 0\n";
-        matchesInitialized_ = true;
-        lastSpeciesListCapacity_ = speciesList.capacity();
+        execution.matchesInitialized = true;
+        execution.lastSpeciesListCapacity = speciesList.capacity();
         // Mark processed even if not all patterns match
         for (std::size_t idx : newSpecies) {
-            if (idx >= lastProcessedInIteration_.size()) {
-                lastProcessedInIteration_.resize(idx + 1, static_cast<std::size_t>(-1));
+            if (idx >= execution.lastProcessedInIteration.size()) {
+                execution.lastProcessedInIteration.resize(idx + 1, static_cast<std::size_t>(-1));
             }
-            lastProcessedInIteration_[idx] = currentIteration;
+            execution.lastProcessedInIteration[idx] = currentIteration;
         }
         return 0;
     }
@@ -1871,7 +1969,7 @@ std::size_t ReactionRule::expandRule(
     std::unordered_set<std::size_t> alreadyTriggered;
     for (std::size_t patternIndex = nPatterns; patternIndex-- > 0;) {
         const std::size_t firstNew = firstNewPerPattern[patternIndex];
-        if (firstNew >= patternMatches_[patternIndex].size()) {
+        if (firstNew >= execution.patternMatches[patternIndex].size()) {
             if (debug) std::cerr << "[DEBUG] Rule " << ruleName_ << ": pattern " << patternIndex << " has no new matches, skipping\n";
             continue;  // No new matches for this pattern
         }
@@ -1891,7 +1989,7 @@ std::size_t ReactionRule::expandRule(
             }
 
             std::size_t begin = 0;
-            std::size_t end = patternMatches_[idx].size();
+            std::size_t end = execution.patternMatches[idx].size();
 
             if (idx == patternIndex) {
                 // Trigger: new matches only
@@ -1902,7 +2000,7 @@ std::size_t ReactionRule::expandRule(
             }
 
             for (std::size_t i = begin; i < end; ++i) {
-                matchSet[idx] = patternMatches_[idx][i];
+                matchSet[idx] = execution.patternMatches[idx][i];
                 enumerate(idx + 1);
             }
         };
@@ -1912,15 +2010,15 @@ std::size_t ReactionRule::expandRule(
         alreadyTriggered.insert(patternIndex);
     }
 
-    matchesInitialized_ = true;
-    lastSpeciesListCapacity_ = speciesList.capacity();
+    execution.matchesInitialized = true;
+    execution.lastSpeciesListCapacity = speciesList.capacity();
 
     // Mark these species as processed by this rule in this iteration
     for (std::size_t idx : newSpecies) {
-        if (idx >= lastProcessedInIteration_.size()) {
-            lastProcessedInIteration_.resize(idx + 1, static_cast<std::size_t>(-1));
+        if (idx >= execution.lastProcessedInIteration.size()) {
+            execution.lastProcessedInIteration.resize(idx + 1, static_cast<std::size_t>(-1));
         }
-        lastProcessedInIteration_[idx] = currentIteration;
+        execution.lastProcessedInIteration[idx] = currentIteration;
     }
 
     return created;

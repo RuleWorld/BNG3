@@ -58,6 +58,11 @@ target_link_libraries(bng_parser PUBLIC antlr4_static bng_ast)
 
 # Execution-facing metadata; no NFsim runtime path is switched by this library.
 add_library(bng_compile STATIC
+    compile/Capabilities.cpp
+    compile/Document.cpp
+    compile/PatternDescriptor.cpp
+    compile/PatternLowering.cpp
+    compile/SymbolTable.cpp
     compile/energy/EnergyDeltaPlan.cpp
     compile/CompiledRateLaw.cpp
     compile/CompiledRule.cpp
@@ -96,6 +101,7 @@ add_library(bng_engine STATIC
     io/SscWriter.cpp
     actions/ActionDispatch.cpp
     console/Console.cpp
+    cli/BatchRunner.cpp
 )
 target_include_directories(bng_engine PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -109,6 +115,7 @@ target_include_directories(bng_engine PUBLIC
 target_link_libraries(bng_engine PUBLIC
     bng_parser
     bng_ast
+    bng_compile
     bng_core
     antlr4_static
     sundials_cvode_static
@@ -116,6 +123,7 @@ target_link_libraries(bng_engine PUBLIC
     sundials_sunlinsoldense_static
     sundials_sunlinsolspgmr_static
     sundials_sunmatrixdense_static
+    Threads::Threads
 )
 target_compile_definitions(bng_engine PUBLIC BNG_CPP_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 target_compile_definitions(bng_engine PUBLIC TIXML_USE_STL)
@@ -161,6 +169,7 @@ set(NFSIM_LIB_SOURCES
     ${NFSIM_UTIL_SRC}
     ${NFSIM_UTIL_MTRAND}
     ${NFSIM_NAUTY_C}
+    ${CMAKE_CURRENT_SOURCE_DIR}/nfsim/NFcore2/nfsim_pattern_lowering.cpp
 )
 
 # Remove NFsim.cpp (contains main())

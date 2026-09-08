@@ -63,6 +63,7 @@ TEST_CASE("native NFcore2 reader rejects unresolved internal graph topology") {
 
 TEST_CASE("native NFcore2 reader captures zero-reactant synthesis") {
     auto system = systemFor("birth: 0 -> B(a) 1");
+    REQUIRE(system->getReaction(0)->getTransformationSet()->getNumOfAddMoleculeTransforms() == 1);
     auto snapshot = NFcore2::snapshotLegacyNFsim(*system);
     REQUIRE(snapshot.rules.size() == 1);
     CHECK_FALSE(snapshot.rules[0].uses_connected_to);

@@ -15,6 +15,14 @@ add_test(
         -P ${CMAKE_CURRENT_SOURCE_DIR}/test_bng_cpp_action_errors.cmake
 )
 
+add_executable(test_batch_runner test_batch_runner.cpp)
+target_compile_definitions(test_batch_runner PRIVATE
+    BNG_CPP_PATH="$<TARGET_FILE:bng_cpp>"
+)
+target_link_libraries(test_batch_runner PRIVATE Catch2::Catch2WithMain Catch2::Catch2)
+add_dependencies(test_batch_runner bng_cpp)
+catch_discover_tests(test_batch_runner)
+
 # localfunc_test
 add_executable(localfunc_test localfunc_test.cpp)
 target_include_directories(localfunc_test PRIVATE

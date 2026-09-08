@@ -244,7 +244,14 @@
       "path": "tests/energy/tests/cpp/test_compiled_model_contracts.cpp",
       "status": "required",
       "target": "test_energy_compiler_contracts",
-      "declared_cases": 6,
+      "declared_cases": 10,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/test_pattern_descriptor_contracts.cpp",
+      "status": "required",
+      "target": "test_energy_compiler_contracts",
+      "declared_cases": 5,
       "empty_bodies": 0
     },
     {
@@ -440,7 +447,7 @@
       "path": "tests/architecture_contracts/nfcore2/test_model_image_shadow.cpp",
       "status": "reference",
       "target": "bng3_nfcore2_reference_tests",
-      "declared_cases": 44,
+      "declared_cases": 46,
       "empty_bodies": 0
     },
     {
@@ -455,6 +462,13 @@
       "status": "reference",
       "target": "bng3_nfcore2_reference_tests",
       "declared_cases": 25,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/architecture_contracts/nfcore2/test_nfsim_pattern_lowering.cpp",
+      "status": "reference",
+      "target": "bng3_nfcore2_reference_tests",
+      "declared_cases": 3,
       "empty_bodies": 0
     },
     {

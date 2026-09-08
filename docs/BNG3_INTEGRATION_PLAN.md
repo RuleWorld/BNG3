@@ -137,7 +137,7 @@ Local evidence at this checkpoint:
   MathML numeric/function handling, identifier-safe rate/observable mapping,
   fixed-seed preservation, expression-seed folding, assignment-rule
   observable aliases, non-finite parameter curation, repeated-site
-  statistical-factor handling, reaction-flux inlining, and non-finite
+  statistical-factor handling, reaction-flux inlining, non-finite
   compartment-size curation, and reversible net-rate splitting.
 - Current direct-vs-in-memory-XML NFsim shadow suite: 4/4 passed with the
   rebuilt native NFsim executable after the latest adapter slices.

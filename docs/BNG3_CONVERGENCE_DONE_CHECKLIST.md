@@ -2171,9 +2171,11 @@ completion gate.
   descriptors, and whole-species deletion. The independent literal oracle and
   fixture are recorded in `provenance/semantic-expansion-2026-09-08.json`;
   current native reference checks report NFcore2 `406/406` and NFnext `PASS`,
-  with ASan/UBSan clean on macOS. This closes only the bounded forms; general
-  internal graph, function/DOR expression, hierarchy, species-carrying move,
-  and conditional-deletion semantics remain fail-closed below.
+  with ASan/UBSan clean on macOS. This closes only the bounded forms; arbitrary
+  internal graph expressions, general local-function/DOR evaluation,
+  compartment hierarchy/species-carrying moves, conditional deletion, and
+  independent full NFsim/BNG2 parity remain intentional fail-closed ceilings
+  below.
 
 ### 5.2 Three-way evidence
 

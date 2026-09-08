@@ -10,6 +10,37 @@ static std::unique_ptr<ast::Model> parseModel(const std::string& bngl) {
     return parser::parseModel(bngl);
 }
 
+TEST_CASE("Rule expansion: execution caches are independent", "[ReactionRule]") {
+    auto model = parseModel(R"(
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin reaction rules
+    A() -> B() 1
+end reaction rules
+)"
+    );
+
+    const auto& rule = model->getReactionRules().front();
+    ast::SpeciesList species;
+    species.add(ast::Species(
+        ast::SpeciesGraph(model->getSeedSpecies().front().getGraph()), 1.0));
+
+    auto firstState = rule.createExecutionState();
+    auto secondState = rule.createExecutionState();
+    ast::RxnList firstReactions;
+    ast::RxnList secondReactions;
+    const auto first = rule.expandRule(species, firstReactions, 0, *firstState, {}, 1, model.get());
+    const auto independent = rule.expandRule(species, secondReactions, 0, *secondState, {}, 1, model.get());
+
+    REQUIRE(first == 1);
+    REQUIRE(independent == 1);
+}
+
 TEST_CASE("Rule expansion: pattern metadata survives reinitialization and move", "[ReactionRule]") {
     // Source-derived from akutuva21/bionetgen commit 7ee2db11: immutable
     // pattern metadata is rebuilt on initialize() and must survive moving a

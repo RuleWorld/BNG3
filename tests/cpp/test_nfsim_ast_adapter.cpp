@@ -836,6 +836,38 @@ TEST_CASE("NFsim AST adapter rejects population molecule types with components")
     CHECK_FALSE(NFinput::addMoleculeTypesFromAst(model, &system, allowedStates, false));
 }
 
+TEST_CASE("NFsim AST adapter rejects population maps before runtime construction") {
+    bng::ast::Model model;
+    model.addPopulationMap({"pm", "A()", "lumped", {}});
+    int traversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(
+        model, false, 100, false, traversalLimit, {});
+    CHECK(system == nullptr);
+    delete system;
+}
+
+TEST_CASE("NFsim AST adapter rejects a site with multiple explicit bonds") {
+    auto model = bng::parser::parseModel(R"BNG(
+begin molecule types
+ A(b)
+ B(a)
+ C(a)
+end molecule types
+begin seed species
+ A(b!1!2).B(a!1).C(a!2) 1
+end seed species
+begin reaction rules
+ keep: A(b!1!2).B(a!1).C(a!2) -> A(b!1!2).B(a!1).C(a!2) 1
+end reaction rules
+)BNG");
+    REQUIRE(model);
+    int traversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(
+        *model, false, 100, false, traversalLimit, {});
+    CHECK(system == nullptr);
+    delete system;
+}
+
 TEST_CASE("NFsim AST adapter maps parameter-backed global functions") {
     bng::ast::Model model;
     model.addParameter(bng::ast::Parameter("k", bng::ast::Expression::number(3.0)));

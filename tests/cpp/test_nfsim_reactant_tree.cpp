@@ -1,4 +1,5 @@
 #include <map>
+#include <list>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -9,6 +10,7 @@
 
 #include "NFcore.hh"
 #include "NFinput/NFinput_fromAst.hh"
+#include "NFreactions/mappings/mappingSet.hh"
 #include "NFreactions/reactantLists/reactantTree.hh"
 #include "NFreactions/transformations/transformationSet.hh"
 #include "parser/BNGAstVisitor.hpp"
@@ -236,6 +238,33 @@ TEST_CASE("NFsim ReactantTree preserves the compact one-leaf contract") {
     tree.removeMappingSet(firstId);
     CHECK(tree.size() == 0);
     CHECK(tree.getRateFactorSum() == 0.0);
+}
+
+TEST_CASE("NFsim product collection preserves single-reactant output membership") {
+    // Source-derived from NFsim commit 7d0f5bf: the common one-reactant,
+    // no-addition path may skip its duplicate-membership set, while the
+    // observable product list must remain unchanged.
+    NFcore::System system("single reactant products");
+    std::vector<std::string> componentNames {"site"};
+    auto* moleculeType = new NFcore::MoleculeType(
+        "SingleReactant", componentNames, &system);
+    auto* templateMolecule = new NFcore::TemplateMolecule(moleculeType);
+    NFcore::TransformationSet transformations({templateMolecule});
+    transformations.finalize();
+
+    auto* molecule = moleculeType->genDefaultMolecule();
+    REQUIRE(molecule != nullptr);
+    auto* mapping = transformations.generateBlankMappingSet(0, 0);
+    REQUIRE(mapping != nullptr);
+    REQUIRE(mapping->set(0, molecule));
+    NFcore::MappingSet* mappingSets[] = {mapping};
+
+    std::list<NFcore::Molecule*> products;
+    CHECK(transformations.getListOfProducts(mappingSets, products, 1));
+    REQUIRE(products.size() == 1);
+    CHECK(products.front() == molecule);
+
+    delete mapping;
 }
 
 TEST_CASE("NFsim ReactantTree preserves weights across repeated expansion") {

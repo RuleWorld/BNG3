@@ -481,3 +481,62 @@ TEST(ModelImage_RoundTripBondToReciprocalComponentCheck){
     EXPECT_TRUE(code[0].check_partner_component);
     EXPECT_EQ(code[0].value,0u);
 }
+
+TEST(ModelImage_RoundTripPopulationAndRateLawMetadata){
+    ExecutableModel e;
+    MoleculeTypeDescriptor population;
+    population.name="ATP";
+    population.state_words=0;
+    population.bond_slots=0;
+    population.population=true;
+    e.buildMetadata().addMoleculeType(population);
+    const FeatureId feature=e.buildMetadata().addFeature(
+        FeatureDescriptor(FEATURE_POPULATION,0,0));
+
+    MatcherProgram matcher;
+    MatchInstruction threshold(MATCH_POPULATION_AT_LEAST);
+    threshold.a=0;
+    threshold.value=2;
+    matcher.add(threshold);
+    matcher.add(MatchInstruction(MATCH_END));
+    const MatcherId matcherId=e.buildMatchers().add(matcher);
+
+    TransformProgram transform;
+    TransformInstruction add(TRANSFORM_POPULATION_ADD);
+    add.a=0;
+    add.value=3;
+    add.feature=feature;
+    transform.add(add);
+    transform.add(TransformInstruction(TRANSFORM_END));
+    const TransformProgramId transformId=e.buildTransforms().add(transform);
+
+    RuleFamilyDescriptor family;
+    family.name="population-rate";
+    family.matcher=matcherId;
+    family.transform=transformId;
+    RuleMember member;
+    member.rate=4.0;
+    member.rate_law.kind=LEGACY_RATE_LOCAL_LINEAR;
+    member.rate_law.target=1;
+    member.rate_law.component=2;
+    member.rate_law.offset=1.5;
+    member.rate_law.slope=0.25;
+    member.rate_law.weight=3.0;
+    family.members.push_back(member);
+    e.buildMetadata().addRuleFamily(family);
+    std::vector<std::vector<MatcherId> > dependencies(1);
+    dependencies[0].push_back(matcherId);
+    e.buildMetadata().setFeatureDependencies(dependencies);
+
+    const ExecutableModel roundtrip=readBytes(writeBytes(e));
+    EXPECT_EQ(roundtrip.metadata().moleculeTypes().size(),1u);
+    EXPECT_TRUE(roundtrip.metadata().moleculeTypes()[0].population);
+    EXPECT_EQ(roundtrip.metadata().ruleFamilies().size(),1u);
+    const RuleMember& restored=roundtrip.metadata().ruleFamilies()[0].members[0];
+    EXPECT_EQ(restored.rate_law.kind,LEGACY_RATE_LOCAL_LINEAR);
+    EXPECT_EQ(restored.rate_law.target,1u);
+    EXPECT_EQ(restored.rate_law.component,2u);
+    EXPECT_EQ(restored.rate_law.offset,1.5);
+    EXPECT_EQ(restored.rate_law.slope,0.25);
+    EXPECT_EQ(restored.rate_law.weight,3.0);
+}

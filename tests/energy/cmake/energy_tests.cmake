@@ -8,6 +8,7 @@ set(BNG_ENERGY_CURRENT_TEST_SOURCES
     test_energy_delta_plan_property.cpp
     test_compiled_rate_law_contracts.cpp
     test_compiled_model_contracts.cpp
+    test_pattern_descriptor_contracts.cpp
 )
 
 add_executable(test_energy_compiler_contracts ${BNG_ENERGY_CURRENT_TEST_SOURCES})

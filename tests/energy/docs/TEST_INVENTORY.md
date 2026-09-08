@@ -1,9 +1,9 @@
 # Test inventory
 
-- C++ contract files: **39**
-- C++ `TEST_CASE`s: **139**
-- Python test files: **10**
-- Python tests: **40**
+- C++ contract files: **42**
+- C++ `TEST_CASE`s: **156**
+- Python test files: **12**
+- Python tests: **51**
 - Energy fixtures/policies: **13**
 - Validation/oracle scripts: **9**
 
@@ -43,8 +43,9 @@
 - `tests/cpp/future_thermodynamic_constraints.cpp` — 9 cases
 - `tests/cpp/fuzz_energy_delta_plan.cpp` — 0 cases
 - `tests/cpp/standalone_energy_delta_plan_smoke.cpp` — 0 cases
-- `tests/cpp/test_compiled_model_contracts.cpp` — 6 cases
+- `tests/cpp/test_compiled_model_contracts.cpp` — 10 cases
 - `tests/cpp/test_compiled_rate_law_contracts.cpp` — 4 cases
+- `tests/cpp/test_pattern_descriptor_contracts.cpp` — 5 cases
 - `tests/cpp/test_energy_compiler_phase1.cpp` — 5 cases
 - `tests/cpp/test_energy_delta_plan_edge_cases.cpp` — 16 cases
 - `tests/cpp/test_energy_delta_plan_property.cpp` — 1 cases

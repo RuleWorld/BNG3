@@ -13,6 +13,7 @@ add_executable(bng3_nfcore2_reference_tests
     nfcore2/test_main.cpp
     nfcore2/test_model_image_shadow.cpp
     nfcore2/test_nfsim_adapter_contract.cpp
+    nfcore2/test_nfsim_pattern_lowering.cpp
     nfcore2/test_nfsim_system_reader.cpp
     nfcore2/test_nfsim_transform_decoder.cpp
     nfcore2/test_randomized_invariants.cpp
@@ -26,6 +27,7 @@ add_executable(bng3_nfcore2_reference_tests
     nfcore2/test_validation_dependency.cpp
 )
 target_link_libraries(bng3_nfcore2_reference_tests PRIVATE bng_nfcore2)
+target_include_directories(bng3_nfcore2_reference_tests PRIVATE ${exprtk_SOURCE_DIR})
 add_test(NAME architecture_nfcore2_reference COMMAND bng3_nfcore2_reference_tests)
 set_tests_properties(architecture_nfcore2_reference PROPERTIES
     LABELS "architecture-reference;nfcore2" TIMEOUT 180)

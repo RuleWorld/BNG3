@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -261,9 +262,14 @@ GeneratedNetwork NetworkGenerator::generateNative(std::size_t maxIter) {
         ast::setCompartmentParents(compParents);
     }
 
-    // Clear per-rule state from previous generate_network calls
-    for (auto& rule : model_.getReactionRules()) {
-        rule.clearPatternMatchCache();
+    // Keep expansion state with this generation, not with the semantic rule.
+    std::vector<std::unique_ptr<ast::ReactionRule::ExecutionState>> executionStates;
+    executionStates.reserve(model_.getReactionRules().size());
+    for (const auto& rule : model_.getReactionRules()) {
+        executionStates.push_back(rule.createExecutionState());
+    }
+    for (std::size_t ruleIndex = 0; ruleIndex < model_.getReactionRules().size(); ++ruleIndex) {
+        model_.getReactionRules()[ruleIndex].clearPatternMatchCache(*executionStates[ruleIndex]);
     }
 
     GeneratedNetwork network;
@@ -301,10 +307,11 @@ GeneratedNetwork NetworkGenerator::generateNative(std::size_t maxIter) {
         const std::size_t previousReactions = network.reactions.size();
         const std::size_t speciesAtIterStart = network.species.size();
 
-        for (const auto& rule : model_.getReactionRules()) {
+        for (std::size_t ruleIndex = 0; ruleIndex < model_.getReactionRules().size(); ++ruleIndex) {
+            const auto& rule = model_.getReactionRules()[ruleIndex];
             const std::size_t beforeSpecies = network.species.size();
             const std::size_t beforeReactions = network.reactions.size();
-            const auto created = rule.expandRule(network.species, network.reactions, iter, [&](const ast::SpeciesGraph& graph) {
+            const auto created = rule.expandRule(network.species, network.reactions, iter, *executionStates[ruleIndex], [&](const ast::SpeciesGraph& graph) {
                 if (!withinStoichLimits(graph, maxStoich)) return false;
                 if (maxAgg.has_value() && !withinAggLimit(graph, *maxAgg)) return false;
                 return true;
