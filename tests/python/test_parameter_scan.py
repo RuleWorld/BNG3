@@ -69,6 +69,27 @@ def test_parameter_scan_log_and_linear_spacing(tmp_path):
     assert np.allclose(lin_scan.parameter_values, np.linspace(0.0, 1.0, 5))
 
 
+def test_parameter_scan_forwards_advanced_simulation_controls(tmp_path):
+    model_path = tmp_path / "decay.bngl"
+    _write_decay_model(model_path)
+    model = bionetgen.load(str(model_path))
+
+    scan = model.parameter_scan(
+        parameter="k",
+        values=[0.1],
+        method="ode",
+        t_end=1.0,
+        n_steps=0,
+        sample_times=[0.0, 0.25, 1.0],
+        max_step=0.1,
+        stop_if="Xtot < 0",
+        sparse=False,
+        check_product_scale=1000.0,
+    )
+
+    assert scan.results[0].time.tolist() == [0.0, 0.25, 1.0]
+
+
 def test_parameter_scan_2d_shape_and_standalone(tmp_path):
     model_path = tmp_path / "decay.bngl"
     _write_decay_model(model_path)

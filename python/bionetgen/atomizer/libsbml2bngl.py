@@ -31,7 +31,6 @@ from bionetgen.atomizer.sbml2bngl import SBML2BNGL
 
 # from biogrid import loadBioGridDict as loadBioGrid
 import logging
-from bionetgen.atomizer.rulifier import postAnalysis
 import pprint
 import fnmatch
 from collections import defaultdict
@@ -57,6 +56,26 @@ AnalysisResults = namedtuple(
         "model",
     ],
 )
+
+
+def _read_sbml_document(path):
+    """Read an SBML path through libSBML's global string API.
+
+    The Linux ``python-libsbml`` wheels can segfault in the SWIG
+    ``readSBMLFromFile`` wrapper on otherwise valid files.  Reading the same
+    bytes in Python and using the global string entry point avoids both the
+    file-wrapper path and a second SWIG method wrapper that is unstable in
+    some Linux wheels.
+    """
+
+    with open(path, "rb") as handle:
+        payload = handle.read()
+
+    encoding = "utf-8-sig"
+    declaration = re.search(rb"encoding\s*=\s*['\"]([^'\"]+)['\"]", payload[:256])
+    if declaration is not None:
+        encoding = declaration.group(1).decode("ascii")
+    return libsbml.readSBMLFromString(payload.decode(encoding))
 
 
 def loadBioGrid():
@@ -410,8 +429,7 @@ def extractCompartmentStatistics(
     Iterate over the translated species and check which compartments
     are used together, and how.
     """
-    reader = libsbml.SBMLReader()
-    document = reader.readSBMLFromFile(bioNumber)
+    document = _read_sbml_document(bioNumber)
 
     parser = SBML2BNGL(document.getModel(), useID)
     database = structures.Databases()
@@ -592,6 +610,11 @@ def reorderFunctions(functions):
 
 
 def postAnalysisHelper(outputFile, bngLocation, database):
+    # Import only for the optional context-analysis path.  The normal SBML
+    # translation path does not need readBNGXML/lxml, and keeping this import
+    # lazy avoids loading a second native XML stack before libSBML is used.
+    from bionetgen.atomizer.rulifier import postAnalysis
+
     consoleCommands.setBngExecutable(bngLocation)
     outputDir = os.sep.join(outputFile.split(os.sep)[:-1])
     if outputDir != "":
@@ -625,6 +648,8 @@ def postAnalyzeFile(
     """
     Performs a postcreation file analysis based on context information
     """
+    from bionetgen.atomizer.rulifier import postAnalysis
+
     # print('Transforming generated BNG file to BNG-XML representation for analysis')
     postAnalysisHelper(outputFile, bngLocation, database)
 

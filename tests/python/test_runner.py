@@ -4,8 +4,9 @@ from unittest.mock import patch, MagicMock, ANY
 from bionetgen.modelapi.runner import run
 
 
+@patch("bionetgen.modelapi.runner._load_cpp_backend", return_value=None)
 @patch("bionetgen.modelapi.runner.BNGCLI")
-def test_runner_with_out(mock_bngcli):
+def test_runner_with_out(mock_bngcli, mock_cpp_backend):
     mock_cli_instance = MagicMock()
     mock_bngcli.return_value = mock_cli_instance
     mock_cli_instance.result = "mock_result"
@@ -20,9 +21,10 @@ def test_runner_with_out(mock_bngcli):
     assert result == "mock_result"
 
 
+@patch("bionetgen.modelapi.runner._load_cpp_backend", return_value=None)
 @patch("bionetgen.modelapi.runner.BNGCLI")
 @patch("bionetgen.modelapi.runner.TemporaryDirectory")
-def test_runner_without_out(mock_tempdir, mock_bngcli):
+def test_runner_without_out(mock_tempdir, mock_bngcli, mock_cpp_backend):
     mock_cli_instance = MagicMock()
     mock_bngcli.return_value = mock_cli_instance
     mock_cli_instance.result = "mock_result"
@@ -42,8 +44,9 @@ def test_runner_without_out(mock_tempdir, mock_bngcli):
     assert result == "mock_result"
 
 
+@patch("bionetgen.modelapi.runner._load_cpp_backend", return_value=None)
 @patch("bionetgen.modelapi.runner.BNGCLI")
-def test_runner_exception(mock_bngcli):
+def test_runner_exception(mock_bngcli, mock_cpp_backend):
     mock_cli_instance = MagicMock()
     mock_bngcli.return_value = mock_cli_instance
     mock_cli_instance.run.side_effect = Exception("Test Exception")
@@ -57,3 +60,15 @@ def test_runner_exception(mock_bngcli):
         run(inp, out=out)
 
     assert os.getcwd() == cur_dir
+
+
+def test_runner_does_not_fallback_after_cpp_failure():
+    cpp = MagicMock()
+    cpp.parse_file.side_effect = RuntimeError("backend parse failure")
+
+    with patch("bionetgen.modelapi.runner._load_cpp_backend", return_value=cpp):
+        with patch("bionetgen.modelapi.runner.BNGCLI") as mock_bngcli:
+            with pytest.raises(RuntimeError, match="backend parse failure"):
+                run("test.bngl", out="test_out")
+
+    mock_bngcli.assert_not_called()

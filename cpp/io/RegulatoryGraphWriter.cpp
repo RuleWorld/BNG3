@@ -5,6 +5,7 @@
 #include <map>
 #include <sstream>
 
+#include "parser/antlr_compat.hpp"
 #include <antlr4-runtime.h>
 #include "generated/BNGLexer.h"
 #include "generated/BNGParser.h"

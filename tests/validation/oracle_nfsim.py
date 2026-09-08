@@ -8,31 +8,33 @@ NFsim consumes BNG-XML, not BNGL. We obtain the XML from the engine under test
 (model.write_xml) so both sides start from the same model, then run NFsim on it.
 
 Configuration (env):
-  NFSIM_BIN   path to the native NFsim executable (default: <repo>/build/NFsim)
+  NFSIM_BIN   path to an independently built native NFsim executable
+              (required; BNG3 build outputs are never selected implicitly)
 """
 
 from __future__ import annotations
 
+import concurrent.futures
 import os
 import subprocess
 from pathlib import Path
 
 from . import corpus
 
-REPO = corpus.REPO
-
 
 def _nfsim_bin() -> Path | None:
     configured = os.environ.get("NFSIM_BIN")
-    candidates = ((Path(configured),) if configured else ()) + (
-        REPO / "build" / "NFsim",
-        REPO / "build" / "NFsim.exe",
-        REPO / "build" / "cpp" / "NFsim",
-    )
-    for cand in candidates:
-        if cand.exists():
-            return cand
-    return None
+    if not configured:
+        # BNG3's optional NFsim target is built from the embedded convergence
+        # sources and is not an independent oracle.  Require callers to name
+        # a binary built from the pinned pre-convergence NFsim source.
+        return None
+
+    # An explicit oracle path is an assertion about the binary to use.  Never
+    # silently replace a missing native oracle with BNG3's own CLI; that would
+    # turn an independent parity check into a self-comparison.
+    path = Path(configured).expanduser()
+    return path.resolve() if path.exists() else None
 
 
 def nfsim_available() -> bool:
@@ -91,6 +93,29 @@ def run_nfsim(
     return (gdat, proc.stderr) if gdat.exists() else (None, "no .gdat produced")
 
 
+def _resolve_ensemble_workers(requested: int | None, n_runs: int) -> int:
+    """Resolve bounded native-oracle concurrency from the shared env knob."""
+    if n_runs < 0:
+        raise ValueError("n_runs must be non-negative")
+    if requested is None:
+        raw = os.environ.get("BNG_ENSEMBLE_WORKERS")
+        requested = int(raw) if raw else 4
+    if requested < 1:
+        raise ValueError("ensemble workers must be at least one")
+    return min(requested, n_runs) if n_runs else 1
+
+
+def _run_nfsim_ensemble_item(payload):
+    xml_path, work_dir, t_end, n_steps, seed = payload
+    return run_nfsim(
+        xml_path,
+        work_dir,
+        t_end=t_end,
+        n_steps=n_steps,
+        seed=seed,
+    )
+
+
 def ensemble(
     model_name: str,
     work_dir: Path,
@@ -99,18 +124,29 @@ def ensemble(
     base_seed: int = 1,
     t_end: float = 100.0,
     n_steps: int = 100,
+    workers: int | None = None,
 ):
-    """Native-NFsim ensemble for the model, in compare.compare_stochastic shape."""
+    """Native-NFsim ensemble in compare.compare_stochastic shape."""
     from .compare import parse_gdat
 
     xml = write_model_xml(model_name, work_dir / f"{Path(model_name).stem}.xml")
     if xml is None:
         return []
+    worker_count = _resolve_ensemble_workers(workers, n_runs)
+    payloads = [
+        (xml, work_dir / f"run{i}", t_end, n_steps, base_seed + i)
+        for i in range(n_runs)
+    ]
+    if worker_count == 1:
+        results = [_run_nfsim_ensemble_item(payload) for payload in payloads]
+    else:
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=worker_count
+        ) as pool:
+            results = list(pool.map(_run_nfsim_ensemble_item, payloads))
+
     runs = []
-    for i in range(n_runs):
-        gdat, _ = run_nfsim(
-            xml, work_dir / f"run{i}", t_end=t_end, n_steps=n_steps, seed=base_seed + i
-        )
+    for gdat, _ in results:
         if gdat is None:
             continue
         data, cols = parse_gdat(gdat)

@@ -7,8 +7,10 @@ on:
     branches: [main]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Keep hosted evidence attached to the exact PR head being evaluated. A
+  # checklist/documentation push must not cancel the preceding semantic run.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: false
 
 env:
   CMAKE_BUILD_TYPE: Release
@@ -31,7 +33,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install linters and policy dependencies
-        run: pip install black ruff pytest
+        run: pip install black ruff pytest numpy
 
       - name: Check Python formatting (Black)
         run: black --check --diff --target-version py312 python/ tests/python/ scripts/
@@ -63,6 +65,9 @@ jobs:
 
       - name: Enforce validation exception budget
         run: python -m tests.validation.exception_ledger --max-exceptions 1
+
+      - name: Run CI contract tests
+        run: python -m pytest tests/test_ci_contract.py -q
 
   # ═══════════════════════════════════════════════════════════════════════════
   # C++ Build & Test (BNG engine with embedded NFsim library)
@@ -188,7 +193,7 @@ jobs:
   # ═══════════════════════════════════════════════════════════════════════════
 
   validation:
-    name: Validation (${{ matrix.os }})
+    name: Validation (supported reference subset, ${{ matrix.os }})
     needs: cpp-build
     runs-on: ${{ matrix.os }}
     strategy:
@@ -222,12 +227,13 @@ jobs:
         if: "!startsWith(matrix.os, 'windows')"
         run: chmod +x build/cpp/bng_cpp*
 
-      - name: Run validation against reference .net files
+      - name: Run supported validation against reference .net files
         shell: bash
         run: |
           BNG=build/cpp/bng_cpp${{ startsWith(matrix.os, 'windows') && '.exe' || '' }}
-          SKIP="--skip michment_cont,test_sbml_flat,test_sbml_structured,Repressilator,SHP2_base_model"
-          python scripts/validate.py --bng-cpp "$BNG" $SKIP --verbose
+          python scripts/validate.py --bng-cpp "$BNG" --strict-references \
+            --skip-file tests/validation/reference_exclusions.json \
+            --skip-profile pull_request --verbose
 
   # ═══════════════════════════════════════════════════════════════════════════
   # BNGL corpus parse inventory (not an NFsim simulation check)
@@ -297,7 +303,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-22.04, macos-14, windows-2022]
-        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
 
     steps:
       - uses: actions/checkout@v4
@@ -319,7 +325,7 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Install Python build dependencies
-        run: pip install scikit-build-core pybind11 numpy pytest pytest-cov cement colorlog pyparsing pylru pandas matplotlib python-libsbml pyyaml lxml networkx sympy seaborn xmltodict
+        run: pip install scikit-build-core pybind11 numpy click pytest pytest-cov cement colorlog pyparsing pylru pandas matplotlib python-libsbml pyyaml lxml networkx sympy seaborn xmltodict
 
       - name: Build and install package (Windows)
         if: startsWith(matrix.os, 'windows')
@@ -336,10 +342,26 @@ jobs:
         env:
           CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=OFF"
 
+      - name: Seed isolated Matplotlib font cache (Unix)
+        if: matrix.os == 'ubuntu-22.04' && (matrix.python-version == '3.9' || matrix.python-version == '3.10')
+        run: python scripts/prepare_matplotlib_cache.py
+        env:
+          MPLBACKEND: Agg
+          MPLCONFIGDIR: ${{ runner.temp }}/matplotlib
+
       - name: Run Python tests
-        run: pytest tests/python/ -v --tb=short --cov=bionetgen --cov-report=xml
+        run: pytest tests/python/test_sbml_import.py -v --tb=short
         env:
           SYMPY_USE_GMPY: "0"
+          MPLBACKEND: Agg
+          MPLCONFIGDIR: ${{ runner.temp }}/matplotlib
+
+      - name: Run Python tests
+        run: pytest tests/python/ -v --tb=short --cov=bionetgen --cov-report=xml --ignore=tests/python/test_sbml_import.py
+        env:
+          SYMPY_USE_GMPY: "0"
+          MPLBACKEND: Agg
+          MPLCONFIGDIR: ${{ runner.temp }}/matplotlib
 
       - name: Upload coverage
         if: matrix.os == 'ubuntu-22.04' && matrix.python-version == '3.12'
@@ -407,6 +429,50 @@ jobs:
           SYMPY_USE_GMPY: "0"
 
   # ═══════════════════════════════════════════════════════════════════════════
+  # Source Distribution Installation Smoke Test
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  package-smoke:
+    name: Package Smoke (sdist)
+    needs: [python-test]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install packaging and native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
+          python -m pip install build
+
+      - name: Build source distribution
+        run: python -m build --sdist
+
+      - name: Install source distribution in clean environment
+        shell: bash
+        run: |
+          set -eu
+          python -m venv "$RUNNER_TEMP/bng3-package-smoke"
+          "$RUNNER_TEMP/bng3-package-smoke/bin/python" -m pip install --upgrade pip
+          "$RUNNER_TEMP/bng3-package-smoke/bin/python" -m pip install numpy click
+          "$RUNNER_TEMP/bng3-package-smoke/bin/python" -m pip install --no-deps dist/*.tar.gz
+        env:
+          CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=OFF"
+
+      - name: Smoke installed package
+        shell: bash
+        run: |
+          set -eu
+          "$RUNNER_TEMP/bng3-package-smoke/bin/python" -c \
+            "import bionetgen; import bionetgen._bionetgen_cpp"
+          "$RUNNER_TEMP/bng3-package-smoke/bin/bionetgen" --version
+          "$RUNNER_TEMP/bng3-package-smoke/bin/bionetgen" --help
+
+  # ═══════════════════════════════════════════════════════════════════════════
   # Wheel Building (binary distribution)
   # ═══════════════════════════════════════════════════════════════════════════
 
@@ -437,10 +503,10 @@ jobs:
       - name: Build wheels
         run: cibuildwheel --output-dir wheelhouse
         env:
-          CIBW_BUILD: "cp39-* cp310-* cp311-* cp312-* cp313-*"
+          CIBW_BUILD: "cp39-* cp310-* cp311-* cp312-* cp313-* cp314-*"
           CIBW_SKIP: "*-musllinux_* *-manylinux_i686 *-win32"
           CIBW_BUILD_VERBOSITY: 1
-          CIBW_TEST_REQUIRES: pytest numpy
+          CIBW_TEST_REQUIRES: pytest numpy click
           CIBW_TEST_COMMAND: pytest {project}/tests/python/test_cpp_backend.py -v --tb=short
           CIBW_ENVIRONMENT: CMAKE_ARGS="-DBUILD_TESTS=OFF -DBUILD_CLI=OFF"
           # macOS: build universal2 wheels

@@ -26,3 +26,9 @@ def test_builder_to_bngl_and_simulation():
     model = builder.build()
     result = model.simulate(method="ode", t_end=50, n_steps=100)
     assert result.observables["AB"][-1] > result.observables["AB"][0]
+
+
+def test_builder_preserves_model_name():
+    model = ModelBuilder("NamedModel").build()
+
+    assert model.name == "NamedModel"

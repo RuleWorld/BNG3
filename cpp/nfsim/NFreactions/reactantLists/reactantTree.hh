@@ -95,7 +95,7 @@ namespace NFcore
 				When a local function value changes, it must update the value in the reactant tree.  This
 				method allows you to update values without changing the mappingSet membership of this tree.
 			 */
-			void updateValue(unsigned int mappingSetId, double newRateFactor);
+			bool updateValue(unsigned int mappingSetId, double newRateFactor);
 
 			/*!
 				Returns a MappingSet so that a DOR can evaluate a local function on it.
@@ -104,6 +104,10 @@ namespace NFcore
 			MappingSet * getMappingSetByIndex(unsigned int index) const {
 				return index < static_cast<unsigned int>(n_mappingSets) ? mappingSets[index] : 0;
 			}
+			void noteMappedComplexSize(int complexSize) {
+				if (complexSize > 1) anyMultiMoleculeComplex = true;
+			}
+			bool mayShareComplexes() const { return anyMultiMoleculeComplex; }
 
 
 
@@ -120,7 +124,10 @@ namespace NFcore
 				Returns the combined rate factor sum of this tree, which is needed by
 				the DOR reactionclass in order to properly update its propensity
 			*/
-			double getRateFactorSum() const { return leftRateFactorSum[0]; };
+			double getRateFactorSum() const {
+				return singleMappingFastPath
+					? singleMappingRateFactor : leftRateFactorSum[0];
+			};
 
 			double getRateFactor(int mappingSetArrayIndex) const;
 
@@ -154,6 +161,7 @@ namespace NFcore
 			unsigned int navigateAndInsertTree(unsigned int firstTreeIndex, int* lElementCount, int* rElementCount, double* lRateFactorSum, double rateFactor);
 
 
+			bool anyMultiMoleculeComplex;
 			TransformationSet *ts;       //Keeps track of the set of transformations
 			unsigned int reactantIndex;  //the index of the tree
 
@@ -197,6 +205,17 @@ namespace NFcore
 
 			//The index of the first molecule in the tree
 			unsigned int firstMappingTreeIndex;
+
+			/* Compact EnergyPattern reactions commonly have one weighted mapping.
+			 * Keep that rate in a scalar so selection and updates avoid walking the
+			 * otherwise-required binary tree.  A second mapping materializes the
+			 * ordinary tree representation. */
+			bool singleMappingFastPath;
+			unsigned int singleMappingId;
+			double singleMappingRateFactor;
+
+			void materializeSingleMappingTree();
+			void refreshSingleMappingFastPath();
 	};
 }
 

@@ -18,6 +18,7 @@ ReactantTree::ReactantTree(
 		TransformationSet *ts,
 		unsigned int init_capacity)
 {
+	this->anyMultiMoleculeComplex = false;
 	//cout<<"Creating reactant tree... "<<endl;
 	//cout<<"  Initial Capacity: "<< init_capacity <<" molecules, ";
 
@@ -25,9 +26,15 @@ ReactantTree::ReactantTree(
 	this->reactantIndex=reactantIndex;
 	this->ts=ts;
 
-	//set the initial size of the tree
-	if(init_capacity<4) maxElementCount=4;
-	else maxElementCount = init_capacity;
+	//set the initial size of the tree.  Compact EnergyPattern reactions have a
+	//single weighted mapping in the common case; let them start with one leaf
+	//and expand on demand.  Preserve the historical minimum for other callers.
+	if (init_capacity == 1)
+		maxElementCount = 1;
+	else if(init_capacity<4)
+		maxElementCount = 4;
+	else
+		maxElementCount = init_capacity;
 
 	//Get the depth of the tree, (can cast here because depth will always be a small integer)
 	this->treeDepth = (unsigned int)ceil((double)log((double)maxElementCount)/(double)log((double)2)) ;
@@ -77,6 +84,9 @@ ReactantTree::ReactantTree(
 
 
 	this->n_mappingSets = 0;
+	this->singleMappingFastPath = false;
+	this->singleMappingId = 0;
+	this->singleMappingRateFactor = 0.0;
 
 	//cout<<"so setting a limit of " << this->maxElementCount <<" molecules. "<<endl;
 	//cout<<"  The depth of the tree will be "<< treeDepth << " and contain ";
@@ -216,6 +226,11 @@ void ReactantTree::expandTree(int newCapacity)
 
 MappingSet * ReactantTree::pushNextAvailableMappingSet()
 {
+	if (singleMappingFastPath) {
+		materializeSingleMappingTree();
+		singleMappingFastPath = false;
+	}
+
 	//Check that we didn't go over the max - if we did we have to expand our tree...
 	if(n_mappingSets >= maxElementCount) {
 		//cout<<"-------------\nIn ReactantTree!!!  Adding more than I can take, so I'm expanding! "<<endl;
@@ -229,6 +244,10 @@ MappingSet * ReactantTree::pushNextAvailableMappingSet()
 
 void ReactantTree::confirmPush(int mappingSetId, double rateFactor)
 {
+	if (singleMappingFastPath) {
+		materializeSingleMappingTree();
+		singleMappingFastPath = false;
+	}
 
 	//Here we have to check that we didn't already put this guy into the tree
 	//somewhere.  A mappingset can get into a tree, if something is pushed, then
@@ -269,6 +288,10 @@ void ReactantTree::popLastMappingSet() {
 		cerr<<"Trying to pop an empty ReactantTree!!"<<endl;
 		exit(1);
 	}
+	if (singleMappingFastPath) {
+		materializeSingleMappingTree();
+		singleMappingFastPath = false;
+	}
 
 	//We check here if the mappingSet that we tried to push was in fact confirmed (by seeing
 	//if it had a place in the tree).  If it did have a place in the tree, the MappingSet can
@@ -288,6 +311,7 @@ void ReactantTree::popLastMappingSet() {
 	if(clone!=MappingSet::NO_CLONE) {
 		this->removeMappingSet(clone);
 	}
+	refreshSingleMappingFastPath();
 }
 
 
@@ -336,6 +360,10 @@ void ReactantTree::removeMappingSet(unsigned int mappingSetId)
 	if(n_mappingSets==0) {
 		cerr<<"Trying to remove from an empty ReactantTree!!"<<endl;
 		exit(1);
+	}
+	if (singleMappingFastPath) {
+		materializeSingleMappingTree();
+		singleMappingFastPath = false;
 	}
 
 	//first get the position of this mappingSet in the tree
@@ -395,6 +423,7 @@ void ReactantTree::removeMappingSet(unsigned int mappingSetId)
 	if(clone!=MappingSet::NO_CLONE) {
 		this->removeMappingSet(clone);
 	}
+	refreshSingleMappingFastPath();
 }
 
 
@@ -409,6 +438,11 @@ void ReactantTree::pickReactantFromValue(MappingSet *&ms, double value, double b
 		cerr<<" with a value greater than the size the total sum"<<endl;
 		cerr<<" value: " << value;
 		cerr<<" rateFactorSum: " << leftRateFactorSum[0] << " and total " << (leftRateFactorSum[0]*baseRate) << endl;
+	}
+
+	if (singleMappingFastPath) {
+		ms = mappingSets[msPositionMap[singleMappingId]];
+		return;
 	}
 
 	//Start from the top of the tree, and based on the given value, determine
@@ -459,8 +493,21 @@ void ReactantTree::pickReactantFromValue(MappingSet *&ms, double value, double b
 
 
 
-void ReactantTree::updateValue(unsigned int mappingSetId, double newRateFactor)
+bool ReactantTree::updateValue(unsigned int mappingSetId, double newRateFactor)
 {
+	if (singleMappingFastPath && mappingSetId == singleMappingId) {
+		if (singleMappingRateFactor == newRateFactor) return false;
+		singleMappingRateFactor = newRateFactor;
+
+		// Keep the leaf and total current so a later insertion can materialize
+		// the full tree without losing this update.
+		unsigned int treeIndex = msTreePositionMap[mappingSetId];
+		unsigned int cn = treeIndex + this->maxElementCount;
+		leftRateFactorSum[cn] = newRateFactor;
+		leftRateFactorSum[0] = newRateFactor;
+		return true;
+	}
+
 	//Here we start from the bottom, removing the old value and adding the new value
 	//Go to that position in the tree, and work up and out
 
@@ -481,7 +528,7 @@ void ReactantTree::updateValue(unsigned int mappingSetId, double newRateFactor)
 	double oldRateFactor = leftRateFactorSum[cn];
 
 	//Make sure there is something to change!  If not, just get out of here!
-	if(oldRateFactor==newRateFactor) return;
+	if(oldRateFactor==newRateFactor) return false;
 	//cout<<"Updating value from: "<<oldRateFactor<<" to "<< newRateFactor<<endl;
 
 	leftRateFactorSum[cn] = newRateFactor;
@@ -510,12 +557,53 @@ void ReactantTree::updateValue(unsigned int mappingSetId, double newRateFactor)
 
 
 	//Ok, we are up to date.  Nothing else changes here...
+	return true;
 }
 
 
 MappingSet * ReactantTree::getMappingSet(unsigned int mappingSetId) const
 {
 	return mappingSets[msPositionMap[mappingSetId]];
+}
+
+
+void ReactantTree::materializeSingleMappingTree()
+{
+	if (!singleMappingFastPath) return;
+
+	int treeIndex = msTreePositionMap[singleMappingId];
+	if (treeIndex < 0) return;
+
+	unsigned int cn = static_cast<unsigned int>(treeIndex) +
+			this->maxElementCount;
+	leftRateFactorSum[cn] = singleMappingRateFactor;
+	while(cn > 1)
+	{
+		unsigned int parent = cn / 2;
+		leftRateFactorSum[parent] = (cn % 2 == 0)
+				? singleMappingRateFactor : 0.0;
+		cn = parent;
+	}
+	leftRateFactorSum[0] = singleMappingRateFactor;
+}
+
+
+void ReactantTree::refreshSingleMappingFastPath()
+{
+	singleMappingFastPath = false;
+	if (n_mappingSets != 1) return;
+
+	MappingSet *only = mappingSets[0];
+	if (only == 0 || only->getClonedMapping() != MappingSet::NO_CLONE)
+		return;
+
+	int treeIndex = msTreePositionMap[only->getId()];
+	if (treeIndex < 0) return;
+
+	singleMappingId = only->getId();
+	singleMappingRateFactor = leftRateFactorSum[
+			static_cast<unsigned int>(treeIndex) + this->maxElementCount];
+	singleMappingFastPath = true;
 }
 
 
@@ -569,6 +657,9 @@ void ReactantTree::printDetails() const {
 
 
 double ReactantTree::getRateFactor(int mappingSetArrayIndex) const {
+	if (singleMappingFastPath && mappingSetArrayIndex == 0)
+		return singleMappingRateFactor;
+
 	unsigned int mappingSetId = mappingSets[mappingSetArrayIndex]->getId();
 	unsigned int treeIndex = msTreePositionMap[mappingSetId];
 	unsigned int cn = treeIndex + this->maxElementCount;

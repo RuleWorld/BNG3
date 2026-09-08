@@ -10,11 +10,11 @@ env:
 
 jobs:
   # ═══════════════════════════════════════════════════════════════════════════
-  # Full BNG Network Generation Validation
+  # Supported BNG Network Generation Validation
   # ═══════════════════════════════════════════════════════════════════════════
 
   bng-validation:
-    name: BNG Validation (${{ matrix.os }})
+    name: BNG Validation (supported reference subset, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -50,16 +50,17 @@ jobs:
             -DBUILD_TESTS=OFF
           cmake --build build --config Release
 
-      - name: Run full validation
+      - name: Run supported validation
         shell: bash
         run: |
-          SKIP="--skip michment_cont,test_sbml_flat,test_sbml_structured,Repressilator,SHP2_base_model,Motivating_example_cBNGL,blbr"
           if [[ "${{ matrix.os }}" == *windows* ]]; then
             BNG=build/cpp/bng_cpp.exe
           else
             BNG=build/cpp/bng_cpp
           fi
-          python scripts/validate.py --bng-cpp "$BNG" $SKIP --verbose
+          python scripts/validate.py --bng-cpp "$BNG" --strict-references \
+            --skip-file tests/validation/reference_exclusions.json \
+            --skip-profile weekly --verbose
 
   # ═══════════════════════════════════════════════════════════════════════════
   # NFsim execution smoke test (not a statistical parity check)
@@ -211,7 +212,7 @@ jobs:
 
       - name: Run cross-validation
         run: |
-          set -e
+          set -euo pipefail
           BNG_CPP=build/cpp/bng_cpp
           BNG_PERL=legacy/perl/BNG2.pl
           MODELS_DIR=tests/validation/Validate
@@ -223,16 +224,18 @@ jobs:
 
           PASS=0
           FAIL=0
-          SKIP=0
+          TOTAL=0
 
           for bngl in "$MODELS_DIR"/*.bngl; do
             model=$(basename "$bngl" .bngl)
+            TOTAL=$((TOTAL + 1))
             tmpdir=$(mktemp -d)
 
             # Run C++ engine
             cp "$bngl" "$tmpdir/"
             if ! timeout 30 "$BNG_CPP" "$tmpdir/$model.bngl" > /dev/null 2>&1; then
-              SKIP=$((SKIP + 1))
+              echo "FAIL $model: C++ execution failed"
+              FAIL=$((FAIL + 1))
               rm -rf "$tmpdir"
               continue
             fi
@@ -242,7 +245,8 @@ jobs:
             perl_tmpdir=$(mktemp -d)
             cp "$bngl" "$perl_tmpdir/"
             if ! timeout 60 perl "$BNG_PERL" "$perl_tmpdir/$model.bngl" > /dev/null 2>&1; then
-              SKIP=$((SKIP + 1))
+              echo "FAIL $model: Perl execution failed"
+              FAIL=$((FAIL + 1))
               rm -rf "$tmpdir" "$perl_tmpdir"
               continue
             fi
@@ -260,7 +264,8 @@ jobs:
                 FAIL=$((FAIL + 1))
               fi
             else
-              SKIP=$((SKIP + 1))
+              echo "FAIL $model: one or both .net outputs are missing"
+              FAIL=$((FAIL + 1))
             fi
 
             rm -rf "$tmpdir" "$perl_tmpdir"
@@ -269,11 +274,11 @@ jobs:
           {
             echo "### C++ vs Perl Cross-Validation"
             echo ""
-            echo "| Passed | Failed | Skipped |"
+            echo "| Total | Passed | Failed |"
             echo "| ---: | ---: | ---: |"
-            echo "| $PASS | $FAIL | $SKIP |"
+            echo "| $TOTAL | $PASS | $FAIL |"
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
-          if [ "$PASS" -eq 0 ] || [ "$FAIL" -gt 0 ]; then
+          if [ "$TOTAL" -eq 0 ] || [ "$FAIL" -gt 0 ]; then
             exit 1
           fi

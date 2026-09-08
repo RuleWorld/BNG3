@@ -1,6 +1,7 @@
 #include "NFinput.hh"
 #include "NFinput_energy.hh"
 #include "../NFcore/compartment.hh"
+#include "parser/BNGAstVisitor.hpp"
 
 
 #include <algorithm>
@@ -1281,6 +1282,57 @@ string NFinput::initStartSpecies(
 
 namespace {
 
+struct LegacyCompositeDOR2 {
+	string functionName1;
+	string functionName2;
+	string argument1;
+	string argument2;
+};
+
+bool parseLegacyCompositeDOR2(
+		CompositeFunction *composite,
+		System *system,
+		LegacyCompositeDOR2 &result)
+{
+	if (composite == NULL || system == NULL || composite->getNumOfArgs() != 2) {
+		return false;
+	}
+
+	bng::ast::Expression expression;
+	try {
+		expression = bng::parser::parseExpression(composite->getOriginalExpression());
+	} catch (...) {
+		return false;
+	}
+	if (expression.kind() != bng::ast::ExpressionKind::Binary ||
+			expression.name() != "*" || expression.args().size() != 2) {
+		return false;
+	}
+
+	const auto parseOperand = [&](const bng::ast::Expression &operand,
+								 string &functionName, string &argument) {
+		using bng::ast::ExpressionKind;
+		if (operand.kind() != ExpressionKind::Function &&
+				operand.kind() != ExpressionKind::ObservableRef ||
+				operand.args().size() != 1 ||
+				operand.args().front().kind() != ExpressionKind::Identifier) {
+			return false;
+		}
+		functionName = operand.name();
+		argument = operand.args().front().name();
+		if (system->getLocalFunctionByName(functionName) == NULL) return false;
+		return argument == composite->getArgName(0) ||
+			argument == composite->getArgName(1);
+	};
+
+	if (!parseOperand(expression.args()[0], result.functionName1, result.argument1) ||
+			!parseOperand(expression.args()[1], result.functionName2, result.argument2) ||
+			result.argument1 == result.argument2) {
+		return false;
+	}
+	return true;
+}
+
 bool readBareProductFilterMolecule(
 		TiXmlElement *pPattern, string &moleculeName, string &diagnostic)
 {
@@ -1382,6 +1434,41 @@ bool validateXmlProductFilters(
 		}
 	}
 	return true;
+}
+
+bool findReactantComponentState(
+		TiXmlElement *pListOfReactantPatterns, const string &componentId,
+		string &state)
+{
+	if (!pListOfReactantPatterns) return false;
+	for (TiXmlElement *pReactant =
+			pListOfReactantPatterns->FirstChildElement("ReactantPattern");
+			pReactant != NULL;
+			pReactant = pReactant->NextSiblingElement("ReactantPattern")) {
+		TiXmlElement *pListOfMolecules =
+				pReactant->FirstChildElement("ListOfMolecules");
+		if (!pListOfMolecules) continue;
+		for (TiXmlElement *pMolecule =
+				pListOfMolecules->FirstChildElement("Molecule");
+				pMolecule != NULL;
+				pMolecule = pMolecule->NextSiblingElement("Molecule")) {
+			TiXmlElement *pListOfComponents =
+					pMolecule->FirstChildElement("ListOfComponents");
+			if (!pListOfComponents) continue;
+			for (TiXmlElement *pComponent =
+					pListOfComponents->FirstChildElement("Component");
+					pComponent != NULL;
+					pComponent = pComponent->NextSiblingElement("Component")) {
+				if (pComponent->Attribute("id") &&
+						componentId == pComponent->Attribute("id") &&
+						pComponent->Attribute("state")) {
+					state = pComponent->Attribute("state");
+					return true;
+				}
+			}
+		}
+	}
+	return false;
 }
 
 } // namespace
@@ -1541,9 +1628,14 @@ bool NFinput::initReactionRules(
 		
 
 
-				///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-				vector<Compartment*> productCompartments;
-				//Read in the list of operations we need to perform in this rule
+					///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+					vector<Compartment*> productCompartments;
+					string arrheniusStateComponent;
+					string arrheniusStateFrom;
+					string arrheniusStateTo;
+					MoleculeType *arrheniusStateMoleculeType = NULL;
+					int arrheniusStateChangeCount = 0;
+					//Read in the list of operations we need to perform in this rule
 				TiXmlElement *pListOfOperations = pRxnRule->FirstChildElement("ListOfOperations");
 				if ( !pListOfOperations )
 				{
@@ -1920,6 +2012,13 @@ bool NFinput::initReactionRules(
 						     << rxnName << "'. Quitting." << endl;
 						return false;
 					}
+
+					++arrheniusStateChangeCount;
+					arrheniusStateTo = finalState;
+					arrheniusStateComponent = c->symPermutationName;
+					arrheniusStateMoleculeType = c->t->getMoleculeType();
+					findReactantComponentState(
+							pListOfReactantPatterns, site, arrheniusStateFrom);
 
 					//handle both increment and decrement states first...
 					if(finalState=="PLUS") {
@@ -2382,6 +2481,18 @@ bool NFinput::initReactionRules(
 
 					if(rateLawType=="Arrhenius")
 					{
+						bool includeArrheniusReverse = true;
+						if (pRxnRule->Attribute("energyIncludeReverse")) {
+							try {
+								includeArrheniusReverse =
+										NFutil::convertToInt(
+												pRxnRule->Attribute("energyIncludeReverse")) != 0;
+							} catch (std::runtime_error &e1) {
+								cerr << "Error!! energyIncludeReverse for ReactionRule "
+								     << rxnName << " was not set properly. Quitting." << endl;
+								return false;
+							}
+						}
 						// Energy-based rule: expand into multiple BasicRxnClass instances
 						// using the Sekar rule expansion algorithm.
 						//
@@ -2389,7 +2500,7 @@ bool NFinput::initReactionRules(
 						//   forward (_R1):         has AddBond op  -> addBondSite1/2 populated
 						//   reverse (_reverse__R1): has DeleteBond  -> addBondSite1/2 empty
 						// The forward expansion creates BOTH directions, so skip the reverse.
-						if (addBondSite1.empty()) {
+						if (addBondSite1.empty() && arrheniusStateChangeCount == 0) {
 							if(verbose)
 								cout << "\t\t\tSkipping reverse Arrhenius rule '" << rxnName
 								     << "' -- reverse already created by forward expansion." << endl;
@@ -2442,6 +2553,42 @@ bool NFinput::initReactionRules(
 							}
 						}
 
+						if (addBondSite1.empty()) {
+							if (arrheniusStateChangeCount != 1 ||
+									arrheniusStateMoleculeType == NULL ||
+									arrheniusStateFrom.empty() || arrheniusStateTo.empty() ||
+									arrheniusStateTo == "PLUS" || arrheniusStateTo == "MINUS") {
+								cerr << "Arrhenius state-change rule " << rxnName
+								     << " needs one explicit source and destination state." << endl;
+								delete ts;
+								return false;
+							}
+
+							const std::size_t firstNewReaction = s->getAllReactions().size();
+							if (!NFinput::createExpandedStateChangeReactions(
+									rxnName, rule_phi, Ea0, arrheniusStateMoleculeType,
+									arrheniusStateComponent, arrheniusStateFrom, arrheniusStateTo,
+									s, blockSameComplexBinding, verbose, reaction_count,
+									includeArrheniusReverse)) {
+								delete ts;
+								return false;
+							}
+							const auto reactions = s->getAllReactions();
+							for (std::size_t reactionIndex = firstNewReaction;
+									reactionIndex < reactions.size(); ++reactionIndex) {
+								auto *reaction = reactions[reactionIndex];
+								reaction->setTotalRateFlag(totalRateFlag);
+								for (std::size_t reactantIndex = 0;
+										reactantIndex < matchOnceList.size(); ++reactantIndex) {
+									reaction->setMatchOnce(
+										static_cast<unsigned int>(reactantIndex),
+										matchOnceList[reactantIndex]);
+								}
+							}
+							delete ts;
+							continue;
+						}
+
 
 						// Validate: must be a 2-reactant binding rule
 						if(ts->getNreactants() != 2) {
@@ -2455,7 +2602,8 @@ bool NFinput::initReactionRules(
 
 						if(!NFinput::createExpandedBindingReactions(
 								rxnName, rule_phi, Ea0, mt1, addBondSite1, mt2, addBondSite2,
-								s, parameter, allowedStates, blockSameComplexBinding, verbose, reaction_count))
+								s, parameter, allowedStates, blockSameComplexBinding, verbose, reaction_count,
+								includeArrheniusReverse))
 						{
 							return false;
 						}
@@ -2624,8 +2772,58 @@ bool NFinput::initReactionRules(
 						} else {
 
 							string functionName = pRateLaw->Attribute("name");
+							CompositeFunction *composite = s->getCompositeFunctionByName(functionName);
+							LegacyCompositeDOR2 legacyDOR2;
+							if (parseLegacyCompositeDOR2(composite, s, legacyDOR2)) {
+								if (funcArgs.size() != 2 ||
+										find(funcArgs.begin(), funcArgs.end(), legacyDOR2.argument1) == funcArgs.end() ||
+										find(funcArgs.begin(), funcArgs.end(), legacyDOR2.argument2) == funcArgs.end()) {
+									cerr << "Error: legacy DOR2 rate law '" << functionName
+									     << "' has invalid reaction arguments." << endl;
+									return false;
+								}
+
+								const auto ensureLocalWrapper = [&](const string &localName,
+															 const string &argument) -> CompositeFunction * {
+									if (s->getLocalFunctionByName(localName) == NULL) return NULL;
+									auto *wrapper = s->getCompositeFunctionByName(localName);
+									if (wrapper == NULL) {
+										vector <string> calledFunctions(1, localName);
+										vector <string> wrapperArgs(1, argument);
+										vector <string> wrapperParams;
+										wrapper = new CompositeFunction(
+											s, localName, localName + "(" + argument + ")",
+											calledFunctions, wrapperArgs, wrapperParams);
+										if (!s->addCompositeFunction(wrapper)) {
+											delete wrapper;
+											return NULL;
+										}
+										wrapper->finalizeInitialization(s);
+									} else if (wrapper->getNumOfArgs() != 1 ||
+											wrapper->getArgName(0) != argument) {
+										return NULL;
+									}
+									return wrapper;
+								};
+
+								CompositeFunction *cf1 = ensureLocalWrapper(
+									legacyDOR2.functionName1, legacyDOR2.argument1);
+								CompositeFunction *cf2 = ensureLocalWrapper(
+									legacyDOR2.functionName2, legacyDOR2.argument2);
+								if (cf1 == NULL || cf2 == NULL) {
+									cerr << "Error: could not resolve legacy DOR2 factors for '"
+									     << functionName << "'." << endl;
+									return false;
+								}
+
+								vector <string> funcArgs1(1, legacyDOR2.argument1);
+								vector <string> funcArgs2(1, legacyDOR2.argument2);
+								ts->finalize();
+								r = new DOR2RxnClass(
+									rxnName, 1, "", ts, cf1, cf2, funcArgs1, funcArgs2, s);
+							} else {
 							LocalFunction *lf = s->getLocalFunctionByName(functionName);
-			if(lf!=NULL) {
+							if(lf!=NULL) {
 				// The XML writer may retain the source-level local
 				// function name. DOR reactions consume a composite
 				// pointer, so create the same thin wrapper used by the
@@ -2648,14 +2846,15 @@ bool NFinput::initReactionRules(
 				}
 			}
 
-			ts->finalize();
-			CompositeFunction *cf = s->getCompositeFunctionByName(functionName);
+							ts->finalize();
+							CompositeFunction *cf = s->getCompositeFunctionByName(functionName);
 			if (cf == NULL) {
 				cerr<<"Error: could not resolve local-function wrapper '"
 				    <<functionName<<"'."<<endl;
 				return false;
-			}
-			r=new DORRxnClass(rxnName,1,"",ts,cf,funcArgs,s);
+							}
+							r=new DORRxnClass(rxnName,1,"",ts,cf,funcArgs,s);
+							}
 						}
 					}
 					else if(rateLawType=="FunctionProduct") {

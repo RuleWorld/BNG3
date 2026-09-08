@@ -4,6 +4,7 @@
 #pragma once
 
 
+#include "../antlr_compat.hpp"
 #include "antlr4-runtime.h"
 #include "BNGParserVisitor.h"
 
@@ -429,4 +430,3 @@ public:
 
 
 };
-

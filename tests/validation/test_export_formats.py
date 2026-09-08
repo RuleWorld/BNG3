@@ -32,8 +32,18 @@ def test_net_roundtrip_idempotent(model_name, bng_cpp, work_dir):
     """write -> read -> write produces an identical network."""
     net1, _, err = runner.run_cli(bng_cpp, model_name, work_dir / "pass1")
     assert net1 is not None, f"first generation failed: {err}"
-    # Second pass over the same model must yield an identical network.
-    net2, _, err2 = runner.run_cli(bng_cpp, model_name, work_dir / "pass2")
+
+    # Follow BNG2's michment/michment_cont contract: the second pass must read
+    # the first pass's .net file, not regenerate the BNGL model.
+    roundtrip_source = work_dir / f"{model_name}_roundtrip.bngl"
+    roundtrip_source.write_text(
+        f'readFile({{file=>"{net1.as_posix()}"}})\n'
+        "writeNetwork({overwrite=>1})\n",
+        encoding="utf-8",
+    )
+    net2, _, err2 = runner.run_cli_path(
+        bng_cpp, roundtrip_source, work_dir / "pass2"
+    )
     assert net2 is not None, f"second generation failed: {err2}"
     n1, n2 = compare.parse_net(net1), compare.parse_net(net2)
     diff = compare.compare_net(n1, n2)

@@ -42,8 +42,11 @@ class libRRSimulator(BNGSimulator):
             import roadrunner as rr
 
             self._simulator = rr.RoadRunner(model)
-        except ImportError:
-            print("libroadrunner is not installed!")
+        except ImportError as exc:
+            raise ImportError(
+                "libRoadRunner is required for sim_type='libRR'; "
+                "install the optional roadrunner dependency"
+            ) from exc
 
     @property
     def sbml(self):

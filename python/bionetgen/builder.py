@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
 from typing import Sequence
 
 from bionetgen.model import BioNetGenModel
@@ -96,7 +97,7 @@ class ModelBuilder:
         return self
 
     def to_bngl(self) -> str:
-        parts = ["begin model", ""]
+        parts = [f"setModelName({json.dumps(self.name)})", "", "begin model", ""]
         if self.parameters:
             parts.append(_format_block("parameters", self.parameters))
         if self.molecule_types:

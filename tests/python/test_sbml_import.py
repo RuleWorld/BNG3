@@ -4,11 +4,6 @@ import pytest
 
 pytest.importorskip("bionetgen._bionetgen_cpp")
 
-try:
-    import libsbml  # noqa: F401
-except ImportError:
-    pytest.skip("libSBML is required for SBML import tests", allow_module_level=True)
-
 import bionetgen
 
 

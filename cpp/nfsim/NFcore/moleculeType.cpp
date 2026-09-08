@@ -1,9 +1,57 @@
 #include <iostream>
 #include "NFcore.hh"
 
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
+
 
 using namespace std;
 using namespace NFcore;
+
+namespace {
+
+unsigned int compactMembershipBitCount(std::uint64_t value)
+{
+	unsigned int count = 0;
+	while (value != 0) {
+		value &= (value - 1);
+		++count;
+	}
+	return count;
+}
+
+void setCompactMembershipCandidateBit(
+		vector<std::uint64_t> &bits, unsigned int reactionIndex)
+{
+	const std::size_t wordIndex = reactionIndex >> 6;
+	if (bits.size() <= wordIndex)
+		bits.resize(wordIndex + 1, 0);
+	bits[wordIndex] |=
+			(std::uint64_t(1) << (reactionIndex & 63));
+}
+
+unsigned int compactMembershipTrailingZeroCount(std::uint64_t value)
+{
+#if defined(_MSC_VER)
+	unsigned long bit = 0;
+	_BitScanForward64(&bit, value);
+	return static_cast<unsigned int>(bit);
+#else
+	return static_cast<unsigned int>(__builtin_ctzll(value));
+#endif
+}
+
+bool compactMembershipBitIsSet(
+		const vector<std::uint64_t> &bits, unsigned int reactionIndex)
+{
+	const std::size_t wordIndex = reactionIndex >> 6;
+	return wordIndex < bits.size() &&
+			(bits[wordIndex] &
+				(std::uint64_t(1) << (reactionIndex & 63))) != 0;
+}
+
+}
 
 
 
@@ -149,10 +197,29 @@ void MoleculeType::init(
 	//Register myself with the system, and get an ID number
 	this->system = system;
 	this->type_id = this->system->addMoleculeType(this);
+	reactionMappingIndices.clear();
+	reactionMappingCount = 0;
+	compactPartnerPools.assign(numOfComponents,
+			static_cast<CompactPartnerPool *>(0));
+	compactEnergyCenterCandidateBits.assign(
+			numOfComponents, vector<std::uint64_t>());
+	compactEnergyContextCandidateBits.assign(
+			numOfComponents, vector<std::uint64_t>());
+	compactPartnerCandidateBits.assign(
+			numOfComponents, vector<std::uint64_t>());
+	compactPartnerReactionIndices.assign(
+			numOfComponents, vector<unsigned int>());
+	compactEnergyContextMinimumRequiredBits.assign(numOfComponents, 0);
+	nonCompactMembershipCandidateBits.clear();
+	hasCompactEnergyMembershipIndex = false;
 
 
 	mList = new MoleculeList(this,2,system->getGlobalMoleculeLimit());
 	n_eqComp = 0;
+	eqCompOriginalName = nullptr;
+	eqCompSizes = nullptr;
+	eqCompName = nullptr;
+	eqCompIndex = nullptr;
 	indexToEqClass = nullptr;
 }
 
@@ -181,6 +248,10 @@ MoleculeType::~MoleculeType()
 	delete [] eqCompOriginalName;
 	if (indexToEqClass) {
 		delete [] indexToEqClass;
+	}
+	for (vector<CompactPartnerPool *>::iterator it = compactPartnerPools.begin();
+			it != compactPartnerPools.end(); ++it) {
+		delete *it;
 	}
 
 
@@ -404,12 +475,13 @@ void MoleculeType::removeMoleculeFromRunningSystem(Molecule *&m)
 
 void MoleculeType::removeAllMolecules()
 {
-	// Iterate through all molecules and remove them
-	// We need to loop backwards because remove() removes by swapping with the last element
+	// Iterate through all molecules and remove them. Loop backwards because
+	// remove() removes by swapping with the last element. MoleculeList owns its
+	// preallocated Molecule objects, so leave the inactive slots in place for
+	// reuse and for MoleculeList::~MoleculeList() to release.
 	for (int m = mList->size() - 1; m >= 0; m--) {
 		Molecule *mol = mList->at(m);
 		removeMoleculeFromRunningSystem(mol);
-		delete mol; // Free the memory to prevent leaks
 	}
 }
 
@@ -436,6 +508,16 @@ Molecule * MoleculeType::getMolecule(int ID_molecule) const {
 }
 int MoleculeType::getMoleculeCount() const {
 	return mList->size();
+}
+
+CompactPartnerPool *MoleculeType::getOrCreateCompactPartnerPool(
+		int componentIndex)
+{
+	if (componentIndex < 0 || componentIndex >= numOfComponents)
+		return 0;
+	if (compactPartnerPools[componentIndex] == 0)
+		compactPartnerPools[componentIndex] = new CompactPartnerPool();
+	return compactPartnerPools[componentIndex];
 }
 
 
@@ -485,8 +567,58 @@ int MoleculeType::getStateValueFromName(int cIndex, string stateName) const
 
 void MoleculeType::addReactionClass(ReactionClass * r, int rPosition)
 {
+	directMembershipDecisionCache.clear();
+	directMembershipDecisionCacheSafe.clear();
+	unsigned int reactionIndex = static_cast<unsigned int>(reactions.size());
 	this->reactions.push_back(r);
 	this->reactionPositions.push_back(rPosition);
+	int partnerComponent = -1;
+	bool compactPartnerRegistration =
+		r->getCompactPartnerPoolInfo(rPosition, partnerComponent) &&
+		partnerComponent >= 0 && partnerComponent < numOfComponents;
+	reactionMappingIndices.push_back(compactPartnerRegistration
+			? -1 : reactionMappingCount++);
+
+	int reactionCenterComponent = -1;
+	std::uint64_t contextComponentMask = 0;
+	unsigned int minimumContextComponents = 0;
+	bool indexed = r->getCompactMembershipIndexInfo(
+			rPosition, reactionCenterComponent, contextComponentMask,
+			minimumContextComponents) &&
+		reactionCenterComponent >= 0 &&
+		reactionCenterComponent < numOfComponents;
+	if (indexed) {
+		hasCompactEnergyMembershipIndex = true;
+		setCompactMembershipCandidateBit(
+				compactEnergyCenterCandidateBits[reactionCenterComponent],
+				reactionIndex);
+		for (int componentIndex = 0;
+				componentIndex < numOfComponents && componentIndex < 64;
+				++componentIndex) {
+			if ((contextComponentMask &
+					std::uint64_t(1) << componentIndex) == 0)
+				continue;
+			setCompactMembershipCandidateBit(
+					compactEnergyContextCandidateBits[componentIndex],
+					reactionIndex);
+			unsigned int &minimum =
+				compactEnergyContextMinimumRequiredBits[componentIndex];
+			if (minimum == 0 || minimumContextComponents < minimum)
+				minimum = minimumContextComponents;
+		}
+	} else {
+		setCompactMembershipCandidateBit(
+				nonCompactMembershipCandidateBits, reactionIndex);
+	}
+	if (compactPartnerRegistration) {
+		CompactPartnerPool *partnerPool = r->getCompactPartnerPool();
+		if (partnerPool != 0)
+			partnerPool->registerReaction(
+					r, r->supportsCompactPartnerPoolUpdate());
+		setCompactMembershipCandidateBit(
+				compactPartnerCandidateBits[partnerComponent], reactionIndex);
+		compactPartnerReactionIndices[partnerComponent].push_back(reactionIndex);
+	}
 
 	//We also have to check to make sure that if the reaction is a DOR reaction,
 	//we remember it so we can updated it
@@ -506,6 +638,17 @@ void MoleculeType::addReactionClass(ReactionClass * r, int rPosition)
 }
 
 
+
+bool MoleculeType::canSkipIndirectMembership(
+		ReactionClass *firedReaction) const
+{
+	for (vector<ReactionClass *>::const_iterator it = reactions.begin();
+			it != reactions.end(); ++it) {
+		if (!(*it)->canSkipIndirectMembership(firedReaction))
+			return false;
+	}
+	return true;
+}
 
 void MoleculeType::populateWithDefaultMolecules(int moleculeCount)
 {
@@ -559,60 +702,464 @@ void MoleculeType::prepareForSimulation()
   		//Check each observable and see if this molecule should be counted
   		this->addToObservables(mol);
 
-  		//Check each reaction and add this molecule as a reactant if we have to
+		//Check each reaction and add this molecule as a reactant if we have to
 		for(rxnIter = reactions.begin(), r=0; rxnIter != reactions.end(); rxnIter++, r++ )
 		{
-			(*rxnIter)->tryToAdd(mol, reactionPositions.at(r));
-  		}
+			if ((*rxnIter)->usesIncrementalMembership())
+				(*rxnIter)->tryToAddWithIndex(
+						mol, reactionPositions.at(r), r);
+			else
+				(*rxnIter)->tryToAdd(mol, reactionPositions.at(r));
+		}
 	}
 }
 
-void MoleculeType::updateRxnMembership(Molecule * m)
+void MoleculeType::updateRxnMembership(Molecule * m,
+		ReactionClass *firedReaction, bool directProduct)
 {
+	const vector<unsigned char> *cachedDecisions = 0;
+	const DirectMembershipDecisionCacheEntry *cachedDecisionEntry = 0;
+	IncrementalMembershipChange membershipChange;
+	bool hasMembershipChange = directProduct && firedReaction != 0 &&
+		firedReaction->usesIncrementalMembership() &&
+		firedReaction->getIncrementalMembershipChange(membershipChange);
+	bool refineMembershipChange = hasMembershipChange &&
+		m->getMoleculeType() == membershipChange.moleculeType1;
+	if (refineMembershipChange && membershipChange.componentIndex1 >= 0 &&
+			membershipChange.componentIndex1 < 64) {
+		/* If the weighted molecule is full immediately before or after the
+		 * event, every accepted context dependency on the changed site crosses
+		 * its predicate.  The endpoint cache is already exact in that case. */
+		std::uint64_t changedBit = std::uint64_t(1) <<
+				membershipChange.componentIndex1;
+		int componentCount = m->getMoleculeType()->getNumOfComponents();
+		if (componentCount <= 64) {
+			std::uint64_t fullMask = componentCount == 64
+					? ~std::uint64_t(0)
+					: ((std::uint64_t(1) << componentCount) - 1);
+			std::uint64_t newMask = m->getBoundComponentMask();
+			std::uint64_t oldMask = membershipChange.isBoundAfter1
+					? (newMask & ~changedBit) : (newMask | changedBit);
+			if (newMask == fullMask || oldMask == fullMask)
+				refineMembershipChange = false;
+		}
+	}
+	bool useCompactMembershipIndex = hasMembershipChange &&
+		m->getMoleculeType() == membershipChange.moleculeType1 &&
+		membershipChange.componentIndex1 >= 0 &&
+		membershipChange.componentIndex1 < 64 &&
+		static_cast<unsigned int>(membershipChange.componentIndex1) <
+			compactEnergyCenterCandidateBits.size() &&
+		static_cast<unsigned int>(membershipChange.componentIndex1) <
+			compactEnergyContextCandidateBits.size() &&
+		hasCompactEnergyMembershipIndex;
+	auto refreshReactionMembership = [&](ReactionClass *rxn,
+			unsigned int reactionIndex) {
+		bool defer = this->system->isDeferringMembershipPropensityUpdates() &&
+			rxn->supportsDeferredMembershipUpdate();
+		if (defer) {
+			double oldA = rxn->get_a();
+			bool changed = rxn->tryToAddAndReportChangeWithIndex(
+					m, reactionPositions.at(reactionIndex), reactionIndex);
+			if (changed)
+				this->system->deferMembershipPropensityUpdate(rxn, oldA);
+			return;
+		}
+		double oldA = rxn->get_a();
+		if (rxn->usesIncrementalMembership())
+			rxn->tryToAddWithIndex(
+					m, reactionPositions.at(reactionIndex), reactionIndex);
+		else
+			rxn->tryToAdd(m, reactionPositions.at(reactionIndex));
+		double newA = rxn->update_a();
+		this->system->update_A_tot(rxn, oldA, newA);
+	};
+	bool useCompactPartnerPoolIndex = hasMembershipChange && directProduct &&
+		membershipChange.moleculeType1 != membershipChange.moleculeType2 &&
+		m->getMoleculeType() == membershipChange.moleculeType2 &&
+		membershipChange.componentIndex2 >= 0 &&
+		static_cast<unsigned int>(membershipChange.componentIndex2) <
+			compactPartnerCandidateBits.size() &&
+		static_cast<unsigned int>(membershipChange.componentIndex2) <
+			compactPartnerReactionIndices.size() &&
+		!compactPartnerReactionIndices[membershipChange.componentIndex2].empty();
+	bool compactMembershipDecisionsComplete = useCompactMembershipIndex &&
+		membershipChange.moleculeType1 != membershipChange.moleculeType2 &&
+		nonCompactMembershipCandidateBits.empty();
+	if (!compactMembershipDecisionsComplete && directProduct &&
+			firedReaction != 0 && firedReaction->usesIncrementalMembership()) {
+		std::unordered_map<ReactionClass *, bool>::iterator safe =
+			directMembershipDecisionCacheSafe.find(firedReaction);
+		if (safe == directMembershipDecisionCacheSafe.end()) {
+			bool typeInvariant = true;
+			for (unsigned int r = 0; r < reactions.size(); ++r) {
+				if (!reactions[r]->membershipDecisionIsTypeInvariant()) {
+					typeInvariant = false;
+					break;
+				}
+			}
+			safe = directMembershipDecisionCacheSafe.emplace(
+				firedReaction, typeInvariant).first;
+		}
+		if (safe->second) {
+			std::unordered_map<ReactionClass *,
+					DirectMembershipDecisionCacheEntry>::iterator cached =
+				directMembershipDecisionCache.find(firedReaction);
+			if (cached == directMembershipDecisionCache.end()) {
+				DirectMembershipDecisionCacheEntry entry;
+				entry.decisions.reserve(reactions.size());
+				for (unsigned int r = 0; r < reactions.size(); ++r)
+					entry.decisions.push_back(
+						reactions[r]->shouldUpdateMembership(
+								m, firedReaction, true));
+				std::size_t affectedReactionCount = 0;
+				for (unsigned int r = 0; r < entry.decisions.size(); ++r) {
+					if (entry.decisions[r])
+						++affectedReactionCount;
+				}
+				if (affectedReactionCount * 2 < entry.decisions.size()) {
+					entry.reactionIndices.reserve(affectedReactionCount);
+					for (unsigned int r = 0; r < entry.decisions.size(); ++r) {
+						if (entry.decisions[r])
+							entry.reactionIndices.push_back(r);
+					}
+					vector<unsigned char>().swap(entry.decisions);
+					entry.useReactionIndices = true;
+				}
+				cached = directMembershipDecisionCache.emplace(
+					firedReaction, entry).first;
+			}
+			cachedDecisionEntry = &cached->second;
+			if (!cachedDecisionEntry->useReactionIndices)
+				cachedDecisions = &cachedDecisionEntry->decisions;
+		}
+	}
+	bool compactPartnerPoolChanged = false;
+	bool compactPartnerPoolBatchScheduled = false;
+	CompactPartnerPool *compactPartnerPool = 0;
+	int oldCompactPartnerPoolSize = 0;
+	const vector<std::uint64_t> *partnerCandidates = 0;
+	if (useCompactPartnerPoolIndex) {
+		int partnerComponent = membershipChange.componentIndex2;
+		partnerCandidates = &compactPartnerCandidateBits[partnerComponent];
+		const vector<unsigned int> &partnerReactions =
+				compactPartnerReactionIndices[partnerComponent];
+		unsigned int firstPartnerReaction = partnerReactions.front();
+		compactPartnerPool = reactions[firstPartnerReaction]->
+				getCompactPartnerPool();
+		if (compactPartnerPool != 0)
+			oldCompactPartnerPoolSize = compactPartnerPool->size();
+		compactPartnerPoolChanged = reactions[firstPartnerReaction]->
+				refreshCompactPartnerPool(
+					m, reactionPositions[firstPartnerReaction]);
+		if (compactPartnerPoolChanged && compactPartnerPool != 0 &&
+				this->system->isDeferringMembershipPropensityUpdates() &&
+				compactPartnerPool->supportsBatchUpdate()) {
+			this->system->deferCompactPartnerPoolUpdate(
+					compactPartnerPool, oldCompactPartnerPoolSize,
+					compactPartnerPool->size());
+			compactPartnerPoolBatchScheduled = true;
+		}
+	}
+	bool allReactionsUseCompactPartnerPool =
+			useCompactPartnerPoolIndex &&
+			compactPartnerReactionIndices[membershipChange.componentIndex2].size() ==
+				reactions.size();
+	if (allReactionsUseCompactPartnerPool) {
+		if (compactPartnerPoolChanged) {
+			bool defer = this->system->isDeferringMembershipPropensityUpdates();
+			if (defer && compactPartnerPoolBatchScheduled)
+				return;
+			const vector<unsigned int> &partnerReactions =
+					compactPartnerReactionIndices[membershipChange.componentIndex2];
+			for (vector<unsigned int>::const_iterator it =
+					partnerReactions.begin(); it != partnerReactions.end(); ++it) {
+				ReactionClass *rxn = reactions[*it];
+				if (defer) {
+					double oldA = rxn->get_a();
+					this->system->deferMembershipPropensityUpdate(rxn, oldA);
+				} else {
+					double oldA = rxn->get_a();
+					double newA = rxn->update_a();
+					this->system->update_A_tot(rxn, oldA, newA);
+				}
+			}
+		}
+		return;
+	}
+	vector<CompactPartnerPool *> compactPools;
+	vector<int> compactPoolOldSizes;
+	vector<bool> compactPoolChanged;
+	if (!useCompactPartnerPoolIndex) {
+	for (unsigned int r=0; r<reactions.size(); r++) {
+		ReactionClass *rxn = reactions.at(r);
+		int partnerComponent = -1;
+		if (!rxn->supportsCompactPartnerPoolScale() ||
+				!rxn->getCompactPartnerPoolInfo(
+						reactionPositions.at(r), partnerComponent))
+			continue;
+		CompactPartnerPool *pool = rxn->getCompactPartnerPool();
+		if (pool == 0 || !pool->supportsBatchUpdate())
+			continue;
+		bool allReactionsSupportScale = true;
+		const vector<ReactionClass *> &registered =
+				pool->getRegisteredReactions();
+		for (vector<ReactionClass *>::const_iterator it = registered.begin();
+				it != registered.end(); ++it) {
+			if (*it == 0 || !(*it)->supportsCompactPartnerPoolScale()) {
+				allReactionsSupportScale = false;
+				break;
+			}
+		}
+		if (!allReactionsSupportScale)
+			continue;
+		int poolIndex = -1;
+		for (unsigned int p=0; p<compactPools.size(); p++) {
+			if (compactPools.at(p) == pool) {
+				poolIndex = static_cast<int>(p);
+				break;
+			}
+		}
+		if (poolIndex >= 0)
+			continue;
+		compactPools.push_back(pool);
+		compactPoolOldSizes.push_back(pool->size());
+		compactPoolChanged.push_back(
+				rxn->refreshCompactPartnerPool(m,
+					reactionPositions.at(r)));
+	}
+	for (unsigned int p=0; p<compactPools.size(); p++) {
+		if (!compactPoolChanged.at(p))
+			continue;
+		if (this->system->isDeferringMembershipPropensityUpdates())
+			this->system->deferCompactPartnerPoolUpdate(
+					compactPools.at(p), compactPoolOldSizes.at(p),
+					compactPools.at(p)->size());
+		else
+			this->system->updateCompactPartnerPoolBatch(
+					compactPools.at(p), compactPoolOldSizes.at(p),
+					compactPools.at(p)->size());
+	}
+	}
+
+	if (cachedDecisionEntry != 0 &&
+			cachedDecisionEntry->useReactionIndices &&
+			!useCompactMembershipIndex) {
+		for (vector<unsigned int>::const_iterator it =
+				cachedDecisionEntry->reactionIndices.begin();
+				it != cachedDecisionEntry->reactionIndices.end(); ++it) {
+			unsigned int r = *it;
+			ReactionClass *rxn = reactions.at(r);
+			if (useCompactPartnerPoolIndex &&
+					compactMembershipBitIsSet(*partnerCandidates, r)) {
+				if (!compactPartnerPoolChanged)
+					continue;
+				bool defer = this->system->isDeferringMembershipPropensityUpdates();
+				if (defer) {
+					if (compactPartnerPoolBatchScheduled)
+						continue;
+					double oldA = rxn->get_a();
+					this->system->deferMembershipPropensityUpdate(rxn, oldA);
+				} else {
+					double oldA = rxn->get_a();
+					double newA = rxn->update_a();
+					this->system->update_A_tot(rxn, oldA, newA);
+				}
+				continue;
+			}
+			if (refineMembershipChange &&
+					!rxn->shouldUpdateMembershipForChange(
+							m, membershipChange))
+				continue;
+			bool handledByCompactPool = false;
+			int partnerComponent = -1;
+			if (rxn->supportsCompactPartnerPoolUpdate() &&
+					rxn->getCompactPartnerPoolInfo(
+						reactionPositions.at(r), partnerComponent)) {
+				CompactPartnerPool *pool = rxn->getCompactPartnerPool();
+				for (unsigned int p = 0; p < compactPools.size(); ++p) {
+					if (compactPools.at(p) == pool) {
+						handledByCompactPool = true;
+						break;
+					}
+				}
+			}
+			if (handledByCompactPool)
+				continue;
+			refreshReactionMembership(rxn, r);
+		}
+		return;
+	}
+
+	if (useCompactMembershipIndex) {
+		int changedComponent = membershipChange.componentIndex1;
+		std::uint64_t changedBit = std::uint64_t(1) << changedComponent;
+		std::uint64_t newMask = m->getBoundComponentMask();
+		std::uint64_t oldMask = membershipChange.isBoundAfter1
+				? (newMask & ~changedBit) : (newMask | changedBit);
+		unsigned int minimumContextBits =
+				compactEnergyContextMinimumRequiredBits[changedComponent];
+		bool includeContext = minimumContextBits == 0 ||
+			compactMembershipBitCount(newMask | oldMask) >=
+				minimumContextBits;
+		const vector<std::uint64_t> &centerCandidates =
+				compactEnergyCenterCandidateBits[changedComponent];
+		const vector<std::uint64_t> &contextCandidates =
+				compactEnergyContextCandidateBits[changedComponent];
+		const std::size_t wordCount = std::max(
+				nonCompactMembershipCandidateBits.size(),
+				std::max(centerCandidates.size(),
+						includeContext ? contextCandidates.size() : std::size_t(0)));
+
+		for (std::size_t wordIndex = 0; wordIndex < wordCount; ++wordIndex) {
+			std::uint64_t candidates = wordIndex <
+					nonCompactMembershipCandidateBits.size()
+				? nonCompactMembershipCandidateBits[wordIndex] : 0;
+			std::uint64_t contextCandidateBits = 0;
+			if (wordIndex < centerCandidates.size())
+				candidates |= centerCandidates[wordIndex];
+			if (includeContext && wordIndex < contextCandidates.size())
+				contextCandidateBits = contextCandidates[wordIndex];
+			candidates |= contextCandidateBits;
+			while (candidates != 0) {
+				unsigned int bit = compactMembershipTrailingZeroCount(candidates);
+				unsigned int r = static_cast<unsigned int>((wordIndex << 6) + bit);
+				candidates &= candidates - 1;
+				ReactionClass *rxn = reactions[r];
+				std::uint64_t reactionBit = std::uint64_t(1) << bit;
+				bool contextCandidate =
+						(contextCandidateBits & reactionBit) != 0;
+				bool centerCandidate = wordIndex < centerCandidates.size() &&
+						(centerCandidates[wordIndex] & reactionBit) != 0;
+				/* A context-only change cannot create a weighted-side mapping:
+				 * the reaction center occupancy is unchanged.  Avoid probing an
+				 * inactive compact rule. */
+				if (contextCandidate && !centerCandidate &&
+						m->getRxnListMappingId(r) < 0)
+					continue;
+				if (!compactMembershipDecisionsComplete) {
+					if (cachedDecisions != 0) {
+						if (!(*cachedDecisions)[r])
+							continue;
+					} else if (!rxn->shouldUpdateMembership(
+								m, firedReaction, directProduct))
+						continue;
+				}
+				if (refineMembershipChange &&
+						!rxn->shouldUpdateMembershipForChange(
+								m, membershipChange))
+					continue;
+				bool handledByCompactPool = false;
+				int partnerComponent = -1;
+				if (rxn->supportsCompactPartnerPoolUpdate() &&
+						rxn->getCompactPartnerPoolInfo(
+							reactionPositions.at(r), partnerComponent)) {
+					CompactPartnerPool *pool = rxn->getCompactPartnerPool();
+					for (unsigned int p = 0; p < compactPools.size(); ++p) {
+						if (compactPools.at(p) == pool) {
+							handledByCompactPool = true;
+							break;
+						}
+					}
+				}
+				if (handledByCompactPool)
+					continue;
+				refreshReactionMembership(rxn, r);
+			}
+		}
+		return;
+	}
+
 	for( unsigned int r=0; r<reactions.size(); r++ )
 	{
 		ReactionClass * rxn=reactions.at(r);
-		double oldA = rxn->get_a();
-		rxn->tryToAdd(m, reactionPositions.at(r));
-		double newA = rxn->update_a();
-		this->system->update_A_tot(rxn,oldA,newA);
+		if (useCompactPartnerPoolIndex &&
+				compactMembershipBitIsSet(*partnerCandidates, r)) {
+			if (!compactPartnerPoolChanged)
+				continue;
+			bool defer = this->system->isDeferringMembershipPropensityUpdates();
+			if (defer) {
+				if (compactPartnerPoolBatchScheduled)
+					continue;
+				double oldA = rxn->get_a();
+				this->system->deferMembershipPropensityUpdate(rxn, oldA);
+			} else {
+				double oldA = rxn->get_a();
+				double newA = rxn->update_a();
+				this->system->update_A_tot(rxn, oldA, newA);
+			}
+			continue;
+		}
+		if (!compactMembershipDecisionsComplete) {
+			if (cachedDecisions != 0) {
+				if (!(*cachedDecisions)[r])
+					continue;
+				} else if (firedReaction != 0 &&
+						!rxn->shouldUpdateMembership(
+								m, firedReaction, directProduct))
+					continue;
+			}
+			if (refineMembershipChange &&
+					!rxn->shouldUpdateMembershipForChange(
+							m, membershipChange))
+				continue;
+			bool handledByCompactPool = false;
+		int partnerComponent = -1;
+		if (rxn->supportsCompactPartnerPoolUpdate() &&
+				rxn->getCompactPartnerPoolInfo(
+					reactionPositions.at(r), partnerComponent)) {
+			CompactPartnerPool *pool = rxn->getCompactPartnerPool();
+			for (unsigned int p=0; p<compactPools.size(); p++) {
+				if (compactPools.at(p) == pool) {
+					handledByCompactPool = true;
+					break;
+				}
+			}
+		}
+		if (handledByCompactPool)
+			continue;
+		refreshReactionMembership(rxn, r);
   	}
 
 }
 
-void MoleculeType::updateConnectedRxnMembership(Molecule * m, ReactionClass * firedReaction)
+void MoleculeType::updateConnectedRxnMembership(
+		Molecule * m, ReactionClass * firedReaction, bool directProduct)
 {
-	// Replace the iteration over all reactions for the MoleculeType in
-	// MoleculeType::updateRxnMembership by only the
-	// connectedReactions for the fired Reaction. This is a much smaller loop
-	// and skips moleculetypes that are not the TemplateMolecule of the reactant
-	// in the connected reaction right away.
-	// Arvind Rasi Subramaniam
-	//
-	for (int r=0; r<firedReaction->getNumConnectedRxns(); r++) {
-		rxn = firedReaction->getconnectedRxn(r);
-		for (int pos=0; pos<rxn->getNumOfReactants(); pos++) {
-			if (rxn->getMoleculeTypeOfReactantTemplate(pos) != this) continue;
-			double oldA = rxn->get_a();
-			double oldAwithTotal = rxn->update_a();
-			rxn->tryToAdd(m, pos);
-				double newA = rxn->update_a();
-				this->system->update_A_tot(rxn,oldA,newA);
-			// Used for debugging to see which reaction rates changed
-			// upon updating molecule membership
-			// Arvind Rasi Subramaniam Nov 21, 2018
-			if (!this->system->getTrackConnected()) continue;
-			if (oldAwithTotal != newA) {
-				this->system->getConnectedRxnFileStream() <<
-				this->system->getGlobalEventCounter() << "\t" <<
-				firedReaction->getName() << "\t" <<
-						m->getMoleculeTypeName() << "\t" <<
-						m->getUniqueID() << "\t" <<
-						rxn->getName() << "\t" <<
-						oldAwithTotal << "\t" << newA << endl;
-			}
+	// Preserve the MoleculeType's native reaction order so the connectivity path
+	// mutates reactant containers in the same sequence as a full membership
+	// refresh, while still using the precomputed connectivity matrix.
+	for (unsigned int r=0; r<reactions.size(); r++) {
+		rxn = reactions.at(r);
+		if (!this->system->areReactionsConnected(
+				firedReaction->getRxnId(), rxn->getRxnId())) {
+			continue;
 		}
-  	}
+		if (!rxn->shouldUpdateMembership(m, firedReaction, directProduct))
+			continue;
+		int pos = reactionPositions.at(r);
+		double oldA = rxn->get_a();
+		double oldAwithTotal = rxn->update_a();
+		if (rxn->usesIncrementalMembership())
+			rxn->tryToAddWithIndex(m, pos, r);
+		else
+			rxn->tryToAdd(m, pos);
+		double newA = rxn->update_a();
+		this->system->update_A_tot(rxn,oldA,newA);
+		// Used for debugging to see which reaction rates changed
+		// upon updating molecule membership
+		// Arvind Rasi Subramaniam Nov 21, 2018
+		if (!this->system->getTrackConnected()) continue;
+		if (oldAwithTotal != newA) {
+			this->system->getConnectedRxnFileStream() <<
+			this->system->getGlobalEventCounter() << "\t" <<
+			firedReaction->getName() << "\t" <<
+					m->getMoleculeTypeName() << "\t" <<
+					m->getUniqueID() << "\t" <<
+					rxn->getName() << "\t" <<
+					oldAwithTotal << "\t" << newA << endl;
+		}
+	}
 }
 
 
@@ -660,9 +1207,71 @@ void MoleculeType::removeFromObservables(Molecule *m)
 
 void MoleculeType::removeFromRxns(Molecule * m)
 {
+	vector<CompactPartnerPool *> compactPools;
+	vector<int> compactPoolOldSizes;
+	vector<bool> compactPoolChanged;
+	for (unsigned int r=0; r<reactions.size(); r++) {
+		ReactionClass *rxn = reactions.at(r);
+		int partnerComponent = -1;
+		if (!rxn->supportsCompactPartnerPoolScale() ||
+				!rxn->getCompactPartnerPoolInfo(
+					reactionPositions.at(r), partnerComponent))
+			continue;
+		CompactPartnerPool *pool = rxn->getCompactPartnerPool();
+		if (pool == 0 || !pool->supportsBatchUpdate())
+			continue;
+		bool allReactionsSupportScale = true;
+		const vector<ReactionClass *> &registered =
+				pool->getRegisteredReactions();
+		for (vector<ReactionClass *>::const_iterator it = registered.begin();
+				it != registered.end(); ++it) {
+			if (*it == 0 || !(*it)->supportsCompactPartnerPoolScale()) {
+				allReactionsSupportScale = false;
+				break;
+			}
+		}
+		if (!allReactionsSupportScale)
+			continue;
+		int poolIndex = -1;
+		for (unsigned int p=0; p<compactPools.size(); p++) {
+			if (compactPools.at(p) == pool) {
+				poolIndex = static_cast<int>(p);
+				break;
+			}
+		}
+		if (poolIndex >= 0)
+			continue;
+		compactPools.push_back(pool);
+		compactPoolOldSizes.push_back(pool->size());
+		rxn->remove(m, reactionPositions.at(r));
+		compactPoolChanged.push_back(pool->size() != compactPoolOldSizes.back());
+	}
+	for (unsigned int p=0; p<compactPools.size(); p++) {
+		if (compactPoolChanged.at(p))
+			this->system->updateCompactPartnerPoolBatch(
+					compactPools.at(p), compactPoolOldSizes.at(p),
+					compactPools.at(p)->size());
+	}
+
 	int r=0;
 	for(rxnIter = reactions.begin(); rxnIter != reactions.end(); rxnIter++, r++ )
 	{
+		ReactionClass *rxn = *rxnIter;
+		bool handledByCompactPool = false;
+		int partnerComponent = -1;
+		if (rxn->supportsCompactPartnerPoolUpdate() &&
+			rxn->getCompactPartnerPoolInfo(
+				reactionPositions.at(r), partnerComponent)) {
+			CompactPartnerPool *pool = rxn->getCompactPartnerPool();
+			for (unsigned int p=0; p<compactPools.size(); p++) {
+				if (compactPools.at(p) == pool) {
+					handledByCompactPool = true;
+					break;
+				}
+			}
+		}
+		if (handledByCompactPool)
+			continue;
 		double oldA = (*rxnIter)->get_a();
 		(*rxnIter)->remove(m, reactionPositions.at(r));
 		double newA = (*rxnIter)->update_a();
@@ -836,5 +1445,3 @@ void MoleculeType::printDetails() const
 
 //     return nfstream;
 // }
-
-

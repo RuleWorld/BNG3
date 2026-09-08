@@ -7,22 +7,102 @@ compared through ``tests.validation.compare`` rather than by section counts.
 
 Usage:
     python scripts/validate.py [--bng-cpp PATH] [--verbose]
+    python scripts/validate.py [--bng-cpp PATH] --skip-file PATH --skip-profile NAME
 """
 
 import argparse
+import json
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import Union
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
 from tests.validation.compare import compare_net, parse_net  # noqa: E402
 
+_FILE_ARGUMENT = re.compile(r"\b(?:file|argfile)\s*=>\s*(['\"])([^'\"]+)\1")
 
-def run_validation(bng_cpp, validate_dir, verbose=False, skip_models=None):
+
+def load_skip_models(skip_file: Union[Path, str], profile: str) -> list[str]:
+    """Load one validated reference-exclusion profile from a JSON manifest."""
+
+    path = Path(skip_file)
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError(
+            f"cannot read reference exclusion manifest {path}: {exc}"
+        ) from exc
+
+    if not isinstance(manifest, dict) or manifest.get("schema_version") != 1:
+        raise ValueError(
+            f"reference exclusion manifest {path} must use schema_version 1"
+        )
+
+    profiles = manifest.get("profiles")
+    if not isinstance(profiles, dict):
+        raise ValueError(f"reference exclusion manifest {path} must contain profiles")
+
+    models = profiles.get(profile)
+    if not isinstance(models, list) or any(
+        not isinstance(model, str) or not model.strip() for model in models
+    ):
+        raise ValueError(
+            f"reference exclusion profile {profile!r} must be a list of names"
+        )
+    if len(models) != len(set(models)):
+        raise ValueError(f"reference exclusion profile {profile!r} contains duplicates")
+
+    return list(models)
+
+
+def copy_referenced_support_files(
+    bngl: Path, validate_dir: Path, dat_dir: Path, work_dir: Path
+) -> list[Path]:
+    """Stage files named by model file arguments into a validation work tree.
+
+    Validation runs in an isolated directory.  Besides the BNGL input and the
+    explicit ``INPUT_FILES`` directory, legacy models may reference a sibling
+    ``.net`` or another artifact from the BNG2 reference directory.  Copy the
+    referenced relative path, preserving subdirectories, so actions observe
+    the same file layout as the source model.
+    """
+
+    copied: list[Path] = []
+    text = bngl.read_text(encoding="utf-8")
+    for match in _FILE_ARGUMENT.finditer(text):
+        relative = Path(match.group(2))
+        if relative.is_absolute() or ".." in relative.parts:
+            continue
+
+        candidates = [
+            validate_dir / relative,
+            dat_dir / relative,
+            dat_dir / relative.name,
+            validate_dir / relative.name,
+        ]
+        source = next(
+            (candidate for candidate in candidates if candidate.is_file()), None
+        )
+        if source is None:
+            continue
+
+        destination = work_dir / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+        copied.append(destination)
+
+    return copied
+
+
+def run_validation(
+    bng_cpp, validate_dir, verbose=False, skip_models=None, strict_references=False
+):
     """Run bng_cpp on all .bngl files and compare against reference .net.
 
     Args:
@@ -30,6 +110,7 @@ def run_validation(bng_cpp, validate_dir, verbose=False, skip_models=None):
         validate_dir: Path to validation directory
         verbose: Whether to print detailed output
         skip_models: List of model names (without .bngl) to skip
+        strict_references: Treat an unskipped missing reference .net as an error
     """
     if skip_models is None:
         skip_models = []
@@ -52,9 +133,13 @@ def run_validation(bng_cpp, validate_dir, verbose=False, skip_models=None):
         ref_net = dat_dir / f"{model_name}.net"
 
         if not ref_net.exists():
-            results["skip"] += 1
-            if verbose:
-                details.append(f"SKIP  {model_name} (no reference .net)")
+            if strict_references:
+                results["error"] += 1
+                details.append(f"ERROR {model_name} (no reference .net)")
+            else:
+                results["skip"] += 1
+                if verbose:
+                    details.append(f"SKIP  {model_name} (no reference .net)")
             continue
 
         # Run bng_cpp to generate network
@@ -68,6 +153,7 @@ def run_validation(bng_cpp, validate_dir, verbose=False, skip_models=None):
             if input_dir.exists():
                 for f in input_dir.iterdir():
                     shutil.copy(f, Path(tmpdir) / f.name)
+            copy_referenced_support_files(bngl, validate_dir, dat_dir, Path(tmpdir))
 
             try:
                 result = subprocess.run(
@@ -139,6 +225,22 @@ def main():
         default="",
         help="Comma-separated list of model names to skip (without .bngl extension)",
     )
+    parser.add_argument(
+        "--skip-file",
+        type=Path,
+        default=None,
+        help="JSON manifest containing named reference-exclusion profiles",
+    )
+    parser.add_argument(
+        "--skip-profile",
+        default=None,
+        help="Profile to load from --skip-file",
+    )
+    parser.add_argument(
+        "--strict-references",
+        action="store_true",
+        help="Treat an unskipped model without a reference .net as an error",
+    )
     args = parser.parse_args()
 
     # Find bng_cpp
@@ -171,8 +273,16 @@ def main():
         print(f"ERROR: Validation directory not found: {validate_dir}")
         sys.exit(1)
 
+    if bool(args.skip_file) != bool(args.skip_profile):
+        parser.error("--skip-file and --skip-profile must be provided together")
+
     # Parse skip list
     skip_models = [m.strip() for m in args.skip.split(",") if m.strip()]
+    if args.skip_file:
+        try:
+            skip_models.extend(load_skip_models(args.skip_file, args.skip_profile))
+        except ValueError as exc:
+            parser.error(str(exc))
 
     print(f"BNG C++:    {bng_cpp}")
     print(f"Validation: {validate_dir}")
@@ -182,7 +292,11 @@ def main():
     print()
 
     results, details = run_validation(
-        bng_cpp, validate_dir, verbose=args.verbose, skip_models=skip_models
+        bng_cpp,
+        validate_dir,
+        verbose=args.verbose,
+        skip_models=skip_models,
+        strict_references=args.strict_references,
     )
 
     # Print details
@@ -198,7 +312,12 @@ def main():
     print(f"  PASS:  {results['pass']}")
     print(f"  FAIL:  {results['fail']}")
     print(f"  ERROR: {results['error']}")
-    print(f"  SKIP:  {results['skip']} (no reference .net)")
+    skip_note = (
+        "explicit exclusions only"
+        if args.strict_references
+        else "explicit exclusions or no reference .net"
+    )
+    print(f"  SKIP:  {results['skip']} ({skip_note})")
     print("=" * 60)
 
     if results["fail"] > 0 or results["error"] > 0:

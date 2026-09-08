@@ -106,7 +106,9 @@ Generate the reaction network, caching it on the model.
 
 #### `simulate(method="ode", t_end=100.0, n_steps=100, ...) -> SimResult`
 
-Run a simulation using one of the bundled engines.
+Run a simulation using one of the bundled engines. For `method="nf"`,
+`traversal_limit=-1` uses the model-derived NFSim neighborhood limit; a
+non-negative value mirrors NFSim's `-utl` control.
 
 #### `execute(verbose=False)`
 

@@ -441,6 +441,7 @@ namespace NFcore {
 
 				int getNumOfArgs() const;
 				string getArgName(int aIndex) const;
+				const string& getOriginalExpression() const { return originalExpression; }
 
 				void addTypeIMoleculeDependency(MoleculeType *mt);
 				bool hasTimeDependentLocalFunction() const;

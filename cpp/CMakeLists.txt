@@ -67,6 +67,7 @@ add_library(bng_engine STATIC
     engine/HybridModelGenerator.cpp
     io/NetWriter.cpp
     io/NetReader.cpp
+    io/SbmlReader.cpp
     io/XmlWriter.cpp
     io/BnglWriter.cpp
     io/SbmlWriter.cpp
@@ -90,6 +91,7 @@ add_library(bng_engine STATIC
 )
 target_include_directories(bng_engine PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/nfsim/NFinput/TinyXML
     ${ANTLR_GEN_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/parser
     ${antlr4_runtime_SOURCE_DIR}/runtime/Cpp/runtime/src
@@ -108,6 +110,7 @@ target_link_libraries(bng_engine PUBLIC
     sundials_sunmatrixdense_static
 )
 target_compile_definitions(bng_engine PUBLIC BNG_CPP_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+target_compile_definitions(bng_engine PUBLIC TIXML_USE_STL)
 
 # =============================================================================
 # nfsim_core (Network-free stochastic simulator)
@@ -193,6 +196,15 @@ else()
     endif()
 endif()
 
+# Apply the guarded Release IPO setting to the embedded NFsim implementation.
+# Final targets also need the property so the linker can consume the NFsim
+# bitcode when it is linked into the unified CLI, Python extension, or legacy
+# standalone executable.
+if(NFSIM_IPO_SUPPORTED)
+    set_property(TARGET nfsim_core
+        PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
+endif()
+
 # =============================================================================
 # bionetgen_core — combined static library for all C++ components
 # =============================================================================
@@ -213,6 +225,10 @@ if(BUILD_CLI)
     add_executable(bng_cpp main.cpp)
     target_link_libraries(bng_cpp PRIVATE bionetgen_core)
     target_compile_definitions(bng_cpp PRIVATE BNG_CPP_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    if(NFSIM_IPO_SUPPORTED)
+        set_property(TARGET bng_cpp
+            PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
+    endif()
 endif()
 
 # =============================================================================
@@ -233,6 +249,10 @@ if(BUILD_NFSIM_CLI)
         ${NFSIM_DIR}/NFtest/agentcell/cell
     )
     target_compile_definitions(NFsim PRIVATE TIXML_USE_STL)
+    if(NFSIM_IPO_SUPPORTED)
+        set_property(TARGET NFsim
+            PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
+    endif()
 endif()
 
 # =============================================================================
@@ -272,6 +292,11 @@ if(BUILD_PYTHON_BINDINGS)
         ${sundials_BINARY_DIR}/include
     )
     target_compile_definitions(_bionetgen_cpp PRIVATE TIXML_USE_STL)
+
+    if(NFSIM_IPO_SUPPORTED)
+        set_property(TARGET _bionetgen_cpp
+            PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
+    endif()
 
     install(TARGETS _bionetgen_cpp DESTINATION bionetgen COMPONENT python)
 endif()

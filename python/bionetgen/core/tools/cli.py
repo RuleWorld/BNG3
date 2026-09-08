@@ -97,9 +97,14 @@ class BNGCLI:
     def run(self):
         self.logger.debug("Running", loc=f"{__file__} : BNGCLI.run()")
 
-        # C++ fast path
+        # C++ fast path.  Import availability is the only fallback boundary;
+        # parse or execution errors must not silently change engines.
         try:
             from bionetgen import _bionetgen_cpp as _cpp
+        except ImportError:
+            _cpp = None
+
+        if _cpp is not None:
             import shutil
 
             # Determine path to run on
@@ -128,26 +133,22 @@ class BNGCLI:
             self.result.process_return = 0
             self.result.output = ["Ran successfully via C++ backend"]
             return
-        except ImportError:
-            self.logger.debug("C++ backend not available, falling back to Perl")
-        except Exception as e:
-            self.logger.warning(f"C++ backend failed: {e}, falling back to Perl")
 
-        # If BNG2.pl is not available, fall back to an empty result so that
-        # library users can still instantiate and inspect models without a
-        # full BioNetGen install.
+        self.logger.debug("C++ backend not available, using explicit legacy Perl path")
+
+        # A missing legacy executable is an error, not a successful empty run.
         if self.bng_exec is None:
-            from bionetgen.core.tools import BNGResult
-
-            self.result = BNGResult(self.output)
-            self.result.process_return = 0
-            self.result.output = []
-            if self.old_bngpath is not None:
-                os.environ["BNGPATH"] = self.old_bngpath
-            else:
-                if "BNGPATH" in os.environ:
-                    del os.environ["BNGPATH"]
-            return
+            raise BNGRunError(
+                [
+                    "perl",
+                    "BNG2.pl",
+                    self.inp_path if not self.is_bngmodel else "<model>",
+                ],
+                message=(
+                    "Neither the in-process BNG3 backend nor the legacy BNG2.pl "
+                    "compatibility executable is available."
+                ),
+            )
 
         from bionetgen.core.utils.utils import run_command
 

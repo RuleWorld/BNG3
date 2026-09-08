@@ -1,13 +1,16 @@
 #include "OdeIntegrator.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <fstream>
 #include <iomanip>
 #include <random>
 #include <sstream>
 #include <stdexcept>
+#include <string_view>
 
+#include "parser/antlr_compat.hpp"
 #include "antlr4-runtime.h"
 #include "BNGLexer.h"
 #include "BNGParser.h"
@@ -118,6 +121,37 @@ bool hasWordBoundaryMatch(const std::string& text, const std::string& target) {
     return false;
 }
 
+bool hasWordBoundaryMatchCaseInsensitive(std::string_view text, std::string_view target) {
+    if (target.empty() || text.length() < target.length()) {
+        return false;
+    }
+
+    for (std::size_t i = 0; i <= text.length() - target.length(); ++i) {
+        bool match = true;
+        for (std::size_t j = 0; j < target.length(); ++j) {
+            if (std::tolower(static_cast<unsigned char>(text[i + j])) !=
+                std::tolower(static_cast<unsigned char>(target[j]))) {
+                match = false;
+                break;
+            }
+        }
+        if (!match) {
+            continue;
+        }
+
+        const bool leftBoundary =
+            i == 0 || (!std::isalnum(static_cast<unsigned char>(text[i - 1])) && text[i - 1] != '_');
+        const bool rightBoundary =
+            i + target.length() == text.length() ||
+            (!std::isalnum(static_cast<unsigned char>(text[i + target.length()])) &&
+             text[i + target.length()] != '_');
+        if (leftBoundary && rightBoundary) {
+            return true;
+        }
+    }
+    return false;
+}
+
 } // anonymous namespace
 
 
@@ -167,6 +201,18 @@ void OdeIntegrator::compile() {
                 }
             }
         }
+    }
+
+    // Precompute lowercase function names once instead of allocating and
+    // transforming them for every reaction/function pair.
+    std::vector<std::string> lowerFuncNames;
+    lowerFuncNames.reserve(model_.getFunctions().size());
+    for (const auto& func : model_.getFunctions()) {
+        std::string name = func.getName();
+        std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+        lowerFuncNames.push_back(std::move(name));
     }
 
     std::size_t rxnIndex = 0;
@@ -466,12 +512,25 @@ void OdeIntegrator::compile() {
         bool isFunctional = crxn.isFunctional;  // May already be set by Sat/MM/Hill
         const auto& rateExpr = rxn.getRateExpression();
 
-        if (!isFunctional && rateExpr.has_value()) {
-            std::string rateLawLower = rawRateLaw;
-            std::transform(rateLawLower.begin(), rateLawLower.end(), rateLawLower.begin(), ::tolower);
+        std::string lowerRawRL;
+        bool lowerRawRLPopulated = false;
+        const auto ensureLowerRawRL = [&]() {
+            if (lowerRawRLPopulated) {
+                return;
+            }
+            lowerRawRL = rawRateLaw;
+            std::transform(lowerRawRL.begin(), lowerRawRL.end(), lowerRawRL.begin(), [](unsigned char c) {
+                return static_cast<char>(std::tolower(c));
+            });
+            lowerRawRLPopulated = true;
+        };
 
-            if (rateLawLower.find("time") != std::string::npos ||
-                hasWordBoundaryMatch(rateLawLower, "t")) {
+        bool checkedFunctions = false;
+        if (!isFunctional && rateExpr.has_value()) {
+            ensureLowerRawRL();
+
+            if (lowerRawRL.find("time") != std::string::npos ||
+                hasWordBoundaryMatch(lowerRawRL, "t")) {
                 isFunctional = true;
             } else {
                 // Check for observable dependencies
@@ -487,18 +546,18 @@ void OdeIntegrator::compile() {
             // --- Bug 2 fix: Check for user-defined function references ---
             std::string matchedFuncName;
             if (!isFunctional) {
-                const std::string rawRL = rxn.getRateLaw();
+                std::size_t functionIndex = 0;
                 for (const auto& func : model_.getFunctions()) {
                     const auto& fname = func.getName();
-                    std::string fnameLower = fname;
-                    std::transform(fnameLower.begin(), fnameLower.end(), fnameLower.begin(), ::tolower);
-                    if (hasWordBoundaryMatch(rateLawLower, fnameLower) ||
-                        hasWordBoundaryMatch(rawRL, fname)) {
+                    if (hasWordBoundaryMatchCaseInsensitive(rawRateLaw, lowerFuncNames[functionIndex]) ||
+                        hasWordBoundaryMatch(rawRateLaw, fname)) {
                         isFunctional = true;
                         matchedFuncName = fname;
                         break;
                     }
+                    ++functionIndex;
                 }
+                checkedFunctions = true;
             }
 
             if (isFunctional) {
@@ -525,20 +584,18 @@ void OdeIntegrator::compile() {
 
         // Bug 2 fix: Also check for user-defined function references OUTSIDE the rateExpr block
         // This catches cases where rateExpr is nullopt but the rate law string references a function
-        if (!crxn.isFunctional) {
-            const std::string rawRL = rxn.getRateLaw();
-            std::string rlLow = rawRL;
-            std::transform(rlLow.begin(), rlLow.end(), rlLow.begin(), ::tolower);
+        if (!crxn.isFunctional && !checkedFunctions) {
+            ensureLowerRawRL();
+            std::size_t functionIndex = 0;
             for (const auto& func : model_.getFunctions()) {
-                std::string fnameLow = func.getName();
-                std::transform(fnameLow.begin(), fnameLow.end(), fnameLow.begin(), ::tolower);
-                if (hasWordBoundaryMatch(rlLow, fnameLow) || hasWordBoundaryMatch(rawRL, func.getName())) {
+                if (hasWordBoundaryMatchCaseInsensitive(rawRateLaw, lowerFuncNames[functionIndex]) ||
+                    hasWordBoundaryMatch(rawRateLaw, func.getName())) {
                     crxn.isFunctional = true;
                     // Parse the full rate law string into an expression so that
                     // compound expressions like "k * funcName()" are preserved.
                     ast::Expression funcExpr2 = ast::Expression::number(0.0);
                     try {
-                        funcExpr2 = parser::parseExpression(rawRL);
+                        funcExpr2 = parser::parseExpression(rawRateLaw);
                     } catch (...) {
                         // Fallback: use bare identifier if parsing fails
                         funcExpr2 = ast::Expression::identifier(func.getName());
@@ -559,6 +616,7 @@ void OdeIntegrator::compile() {
                     hasFunctionalRates_ = true;
                     break;
                 }
+                ++functionIndex;
             }
         }
 
@@ -656,14 +714,43 @@ void OdeIntegrator::compile() {
     // 2. Pre-allocate groupValues for reuse in derivs()
     groupValues_.resize(compiledGroups_.size(), 0.0);
 
-    // 3. Separate constant-rate vs functional-rate reaction indices
+    // 3. Keep large constant-reaction networks in compact, contiguous arrays
+    // for derivs(). Small networks retain the original indexed representation
+    // because their one-time packing cost is not amortized by CVODE callbacks.
+    constexpr std::size_t compactReactionThreshold = 512;
     constantRxnIndices_.clear();
+    constantReactions_.clear();
+    constantReactantIndices_.clear();
+    constantProductIndices_.clear();
+    useCompactConstantReactions_ = false;
     functionalRxnIndices_.clear();
     for (std::size_t i = 0; i < compiledRxns_.size(); ++i) {
         if (compiledRxns_[i].isFunctional) {
             functionalRxnIndices_.push_back(i);
         } else {
             constantRxnIndices_.push_back(i);
+        }
+    }
+
+    if (constantRxnIndices_.size() >= compactReactionThreshold) {
+        useCompactConstantReactions_ = true;
+        constantReactions_.reserve(constantRxnIndices_.size());
+        constantReactantIndices_.reserve(constantRxnIndices_.size());
+        constantProductIndices_.reserve(constantRxnIndices_.size());
+        for (const auto idx : constantRxnIndices_) {
+            const auto& rxn = compiledRxns_[idx];
+            CompiledConstantReaction compact;
+            compact.reactantOffset = constantReactantIndices_.size();
+            compact.productOffset = constantProductIndices_.size();
+            compact.reactantCount = rxn.reactantIndices.size();
+            compact.productCount = rxn.productIndices.size();
+            compact.rateConstant = rxn.rateConstant;
+            compact.isTotalRate = rxn.isTotalRate;
+            constantReactantIndices_.insert(constantReactantIndices_.end(),
+                                            rxn.reactantIndices.begin(), rxn.reactantIndices.end());
+            constantProductIndices_.insert(constantProductIndices_.end(),
+                                           rxn.productIndices.begin(), rxn.productIndices.end());
+            constantReactions_.push_back(compact);
         }
     }
 }
@@ -674,143 +761,182 @@ void OdeIntegrator::compileGroups() {
     // Note: const_cast needed because buildPatternGraph may infer molecule types
     auto& mutableModel = const_cast<ast::Model&>(model_);
 
+    struct CachedObservablePattern {
+        BNGcore::PatternGraph graph;
+        std::string compartment;
+    };
+    struct ParsedPatternInfo {
+        const BNGcore::PatternGraph* graph;
+        std::string compartment;
+        std::string quantifier;
+        int quantifierThreshold;
+        bool hasQuantifier;
+    };
+    std::unordered_map<std::string, CachedObservablePattern> parsedObservableCache;
+
     for (const auto& observable : model_.getObservables()) {
         CompiledGroup group;
         group.name = observable.getName();
 
-        // Match each pattern against all species
-        for (std::size_t speciesIndex = 0; speciesIndex < network_.species.size(); ++speciesIndex) {
-            std::size_t weight = 0;
+        std::vector<ParsedPatternInfo> parsedPatterns;
+        parsedPatterns.reserve(observable.getPatterns().size());
 
-            for (const auto& patternText : observable.getPatterns()) {
-                // Parse the observable pattern
-                try {
-                    // Extract optional quantifier (e.g., "> 2", "== 1", "<= 3")
-                    std::string cleanPattern = patternText;
-                    std::string quantOp;
-                    int quantThreshold = 0;
-                    bool hasQuantifier = false;
+        // Parse and cache each pattern once before matching it against all
+        // species. Quantifier metadata remains per occurrence.
+        for (const auto& patternText : observable.getPatterns()) {
+            try {
+                std::string cleanPattern = patternText;
+                std::string quantifier;
+                int quantifierThreshold = 0;
+                bool hasQuantifier = false;
 
-                    // Look for trailing quantifier: operators >=, <=, ==, !=, >, <
-                    // Pattern: species_def WS* (OP WS* INT)
-                    static const std::vector<std::string> ops = {">=", "<=", "==", "!=", ">", "<"};
-                    for (const auto& op : ops) {
-                        auto pos = cleanPattern.rfind(op);
-                        if (pos != std::string::npos && pos > 0) {
-                            std::string after = cleanPattern.substr(pos + op.size());
-                            // Trim whitespace
-                            after.erase(0, after.find_first_not_of(" \t"));
-                            after.erase(after.find_last_not_of(" \t") + 1);
-                            // Check if remainder is an integer
-                            bool isInt = !after.empty();
-                            for (char c : after) {
-                                if (!std::isdigit(static_cast<unsigned char>(c))) { isInt = false; break; }
-                            }
-                            if (isInt) {
-                                // Verify the character before the operator is whitespace or close-paren
-                                // to avoid matching bond syntax like "!1"
-                                std::string before = cleanPattern.substr(0, pos);
-                                before.erase(before.find_last_not_of(" \t") + 1);
-                                if (!before.empty() && (before.back() == ')' || std::isalnum(static_cast<unsigned char>(before.back())) || before.back() == '_')) {
-                                    quantOp = op;
-                                    quantThreshold = std::stoi(after);
-                                    hasQuantifier = true;
-                                    cleanPattern = before;
-                                    break;
-                                }
-                            }
-                        }
+                static const std::vector<std::string> ops = {">=", "<=", "==", "!=", ">", "<"};
+                for (const auto& op : ops) {
+                    const auto pos = cleanPattern.rfind(op);
+                    if (pos == std::string::npos || pos == 0) {
+                        continue;
                     }
 
+                    std::string after = cleanPattern.substr(pos + op.size());
+                    after.erase(0, after.find_first_not_of(" \t"));
+                    after.erase(after.find_last_not_of(" \t") + 1);
+                    bool isInteger = !after.empty();
+                    for (const char c : after) {
+                        if (!std::isdigit(static_cast<unsigned char>(c))) {
+                            isInteger = false;
+                            break;
+                        }
+                    }
+                    if (!isInteger) {
+                        continue;
+                    }
+
+                    std::string before = cleanPattern.substr(0, pos);
+                    before.erase(before.find_last_not_of(" \t") + 1);
+                    if (before.empty() ||
+                        (before.back() != ')' &&
+                         !std::isalnum(static_cast<unsigned char>(before.back())) &&
+                         before.back() != '_')) {
+                        continue;
+                    }
+
+                    quantifier = op;
+                    quantifierThreshold = std::stoi(after);
+                    hasQuantifier = true;
+                    cleanPattern = std::move(before);
+                    break;
+                }
+
+                auto cacheIt = parsedObservableCache.find(cleanPattern);
+                if (cacheIt == parsedObservableCache.end()) {
                     antlr4::ANTLRInputStream input(cleanPattern);
                     BNGLexer lexer(&input);
                     antlr4::CommonTokenStream tokens(&lexer);
                     BNGParser parser(&tokens);
                     auto* species = parser.species_def();
-
                     if (parser.getNumberOfSyntaxErrors() != 0) {
                         throw std::runtime_error("Could not parse observable pattern: " + patternText);
                     }
 
-                    const auto pattern = bng::parser::buildPatternGraph(species, mutableModel, false);
-
-                    // Compartment matching strategy:
-                    // 1. Molecule-level compartment (e.g., SARM()@Cyt) -- handled
-                    //    by Ullmann matcher's Node::operator== compartment check.
-                    // 2. Species-level prefix compartment (e.g., @PM:L) -- no
-                    //    compartment on pattern nodes; filter at species level.
-                    const auto patternCompartment = bng::parser::extractSpeciesCompartment(species);
-                    if (!patternCompartment.empty()) {
-                        bool patternHasMoleculeCompartment = false;
-                        for (auto it = pattern.begin(); it != pattern.end(); ++it) {
-                            if (!(*it)->get_compartment().empty()) {
-                                patternHasMoleculeCompartment = true;
-                                break;
-                            }
-                        }
-                        if (!patternHasMoleculeCompartment) {
-                            const auto& speciesCompartment = network_.species.get(speciesIndex).getCompartment();
-                            if (speciesCompartment != patternCompartment) {
-                                continue;  // Skip -- species-level compartment mismatch
-                            }
-                        }
-                    }
-
-                    // Count matches (with node-level state and structure validation)
-                    const auto& targetGraph = network_.species.get(speciesIndex).getSpeciesGraph().getGraph();
-                    BNGcore::UllmannSGIso matcher(pattern, targetGraph);
-                    BNGcore::List<BNGcore::Map> maps;
-                    matcher.find_maps(maps);
-
-                    // Post-filter: verify each map respects node states, compartments,
-                    // and structural roles (molecule vs component vs bond nodes).
-                    // The Ullmann SGIso matches by type_name which may conflate molecule
-                    // types and component types that share the same name (e.g., CDKN1A).
-                    std::size_t matchCount = 0;
-                    for (auto mapIt = maps.begin(); mapIt != maps.end(); ++mapIt) {
-                        bool valid = true;
-                        for (auto pnIt = pattern.begin(); pnIt != pattern.end(); ++pnIt) {
-                            auto* target = mapIt->mapf(*pnIt);
-                            if (!target) { valid = false; break; }
-                            // Check state compatibility
-                            if (!((*pnIt)->get_state() == target->get_state())) { valid = false; break; }
-                            // Check structural role: molecule nodes must map to molecule nodes
-                            bool patternIsMol = ((*pnIt)->in_degree() == 0);
-                            bool targetIsMol = (target->in_degree() == 0);
-                            if (patternIsMol != targetIsMol) { valid = false; break; }
-                            // Check per-molecule compartment
-                            if (patternIsMol) {
-                                const auto& pc = (*pnIt)->get_compartment();
-                                if (!pc.empty() && target->get_compartment() != pc) { valid = false; break; }
-                            }
-                        }
-                        if (valid) ++matchCount;
-                    }
-
-                    // Apply quantifier filter if present
-                    if (hasQuantifier) {
-                        bool passes = false;
-                        int mc = static_cast<int>(matchCount);
-                        if (quantOp == ">") passes = mc > quantThreshold;
-                        else if (quantOp == "<") passes = mc < quantThreshold;
-                        else if (quantOp == ">=") passes = mc >= quantThreshold;
-                        else if (quantOp == "<=") passes = mc <= quantThreshold;
-                        else if (quantOp == "==") passes = mc == quantThreshold;
-                        else if (quantOp == "!=") passes = mc != quantThreshold;
-                        matchCount = passes ? matchCount : 0;
-                    }
-
-                    // For "Species" observables, each pattern contributes 0 or 1
-                    // (presence/absence). The total weight is the number of
-                    // patterns that match, NOT clamped to 1 across all patterns.
-                    if (observable.getType() == "Species" && matchCount > 0) {
-                        matchCount = 1;
-                    }
-                    weight += matchCount;
-                } catch (const std::exception& e) {
-                    throw std::runtime_error("Failed to compile observable " + observable.getName() +
-                                           " pattern '" + patternText + "': " + e.what());
+                    auto graph = bng::parser::buildPatternGraph(species, mutableModel, false);
+                    auto compartment = bng::parser::extractSpeciesCompartment(species);
+                    cacheIt = parsedObservableCache.emplace(
+                        cleanPattern,
+                        CachedObservablePattern {std::move(graph), std::move(compartment)})
+                                  .first;
                 }
+
+                parsedPatterns.push_back({&cacheIt->second.graph,
+                                          cacheIt->second.compartment,
+                                          std::move(quantifier),
+                                          quantifierThreshold,
+                                          hasQuantifier});
+            } catch (const std::exception& error) {
+                throw std::runtime_error("Failed to compile observable " + observable.getName() +
+                                         " pattern '" + patternText + "': " + error.what());
+            }
+        }
+
+        // Match each pattern against all species
+        for (std::size_t speciesIndex = 0; speciesIndex < network_.species.size(); ++speciesIndex) {
+            std::size_t weight = 0;
+
+            for (const auto& parsedPattern : parsedPatterns) {
+                const auto& pattern = *parsedPattern.graph;
+
+                // Compartment matching strategy:
+                // 1. Molecule-level compartment (e.g., SARM()@Cyt) -- handled
+                //    by Ullmann matcher's Node::operator== compartment check.
+                // 2. Species-level prefix compartment (e.g., @PM:L) -- no
+                //    compartment on pattern nodes; filter at species level.
+                const auto& patternCompartment = parsedPattern.compartment;
+                if (!patternCompartment.empty()) {
+                    bool patternHasMoleculeCompartment = false;
+                    for (auto it = pattern.begin(); it != pattern.end(); ++it) {
+                        if (!(*it)->get_compartment().empty()) {
+                            patternHasMoleculeCompartment = true;
+                            break;
+                        }
+                    }
+                    if (!patternHasMoleculeCompartment) {
+                        const auto& speciesCompartment = network_.species.get(speciesIndex).getCompartment();
+                        if (speciesCompartment != patternCompartment) {
+                            continue;  // Skip -- species-level compartment mismatch
+                        }
+                    }
+                }
+
+                // Count matches (with node-level state and structure validation)
+                const auto& targetGraph = network_.species.get(speciesIndex).getSpeciesGraph().getGraph();
+                BNGcore::UllmannSGIso matcher(pattern, targetGraph);
+                BNGcore::List<BNGcore::Map> maps;
+                matcher.find_maps(maps);
+
+                // Post-filter: verify each map respects node states, compartments,
+                // and structural roles (molecule vs component vs bond nodes).
+                // The Ullmann SGIso matches by type_name which may conflate molecule
+                // types and component types that share the same name (e.g., CDKN1A).
+                std::size_t matchCount = 0;
+                for (auto mapIt = maps.begin(); mapIt != maps.end(); ++mapIt) {
+                    bool valid = true;
+                    for (auto pnIt = pattern.begin(); pnIt != pattern.end(); ++pnIt) {
+                        auto* target = mapIt->mapf(*pnIt);
+                        if (!target) { valid = false; break; }
+                        // Check state compatibility
+                        if (!((*pnIt)->get_state() == target->get_state())) { valid = false; break; }
+                        // Check structural role: molecule nodes must map to molecule nodes
+                        bool patternIsMol = ((*pnIt)->in_degree() == 0);
+                        bool targetIsMol = (target->in_degree() == 0);
+                        if (patternIsMol != targetIsMol) { valid = false; break; }
+                        // Check per-molecule compartment
+                        if (patternIsMol) {
+                            const auto& pc = (*pnIt)->get_compartment();
+                            if (!pc.empty() && target->get_compartment() != pc) { valid = false; break; }
+                        }
+                    }
+                    if (valid) ++matchCount;
+                }
+
+                // Apply quantifier filter if present
+                if (parsedPattern.hasQuantifier) {
+                    bool passes = false;
+                    const int matchCountInt = static_cast<int>(matchCount);
+                    if (parsedPattern.quantifier == ">") passes = matchCountInt > parsedPattern.quantifierThreshold;
+                    else if (parsedPattern.quantifier == "<") passes = matchCountInt < parsedPattern.quantifierThreshold;
+                    else if (parsedPattern.quantifier == ">=") passes = matchCountInt >= parsedPattern.quantifierThreshold;
+                    else if (parsedPattern.quantifier == "<=") passes = matchCountInt <= parsedPattern.quantifierThreshold;
+                    else if (parsedPattern.quantifier == "==") passes = matchCountInt == parsedPattern.quantifierThreshold;
+                    else if (parsedPattern.quantifier == "!=") passes = matchCountInt != parsedPattern.quantifierThreshold;
+                    matchCount = passes ? matchCount : 0;
+                }
+
+                // For "Species" observables, each pattern contributes 0 or 1
+                // (presence/absence). The total weight is the number of
+                // patterns that match, NOT clamped to 1 across all patterns.
+                if (observable.getType() == "Species" && matchCount > 0) {
+                    matchCount = 1;
+                }
+                weight += matchCount;
             }
 
             if (weight > 0) {
@@ -831,19 +957,43 @@ void OdeIntegrator::derivs(double t, const double* y, double* dydt) const {
         updateGroups(y, groupValues_);
     }
 
-    // Process constant-rate reactions first (no expression evaluation needed)
-    for (const auto idx : constantRxnIndices_) {
-        const auto& rxn = compiledRxns_[idx];
-        double rate = rxn.rateConstant;
+    // Process constant-rate reactions first (no expression evaluation needed).
+    if (useCompactConstantReactions_) {
+        // Their small index arrays are flattened so this hot loop does not
+        // chase a vector allocation for every reaction.
+        for (const auto& rxn : constantReactions_) {
+            double rate = rxn.rateConstant;
 
-        if (!rxn.isTotalRate) {
-            for (const auto ri : rxn.reactantIndices) {
-                rate *= y[ri];
+            if (!rxn.isTotalRate && rxn.reactantCount > 0) {
+                const auto* reactants = constantReactantIndices_.data() + rxn.reactantOffset;
+                for (std::size_t i = 0; i < rxn.reactantCount; ++i) {
+                    rate *= y[reactants[i]];
+                }
+            }
+
+            if (rxn.reactantCount > 0) {
+                const auto* reactants = constantReactantIndices_.data() + rxn.reactantOffset;
+                for (std::size_t i = 0; i < rxn.reactantCount; ++i) { dydt[reactants[i]] -= rate; }
+            }
+            if (rxn.productCount > 0) {
+                const auto* products = constantProductIndices_.data() + rxn.productOffset;
+                for (std::size_t i = 0; i < rxn.productCount; ++i) { dydt[products[i]] += rate; }
             }
         }
+    } else {
+        for (const auto idx : constantRxnIndices_) {
+            const auto& rxn = compiledRxns_[idx];
+            double rate = rxn.rateConstant;
 
-        for (const auto ri : rxn.reactantIndices) { dydt[ri] -= rate; }
-        for (const auto pi : rxn.productIndices) { dydt[pi] += rate; }
+            if (!rxn.isTotalRate) {
+                for (const auto ri : rxn.reactantIndices) {
+                    rate *= y[ri];
+                }
+            }
+
+            for (const auto ri : rxn.reactantIndices) { dydt[ri] -= rate; }
+            for (const auto pi : rxn.productIndices) { dydt[pi] += rate; }
+        }
     }
 
     // Process functional-rate reactions (require expression evaluation)
@@ -939,7 +1089,111 @@ void OdeIntegrator::updateGroups(const double* y, std::vector<double>& groupValu
     }
 }
 
+std::vector<double> OdeIntegrator::outputTimes(const OdeOptions& options) const {
+    if (!std::isfinite(options.tStart) || !std::isfinite(options.tEnd)) {
+        throw std::runtime_error("t_start and t_end must be finite");
+    }
+    if (options.tEnd < options.tStart) {
+        throw std::runtime_error("t_end must be greater than or equal to t_start");
+    }
+
+    if (!options.sampleTimes.empty()) {
+        std::vector<double> times = options.sampleTimes;
+        for (std::size_t i = 0; i < times.size(); ++i) {
+            if (!std::isfinite(times[i])) {
+                throw std::runtime_error("sample_times must contain only finite values");
+            }
+            if (times[i] < options.tStart || times[i] > options.tEnd) {
+                throw std::runtime_error(
+                    "sample_times must lie between t_start and t_end");
+            }
+            if (i > 0 && times[i] <= times[i - 1]) {
+                throw std::runtime_error(
+                    "sample_times must be strictly increasing");
+            }
+        }
+        return times;
+    }
+
+    if (options.nSteps == 0) {
+        throw std::runtime_error("n_steps must be positive");
+    }
+
+    const double dt = (options.tEnd - options.tStart) /
+                      static_cast<double>(options.nSteps);
+    std::vector<double> times;
+    times.reserve(options.nSteps + 1);
+    for (std::size_t step = 0; step <= options.nSteps; ++step) {
+        times.push_back(options.tStart + step * dt);
+    }
+    return times;
+}
+
+std::optional<ast::Expression> OdeIntegrator::parseStopIf(
+    const OdeOptions& options) const {
+    if (options.stopIf.empty()) {
+        return std::nullopt;
+    }
+    try {
+        return parser::parseExpression(options.stopIf);
+    } catch (const std::exception& error) {
+        throw std::runtime_error(
+            "Failed to parse stop_if expression: " + std::string(error.what()));
+    }
+}
+
+bool OdeIntegrator::stopConditionMet(const ast::Expression& condition,
+                                     double time,
+                                     const std::vector<double>& state) const {
+    std::vector<double> groupValues;
+    updateGroups(state.data(), groupValues);
+
+    const auto resolver = [&](const std::string& name) -> double {
+        if (name == "time") {
+            return time;
+        }
+        const auto observable = observableIndex_.find(name);
+        if (observable != observableIndex_.end()) {
+            return groupValues[observable->second];
+        }
+        return model_.getParameters().evaluate(name, time);
+    };
+
+    try {
+        return condition.evaluate(resolver, time) != 0.0;
+    } catch (const std::exception& error) {
+        throw std::runtime_error(
+            "Failed to evaluate stop_if expression '" +
+            condition.toString() + "': " + error.what());
+    }
+}
+
+bool OdeIntegrator::steadyStateReached(const OdeOptions& options,
+                                       double time,
+                                       const std::vector<double>& state) const {
+    if (!options.steadyState) {
+        return false;
+    }
+    if (nSpecies_ == 0) {
+        return true;
+    }
+
+    std::vector<double> derivatives(nSpecies_);
+    derivs(time, state.data(), derivatives.data());
+    double sumSq = 0.0;
+    for (const double derivative : derivatives) {
+        sumSq += derivative * derivative;
+    }
+    const double dx = std::sqrt(sumSq) / static_cast<double>(nSpecies_);
+    return dx < options.steadyStateTol;
+}
+
 OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
+    if (options.method != "ssa" &&
+        (options.maxSimSteps > 0 || options.outputStepInterval > 0)) {
+        throw std::runtime_error(
+            "max_sim_steps and output_step_interval are supported only for SSA");
+    }
     if (options.method == "euler") {
         return integrateEuler(options);
     } else if (options.method == "rk4") {
@@ -954,18 +1208,9 @@ OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
 }
 
 OdeResult OdeIntegrator::integrateEuler(const OdeOptions& opts) {
-    const double dt = (opts.tEnd - opts.tStart) / static_cast<double>(opts.nSteps);
+    const auto times = outputTimes(opts);
+    const auto stopIfExpr = parseStopIf(opts);
     std::vector<double> y(nSpecies_);
-
-    // Parse stop_if expression at compile time
-    std::optional<ast::Expression> stopIfExpr;
-    if (!opts.stopIf.empty()) {
-        try {
-            stopIfExpr = parser::parseExpression(opts.stopIf);
-        } catch (const std::exception& e) {
-            std::cerr << "[bng_cpp] Warning: failed to parse stop_if expression: " << e.what() << "\n";
-        }
-    }
 
     // Initialize from species amounts
     for (std::size_t i = 0; i < nSpecies_; ++i) {
@@ -973,69 +1218,38 @@ OdeResult OdeIntegrator::integrateEuler(const OdeOptions& opts) {
     }
 
     OdeResult result;
-    result.timePoints.reserve(opts.nSteps + 1);
-    result.concentrations.reserve(opts.nSteps + 1);
+    result.timePoints.reserve(times.size());
+    result.concentrations.reserve(times.size());
 
-    for (std::size_t step = 0; step <= opts.nSteps; ++step) {
-        double t = opts.tStart + step * dt;
-        result.timePoints.push_back(t);
-        result.concentrations.push_back(y);
-
-        if (step < opts.nSteps) {
+    double currentTime = opts.tStart;
+    for (std::size_t step = 0; step < times.size(); ++step) {
+        const double targetTime = times[step];
+        const double dt = targetTime - currentTime;
+        if (dt > 0.0) {
             std::vector<double> dydt(nSpecies_);
-            derivs(t, y.data(), dydt.data());
-
-            // Check steady-state condition (BNG2 parity)
-            if (opts.steadyState && step > 0) {
-                double sumSq = 0.0;
-                for (std::size_t i = 0; i < nSpecies_; ++i) {
-                    sumSq += dydt[i] * dydt[i];
-                }
-                double dx = std::sqrt(sumSq) / static_cast<double>(nSpecies_);
-                if (dx < opts.steadyStateTol) {
-                    std::cerr << "[bng_cpp] Steady state reached at step " << step
-                              << ", t=" << t << ", dx=" << dx << "\n";
-                    break;  // Stop early
-                }
-            }
-
-            // Check stop_if condition (BNG2 parity)
-            if (stopIfExpr.has_value() && step > 0) {
-                std::vector<double> groupValues;
-                updateGroups(y.data(), groupValues);
-
-                auto resolver = [&](const std::string& name) -> double {
-                    if (name == "time") return t;
-                    for (std::size_t g = 0; g < compiledGroups_.size(); ++g) {
-                        if (compiledGroups_[g].name == name) {
-                            return groupValues[g];
-                        }
-                    }
-                    return model_.getParameters().evaluate(name);
-                };
-
-                try {
-                    double stopVal = stopIfExpr->evaluate(resolver, t);
-                    if (stopVal != 0.0) {
-                        std::cerr << "[bng_cpp] stop_if condition met at step " << step
-                                  << ", t=" << t << ": " << opts.stopIf << "\n";
-                        break;
-                    }
-                } catch (const std::exception& e) {
-                    // Ignore evaluation errors in stop_if
-                }
-            }
-
+            derivs(currentTime, y.data(), dydt.data());
             for (std::size_t i = 0; i < nSpecies_; ++i) {
                 y[i] += dt * dydt[i];
-                if (y[i] < 0.0) y[i] = 0.0;  // Clamp negative concentrations
+                if (y[i] < 0.0) y[i] = 0.0;
             }
+            currentTime = targetTime;
+        }
+
+        result.timePoints.push_back(targetTime);
+        result.concentrations.push_back(y);
+
+        if (step > 0 && steadyStateReached(opts, targetTime, y)) {
+            break;
+        }
+        if (step > 0 && stopIfExpr.has_value() &&
+            stopConditionMet(*stopIfExpr, targetTime, y)) {
+            break;
         }
     }
 
     // Compute observables for each time point
     result.observables.resize(result.timePoints.size());
-    for (std::size_t step = 0; step <= opts.nSteps; ++step) {
+    for (std::size_t step = 0; step < result.timePoints.size(); ++step) {
         updateGroups(result.concentrations[step].data(), result.observables[step]);
     }
 
@@ -1046,20 +1260,10 @@ OdeResult OdeIntegrator::integrateRK4(const OdeOptions& opts) {
     // Use internal sub-stepping for stability
     // For stiff systems, we need many more steps than the output points
     const std::size_t internalStepsPerOutput = 1000;  // Subdivide each output interval
-    const double outputDt = (opts.tEnd - opts.tStart) / static_cast<double>(opts.nSteps);
-    const double dt = outputDt / static_cast<double>(internalStepsPerOutput);
+    const auto times = outputTimes(opts);
+    const auto stopIfExpr = parseStopIf(opts);
 
     std::vector<double> y(nSpecies_);
-
-    // Parse stop_if expression at compile time
-    std::optional<ast::Expression> stopIfExpr;
-    if (!opts.stopIf.empty()) {
-        try {
-            stopIfExpr = parser::parseExpression(opts.stopIf);
-        } catch (const std::exception& e) {
-            std::cerr << "[bng_cpp] Warning: failed to parse stop_if expression: " << e.what() << "\n";
-        }
-    }
 
     // Initialize from species amounts
     for (std::size_t i = 0; i < nSpecies_; ++i) {
@@ -1067,75 +1271,19 @@ OdeResult OdeIntegrator::integrateRK4(const OdeOptions& opts) {
     }
 
     OdeResult result;
-    result.timePoints.reserve(opts.nSteps + 1);
-    result.concentrations.reserve(opts.nSteps + 1);
+    result.timePoints.reserve(times.size());
+    result.concentrations.reserve(times.size());
 
     std::vector<double> k1(nSpecies_), k2(nSpecies_), k3(nSpecies_), k4(nSpecies_);
     std::vector<double> yTemp(nSpecies_);
 
     double t = opts.tStart;
-    bool stopEarly = false;
-
-    for (std::size_t outputStep = 0; outputStep <= opts.nSteps; ++outputStep) {
-        double targetT = opts.tStart + outputStep * outputDt;
-
-        // Save output at this time point
-        result.timePoints.push_back(targetT);
-        result.concentrations.push_back(y);
-
-        // Check steady-state and stop_if at each output point
-        if (outputStep > 0 && outputStep < opts.nSteps) {
-            std::vector<double> dydt(nSpecies_);
-            derivs(t, y.data(), dydt.data());
-
-            // Steady-state detection (BNG2 parity)
-            if (opts.steadyState) {
-                double sumSq = 0.0;
-                for (std::size_t i = 0; i < nSpecies_; ++i) {
-                    sumSq += dydt[i] * dydt[i];
-                }
-                double dx = std::sqrt(sumSq) / static_cast<double>(nSpecies_);
-                if (dx < opts.steadyStateTol) {
-                    std::cerr << "[bng_cpp] Steady state reached at step " << outputStep
-                              << ", t=" << t << ", dx=" << dx << "\n";
-                    stopEarly = true;
-                }
-            }
-
-            // stop_if condition (BNG2 parity)
-            if (stopIfExpr.has_value()) {
-                std::vector<double> groupValues;
-                updateGroups(y.data(), groupValues);
-
-                auto resolver = [&](const std::string& name) -> double {
-                    if (name == "time") return t;
-                    for (std::size_t g = 0; g < compiledGroups_.size(); ++g) {
-                        if (compiledGroups_[g].name == name) {
-                            return groupValues[g];
-                        }
-                    }
-                    return model_.getParameters().evaluate(name);
-                };
-
-                try {
-                    double stopVal = stopIfExpr->evaluate(resolver, t);
-                    if (stopVal != 0.0) {
-                        std::cerr << "[bng_cpp] stop_if condition met at step " << outputStep
-                                  << ", t=" << t << ": " << opts.stopIf << "\n";
-                        stopEarly = true;
-                    }
-                } catch (const std::exception& e) {
-                    // Ignore evaluation errors
-                }
-            }
-        }
-
-        if (stopEarly || outputStep >= opts.nSteps) {
-            break;
-        }
-
-        if (outputStep < opts.nSteps) {
-            // Take internal steps to reach next output point
+    for (std::size_t outputStep = 0; outputStep < times.size(); ++outputStep) {
+        const double targetT = times[outputStep];
+        const double outputDt = targetT - t;
+        if (outputDt > 0.0) {
+            const double dt = outputDt / static_cast<double>(internalStepsPerOutput);
+            // Take internal steps to reach the next output point.
             for (std::size_t internalStep = 0; internalStep < internalStepsPerOutput; ++internalStep) {
                 // k1 = f(t, y)
                 derivs(t, y.data(), k1.data());
@@ -1172,12 +1320,24 @@ OdeResult OdeIntegrator::integrateRK4(const OdeOptions& opts) {
 
                 t += dt;
             }
+            t = targetT;
+        }
+
+        result.timePoints.push_back(targetT);
+        result.concentrations.push_back(y);
+
+        if (outputStep > 0 && steadyStateReached(opts, targetT, y)) {
+            break;
+        }
+        if (outputStep > 0 && stopIfExpr.has_value() &&
+            stopConditionMet(*stopIfExpr, targetT, y)) {
+            break;
         }
     }
 
     // Compute observables for each time point
     result.observables.resize(result.timePoints.size());
-    for (std::size_t step = 0; step <= opts.nSteps; ++step) {
+    for (std::size_t step = 0; step < result.timePoints.size(); ++step) {
         updateGroups(result.concentrations[step].data(), result.observables[step]);
     }
 
@@ -1260,14 +1420,25 @@ void OdeIntegrator::writeOutputFiles(const std::string& prefix, const OdeResult&
             for (std::size_t gi = 0; gi < compiledGroups_.size() && gi < result.observables[step].size(); ++gi) {
                 obsMap[compiledGroups_[gi].name] = result.observables[step][gi];
             }
-            // Also include parameters
-            auto resolver = [&](const std::string& name) -> double {
+            // Also resolve model-defined functions recursively.  A function
+            // output may reference another zero-argument function (for
+            // example f_diff() = f_correct() - f_builtin()), so treating
+            // every identifier as a parameter loses the model-function
+            // namespace and raises "Unknown parameter".
+            std::function<double(const std::string&)> resolver;
+            resolver = [&](const std::string& name) -> double {
                 auto obsIt = obsMap.find(name);
                 if (obsIt != obsMap.end()) return obsIt->second;
+                for (const auto& function : model_.getFunctions()) {
+                    if (function.getName() == name && function.getArgs().empty()) {
+                        return function.getExpression().evaluate(
+                            resolver, result.timePoints[step]);
+                    }
+                }
                 return model_.getParameters().evaluate(name);
             };
             for (auto& fexpr : funcExprs) {
-                double val = fexpr.evaluate(resolver);
+                double val = fexpr.evaluate(resolver, result.timePoints[step]);
                 gdat << " " << std::setw(18) << val;
             }
         }
@@ -1313,15 +1484,8 @@ static int cvodeCallbackWrapper(sunrealtype t, N_Vector y, N_Vector ydot, void* 
 }
 
 OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
-    // Parse stop_if expression at compile time
-    std::optional<ast::Expression> stopIfExpr;
-    if (!opts.stopIf.empty()) {
-        try {
-            stopIfExpr = parser::parseExpression(opts.stopIf);
-        } catch (const std::exception& e) {
-            std::cerr << "[bng_cpp] Warning: failed to parse stop_if expression: " << e.what() << "\n";
-        }
-    }
+    const auto times = outputTimes(opts);
+    const auto stopIfExpr = parseStopIf(opts);
 
     // SUNDIALS v7: Create context (required for all SUNDIALS objects)
     SUNContext sunctx = nullptr;
@@ -1372,6 +1536,15 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
 
     // Set max number of steps (BNG2 default: 2000, auto-increases if needed)
     CVodeSetMaxNumSteps(cvode_mem, 2000);
+    if (opts.maxStep > 0.0) {
+        flag = CVodeSetMaxStep(cvode_mem, opts.maxStep);
+        if (flag != CV_SUCCESS) {
+            CVodeFree(&cvode_mem);
+            N_VDestroy(y);
+            SUNContext_Free(&sunctx);
+            throw std::runtime_error("CVodeSetMaxStep failed");
+        }
+    }
 
     // Note: Perl's run_network does NOT enable stability limit detection.
     // Disabled for exact parity with Perl CVODE stepping behavior.
@@ -1431,14 +1604,37 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
 
     // Integration loop
     OdeResult result;
-    result.timePoints.reserve(opts.nSteps + 1);
-    result.concentrations.reserve(opts.nSteps + 1);
+    result.timePoints.reserve(times.size());
+    result.concentrations.reserve(times.size());
 
-    const double dt = (opts.tEnd - opts.tStart) / static_cast<double>(opts.nSteps);
     double t = opts.tStart;
 
-    for (std::size_t step = 0; step <= opts.nSteps; ++step) {
-        double tOut = opts.tStart + step * dt;
+    for (std::size_t step = 0; step < times.size(); ++step) {
+        const double tOut = times[step];
+
+        if (tOut > t) {
+            long int maxSteps = 2000;
+            while (true) {
+                flag = CVode(cvode_mem, tOut, y, &t, CV_NORMAL);
+
+                if (flag == CV_SUCCESS || flag == CV_TSTOP_RETURN) {
+                    break;
+                } else if (flag == CV_TOO_MUCH_WORK) {
+                    // Auto-increase max steps (matches BNG2 behavior)
+                    maxSteps *= 2;
+                    CVodeSetMaxNumSteps(cvode_mem, maxSteps);
+                    continue;
+                } else {
+                    SUNLinSolFree(LS);
+                    if (A) SUNMatDestroy(A);
+                    CVodeFree(&cvode_mem);
+                    N_VDestroy(y);
+                    SUNContext_Free(&sunctx);
+                    throw std::runtime_error("CVODE failed with flag " + std::to_string(flag));
+                }
+            }
+            t = tOut;
+        }
 
         // Save current state
         result.timePoints.push_back(tOut);
@@ -1461,55 +1657,12 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
             }
         }
 
-        // Check stop_if condition after each output point (BNG2 parity)
-        if (stopIfExpr.has_value() && step > 0 && step < opts.nSteps) {
-            std::vector<double> groupValues;
-            updateGroups(conc.data(), groupValues);
-
-            auto resolver = [&](const std::string& name) -> double {
-                if (name == "time") return tOut;
-                for (std::size_t g = 0; g < compiledGroups_.size(); ++g) {
-                    if (compiledGroups_[g].name == name) {
-                        return groupValues[g];
-                    }
-                }
-                return model_.getParameters().evaluate(name);
-            };
-
-            try {
-                double stopVal = stopIfExpr->evaluate(resolver, tOut);
-                if (stopVal != 0.0) {
-                    std::cerr << "[bng_cpp] stop_if condition met at step " << step
-                              << ", t=" << tOut << ": " << opts.stopIf << "\n";
-                    break;
-                }
-            } catch (const std::exception& e) {
-                // Ignore evaluation errors
-            }
+        if (step > 0 && steadyStateReached(opts, tOut, conc)) {
+            break;
         }
-
-        // Integrate to next output point
-        if (step < opts.nSteps) {
-            long int maxSteps = 2000;
-            while (true) {
-                flag = CVode(cvode_mem, tOut + dt, y, &t, CV_NORMAL);
-
-                if (flag == CV_SUCCESS || flag == CV_TSTOP_RETURN) {
-                    break;
-                } else if (flag == CV_TOO_MUCH_WORK) {
-                    // Auto-increase max steps (matches BNG2 behavior)
-                    maxSteps *= 2;
-                    CVodeSetMaxNumSteps(cvode_mem, maxSteps);
-                    continue;
-                } else {
-                    SUNLinSolFree(LS);
-                    if (A) SUNMatDestroy(A);
-                    CVodeFree(&cvode_mem);
-                    N_VDestroy(y);
-                    SUNContext_Free(&sunctx);
-                    throw std::runtime_error("CVODE failed with flag " + std::to_string(flag));
-                }
-            }
+        if (step > 0 && stopIfExpr.has_value() &&
+            stopConditionMet(*stopIfExpr, tOut, conc)) {
+            break;
         }
     }
 
@@ -1571,6 +1724,9 @@ double OdeIntegrator::computePropensity(const CompiledReaction& rxn, const std::
 
 OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     // Direct Gillespie algorithm (matches BNG2 implementation)
+    const auto times = outputTimes(opts);
+    const auto stopIfExpr = parseStopIf(opts);
+    const bool explicitTimes = !opts.sampleTimes.empty();
     std::mt19937_64 rng;
     if (opts.seed > 0) {
         rng.seed(opts.seed);
@@ -1587,13 +1743,43 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     }
 
     OdeResult result;
-    result.timePoints.reserve(opts.nSteps + 1);
-    result.concentrations.reserve(opts.nSteps + 1);
+    result.timePoints.reserve(times.size() + 1);
+    result.concentrations.reserve(times.size() + 1);
 
     double t = opts.tStart;
-    const double dt = (opts.tEnd - opts.tStart) / static_cast<double>(opts.nSteps);
-    std::size_t nextOutputStep = 0;
+    std::size_t nextOutputTime = 0;
     std::size_t ssaStepCount = 0;  // track internal SSA steps for output_step_interval
+    bool stoppedEarly = false;
+
+    const auto appendScheduledBefore = [&](double until) {
+        while (nextOutputTime < times.size() &&
+               times[nextOutputTime] < until - 1e-12) {
+            result.timePoints.push_back(times[nextOutputTime]);
+            result.concentrations.push_back(y);
+            ++nextOutputTime;
+        }
+    };
+
+    const auto appendScheduledThrough = [&](double until) {
+        while (nextOutputTime < times.size() &&
+               times[nextOutputTime] <= until + 1e-12) {
+            result.timePoints.push_back(times[nextOutputTime]);
+            result.concentrations.push_back(y);
+            ++nextOutputTime;
+        }
+    };
+
+    const auto appendEventState = [&]() {
+        if (result.timePoints.empty() ||
+            std::abs(result.timePoints.back() - t) > 1e-12) {
+            result.timePoints.push_back(t);
+            result.concentrations.push_back(y);
+        } else {
+            // An event may land exactly on an explicit output time.  The
+            // sample at that instant represents the post-event state.
+            result.concentrations.back() = y;
+        }
+    };
 
     // Compute initial propensities
     std::vector<double> propensities(compiledRxns_.size());
@@ -1610,24 +1796,30 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     recomputePropensities();
 
     // Record initial state
-    if (opts.outputStepInterval > 0) {
+    if (opts.outputStepInterval == 0 || explicitTimes) {
+        appendScheduledThrough(t);
+    } else {
         result.timePoints.push_back(t);
         result.concentrations.push_back(y);
     }
 
     // Main SSA loop
     while (t < opts.tEnd) {
-        // Record output points as we pass them (only when not using output_step_interval)
-        if (opts.outputStepInterval == 0) {
-            while (opts.tStart + nextOutputStep * dt <= t && nextOutputStep <= opts.nSteps) {
-                result.timePoints.push_back(opts.tStart + nextOutputStep * dt);
-                result.concentrations.push_back(y);
-                ++nextOutputStep;
-            }
+        // Record scheduled output points as events advance the trajectory.
+        if (opts.outputStepInterval == 0 || explicitTimes) {
+            appendScheduledThrough(t);
         }
 
         // Check if we've passed the end time
-        if (t >= opts.tEnd || totalPropensity <= 0.0) {
+        if (opts.maxSimSteps > 0 && ssaStepCount >= opts.maxSimSteps) {
+            stoppedEarly = true;
+            break;
+        }
+        if (t >= opts.tEnd) {
+            break;
+        }
+        if (totalPropensity <= 0.0) {
+            t = opts.tEnd;
             break;
         }
 
@@ -1644,7 +1836,12 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             break;
         }
 
-        t += tau;
+        const double eventTime = t + tau;
+        if (opts.outputStepInterval == 0 || explicitTimes) {
+            // Scheduled samples before the event see the pre-event state.
+            appendScheduledBefore(eventTime);
+        }
+        t = eventTime;
 
         // Select next reaction
         double r2 = uniform(rng);
@@ -1662,6 +1859,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
 
         if (selectedRxn >= compiledRxns_.size()) {
             // Shouldn't happen unless roundoff error
+            stoppedEarly = true;
             break;
         }
 
@@ -1679,24 +1877,37 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         // Optimization: could track which reactions are affected by this species change
         recomputePropensities();
 
+        if (opts.outputStepInterval == 0 || explicitTimes) {
+            // Include an explicit sample that coincides with the event using
+            // the post-event state.
+            appendScheduledThrough(t);
+        }
+
         // output_step_interval: record output every N internal SSA steps
         ++ssaStepCount;
-        if (opts.outputStepInterval > 0 && (ssaStepCount % opts.outputStepInterval) == 0) {
+        if (opts.outputStepInterval > 0 && !explicitTimes &&
+            (ssaStepCount % opts.outputStepInterval) == 0) {
             result.timePoints.push_back(t);
             result.concentrations.push_back(y);
         }
+
+        if (stopIfExpr.has_value() &&
+            stopConditionMet(*stopIfExpr, t, y)) {
+            stoppedEarly = true;
+            break;
+        }
     }
 
-    if (opts.outputStepInterval > 0) {
-        // Record final state at end time
-        result.timePoints.push_back(t);
-        result.concentrations.push_back(y);
+    if (opts.outputStepInterval > 0 && !explicitTimes) {
+        // Record final state at the actual stopping time.
+        appendEventState();
     } else {
-        // Record final state if we haven't already (uniform time-interval mode)
-        while (nextOutputStep <= opts.nSteps) {
-            result.timePoints.push_back(opts.tStart + nextOutputStep * dt);
-            result.concentrations.push_back(y);
-            ++nextOutputStep;
+        if (!stoppedEarly) {
+            t = opts.tEnd;
+        }
+        appendScheduledThrough(t);
+        if (stoppedEarly) {
+            appendEventState();
         }
     }
 

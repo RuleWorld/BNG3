@@ -49,6 +49,32 @@ bool SpeciesList::getCheckIso() const {
     return checkIso_;
 }
 
+std::optional<std::size_t> SpeciesList::findExact(const Species& species) const {
+    std::string exact;
+    return findExact(species, exact);
+}
+
+std::optional<std::size_t> SpeciesList::findExact(
+    const Species& species, std::string& exact) const {
+    exact.clear();
+    if (!checkIso_) {
+        return std::nullopt;
+    }
+
+    exact = species.getSpeciesGraph().toStringForDedup();
+    const auto exactBucket = indicesByExactString_.find(exact);
+    if (exactBucket == indicesByExactString_.end()) {
+        return std::nullopt;
+    }
+
+    for (const auto index : exactBucket->second) {
+        if (species_[index].getCompartment() == species.getCompartment()) {
+            return index;
+        }
+    }
+    return std::nullopt;
+}
+
 std::pair<std::size_t, bool> SpeciesList::add(Species species) {
     // When check_iso is disabled, skip all dedup and add unconditionally
     if (!checkIso_) {
@@ -58,10 +84,29 @@ std::pair<std::size_t, bool> SpeciesList::add(Species species) {
         return {index, true};
     }
 
-    const std::string label = species.getSpeciesGraph().canonicalLabel();
+    return addChecked(std::move(species), {}, false);
+}
+
+std::pair<std::size_t, bool> SpeciesList::addWithExactKey(
+    Species species, std::string exact) {
+    // When check_iso is disabled, skip all dedup and add unconditionally
+    if (!checkIso_) {
+        const std::size_t index = species_.size();
+        species.setIndex(index);
+        species_.push_back(std::move(species));
+        return {index, true};
+    }
+
+    return addChecked(std::move(species), std::move(exact), true);
+}
+
+std::pair<std::size_t, bool> SpeciesList::addChecked(
+    Species species, std::string exact, bool hasExact) {
     // Use compartment-aware string for dedup to distinguish species that differ
     // only by per-molecule compartments (e.g., Im@CP.NP vs Im@NU.NP).
-    const std::string exact = species.getSpeciesGraph().toStringForDedup();
+    if (!hasExact) {
+        exact = species.getSpeciesGraph().toStringForDedup();
+    }
 
     // Fast path 1: exact string match (O(1))
     const auto exactBucket = indicesByExactString_.find(exact);
@@ -78,6 +123,22 @@ std::pair<std::size_t, bool> SpeciesList::add(Species species) {
         }
     }
 
+    // Canonical labeling is substantially more expensive than exact string
+    // serialization. Only compute it after the exact-key fast path misses;
+    // product graphs are frequently exact duplicates of an existing species.
+    const std::string label = species.getSpeciesGraph().canonicalLabel();
+    // The fingerprint is also compartment-aware at the molecule level.  It
+    // is the semantic guard needed when a graph's serialization order differs
+    // between two otherwise isomorphic products.
+    const std::string fp = species.getSpeciesGraph().fingerprint();
+    // Canonical labeling may change node-index tie breakers used by the
+    // serializer, so use the canonicalized key for compartmented fallback and
+    // insert paths. Unscoped species retain the pre-label exact key and avoid
+    // serializing every new species a second time.
+    if (!species.getCompartment().empty()) {
+        exact = species.getSpeciesGraph().toStringForDedup();
+    }
+
     // Fast path 2: canonical label match (O(1))
     // Note: canonical label is compartment-blind. Species with same graph structure
     // and same species-level compartment but different per-molecule compartments
@@ -90,11 +151,10 @@ std::pair<std::size_t, bool> SpeciesList::add(Species species) {
             if (existingSpecies.getCompartment() != species.getCompartment()) {
                 continue;
             }
-            // Per-molecule compartment check: when species have compartments,
-            // dedup strings must match to avoid merging species that differ
-            // only in per-molecule compartments (e.g., Im@CP.NP vs Im@NU.NP)
-            if (!species.getCompartment().empty() &&
-                existingSpecies.getSpeciesGraph().toStringForDedup() != exact) {
+            // Canonical labels omit molecule compartments.  Require the
+            // compartment-aware fingerprint instead of the serialization key:
+            // equivalent graphs may list root molecules in different orders.
+            if (existingSpecies.getSpeciesGraph().fingerprint() != fp) {
                 continue;
             }
             if (existingSpecies.getCompartment().empty() && !species.getCompartment().empty()) {
@@ -109,7 +169,6 @@ std::pair<std::size_t, bool> SpeciesList::add(Species species) {
     // the same fingerprint. This replaces the old O(n) scan over all species with an
     // O(1) hash lookup. Only species in the same fingerprint bucket need Ullmann
     // confirmation (which now correctly handles in-edges for full isomorphism).
-    const std::string fp = species.getSpeciesGraph().fingerprint();
     const auto fpBucket = indicesByFingerprint_.find(fp);
     if (fpBucket != indicesByFingerprint_.end()) {
         for (const auto index : fpBucket->second) {
@@ -118,10 +177,6 @@ std::pair<std::size_t, bool> SpeciesList::add(Species species) {
                 continue;
             }
             if (!isIsomorphic(existingSpecies.getSpeciesGraph(), species.getSpeciesGraph())) {
-                continue;
-            }
-            if (!species.getCompartment().empty() &&
-                existingSpecies.getSpeciesGraph().toStringForDedup() != exact) {
                 continue;
             }
             if (existingSpecies.getCompartment().empty() && !species.getCompartment().empty()) {

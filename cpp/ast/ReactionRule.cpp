@@ -21,6 +21,7 @@
 #include "core/Ullmann.hpp"
 #include "Model.hpp"
 
+#include "parser/antlr_compat.hpp"
 #include <antlr4-runtime.h>
 #include "BNGLexer.h"
 #include "BNGParser.h"
@@ -491,10 +492,14 @@ std::vector<SpeciesGraph> splitIntoSpeciesGraphs(const BNGcore::PatternGraph& gr
     return products;
 }
 
-void safeDeleteNode(BNGcore::PatternGraph& graph, BNGcore::Node* node) {
+void safeDeleteNode(BNGcore::PatternGraph& graph, BNGcore::Node* node,
+                    bool restoreUnboundMarkers = false,
+                    const BNGcore::Node* moleculeBeingDeleted = nullptr) {
     if (node == nullptr) {
         return;
     }
+
+    const bool isBoundBond = isBondNode(*node) && node->get_state() == BNGcore::BOUND_STATE;
 
     std::vector<BNGcore::Node*> incoming;
     std::vector<BNGcore::Node*> outgoing;
@@ -512,6 +517,49 @@ void safeDeleteNode(BNGcore::PatternGraph& graph, BNGcore::Node* node) {
         graph.delete_edge(node, dst);
     }
     graph.delete_node(node);
+
+    // BNG2 represents a free component without an edge marker.  BNG3's
+    // in-memory species graphs use an explicit UNBOUND bond node so that the
+    // matcher can distinguish free sites from unspecified pattern sites.
+    // Restore that marker on surviving endpoints when a bound bond is removed.
+    if (restoreUnboundMarkers && isBoundBond) {
+        for (auto* component : incoming) {
+            if (!isComponentNode(*component)) {
+                continue;
+            }
+            if (moleculeBeingDeleted != nullptr) {
+                bool belongsToDeletedMolecule = false;
+                for (auto edge = component->edges_in_begin(); edge != component->edges_in_end(); ++edge) {
+                    if (*edge == moleculeBeingDeleted) {
+                        belongsToDeletedMolecule = true;
+                        break;
+                    }
+                }
+                if (belongsToDeletedMolecule) {
+                    continue;
+                }
+            }
+            bool hasBoundBond = false;
+            bool hasUnboundMarker = false;
+            for (auto edge = component->edges_out_begin(); edge != component->edges_out_end(); ++edge) {
+                if (!isBondNode(**edge)) {
+                    continue;
+                }
+                if ((*edge)->get_state() == BNGcore::BOUND_STATE) {
+                    hasBoundBond = true;
+                } else if ((*edge)->get_state() == BNGcore::UNBOUND_STATE) {
+                    hasUnboundMarker = true;
+                }
+            }
+            if (hasBoundBond || hasUnboundMarker) {
+                continue;
+            }
+            BNGcore::Node unboundNode(BNGcore::BOND_NODE_TYPE);
+            auto* marker = graph.add_node(unboundNode);
+            marker->set_state(BNGcore::UNBOUND_STATE);
+            graph.add_edge(component, marker);
+        }
+    }
 }
 
 void deleteMappedMolecule(BNGcore::Map& aggregateMap, BNGcore::Node* sourceMoleculeNode) {
@@ -532,7 +580,7 @@ void deleteMappedMolecule(BNGcore::Map& aggregateMap, BNGcore::Node* sourceMolec
             bondNodes.push_back(*edge);
         }
         for (auto* bondNode : bondNodes) {
-            safeDeleteNode(*graph, bondNode);
+            safeDeleteNode(*graph, bondNode, true, targetMolecule);
         }
         safeDeleteNode(*graph, component);
     }
@@ -859,6 +907,18 @@ bool verifyBondTopology(const BNGcore::PatternGraph& graph) {
 
 } // namespace
 
+// Pattern metadata points into the immutable rule pattern graphs. Keeping it
+// per rule avoids rebuilding the same molecule/component descriptions for
+// every embedding search and generated reaction.
+struct ReactionRule::PatternCache {
+    std::vector<PatternInfo> reactantInfo;
+    std::vector<PatternInfo> productInfo;
+};
+
+ReactionRule::~ReactionRule() = default;
+ReactionRule::ReactionRule(ReactionRule&&) noexcept = default;
+ReactionRule& ReactionRule::operator=(ReactionRule&&) noexcept = default;
+
 bool ReactionRule::ComponentRef::operator==(const ComponentRef& other) const {
     return std::tie(patternIndex, moleculeIndex, componentIndex) ==
            std::tie(other.patternIndex, other.moleculeIndex, other.componentIndex);
@@ -963,6 +1023,10 @@ ReactionRule::getNewMoleculeBonds() const {
 }
 
 void ReactionRule::initialize() {
+    patternCache_ = std::make_unique<PatternCache>();
+    patternCache_->reactantInfo = describePatterns(reactantPatterns_);
+    patternCache_->productInfo = describePatterns(productPatterns_);
+
     operations_.clear();
     moleculeMappings_.clear();
     componentMappings_.clear();
@@ -971,12 +1035,34 @@ void ReactionRule::initialize() {
     reactionCenter_.assign(reactantPatterns_.size(), {});
     patternMatches_.assign(reactantPatterns_.size(), {});
     matchesInitialized_ = true;
-    if (reactantPatterns_.empty() || productPatterns_.empty()) {
+    if (reactantPatterns_.empty()) {
+        // Zero-order synthesis has no reactant-side graph to diff against, but
+        // each product molecule still needs an explicit creation operation.
+        // Besides driving direct AST expansion, XmlWriter uses these operations
+        // to serialize the same product construction for the compatibility
+        // loader.
+        if (!productPatterns_.empty()) {
+            const auto& productInfo = patternCache_->productInfo;
+            const auto productMolecules = flattenMolecules(productInfo);
+            for (const auto& productMolecule : productMolecules) {
+                operations_.push_back(TransformOp {
+                    TransformOp::Type::AddMolecule,
+                    {},
+                    {},
+                    productMolecule.base.moleculeIndex,
+                    productMolecule.base.patternIndex,
+                    {},
+                });
+            }
+        }
+        return;
+    }
+    if (productPatterns_.empty()) {
         return;
     }
 
-    const auto reactantInfo = describePatterns(reactantPatterns_);
-    const auto productInfo = describePatterns(productPatterns_);
+    const auto& reactantInfo = patternCache_->reactantInfo;
+    const auto& productInfo = patternCache_->productInfo;
     const auto reactantMolecules = flattenMolecules(reactantInfo);
     const auto productMolecules = flattenMolecules(productInfo);
 
@@ -1303,7 +1389,7 @@ std::vector<ReactionRule::EmbeddingResult> ReactionRule::findEmbeddingsForSpecie
     const Model* model) const {
     std::vector<EmbeddingResult> results;
     const auto& pattern = reactantPatterns_.at(patternIndex).getGraph();
-    const auto reactantInfo = describePatterns(reactantPatterns_);
+    const auto& reactantInfo = patternCache_->reactantInfo;
     std::unordered_set<std::string> seen;
     const bool debug = std::getenv("BNG_DEBUG_EMBEDDINGS") != nullptr;
 
@@ -1569,8 +1655,17 @@ std::size_t ReactionRule::expandRule(
                 if (productFilter && !productFilter(sg)) {
                     return 0;
                 }
-                productLabels.push_back(sg.canonicalLabel());
-                const auto [index, isNew] = speciesList.add(Species(sg, 0.0, false, productPattern.getCompartment()));
+                auto product = Species(std::move(sg), 0.0, false, productPattern.getCompartment());
+                std::string exact;
+                const auto exactIndex = speciesList.findExact(product, exact);
+                std::size_t index;
+                if (exactIndex) {
+                    index = *exactIndex;
+                } else {
+                    product.getSpeciesGraph().canonicalLabel();
+                    index = speciesList.addWithExactKey(std::move(product), std::move(exact)).first;
+                }
+                productLabels.push_back(speciesList.get(index).getSpeciesGraph().canonicalLabel());
                 productIndices.push_back(index);
             }
             std::sort(productLabels.begin(), productLabels.end());
@@ -1838,8 +1933,8 @@ bool ReactionRule::buildReaction(
     const std::function<bool(const SpeciesGraph&)>& productFilter,
     const Model* model) const {
     const bool debug = std::getenv("BNG_DEBUG_BUILD_RXN") != nullptr;
-    const auto reactantInfo = describePatterns(reactantPatterns_);
-    const auto productInfo = describePatterns(productPatterns_);
+    const auto& reactantInfo = patternCache_->reactantInfo;
+    const auto& productInfo = patternCache_->productInfo;
     std::vector<std::size_t> reactantIndices;
     reactantIndices.reserve(matchSet.size());
     std::string inferredCompartment;
@@ -1960,15 +2055,7 @@ bool ReactionRule::buildReaction(
             if (lhsComponent == nullptr || rhsComponent == nullptr || bondNode == nullptr) {
                 return false;
             }
-            safeDeleteNode(*graph, bondNode);
-            auto* lhsBond = new BNGcore::Node(BNGcore::BOND_NODE_TYPE);
-            lhsBond->set_state(BNGcore::UNBOUND_STATE);
-            graph->add_node(lhsBond);
-            graph->add_edge(lhsComponent, lhsBond);
-            auto* rhsBond = new BNGcore::Node(BNGcore::BOND_NODE_TYPE);
-            rhsBond->set_state(BNGcore::UNBOUND_STATE);
-            graph->add_node(rhsBond);
-            graph->add_edge(rhsComponent, rhsBond);
+            safeDeleteNode(*graph, bondNode, true);
             break;
         }
         case TransformOp::Type::ChangeState: {
@@ -2010,7 +2097,7 @@ bool ReactionRule::buildReaction(
                         bondNodes.push_back(*edge);
                     }
                     for (auto* bondNode : bondNodes) {
-                        safeDeleteNode(*graph, bondNode);
+                        safeDeleteNode(*graph, bondNode, true, mappedMolecule);
                     }
                     safeDeleteNode(*graph, component);
                 }
@@ -2394,7 +2481,7 @@ bool ReactionRule::buildReaction(
             // should leave the other half of the complex as a product.
 
             // Delete matched molecules from aggregate graph
-            const auto reactantInfoLocal = describePatterns(reactantPatterns_);
+            const auto& reactantInfoLocal = patternCache_->reactantInfo;
             for (std::size_t pi = 0; pi < reactantPatterns_.size(); ++pi) {
                 for (const auto& molInfo : reactantInfoLocal[pi].molecules) {
                     auto* targetMol = matchSet[pi].map.mapf(molInfo.node);
@@ -2414,7 +2501,7 @@ bool ReactionRule::buildReaction(
                             bondNodes.push_back(*edge);
                         }
                         for (auto* bondNode : bondNodes) {
-                            safeDeleteNode(aggregateGraph, bondNode);
+                            safeDeleteNode(aggregateGraph, bondNode, true, clonedMol);
                         }
                         safeDeleteNode(aggregateGraph, component);
                     }
@@ -2427,7 +2514,6 @@ bool ReactionRule::buildReaction(
                 if (productFilter && !productFilter(productGraph)) {
                     return false;
                 }
-                productLabels.push_back(productGraph.canonicalLabel());
                 std::string compartmentToUse;
                 if (!g_compartmentDimensions.empty()) {
                     std::set<std::string> surfaces, volumes;
@@ -2458,8 +2544,17 @@ bool ReactionRule::buildReaction(
                         }
                     }
                 }
-                auto prodSp = Species(productGraph, 0.0, false, compartmentToUse);
-                const auto [index, wasNew] = speciesList.add(std::move(prodSp));
+                auto prodSp = Species(std::move(productGraph), 0.0, false, compartmentToUse);
+                std::string exact;
+                const auto exactIndex = speciesList.findExact(prodSp, exact);
+                std::size_t index;
+                if (exactIndex) {
+                    index = *exactIndex;
+                } else {
+                    prodSp.getSpeciesGraph().canonicalLabel();
+                    index = speciesList.addWithExactKey(std::move(prodSp), std::move(exact)).first;
+                }
+                productLabels.push_back(speciesList.get(index).getSpeciesGraph().canonicalLabel());
                 productIndices.push_back(index);
             }
         }
@@ -2640,7 +2735,6 @@ bool ReactionRule::buildReaction(
             if (productFilter && !productFilter(productGraph)) {
                 return false;
             }
-            productLabels.push_back(productGraph.canonicalLabel());
             // Perl-faithful inferSpeciesCompartment (SpeciesGraph.pm:795-893):
             // Collect unique 2D surfaces and 3D volumes from molecule compartments.
             // 0 surfaces: 1 volume → that volume; 0 volumes → undefined; >1 → first alphabetically
@@ -2728,8 +2822,17 @@ bool ReactionRule::buildReaction(
             // GPCR(l,b!1,loc~cyt,s~P).Arrestin(b!1) from applying to species where
             // GPCR has 'l' bonded: the product pattern says 'l' should be unbound.
             // (Product pattern bond constraint check would go here in a future version)
-            auto prodSp = Species(productGraph, 0.0, false, compartmentToUse);
-            const auto [index, wasNew] = speciesList.add(std::move(prodSp));
+            auto prodSp = Species(std::move(productGraph), 0.0, false, compartmentToUse);
+            std::string exact;
+            const auto exactIndex = speciesList.findExact(prodSp, exact);
+            std::size_t index;
+            if (exactIndex) {
+                index = *exactIndex;
+            } else {
+                prodSp.getSpeciesGraph().canonicalLabel();
+                index = speciesList.addWithExactKey(std::move(prodSp), std::move(exact)).first;
+            }
+            productLabels.push_back(speciesList.get(index).getSpeciesGraph().canonicalLabel());
             productIndices.push_back(index);
         }
     }

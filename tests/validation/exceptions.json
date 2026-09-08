@@ -1,23 +1,4 @@
 {
   "schema_version": 1,
-  "exceptions": [
-    {
-      "id": "net-parity-blbr-overcount",
-      "model": "blbr",
-      "tests": [
-        "test_parity_net.py::test_net_parity_smoke[blbr]",
-        "test_parity_net.py::test_net_parity_full[blbr]"
-      ],
-      "method": "network_generation",
-      "platforms": [
-        "all"
-      ],
-      "issue_url": "https://github.com/RuleWorld/BNG3/blob/59b774a14aa956a2c25daa6d904e7ad476feda15/BNG3_overcount_analysis.md",
-      "technical_reason": "BNG3 produces 26 excess network reactions relative to the BNG2 Perl oracle for symmetry-heavy blbr. Failed reaction merging is established; species identity versus origin-rule disambiguation remains unresolved.",
-      "owner": "BNG3 network-generation maintainers",
-      "introduced_on": "2026-06-01",
-      "review_by": "2026-11-26",
-      "expected_failure_signature": "(?s)^net mismatch \\[blbr\\].*reactions: ref=\\d+ test=\\d+ \\(delta=\\+26\\)"
-    }
-  ]
+  "exceptions": []
 }

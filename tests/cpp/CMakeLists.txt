@@ -1,5 +1,20 @@
 include(Catch)
 
+add_test(
+    NAME bng3_release_lto_contract
+    COMMAND ${CMAKE_COMMAND}
+        -DCONTRACT_PATH=${CMAKE_BINARY_DIR}/bng3_lto_contract.txt
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/test_release_lto.cmake
+)
+
+add_test(
+    NAME bng_cpp_action_errors
+    COMMAND ${CMAKE_COMMAND}
+        -DBNG_CPP_PATH=$<TARGET_FILE:bng_cpp>
+        -DMODEL_PATH=${CMAKE_SOURCE_DIR}/tests/fixtures/issue_328_missing_net.bngl
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/test_bng_cpp_action_errors.cmake
+)
+
 # localfunc_test
 add_executable(localfunc_test localfunc_test.cpp)
 target_include_directories(localfunc_test PRIVATE
@@ -38,6 +53,25 @@ target_link_libraries(test_pla_simulator PRIVATE
     antlr4_static
 )
 catch_discover_tests(test_pla_simulator)
+
+# test_ode_options
+add_executable(test_ode_options test_ode_options.cpp)
+target_include_directories(test_ode_options PRIVATE
+    ${CMAKE_SOURCE_DIR}/cpp
+    ${CMAKE_SOURCE_DIR}/cpp/parser
+    ${CMAKE_SOURCE_DIR}/cpp/parser/generated
+    ${antlr4_runtime_SOURCE_DIR}/runtime/Cpp/runtime/src
+    ${sundials_SOURCE_DIR}/include
+    ${sundials_BINARY_DIR}/include
+)
+target_link_libraries(test_ode_options PRIVATE
+    Catch2::Catch2WithMain
+    Catch2::Catch2
+    bng_engine
+    bng_ast
+    antlr4_static
+)
+catch_discover_tests(test_ode_options)
 
 # test_hybrid_model_generator
 add_executable(test_hybrid_model_generator test_hybrid_model_generator.cpp)
@@ -138,3 +172,30 @@ target_link_libraries(test_nfsim_ast_adapter PRIVATE
     # GNU ld resolves the static-archive cycle on this test target.
     bng_parser)
 catch_discover_tests(test_nfsim_ast_adapter)
+
+# test_nfsim_reactant_tree
+add_executable(test_nfsim_reactant_tree test_nfsim_reactant_tree.cpp)
+target_include_directories(test_nfsim_reactant_tree PRIVATE
+    ${CMAKE_SOURCE_DIR}/cpp
+    ${CMAKE_SOURCE_DIR}/cpp/nfsim
+    ${CMAKE_SOURCE_DIR}/cpp/nfsim/NFcore
+    ${CMAKE_SOURCE_DIR}/cpp/nfsim/NFinput
+    ${exprtk_SOURCE_DIR}
+)
+target_link_libraries(test_nfsim_reactant_tree PRIVATE
+    Catch2::Catch2WithMain Catch2::Catch2
+    bionetgen_core
+    bng_parser)
+catch_discover_tests(test_nfsim_reactant_tree)
+
+# test_sbml_reader
+add_executable(test_sbml_reader test_sbml_reader.cpp)
+target_include_directories(test_sbml_reader PRIVATE
+    ${CMAKE_SOURCE_DIR}/cpp
+    ${CMAKE_SOURCE_DIR}/cpp/nfsim
+    ${CMAKE_SOURCE_DIR}/cpp/nfsim/NFinput
+    ${CMAKE_SOURCE_DIR}/cpp/nfsim/NFinput/TinyXML
+)
+target_link_libraries(test_sbml_reader PRIVATE
+    Catch2::Catch2WithMain Catch2::Catch2 bionetgen_core)
+catch_discover_tests(test_sbml_reader)

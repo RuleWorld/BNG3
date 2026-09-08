@@ -5,6 +5,7 @@ using namespace NFcore;
 
 ReactantList::ReactantList(unsigned int reactantIndex, TransformationSet *ts, unsigned int init_capacity=50)
 {
+	this->anyMultiMoleculeComplex = false;
 
 	this->n_mappingSets = 0;
 	this->capacity = init_capacity;

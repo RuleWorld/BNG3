@@ -10,6 +10,41 @@ import pytest
 from tests.validation import exception_ledger
 
 
+SAMPLE_EXCEPTION = {
+    "id": "sample-exception",
+    "model": "blbr",
+    "tests": ["test_parity_net.py::test_net_parity_smoke[blbr]"],
+    "method": "network_generation",
+    "platforms": ["all"],
+    "issue_url": "https://example.com/sample-exception",
+    "technical_reason": "test fixture",
+    "owner": "test fixture",
+    "introduced_on": "2026-06-01",
+    "review_by": "2026-11-26",
+    "expected_failure_signature": "^expected failure$",
+}
+
+
+def _sample_document():
+    return {"schema_version": 1, "exceptions": [dict(SAMPLE_EXCEPTION)]}
+
+
+def _sample_entry():
+    return exception_ledger.ExpectedFailure(
+        id="sample-exception",
+        model="blbr",
+        tests=("test_parity_net.py::test_net_parity_smoke[blbr]",),
+        method="network_generation",
+        platforms=("all",),
+        issue_url="https://example.com/sample-exception",
+        technical_reason="test fixture",
+        owner="test fixture",
+        introduced_on=date(2026, 6, 1),
+        review_by=date(2026, 11, 26),
+        expected_failure_signature="^expected failure$",
+    )
+
+
 def _write_ledger(tmp_path, document):
     path = tmp_path / "exceptions.json"
     path.write_text(json.dumps(document), encoding="utf-8")
@@ -20,24 +55,16 @@ def test_repository_exception_ledger_is_valid():
     ledger = exception_ledger.load_ledger(as_of=date(2026, 8, 28))
     exception_ledger.validate_references(ledger)
 
-    assert len(ledger.exceptions) == 1
-    entry = ledger.find(
+    assert len(ledger.exceptions) == 0
+    assert ledger.find(
         "test_parity_net.py::test_net_parity_smoke[blbr]",
         "blbr",
         "network_generation",
-    )
-    assert entry is not None
-    assert entry.matches_failure(
-        "net mismatch [blbr] (ref=golden):\n" "reactions: ref=66 test=92 (delta=+26)"
-    )
-    assert not entry.matches_failure(
-        "net mismatch [blbr] (ref=golden):\n" "reactions: ref=67 test=92 (delta=+25)"
-    )
+    ) is None
 
 
 def test_strict_exception_rejects_unexpected_pass():
-    ledger = exception_ledger.load_ledger(as_of=date(2026, 8, 28))
-    entry = ledger.exceptions[0]
+    entry = _sample_entry()
 
     with pytest.raises(pytest.fail.Exception, match="unexpected pass"):
         with exception_ledger.strict_expected_failure(entry):
@@ -45,8 +72,7 @@ def test_strict_exception_rejects_unexpected_pass():
 
 
 def test_strict_exception_does_not_hide_a_different_failure():
-    ledger = exception_ledger.load_ledger(as_of=date(2026, 8, 28))
-    entry = ledger.exceptions[0]
+    entry = _sample_entry()
 
     with pytest.raises(AssertionError, match="engine produced no .net"):
         with exception_ledger.strict_expected_failure(entry):
@@ -54,7 +80,7 @@ def test_strict_exception_does_not_hide_a_different_failure():
 
 
 def test_ledger_rejects_missing_required_field(tmp_path):
-    document = json.loads(exception_ledger.LEDGER_PATH.read_text(encoding="utf-8"))
+    document = _sample_document()
     del document["exceptions"][0]["owner"]
 
     with pytest.raises(exception_ledger.LedgerError, match="owner"):
@@ -64,7 +90,7 @@ def test_ledger_rejects_missing_required_field(tmp_path):
 
 
 def test_ledger_rejects_overdue_review(tmp_path):
-    document = json.loads(exception_ledger.LEDGER_PATH.read_text(encoding="utf-8"))
+    document = _sample_document()
 
     with pytest.raises(exception_ledger.LedgerError, match="review overdue"):
         exception_ledger.load_ledger(
@@ -73,7 +99,7 @@ def test_ledger_rejects_overdue_review(tmp_path):
 
 
 def test_ledger_rejects_duplicate_assignment(tmp_path):
-    document = json.loads(exception_ledger.LEDGER_PATH.read_text(encoding="utf-8"))
+    document = _sample_document()
     duplicate = dict(document["exceptions"][0])
     duplicate["id"] = "duplicate-id"
     document["exceptions"].append(duplicate)

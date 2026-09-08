@@ -172,6 +172,24 @@ const std::vector<MoleculeType>& Model::getMoleculeTypes() const {
     return moleculeTypes_;
 }
 
+MoleculeType* Model::findMoleculeType(const std::string& name) {
+    for (auto& moleculeType : moleculeTypes_) {
+        if (moleculeType.getName() == name) {
+            return &moleculeType;
+        }
+    }
+    return nullptr;
+}
+
+const MoleculeType* Model::findMoleculeType(const std::string& name) const {
+    for (const auto& moleculeType : moleculeTypes_) {
+        if (moleculeType.getName() == name) {
+            return &moleculeType;
+        }
+    }
+    return nullptr;
+}
+
 const std::vector<SeedSpecies>& Model::getSeedSpecies() const {
     return seedSpecies_;
 }

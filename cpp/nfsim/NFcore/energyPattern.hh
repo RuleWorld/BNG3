@@ -31,6 +31,7 @@
 #include <vector>
 #include <map>
 #include <set>
+#include <cstdint>
 #include <cmath>
 
 namespace NFcore {
@@ -116,6 +117,24 @@ namespace NFcore {
     };
 
     /*
+     * Compact representation of the context-dependent part of a binding
+     * energy rule. The legacy path materializes one ExpandedRuleInfo for
+     * every boolean context combination. A factorized rule can instead keep
+     * these terms and evaluate the matching rate factor for the selected
+     * mapping only.
+     */
+    struct EnergyPatternTerm {
+        double energyValue;
+        std::uint64_t conditionMask;
+    };
+
+    struct EnergyBindingContext {
+        double baseEnergy;
+        std::vector<ContextCondition> conditions;
+        std::vector<EnergyPatternTerm> conditionalTerms;
+    };
+
+    /*
      * EnergyFunction: holds all parsed energy patterns and parameters,
      * and implements the Sekar expansion algorithm.
      */
@@ -130,6 +149,17 @@ namespace NFcore {
         void addEnergyPattern(const EnergyPatternInfo &ep);
         int  getNumPatterns() const { return (int)patterns.size(); }
         const EnergyPatternInfo& getPattern(int i) const { return patterns[i]; }
+
+        /*
+         * Build the compact context descriptor used by the incremental
+         * binding path. A false return leaves the caller free to use the
+         * materialized expansion for unsupported context topologies.
+         */
+        bool getBindingContext(
+            const std::string &molType1, const std::string &bindSite1,
+            const std::string &molType2, const std::string &bindSite2,
+            EnergyBindingContext &context
+        ) const;
 
         /*
          * Core expansion algorithm (Sekar §3.4).

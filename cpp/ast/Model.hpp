@@ -61,6 +61,8 @@ public:
     const std::vector<EnergyPattern>& getEnergyPatterns() const;
     const std::vector<Observable>& getObservables() const;
     const std::vector<MoleculeType>& getMoleculeTypes() const;
+    MoleculeType* findMoleculeType(const std::string& name);
+    const MoleculeType* findMoleculeType(const std::string& name) const;
     const std::vector<SeedSpecies>& getSeedSpecies() const;
     const std::vector<ReactionRule>& getReactionRules() const;
     std::vector<ReactionRule>& getReactionRules();

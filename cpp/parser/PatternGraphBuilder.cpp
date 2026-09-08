@@ -1,5 +1,6 @@
 ﻿#include "PatternGraphBuilder.hpp"
 
+#include <algorithm>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -46,12 +47,10 @@ const bng::ast::ComponentType* findComponentType(const bng::ast::MoleculeType& m
     return nullptr;
 }
 
-const bng::ast::MoleculeType& ensureInferredMoleculeType(BNGParser::Molecule_patternContext* ctx, bng::ast::Model& model) {
-    const auto name = moleculePatternName(ctx);
-    if (const auto* existing = findMoleculeType(model, name)) {
-        return *existing;
-    }
+} // namespace
 
+bng::ast::MoleculeType inferMoleculeTypeFromPattern(BNGParser::Molecule_patternContext* ctx) {
+    const auto name = moleculePatternName(ctx);
     std::vector<bng::ast::ComponentType> components;
     if (auto* componentList = ctx->component_pattern_list()) {
         for (auto* componentPattern : componentList->component_pattern()) {
@@ -63,7 +62,28 @@ const bng::ast::MoleculeType& ensureInferredMoleculeType(BNGParser::Molecule_pat
         }
     }
 
-    model.addMoleculeType(bng::ast::MoleculeType(name, std::move(components), false));
+    // BNG2 sorts inferred species-graph components before creating a new
+    // molecule type.  Keep the source pattern's order for ties (notably
+    // symmetric sites), but make the canonical name ordering observable to
+    // both the XML writer and direct NFsim type registration.
+    std::stable_sort(components.begin(), components.end(),
+                     [](const bng::ast::ComponentType& left,
+                        const bng::ast::ComponentType& right) {
+                         return left.name < right.name;
+                     });
+
+    return bng::ast::MoleculeType(name, std::move(components), false);
+}
+
+namespace {
+
+const bng::ast::MoleculeType& ensureInferredMoleculeType(BNGParser::Molecule_patternContext* ctx, bng::ast::Model& model) {
+    const auto name = moleculePatternName(ctx);
+    if (const auto* existing = findMoleculeType(model, name)) {
+        return *existing;
+    }
+
+    model.addMoleculeType(inferMoleculeTypeFromPattern(ctx));
     return model.getMoleculeTypes().back();
 }
 
@@ -254,4 +274,3 @@ bool isSpeciesCompartmentPrefix(BNGParser::Species_defContext* ctx) {
 }
 
 } // namespace bng::parser
-

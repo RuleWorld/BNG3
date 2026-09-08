@@ -43,7 +43,8 @@ namespace NFinput {
         std::map<std::string, int> &allowedStates,
         bool blockSameComplexBinding,
         bool verbose,
-        int &reaction_count);
+        int &reaction_count,
+        bool includeReverse);
 
     /*
      * Create expanded BasicRxnClass instances for an energy state-change rule.
@@ -59,7 +60,8 @@ namespace NFinput {
         NFcore::System *s,
         bool blockSameComplexBinding,
         bool verbose,
-        int &reaction_count);
+        int &reaction_count,
+        bool includeReverse);
 
 } // namespace NFinput
 

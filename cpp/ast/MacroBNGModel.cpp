@@ -6,9 +6,11 @@
 #include <algorithm>
 #include <cassert>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <regex>
 #include <set>
@@ -502,9 +504,10 @@ std::string MacroBNGModel::pre_macr(const std::string& param_prefix) {
     // Pre-process rules: binding analysis, hierarchy, macro transform
     pre_rules(nm_site, nm2_site, param_prefix, skf, dpp_site, lis1h);
 
-    // pre_obs1 will be called by the second-half agent
-    // (For completeness of the first half we omit pre_obs1 here since it is
-    //  not in the assignment list; the second half agent will add it.)
+    // Transform observables and species after the rule dependency maps exist.
+    // This is the source MacroBNGModel.pm pre_obs1 call; omitting it leaves
+    // the generated macro model without its transformed species contract.
+    pre_obs1(nm_site, nm2_site, param_prefix, skf, dpp_site, lis1h);
 
     WFILErec_ << " EXIT FROM sub PRE_MACR for *.rec \n";
     WFILErec_ << " BEGIN COR_NET \n";
@@ -1180,20 +1183,22 @@ std::string MacroBNGModel::num_site(const std::string& re, const std::string& pr
 
     // Extract contents inside parentheses from reactant
     std::string name;
-    std::smatch m;
-    std::regex re_paren("[\\(](.*)[\\)]");
 
     std::string ss_re;
-    if (std::regex_search(re, m, re_paren)) {
-        name = m.prefix().str();
-        ss_re = m[1].str();
+    const std::size_t re_open = re.find('(');
+    const std::size_t re_close = re.rfind(')');
+    if (re_open != std::string::npos && re_close != std::string::npos && re_close > re_open) {
+        name = re.substr(0, re_open);
+        ss_re = re.substr(re_open + 1, re_close - re_open - 1);
     }
     auto rem = split(ss_re, ',');
 
     // Extract contents from product
     std::string ss_pr;
-    if (std::regex_search(pr, m, re_paren)) {
-        ss_pr = m[1].str();
+    const std::size_t pr_open = pr.find('(');
+    const std::size_t pr_close = pr.rfind(')');
+    if (pr_open != std::string::npos && pr_close != std::string::npos && pr_close > pr_open) {
+        ss_pr = pr.substr(pr_open + 1, pr_close - pr_open - 1);
     }
     auto prm = split(ss_pr, ',');
 
@@ -1464,8 +1469,8 @@ void MacroBNGModel::pre_rules(
     // Determine minimal variable set
     min_set(dpp_site, lis1h, nm_site, nm2_site, site_lig);
 
-    // Transform reaction rules (trans_rec is in the second half)
-    // trans_rec(dpp_site, lis1h, lis1, site_lig);
+    // Transform reaction rules into macro rules.
+    trans_rec(dpp_site, lis1h, lis1, site_lig);
 
     WFILErules_ << "end reaction_rules\n";
     WFILErules_.close();
@@ -1676,7 +1681,121 @@ mlig:
 }
 
 // ---------------------------------------------------------------------------
-// 23. pre_obs1()   (Perl lines 1390-1441)
+// 23. trans_specie()   (Perl lines 1625-1705)
+// ---------------------------------------------------------------------------
+
+void MacroBNGModel::trans_specie(
+    std::map<std::string, std::vector<std::string>>& dpp_site,
+    std::map<std::string, std::vector<int>>& /*lis1h*/,
+    const std::vector<std::string>& lis1) {
+    // Perl stores these as numeric values through +=.  Keep the same
+    // aggregation semantics while formatting integral counts without a
+    // spurious decimal suffix in the generated species block.
+    auto numeric_count = [&](const std::string& token) {
+        if (token.empty()) return 0.0;
+        std::string value = token;
+        if (!std::isdigit(static_cast<unsigned char>(token.front()))) {
+            auto it = para1ms_.find(token);
+            if (it == para1ms_.end()) return 0.0;
+            value = it->second;
+        }
+        try {
+            return std::stod(value);
+        } catch (const std::exception&) {
+            return 0.0;
+        }
+    };
+
+    auto format_count = [](double value) {
+        std::ostringstream out;
+        if (std::isfinite(value) && value == std::trunc(value)) {
+            out << std::fixed << std::setprecision(0) << value;
+        } else {
+            out << std::setprecision(15) << value;
+        }
+        return out.str();
+    };
+
+    for (const auto& line : lis1) {
+        auto parts = split(line, ';');
+        // del_blank() produces a leading semicolon.  Ignore that empty field,
+        // matching Perl's (undef,@re)=split(/\;/,$stt).
+        const std::size_t offset = (!parts.empty() && parts.front().empty()) ? 1 : 0;
+        if (parts.size() <= offset) continue;
+
+        const std::string& reactant = parts[offset];
+        if (reactant.find('(') == std::string::npos) {
+            std::string passthrough = replaceAll(line, ";", " ");
+            WFILErec_ << passthrough << "\n";
+            WFILEspec2_ << passthrough << "\n";
+            continue;
+        }
+
+        const auto open = reactant.find('(');
+        const std::string key_obs = reactant.substr(0, open);
+        std::string sites = reactant.substr(open + 1);
+        if (!sites.empty() && sites.back() == ')') sites.pop_back();
+
+        auto raw_sites = split(sites, ',');
+        auto normalized_sites = raw_sites;
+        for (auto& site : normalized_sites) {
+            const auto modifier = site.find_first_of("!~");
+            if (modifier != std::string::npos) site.erase(modifier);
+        }
+
+        std::map<std::string, std::string> transformed_patterns;
+        std::map<std::string, double> transformed_counts;
+        bool is_dependent = false;
+
+        for (const auto& [dependency_key, dependency_sites] : dpp_site) {
+            const auto colon = dependency_key.find(':');
+            const std::string key_d = (colon == std::string::npos)
+                                          ? dependency_key
+                                          : dependency_key.substr(0, colon);
+            if (key_obs != key_d) continue;
+
+            auto sorted_sites = dependency_sites;
+            std::sort(sorted_sites.begin(), sorted_sites.end());
+
+            std::string macro_key = key_obs;
+            std::string transformed;
+            for (const auto& site : sorted_sites) {
+                macro_key += "_" + site;
+                const int index = inc_elt(site, normalized_sites);
+                if (index > 0 && static_cast<std::size_t>(index) <= raw_sites.size()) {
+                    if (!transformed.empty()) transformed += ',';
+                    transformed += raw_sites[static_cast<std::size_t>(index - 1)];
+                }
+            }
+
+            if (!transformed.empty()) {
+                transformed_patterns[macro_key] = transformed;
+                if (parts.size() > offset + 1) {
+                    transformed_counts[macro_key] += numeric_count(parts[offset + 1]);
+                }
+                is_dependent = true;
+            }
+        }
+
+        if (!is_dependent) {
+            std::string passthrough = replaceAll(line, ";", " ");
+            WFILErec_ << passthrough << "\n";
+            WFILEspec2_ << passthrough << "\n";
+            continue;
+        }
+
+        for (const auto& [macro_key, transformed] : transformed_patterns) {
+            std::string macro_line = macro_key + "(" + transformed + ");" +
+                                     format_count(transformed_counts[macro_key]);
+            macro_line = replaceAll(macro_line, ";", " ");
+            WFILErec_ << macro_line << "\n";
+            WFILEspec2_ << macro_line << "\n";
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 24. pre_obs1()   (Perl lines 1390-1441)
 // ---------------------------------------------------------------------------
 
 void MacroBNGModel::pre_obs1(
@@ -1745,7 +1864,7 @@ void MacroBNGModel::pre_obs1(
 }
 
 // ---------------------------------------------------------------------------
-// 24. trans_obs()   (Perl lines 1243-1301)
+// 25. trans_obs()   (Perl lines 1243-1301)
 // ---------------------------------------------------------------------------
 
 void MacroBNGModel::trans_obs(
@@ -1831,7 +1950,7 @@ void MacroBNGModel::trans_obs(
 }
 
 // ---------------------------------------------------------------------------
-// 25. obs_mac0()   (Perl lines 1444-1520)
+// 26. obs_mac0()   (Perl lines 1444-1520)
 // ---------------------------------------------------------------------------
 
 std::string MacroBNGModel::obs_mac0(

@@ -1,17 +1,21 @@
 #include "BNGAstVisitor.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <fstream>
 #include <iomanip>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
+#include "antlr_compat.hpp"
 #include <antlr4-runtime.h>
 
 #include "generated/BNGLexer.h"
@@ -75,6 +79,14 @@ std::string normalizeLegacyBlockHeaders(const std::string& source) {
 
         if (matchWord("begin") || matchWord("end")) {
             skipSpace();
+            const auto blockPosition = position;
+            if (matchWord("function") && hasBoundary()) {
+                result.append(line, 0, position);
+                result.push_back('s');
+                result.append(line, position, std::string::npos);
+                return;
+            }
+            position = blockPosition;
             if (matchWord("molecule")) {
                 skipSpace();
                 if (matchWord("type") && hasBoundary()) {
@@ -100,6 +112,337 @@ std::string normalizeLegacyBlockHeaders(const std::string& source) {
         lineStart = lineEnd + 1;
     }
     return result;
+}
+
+bool isEmptyReactantFunctionDeclaration(const std::string& line) {
+    const auto comment = line.find('#');
+    const auto code = trimCopy(
+        comment == std::string::npos ? line : line.substr(0, comment));
+    static constexpr std::string_view prefix = "reactant_";
+    if (code.size() <= prefix.size() + 2 ||
+        code.compare(0, prefix.size(), prefix) != 0) {
+        return false;
+    }
+
+    std::size_t position = prefix.size();
+    if (code[position] < '1' || code[position] > '9') return false;
+    ++position;
+    while (position < code.size() &&
+           std::isspace(static_cast<unsigned char>(code[position]))) {
+        ++position;
+    }
+    return code.compare(position, 2, "()") == 0 && position + 2 == code.size();
+}
+
+// The legacy NFsim XML parser accepts empty reactant_N() declarations as
+// placeholders.  They carry no user-defined expression; CompositeFunction
+// materializes the corresponding mapping count when a reaction evaluates its
+// rate.  Keep the generated ANTLR grammar strict for ordinary functions and
+// erase only these source-backed placeholders before parsing.
+std::string normalizeEmptyReactantFunctionDeclarations(const std::string& source) {
+    std::string result;
+    result.reserve(source.size());
+    bool insideFunctions = false;
+
+    std::size_t lineStart = 0;
+    while (lineStart <= source.size()) {
+        const auto lineEnd = source.find('\n', lineStart);
+        const auto lineLength = lineEnd == std::string::npos
+                                    ? source.size() - lineStart
+                                    : lineEnd - lineStart;
+        const auto line = source.substr(lineStart, lineLength);
+        const auto normalizedHeader = toLower(trimCopy(line));
+        if (normalizedHeader == "begin functions") {
+            insideFunctions = true;
+            result.append(line);
+        } else if (normalizedHeader == "end functions") {
+            insideFunctions = false;
+            result.append(line);
+        } else if (insideFunctions && isEmptyReactantFunctionDeclaration(line)) {
+            result.append("# BNG3: legacy empty reactant-count placeholder");
+        } else {
+            result.append(line);
+        }
+
+        if (lineEnd == std::string::npos) break;
+        result.push_back('\n');
+        lineStart = lineEnd + 1;
+    }
+    return result;
+}
+
+std::string normalizeLegacyActionNames(const std::string& source) {
+    std::string result;
+    result.reserve(source.size());
+
+    bool atLineStart = true;
+    std::size_t index = 0;
+    while (index < source.size()) {
+        if (atLineStart) {
+            if (source[index] == ' ' || source[index] == '\t' || source[index] == '\r') {
+                result.push_back(source[index++]);
+                continue;
+            }
+
+            if (source[index] == '#') {
+                const auto lineEnd = source.find('\n', index);
+                const auto end = lineEnd == std::string::npos ? source.size() : lineEnd;
+                result.append(source, index, end - index);
+                index = end;
+                continue;
+            }
+
+            constexpr std::array<std::string_view, 2> legacyNames = {
+                "readNetwork", "readModel"};
+            bool normalized = false;
+            for (const auto legacyName : legacyNames) {
+                if (source.compare(index, legacyName.size(), legacyName) != 0) continue;
+                const auto afterName = index + legacyName.size();
+                std::size_t next = afterName;
+                while (next < source.size() &&
+                       (source[next] == ' ' || source[next] == '\t' || source[next] == '\r')) {
+                    ++next;
+                }
+                if (next < source.size() && source[next] == '(') {
+                    result += "readFile";
+                    index = afterName;
+                    normalized = true;
+                    break;
+                }
+            }
+            if (normalized) {
+                atLineStart = false;
+                continue;
+            }
+
+            atLineStart = false;
+        }
+
+        const char current = source[index++];
+        result.push_back(current);
+        if (current == '\n') atLineStart = true;
+    }
+
+    return result;
+}
+
+bool isLooseActionLine(const std::string& line) {
+    static constexpr std::array<std::string_view, 27> actionNames = {
+        "generate_network", "generatenetwork", "simulate", "simulate_ode",
+        "simulate_ssa", "simulate_nf", "simulate_pla", "simulate_psa",
+        "simulate_rm", "simulate_protocol", "writefile", "writexml",
+        "writesbml", "writesbmlmulti", "writenetwork", "writemodel",
+        "writemfile", "writemexfile", "writecppfile", "writecpyfile",
+        "writelatex", "writemdl", "writessc", "writessccfg",
+        "setconcentration", "addconcentration", "setparameter"};
+
+    auto trimmed = trimCopy(line);
+    if (trimmed.empty() || trimmed.front() == '#') return false;
+    const auto comment = trimmed.find('#');
+    if (comment != std::string::npos) trimmed.resize(comment);
+
+    std::size_t nameEnd = 0;
+    while (nameEnd < trimmed.size() &&
+           (std::isalnum(static_cast<unsigned char>(trimmed[nameEnd])) ||
+            trimmed[nameEnd] == '_')) {
+        ++nameEnd;
+    }
+    if (nameEnd == 0) return false;
+
+    auto name = trimmed.substr(0, nameEnd);
+    std::transform(name.begin(), name.end(), name.begin(), [](unsigned char value) {
+        return static_cast<char>(std::tolower(value));
+    });
+    if (std::find(actionNames.begin(), actionNames.end(), name) == actionNames.end()) {
+        return false;
+    }
+    while (nameEnd < trimmed.size() &&
+           std::isspace(static_cast<unsigned char>(trimmed[nameEnd]))) {
+        ++nameEnd;
+    }
+    return nameEnd < trimmed.size() && trimmed[nameEnd] == '(';
+}
+
+std::string normalizeLooseActionsInsideModel(const std::string& source) {
+    std::vector<std::string> output;
+    std::vector<std::string> deferredActions;
+    bool insideModel = false;
+    int nestedBlockDepth = 0;
+    const bool hadTrailingNewline = !source.empty() && source.back() == '\n';
+
+    std::size_t lineStart = 0;
+    while (lineStart <= source.size()) {
+        const auto lineEnd = source.find('\n', lineStart);
+        const auto lineLength = lineEnd == std::string::npos
+                                     ? source.size() - lineStart
+                                     : lineEnd - lineStart;
+        const auto line = source.substr(lineStart, lineLength);
+        const auto trimmed = trimCopy(line);
+        std::istringstream words(trimmed);
+        std::string command;
+        std::string block;
+        words >> command >> block;
+        std::transform(command.begin(), command.end(), command.begin(), [](unsigned char value) {
+            return static_cast<char>(std::tolower(value));
+        });
+        std::transform(block.begin(), block.end(), block.begin(), [](unsigned char value) {
+            return static_cast<char>(std::tolower(value));
+        });
+
+        if (!insideModel) {
+            output.push_back(line);
+            if (command == "begin" && block == "model") {
+                insideModel = true;
+                nestedBlockDepth = 0;
+            }
+        } else if (command == "end" && block == "model") {
+            output.push_back(line);
+            output.insert(output.end(), deferredActions.begin(), deferredActions.end());
+            deferredActions.clear();
+            insideModel = false;
+            nestedBlockDepth = 0;
+        } else if (nestedBlockDepth == 0 && isLooseActionLine(line)) {
+            deferredActions.push_back(line);
+        } else {
+            output.push_back(line);
+            if (command == "begin") {
+                ++nestedBlockDepth;
+            } else if (command == "end" && nestedBlockDepth > 0) {
+                --nestedBlockDepth;
+            }
+        }
+
+        if (lineEnd == std::string::npos) break;
+        lineStart = lineEnd + 1;
+    }
+
+    output.insert(output.end(), deferredActions.begin(), deferredActions.end());
+
+    std::ostringstream normalized;
+    for (std::size_t index = 0; index < output.size(); ++index) {
+        if (index != 0) normalized << '\n';
+        normalized << output[index];
+    }
+    if (hadTrailingNewline) normalized << '\n';
+    return normalized.str();
+}
+
+int maximumIntegerState(const std::string& source) {
+    int maximum = -1;
+    for (std::size_t index = 0; index < source.size(); ++index) {
+        if (source[index] != '~') continue;
+        std::size_t number = index + 1;
+        if (number < source.size() && source[number] == '^') {
+            if (number + 1 >= source.size() || source[number + 1] != '[') continue;
+            number += 2;
+        }
+        if (number >= source.size() ||
+            !std::isdigit(static_cast<unsigned char>(source[number]))) {
+            continue;
+        }
+        int value = 0;
+        while (number < source.size() &&
+               std::isdigit(static_cast<unsigned char>(source[number]))) {
+            const int digit = source[number] - '0';
+            if (value > (std::numeric_limits<int>::max() - digit) / 10) {
+                value = std::numeric_limits<int>::max();
+                break;
+            }
+            value = value * 10 + digit;
+            ++number;
+        }
+        maximum = std::max(maximum, value);
+    }
+    return maximum;
+}
+
+std::vector<std::string> expandIntegerStateTransition(
+    const std::string& line, int maximumState) {
+    const auto increment = line.find("~++");
+    const auto decrement = line.find("~--");
+    const bool isIncrement = increment != std::string::npos;
+    const bool isDecrement = decrement != std::string::npos;
+    if (isIncrement == isDecrement) return {line};
+
+    const auto transition = isIncrement ? increment : decrement;
+    const std::string transitionText = isIncrement ? "~++" : "~--";
+    if (line.find(transitionText, transition + 1) != std::string::npos) {
+        return {line};
+    }
+
+    const auto boundary = line.rfind("~^[", transition);
+    if (boundary == std::string::npos ||
+        line.find("~^[", boundary + 1) != std::string::npos) {
+        return {line};
+    }
+    const auto boundaryEnd = line.find(']', boundary + 3);
+    if (boundaryEnd == std::string::npos || boundaryEnd >= transition) {
+        return {line};
+    }
+
+    const auto boundText = line.substr(boundary + 3, boundaryEnd - boundary - 3);
+    if (boundText.empty() ||
+        !std::all_of(boundText.begin(), boundText.end(), [](unsigned char value) {
+            return std::isdigit(value) != 0;
+        })) {
+        return {line};
+    }
+
+    std::size_t consumed = 0;
+    int bound = 0;
+    try {
+        bound = std::stoi(boundText, &consumed);
+    } catch (const std::exception&) {
+        return {line};
+    }
+    if (consumed != boundText.size()) return {line};
+
+    const int firstState = isIncrement ? 0 : 1;
+    const int lastState = isIncrement ? bound - 1 : maximumState;
+    if (lastState < firstState) return {line};
+    constexpr int maxExpandedStates = 10000;
+    if (lastState > firstState + maxExpandedStates - 1) return {line};
+
+    std::vector<std::string> expanded;
+    expanded.reserve(static_cast<std::size_t>(lastState - firstState + 1));
+    for (int state = firstState; state <= lastState; ++state) {
+        auto replacement = line;
+        replacement.replace(boundary, boundaryEnd - boundary + 1,
+                            "~" + std::to_string(state));
+        const auto replacementTransition = replacement.find(transitionText);
+        if (replacementTransition == std::string::npos) return {line};
+        replacement.replace(replacementTransition, transitionText.size(),
+                            "~" + std::to_string(state + (isIncrement ? 1 : -1)));
+        expanded.push_back(std::move(replacement));
+    }
+    return expanded;
+}
+
+std::string normalizeIntegerStateTransitions(const std::string& source) {
+    const int maximumState = maximumIntegerState(source);
+    std::vector<std::string> output;
+    const bool hadTrailingNewline = !source.empty() && source.back() == '\n';
+
+    std::size_t lineStart = 0;
+    while (lineStart <= source.size()) {
+        const auto lineEnd = source.find('\n', lineStart);
+        const auto lineLength = lineEnd == std::string::npos
+                                     ? source.size() - lineStart
+                                     : lineEnd - lineStart;
+        const auto line = source.substr(lineStart, lineLength);
+        const auto expanded = expandIntegerStateTransition(line, maximumState);
+        output.insert(output.end(), expanded.begin(), expanded.end());
+        if (lineEnd == std::string::npos) break;
+        lineStart = lineEnd + 1;
+    }
+
+    std::ostringstream normalized;
+    for (std::size_t index = 0; index < output.size(); ++index) {
+        if (index != 0) normalized << '\n';
+        normalized << output[index];
+    }
+    if (hadTrailingNewline) normalized << '\n';
+    return normalized.str();
 }
 
 bool isIdentifierStart(char value) {
@@ -467,6 +810,19 @@ std::string getComponentName(BNGParser::Component_defContext* ctx) {
     return ctx->getText();
 }
 
+template <typename Context>
+void collectParseContexts(antlr4::tree::ParseTree* node, std::vector<Context*>& contexts) {
+    if (node == nullptr) {
+        return;
+    }
+    if (auto* context = dynamic_cast<Context*>(node)) {
+        contexts.push_back(context);
+    }
+    for (auto* child : node->children) {
+        collectParseContexts(child, contexts);
+    }
+}
+
 template <typename ContextT, typename ChildT>
 ast::Expression buildLeftAssociativeExpression(
     ContextT* ctx,
@@ -792,7 +1148,10 @@ ast::Expression parseExpressionImpl(const std::string& exprText) {
 } // namespace
 
 std::string normalizeBNGLSource(const std::string& sourceText) {
-    return normalizeLegacyBlockHeaders(normalizeTfunSyntax(sourceText));
+    return normalizeLooseActionsInsideModel(normalizeIntegerStateTransitions(
+        normalizeLegacyActionNames(
+            normalizeEmptyReactantFunctionDeclarations(
+                normalizeLegacyBlockHeaders(normalizeTfunSyntax(sourceText))))));
 }
 
 BNGAstVisitor::BNGAstVisitor()
@@ -803,9 +1162,41 @@ std::unique_ptr<ast::Model> BNGAstVisitor::takeModel() {
 }
 
 std::any BNGAstVisitor::visitProg(BNGParser::ProgContext* ctx) {
+    predeclareMoleculeTypes(ctx);
     visitChildren(ctx);
     currentModel_->getParameters().evaluateAll();
     return {};
+}
+
+void BNGAstVisitor::predeclareMoleculeTypes(BNGParser::ProgContext* ctx) {
+    std::vector<BNGParser::Molecule_type_defContext*> explicitDefinitions;
+    collectParseContexts(ctx, explicitDefinitions);
+    for (auto* definition : explicitDefinitions) {
+        visitMolecule_type_def(definition);
+        predeclaredMoleculeTypes_.insert(definition);
+    }
+
+    std::vector<BNGParser::Molecule_patternContext*> patterns;
+    collectParseContexts(ctx, patterns);
+    std::unordered_set<std::string> explicitNames;
+    for (auto* definition : explicitDefinitions) {
+        if (definition->molecule_def() == nullptr) {
+            continue;
+        }
+        explicitNames.insert(getMoleculeName(definition->molecule_def()));
+    }
+
+    for (auto* pattern : patterns) {
+        auto fragment = inferMoleculeTypeFromPattern(pattern);
+        if (explicitNames.find(fragment.getName()) != explicitNames.end()) {
+            continue;
+        }
+        if (auto* existing = currentModel_->findMoleculeType(fragment.getName())) {
+            existing->mergeInferredComponents(fragment.getComponents());
+        } else {
+            currentModel_->addMoleculeType(std::move(fragment));
+        }
+    }
 }
 
 std::any BNGAstVisitor::visitVersion_def(BNGParser::Version_defContext* ctx) {
@@ -871,6 +1262,9 @@ std::any BNGAstVisitor::visitCompartment_def(BNGParser::Compartment_defContext* 
 }
 
 std::any BNGAstVisitor::visitMolecule_type_def(BNGParser::Molecule_type_defContext* ctx) {
+    if (predeclaredMoleculeTypes_.find(ctx) != predeclaredMoleculeTypes_.end()) {
+        return {};
+    }
     if (ctx->molecule_def() == nullptr) {
         return {};
     }
