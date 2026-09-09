@@ -8,7 +8,7 @@
   ],
   "test_first": {
     "red_build": "bng3_nfcore2_reference_tests reported missing population, graph, compartment, move, species-delete, conditional-delete, and rate-law contracts before implementation; the added volume-scope tests initially lacked compartment lookup APIs",
-    "focused_green": "ctest --test-dir build --output-on-failure -R 'native-port|architecture_nfcore2_reference' (20 native-port tests plus the NFcore2 reference target)",
+    "focused_green": "ctest --test-dir build --output-on-failure -R 'native-port|architecture_nfcore2_reference' (21 native-port tests plus the NFcore2 reference target)",
     "full_validation": {
       "build": "cmake --build build --parallel 4",
       "ctest": "281 passed",
@@ -52,7 +52,8 @@
       "tests": [
         "NFsimAdapter_RootInternalTopologyAndPartnerStateLowerDirectly",
         "NFsimAdapter_ConnectedToPredicateUsesGraphSearchForRootReactants",
-        "native NFcore2 reader preserves internal graph-node state constraints"
+        "native NFcore2 reader preserves internal graph-node state constraints",
+        "native NFcore2 matcher preserves multi-edge equivalent-site automorphisms"
       ],
       "oracle": "tests/energy/tests/python/test_nfcore2_semantic_expansion_oracle.py::test_connected_to_graph_oracle"
     },
@@ -111,7 +112,7 @@
     {
       "id": "arbitrary-graph-expressions",
       "status": "direct-finite-symmetric-bounded-fallback-richer",
-      "implemented": "Exact backtracking supports anchored/unanchored nodes, multiple reciprocal bonds, state, compartment, free-site, bound-site, and finite symmetric equivalent-site constraints with injective assignment.",
+      "implemented": "Exact backtracking supports anchored/unanchored nodes, multiple reciprocal bonds, state, compartment, free-site, bound-site, and finite symmetric equivalent-site constraints with injective assignment across multi-edge site permutations; mirrored native descriptors are deduplicated after partner resolution.",
       "tests": [
         "NFsimAdapter_ArbitraryGraphExpressionPreservesFreeAndBoundSiteConstraints",
         "NFsimAdapter_SymmetricGraphAutomorphismMatchesDistinctEquivalentSites",
@@ -121,9 +122,10 @@
         "native NFcore2 reader captures dot-separated connectedTo topology",
         "ModelImage_RoundTripSymmetricGraphConstraints",
         "NFsimAdapter_RejectsMalformedGraphEdge",
-        "NFsimAdapter_ArbitraryGraphExpressionRejectsAsymmetricRuntimeBond"
+        "NFsimAdapter_ArbitraryGraphExpressionRejectsAsymmetricRuntimeBond",
+        "native NFcore2 matcher preserves multi-edge equivalent-site automorphisms"
       ],
-      "remaining": "Negative/molecularity forms, richer child constraints, and unresolved or unbounded connectedTo remain fail-closed; broader automorphism expressions remain outside the finite candidate slice."
+      "remaining": "Negative/molecularity forms, richer child constraints, and unresolved or unbounded connectedTo remain fail-closed; broader automorphism expressions remain outside the finite multi-edge candidate slice."
     },
     {
       "id": "general-local-dor-evaluation",
@@ -169,5 +171,17 @@
     "Positive compartment-volume bindings and same-dimension transport ratios are direct; automatic volume/region scaling, dimension conversion, and topology-changing transport remain fail-closed.",
     "Native conditional-deletion spellings whose component ownership or post-delete invalidation cannot be established remain fail-closed; unknown removal codes are explicit fallbacks.",
     "Independent seeded trajectory, propensity, and failure-classification parity against NFsim/BNG2/Rasi/uORF oracles is not claimed."
-  ]
+  ],
+  "latest_published_implementation": {
+    "commit": "7d88977ca4bf7fbd98933ee8338fab9b05b9950a",
+    "full_sha": "7d88977ca4bf7fbd98933ee8338fab9b05b9950a",
+    "branch": "main",
+    "description": "Native reader preserves finite multi-edge equivalent-site automorphisms by lowering symmetric bonds as injective orbit constraints and deduplicating mirrored descriptors."
+  },
+  "post_checkpoint_validation": {
+    "native_reader": "21 test cases, 181 assertions",
+    "nfcore2_reference": "432 passed, 0 failed",
+    "ctest": "282 runnable tests passed; architecture_nfnext_future is pre-existing RED and has no executable because its source intentionally contains #error",
+    "build_note": "Full build is blocked only by the pre-existing NFnext future contract; the changed native-port target builds and runs."
+  }
 }

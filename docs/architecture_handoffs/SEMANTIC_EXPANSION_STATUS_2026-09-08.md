@@ -54,7 +54,7 @@ After implementation, the focused CTest target passed:
 
 ```text
 ctest --test-dir build --output-on-failure -R 'native-port|architecture_nfcore2_reference'
-20/20 native-port tests ... Passed
+21/21 native-port tests ... Passed
 architecture_nfcore2_reference ... Passed
 ```
 
@@ -88,7 +88,7 @@ The post-fix validation set is also green:
 
 ```text
 cmake --build build --parallel 4
-ctest --test-dir build --output-on-failure       # 281/281 passed
+ctest --test-dir build --output-on-failure       # 282 runnable passed; 1 pre-existing NFnext future target not built
 tests/energy/tests/python                         # 66 passed
 tests/python                                       # 348 passed, 27 skipped
 tests/validation -m smoke                         # 4 passed, 14 skipped
@@ -111,7 +111,9 @@ Root-local state, bond, and compartment constraints are lowered directly.
 Finite graph expressions use exact backtracking over live molecules, preserving
 anchors, multiple internal bonds, state values, exact compartments, free/bound
 sites, and reciprocal-bond requirements. Finite symmetric equivalent-site
-constraints use injective candidate assignment; malformed, negative,
+constraints use injective candidate assignment across multi-edge site
+permutations; mirrored descriptors are deduplicated after partner resolution;
+malformed, negative,
 molecularity, richer-child, or unbounded forms fail closed. Root `connectedTo`
 uses a graph search over live reciprocal bonds. Zero-reactant rules are eligible for synthesis/population lowering
 rather than being classified as graph fallback.
@@ -146,8 +148,8 @@ The broader unresolved goal remains: arbitrary internal graph expressions, gener
 
 The port remains fail-closed for semantics not proven by these contracts:
 
-- richer native graph automorphisms beyond finite symmetric equivalent-site
-  assignment, negative graph expressions, molecularity constraints,
+- richer native graph automorphisms beyond finite multi-edge symmetric
+  equivalent-site assignment, negative graph expressions, molecularity constraints,
   unsupported child constraints, and malformed or unbounded `connectedTo`
   forms;
 - native local-function/DOR object evaluation with observable/complex scopes,

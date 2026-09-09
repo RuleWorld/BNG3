@@ -17,12 +17,12 @@
     "bng3": {
       "repository": "https://github.com/RuleWorld/BNG3.git",
       "branch": "main",
-      "revision": "8eef19c5bf7edbfeb2f5a090ebe1e998a17876e3",
+      "revision": "7d88977ca4bf7fbd98933ee8338fab9b05b9950a",
       "role": "destination-and-future-authority",
       "status": "observed",
       "evidence": {
         "kind": "local-checkout",
-        "checked_at": "2026-09-08"
+        "checked_at": "2026-09-09"
       }
     },
     "bionetgen": {

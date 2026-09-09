@@ -20,7 +20,7 @@ The archival documents are retained under `docs/architecture_handoffs/`. The exa
 - NFcore2 source is in `cpp/nfsim/NFcore2/`; its native reader is adapted to the real BNG3 reaction, template, transformation, and energy APIs.
 - NFnext source is in `cpp/nfnext/` and is built as an isolated library so its prototype contracts remain testable without being presented as the NFsim replacement.
 - Root-local NFsim introspection and conservative dependency collection are implemented in the existing NFsim classes. Unsupported richer topology and broader transport cases fail closed; bounded graph matching, synthesis, root-local moves, and species-carrying `MoveConnected` execute directly. Explicit rate bindings resolve reactant counts, connected-species molecule counts, and positive compartment volumes.
-- Symmetric graph automorphisms now lower through the native reader as finite equivalent-site candidate sets. The matcher assigns candidates injectively, checks state and occupancy constraints, and verifies reciprocal bonds; malformed candidate or partner payloads remain rejected.
+- Symmetric graph automorphisms now lower through the native reader as finite equivalent-site candidate sets. The matcher assigns candidates injectively, checks state and occupancy constraints, verifies reciprocal bonds, and preserves multi-edge site permutations; mirrored descriptors are deduplicated after partner resolution. Malformed candidate or partner payloads remain rejected.
 - The staged semantic layer now has typed symbols/rate-law references, structured
   feature diagnostics, an immutable `compile::Document` protocol split, and a
   value-like `compile::Pattern` with explicit BNGcore and NFsim
@@ -83,11 +83,13 @@ The archival documents are retained under `docs/architecture_handoffs/`. The exa
 ## Evidence at this checkpoint
 
 - The direct-port build completed after adapting the BNG3 APIs.
-- Full Release/Ninja CTest passed all `281/281` tests, including `58/58`
-  tests under the exact `energy` label, one NFcore2 and one NFnext
-  architecture-reference test, and the 20 native-port semantic tests.
+- All runnable Release/Ninja CTest tests passed (`282` passed; the sole
+  non-runnable entry is the pre-existing RED NFnext future contract, whose
+  source contains an intentional `#error` and therefore has no executable),
+  including `58/58` tests under the exact `energy` label, one NFcore2 and one
+  NFnext architecture-reference test, and the 21 native-port semantic tests.
   The NFcore2 reference suite passed 432/432; the native-reader suite
-  passed 20 cases and 180 assertions.
+  passed 21 cases and 181 assertions.
 - The imported energy Python self-tests passed `66/66` under the repository's
   intended `PYTHONPATH=tests/energy` environment.
 - The fresh current-main BNG3 Python regression suite passed `348` tests with
