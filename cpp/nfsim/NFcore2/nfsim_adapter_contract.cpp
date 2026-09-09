@@ -280,6 +280,11 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                         throw std::out_of_range("transport-volume binding destination");
                     binding.destination_compartment = nativeBinding.destination_compartment;
                     binding.kind = RATE_EXPRESSION_TRANSPORT_VOLUME_RATIO;
+                } else if (nativeBinding.kind == NATIVE_RATE_EXPRESSION_GLOBAL_MOLECULE_COUNT) {
+                    if (binding.molecule_type >= source.molecule_types.size() ||
+                        source.molecule_types[binding.molecule_type].population)
+                        throw std::invalid_argument("global observable molecule type");
+                    binding.kind = RATE_EXPRESSION_GLOBAL_MOLECULE_COUNT;
                 } else {
                     throw std::invalid_argument("unknown expression binding kind");
                 }

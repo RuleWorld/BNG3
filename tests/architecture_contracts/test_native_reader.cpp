@@ -206,6 +206,36 @@ end reaction rules
     REQUIRE(system);
     return system;
 }
+
+std::unique_ptr<NFcore::System> globalFunctionSystem() {
+    auto model = bng::parser::parseModel(R"BNGL(
+begin parameters
+ k 2.0
+end parameters
+begin molecule types
+ A()
+ C()
+end molecule types
+begin seed species
+ A() 2
+end seed species
+begin observables
+ Molecules atotal A()
+end observables
+begin functions
+ rate() = k*atotal + time()
+end functions
+begin reaction rules
+ A() -> A() rate
+end reaction rules
+)BNGL");
+    REQUIRE(model);
+    int traversal = 0;
+    auto system = std::unique_ptr<NFcore::System>(
+        NFinput::buildSystemFromAst(*model, false, 100, false, traversal));
+    REQUIRE(system);
+    return system;
+}
 }
 
 TEST_CASE("native NFcore2 reader preserves root state and transformation") {
@@ -591,6 +621,28 @@ TEST_CASE("native NFcore2 reader lowers a FunctionProduct of scoped local functi
     context.setMoleculeAt(0, NFcore2::MoleculeRef(NFcore2::MoleculeTypeId(0), a));
     context.setMoleculeAt(1, NFcore2::MoleculeRef(NFcore2::MoleculeTypeId(1), b));
     CHECK(engine.evaluateRate(lowered.rules[0].family, lowered.rules[0].member, context) == 6.0);
+}
+
+TEST_CASE("native NFcore2 reader lowers a simple global observable function") {
+    auto system = globalFunctionSystem();
+    const auto snapshot = NFcore2::snapshotLegacyNFsim(*system);
+    REQUIRE(snapshot.rules.size() == 1);
+    const auto& rule = snapshot.rules[0];
+    CHECK(rule.rate_law == NFcore2::NATIVE_RATE_EXPRESSION);
+    CHECK_FALSE(rule.uses_local_function);
+    REQUIRE(rule.rate_expression_bindings.size() == 2);
+    CHECK(rule.rate_expression_bindings[0].kind == NFcore2::NATIVE_RATE_EXPRESSION_GLOBAL_MOLECULE_COUNT);
+    CHECK(rule.rate_expression_bindings[0].molecule_type == 0);
+    const auto lowered = NFcore2::lowerLegacyNFsim(*system);
+    CHECK(lowered.supported_rule_count == 1);
+    CHECK(lowered.fallback_rule_count == 0);
+    NFcore2::Engine engine(lowered.executable);
+    const auto a = engine.state().molecules(NFcore2::MoleculeTypeId(0)).create();
+    const auto b = engine.state().molecules(NFcore2::MoleculeTypeId(0)).create();
+    (void)a; (void)b;
+    engine.state().setTime(1.0);
+    NFcore2::MatchContext context;
+    CHECK(engine.evaluateRate(lowered.rules[0].family, lowered.rules[0].member, context) == 5.0);
 }
 
 TEST_CASE("native NFcore2 lowering executes a reciprocal binding transform") {

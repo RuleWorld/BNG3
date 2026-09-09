@@ -630,6 +630,9 @@ TEST(ModelImage_RoundTripCompartmentGraphAndExpressionMetadata){
     RateExpressionBinding transport; transport.kind=RATE_EXPRESSION_TRANSPORT_VOLUME_RATIO;
     transport.name="transport"; transport.target=0; transport.destination_compartment=11;
     member.rate_law.expression_bindings.push_back(transport);
+    RateExpressionBinding global; global.kind=RATE_EXPRESSION_GLOBAL_MOLECULE_COUNT;
+    global.name="global"; global.molecule_type=1;
+    member.rate_law.expression_bindings.push_back(global);
     family.members.push_back(member); e.buildMetadata().addRuleFamily(family);
     e.buildMetadata().setFeatureDependencies(std::vector<std::vector<MatcherId> >());
 
@@ -645,7 +648,7 @@ TEST(ModelImage_RoundTripCompartmentGraphAndExpressionMetadata){
     EXPECT_EQ(restoredMember.rate_law.kind,LEGACY_RATE_EXPRESSION);
     EXPECT_EQ(restoredMember.rate_law.expression,std::string("s0 + time"));
     EXPECT_EQ(restoredMember.rate_law.expression_components.size(),1u);
-    EXPECT_EQ(restoredMember.rate_law.expression_bindings.size(),5u);
+    EXPECT_EQ(restoredMember.rate_law.expression_bindings.size(),6u);
     EXPECT_EQ(restoredMember.rate_law.expression_bindings[0].name,std::string("k"));
     EXPECT_EQ(restoredMember.rate_law.expression_bindings[0].value,3.0);
     EXPECT_EQ(restoredMember.rate_law.expression_bindings[1].kind,RATE_EXPRESSION_REACTANT_COUNT);
@@ -659,4 +662,6 @@ TEST(ModelImage_RoundTripCompartmentGraphAndExpressionMetadata){
     EXPECT_EQ(restoredMember.rate_law.expression_bindings[4].kind,RATE_EXPRESSION_TRANSPORT_VOLUME_RATIO);
     EXPECT_EQ(restoredMember.rate_law.expression_bindings[4].target,0u);
     EXPECT_EQ(restoredMember.rate_law.expression_bindings[4].destination_compartment,11u);
+    EXPECT_EQ(restoredMember.rate_law.expression_bindings[5].kind,RATE_EXPRESSION_GLOBAL_MOLECULE_COUNT);
+    EXPECT_EQ(restoredMember.rate_law.expression_bindings[5].molecule_type,1u);
 }

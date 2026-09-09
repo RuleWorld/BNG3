@@ -4,6 +4,7 @@
 #include "../NFcore/observable.hh"
 #include "../NFcore/templateMolecule.hh"
 #include "../NFreactions/reactions/reaction.hh"
+#include "../NFfunction/NFfunction.hh"
 #include "../NFreactions/transformations/transformationSet.hh"
 #include "../NFreactions/transformations/transformation.hh"
 #include "nfsim_transform_decoder.hh"
@@ -71,6 +72,54 @@ bool appendSimpleScopedLocalFunction(System& system, LocalFunction* local,
     return true;
 }
 
+bool appendSimpleGlobalFunction(System& system, GlobalFunction* global,
+                               NativeReactionHeader& header) {
+    if (!global || global->getExpression().empty()) return false;
+    NativeReactionHeader candidate = header;
+    candidate.rate_law = NATIVE_RATE_EXPRESSION;
+    candidate.rate_expression = global->getExpression();
+    candidate.rate_expression_bindings.clear();
+    for (int i = 0; i < global->getNumOfVarRefs(); ++i) {
+        const std::string type = global->getVarRefType(i);
+        if (type == "Time") continue;
+        if (type != "Observable") return false;
+        Observable* observable = system.getObservableByName(global->getVarRefName(i));
+        if (!observable || observable->getType() != Observable::MOLECULES)
+            return false;
+        int templateCount = 0;
+        TemplateMolecule** templates = nullptr;
+        observable->getTemplateMoleculeList(templateCount, templates);
+        if (templateCount != 1 || templates == nullptr || templates[0] == nullptr ||
+            templates[0]->getMoleculeType() == nullptr)
+            return false;
+        TemplateMolecule::RootLocalConstraints constraints;
+        if (!templates[0]->collectRootLocalConstraints(constraints) ||
+            !constraints.empty.empty() || !constraints.occupied.empty() ||
+            !constraints.states.empty() || !constraints.exclusions.empty() ||
+            !constraints.bonds.empty() || !constraints.symmetric.empty() ||
+            !constraints.connected_to.empty() || !constraints.compartment.empty())
+            return false;
+        NativeRateExpressionBindingSnapshot binding;
+        binding.kind = NATIVE_RATE_EXPRESSION_GLOBAL_MOLECULE_COUNT;
+        binding.name = global->getVarRefName(i);
+        binding.molecule_type = static_cast<std::uint32_t>(
+            templates[0]->getMoleculeType()->getTypeID());
+        candidate.rate_expression_bindings.push_back(binding);
+    }
+    for (int i = 0; i < global->getNumOfParams(); ++i) {
+        const std::string name = global->getParamName(i);
+        const double value = system.getParameter(name);
+        if (!std::isfinite(value)) return false;
+        NativeRateExpressionBindingSnapshot binding;
+        binding.kind = NATIVE_RATE_EXPRESSION_CONSTANT;
+        binding.name = name;
+        binding.value = value;
+        candidate.rate_expression_bindings.push_back(binding);
+    }
+    header = candidate;
+    return true;
+}
+
 bool mergeSimpleScopedLocalFunctions(const NativeReactionHeader& first,
                                      const NativeReactionHeader& second,
                                      NativeReactionHeader& merged) {
@@ -104,6 +153,7 @@ std::size_t NativeNFsimSystemReader::reactionCount() const{return system_.getAll
 NativeReactionHeader NativeNFsimSystemReader::reactionHeader(std::size_t i) const{
     ReactionClass* r=system_.getReaction(static_cast<int>(i));NativeReactionHeader h;h.name=r->getName();h.base_rate=r->getBaseRate();h.coordinate=static_cast<std::uint32_t>(i);h.parameter_index=static_cast<std::uint32_t>(i);
     bool directLocalFunction = false;
+    bool directGlobalFunction = false;
     if (r->getRxnType() == ReactionClass::DOR_RXN) {
         DORRxnClass* dor = dynamic_cast<DORRxnClass*>(r);
         if (dor && dor->getCompositeFunction()) {
@@ -128,9 +178,14 @@ NativeReactionHeader NativeNFsimSystemReader::reactionHeader(std::size_t i) cons
             if (firstSimple && secondSimple)
                 directLocalFunction = mergeSimpleScopedLocalFunctions(firstHeader, secondHeader, h);
         }
+    } else if (r->getRxnType() == ReactionClass::OBS_DEPENDENT_RXN) {
+        FunctionalRxnClass* functional = dynamic_cast<FunctionalRxnClass*>(r);
+        if (functional && functional->getGlobalFunction())
+            directGlobalFunction = appendSimpleGlobalFunction(
+                system_, functional->getGlobalFunction(), h);
     }
     h.uses_local_function = r->getRxnType() != ReactionClass::BASIC_RXN &&
-                            !directLocalFunction;
+                            !directLocalFunction && !directGlobalFunction;
     // A zero-reactant rule is a synthesis/population rule.  It does not
     // imply an unresolved internal graph query.
     h.uses_connected_to = false;

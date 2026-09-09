@@ -67,6 +67,8 @@ namespace NFcore
 			virtual double exactRuleMonkey_a();
 			virtual void pickRuleMonkeyMappingSets(double randNumber) const { BasicRxnClass::pickRuleMonkeyMappingSets(randNumber); }
 			virtual void printDetails() const;
+			GlobalFunction *getGlobalFunction() const { return gf; }
+			CompositeFunction *getCompositeFunction() const { return cf; }
 
 		protected:
 			GlobalFunction *gf;

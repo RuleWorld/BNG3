@@ -34,6 +34,12 @@ double RateLawDescriptor::evaluate(const SimulationState& state,
                         throw std::out_of_range("expression reactant-count binding missing");
                     return static_cast<double>(context.reactant_counts[binding.target]);
                 }
+                if (binding.kind == RATE_EXPRESSION_GLOBAL_MOLECULE_COUNT) {
+                    if (binding.molecule_type >= state.model().moleculeTypes().size())
+                        throw std::out_of_range("global observable molecule type");
+                    return static_cast<double>(state.molecules(
+                        MoleculeTypeId(binding.molecule_type)).liveCount());
+                }
                 const MoleculeRef ref = context.moleculeAt(binding.target);
                 if (!ref.valid()) throw std::out_of_range("expression binding reactant missing");
                 if (binding.kind == RATE_EXPRESSION_SPECIES_MOLECULE_COUNT) {

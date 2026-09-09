@@ -160,6 +160,7 @@ namespace NFcore {
 				Simply gives the name of the function only (without the open and close parentheses) .
 			*/
 			string getName() const {return name;};
+			string getExpression() const {return funcExpression;};
 
 			/*!
 				For Debugging, prints out the details of the function including the defined variables and constant
@@ -177,6 +178,8 @@ namespace NFcore {
 
 
 			int getNumOfVarRefs() const { return (int) n_varRefs; };
+			int getNumOfParams() const { return (int) n_params; };
+			string getParamName(int index) const { return paramNames[index]; }
 			string getVarRefName(int varRefIndex) const {
 				return varRefNames[varRefIndex];
 			}
