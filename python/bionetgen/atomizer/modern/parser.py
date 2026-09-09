@@ -142,7 +142,16 @@ def _mathml_to_formula(element: Optional[Any]) -> str:
         return "1e308"
     if tag == "notanumber":
         return "0"
-    if tag in {"lambda", "bvar", "piece", "otherwise"}:
+    if tag == "lambda":
+        # SBML function bodies are lambda(bvar..., body).  Bound-variable
+        # declarations are metadata; the final non-bvar child is the body.
+        expressions = [
+            _mathml_to_formula(child).strip()
+            for child in children
+            if _local_name(child.tag) != "bvar"
+        ]
+        return expressions[-1] if expressions else ""
+    if tag in {"bvar", "piece", "otherwise"}:
         return next(
             (
                 expression
@@ -160,8 +169,28 @@ def _mathml_to_formula(element: Optional[Any]) -> str:
                 child for child in list(part) if _local_name(child.tag) != "#text"
             ]
             if part_tag == "piece" and len(part_children) >= 2:
-                value = _mathml_to_formula(part_children[0])
-                condition = _mathml_to_formula(part_children[1])
+                wrapped_condition = next(
+                    (
+                        child
+                        for child in part_children
+                        if _local_name(child.tag) == "condition"
+                    ),
+                    None,
+                )
+                if wrapped_condition is not None:
+                    value_node = next(
+                        (
+                            child
+                            for child in part_children
+                            if child is not wrapped_condition
+                        ),
+                        None,
+                    )
+                    condition_node = wrapped_condition
+                else:
+                    value_node, condition_node = part_children[:2]
+                value = _mathml_to_formula(value_node)
+                condition = _mathml_to_formula(condition_node)
                 branches.append((value, condition))
             elif part_tag == "otherwise" and part_children:
                 fallback = _mathml_to_formula(part_children[0])
@@ -196,6 +225,12 @@ def _mathml_to_formula(element: Optional[Any]) -> str:
             for child in children[1:]
             if _local_name(child.tag) not in {"degree", "logbase"}
         ]
+        if operator == "and" and not args:
+            return "1"
+        if operator in {"or", "xor"} and not args:
+            return "0"
+        if operator == "not" and not args:
+            return "1"
         if operator in {"plus", "times", "minus", "divide", "power"}:
             symbol = {
                 "plus": "+",
@@ -271,7 +306,13 @@ class SBMLParser:
         if math_element is None:
             formula = _attribute(parent, "formula", "")
             return str(formula or "").strip()
-        return _mathml_to_formula(math_element)
+        formula = _mathml_to_formula(math_element)
+        if formula:
+            return formula
+        # Small fixtures and some libSBML XML exports use a formula attribute
+        # on an otherwise empty <math/> element. Preserve it as a compatibility
+        # fallback; a genuinely empty MathML node still returns "".
+        return str(_attribute(math_element, "formula", "") or "").strip()
 
     @staticmethod
     def _mathml_import_warnings(root: Any) -> List[Dict[str, Any]]:
@@ -387,11 +428,14 @@ class SBMLParser:
             model, parameter_warnings, parameter_aliases
         )
         reactions = SBMLParser._parse_xml_reactions(model, parameter_aliases)
-        rules = SBMLParser._parse_xml_rules(model, parameter_aliases)
-        functions = SBMLParser._parse_xml_functions(model, parameter_aliases)
+        math_warnings: List[Dict[str, Any]] = []
+        rules = SBMLParser._parse_xml_rules(model, parameter_aliases, math_warnings)
+        functions = SBMLParser._parse_xml_functions(
+            model, parameter_aliases, math_warnings
+        )
         events = SBMLParser._parse_xml_events(model, parameter_aliases)
         initial_assignments = SBMLParser._parse_xml_initial_assignments(
-            model, parameter_aliases
+            model, parameter_aliases, math_warnings
         )
         species_by_compartment: Dict[str, List[str]] = OrderedDict()
         for species_id, item in species.items():
@@ -439,6 +483,7 @@ class SBMLParser:
         result.import_warnings.extend(SBMLParser._mathml_import_warnings(root))
         result.import_warnings.extend(apply_unit_scaling(result))
         result.import_warnings.extend(parameter_warnings)
+        result.import_warnings.extend(math_warnings)
         for reaction_id, reaction in result.reactions.items():
             for reference in [*reaction.reactants, *reaction.products]:
                 value = reference.stoichiometry
@@ -487,19 +532,6 @@ class SBMLParser:
                         "severity": "approximated",
                     }
                 )
-            if reaction.conversion_factor:
-                result.import_warnings.append(
-                    {
-                        "category": "conversionFactor",
-                        "message": (
-                            f'Reaction "{reaction_id}" declares '
-                            f'conversionFactor="{reaction.conversion_factor}"; '
-                            "captured but not applied to the rate law."
-                        ),
-                        "count": 1,
-                        "severity": "approximated",
-                    }
-                )
         if result.events:
             result.import_warnings.append(
                 {
@@ -541,6 +573,7 @@ class SBMLParser:
             "layout": "diagram layout",
             "render": "diagram rendering",
             "groups": "element grouping",
+            "req": "requirements metadata (retired package)",
         }
         package_counts: Dict[str, int] = {
             str(package).lower(): 0 for package in (declared_packages or [])
@@ -663,6 +696,7 @@ class SBMLParser:
                 constant=_bool(_attribute(item, "constant"), True),
                 outside=(str(_attribute(item, "outside", "") or "") or None),
                 compartment_type=_attribute(item, "compartmentType"),
+                is_type=_bool(_attribute(item, "isType"), False),
                 size_set=(
                     _attribute(item, "size") is not None
                     or _attribute(item, "volume") is not None
@@ -922,7 +956,9 @@ class SBMLParser:
 
     @staticmethod
     def _parse_xml_rules(
-        model: Any, parameter_aliases: Optional[Dict[str, str]] = None
+        model: Any,
+        parameter_aliases: Optional[Dict[str, str]] = None,
+        warnings: Optional[List[Dict[str, Any]]] = None,
     ) -> List[SBMLRule]:
         result: List[SBMLRule] = []
         parent = _first_child(model, "listOfRules")
@@ -936,6 +972,29 @@ class SBMLParser:
             }.get(_local_name(item.tag))
             if kind is None:
                 continue
+            math = SBMLParser._normalize_formula_identifiers(
+                SBMLParser._xml_math(item), parameter_aliases
+            )
+            if not math.strip():
+                if warnings is not None:
+                    warnings.append(
+                        {
+                            "category": "missingMath",
+                            "message": (
+                                f'{kind} rule'
+                                + (
+                                    f' for "{_attribute(item, "variable")}"'
+                                    if _attribute(item, "variable")
+                                    else ""
+                                )
+                                + " has no MathML expression; rule was omitted "
+                                "from the executable BNGL."
+                            ),
+                            "count": 1,
+                            "severity": "dropped",
+                        }
+                    )
+                continue
             result.append(
                 SBMLRule(
                     type=kind,
@@ -944,16 +1003,16 @@ class SBMLParser:
                         if _attribute(item, "variable") is not None
                         else None
                     ),
-                    math=SBMLParser._normalize_formula_identifiers(
-                        SBMLParser._xml_math(item), parameter_aliases
-                    ),
+                    math=math,
                 )
             )
         return result
 
     @staticmethod
     def _parse_xml_functions(
-        model: Any, parameter_aliases: Optional[Dict[str, str]] = None
+        model: Any,
+        parameter_aliases: Optional[Dict[str, str]] = None,
+        warnings: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, SBMLFunctionDefinition]:
         result: Dict[str, SBMLFunctionDefinition] = OrderedDict()
         for item in SBMLParser._xml_items(
@@ -976,14 +1035,33 @@ class SBMLParser:
                     name = _mathml_to_formula(argument)
                     if name:
                         arguments.append(name)
-                children = list(lambda_element)
+                children = [
+                    child
+                    for child in list(lambda_element)
+                    if _local_name(child.tag) != "bvar"
+                ]
                 body = children[-1] if children else None
+            math = SBMLParser._normalize_formula_identifiers(
+                _mathml_to_formula(body), parameter_aliases
+            )
+            if not math.strip():
+                if warnings is not None:
+                    warnings.append(
+                        {
+                            "category": "missingMath",
+                            "message": (
+                                f'Function definition "{item_id}" has no MathML '
+                                "expression; emitted as the constant zero function."
+                            ),
+                            "count": 1,
+                            "severity": "approximated",
+                        }
+                    )
+                math = "0"
             result[item_id] = SBMLFunctionDefinition(
                 id=item_id,
                 name=str(_attribute(item, "name", item_id) or item_id),
-                math=SBMLParser._normalize_formula_identifiers(
-                    _mathml_to_formula(body), parameter_aliases
-                ),
+                math=math,
                 arguments=arguments,
             )
         return result
@@ -1054,7 +1132,9 @@ class SBMLParser:
 
     @staticmethod
     def _parse_xml_initial_assignments(
-        model: Any, parameter_aliases: Optional[Dict[str, str]] = None
+        model: Any,
+        parameter_aliases: Optional[Dict[str, str]] = None,
+        warnings: Optional[List[Dict[str, Any]]] = None,
     ) -> List[SBMLInitialAssignment]:
         result: List[SBMLInitialAssignment] = []
         for item in SBMLParser._xml_items(
@@ -1062,12 +1142,27 @@ class SBMLParser:
         ):
             symbol = _attribute(item, "symbol")
             if symbol is not None:
+                math = SBMLParser._normalize_formula_identifiers(
+                    SBMLParser._xml_math(item), parameter_aliases
+                )
+                if not math.strip():
+                    if warnings is not None:
+                        warnings.append(
+                            {
+                                "category": "missingMath",
+                                "message": (
+                                    f'Initial assignment "{symbol}" has no MathML '
+                                    "expression; assignment was omitted."
+                                ),
+                                "count": 1,
+                                "severity": "dropped",
+                            }
+                        )
+                    continue
                 result.append(
                     SBMLInitialAssignment(
                         symbol=str(symbol),
-                        math=SBMLParser._normalize_formula_identifiers(
-                            SBMLParser._xml_math(item), parameter_aliases
-                        ),
+                        math=math,
                     )
                 )
         return result

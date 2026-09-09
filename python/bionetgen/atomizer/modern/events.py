@@ -27,6 +27,9 @@ class EventTranslationContext:
     method: str = "ode"
     base_t_end: float = 10
     base_steps: int = 100
+    # Only immutable SBML identifiers may be folded into scheduled actions.
+    # Default keeps the older direct-call contract source-compatible.
+    is_compile_time_constant: Callable[[str], bool] = lambda _identifier: True
 
     @property
     def resolveSpeciesPattern(self):
@@ -51,6 +54,14 @@ class EventTranslationContext:
     @isParam.setter
     def isParam(self, value):
         self.is_param = value
+
+    @property
+    def isCompileTimeConstant(self):
+        return self.is_compile_time_constant
+
+    @isCompileTimeConstant.setter
+    def isCompileTimeConstant(self, value):
+        self.is_compile_time_constant = value
 
     @property
     def baseTEnd(self):
@@ -328,6 +339,16 @@ def synthesize_event_actions(
     untranslated: List[Tuple[SBMLEvent, str]] = []
     scheduled: List[Tuple[float, List[Tuple[str, str, float]], float]] = []
 
+    def fold(expression: str) -> Optional[float]:
+        return fold_numeric(
+            expression,
+            lambda identifier: (
+                context.resolve_param(identifier)
+                if context.is_compile_time_constant(identifier)
+                else None
+            ),
+        )
+
     for event in events:
         threshold = parse_time_threshold(event.trigger)
         if threshold is None:
@@ -339,7 +360,7 @@ def synthesize_event_actions(
                 )
             )
             continue
-        time = fold_numeric(threshold, context.resolve_param)
+        time = fold(threshold)
         if time is None:
             untranslated.append(
                 (
@@ -349,7 +370,7 @@ def synthesize_event_actions(
             )
             continue
         if event.delay:
-            delay = fold_numeric(event.delay, context.resolve_param)
+            delay = fold(event.delay)
             if delay is None:
                 untranslated.append(
                     (
@@ -364,7 +385,7 @@ def synthesize_event_actions(
         failure: Optional[str] = None
         for assignment in event.assignments:
             variable, expression = _event_assignment(assignment)
-            value = fold_numeric(expression, context.resolve_param)
+            value = fold(expression)
             if value is None:
                 failure = (
                     f'assignment "{variable} := {expression}" is not constant '
@@ -388,9 +409,16 @@ def synthesize_event_actions(
 
         priority = 0.0
         if getattr(event, "priority", None):
-            folded_priority = fold_numeric(event.priority or "", context.resolve_param)
-            if folded_priority is not None:
-                priority = folded_priority
+            folded_priority = fold(event.priority or "")
+            if folded_priority is None:
+                untranslated.append(
+                    (
+                        event,
+                        f'priority "{event.priority}" is not compile-time constant',
+                    )
+                )
+                continue
+            priority = folded_priority
         scheduled.append((time, sets, priority))
 
     if not scheduled:

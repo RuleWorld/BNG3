@@ -16,6 +16,9 @@ from typing import Any, Dict, List, NamedTuple, Optional, Tuple, Union
 from .types import SBMLImportWarning
 
 
+MULTI_V1_NAMESPACE = "http://www.sbml.org/sbml/level3/version1/multi/version1"
+
+
 def _local_name(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
 
@@ -29,6 +32,19 @@ def _attribute(element: Any, name: str, default: str = "") -> str:
         if key == name or _local_name(key) == name:
             return str(value)
     return default
+
+
+def _namespaced_attribute(
+    element: Any, namespace: str, name: str, default: str = ""
+) -> str:
+    key = f"{{{namespace}}}{name}"
+    return str(getattr(element, "attrib", {}).get(key, default) or default)
+
+
+def _bool(value: str, default: bool = False) -> bool:
+    if value == "":
+        return default
+    return value.strip().lower() in {"1", "true", "yes"}
 
 
 def _children(element: Any, name: str, namespace: Optional[str] = None) -> List[Any]:
@@ -65,6 +81,9 @@ class _SpeciesType:
     id: str
     name: str
     features: List[Tuple[str, List[str]]] = field(default_factory=list)
+    feature_definitions: Dict[str, Tuple[str, Dict[str, str]]] = field(
+        default_factory=dict
+    )
     instances: List[_Instance] = field(default_factory=list)
     component_indexes: Dict[str, Tuple[str, str]] = field(default_factory=dict)
     bonds: List[Tuple[str, str]] = field(default_factory=list)
@@ -176,6 +195,69 @@ def _declaration(species_type: _SpeciesType, binding_sites: set) -> str:
     return f"{species_type.name}({','.join(features + sites)})"
 
 
+def _species_pattern(
+    species: Any,
+    species_type: _SpeciesType,
+    binding_sites: set,
+    namespace: str,
+) -> Optional[str]:
+    """Render a conservative pattern for a direct single-molecule species.
+
+    Multi omits unspecified features and outward sites deliberately: omitted
+    feature values mean don't-care, and omitted outward binding sites mean
+    bindingStatus="either". BNGL's ``!?`` is the closest comment-only pattern
+    representation for that latter state. Complexes still use the type-level
+    reconstruction path.
+    """
+
+    if any(
+        instance.type_id not in binding_sites
+        for instance in species_type.instances
+        if instance.type_id
+    ):
+        return None
+
+    explicit_features: Dict[str, List[str]] = {}
+    feature_list = _first_child(species, "listOfSpeciesFeatures", namespace)
+    for feature in _children(feature_list, "speciesFeature", namespace):
+        feature_id = _attribute(feature, "speciesFeatureType")
+        definition = species_type.feature_definitions.get(feature_id)
+        if definition is None:
+            continue
+        _feature_name, value_labels = definition
+        values_parent = _first_child(feature, "listOfSpeciesFeatureValues", namespace)
+        values = []
+        for value in _children(values_parent, "speciesFeatureValue", namespace):
+            raw = _attribute(value, "value")
+            values.append(_clean(value_labels.get(raw, raw)))
+        if values:
+            explicit_features[feature_id] = values
+
+    outward: Dict[str, str] = {}
+    outward_list = _first_child(species, "listOfOutwardBindingSites", namespace)
+    for item in _children(outward_list, "outwardBindingSite", namespace):
+        component = _attribute(item, "component")
+        status = _attribute(item, "bindingStatus", "either").lower()
+        if component:
+            outward[component] = status
+
+    components: List[str] = []
+    for feature_id, (feature_name, _values) in species_type.feature_definitions.items():
+        selected = explicit_features.get(feature_id, [])
+        if len(selected) == 1:
+            components.append(f"{feature_name}~{selected[0]}")
+        elif len(selected) > 1:
+            # BNGL cannot express Multi's value disjunction in one seed
+            # pattern; retain the state domain as a visible approximation.
+            components.append(f"{feature_name}~{'~'.join(selected)}")
+
+    for keys, label in _sites_of(species_type, binding_sites):
+        status = next((outward[key] for key in keys if key in outward), "either")
+        suffix = {"bound": "!+", "either": "!?"}.get(status, "")
+        components.append(f"{label}{suffix}")
+    return f"{species_type.name}({','.join(components)})"
+
+
 def parse_multi_package(document: Union[str, Any]) -> MultiParseResult:
     """Extract canonical Multi-package molecule/complex references."""
 
@@ -187,17 +269,103 @@ def parse_multi_package(document: Union[str, Any]) -> MultiParseResult:
     if namespace is None:
         return MultiParseResult()
 
+    warnings: List[SBMLImportWarning] = []
+    spec_warnings: List[SBMLImportWarning] = []
+    if namespace != MULTI_V1_NAMESPACE:
+        spec_warnings.append(
+            _warning(
+                f'SBML Multi namespace "{namespace}" is not the released '
+                f'Level 3 Multi Version 1 namespace "{MULTI_V1_NAMESPACE}"; '
+                "parsed conservatively.",
+                "approximated",
+            )
+        )
+
+    required = _namespaced_attribute(root, namespace, "required")
+    if required == "":
+        spec_warnings.append(
+            _warning(
+                'SBML Multi is used but the root sbml element has no '
+                'multi:required attribute; the package requirement is not explicit.',
+                "approximated",
+            )
+        )
+    elif not _bool(required):
+        spec_warnings.append(
+            _warning(
+                'SBML Multi is used with multi:required="false"; a core-only '
+                "consumer may legally ignore the package, so executable flattening "
+                "is disabled.",
+                "dropped",
+            )
+        )
+
+    # Multi attributes added to core elements must carry the Multi namespace.
+    # Keep parsing legacy hand-authored fixtures, but make the spec violation visible.
+    for element in root.iter():
+        if _local_name(element.tag) not in {"species", "compartment"}:
+            continue
+        for key in getattr(element, "attrib", {}):
+            if key in {"speciesType", "compartmentType", "isType"}:
+                spec_warnings.append(
+                    _warning(
+                        f'Multi attribute "{key}" on {_local_name(element.tag)} '
+                        "is unqualified; SBML package attributes on core elements "
+                        "must use the Multi namespace.",
+                        "approximated",
+                    )
+                )
+
+    compartment_parent = _first_child(_model_element(root), "listOfCompartments")
+    for compartment in _children(compartment_parent, "compartment"):
+        if _namespaced_attribute(compartment, namespace, "compartmentType") and not _namespaced_attribute(
+            compartment, namespace, "isType"
+        ):
+            spec_warnings.append(
+                _warning(
+                    f'Compartment "{_attribute(compartment, "id")}" uses '
+                    "Multi compartmentType without the required Multi isType "
+                    "attribute; the compartment extension is not reconstructed.",
+                    "approximated",
+                )
+            )
+
+    if any(_local_name(element.tag) == "subListOfSpeciesFeatures" for element in root.iter()):
+        spec_warnings.append(
+            _warning(
+                "SBML Multi subListOfSpeciesFeatures relations are preserved only "
+                "as diagnostics; BNGL reference seeds use direct feature values.",
+                "approximated",
+            )
+        )
+    for feature in root.iter():
+        if _local_name(feature.tag) != "speciesFeature":
+            continue
+        try:
+            occur = int(_attribute(feature, "occur", "1"))
+        except ValueError:
+            occur = 1
+        if occur > 1:
+            spec_warnings.append(
+                _warning(
+                    "SBML Multi speciesFeature occurrences greater than one are "
+                    "not flattened into a single BNGL component.",
+                    "approximated",
+                )
+            )
+
     model = _model_element(root)
     list_types = _first_child(model, "listOfSpeciesTypes", namespace)
     if list_types is None:
+        warnings.append(
+            _warning(
+                "SBML Multi package is present but no listOfSpeciesTypes was found.",
+                "info",
+            )
+        )
         return MultiParseResult(
             present=True,
-            warnings=[
-                _warning(
-                    "SBML Multi package is present but no listOfSpeciesTypes was found.",
-                    "info",
-                )
-            ],
+            warnings=warnings + spec_warnings,
         )
 
     binding_sites = {
@@ -217,18 +385,28 @@ def parse_multi_package(document: Union[str, Any]) -> MultiParseResult:
         feature_list = _first_child(item, "listOfSpeciesFeatureTypes", namespace)
         for feature in _children(feature_list, "speciesFeatureType", namespace):
             values: List[str] = []
+            value_labels: Dict[str, str] = {}
             possible = _first_child(
                 feature, "listOfPossibleSpeciesFeatureValues", namespace
             )
             for value in _children(possible, "possibleSpeciesFeatureValue", namespace):
-                label = _clean(_attribute(value, "name") or _attribute(value, "id"))
+                value_id = _attribute(value, "id")
+                label = _clean(_attribute(value, "name") or value_id)
                 if label:
                     values.append(label)
+                    if value_id:
+                        value_labels[value_id] = label
             feature_name = _clean(
                 _attribute(feature, "name") or _attribute(feature, "id")
             )
             if feature_name:
                 species_type.features.append((feature_name, values))
+                feature_id = _attribute(feature, "id")
+                if feature_id:
+                    species_type.feature_definitions[feature_id] = (
+                        feature_name,
+                        value_labels,
+                    )
 
         instance_list = _first_child(item, "listOfSpeciesTypeInstances", namespace)
         for instance in _children(instance_list, "speciesTypeInstance", namespace):
@@ -260,6 +438,15 @@ def parse_multi_package(document: Union[str, Any]) -> MultiParseResult:
                 species_type.bonds.append((site1, site2))
         species_types[type_id] = species_type
 
+    if not species_types and not binding_sites:
+        warnings.append(
+            _warning(
+                "SBML Multi listOfSpeciesTypes is empty; the package cannot define "
+                "species types, features, or binding sites.",
+                "dropped",
+            )
+        )
+
     top_types = []
     for element in root.iter():
         for attribute, value in getattr(element, "attrib", {}).items():
@@ -280,14 +467,16 @@ def parse_multi_package(document: Union[str, Any]) -> MultiParseResult:
             top_types.append(type_id)
 
     if not top_types:
+        warnings.append(
+            _warning(
+                "SBML Multi package has species types but no referenced top-level "
+                "species type.",
+                "info",
+            )
+        )
         return MultiParseResult(
             present=True,
-            warnings=[
-                _warning(
-                    "SBML Multi package has species types but no referenced top-level species type.",
-                    "info",
-                )
-            ],
+            warnings=warnings + spec_warnings,
         )
 
     def is_container(species_type: _SpeciesType) -> bool:
@@ -313,13 +502,15 @@ def parse_multi_package(document: Union[str, Any]) -> MultiParseResult:
         return MultiParseResult(
             present=True,
             deep=True,
-            warnings=[
+            warnings=warnings
+            + [
                 _warning(
                     "SBML Multi package uses a multi-layer hierarchy; molecule "
                     "boundaries cannot be inferred safely, so complexes were not "
                     f"reconstructed. Molecule names: {', '.join(names[:20])}."
                 )
-            ],
+            ]
+            + spec_warnings,
         )
 
     molecule_type_ids = []
@@ -393,7 +584,7 @@ def parse_multi_package(document: Union[str, Any]) -> MultiParseResult:
             )
         complex_patterns.append(MultiComplexPattern(type_id, ".".join(molecules)))
 
-    warnings = []
+    warnings.extend(spec_warnings)
     if unresolved:
         warnings.append(
             _warning(
@@ -413,11 +604,36 @@ def parse_multi_package(document: Union[str, Any]) -> MultiParseResult:
                 f"type(s) with binding sites and states.{suffix}"
             )
         )
+
+    # A concrete species instance can safely retain the reconstructed complex
+    # as a reference seed.  Do not inject it into BNGL: Multi species feature
+    # values, omitted features, and outward-site semantics still need an
+    # execution oracle before they can become initial conditions.
+    complex_by_type = {item.type_id: item.pattern for item in complex_patterns}
+    seed_patterns: List[Tuple[str, str]] = []
+    for species in _children(_first_child(model, "listOfSpecies"), "species"):
+        type_id = _namespaced_attribute(species, namespace, "speciesType")
+        if not type_id:
+            type_id = _attribute(species, "speciesType")
+        if type_id not in top_types:
+            continue
+        if (
+            _attribute(species, "initialAmount") == ""
+            and _attribute(species, "initialConcentration") == ""
+        ):
+            continue
+        pattern = complex_by_type.get(type_id)
+        if pattern is None:
+            top = species_types[type_id]
+            pattern = _species_pattern(species, top, binding_sites, namespace)
+        if pattern:
+            seed_patterns.append((_attribute(species, "id"), pattern))
+
     return MultiParseResult(
         present=True,
         bngl_molecule_types=molecule_types,
         complex_patterns=complex_patterns,
-        seed_patterns=[],
+        seed_patterns=seed_patterns,
         warnings=warnings,
     )
 

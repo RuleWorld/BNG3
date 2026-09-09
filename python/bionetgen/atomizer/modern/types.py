@@ -28,6 +28,9 @@ class SBMLCompartment:
     constant: bool = True
     outside: Optional[str] = None
     compartment_type: Optional[str] = None
+    # SBML Multi marks type compartments with multi:isType.  Core
+    # compartments remain false by default.
+    is_type: bool = False
     size_set: bool = False
 
 
@@ -373,6 +376,7 @@ AnnotationInfo.biologicalQualifier = _alias_property("biological_qualifier")
 AnnotationInfo.modelQualifier = _alias_property("model_qualifier")
 
 SBMLCompartment.spatialDimensions = _alias_property("spatial_dimensions")
+SBMLCompartment.isType = _alias_property("is_type")
 SBMLCompartment.sizeSet = _alias_property("size_set")
 
 SBMLSpecies.initialConcentration = _alias_property("initial_concentration")

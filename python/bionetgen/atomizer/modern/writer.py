@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import ast
+import json
 import math
 import os
 import re
+from urllib.parse import quote
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import (
@@ -886,6 +888,135 @@ def _strip_mass_action_factors(expression: str, reactant_ids: Sequence[str]) -> 
     return " * ".join(remaining) if remaining else "1"
 
 
+def _strip_explicit_reactant_factors(
+    expression: str, reactant_ids: Sequence[str]
+) -> str:
+    """Remove only top-level reactant factors from a functional flux.
+
+    Conditions and denominators may contain the same species symbol. Splitting
+    only at top-level multiplication preserves those live dependencies.
+    """
+
+    value = str(expression or "").strip()
+    while value.startswith("(") and value.endswith(")"):
+        depth = 0
+        encloses_all = True
+        for index, character in enumerate(value):
+            if character in "([":
+                depth += 1
+            elif character in ")]":
+                depth -= 1
+                if depth == 0 and index < len(value) - 1:
+                    encloses_all = False
+                    break
+        if not encloses_all:
+            break
+        value = value[1:-1].strip()
+
+    factors: List[str] = []
+    depth = 0
+    start = 0
+    for index, character in enumerate(value):
+        if character in "([":
+            depth += 1
+        elif character in ")]":
+            depth -= 1
+        elif character == "*" and depth == 0:
+            factors.append(value[start:index].strip())
+            start = index + 1
+    factors.append(value[start:].strip())
+
+    removable: Dict[str, int] = {}
+    for species_id in reactant_ids:
+        name = standardize_name(str(species_id))
+        for token in (name, f"{name}_amt", f"_c_{name}()"):
+            key = token.lower()
+            removable[key] = removable.get(key, 0) + 1
+
+    kept: List[str] = []
+    for factor in factors:
+        normalized = factor.strip()
+        while normalized.startswith("(") and normalized.endswith(")"):
+            normalized = normalized[1:-1].strip()
+        key = normalized.lower()
+        if removable.get(key, 0) > 0:
+            removable[key] -= 1
+        else:
+            kept.append(factor)
+    return " * ".join(kept) if kept else "1"
+
+
+def _is_functional_rate_expression(expression: str) -> bool:
+    return bool(
+        re.search(
+            r"\b(?:if|piecewise)\s*\(|(?:>=|<=|==|!=|>|<)",
+            str(expression or ""),
+            re.IGNORECASE,
+        )
+    )
+
+
+def _event_metadata_block(
+    model: SBMLModel, species_to_pattern: Mapping[str, str]
+) -> List[str]:
+    """Preserve original SBML event semantics in machine-readable BNGL comments."""
+
+    if not model.events:
+        return []
+    species_ids = sorted((str(identifier) for identifier in model.species), key=len, reverse=True)
+
+    def bngl_expression(expression: object) -> str:
+        value = str(expression or "")
+        for identifier in species_ids:
+            value = re.sub(
+                rf"\b{re.escape(identifier)}\b",
+                f"{standardize_name(identifier)}_amt",
+                value,
+            )
+        return value
+
+    lines = ["# ==== SBML EVENT METADATA ===="]
+    for index, event in enumerate(model.events):
+        assignments = []
+        for assignment in event.assignments:
+            variable = getattr(assignment, "variable", None)
+            expression = getattr(assignment, "math", None)
+            if variable is None and isinstance(assignment, Mapping):
+                variable = assignment.get("variable", "")
+                expression = assignment.get("math", "")
+            elif variable is None and isinstance(assignment, (tuple, list)):
+                variable = assignment[0] if assignment else ""
+                expression = assignment[1] if len(assignment) > 1 else ""
+            variable = str(variable or "")
+            assignments.append(
+                {
+                    "variable": variable,
+                    "math": str(expression or ""),
+                    "bnglVariable": standardize_name(variable),
+                    "bnglTarget": species_to_pattern.get(variable),
+                    "bnglMath": bngl_expression(expression),
+                }
+            )
+        payload = {
+            "id": event.id or f"event_{index}",
+            "name": event.name or event.id or f"event_{index}",
+            "trigger": event.trigger,
+            "bnglTrigger": bngl_expression(event.trigger),
+            "delay": event.delay,
+            "bnglDelay": bngl_expression(event.delay),
+            "priority": event.priority,
+            "bnglPriority": bngl_expression(event.priority),
+            "useValuesFromTriggerTime": event.use_values_from_trigger_time,
+            "triggerInitialValue": event.trigger_initial_value,
+            "triggerPersistent": event.trigger_persistent,
+            "assignments": assignments,
+        }
+        encoded = quote(json.dumps(payload, separators=(",", ":")), safe="")
+        lines.append(f"# @sbml-event {encoded}")
+    lines.append("# ==============================")
+    return lines
+
+
 def _extract_statistical_factor(
     rate: str, reactant_structures: Mapping[str, Species]
 ) -> str:
@@ -1490,7 +1621,8 @@ def _rate_for_reaction(
     # actually mention a reactant, so zero-order fluxes retain their volume
     # semantics.
     has_saturation = bool(re.search(r"\b(?:Sat|MM|Hill)\s*\(", math))
-    nonlinear = has_saturation or "/" in math
+    functional = _is_functional_rate_expression(math)
+    nonlinear = has_saturation or "/" in math or functional
     if (
         not has_saturation
         and reactants
@@ -1500,7 +1632,7 @@ def _rate_for_reaction(
         )
     ):
         math = _strip_compartment_rate_factors(math, model, reactants)
-        nonlinear = has_saturation or "/" in math
+        nonlinear = has_saturation or "/" in math or functional
 
     # The Playground writer keeps nonlinear laws intact and maps their species
     # operands to concentration functions (or amount observables for Sat/MM/
@@ -1508,18 +1640,21 @@ def _rate_for_reaction(
     # mapping; stripping a substrate from a saturation or rational law changes
     # its biology.
     if nonlinear:
-        return apply_conversion(
-            bngl_function(
-                math,
-                reaction.name or reaction.id,
-                reactants,
-                list(model.compartments),
-                assignment_rule_variables=assignment_variables,
-                observable_converted_rules=observable_converted_rules,
-                species_with_conc_functions=concentration_names,
-                sbml_to_bngl_id=species_map,
-            )
+        converted_function = bngl_function(
+            convert_math_expression(math),
+            reaction.name or reaction.id,
+            reactants,
+            list(model.compartments),
+            assignment_rule_variables=assignment_variables,
+            observable_converted_rules=observable_converted_rules,
+            species_with_conc_functions=concentration_names,
+            sbml_to_bngl_id=species_map,
         )
+        if functional:
+            converted_function = _strip_explicit_reactant_factors(
+                converted_function, reactants
+            )
+        return apply_conversion(converted_function)
 
     converted = convert_math_expression(math)
     if reactant_structures:
@@ -3167,6 +3302,34 @@ def generate_bngl(
 
     event_result = None
     if model.events:
+        mutable_event_ids = {
+            rule.variable
+            for rule in model.rules
+            if rule.variable
+        }
+        mutable_event_ids.update(
+            assignment.symbol
+            for assignment in model.initial_assignments
+            if assignment.symbol
+        )
+        mutable_event_ids.update(
+            getattr(assignment, "variable", assignment[0] if isinstance(assignment, (tuple, list)) else "")
+            for event in model.events
+            for assignment in event.assignments
+            if getattr(assignment, "variable", assignment[0] if isinstance(assignment, (tuple, list)) else "")
+        )
+
+        def is_compile_time_constant(identifier: str) -> bool:
+            parameter = model.parameters.get(identifier)
+            if parameter is not None:
+                return parameter.constant and identifier not in mutable_event_ids
+            compartment = model.compartments.get(identifier)
+            return bool(
+                compartment is not None
+                and compartment.constant
+                and identifier not in mutable_event_ids
+            )
+
         event_result = synthesize_event_actions(
             model.events,
             EventTranslationContext(
@@ -3184,6 +3347,7 @@ def generate_bngl(
                 ),
                 is_param=lambda identifier: identifier in model.parameters
                 or identifier in model.compartments,
+                is_compile_time_constant=is_compile_time_constant,
                 method=(
                     "ssa"
                     if re.search(
@@ -3238,6 +3402,11 @@ def generate_bngl(
         model_text += "\nbegin actions\n"
         model_text += "\n".join("  " + line for line in actions.strip().splitlines())
         model_text += "\nend actions\n"
+
+    if model.events:
+        model_text += "\n" + "\n".join(
+            _event_metadata_block(model, species_to_pattern)
+        ) + "\n"
 
     has_multi = bool(
         model.multi_molecule_types

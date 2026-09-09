@@ -56,8 +56,12 @@ def test_parse_multi_package_returns_structured_warning_records():
     result = parse_multi_package(xml)
 
     assert result.present is True
-    assert len(result.warnings) == 1
-    warning = result.warnings[0]
+    assert len(result.warnings) >= 2
+    warning = next(
+        warning
+        for warning in result.warnings
+        if "no referenced top-level" in warning.message
+    )
     assert isinstance(warning, SBMLImportWarning)
     assert warning.category == "package:multi"
     assert warning.severity == "info"
@@ -149,6 +153,52 @@ def test_playground_multi_resolves_single_site_bonds_with_component_fallback():
     assert not any("could not be resolved" in item.message for item in result.warnings)
 
 
+def test_multi_spec_features_and_outward_binding_statuses_become_reference_seed_pattern():
+    xml = """<?xml version="1.0"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      multi:required="true">
+  <model id="multi_species">
+    <listOfSpecies>
+      <species id="A0" multi:speciesType="AType" initialAmount="1">
+        <multi:listOfSpeciesFeatures>
+          <multi:speciesFeature multi:speciesFeatureType="state" multi:occur="1">
+            <multi:listOfSpeciesFeatureValues>
+              <multi:speciesFeatureValue multi:value="p"/>
+            </multi:listOfSpeciesFeatureValues>
+          </multi:speciesFeature>
+        </multi:listOfSpeciesFeatures>
+        <multi:listOfOutwardBindingSites>
+          <multi:outwardBindingSite multi:component="site" multi:bindingStatus="unbound"/>
+        </multi:listOfOutwardBindingSites>
+      </species>
+    </listOfSpecies>
+    <multi:listOfSpeciesTypes>
+      <multi:bindingSiteSpeciesType multi:id="binding" multi:name="site"/>
+      <multi:speciesType multi:id="AType" multi:name="A">
+        <multi:listOfSpeciesFeatureTypes>
+          <multi:speciesFeatureType multi:id="state" multi:name="state" multi:occur="1">
+            <multi:listOfPossibleSpeciesFeatureValues>
+              <multi:possibleSpeciesFeatureValue multi:id="u" multi:name="U"/>
+              <multi:possibleSpeciesFeatureValue multi:id="p" multi:name="P"/>
+            </multi:listOfPossibleSpeciesFeatureValues>
+          </multi:speciesFeatureType>
+        </multi:listOfSpeciesFeatureTypes>
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="site" multi:speciesType="binding"/>
+        </multi:listOfSpeciesTypeInstances>
+      </multi:speciesType>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+
+    result = parse_multi_package(xml)
+
+    assert result.bngl_molecule_types == ["A(state~U~P,site)"]
+    assert result.seed_patterns == [("A0", "A(state~P,site)")]
+    assert not any("required attribute" in warning.message for warning in result.warnings)
+
+
 def test_playground_multi_detects_deep_hierarchy_without_flattening():
     xml = """<?xml version="1.0"?>
 <sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
@@ -182,7 +232,7 @@ def test_playground_multi_detects_deep_hierarchy_without_flattening():
     assert result.deep is True
     assert result.bngl_molecule_types == []
     assert result.complex_patterns == []
-    assert "multi-layer hierarchy" in result.warnings[0].message
+    assert any("multi-layer hierarchy" in warning.message for warning in result.warnings)
     assert "complex" in result.warnings[0].message
 
 
@@ -196,5 +246,5 @@ def test_playground_multi_reports_missing_species_type_list():
 
     assert result.present is True
     assert result.deep is False
-    assert result.warnings[0].severity == "info"
+    assert any(warning.severity == "info" for warning in result.warnings)
     assert "no listOfSpeciesTypes" in result.warnings[0].message

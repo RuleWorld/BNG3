@@ -644,10 +644,8 @@ def test_playground_parser_surfaces_fast_and_reaction_conversion_diagnostics():
         and "ordinary reaction" in warning["message"]
         for warning in model.import_warnings
     )
-    assert any(
-        warning["category"] == "conversionFactor"
-        and "captured but not applied" in warning["message"]
-        for warning in model.import_warnings
+    assert not any(
+        warning["category"] == "conversionFactor" for warning in model.import_warnings
     )
 
 
@@ -2408,7 +2406,7 @@ def test_playground_parser_extracts_canonical_sbml_multi_as_comment_only():
 
     assert model.multi_molecule_types == ["A(bind)"]
     assert model.multi_complex_patterns == ["A(bind!1).A(bind!1)"]
-    assert model.multi_seed_patterns == []
+    assert model.multi_seed_patterns == ["AB: A(bind!1).A(bind!1)"]
     assert any(w["category"] == "package:multi" for w in model.import_warnings)
 
     sct = build_species_composition_table(model)
@@ -2417,6 +2415,7 @@ def test_playground_parser_extracts_canonical_sbml_multi_as_comment_only():
     )
     assert "#     A(bind)" in bngl
     assert "#     A(bind!1).A(bind!1)" in bngl
+    assert "#     AB: A(bind!1).A(bind!1)" in bngl
     assert "not yet fed into the simulated network" in bngl
 
 
