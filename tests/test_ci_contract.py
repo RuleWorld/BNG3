@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 import re
 
+import pytest
+
 from scripts.validate import (
     load_skip_models,
     run_validation,
@@ -22,6 +24,7 @@ CI_WORKFLOW = REPO / ".github" / "workflows" / "ci.yml"
 WEEKLY_WORKFLOW = REPO / ".github" / "workflows" / "weekly.yml"
 REFERENCE_EXCLUSIONS = REPO / "tests" / "validation" / "reference_exclusions.json"
 VALIDATE_DIR = REPO / "tests" / "validation" / "Validate"
+PARITY_WORKFLOW = REPO / ".github" / "workflows" / "parity.yml"
 
 
 def test_pull_request_runs_keep_exact_head_evidence_available():
@@ -54,6 +57,56 @@ def _workflow_job_from(path: Path, name: str) -> str:
     )
     assert match, f"{path.name} must define a {name} job"
     return match.group("body")
+
+
+def test_external_parity_workflow_is_present_and_keeps_exact_head_evidence():
+    """Cross-tool checks must be independently reproducible per PR head."""
+
+    workflow = PARITY_WORKFLOW.read_text(encoding="utf-8")
+    assert "github.event.pull_request.head.sha" in workflow
+    assert re.search(r"^\s+cancel-in-progress:\s+false\s*$", workflow, re.MULTILINE)
+    assert 'BNG3_CI_STRICT_ORACLES: "1"' in workflow
+    for job in ("oracle-lock", "bng2-parity", "nfsim-parity", "pybionetgen-compat"):
+        assert re.search(rf"^  {job}:\n", workflow, re.MULTILINE), job
+
+
+def test_external_parity_jobs_use_pinned_oracle_checkouts_and_fail_closed():
+    """No parity job may silently substitute a branch head or embedded engine."""
+
+    workflow = PARITY_WORKFLOW.read_text(encoding="utf-8")
+    for source in ("bionetgen", "nfsim", "pybionetgen"):
+        assert f"--name {source}" in workflow
+        assert "scripts/ci/checkout_oracle.py" in workflow
+    bng2 = _workflow_job_from(PARITY_WORKFLOW, "bng2-parity")
+    assert "--bng-perl" in bng2
+    assert "--bng-cpp" in bng2
+    assert '--summary-file "$GITHUB_STEP_SUMMARY"' in bng2
+    nfsim = _workflow_job_from(PARITY_WORKFLOW, "nfsim-parity")
+    assert "NFSIM_BIN" in nfsim
+    assert "build/NFsim" in nfsim
+    assert "tests/validation/test_parity_nfsim.py" in nfsim
+    assert "build/cpp/NFsim" not in nfsim
+
+
+def test_oracle_source_loader_requires_full_locked_revisions(tmp_path):
+    """The checkout helper must reject floating or malformed source refs."""
+
+    from scripts.ci.oracle_sources import OracleSourceError, load_oracle_source
+
+    lock = {
+        "sources": {
+            "nfsim": {
+                "repository": "https://github.com/RuleWorld/NFsim.git",
+                "revision": "a" * 40,
+            }
+        }
+    }
+    assert load_oracle_source(lock, "nfsim")["revision"] == "a" * 40
+    with pytest.raises(OracleSourceError, match="full lowercase Git SHA"):
+        load_oracle_source(
+            {"sources": {"nfsim": {"repository": "x", "revision": "main"}}},
+            "nfsim",
+        )
 
 
 def test_pull_request_exercises_clean_source_distribution_install():

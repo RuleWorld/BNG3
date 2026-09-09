@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 
 from tests.validation import compare, corpus, runner
+from tests.validation.strict import require_oracle
 
 STOCH_MODELS = [
     m
@@ -39,8 +40,10 @@ def test_ssa_ensemble_vs_perl(model_name, api, work_dir):
 
     # A single .gdat is not an ensemble and must never be promoted to one.
     ref_runs, ref_src = oracle_perl.ensemble(model_name, min_runs=200)
-    if len(ref_runs) < 200:
-        pytest.skip(f"no 200-member reference ensemble for {model_name}: {ref_src}")
+    require_oracle(
+        len(ref_runs) >= 200,
+        f"no 200-member reference ensemble for {model_name}: {ref_src}",
+    )
 
     ref_data, _ = ref_runs[0]
     test_runs = runner.run_api_ensemble(

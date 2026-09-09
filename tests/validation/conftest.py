@@ -22,11 +22,16 @@ from pathlib import Path
 import pytest
 
 from tests.validation import corpus
+from tests.validation.strict import require_oracle
 
 
 def pytest_addoption(parser):
-    parser.addoption("--bng-cpp", action="store", default=None,
-                     help="Path to the bng_cpp CLI executable")
+    parser.addoption(
+        "--bng-cpp",
+        action="store",
+        default=None,
+        help="Path to the bng_cpp CLI executable",
+    )
 
 
 def _discover_bng_cpp(explicit: str | None) -> Path | None:
@@ -48,8 +53,11 @@ def _discover_bng_cpp(explicit: str | None) -> Path | None:
 @pytest.fixture(scope="session")
 def bng_cpp(request) -> Path:
     p = _discover_bng_cpp(request.config.getoption("--bng-cpp"))
-    if p is None:
-        pytest.skip("bng_cpp CLI not found (build it, or pass --bng-cpp / set BNG_CPP)")
+    require_oracle(
+        p is not None,
+        "bng_cpp CLI not found (build it, or pass --bng-cpp / set BNG_CPP)",
+    )
+    assert p is not None
     return p
 
 
@@ -58,6 +66,7 @@ def have_api() -> bool:
     try:
         import bionetgen  # noqa: F401
         import bionetgen.model  # the compiled path, not the Perl fallback
+
         return True
     except Exception:
         return False
@@ -68,6 +77,7 @@ def api(have_api):
     if not have_api:
         pytest.skip("compiled bionetgen extension not importable")
     import bionetgen
+
     return bionetgen
 
 
