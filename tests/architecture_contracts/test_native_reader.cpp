@@ -85,6 +85,28 @@ end reaction rules
     return system;
 }
 
+std::unique_ptr<NFcore::System> multiSymmetricGraphSystem() {
+    auto model = bng::parser::parseModel(R"(
+begin molecule types
+ A(x,x)
+ B(y)
+ C(z)
+end molecule types
+begin seed species
+ A(x!1,x!2).B(y!1).C(z!2) 1
+end seed species
+begin reaction rules
+ swap: A(x!1,x!2).B(y!1).C(z!2) -> A(x!1,x!2).B(y!1).C(z!2) 1
+end reaction rules
+)");
+    REQUIRE(model);
+    int traversal = 0;
+    auto system = std::unique_ptr<NFcore::System>(
+        NFinput::buildSystemFromAst(*model, false, 100, false, traversal));
+    REQUIRE(system);
+    return system;
+}
+
 std::unique_ptr<NFcore::System> symmetricSystem() {
     auto model = bng::parser::parseModel(R"(
 begin molecule types
@@ -206,11 +228,9 @@ TEST_CASE("native NFcore2 reader preserves symmetric internal graph automorphism
     REQUIRE(graph.nodes.size() == 2);
     REQUIRE(graph.nodes[0].symmetric_constraints.size() >= 1);
     CHECK(graph.nodes[0].symmetric_constraints[0].components.size() == 2);
-    REQUIRE(graph.edges.size() == 1);
-    CHECK(graph.edges[0].first_node == 0);
-    CHECK(graph.edges[0].first_component == 0);
-    CHECK(graph.edges[0].second_node == 1);
-    CHECK(graph.edges[0].second_component == 0);
+    // The symmetric bond is represented by its orbit constraint so a concrete
+    // component index cannot pin one representative of the equivalence class.
+    CHECK(graph.edges.empty());
 }
 
 TEST_CASE("native NFcore2 reader preserves symmetric component automorphisms") {
@@ -223,6 +243,33 @@ TEST_CASE("native NFcore2 reader preserves symmetric component automorphisms") {
     CHECK(lowered.fallback_rule_count == 0);
     REQUIRE(lowered.rules.size() == snapshot.rules.size());
     for (const auto& rule : lowered.rules) CHECK(rule.supported());
+}
+
+TEST_CASE("native NFcore2 matcher preserves multi-edge equivalent-site automorphisms") {
+    auto system = multiSymmetricGraphSystem();
+    const auto lowered = NFcore2::lowerLegacyNFsim(*system);
+    REQUIRE(lowered.supported_rule_count == 1);
+    REQUIRE(lowered.fallback_rule_count == 0);
+    NFcore2::Engine engine(lowered.executable);
+    const auto a = engine.state().molecules(NFcore2::MoleculeTypeId(0)).create();
+    const auto b = engine.state().molecules(NFcore2::MoleculeTypeId(1)).create();
+    const auto c = engine.state().molecules(NFcore2::MoleculeTypeId(2)).create();
+    // Swap the two equivalent sites relative to the source spelling. The
+    // legacy matcher treats the sites as an automorphism, so this is still a
+    // valid match of the same graph rule.
+    engine.state().molecules(NFcore2::MoleculeTypeId(0)).setBondRef(
+        a, 0, NFcore2::MoleculeRef(NFcore2::MoleculeTypeId(2), c));
+    engine.state().molecules(NFcore2::MoleculeTypeId(2)).setBondRef(
+        c, 0, NFcore2::MoleculeRef(NFcore2::MoleculeTypeId(0), a));
+    engine.state().molecules(NFcore2::MoleculeTypeId(0)).setBondRef(
+        a, 1, NFcore2::MoleculeRef(NFcore2::MoleculeTypeId(1), b));
+    engine.state().molecules(NFcore2::MoleculeTypeId(1)).setBondRef(
+        b, 0, NFcore2::MoleculeRef(NFcore2::MoleculeTypeId(0), a));
+    NFcore2::MatchContext context;
+    context.setMoleculeAt(0, NFcore2::MoleculeRef(NFcore2::MoleculeTypeId(0), a));
+    const auto& family = lowered.executable.metadata().ruleFamilies()[0];
+    CHECK(lowered.executable.matchers().at(family.matcher).evaluate(
+        engine.state(), engine.scaffolds(), context));
 }
 
 TEST_CASE("native NFcore2 reader preserves internal graph-node state constraints") {

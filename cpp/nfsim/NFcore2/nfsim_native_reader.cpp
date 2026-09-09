@@ -175,7 +175,17 @@ void NativeNFsimSystemReader::collectGraphPatterns(std::size_t i,std::vector<Nat
             }
             const std::size_t partnerIndex=found->second;
             if (partnerComponent >= 0 && currentIndex < partnerIndex) {
-                NativeGraphEdgeSnapshot edge; edge.first_node=currentIndex; edge.first_component=static_cast<std::uint32_t>(component); edge.second_node=partnerIndex; edge.second_component=static_cast<std::uint32_t>(partnerComponent); graph.edges.push_back(edge);
+                const bool currentEquivalent = current->getMoleculeType()->isEquivalentComponent(component);
+                const bool partnerEquivalent = partner->getMoleculeType()->isEquivalentComponent(partnerComponent);
+                if (currentEquivalent || partnerEquivalent) {
+                    // A concrete edge would freeze one representative of an
+                    // equivalent-site orbit. The appendNode pass already
+                    // captured the corresponding source symmetric-bond
+                    // constraint; omit the concrete edge so the matcher can
+                    // assign distinct orbit members across all constraints.
+                } else {
+                    NativeGraphEdgeSnapshot edge; edge.first_node=currentIndex; edge.first_component=static_cast<std::uint32_t>(component); edge.second_node=partnerIndex; edge.second_component=static_cast<std::uint32_t>(partnerComponent); graph.edges.push_back(edge);
+                }
             } else if (partnerComponent < 0) {
                 // NFsim stores the reverse half of a bond to a symmetric site
                 // as a regular bond with only the generic partner name. Lift
@@ -248,6 +258,29 @@ void NativeNFsimSystemReader::collectGraphPatterns(std::size_t i,std::vector<Nat
         }
         graph.nodes[pendingConstraint.node].symmetric_constraints[pendingConstraint.constraint].partner_node =
             static_cast<std::uint32_t>(found->second);
+    }
+    // A symmetric bond can be visited once from each endpoint and may also
+    // be present in the root-local symmetric table. Collapse those duplicate
+    // descriptors after partner pointers have been resolved; keeping both
+    // would incorrectly require two distinct orbit members for one bond.
+    for (auto& node : graph.nodes) {
+        std::vector<NativeGraphNodeSnapshot::SymmetricConstraint> unique;
+        for (const auto& constraint : node.symmetric_constraints) {
+            bool duplicate = false;
+            for (const auto& prior : unique) {
+                if (prior.components == constraint.components &&
+                    prior.state == constraint.state &&
+                    prior.bond_state == constraint.bond_state &&
+                    prior.partner_node == constraint.partner_node &&
+                    prior.partner_components == constraint.partner_components &&
+                    prior.partner_symmetric == constraint.partner_symmetric) {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (!duplicate) unique.push_back(constraint);
+        }
+        node.symmetric_constraints.swap(unique);
     }
     bool hasSymmetricConstraint = false;
     for (const auto& node : graph.nodes)
