@@ -1,0 +1,256 @@
+name: Cross-tool parity
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "17 4 * * 0"
+  workflow_dispatch:
+
+concurrency:
+  # Preserve the evidence for each exact PR head.  A later documentation push
+  # must not cancel a semantic parity run for the preceding head.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CMAKE_BUILD_TYPE: Release
+  CTEST_OUTPUT_ON_FAILURE: 1
+  BNG3_CI_STRICT_ORACLES: "1"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  oracle-lock:
+    name: Validate parity source lock
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate locked sources
+        run: python scripts/ci/checkout_oracle.py --validate-only
+
+      - name: Validate provenance structure
+        run: python scripts/validate_provenance.py
+
+      - name: Run CI contract tests
+        run: python -m pytest tests/test_ci_contract.py -q
+
+  bng2-parity:
+    name: BNG3 vs independent BNG2 networks
+    needs: oracle-lock
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build and comparison dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build perl
+          python -m pip install numpy
+
+      - name: Checkout locked BioNetGen oracle
+        run: |
+          python scripts/ci/checkout_oracle.py \
+            --name bionetgen \
+            --destination "$RUNNER_TEMP/oracle-bionetgen" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
+
+      - name: Build BNG3 network-generation CLI
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+            -DBUILD_PYTHON_BINDINGS=OFF \
+            -DBUILD_CLI=ON \
+            -DBUILD_NFSIM_CLI=OFF \
+            -DBUILD_TESTS=OFF
+          cmake --build build --parallel 2
+
+      - name: Compare graph-aware networks against BNG2
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/cross_validate.py \
+            --bng-cpp build/cpp/bng_cpp \
+            --bng-perl "$RUNNER_TEMP/oracle-bionetgen/bng2/BNG2.pl" \
+            --models-dir "$RUNNER_TEMP/oracle-bionetgen/bng2/Validate" \
+            --model simple_system \
+            --model test_assignment \
+            --model test_compartment_XML \
+            --model test_time \
+            --model test_tfun_observable \
+            --summary-file "$GITHUB_STEP_SUMMARY" \
+            --verbose
+        env:
+          BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+
+  nfsim-parity:
+    name: BNG3 vs independent NFsim
+    needs: oracle-lock
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build and validation dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
+          python -m pip install pytest numpy scipy
+
+      - name: Checkout locked NFsim oracle
+        run: |
+          python scripts/ci/checkout_oracle.py \
+            --name nfsim \
+            --destination "$RUNNER_TEMP/oracle-nfsim" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
+
+      - name: Build independent NFsim oracle
+        run: |
+          cmake -S "$RUNNER_TEMP/oracle-nfsim" \
+            -B "$RUNNER_TEMP/oracle-nfsim/build" \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+            -DNFSIM_BUILD_EXECUTABLE=ON \
+            -DNFSIM_BUILD_LIBRARY=OFF
+          cmake --build "$RUNNER_TEMP/oracle-nfsim/build" --target NFsim --parallel 2
+
+      - name: Build BNG3 Python API and CLI
+        run: |
+          python -m pip install scikit-build-core pybind11
+          python -m pip install -e ".[full,dev]"
+        env:
+          CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=OFF -DBUILD_NFSIM_CLI=OFF"
+
+      - name: Run direct/XML NFsim construction checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          NFSIM_BIN="$RUNNER_TEMP/oracle-nfsim/build/NFsim" \
+            PYTHONPATH="python:build/cpp" \
+            pytest -c tests/validation/pytest.ini \
+              tests/validation/test_parity_nfsim.py \
+              -m "nf and not slow" \
+              --bng-cpp build/cpp/bng_cpp -q
+
+      - name: Run fixed-seed native NFsim parity
+        shell: bash
+        run: |
+          set -euo pipefail
+          NFSIM_BIN="$RUNNER_TEMP/oracle-nfsim/build/NFsim" \
+            PYTHONPATH="python:build/cpp" \
+            BNG_ENSEMBLE_WORKERS=2 \
+            pytest -c tests/validation/pytest.ini \
+              tests/validation/test_parity_nfsim.py \
+              -k "test_nf_vs_native and simple_system" \
+              --bng-cpp build/cpp/bng_cpp -q
+          NFSIM_DIGEST=$(sha256sum "$RUNNER_TEMP/oracle-nfsim/build/NFsim" | cut -d ' ' -f 1)
+          {
+            echo "### Native NFsim parity"
+            echo ""
+            echo "- BNG3 source revision: \`${BNG3_SOURCE_REVISION}\`"
+            echo "- NFsim oracle SHA-256: \`${NFSIM_DIGEST}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+
+  nfsim-source-validation:
+    name: NFsim historical validation (scheduled)
+    needs: oracle-lock
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install NFsim validation dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
+          python -m pip install numpy scipy seaborn
+
+      - name: Checkout locked NFsim source
+        run: |
+          python scripts/ci/checkout_oracle.py \
+            --name nfsim \
+            --destination "$RUNNER_TEMP/oracle-nfsim" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
+
+      - name: Build independent NFsim executable
+        run: |
+          cmake -S "$RUNNER_TEMP/oracle-nfsim" \
+            -B "$RUNNER_TEMP/oracle-nfsim/build" \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+            -DNFSIM_BUILD_EXECUTABLE=ON \
+            -DNFSIM_BUILD_LIBRARY=OFF
+          cmake --build "$RUNNER_TEMP/oracle-nfsim/build" --target NFsim --parallel 2
+
+      - name: Install BNG3 package used by the historical validator
+        run: |
+          python -m pip install scikit-build-core pybind11
+          python -m pip install -e ".[full,dev]"
+        env:
+          CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=OFF -DBUILD_NFSIM_CLI=OFF"
+
+      - name: Run the source NFsim validation framework
+        shell: bash
+        run: |
+          set -euo pipefail
+          python "$RUNNER_TEMP/oracle-nfsim/validate/validate.py" \
+            "$RUNNER_TEMP/oracle-nfsim/validate"
+
+  pybionetgen-compat:
+    name: PyBioNetGen API compatibility
+    needs: oracle-lock
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install BNG3 compatibility dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
+          python -m pip install scikit-build-core pybind11 pytest numpy
+          python -m pip install -e ".[full,dev]"
+        env:
+          CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=OFF -DBUILD_NFSIM_CLI=OFF"
+
+      - name: Checkout locked PyBioNetGen source
+        run: |
+          python scripts/ci/checkout_oracle.py \
+            --name pybionetgen \
+            --destination "$RUNNER_TEMP/oracle-pybionetgen" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
+
+      - name: Run source-derived compatibility contracts
+        run: |
+          set -euo pipefail
+          python scripts/ci/check_pybionetgen_compat.py \
+            --source-root "$RUNNER_TEMP/oracle-pybionetgen" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
+        env:
+          MPLBACKEND: Agg
+          SYMPY_USE_GMPY: "0"
