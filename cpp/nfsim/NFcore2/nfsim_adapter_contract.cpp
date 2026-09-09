@@ -219,6 +219,8 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                 binding.name = nativeBinding.name;
                 binding.target = nativeBinding.reactant;
                 binding.component = nativeBinding.component;
+                binding.molecule_type = nativeBinding.molecule_type;
+                binding.scope = nativeBinding.scope;
                 binding.value = nativeBinding.value;
                 if (binding.name.empty()) throw std::invalid_argument("expression binding name is empty");
                 for (const auto& prior : r.rate_law.expression_bindings)
@@ -244,6 +246,13 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                     const std::uint32_t scopeType = reactantType(source, nr, binding.target);
                     if (source.molecule_types[scopeType].population)
                         throw std::invalid_argument("species-scope binding cannot read a population type");
+                    if (binding.molecule_type != std::numeric_limits<std::uint32_t>::max()) {
+                        if (binding.molecule_type >= source.molecule_types.size() ||
+                            source.molecule_types[binding.molecule_type].population)
+                            throw std::invalid_argument("scoped observable binding molecule type");
+                        if (binding.scope != 0 && binding.scope != 1)
+                            throw std::invalid_argument("scoped observable binding scope");
+                    }
                     binding.kind = RATE_EXPRESSION_SPECIES_MOLECULE_COUNT;
                 } else if (nativeBinding.kind == NATIVE_RATE_EXPRESSION_COMPARTMENT_VOLUME) {
                     if (binding.target >= nr.reactant_types.size())
@@ -396,7 +405,11 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                     if (x.local_function_pointer.empty() ||
                         (x.local_function_scope != 0 && x.local_function_scope != 1))
                         throw std::invalid_argument("NFsim local-function reference scope is malformed");
-                    r.uses_local_function=true;
+                    // A simple scoped local function is already represented
+                    // by the executable expression descriptor. The transform
+                    // is only a legacy bookkeeping marker in that case.
+                    if (nr.rate_law != NATIVE_RATE_EXPRESSION)
+                        r.uses_local_function=true;
                     break;
                 case NATIVE_INCREMENT_STATE:
                     t=transform(LEGACY_TRANSFORM_ADD_STATE_WORD,x.reactant,x.component,fmap.state[type][x.component]);t.value=1;r.transforms.push_back(t);break;

@@ -301,6 +301,12 @@ namespace NFcore {
 			string getNiceName() const;
 			string getExpression() const;
 			string getParsedExpression() const;
+			int getNumOfVarRefs() const { return static_cast<int>(n_varRefs); }
+			string getVarRefName(int index) const { return varRefNames[index]; }
+			string getVarObservableName(int index) const { return varObservableNames[index]; }
+			int getVarRefScope(int index) const { return varRefScope[index]; }
+			int getNumOfParams() const { return static_cast<int>(n_params); }
+			string getParamName(int index) const { return paramNames[index]; }
 
 			// set/get whether this evaluates on complex complex
 			bool getEvaluateComplexScope() const;

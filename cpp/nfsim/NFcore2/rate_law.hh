@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -29,9 +30,12 @@ struct RateExpressionBinding {
     std::string name;
     std::uint16_t target;
     std::uint32_t component;
+    std::uint32_t molecule_type;
+    int scope;
     double value;
     RateExpressionBinding()
-        : kind(RATE_EXPRESSION_CONSTANT), target(0), component(0), value(0.0) {}
+        : kind(RATE_EXPRESSION_CONSTANT), target(0), component(0),
+          molecule_type(std::numeric_limits<std::uint32_t>::max()), scope(-1), value(0.0) {}
 };
 
 // Bounded, source-derived rate descriptors. Constant rates retain the old

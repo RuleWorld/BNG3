@@ -469,15 +469,21 @@ TEST_CASE("native NFcore2 lowering executes internal graph topology") {
     CHECK(lowered.rules[0].supported());
 }
 
-TEST_CASE("native NFcore2 reader keeps local DOR rules on compatibility fallback") {
+TEST_CASE("native NFcore2 reader executes a simple scoped local DOR rate") {
     auto system = localFunctionSystem();
     const auto snapshot = NFcore2::snapshotLegacyNFsim(*system);
     REQUIRE(snapshot.rules.size() == 1);
-    CHECK(snapshot.rules[0].uses_local_function);
+    CHECK_FALSE(snapshot.rules[0].uses_local_function);
     const auto lowered = NFcore2::lowerLegacyNFsim(*system);
-    CHECK(lowered.supported_rule_count == 0);
-    CHECK(lowered.fallback_rule_count == 1);
-    CHECK(lowered.rules[0].reason == NFcore2::LOWERING_LOCAL_FUNCTION);
+    CHECK(lowered.supported_rule_count == 1);
+    CHECK(lowered.fallback_rule_count == 0);
+    NFcore2::Engine engine(lowered.executable);
+    const auto molecule = engine.state().molecules(NFcore2::MoleculeTypeId(0)).create();
+    NFcore2::MatchContext context;
+    context.setMoleculeAt(0, NFcore2::MoleculeRef(
+        NFcore2::MoleculeTypeId(0), molecule));
+    CHECK(engine.evaluateRate(lowered.rules[0].family, lowered.rules[0].member,
+                              context) == 2.0);
 }
 
 TEST_CASE("native NFcore2 reader preserves local-function pointer scope") {
@@ -493,6 +499,37 @@ TEST_CASE("native NFcore2 reader preserves local-function pointer scope") {
     CHECK(reference->local_function_pointer == "x");
     CHECK(reference->local_function_scope ==
           NFcore::LocalFunction::SPECIES);
+}
+
+TEST_CASE("native NFcore2 reader lowers a simple scoped local function descriptor") {
+    auto system = localFunctionSystem();
+    const auto snapshot = NFcore2::snapshotLegacyNFsim(*system);
+    REQUIRE(snapshot.rules.size() == 1);
+    const auto& rule = snapshot.rules[0];
+    CHECK(rule.rate_law == NFcore2::NATIVE_RATE_EXPRESSION);
+    CHECK_FALSE(rule.uses_local_function);
+    CHECK_FALSE(rule.rate_expression.empty());
+    const auto observable = std::find_if(
+        rule.rate_expression_bindings.begin(), rule.rate_expression_bindings.end(),
+        [](const auto& binding) {
+            return binding.kind == NFcore2::NATIVE_RATE_EXPRESSION_SPECIES_MOLECULE_COUNT;
+        });
+    REQUIRE(observable != rule.rate_expression_bindings.end());
+    CHECK(observable->reactant == 0);
+    CHECK(observable->molecule_type == 0);
+    CHECK(observable->scope == NFcore::LocalFunction::SPECIES);
+    const auto constant = std::find_if(
+        rule.rate_expression_bindings.begin(), rule.rate_expression_bindings.end(),
+        [](const auto& binding) {
+            return binding.kind == NFcore2::NATIVE_RATE_EXPRESSION_CONSTANT &&
+                   binding.name == "k";
+        });
+    REQUIRE(constant != rule.rate_expression_bindings.end());
+    CHECK(constant->value == 2.0);
+
+    const auto lowered = NFcore2::lowerLegacyNFsim(*system);
+    CHECK(lowered.supported_rule_count == 1);
+    CHECK(lowered.fallback_rule_count == 0);
 }
 
 TEST_CASE("native NFcore2 lowering executes a reciprocal binding transform") {

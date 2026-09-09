@@ -84,9 +84,15 @@ struct NativeRateExpressionBindingSnapshot {
     std::string name;
     std::uint16_t reactant;
     std::uint32_t component;
+    // Optional molecule type and local-function scope for observable-backed
+    // bindings.  The sentinel preserves the older whole-component species
+    // count contract when no type was supplied.
+    std::uint32_t molecule_type;
+    int scope;
     double value;
     NativeRateExpressionBindingSnapshot()
-        : kind(NATIVE_RATE_EXPRESSION_CONSTANT), reactant(0), component(0), value(0.0) {}
+        : kind(NATIVE_RATE_EXPRESSION_CONSTANT), reactant(0), component(0),
+          molecule_type(std::numeric_limits<std::uint32_t>::max()), scope(-1), value(0.0) {}
     static NativeRateExpressionBindingSnapshot state(const std::string& name,
                                                      std::uint16_t reactant,
                                                      std::uint32_t component) {

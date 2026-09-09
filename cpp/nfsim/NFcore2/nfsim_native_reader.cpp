@@ -1,12 +1,15 @@
 #include "nfsim_native_reader.hh"
 #include "../NFcore/NFcore.hh"
 #include "../NFcore/compartment.hh"
+#include "../NFcore/observable.hh"
 #include "../NFcore/templateMolecule.hh"
+#include "../NFreactions/reactions/reaction.hh"
 #include "../NFreactions/transformations/transformationSet.hh"
 #include "../NFreactions/transformations/transformation.hh"
 #include "nfsim_transform_decoder.hh"
 #include "../NFreactions/transformations/moleculeCreator.hh"
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <stdexcept>
 #include <map>
@@ -14,6 +17,61 @@
 namespace NFcore2 {
 using namespace NFcore;
 NativeNFsimSystemReader::NativeNFsimSystemReader(System& s):system_(s){}
+
+namespace {
+bool appendSimpleScopedLocalFunction(System& system, LocalFunction* local,
+                                     std::uint16_t reactant,
+                                     NativeReactionHeader& header) {
+    if (!local || local->getParsedExpression().empty()) return false;
+    NativeReactionHeader candidate = header;
+    candidate.rate_law = NATIVE_RATE_EXPRESSION;
+    candidate.rate_expression = local->getParsedExpression();
+    candidate.rate_expression_bindings.clear();
+    for (int i = 0; i < local->getNumOfVarRefs(); ++i) {
+        const int scope = local->getVarRefScope(i);
+        if (scope != LocalFunction::SPECIES && scope != LocalFunction::MOLECULE)
+            return false;
+        Observable* observable = system.getObservableByName(
+            local->getVarObservableName(i));
+        if (!observable || observable->getType() != Observable::MOLECULES)
+            return false;
+        int templateCount = 0;
+        TemplateMolecule** templates = nullptr;
+        observable->getTemplateMoleculeList(templateCount, templates);
+        if (templateCount != 1 || templates == nullptr || templates[0] == nullptr ||
+            templates[0]->getMoleculeType() == nullptr)
+            return false;
+        TemplateMolecule::RootLocalConstraints constraints;
+        if (!templates[0]->collectRootLocalConstraints(constraints) ||
+            !constraints.empty.empty() || !constraints.occupied.empty() ||
+            !constraints.states.empty() || !constraints.exclusions.empty() ||
+            !constraints.bonds.empty() || !constraints.symmetric.empty() ||
+            !constraints.connected_to.empty() || !constraints.compartment.empty())
+            return false;
+        NativeRateExpressionBindingSnapshot binding;
+        binding.kind = NATIVE_RATE_EXPRESSION_SPECIES_MOLECULE_COUNT;
+        binding.name = local->getVarRefName(i);
+        binding.reactant = reactant;
+        binding.molecule_type = static_cast<std::uint32_t>(
+            templates[0]->getMoleculeType()->getTypeID());
+        binding.scope = scope;
+        candidate.rate_expression_bindings.push_back(binding);
+    }
+    for (int i = 0; i < local->getNumOfParams(); ++i) {
+        const std::string name = local->getParamName(i);
+        const double value = system.getParameter(name);
+        if (!std::isfinite(value)) return false;
+        NativeRateExpressionBindingSnapshot binding;
+        binding.kind = NATIVE_RATE_EXPRESSION_CONSTANT;
+        binding.name = name;
+        binding.value = value;
+        candidate.rate_expression_bindings.push_back(binding);
+    }
+    header = candidate;
+    return true;
+}
+}
+
 std::size_t NativeNFsimSystemReader::moleculeTypeCount() const{return static_cast<std::size_t>(system_.getNumOfMoleculeTypes());}
 NativeMoleculeTypeSnapshot NativeNFsimSystemReader::moleculeType(std::size_t i) const{
     MoleculeType* mt=system_.getMoleculeType(static_cast<int>(i));NativeMoleculeTypeSnapshot o;o.name=mt->getName();o.component_count=static_cast<std::uint32_t>(mt->getNumOfComponents());o.population=mt->isPopulationType();return o;
@@ -21,7 +79,18 @@ NativeMoleculeTypeSnapshot NativeNFsimSystemReader::moleculeType(std::size_t i) 
 std::size_t NativeNFsimSystemReader::reactionCount() const{return system_.getAllReactions().size();}
 NativeReactionHeader NativeNFsimSystemReader::reactionHeader(std::size_t i) const{
     ReactionClass* r=system_.getReaction(static_cast<int>(i));NativeReactionHeader h;h.name=r->getName();h.base_rate=r->getBaseRate();h.coordinate=static_cast<std::uint32_t>(i);h.parameter_index=static_cast<std::uint32_t>(i);
-    h.uses_local_function = r->getRxnType() != ReactionClass::BASIC_RXN;
+    bool directLocalFunction = false;
+    if (r->getRxnType() == ReactionClass::DOR_RXN) {
+        DORRxnClass* dor = dynamic_cast<DORRxnClass*>(r);
+        if (dor && dor->getCompositeFunction()) {
+            LocalFunction* local = system_.getLocalFunctionByName(
+                dor->getCompositeFunction()->getName());
+            directLocalFunction = appendSimpleScopedLocalFunction(
+                system_, local, static_cast<std::uint16_t>(std::max(0, dor->getDORreactantPosition())), h);
+        }
+    }
+    h.uses_local_function = r->getRxnType() != ReactionClass::BASIC_RXN &&
+                            !directLocalFunction;
     // A zero-reactant rule is a synthesis/population rule.  It does not
     // imply an unresolved internal graph query.
     h.uses_connected_to = false;
@@ -45,7 +114,7 @@ NativeReactionHeader NativeNFsimSystemReader::reactionHeader(std::size_t i) cons
                 h.uses_connected_to = true;
         }
     }
-    TransformationSet* ts=r->getTransformationSet();if(ts)for(int p=0;p<r->getNumOfReactants();++p)for(int x=0;x<ts->getNumOfTransformations(p);++x)if(ts->getTransformation(p,x)->getType()==TransformationFactory::LOCAL_FUNCTION_REFERENCE)h.uses_local_function=true;
+    TransformationSet* ts=r->getTransformationSet();if(ts)for(int p=0;p<r->getNumOfReactants();++p)for(int x=0;x<ts->getNumOfTransformations(p);++x)if(ts->getTransformation(p,x)->getType()==TransformationFactory::LOCAL_FUNCTION_REFERENCE && h.rate_law != NATIVE_RATE_EXPRESSION)h.uses_local_function=true;
     return h;
 }
 void NativeNFsimSystemReader::collectGraphPatterns(std::size_t i,std::vector<NativeGraphPatternSnapshot>& out) const {

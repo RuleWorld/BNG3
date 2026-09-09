@@ -162,6 +162,7 @@ namespace NFcore
 			virtual double update_a();
 
 			virtual int getDORreactantPosition() const { return DORreactantIndex; };
+			CompositeFunction *getCompositeFunction() const { return cf; };
 
 			//JJT: checks if there's an existing mapping set in *m equal to *ms that maps to this reaction
 			virtual int checkForCollision(Molecule *m, MappingSet* ms,int rxnIndex);

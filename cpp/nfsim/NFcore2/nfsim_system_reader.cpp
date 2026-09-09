@@ -25,6 +25,12 @@ NativeModelSnapshot readNFsimSystem(const NFsimSystemReader& reader) {
         NativeReactionSnapshot r;
         r.name=h.name;r.base_rate=h.base_rate;r.parameter_index=h.parameter_index;r.coordinate=h.coordinate;
         r.reactant_types=h.reactant_types;r.uses_local_function=h.uses_local_function;r.uses_connected_to=h.uses_connected_to;
+        r.rate_law=h.rate_law;r.local_offset=h.local_offset;r.local_slope=h.local_slope;
+        r.local_state_component=h.local_state_component;r.dor_weight=h.dor_weight;
+        r.dor_state_component=h.dor_state_component;r.dor_partner_reactant=h.dor_partner_reactant;
+        r.dor_partner_state_component=h.dor_partner_state_component;
+        r.rate_expression=h.rate_expression;r.rate_expression_components=h.rate_expression_components;
+        r.rate_expression_bindings=h.rate_expression_bindings;
         reader.collectDependencies(i,r.dependencies);
         reader.collectTransforms(i,r.transforms);
         reader.collectGraphPatterns(i,r.graph_patterns);

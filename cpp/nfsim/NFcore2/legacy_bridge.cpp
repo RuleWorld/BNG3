@@ -38,6 +38,16 @@ double RateLawDescriptor::evaluate(const SimulationState& state,
                 if (!ref.valid()) throw std::out_of_range("expression binding reactant missing");
                 if (binding.kind == RATE_EXPRESSION_SPECIES_MOLECULE_COUNT) {
                     const std::vector<MoleculeRef> members = state.connectedComponent(ref);
+                    if (binding.molecule_type != std::numeric_limits<std::uint32_t>::max()) {
+                        if (binding.scope == 1)
+                            return ref.type.value() == binding.molecule_type ? 1.0 : 0.0;
+                        if (binding.scope != 0)
+                            throw std::invalid_argument("invalid scoped observable binding");
+                        double count = 0.0;
+                        for (const auto& member : members)
+                            if (member.type.value() == binding.molecule_type) count += 1.0;
+                        return count;
+                    }
                     return static_cast<double>(members.size());
                 }
                 if (binding.kind == RATE_EXPRESSION_COMPARTMENT_VOLUME) {
