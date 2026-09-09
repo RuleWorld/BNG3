@@ -431,6 +431,8 @@ LegacyLoweringResult LegacyLowerer::lower(const LegacyModelIR& legacy) {
                  (law.kind==LEGACY_RATE_DOR_PRODUCT &&
                   (fd.index==law.component || fd.index==law.partner_component)))) reads=true;
             if (law.kind == LEGACY_RATE_EXPRESSION) {
+                if (fd.kind == FEATURE_TIME)
+                    reads = true;
                 for (const auto& binding : law.expression_bindings) {
                     const bool scopedCount =
                         binding.kind == RATE_EXPRESSION_GLOBAL_MOLECULE_COUNT ||

@@ -146,6 +146,19 @@ TEST(DependencyPrecision_ExpressionObservableTracksStateAndCompartment){
     EXPECT_EQ(state[0],compartment[0]);
 }
 
+TEST(DependencyPrecision_ExpressionRateTracksSimulationTime){
+    LegacyModelIR m=dependencyModel();
+    m.features.push_back(FeatureDescriptor(FEATURE_TIME,0,0));
+    LegacyRuleIR r;
+    r.name="time-expression"; r.rate=1.0;
+    r.rate_law.kind=LEGACY_RATE_EXPRESSION;
+    r.rate_law.expression="time + 1";
+    m.rules.push_back(r);
+    LegacyLoweringResult out=LegacyLowerer::lower(m);
+    std::vector<MatcherId> d=dependents(out.executable.metadata(),FeatureId(6));
+    EXPECT_EQ(d.size(),1u);
+}
+
 TEST(DependencyPrecision_DuplicateRulesDoNotDuplicateMatcherDependencyEntries){
     LegacyModelIR m=dependencyModel();
     for(unsigned i=0;i<100;++i){
