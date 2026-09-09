@@ -379,6 +379,8 @@ namespace NFcore
 
 			virtual int getDORreactantPosition()  const { return DORreactantIndex1; };
 			virtual int getDORreactantPosition2() const { return DORreactantIndex2; };
+			CompositeFunction *getCompositeFunction1() const { return cf1; };
+			CompositeFunction *getCompositeFunction2() const { return cf2; };
 
 			virtual void notifyRateFactorChange(Molecule * m, int reactantIndex, int rxnListIndex);
 			virtual int getReactantCount(unsigned int reactantIndex) const;

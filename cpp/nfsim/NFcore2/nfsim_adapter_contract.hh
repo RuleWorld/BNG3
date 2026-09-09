@@ -76,7 +76,8 @@ enum NativeRateExpressionBindingKind {
     NATIVE_RATE_EXPRESSION_CONSTANT = 1,
     NATIVE_RATE_EXPRESSION_REACTANT_COUNT = 2,
     NATIVE_RATE_EXPRESSION_SPECIES_MOLECULE_COUNT = 3,
-    NATIVE_RATE_EXPRESSION_COMPARTMENT_VOLUME = 4
+    NATIVE_RATE_EXPRESSION_COMPARTMENT_VOLUME = 4,
+    NATIVE_RATE_EXPRESSION_TRANSPORT_VOLUME_RATIO = 5
 };
 
 struct NativeRateExpressionBindingSnapshot {
@@ -89,10 +90,12 @@ struct NativeRateExpressionBindingSnapshot {
     // count contract when no type was supplied.
     std::uint32_t molecule_type;
     int scope;
+    std::uint32_t destination_compartment;
     double value;
     NativeRateExpressionBindingSnapshot()
         : kind(NATIVE_RATE_EXPRESSION_CONSTANT), reactant(0), component(0),
-          molecule_type(std::numeric_limits<std::uint32_t>::max()), scope(-1), value(0.0) {}
+          molecule_type(std::numeric_limits<std::uint32_t>::max()), scope(-1),
+          destination_compartment(std::numeric_limits<std::uint32_t>::max()), value(0.0) {}
     static NativeRateExpressionBindingSnapshot state(const std::string& name,
                                                      std::uint16_t reactant,
                                                      std::uint32_t component) {

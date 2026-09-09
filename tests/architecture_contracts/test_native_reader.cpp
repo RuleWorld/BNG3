@@ -65,7 +65,7 @@ std::unique_ptr<NFcore::System> moveConnectedSystem() {
 }
 
 std::unique_ptr<NFcore::System> symmetricGraphSystem() {
-    auto model = bng::parser::parseModel(R"(
+    auto model = bng::parser::parseModel(R"BNGL(
 begin molecule types
  A(x~U~P,x~U~P)
  B(y)
@@ -76,7 +76,7 @@ end seed species
 begin reaction rules
  flip: A(x~U!1,x~U).B(y!1) -> A(x~P!1,x~U).B(y!1) 1
 end reaction rules
-)");
+)BNGL");
     REQUIRE(model);
     int traversal = 0;
     auto system = std::unique_ptr<NFcore::System>(
@@ -165,6 +165,40 @@ begin reaction rules
  %x::A() -> %x::A() + C() f(x)
 end reaction rules
 )");
+    REQUIRE(model);
+    int traversal = 0;
+    auto system = std::unique_ptr<NFcore::System>(
+        NFinput::buildSystemFromAst(*model, false, 100, false, traversal));
+    REQUIRE(system);
+    return system;
+}
+
+std::unique_ptr<NFcore::System> localFunctionProductSystem() {
+    auto model = bng::parser::parseModel(R"BNGL(
+begin parameters
+ kA 2.0
+ kB 3.0
+end parameters
+begin molecule types
+ A()
+ B()
+end molecule types
+begin seed species
+ A() 1
+ B() 1
+end seed species
+begin observables
+ Molecules atotal A()
+ Molecules btotal B()
+end observables
+begin functions
+ fA(x) = kA*atotal(x)
+ fB(y) = kB*btotal(y)
+end functions
+begin reaction rules
+ %x::A() + %y::B() -> %x::A() + %y::B() FunctionProduct("fA(x)", "fB(y)")
+end reaction rules
+)BNGL");
     REQUIRE(model);
     int traversal = 0;
     auto system = std::unique_ptr<NFcore::System>(
@@ -412,6 +446,12 @@ TEST_CASE("native NFcore2 reader captures dot-separated connectedTo topology") {
     const auto lowered = NFcore2::lowerLegacyNFsim(*system);
     CHECK(lowered.supported_rule_count == 1);
     CHECK(lowered.fallback_rule_count == 0);
+    NFcore2::Engine engine(lowered.executable);
+    const auto a = engine.state().molecules(NFcore2::MoleculeTypeId(0)).create();
+    const auto b = engine.state().molecules(NFcore2::MoleculeTypeId(1)).create();
+    NFcore2::MatchContext context;
+    context.setMoleculeAt(0, NFcore2::MoleculeRef(NFcore2::MoleculeTypeId(0), a));
+    context.setMoleculeAt(1, NFcore2::MoleculeRef(NFcore2::MoleculeTypeId(1), b));
 }
 
 TEST_CASE("native NFcore2 reader captures zero-reactant synthesis") {
@@ -530,6 +570,27 @@ TEST_CASE("native NFcore2 reader lowers a simple scoped local function descripto
     const auto lowered = NFcore2::lowerLegacyNFsim(*system);
     CHECK(lowered.supported_rule_count == 1);
     CHECK(lowered.fallback_rule_count == 0);
+}
+
+TEST_CASE("native NFcore2 reader lowers a FunctionProduct of scoped local functions") {
+    auto system = localFunctionProductSystem();
+    const auto snapshot = NFcore2::snapshotLegacyNFsim(*system);
+    REQUIRE(snapshot.rules.size() == 1);
+    const auto& rule = snapshot.rules[0];
+    CHECK(rule.rate_law == NFcore2::NATIVE_RATE_EXPRESSION);
+    CHECK_FALSE(rule.uses_local_function);
+    CHECK(rule.rate_expression.find("*") != std::string::npos);
+    CHECK(rule.rate_expression_bindings.size() == 4);
+    const auto lowered = NFcore2::lowerLegacyNFsim(*system);
+    CHECK(lowered.supported_rule_count == 1);
+    CHECK(lowered.fallback_rule_count == 0);
+    NFcore2::Engine engine(lowered.executable);
+    const auto a = engine.state().molecules(NFcore2::MoleculeTypeId(0)).create();
+    const auto b = engine.state().molecules(NFcore2::MoleculeTypeId(1)).create();
+    NFcore2::MatchContext context;
+    context.setMoleculeAt(0, NFcore2::MoleculeRef(NFcore2::MoleculeTypeId(0), a));
+    context.setMoleculeAt(1, NFcore2::MoleculeRef(NFcore2::MoleculeTypeId(1), b));
+    CHECK(engine.evaluateRate(lowered.rules[0].family, lowered.rules[0].member, context) == 6.0);
 }
 
 TEST_CASE("native NFcore2 lowering executes a reciprocal binding transform") {

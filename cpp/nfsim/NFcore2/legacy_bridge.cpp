@@ -54,6 +54,11 @@ double RateLawDescriptor::evaluate(const SimulationState& state,
                     return state.compartmentSize(
                         state.molecules(ref.type).compartment(ref.handle));
                 }
+                if (binding.kind == RATE_EXPRESSION_TRANSPORT_VOLUME_RATIO) {
+                    return state.transportVolumeRatio(
+                        state.molecules(ref.type).compartment(ref.handle),
+                        binding.destination_compartment);
+                }
                 if (binding.component > std::numeric_limits<std::uint16_t>::max())
                     throw std::out_of_range("expression binding state component overflow");
                 return static_cast<double>(state.molecules(ref.type).stateWord(
@@ -223,7 +228,8 @@ std::string LegacyLowerer::transformSignature(const LegacyRuleIR& r) {
     os << ':';
     for (const auto& binding : r.rate_law.expression_bindings)
         os << static_cast<int>(binding.kind) << ':' << binding.name << ':' << binding.target << ':'
-           << binding.component << ':' << binding.value << ';';
+           << binding.component << ':' << binding.molecule_type << ':' << binding.scope << ':'
+           << binding.destination_compartment << ':' << binding.value << ';';
     os << ';';
     return os.str();
 }

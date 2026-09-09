@@ -638,6 +638,26 @@ TEST(NFsimAdapter_GeneralExpressionRateResolvesCompartmentVolume){
     EXPECT_NEAR(engine.evaluateRate(lowered.rules[0].family,lowered.rules[0].member,context),10.0,1e-12);
 }
 
+TEST(NFsimAdapter_GeneralExpressionRateResolvesTransportVolumeRatio){
+    NativeModelSnapshot n;
+    n.molecule_types.push_back(mol("A",1));
+    NativeCompartmentSnapshot source; source.id=2; source.dimensions=3; source.size=10.0;
+    NativeCompartmentSnapshot destination; destination.id=3; destination.dimensions=3; destination.size=5.0;
+    n.compartments.push_back(source); n.compartments.push_back(destination);
+    NativeReactionSnapshot r=rxn(); r.base_rate=1.0; r.reactant_types.push_back(0);
+    r.rate_law=NATIVE_RATE_EXPRESSION; r.rate_expression="transport";
+    NativeRateExpressionBindingSnapshot transport;
+    transport.kind=NATIVE_RATE_EXPRESSION_TRANSPORT_VOLUME_RATIO;
+    transport.name="transport"; transport.reactant=0; transport.destination_compartment=3;
+    r.rate_expression_bindings.push_back(transport); n.rules.push_back(r);
+    LegacyLoweringResult lowered=LegacyLowerer::lower(NFsimSnapshotAdapter::toLegacy(n));
+    Engine engine(lowered.executable);
+    MoleculeHandle a=engine.state().molecules(MoleculeTypeId(0)).create();
+    engine.state().molecules(MoleculeTypeId(0)).setCompartment(a,2);
+    MatchContext context; context.setMoleculeAt(0,MoleculeRef(MoleculeTypeId(0),a));
+    EXPECT_NEAR(engine.evaluateRate(lowered.rules[0].family,lowered.rules[0].member,context),0.5,1e-12);
+}
+
 TEST(NFsimAdapter_CompartmentInsideRejectsUnknownIdentity){
     NativeModelSnapshot n; n.molecule_types.push_back(mol("A",1));
     NativeCompartmentSnapshot root; root.id=17; n.compartments.push_back(root);

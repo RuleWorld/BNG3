@@ -70,6 +70,30 @@ bool appendSimpleScopedLocalFunction(System& system, LocalFunction* local,
     header = candidate;
     return true;
 }
+
+bool mergeSimpleScopedLocalFunctions(const NativeReactionHeader& first,
+                                     const NativeReactionHeader& second,
+                                     NativeReactionHeader& merged) {
+    merged = first;
+    merged.rate_expression = "(" + first.rate_expression + ")*(" +
+                             second.rate_expression + ")";
+    for (const auto& binding : second.rate_expression_bindings) {
+        bool duplicate = false;
+        for (const auto& prior : merged.rate_expression_bindings) {
+            if (prior.name != binding.name) continue;
+            if (prior.kind != binding.kind || prior.reactant != binding.reactant ||
+                prior.component != binding.component ||
+                prior.molecule_type != binding.molecule_type ||
+                prior.scope != binding.scope ||
+                prior.destination_compartment != binding.destination_compartment ||
+                prior.value != binding.value) return false;
+            duplicate = true;
+            break;
+        }
+        if (!duplicate) merged.rate_expression_bindings.push_back(binding);
+    }
+    return true;
+}
 }
 
 std::size_t NativeNFsimSystemReader::moleculeTypeCount() const{return static_cast<std::size_t>(system_.getNumOfMoleculeTypes());}
@@ -87,6 +111,22 @@ NativeReactionHeader NativeNFsimSystemReader::reactionHeader(std::size_t i) cons
                 dor->getCompositeFunction()->getName());
             directLocalFunction = appendSimpleScopedLocalFunction(
                 system_, local, static_cast<std::uint16_t>(std::max(0, dor->getDORreactantPosition())), h);
+        }
+    } else if (r->getRxnType() == ReactionClass::DOR2_RXN) {
+        DOR2RxnClass* dor2 = dynamic_cast<DOR2RxnClass*>(r);
+        if (dor2 && dor2->getCompositeFunction1() && dor2->getCompositeFunction2()) {
+            LocalFunction* first = system_.getLocalFunctionByName(
+                dor2->getCompositeFunction1()->getName());
+            LocalFunction* second = system_.getLocalFunctionByName(
+                dor2->getCompositeFunction2()->getName());
+            NativeReactionHeader firstHeader = h;
+            NativeReactionHeader secondHeader = h;
+            const bool firstSimple = appendSimpleScopedLocalFunction(
+                system_, first, static_cast<std::uint16_t>(std::max(0, dor2->getDORreactantPosition())), firstHeader);
+            const bool secondSimple = appendSimpleScopedLocalFunction(
+                system_, second, static_cast<std::uint16_t>(std::max(0, dor2->getDORreactantPosition2())), secondHeader);
+            if (firstSimple && secondSimple)
+                directLocalFunction = mergeSimpleScopedLocalFunctions(firstHeader, secondHeader, h);
         }
     }
     h.uses_local_function = r->getRxnType() != ReactionClass::BASIC_RXN &&

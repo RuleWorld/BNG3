@@ -627,6 +627,9 @@ TEST(ModelImage_RoundTripCompartmentGraphAndExpressionMetadata){
     member.rate_law.expression_bindings.push_back(scoped);
     RateExpressionBinding volume; volume.kind=RATE_EXPRESSION_COMPARTMENT_VOLUME; volume.name="vol"; volume.target=0;
     member.rate_law.expression_bindings.push_back(volume);
+    RateExpressionBinding transport; transport.kind=RATE_EXPRESSION_TRANSPORT_VOLUME_RATIO;
+    transport.name="transport"; transport.target=0; transport.destination_compartment=11;
+    member.rate_law.expression_bindings.push_back(transport);
     family.members.push_back(member); e.buildMetadata().addRuleFamily(family);
     e.buildMetadata().setFeatureDependencies(std::vector<std::vector<MatcherId> >());
 
@@ -642,7 +645,7 @@ TEST(ModelImage_RoundTripCompartmentGraphAndExpressionMetadata){
     EXPECT_EQ(restoredMember.rate_law.kind,LEGACY_RATE_EXPRESSION);
     EXPECT_EQ(restoredMember.rate_law.expression,std::string("s0 + time"));
     EXPECT_EQ(restoredMember.rate_law.expression_components.size(),1u);
-    EXPECT_EQ(restoredMember.rate_law.expression_bindings.size(),4u);
+    EXPECT_EQ(restoredMember.rate_law.expression_bindings.size(),5u);
     EXPECT_EQ(restoredMember.rate_law.expression_bindings[0].name,std::string("k"));
     EXPECT_EQ(restoredMember.rate_law.expression_bindings[0].value,3.0);
     EXPECT_EQ(restoredMember.rate_law.expression_bindings[1].kind,RATE_EXPRESSION_REACTANT_COUNT);
@@ -653,4 +656,7 @@ TEST(ModelImage_RoundTripCompartmentGraphAndExpressionMetadata){
     EXPECT_EQ(restoredMember.rate_law.expression_bindings[2].scope,0);
     EXPECT_EQ(restoredMember.rate_law.expression_bindings[3].kind,RATE_EXPRESSION_COMPARTMENT_VOLUME);
     EXPECT_EQ(restoredMember.rate_law.expression_bindings[3].target,0u);
+    EXPECT_EQ(restoredMember.rate_law.expression_bindings[4].kind,RATE_EXPRESSION_TRANSPORT_VOLUME_RATIO);
+    EXPECT_EQ(restoredMember.rate_law.expression_bindings[4].target,0u);
+    EXPECT_EQ(restoredMember.rate_law.expression_bindings[4].destination_compartment,11u);
 }

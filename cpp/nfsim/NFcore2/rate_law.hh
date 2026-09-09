@@ -22,7 +22,8 @@ enum RateExpressionBindingKind {
     RATE_EXPRESSION_CONSTANT = 1,
     RATE_EXPRESSION_REACTANT_COUNT = 2,
     RATE_EXPRESSION_SPECIES_MOLECULE_COUNT = 3,
-    RATE_EXPRESSION_COMPARTMENT_VOLUME = 4
+    RATE_EXPRESSION_COMPARTMENT_VOLUME = 4,
+    RATE_EXPRESSION_TRANSPORT_VOLUME_RATIO = 5
 };
 
 struct RateExpressionBinding {
@@ -32,10 +33,12 @@ struct RateExpressionBinding {
     std::uint32_t component;
     std::uint32_t molecule_type;
     int scope;
+    std::uint32_t destination_compartment;
     double value;
     RateExpressionBinding()
         : kind(RATE_EXPRESSION_CONSTANT), target(0), component(0),
-          molecule_type(std::numeric_limits<std::uint32_t>::max()), scope(-1), value(0.0) {}
+          molecule_type(std::numeric_limits<std::uint32_t>::max()), scope(-1),
+          destination_compartment(std::numeric_limits<std::uint32_t>::max()), value(0.0) {}
 };
 
 // Bounded, source-derived rate descriptors. Constant rates retain the old

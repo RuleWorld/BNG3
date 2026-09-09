@@ -221,6 +221,7 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                 binding.component = nativeBinding.component;
                 binding.molecule_type = nativeBinding.molecule_type;
                 binding.scope = nativeBinding.scope;
+                binding.destination_compartment = nativeBinding.destination_compartment;
                 binding.value = nativeBinding.value;
                 if (binding.name.empty()) throw std::invalid_argument("expression binding name is empty");
                 for (const auto& prior : r.rate_law.expression_bindings)
@@ -261,6 +262,24 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                     if (source.molecule_types[compartmentType].population)
                         throw std::invalid_argument("compartment-volume binding cannot read a population type");
                     binding.kind = RATE_EXPRESSION_COMPARTMENT_VOLUME;
+                } else if (nativeBinding.kind == NATIVE_RATE_EXPRESSION_TRANSPORT_VOLUME_RATIO) {
+                    if (binding.target >= nr.reactant_types.size())
+                        throw std::out_of_range("transport-volume binding target");
+                    const std::uint32_t transportType = reactantType(source, nr, binding.target);
+                    if (source.molecule_types[transportType].population)
+                        throw std::invalid_argument("transport-volume binding cannot read a population type");
+                    if (nativeBinding.destination_compartment == std::numeric_limits<std::uint32_t>::max())
+                        throw std::invalid_argument("transport-volume binding destination");
+                    bool knownDestination = false;
+                    for (const auto& compartment : source.compartments)
+                        if (compartment.id == nativeBinding.destination_compartment) {
+                            knownDestination = true;
+                            break;
+                        }
+                    if (!knownDestination)
+                        throw std::out_of_range("transport-volume binding destination");
+                    binding.destination_compartment = nativeBinding.destination_compartment;
+                    binding.kind = RATE_EXPRESSION_TRANSPORT_VOLUME_RATIO;
                 } else {
                     throw std::invalid_argument("unknown expression binding kind");
                 }
