@@ -19,6 +19,11 @@ bool graphMatch(const SimulationState& s, const GraphPattern& graph, const Match
       connected.second_node >= graph.nodes.size() ||
       connected.first_node == connected.second_node) return false;
  }
+ for (const auto& node : graph.nodes) {
+  if (node.min_bound_components < -1 || node.max_bound_components < -1 ||
+      (node.min_bound_components >= 0 && node.max_bound_components >= 0 &&
+       node.min_bound_components > node.max_bound_components)) return false;
+ }
  std::vector<MoleculeRef> mapping(graph.nodes.size());
  std::vector<bool> used(graph.nodes.size(), false);
  for (std::size_t i=0;i<graph.nodes.size();++i) {
@@ -78,6 +83,14 @@ bool graphMatch(const SimulationState& s, const GraphPattern& graph, const Match
   if (!ref.valid() || ref.type.value()!=n.molecule_type || !s.molecules(ref.type).alive(ref.handle)) return false;
   if (n.compartment != std::numeric_limits<std::uint32_t>::max() &&
       s.molecules(ref.type).compartment(ref.handle) != n.compartment) return false;
+  if (n.min_bound_components >= 0 || n.max_bound_components >= 0) {
+   int occupied = 0;
+   const MoleculeStore& boundedStore = s.molecules(ref.type);
+   for (std::uint16_t slot = 0; slot < boundedStore.bondSlotCount(); ++slot)
+    if (boundedStore.bondRef(ref.handle, slot).valid()) ++occupied;
+   if (n.min_bound_components >= 0 && occupied < n.min_bound_components) return false;
+   if (n.max_bound_components >= 0 && occupied > n.max_bound_components) return false;
+  }
   for (const auto component : n.free_components) {
    if (component > std::numeric_limits<std::uint16_t>::max() ||
        component >= s.molecules(ref.type).bondSlotCount() ||
@@ -116,8 +129,11 @@ bool graphMatch(const SimulationState& s, const GraphPattern& graph, const Match
    std::size_t other=std::numeric_limits<std::size_t>::max(); std::uint32_t slot=0;
    if (e.first_node==i) { other=e.second_node; slot=e.first_component; }
    else if (e.second_node==i) { other=e.first_node; slot=e.second_component; }
-   if (other!=std::numeric_limits<std::size_t>::max() && mapping[other].valid() &&
-       !(s.molecules(ref.type).bondRef(ref.handle, static_cast<std::uint16_t>(slot))==mapping[other])) return false;
+   if (other!=std::numeric_limits<std::size_t>::max() && mapping[other].valid()) {
+    const bool equal = s.molecules(ref.type).bondRef(
+        ref.handle, static_cast<std::uint16_t>(slot)) == mapping[other];
+    if ((!e.negate && !equal) || (e.negate && equal)) return false;
+   }
   }
   for (const auto& connected : graph.connected_to) {
    std::size_t other = std::numeric_limits<std::size_t>::max();
@@ -125,8 +141,8 @@ bool graphMatch(const SimulationState& s, const GraphPattern& graph, const Match
    else if (connected.second_node == i) other = connected.first_node;
    if (other == std::numeric_limits<std::size_t>::max() || !mapping[other].valid()) continue;
    const std::vector<MoleculeRef> component = s.connectedComponent(ref);
-   if (std::find(component.begin(), component.end(), mapping[other]) == component.end())
-    return false;
+   const bool connectedTo = std::find(component.begin(), component.end(), mapping[other]) != component.end();
+   if ((!connected.negate && !connectedTo) || (connected.negate && connectedTo)) return false;
   }
   return true;
  };
@@ -163,7 +179,27 @@ bool MatcherProgram::evaluate(const SimulationState&s,const ScaffoldStore&sc,con
  case MATCH_POPULATION_AT_LEAST: if(s.populations().value(PopulationId(x.a))<(std::int64_t)x.value)return false;break;
  case MATCH_COMPARTMENT: if(!r.valid()||s.molecules(r.type).compartment(r.handle)!=x.value)return false;break;
  case MATCH_COMPARTMENT_INSIDE: if(!r.valid()||!s.model().compartmentInside(s.molecules(r.type).compartment(r.handle), static_cast<std::uint32_t>(x.value)))return false;break;
- case MATCH_CONNECTED_TO:{if(!r.valid())return false;MoleculeRef wanted=c.moleculeAt(x.b);if(!wanted.valid())return false;std::vector<MoleculeRef> pending(1,r);std::vector<MoleculeRef> seen(1,r);bool found=false;for(std::size_t qi=0;qi<pending.size()&&!found;++qi){const MoleculeRef current=pending[qi];if(current==wanted){found=true;break;}const MoleculeStore& store=s.molecules(current.type);for(std::uint16_t slot=0;slot<store.bondSlotCount();++slot){MoleculeRef next=store.bondRef(current.handle,slot);if(!next.valid()||!s.molecules(next.type).alive(next.handle))continue;bool known=false;for(std::size_t si=0;si<seen.size();++si)if(seen[si]==next){known=true;break;}if(!known){seen.push_back(next);pending.push_back(next);}}}if(!found)return false;break;}
+ case MATCH_CONNECTED_TO:{
+  if(!r.valid()) return x.negate;
+  MoleculeRef wanted=c.moleculeAt(x.b);
+  if(!wanted.valid()) return x.negate;
+  std::vector<MoleculeRef> pending(1,r), seen(1,r);
+  bool found=false;
+  for(std::size_t qi=0;qi<pending.size()&&!found;++qi){
+   const MoleculeRef current=pending[qi];
+   if(current==wanted){found=true;break;}
+   const MoleculeStore& store=s.molecules(current.type);
+   for(std::uint16_t slot=0;slot<store.bondSlotCount();++slot){
+    MoleculeRef next=store.bondRef(current.handle,slot);
+    if(!next.valid()||!s.molecules(next.type).alive(next.handle)) continue;
+    bool known=false; for(std::size_t si=0;si<seen.size();++si)
+     if(seen[si]==next){known=true;break;}
+    if(!known){seen.push_back(next);pending.push_back(next);}
+   }
+  }
+  if((!x.negate && !found)||(x.negate && found)) return false;
+  break;
+ }
  case MATCH_GRAPH: if(x.a>=graphs_.size() || !graphMatch(s,graphs_[x.a],c))return false;break;
  case MATCH_SCAFFOLD_STATE: if(x.a>std::numeric_limits<std::uint32_t>::max()-c.coordinate)throw std::out_of_range("scaffold offset overflow"); if(sc.state(c.scaffold,c.coordinate+x.a)!=(std::uint8_t)x.value)return false;break;
  case MATCH_SCAFFOLD_FREE: if(x.a>std::numeric_limits<std::uint32_t>::max()-c.coordinate)throw std::out_of_range("scaffold offset overflow"); if(sc.occupant(c.scaffold,c.coordinate+x.a).valid())return false;break;

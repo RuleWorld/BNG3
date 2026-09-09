@@ -72,6 +72,12 @@ struct RateExpressionFunction {
     std::string name;
     std::string expression;
     std::vector<std::string> arguments;
+    // NFsim TFUN metadata. Empty tables retain ordinary expression-function
+    // behavior; populated tables are interpolated at evaluation time.
+    std::vector<double> table_x;
+    std::vector<double> table_y;
+    std::string table_method;
+    std::string table_counter;
 };
 
 // Bounded, source-derived rate descriptors. Constant rates retain the old

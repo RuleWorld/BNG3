@@ -120,6 +120,12 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                 outNode.compartment=node.compartment;
                 outNode.free_components=node.free_components;
                 outNode.bound_components=node.bound_components;
+                outNode.min_bound_components=node.min_bound_components;
+                outNode.max_bound_components=node.max_bound_components;
+                if (outNode.min_bound_components < -1 || outNode.max_bound_components < -1 ||
+                    (outNode.max_bound_components >= 0 && outNode.min_bound_components >= 0 &&
+                     outNode.min_bound_components > outNode.max_bound_components))
+                    throw std::invalid_argument("NFsim graph molecularity bounds are malformed");
                 outNode.state_value=node.state;
                 for (const auto& state : node.state_constraints) {
                     validateComponent(source, node.molecule_type, state.first);
@@ -189,6 +195,7 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                 GraphEdgePattern outEdge;
                 outEdge.first_node=edge.first_node; outEdge.first_component=edge.first_component;
                 outEdge.second_node=edge.second_node; outEdge.second_component=edge.second_component;
+                outEdge.negate=edge.negate;
                 graph.edges.push_back(outEdge);
             }
             for (const auto& connected : nativeGraph.connected_to) {
@@ -196,8 +203,10 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                     connected.second_node >= graph.nodes.size() ||
                     connected.first_node == connected.second_node)
                     throw std::invalid_argument("NFsim connectedTo graph node out of range");
-                graph.connected_to.push_back(
-                    GraphConnectivityPattern(connected.first_node, connected.second_node));
+                GraphConnectivityPattern outConnected(
+                    connected.first_node, connected.second_node);
+                outConnected.negate = connected.negate;
+                graph.connected_to.push_back(outConnected);
             }
             r.graph_patterns.push_back(graph);
         }
@@ -219,11 +228,28 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                     throw std::invalid_argument("expression function definition is empty");
                 for (const auto& prior : r.rate_law.expression_functions)
                     if (prior.name == nativeFunction.name)
-                        throw std::invalid_argument("duplicate expression function name");
+                        if (prior.expression != nativeFunction.expression ||
+                            prior.arguments != nativeFunction.arguments ||
+                            prior.table_x != nativeFunction.table_x ||
+                            prior.table_y != nativeFunction.table_y ||
+                            prior.table_method != nativeFunction.table_method ||
+                            prior.table_counter != nativeFunction.table_counter)
+                            throw std::invalid_argument("conflicting expression function definition");
+                        else
+                            throw std::invalid_argument("duplicate expression function name");
                 RateExpressionFunction function;
                 function.name = nativeFunction.name;
                 function.expression = nativeFunction.expression;
                 function.arguments = nativeFunction.arguments;
+                function.table_x = nativeFunction.table_x;
+                function.table_y = nativeFunction.table_y;
+                function.table_method = nativeFunction.table_method;
+                function.table_counter = nativeFunction.table_counter;
+                if (function.table_x.size() != function.table_y.size())
+                    throw std::invalid_argument("TFUN table columns have different lengths");
+                for (std::size_t k = 0; k < function.table_x.size(); ++k)
+                    if (!std::isfinite(function.table_x[k]) || !std::isfinite(function.table_y[k]))
+                        throw std::invalid_argument("TFUN table contains a non-finite value");
                 r.rate_law.expression_functions.push_back(function);
             }
             for (const auto& nativeBinding : nr.rate_expression_bindings) {

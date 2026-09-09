@@ -132,6 +132,10 @@ struct NativeRateExpressionFunctionSnapshot {
     std::string name;
     std::string expression;
     std::vector<std::string> arguments;
+    std::vector<double> table_x;
+    std::vector<double> table_y;
+    std::string table_method;
+    std::string table_counter;
 };
 
 enum NativeRemovalType {
@@ -174,6 +178,8 @@ struct NativeGraphNodeSnapshot {
     // child constraint.
     std::vector<std::pair<std::uint32_t, int> > state_constraints;
     std::vector<std::pair<std::uint32_t, int> > excluded_states;
+    int min_bound_components;
+    int max_bound_components;
     struct SymmetricConstraint {
         std::vector<std::uint32_t> components;
         int state;
@@ -188,17 +194,20 @@ struct NativeGraphNodeSnapshot {
     int state;
     NativeGraphNodeSnapshot() : molecule_type(0), reactant(std::numeric_limits<std::uint16_t>::max()),
         state_component(std::numeric_limits<std::uint32_t>::max()),
-        compartment(std::numeric_limits<std::uint32_t>::max()), state(-1) {}
+        compartment(std::numeric_limits<std::uint32_t>::max()),
+        min_bound_components(-1), max_bound_components(-1), state(-1) {}
 };
 struct NativeGraphEdgeSnapshot {
     std::uint32_t first_node, first_component, second_node, second_component;
-    NativeGraphEdgeSnapshot() : first_node(0), first_component(0), second_node(0), second_component(0) {}
+    bool negate;
+    NativeGraphEdgeSnapshot() : first_node(0), first_component(0), second_node(0), second_component(0), negate(false) {}
 };
 struct NativeGraphConnectivitySnapshot {
     std::uint32_t first_node;
     std::uint32_t second_node;
+    bool negate;
     NativeGraphConnectivitySnapshot(std::uint32_t first = 0, std::uint32_t second = 0)
-        : first_node(first), second_node(second) {}
+        : first_node(first), second_node(second), negate(false) {}
 };
 struct NativeGraphPatternSnapshot {
     std::vector<NativeGraphNodeSnapshot> nodes;

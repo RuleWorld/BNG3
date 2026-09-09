@@ -39,8 +39,9 @@ struct LegacyPredicateIR {
     std::uint64_t mask;
     std::uint64_t value;
     bool has_partner_component;
+    bool negate;
     FeatureId partner_feature;
-    LegacyPredicateIR() : kind(LEGACY_PRED_UNSUPPORTED), target(0), owner(std::numeric_limits<std::uint32_t>::max()), a(0), b(0), mask(0), value(0), has_partner_component(false) {}
+    LegacyPredicateIR() : kind(LEGACY_PRED_UNSUPPORTED), target(0), owner(std::numeric_limits<std::uint32_t>::max()), a(0), b(0), mask(0), value(0), has_partner_component(false), negate(false) {}
 };
 
 enum LegacyTransformKind {

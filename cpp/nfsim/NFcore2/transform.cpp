@@ -75,7 +75,16 @@ case TRANSFORM_UNBIND:{
  s.molecules(r.type).setBondRef(r.handle,(std::uint16_t)x.a,MoleculeRef());
  s.molecules(q.type).setBondRef(q.handle,(std::uint16_t)partner_slot,MoleculeRef());
  reportBondDelta(s,r,x.a,q,partner_slot,x.feature,d);break;}
-case TRANSFORM_CREATE_MOLECULE:{MoleculeTypeId t(x.a);MoleculeHandle h=s.molecules(t).create();c.setMoleculeAt(x.target,MoleculeRef(t,h));if(x.feature.valid())d.add(x.feature);break;}
+case TRANSFORM_CREATE_MOLECULE:{
+ MoleculeTypeId t(x.a); MoleculeHandle h=s.molecules(t).create();
+ MoleculeRef created(t,h);
+ // NFsim synthesis inherits the compartment of its mapped template when a
+ // product is created inside a reaction; zero-reactant synthesis keeps the
+ // model's default compartment.
+ if (r.valid() && !s.model().compartments().empty())
+  s.molecules(t).setCompartment(h, s.molecules(r.type).compartment(r.handle));
+ c.setMoleculeAt(x.target, created);
+ if(x.feature.valid())d.add(x.feature);break;}
 case TRANSFORM_DELETE_MOLECULE:{if(r.valid()){std::vector<MoleculeRef> neighbors;const MoleculeStore& source=s.molecules(r.type);for(std::uint16_t slot=0;slot<source.bondSlotCount();++slot){MoleculeRef p=source.bondRef(r.handle,slot);if(p.valid()&&s.molecules(p.type).alive(p.handle))neighbors.push_back(p);}s.eraseMolecule(r);reportMoleculeFeatures(s,r.type,d);for(const auto& p:neighbors)reportMoleculeFeatures(s,p.type,d);}if(x.feature.valid())d.add(x.feature);break;}
 case TRANSFORM_DELETE_SPECIES:{std::vector<MoleculeRef> removed=s.eraseSpecies(r);for(std::size_t j=0;j<removed.size();++j)reportMoleculeFeatures(s,removed[j].type,d);if(x.feature.valid())d.add(x.feature);break;}
 case TRANSFORM_MOVE_MOLECULE:s.moveMolecule(r,x.a);if(x.feature.valid())d.add(x.feature);break;

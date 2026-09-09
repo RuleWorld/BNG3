@@ -155,6 +155,9 @@ double SimulationState::transportVolumeRatio(std::uint32_t source,
     }
     if (sourceDescriptor->dimensions != destinationDescriptor->dimensions)
         throw std::invalid_argument("transport dimensions do not match");
+    // A compartment hierarchy still transports through the concrete region
+    // volumes; the model validates parent chains whenever an inside query is
+    // required by a matcher or expression binding.
     const double sourceSize = compartmentSize(source);
     const double destinationSize = compartmentSize(destination);
     const double ratio = destinationSize / sourceSize;
@@ -169,6 +172,18 @@ void SimulationState::moveMolecule(MoleculeRef ref, std::uint32_t destination) {
     if (!model_.compartments().empty()) {
         if (!model_.hasCompartment(destination))
             throw std::out_of_range("move destination compartment is unknown");
+        const std::uint32_t source = molecules(ref.type).compartment(ref.handle);
+        if (model_.hasCompartment(source)) {
+            const CompartmentDescriptor* sourceDescriptor = nullptr;
+            const CompartmentDescriptor* destinationDescriptor = nullptr;
+            for (const auto& compartment : model_.compartments()) {
+                if (compartment.id == source) sourceDescriptor = &compartment;
+                if (compartment.id == destination) destinationDescriptor = &compartment;
+            }
+            if (sourceDescriptor && destinationDescriptor &&
+                sourceDescriptor->dimensions != destinationDescriptor->dimensions)
+                throw std::invalid_argument("move dimensions do not match");
+        }
         (void)compartmentSize(destination);
     }
     molecules(ref.type).setCompartment(ref.handle, destination);
@@ -187,6 +202,20 @@ void SimulationState::moveSpecies(MoleculeRef ref, std::uint32_t destination) {
     for (const auto& member : members)
         if (!member.valid() || !molecules(member.type).alive(member.handle))
             throw std::logic_error("species contains a stale molecule");
+    if (!model_.compartments().empty()) {
+        const CompartmentDescriptor* destinationDescriptor = nullptr;
+        for (const auto& compartment : model_.compartments())
+            if (compartment.id == destination) { destinationDescriptor = &compartment; break; }
+        if (!destinationDescriptor) throw std::out_of_range("move destination compartment is unknown");
+        for (const auto& member : members) {
+            const std::uint32_t source = molecules(member.type).compartment(member.handle);
+            for (const auto& compartment : model_.compartments()) {
+                if (compartment.id == source &&
+                    compartment.dimensions != destinationDescriptor->dimensions)
+                    throw std::invalid_argument("species move dimensions do not match");
+            }
+        }
+    }
     for (const auto& member : members)
         molecules(member.type).setCompartment(member.handle, destination);
 }
