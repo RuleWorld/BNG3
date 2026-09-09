@@ -124,6 +124,28 @@ TEST(DependencyPrecision_BondSlotsDoNotCrossInvalidate){
     EXPECT_NE(a[0],b[0]);
 }
 
+TEST(DependencyPrecision_ExpressionObservableTracksStateAndCompartment){
+    LegacyModelIR m=dependencyModel();
+    m.features.push_back(FeatureDescriptor(FEATURE_MOLECULE_COMPARTMENT,0,0));
+    LegacyRuleIR r;
+    r.name="expression"; r.rate=1.0;
+    r.rate_law.kind=LEGACY_RATE_EXPRESSION;
+    r.rate_law.expression="active";
+    RateExpressionBinding binding;
+    binding.kind=RATE_EXPRESSION_GLOBAL_MOLECULE_COUNT;
+    binding.name="active"; binding.molecule_type=0;
+    binding.state_component=1; binding.state_value=1;
+    binding.compartment=7;
+    r.rate_law.expression_bindings.push_back(binding);
+    m.rules.push_back(r);
+    LegacyLoweringResult out=LegacyLowerer::lower(m);
+    std::vector<MatcherId> state=dependents(out.executable.metadata(),FeatureId(1));
+    std::vector<MatcherId> compartment=dependents(out.executable.metadata(),FeatureId(6));
+    EXPECT_EQ(state.size(),1u);
+    EXPECT_EQ(compartment.size(),1u);
+    EXPECT_EQ(state[0],compartment[0]);
+}
+
 TEST(DependencyPrecision_DuplicateRulesDoNotDuplicateMatcherDependencyEntries){
     LegacyModelIR m=dependencyModel();
     for(unsigned i=0;i<100;++i){

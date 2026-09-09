@@ -430,6 +430,43 @@ LegacyLoweringResult LegacyLowerer::lower(const LegacyModelIR& legacy) {
                 ((law.kind==LEGACY_RATE_LOCAL_LINEAR && fd.index==law.component) ||
                  (law.kind==LEGACY_RATE_DOR_PRODUCT &&
                   (fd.index==law.component || fd.index==law.partner_component)))) reads=true;
+            if (law.kind == LEGACY_RATE_EXPRESSION) {
+                for (const auto& binding : law.expression_bindings) {
+                    const bool scopedCount =
+                        binding.kind == RATE_EXPRESSION_GLOBAL_MOLECULE_COUNT ||
+                        binding.kind == RATE_EXPRESSION_SPECIES_MOLECULE_COUNT;
+                    if (scopedCount &&
+                        binding.molecule_type != std::numeric_limits<std::uint32_t>::max() &&
+                        fd.owner != binding.molecule_type)
+                        continue;
+                    if (scopedCount &&
+                        binding.molecule_type == std::numeric_limits<std::uint32_t>::max() &&
+                        fd.kind != FEATURE_MOLECULE_EXISTENCE)
+                        continue;
+                    if (scopedCount) {
+                        // Every counted molecule type contributes existence;
+                        // state/bond/compartment filters add the corresponding
+                        // narrower invalidation edge.
+                        if (fd.kind == FEATURE_MOLECULE_EXISTENCE)
+                            reads = true;
+                        if (binding.state_component != std::numeric_limits<std::uint32_t>::max() &&
+                            fd.kind == FEATURE_MOLECULE_STATE &&
+                            fd.index == binding.state_component)
+                            reads = true;
+                        if (binding.bond_component != std::numeric_limits<std::uint32_t>::max() &&
+                            fd.kind == FEATURE_MOLECULE_BOND &&
+                            fd.index == binding.bond_component)
+                            reads = true;
+                        if (binding.compartment != std::numeric_limits<std::uint32_t>::max() &&
+                            fd.kind == FEATURE_MOLECULE_COMPARTMENT)
+                            reads = true;
+                    } else if (binding.kind == RATE_EXPRESSION_COMPARTMENT_VOLUME ||
+                               binding.kind == RATE_EXPRESSION_TRANSPORT_VOLUME_RATIO) {
+                        if (fd.kind == FEATURE_MOLECULE_COMPARTMENT)
+                            reads = true;
+                    }
+                }
+            }
             if (reads) deps[fi].push_back(metadata.ruleFamilies().at(out.rules[ri].family.value()).matcher);
         }
     }
