@@ -112,7 +112,13 @@ def _mathml_to_formula(element: Optional[Any]) -> str:
             return "time"
         if "symbols/avogadro" in definition_url:
             return "__Avogadro__"
-        return _mathml_text(element)
+        content = _mathml_text(element)
+        representation = str(_attribute(element, "representationType", "") or "")
+        if representation == "sum":
+            return f"__SBML_MULTI_SUM__{content}__"
+        if representation == "numericValue":
+            return f"__SBML_MULTI_NUMERIC__{content}__"
+        return content
     if tag == "cn":
         chunks: List[str] = []
         if element.text and element.text.strip():
@@ -646,6 +652,7 @@ class SBMLParser:
         result.multi_component_aliases = dict(multi.component_aliases)
         result.multi_reaction_mappings = dict(multi.reaction_product_maps)
         result.multi_compartment_references = dict(multi.compartment_references)
+        result.multi_numeric_values = dict(multi.numeric_values)
         result.multi_executable = multi.executable
         if result.constraint_count:
             result.import_warnings.append(

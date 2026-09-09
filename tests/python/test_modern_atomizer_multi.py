@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -272,7 +273,9 @@ def test_multi_product_component_map_carries_source_wildcard_binding_status():
       xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
       multi:required="true">
   <model id="mapped_product">
-    <listOfCompartments><compartment id="c" size="1"/></listOfCompartments>
+    <listOfCompartments>
+      <compartment id="c" size="1" multi:isType="false"/>
+    </listOfCompartments>
     <listOfSpecies>
       <species id="A0" compartment="c" initialAmount="1"
                multi:speciesType="AType" name="A(x!+)"/>
@@ -280,7 +283,7 @@ def test_multi_product_component_map_carries_source_wildcard_binding_status():
                name="A()"/>
     </listOfSpecies>
     <listOfReactions>
-      <multi:intraSpeciesReaction multi:id="r" multi:reversible="false">
+      <multi:intraSpeciesReaction id="r" reversible="false">
         <listOfReactants>
           <speciesReference id="r1" species="A0"/>
         </listOfReactants>
@@ -386,7 +389,7 @@ def test_multi_namespace_violation_is_parseable_but_not_executable():
       xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
       multi:required="true">
   <model id="bad_namespace">
-    <listOfSpecies><species id="A" multi:speciesType="AType"/></listOfSpecies>
+        <listOfSpecies><species id="A" speciesType="AType"/></listOfSpecies>
     <multi:listOfSpeciesTypes>
       <multi:bindingSiteSpeciesType id="xType" multi:name="x"/>
       <multi:speciesType multi:id="AType" multi:name="A">
@@ -403,6 +406,200 @@ def test_multi_namespace_violation_is_parseable_but_not_executable():
     assert result.executable is False
     assert any(
         "must use the Multi namespace" in warning.message for warning in result.warnings
+    )
+
+
+def test_multi_repeated_feature_occurrences_and_numeric_values_are_executable():
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      level="3" version="1" multi:required="true">
+  <model id="repeated_feature">
+    <listOfParameters><parameter id="p" value="1"/></listOfParameters>
+    <listOfSpecies>
+      <species id="A0" multi:speciesType="AType" initialAmount="1">
+        <multi:listOfSpeciesFeatures>
+          <multi:speciesFeature multi:speciesFeatureType="state" multi:occur="1">
+            <multi:listOfSpeciesFeatureValues>
+              <multi:speciesFeatureValue multi:value="u"/>
+            </multi:listOfSpeciesFeatureValues>
+          </multi:speciesFeature>
+          <multi:speciesFeature multi:speciesFeatureType="state" multi:occur="2">
+            <multi:listOfSpeciesFeatureValues>
+              <multi:speciesFeatureValue multi:value="x"/>
+            </multi:listOfSpeciesFeatureValues>
+          </multi:speciesFeature>
+        </multi:listOfSpeciesFeatures>
+      </species>
+    </listOfSpecies>
+    <multi:listOfSpeciesTypes>
+      <multi:speciesType multi:id="AType" multi:name="A">
+        <multi:listOfSpeciesFeatureTypes>
+          <multi:speciesFeatureType multi:id="state" multi:occur="2">
+            <multi:listOfPossibleSpeciesFeatureValues>
+              <multi:possibleSpeciesFeatureValue multi:id="u" multi:name="U"
+                                                   multi:numericValue="p"/>
+              <multi:possibleSpeciesFeatureValue multi:id="x" multi:name="X"/>
+            </multi:listOfPossibleSpeciesFeatureValues>
+          </multi:speciesFeatureType>
+        </multi:listOfSpeciesFeatureTypes>
+      </multi:speciesType>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+
+    result = parse_multi_package(xml)
+
+    assert result.executable is True
+    assert result.type_patterns["AType"] == "A(state_1~U~X,state_2~U~X)"
+    assert result.species_patterns["A0"] == "A(state_1~U,state_2~X)"
+
+
+def test_multi_unprefixed_attributes_on_package_elements_follow_spec_rules():
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      multi:required="true">
+  <model id="unprefixed_multi">
+    <listOfSpecies>
+      <species id="A0" multi:speciesType="AType" initialAmount="1"/>
+    </listOfSpecies>
+    <multi:listOfSpeciesTypes>
+      <multi:bindingSiteSpeciesType id="xType" name="x"/>
+      <multi:speciesType id="AType" name="A">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance id="x" speciesType="xType"/>
+        </multi:listOfSpeciesTypeInstances>
+      </multi:speciesType>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+
+    result = parse_multi_package(xml)
+
+    assert result.executable is True
+    assert not any("must use the Multi namespace" in w.message for w in result.warnings)
+
+
+def test_multi_and_sublist_is_flattened_but_or_sublist_fails_closed():
+    def make_xml(relation: str) -> str:
+        return f"""<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+          xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+          multi:required="true">
+      <model id="sublist">
+        <listOfSpecies>
+          <species id="A0" multi:speciesType="AType" initialAmount="1">
+            <multi:listOfSpeciesFeatures>
+              <multi:subListOfSpeciesFeatures multi:relation="{relation}">
+                <multi:speciesFeature multi:speciesFeatureType="a" multi:occur="1">
+                  <multi:listOfSpeciesFeatureValues>
+                    <multi:speciesFeatureValue multi:value="a_on"/>
+                  </multi:listOfSpeciesFeatureValues>
+                </multi:speciesFeature>
+                <multi:speciesFeature multi:speciesFeatureType="b" multi:occur="1">
+                  <multi:listOfSpeciesFeatureValues>
+                    <multi:speciesFeatureValue multi:value="b_on"/>
+                  </multi:listOfSpeciesFeatureValues>
+                </multi:speciesFeature>
+              </multi:subListOfSpeciesFeatures>
+            </multi:listOfSpeciesFeatures>
+          </species>
+        </listOfSpecies>
+        <multi:listOfSpeciesTypes>
+          <multi:speciesType multi:id="AType" multi:name="A">
+            <multi:listOfSpeciesFeatureTypes>
+              <multi:speciesFeatureType multi:id="a" multi:name="a" multi:occur="2">
+                <multi:listOfPossibleSpeciesFeatureValues>
+                  <multi:possibleSpeciesFeatureValue multi:id="a_on" multi:name="on"/>
+                </multi:listOfPossibleSpeciesFeatureValues>
+              </multi:speciesFeatureType>
+              <multi:speciesFeatureType multi:id="b" multi:name="b" multi:occur="1">
+                <multi:listOfPossibleSpeciesFeatureValues>
+                  <multi:possibleSpeciesFeatureValue multi:id="b_on" multi:name="on"/>
+                </multi:listOfPossibleSpeciesFeatureValues>
+              </multi:speciesFeatureType>
+            </multi:listOfSpeciesFeatureTypes>
+          </multi:speciesType>
+        </multi:listOfSpeciesTypes>
+      </model>
+    </sbml>"""
+
+    conjunction = parse_multi_package(make_xml("and"))
+    assert conjunction.executable is True
+    assert conjunction.species_patterns["A0"] == "A(a_1~on,a_2,b~on)"
+
+    disjunction = parse_multi_package(make_xml("or"))
+    assert disjunction.executable is False
+    assert any("relation=or" in warning.message for warning in disjunction.warnings)
+
+    negation = parse_multi_package(make_xml("not"))
+    assert negation.executable is False
+    assert any("relation=not" in warning.message for warning in negation.warnings)
+
+
+def test_multi_mathml_ci_extensions_are_validated_and_reconstructed():
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      xmlns:m="http://www.w3.org/1998/Math/MathML" multi:required="true">
+  <model id="mathml_multi">
+    <listOfParameters><parameter id="p" value="2"/></listOfParameters>
+    <listOfSpecies>
+      <species id="A0" compartment="c" multi:speciesType="AType"/>
+    </listOfSpecies>
+    <listOfCompartments>
+      <compartment id="c" size="1" multi:isType="false"/>
+    </listOfCompartments>
+    <listOfReactions>
+      <reaction id="r">
+        <listOfReactants><speciesReference id="r1" species="A0"/></listOfReactants>
+        <listOfProducts><speciesReference id="p1" species="A0"/></listOfProducts>
+        <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+          <apply><plus/>
+            <ci multi:representationType="sum">A0</ci>
+            <ci multi:representationType="numericValue" multi:speciesReference="r1">u</ci>
+          </apply>
+        </math></kineticLaw>
+      </reaction>
+    </listOfReactions>
+    <multi:listOfSpeciesTypes>
+      <multi:speciesType multi:id="AType" multi:name="A">
+        <multi:listOfSpeciesFeatureTypes>
+          <multi:speciesFeatureType multi:id="state" multi:occur="1">
+            <multi:listOfPossibleSpeciesFeatureValues>
+              <multi:possibleSpeciesFeatureValue multi:id="u" multi:numericValue="p"/>
+            </multi:listOfPossibleSpeciesFeatureValues>
+          </multi:speciesFeatureType>
+        </multi:listOfSpeciesFeatureTypes>
+      </multi:speciesType>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+
+    result = parse_multi_package(xml)
+
+    assert result.executable is True
+    assert not any(warning.severity == "dropped" for warning in result.warnings)
+
+    from bionetgen.atomizer.modern import (
+        SBMLParser,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    model = SBMLParser().parse(xml)
+    sct = build_species_composition_table(model)
+    molecule_types = get_molecule_types(sct, model.multi_type_patterns.values())
+    bngl, _ = generate_bngl(model, sct, molecule_types, get_seed_species(sct, model))
+    assert "Molecules __multi_sum_A0" in bngl
+    assert "__multi_sum_A0 + p" in bngl
+
+
+def test_multi_invalid_xml_fails_closed_with_diagnostic():
+    result = parse_multi_package("<sbml xmlns:multi='broken'>")
+
+    assert result.executable is False
+    assert any(
+        "could not be parsed as XML" in warning.message for warning in result.warnings
     )
 
 
@@ -423,17 +620,22 @@ def test_real_sbml_multi_validation_model_reconstructs_and_parses_with_bng_cpp()
     assert model.multi_executable is True
     assert len(model.multi_species_patterns) == 13
     assert len(model.multi_reaction_mappings) == 6
-    assert model.multi_type_patterns["ST3"] == "L(r,r,r!1).R(l!1,l)"
+    assert model.multi_type_patterns["ST3"] == "L(r,r,r!1)@cell.R(l!1,l)@cell"
 
     sct = build_species_composition_table(model)
     molecule_types = get_molecule_types(sct, model.multi_type_patterns.values())
     bngl, _ = generate_bngl(model, sct, molecule_types, get_seed_species(sct, model))
     assert "not yet fed into the simulated network" not in bngl
     assert "M_L(r,r,r)" in bngl
-    assert "M_L(r,r,r!1).M_R(l!1)" in bngl
+    assert "M_L(r,r,r!1).M_R(l!1,l!?)" in bngl
     assert "__sp~" not in bngl
 
-    oracle = Path(__file__).parents[2] / "build/cpp/bng_cpp"
+    configured_oracle = os.environ.get("BNG_CPP")
+    oracle = (
+        Path(configured_oracle)
+        if configured_oracle
+        else Path(__file__).parents[2] / "build/cpp/bng_cpp"
+    )
     if not oracle.exists():
         pytest.skip("bng_cpp execution oracle is not built")
     completed = subprocess.run(
@@ -445,3 +647,137 @@ def test_real_sbml_multi_validation_model_reconstructs_and_parses_with_bng_cpp()
     )
     assert completed.returncode == 0, completed.stderr
     assert "parse ok" in completed.stdout
+
+
+def test_cpp_sbml_multi_writer_roundtrip_is_libsbml_consistent(tmp_path):
+    libsbml = pytest.importorskip("libsbml")
+    configured = os.environ.get("BNG_CPP")
+    oracle = (
+        Path(configured)
+        if configured
+        else Path(__file__).parents[2] / "build/cpp/bng_cpp"
+    )
+    if not oracle.exists():
+        pytest.skip("bng_cpp writer oracle is not built (set BNG_CPP)")
+
+    source = (
+        Path(__file__).parents[1] / "validation/Validate/test_write_sbml_multi.bngl"
+    )
+    input_path = tmp_path / source.name
+    input_path.write_text(source.read_text())
+    completed = subprocess.run(
+        [str(oracle), str(input_path)],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    outputs = sorted(tmp_path.glob("*_sbml_multi.xml"))
+    assert len(outputs) == 1
+
+    document = libsbml.readSBML(str(outputs[0]))
+    assert document.getNumErrors() == 0
+    assert document.checkInternalConsistency() == 0
+    result = parse_multi_package(outputs[0].read_text())
+    assert result.present is True
+    if 'multi:required="true"' in outputs[0].read_text():
+        if result.executable:
+            assert not any(warning.severity == "dropped" for warning in result.warnings)
+        else:
+            assert any(
+                "without a Multi speciesType" in warning.message
+                for warning in result.warnings
+            )
+    else:
+        assert result.executable is False
+        assert any('required="false"' in warning.message for warning in result.warnings)
+
+
+def test_reconstructed_sbml_multi_model_runs_in_independent_nfsim(tmp_path):
+    configured_cpp = os.environ.get("BNG_CPP")
+    oracle_cpp = (
+        Path(configured_cpp)
+        if configured_cpp
+        else Path(__file__).parents[2] / "build/cpp/bng_cpp"
+    )
+    native_nfsim = os.environ.get("NFSIM_BIN")
+    if not oracle_cpp.exists():
+        pytest.skip("bng_cpp execution oracle is not built (set BNG_CPP)")
+    if not native_nfsim or not Path(native_nfsim).exists():
+        pytest.skip("independent NFsim oracle is unavailable (set NFSIM_BIN)")
+
+    from bionetgen.atomizer.modern import (
+        SBMLParser,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    fixture = (
+        Path(__file__).parents[1]
+        / "validation/Validate/test_write_sbml_multi_sbml_sbmlmulti.xml"
+    )
+    model = SBMLParser().parse(fixture.read_text())
+    sct = build_species_composition_table(model)
+    molecule_types = get_molecule_types(sct, model.multi_type_patterns.values())
+    bngl, _ = generate_bngl(model, sct, molecule_types, get_seed_species(sct, model))
+    sanitized_lines = []
+    skipped_section = None
+    in_seed_species = False
+    for line in bngl.splitlines():
+        marker = line.strip().lower()
+        if marker in {"begin observables", "begin functions"}:
+            skipped_section = marker.removeprefix("begin ")
+            continue
+        if skipped_section is not None:
+            if marker == f"end {skipped_section}":
+                skipped_section = None
+            continue
+        if marker == "begin seed species":
+            in_seed_species = True
+        elif marker == "end seed species":
+            in_seed_species = False
+        if in_seed_species and line.split() and line.split()[-1] == "0":
+            continue
+        sanitized_lines.append(line)
+    bngl = "\n".join(sanitized_lines)
+    input_path = tmp_path / "multi_oracle.bngl"
+    input_path.write_text(
+        bngl.rstrip() + "\n\n## actions ##\nwriteXML({overwrite=>1})\n"
+    )
+    compiled = subprocess.run(
+        [str(oracle_cpp), str(input_path)],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert compiled.returncode == 0, compiled.stderr
+    xml_path = tmp_path / "multi_oracle.xml"
+    assert xml_path.exists()
+
+    gdat_path = tmp_path / "multi_oracle_nf.gdat"
+    executed = subprocess.run(
+        [
+            str(Path(native_nfsim).resolve()),
+            "-xml",
+            str(xml_path),
+            "-o",
+            str(gdat_path),
+            "-sim",
+            "0",
+            "-oSteps",
+            "1",
+            "-seed",
+            "17",
+        ],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert executed.returncode == 0, executed.stderr or executed.stdout
+    assert gdat_path.exists()
+    assert "time" in gdat_path.read_text().splitlines()[0]

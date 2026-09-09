@@ -16,11 +16,13 @@ namespace bng::io {
  *
  * Key SBML Multi elements:
  * - <multi:listOfSpeciesTypes> -- molecule types with components and states
- * - <multi:listOfIntraSpeciesTypeBonds> -- allowed bonds within species types
+ * - <multi:listOfInSpeciesTypeBonds> -- allowed bonds within species types
  * - <multi:listOfSpeciesFeatures> -- component features (states)
- * - <multi:bindingSiteSpeciesFeatureType> -- binding site definitions
+ * - <multi:bindingSiteSpeciesType> -- binding site definitions
  * - Species defined as <multi:speciesType> references
- * - Reactions reference rule patterns instead of concrete species
+ * - Core reactions reference Multi pattern species
+ * - Patterns that need a richer hierarchy remain core species names; the
+ *   modern importer reports those as non-executable instead of guessing.
  *
  * Reference:
  * - BNG2/bng2/Perl2/BNGOutput.pm::writeSBMLMulti()

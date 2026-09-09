@@ -312,6 +312,7 @@ class SBMLModel:
     multi_component_aliases: Mapping[str, Any] = field(default_factory=OrderedDict)
     multi_reaction_mappings: Mapping[str, Any] = field(default_factory=OrderedDict)
     multi_compartment_references: Mapping[str, Any] = field(default_factory=OrderedDict)
+    multi_numeric_values: Mapping[str, str] = field(default_factory=OrderedDict)
     multi_executable: bool = False
     import_warnings: List[Union[Dict[str, Any], SBMLImportWarning]] = field(
         default_factory=list
@@ -446,6 +447,7 @@ SBMLModel.multiTypePatterns = _alias_property("multi_type_patterns")
 SBMLModel.multiComponentAliases = _alias_property("multi_component_aliases")
 SBMLModel.multiReactionMappings = _alias_property("multi_reaction_mappings")
 SBMLModel.multiCompartmentReferences = _alias_property("multi_compartment_references")
+SBMLModel.multiNumericValues = _alias_property("multi_numeric_values")
 SBMLModel.multiExecutable = _alias_property("multi_executable")
 SBMLModel.importWarnings = _alias_property("import_warnings")
 

@@ -46,6 +46,8 @@ from .types import (
 )
 
 _PROTECTED_BUILTIN_OPERANDS = frozenset({"time", "_pi", "_e", "true", "false"})
+_MULTI_SUM_TOKEN = re.compile(r"__SBML_MULTI_SUM__([A-Za-z_][A-Za-z0-9_]*)__")
+_MULTI_NUMERIC_TOKEN = re.compile(r"__SBML_MULTI_NUMERIC__([A-Za-z_][A-Za-z0-9_]*)__")
 
 # Function identifiers and formal arguments have a narrower reserved-word
 # contract than general SBML/BNGL names.  Keep this aligned with the
@@ -1453,6 +1455,35 @@ def _prepared_kinetic_math(
         {},
         model.function_definitions,
     )
+
+    def replace_sum(match: re.Match[str]) -> str:
+        species_id = match.group(1)
+        if model.multi_executable and model.multi_species_patterns.get(species_id):
+            return f"__multi_sum_{standardize_name(species_id)}"
+        _record_import_warning(
+            model,
+            f'Multi sum representation for species "{species_id}" could not be '
+            "lowered to a BNGL pattern observable.",
+            category="package:multi",
+            severity="dropped",
+        )
+        return standardize_name(species_id)
+
+    def replace_numeric(match: re.Match[str]) -> str:
+        value_id = match.group(1)
+        parameter_id = model.multi_numeric_values.get(value_id)
+        if parameter_id:
+            return standardize_name(parameter_id)
+        _record_import_warning(
+            model,
+            f'Multi numericValue "{value_id}" has no referenced parameter.',
+            category="package:multi",
+            severity="dropped",
+        )
+        return standardize_name(value_id)
+
+    math_expression = _MULTI_SUM_TOKEN.sub(replace_sum, math_expression)
+    math_expression = _MULTI_NUMERIC_TOKEN.sub(replace_numeric, math_expression)
     kinetic_law = reaction.kinetic_law
     local_parameters = (
         kinetic_law.get("localParameters", [])
@@ -2346,6 +2377,17 @@ def write_observables(
         lines.append(f"Species {name}_amt {pattern} # {species_id} amount")
         lines.append(f"Species {name} {pattern} # {species_id}")
         observable_map[species_id] = name
+
+    sum_species_ids = {
+        match.group(1)
+        for reaction in model.reactions.values()
+        for match in _MULTI_SUM_TOKEN.finditer(get_kinetic_math(reaction.kinetic_law))
+    }
+    for species_id in sorted(sum_species_ids):
+        pattern = model.multi_species_patterns.get(species_id)
+        if not pattern:
+            continue
+        lines.append(f"Molecules __multi_sum_{standardize_name(species_id)} {pattern}")
 
     # A simple assignment rule such as ``total = A + 2 * B`` is a BNGL
     # observable, not a dynamic function.  Preserve this losslessly when all
