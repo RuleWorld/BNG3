@@ -234,6 +234,37 @@ end reaction rules
     return system;
 }
 
+std::unique_ptr<NFcore::System> compartmentScopedGlobalFunctionSystem() {
+    auto model = bng::parser::parseModel(R"(
+begin compartments
+ c1 3 1.0
+ c2 3 1.0
+end compartments
+begin molecule types
+ A()
+end molecule types
+begin seed species
+ @c1:A() 1
+ @c2:A() 1
+end seed species
+begin observables
+ Molecules atotal @c1:A()
+end observables
+begin functions
+ rate() = atotal
+end functions
+begin reaction rules
+ A() -> A() rate
+end reaction rules
+)");
+    REQUIRE(model);
+    int traversal = 0;
+    auto system = std::unique_ptr<NFcore::System>(
+        NFinput::buildSystemFromAst(*model, false, 100, false, traversal));
+    REQUIRE(system);
+    return system;
+}
+
 std::unique_ptr<NFcore::System> localFunctionProductSystem() {
     auto model = bng::parser::parseModel(R"BNGL(
 begin parameters
@@ -782,6 +813,20 @@ TEST_CASE("native NFcore2 reader evaluates state-constrained global observables"
     NFcore2::MatchContext context;
     CHECK(engine.evaluateRate(lowered.rules[0].family, lowered.rules[0].member,
                               context) == 2.0);
+}
+
+TEST_CASE("native NFcore2 reader preserves compartment-scoped global observables") {
+    auto system = compartmentScopedGlobalFunctionSystem();
+    const auto snapshot = NFcore2::snapshotLegacyNFsim(*system);
+    REQUIRE(snapshot.rules.size() == 1);
+    const auto& rule = snapshot.rules[0];
+    CHECK(rule.rate_law == NFcore2::NATIVE_RATE_EXPRESSION);
+    REQUIRE(rule.rate_expression_bindings.size() == 1);
+    const auto& binding = rule.rate_expression_bindings[0];
+    CHECK(binding.kind == NFcore2::NATIVE_RATE_EXPRESSION_GLOBAL_MOLECULE_COUNT);
+    CHECK(binding.molecule_type == 0);
+    CHECK(binding.compartment == NFcore2::nativeCompartmentId("c1"));
+    CHECK_FALSE(binding.compartment_ancestry);
 }
 
 TEST_CASE("native NFcore2 reader evaluates nested scoped local functions") {

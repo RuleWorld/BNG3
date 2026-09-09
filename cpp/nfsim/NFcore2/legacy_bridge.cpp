@@ -36,6 +36,16 @@ double RateLawDescriptor::evaluate(const SimulationState& state,
                 handle, static_cast<std::uint16_t>(binding.bond_component)).valid();
             return binding.bond_state == (occupied ? 1 : 0);
         };
+        const auto compartmentMatches = [&](const MoleculeStore& store,
+                                             MoleculeHandle handle,
+                                             const RateExpressionBinding& binding) {
+            if (binding.compartment == std::numeric_limits<std::uint32_t>::max())
+                return true;
+            const std::uint32_t actual = store.compartment(handle);
+            return binding.compartment_ancestry
+                ? state.model().compartmentInside(actual, binding.compartment)
+                : actual == binding.compartment;
+        };
         std::function<double(const std::string&, const std::vector<double>&)> resolveFunction;
         std::function<double(const std::string&)> resolve;
         resolveFunction = [&](const std::string& name,
@@ -94,7 +104,8 @@ double RateLawDescriptor::evaluate(const SimulationState& state,
                     const MoleculeStore& store = state.molecules(
                         MoleculeTypeId(binding.molecule_type));
                     if (binding.state_component == std::numeric_limits<std::uint32_t>::max() &&
-                        binding.bond_component == std::numeric_limits<std::uint32_t>::max())
+                        binding.bond_component == std::numeric_limits<std::uint32_t>::max() &&
+                        binding.compartment == std::numeric_limits<std::uint32_t>::max())
                         return static_cast<double>(store.liveCount());
                     if (binding.state_component > std::numeric_limits<std::uint16_t>::max() &&
                         binding.state_component != std::numeric_limits<std::uint32_t>::max())
@@ -105,7 +116,8 @@ double RateLawDescriptor::evaluate(const SimulationState& state,
                             std::numeric_limits<std::uint32_t>::max() ||
                             store.stateWord(handle, static_cast<std::uint16_t>(binding.state_component)) ==
                                 static_cast<std::uint64_t>(binding.state_value);
-                        if (state_match && bondMatches(store, handle, binding)) count += 1.0;
+                        if (state_match && bondMatches(store, handle, binding) &&
+                            compartmentMatches(store, handle, binding)) count += 1.0;
                     }
                     return count;
                 }
@@ -120,7 +132,8 @@ double RateLawDescriptor::evaluate(const SimulationState& state,
                                    (binding.state_component == std::numeric_limits<std::uint32_t>::max() ||
                                     store.stateWord(ref.handle, static_cast<std::uint16_t>(binding.state_component)) ==
                                         static_cast<std::uint64_t>(binding.state_value)) &&
-                                   bondMatches(store, ref.handle, binding) ? 1.0 : 0.0;
+                                   bondMatches(store, ref.handle, binding) &&
+                                   compartmentMatches(store, ref.handle, binding) ? 1.0 : 0.0;
                         }
                         if (binding.scope != 0)
                             throw std::invalid_argument("invalid scoped observable binding");
@@ -131,7 +144,8 @@ double RateLawDescriptor::evaluate(const SimulationState& state,
                                 (binding.state_component == std::numeric_limits<std::uint32_t>::max() ||
                                  store.stateWord(member.handle, static_cast<std::uint16_t>(binding.state_component)) ==
                                      static_cast<std::uint64_t>(binding.state_value)) &&
-                                bondMatches(store, member.handle, binding))
+                                bondMatches(store, member.handle, binding) &&
+                                compartmentMatches(store, member.handle, binding))
                                 count += 1.0;
                         }
                         return count;
@@ -322,6 +336,7 @@ std::string LegacyLowerer::transformSignature(const LegacyRuleIR& r) {
            << binding.component << ':' << binding.state_component << ':' << binding.state_value << ':'
            << binding.bond_component << ':' << binding.bond_state << ':'
            << binding.molecule_type << ':' << binding.scope << ':'
+           << binding.compartment << ':' << binding.compartment_ancestry << ':'
            << binding.destination_compartment << ':' << binding.value << ';';
     os << "functions:";
     for (const auto& function : r.rate_law.expression_functions) {

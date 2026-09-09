@@ -237,6 +237,8 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                 binding.bond_state = nativeBinding.bond_state;
                 binding.molecule_type = nativeBinding.molecule_type;
                 binding.scope = nativeBinding.scope;
+                binding.compartment = nativeBinding.compartment;
+                binding.compartment_ancestry = nativeBinding.compartment_ancestry;
                 binding.destination_compartment = nativeBinding.destination_compartment;
                 binding.value = nativeBinding.value;
                 if (binding.name.empty()) throw std::invalid_argument("expression binding name is empty");
@@ -277,6 +279,15 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                                 throw std::invalid_argument("scoped observable binding bond");
                         } else if (binding.bond_state != -1) {
                             throw std::invalid_argument("scoped observable binding bond component");
+                        }
+                        if (binding.compartment != std::numeric_limits<std::uint32_t>::max()) {
+                            bool known = false;
+                            for (const auto& compartment : source.compartments)
+                                if (compartment.id == binding.compartment) { known = true; break; }
+                            if (!known)
+                                throw std::out_of_range("scoped observable binding compartment");
+                        } else if (binding.compartment_ancestry) {
+                            throw std::invalid_argument("scoped observable binding compartment ancestry");
                         }
                     }
                     binding.kind = RATE_EXPRESSION_SPECIES_MOLECULE_COUNT;
@@ -320,6 +331,15 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                     } else if (binding.bond_state != -1) {
                         throw std::invalid_argument("global observable binding bond component");
                     }
+                    if (binding.compartment != std::numeric_limits<std::uint32_t>::max()) {
+                        bool known = false;
+                        for (const auto& compartment : source.compartments)
+                            if (compartment.id == binding.compartment) { known = true; break; }
+                        if (!known)
+                            throw std::out_of_range("global observable binding compartment");
+                    } else if (binding.compartment_ancestry) {
+                        throw std::invalid_argument("global observable binding compartment ancestry");
+                    }
                     binding.kind = RATE_EXPRESSION_GLOBAL_MOLECULE_COUNT;
                 } else {
                     throw std::invalid_argument("unknown expression binding kind");
@@ -335,6 +355,8 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                         prior.bond_state == binding.bond_state &&
                         prior.molecule_type == binding.molecule_type &&
                         prior.scope == binding.scope &&
+                        prior.compartment == binding.compartment &&
+                        prior.compartment_ancestry == binding.compartment_ancestry &&
                         prior.destination_compartment == binding.destination_compartment &&
                         prior.value == binding.value) {
                         alreadyPresent = true;

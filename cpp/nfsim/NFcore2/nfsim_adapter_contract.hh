@@ -95,6 +95,8 @@ struct NativeRateExpressionBindingSnapshot {
     // count contract when no type was supplied.
     std::uint32_t molecule_type;
     int scope;
+    std::uint32_t compartment;
+    bool compartment_ancestry;
     std::uint32_t destination_compartment;
     double value;
     NativeRateExpressionBindingSnapshot()
@@ -102,6 +104,7 @@ struct NativeRateExpressionBindingSnapshot {
           state_component(std::numeric_limits<std::uint32_t>::max()), state_value(-1),
           bond_component(std::numeric_limits<std::uint32_t>::max()), bond_state(-1),
           molecule_type(std::numeric_limits<std::uint32_t>::max()), scope(-1),
+          compartment(std::numeric_limits<std::uint32_t>::max()), compartment_ancestry(false),
           destination_compartment(std::numeric_limits<std::uint32_t>::max()), value(0.0) {}
     static NativeRateExpressionBindingSnapshot state(const std::string& name,
                                                      std::uint16_t reactant,

@@ -38,6 +38,8 @@ struct RateExpressionBinding {
     int bond_state;
     std::uint32_t molecule_type;
     int scope;
+    std::uint32_t compartment;
+    bool compartment_ancestry;
     std::uint32_t destination_compartment;
     double value;
     RateExpressionBinding()
@@ -45,6 +47,7 @@ struct RateExpressionBinding {
           state_component(std::numeric_limits<std::uint32_t>::max()), state_value(-1),
           bond_component(std::numeric_limits<std::uint32_t>::max()), bond_state(-1),
           molecule_type(std::numeric_limits<std::uint32_t>::max()), scope(-1),
+          compartment(std::numeric_limits<std::uint32_t>::max()), compartment_ancestry(false),
           destination_compartment(std::numeric_limits<std::uint32_t>::max()), value(0.0) {}
 
     static RateExpressionBinding constant(const std::string& binding_name, double constant_value) {

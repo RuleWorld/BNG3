@@ -638,6 +638,34 @@ TEST(NFsimAdapter_GeneralExpressionRateResolvesCompartmentVolume){
     EXPECT_NEAR(engine.evaluateRate(lowered.rules[0].family,lowered.rules[0].member,context),10.0,1e-12);
 }
 
+TEST(NFsimAdapter_GeneralExpressionRateFiltersGlobalObservableByCompartment){
+    NativeModelSnapshot n; n.molecule_types.push_back(mol("A",1));
+    NativeCompartmentSnapshot root; root.id=10; root.size=10.0;
+    NativeCompartmentSnapshot child; child.id=11; child.parent=root.id; child.size=5.0;
+    NativeCompartmentSnapshot other; other.id=12; other.size=5.0;
+    n.compartments={root,child,other};
+    NativeReactionSnapshot r=rxn(); r.base_rate=1.0; r.reactant_types.push_back(0);
+    r.rate_law=NATIVE_RATE_EXPRESSION; r.rate_expression="inside + root_count";
+    NativeRateExpressionBindingSnapshot inside;
+    inside.kind=NATIVE_RATE_EXPRESSION_GLOBAL_MOLECULE_COUNT;
+    inside.name="inside"; inside.molecule_type=0; inside.compartment=11;
+    NativeRateExpressionBindingSnapshot rootCount;
+    rootCount.kind=NATIVE_RATE_EXPRESSION_GLOBAL_MOLECULE_COUNT;
+    rootCount.name="root_count"; rootCount.molecule_type=0;
+    rootCount.compartment=root.id; rootCount.compartment_ancestry=true;
+    r.rate_expression_bindings={inside,rootCount}; n.rules.push_back(r);
+    LegacyLoweringResult lowered=LegacyLowerer::lower(NFsimSnapshotAdapter::toLegacy(n));
+    Engine engine(lowered.executable);
+    MoleculeHandle a=engine.state().molecules(MoleculeTypeId(0)).create();
+    MoleculeHandle b=engine.state().molecules(MoleculeTypeId(0)).create();
+    MoleculeHandle c=engine.state().molecules(MoleculeTypeId(0)).create();
+    engine.state().molecules(MoleculeTypeId(0)).setCompartment(a,11);
+    engine.state().molecules(MoleculeTypeId(0)).setCompartment(b,11);
+    engine.state().molecules(MoleculeTypeId(0)).setCompartment(c,12);
+    MatchContext context; context.setMoleculeAt(0,MoleculeRef(MoleculeTypeId(0),a));
+    EXPECT_NEAR(engine.evaluateRate(lowered.rules[0].family,lowered.rules[0].member,context),4.0,1e-12);
+}
+
 TEST(NFsimAdapter_GeneralExpressionRateResolvesTransportVolumeRatio){
     NativeModelSnapshot n;
     n.molecule_types.push_back(mol("A",1));

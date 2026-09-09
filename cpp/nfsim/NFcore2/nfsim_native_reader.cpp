@@ -49,7 +49,7 @@ bool appendSimpleScopedLocalFunction(System& system, LocalFunction* local,
             (!constraints.empty.empty() && !constraints.occupied.empty()) ||
             constraints.states.size() > 1 || !constraints.exclusions.empty() ||
             !constraints.bonds.empty() || !constraints.symmetric.empty() ||
-            !constraints.connected_to.empty() || !constraints.compartment.empty()) {
+            !constraints.connected_to.empty()) {
             return false;
         }
         NativeRateExpressionBindingSnapshot binding;
@@ -74,6 +74,8 @@ bool appendSimpleScopedLocalFunction(System& system, LocalFunction* local,
             binding.bond_component = static_cast<std::uint32_t>(constraints.occupied.front());
             binding.bond_state = TemplateMolecule::OCCUPIED;
         }
+        if (!constraints.compartment.empty())
+            binding.compartment = nativeCompartmentId(constraints.compartment);
         candidate.rate_expression_bindings.push_back(binding);
     }
     for (int i = 0; i < local->getNumOfParams(); ++i) {
@@ -116,7 +118,7 @@ bool appendSimpleGlobalFunction(System& system, GlobalFunction* global,
             (!constraints.empty.empty() && !constraints.occupied.empty()) ||
             constraints.states.size() > 1 || !constraints.exclusions.empty() ||
             !constraints.bonds.empty() || !constraints.symmetric.empty() ||
-            !constraints.connected_to.empty() || !constraints.compartment.empty())
+            !constraints.connected_to.empty())
             return false;
         NativeRateExpressionBindingSnapshot binding;
         binding.kind = NATIVE_RATE_EXPRESSION_GLOBAL_MOLECULE_COUNT;
@@ -138,6 +140,8 @@ bool appendSimpleGlobalFunction(System& system, GlobalFunction* global,
             binding.bond_component = static_cast<std::uint32_t>(constraints.occupied.front());
             binding.bond_state = TemplateMolecule::OCCUPIED;
         }
+        if (!constraints.compartment.empty())
+            binding.compartment = nativeCompartmentId(constraints.compartment);
         candidate.rate_expression_bindings.push_back(binding);
     }
     for (int i = 0; i < global->getNumOfParams(); ++i) {
@@ -248,7 +252,7 @@ bool appendScopedObservableBinding(System& system, Observable* observable,
         (!constraints.empty.empty() && !constraints.occupied.empty()) ||
         constraints.states.size() > 1 || !constraints.exclusions.empty() ||
         !constraints.bonds.empty() || !constraints.symmetric.empty() ||
-        !constraints.connected_to.empty() || !constraints.compartment.empty()) {
+        !constraints.connected_to.empty()) {
         return false;
     }
     NativeRateExpressionBindingSnapshot binding;
@@ -273,6 +277,8 @@ bool appendScopedObservableBinding(System& system, Observable* observable,
         binding.bond_component = static_cast<std::uint32_t>(constraints.occupied.front());
         binding.bond_state = TemplateMolecule::OCCUPIED;
     }
+    if (!constraints.compartment.empty())
+        binding.compartment = nativeCompartmentId(constraints.compartment);
     return appendExpressionBinding(header, binding);
 }
 
@@ -360,7 +366,7 @@ bool appendGlobalFunctionDefinition(System& system, GlobalFunction* global,
             (!constraints.empty.empty() && !constraints.occupied.empty()) ||
             constraints.states.size() > 1 || !constraints.exclusions.empty() ||
             !constraints.bonds.empty() || !constraints.symmetric.empty() ||
-            !constraints.connected_to.empty() || !constraints.compartment.empty()) {
+            !constraints.connected_to.empty()) {
             visiting.erase(global->getName());
             return false;
         }
@@ -392,6 +398,8 @@ bool appendGlobalFunctionDefinition(System& system, GlobalFunction* global,
             binding.bond_component = static_cast<std::uint32_t>(constraints.occupied.front());
             binding.bond_state = TemplateMolecule::OCCUPIED;
         }
+        if (!constraints.compartment.empty())
+            binding.compartment = nativeCompartmentId(constraints.compartment);
         if (!appendExpressionBinding(header, binding)) {
             visiting.erase(global->getName());
             return false;

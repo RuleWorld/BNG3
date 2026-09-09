@@ -654,6 +654,7 @@ TEST(ModelImage_RoundTripCompartmentGraphAndExpressionMetadata){
     RateExpressionBinding scoped; scoped.kind=RATE_EXPRESSION_SPECIES_MOLECULE_COUNT;
     scoped.name="atotal_1"; scoped.target=0; scoped.molecule_type=1; scoped.scope=0;
     scoped.state_component=0; scoped.state_value=1; scoped.bond_component=0; scoped.bond_state=0;
+    scoped.compartment=11; scoped.compartment_ancestry=true;
     member.rate_law.expression_bindings.push_back(scoped);
     RateExpressionBinding volume; volume.kind=RATE_EXPRESSION_COMPARTMENT_VOLUME; volume.name="vol"; volume.target=0;
     member.rate_law.expression_bindings.push_back(volume);
@@ -692,6 +693,8 @@ TEST(ModelImage_RoundTripCompartmentGraphAndExpressionMetadata){
     EXPECT_EQ(restoredMember.rate_law.expression_bindings[2].state_value,1);
     EXPECT_EQ(restoredMember.rate_law.expression_bindings[2].bond_component,0u);
     EXPECT_EQ(restoredMember.rate_law.expression_bindings[2].bond_state,0);
+    EXPECT_EQ(restoredMember.rate_law.expression_bindings[2].compartment,11u);
+    EXPECT_TRUE(restoredMember.rate_law.expression_bindings[2].compartment_ancestry);
     EXPECT_EQ(restoredMember.rate_law.expression_bindings[3].kind,RATE_EXPRESSION_COMPARTMENT_VOLUME);
     EXPECT_EQ(restoredMember.rate_law.expression_bindings[3].target,0u);
     EXPECT_EQ(restoredMember.rate_law.expression_bindings[4].kind,RATE_EXPRESSION_TRANSPORT_VOLUME_RATIO);
