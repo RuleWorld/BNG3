@@ -32,12 +32,18 @@ struct RateExpressionBinding {
     std::string name;
     std::uint16_t target;
     std::uint32_t component;
+    std::uint32_t state_component;
+    int state_value;
+    std::uint32_t bond_component;
+    int bond_state;
     std::uint32_t molecule_type;
     int scope;
     std::uint32_t destination_compartment;
     double value;
     RateExpressionBinding()
         : kind(RATE_EXPRESSION_CONSTANT), target(0), component(0),
+          state_component(std::numeric_limits<std::uint32_t>::max()), state_value(-1),
+          bond_component(std::numeric_limits<std::uint32_t>::max()), bond_state(-1),
           molecule_type(std::numeric_limits<std::uint32_t>::max()), scope(-1),
           destination_compartment(std::numeric_limits<std::uint32_t>::max()), value(0.0) {}
 

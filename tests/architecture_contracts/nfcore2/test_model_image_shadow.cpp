@@ -653,6 +653,7 @@ TEST(ModelImage_RoundTripCompartmentGraphAndExpressionMetadata){
     member.rate_law.expression_bindings.push_back(count);
     RateExpressionBinding scoped; scoped.kind=RATE_EXPRESSION_SPECIES_MOLECULE_COUNT;
     scoped.name="atotal_1"; scoped.target=0; scoped.molecule_type=1; scoped.scope=0;
+    scoped.state_component=0; scoped.state_value=1; scoped.bond_component=0; scoped.bond_state=0;
     member.rate_law.expression_bindings.push_back(scoped);
     RateExpressionBinding volume; volume.kind=RATE_EXPRESSION_COMPARTMENT_VOLUME; volume.name="vol"; volume.target=0;
     member.rate_law.expression_bindings.push_back(volume);
@@ -661,6 +662,7 @@ TEST(ModelImage_RoundTripCompartmentGraphAndExpressionMetadata){
     member.rate_law.expression_bindings.push_back(transport);
     RateExpressionBinding global; global.kind=RATE_EXPRESSION_GLOBAL_MOLECULE_COUNT;
     global.name="global"; global.molecule_type=1;
+    global.state_component=0; global.state_value=1; global.bond_component=0; global.bond_state=1;
     member.rate_law.expression_bindings.push_back(global);
     family.members.push_back(member); e.buildMetadata().addRuleFamily(family);
     e.buildMetadata().setFeatureDependencies(std::vector<std::vector<MatcherId> >());
@@ -686,6 +688,10 @@ TEST(ModelImage_RoundTripCompartmentGraphAndExpressionMetadata){
     EXPECT_EQ(restoredMember.rate_law.expression_bindings[2].target,0u);
     EXPECT_EQ(restoredMember.rate_law.expression_bindings[2].molecule_type,1u);
     EXPECT_EQ(restoredMember.rate_law.expression_bindings[2].scope,0);
+    EXPECT_EQ(restoredMember.rate_law.expression_bindings[2].state_component,0u);
+    EXPECT_EQ(restoredMember.rate_law.expression_bindings[2].state_value,1);
+    EXPECT_EQ(restoredMember.rate_law.expression_bindings[2].bond_component,0u);
+    EXPECT_EQ(restoredMember.rate_law.expression_bindings[2].bond_state,0);
     EXPECT_EQ(restoredMember.rate_law.expression_bindings[3].kind,RATE_EXPRESSION_COMPARTMENT_VOLUME);
     EXPECT_EQ(restoredMember.rate_law.expression_bindings[3].target,0u);
     EXPECT_EQ(restoredMember.rate_law.expression_bindings[4].kind,RATE_EXPRESSION_TRANSPORT_VOLUME_RATIO);
@@ -693,4 +699,8 @@ TEST(ModelImage_RoundTripCompartmentGraphAndExpressionMetadata){
     EXPECT_EQ(restoredMember.rate_law.expression_bindings[4].destination_compartment,11u);
     EXPECT_EQ(restoredMember.rate_law.expression_bindings[5].kind,RATE_EXPRESSION_GLOBAL_MOLECULE_COUNT);
     EXPECT_EQ(restoredMember.rate_law.expression_bindings[5].molecule_type,1u);
+    EXPECT_EQ(restoredMember.rate_law.expression_bindings[5].state_component,0u);
+    EXPECT_EQ(restoredMember.rate_law.expression_bindings[5].state_value,1);
+    EXPECT_EQ(restoredMember.rate_law.expression_bindings[5].bond_component,0u);
+    EXPECT_EQ(restoredMember.rate_law.expression_bindings[5].bond_state,1);
 }

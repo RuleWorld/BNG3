@@ -23,6 +23,19 @@ double RateLawDescriptor::evaluate(const SimulationState& state,
     if (kind == LEGACY_RATE_EXPRESSION) {
         if (expression.empty()) throw std::invalid_argument("empty expression rate law");
         const auto parsed = bng::parser::parseExpression(expression);
+        const auto bondMatches = [&](const MoleculeStore& store,
+                                     MoleculeHandle handle,
+                                     const RateExpressionBinding& binding) {
+            if (binding.bond_component == std::numeric_limits<std::uint32_t>::max())
+                return true;
+            if (binding.bond_component > std::numeric_limits<std::uint16_t>::max() ||
+                binding.bond_state < 0 || binding.bond_state > 1 ||
+                binding.bond_component >= store.bondSlotCount())
+                throw std::out_of_range("expression binding bond component");
+            const bool occupied = store.bondRef(
+                handle, static_cast<std::uint16_t>(binding.bond_component)).valid();
+            return binding.bond_state == (occupied ? 1 : 0);
+        };
         std::function<double(const std::string&, const std::vector<double>&)> resolveFunction;
         std::function<double(const std::string&)> resolve;
         resolveFunction = [&](const std::string& name,
@@ -78,21 +91,49 @@ double RateLawDescriptor::evaluate(const SimulationState& state,
                 if (binding.kind == RATE_EXPRESSION_GLOBAL_MOLECULE_COUNT) {
                     if (binding.molecule_type >= state.model().moleculeTypes().size())
                         throw std::out_of_range("global observable molecule type");
-                    return static_cast<double>(state.molecules(
-                        MoleculeTypeId(binding.molecule_type)).liveCount());
+                    const MoleculeStore& store = state.molecules(
+                        MoleculeTypeId(binding.molecule_type));
+                    if (binding.state_component == std::numeric_limits<std::uint32_t>::max() &&
+                        binding.bond_component == std::numeric_limits<std::uint32_t>::max())
+                        return static_cast<double>(store.liveCount());
+                    if (binding.state_component > std::numeric_limits<std::uint16_t>::max() &&
+                        binding.state_component != std::numeric_limits<std::uint32_t>::max())
+                        throw std::out_of_range("global observable state component");
+                    double count = 0.0;
+                    for (const auto handle : store.liveHandles()) {
+                        const bool state_match = binding.state_component ==
+                            std::numeric_limits<std::uint32_t>::max() ||
+                            store.stateWord(handle, static_cast<std::uint16_t>(binding.state_component)) ==
+                                static_cast<std::uint64_t>(binding.state_value);
+                        if (state_match && bondMatches(store, handle, binding)) count += 1.0;
+                    }
+                    return count;
                 }
                 const MoleculeRef ref = context.moleculeAt(binding.target);
                 if (!ref.valid()) throw std::out_of_range("expression binding reactant missing");
                 if (binding.kind == RATE_EXPRESSION_SPECIES_MOLECULE_COUNT) {
                     const std::vector<MoleculeRef> members = state.connectedComponent(ref);
                     if (binding.molecule_type != std::numeric_limits<std::uint32_t>::max()) {
-                        if (binding.scope == 1)
-                            return ref.type.value() == binding.molecule_type ? 1.0 : 0.0;
+                        if (binding.scope == 1) {
+                            const MoleculeStore& store = state.molecules(ref.type);
+                            return ref.type.value() == binding.molecule_type &&
+                                   (binding.state_component == std::numeric_limits<std::uint32_t>::max() ||
+                                    store.stateWord(ref.handle, static_cast<std::uint16_t>(binding.state_component)) ==
+                                        static_cast<std::uint64_t>(binding.state_value)) &&
+                                   bondMatches(store, ref.handle, binding) ? 1.0 : 0.0;
+                        }
                         if (binding.scope != 0)
                             throw std::invalid_argument("invalid scoped observable binding");
                         double count = 0.0;
-                        for (const auto& member : members)
-                            if (member.type.value() == binding.molecule_type) count += 1.0;
+                        for (const auto& member : members) {
+                            const MoleculeStore& store = state.molecules(member.type);
+                            if (member.type.value() == binding.molecule_type &&
+                                (binding.state_component == std::numeric_limits<std::uint32_t>::max() ||
+                                 store.stateWord(member.handle, static_cast<std::uint16_t>(binding.state_component)) ==
+                                     static_cast<std::uint64_t>(binding.state_value)) &&
+                                bondMatches(store, member.handle, binding))
+                                count += 1.0;
+                        }
                         return count;
                     }
                     return static_cast<double>(members.size());
@@ -278,7 +319,9 @@ std::string LegacyLowerer::transformSignature(const LegacyRuleIR& r) {
     os << ':';
     for (const auto& binding : r.rate_law.expression_bindings)
         os << static_cast<int>(binding.kind) << ':' << binding.name << ':' << binding.target << ':'
-           << binding.component << ':' << binding.molecule_type << ':' << binding.scope << ':'
+           << binding.component << ':' << binding.state_component << ':' << binding.state_value << ':'
+           << binding.bond_component << ':' << binding.bond_state << ':'
+           << binding.molecule_type << ':' << binding.scope << ':'
            << binding.destination_compartment << ':' << binding.value << ';';
     os << "functions:";
     for (const auto& function : r.rate_law.expression_functions) {

@@ -173,6 +173,67 @@ end reaction rules
     return system;
 }
 
+std::unique_ptr<NFcore::System> stateScopedLocalFunctionSystem() {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+ k 2.0
+end parameters
+begin molecule types
+ A(s~U~P)
+ C()
+end molecule types
+begin seed species
+ A(s~P) 1
+end seed species
+begin observables
+ Molecules active A(s~P)
+end observables
+begin functions
+ f(x) = k*active(x)
+end functions
+begin reaction rules
+ %x::A(s~P) -> %x::A(s~P) + C() f(x)
+end reaction rules
+)");
+    REQUIRE(model);
+    int traversal = 0;
+    auto system = std::unique_ptr<NFcore::System>(
+        NFinput::buildSystemFromAst(*model, false, 100, false, traversal));
+    REQUIRE(system);
+    return system;
+}
+
+std::unique_ptr<NFcore::System> stateScopedGlobalFunctionSystem() {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+ k 2.0
+end parameters
+begin molecule types
+ A(s~U~P)
+ C()
+end molecule types
+begin seed species
+ A(s~P) 1
+ A(s~U) 1
+end seed species
+begin observables
+ Molecules active A(s~P)
+end observables
+begin functions
+ rate() = k*active
+end functions
+begin reaction rules
+ A(s~P) -> A(s~P) + C() rate
+end reaction rules
+)");
+    REQUIRE(model);
+    int traversal = 0;
+    auto system = std::unique_ptr<NFcore::System>(
+        NFinput::buildSystemFromAst(*model, false, 100, false, traversal));
+    REQUIRE(system);
+    return system;
+}
+
 std::unique_ptr<NFcore::System> localFunctionProductSystem() {
     auto model = bng::parser::parseModel(R"BNGL(
 begin parameters
@@ -661,6 +722,66 @@ TEST_CASE("native NFcore2 reader lowers a simple scoped local function descripto
     const auto lowered = NFcore2::lowerLegacyNFsim(*system);
     CHECK(lowered.supported_rule_count == 1);
     CHECK(lowered.fallback_rule_count == 0);
+}
+
+TEST_CASE("native NFcore2 reader evaluates state-constrained scoped observables") {
+    auto system = stateScopedLocalFunctionSystem();
+    const auto snapshot = NFcore2::snapshotLegacyNFsim(*system);
+    REQUIRE(snapshot.rules.size() == 1);
+    CHECK_FALSE(snapshot.rules[0].uses_local_function);
+    const auto observable = std::find_if(
+        snapshot.rules[0].rate_expression_bindings.begin(),
+        snapshot.rules[0].rate_expression_bindings.end(),
+        [](const auto& binding) {
+            return binding.kind == NFcore2::NATIVE_RATE_EXPRESSION_SPECIES_MOLECULE_COUNT;
+        });
+    REQUIRE(observable != snapshot.rules[0].rate_expression_bindings.end());
+    CHECK(observable->state_value == 1);
+    const auto lowered = NFcore2::lowerLegacyNFsim(*system);
+    CHECK(lowered.supported_rule_count == 1);
+    CHECK(lowered.fallback_rule_count == 0);
+    NFcore2::Engine engine(lowered.executable);
+    const auto molecule = engine.state().molecules(NFcore2::MoleculeTypeId(0)).create();
+    engine.state().molecules(NFcore2::MoleculeTypeId(0)).setStateWord(molecule, 0, 1);
+    NFcore2::MatchContext context;
+    context.setMoleculeAt(0, NFcore2::MoleculeRef(
+        NFcore2::MoleculeTypeId(0), molecule));
+    CHECK(engine.evaluateRate(lowered.rules[0].family, lowered.rules[0].member,
+                               context) == 2.0);
+}
+
+TEST_CASE("native NFcore2 reader evaluates state-constrained global observables") {
+    auto system = stateScopedGlobalFunctionSystem();
+    const auto snapshot = NFcore2::snapshotLegacyNFsim(*system);
+    REQUIRE(snapshot.rules.size() == 1);
+    CHECK_FALSE(snapshot.rules[0].uses_local_function);
+    const auto observable = std::find_if(
+        snapshot.rules[0].rate_expression_bindings.begin(),
+        snapshot.rules[0].rate_expression_bindings.end(),
+        [](const auto& binding) {
+            return binding.kind == NFcore2::NATIVE_RATE_EXPRESSION_GLOBAL_MOLECULE_COUNT;
+        });
+    REQUIRE(observable != snapshot.rules[0].rate_expression_bindings.end());
+    CHECK(observable->state_value == 1);
+    const auto lowered = NFcore2::lowerLegacyNFsim(*system);
+    CHECK(lowered.supported_rule_count == 1);
+    CHECK(lowered.fallback_rule_count == 0);
+    NFcore2::Engine engine(lowered.executable);
+    const auto p = engine.state().molecules(NFcore2::MoleculeTypeId(0)).create();
+    const auto u = engine.state().molecules(NFcore2::MoleculeTypeId(0)).create();
+    const auto bound = engine.state().molecules(NFcore2::MoleculeTypeId(0)).create();
+    const auto partner = engine.state().molecules(NFcore2::MoleculeTypeId(0)).create();
+    engine.state().molecules(NFcore2::MoleculeTypeId(0)).setStateWord(p, 0, 1);
+    engine.state().molecules(NFcore2::MoleculeTypeId(0)).setStateWord(u, 0, 0);
+    engine.state().molecules(NFcore2::MoleculeTypeId(0)).setStateWord(bound, 0, 1);
+    engine.state().molecules(NFcore2::MoleculeTypeId(0)).setStateWord(partner, 0, 0);
+    engine.state().molecules(NFcore2::MoleculeTypeId(0)).setBondRef(
+        bound, 0, NFcore2::MoleculeRef(NFcore2::MoleculeTypeId(0), partner));
+    engine.state().molecules(NFcore2::MoleculeTypeId(0)).setBondRef(
+        partner, 0, NFcore2::MoleculeRef(NFcore2::MoleculeTypeId(0), bound));
+    NFcore2::MatchContext context;
+    CHECK(engine.evaluateRate(lowered.rules[0].family, lowered.rules[0].member,
+                              context) == 2.0);
 }
 
 TEST_CASE("native NFcore2 reader evaluates nested scoped local functions") {

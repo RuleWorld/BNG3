@@ -231,6 +231,10 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                 binding.name = nativeBinding.name;
                 binding.target = nativeBinding.reactant;
                 binding.component = nativeBinding.component;
+                binding.state_component = nativeBinding.state_component;
+                binding.state_value = nativeBinding.state_value;
+                binding.bond_component = nativeBinding.bond_component;
+                binding.bond_state = nativeBinding.bond_state;
                 binding.molecule_type = nativeBinding.molecule_type;
                 binding.scope = nativeBinding.scope;
                 binding.destination_compartment = nativeBinding.destination_compartment;
@@ -262,6 +266,18 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                             throw std::invalid_argument("scoped observable binding molecule type");
                         if (binding.scope != 0 && binding.scope != 1)
                             throw std::invalid_argument("scoped observable binding scope");
+                        if (binding.state_component != std::numeric_limits<std::uint32_t>::max()) {
+                            if (binding.state_component >= source.molecule_types[binding.molecule_type].component_count ||
+                                binding.state_value < 0)
+                                throw std::invalid_argument("scoped observable binding state");
+                        }
+                        if (binding.bond_component != std::numeric_limits<std::uint32_t>::max()) {
+                            if (binding.bond_component >= source.molecule_types[binding.molecule_type].component_count ||
+                                (binding.bond_state != 0 && binding.bond_state != 1))
+                                throw std::invalid_argument("scoped observable binding bond");
+                        } else if (binding.bond_state != -1) {
+                            throw std::invalid_argument("scoped observable binding bond component");
+                        }
                     }
                     binding.kind = RATE_EXPRESSION_SPECIES_MOLECULE_COUNT;
                 } else if (nativeBinding.kind == NATIVE_RATE_EXPRESSION_COMPARTMENT_VOLUME) {
@@ -293,6 +309,17 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                     if (binding.molecule_type >= source.molecule_types.size() ||
                         source.molecule_types[binding.molecule_type].population)
                         throw std::invalid_argument("global observable molecule type");
+                    if (binding.state_component != std::numeric_limits<std::uint32_t>::max() &&
+                        (binding.state_component >= source.molecule_types[binding.molecule_type].component_count ||
+                         binding.state_value < 0))
+                        throw std::invalid_argument("global observable binding state");
+                    if (binding.bond_component != std::numeric_limits<std::uint32_t>::max()) {
+                        if (binding.bond_component >= source.molecule_types[binding.molecule_type].component_count ||
+                            (binding.bond_state != 0 && binding.bond_state != 1))
+                            throw std::invalid_argument("global observable binding bond");
+                    } else if (binding.bond_state != -1) {
+                        throw std::invalid_argument("global observable binding bond component");
+                    }
                     binding.kind = RATE_EXPRESSION_GLOBAL_MOLECULE_COUNT;
                 } else {
                     throw std::invalid_argument("unknown expression binding kind");
@@ -302,6 +329,10 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                     if (prior.name != binding.name) continue;
                     if (prior.kind == binding.kind && prior.target == binding.target &&
                         prior.component == binding.component &&
+                        prior.state_component == binding.state_component &&
+                        prior.state_value == binding.state_value &&
+                        prior.bond_component == binding.bond_component &&
+                        prior.bond_state == binding.bond_state &&
                         prior.molecule_type == binding.molecule_type &&
                         prior.scope == binding.scope &&
                         prior.destination_compartment == binding.destination_compartment &&

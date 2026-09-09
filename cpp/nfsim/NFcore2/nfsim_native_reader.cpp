@@ -45,11 +45,13 @@ bool appendSimpleScopedLocalFunction(System& system, LocalFunction* local,
             return false;
         TemplateMolecule::RootLocalConstraints constraints;
         if (!templates[0]->collectRootLocalConstraints(constraints) ||
-            !constraints.empty.empty() || !constraints.occupied.empty() ||
-            !constraints.states.empty() || !constraints.exclusions.empty() ||
+            constraints.empty.size() > 1 || constraints.occupied.size() > 1 ||
+            (!constraints.empty.empty() && !constraints.occupied.empty()) ||
+            constraints.states.size() > 1 || !constraints.exclusions.empty() ||
             !constraints.bonds.empty() || !constraints.symmetric.empty() ||
-            !constraints.connected_to.empty() || !constraints.compartment.empty())
+            !constraints.connected_to.empty() || !constraints.compartment.empty()) {
             return false;
+        }
         NativeRateExpressionBindingSnapshot binding;
         binding.kind = NATIVE_RATE_EXPRESSION_SPECIES_MOLECULE_COUNT;
         binding.name = local->getVarRefName(i);
@@ -57,6 +59,21 @@ bool appendSimpleScopedLocalFunction(System& system, LocalFunction* local,
         binding.molecule_type = static_cast<std::uint32_t>(
             templates[0]->getMoleculeType()->getTypeID());
         binding.scope = scope;
+        if (!constraints.states.empty()) {
+            if (constraints.states.front().first < 0 || constraints.states.front().second < 0)
+                return false;
+            binding.state_component = static_cast<std::uint32_t>(constraints.states.front().first);
+            binding.state_value = constraints.states.front().second;
+        }
+        if (constraints.empty.size() == 1) {
+            if (constraints.empty.front() < 0) return false;
+            binding.bond_component = static_cast<std::uint32_t>(constraints.empty.front());
+            binding.bond_state = TemplateMolecule::EMPTY;
+        } else if (constraints.occupied.size() == 1) {
+            if (constraints.occupied.front() < 0) return false;
+            binding.bond_component = static_cast<std::uint32_t>(constraints.occupied.front());
+            binding.bond_state = TemplateMolecule::OCCUPIED;
+        }
         candidate.rate_expression_bindings.push_back(binding);
     }
     for (int i = 0; i < local->getNumOfParams(); ++i) {
@@ -95,8 +112,9 @@ bool appendSimpleGlobalFunction(System& system, GlobalFunction* global,
             return false;
         TemplateMolecule::RootLocalConstraints constraints;
         if (!templates[0]->collectRootLocalConstraints(constraints) ||
-            !constraints.empty.empty() || !constraints.occupied.empty() ||
-            !constraints.states.empty() || !constraints.exclusions.empty() ||
+            constraints.empty.size() > 1 || constraints.occupied.size() > 1 ||
+            (!constraints.empty.empty() && !constraints.occupied.empty()) ||
+            constraints.states.size() > 1 || !constraints.exclusions.empty() ||
             !constraints.bonds.empty() || !constraints.symmetric.empty() ||
             !constraints.connected_to.empty() || !constraints.compartment.empty())
             return false;
@@ -105,6 +123,21 @@ bool appendSimpleGlobalFunction(System& system, GlobalFunction* global,
         binding.name = global->getVarRefName(i);
         binding.molecule_type = static_cast<std::uint32_t>(
             templates[0]->getMoleculeType()->getTypeID());
+        if (!constraints.states.empty()) {
+            if (constraints.states.front().first < 0 || constraints.states.front().second < 0)
+                return false;
+            binding.state_component = static_cast<std::uint32_t>(constraints.states.front().first);
+            binding.state_value = constraints.states.front().second;
+        }
+        if (constraints.empty.size() == 1) {
+            if (constraints.empty.front() < 0) return false;
+            binding.bond_component = static_cast<std::uint32_t>(constraints.empty.front());
+            binding.bond_state = TemplateMolecule::EMPTY;
+        } else if (constraints.occupied.size() == 1) {
+            if (constraints.occupied.front() < 0) return false;
+            binding.bond_component = static_cast<std::uint32_t>(constraints.occupied.front());
+            binding.bond_state = TemplateMolecule::OCCUPIED;
+        }
         candidate.rate_expression_bindings.push_back(binding);
     }
     for (int i = 0; i < global->getNumOfParams(); ++i) {
@@ -133,6 +166,10 @@ bool mergeSimpleScopedLocalFunctions(const NativeReactionHeader& first,
             if (prior.name != binding.name) continue;
             if (prior.kind != binding.kind || prior.reactant != binding.reactant ||
                 prior.component != binding.component ||
+                prior.state_component != binding.state_component ||
+                prior.state_value != binding.state_value ||
+                prior.bond_component != binding.bond_component ||
+                prior.bond_state != binding.bond_state ||
                 prior.molecule_type != binding.molecule_type ||
                 prior.scope != binding.scope ||
                 prior.destination_compartment != binding.destination_compartment ||
@@ -179,6 +216,10 @@ bool appendExpressionBinding(NativeReactionHeader& header,
         if (prior.name != binding.name) continue;
         return prior.kind == binding.kind && prior.reactant == binding.reactant &&
                prior.component == binding.component &&
+               prior.state_component == binding.state_component &&
+               prior.state_value == binding.state_value &&
+               prior.bond_component == binding.bond_component &&
+               prior.bond_state == binding.bond_state &&
                prior.molecule_type == binding.molecule_type &&
                prior.scope == binding.scope &&
                prior.destination_compartment == binding.destination_compartment &&
@@ -203,11 +244,13 @@ bool appendScopedObservableBinding(System& system, Observable* observable,
         return false;
     TemplateMolecule::RootLocalConstraints constraints;
     if (!templates[0]->collectRootLocalConstraints(constraints) ||
-        !constraints.empty.empty() || !constraints.occupied.empty() ||
-        !constraints.states.empty() || !constraints.exclusions.empty() ||
+        constraints.empty.size() > 1 || constraints.occupied.size() > 1 ||
+        (!constraints.empty.empty() && !constraints.occupied.empty()) ||
+        constraints.states.size() > 1 || !constraints.exclusions.empty() ||
         !constraints.bonds.empty() || !constraints.symmetric.empty() ||
-        !constraints.connected_to.empty() || !constraints.compartment.empty())
+        !constraints.connected_to.empty() || !constraints.compartment.empty()) {
         return false;
+    }
     NativeRateExpressionBindingSnapshot binding;
     binding.kind = NATIVE_RATE_EXPRESSION_SPECIES_MOLECULE_COUNT;
     binding.name = name;
@@ -215,6 +258,21 @@ bool appendScopedObservableBinding(System& system, Observable* observable,
     binding.molecule_type = static_cast<std::uint32_t>(
         templates[0]->getMoleculeType()->getTypeID());
     binding.scope = scope;
+    if (!constraints.states.empty()) {
+        if (constraints.states.front().first < 0 || constraints.states.front().second < 0)
+            return false;
+        binding.state_component = static_cast<std::uint32_t>(constraints.states.front().first);
+        binding.state_value = constraints.states.front().second;
+    }
+    if (constraints.empty.size() == 1) {
+        if (constraints.empty.front() < 0) return false;
+        binding.bond_component = static_cast<std::uint32_t>(constraints.empty.front());
+        binding.bond_state = TemplateMolecule::EMPTY;
+    } else if (constraints.occupied.size() == 1) {
+        if (constraints.occupied.front() < 0) return false;
+        binding.bond_component = static_cast<std::uint32_t>(constraints.occupied.front());
+        binding.bond_state = TemplateMolecule::OCCUPIED;
+    }
     return appendExpressionBinding(header, binding);
 }
 
@@ -298,8 +356,9 @@ bool appendGlobalFunctionDefinition(System& system, GlobalFunction* global,
         }
         TemplateMolecule::RootLocalConstraints constraints;
         if (!templates[0]->collectRootLocalConstraints(constraints) ||
-            !constraints.empty.empty() || !constraints.occupied.empty() ||
-            !constraints.states.empty() || !constraints.exclusions.empty() ||
+            constraints.empty.size() > 1 || constraints.occupied.size() > 1 ||
+            (!constraints.empty.empty() && !constraints.occupied.empty()) ||
+            constraints.states.size() > 1 || !constraints.exclusions.empty() ||
             !constraints.bonds.empty() || !constraints.symmetric.empty() ||
             !constraints.connected_to.empty() || !constraints.compartment.empty()) {
             visiting.erase(global->getName());
@@ -310,6 +369,29 @@ bool appendGlobalFunctionDefinition(System& system, GlobalFunction* global,
         binding.name = global->getVarRefName(i);
         binding.molecule_type = static_cast<std::uint32_t>(
             templates[0]->getMoleculeType()->getTypeID());
+        if (!constraints.states.empty()) {
+            if (constraints.states.front().first < 0 || constraints.states.front().second < 0) {
+                visiting.erase(global->getName());
+                return false;
+            }
+            binding.state_component = static_cast<std::uint32_t>(constraints.states.front().first);
+            binding.state_value = constraints.states.front().second;
+        }
+        if (constraints.empty.size() == 1) {
+            if (constraints.empty.front() < 0) {
+                visiting.erase(global->getName());
+                return false;
+            }
+            binding.bond_component = static_cast<std::uint32_t>(constraints.empty.front());
+            binding.bond_state = TemplateMolecule::EMPTY;
+        } else if (constraints.occupied.size() == 1) {
+            if (constraints.occupied.front() < 0) {
+                visiting.erase(global->getName());
+                return false;
+            }
+            binding.bond_component = static_cast<std::uint32_t>(constraints.occupied.front());
+            binding.bond_state = TemplateMolecule::OCCUPIED;
+        }
         if (!appendExpressionBinding(header, binding)) {
             visiting.erase(global->getName());
             return false;
