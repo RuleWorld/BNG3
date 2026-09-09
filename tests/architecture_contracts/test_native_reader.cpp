@@ -744,6 +744,38 @@ TEST_CASE("native NFcore2 reader captures complete species deletion") {
     CHECK_FALSE(engine.state().molecules(NFcore2::MoleculeTypeId(0)).alive(molecule));
 }
 
+TEST_CASE("native NFcore2 reader preserves implicit conditional deletion") {
+    auto system = systemFor("conditional: A(s~U,b!1).B(a!1) -> B(a) 1");
+    const auto snapshot = NFcore2::snapshotLegacyNFsim(*system);
+    REQUIRE(snapshot.rules.size() == 1);
+    const auto removal = std::find_if(snapshot.rules[0].transforms.begin(),
+                                      snapshot.rules[0].transforms.end(),
+                                      [](const auto& transform) {
+                                          return transform.kind == NFcore2::NATIVE_REMOVE;
+                                      });
+    REQUIRE(removal != snapshot.rules[0].transforms.end());
+    CHECK(removal->removal_type == NFcore2::NATIVE_DELETE_MOLECULE_CONDITIONAL);
+    const auto lowered = NFcore2::lowerLegacyNFsim(*system);
+    CHECK(lowered.supported_rule_count == 1);
+    CHECK(lowered.fallback_rule_count == 0);
+}
+
+TEST_CASE("native NFcore2 reader preserves explicit DeleteMolecules deletion") {
+    auto system = systemFor("explicit: A(s~U,b!1).B(a!1) -> B(a) 1 DeleteMolecules");
+    const auto snapshot = NFcore2::snapshotLegacyNFsim(*system);
+    REQUIRE(snapshot.rules.size() == 1);
+    const auto removal = std::find_if(snapshot.rules[0].transforms.begin(),
+                                      snapshot.rules[0].transforms.end(),
+                                      [](const auto& transform) {
+                                          return transform.kind == NFcore2::NATIVE_REMOVE;
+                                      });
+    REQUIRE(removal != snapshot.rules[0].transforms.end());
+    CHECK(removal->removal_type == NFcore2::NATIVE_DELETE_MOLECULE_ONLY);
+    const auto lowered = NFcore2::lowerLegacyNFsim(*system);
+    CHECK(lowered.supported_rule_count == 1);
+    CHECK(lowered.fallback_rule_count == 0);
+}
+
 TEST_CASE("native NFcore2 reader captures population decrement") {
     auto system = populationSystemFor("dec: P() -> 0 1");
     const auto snapshot = NFcore2::snapshotLegacyNFsim(*system);

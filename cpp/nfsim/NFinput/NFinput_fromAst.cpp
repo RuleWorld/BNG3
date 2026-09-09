@@ -5348,10 +5348,16 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                     if (target->getMoleculeType()->isPopulationType()) {
                         ok = transformationSet->addDecrementPopulation(target);
                     } else {
+                        // A product graph that removes one molecule without
+                        // DeleteMolecules uses BNGL's conditional spelling:
+                        // delete only when the post-delete graph remains one
+                        // species. A bare degradation (`-> 0`) is handled
+                        // above as complete-species removal.
+                        const int deletionType = deleteMolecules
+                            ? TransformationFactory::DELETE_MOLECULES
+                            : TransformationFactory::DELETE_MOLECULES_NO_KEYWORD;
                         ok = transformationSet->addDeleteMolecule(
-                            target, deleteMolecules
-                                      ? TransformationFactory::DELETE_MOLECULES
-                                      : TransformationFactory::COMPLETE_SPECIES_REMOVAL);
+                            target, deletionType);
                     }
                     if (!ok) break;
                 }
