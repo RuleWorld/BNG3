@@ -122,3 +122,31 @@ TEST(NFsimPatternLowering_RejectsMultipleBondsOnOneSite) {
         pattern, *system, templates, hasDisjointSets, traversalLimit, diagnostic));
     EXPECT_TRUE(!diagnostic.empty());
 }
+
+TEST(NFsimPatternLowering_AllowsMultipleBondsOnEquivalentSiteOrbit) {
+    auto system = patternSystem();
+    std::vector<std::string> components{"x1", "x"};
+    std::vector<std::string> defaults{"NO_STATE", "NO_STATE"};
+    std::vector<std::vector<std::string>> states{{}, {}};
+    std::vector<bool> integerStates{false, false};
+    new NFcore::MoleculeType("X", components, defaults, states,
+                             integerStates, false, system.get());
+    std::vector<std::vector<std::string>> equivalentComponents{{"x1", "x"}};
+    system->getMoleculeTypeByName("X")->addEquivalentComponents(equivalentComponents);
+    const auto equivalent = bng::compile::Pattern::parse(
+        "X(x!1!2).B(a!1).C(a!2)");
+    std::vector<NFcore::TemplateMolecule*> templates;
+    bool hasDisjointSets = false;
+    int traversalLimit = 0;
+    std::string diagnostic;
+
+    const bool lowered = NFcore2::lowerPatternToNFsim(
+        equivalent, *system, templates, hasDisjointSets, traversalLimit,
+        diagnostic);
+    EXPECT_TRUE(lowered);
+    EXPECT_TRUE(diagnostic.empty());
+    EXPECT_EQ(templates.size(), 3u);
+    NFcore::TemplateMolecule::RootLocalConstraints constraints;
+    EXPECT_TRUE(templates[0]->collectRootLocalConstraints(constraints));
+    EXPECT_EQ(constraints.symmetric.size(), 2u);
+}

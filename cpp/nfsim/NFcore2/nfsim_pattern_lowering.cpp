@@ -187,7 +187,13 @@ bool lowerPatternToNFsim(
         }
         resolvedSites[moleculeIndex].resize(molecule.sites.size());
         for (std::size_t siteIndex = 0; siteIndex < molecule.sites.size(); ++siteIndex) {
-            if (molecule.sites[siteIndex].bondConstraints.size() > 1) {
+            // A concrete component can carry at most one bond.  Repeated
+            // component names are NFsim's equivalent-site orbit, however;
+            // each explicit bond label selects a distinct orbit member and
+            // is represented by a separate symmetric constraint below.
+            if (molecule.sites[siteIndex].bondConstraints.size() > 1 &&
+                !moleculeType->isEquivalentComponent(
+                    molecule.sites[siteIndex].componentName)) {
                 diagnostic = "NFsim direct lowering rejects multiple explicit bonds on one component";
                 return false;
             }
@@ -198,29 +204,38 @@ bool lowerPatternToNFsim(
         }
     }
 
-    std::map<std::size_t, std::vector<std::pair<std::size_t, std::size_t>>> bondEndpoints;
+    struct BondEndpoint {
+        std::size_t molecule;
+        std::size_t site;
+        std::size_t bond;
+    };
+    std::map<std::size_t, std::vector<BondEndpoint>> bondEndpoints;
     for (std::size_t moleculeIndex = 0;
          moleculeIndex < pattern.molecules().size(); ++moleculeIndex) {
         for (std::size_t siteIndex = 0;
              siteIndex < pattern.molecules()[moleculeIndex].sites.size(); ++siteIndex) {
             const auto& site = pattern.molecules()[moleculeIndex].sites[siteIndex];
-            const auto addBondEndpoint = [&](const bng::compile::PatternBondDescriptor& bond) {
+            const auto addBondEndpoint = [&](const bng::compile::PatternBondDescriptor& bond,
+                                             std::size_t bondIndex) {
                 if (bond.kind != bng::compile::BondConstraintKind::Exact) return true;
                 if (bond.group.value == 0) {
                     diagnostic = "explicit bond has no bond-group identity";
                     return false;
                 }
-                bondEndpoints[bond.group.value].emplace_back(moleculeIndex, siteIndex);
+                bondEndpoints[bond.group.value].push_back(
+                    BondEndpoint{moleculeIndex, siteIndex, bondIndex});
                 return true;
             };
             if (site.bondConstraints.empty()) {
                 if (!addBondEndpoint({site.bondConstraint, site.bondKind,
-                                      site.bondGroup})) {
+                                      site.bondGroup}, 0)) {
                     return false;
                 }
             } else {
-                for (const auto& bond : site.bondConstraints) {
-                    if (!addBondEndpoint(bond)) return false;
+                for (std::size_t bondIndex = 0;
+                     bondIndex < site.bondConstraints.size(); ++bondIndex) {
+                    if (!addBondEndpoint(site.bondConstraints[bondIndex], bondIndex))
+                        return false;
                 }
             }
         }
@@ -259,15 +274,19 @@ bool lowerPatternToNFsim(
     for (const auto& entry : bondEndpoints) {
         const auto& first = entry.second[0];
         const auto& second = entry.second[1];
-        const auto& firstSite = pattern.molecules()[first.first].sites[first.second];
-        const auto& secondSite = pattern.molecules()[second.first].sites[second.second];
-        const std::string firstId = "m" + std::to_string(first.first) + "c" +
-                                    std::to_string(first.second);
-        const std::string secondId = "m" + std::to_string(second.first) + "c" +
-                                     std::to_string(second.second);
+        const auto& firstSite = pattern.molecules()[first.molecule].sites[first.site];
+        const auto& secondSite = pattern.molecules()[second.molecule].sites[second.site];
+        const bool firstSymmetric = lowered[first.molecule]->getMoleculeType()->
+            isEquivalentComponent(firstSite.componentName);
+        const bool secondSymmetric = lowered[second.molecule]->getMoleculeType()->
+            isEquivalentComponent(secondSite.componentName);
+        const std::string firstId = "m" + std::to_string(first.molecule) + "c" +
+            std::to_string(first.site) + (firstSymmetric ? "b" + std::to_string(first.bond) : "");
+        const std::string secondId = "m" + std::to_string(second.molecule) + "c" +
+            std::to_string(second.site) + (secondSymmetric ? "b" + std::to_string(second.bond) : "");
         NFcore::TemplateMolecule::bind(
-            lowered[first.first], firstSite.componentName, firstId,
-            lowered[second.first], secondSite.componentName, secondId);
+            lowered[first.molecule], firstSite.componentName, firstId,
+            lowered[second.molecule], secondSite.componentName, secondId);
     }
 
     std::vector<std::vector<NFcore::TemplateMolecule*>> sets;
