@@ -15,6 +15,7 @@
 #include <stdexcept>
 #include <map>
 #include <queue>
+#include <set>
 namespace NFcore2 {
 using namespace NFcore;
 NativeNFsimSystemReader::NativeNFsimSystemReader(System& s):system_(s){}
@@ -141,6 +142,235 @@ bool mergeSimpleScopedLocalFunctions(const NativeReactionHeader& first,
         }
         if (!duplicate) merged.rate_expression_bindings.push_back(binding);
     }
+    for (const auto& function : second.rate_expression_functions) {
+        bool duplicate = false;
+        for (const auto& prior : merged.rate_expression_functions) {
+            if (prior.name != function.name) continue;
+            if (prior.expression != function.expression ||
+                prior.arguments != function.arguments) return false;
+            duplicate = true;
+            break;
+        }
+        if (!duplicate) merged.rate_expression_functions.push_back(function);
+    }
+    return true;
+}
+
+bool appendExpressionFunction(NativeReactionHeader& header,
+                              const std::string& name,
+                              const std::string& expression,
+                              const std::vector<std::string>& arguments) {
+    if (name.empty() || expression.empty()) return false;
+    for (const auto& prior : header.rate_expression_functions) {
+        if (prior.name != name) continue;
+        return prior.expression == expression && prior.arguments == arguments;
+    }
+    NativeRateExpressionFunctionSnapshot function;
+    function.name = name;
+    function.expression = expression;
+    function.arguments = arguments;
+    header.rate_expression_functions.push_back(function);
+    return true;
+}
+
+bool appendExpressionBinding(NativeReactionHeader& header,
+                             const NativeRateExpressionBindingSnapshot& binding) {
+    for (const auto& prior : header.rate_expression_bindings) {
+        if (prior.name != binding.name) continue;
+        return prior.kind == binding.kind && prior.reactant == binding.reactant &&
+               prior.component == binding.component &&
+               prior.molecule_type == binding.molecule_type &&
+               prior.scope == binding.scope &&
+               prior.destination_compartment == binding.destination_compartment &&
+               prior.value == binding.value;
+    }
+    header.rate_expression_bindings.push_back(binding);
+    return true;
+}
+
+bool appendScopedObservableBinding(System& system, Observable* observable,
+                                  const std::string& name,
+                                  std::uint16_t reactant, int scope,
+                                  NativeReactionHeader& header) {
+    if (!observable || observable->getType() != Observable::MOLECULES ||
+        (scope != LocalFunction::SPECIES && scope != LocalFunction::MOLECULE))
+        return false;
+    int templateCount = 0;
+    TemplateMolecule** templates = nullptr;
+    observable->getTemplateMoleculeList(templateCount, templates);
+    if (templateCount != 1 || templates == nullptr || templates[0] == nullptr ||
+        templates[0]->getMoleculeType() == nullptr)
+        return false;
+    TemplateMolecule::RootLocalConstraints constraints;
+    if (!templates[0]->collectRootLocalConstraints(constraints) ||
+        !constraints.empty.empty() || !constraints.occupied.empty() ||
+        !constraints.states.empty() || !constraints.exclusions.empty() ||
+        !constraints.bonds.empty() || !constraints.symmetric.empty() ||
+        !constraints.connected_to.empty() || !constraints.compartment.empty())
+        return false;
+    NativeRateExpressionBindingSnapshot binding;
+    binding.kind = NATIVE_RATE_EXPRESSION_SPECIES_MOLECULE_COUNT;
+    binding.name = name;
+    binding.reactant = reactant;
+    binding.molecule_type = static_cast<std::uint32_t>(
+        templates[0]->getMoleculeType()->getTypeID());
+    binding.scope = scope;
+    return appendExpressionBinding(header, binding);
+}
+
+bool appendLocalFunctionDefinition(System& system, LocalFunction* local,
+                                   std::uint16_t reactant,
+                                   NativeReactionHeader& header,
+                                   std::set<std::string>& visiting) {
+    if (!local || local->getParsedExpression().empty()) return false;
+    if (!visiting.insert(local->getName()).second) return false;
+    std::vector<std::string> arguments;
+    for (int i = 0; i < local->getNumOfArgs(); ++i)
+        arguments.push_back(local->getArgName(i));
+    if (!appendExpressionFunction(header, local->getName(),
+                                  local->getParsedExpression(), arguments)) {
+        visiting.erase(local->getName());
+        return false;
+    }
+    for (int i = 0; i < local->getNumOfVarRefs(); ++i) {
+        const int scope = local->getVarRefScope(i);
+        Observable* observable = system.getObservableByName(
+            local->getVarObservableName(i));
+        if (!appendScopedObservableBinding(system, observable,
+                                           local->getVarRefName(i), reactant,
+                                           scope, header)) {
+            visiting.erase(local->getName());
+            return false;
+        }
+    }
+    for (int i = 0; i < local->getNumOfParams(); ++i) {
+        const std::string name = local->getParamName(i);
+        const double value = system.getParameter(name);
+        if (!std::isfinite(value) ||
+            !appendExpressionBinding(header,
+                NativeRateExpressionBindingSnapshot::constant(name, value))) {
+            visiting.erase(local->getName());
+            return false;
+        }
+    }
+    visiting.erase(local->getName());
+    return true;
+}
+
+bool appendGlobalFunctionDefinition(System& system, GlobalFunction* global,
+                                    NativeReactionHeader& header,
+                                    std::set<std::string>& visiting) {
+    if (!global || global->getExpression().empty()) return false;
+    if (!visiting.insert(global->getName()).second) return false;
+    if (!appendExpressionFunction(header, global->getName(),
+                                  global->getExpression(), {})) {
+        visiting.erase(global->getName());
+        return false;
+    }
+    for (int i = 0; i < global->getNumOfVarRefs(); ++i) {
+        const std::string type = global->getVarRefType(i);
+        if (type == "Time") continue;
+        if (type == "Function") {
+            GlobalFunction* nested = system.getGlobalFunctionByName(
+                global->getVarRefName(i));
+            if (!appendGlobalFunctionDefinition(system, nested, header, visiting)) {
+                visiting.erase(global->getName());
+                return false;
+            }
+            continue;
+        }
+        if (type != "Observable") {
+            visiting.erase(global->getName());
+            return false;
+        }
+        Observable* observable = system.getObservableByName(global->getVarRefName(i));
+        int templateCount = 0;
+        TemplateMolecule** templates = nullptr;
+        if (!observable || observable->getType() != Observable::MOLECULES) {
+            visiting.erase(global->getName());
+            return false;
+        }
+        observable->getTemplateMoleculeList(templateCount, templates);
+        if (templateCount != 1 || templates == nullptr || templates[0] == nullptr ||
+            templates[0]->getMoleculeType() == nullptr) {
+            visiting.erase(global->getName());
+            return false;
+        }
+        TemplateMolecule::RootLocalConstraints constraints;
+        if (!templates[0]->collectRootLocalConstraints(constraints) ||
+            !constraints.empty.empty() || !constraints.occupied.empty() ||
+            !constraints.states.empty() || !constraints.exclusions.empty() ||
+            !constraints.bonds.empty() || !constraints.symmetric.empty() ||
+            !constraints.connected_to.empty() || !constraints.compartment.empty()) {
+            visiting.erase(global->getName());
+            return false;
+        }
+        NativeRateExpressionBindingSnapshot binding;
+        binding.kind = NATIVE_RATE_EXPRESSION_GLOBAL_MOLECULE_COUNT;
+        binding.name = global->getVarRefName(i);
+        binding.molecule_type = static_cast<std::uint32_t>(
+            templates[0]->getMoleculeType()->getTypeID());
+        if (!appendExpressionBinding(header, binding)) {
+            visiting.erase(global->getName());
+            return false;
+        }
+    }
+    for (int i = 0; i < global->getNumOfParams(); ++i) {
+        const std::string name = global->getParamName(i);
+        const double value = system.getParameter(name);
+        if (!std::isfinite(value) ||
+            !appendExpressionBinding(header,
+                NativeRateExpressionBindingSnapshot::constant(name, value))) {
+            visiting.erase(global->getName());
+            return false;
+        }
+    }
+    visiting.erase(global->getName());
+    return true;
+}
+
+bool appendCompositeScopedLocalFunction(System& system, CompositeFunction* composite,
+                                        std::uint16_t reactant,
+                                        NativeReactionHeader& header) {
+    if (!composite || composite->getOriginalExpression().empty()) return false;
+    NativeReactionHeader candidate = header;
+    candidate.rate_law = NATIVE_RATE_EXPRESSION;
+    candidate.rate_expression = composite->getOriginalExpression();
+    candidate.rate_expression_bindings.clear();
+    candidate.rate_expression_functions.clear();
+    std::set<std::string> visiting;
+    for (int i = 0; i < composite->getNumOfFunctions(); ++i) {
+        const std::string name = composite->getFunctionName(i);
+        if (LocalFunction* local = system.getLocalFunctionByName(name)) {
+            if (!appendLocalFunctionDefinition(system, local, reactant, candidate, visiting))
+                return false;
+        } else if (GlobalFunction* global = system.getGlobalFunctionByName(name)) {
+            if (!appendGlobalFunctionDefinition(system, global, candidate, visiting))
+                return false;
+        } else {
+            return false;
+        }
+    }
+    header = candidate;
+    return true;
+}
+
+bool appendCompositeGlobalFunction(System& system, CompositeFunction* composite,
+                                   NativeReactionHeader& header) {
+    if (!composite || composite->getOriginalExpression().empty()) return false;
+    NativeReactionHeader candidate = header;
+    candidate.rate_law = NATIVE_RATE_EXPRESSION;
+    candidate.rate_expression = composite->getOriginalExpression();
+    candidate.rate_expression_bindings.clear();
+    candidate.rate_expression_functions.clear();
+    std::set<std::string> visiting;
+    for (int i = 0; i < composite->getNumOfFunctions(); ++i) {
+        GlobalFunction* global = system.getGlobalFunctionByName(
+            composite->getFunctionName(i));
+        if (!appendGlobalFunctionDefinition(system, global, candidate, visiting))
+            return false;
+    }
+    header = candidate;
     return true;
 }
 }
@@ -157,10 +387,14 @@ NativeReactionHeader NativeNFsimSystemReader::reactionHeader(std::size_t i) cons
     if (r->getRxnType() == ReactionClass::DOR_RXN) {
         DORRxnClass* dor = dynamic_cast<DORRxnClass*>(r);
         if (dor && dor->getCompositeFunction()) {
+            directLocalFunction = appendCompositeScopedLocalFunction(
+                system_, dor->getCompositeFunction(),
+                static_cast<std::uint16_t>(std::max(0, dor->getDORreactantPosition())), h);
             LocalFunction* local = system_.getLocalFunctionByName(
                 dor->getCompositeFunction()->getName());
-            directLocalFunction = appendSimpleScopedLocalFunction(
-                system_, local, static_cast<std::uint16_t>(std::max(0, dor->getDORreactantPosition())), h);
+            if (!directLocalFunction)
+                directLocalFunction = appendSimpleScopedLocalFunction(
+                    system_, local, static_cast<std::uint16_t>(std::max(0, dor->getDORreactantPosition())), h);
         }
     } else if (r->getRxnType() == ReactionClass::DOR2_RXN) {
         DOR2RxnClass* dor2 = dynamic_cast<DOR2RxnClass*>(r);
@@ -171,18 +405,39 @@ NativeReactionHeader NativeNFsimSystemReader::reactionHeader(std::size_t i) cons
                 dor2->getCompositeFunction2()->getName());
             NativeReactionHeader firstHeader = h;
             NativeReactionHeader secondHeader = h;
-            const bool firstSimple = appendSimpleScopedLocalFunction(
-                system_, first, static_cast<std::uint16_t>(std::max(0, dor2->getDORreactantPosition())), firstHeader);
-            const bool secondSimple = appendSimpleScopedLocalFunction(
-                system_, second, static_cast<std::uint16_t>(std::max(0, dor2->getDORreactantPosition2())), secondHeader);
+            bool firstSimple = appendCompositeScopedLocalFunction(
+                system_, dor2->getCompositeFunction1(),
+                static_cast<std::uint16_t>(std::max(0, dor2->getDORreactantPosition())), firstHeader);
+            bool secondSimple = appendCompositeScopedLocalFunction(
+                system_, dor2->getCompositeFunction2(),
+                static_cast<std::uint16_t>(std::max(0, dor2->getDORreactantPosition2())), secondHeader);
+            if (!firstSimple)
+                firstSimple = appendSimpleScopedLocalFunction(
+                    system_, first, static_cast<std::uint16_t>(std::max(0, dor2->getDORreactantPosition())), firstHeader);
+            if (!secondSimple)
+                secondSimple = appendSimpleScopedLocalFunction(
+                    system_, second, static_cast<std::uint16_t>(std::max(0, dor2->getDORreactantPosition2())), secondHeader);
             if (firstSimple && secondSimple)
                 directLocalFunction = mergeSimpleScopedLocalFunctions(firstHeader, secondHeader, h);
         }
     } else if (r->getRxnType() == ReactionClass::OBS_DEPENDENT_RXN) {
         FunctionalRxnClass* functional = dynamic_cast<FunctionalRxnClass*>(r);
-        if (functional && functional->getGlobalFunction())
-            directGlobalFunction = appendSimpleGlobalFunction(
+        if (functional && functional->getGlobalFunction()) {
+            NativeReactionHeader candidate = h;
+            candidate.rate_law = NATIVE_RATE_EXPRESSION;
+            candidate.rate_expression = functional->getGlobalFunction()->getExpression();
+            candidate.rate_expression_bindings.clear();
+            candidate.rate_expression_functions.clear();
+            std::set<std::string> visiting;
+            directGlobalFunction = appendGlobalFunctionDefinition(
+                system_, functional->getGlobalFunction(), candidate, visiting);
+            if (directGlobalFunction) h = candidate;
+            else directGlobalFunction = appendSimpleGlobalFunction(
                 system_, functional->getGlobalFunction(), h);
+        } else if (functional && functional->getCompositeFunction()) {
+            directGlobalFunction = appendCompositeGlobalFunction(
+                system_, functional->getCompositeFunction(), h);
+        }
     }
     h.uses_local_function = r->getRxnType() != ReactionClass::BASIC_RXN &&
                             !directLocalFunction && !directGlobalFunction;

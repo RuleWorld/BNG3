@@ -214,6 +214,18 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
             r.rate_law.kind=LEGACY_RATE_EXPRESSION;
             r.rate_law.expression=nr.rate_expression;
             r.rate_law.expression_components=nr.rate_expression_components;
+            for (const auto& nativeFunction : nr.rate_expression_functions) {
+                if (nativeFunction.name.empty() || nativeFunction.expression.empty())
+                    throw std::invalid_argument("expression function definition is empty");
+                for (const auto& prior : r.rate_law.expression_functions)
+                    if (prior.name == nativeFunction.name)
+                        throw std::invalid_argument("duplicate expression function name");
+                RateExpressionFunction function;
+                function.name = nativeFunction.name;
+                function.expression = nativeFunction.expression;
+                function.arguments = nativeFunction.arguments;
+                r.rate_law.expression_functions.push_back(function);
+            }
             for (const auto& nativeBinding : nr.rate_expression_bindings) {
                 RateExpressionBinding binding;
                 binding.name = nativeBinding.name;
@@ -224,9 +236,6 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                 binding.destination_compartment = nativeBinding.destination_compartment;
                 binding.value = nativeBinding.value;
                 if (binding.name.empty()) throw std::invalid_argument("expression binding name is empty");
-                for (const auto& prior : r.rate_law.expression_bindings)
-                    if (prior.name == binding.name)
-                        throw std::invalid_argument("duplicate expression binding name");
                 if (nativeBinding.kind == NATIVE_RATE_EXPRESSION_STATE) {
                     binding.kind = RATE_EXPRESSION_STATE;
                     const std::uint32_t type = reactantType(source, nr, binding.target);
@@ -288,7 +297,21 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                 } else {
                     throw std::invalid_argument("unknown expression binding kind");
                 }
-                r.rate_law.expression_bindings.push_back(binding);
+                bool alreadyPresent = false;
+                for (const auto& prior : r.rate_law.expression_bindings) {
+                    if (prior.name != binding.name) continue;
+                    if (prior.kind == binding.kind && prior.target == binding.target &&
+                        prior.component == binding.component &&
+                        prior.molecule_type == binding.molecule_type &&
+                        prior.scope == binding.scope &&
+                        prior.destination_compartment == binding.destination_compartment &&
+                        prior.value == binding.value) {
+                        alreadyPresent = true;
+                        break;
+                    }
+                    throw std::invalid_argument("conflicting expression binding name");
+                }
+                if (!alreadyPresent) r.rate_law.expression_bindings.push_back(binding);
             }
             r.uses_local_function=false;
         } else if (nr.rate_law == NATIVE_RATE_LOCAL_LINEAR) {

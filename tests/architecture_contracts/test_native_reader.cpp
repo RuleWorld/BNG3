@@ -207,6 +207,37 @@ end reaction rules
     return system;
 }
 
+std::unique_ptr<NFcore::System> nestedLocalFunctionSystem() {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+ k 2.0
+end parameters
+begin molecule types
+ A()
+ C()
+end molecule types
+begin seed species
+ A() 1
+end seed species
+begin observables
+ Molecules atotal A()
+end observables
+begin functions
+ g(x) = k*atotal(x)
+ f(x) = g(x) + 1
+end functions
+begin reaction rules
+ %x::A() -> %x::A() + C() f(x)
+end reaction rules
+)");
+    REQUIRE(model);
+    int traversal = 0;
+    auto system = std::unique_ptr<NFcore::System>(
+        NFinput::buildSystemFromAst(*model, false, 100, false, traversal));
+    REQUIRE(system);
+    return system;
+}
+
 std::unique_ptr<NFcore::System> globalFunctionSystem() {
     auto model = bng::parser::parseModel(R"BNGL(
 begin parameters
@@ -229,6 +260,36 @@ begin reaction rules
  A() -> A() rate
 end reaction rules
 )BNGL");
+    REQUIRE(model);
+    int traversal = 0;
+    auto system = std::unique_ptr<NFcore::System>(
+        NFinput::buildSystemFromAst(*model, false, 100, false, traversal));
+    REQUIRE(system);
+    return system;
+}
+
+std::unique_ptr<NFcore::System> nestedGlobalFunctionSystem() {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+ k 2.0
+end parameters
+begin molecule types
+ A()
+end molecule types
+begin seed species
+ A() 2
+end seed species
+begin observables
+ Molecules atotal A()
+end observables
+begin functions
+ base() = k*atotal
+ rate() = base() + 1
+end functions
+begin reaction rules
+ A() -> A() rate
+end reaction rules
+)");
     REQUIRE(model);
     int traversal = 0;
     auto system = std::unique_ptr<NFcore::System>(
@@ -602,6 +663,25 @@ TEST_CASE("native NFcore2 reader lowers a simple scoped local function descripto
     CHECK(lowered.fallback_rule_count == 0);
 }
 
+TEST_CASE("native NFcore2 reader evaluates nested scoped local functions") {
+    auto system = nestedLocalFunctionSystem();
+    const auto snapshot = NFcore2::snapshotLegacyNFsim(*system);
+    REQUIRE(snapshot.rules.size() == 1);
+    CHECK(snapshot.rules[0].rate_law == NFcore2::NATIVE_RATE_EXPRESSION);
+    CHECK_FALSE(snapshot.rules[0].uses_local_function);
+    CHECK_FALSE(snapshot.rules[0].rate_expression_functions.empty());
+    const auto lowered = NFcore2::lowerLegacyNFsim(*system);
+    CHECK(lowered.supported_rule_count == 1);
+    CHECK(lowered.fallback_rule_count == 0);
+    NFcore2::Engine engine(lowered.executable);
+    const auto molecule = engine.state().molecules(NFcore2::MoleculeTypeId(0)).create();
+    NFcore2::MatchContext context;
+    context.setMoleculeAt(0, NFcore2::MoleculeRef(
+        NFcore2::MoleculeTypeId(0), molecule));
+    CHECK(engine.evaluateRate(lowered.rules[0].family, lowered.rules[0].member,
+                               context) == 3.0);
+}
+
 TEST_CASE("native NFcore2 reader lowers a FunctionProduct of scoped local functions") {
     auto system = localFunctionProductSystem();
     const auto snapshot = NFcore2::snapshotLegacyNFsim(*system);
@@ -643,6 +723,25 @@ TEST_CASE("native NFcore2 reader lowers a simple global observable function") {
     engine.state().setTime(1.0);
     NFcore2::MatchContext context;
     CHECK(engine.evaluateRate(lowered.rules[0].family, lowered.rules[0].member, context) == 5.0);
+}
+
+TEST_CASE("native NFcore2 reader evaluates nested global functions") {
+    auto system = nestedGlobalFunctionSystem();
+    const auto snapshot = NFcore2::snapshotLegacyNFsim(*system);
+    REQUIRE(snapshot.rules.size() == 1);
+    CHECK(snapshot.rules[0].rate_law == NFcore2::NATIVE_RATE_EXPRESSION);
+    CHECK_FALSE(snapshot.rules[0].uses_local_function);
+    REQUIRE(snapshot.rules[0].rate_expression_functions.size() == 1);
+    CHECK(snapshot.rules[0].rate_expression_functions[0].name == "base");
+    const auto lowered = NFcore2::lowerLegacyNFsim(*system);
+    CHECK(lowered.supported_rule_count == 1);
+    CHECK(lowered.fallback_rule_count == 0);
+    NFcore2::Engine engine(lowered.executable);
+    engine.state().molecules(NFcore2::MoleculeTypeId(0)).create();
+    engine.state().molecules(NFcore2::MoleculeTypeId(0)).create();
+    NFcore2::MatchContext context;
+    CHECK(engine.evaluateRate(lowered.rules[0].family, lowered.rules[0].member,
+                               context) == 5.0);
 }
 
 TEST_CASE("native NFcore2 lowering executes a reciprocal binding transform") {

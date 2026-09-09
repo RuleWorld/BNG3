@@ -40,6 +40,20 @@ struct RateExpressionBinding {
         : kind(RATE_EXPRESSION_CONSTANT), target(0), component(0),
           molecule_type(std::numeric_limits<std::uint32_t>::max()), scope(-1),
           destination_compartment(std::numeric_limits<std::uint32_t>::max()), value(0.0) {}
+
+    static RateExpressionBinding constant(const std::string& binding_name, double constant_value) {
+        RateExpressionBinding binding;
+        binding.kind = RATE_EXPRESSION_CONSTANT;
+        binding.name = binding_name;
+        binding.value = constant_value;
+        return binding;
+    }
+};
+
+struct RateExpressionFunction {
+    std::string name;
+    std::string expression;
+    std::vector<std::string> arguments;
 };
 
 // Bounded, source-derived rate descriptors. Constant rates retain the old
@@ -57,6 +71,7 @@ struct RateLawDescriptor {
     std::string expression;
     std::vector<std::uint32_t> expression_components;
     std::vector<RateExpressionBinding> expression_bindings;
+    std::vector<RateExpressionFunction> expression_functions;
     RateLawDescriptor()
         : kind(LEGACY_RATE_CONSTANT), target(0), partner_target(1), component(0),
           partner_component(0), offset(0.0), slope(0.0), weight(1.0) {}

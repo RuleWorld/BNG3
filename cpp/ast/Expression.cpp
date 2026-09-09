@@ -136,6 +136,12 @@ std::string Expression::tableFileKey() const {
 }
 
 double Expression::evaluate(const std::function<double(const std::string&)>& resolveIdentifier, double t) const {
+    return evaluateWithFunctions(resolveIdentifier, t, FunctionResolver());
+}
+
+double Expression::evaluateWithFunctions(
+    const std::function<double(const std::string&)>& resolveIdentifier,
+    double t, const FunctionResolver& resolveFunction) const {
     switch (kind_) {
     case ExpressionKind::Number:
         return numberValue_;
@@ -145,7 +151,7 @@ double Expression::evaluate(const std::function<double(const std::string&)>& res
         }
         return resolveIdentifier(text_);
     case ExpressionKind::Unary: {
-        const double value = children_.front().evaluate(resolveIdentifier, t);
+        const double value = children_.front().evaluateWithFunctions(resolveIdentifier, t, resolveFunction);
         if (text_ == "+") {
             return value;
         }
@@ -158,8 +164,8 @@ double Expression::evaluate(const std::function<double(const std::string&)>& res
         throw std::runtime_error("Unsupported unary operator '" + text_ + "'");
     }
     case ExpressionKind::Binary: {
-        const double lhs = children_[0].evaluate(resolveIdentifier, t);
-        const double rhs = children_[1].evaluate(resolveIdentifier, t);
+        const double lhs = children_[0].evaluateWithFunctions(resolveIdentifier, t, resolveFunction);
+        const double rhs = children_[1].evaluateWithFunctions(resolveIdentifier, t, resolveFunction);
 
         if (text_ == "+") return lhs + rhs;
         if (text_ == "-") return lhs - rhs;
@@ -179,7 +185,9 @@ double Expression::evaluate(const std::function<double(const std::string&)>& res
         throw std::runtime_error("Unsupported binary operator '" + text_ + "'");
     }
     case ExpressionKind::Function: {
-        const auto evalArg = [&](std::size_t index) { return children_[index].evaluate(resolveIdentifier, t); };
+        const auto evalArg = [&](std::size_t index) {
+            return children_[index].evaluateWithFunctions(resolveIdentifier, t, resolveFunction);
+        };
 
         if (text_ == "time" || text_ == "t") {
             requireArity(text_, children_, 0);
@@ -337,9 +345,14 @@ double Expression::evaluate(const std::function<double(const std::string&)>& res
         if (text_ == "_e") { requireArity(text_, children_, 0); return M_E; }
 
         // Try resolving as user-defined function (zero-arg call like myFunc())
-        if (children_.empty()) {
-            return resolveIdentifier(text_);
+        if (resolveFunction) {
+            std::vector<double> values;
+            values.reserve(children_.size());
+            for (const auto& child : children_)
+                values.push_back(child.evaluateWithFunctions(resolveIdentifier, t, resolveFunction));
+            return resolveFunction(text_, values);
         }
+        if (children_.empty()) return resolveIdentifier(text_);
         throw std::runtime_error("Unsupported function '" + text_ + "'");
     }
     case ExpressionKind::ObservableRef:
@@ -352,7 +365,7 @@ double Expression::evaluate(const std::function<double(const std::string&)>& res
         if (children_.size() != 1) {
             throw std::runtime_error("TFUN expression must have one counter expression");
         }
-        const double counter = children_.front().evaluate(resolveIdentifier, t);
+        const double counter = children_.front().evaluateWithFunctions(resolveIdentifier, t, resolveFunction);
         if (!tableFilePath_.empty()) {
             std::ostringstream value;
             value << std::scientific << std::setprecision(17) << counter;

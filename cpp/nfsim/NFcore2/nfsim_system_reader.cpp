@@ -31,6 +31,7 @@ NativeModelSnapshot readNFsimSystem(const NFsimSystemReader& reader) {
         r.dor_partner_state_component=h.dor_partner_state_component;
         r.rate_expression=h.rate_expression;r.rate_expression_components=h.rate_expression_components;
         r.rate_expression_bindings=h.rate_expression_bindings;
+        r.rate_expression_functions=h.rate_expression_functions;
         reader.collectDependencies(i,r.dependencies);
         reader.collectTransforms(i,r.transforms);
         reader.collectGraphPatterns(i,r.graph_patterns);

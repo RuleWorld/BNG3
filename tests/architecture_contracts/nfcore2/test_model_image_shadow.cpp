@@ -177,6 +177,35 @@ TEST(ModelImage_RoundTripRuleFamiliesAndMembers){
     EXPECT_EQ(f.members[1].coordinate,11u);
 }
 
+TEST(ModelImage_RoundTripRateExpressionFunctions){
+    ExecutableModel e;
+    MoleculeTypeDescriptor type; type.name="X"; e.buildMetadata().addMoleculeType(type);
+    MatcherProgram matcher; matcher.add(MatchInstruction(MATCH_END));
+    const MatcherId matcherId=e.buildMatchers().add(matcher);
+    TransformProgram transform; transform.add(TransformInstruction(TRANSFORM_END));
+    const TransformProgramId transformId=e.buildTransforms().add(transform);
+    RuleFamilyDescriptor family; family.matcher=matcherId; family.transform=transformId;
+    RuleMember member; member.rate=1.0;
+    member.rate_law.kind=LEGACY_RATE_EXPRESSION;
+    member.rate_law.expression="f(x)";
+    member.rate_law.expression_functions.push_back(
+        RateExpressionFunction{"f", "k*x", {"x"}});
+    RateExpressionBinding constant;
+    constant.kind=RATE_EXPRESSION_CONSTANT;
+    constant.name="k";
+    constant.value=2.0;
+    member.rate_law.expression_bindings.push_back(constant);
+    family.members.push_back(member);
+    e.buildMetadata().addRuleFamily(family);
+    ExecutableModel b=readBytes(writeBytes(e));
+    const RuleMember& restored=b.metadata().ruleFamilies()[0].members[0];
+    EXPECT_EQ(restored.rate_law.expression,std::string("f(x)"));
+    EXPECT_EQ(restored.rate_law.expression_functions.size(),1u);
+    EXPECT_EQ(restored.rate_law.expression_functions[0].name,std::string("f"));
+    EXPECT_EQ(restored.rate_law.expression_functions[0].arguments.size(),1u);
+    EXPECT_EQ(restored.rate_law.expression_functions[0].arguments[0],std::string("x"));
+}
+
 TEST(ModelImage_RoundTripDependencyIndex){
     ExecutableModel a=imageModel();
     ExecutableModel b=readBytes(writeBytes(a));

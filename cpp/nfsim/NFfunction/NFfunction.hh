@@ -310,6 +310,8 @@ namespace NFcore {
 			int getVarRefScope(int index) const { return varRefScope[index]; }
 			int getNumOfParams() const { return static_cast<int>(n_params); }
 			string getParamName(int index) const { return paramNames[index]; }
+			int getNumOfArgs() const { return static_cast<int>(n_args); }
+			string getArgName(int index) const { return argNames[index]; }
 
 			// set/get whether this evaluates on complex complex
 			bool getEvaluateComplexScope() const;
@@ -453,6 +455,10 @@ namespace NFcore {
 
 				int getNumOfArgs() const;
 				string getArgName(int aIndex) const;
+				int getNumOfFunctions() const { return static_cast<int>(n_allFuncs); }
+				string getFunctionName(int index) const { return allFuncNames[index]; }
+				int getNumOfParams() const { return static_cast<int>(n_params); }
+				string getParamName(int index) const { return paramNames[index]; }
 				const string& getOriginalExpression() const { return originalExpression; }
 
 				void addTypeIMoleculeDependency(MoleculeType *mt);

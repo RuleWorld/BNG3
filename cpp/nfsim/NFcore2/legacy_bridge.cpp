@@ -6,6 +6,8 @@
 #include <cmath>
 #include <cstdlib>
 #include <limits>
+#include <functional>
+#include <unordered_map>
 #include "parser/BNGAstVisitor.hpp"
 
 namespace NFcore2 {
@@ -21,7 +23,46 @@ double RateLawDescriptor::evaluate(const SimulationState& state,
     if (kind == LEGACY_RATE_EXPRESSION) {
         if (expression.empty()) throw std::invalid_argument("empty expression rate law");
         const auto parsed = bng::parser::parseExpression(expression);
-        const auto resolve = [&](const std::string& name) -> double {
+        std::function<double(const std::string&, const std::vector<double>&)> resolveFunction;
+        std::function<double(const std::string&)> resolve;
+        resolveFunction = [&](const std::string& name,
+                              const std::vector<double>& arguments) -> double {
+            const RateExpressionFunction* definition = nullptr;
+            for (const auto& candidate : expression_functions) {
+                if (candidate.name == name) {
+                    definition = &candidate;
+                    break;
+                }
+            }
+            if (definition == nullptr) {
+                // Observable references in legacy local functions are emitted
+                // as calls such as atotal(x). Their binding already captures
+                // the scoped count; the parser callback only needs to ignore
+                // the scope argument.
+                if (!arguments.empty()) return resolve(name);
+                throw std::out_of_range("unknown expression function '" + name + "'");
+            }
+            if (arguments.size() > definition->arguments.size())
+                throw std::invalid_argument("expression function argument count mismatch");
+            const auto functionExpression = bng::parser::parseExpression(definition->expression);
+            std::unordered_map<std::string, double> local;
+            for (std::size_t i = 0; i < arguments.size(); ++i)
+                local.emplace(definition->arguments[i], arguments[i]);
+            // Legacy DOR wrappers often expose the scoped function as a
+            // zero-argument identifier even though its LocalFunction carries
+            // one scope argument. The scope is already encoded in the
+            // observable bindings, so unused formal arguments can be zero.
+            for (std::size_t i = arguments.size(); i < definition->arguments.size(); ++i)
+                local.emplace(definition->arguments[i], 0.0);
+            const auto functionResolve = [&](const std::string& symbol) -> double {
+                const auto it = local.find(symbol);
+                if (it != local.end()) return it->second;
+                return resolve(symbol);
+            };
+            return functionExpression.evaluateWithFunctions(
+                functionResolve, state.time(), resolveFunction);
+        };
+        resolve = [&](const std::string& name) -> double {
             for (const auto& binding : expression_bindings) {
                 if (binding.name != name) continue;
                 if (binding.kind == RATE_EXPRESSION_CONSTANT) {
@@ -80,9 +121,12 @@ double RateLawDescriptor::evaluate(const SimulationState& state,
                     return static_cast<double>(state.molecules(ref.type).stateWord(ref.handle, static_cast<std::uint16_t>(expression_components[index])));
                 }
             }
+            for (const auto& function : expression_functions)
+                if (function.name == name)
+                    return resolveFunction(name, {});
             throw std::out_of_range("unknown expression rate-law symbol '" + name + "'");
         };
-        const double result = parsed.evaluate(resolve, state.time());
+        const double result = parsed.evaluateWithFunctions(resolve, state.time(), resolveFunction);
         if (!std::isfinite(result) || result < 0.0) throw std::domain_error("expression rate law produced invalid propensity");
         const double propensity = base_rate * result;
         if (!std::isfinite(propensity) || propensity < 0.0)
@@ -236,6 +280,12 @@ std::string LegacyLowerer::transformSignature(const LegacyRuleIR& r) {
         os << static_cast<int>(binding.kind) << ':' << binding.name << ':' << binding.target << ':'
            << binding.component << ':' << binding.molecule_type << ':' << binding.scope << ':'
            << binding.destination_compartment << ':' << binding.value << ';';
+    os << "functions:";
+    for (const auto& function : r.rate_law.expression_functions) {
+        os << function.name << ':' << function.expression << ':';
+        for (const auto& argument : function.arguments) os << argument << ',';
+        os << ';';
+    }
     os << ';';
     return os.str();
 }

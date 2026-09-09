@@ -25,6 +25,7 @@ struct NativeReactionHeader {
     std::string rate_expression;
     std::vector<std::uint32_t> rate_expression_components;
     std::vector<NativeRateExpressionBindingSnapshot> rate_expression_bindings;
+    std::vector<NativeRateExpressionFunctionSnapshot> rate_expression_functions;
     NativeReactionHeader() : base_rate(0.0), parameter_index(0), coordinate(0),
         uses_local_function(false), uses_connected_to(false), rate_law(NATIVE_RATE_CONSTANT),
         local_offset(0.0), local_slope(0.0), local_state_component(0), dor_weight(1.0),

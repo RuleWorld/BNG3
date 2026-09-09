@@ -5,9 +5,8 @@
 namespace NFcore2 {
 class ModelImage {
 public:
-    // Version 6 adds complete graph-node state/exclusion vectors and
-    // connectedTo graph edges.
-    static const std::uint32_t FORMAT_VERSION = 7;
+    // Version 8 adds native user-defined rate-expression function bodies.
+    static const std::uint32_t FORMAT_VERSION = 8;
     static void write(const ExecutableModel& model, std::ostream& out);
     static ExecutableModel read(std::istream& in);
     static void writeFile(const ExecutableModel& model, const std::string& path);
