@@ -3402,6 +3402,21 @@ completion gate.
 
 - [x] Current parser detects and exposes conservative canonical single-level
   Multi structures as reference diagnostics.
+- [x] Executable SBML Multi v1 reconstruction checkpoint
+  `4f25b2f2291573c9de4bf8171f5faf33654c3e00` on dedicated branch
+  `codex/sbml-multi-full-work-v2` expands the modern Atomizer path to resolve
+  namespaced species types, binding sites, feature states, nested component
+  indexes, in-species bonds, explicit/don't-care species patterns, Multi
+  product component maps, compartment references, and
+  `intraSpeciesReaction`. Unsupported hierarchy/namespace/value cases fail
+  closed with structured diagnostics. The real fixture
+  `tests/validation/Validate/test_write_sbml_multi_sbml_sbmlmulti.xml` now
+  produces executable BNGL and parses through the native `build/cpp/bng_cpp`
+  parser oracle. Focused Multi tests report `12 passed`; full Python reports
+  `357 passed, 27 skipped`; CTest reports `303/303`; Black, Ruff, and
+  `git diff --check` pass. This closes the implemented parser/writer and local
+  execution slice; independent simulation parity, schema validation, complete
+  SBML round trips, and Tier-X approval remain open below.
 - [ ] Canonical Multi molecule types, components, states, complexes,
   species/seed patterns, bonds, compartments, and annotations are fully
   reconstructed from approved fixtures.
