@@ -333,6 +333,9 @@ namespace NFcore {
 
 			double getValue(Molecule *m, int scope);
 			double evaluateOn(Molecule *m, int scope);
+			// Evaluate a species-scoped local function over a component already
+			// traversed by the caller.
+			double evaluateOn(Molecule *m, const list <Molecule *> &members);
 			// this version evaluates local fcn on a complex with SPECIES scope
 			double evaluateOn(Complex *c);
 

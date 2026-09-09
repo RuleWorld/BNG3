@@ -8,19 +8,19 @@
   ],
   "test_first": {
     "red_build": "bng3_nfcore2_reference_tests reported missing population, graph, compartment, move, species-delete, conditional-delete, and rate-law contracts before implementation; the added volume-scope tests initially lacked compartment lookup APIs",
-    "focused_green": "ctest --test-dir build --output-on-failure -R 'native-port|architecture_nfcore2_reference' (14 native-port tests plus the NFcore2 reference target)",
+    "focused_green": "ctest --test-dir build --output-on-failure -R 'native-port|architecture_nfcore2_reference' (20 native-port tests plus the NFcore2 reference target)",
     "full_validation": {
       "build": "cmake --build build --parallel 4",
-      "ctest": "276 passed",
+      "ctest": "281 passed",
       "energy_python": "66 passed",
       "main_python": "348 passed, 27 skipped (tests/python current-main regression)",
       "validation_smoke": "4 passed, 14 skipped (legacy run_network and standalone NFsim oracle unavailable)",
       "architecture_audit": "passed with zero failures",
       "sanitizers": {
-        "build": "ASan/UBSan Debug build in build-asan",
+        "build": "ASan/UBSan RelWithDebInfo build in /private/tmp/bng3-main-asan",
         "energy": "energy_sanitizer_smoke passed",
-        "nfcore2": "431 passed, 0 failed",
-        "native_reader": "16 test cases, 152 assertions",
+        "nfcore2": "432 passed, 0 failed",
+        "native_reader": "20 test cases, 180 assertions",
         "nfnext": "PASS",
         "leaks": "LeakSanitizer unavailable on macOS"
       }
@@ -116,16 +116,19 @@
         "NFsimAdapter_ArbitraryGraphExpressionPreservesFreeAndBoundSiteConstraints",
         "NFsimAdapter_SymmetricGraphAutomorphismMatchesDistinctEquivalentSites",
         "native NFcore2 reader preserves symmetric internal graph automorphisms",
+        "native NFcore2 graph nodes preserve multiple state constraints and exclusions",
+        "native NFcore2 graph patterns preserve connectedTo links",
+        "native NFcore2 reader captures dot-separated connectedTo topology",
         "ModelImage_RoundTripSymmetricGraphConstraints",
         "NFsimAdapter_RejectsMalformedGraphEdge",
         "NFsimAdapter_ArbitraryGraphExpressionRejectsAsymmetricRuntimeBond"
       ],
-      "remaining": "Negative/molecularity forms, richer child constraints, and unbounded connectedTo remain fail-closed; broader automorphism expressions remain outside the finite candidate slice."
+      "remaining": "Negative/molecularity forms, richer child constraints, and unresolved or unbounded connectedTo remain fail-closed; broader automorphism expressions remain outside the finite candidate slice."
     },
     {
       "id": "general-local-dor-evaluation",
       "status": "direct-named-binding-bounded-fallback-native-objects",
-      "implemented": "Parsed arithmetic/conditional expressions resolve named matched-state, finite-constant, reactant-count, connected-species-count, and compartment-volume bindings plus time and built-ins.",
+      "implemented": "Parsed arithmetic/conditional expressions resolve named matched-state, finite-constant, reactant-count, connected-species-count, and compartment-volume bindings plus time and built-ins; native LocalFunction references retain pointer and scope metadata for compatibility dispatch.",
       "tests": [
         "NFsimAdapter_GeneralExpressionRateResolvesNamedLocalAndConstantBindings",
         "NFsimAdapter_LocalFunctionAndDORRatesEvaluateFromMatchedState",

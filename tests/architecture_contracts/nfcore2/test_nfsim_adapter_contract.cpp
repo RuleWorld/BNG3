@@ -216,7 +216,11 @@ TEST(NFsimAdapter_IncrementAndDecrementStateLowerToCheckedAdd){
 }
 
 TEST(NFsimAdapter_LocalFunctionReferenceMarksRuleFallback){
-    NativeModelSnapshot n;n.molecule_types.push_back(mol("R",1));NativeReactionSnapshot r=rxn();r.transforms.push_back(tr(NATIVE_LOCAL_FUNCTION_REFERENCE,0));n.rules.push_back(r);
+    NativeModelSnapshot n;n.molecule_types.push_back(mol("R",1));NativeReactionSnapshot r=rxn();
+    NativeTransformSnapshot reference=tr(NATIVE_LOCAL_FUNCTION_REFERENCE,0);
+    reference.local_function_pointer="f";
+    reference.local_function_scope=1;
+    r.transforms.push_back(reference);n.rules.push_back(r);
     EXPECT_TRUE(NFsimSnapshotAdapter::toLegacy(n).rules[0].uses_local_function);
 }
 

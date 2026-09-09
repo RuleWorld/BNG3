@@ -1519,10 +1519,11 @@ namespace NFcore
 
 			/* functions needed to traverse a complex and get all components
 			 * which is important when we want to update reactions and complexes */
-			void traverseBondedNeighborhood(list <Molecule *> &members, int traversalLimit);
+			/* returns true when a finite traversal limit excluded a bonded neighbor */
+			bool traverseBondedNeighborhood(list <Molecule *> &members, int traversalLimit);
 			// AS2023 - additional call sig to use with reaction firing logging
 			void traverseBondedNeighborhood(list <Molecule *> &members, int traversalLimit, string &logstr);
-			static void breadthFirstSearch(list <Molecule *> &members, Molecule *m, int depth);
+			static bool breadthFirstSearch(list <Molecule *> &members, Molecule *m, int depth);
 			// AS2023 - additional call sig to use with reaction firing logging
 			static void breadthFirstSearch(list <Molecule *> &members, Molecule *m, int depth, string &logstr);
 			void depthFirstSearch(list <Molecule *> &members);
@@ -2067,6 +2068,10 @@ namespace NFcore
 			 * the ordered adapter representation. */
 			unordered_set <Molecule *> *directProductMolecules;
 			bool directProductMoleculeSetValid;
+
+			/* Product component sizes from the current bounded traversal. */
+			vector <unsigned int> productComponentSizes;
+			bool productComponentsTruncated;
 
 			// remember the molecule type of each product molecule a with typeII dependencies
 			list <MoleculeType *> typeII_products;

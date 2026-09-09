@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <limits>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace NFcore2 {
@@ -117,9 +118,13 @@ struct NativeTransformSnapshot {
     std::int64_t population_delta;
     std::uint32_t destination_compartment;
     bool move_connected;
+    // Scope identifier used by the LocalFunctionReference transform (the
+    // referenced function itself belongs to the legacy function table).
+    std::string local_function_pointer;
+    int local_function_scope;
     NativeTransformSnapshot() : kind(NATIVE_EMPTY), reactant(0), other_reactant(0), component(0),
         other_component(0), new_value(0), removal_type(-1), added_molecule_type(0), population_delta(0),
-        destination_compartment(0), move_connected(false) {}
+        destination_compartment(0), move_connected(false), local_function_scope(-1) {}
 };
 
 struct NativeGraphNodeSnapshot {
@@ -129,6 +134,12 @@ struct NativeGraphNodeSnapshot {
     std::uint32_t compartment;
     std::vector<std::uint32_t> free_components;
     std::vector<std::uint32_t> bound_components;
+    // State predicates on internal graph nodes. The legacy scalar fields are
+    // retained for image/backward source compatibility; these vectors carry
+    // every state requirement and exclusion without silently dropping a
+    // child constraint.
+    std::vector<std::pair<std::uint32_t, int> > state_constraints;
+    std::vector<std::pair<std::uint32_t, int> > excluded_states;
     struct SymmetricConstraint {
         std::vector<std::uint32_t> components;
         int state;
@@ -149,9 +160,16 @@ struct NativeGraphEdgeSnapshot {
     std::uint32_t first_node, first_component, second_node, second_component;
     NativeGraphEdgeSnapshot() : first_node(0), first_component(0), second_node(0), second_component(0) {}
 };
+struct NativeGraphConnectivitySnapshot {
+    std::uint32_t first_node;
+    std::uint32_t second_node;
+    NativeGraphConnectivitySnapshot(std::uint32_t first = 0, std::uint32_t second = 0)
+        : first_node(first), second_node(second) {}
+};
 struct NativeGraphPatternSnapshot {
     std::vector<NativeGraphNodeSnapshot> nodes;
     std::vector<NativeGraphEdgeSnapshot> edges;
+    std::vector<NativeGraphConnectivitySnapshot> connected_to;
 };
 struct NativeCompartmentSnapshot {
     std::uint32_t id;

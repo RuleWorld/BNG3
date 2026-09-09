@@ -108,6 +108,8 @@ TEST(ModelImage_RoundTripSymmetricGraphConstraints){
     MatcherProgram matcher;
     GraphPattern graph;
     GraphNodePattern left; left.molecule_type=0; left.anchor_reactant=0;
+    left.state_constraints={{0u,1},{1u,2}};
+    left.excluded_states={{0u,3}};
     SymmetricConstraintPattern bound; bound.components={0,1}; bound.bond_state=1; bound.partner_node=1; bound.partner_components={0};
     SymmetricConstraintPattern free; free.components={0,1}; free.bond_state=0;
     left.symmetric_constraints={bound,free};
@@ -122,6 +124,30 @@ TEST(ModelImage_RoundTripSymmetricGraphConstraints){
     EXPECT_EQ(restored.nodes[0].symmetric_constraints[0].partner_node,1u);
     EXPECT_EQ(restored.nodes[0].symmetric_constraints[0].partner_components[0],0u);
     EXPECT_EQ(restored.nodes[0].symmetric_constraints[1].bond_state,0);
+    EXPECT_EQ(restored.nodes[0].state_constraints.size(),2u);
+    EXPECT_EQ(restored.nodes[0].state_constraints[1].first,1u);
+    EXPECT_EQ(restored.nodes[0].state_constraints[1].second,2);
+    EXPECT_EQ(restored.nodes[0].excluded_states.size(),1u);
+    EXPECT_EQ(restored.nodes[0].excluded_states[0].second,3);
+}
+
+TEST(ModelImage_RoundTripGraphConnectedToConstraints){
+    ExecutableModel e;
+    MoleculeTypeDescriptor a; a.name="A"; a.bond_slots=2;
+    MoleculeTypeDescriptor b; b.name="B"; b.bond_slots=1;
+    e.buildMetadata().addMoleculeType(a); e.buildMetadata().addMoleculeType(b);
+    MatcherProgram matcher;
+    GraphPattern graph;
+    GraphNodePattern left; left.molecule_type=0; left.anchor_reactant=0;
+    GraphNodePattern right; right.molecule_type=1;
+    graph.nodes={left,right}; graph.connected_to.push_back(GraphConnectivityPattern(0,1));
+    matcher.addGraphPattern(graph); matcher.add(MatchInstruction(MATCH_END));
+    e.buildMatchers().add(matcher);
+    ExecutableModel roundtrip=readBytes(writeBytes(e));
+    const GraphPattern& restored=roundtrip.matchers().at(MatcherId(0)).graphPatterns()[0];
+    EXPECT_EQ(restored.connected_to.size(),1u);
+    EXPECT_EQ(restored.connected_to[0].first_node,0u);
+    EXPECT_EQ(restored.connected_to[0].second_node,1u);
 }
 
 TEST(ModelImage_RoundTripTransformBytecode){

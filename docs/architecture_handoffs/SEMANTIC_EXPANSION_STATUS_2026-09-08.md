@@ -54,7 +54,7 @@ After implementation, the focused CTest target passed:
 
 ```text
 ctest --test-dir build --output-on-failure -R 'native-port|architecture_nfcore2_reference'
-14/14 native-port tests ... Passed
+20/20 native-port tests ... Passed
 architecture_nfcore2_reference ... Passed
 ```
 
@@ -69,11 +69,12 @@ species-deletion transforms without a mapped reactant.
 
 The native reader now has direct parser-backed contracts for root-local moves,
 complete species deletion, population decrement, internal graph topology,
-compartment hierarchy metadata, and species-carrying MoveConnected. Internal
-graph-node state, free/bound-site, and compartment constraints are retained
-through lowering and model-image round trips. Native local/DOR function objects
-and unsupported connectedTo forms remain on the compatibility path until their
-scope and dependency extraction are proven independently. The executable
+compartment hierarchy metadata, species-carrying MoveConnected, and finite
+connectedTo graph edges. Internal graph-node state, free/bound-site, and
+compartment constraints are retained through lowering and model-image round
+trips. Native local/DOR function objects and unresolved connectedTo forms remain
+on the compatibility path until their scope and dependency extraction are
+proven independently. The executable
 NFcore2 slice resolves explicit reactant-count, connected-species-count, and
 positive compartment-volume bindings; it does not claim native object-level
 LocalFunction/DOR evaluation.
@@ -87,7 +88,7 @@ The post-fix validation set is also green:
 
 ```text
 cmake --build build --parallel 4
-ctest --test-dir build --output-on-failure       # 276/276 passed
+ctest --test-dir build --output-on-failure       # 281/281 passed
 tests/energy/tests/python                         # 66 passed
 tests/python                                       # 348 passed, 27 skipped
 tests/validation -m smoke                         # 4 passed, 14 skipped
@@ -136,7 +137,7 @@ words, finite constants, reactant counts, connected-species molecule counts,
 or positive compartment volumes and can use time, conditionals, arithmetic,
 and the BNG expression built-ins. Results are checked for finite,
 non-negative propensities. Rate-law fields participate in rule-family
-signatures and state-feature dependencies, and model-image version 5
+signatures and state-feature dependencies, and model-image version 6
 preserves the metadata.
 
 ## Deliberate remaining fallbacks

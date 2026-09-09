@@ -267,6 +267,57 @@ TEST_CASE("NFsim product collection preserves single-reactant output membership"
     delete mapping;
 }
 
+TEST_CASE("NFsim product collection reports complete component boundaries") {
+    // Source-derived from NFsim commit 97f86d7: bounded product traversal must
+    // report both the component sizes it collected and whether the traversal
+    // stopped before reaching a bonded neighbor.
+    NFcore::System system("product component boundaries");
+    std::vector<std::string> componentNames {"left", "right"};
+    auto* moleculeType = new NFcore::MoleculeType(
+        "ComponentBoundary", componentNames, &system);
+    auto* first = moleculeType->genDefaultMolecule();
+    auto* second = moleculeType->genDefaultMolecule();
+    REQUIRE(first != nullptr);
+    REQUIRE(second != nullptr);
+    NFcore::Molecule::bind(first, 1, second, 0);
+
+    auto* templateMolecule = new NFcore::TemplateMolecule(moleculeType);
+    NFcore::TransformationSet transformations({templateMolecule});
+    transformations.finalize();
+    auto* mapping = transformations.generateBlankMappingSet(0, 0);
+    REQUIRE(mapping != nullptr);
+    REQUIRE(mapping->set(0, first));
+    NFcore::MappingSet* mappingSets[] = {mapping};
+
+    std::list<NFcore::Molecule*> products;
+    std::vector<unsigned int> componentSizes;
+    bool componentsTruncated = false;
+    CHECK(transformations.getListOfProducts(
+        mappingSets, products, NFcore::ReactionClass::NO_LIMIT,
+        &componentSizes, &componentsTruncated));
+    REQUIRE(products.size() == 2);
+    REQUIRE(componentSizes.size() == 1);
+    CHECK(componentSizes.front() == 2);
+    CHECK_FALSE(componentsTruncated);
+
+    products.clear();
+    componentSizes.clear();
+    componentsTruncated = false;
+    CHECK(transformations.getListOfProducts(
+        mappingSets, products, 1, &componentSizes, &componentsTruncated));
+    REQUIRE(products.size() == 1);
+    REQUIRE(componentSizes.size() == 1);
+    CHECK(componentSizes.front() == 1);
+    CHECK(componentsTruncated);
+
+    std::list<NFcore::Molecule*> traversed;
+    CHECK(first->traverseBondedNeighborhood(
+        traversed, NFcore::ReactionClass::NO_LIMIT) == false);
+    CHECK(traversed.size() == 2);
+
+    delete mapping;
+}
+
 TEST_CASE("NFsim ReactantTree preserves weights across repeated expansion") {
     /* Source-derived from ReactantTree::expandTree: active MappingSets are
      * reinserted by stable id when the complete tree grows, then cleared

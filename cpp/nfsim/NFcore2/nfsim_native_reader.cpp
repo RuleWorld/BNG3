@@ -41,7 +41,7 @@ NativeReactionHeader NativeNFsimSystemReader::reactionHeader(std::size_t i) cons
                 h.uses_connected_to = true;
         }
         for (TemplateMolecule* connected : constraints.connected_to) {
-            if (std::find(roots.begin(), roots.end(), connected) == roots.end())
+            if (std::find(roots.begin(), roots.end(), connected) == roots.end() && graphPatterns.empty())
                 h.uses_connected_to = true;
         }
     }
@@ -81,13 +81,8 @@ void NativeNFsimSystemReader::collectGraphPatterns(std::size_t i,std::vector<Nat
         if (!molecule->collectRootLocalConstraints(constraints)) { out.clear(); return false; }
         // Root-local constraints are emitted separately as dependency
         // predicates. Internal graph nodes need their own exact state
-        // constraint here; silently dropping child constraints would widen
+        // constraints here; silently dropping child constraints would widen
         // the graph match.
-        if (reactant == std::numeric_limits<std::uint16_t>::max() &&
-            (!constraints.exclusions.empty() || !constraints.connected_to.empty() ||
-             constraints.states.size() > 1)) {
-            out.clear(); return false;
-        }
         NativeGraphNodeSnapshot node;
         node.molecule_type=static_cast<std::uint32_t>(molecule->getMoleculeType()->getTypeID());
         node.reactant=reactant;
@@ -97,10 +92,19 @@ void NativeNFsimSystemReader::collectGraphPatterns(std::size_t i,std::vector<Nat
             node.free_components.push_back(static_cast<std::uint32_t>(component));
         for (const auto component : constraints.occupied)
             node.bound_components.push_back(static_cast<std::uint32_t>(component));
-        if (reactant == std::numeric_limits<std::uint16_t>::max() && !constraints.states.empty()) {
-            if (constraints.states.front().first < 0 || constraints.states.front().second < 0) {
+        for (const auto& state : constraints.states) {
+            if (state.first < 0 || state.second < 0) {
                 out.clear(); return false;
             }
+            node.state_constraints.emplace_back(static_cast<std::uint32_t>(state.first), state.second);
+        }
+        for (const auto& excluded : constraints.exclusions) {
+            if (excluded.first < 0 || excluded.second < 0) {
+                out.clear(); return false;
+            }
+            node.excluded_states.emplace_back(static_cast<std::uint32_t>(excluded.first), excluded.second);
+        }
+        if (!constraints.states.empty()) {
             node.state_component=static_cast<std::uint32_t>(constraints.states.front().first);
             node.state=constraints.states.front().second;
         }
@@ -213,6 +217,27 @@ void NativeNFsimSystemReader::collectGraphPatterns(std::size_t i,std::vector<Nat
                 if (!appendNode(symmetric.partner, std::numeric_limits<std::uint16_t>::max())) return;
             }
         }
+        for (TemplateMolecule* connected : currentConstraints.connected_to) {
+            if (!connected) { out.clear(); return; }
+            auto found = indices.find(connected);
+            if (found == indices.end()) {
+                if (!appendNode(connected, std::numeric_limits<std::uint16_t>::max())) return;
+                found = indices.find(connected);
+            }
+            const std::size_t connectedIndex = found->second;
+            if (connectedIndex == currentIndex) { out.clear(); return; }
+            const std::size_t first = std::min(currentIndex, connectedIndex);
+            const std::size_t second = std::max(currentIndex, connectedIndex);
+            bool alreadyCaptured = false;
+            for (const auto& existing : graph.connected_to) {
+                if (existing.first_node == first && existing.second_node == second) {
+                    alreadyCaptured = true; break;
+                }
+            }
+            if (!alreadyCaptured)
+                graph.connected_to.push_back(NativeGraphConnectivitySnapshot(
+                    static_cast<std::uint32_t>(first), static_cast<std::uint32_t>(second)));
+        }
     }
     for (const auto& pendingConstraint : pendingSymmetric) {
         auto found = indices.find(pendingConstraint.partner);
@@ -227,7 +252,7 @@ void NativeNFsimSystemReader::collectGraphPatterns(std::size_t i,std::vector<Nat
     bool hasSymmetricConstraint = false;
     for (const auto& node : graph.nodes)
         if (!node.symmetric_constraints.empty()) { hasSymmetricConstraint = true; break; }
-    if (!hasSymmetricConstraint && graph.edges.empty()) { return; }
+    if (!hasSymmetricConstraint && graph.edges.empty() && graph.connected_to.empty()) { return; }
     out.push_back(graph);
 }
 
@@ -287,11 +312,17 @@ void NativeNFsimSystemReader::collectDependencies(std::size_t i,std::vector<Nati
         for (TemplateMolecule* connected : constraints.connected_to) {
             auto partner = std::find(roots.begin(), roots.end(), connected);
             if (partner == roots.end()) {
-                NativeDependencySnapshot unsupported;
-                unsupported.kind = NATIVE_TOPOLOGY;
-                unsupported.reactant = static_cast<std::uint16_t>(p);
-                unsupported.partner_reactant = std::numeric_limits<std::uint16_t>::max();
-                out.push_back(unsupported);
+                // The graph snapshot carries external connectedTo relations.
+                // Keep the unresolved marker only when graph extraction did
+                // not produce a native graph; otherwise it would force a
+                // fallback despite an exact matcher representation.
+                if (graphPatterns.empty()) {
+                    NativeDependencySnapshot unsupported;
+                    unsupported.kind = NATIVE_TOPOLOGY;
+                    unsupported.reactant = static_cast<std::uint16_t>(p);
+                    unsupported.partner_reactant = std::numeric_limits<std::uint16_t>::max();
+                    out.push_back(unsupported);
+                }
                 continue;
             }
             NativeDependencySnapshot value;
@@ -359,6 +390,11 @@ void NativeNFsimSystemReader::collectTransforms(std::size_t i,std::vector<Native
                     v.destination_compartment=nativeCompartmentId(q->getNewCompartmentId());
                     v.move_connected=q->isMoveConnected();
                 }
+            }else if(t->getType()==TransformationFactory::LOCAL_FUNCTION_REFERENCE){
+                LocalFunctionReference* q=dynamic_cast<LocalFunctionReference*>(t);
+                if(!q)throw std::logic_error("local-function transform type mismatch");
+                v.local_function_pointer=q->getPointerName();
+                v.local_function_scope=q->getFunctionScope();
             }
             views[static_cast<std::size_t>(p)].push_back(v);
         }

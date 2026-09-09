@@ -172,6 +172,12 @@ std::string LegacyLowerer::matcherSignature(const LegacyRuleIR& r) {
         for (const auto& node : graph.nodes) {
             os << node.molecule_type << ':' << node.anchor_reactant << ':' << node.state_component << ':'
                << node.compartment << ':' << node.state_value << ':';
+            os << "states:";
+            for (const auto& state : node.state_constraints)
+                os << state.first << '=' << state.second << ',';
+            os << "excluded:";
+            for (const auto& state : node.excluded_states)
+                os << state.first << '!' << state.second << ',';
             for (const auto component : node.free_components) os << 'f' << component << ',';
             os << ':';
             for (const auto component : node.bound_components) os << 'b' << component << ',';
@@ -186,6 +192,8 @@ std::string LegacyLowerer::matcherSignature(const LegacyRuleIR& r) {
         }
         for (const auto& edge : graph.edges)
             os << edge.first_node << ':' << edge.first_component << ':' << edge.second_node << ':' << edge.second_component << ';';
+        for (const auto& connected : graph.connected_to)
+            os << "connected:" << connected.first_node << ':' << connected.second_node << ';';
     }
     return os.str();
 }

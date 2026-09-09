@@ -258,6 +258,115 @@ TEST_CASE("native NFcore2 reader preserves internal graph-node state constraints
         engine.state(), engine.scaffolds(), context));
 }
 
+TEST_CASE("native NFcore2 graph nodes preserve multiple state constraints and exclusions") {
+    NFcore2::NativeModelSnapshot source;
+    NFcore2::NativeMoleculeTypeSnapshot a; a.name = "A"; a.component_count = 2;
+    NFcore2::NativeMoleculeTypeSnapshot b; b.name = "B"; b.component_count = 2;
+    source.molecule_types.push_back(a); source.molecule_types.push_back(b);
+    NFcore2::NativeReactionSnapshot rule;
+    rule.name = "graph_states"; rule.base_rate = 1.0; rule.reactant_types.push_back(0);
+    NFcore2::NativeGraphPatternSnapshot graph;
+    NFcore2::NativeGraphNodeSnapshot root; root.molecule_type = 0; root.reactant = 0;
+    NFcore2::NativeGraphNodeSnapshot child; child.molecule_type = 1;
+    child.state_constraints.push_back(std::make_pair(0u, 1));
+    child.state_constraints.push_back(std::make_pair(1u, 2));
+    child.excluded_states.push_back(std::make_pair(0u, 3));
+    graph.nodes.push_back(root); graph.nodes.push_back(child);
+    graph.edges.push_back(NFcore2::NativeGraphEdgeSnapshot());
+    graph.edges.back().first_node = 0; graph.edges.back().first_component = 0;
+    graph.edges.back().second_node = 1; graph.edges.back().second_component = 0;
+    rule.graph_patterns.push_back(graph); source.rules.push_back(rule);
+    const auto legacy = NFcore2::NFsimSnapshotAdapter::toLegacy(source);
+    REQUIRE(legacy.rules.size() == 1);
+    CHECK(legacy.rules[0].graph_patterns[0].nodes[1].state_constraints.size() == 2);
+    CHECK(legacy.rules[0].graph_patterns[0].nodes[1].excluded_states.size() == 1);
+    const auto lowered = NFcore2::LegacyLowerer::lower(legacy);
+    REQUIRE(lowered.supported_rule_count == 1);
+    NFcore2::Engine engine(lowered.executable);
+    const auto left = engine.state().molecules(NFcore2::MoleculeTypeId(0)).create();
+    const auto right = engine.state().molecules(NFcore2::MoleculeTypeId(1)).create();
+    engine.state().molecules(NFcore2::MoleculeTypeId(0)).setBondRef(
+        left, 0, NFcore2::MoleculeRef(NFcore2::MoleculeTypeId(1), right));
+    engine.state().molecules(NFcore2::MoleculeTypeId(1)).setBondRef(
+        right, 0, NFcore2::MoleculeRef(NFcore2::MoleculeTypeId(0), left));
+    engine.state().molecules(NFcore2::MoleculeTypeId(1)).setStateWord(right, 0, 1);
+    engine.state().molecules(NFcore2::MoleculeTypeId(1)).setStateWord(right, 1, 2);
+    NFcore2::MatchContext context;
+    context.setMoleculeAt(0, NFcore2::MoleculeRef(NFcore2::MoleculeTypeId(0), left));
+    const auto& family = lowered.executable.metadata().ruleFamilies()[0];
+    CHECK(lowered.executable.matchers().at(family.matcher).evaluate(
+        engine.state(), engine.scaffolds(), context));
+    engine.state().molecules(NFcore2::MoleculeTypeId(1)).setStateWord(right, 1, 3);
+    CHECK_FALSE(lowered.executable.matchers().at(family.matcher).evaluate(
+        engine.state(), engine.scaffolds(), context));
+}
+
+TEST_CASE("native NFcore2 graph patterns preserve connectedTo links") {
+    NFcore2::NativeModelSnapshot source;
+    NFcore2::NativeMoleculeTypeSnapshot a; a.name = "A"; a.component_count = 2;
+    NFcore2::NativeMoleculeTypeSnapshot b; b.name = "B"; b.component_count = 1;
+    NFcore2::NativeMoleculeTypeSnapshot c; c.name = "C"; c.component_count = 1;
+    source.molecule_types.push_back(a); source.molecule_types.push_back(b);
+    source.molecule_types.push_back(c);
+    NFcore2::NativeReactionSnapshot rule;
+    rule.name = "graph_connected"; rule.base_rate = 1.0; rule.reactant_types.push_back(0);
+    NFcore2::NativeGraphPatternSnapshot graph;
+    NFcore2::NativeGraphNodeSnapshot root; root.molecule_type = 0; root.reactant = 0;
+    NFcore2::NativeGraphNodeSnapshot first; first.molecule_type = 1;
+    NFcore2::NativeGraphNodeSnapshot second; second.molecule_type = 2;
+    graph.nodes.push_back(root); graph.nodes.push_back(first); graph.nodes.push_back(second);
+    graph.edges.push_back(NFcore2::NativeGraphEdgeSnapshot());
+    graph.edges.back().first_node = 0; graph.edges.back().first_component = 0;
+    graph.edges.back().second_node = 1; graph.edges.back().second_component = 0;
+    graph.connected_to.push_back(NFcore2::NativeGraphConnectivitySnapshot(1, 2));
+    rule.graph_patterns.push_back(graph); source.rules.push_back(rule);
+    const auto legacy = NFcore2::NFsimSnapshotAdapter::toLegacy(source);
+    REQUIRE(legacy.rules.size() == 1);
+    REQUIRE(legacy.rules[0].graph_patterns[0].connected_to.size() == 1);
+    CHECK(legacy.rules[0].graph_patterns[0].connected_to[0].first_node == 1);
+    CHECK(legacy.rules[0].graph_patterns[0].connected_to[0].second_node == 2);
+    const auto lowered = NFcore2::LegacyLowerer::lower(legacy);
+    REQUIRE(lowered.supported_rule_count == 1);
+    NFcore2::Engine engine(lowered.executable);
+    REQUIRE(lowered.executable.matchers().at(
+        lowered.executable.metadata().ruleFamilies()[0].matcher)
+        .graphPatterns()[0].connected_to.size() == 1);
+    const auto aHandle = engine.state().molecules(NFcore2::MoleculeTypeId(0)).create();
+    const auto bHandle = engine.state().molecules(NFcore2::MoleculeTypeId(1)).create();
+    const auto cHandle = engine.state().molecules(NFcore2::MoleculeTypeId(2)).create();
+    engine.state().molecules(NFcore2::MoleculeTypeId(0)).setBondRef(
+        aHandle, 0, NFcore2::MoleculeRef(NFcore2::MoleculeTypeId(1), bHandle));
+    engine.state().molecules(NFcore2::MoleculeTypeId(1)).setBondRef(
+        bHandle, 0, NFcore2::MoleculeRef(NFcore2::MoleculeTypeId(0), aHandle));
+    engine.state().molecules(NFcore2::MoleculeTypeId(0)).setBondRef(
+        aHandle, 1, NFcore2::MoleculeRef(NFcore2::MoleculeTypeId(2), cHandle));
+    engine.state().molecules(NFcore2::MoleculeTypeId(2)).setBondRef(
+        cHandle, 0, NFcore2::MoleculeRef(NFcore2::MoleculeTypeId(0), aHandle));
+    NFcore2::MatchContext context;
+    context.setMoleculeAt(0, NFcore2::MoleculeRef(NFcore2::MoleculeTypeId(0), aHandle));
+    const auto& family = lowered.executable.metadata().ruleFamilies()[0];
+    CHECK(lowered.executable.matchers().at(family.matcher).evaluate(
+        engine.state(), engine.scaffolds(), context));
+    engine.state().molecules(NFcore2::MoleculeTypeId(0)).setBondRef(
+        aHandle, 1, NFcore2::MoleculeRef());
+    engine.state().molecules(NFcore2::MoleculeTypeId(2)).setBondRef(
+        cHandle, 0, NFcore2::MoleculeRef());
+    CHECK_FALSE(lowered.executable.matchers().at(family.matcher).evaluate(
+        engine.state(), engine.scaffolds(), context));
+}
+
+TEST_CASE("native NFcore2 reader captures dot-separated connectedTo topology") {
+    auto system = systemFor("dot: A(b).B(a) -> A(b).B(a) 1");
+    const auto snapshot = NFcore2::snapshotLegacyNFsim(*system);
+    REQUIRE(snapshot.rules.size() == 1);
+    CHECK_FALSE(snapshot.rules[0].uses_connected_to);
+    REQUIRE(snapshot.rules[0].graph_patterns.size() == 1);
+    REQUIRE(snapshot.rules[0].graph_patterns[0].connected_to.size() == 1);
+    const auto lowered = NFcore2::lowerLegacyNFsim(*system);
+    CHECK(lowered.supported_rule_count == 1);
+    CHECK(lowered.fallback_rule_count == 0);
+}
+
 TEST_CASE("native NFcore2 reader captures zero-reactant synthesis") {
     auto system = systemFor("birth: 0 -> B(a) 1");
     REQUIRE(system->getReaction(0)->getTransformationSet()->getNumOfAddMoleculeTransforms() == 1);
@@ -322,6 +431,21 @@ TEST_CASE("native NFcore2 reader keeps local DOR rules on compatibility fallback
     CHECK(lowered.supported_rule_count == 0);
     CHECK(lowered.fallback_rule_count == 1);
     CHECK(lowered.rules[0].reason == NFcore2::LOWERING_LOCAL_FUNCTION);
+}
+
+TEST_CASE("native NFcore2 reader preserves local-function pointer scope") {
+    auto system = localFunctionSystem();
+    const auto snapshot = NFcore2::snapshotLegacyNFsim(*system);
+    REQUIRE(snapshot.rules.size() == 1);
+    const auto reference = std::find_if(
+        snapshot.rules[0].transforms.begin(), snapshot.rules[0].transforms.end(),
+        [](const auto& transform) {
+            return transform.kind == NFcore2::NATIVE_LOCAL_FUNCTION_REFERENCE;
+        });
+    REQUIRE(reference != snapshot.rules[0].transforms.end());
+    CHECK(reference->local_function_pointer == "x");
+    CHECK(reference->local_function_scope ==
+          NFcore::LocalFunction::SPECIES);
 }
 
 TEST_CASE("native NFcore2 lowering executes a reciprocal binding transform") {

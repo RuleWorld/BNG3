@@ -257,7 +257,9 @@ namespace NFcore
 				will explore down one level of bonds, and so on.
 				@author Michael Sneddon
 			*/
-			bool getListOfProducts(MappingSet **mappingSets, list <Molecule *> &products, int traversalLimit);
+			bool getListOfProducts(MappingSet **mappingSets, list <Molecule *> &products,
+					int traversalLimit, vector <unsigned int> *componentSizes = 0,
+					bool *componentsTruncated = 0);
 
 			/*!
 				This is a companion to getListOfProducts. This is called after applying transformations and
@@ -281,6 +283,8 @@ namespace NFcore
 				@author Michael Sneddon
 			*/
 			bool hasSymBindingTransform() const { return hasSymBinding; };
+
+			bool hasTopologyChangingTransform() const { return topologyChanging; };
 
 			/*!
 				Returns the number of transformations that the template at reactantIndex given has.
@@ -404,6 +408,9 @@ namespace NFcore
 
 			/*!	keeps track if this set has a symmetric binding reaction	*/
 			bool hasSymBinding;
+
+			/*! Whether this set can change molecular connectivity. */
+			bool topologyChanging;
 
 			/*! are we using the new general method for symmetry handling	*/
 			bool   useSymmetryFactor;

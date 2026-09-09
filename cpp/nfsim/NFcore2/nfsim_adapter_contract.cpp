@@ -121,6 +121,28 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                 outNode.free_components=node.free_components;
                 outNode.bound_components=node.bound_components;
                 outNode.state_value=node.state;
+                for (const auto& state : node.state_constraints) {
+                    validateComponent(source, node.molecule_type, state.first);
+                    if (state.second < 0)
+                        throw std::invalid_argument("NFsim graph state constraint is negative");
+                    outNode.state_constraints.push_back(state);
+                }
+                for (const auto& excluded : node.excluded_states) {
+                    validateComponent(source, node.molecule_type, excluded.first);
+                    if (excluded.second < 0)
+                        throw std::invalid_argument("NFsim graph state exclusion is negative");
+                    outNode.excluded_states.push_back(excluded);
+                }
+                // Older producers only populated the scalar state fields.
+                // Preserve that representation when no vector payload is
+                // available, while preferring the complete vector form.
+                if (outNode.state_constraints.empty() &&
+                    node.state_component != std::numeric_limits<std::uint32_t>::max() &&
+                    node.state >= 0) {
+                    validateComponent(source, node.molecule_type, node.state_component);
+                    outNode.state_constraints.push_back(
+                        std::make_pair(node.state_component, node.state));
+                }
                 for (const auto component : outNode.free_components)
                     validateComponent(source, node.molecule_type, component);
                 for (const auto component : outNode.bound_components)
@@ -168,6 +190,14 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                 outEdge.first_node=edge.first_node; outEdge.first_component=edge.first_component;
                 outEdge.second_node=edge.second_node; outEdge.second_component=edge.second_component;
                 graph.edges.push_back(outEdge);
+            }
+            for (const auto& connected : nativeGraph.connected_to) {
+                if (connected.first_node >= graph.nodes.size() ||
+                    connected.second_node >= graph.nodes.size() ||
+                    connected.first_node == connected.second_node)
+                    throw std::invalid_argument("NFsim connectedTo graph node out of range");
+                graph.connected_to.push_back(
+                    GraphConnectivityPattern(connected.first_node, connected.second_node));
             }
             r.graph_patterns.push_back(graph);
         }
@@ -362,7 +392,12 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                     else {t.kind=LEGACY_TRANSFORM_UNSUPPORTED;r.transforms.push_back(t);r.topology_change_is_local=false;}
                     break;
                 case NATIVE_EMPTY: break;
-                case NATIVE_LOCAL_FUNCTION_REFERENCE:r.uses_local_function=true;break;
+                case NATIVE_LOCAL_FUNCTION_REFERENCE:
+                    if (x.local_function_pointer.empty() ||
+                        (x.local_function_scope != 0 && x.local_function_scope != 1))
+                        throw std::invalid_argument("NFsim local-function reference scope is malformed");
+                    r.uses_local_function=true;
+                    break;
                 case NATIVE_INCREMENT_STATE:
                     t=transform(LEGACY_TRANSFORM_ADD_STATE_WORD,x.reactant,x.component,fmap.state[type][x.component]);t.value=1;r.transforms.push_back(t);break;
                 case NATIVE_DECREMENT_STATE:

@@ -83,11 +83,11 @@ The archival documents are retained under `docs/architecture_handoffs/`. The exa
 ## Evidence at this checkpoint
 
 - The direct-port build completed after adapting the BNG3 APIs.
-- Full Release/Ninja CTest passed all `276/276` tests, including `58/58`
+- Full Release/Ninja CTest passed all `281/281` tests, including `58/58`
   tests under the exact `energy` label, one NFcore2 and one NFnext
-  architecture-reference test, and the 14 native-port semantic tests.
-  The NFcore2 reference suite passed 431/431; the native-reader suite
-  passed 16 cases and 152 assertions.
+  architecture-reference test, and the 20 native-port semantic tests.
+  The NFcore2 reference suite passed 432/432; the native-reader suite
+  passed 20 cases and 180 assertions.
 - The imported energy Python self-tests passed `66/66` under the repository's
   intended `PYTHONPATH=tests/energy` environment.
 - The fresh current-main BNG3 Python regression suite passed `348` tests with
@@ -95,7 +95,7 @@ The archival documents are retained under `docs/architecture_handoffs/`. The exa
 - The validation smoke gate passed `4` checks with `14` visible skips; the
   skipped parity checks require the unavailable legacy `run_network` helper
   or an independently built native NFsim oracle.
-- Current ASan/UBSan focused checks passed the NFcore2 reference (`431/431`)
+- Current ASan/UBSan focused checks passed the NFcore2 reference (`432/432`)
   and ODE/observable/solver regressions (`10/10`).
 - BNG2 `master` was rebuilt from merged main revision `e0a5c6d9` and its CTest
   suite passed `81/81`.

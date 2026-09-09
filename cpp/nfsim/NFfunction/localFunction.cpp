@@ -530,6 +530,52 @@ double LocalFunction::evaluateOn(Molecule *m, int scope) {
 	return -1;
 }
 
+double LocalFunction::evaluateOn(Molecule *m, const list <Molecule *> &members) {
+	if(!isEverEvaluatedOnSpeciesScope) {
+		return this->evaluateOn(m, LocalFunction::MOLECULE);
+	}
+
+	if(!system->getEvaluateComplexScopedLocalFunctions()) {
+		return 0;
+	}
+
+	for(unsigned int i=0; i<n_varRefs; i++) {
+		if(varLocalObservables[i]!=0) {
+			varLocalObservables[i]->clear();
+		}
+	}
+
+	int matches = 0;
+	for(list<Molecule *>::const_iterator memberIter=members.begin();
+			memberIter!=members.end(); ++memberIter) {
+		for(unsigned int i=0; i<n_varRefs; i++) {
+			if(varLocalObservables[i]==0) continue;
+			if(varLocalObservables[i]->getType()==Observable::MOLECULES) {
+				matches = varLocalObservables[i]->isObservable(*memberIter);
+				varLocalObservables[i]->straightAdd(matches);
+			} else {
+				cerr<<"Error in LocalFunction::evaluateOn()! cannot handle this observable type when"<<endl;
+				cerr<<"evaluating on a connected component."<<endl;
+				exit(1);
+			}
+		}
+	}
+
+	double newValue = FuncFactory::Eval(p);
+	for(list<Molecule *>::const_iterator memberIter=members.begin();
+			memberIter!=members.end(); ++memberIter) {
+		for(unsigned int ti=0; ti<typeI_mol.size(); ti++) {
+			if((*memberIter)->getMoleculeType()==typeI_mol.at(ti)) {
+				(*memberIter)->setLocalFunctionValue(
+						newValue, this->typeI_localFunctionIndex.at(ti));
+				(*memberIter)->updateDORRxnValues();
+			}
+		}
+	}
+
+	return newValue;
+}
+
 //This version accepts a complex and evaluates the LocalFunction with SPECIES scope.
 double LocalFunction::evaluateOn(Complex *c) {
 	if (this->fileFunc) {

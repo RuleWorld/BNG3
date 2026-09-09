@@ -1,4 +1,5 @@
 #include "matcher.hh"
+#include <algorithm>
 #include <limits>
 #include <functional>
 namespace NFcore2 {
@@ -12,6 +13,11 @@ bool graphMatch(const SimulationState& s, const GraphPattern& graph, const Match
       edge.first_node == edge.second_node ||
       edge.first_component > std::numeric_limits<std::uint16_t>::max() ||
       edge.second_component > std::numeric_limits<std::uint16_t>::max()) return false;
+ }
+ for (const auto& connected : graph.connected_to) {
+  if (connected.first_node >= graph.nodes.size() ||
+      connected.second_node >= graph.nodes.size() ||
+      connected.first_node == connected.second_node) return false;
  }
  std::vector<MoleculeRef> mapping(graph.nodes.size());
  std::vector<bool> used(graph.nodes.size(), false);
@@ -87,6 +93,24 @@ bool graphMatch(const SimulationState& s, const GraphPattern& graph, const Match
       s.molecules(ref.type).stateWord(ref.handle, static_cast<std::uint16_t>(n.state_component)) != static_cast<std::uint64_t>(n.state_value)) return false;
   if (n.state_component != std::numeric_limits<std::uint32_t>::max() &&
       n.state_component > std::numeric_limits<std::uint16_t>::max()) return false;
+  for (const auto& state : n.state_constraints) {
+   if (state.first > std::numeric_limits<std::uint16_t>::max() ||
+       state.first >= s.model().moleculeTypes()[ref.type.value()].state_words)
+    return false;
+   if (state.second < 0 ||
+       s.molecules(ref.type).stateWord(ref.handle,
+                                       static_cast<std::uint16_t>(state.first)) !=
+           static_cast<std::uint64_t>(state.second)) return false;
+  }
+  for (const auto& excluded : n.excluded_states) {
+   if (excluded.first > std::numeric_limits<std::uint16_t>::max() ||
+       excluded.first >= s.model().moleculeTypes()[ref.type.value()].state_words ||
+       excluded.second < 0)
+    return false;
+   if (s.molecules(ref.type).stateWord(ref.handle,
+                                       static_cast<std::uint16_t>(excluded.first)) ==
+           static_cast<std::uint64_t>(excluded.second)) return false;
+  }
   if (!symmetricOk(i, ref, false)) return false;
   for (const auto& e: graph.edges) {
    std::size_t other=std::numeric_limits<std::size_t>::max(); std::uint32_t slot=0;
@@ -94,6 +118,15 @@ bool graphMatch(const SimulationState& s, const GraphPattern& graph, const Match
    else if (e.second_node==i) { other=e.first_node; slot=e.second_component; }
    if (other!=std::numeric_limits<std::size_t>::max() && mapping[other].valid() &&
        !(s.molecules(ref.type).bondRef(ref.handle, static_cast<std::uint16_t>(slot))==mapping[other])) return false;
+  }
+  for (const auto& connected : graph.connected_to) {
+   std::size_t other = std::numeric_limits<std::size_t>::max();
+   if (connected.first_node == i) other = connected.second_node;
+   else if (connected.second_node == i) other = connected.first_node;
+   if (other == std::numeric_limits<std::size_t>::max() || !mapping[other].valid()) continue;
+   const std::vector<MoleculeRef> component = s.connectedComponent(ref);
+   if (std::find(component.begin(), component.end(), mapping[other]) == component.end())
+    return false;
   }
   return true;
  };
