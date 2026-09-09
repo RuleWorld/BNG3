@@ -21,6 +21,11 @@ using namespace NFcore;
 NativeNFsimSystemReader::NativeNFsimSystemReader(System& s):system_(s){}
 
 namespace {
+bool appendExactComplexObservableBinding(
+    Observable* observable, const std::string& name, std::uint16_t reactant,
+    int scope, NativeReactionHeader& header);
+bool observableHasInternalBond(Observable* observable);
+
 bool appendSimpleScopedLocalFunction(System& system, LocalFunction* local,
                                      std::uint16_t reactant,
                                      NativeReactionHeader& header) {
@@ -40,6 +45,12 @@ bool appendSimpleScopedLocalFunction(System& system, LocalFunction* local,
         int templateCount = 0;
         TemplateMolecule** templates = nullptr;
         observable->getTemplateMoleculeList(templateCount, templates);
+        if (templateCount == 2 || observableHasInternalBond(observable)) {
+            if (!appendExactComplexObservableBinding(
+                    observable, local->getVarRefName(i), reactant, scope, candidate))
+                return false;
+            continue;
+        }
         if (templateCount != 1 || templates == nullptr || templates[0] == nullptr ||
             templates[0]->getMoleculeType() == nullptr)
             return false;
@@ -109,6 +120,13 @@ bool appendSimpleGlobalFunction(System& system, GlobalFunction* global,
         int templateCount = 0;
         TemplateMolecule** templates = nullptr;
         observable->getTemplateMoleculeList(templateCount, templates);
+        if (templateCount == 2 || observableHasInternalBond(observable)) {
+            if (!appendExactComplexObservableBinding(
+                    observable, global->getVarRefName(i), 0,
+                    -1, candidate))
+                return false;
+            continue;
+        }
         if (templateCount != 1 || templates == nullptr || templates[0] == nullptr ||
             templates[0]->getMoleculeType() == nullptr)
             return false;
@@ -175,7 +193,13 @@ bool mergeSimpleScopedLocalFunctions(const NativeReactionHeader& first,
                 prior.bond_component != binding.bond_component ||
                 prior.bond_state != binding.bond_state ||
                 prior.molecule_type != binding.molecule_type ||
+                prior.partner_molecule_type != binding.partner_molecule_type ||
+                prior.partner_component != binding.partner_component ||
+                prior.partner_state_component != binding.partner_state_component ||
+                prior.partner_state_value != binding.partner_state_value ||
                 prior.scope != binding.scope ||
+                prior.compartment != binding.compartment ||
+                prior.compartment_ancestry != binding.compartment_ancestry ||
                 prior.destination_compartment != binding.destination_compartment ||
                 prior.value != binding.value) return false;
             duplicate = true;
@@ -225,12 +249,101 @@ bool appendExpressionBinding(NativeReactionHeader& header,
                prior.bond_component == binding.bond_component &&
                prior.bond_state == binding.bond_state &&
                prior.molecule_type == binding.molecule_type &&
+               prior.partner_molecule_type == binding.partner_molecule_type &&
+               prior.partner_component == binding.partner_component &&
+               prior.partner_state_component == binding.partner_state_component &&
+               prior.partner_state_value == binding.partner_state_value &&
                prior.scope == binding.scope &&
+               prior.compartment == binding.compartment &&
+               prior.compartment_ancestry == binding.compartment_ancestry &&
                prior.destination_compartment == binding.destination_compartment &&
                prior.value == binding.value;
     }
     header.rate_expression_bindings.push_back(binding);
     return true;
+}
+
+bool appendExactComplexObservableBinding(
+    Observable* observable, const std::string& name, std::uint16_t reactant,
+    int scope, NativeReactionHeader& header) {
+    if (!observable || observable->getType() != Observable::MOLECULES)
+        return false;
+    int templateCount = 0;
+    TemplateMolecule** templates = nullptr;
+    observable->getTemplateMoleculeList(templateCount, templates);
+    if ((templateCount != 1 && templateCount != 2) || templates == nullptr ||
+        !templates[0] || !templates[0]->getMoleculeType())
+        return false;
+    TemplateMolecule* rootTemplate = templates[0];
+    TemplateMolecule* partnerTemplate = nullptr;
+    TemplateMolecule::RootLocalConstraints root;
+    TemplateMolecule::RootLocalConstraints partner;
+    const bool collected = rootTemplate->collectRootLocalConstraints(root);
+    if (collected && root.bonds.size() == 1) {
+        partnerTemplate = root.bonds[0].partner;
+        if (templateCount == 2 && partnerTemplate != templates[1])
+            partnerTemplate = nullptr;
+    }
+    const bool partnerCollected = partnerTemplate && partnerTemplate->getMoleculeType() &&
+        partnerTemplate->collectRootLocalConstraints(partner);
+    const bool shape = root.bonds.size() == 1 && partner.bonds.size() == 1;
+    const bool reciprocal = shape && root.bonds[0].partner == partnerTemplate &&
+        partner.bonds[0].partner == rootTemplate;
+    const bool componentShape = shape && root.bonds[0].component >= 0 &&
+        partner.bonds[0].component >= 0 && root.bonds[0].partner_component >= 0 &&
+        partner.bonds[0].partner_component >= 0 &&
+        !root.bonds[0].partner_component_symmetric &&
+        !partner.bonds[0].partner_component_symmetric &&
+        root.bonds[0].partner_component == partner.bonds[0].component &&
+        partner.bonds[0].partner_component == root.bonds[0].component;
+    const bool localOnly = root.compartment == partner.compartment &&
+        root.symmetric.empty() && partner.symmetric.empty() &&
+        root.connected_to.empty() && partner.connected_to.empty() &&
+        root.empty.empty() && root.occupied.empty() &&
+        partner.empty.empty() && partner.occupied.empty() &&
+        root.exclusions.empty() && partner.exclusions.empty() &&
+        root.states.size() <= 1 && partner.states.size() <= 1;
+    if (!(collected && partnerCollected && shape && reciprocal && componentShape && localOnly)) {
+        return false;
+    }
+    NativeRateExpressionBindingSnapshot binding;
+    binding.kind = NATIVE_RATE_EXPRESSION_COMPLEX_MOLECULE_COUNT;
+    binding.name = name;
+    binding.reactant = reactant;
+    binding.scope = scope;
+    binding.molecule_type = static_cast<std::uint32_t>(
+        rootTemplate->getMoleculeType()->getTypeID());
+    binding.component = static_cast<std::uint32_t>(root.bonds[0].component);
+    binding.partner_molecule_type = static_cast<std::uint32_t>(
+        partnerTemplate->getMoleculeType()->getTypeID());
+    binding.partner_component = static_cast<std::uint32_t>(root.bonds[0].partner_component);
+    if (!root.states.empty()) {
+        if (root.states[0].first < 0 || root.states[0].second < 0) return false;
+        binding.state_component = static_cast<std::uint32_t>(root.states[0].first);
+        binding.state_value = root.states[0].second;
+    }
+    if (!partner.states.empty()) {
+        if (partner.states[0].first < 0 || partner.states[0].second < 0) return false;
+        binding.partner_state_component = static_cast<std::uint32_t>(partner.states[0].first);
+        binding.partner_state_value = partner.states[0].second;
+    }
+    if (!root.compartment.empty())
+        binding.compartment = nativeCompartmentId(root.compartment);
+    return appendExpressionBinding(header, binding);
+}
+
+bool observableHasInternalBond(Observable* observable) {
+    if (!observable || observable->getType() != Observable::MOLECULES)
+        return false;
+    int templateCount = 0;
+    TemplateMolecule** templates = nullptr;
+    observable->getTemplateMoleculeList(templateCount, templates);
+    if (templateCount == 2) return true;
+    if (templateCount != 1 || templates == nullptr || templates[0] == nullptr)
+        return false;
+    TemplateMolecule::RootLocalConstraints constraints;
+    return templates[0]->collectRootLocalConstraints(constraints) &&
+        constraints.bonds.size() == 1 && constraints.bonds[0].partner != nullptr;
 }
 
 bool appendScopedObservableBinding(System& system, Observable* observable,
@@ -243,6 +356,9 @@ bool appendScopedObservableBinding(System& system, Observable* observable,
     int templateCount = 0;
     TemplateMolecule** templates = nullptr;
     observable->getTemplateMoleculeList(templateCount, templates);
+    if (templateCount == 2 || observableHasInternalBond(observable))
+        return appendExactComplexObservableBinding(
+            observable, name, reactant, scope, header);
     if (templateCount != 1 || templates == nullptr || templates[0] == nullptr ||
         templates[0]->getMoleculeType() == nullptr)
         return false;
@@ -355,6 +471,14 @@ bool appendGlobalFunctionDefinition(System& system, GlobalFunction* global,
             return false;
         }
         observable->getTemplateMoleculeList(templateCount, templates);
+        if (templateCount == 2 || observableHasInternalBond(observable)) {
+            if (!appendExactComplexObservableBinding(
+                    observable, global->getVarRefName(i), 0, -1, header)) {
+                visiting.erase(global->getName());
+                return false;
+            }
+            continue;
+        }
         if (templateCount != 1 || templates == nullptr || templates[0] == nullptr ||
             templates[0]->getMoleculeType() == nullptr) {
             visiting.erase(global->getName());

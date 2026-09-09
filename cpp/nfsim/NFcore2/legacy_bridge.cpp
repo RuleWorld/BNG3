@@ -121,6 +121,59 @@ double RateLawDescriptor::evaluate(const SimulationState& state,
                     }
                     return count;
                 }
+                if (binding.kind == RATE_EXPRESSION_COMPLEX_MOLECULE_COUNT) {
+                    if (binding.molecule_type >= state.model().moleculeTypes().size() ||
+                        binding.partner_molecule_type >= state.model().moleculeTypes().size())
+                        throw std::out_of_range("complex observable molecule type");
+                    const auto rootMatches = [&](MoleculeRef root) {
+                        if (!root.valid() || root.type.value() != binding.molecule_type ||
+                            !state.molecules(root.type).alive(root.handle))
+                            return false;
+                        const MoleculeStore& rootStore = state.molecules(root.type);
+                        if (binding.state_component != std::numeric_limits<std::uint32_t>::max() &&
+                            rootStore.stateWord(root.handle,
+                                static_cast<std::uint16_t>(binding.state_component)) !=
+                                static_cast<std::uint64_t>(binding.state_value))
+                            return false;
+                        if (!compartmentMatches(rootStore, root.handle, binding)) return false;
+                        const MoleculeRef partner = rootStore.bondRef(
+                            root.handle, static_cast<std::uint16_t>(binding.component));
+                        if (!partner.valid() || partner.type.value() != binding.partner_molecule_type ||
+                            !state.molecules(partner.type).alive(partner.handle))
+                            return false;
+                        const MoleculeStore& partnerStore = state.molecules(partner.type);
+                        if (!(partnerStore.bondRef(partner.handle,
+                                static_cast<std::uint16_t>(binding.partner_component)) == root))
+                            return false;
+                        if (binding.partner_state_component != std::numeric_limits<std::uint32_t>::max() &&
+                            partnerStore.stateWord(partner.handle,
+                                static_cast<std::uint16_t>(binding.partner_state_component)) !=
+                                static_cast<std::uint64_t>(binding.partner_state_value))
+                            return false;
+                        return true;
+                    };
+                    if (binding.scope == 1) {
+                        const MoleculeRef ref = context.moleculeAt(binding.target);
+                        return rootMatches(ref) ? 1.0 : 0.0;
+                    }
+                    if (binding.scope == 0) {
+                        const MoleculeRef ref = context.moleculeAt(binding.target);
+                        if (!ref.valid()) throw std::out_of_range("complex observable reactant missing");
+                        double count = 0.0;
+                        for (const auto& member : state.connectedComponent(ref))
+                            if (rootMatches(member)) count += 1.0;
+                        return count;
+                    }
+                    if (binding.scope != -1)
+                        throw std::invalid_argument("invalid complex observable binding scope");
+                    double count = 0.0;
+                    const MoleculeStore& store = state.molecules(
+                        MoleculeTypeId(binding.molecule_type));
+                    for (const auto handle : store.liveHandles())
+                        if (rootMatches(MoleculeRef(MoleculeTypeId(binding.molecule_type), handle)))
+                            count += 1.0;
+                    return count;
+                }
                 const MoleculeRef ref = context.moleculeAt(binding.target);
                 if (!ref.valid()) throw std::out_of_range("expression binding reactant missing");
                 if (binding.kind == RATE_EXPRESSION_SPECIES_MOLECULE_COUNT) {
@@ -336,6 +389,8 @@ std::string LegacyLowerer::transformSignature(const LegacyRuleIR& r) {
            << binding.component << ':' << binding.state_component << ':' << binding.state_value << ':'
            << binding.bond_component << ':' << binding.bond_state << ':'
            << binding.molecule_type << ':' << binding.scope << ':'
+           << binding.partner_molecule_type << ':' << binding.partner_component << ':'
+           << binding.partner_state_component << ':' << binding.partner_state_value << ':'
            << binding.compartment << ':' << binding.compartment_ancestry << ':'
            << binding.destination_compartment << ':' << binding.value << ';';
     os << "functions:";
@@ -434,6 +489,27 @@ LegacyLoweringResult LegacyLowerer::lower(const LegacyModelIR& legacy) {
                 if (fd.kind == FEATURE_TIME)
                     reads = true;
                 for (const auto& binding : law.expression_bindings) {
+                    if (binding.kind == RATE_EXPRESSION_COMPLEX_MOLECULE_COUNT) {
+                        const bool rootOwner = fd.owner == binding.molecule_type;
+                        const bool partnerOwner = fd.owner == binding.partner_molecule_type;
+                        if (!rootOwner && !partnerOwner) continue;
+                        if (fd.kind == FEATURE_MOLECULE_EXISTENCE)
+                            reads = true;
+                        if (fd.kind == FEATURE_MOLECULE_BOND &&
+                            ((rootOwner && fd.index == binding.component) ||
+                             (partnerOwner && fd.index == binding.partner_component)))
+                            reads = true;
+                        if (fd.kind == FEATURE_MOLECULE_STATE &&
+                            ((rootOwner && binding.state_component != std::numeric_limits<std::uint32_t>::max() &&
+                              fd.index == binding.state_component) ||
+                             (partnerOwner && binding.partner_state_component != std::numeric_limits<std::uint32_t>::max() &&
+                              fd.index == binding.partner_state_component)))
+                            reads = true;
+                        if (fd.kind == FEATURE_MOLECULE_COMPARTMENT &&
+                            binding.compartment != std::numeric_limits<std::uint32_t>::max())
+                            reads = true;
+                        continue;
+                    }
                     const bool scopedCount =
                         binding.kind == RATE_EXPRESSION_GLOBAL_MOLECULE_COUNT ||
                         binding.kind == RATE_EXPRESSION_SPECIES_MOLECULE_COUNT;

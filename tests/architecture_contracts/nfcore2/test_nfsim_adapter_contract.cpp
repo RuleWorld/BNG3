@@ -626,6 +626,51 @@ TEST(NFsimAdapter_GeneralExpressionRateResolvesReactantAndSpeciesScopes){
     EXPECT_NEAR(engine.evaluateRate(lowered.rules[0].family,lowered.rules[0].member,context),6.0,1e-12);
 }
 
+TEST(NFsimAdapter_GeneralExpressionRateResolvesExactComplexObservable){
+    NativeModelSnapshot n;
+    n.molecule_types.push_back(mol("A",1));
+    n.molecule_types.push_back(mol("B",1));
+    NativeReactionSnapshot r=rxn(); r.base_rate=1.0; r.reactant_types={0};
+    r.rate_law=NATIVE_RATE_EXPRESSION; r.rate_expression="complex";
+    NativeRateExpressionBindingSnapshot complex;
+    complex.kind=NATIVE_RATE_EXPRESSION_COMPLEX_MOLECULE_COUNT;
+    complex.name="complex"; complex.reactant=0; complex.scope=-1;
+    complex.molecule_type=0; complex.component=0;
+    complex.partner_molecule_type=1; complex.partner_component=0;
+    r.rate_expression_bindings.push_back(complex); n.rules.push_back(r);
+    LegacyLoweringResult lowered=LegacyLowerer::lower(NFsimSnapshotAdapter::toLegacy(n));
+    Engine engine(lowered.executable);
+    MoleculeHandle a=engine.state().molecules(MoleculeTypeId(0)).create();
+    MoleculeHandle b=engine.state().molecules(MoleculeTypeId(1)).create();
+    MoleculeHandle a2=engine.state().molecules(MoleculeTypeId(0)).create();
+    MoleculeHandle b2=engine.state().molecules(MoleculeTypeId(1)).create();
+    engine.state().molecules(MoleculeTypeId(0)).setBondRef(
+        a,0,MoleculeRef(MoleculeTypeId(1),b));
+    engine.state().molecules(MoleculeTypeId(1)).setBondRef(
+        b,0,MoleculeRef(MoleculeTypeId(0),a));
+    MatchContext context; context.setMoleculeAt(0,MoleculeRef(MoleculeTypeId(0),a));
+    EXPECT_NEAR(engine.evaluateRate(lowered.rules[0].family,lowered.rules[0].member,context),1.0,1e-12);
+    engine.state().molecules(MoleculeTypeId(0)).setBondRef(
+        a2,0,MoleculeRef(MoleculeTypeId(1),b2));
+    engine.state().molecules(MoleculeTypeId(1)).setBondRef(
+        b2,0,MoleculeRef(MoleculeTypeId(0),a2));
+    EXPECT_NEAR(engine.evaluateRate(lowered.rules[0].family,lowered.rules[0].member,context),2.0,1e-12);
+}
+
+TEST(NFsimAdapter_RejectsMalformedExactComplexObservable){
+    NativeModelSnapshot n;
+    n.molecule_types.push_back(mol("A",1));
+    n.molecule_types.push_back(mol("B",1));
+    NativeReactionSnapshot r=rxn(); r.rate_law=NATIVE_RATE_EXPRESSION;
+    r.rate_expression="complex";
+    NativeRateExpressionBindingSnapshot complex;
+    complex.kind=NATIVE_RATE_EXPRESSION_COMPLEX_MOLECULE_COUNT;
+    complex.name="complex"; complex.scope=-1; complex.molecule_type=0;
+    complex.component=0;
+    r.rate_expression_bindings.push_back(complex); n.rules.push_back(r);
+    EXPECT_THROW(NFsimSnapshotAdapter::toLegacy(n),std::invalid_argument);
+}
+
 TEST(NFsimAdapter_GeneralExpressionRateResolvesCompartmentVolume){
     NativeModelSnapshot n; n.molecule_types.push_back(mol("A",1));
     NativeCompartmentSnapshot compartment; compartment.id=7; compartment.dimensions=3; compartment.size=5.0; n.compartments.push_back(compartment);

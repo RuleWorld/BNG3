@@ -236,6 +236,10 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                 binding.bond_component = nativeBinding.bond_component;
                 binding.bond_state = nativeBinding.bond_state;
                 binding.molecule_type = nativeBinding.molecule_type;
+                binding.partner_molecule_type = nativeBinding.partner_molecule_type;
+                binding.partner_component = nativeBinding.partner_component;
+                binding.partner_state_component = nativeBinding.partner_state_component;
+                binding.partner_state_value = nativeBinding.partner_state_value;
                 binding.scope = nativeBinding.scope;
                 binding.compartment = nativeBinding.compartment;
                 binding.compartment_ancestry = nativeBinding.compartment_ancestry;
@@ -291,6 +295,38 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                         }
                     }
                     binding.kind = RATE_EXPRESSION_SPECIES_MOLECULE_COUNT;
+                } else if (nativeBinding.kind == NATIVE_RATE_EXPRESSION_COMPLEX_MOLECULE_COUNT) {
+                    if (binding.scope != -1 && binding.target >= nr.reactant_types.size())
+                        throw std::out_of_range("complex observable binding target");
+                    if (binding.molecule_type >= source.molecule_types.size() ||
+                        binding.partner_molecule_type >= source.molecule_types.size() ||
+                        source.molecule_types[binding.molecule_type].population ||
+                        source.molecule_types[binding.partner_molecule_type].population)
+                        throw std::invalid_argument("complex observable binding molecule type");
+                    if (binding.scope != -1 && binding.scope != 0 && binding.scope != 1)
+                        throw std::invalid_argument("complex observable binding scope");
+                    validateComponent(source, binding.molecule_type, binding.component);
+                    validateComponent(source, binding.partner_molecule_type,
+                                      binding.partner_component);
+                    if (binding.state_component != std::numeric_limits<std::uint32_t>::max()) {
+                        if (binding.state_value < 0)
+                            throw std::invalid_argument("complex observable root state");
+                        validateComponent(source, binding.molecule_type, binding.state_component);
+                    }
+                    if (binding.partner_state_component != std::numeric_limits<std::uint32_t>::max()) {
+                        if (binding.partner_state_value < 0)
+                            throw std::invalid_argument("complex observable partner state");
+                        validateComponent(source, binding.partner_molecule_type,
+                                          binding.partner_state_component);
+                    }
+                    if (binding.compartment != std::numeric_limits<std::uint32_t>::max()) {
+                        bool known = false;
+                        for (const auto& compartment : source.compartments)
+                            if (compartment.id == binding.compartment) { known = true; break; }
+                        if (!known)
+                            throw std::out_of_range("complex observable binding compartment");
+                    }
+                    binding.kind = RATE_EXPRESSION_COMPLEX_MOLECULE_COUNT;
                 } else if (nativeBinding.kind == NATIVE_RATE_EXPRESSION_COMPARTMENT_VOLUME) {
                     if (binding.target >= nr.reactant_types.size())
                         throw std::out_of_range("compartment-volume binding target");
@@ -354,6 +390,10 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                         prior.bond_component == binding.bond_component &&
                         prior.bond_state == binding.bond_state &&
                         prior.molecule_type == binding.molecule_type &&
+                        prior.partner_molecule_type == binding.partner_molecule_type &&
+                        prior.partner_component == binding.partner_component &&
+                        prior.partner_state_component == binding.partner_state_component &&
+                        prior.partner_state_value == binding.partner_state_value &&
                         prior.scope == binding.scope &&
                         prior.compartment == binding.compartment &&
                         prior.compartment_ancestry == binding.compartment_ancestry &&
