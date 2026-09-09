@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import subprocess
+from pathlib import Path
+
+import pytest
+
 from bionetgen.atomizer.modern import parse_multi_package
 
 
@@ -196,7 +201,9 @@ def test_multi_spec_features_and_outward_binding_statuses_become_reference_seed_
 
     assert result.bngl_molecule_types == ["A(state~U~P,site)"]
     assert result.seed_patterns == [("A0", "A(state~P,site)")]
-    assert not any("required attribute" in warning.message for warning in result.warnings)
+    assert not any(
+        "required attribute" in warning.message for warning in result.warnings
+    )
 
 
 def test_playground_multi_detects_deep_hierarchy_without_flattening():
@@ -232,7 +239,9 @@ def test_playground_multi_detects_deep_hierarchy_without_flattening():
     assert result.deep is True
     assert result.bngl_molecule_types == []
     assert result.complex_patterns == []
-    assert any("multi-layer hierarchy" in warning.message for warning in result.warnings)
+    assert any(
+        "multi-layer hierarchy" in warning.message for warning in result.warnings
+    )
     assert "complex" in result.warnings[0].message
 
 
@@ -248,3 +257,191 @@ def test_playground_multi_reports_missing_species_type_list():
     assert result.deep is False
     assert any(warning.severity == "info" for warning in result.warnings)
     assert "no listOfSpeciesTypes" in result.warnings[0].message
+
+
+def test_multi_product_component_map_carries_source_wildcard_binding_status():
+    from bionetgen.atomizer.modern import (
+        SBMLParser,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      multi:required="true">
+  <model id="mapped_product">
+    <listOfCompartments><compartment id="c" size="1"/></listOfCompartments>
+    <listOfSpecies>
+      <species id="A0" compartment="c" initialAmount="1"
+               multi:speciesType="AType" name="A(x!+)"/>
+      <species id="A1" compartment="c" multi:speciesType="AType"
+               name="A()"/>
+    </listOfSpecies>
+    <listOfReactions>
+      <multi:intraSpeciesReaction multi:id="r" multi:reversible="false">
+        <listOfReactants>
+          <speciesReference id="r1" species="A0"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference id="p1" species="A1">
+            <multi:listOfSpeciesTypeComponentMapsInProduct>
+              <multi:speciesTypeComponentMapInProduct
+                multi:reactant="r1" multi:reactantComponent="AType"
+                multi:productComponent="AType"/>
+            </multi:listOfSpeciesTypeComponentMapsInProduct>
+          </speciesReference>
+        </listOfProducts>
+        <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+          <cn>1</cn>
+        </math></kineticLaw>
+      </multi:intraSpeciesReaction>
+    </listOfReactions>
+    <multi:listOfSpeciesTypes>
+      <multi:bindingSiteSpeciesType multi:id="xType" multi:name="x"/>
+      <multi:speciesType multi:id="AType" multi:name="A">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="x" multi:name="x"
+                                     multi:speciesType="xType"/>
+        </multi:listOfSpeciesTypeInstances>
+      </multi:speciesType>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+
+    model = SBMLParser().parse(xml)
+    assert model.multi_executable is True
+    assert model.reactions["r"].multi_intra_species is True
+    assert model.reactions["r"].products[0].multi_component_maps
+    sct = build_species_composition_table(model)
+    molecule_types = get_molecule_types(sct, model.multi_type_patterns.values())
+    bngl, _ = generate_bngl(model, sct, molecule_types, get_seed_species(sct, model))
+
+    reaction = next(line for line in bngl.splitlines() if line.startswith("  r:"))
+    assert "M_A(x!+)@c -> M_A(x!+)@c" in reaction
+
+
+def test_multi_compartment_reference_overrides_species_reference_compartment():
+    from bionetgen.atomizer.modern import (
+        SBMLParser,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      multi:required="true">
+  <model id="compartment_reference">
+    <listOfCompartments>
+      <compartment id="c1" size="1"/>
+      <compartment id="c2" size="1">
+        <multi:listOfCompartmentReferences>
+          <multi:compartmentReference multi:id="inside" multi:compartment="c2"/>
+        </multi:listOfCompartmentReferences>
+      </compartment>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="A" compartment="c1" initialAmount="1"
+               multi:speciesType="AType" name="A(x)"/>
+      <species id="B" compartment="c1" multi:speciesType="AType"
+               name="A(x)"/>
+    </listOfSpecies>
+    <listOfReactions>
+      <reaction id="move">
+        <listOfReactants><speciesReference species="A"/></listOfReactants>
+        <listOfProducts>
+          <speciesReference species="B" multi:compartmentReference="inside"/>
+        </listOfProducts>
+        <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></kineticLaw>
+      </reaction>
+    </listOfReactions>
+    <multi:listOfSpeciesTypes>
+      <multi:bindingSiteSpeciesType multi:id="xType" multi:name="x"/>
+      <multi:speciesType multi:id="AType" multi:name="A">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="x" multi:name="x"
+                                     multi:speciesType="xType"/>
+        </multi:listOfSpeciesTypeInstances>
+      </multi:speciesType>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+
+    model = SBMLParser().parse(xml)
+    assert model.multi_compartment_references == {"c2": {"inside": "c2"}}
+    sct = build_species_composition_table(model)
+    molecule_types = get_molecule_types(sct, model.multi_type_patterns.values())
+    bngl, _ = generate_bngl(model, sct, molecule_types, get_seed_species(sct, model))
+    reaction = next(line for line in bngl.splitlines() if line.startswith("  move:"))
+    assert "@c1 -> M_A(x)@c2" in reaction
+
+
+def test_multi_namespace_violation_is_parseable_but_not_executable():
+    from bionetgen.atomizer.modern import parse_multi_package
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      multi:required="true">
+  <model id="bad_namespace">
+    <listOfSpecies><species id="A" multi:speciesType="AType"/></listOfSpecies>
+    <multi:listOfSpeciesTypes>
+      <multi:bindingSiteSpeciesType id="xType" multi:name="x"/>
+      <multi:speciesType multi:id="AType" multi:name="A">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="x" multi:speciesType="xType"/>
+        </multi:listOfSpeciesTypeInstances>
+      </multi:speciesType>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+
+    result = parse_multi_package(xml)
+    assert result.present is True
+    assert result.executable is False
+    assert any(
+        "must use the Multi namespace" in warning.message for warning in result.warnings
+    )
+
+
+def test_real_sbml_multi_validation_model_reconstructs_and_parses_with_bng_cpp():
+    from bionetgen.atomizer.modern import (
+        SBMLParser,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    fixture = (
+        Path(__file__).parents[1]
+        / "validation/Validate/test_write_sbml_multi_sbml_sbmlmulti.xml"
+    )
+    model = SBMLParser().parse(fixture.read_text())
+    assert model.multi_executable is True
+    assert len(model.multi_species_patterns) == 13
+    assert len(model.multi_reaction_mappings) == 6
+    assert model.multi_type_patterns["ST3"] == "L(r,r,r!1).R(l!1,l)"
+
+    sct = build_species_composition_table(model)
+    molecule_types = get_molecule_types(sct, model.multi_type_patterns.values())
+    bngl, _ = generate_bngl(model, sct, molecule_types, get_seed_species(sct, model))
+    assert "not yet fed into the simulated network" not in bngl
+    assert "M_L(r,r,r)" in bngl
+    assert "M_L(r,r,r!1).M_R(l!1)" in bngl
+    assert "__sp~" not in bngl
+
+    oracle = Path(__file__).parents[2] / "build/cpp/bng_cpp"
+    if not oracle.exists():
+        pytest.skip("bng_cpp execution oracle is not built")
+    completed = subprocess.run(
+        [str(oracle), "/dev/stdin"],
+        input=bngl,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert "parse ok" in completed.stdout

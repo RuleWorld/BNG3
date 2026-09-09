@@ -23,6 +23,7 @@ from .types import (
     SBMLModel,
     coerce_import_warning,
     SBMLModifierSpeciesReference,
+    SBMLMultiComponentMap,
     SBMLParameter,
     SBMLReaction,
     SBMLRule,
@@ -561,7 +562,6 @@ class SBMLParser:
             )
         dynamic_packages = {
             "comp": "hierarchical model composition (submodels/externalModelDefinitions are not flattened)",
-            "multi": "multistate/multicomponent species beyond the conservative reference extraction",
             "fbc": "flux-balance constraints and objectives",
             "qual": "qualitative (logical) model transitions",
             "spatial": "spatial geometry and diffusion",
@@ -641,6 +641,12 @@ class SBMLParser:
         result.multi_seed_patterns = [
             f"{species}: {pattern}" for species, pattern in multi.seed_patterns
         ]
+        result.multi_species_patterns = dict(multi.species_patterns)
+        result.multi_type_patterns = dict(multi.type_patterns)
+        result.multi_component_aliases = dict(multi.component_aliases)
+        result.multi_reaction_mappings = dict(multi.reaction_product_maps)
+        result.multi_compartment_references = dict(multi.compartment_references)
+        result.multi_executable = multi.executable
         if result.constraint_count:
             result.import_warnings.append(
                 {
@@ -841,6 +847,27 @@ class SBMLParser:
             stoichiometry /= denominator
         constant = _bool(_attribute(item, "constant"), True)
         stoichiometry_math_set = _first_child(item, "stoichiometryMath") is not None
+        map_parent = _first_child(item, "listOfSpeciesTypeComponentMapsInProduct")
+        component_maps = []
+        if map_parent is not None:
+            for mapping in _children(map_parent, "speciesTypeComponentMapInProduct"):
+                component_maps.append(
+                    SBMLMultiComponentMap(
+                        reactant=str(_attribute(mapping, "reactant", "") or ""),
+                        reactant_component=str(
+                            _attribute(mapping, "reactantComponent", "") or ""
+                        ),
+                        product_component=str(
+                            _attribute(mapping, "productComponent", "") or ""
+                        ),
+                        id=(
+                            str(_attribute(mapping, "id"))
+                            if _attribute(mapping, "id")
+                            else None
+                        ),
+                        name=str(_attribute(mapping, "name", "") or ""),
+                    )
+                )
         return SBMLSpeciesReference(
             species=species,
             stoichiometry=stoichiometry,
@@ -848,6 +875,12 @@ class SBMLParser:
             id=(str(_attribute(item, "id")) if _attribute(item, "id") else None),
             stoichiometry_set=stoichiometry_set,
             variable_stoichiometry=not constant or stoichiometry_math_set,
+            compartment_reference=(
+                str(_attribute(item, "compartmentReference"))
+                if _attribute(item, "compartmentReference")
+                else None
+            ),
+            multi_component_maps=component_maps,
         )
 
     @staticmethod
@@ -902,7 +935,17 @@ class SBMLParser:
         model: Any, parameter_aliases: Optional[Dict[str, str]] = None
     ) -> Dict[str, SBMLReaction]:
         result: Dict[str, SBMLReaction] = OrderedDict()
-        for item in SBMLParser._xml_items(model, "listOfReactions", "reaction"):
+        reaction_parent = _first_child(model, "listOfReactions")
+        reaction_items = (
+            [
+                item
+                for item in list(reaction_parent)
+                if _local_name(item.tag) in {"reaction", "intraSpeciesReaction"}
+            ]
+            if reaction_parent is not None
+            else []
+        )
+        for item in reaction_items:
             item_id = str(_attribute(item, "id", "") or "")
             if not item_id:
                 continue
@@ -951,6 +994,7 @@ class SBMLParser:
                     else None
                 ),
                 conversion_factor=_attribute(item, "conversionFactor"),
+                multi_intra_species=(_local_name(item.tag) == "intraSpeciesReaction"),
             )
         return result
 
@@ -981,7 +1025,7 @@ class SBMLParser:
                         {
                             "category": "missingMath",
                             "message": (
-                                f'{kind} rule'
+                                f"{kind} rule"
                                 + (
                                     f' for "{_attribute(item, "variable")}"'
                                     if _attribute(item, "variable")
