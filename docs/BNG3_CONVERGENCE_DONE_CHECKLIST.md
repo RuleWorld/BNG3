@@ -3403,7 +3403,7 @@ completion gate.
 - [x] Current parser detects and exposes conservative canonical single-level
   Multi structures as reference diagnostics.
 - [x] Executable SBML Multi v1 reconstruction checkpoint
-  `020fe68` on dedicated branch `codex/sbml-multi-full-work-v2` expands the
+  `c48c758` on dedicated branch `codex/sbml-multi-full-work-v2` expands the
   modern Atomizer path to resolve the released namespace and package grammar,
   spec-valid unqualified attributes on Multi-defined elements plus strict
   namespace placement for Multi extensions to core/MathML elements, SBML
@@ -3444,8 +3444,13 @@ completion gate.
 - [x] Multi output is emitted through the supported C++ writer with libSBML
   consistency checks and semantic parser round-trip tests.
 - [x] Independent NFsim execution parity is covered for a representative
-  Multi binding model; Multi-derived structures enter execution only after the
-  parser and oracle gates pass.
+  Multi binding model; the local gate builds standalone NFsim from source
+  revision `a6f9fa945c9d6e1e122e789c952260112c93f157` outside BNG3 and runs a
+  positive-time `0.1` simulation, producing a time-series output. The tested
+  binary SHA-256 is
+  `b5c5c4c82855a5084301bfe4a8d0c2bdc20b7ee996b6e3c868f9575862e916eb`.
+  Multi-derived structures enter execution only after the parser and oracle
+  gates pass; hosted/pinned Tier-NF qualification remains open.
 - [ ] Full SBML-Multi simulation, not merely diagnostics/comments, passes Tier-X
   and representative NF/network gates.
 
