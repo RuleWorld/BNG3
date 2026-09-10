@@ -118,8 +118,7 @@ class Species:
     def copy(self):
         species = Species()
         species.identifier = randint(0, 1000000)
-        for molecule in self.molecules:
-            species.molecules.append(molecule.copy())
+        species.molecules = [molecule.copy() for molecule in self.molecules]
         return species
 
     def getMoleculeById(self, idx):
@@ -489,8 +488,7 @@ class Molecule:
 
     def copy(self):
         molecule = Molecule(self.name, self.idx)
-        for element in self.components:
-            molecule.components.append(element.copy())
+        molecule.components = [element.copy() for element in self.components]
         return molecule
 
     def addChunk(self, chunk):
@@ -672,9 +670,9 @@ class Component:
 
     def copy(self):
         component = Component(
-            self.name, self.idx, deepcopy(self.bonds), deepcopy(self.states)
+            self.name, self.idx, [list(b) if isinstance(b, list) else b for b in self.bonds], list(self.states)
         )
-        component.activeState = deepcopy(self.activeState)
+        component.activeState = self.activeState
         return component
 
     def addState(self, state, update=True):

@@ -44,7 +44,7 @@ class Component:
 
     def copy(self) -> "Component":
         result = Component(
-            self.name, self.idx, copy.deepcopy(self.bonds), copy.deepcopy(self.states)
+            self.name, self.idx, [list(b) if isinstance(b, list) else b for b in self.bonds], list(self.states)
         )
         result.active_state = self.active_state
         return result
@@ -315,7 +315,7 @@ class Species:
 
     def copy(self) -> "Species":
         result = Species()
-        result.bond_numbers = copy.deepcopy(self.bond_numbers)
+        result.bond_numbers = list(self.bond_numbers)
         result.bonds = copy.deepcopy(self.bonds)
         result.identifier = self.identifier
         result.idx = self.idx
