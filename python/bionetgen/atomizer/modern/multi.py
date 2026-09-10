@@ -854,11 +854,20 @@ def _apply_component_indexes(
         progress = False
         for index_id, (component, parent) in pending:
             if parent:
-                matches = _find_components(flat_type, component, parent)
-                if len(matches) == 1:
-                    matches[0][1].aliases.add(index_id)
+                molecule_matches = [
+                    molecule
+                    for molecule in flat_type.molecules
+                    if parent in molecule.aliases and component in molecule.aliases
+                ]
+                component_matches = _find_components(flat_type, component, parent)
+                match_count = len(molecule_matches) + len(component_matches)
+                if match_count == 1:
+                    if molecule_matches:
+                        molecule_matches[0].aliases.add(index_id)
+                    else:
+                        component_matches[0][1].aliases.add(index_id)
                     progress = True
-                elif len(matches) > 1 and warnings is not None:
+                elif match_count > 1 and warnings is not None:
                     warnings.append(
                         _warning(
                             f'Multi speciesTypeComponentIndex "{index_id}" in '
@@ -2206,6 +2215,15 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
         if _namespace(element.tag) in {"", CORE_V1_NAMESPACE}
         and _attribute(element, "id")
     }
+    # IntraSpeciesReaction is a Multi element derived from the core Reaction
+    # class, so its id participates in the model-wide SId namespace too.
+    core_model_ids.update(
+        _attribute(element, "id")
+        for element in model.iter()
+        if _namespace(element.tag) == namespace
+        and _local_name(element.tag) == "intraSpeciesReaction"
+        and _attribute(element, "id")
+    )
     raw_type_elements = [
         *(_children(list_types, "bindingSiteSpeciesType", namespace)),
         *(_children(list_types, "speciesType", namespace)),
@@ -2469,47 +2487,52 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                 )
         types[type_id] = species_type
 
+    def resolve_component_scope(
+        owner: _SpeciesType,
+        token: str,
+        seen: Tuple[Tuple[str, str], ...] = (),
+    ) -> Optional[_SpeciesType]:
+        """Resolve a component object to its nested SpeciesType scope."""
+
+        marker = (owner.id, token)
+        if not token or marker in seen:
+            return None
+        if token == owner.id:
+            return owner
+        direct_instances = [
+            instance for instance in owner.instances if instance.id == token
+        ]
+        if len(direct_instances) == 1:
+            return types.get(direct_instances[0].type_id)
+        typed_instances = [
+            instance for instance in owner.instances if instance.type_id == token
+        ]
+        if len(typed_instances) == 1:
+            return types.get(typed_instances[0].type_id)
+        if len(typed_instances) > 1:
+            return None
+        if token not in owner.component_indexes:
+            return None
+        component, parent = owner.component_indexes[token]
+        scope = owner
+        if parent:
+            scope = resolve_component_scope(owner, parent, seen + (marker,))
+        if scope is None:
+            return None
+        return resolve_component_scope(scope, component, seen + (marker,))
+
     def scoped_component_tokens(
-        owner: _SpeciesType, identifying_parent: str = "", seen: Tuple[str, ...] = ()
+        owner: _SpeciesType, identifying_parent: str = ""
     ) -> set:
         """Return component/index ids visible from a Multi component scope."""
 
-        if owner.id in seen:
+        scope = (
+            owner
+            if not identifying_parent
+            else resolve_component_scope(owner, identifying_parent)
+        )
+        if scope is None:
             return set()
-        scope = owner
-        if identifying_parent and identifying_parent != owner.id:
-            direct_instances = [
-                instance
-                for instance in owner.instances
-                if instance.id == identifying_parent
-            ]
-            if len(direct_instances) == 1:
-                scope = types.get(direct_instances[0].type_id, owner)
-            elif any(
-                instance.type_id == identifying_parent for instance in owner.instances
-            ):
-                scope = types.get(identifying_parent, owner)
-            elif identifying_parent in owner.component_indexes:
-                component, parent = owner.component_indexes[identifying_parent]
-                # The parent index is resolved in the current owner's scope.
-                # Do not mark that owner as visited before this lookup: doing
-                # so makes an index with no identifyingParent appear empty,
-                # even though its component is a valid direct instance.
-                parent_tokens = scoped_component_tokens(owner, parent, seen)
-                if component not in parent_tokens:
-                    return set()
-                nested_types = [
-                    types.get(instance.type_id)
-                    for instance in owner.instances
-                    if instance.id == component or instance.type_id == component
-                ]
-                nested_types = [candidate for candidate in nested_types if candidate]
-                if len(nested_types) == 1:
-                    scope = nested_types[0]
-                else:
-                    return set()
-            else:
-                return set()
         tokens = {scope.id} | set(scope.component_indexes)
         for instance in scope.instances:
             tokens.update({instance.id, instance.type_id})
@@ -2550,25 +2573,9 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
         valid_bond_endpoints = set(species_type.component_indexes)
         valid_bond_endpoints.update(instance.id for instance in species_type.instances)
 
-        def binding_type_for(
-            token: str, seen: Tuple[str, ...] = ()
-        ) -> Optional[str]:
-            if token in seen:
-                return None
-            component, _parent = species_type.component_indexes.get(token, (token, ""))
-            instance = next(
-                (candidate for candidate in species_type.instances if candidate.id == component),
-                None,
-            )
-            if instance is not None:
-                target = types.get(instance.type_id)
-                return target.id if target is not None and target.is_binding_site else None
-            if component in species_type.component_indexes:
-                return binding_type_for(component, seen + (token,))
-            target = types.get(component)
-            if target is not None and target.is_binding_site:
-                return target.id
-            return None
+        def binding_type_for(token: str) -> Optional[str]:
+            target = resolve_component_scope(species_type, token)
+            return target.id if target is not None and target.is_binding_site else None
 
         for site1, site2 in species_type.bonds:
             if site1 not in valid_bond_endpoints or site2 not in valid_bond_endpoints:
@@ -2711,6 +2718,7 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
         if not compartment_id or reference_list is None:
             continue
         references: Dict[str, str] = {}
+        reference_ids = {compartment_id}
         reference_targets: List[Tuple[str, bool]] = []
         for reference in _children(reference_list, "compartmentReference", namespace):
             reference_id = _attribute(reference, "id")
@@ -2755,7 +2763,7 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                 )
             reference_targets.append((reference_compartment, bool(reference_id)))
             if reference_id:
-                if reference_id in references:
+                if reference_id in reference_ids:
                     warnings.append(
                         _warning(
                             f'Duplicate compartmentReference id "{reference_id}" '
@@ -2763,6 +2771,7 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                             "dropped",
                         )
                     )
+                reference_ids.add(reference_id)
                 references[reference_id] = reference_compartment
         if reference_targets:
             compartment_reference_edges[compartment_id] = {
@@ -3169,7 +3178,9 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                     (feature, inherited_component) for feature in nested_features
                 )
         seen_feature_occurrences = set()
-        seen_feature_ids = set()
+        # SpeciesFeature and SubListOfSpeciesFeatures ids share the Species
+        # object's local id scope, which includes the core species id.
+        seen_feature_ids = {species_id}
         for child in list(feature_list) if feature_list is not None else []:
             if _local_name(child.tag) != "subListOfSpeciesFeatures":
                 continue

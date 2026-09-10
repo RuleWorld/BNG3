@@ -707,6 +707,118 @@ def test_multi_rejects_type_and_possible_value_global_id_collision():
     assert any("globally unique" in warning.message for warning in result.warnings)
 
 
+def test_multi_rejects_species_feature_id_collision_with_species_id():
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      multi:required="true">
+  <model id="species_id_scope">
+    <listOfSpecies>
+      <species id="a0" multi:speciesType="aType">
+        <multi:listOfSpeciesFeatures>
+          <multi:speciesFeature multi:id="a0" multi:speciesFeatureType="state"
+            multi:occur="1">
+            <multi:listOfSpeciesFeatureValues>
+              <multi:speciesFeatureValue multi:value="on"/>
+            </multi:listOfSpeciesFeatureValues>
+          </multi:speciesFeature>
+        </multi:listOfSpeciesFeatures>
+      </species>
+    </listOfSpecies>
+    <multi:listOfSpeciesTypes>
+      <multi:speciesType multi:id="aType">
+        <multi:listOfSpeciesFeatureTypes>
+          <multi:speciesFeatureType multi:id="state" multi:occur="1">
+            <multi:listOfPossibleSpeciesFeatureValues>
+              <multi:possibleSpeciesFeatureValue multi:id="on"/>
+            </multi:listOfPossibleSpeciesFeatureValues>
+          </multi:speciesFeatureType>
+        </multi:listOfSpeciesFeatureTypes>
+      </multi:speciesType>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+
+    result = parse_multi_package(xml)
+
+    assert result.executable is False
+    assert any("Duplicate Multi speciesFeature id" in w.message
+               for w in result.warnings)
+
+
+def test_multi_rejects_compartment_reference_id_collision_with_parent():
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      multi:required="true">
+  <model id="compartment_id_scope">
+    <listOfCompartments>
+      <compartment id="c1" multi:isType="false">
+        <multi:listOfCompartmentReferences>
+          <multi:compartmentReference multi:id="c1" multi:compartment="c2"/>
+        </multi:listOfCompartmentReferences>
+      </compartment>
+      <compartment id="c2" multi:isType="false"/>
+    </listOfCompartments>
+    <multi:listOfSpeciesTypes>
+      <multi:speciesType multi:id="aType"/>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+
+    result = parse_multi_package(xml)
+
+    assert result.executable is False
+    assert any("Duplicate compartmentReference id" in w.message
+               for w in result.warnings)
+
+
+def test_multi_rejects_intra_species_reaction_id_collision_with_species_type():
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      multi:required="true">
+  <model id="reaction_id_scope">
+    <listOfSpecies>
+      <species id="a1" multi:speciesType="aType">
+        <multi:listOfOutwardBindingSites>
+          <multi:outwardBindingSite multi:component="x"
+            multi:bindingStatus="unbound"/>
+        </multi:listOfOutwardBindingSites>
+      </species>
+      <species id="a2" multi:speciesType="aType">
+        <multi:listOfOutwardBindingSites>
+          <multi:outwardBindingSite multi:component="x"
+            multi:bindingStatus="unbound"/>
+        </multi:listOfOutwardBindingSites>
+      </species>
+      <species id="aa" multi:speciesType="aaType"/>
+    </listOfSpecies>
+    <listOfReactions>
+      <multi:intraSpeciesReaction id="aType">
+        <listOfReactants>
+          <speciesReference species="a1"/>
+          <speciesReference species="a2"/>
+        </listOfReactants>
+        <listOfProducts><speciesReference species="aa"/></listOfProducts>
+      </multi:intraSpeciesReaction>
+    </listOfReactions>
+    <multi:listOfSpeciesTypes>
+      <multi:bindingSiteSpeciesType multi:id="xType"/>
+      <multi:speciesType multi:id="aType">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="x" multi:speciesType="xType"/>
+        </multi:listOfSpeciesTypeInstances>
+      </multi:speciesType>
+      <multi:speciesType multi:id="aaType"/>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+
+    result = parse_multi_package(xml)
+
+    assert result.executable is False
+    assert any("collides with a core Model identifier" in w.message
+               for w in result.warnings)
+
+
 def test_multi_positive_initial_pool_requires_fully_defined_sites():
     xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
       xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
@@ -923,6 +1035,57 @@ def test_multi_resolves_component_indexes_independent_of_declaration_order():
         "could not resolve component" in warning.message
         for warning in result.warnings
     )
+
+
+def test_multi_resolves_nested_index_bonds_through_indexed_parents():
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      multi:required="true">
+  <model id="nested_index_bond">
+    <listOfSpecies>
+      <species id="x0" initialAmount="1" multi:speciesType="outer"/>
+    </listOfSpecies>
+    <multi:listOfSpeciesTypes>
+      <multi:bindingSiteSpeciesType multi:id="siteAType"/>
+      <multi:bindingSiteSpeciesType multi:id="siteBType"/>
+      <multi:speciesType multi:id="innerA">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="site" multi:speciesType="siteAType"/>
+        </multi:listOfSpeciesTypeInstances>
+      </multi:speciesType>
+      <multi:speciesType multi:id="innerB">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="site" multi:speciesType="siteBType"/>
+        </multi:listOfSpeciesTypeInstances>
+      </multi:speciesType>
+      <multi:speciesType multi:id="outer">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="a" multi:speciesType="innerA"/>
+          <multi:speciesTypeInstance multi:id="b" multi:speciesType="innerB"/>
+        </multi:listOfSpeciesTypeInstances>
+        <multi:listOfSpeciesTypeComponentIndexes>
+          <multi:speciesTypeComponentIndex multi:id="aSite"
+            multi:component="site" multi:identifyingParent="aParent"/>
+          <multi:speciesTypeComponentIndex multi:id="bSite"
+            multi:component="site" multi:identifyingParent="bParent"/>
+          <multi:speciesTypeComponentIndex multi:id="aParent" multi:component="a"/>
+          <multi:speciesTypeComponentIndex multi:id="bParent" multi:component="b"/>
+        </multi:listOfSpeciesTypeComponentIndexes>
+        <multi:listOfInSpeciesTypeBonds>
+          <multi:inSpeciesTypeBond multi:bindingSite1="aSite"
+            multi:bindingSite2="bSite"/>
+        </multi:listOfInSpeciesTypeBonds>
+      </multi:speciesType>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+
+    result = parse_multi_package(xml)
+
+    assert result.executable is True
+    assert result.species_patterns["x0"] == "innerA(siteAType!1).innerB(siteBType!1)"
+    assert not any("must resolve both endpoints" in warning.message
+                   for warning in result.warnings)
 
 
 def test_multi_product_component_map_ids_are_unique_across_products():
