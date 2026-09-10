@@ -20,6 +20,7 @@ from .types import SBMLImportWarning, SBMLMultiComponentMap
 MULTI_V1_NAMESPACE = "http://www.sbml.org/sbml/level3/version1/multi/version1"
 CORE_V1_NAMESPACE = "http://www.sbml.org/sbml/level3/version1/core"
 MATHML_NAMESPACE = "http://www.w3.org/1998/Math/MathML"
+_SID_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def _local_name(tag: str) -> str:
@@ -70,6 +71,12 @@ def _first_child(
 
 def _clean(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9_]", "_", value or "")
+
+
+def _is_sid(value: str) -> bool:
+    """Return whether *value* has SBML's SId/SIdRef lexical shape."""
+
+    return bool(value and _SID_PATTERN.fullmatch(value))
 
 
 @dataclass
@@ -1187,9 +1194,6 @@ def _species_pattern_from_multi(
     )
     if not flat.molecules:
         return None
-    source = str(_attribute(species, "name", "") or "").strip()
-    source_is_usable = _source_pattern_is_usable(source, flat)
-
     feature_entries: List[Tuple[Any, str]] = []
     feature_parent = _first_child(species, "listOfSpeciesFeatures", namespace)
     for child in list(feature_parent) if feature_parent is not None else []:
@@ -1373,8 +1377,10 @@ def _species_pattern_from_multi(
             )
             continue
         targets[0].binding_status = status
-    if source_is_usable:
-        return source
+    # Core Species.name is a human-readable label, not a pattern-bearing
+    # attribute.  A Multi speciesType is therefore always reconstructed from
+    # the package graph and per-species annotations; accepting a parseable
+    # name here would silently turn arbitrary labels into executable BNGL.
     return _render_flat_type(flat, show_states=False)
 
 
@@ -1539,6 +1545,54 @@ _MULTI_ALLOWED_PARENTS = {
     },
 }
 
+_MULTI_ALLOWED_CHILDREN = {
+    "listOfCompartmentReferences": {"compartmentReference"},
+    "compartmentReference": set(),
+    "listOfSpeciesTypes": {"speciesType", "bindingSiteSpeciesType"},
+    "speciesType": {
+        "listOfSpeciesFeatureTypes",
+        "listOfSpeciesTypeInstances",
+        "listOfSpeciesTypeComponentIndexes",
+        "listOfInSpeciesTypeBonds",
+    },
+    "bindingSiteSpeciesType": set(),
+    "listOfSpeciesTypeInstances": {"speciesTypeInstance"},
+    "speciesTypeInstance": set(),
+    "listOfSpeciesTypeComponentIndexes": {"speciesTypeComponentIndex"},
+    "speciesTypeComponentIndex": set(),
+    "listOfInSpeciesTypeBonds": {"inSpeciesTypeBond"},
+    "inSpeciesTypeBond": set(),
+    "listOfSpeciesFeatureTypes": {"speciesFeatureType"},
+    "speciesFeatureType": {"listOfPossibleSpeciesFeatureValues"},
+    "listOfPossibleSpeciesFeatureValues": {"possibleSpeciesFeatureValue"},
+    "possibleSpeciesFeatureValue": set(),
+    "listOfSpeciesFeatures": {"speciesFeature", "subListOfSpeciesFeatures"},
+    "speciesFeature": {"listOfSpeciesFeatureValues"},
+    "listOfSpeciesFeatureValues": {"speciesFeatureValue"},
+    "speciesFeatureValue": set(),
+    "listOfOutwardBindingSites": {"outwardBindingSite"},
+    "outwardBindingSite": set(),
+    "subListOfSpeciesFeatures": {"speciesFeature"},
+    "intraSpeciesReaction": {
+        "listOfReactants",
+        "listOfProducts",
+        "listOfModifiers",
+        "kineticLaw",
+    },
+    "listOfSpeciesTypeComponentMapsInProduct": {
+        "speciesTypeComponentMapInProduct"
+    },
+    "speciesTypeComponentMapInProduct": set(),
+}
+
+_MULTI_METADATA_ELEMENTS = {"notes", "annotation"}
+_MULTI_CORE_CHILDREN = {
+    "listOfReactants",
+    "listOfProducts",
+    "listOfModifiers",
+    "kineticLaw",
+}
+
 
 def _validate_multi_markup(
     root: Any, namespace: str, warnings: List[SBMLImportWarning]
@@ -1551,39 +1605,88 @@ def _validate_multi_markup(
         for parent in root.iter()
         for child in list(parent)
     }
+    metadata_nodes = {
+        id(descendant)
+        for element in root.iter()
+        if _namespace(element.tag) == CORE_V1_NAMESPACE
+        and _local_name(element.tag) in _MULTI_METADATA_ELEMENTS
+        for descendant in element.iter()
+    }
+
+    def mark(message: str) -> None:
+        nonlocal invalid
+        invalid = True
+        warnings.append(_warning(message, "dropped"))
+
+    def validate_value(element: Any, key: str, value: str, key_namespace: str) -> None:
+        """Validate Multi primitive lexical values before semantic resolution."""
+
+        nonlocal invalid
+        if key_namespace not in {namespace, ""}:
+            return
+        if key in {"id", "component", "identifyingParent", "bindingSite1", "bindingSite2",
+                   "speciesType", "compartmentReference", "compartment", "compartmentType",
+                   "reactant", "reactantComponent", "productComponent", "value",
+                   "numericValue", "speciesFeatureType", "speciesReference"}:
+            if not _is_sid(value):
+                mark(
+                    f'Multi attribute "{key}" on {_local_name(element.tag)} '
+                    f'has invalid SId/SIdRef value "{value}".'
+                )
+        elif key == "occur" and not re.fullmatch(r"[1-9][0-9]*", value):
+            mark(
+                f'Multi attribute "occur" on {_local_name(element.tag)} must be '
+                "a positiveInteger."
+            )
+        elif key == "bindingStatus" and value not in {"bound", "unbound", "either"}:
+            mark(
+                f'Multi attribute "bindingStatus" on {_local_name(element.tag)} '
+                f'has invalid value "{value}".'
+            )
+        elif key == "relation" and value not in {"and", "or", "not"}:
+            mark(
+                f'Multi attribute "relation" on {_local_name(element.tag)} '
+                f'has invalid value "{value}".'
+            )
+        elif key == "representationType" and value not in {"sum", "numericValue"}:
+            mark(
+                f'Multi attribute "representationType" on {_local_name(element.tag)} '
+                f'has invalid value "{value}".'
+            )
+        elif key in {"required", "isType"} and value not in {
+            "true",
+            "false",
+            "1",
+            "0",
+        }:
+            mark(
+                f'Multi boolean attribute "{key}" on {_local_name(element.tag)} '
+                f'has invalid value "{value}".'
+            )
+
     for element in root.iter():
+        if id(element) in metadata_nodes:
+            continue
         local = _local_name(element.tag)
         element_namespace = _namespace(element.tag)
         if "/multi/" in element_namespace and element_namespace != namespace:
-            invalid = True
-            warnings.append(
-                _warning(
-                    f'Unsupported SBML Multi element namespace "{element_namespace}".',
-                    "dropped",
-                )
+            mark(
+                f'Unsupported SBML Multi element namespace "{element_namespace}".'
             )
             continue
         if element_namespace == namespace:
             if local not in _MULTI_ELEMENTS:
-                invalid = True
-                warnings.append(
-                    _warning(
-                        f'Unsupported SBML Multi element "{local}"; its semantics '
-                        "are not reconstructed.",
-                        "dropped",
-                    )
+                mark(
+                    f'Unsupported SBML Multi element "{local}"; its semantics '
+                    "are not reconstructed."
                 )
             parent = parents.get(id(element))
             parent_local = _local_name(parent.tag) if parent is not None else ""
             allowed_parents = _MULTI_ALLOWED_PARENTS.get(local)
             if allowed_parents is not None and parent_local not in allowed_parents:
-                invalid = True
-                warnings.append(
-                    _warning(
-                        f'SBML Multi element "{local}" is not allowed inside '
-                        f'core or Multi parent "{parent_local or "<root>"}".',
-                        "dropped",
-                    )
+                mark(
+                    f'SBML Multi element "{local}" is not allowed inside '
+                    f'core or Multi parent "{parent_local or "<root>"}".'
                 )
             elif allowed_parents and parent is not None:
                 parent_namespace = _namespace(parent.tag)
@@ -1600,75 +1703,63 @@ def _validate_multi_markup(
                     else namespace
                 )
                 if parent_namespace != expected_parent_namespace:
-                    invalid = True
-                    warnings.append(
-                        _warning(
-                            f'SBML Multi element "{local}" has parent '
-                            f'"{parent_local}" in namespace "{parent_namespace}"; '
-                            f'expected "{expected_parent_namespace}".',
-                            "dropped",
-                        )
+                    mark(
+                        f'SBML Multi element "{local}" has parent '
+                        f'"{parent_local}" in namespace "{parent_namespace}"; '
+                        f'expected "{expected_parent_namespace}".'
                     )
             allowed = set(_MULTI_ELEMENT_ATTRIBUTES.get(local, set()))
             if local == "intraSpeciesReaction":
                 allowed.clear()
             for required_attribute in _MULTI_REQUIRED_ATTRIBUTES.get(local, set()):
                 if not _attribute(element, required_attribute):
-                    invalid = True
-                    warnings.append(
-                        _warning(
-                            f'Multi {local} is missing required attribute '
-                            f'"{required_attribute}".',
-                            "dropped",
-                        )
+                    mark(
+                        f'Multi {local} is missing required attribute '
+                        f'"{required_attribute}".'
                     )
             for key in getattr(element, "attrib", {}):
                 key_namespace = _namespace(key)
                 key_local = _local_name(key)
                 if key_namespace == namespace:
                     if key_local not in allowed:
-                        invalid = True
-                        warnings.append(
-                            _warning(
-                                f'Unexpected Multi attribute "{key_local}" on '
-                                f"{local}.",
-                                "dropped",
-                            )
+                        mark(
+                            f'Unexpected Multi attribute "{key_local}" on '
+                            f"{local}."
+                        )
+                    else:
+                        validate_value(
+                            element,
+                            key_local,
+                            str(element.attrib[key]),
+                            key_namespace,
                         )
                 elif key_namespace == CORE_V1_NAMESPACE:
                     if key_local not in _MULTI_CORE_ATTRIBUTES:
-                        invalid = True
-                        warnings.append(
-                            _warning(
-                                f'Unexpected core attribute "{key_local}" on '
-                                f"Multi {local}.",
-                                "dropped",
-                            )
+                        mark(
+                            f'Unexpected core attribute "{key_local}" on '
+                            f"Multi {local}."
                         )
                 elif key_namespace == "":
                     unqualified_allowed = (
                         _INTRA_REACTION_CORE_ATTRIBUTES
                         if local == "intraSpeciesReaction"
-                        else set(_CORE_MULTI_ATTRIBUTES.get(local, set()))
-                        | set(allowed)
+                        else set()
                     )
                     if key_local not in unqualified_allowed:
-                        invalid = True
-                        warnings.append(
-                            _warning(
-                                f'Multi attribute "{key_local}" on {local} must '
-                                "use the Multi namespace.",
-                                "dropped",
+                        mark(
+                            f'Multi attribute "{key_local}" on {local} must '
+                            "use the Multi namespace."
+                        )
+                    elif local == "intraSpeciesReaction":
+                        if key_local == "id" and not _is_sid(str(element.attrib[key])):
+                            mark(
+                                f'Core reaction id "{element.attrib[key]}" has '
+                                "invalid SId syntax."
                             )
-                        )
                 else:
-                    invalid = True
-                    warnings.append(
-                        _warning(
-                            f'Attribute "{key_local}" on Multi element {local} '
-                            "uses an unsupported namespace.",
-                            "dropped",
-                        )
+                    mark(
+                        f'Attribute "{key_local}" on Multi element {local} '
+                        "uses an unsupported namespace."
                     )
             allowed_children = _MULTI_LIST_CHILDREN.get(local)
             if allowed_children is not None:
@@ -1678,24 +1769,42 @@ def _validate_multi_markup(
                     if _namespace(child.tag) == namespace
                 ]
                 if not package_children:
-                    invalid = True
-                    warnings.append(
-                        _warning(
-                            f"SBML Multi {local} must contain at least one "
-                            "package child.",
-                            "dropped",
-                        )
+                    mark(
+                        f"SBML Multi {local} must contain at least one "
+                        "package child."
                     )
                 for child in package_children:
                     child_local = _local_name(child.tag)
                     if child_local not in allowed_children:
-                        invalid = True
-                        warnings.append(
-                            _warning(
-                                f"SBML Multi {local} contains unsupported child "
-                                f'"{child_local}".',
-                                "dropped",
+                        mark(
+                            f"SBML Multi {local} contains unsupported child "
+                            f'"{child_local}".'
+                        )
+            allowed_children = _MULTI_ALLOWED_CHILDREN.get(local)
+            if allowed_children is not None:
+                for child in list(element):
+                    child_local = _local_name(child.tag)
+                    child_namespace = _namespace(child.tag)
+                    if (
+                        child_namespace == CORE_V1_NAMESPACE
+                        and child_local in _MULTI_METADATA_ELEMENTS
+                    ):
+                        continue
+                    if child_local not in allowed_children:
+                        mark(
+                            f'SBML Multi {local} contains unexpected child '
+                            f'"{child_local}".'
+                        )
+                    elif child_local in _MULTI_CORE_CHILDREN:
+                        if child_namespace != CORE_V1_NAMESPACE:
+                            mark(
+                                f'Core child "{child_local}" under Multi {local} '
+                                "must use the SBML Core namespace."
                             )
+                    elif child_namespace != namespace:
+                        mark(
+                            f'Multi child "{child_local}" under {local} must use '
+                            "the Multi namespace."
                         )
             continue
         expected = _CORE_MULTI_ATTRIBUTES.get(local, set())
@@ -1719,14 +1828,17 @@ def _validate_multi_markup(
                     "isType",
                     "compartmentReference",
                 }
-            ):
-                invalid = True
-                warnings.append(
-                    _warning(
-                        f'Multi attribute "{_local_name(key)}" on core {local} '
-                        "must use the Multi namespace.",
-                        "dropped",
-                    )
+                ):
+                mark(
+                    f'Multi attribute "{_local_name(key)}" on core {local} '
+                    "must use the Multi namespace."
+                )
+            elif _namespace(key) == namespace:
+                validate_value(
+                    element,
+                    _local_name(key),
+                    str(element.attrib[key]),
+                    namespace,
                 )
         for child in list(element):
             child_namespace = _namespace(child.tag)
@@ -1738,14 +1850,9 @@ def _validate_multi_markup(
                 MATHML_NAMESPACE,
             }:
                 continue
-            if child_namespace:
-                invalid = True
-                warnings.append(
-                    _warning(
-                        f'Unexpected child "{child_local}" on core {local}.',
-                        "dropped",
-                    )
-                )
+            # Other SBML packages are validated by their own import paths.  Do
+            # not make Multi fail closed merely because another package is
+            # present; only Multi namespace placement is this validator's job.
     return invalid
 
 
@@ -2031,11 +2138,21 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                 )
 
         instance_list = _first_child(item, "listOfSpeciesTypeInstances", namespace)
-        if is_binding_site and instance_list is not None:
+        index_list = _first_child(item, "listOfSpeciesTypeComponentIndexes", namespace)
+        bond_list = _first_child(item, "listOfInSpeciesTypeBonds", namespace)
+        if is_binding_site and any(
+            child is not None
+            for child in (
+                feature_list,
+                instance_list,
+                index_list,
+                bond_list,
+            )
+        ):
             warnings.append(
                 _warning(
                     f'Multi bindingSiteSpeciesType "{type_id}" must be atomic '
-                    "and cannot contain speciesTypeInstance children.",
+                    "and cannot contain feature, instance, index, or bond children.",
                     "dropped",
                 )
             )
@@ -2071,7 +2188,6 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                 )
             )
 
-        index_list = _first_child(item, "listOfSpeciesTypeComponentIndexes", namespace)
         index_ids = set()
         for component in _children(index_list, "speciesTypeComponentIndex", namespace):
             component_id = _attribute(component, "id")
@@ -2100,7 +2216,6 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                     )
                 )
 
-        bond_list = _first_child(item, "listOfInSpeciesTypeBonds", namespace)
         bond_pairs = set()
         for bond in _children(bond_list, "inSpeciesTypeBond", namespace):
             site1 = _attribute(bond, "bindingSite1")
@@ -2128,6 +2243,75 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                 )
         types[type_id] = species_type
 
+    # All Multi SId-valued identifiers share SBML's global SId namespace.
+    # Check this before resolving references so duplicate ids cannot be
+    # interpreted differently merely because they occur in different lists.
+    multi_id_owner: Dict[str, str] = {}
+    for element in root.iter():
+        if _namespace(element.tag) != namespace:
+            continue
+        identifier = _namespaced_attribute(element, namespace, "id")
+        if not identifier:
+            continue
+        owner = _local_name(element.tag)
+        previous = multi_id_owner.get(identifier)
+        if previous is not None:
+            warnings.append(
+                _warning(
+                    f'Duplicate Multi id "{identifier}" on {previous} and '
+                    f"{owner}; SBML identifiers are globally unique.",
+                    "dropped",
+                )
+            )
+        else:
+            multi_id_owner[identifier] = owner
+        if identifier in core_model_ids:
+            warnings.append(
+                _warning(
+                    f'Multi id "{identifier}" on {owner} collides with a core '
+                    "SBML identifier.",
+                    "dropped",
+                )
+            )
+
+    def scoped_component_tokens(
+        owner: _SpeciesType, identifying_parent: str = "", seen: Tuple[str, ...] = ()
+    ) -> set:
+        """Return component/index ids visible from a Multi component scope."""
+
+        if owner.id in seen:
+            return set()
+        scope = owner
+        if identifying_parent and identifying_parent != owner.id:
+            direct_instances = [
+                instance
+                for instance in owner.instances
+                if instance.id == identifying_parent
+            ]
+            if len(direct_instances) == 1:
+                scope = types.get(direct_instances[0].type_id, owner)
+            elif identifying_parent in owner.component_indexes:
+                component, parent = owner.component_indexes[identifying_parent]
+                parent_tokens = scoped_component_tokens(owner, parent, seen + (owner.id,))
+                if component not in parent_tokens:
+                    return set()
+                nested_types = [
+                    types.get(instance.type_id)
+                    for instance in owner.instances
+                    if instance.id == component or instance.type_id == component
+                ]
+                nested_types = [candidate for candidate in nested_types if candidate]
+                if len(nested_types) == 1:
+                    scope = nested_types[0]
+                else:
+                    return set()
+            else:
+                return set()
+        tokens = {scope.id} | set(scope.component_indexes)
+        for instance in scope.instances:
+            tokens.update({instance.id, instance.type_id})
+        return tokens
+
     for species_type in types.values():
         for instance in species_type.instances:
             if instance.type_id not in types:
@@ -2139,10 +2323,8 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                         "dropped",
                     )
                 )
-        component_ids = {
-            instance.id for instance in species_type.instances
-        } | set(species_type.component_indexes) | {species_type.id} | set(types)
         for index_id, (component, identifying_parent) in species_type.component_indexes.items():
+            component_ids = scoped_component_tokens(species_type, identifying_parent)
             if component not in component_ids:
                 warnings.append(
                     _warning(
@@ -2152,7 +2334,8 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                         "dropped",
                     )
                 )
-            if identifying_parent and identifying_parent not in component_ids:
+            parent_ids = scoped_component_tokens(species_type)
+            if identifying_parent and identifying_parent not in parent_ids:
                 warnings.append(
                     _warning(
                         f'Multi speciesTypeComponentIndex "{index_id}" in '
@@ -2161,9 +2344,8 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                         "dropped",
                     )
                 )
-        valid_bond_endpoints = {
-            instance.id for instance in species_type.instances
-        } | set(species_type.component_indexes)
+        valid_bond_endpoints = set(species_type.component_indexes)
+        valid_bond_endpoints.update(instance.id for instance in species_type.instances)
 
         def binding_type_for(
             token: str, seen: Tuple[str, ...] = ()
@@ -2805,6 +2987,25 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                 or _attribute(species, "initialConcentration") != ""
             ):
                 seed_patterns.append((species_id, pattern))
+
+    # A bindingSiteSpeciesType may also be used as a top-level SpeciesType.
+    # It is atomic in Multi, but still needs a BNGL molecule declaration when
+    # it is instantiated directly as a core species.
+    for type_id in set(species_type_by_species.values()):
+        species_type = types.get(type_id)
+        if species_type is None or not species_type.is_binding_site:
+            continue
+        flat = _flatten_type(
+            type_id,
+            types,
+            structure_warnings,
+            compartment_references=compartment_references,
+        )
+        if flat.molecules:
+            rendered = _render_flat_type(flat, show_states=True)
+            type_patterns[type_id] = rendered
+            if rendered not in molecule_types:
+                molecule_types.append(rendered)
 
     reaction_product_maps: Dict[str, Dict[str, List[Any]]] = {}
     species_ids = set(species_compartments)

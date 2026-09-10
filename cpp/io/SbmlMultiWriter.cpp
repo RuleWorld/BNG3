@@ -360,7 +360,7 @@ std::string SbmlMultiWriter::writeSeedSpecies(const ast::Model& model) {
                         const auto bond = (*edge)->get_state().get_BNG2_string();
                         if (bond == "!+") bindingStatus = "bound";
                         else if (bond == "!?") bindingStatus = "either";
-                        else if (bond == "!-") bindingStatus = "unbound";
+                        else if (bond == "!0" || bond == "!-") bindingStatus = "unbound";
                     }
                     if (!bindingStatus.empty()) {
                         const auto componentId = "st_" + makeValidSBMLId(moleculeType->getName()) +

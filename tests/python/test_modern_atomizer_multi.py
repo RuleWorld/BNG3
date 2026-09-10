@@ -147,7 +147,7 @@ def _shallow_multi_xml(component: str = "bind") -> str:
 </sbml>"""
 
 
-def test_playground_multi_resolves_single_site_bonds_with_component_fallback():
+def test_multi_rejects_component_index_outside_its_identifying_parent_scope():
     result = parse_multi_package(_shallow_multi_xml(component="not_the_site_id"))
 
     assert result.present is True
@@ -156,7 +156,8 @@ def test_playground_multi_resolves_single_site_bonds_with_component_fallback():
     assert [(item.type_id, item.pattern) for item in result.complex_patterns] == [
         ("ABType", "A(bind!1).A(bind!1)")
     ]
-    assert not any("could not be resolved" in item.message for item in result.warnings)
+    assert result.executable is False
+    assert any("unknown component" in item.message for item in result.warnings)
 
 
 def test_multi_spec_features_and_outward_binding_statuses_become_reference_seed_pattern():
@@ -277,8 +278,13 @@ def test_multi_product_component_map_carries_source_wildcard_binding_status():
       <compartment id="c" size="1" multi:isType="false"/>
     </listOfCompartments>
     <listOfSpecies>
-      <species id="A0" compartment="c" initialAmount="1"
-               multi:speciesType="AType" name="A(x!+)"/>
+          <species id="A0" compartment="c" initialAmount="1"
+                   multi:speciesType="AType" name="human-readable A">
+            <multi:listOfOutwardBindingSites>
+              <multi:outwardBindingSite multi:component="x"
+                                        multi:bindingStatus="bound"/>
+            </multi:listOfOutwardBindingSites>
+          </species>
       <species id="A1" compartment="c" multi:speciesType="AType"
                name="A()"/>
     </listOfSpecies>
@@ -518,7 +524,7 @@ def test_multi_repeated_feature_occurrences_and_numeric_values_are_executable():
     assert result.species_patterns["A0"] == "A(state_1~U,state_2~X)"
 
 
-def test_multi_unprefixed_attributes_on_package_elements_follow_spec_rules():
+def test_multi_unprefixed_attributes_on_package_elements_are_rejected():
     xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
       xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
       multi:required="true">
@@ -539,8 +545,8 @@ def test_multi_unprefixed_attributes_on_package_elements_follow_spec_rules():
 
     result = parse_multi_package(xml)
 
-    assert result.executable is True
-    assert not any("must use the Multi namespace" in w.message for w in result.warnings)
+    assert result.executable is False
+    assert any("must use the Multi namespace" in w.message for w in result.warnings)
 
 
 def test_multi_empty_optional_type_list_does_not_block_core_model_import():
@@ -557,6 +563,120 @@ def test_multi_empty_optional_type_list_does_not_block_core_model_import():
     assert result.present is True
     assert result.executable is True
     assert not any(warning.severity == "dropped" for warning in result.warnings)
+
+
+def test_multi_ignores_foreign_package_content_inside_core_metadata():
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      xmlns:foo="urn:example:foo" multi:required="true">
+  <model id="metadata_foreign">
+    <annotation><foo:payload foo:token="opaque"><foo:item/></foo:payload></annotation>
+    <listOfSpecies><species id="A0" multi:speciesType="AType"/></listOfSpecies>
+    <multi:listOfSpeciesTypes>
+      <multi:speciesType multi:id="AType" multi:name="A"/>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+
+    result = parse_multi_package(xml)
+
+    assert result.executable is True
+    assert not any("foreign" in warning.message.lower() for warning in result.warnings)
+
+
+def test_multi_binding_site_species_type_is_atomic():
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      multi:required="true">
+  <model id="non_atomic_binding_site">
+    <listOfSpecies><species id="A0" multi:speciesType="AType"/></listOfSpecies>
+    <multi:listOfSpeciesTypes>
+      <multi:bindingSiteSpeciesType multi:id="xType">
+        <multi:listOfSpeciesFeatureTypes>
+          <multi:speciesFeatureType multi:id="state" multi:occur="1">
+            <multi:listOfPossibleSpeciesFeatureValues>
+              <multi:possibleSpeciesFeatureValue multi:id="on"/>
+            </multi:listOfPossibleSpeciesFeatureValues>
+          </multi:speciesFeatureType>
+        </multi:listOfSpeciesFeatureTypes>
+      </multi:bindingSiteSpeciesType>
+      <multi:speciesType multi:id="AType" multi:name="A">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="x" multi:speciesType="xType"/>
+        </multi:listOfSpeciesTypeInstances>
+      </multi:speciesType>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+
+    result = parse_multi_package(xml)
+
+    assert result.executable is False
+    assert any("must be atomic" in warning.message for warning in result.warnings)
+
+
+def test_multi_rejects_invalid_primitive_values_before_reconstruction():
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      multi:required="true">
+  <model id="invalid_primitives">
+    <listOfSpecies>
+      <species id="A0" multi:speciesType="AType">
+        <multi:listOfOutwardBindingSites>
+          <multi:outwardBindingSite multi:component="x"
+                                    multi:bindingStatus="sometimes"/>
+        </multi:listOfOutwardBindingSites>
+      </species>
+    </listOfSpecies>
+    <multi:listOfSpeciesTypes>
+      <multi:bindingSiteSpeciesType multi:id="xType"/>
+      <multi:speciesType multi:id="AType" multi:name="A">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="x" multi:speciesType="xType"/>
+        </multi:listOfSpeciesTypeInstances>
+      </multi:speciesType>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+
+    result = parse_multi_package(xml)
+
+    assert result.executable is False
+    assert any("invalid value" in warning.message for warning in result.warnings)
+
+
+def test_multi_reports_spec_valid_cross_compartment_component_as_nonrepresentable():
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      multi:required="true">
+  <model id="cross_compartment_component">
+    <listOfCompartments>
+      <compartment id="cc" size="1">
+        <multi:listOfCompartmentReferences>
+          <multi:compartmentReference multi:id="inside" multi:compartment="c"/>
+        </multi:listOfCompartmentReferences>
+      </compartment>
+      <compartment id="c" size="1"/>
+    </listOfCompartments>
+    <listOfSpecies><species id="A0" compartment="cc"
+      multi:speciesType="AType"/></listOfSpecies>
+    <multi:listOfSpeciesTypes>
+      <multi:bindingSiteSpeciesType multi:id="xType" multi:compartment="c"/>
+      <multi:speciesType multi:id="AType" multi:name="A" multi:compartment="cc">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="x" multi:speciesType="xType"
+            multi:compartmentReference="inside"/>
+        </multi:listOfSpeciesTypeInstances>
+      </multi:speciesType>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+
+    result = parse_multi_package(xml)
+
+    assert result.present is True
+    assert result.executable is False
+    assert any("different compartment" in warning.message for warning in result.warnings)
 
 
 def test_multi_allows_state_features_and_in_species_bonds_on_one_species_type():
