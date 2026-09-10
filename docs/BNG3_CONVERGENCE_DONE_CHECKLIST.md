@@ -3403,7 +3403,7 @@ completion gate.
 - [x] Current parser detects and exposes conservative canonical single-level
   Multi structures as reference diagnostics.
 - [x] Executable SBML Multi v1 reconstruction checkpoint
-  `cb6b7fa` on dedicated branch `codex/sbml-multi-full-work-v2` expands the
+  `84f124f` on dedicated branch `codex/sbml-multi-full-work-v2` expands the
   modern Atomizer path to resolve the released namespace and package grammar,
   strict namespace-qualified package attributes, SBML primitive lexical rules,
   spec-scoped identifier collisions, scoped/nested component indexes, atomic
@@ -3418,13 +3418,18 @@ completion gate.
   accepts valid SpeciesType identifying parents; compartment-type instances,
   nested compartment propagation, binding-site feature inheritance, outward
   binding-site ID uniqueness, relation=`and` occurrence constraints, and
-  type-only definitions are covered. Invalid or non-representable structures
-  fail closed with structured diagnostics.
+  type-only definitions are covered. Nested component indexes resolve through
+  indexed parents for feature and bond scopes; component indexes may target
+  either a component instance or a nested SpeciesType object. Core
+  Reaction-derived Multi identifiers, species-feature identifiers, and
+  compartment-reference identifiers are checked in their complete SBML/Multi
+  scopes. Invalid or non-representable structures fail closed with structured
+  diagnostics.
   Core metadata and foreign package annotations are preserved without false
   rejection. The real fixture
   `tests/validation/Validate/test_write_sbml_multi_sbml_sbmlmulti.xml`
   produces executable BNGL and parses through the native `bng_cpp` oracle.
-  Focused Multi tests report `37 passed, 3 skipped`; full Python reports `382
+  Focused Multi tests report `41 passed, 3 skipped`; full Python reports `386
   passed, 30 skipped`; CTest reports `291/291`; Ruff, C++ syntax, and `git
   diff --check` pass.
 - [x] Canonical Multi molecule types, components, states, complexes,
