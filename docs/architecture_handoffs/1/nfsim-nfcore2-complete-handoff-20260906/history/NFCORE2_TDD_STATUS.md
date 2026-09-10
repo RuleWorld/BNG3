@@ -1,5 +1,8 @@
 # NFcore2 test-first continuation status
 
+> Historical TDD checkpoint. Current contract promotion is governed by the
+> live convergence checklist and [`docs/CURRENT_PROGRESS.md`](../../../../../CURRENT_PROGRESS.md).
+
 Base target: `akutuva21/nfsim`, branch `perf/rasi-translation-optimization`, previously evaluated at `d13086bd3cf2fd268be5efea4d83089301479de3`.
 
 This continuation changed the development rule for NFcore2 to test-first. New behavior was first expressed as failing conformance tests, then the implementation was changed until the tests passed. The production NFsim execution path remains untouched; these tests validate the adjacent NFcore2 backend and its semantic lowering/runtime contracts.

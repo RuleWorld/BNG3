@@ -1,5 +1,8 @@
 # NFnext future-contract test suite
 
+> Archived copy of the future-contract suite. The repository copy and current
+> promotion state are described in `docs/CURRENT_PROGRESS.md`.
+
 This directory is an executable specification of the clean-slate NFsim/NFnext
 architecture. It is deliberately **not built by default**. Existing green tests
 remain the regression gate for implemented functionality; this suite defines

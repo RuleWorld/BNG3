@@ -1,5 +1,9 @@
 # CLI Reference
 
+The live implementation and final verification state are tracked in
+[`CURRENT_PROGRESS.md`](CURRENT_PROGRESS.md). Examples here describe the
+supported interface, not an assertion that every convergence gate is green.
+
 The `bionetgen` command-line tool exposes the same in-process backend used by the Python API.
 
 ## `bionetgen run`

@@ -1,5 +1,9 @@
 # Test inventory
 
+> Historical inventory from the energy handoff. Current test registration is
+> defined by the repository CMake files and the live progress record in
+> [`docs/CURRENT_PROGRESS.md`](../../../../../CURRENT_PROGRESS.md).
+
 - C++ contract files: **39**
 - C++ `TEST_CASE`s: **139**
 - Python test files: **10**

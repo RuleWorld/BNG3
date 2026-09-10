@@ -1,5 +1,22 @@
 # Changelog
 
+## [Unreleased] - 2026-09-10
+
+### In progress
+
+- Added the consolidated NFnext semantic/runtime contract batch, including
+  rule-family compilation, canonicalization, matching, transformations,
+  cache v2, replay/RNG, and selected default architecture contracts.
+- Added lazy paged NFsim reaction-mapping storage with active-membership
+  tracking.
+- Reconciled the modern SBML-Multi parser toward bounded structured
+  reconstruction with explicit diagnostics and fail-closed execution.
+- Added the shared structured SBML-Multi component-map type and synchronized
+  the architecture-contract inventory.
+- Final consolidated verification passed: build, CTest (305/305), Python
+  regression (353 passed, 27 skipped), and validation smoke (4 passed, 14
+  environment/reference skips).
+
 ## [3.0.0a1] - 2026-05-11
 
 ### Added

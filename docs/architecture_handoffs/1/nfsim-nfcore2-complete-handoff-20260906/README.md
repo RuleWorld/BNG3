@@ -1,5 +1,8 @@
 # NFcore2 Complete Handoff Package
 
+> Historical handoff index. Current integration status is in
+> `docs/CURRENT_PROGRESS.md`.
+
 Start with **`COMPLETE_NFCORE2_HANDOFF.md`**. It contains the full project context, architecture, completed work, testing history, limitations, reasons unfinished work could not be completed in this environment, and the recommended next test-first implementation sequence.
 
 Package contents:

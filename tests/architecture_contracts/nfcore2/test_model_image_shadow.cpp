@@ -665,6 +665,10 @@ TEST(ModelImage_RoundTripCompartmentGraphAndExpressionMetadata){
     global.name="global"; global.molecule_type=1;
     global.state_component=0; global.state_value=1; global.bond_component=0; global.bond_state=1;
     member.rate_law.expression_bindings.push_back(global);
+    RateExpressionBinding complex; complex.kind=RATE_EXPRESSION_COMPLEX_MOLECULE_COUNT;
+    complex.name="complex"; complex.molecule_type=0; complex.component=0;
+    complex.partner_molecule_type=1; complex.partner_component=0; complex.scope=-1;
+    member.rate_law.expression_bindings.push_back(complex);
     family.members.push_back(member); e.buildMetadata().addRuleFamily(family);
     e.buildMetadata().setFeatureDependencies(std::vector<std::vector<MatcherId> >());
 
@@ -680,7 +684,7 @@ TEST(ModelImage_RoundTripCompartmentGraphAndExpressionMetadata){
     EXPECT_EQ(restoredMember.rate_law.kind,LEGACY_RATE_EXPRESSION);
     EXPECT_EQ(restoredMember.rate_law.expression,std::string("s0 + time"));
     EXPECT_EQ(restoredMember.rate_law.expression_components.size(),1u);
-    EXPECT_EQ(restoredMember.rate_law.expression_bindings.size(),6u);
+    EXPECT_EQ(restoredMember.rate_law.expression_bindings.size(),7u);
     EXPECT_EQ(restoredMember.rate_law.expression_bindings[0].name,std::string("k"));
     EXPECT_EQ(restoredMember.rate_law.expression_bindings[0].value,3.0);
     EXPECT_EQ(restoredMember.rate_law.expression_bindings[1].kind,RATE_EXPRESSION_REACTANT_COUNT);
@@ -706,4 +710,11 @@ TEST(ModelImage_RoundTripCompartmentGraphAndExpressionMetadata){
     EXPECT_EQ(restoredMember.rate_law.expression_bindings[5].state_value,1);
     EXPECT_EQ(restoredMember.rate_law.expression_bindings[5].bond_component,0u);
     EXPECT_EQ(restoredMember.rate_law.expression_bindings[5].bond_state,1);
+    EXPECT_EQ(restoredMember.rate_law.expression_bindings[6].kind,
+              RATE_EXPRESSION_COMPLEX_MOLECULE_COUNT);
+    EXPECT_EQ(restoredMember.rate_law.expression_bindings[6].molecule_type,0u);
+    EXPECT_EQ(restoredMember.rate_law.expression_bindings[6].component,0u);
+    EXPECT_EQ(restoredMember.rate_law.expression_bindings[6].partner_molecule_type,1u);
+    EXPECT_EQ(restoredMember.rate_law.expression_bindings[6].partner_component,0u);
+    EXPECT_EQ(restoredMember.rate_law.expression_bindings[6].scope,-1);
 }

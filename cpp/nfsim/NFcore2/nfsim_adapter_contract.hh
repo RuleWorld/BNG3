@@ -78,7 +78,8 @@ enum NativeRateExpressionBindingKind {
     NATIVE_RATE_EXPRESSION_SPECIES_MOLECULE_COUNT = 3,
     NATIVE_RATE_EXPRESSION_COMPARTMENT_VOLUME = 4,
     NATIVE_RATE_EXPRESSION_TRANSPORT_VOLUME_RATIO = 5,
-    NATIVE_RATE_EXPRESSION_GLOBAL_MOLECULE_COUNT = 6
+    NATIVE_RATE_EXPRESSION_GLOBAL_MOLECULE_COUNT = 6,
+    NATIVE_RATE_EXPRESSION_COMPLEX_MOLECULE_COUNT = 7
 };
 
 struct NativeRateExpressionBindingSnapshot {
@@ -94,6 +95,10 @@ struct NativeRateExpressionBindingSnapshot {
     // bindings.  The sentinel preserves the older whole-component species
     // count contract when no type was supplied.
     std::uint32_t molecule_type;
+    std::uint32_t partner_molecule_type;
+    std::uint32_t partner_component;
+    std::uint32_t partner_state_component;
+    int partner_state_value;
     int scope;
     std::uint32_t compartment;
     bool compartment_ancestry;
@@ -104,6 +109,10 @@ struct NativeRateExpressionBindingSnapshot {
           state_component(std::numeric_limits<std::uint32_t>::max()), state_value(-1),
           bond_component(std::numeric_limits<std::uint32_t>::max()), bond_state(-1),
           molecule_type(std::numeric_limits<std::uint32_t>::max()), scope(-1),
+          partner_molecule_type(std::numeric_limits<std::uint32_t>::max()),
+          partner_component(std::numeric_limits<std::uint32_t>::max()),
+          partner_state_component(std::numeric_limits<std::uint32_t>::max()),
+          partner_state_value(-1),
           compartment(std::numeric_limits<std::uint32_t>::max()), compartment_ancestry(false),
           destination_compartment(std::numeric_limits<std::uint32_t>::max()), value(0.0) {}
     static NativeRateExpressionBindingSnapshot state(const std::string& name,
@@ -123,6 +132,10 @@ struct NativeRateExpressionFunctionSnapshot {
     std::string name;
     std::string expression;
     std::vector<std::string> arguments;
+    std::vector<double> table_x;
+    std::vector<double> table_y;
+    std::string table_method;
+    std::string table_counter;
 };
 
 enum NativeRemovalType {
@@ -165,6 +178,8 @@ struct NativeGraphNodeSnapshot {
     // child constraint.
     std::vector<std::pair<std::uint32_t, int> > state_constraints;
     std::vector<std::pair<std::uint32_t, int> > excluded_states;
+    int min_bound_components;
+    int max_bound_components;
     struct SymmetricConstraint {
         std::vector<std::uint32_t> components;
         int state;
@@ -179,17 +194,20 @@ struct NativeGraphNodeSnapshot {
     int state;
     NativeGraphNodeSnapshot() : molecule_type(0), reactant(std::numeric_limits<std::uint16_t>::max()),
         state_component(std::numeric_limits<std::uint32_t>::max()),
-        compartment(std::numeric_limits<std::uint32_t>::max()), state(-1) {}
+        compartment(std::numeric_limits<std::uint32_t>::max()),
+        min_bound_components(-1), max_bound_components(-1), state(-1) {}
 };
 struct NativeGraphEdgeSnapshot {
     std::uint32_t first_node, first_component, second_node, second_component;
-    NativeGraphEdgeSnapshot() : first_node(0), first_component(0), second_node(0), second_component(0) {}
+    bool negate;
+    NativeGraphEdgeSnapshot() : first_node(0), first_component(0), second_node(0), second_component(0), negate(false) {}
 };
 struct NativeGraphConnectivitySnapshot {
     std::uint32_t first_node;
     std::uint32_t second_node;
+    bool negate;
     NativeGraphConnectivitySnapshot(std::uint32_t first = 0, std::uint32_t second = 0)
-        : first_node(first), second_node(second) {}
+        : first_node(first), second_node(second), negate(false) {}
 };
 struct NativeGraphPatternSnapshot {
     std::vector<NativeGraphNodeSnapshot> nodes;

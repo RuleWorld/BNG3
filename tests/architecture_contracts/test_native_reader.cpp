@@ -173,6 +173,64 @@ end reaction rules
     return system;
 }
 
+std::unique_ptr<NFcore::System> complexGlobalFunctionSystem() {
+    auto model = bng::parser::parseModel(R"(
+begin molecule types
+ A(b)
+ B(a)
+ C()
+end molecule types
+begin seed species
+ A(b) 1
+ B(a) 1
+end seed species
+begin observables
+ Molecules ab A(b!1).B(a!1)
+end observables
+begin functions
+ rate() = 1*ab + 0
+end functions
+begin reaction rules
+ A(b) -> A(b) + C() rate
+end reaction rules
+)");
+    REQUIRE(model);
+    int traversal = 0;
+    auto system = std::unique_ptr<NFcore::System>(
+        NFinput::buildSystemFromAst(*model, false, 100, false, traversal));
+    REQUIRE(system);
+    return system;
+}
+
+std::unique_ptr<NFcore::System> complexScopedLocalFunctionSystem() {
+    auto model = bng::parser::parseModel(R"(
+begin molecule types
+ A(b)
+ B(a)
+ C()
+end molecule types
+begin seed species
+ A(b) 1
+ B(a) 1
+end seed species
+begin observables
+ Molecules ab A(b!1).B(a!1)
+end observables
+begin functions
+ f(x) = ab(x)
+end functions
+begin reaction rules
+ %x::A(b) -> %x::A(b) + C() f(x)
+end reaction rules
+)");
+    REQUIRE(model);
+    int traversal = 0;
+    auto system = std::unique_ptr<NFcore::System>(
+        NFinput::buildSystemFromAst(*model, false, 100, false, traversal));
+    REQUIRE(system);
+    return system;
+}
+
 std::unique_ptr<NFcore::System> stateScopedLocalFunctionSystem() {
     auto model = bng::parser::parseModel(R"(
 begin parameters
@@ -750,6 +808,46 @@ TEST_CASE("native NFcore2 reader lowers a simple scoped local function descripto
     REQUIRE(constant != rule.rate_expression_bindings.end());
     CHECK(constant->value == 2.0);
 
+    const auto lowered = NFcore2::lowerLegacyNFsim(*system);
+    CHECK(lowered.supported_rule_count == 1);
+    CHECK(lowered.fallback_rule_count == 0);
+}
+
+TEST_CASE("native NFcore2 reader lowers an exact complex global observable") {
+    auto system = complexGlobalFunctionSystem();
+    const auto snapshot = NFcore2::snapshotLegacyNFsim(*system);
+    REQUIRE(snapshot.rules.size() == 1);
+    const auto observable = std::find_if(
+        snapshot.rules[0].rate_expression_bindings.begin(),
+        snapshot.rules[0].rate_expression_bindings.end(),
+        [](const auto& binding) {
+            return binding.kind == NFcore2::NATIVE_RATE_EXPRESSION_COMPLEX_MOLECULE_COUNT;
+        });
+    REQUIRE(observable != snapshot.rules[0].rate_expression_bindings.end());
+    CHECK(observable->molecule_type == 0);
+    CHECK(observable->component == 0);
+    CHECK(observable->partner_molecule_type == 1);
+    CHECK(observable->partner_component == 0);
+    CHECK(observable->scope == -1);
+    const auto lowered = NFcore2::lowerLegacyNFsim(*system);
+    CHECK(lowered.supported_rule_count == 1);
+    CHECK(lowered.fallback_rule_count == 0);
+}
+
+TEST_CASE("native NFcore2 reader lowers an exact complex scoped observable") {
+    auto system = complexScopedLocalFunctionSystem();
+    const auto snapshot = NFcore2::snapshotLegacyNFsim(*system);
+    REQUIRE(snapshot.rules.size() == 1);
+    const auto observable = std::find_if(
+        snapshot.rules[0].rate_expression_bindings.begin(),
+        snapshot.rules[0].rate_expression_bindings.end(),
+        [](const auto& binding) {
+            return binding.kind == NFcore2::NATIVE_RATE_EXPRESSION_COMPLEX_MOLECULE_COUNT;
+        });
+    REQUIRE(observable != snapshot.rules[0].rate_expression_bindings.end());
+    CHECK(observable->molecule_type == 0);
+    CHECK(observable->partner_molecule_type == 1);
+    CHECK(observable->scope == NFcore::LocalFunction::SPECIES);
     const auto lowered = NFcore2::lowerLegacyNFsim(*system);
     CHECK(lowered.supported_rule_count == 1);
     CHECK(lowered.fallback_rule_count == 0);

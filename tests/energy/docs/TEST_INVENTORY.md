@@ -1,5 +1,9 @@
 # Test inventory
 
+The counts below are a historical bundle snapshot. The active repository test
+inventory is defined by the current CMake files and the live status record in
+[`docs/CURRENT_PROGRESS.md`](../../../docs/CURRENT_PROGRESS.md).
+
 - C++ contract files: **42**
 - C++ `TEST_CASE`s: **156**
 - Python test files: **12**

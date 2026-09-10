@@ -1,4 +1,5 @@
 #include "nfnext/compiler.hpp"
+#include "nfnext/family_compiler.hpp"
 
 #include <algorithm>
 
@@ -48,7 +49,7 @@ bool ModelCompiler::latticeCompatible(const ModelIR& model) noexcept {
 CompileReport ModelCompiler::compile(ModelIR& model, const CompileOptions& options) const {
     CompileReport report;
     if (options.collapse_indexed_rules) {
-        auto result = collapseIndexedRuleFamilies(model.expanded_rules);
+        auto result = compileRuleFamilies(model.expanded_rules);
         model.rule_families = std::move(result.families);
         report.family_stats = result.stats;
     } else {
@@ -56,7 +57,9 @@ CompileReport ModelCompiler::compile(ModelIR& model, const CompileOptions& optio
         FamilyId id = 0;
         for (const auto& r : model.expanded_rules) {
             RuleFamilyIR f; f.id = id++; f.name = r.name; f.default_rate = r.rate;
-            f.predicates = r.predicates; f.actions = r.actions; f.source_rules.push_back(r.id);
+            f.rate_law = r.rate_law;
+            f.predicates = r.predicates; f.actions = r.actions;
+            f.pattern = r.pattern; f.source_rules.push_back(r.id);
             model.rule_families.push_back(std::move(f));
         }
         report.family_stats = {model.expanded_rules.size(), model.rule_families.size(), 0, model.rule_families.size()};

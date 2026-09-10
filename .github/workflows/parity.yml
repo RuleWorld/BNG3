@@ -35,6 +35,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install CI contract dependencies
+        run: python -m pip install pytest numpy
+
       - name: Validate locked sources
         run: python scripts/ci/checkout_oracle.py --validate-only
 

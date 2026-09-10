@@ -1,5 +1,10 @@
 # Proposed-improvement testing strategy
 
+This document records the energy-bundle strategy and remains a correctness
+guardrail, not a claim that every listed contract is implemented. Current
+implementation state and the deliberately deferred verification pass are
+tracked in [`docs/CURRENT_PROGRESS.md`](../../../docs/CURRENT_PROGRESS.md).
+
 ## 1. Separate semantic correctness from RNG identity
 
 A generalized energy backend can represent the same continuous-time Markov chain with fewer reaction classes.

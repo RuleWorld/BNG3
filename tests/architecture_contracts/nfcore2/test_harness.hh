@@ -35,8 +35,7 @@ inline void expectNear(double a,double b,double tol,const char* file,int line){
 template<class E,class F> inline void expectThrows(F f,const char* expr,const char* file,int line){
     try { f(); }
     catch(const E&) { return; }
-    catch(const std::exception& e){ std::ostringstream os; os<<"expected exception for "<<expr<<", got different std::exception: "<<e.what(); fail(file,line,os.str()); }
-    catch(...){ fail(file,line,std::string("expected exception for ")+expr+", got non-std exception"); }
+    catch(...){ fail(file,line,std::string("expected exception for ")+expr+", got a different exception"); }
     fail(file,line,std::string("expected exception for ")+expr+", but nothing was thrown");
 }
 

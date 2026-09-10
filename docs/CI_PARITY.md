@@ -1,5 +1,9 @@
 # Cross-tool CI parity
 
+Current branch state and unvalidated implementation changes are recorded in
+[`CURRENT_PROGRESS.md`](CURRENT_PROGRESS.md). Historical hosted results only
+apply to the exact SHA named with them.
+
 BNG3 is the forward-development tree. BioNetGen, NFsim, and PyBioNetGen remain
 external compatibility sources and independent oracles for CI; their runtime
 trees are not copied into BNG3 by this workflow.

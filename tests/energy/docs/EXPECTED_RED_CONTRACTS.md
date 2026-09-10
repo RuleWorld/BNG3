@@ -1,5 +1,11 @@
 # Intentional RED contracts
 
+This is a historical energy-bundle inventory. The live repository status is
+maintained in [`docs/CURRENT_PROGRESS.md`](../../../docs/CURRENT_PROGRESS.md).
+Some bounded contracts have since landed elsewhere in the architecture suite;
+remaining future contracts must still stay opt-in until their exact-tree gates
+are satisfied.
+
 These tests are specifications for proposed APIs and are excluded unless
 `BNG_ENABLE_FUTURE_ENERGY_CONTRACTS=ON`.
 

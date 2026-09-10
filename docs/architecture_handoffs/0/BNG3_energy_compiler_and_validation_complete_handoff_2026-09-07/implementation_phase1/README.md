@@ -1,5 +1,8 @@
 # BNG3 energy compiler — phase 1 implementation bundle
 
+> Archived implementation bundle. Current integration status is recorded in
+> `docs/CURRENT_PROGRESS.md`; this file describes its source checkpoint.
+
 Prepared against:
 
 - repository: `RuleWorld/BNG3`

@@ -1,5 +1,9 @@
 # Migration Guide
 
+The migration surface is still being qualified. Use
+[`CURRENT_PROGRESS.md`](CURRENT_PROGRESS.md) for the current branch state and
+the convergence checklist for supported-versus-open capability decisions.
+
 BioNetGen 3 replaces the subprocess-based PyBioNetGen/BNG2 workflow with an in-process Python API backed by C++.
 
 ## Compatibility Overview

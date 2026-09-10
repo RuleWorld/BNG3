@@ -258,12 +258,18 @@ target_link_libraries(bng_nfcore2 PUBLIC nfsim_core)
 find_package(Threads REQUIRED)
 add_library(bng_nfnext STATIC
     nfnext/src/cache.cpp
+    nfnext/src/cache_v2.cpp
+    nfnext/src/canonical.cpp
     nfnext/src/compiler.cpp
+    nfnext/src/family_compiler.cpp
+    nfnext/src/generic_matcher.cpp
     nfnext/src/generic_state.cpp
     nfnext/src/lattice.cpp
     nfnext/src/nfir.cpp
     nfnext/src/rule_family.cpp
     nfnext/src/trajectory.cpp
+    nfnext/src/transformation.cpp
+    nfnext/src/validator.cpp
 )
 target_include_directories(bng_nfnext PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/nfnext/include)
 target_link_libraries(bng_nfnext PUBLIC Threads::Threads)

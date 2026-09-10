@@ -1,5 +1,10 @@
 # Over-count root cause — analysis and experiment
 
+> This remains a focused historical analysis note. See
+> [`docs/CURRENT_PROGRESS.md`](docs/CURRENT_PROGRESS.md) for the live branch
+> and verification state; no unverified current-tree result should be inferred
+> from the experiment record below.
+
 `blbr` emits +26 reactions vs Perl BNG2; `Motivating_example_cBNGL` +2. This is
 the gate WO-1 must clear. This note is the evidence, a decision tree that pins
 the cause to one of two files, and the exact experiment to run once the engine

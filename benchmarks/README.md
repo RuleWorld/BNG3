@@ -1,5 +1,9 @@
 # Benchmarks
 
+Benchmark claims are exact-checkpoint evidence. The current implementation
+snapshot and pending verification state are in
+[`../docs/CURRENT_PROGRESS.md`](../docs/CURRENT_PROGRESS.md).
+
 This directory tracks simple performance measurements for the in-process C++ backend.
 
 ## Run

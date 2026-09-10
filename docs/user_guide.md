@@ -1,5 +1,9 @@
 # User Guide
 
+For current qualification limits and known unsupported paths, see
+[`CURRENT_PROGRESS.md`](CURRENT_PROGRESS.md) before relying on this usage
+guide as a completeness claim.
+
 This guide walks through the new BNG3 workflow from loading a BNGL file to scanning parameters, importing SBML, and building models programmatically.
 
 ## 1. Install

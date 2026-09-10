@@ -1,5 +1,8 @@
 # NFsim next-generation engine: first executable tranche
 
+> Archived architecture tranche. It remains useful as source context but is
+> not current branch evidence; see `docs/CURRENT_PROGRESS.md`.
+
 This directory is an additive prototype intended to sit beside the optimized
 `perf/rasi-translation-optimization` NFsim engine. The old engine remains the
 semantic oracle. The purpose of this tranche is to implement the architectural

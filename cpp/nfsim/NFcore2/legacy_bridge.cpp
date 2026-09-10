@@ -46,6 +46,24 @@ double RateLawDescriptor::evaluate(const SimulationState& state,
                 ? state.model().compartmentInside(actual, binding.compartment)
                 : actual == binding.compartment;
         };
+        const auto interpolate = [](const RateExpressionFunction& function, double counter) {
+            if (function.table_x.empty() || function.table_x.size() != function.table_y.size())
+                throw std::invalid_argument("TFUN table is empty or has mismatched columns");
+            if (function.table_x.size() == 1) return function.table_y.front();
+            for (std::size_t i = 1; i < function.table_x.size(); ++i)
+                if (!std::isfinite(function.table_x[i]) || function.table_x[i] <= function.table_x[i - 1])
+                    throw std::invalid_argument("TFUN table counter must be strictly increasing");
+            if (counter <= function.table_x.front()) return function.table_y.front();
+            if (counter >= function.table_x.back()) return function.table_y.back();
+            std::size_t upper = 1;
+            while (upper < function.table_x.size() && counter > function.table_x[upper]) ++upper;
+            const std::size_t lower = upper - 1;
+            if (function.table_method == "step") return function.table_y[lower];
+            const double span = function.table_x[upper] - function.table_x[lower];
+            const double fraction = (counter - function.table_x[lower]) / span;
+            return function.table_y[lower] + fraction *
+                (function.table_y[upper] - function.table_y[lower]);
+        };
         std::function<double(const std::string&, const std::vector<double>&)> resolveFunction;
         std::function<double(const std::string&)> resolve;
         resolveFunction = [&](const std::string& name,
@@ -77,9 +95,18 @@ double RateLawDescriptor::evaluate(const SimulationState& state,
             // observable bindings, so unused formal arguments can be zero.
             for (std::size_t i = arguments.size(); i < definition->arguments.size(); ++i)
                 local.emplace(definition->arguments[i], 0.0);
+            const auto tableValue = [&]() {
+                if (definition->table_x.empty()) return 0.0;
+                const double counter = definition->table_counter.empty() ||
+                    definition->table_counter == "time" || definition->table_counter == "Time"
+                    ? state.time() : resolve(definition->table_counter);
+                return interpolate(*definition, counter);
+            };
             const auto functionResolve = [&](const std::string& symbol) -> double {
                 const auto it = local.find(symbol);
                 if (it != local.end()) return it->second;
+                if (symbol == "__TFUN_VAL__" || symbol == "__TFUN__VAL__")
+                    return tableValue();
                 return resolve(symbol);
             };
             return functionExpression.evaluateWithFunctions(
@@ -119,6 +146,59 @@ double RateLawDescriptor::evaluate(const SimulationState& state,
                         if (state_match && bondMatches(store, handle, binding) &&
                             compartmentMatches(store, handle, binding)) count += 1.0;
                     }
+                    return count;
+                }
+                if (binding.kind == RATE_EXPRESSION_COMPLEX_MOLECULE_COUNT) {
+                    if (binding.molecule_type >= state.model().moleculeTypes().size() ||
+                        binding.partner_molecule_type >= state.model().moleculeTypes().size())
+                        throw std::out_of_range("complex observable molecule type");
+                    const auto rootMatches = [&](MoleculeRef root) {
+                        if (!root.valid() || root.type.value() != binding.molecule_type ||
+                            !state.molecules(root.type).alive(root.handle))
+                            return false;
+                        const MoleculeStore& rootStore = state.molecules(root.type);
+                        if (binding.state_component != std::numeric_limits<std::uint32_t>::max() &&
+                            rootStore.stateWord(root.handle,
+                                static_cast<std::uint16_t>(binding.state_component)) !=
+                                static_cast<std::uint64_t>(binding.state_value))
+                            return false;
+                        if (!compartmentMatches(rootStore, root.handle, binding)) return false;
+                        const MoleculeRef partner = rootStore.bondRef(
+                            root.handle, static_cast<std::uint16_t>(binding.component));
+                        if (!partner.valid() || partner.type.value() != binding.partner_molecule_type ||
+                            !state.molecules(partner.type).alive(partner.handle))
+                            return false;
+                        const MoleculeStore& partnerStore = state.molecules(partner.type);
+                        if (!(partnerStore.bondRef(partner.handle,
+                                static_cast<std::uint16_t>(binding.partner_component)) == root))
+                            return false;
+                        if (binding.partner_state_component != std::numeric_limits<std::uint32_t>::max() &&
+                            partnerStore.stateWord(partner.handle,
+                                static_cast<std::uint16_t>(binding.partner_state_component)) !=
+                                static_cast<std::uint64_t>(binding.partner_state_value))
+                            return false;
+                        return true;
+                    };
+                    if (binding.scope == 1) {
+                        const MoleculeRef ref = context.moleculeAt(binding.target);
+                        return rootMatches(ref) ? 1.0 : 0.0;
+                    }
+                    if (binding.scope == 0) {
+                        const MoleculeRef ref = context.moleculeAt(binding.target);
+                        if (!ref.valid()) throw std::out_of_range("complex observable reactant missing");
+                        double count = 0.0;
+                        for (const auto& member : state.connectedComponent(ref))
+                            if (rootMatches(member)) count += 1.0;
+                        return count;
+                    }
+                    if (binding.scope != -1)
+                        throw std::invalid_argument("invalid complex observable binding scope");
+                    double count = 0.0;
+                    const MoleculeStore& store = state.molecules(
+                        MoleculeTypeId(binding.molecule_type));
+                    for (const auto handle : store.liveHandles())
+                        if (rootMatches(MoleculeRef(MoleculeTypeId(binding.molecule_type), handle)))
+                            count += 1.0;
                     return count;
                 }
                 const MoleculeRef ref = context.moleculeAt(binding.target);
@@ -217,8 +297,14 @@ double RateLawDescriptor::evaluate(const SimulationState& state,
 namespace {
 
 LoweringFallbackReason unsupportedReason(const LegacyRuleIR& r) {
-    if (r.uses_local_function) return LOWERING_LOCAL_FUNCTION;
-    if (r.uses_connected_to) return LOWERING_CONNECTED_TO;
+    // NFsim's native reader emits executable expression/function descriptors
+    // and graph patterns for these cases.  Keep fallback only when extraction
+    // really failed, so direct LocalFunction/DOR and connectedTo rules reach
+    // the same matcher/rate paths as ordinary reactions.
+    if (r.uses_local_function && r.rate_law.kind != LEGACY_RATE_EXPRESSION)
+        return LOWERING_LOCAL_FUNCTION;
+    if (r.uses_connected_to && r.graph_patterns.empty())
+        return LOWERING_CONNECTED_TO;
     if (r.changes_topology && !r.topology_change_is_local) return LOWERING_TOPOLOGY_CHANGE;
     for (std::size_t i=0;i<r.predicates.size();++i)
         if (r.predicates[i].kind == LEGACY_PRED_UNSUPPORTED) return LOWERING_UNSUPPORTED_PREDICATE;
@@ -244,7 +330,7 @@ MatchInstruction lowerPredicate(const LegacyPredicateIR& p) {
         case LEGACY_PRED_SCAFFOLD_FREE: op=MATCH_SCAFFOLD_FREE; break;
         default: throw std::logic_error("unsupported legacy predicate reached lowerer");
     }
-    MatchInstruction x(op); x.target=p.target; x.a=p.a; x.b=p.b; x.mask=p.mask; x.value=p.value; x.check_partner_component=p.has_partner_component; return x;
+    MatchInstruction x(op); x.target=p.target; x.a=p.a; x.b=p.b; x.mask=p.mask; x.value=p.value; x.check_partner_component=p.has_partner_component; x.negate=p.negate; return x;
 }
 
 TransformInstruction lowerTransform(const LegacyTransformIR& t) {
@@ -285,13 +371,15 @@ std::string LegacyLowerer::matcherSignature(const LegacyRuleIR& r) {
     for (std::size_t i=0;i<r.predicates.size();++i) {
         const LegacyPredicateIR& p=r.predicates[i];
         os << static_cast<int>(p.kind) << ':' << p.target << ':' << p.owner << ':' << p.a << ':' << p.b << ':'
-           << p.mask << ':' << p.value << ':' << p.has_partner_component << ':' << p.partner_feature.value() << ';';
+           << p.mask << ':' << p.value << ':' << p.has_partner_component << ':' << p.negate << ':'
+           << p.partner_feature.value() << ';';
     }
     for (const auto& graph : r.graph_patterns) {
-        os << "graph:" << graph.nodes.size() << ':' << graph.edges.size() << ';';
+        os << "graph:" << graph.nodes.size() << ':' << graph.edges.size() << ':' << graph.connected_to.size() << ';';
         for (const auto& node : graph.nodes) {
             os << node.molecule_type << ':' << node.anchor_reactant << ':' << node.state_component << ':'
-               << node.compartment << ':' << node.state_value << ':';
+               << node.compartment << ':' << node.state_value << ':'
+               << node.min_bound_components << ':' << node.max_bound_components << ':';
             os << "states:";
             for (const auto& state : node.state_constraints)
                 os << state.first << '=' << state.second << ',';
@@ -311,9 +399,9 @@ std::string LegacyLowerer::matcherSignature(const LegacyRuleIR& r) {
             os << ';';
         }
         for (const auto& edge : graph.edges)
-            os << edge.first_node << ':' << edge.first_component << ':' << edge.second_node << ':' << edge.second_component << ';';
+            os << edge.first_node << ':' << edge.first_component << ':' << edge.second_node << ':' << edge.second_component << ':' << edge.negate << ';';
         for (const auto& connected : graph.connected_to)
-            os << "connected:" << connected.first_node << ':' << connected.second_node << ';';
+            os << "connected:" << connected.first_node << ':' << connected.second_node << ':' << connected.negate << ';';
     }
     return os.str();
 }
@@ -336,12 +424,19 @@ std::string LegacyLowerer::transformSignature(const LegacyRuleIR& r) {
            << binding.component << ':' << binding.state_component << ':' << binding.state_value << ':'
            << binding.bond_component << ':' << binding.bond_state << ':'
            << binding.molecule_type << ':' << binding.scope << ':'
+           << binding.partner_molecule_type << ':' << binding.partner_component << ':'
+           << binding.partner_state_component << ':' << binding.partner_state_value << ':'
            << binding.compartment << ':' << binding.compartment_ancestry << ':'
            << binding.destination_compartment << ':' << binding.value << ';';
     os << "functions:";
     for (const auto& function : r.rate_law.expression_functions) {
         os << function.name << ':' << function.expression << ':';
         for (const auto& argument : function.arguments) os << argument << ',';
+        os << "x:";
+        for (const auto value : function.table_x) os << value << ',';
+        os << "y:";
+        for (const auto value : function.table_y) os << value << ',';
+        os << ':' << function.table_method << ':' << function.table_counter;
         os << ';';
     }
     os << ';';
@@ -425,6 +520,17 @@ LegacyLoweringResult LegacyLowerer::lower(const LegacyModelIR& legacy) {
                 else if (fd.kind==FEATURE_SCAFFOLD_OCCUPANCY && p.kind==LEGACY_PRED_SCAFFOLD_FREE) reads=true;
                 else if (fd.kind==FEATURE_SCAFFOLD_OCCUPANCY && p.kind==LEGACY_PRED_SCAFFOLD_STATE) reads=true;
             }
+            if (!legacy.rules[ri].graph_patterns.empty()) {
+                // Graph predicates read existence, bond topology, states, and
+                // compartments across every participating molecule.  Keep the
+                // invalidation conservative: a changed member can alter an
+                // automorphism or a transitive connectedTo result.
+                if (fd.kind == FEATURE_MOLECULE_EXISTENCE ||
+                    fd.kind == FEATURE_MOLECULE_BOND ||
+                    fd.kind == FEATURE_MOLECULE_STATE ||
+                    fd.kind == FEATURE_MOLECULE_COMPARTMENT)
+                    reads = true;
+            }
             const RateLawDescriptor& law=legacy.rules[ri].rate_law;
             if (fd.kind==FEATURE_MOLECULE_STATE &&
                 ((law.kind==LEGACY_RATE_LOCAL_LINEAR && fd.index==law.component) ||
@@ -434,6 +540,27 @@ LegacyLoweringResult LegacyLowerer::lower(const LegacyModelIR& legacy) {
                 if (fd.kind == FEATURE_TIME)
                     reads = true;
                 for (const auto& binding : law.expression_bindings) {
+                    if (binding.kind == RATE_EXPRESSION_COMPLEX_MOLECULE_COUNT) {
+                        const bool rootOwner = fd.owner == binding.molecule_type;
+                        const bool partnerOwner = fd.owner == binding.partner_molecule_type;
+                        if (!rootOwner && !partnerOwner) continue;
+                        if (fd.kind == FEATURE_MOLECULE_EXISTENCE)
+                            reads = true;
+                        if (fd.kind == FEATURE_MOLECULE_BOND &&
+                            ((rootOwner && fd.index == binding.component) ||
+                             (partnerOwner && fd.index == binding.partner_component)))
+                            reads = true;
+                        if (fd.kind == FEATURE_MOLECULE_STATE &&
+                            ((rootOwner && binding.state_component != std::numeric_limits<std::uint32_t>::max() &&
+                              fd.index == binding.state_component) ||
+                             (partnerOwner && binding.partner_state_component != std::numeric_limits<std::uint32_t>::max() &&
+                              fd.index == binding.partner_state_component)))
+                            reads = true;
+                        if (fd.kind == FEATURE_MOLECULE_COMPARTMENT &&
+                            binding.compartment != std::numeric_limits<std::uint32_t>::max())
+                            reads = true;
+                        continue;
+                    }
                     const bool scopedCount =
                         binding.kind == RATE_EXPRESSION_GLOBAL_MOLECULE_COUNT ||
                         binding.kind == RATE_EXPRESSION_SPECIES_MOLECULE_COUNT;

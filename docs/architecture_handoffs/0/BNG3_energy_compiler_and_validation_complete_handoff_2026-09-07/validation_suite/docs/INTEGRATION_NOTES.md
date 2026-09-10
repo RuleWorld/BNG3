@@ -1,5 +1,8 @@
 # Integration notes
 
+> Archived integration notes. They describe the handoff-era layout, not the
+> current branch; see `docs/CURRENT_PROGRESS.md`.
+
 The suite assumes the phase-1 compiler patch (or equivalent interfaces) is present for the non-future C++ tests.
 The future contracts are OFF by default and intentionally reference APIs that are not yet guaranteed to exist.
 

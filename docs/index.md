@@ -1,5 +1,9 @@
 # BioNetGen 3 Documentation
 
+For the live implementation snapshot and current validation status, start with
+[`CURRENT_PROGRESS.md`](CURRENT_PROGRESS.md). The convergence checklist is the
+release-completion authority.
+
 ## Overview
 
 BioNetGen 3 is a unified platform for rule-based modeling of biochemical systems. It combines three previously separate tools into a single Python package with a compiled C++ backend:

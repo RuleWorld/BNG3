@@ -1,5 +1,10 @@
 # Validation harness
 
+The current combined-tree verification state is recorded in
+[`../../docs/CURRENT_PROGRESS.md`](../../docs/CURRENT_PROGRESS.md). The final
+verification pass for the active branch is intentionally deferred until the
+implementation batch is complete.
+
 Differential testing against the originals. Nothing merges until it matches.
 
 ## Oracles

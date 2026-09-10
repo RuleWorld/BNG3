@@ -24,7 +24,8 @@ enum RateExpressionBindingKind {
     RATE_EXPRESSION_SPECIES_MOLECULE_COUNT = 3,
     RATE_EXPRESSION_COMPARTMENT_VOLUME = 4,
     RATE_EXPRESSION_TRANSPORT_VOLUME_RATIO = 5,
-    RATE_EXPRESSION_GLOBAL_MOLECULE_COUNT = 6
+    RATE_EXPRESSION_GLOBAL_MOLECULE_COUNT = 6,
+    RATE_EXPRESSION_COMPLEX_MOLECULE_COUNT = 7
 };
 
 struct RateExpressionBinding {
@@ -37,6 +38,10 @@ struct RateExpressionBinding {
     std::uint32_t bond_component;
     int bond_state;
     std::uint32_t molecule_type;
+    std::uint32_t partner_molecule_type;
+    std::uint32_t partner_component;
+    std::uint32_t partner_state_component;
+    int partner_state_value;
     int scope;
     std::uint32_t compartment;
     bool compartment_ancestry;
@@ -47,6 +52,10 @@ struct RateExpressionBinding {
           state_component(std::numeric_limits<std::uint32_t>::max()), state_value(-1),
           bond_component(std::numeric_limits<std::uint32_t>::max()), bond_state(-1),
           molecule_type(std::numeric_limits<std::uint32_t>::max()), scope(-1),
+          partner_molecule_type(std::numeric_limits<std::uint32_t>::max()),
+          partner_component(std::numeric_limits<std::uint32_t>::max()),
+          partner_state_component(std::numeric_limits<std::uint32_t>::max()),
+          partner_state_value(-1),
           compartment(std::numeric_limits<std::uint32_t>::max()), compartment_ancestry(false),
           destination_compartment(std::numeric_limits<std::uint32_t>::max()), value(0.0) {}
 
@@ -63,6 +72,12 @@ struct RateExpressionFunction {
     std::string name;
     std::string expression;
     std::vector<std::string> arguments;
+    // NFsim TFUN metadata. Empty tables retain ordinary expression-function
+    // behavior; populated tables are interpolated at evaluation time.
+    std::vector<double> table_x;
+    std::vector<double> table_y;
+    std::string table_method;
+    std::string table_counter;
 };
 
 // Bounded, source-derived rate descriptors. Constant rates retain the old

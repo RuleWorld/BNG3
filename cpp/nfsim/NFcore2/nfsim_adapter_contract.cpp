@@ -120,6 +120,12 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                 outNode.compartment=node.compartment;
                 outNode.free_components=node.free_components;
                 outNode.bound_components=node.bound_components;
+                outNode.min_bound_components=node.min_bound_components;
+                outNode.max_bound_components=node.max_bound_components;
+                if (outNode.min_bound_components < -1 || outNode.max_bound_components < -1 ||
+                    (outNode.max_bound_components >= 0 && outNode.min_bound_components >= 0 &&
+                     outNode.min_bound_components > outNode.max_bound_components))
+                    throw std::invalid_argument("NFsim graph molecularity bounds are malformed");
                 outNode.state_value=node.state;
                 for (const auto& state : node.state_constraints) {
                     validateComponent(source, node.molecule_type, state.first);
@@ -189,6 +195,7 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                 GraphEdgePattern outEdge;
                 outEdge.first_node=edge.first_node; outEdge.first_component=edge.first_component;
                 outEdge.second_node=edge.second_node; outEdge.second_component=edge.second_component;
+                outEdge.negate=edge.negate;
                 graph.edges.push_back(outEdge);
             }
             for (const auto& connected : nativeGraph.connected_to) {
@@ -196,8 +203,10 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                     connected.second_node >= graph.nodes.size() ||
                     connected.first_node == connected.second_node)
                     throw std::invalid_argument("NFsim connectedTo graph node out of range");
-                graph.connected_to.push_back(
-                    GraphConnectivityPattern(connected.first_node, connected.second_node));
+                GraphConnectivityPattern outConnected(
+                    connected.first_node, connected.second_node);
+                outConnected.negate = connected.negate;
+                graph.connected_to.push_back(outConnected);
             }
             r.graph_patterns.push_back(graph);
         }
@@ -219,11 +228,28 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                     throw std::invalid_argument("expression function definition is empty");
                 for (const auto& prior : r.rate_law.expression_functions)
                     if (prior.name == nativeFunction.name)
-                        throw std::invalid_argument("duplicate expression function name");
+                        if (prior.expression != nativeFunction.expression ||
+                            prior.arguments != nativeFunction.arguments ||
+                            prior.table_x != nativeFunction.table_x ||
+                            prior.table_y != nativeFunction.table_y ||
+                            prior.table_method != nativeFunction.table_method ||
+                            prior.table_counter != nativeFunction.table_counter)
+                            throw std::invalid_argument("conflicting expression function definition");
+                        else
+                            throw std::invalid_argument("duplicate expression function name");
                 RateExpressionFunction function;
                 function.name = nativeFunction.name;
                 function.expression = nativeFunction.expression;
                 function.arguments = nativeFunction.arguments;
+                function.table_x = nativeFunction.table_x;
+                function.table_y = nativeFunction.table_y;
+                function.table_method = nativeFunction.table_method;
+                function.table_counter = nativeFunction.table_counter;
+                if (function.table_x.size() != function.table_y.size())
+                    throw std::invalid_argument("TFUN table columns have different lengths");
+                for (std::size_t k = 0; k < function.table_x.size(); ++k)
+                    if (!std::isfinite(function.table_x[k]) || !std::isfinite(function.table_y[k]))
+                        throw std::invalid_argument("TFUN table contains a non-finite value");
                 r.rate_law.expression_functions.push_back(function);
             }
             for (const auto& nativeBinding : nr.rate_expression_bindings) {
@@ -236,6 +262,10 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                 binding.bond_component = nativeBinding.bond_component;
                 binding.bond_state = nativeBinding.bond_state;
                 binding.molecule_type = nativeBinding.molecule_type;
+                binding.partner_molecule_type = nativeBinding.partner_molecule_type;
+                binding.partner_component = nativeBinding.partner_component;
+                binding.partner_state_component = nativeBinding.partner_state_component;
+                binding.partner_state_value = nativeBinding.partner_state_value;
                 binding.scope = nativeBinding.scope;
                 binding.compartment = nativeBinding.compartment;
                 binding.compartment_ancestry = nativeBinding.compartment_ancestry;
@@ -291,6 +321,38 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                         }
                     }
                     binding.kind = RATE_EXPRESSION_SPECIES_MOLECULE_COUNT;
+                } else if (nativeBinding.kind == NATIVE_RATE_EXPRESSION_COMPLEX_MOLECULE_COUNT) {
+                    if (binding.scope != -1 && binding.target >= nr.reactant_types.size())
+                        throw std::out_of_range("complex observable binding target");
+                    if (binding.molecule_type >= source.molecule_types.size() ||
+                        binding.partner_molecule_type >= source.molecule_types.size() ||
+                        source.molecule_types[binding.molecule_type].population ||
+                        source.molecule_types[binding.partner_molecule_type].population)
+                        throw std::invalid_argument("complex observable binding molecule type");
+                    if (binding.scope != -1 && binding.scope != 0 && binding.scope != 1)
+                        throw std::invalid_argument("complex observable binding scope");
+                    validateComponent(source, binding.molecule_type, binding.component);
+                    validateComponent(source, binding.partner_molecule_type,
+                                      binding.partner_component);
+                    if (binding.state_component != std::numeric_limits<std::uint32_t>::max()) {
+                        if (binding.state_value < 0)
+                            throw std::invalid_argument("complex observable root state");
+                        validateComponent(source, binding.molecule_type, binding.state_component);
+                    }
+                    if (binding.partner_state_component != std::numeric_limits<std::uint32_t>::max()) {
+                        if (binding.partner_state_value < 0)
+                            throw std::invalid_argument("complex observable partner state");
+                        validateComponent(source, binding.partner_molecule_type,
+                                          binding.partner_state_component);
+                    }
+                    if (binding.compartment != std::numeric_limits<std::uint32_t>::max()) {
+                        bool known = false;
+                        for (const auto& compartment : source.compartments)
+                            if (compartment.id == binding.compartment) { known = true; break; }
+                        if (!known)
+                            throw std::out_of_range("complex observable binding compartment");
+                    }
+                    binding.kind = RATE_EXPRESSION_COMPLEX_MOLECULE_COUNT;
                 } else if (nativeBinding.kind == NATIVE_RATE_EXPRESSION_COMPARTMENT_VOLUME) {
                     if (binding.target >= nr.reactant_types.size())
                         throw std::out_of_range("compartment-volume binding target");
@@ -354,6 +416,10 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                         prior.bond_component == binding.bond_component &&
                         prior.bond_state == binding.bond_state &&
                         prior.molecule_type == binding.molecule_type &&
+                        prior.partner_molecule_type == binding.partner_molecule_type &&
+                        prior.partner_component == binding.partner_component &&
+                        prior.partner_state_component == binding.partner_state_component &&
+                        prior.partner_state_value == binding.partner_state_value &&
                         prior.scope == binding.scope &&
                         prior.compartment == binding.compartment &&
                         prior.compartment_ancestry == binding.compartment_ancestry &&

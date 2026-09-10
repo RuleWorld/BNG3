@@ -1,5 +1,9 @@
 # NFcore2 semantic expansion checkpoint
 
+> Historical checkpoint dated 2026-09-08. The live branch and current
+> verification state are in [`../CURRENT_PROGRESS.md`](../CURRENT_PROGRESS.md);
+> the counts and “main” references below do not qualify the active branch.
+
 This checkpoint extends the tests-first NFsim/NFcore2 port on
 `main`. It carries the six earlier semantic
 families forward and opens four formerly explicit ceilings:

@@ -1,5 +1,8 @@
 # NFcore2 maximum-testing expansion
 
+> Historical testing record; current verification is intentionally deferred to
+> the end of the active implementation pass.
+
 This milestone intentionally prioritizes test construction over production implementation.
 
 ## Executable green suite

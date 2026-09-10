@@ -287,6 +287,162 @@ namespace NFcore
 			unsigned int extraCapacity;
 	};
 
+	/* Lazy paged storage for per-molecule reaction mappings.  Large rule-heavy
+	 * models usually leave most molecule/reaction pairs empty; an eager array of
+	 * MappingIdSet objects pays for every pair.  Allocate 32-set pages only when
+	 * a molecule acquires a mapping in that page, and retain a bounded recycle
+	 * pool for the page churn caused by reaction firing. */
+	class PagedMappingIdTable {
+		public:
+#ifndef NFSIM_MAPPING_PAGE_SHIFT
+#define NFSIM_MAPPING_PAGE_SHIFT 5
+#endif
+			static const unsigned int PAGE_SHIFT = NFSIM_MAPPING_PAGE_SHIFT;
+			static const unsigned int PAGE_SIZE = 1u << PAGE_SHIFT;
+			static const unsigned int PAGE_MASK = PAGE_SIZE - 1u;
+			static const unsigned int GROUP_SHIFT = 4;
+			static const unsigned int GROUP_SIZE = 1u << GROUP_SHIFT;
+			static const unsigned int GROUP_MASK = GROUP_SIZE - 1u;
+
+			PagedMappingIdTable() : groups(0), groupCount(0), mappingCount(0) {}
+			~PagedMappingIdTable() { reset(); }
+
+			void init(int count) {
+				reset();
+				mappingCount = count > 0 ? static_cast<unsigned int>(count) : 0;
+				const unsigned int pageCount =
+					(mappingCount + PAGE_SIZE - 1u) >> PAGE_SHIFT;
+				groupCount = (pageCount + GROUP_SIZE - 1u) >> GROUP_SHIFT;
+				if (groupCount == 0) return;
+				groups = new PageGroup *[groupCount];
+				for (unsigned int i = 0; i < groupCount; ++i) groups[i] = 0;
+			}
+
+			const MappingIdSet *get(unsigned int index) const {
+				if (index >= mappingCount || groups == 0) return 0;
+				const unsigned int pageIndex = index >> PAGE_SHIFT;
+				PageGroup *group = groups[pageIndex >> GROUP_SHIFT];
+				if (group == 0) return 0;
+				Page *page = group->pages[pageIndex & GROUP_MASK];
+				return page == 0 ? 0 : &page->sets[index & PAGE_MASK];
+			}
+
+			MappingIdSet *ensure(unsigned int index) {
+				if (index >= mappingCount || groups == 0) return 0;
+				const unsigned int pageIndex = index >> PAGE_SHIFT;
+				const unsigned int groupIndex = pageIndex >> GROUP_SHIFT;
+				PageGroup *&group = groups[groupIndex];
+				if (group == 0) group = acquireGroup();
+				Page *&page = group->pages[pageIndex & GROUP_MASK];
+				if (page == 0) {
+					page = acquirePage();
+					++group->allocatedPages;
+				}
+				return &page->sets[index & PAGE_MASK];
+			}
+
+			void noteBecameNonempty(unsigned int index) {
+				if (index >= mappingCount || groups == 0) return;
+				const unsigned int pageIndex = index >> PAGE_SHIFT;
+				PageGroup *group = groups[pageIndex >> GROUP_SHIFT];
+				if (group == 0) return;
+				Page *page = group->pages[pageIndex & GROUP_MASK];
+				if (page != 0) ++page->nonemptyCount;
+			}
+
+			void noteBecameEmpty(unsigned int index) {
+				if (index >= mappingCount || groups == 0) return;
+				const unsigned int pageIndex = index >> PAGE_SHIFT;
+				const unsigned int groupIndex = pageIndex >> GROUP_SHIFT;
+				PageGroup *group = groups[groupIndex];
+				if (group == 0) return;
+				const unsigned int localPage = pageIndex & GROUP_MASK;
+				Page *page = group->pages[localPage];
+				if (page == 0) return;
+				if (page->nonemptyCount > 0) --page->nonemptyCount;
+				if (page->nonemptyCount != 0) return;
+				group->pages[localPage] = 0;
+				releasePage(page);
+				if (group->allocatedPages > 0) --group->allocatedPages;
+				if (group->allocatedPages != 0) return;
+				groups[groupIndex] = 0;
+				releaseGroup(group);
+			}
+
+		private:
+			struct Page {
+				Page() : nonemptyCount(0) {}
+				MappingIdSet sets[PAGE_SIZE];
+				unsigned int nonemptyCount;
+			};
+			struct PageGroup {
+				PageGroup() : allocatedPages(0) {
+					for (unsigned int i = 0; i < GROUP_SIZE; ++i) pages[i] = 0;
+				}
+				Page *pages[GROUP_SIZE];
+				unsigned int allocatedPages;
+			};
+
+			static const unsigned int RECYCLE_CAPACITY = 256;
+			struct RecyclePool {
+				RecyclePool() : pageCount(0), groupCount(0) {}
+				~RecyclePool() {
+					for (unsigned int i = 0; i < pageCount; ++i) delete pages[i];
+					for (unsigned int i = 0; i < groupCount; ++i) delete pageGroups[i];
+				}
+				Page *pages[RECYCLE_CAPACITY];
+				PageGroup *pageGroups[RECYCLE_CAPACITY];
+				unsigned int pageCount;
+				unsigned int groupCount;
+			};
+
+			static RecyclePool& recyclePool() {
+				static RecyclePool pool;
+				return pool;
+			}
+			static Page *acquirePage() {
+				RecyclePool &pool = recyclePool();
+				return pool.pageCount == 0 ? new Page() : pool.pages[--pool.pageCount];
+			}
+			static void releasePage(Page *page) {
+				RecyclePool &pool = recyclePool();
+				if (pool.pageCount < RECYCLE_CAPACITY) pool.pages[pool.pageCount++] = page;
+				else delete page;
+			}
+			static PageGroup *acquireGroup() {
+				RecyclePool &pool = recyclePool();
+				return pool.groupCount == 0 ? new PageGroup() : pool.pageGroups[--pool.groupCount];
+			}
+			static void releaseGroup(PageGroup *group) {
+				RecyclePool &pool = recyclePool();
+				if (pool.groupCount < RECYCLE_CAPACITY) pool.pageGroups[pool.groupCount++] = group;
+				else delete group;
+			}
+
+			void reset() {
+				if (groups != 0) {
+					for (unsigned int g = 0; g < groupCount; ++g) {
+						PageGroup *group = groups[g];
+						if (group == 0) continue;
+						for (unsigned int p = 0; p < GROUP_SIZE; ++p)
+							delete group->pages[p];
+						delete group;
+					}
+					delete [] groups;
+				}
+				groups = 0;
+				groupCount = 0;
+				mappingCount = 0;
+			}
+
+			PageGroup **groups;
+			unsigned int groupCount;
+			unsigned int mappingCount;
+
+			PagedMappingIdTable(const PagedMappingIdTable &);
+			PagedMappingIdTable& operator=(const PagedMappingIdTable &);
+	};
+
 	/* Endpoint state changes exposed by compact EnergyPattern reactions. */
 	struct IncrementalMembershipChange {
 		IncrementalMembershipChange() :
@@ -1462,8 +1618,9 @@ namespace NFcore
 				int mappingIndex = parentMoleculeType->getReactionMappingIndex(
 						rxnIndex);
 				if (mappingIndex < 0) return -1;
-				return (rxnListMappingId2[mappingIndex].size() > 0) ?
-					*rxnListMappingId2[mappingIndex].begin() : -1;  //JJT: changing to handle multiple mappings per reaction
+				const MappingIdSet *mappingIds = rxnListMappings.get(mappingIndex);
+				return (mappingIds != 0 && !mappingIds->empty()) ?
+					*mappingIds->begin() : -1;  //JJT: changing to handle multiple mappings per reaction
 			};
 
 			const MappingIdSet& getRxnListMappingSet(int rxnIndex) const {
@@ -1473,7 +1630,16 @@ namespace NFcore
 					static const MappingIdSet empty;
 					return empty;
 				}
-				return rxnListMappingId2[mappingIndex];
+				const MappingIdSet *mappingIds = rxnListMappings.get(mappingIndex);
+				if (mappingIds == 0) {
+					static const MappingIdSet empty;
+					return empty;
+				}
+				return *mappingIds;
+			}
+
+			const vector<int>& getActiveReactionMembershipIndices() const {
+				return activeReactionMembershipIndices;
 			}
 
 			bool setRxnListMappingId(int rxnIndex, int rxnListMappingId) {
@@ -1481,13 +1647,25 @@ namespace NFcore
 						rxnIndex);
 				if (mappingIndex < 0) return rxnListMappingId == -1;
 				if(rxnListMappingId == -1){
-					this->rxnListMappingId2[mappingIndex].clear();
+					const MappingIdSet *existing = rxnListMappings.get(mappingIndex);
+					if (existing == 0 || existing->empty()) return true;
+					MappingIdSet *mappingIds = rxnListMappings.ensure(mappingIndex);
+					mappingIds->clear();
+					rxnListMappings.noteBecameEmpty(mappingIndex);
+					removeActiveReactionMembershipIndex(rxnIndex);
 					//this->rxnListMappingId3[rxnIndex].clear();
 					return true;
 				}
 				else{
+					MappingIdSet *mappingIds = rxnListMappings.ensure(mappingIndex);
+					if (mappingIds == 0) return false;
+					bool wasEmpty = mappingIds->empty();
 					pair<MappingIdSet::iterator,bool> it =
-						this->rxnListMappingId2[mappingIndex].insert(rxnListMappingId); //JJT: using a compact set instead of int* to deal with multiple mappings per reaction
+						mappingIds->insert(rxnListMappingId); //JJT: using a compact set instead of int* to deal with multiple mappings per reaction
+					if (wasEmpty && it.second) {
+						rxnListMappings.noteBecameNonempty(mappingIndex);
+						activeReactionMembershipIndices.push_back(rxnIndex);
+					}
 					return it.second; //JJT:  return whether it is a new insert or not
 				}
 			};
@@ -1496,9 +1674,17 @@ namespace NFcore
 
 			void deleteRxnListMappingId(int rxnIndex, int rxnListMappingId){
 				int mappingIndex = parentMoleculeType->getReactionMappingIndex(
-						rxnIndex);
-				if (mappingIndex >= 0)
-					rxnListMappingId2[mappingIndex].erase(rxnListMappingId);
+					rxnIndex);
+				if (mappingIndex < 0) return;
+				const MappingIdSet *existing = rxnListMappings.get(mappingIndex);
+				if (existing == 0 || existing->empty()) return;
+				MappingIdSet *mappingIds = rxnListMappings.ensure(mappingIndex);
+				bool hadMembership = !mappingIds->empty();
+				mappingIds->erase(rxnListMappingId);
+				if (hadMembership && mappingIds->empty()) {
+					rxnListMappings.noteBecameEmpty(mappingIndex);
+					removeActiveReactionMembershipIndex(rxnIndex);
+				}
 			}
 
 			/* set functions for states, bonds, and complexes */
@@ -1628,9 +1814,13 @@ namespace NFcore
 
 
 			//Used to keep track of which reactions this molecule is in...
-			MappingIdSet* rxnListMappingId2;
+			PagedMappingIdTable rxnListMappings;
 			map<vector<Molecule *>, int>* rxnListMappingId3;
 			int nReactions;
+			/* Sparse list of reaction registrations with at least one mapping. */
+			vector<int> activeReactionMembershipIndices;
+
+			void removeActiveReactionMembershipIndex(int rxnIndex);
 
 		private:
 

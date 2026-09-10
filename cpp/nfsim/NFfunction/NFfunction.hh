@@ -201,6 +201,10 @@ namespace NFcore {
 			void setCounterFromParameter(System *s, string paramName);
 			void addSystemPointer(System *s);
 			string getCtrType() const { return ctrType; }
+			string getCtrName() const { return ctrName; }
+			string getCounterParamName() const { return counterParamName; }
+			string getInterpolationMethod() const { return interpolationMethod; }
+			const vector<vector<double> >& getTFUNData() const { return data; }
 			bool fileFunc;
 			// AS-2021
 
@@ -339,6 +343,12 @@ namespace NFcore {
 			void setCounterFromObservable(Observable *observable);
 			void refreshObservableCounter();
 			void addSystemPointer(System *s);
+			string getCtrType() const { return ctrType; }
+			string getCtrName() const { return ctrName; }
+			string getCounterParamName() const { return counterParamName; }
+			string getInterpolationMethod() const { return interpolationMethod; }
+			const vector<vector<double> >& getTFUNData() const { return data; }
+			Observable* getCounterObservable() const { return counterObservable; }
 			bool fileFunc;
 
 
@@ -475,9 +485,14 @@ namespace NFcore {
 				void addCounterPointer(double *count);
 				void addFunctionPointer(GlobalFunction *f);
 				void setCounterFromTime(System *s);
-				void setCounterFromParameter(System *s, string paramName);
-				void addSystemPointer(System *s);
-				bool fileFunc;
+			void setCounterFromParameter(System *s, string paramName);
+			void addSystemPointer(System *s);
+			string getCtrType() const { return ctrType; }
+			string getCtrName() const { return ctrName; }
+			string getCounterParamName() const { return counterParamName; }
+			string getInterpolationMethod() const { return interpolationMethod; }
+			const vector<vector<double> >& getTFUNData() const { return data; }
+			bool fileFunc;
 				// AS-2021
 
 

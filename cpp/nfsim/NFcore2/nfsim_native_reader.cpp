@@ -21,6 +21,22 @@ using namespace NFcore;
 NativeNFsimSystemReader::NativeNFsimSystemReader(System& s):system_(s){}
 
 namespace {
+bool appendExactComplexObservableBinding(
+    Observable* observable, const std::string& name, std::uint16_t reactant,
+    int scope, NativeReactionHeader& header);
+bool observableHasInternalBond(Observable* observable);
+bool appendGlobalObservableCounter(System& system, Observable* observable,
+                                   const std::string& name,
+                                   NativeReactionHeader& header);
+bool appendExpressionFunction(NativeReactionHeader& header,
+                              const std::string& name,
+                              const std::string& expression,
+                              const std::vector<std::string>& arguments,
+                              const std::vector<double>& tableX,
+                              const std::vector<double>& tableY,
+                              const std::string& tableMethod,
+                              const std::string& tableCounter);
+
 bool appendSimpleScopedLocalFunction(System& system, LocalFunction* local,
                                      std::uint16_t reactant,
                                      NativeReactionHeader& header) {
@@ -29,6 +45,17 @@ bool appendSimpleScopedLocalFunction(System& system, LocalFunction* local,
     candidate.rate_law = NATIVE_RATE_EXPRESSION;
     candidate.rate_expression = local->getParsedExpression();
     candidate.rate_expression_bindings.clear();
+    const auto& localData = local->getTFUNData();
+    const std::vector<double> empty;
+    const std::vector<double>& localX = localData.size() > 0 ? localData[0] : empty;
+    const std::vector<double>& localY = localData.size() > 1 ? localData[1] : empty;
+    std::string localCounter = local->getCtrName();
+    if (localCounter.empty() && local->getCtrType() == "Parameter")
+        localCounter = local->getCounterParamName();
+    if ((!localX.empty() || !localY.empty()) &&
+        !appendExpressionFunction(candidate, "__TFUN_VAL__", "__TFUN_VAL__", {},
+                                  localX, localY, local->getInterpolationMethod(),
+                                  localCounter)) return false;
     for (int i = 0; i < local->getNumOfVarRefs(); ++i) {
         const int scope = local->getVarRefScope(i);
         if (scope != LocalFunction::SPECIES && scope != LocalFunction::MOLECULE)
@@ -40,6 +67,12 @@ bool appendSimpleScopedLocalFunction(System& system, LocalFunction* local,
         int templateCount = 0;
         TemplateMolecule** templates = nullptr;
         observable->getTemplateMoleculeList(templateCount, templates);
+        if (templateCount == 2 || observableHasInternalBond(observable)) {
+            if (!appendExactComplexObservableBinding(
+                    observable, local->getVarRefName(i), reactant, scope, candidate))
+                return false;
+            continue;
+        }
         if (templateCount != 1 || templates == nullptr || templates[0] == nullptr ||
             templates[0]->getMoleculeType() == nullptr)
             return false;
@@ -88,6 +121,15 @@ bool appendSimpleScopedLocalFunction(System& system, LocalFunction* local,
         binding.value = value;
         candidate.rate_expression_bindings.push_back(binding);
     }
+    if (local->fileFunc && local->getCtrType() == "Observable") {
+        Observable* counter = local->getCounterObservable();
+        if (!counter) return false;
+        const std::string counterName = "__TFUN_COUNTER__" + local->getName();
+        if (!appendGlobalObservableCounter(system, counter, counterName, candidate))
+            return false;
+        for (auto& function : candidate.rate_expression_functions)
+            if (function.name == "__TFUN_VAL__") function.table_counter = counterName;
+    }
     header = candidate;
     return true;
 }
@@ -109,6 +151,13 @@ bool appendSimpleGlobalFunction(System& system, GlobalFunction* global,
         int templateCount = 0;
         TemplateMolecule** templates = nullptr;
         observable->getTemplateMoleculeList(templateCount, templates);
+        if (templateCount == 2 || observableHasInternalBond(observable)) {
+            if (!appendExactComplexObservableBinding(
+                    observable, global->getVarRefName(i), 0,
+                    -1, candidate))
+                return false;
+            continue;
+        }
         if (templateCount != 1 || templates == nullptr || templates[0] == nullptr ||
             templates[0]->getMoleculeType() == nullptr)
             return false;
@@ -175,7 +224,13 @@ bool mergeSimpleScopedLocalFunctions(const NativeReactionHeader& first,
                 prior.bond_component != binding.bond_component ||
                 prior.bond_state != binding.bond_state ||
                 prior.molecule_type != binding.molecule_type ||
+                prior.partner_molecule_type != binding.partner_molecule_type ||
+                prior.partner_component != binding.partner_component ||
+                prior.partner_state_component != binding.partner_state_component ||
+                prior.partner_state_value != binding.partner_state_value ||
                 prior.scope != binding.scope ||
+                prior.compartment != binding.compartment ||
+                prior.compartment_ancestry != binding.compartment_ancestry ||
                 prior.destination_compartment != binding.destination_compartment ||
                 prior.value != binding.value) return false;
             duplicate = true;
@@ -186,9 +241,13 @@ bool mergeSimpleScopedLocalFunctions(const NativeReactionHeader& first,
     for (const auto& function : second.rate_expression_functions) {
         bool duplicate = false;
         for (const auto& prior : merged.rate_expression_functions) {
-            if (prior.name != function.name) continue;
-            if (prior.expression != function.expression ||
-                prior.arguments != function.arguments) return false;
+        if (prior.name != function.name) continue;
+        if (prior.expression != function.expression ||
+                prior.arguments != function.arguments ||
+                prior.table_x != function.table_x ||
+                prior.table_y != function.table_y ||
+                prior.table_method != function.table_method ||
+                prior.table_counter != function.table_counter) return false;
             duplicate = true;
             break;
         }
@@ -200,16 +259,27 @@ bool mergeSimpleScopedLocalFunctions(const NativeReactionHeader& first,
 bool appendExpressionFunction(NativeReactionHeader& header,
                               const std::string& name,
                               const std::string& expression,
-                              const std::vector<std::string>& arguments) {
+                              const std::vector<std::string>& arguments,
+                              const std::vector<double>& tableX = {},
+                              const std::vector<double>& tableY = {},
+                              const std::string& tableMethod = "linear",
+                              const std::string& tableCounter = "") {
     if (name.empty() || expression.empty()) return false;
     for (const auto& prior : header.rate_expression_functions) {
         if (prior.name != name) continue;
-        return prior.expression == expression && prior.arguments == arguments;
+        return prior.expression == expression && prior.arguments == arguments &&
+               prior.table_x == tableX && prior.table_y == tableY &&
+               prior.table_method == tableMethod && prior.table_counter == tableCounter;
     }
     NativeRateExpressionFunctionSnapshot function;
     function.name = name;
     function.expression = expression;
     function.arguments = arguments;
+    function.table_x = tableX;
+    function.table_y = tableY;
+    function.table_method = tableMethod;
+    function.table_counter = tableCounter;
+    if (function.table_x.size() != function.table_y.size()) return false;
     header.rate_expression_functions.push_back(function);
     return true;
 }
@@ -225,12 +295,101 @@ bool appendExpressionBinding(NativeReactionHeader& header,
                prior.bond_component == binding.bond_component &&
                prior.bond_state == binding.bond_state &&
                prior.molecule_type == binding.molecule_type &&
+               prior.partner_molecule_type == binding.partner_molecule_type &&
+               prior.partner_component == binding.partner_component &&
+               prior.partner_state_component == binding.partner_state_component &&
+               prior.partner_state_value == binding.partner_state_value &&
                prior.scope == binding.scope &&
+               prior.compartment == binding.compartment &&
+               prior.compartment_ancestry == binding.compartment_ancestry &&
                prior.destination_compartment == binding.destination_compartment &&
                prior.value == binding.value;
     }
     header.rate_expression_bindings.push_back(binding);
     return true;
+}
+
+bool appendExactComplexObservableBinding(
+    Observable* observable, const std::string& name, std::uint16_t reactant,
+    int scope, NativeReactionHeader& header) {
+    if (!observable || observable->getType() != Observable::MOLECULES)
+        return false;
+    int templateCount = 0;
+    TemplateMolecule** templates = nullptr;
+    observable->getTemplateMoleculeList(templateCount, templates);
+    if ((templateCount != 1 && templateCount != 2) || templates == nullptr ||
+        !templates[0] || !templates[0]->getMoleculeType())
+        return false;
+    TemplateMolecule* rootTemplate = templates[0];
+    TemplateMolecule* partnerTemplate = nullptr;
+    TemplateMolecule::RootLocalConstraints root;
+    TemplateMolecule::RootLocalConstraints partner;
+    const bool collected = rootTemplate->collectRootLocalConstraints(root);
+    if (collected && root.bonds.size() == 1) {
+        partnerTemplate = root.bonds[0].partner;
+        if (templateCount == 2 && partnerTemplate != templates[1])
+            partnerTemplate = nullptr;
+    }
+    const bool partnerCollected = partnerTemplate && partnerTemplate->getMoleculeType() &&
+        partnerTemplate->collectRootLocalConstraints(partner);
+    const bool shape = root.bonds.size() == 1 && partner.bonds.size() == 1;
+    const bool reciprocal = shape && root.bonds[0].partner == partnerTemplate &&
+        partner.bonds[0].partner == rootTemplate;
+    const bool componentShape = shape && root.bonds[0].component >= 0 &&
+        partner.bonds[0].component >= 0 && root.bonds[0].partner_component >= 0 &&
+        partner.bonds[0].partner_component >= 0 &&
+        !root.bonds[0].partner_component_symmetric &&
+        !partner.bonds[0].partner_component_symmetric &&
+        root.bonds[0].partner_component == partner.bonds[0].component &&
+        partner.bonds[0].partner_component == root.bonds[0].component;
+    const bool localOnly = root.compartment == partner.compartment &&
+        root.symmetric.empty() && partner.symmetric.empty() &&
+        root.connected_to.empty() && partner.connected_to.empty() &&
+        root.empty.empty() && root.occupied.empty() &&
+        partner.empty.empty() && partner.occupied.empty() &&
+        root.exclusions.empty() && partner.exclusions.empty() &&
+        root.states.size() <= 1 && partner.states.size() <= 1;
+    if (!(collected && partnerCollected && shape && reciprocal && componentShape && localOnly)) {
+        return false;
+    }
+    NativeRateExpressionBindingSnapshot binding;
+    binding.kind = NATIVE_RATE_EXPRESSION_COMPLEX_MOLECULE_COUNT;
+    binding.name = name;
+    binding.reactant = reactant;
+    binding.scope = scope;
+    binding.molecule_type = static_cast<std::uint32_t>(
+        rootTemplate->getMoleculeType()->getTypeID());
+    binding.component = static_cast<std::uint32_t>(root.bonds[0].component);
+    binding.partner_molecule_type = static_cast<std::uint32_t>(
+        partnerTemplate->getMoleculeType()->getTypeID());
+    binding.partner_component = static_cast<std::uint32_t>(root.bonds[0].partner_component);
+    if (!root.states.empty()) {
+        if (root.states[0].first < 0 || root.states[0].second < 0) return false;
+        binding.state_component = static_cast<std::uint32_t>(root.states[0].first);
+        binding.state_value = root.states[0].second;
+    }
+    if (!partner.states.empty()) {
+        if (partner.states[0].first < 0 || partner.states[0].second < 0) return false;
+        binding.partner_state_component = static_cast<std::uint32_t>(partner.states[0].first);
+        binding.partner_state_value = partner.states[0].second;
+    }
+    if (!root.compartment.empty())
+        binding.compartment = nativeCompartmentId(root.compartment);
+    return appendExpressionBinding(header, binding);
+}
+
+bool observableHasInternalBond(Observable* observable) {
+    if (!observable || observable->getType() != Observable::MOLECULES)
+        return false;
+    int templateCount = 0;
+    TemplateMolecule** templates = nullptr;
+    observable->getTemplateMoleculeList(templateCount, templates);
+    if (templateCount == 2) return true;
+    if (templateCount != 1 || templates == nullptr || templates[0] == nullptr)
+        return false;
+    TemplateMolecule::RootLocalConstraints constraints;
+    return templates[0]->collectRootLocalConstraints(constraints) &&
+        constraints.bonds.size() == 1 && constraints.bonds[0].partner != nullptr;
 }
 
 bool appendScopedObservableBinding(System& system, Observable* observable,
@@ -243,6 +402,9 @@ bool appendScopedObservableBinding(System& system, Observable* observable,
     int templateCount = 0;
     TemplateMolecule** templates = nullptr;
     observable->getTemplateMoleculeList(templateCount, templates);
+    if (templateCount == 2 || observableHasInternalBond(observable))
+        return appendExactComplexObservableBinding(
+            observable, name, reactant, scope, header);
     if (templateCount != 1 || templates == nullptr || templates[0] == nullptr ||
         templates[0]->getMoleculeType() == nullptr)
         return false;
@@ -282,6 +444,49 @@ bool appendScopedObservableBinding(System& system, Observable* observable,
     return appendExpressionBinding(header, binding);
 }
 
+bool appendGlobalObservableCounter(System& system, Observable* observable,
+                                   const std::string& name,
+                                   NativeReactionHeader& header) {
+    if (!observable || observable->getType() != Observable::MOLECULES) return false;
+    if (observableHasInternalBond(observable))
+        return appendExactComplexObservableBinding(observable, name, 0, -1, header);
+    int templateCount = 0;
+    TemplateMolecule** templates = nullptr;
+    observable->getTemplateMoleculeList(templateCount, templates);
+    if (templateCount != 1 || !templates || !templates[0] ||
+        !templates[0]->getMoleculeType()) return false;
+    TemplateMolecule::RootLocalConstraints constraints;
+    if (!templates[0]->collectRootLocalConstraints(constraints) ||
+        constraints.empty.size() > 1 || constraints.occupied.size() > 1 ||
+        (!constraints.empty.empty() && !constraints.occupied.empty()) ||
+        constraints.states.size() > 1 || !constraints.exclusions.empty() ||
+        !constraints.bonds.empty() || !constraints.symmetric.empty() ||
+        !constraints.connected_to.empty()) return false;
+    NativeRateExpressionBindingSnapshot binding;
+    binding.kind = NATIVE_RATE_EXPRESSION_GLOBAL_MOLECULE_COUNT;
+    binding.name = name;
+    binding.molecule_type = static_cast<std::uint32_t>(
+        templates[0]->getMoleculeType()->getTypeID());
+    if (!constraints.states.empty()) {
+        if (constraints.states.front().first < 0 || constraints.states.front().second < 0)
+            return false;
+        binding.state_component = static_cast<std::uint32_t>(constraints.states.front().first);
+        binding.state_value = constraints.states.front().second;
+    }
+    if (constraints.empty.size() == 1) {
+        if (constraints.empty.front() < 0) return false;
+        binding.bond_component = static_cast<std::uint32_t>(constraints.empty.front());
+        binding.bond_state = TemplateMolecule::EMPTY;
+    } else if (constraints.occupied.size() == 1) {
+        if (constraints.occupied.front() < 0) return false;
+        binding.bond_component = static_cast<std::uint32_t>(constraints.occupied.front());
+        binding.bond_state = TemplateMolecule::OCCUPIED;
+    }
+    if (!constraints.compartment.empty())
+        binding.compartment = nativeCompartmentId(constraints.compartment);
+    return appendExpressionBinding(header, binding);
+}
+
 bool appendLocalFunctionDefinition(System& system, LocalFunction* local,
                                    std::uint16_t reactant,
                                    NativeReactionHeader& header,
@@ -291,8 +496,17 @@ bool appendLocalFunctionDefinition(System& system, LocalFunction* local,
     std::vector<std::string> arguments;
     for (int i = 0; i < local->getNumOfArgs(); ++i)
         arguments.push_back(local->getArgName(i));
+    const auto& localData = local->getTFUNData();
+    const std::vector<double> empty;
+    const std::vector<double>& localX = localData.size() > 0 ? localData[0] : empty;
+    const std::vector<double>& localY = localData.size() > 1 ? localData[1] : empty;
+    std::string localCounter = local->getCtrName();
+    if (localCounter.empty() && local->getCtrType() == "Parameter")
+        localCounter = local->getCounterParamName();
     if (!appendExpressionFunction(header, local->getName(),
-                                  local->getParsedExpression(), arguments)) {
+                                  local->getParsedExpression(), arguments,
+                                  localX, localY, local->getInterpolationMethod(),
+                                  localCounter)) {
         visiting.erase(local->getName());
         return false;
     }
@@ -317,6 +531,16 @@ bool appendLocalFunctionDefinition(System& system, LocalFunction* local,
             return false;
         }
     }
+    if (local->fileFunc && local->getCtrType() == "Observable") {
+        Observable* counter = local->getCounterObservable();
+        if (!counter) { visiting.erase(local->getName()); return false; }
+        const std::string counterName = "__TFUN_COUNTER__" + local->getName();
+        if (!appendGlobalObservableCounter(system, counter, counterName, header)) {
+            visiting.erase(local->getName()); return false;
+        }
+        for (auto& function : header.rate_expression_functions)
+            if (function.name == local->getName()) function.table_counter = counterName;
+    }
     visiting.erase(local->getName());
     return true;
 }
@@ -326,8 +550,17 @@ bool appendGlobalFunctionDefinition(System& system, GlobalFunction* global,
                                     std::set<std::string>& visiting) {
     if (!global || global->getExpression().empty()) return false;
     if (!visiting.insert(global->getName()).second) return false;
+    const auto& globalData = global->getTFUNData();
+    const std::vector<double> empty;
+    const std::vector<double>& globalX = globalData.size() > 0 ? globalData[0] : empty;
+    const std::vector<double>& globalY = globalData.size() > 1 ? globalData[1] : empty;
+    std::string globalCounter = global->getCtrName();
+    if (globalCounter.empty() && global->getCtrType() == "Parameter")
+        globalCounter = global->getCounterParamName();
     if (!appendExpressionFunction(header, global->getName(),
-                                  global->getExpression(), {})) {
+                                  global->getExpression(), {},
+                                  globalX, globalY, global->getInterpolationMethod(),
+                                  globalCounter)) {
         visiting.erase(global->getName());
         return false;
     }
@@ -355,6 +588,14 @@ bool appendGlobalFunctionDefinition(System& system, GlobalFunction* global,
             return false;
         }
         observable->getTemplateMoleculeList(templateCount, templates);
+        if (templateCount == 2 || observableHasInternalBond(observable)) {
+            if (!appendExactComplexObservableBinding(
+                    observable, global->getVarRefName(i), 0, -1, header)) {
+                visiting.erase(global->getName());
+                return false;
+            }
+            continue;
+        }
         if (templateCount != 1 || templates == nullptr || templates[0] == nullptr ||
             templates[0]->getMoleculeType() == nullptr) {
             visiting.erase(global->getName());
@@ -428,6 +669,17 @@ bool appendCompositeScopedLocalFunction(System& system, CompositeFunction* compo
     candidate.rate_expression = composite->getOriginalExpression();
     candidate.rate_expression_bindings.clear();
     candidate.rate_expression_functions.clear();
+    const auto& compositeData = composite->getTFUNData();
+    const std::vector<double> empty;
+    const std::vector<double>& compositeX = compositeData.size() > 0 ? compositeData[0] : empty;
+    const std::vector<double>& compositeY = compositeData.size() > 1 ? compositeData[1] : empty;
+    std::string compositeCounter = composite->getCtrName();
+    if (compositeCounter.empty() && composite->getCtrType() == "Parameter")
+        compositeCounter = composite->getCounterParamName();
+    if ((!compositeX.empty() || !compositeY.empty()) &&
+        !appendExpressionFunction(candidate, "__TFUN_VAL__", "__TFUN_VAL__", {},
+                                  compositeX, compositeY, composite->getInterpolationMethod(),
+                                  compositeCounter)) return false;
     std::set<std::string> visiting;
     for (int i = 0; i < composite->getNumOfFunctions(); ++i) {
         const std::string name = composite->getFunctionName(i);
@@ -441,6 +693,14 @@ bool appendCompositeScopedLocalFunction(System& system, CompositeFunction* compo
             return false;
         }
     }
+    for (int i = 0; i < composite->getNumOfParams(); ++i) {
+        const std::string name = composite->getParamName(i);
+        const double value = system.getParameter(name);
+        if (!std::isfinite(value) ||
+            !appendExpressionBinding(candidate,
+                NativeRateExpressionBindingSnapshot::constant(name, value)))
+            return false;
+    }
     header = candidate;
     return true;
 }
@@ -453,11 +713,30 @@ bool appendCompositeGlobalFunction(System& system, CompositeFunction* composite,
     candidate.rate_expression = composite->getOriginalExpression();
     candidate.rate_expression_bindings.clear();
     candidate.rate_expression_functions.clear();
+    const auto& compositeData = composite->getTFUNData();
+    const std::vector<double> empty;
+    const std::vector<double>& compositeX = compositeData.size() > 0 ? compositeData[0] : empty;
+    const std::vector<double>& compositeY = compositeData.size() > 1 ? compositeData[1] : empty;
+    std::string compositeCounter = composite->getCtrName();
+    if (compositeCounter.empty() && composite->getCtrType() == "Parameter")
+        compositeCounter = composite->getCounterParamName();
+    if ((!compositeX.empty() || !compositeY.empty()) &&
+        !appendExpressionFunction(candidate, "__TFUN_VAL__", "__TFUN_VAL__", {},
+                                  compositeX, compositeY, composite->getInterpolationMethod(),
+                                  compositeCounter)) return false;
     std::set<std::string> visiting;
     for (int i = 0; i < composite->getNumOfFunctions(); ++i) {
         GlobalFunction* global = system.getGlobalFunctionByName(
             composite->getFunctionName(i));
         if (!appendGlobalFunctionDefinition(system, global, candidate, visiting))
+            return false;
+    }
+    for (int i = 0; i < composite->getNumOfParams(); ++i) {
+        const std::string name = composite->getParamName(i);
+        const double value = system.getParameter(name);
+        if (!std::isfinite(value) ||
+            !appendExpressionBinding(candidate,
+                NativeRateExpressionBindingSnapshot::constant(name, value)))
             return false;
     }
     header = candidate;

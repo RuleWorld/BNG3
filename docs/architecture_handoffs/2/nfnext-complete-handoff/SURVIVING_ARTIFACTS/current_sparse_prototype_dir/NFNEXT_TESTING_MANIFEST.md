@@ -1,5 +1,9 @@
 # NFnext testing expansion manifest
 
+> Historical manifest from the reconstructed prototype. Current test targets
+> and verification state are maintained in the live repository docs, starting
+> with [`docs/CURRENT_PROGRESS.md`](../../../../../CURRENT_PROGRESS.md).
+
 ## Purpose
 
 This package turns the proposed NFnext/NFsim rewrite architecture into a TDD

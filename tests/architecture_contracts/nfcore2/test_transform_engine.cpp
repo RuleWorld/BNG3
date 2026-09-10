@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "test_harness.hh"
 #include "engine.hh"
 #include <limits>

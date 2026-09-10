@@ -4,6 +4,10 @@
 - Date: 2026-09-08
 - Scope: Optional BNG3-to-BNGsim network adapter
 
+> Current implementation status is tracked in
+> [`docs/CURRENT_PROGRESS.md`](../CURRENT_PROGRESS.md). This ADR records the
+> adapter decision and does not supersede the active convergence gates.
+
 ## Context
 
 BNGsim provides a native `ModelBuilder` API that can consume a generated

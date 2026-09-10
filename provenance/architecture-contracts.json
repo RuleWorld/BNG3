@@ -486,6 +486,13 @@
       "empty_bodies": 0
     },
     {
+      "path": "tests/architecture_contracts/nfcore2/test_paged_mapping.cpp",
+      "status": "reference",
+      "target": "bng3_nfcore2_reference_tests",
+      "declared_cases": 3,
+      "empty_bodies": 0
+    },
+    {
       "path": "tests/architecture_contracts/nfcore2/test_randomized_invariants.cpp",
       "status": "reference",
       "target": "bng3_nfcore2_reference_tests",

@@ -3,8 +3,16 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <stdexcept>
 
 namespace nfnext {
+
+class RngDomainError : public std::domain_error {
+public:
+    explicit RngDomainError(const char* message) : std::domain_error(message) {}
+};
+
+class StrictCounterRng;
 
 // Stateless counter-based RNG. Results depend only on (seed, stream, counter),
 // so batched trajectories are reproducible independent of thread scheduling.
@@ -34,6 +42,42 @@ public:
 private:
     std::uint64_t seed_;
     std::uint64_t stream_;
+};
+
+class StrictCounterRng : public CounterRng {
+public:
+    using CounterRng::CounterRng;
+
+    double exponential(std::uint64_t counter, double rate) const {
+        if (rate < 0.0) throw RngDomainError("exponential rate must be non-negative");
+        return CounterRng::exponential(counter, rate);
+    }
+};
+
+enum class RngPurpose : std::uint8_t {
+    WaitingTime = 0,
+    FamilyChoice = 1,
+    Auxiliary = 2,
+    Reserved = 3
+};
+
+class RngLayout {
+public:
+    static constexpr RngLayout exactSSA() noexcept { return RngLayout(); }
+
+    constexpr std::uint32_t wordsPerEvent() const noexcept { return 4; }
+
+    constexpr std::uint64_t word(RngPurpose purpose, std::uint64_t event) const noexcept {
+        return event * wordsPerEvent() + static_cast<std::uint8_t>(purpose);
+    }
+
+    constexpr bool allowBackendDependentConsumption() const noexcept { return false; }
+
+    friend constexpr bool operator==(RngLayout, RngLayout) noexcept { return true; }
+    friend constexpr bool operator!=(RngLayout, RngLayout) noexcept { return false; }
+
+private:
+    constexpr RngLayout() noexcept = default;
 };
 
 } // namespace nfnext
