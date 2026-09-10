@@ -715,6 +715,64 @@ def test_multi_positive_initial_pool_requires_fully_defined_sites():
     assert any("positive initial pool" in warning.message for warning in result.warnings)
 
 
+def test_multi_initial_assignment_initializes_species_for_definition_checks():
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      xmlns:math="http://www.w3.org/1998/Math/MathML"
+      multi:required="true">
+  <model id="assignment_initial_pool">
+    <listOfSpecies>
+      <species id="a0" multi:speciesType="aType"/>
+    </listOfSpecies>
+    <listOfInitialAssignments>
+      <initialAssignment symbol="a0">
+        <math:math><math:cn type="integer">1</math:cn></math:math>
+      </initialAssignment>
+    </listOfInitialAssignments>
+    <multi:listOfSpeciesTypes>
+      <multi:bindingSiteSpeciesType multi:id="siteType"/>
+      <multi:speciesType multi:id="aType">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="site" multi:speciesType="siteType"/>
+        </multi:listOfSpeciesTypeInstances>
+      </multi:speciesType>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+
+    result = parse_multi_package(xml)
+
+    assert result.seed_patterns == [("a0", "aType(siteType)")]
+    assert result.executable is False
+    assert any("positive initial pool" in warning.message for warning in result.warnings)
+
+
+def test_multi_initial_assignment_requires_core_target_and_mathml():
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      xmlns:math="http://www.w3.org/1998/Math/MathML"
+      multi:required="true">
+  <model id="invalid_assignments">
+    <listOfSpecies><species id="a0" multi:speciesType="aType"/></listOfSpecies>
+    <listOfInitialAssignments>
+      <initialAssignment symbol="missing">
+        <math:math><math:cn type="integer">1</math:cn></math:math>
+      </initialAssignment>
+      <initialAssignment symbol="a0"/>
+    </listOfInitialAssignments>
+    <multi:listOfSpeciesTypes>
+      <multi:speciesType multi:id="aType"/>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+
+    result = parse_multi_package(xml)
+
+    assert result.seed_patterns == []
+    assert any("does not identify a Model element" in warning.message for warning in result.warnings)
+    assert any("missing its required MathML" in warning.message for warning in result.warnings)
+
+
 def test_multi_positive_initial_pool_allows_internal_species_type_bonds():
     xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
       xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"

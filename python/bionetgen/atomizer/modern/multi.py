@@ -1237,6 +1237,7 @@ def _species_pattern_from_multi(
     namespace: str,
     warnings: List[SBMLImportWarning],
     compartment_references: Optional[Dict[str, Dict[str, str]]] = None,
+    initialized_by_assignment: bool = False,
 ) -> Optional[str]:
     flat = _flatten_type(
         type_id,
@@ -1438,7 +1439,7 @@ def _species_pattern_from_multi(
         _attribute(species, "initialAmount"),
         _attribute(species, "initialConcentration"),
     ]
-    has_positive_initial = False
+    has_positive_initial = initialized_by_assignment
     for raw_initial in initial_values:
         if not raw_initial:
             continue
@@ -2857,6 +2858,49 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
     species_compartments: Dict[str, str] = {}
     species_feature_ids_by_species: Dict[str, set] = {}
     species_parent = _first_child(model, "listOfSpecies")
+    initial_assignment_symbols: set = set()
+    initial_assignment_parent = _first_child(
+        model, "listOfInitialAssignments", CORE_V1_NAMESPACE
+    )
+    for assignment in _children(
+        initial_assignment_parent, "initialAssignment", CORE_V1_NAMESPACE
+    ):
+        symbol = _attribute(assignment, "symbol")
+        if not symbol:
+            warnings.append(
+                _warning(
+                    "Core initialAssignment is missing its required symbol.",
+                    "dropped",
+                )
+            )
+            continue
+        if symbol in initial_assignment_symbols:
+            warnings.append(
+                _warning(
+                    f'Duplicate core initialAssignment target "{symbol}".',
+                    "dropped",
+                )
+            )
+            continue
+        if symbol not in core_model_ids:
+            warnings.append(
+                _warning(
+                    f'Core initialAssignment symbol "{symbol}" does not '
+                    "identify a Model element.",
+                    "dropped",
+                )
+            )
+            continue
+        if _first_child(assignment, "math", MATHML_NAMESPACE) is None:
+            warnings.append(
+                _warning(
+                    f'Core initialAssignment for "{symbol}" is missing its '
+                    "required MathML math child.",
+                    "dropped",
+                )
+            )
+            continue
+        initial_assignment_symbols.add(symbol)
 
     def visible_feature_types(
         type_id: str, stack: Tuple[str, ...] = ()
@@ -2946,6 +2990,7 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
             if (
                 _attribute(species, "initialAmount") != ""
                 or _attribute(species, "initialConcentration") != ""
+                or species_id in initial_assignment_symbols
             ):
                 seed_patterns.append((species_id, source_pattern))
             continue
@@ -2979,6 +3024,7 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
             and (
                 _attribute(species, "initialAmount") != ""
                 or _attribute(species, "initialConcentration") != ""
+                or species_id in initial_assignment_symbols
             )
         ):
             warnings.append(
@@ -3168,12 +3214,14 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
             namespace,
             structure_warnings,
             compartment_references,
+            species_id in initial_assignment_symbols,
         )
         if pattern:
             species_patterns[species_id] = pattern
             if (
                 _attribute(species, "initialAmount") != ""
                 or _attribute(species, "initialConcentration") != ""
+                or species_id in initial_assignment_symbols
             ):
                 seed_patterns.append((species_id, pattern))
 
