@@ -650,8 +650,18 @@ def build_species_composition_table(
         components: List[str] = []
         modifications_info: Dict[str, str] = {}
 
+        multi_pattern = (
+            model.multi_species_patterns.get(species_id)
+            if model.multi_executable
+            else None
+        )
         has_real_structure = ("." in item_name or "(" in item_name) and "!" in item_name
-        if atomize and has_real_structure:
+        if multi_pattern:
+            structure = read_from_string(multi_pattern)
+            _sanitize_structure(structure)
+            components = structure.get_molecule_names()
+            is_elemental = False
+        elif atomize and has_real_structure:
             structure = read_from_string(item_name)
             _sanitize_structure(structure)
             components = structure.get_molecule_names()
@@ -732,7 +742,14 @@ def build_species_composition_table(
         sorted_species=sorted_species,
         weights=sorted(weights.items(), key=lambda item: item[1]),
     )
-    reconcile_sct(table, get_molecule_types(table))
+    reconcile_sct(
+        table,
+        get_molecule_types(
+            table,
+            model.multi_type_patterns.values() if model.multi_executable else None,
+        ),
+        preserve_partial=model.multi_executable,
+    )
     return table
 
 
@@ -753,7 +770,10 @@ def _update_molecule_type(existing: Molecule, incoming: Molecule) -> None:
             left.add_states(right.states, update=False)
 
 
-def get_molecule_types(sct: SpeciesCompositionTable) -> List[Molecule]:
+def get_molecule_types(
+    sct: SpeciesCompositionTable,
+    explicit_patterns: Optional[Sequence[str]] = None,
+) -> List[Molecule]:
     molecule_types: Dict[str, Molecule] = OrderedDict()
     for entry in sct.entries.values():
         for molecule in entry.structure.molecules:
@@ -761,12 +781,31 @@ def get_molecule_types(sct: SpeciesCompositionTable) -> List[Molecule]:
                 molecule_types[molecule.name] = molecule.copy()
             else:
                 _update_molecule_type(molecule_types[molecule.name], molecule)
+    for pattern in explicit_patterns or []:
+        try:
+            parsed = read_from_string(pattern)
+        except (TypeError, ValueError):
+            continue
+        for molecule in parsed.molecules:
+            existing = molecule_types.get(molecule.name)
+            if existing is None:
+                molecule_types[molecule.name] = molecule.copy()
+            else:
+                _update_molecule_type(existing, molecule)
     return list(molecule_types.values())
 
 
 def reconcile_sct(
-    sct: SpeciesCompositionTable, molecule_types: Sequence[Molecule]
+    sct: SpeciesCompositionTable,
+    molecule_types: Sequence[Molecule],
+    preserve_partial: bool = False,
 ) -> None:
+    if preserve_partial:
+        # Multi species patterns may intentionally omit feature values or
+        # outward binding sites.  Omission means don't-care in SBML Multi;
+        # filling the molecule from its type would silently turn that into a
+        # concrete BNGL state.
+        return
     type_map = {molecule.name: molecule for molecule in molecule_types}
     for entry in sct.entries.values():
         for molecule in entry.structure.molecules:
@@ -796,6 +835,11 @@ def reconcile_sct(
 def disambiguate_colliding_species(
     sct: SpeciesCompositionTable, model: SBMLModel
 ) -> int:
+    if model.multi_executable:
+        # SBML Multi deliberately permits several fully-defined species and a
+        # pattern species to share one speciesType.  Their identity is carried
+        # by the Multi feature/binding semantics, not by synthetic BNGL state.
+        return 0
     groups: Dict[Tuple[str, str], List[str]] = OrderedDict()
     for species_id, entry in sct.entries.items():
         if not entry.structure.molecules:

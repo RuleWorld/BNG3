@@ -3422,14 +3422,55 @@ completion gate.
 
 - [x] Current parser detects and exposes conservative canonical single-level
   Multi structures as reference diagnostics.
-- [ ] Canonical Multi molecule types, components, states, complexes,
-  species/seed patterns, bonds, compartments, and annotations are fully
-  reconstructed from approved fixtures.
-- [ ] Multi output is emitted through a supported writer with schema and
-  semantic round-trip tests.
-- [ ] An independent oracle and end-to-end execution semantics are approved.
-- [ ] Multi-derived structures are injected into the simulated network only
-  after the oracle and execution gate pass.
+- [x] Executable SBML Multi v1 reconstruction checkpoint
+  `c48c758` on dedicated branch `codex/sbml-multi-full-work-v2` expands the
+  modern Atomizer path to resolve the released namespace and package grammar,
+  spec-valid unqualified attributes on Multi-defined elements plus strict
+  namespace placement for Multi extensions to core/MathML elements, SBML
+  primitive lexical rules,
+  spec-scoped identifier collisions, scoped/nested component indexes, atomic
+  binding-site types, species types, feature states and occurrences,
+  in-species bonds, explicit/don't-care species patterns, fully defined
+  positive initial pools including core `initialAssignment` targets, Multi
+  product component maps, compartment references,
+  `intraSpeciesReaction`, MathML `sum`/`numericValue` representations,
+  component-scoped feature IDs, one-to-one bond validation, and strict
+  reaction/map identifier checks, and core initial-assignment target/MathML
+  validation. Component-index resolution is declaration-order independent and
+  accepts valid SpeciesType identifying parents; compartment-type instances,
+  nested compartment propagation, binding-site feature inheritance, outward
+  binding-site ID uniqueness, relation=`and` occurrence constraints, and
+  type-only definitions are covered. Nested component indexes resolve through
+  indexed parents for feature and bond scopes; component indexes may target
+  either a component instance or a nested SpeciesType object. Multi hierarchies
+  without an unambiguous BNGL molecule boundary fail closed instead of being
+  flattened. Repeated nested features on binding-site components and
+  unsupported feature-count or sub-compartment-reference MathML `ci` semantics
+  also fail closed with explicit diagnostics. Core
+  Reaction-derived Multi identifiers, species-feature identifiers, and
+  compartment-reference identifiers are checked in their complete SBML/Multi
+  scopes. Invalid or non-representable structures fail closed with structured
+  diagnostics.
+  Core metadata and foreign package annotations are preserved without false
+  rejection. The real fixture
+  `tests/validation/Validate/test_write_sbml_multi_sbml_sbmlmulti.xml`
+  produces executable BNGL and parses through the native `bng_cpp` oracle.
+  Focused Multi tests report `45 passed, 3 skipped`; full Python reports `390
+  passed, 30 skipped`; CTest reports `291/291`; Ruff, C++ syntax, and `git
+  diff --check` pass.
+- [x] Canonical Multi molecule types, components, states, complexes,
+  species/seed patterns, bonds, compartments, product maps, and diagnostics
+  are reconstructed from the real fixture plus spec-derived tests.
+- [x] Multi output is emitted through the supported C++ writer with libSBML
+  consistency checks and semantic parser round-trip tests.
+- [x] Independent NFsim execution parity is covered for a representative
+  Multi binding model; the local gate builds standalone NFsim from source
+  revision `a6f9fa945c9d6e1e122e789c952260112c93f157` outside BNG3 and runs a
+  positive-time `0.1` simulation, producing a time-series output. The tested
+  binary SHA-256 is
+  `b5c5c4c82855a5084301bfe4a8d0c2bdc20b7ee996b6e3c868f9575862e916eb`.
+  Multi-derived structures enter execution only after the parser and oracle
+  gates pass; hosted/pinned Tier-NF qualification remains open.
 - [ ] Full SBML-Multi simulation, not merely diagnostics/comments, passes Tier-X
   and representative NF/network gates.
 
@@ -3782,8 +3823,10 @@ These are known unchecked requirements, not reasons to claim completion:
 - Structured SBML atomization still has a deliberate visible error, and
   local validation has environment-dependent skips; hosted validation green
   does not prove full Tier-P/NF/X parity.
-- SBML-Multi is currently diagnostic/reference extraction, not approved
-  end-to-end simulated execution.
+- SBML-Multi v1 representable structures now enter executable modern
+  Atomizer/BNGL paths with native writer/parser and NFsim evidence;
+  unsupported shapes still fail closed, and full Tier-X capability remains
+  open.
 - Legacy Python core/modelapi/network/simulator trees remain and have not
   passed zero-reference deletion gates.
 - Atomizer writer/helper/parser parity and all format round trips remain

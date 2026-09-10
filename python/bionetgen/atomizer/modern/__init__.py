@@ -440,9 +440,20 @@ class Atomizer:
                     "ATM008",
                     f"Disambiguated {disambiguated} colliding species (isoform collapse)",
                 )
-            molecule_types = get_molecule_types(self.sct)
+            molecule_types = get_molecule_types(
+                self.sct,
+                (
+                    self.model.multi_molecule_types
+                    if self.model.multi_executable
+                    else None
+                ),
+            )
             logger.info("ATM006", f"Found {len(molecule_types)} molecule types")
-            reconcile_sct(self.sct, molecule_types)
+            reconcile_sct(
+                self.sct,
+                molecule_types,
+                preserve_partial=self.model.multi_executable,
+            )
             seed_species = get_seed_species(self.sct, self.model)
             logger.info("ATM007", f"Found {len(seed_species)} seed species")
             logger.info("ATM008", "Generating BNGL model...")
