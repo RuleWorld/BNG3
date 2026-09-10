@@ -1,6 +1,11 @@
 # BNG3 handoff port status
 
-This branch implements the first direct, reviewable port of the three supplied handoffs into the authoritative BNG3 checkout. The branch is intentionally staged: executable behavior is enabled only where the BNG3 tree and tests prove the required semantics; future contracts remain visible and fail closed.
+This branch carries the direct, reviewable port of the three supplied handoffs
+in the authoritative BNG3 tree. The work is intentionally staged: executable
+behavior is enabled only where the BNG3 tree and tests prove the required
+semantics; future contracts remain visible and fail closed. The live branch,
+current batch, and verification state are in
+[`CURRENT_PROGRESS.md`](CURRENT_PROGRESS.md).
 
 ## Governing goal
 
@@ -19,6 +24,17 @@ The archival documents are retained under `docs/architecture_handoffs/`. The exa
 - Energy compiler types and `EnergyDeltaPlan` are in `cpp/compile/` and connected to the real NFsim energy bridge.
 - NFcore2 source is in `cpp/nfsim/NFcore2/`; its native reader is adapted to the real BNG3 reaction, template, transformation, and energy APIs.
 - NFnext source is in `cpp/nfnext/` and is built as an isolated library so its prototype contracts remain testable without being presented as the NFsim replacement.
+- NFnext family compilation now has a tested semantic API in
+  `cpp/nfnext/include/nfnext/family_compiler.hpp`: coordinate inference comes
+  from position predicates before human-readable names, only consecutive
+  semantically identical runs collapse, rate-law/state-set/molecularity
+  differences remain explicit, and expansion/fingerprint oracles preserve
+  deterministic source ordering. The completed family contract is part of the
+  normal architecture regression suite; the completed canonicalization,
+  dependency, matcher, transformation, memory-arena, cache,
+  observable/function, lattice/interval, and compartment/rate contracts are
+  also registered in the normal CTest spine. Remaining NFnext contracts stay
+  opt-in and fail closed.
 - Root-local NFsim introspection and conservative dependency collection are implemented in the existing NFsim classes. Unsupported richer topology and broader transport cases fail closed; bounded graph matching, synthesis, root-local moves, and species-carrying `MoveConnected` execute directly. Explicit rate bindings resolve reactant counts, connected-species molecule counts, and positive compartment volumes.
 - Symmetric graph automorphisms now lower through the native reader as finite equivalent-site candidate sets. The matcher assigns candidates injectively, checks state and occupancy constraints, verifies reciprocal bonds, and preserves multi-edge site permutations; mirrored descriptors are deduplicated after partner resolution. Malformed candidate or partner payloads remain rejected.
 - The staged semantic layer now has typed symbols/rate-law references, structured
@@ -82,28 +98,32 @@ The archival documents are retained under `docs/architecture_handoffs/`. The exa
 
 ## Evidence at this checkpoint
 
-- The direct-port build completed after adapting the BNG3 APIs.
-- All runnable Release/Ninja CTest tests passed (`282` passed; the sole
-  non-runnable entry is the pre-existing RED NFnext future contract, whose
-  source contains an intentional `#error` and therefore has no executable),
-  including `58/58` tests under the exact `energy` label, one NFcore2 and one
-  NFnext architecture-reference test, and the 21 native-port semantic tests.
-  The NFcore2 reference suite passed 432/432; the native-reader suite
-  passed 21 cases and 181 assertions.
+- The branch was created from committed base `a8d2a8b` with pre-existing
+  uncommitted implementation changes preserved. The final combined-tree build
+  passed, and CTest passed `305/305`, including the NFnext and NFcore2
+  architecture targets.
+- The BNG3 Python regression suite passed `353` tests with `27` expected skips
+  under the configured Anaconda 3.14 environment. Validation smoke passed `4`
+  checks with `14` environment/reference skips; the skipped parity checks
+  require the unavailable legacy `run_network` helper or an independently
+  built native NFsim oracle.
 - The imported energy Python self-tests passed `66/66` under the repository's
-  intended `PYTHONPATH=tests/energy` environment.
-- The fresh current-main BNG3 Python regression suite passed `348` tests with
-  `27` expected skips under the base Anaconda 3.14 environment.
-- The validation smoke gate passed `4` checks with `14` visible skips; the
-  skipped parity checks require the unavailable legacy `run_network` helper
-  or an independently built native NFsim oracle.
-- Current ASan/UBSan focused checks passed the NFcore2 reference (`432/432`)
-  and ODE/observable/solver regressions (`10/10`).
+  intended `PYTHONPATH=tests/energy` environment. Older sanitizer, oracle,
+  and exact-head results remain historical provenance rather than new
+  evidence for this branch.
+- Fresh ASan/UBSan checks passed all 12 selected NFnext/reference targets:
+  the NFnext reference target, canonicalization, dependency, matcher,
+  transformation, memory-arena, cache, observable/function, lattice/interval,
+  compartment/rate, replay/RNG, and rule-family contracts, with no sanitizer
+  findings. The replay/RNG target covers 25 cases and 2,101,136 checks.
 - BNG2 `master` was rebuilt from merged main revision `e0a5c6d9` and its CTest
   suite passed `81/81`.
 - The isolated batch CLI tests passed `2/2`, covering private generated
   outputs and child failure propagation.
-- The architecture inventory audit is required to pass before each checkpoint; it verifies that every imported C++ contract is classified and that executable dispositions name a CMake target.
+- The architecture inventory audit passed with no failures; it reports 57
+  blocked-api, 15 design-only, 21 reference, 6 required, and 5 auxiliary
+  files. This inventory is classification evidence, not a claim that blocked
+  or design-only contracts pass.
 - The existing BNG3 Python regression suite and the imported Python harness self-tests are separate gates. They must be rerun after later source or build-system changes.
 - A pinned native NFsim oracle was built in an isolated temporary tree from
   source revision `a6f9fa945c9d6e1e122e789c952260112c93f157`. The NF validation
@@ -116,9 +136,10 @@ The archival documents are retained under `docs/architecture_handoffs/`. The exa
 
 ## Required next gates
 
-1. Exercise NFcore2 and NFnext reference targets independently, then add
-   semantic fixtures for matcher, transformation, observables, and cache
-   behavior.
+1. Complete the consolidated NFnext implementation batch and promote only
+   contracts whose real API and semantics are verified on this exact branch.
+   Unimplemented XML-to-NFIR, backend-equivalence, accelerator, population,
+   and Rasi/uORF surfaces remain opt-in and fail closed.
 2. Replace adapter-level smoke checks with independent NFsim and BNG2 oracle
    comparisons, including seeded trajectories, rates, observables, and failure
    classifications.

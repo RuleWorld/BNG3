@@ -1,5 +1,9 @@
 # Provenance
 
+The live branch and current qualification state are summarized in
+[`../docs/CURRENT_PROGRESS.md`](../docs/CURRENT_PROGRESS.md). Provenance
+records remain pending until their stated maintainer and oracle gates are met.
+
 `upstreams.lock.yml` is the machine-readable source and oracle baseline. It is
 written as JSON-compatible YAML so the repository can validate it with the
 Python standard library.

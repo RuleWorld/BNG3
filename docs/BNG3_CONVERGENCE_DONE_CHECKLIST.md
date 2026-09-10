@@ -1,12 +1,13 @@
 # BNG3 Convergence: Definition of Done and Remaining Checklist
 
 **Status:** Active; not complete
-**Last audited:** 2026-09-03
+**Last audited:** 2026-09-10
 **Repository:** RuleWorld/BNG3
-**Working branch:** codex/bng3-integration-foundations
-**Audited semantic code head:** ccb3ef9efd069bb9375a39ddb64b1861909b4aa8 (local exact head; public synchronization is deferred by the local-only work instruction)
-**Checklist refresh base:** ce4575f5c31b94ded5dfac1842a9c8e438f608d4 (local exact-head CI provenance-summary checkpoint; public synchronization is deferred by the local-only work instruction)
-**Latest workflow checkpoint:** ce4575f5c31b94ded5dfac1842a9c8e438f608d4 (local-only; no hosted run was created because this checkpoint has not been pushed)
+**Working branch:** codex/bng3-rest-of-port-20260909
+**Historical audited semantic code head:** ccb3ef9efd069bb9375a39ddb64b1861909b4aa8 (local exact head; public synchronization is deferred by the local-only work instruction)
+**Historical checklist refresh base:** ce4575f5c31b94ded5dfac1842a9c8e438f608d4 (local exact-head CI provenance-summary checkpoint; public synchronization is deferred by the local-only work instruction)
+**Historical workflow checkpoint:** ce4575f5c31b94ded5dfac1842a9c8e438f608d4 (local-only; no hosted run was created because this checkpoint has not been pushed)
+**Current audit base:** a8d2a8b on branch `codex/bng3-rest-of-port-20260909`; the working tree contains an uncommitted implementation batch whose final verification is pending.
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -22,6 +23,25 @@ completion charter and Section 11 of BNG3_INTEGRATION_PLAN.md into auditable
 work items. The unification work orders in BNG3_unification_spec.md remain the
 detailed dependency map; provenance/capability-matrix.yml remains the
 capability inventory.
+
+## Live audit — 2026-09-10
+
+The active worktree is on `codex/bng3-rest-of-port-20260909` at committed base
+`a8d2a8b`, with a consolidated uncommitted implementation batch. The live
+summary is [`CURRENT_PROGRESS.md`](CURRENT_PROGRESS.md). The batch includes
+NFnext semantic/runtime contracts, lazy paged NFsim mapping storage, and the
+reconciled modern SBML-Multi parser. The final combined-tree verification for
+this pass passed: build, CTest 305/305, Python 353 passed with 27 skips, and
+validation smoke 4 passed with 14 environment/reference skips. These results
+are recorded as branch evidence, but they do not by themselves close the
+remaining convergence checklist items.
+
+The pre-existing unresolved or unvalidated worktree changes were preserved;
+the only conflict encountered, in `python/bionetgen/atomizer/modern/multi.py`,
+was resolved in favor of the newer spec-aware implementation and marked
+resolved. Ruff, Black, and `git diff --check` also pass for the final worktree
+state; the mandatory semantic convergence gates remain open until
+independently evidenced.
 
 The project is done only when every mandatory item below is checked or has an
 explicitly approved compatibility disposition. A green unit suite, a green

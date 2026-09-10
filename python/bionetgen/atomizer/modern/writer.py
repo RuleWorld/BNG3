@@ -963,7 +963,9 @@ def _event_metadata_block(
 
     if not model.events:
         return []
-    species_ids = sorted((str(identifier) for identifier in model.species), key=len, reverse=True)
+    species_ids = sorted(
+        (str(identifier) for identifier in model.species), key=len, reverse=True
+    )
 
     def bngl_expression(expression: object) -> str:
         value = str(expression or "")
@@ -3302,21 +3304,25 @@ def generate_bngl(
 
     event_result = None
     if model.events:
-        mutable_event_ids = {
-            rule.variable
-            for rule in model.rules
-            if rule.variable
-        }
+        mutable_event_ids = {rule.variable for rule in model.rules if rule.variable}
         mutable_event_ids.update(
             assignment.symbol
             for assignment in model.initial_assignments
             if assignment.symbol
         )
         mutable_event_ids.update(
-            getattr(assignment, "variable", assignment[0] if isinstance(assignment, (tuple, list)) else "")
+            getattr(
+                assignment,
+                "variable",
+                assignment[0] if isinstance(assignment, (tuple, list)) else "",
+            )
             for event in model.events
             for assignment in event.assignments
-            if getattr(assignment, "variable", assignment[0] if isinstance(assignment, (tuple, list)) else "")
+            if getattr(
+                assignment,
+                "variable",
+                assignment[0] if isinstance(assignment, (tuple, list)) else "",
+            )
         )
 
         def is_compile_time_constant(identifier: str) -> bool:
@@ -3404,9 +3410,9 @@ def generate_bngl(
         model_text += "\nend actions\n"
 
     if model.events:
-        model_text += "\n" + "\n".join(
-            _event_metadata_block(model, species_to_pattern)
-        ) + "\n"
+        model_text += (
+            "\n" + "\n".join(_event_metadata_block(model, species_to_pattern)) + "\n"
+        )
 
     has_multi = bool(
         model.multi_molecule_types

@@ -1,5 +1,9 @@
 # API Reference
 
+This reference describes the intended public API. Check
+[`CURRENT_PROGRESS.md`](CURRENT_PROGRESS.md) and the convergence checklist for
+the current implementation and qualification status.
+
 ## Module: `bionetgen`
 
 ### `bionetgen.load(path) → BioNetGenModel`

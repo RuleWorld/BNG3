@@ -143,8 +143,8 @@ inline int runAll(const char* suite) {
 #define REQUIRE_NEAR(a,b,t) ::nfnext_contract::requireNear((a),(b),(t),__FILE__,__LINE__,#a,#b)
 #define REQUIRE_THROWS_AS(expr, ex) \
     ::nfnext_contract::requireThrows<ex>([&](){ (void)(expr); },__FILE__,__LINE__,#expr)
-#define REQUIRE_NO_THROW(expr) \
-    ::nfnext_contract::requireNoThrow([&](){ (void)(expr); },__FILE__,__LINE__,#expr)
+#define REQUIRE_NO_THROW(...) \
+    ::nfnext_contract::requireNoThrow([&](){ (void)(__VA_ARGS__); },__FILE__,__LINE__,#__VA_ARGS__)
 
 #define CONTRACT_MAIN(suite_name) \
     int main() { return ::nfnext_contract::runAll(suite_name); }

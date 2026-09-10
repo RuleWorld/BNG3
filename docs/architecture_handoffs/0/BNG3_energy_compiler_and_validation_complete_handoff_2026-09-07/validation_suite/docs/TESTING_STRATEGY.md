@@ -1,5 +1,8 @@
 # Proposed-improvement testing strategy
 
+> Archived strategy note. The active pass batches changes and defers the main
+> verification sequence until the end; see `docs/CURRENT_PROGRESS.md`.
+
 ## 1. Separate semantic correctness from RNG identity
 
 A generalized energy backend can represent the same continuous-time Markov chain with fewer reaction classes.

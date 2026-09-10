@@ -1,5 +1,8 @@
 # NFsim / NFcore2 Complete Engineering Handoff
 
+> Archived snapshot from 2026-09-06. See `docs/CURRENT_PROGRESS.md` for the
+> live branch and current verification state.
+
 **Date:** 2026-09-06  
 **Target repository:** `akutuva21/nfsim`  
 **Target working branch:** `perf/rasi-translation-optimization`  

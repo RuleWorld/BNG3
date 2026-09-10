@@ -1,5 +1,8 @@
 # Validation record
 
+> Historical validation record for the archived source checkpoint. It is not
+> evidence for the current branch; see `docs/CURRENT_PROGRESS.md`.
+
 ## Exact source target
 
 `RuleWorld/BNG3@3bc7b4ff131f8927421bc8eae170e3b248b75318`

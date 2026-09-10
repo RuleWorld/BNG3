@@ -1,5 +1,6 @@
 #include "nfnext/cache.hpp"
 
+#include <algorithm>
 #include <fstream>
 #include <stdexcept>
 #include <type_traits>
@@ -42,12 +43,149 @@ std::string readString(std::istream& in) {
 void writePredicate(std::ostream& out, const PredicateIR& p) {
     writePod(out, static_cast<std::uint8_t>(p.kind)); writePod(out, p.molecule_type);
     writePod(out, p.site); writePod(out, p.value); writePod(out, p.aux);
+    writePod(out, static_cast<std::uint64_t>(p.state_set.size()));
+    for (const auto state : p.state_set) writePod(out, state);
 }
 
 PredicateIR readPredicate(std::istream& in) {
     PredicateIR p; p.kind = static_cast<PredicateKind>(readPod<std::uint8_t>(in));
     p.molecule_type = readPod<TypeId>(in); p.site = readPod<std::uint16_t>(in);
-    p.value = readPod<std::int32_t>(in); p.aux = readPod<std::int32_t>(in); return p;
+    p.value = readPod<std::int32_t>(in); p.aux = readPod<std::int32_t>(in);
+    const auto nstates = readPod<std::uint64_t>(in);
+    if (nstates > (1ULL << 30)) throw std::runtime_error("NFIR cache invalid state-set length");
+    p.state_set.reserve(static_cast<std::size_t>(nstates));
+    for (std::uint64_t i = 0; i < nstates; ++i) p.state_set.push_back(readPod<std::int32_t>(in));
+    return p;
+}
+
+void writeRateLaw(std::ostream& out, const RateLawIR& rate_law) {
+    writePod(out, static_cast<std::uint8_t>(rate_law.kind));
+    writeString(out, rate_law.expression);
+}
+
+RateLawIR readRateLaw(std::istream& in) {
+    RateLawIR rate_law;
+    rate_law.kind = static_cast<RateLawKind>(readPod<std::uint8_t>(in));
+    rate_law.expression = readString(in);
+    return rate_law;
+}
+
+template<class T, class Writer>
+void writeVector(std::ostream& out, const std::vector<T>& v, Writer writer);
+
+template<class T, class Reader>
+std::vector<T> readVector(std::istream& in, Reader reader);
+
+void writePattern(std::ostream& out, const PatternIR& pattern) {
+    writePod(out, static_cast<std::uint64_t>(pattern.nodes.size()));
+    for (const auto& node : pattern.nodes) {
+        writePod(out, node.molecule_type);
+        writePod(out, static_cast<std::uint64_t>(node.constraints.size()));
+        for (const auto& constraint : node.constraints) {
+            writePod(out, static_cast<std::uint8_t>(constraint.kind));
+            writePod(out, constraint.site);
+            writePod(out, constraint.state);
+            writePod(out, static_cast<std::uint64_t>(constraint.states.size()));
+            for (const auto state : constraint.states) writePod(out, state);
+        }
+    }
+    writePod(out, static_cast<std::uint64_t>(pattern.bonds.size()));
+    for (const auto& bond : pattern.bonds) {
+        writePod(out, static_cast<std::uint64_t>(bond.first));
+        writePod(out, bond.first_site);
+        writePod(out, static_cast<std::uint64_t>(bond.second));
+        writePod(out, bond.second_site);
+    }
+    writePod(out, static_cast<std::uint64_t>(pattern.molecularity.size()));
+    for (const auto& constraint : pattern.molecularity) {
+        writePod(out, static_cast<std::uint8_t>(constraint.kind));
+        writePod(out, constraint.left);
+        writePod(out, constraint.right);
+    }
+    auto writePairVector = [&out](const auto& pairs) {
+        writePod(out, static_cast<std::uint64_t>(pairs.size()));
+        for (const auto& pair : pairs) {
+            writePod(out, static_cast<std::uint64_t>(pair.first));
+            writePod(out, static_cast<std::uint64_t>(pair.second));
+        }
+    };
+    writePairVector(pattern.aliases);
+    writePairVector(pattern.connected_to);
+    writePod(out, static_cast<std::uint64_t>(pattern.interchangeable.size()));
+    for (const auto& group : pattern.interchangeable) {
+        writePod(out, static_cast<std::uint64_t>(group.size()));
+        for (const auto node : group) writePod(out, static_cast<std::uint64_t>(node));
+    }
+}
+
+PatternIR readPattern(std::istream& in) {
+    PatternIR pattern;
+    const auto nnodes = readPod<std::uint64_t>(in);
+    if (nnodes > (1ULL << 30)) throw std::runtime_error("NFIR cache invalid pattern-node length");
+    pattern.nodes.reserve(static_cast<std::size_t>(nnodes));
+    for (std::uint64_t i = 0; i < nnodes; ++i) {
+        PatternIR::Node node;
+        node.molecule_type = readPod<TypeId>(in);
+        const auto nconstraints = readPod<std::uint64_t>(in);
+        if (nconstraints > (1ULL << 30)) throw std::runtime_error("NFIR cache invalid constraint length");
+        node.constraints.reserve(static_cast<std::size_t>(nconstraints));
+        for (std::uint64_t j = 0; j < nconstraints; ++j) {
+            PatternIR::SiteConstraint constraint;
+            constraint.kind = static_cast<PatternIR::SiteConstraintKind>(readPod<std::uint8_t>(in));
+            constraint.site = readPod<std::uint32_t>(in);
+            constraint.state = readPod<std::int32_t>(in);
+            const auto nstates = readPod<std::uint64_t>(in);
+            if (nstates > (1ULL << 30)) throw std::runtime_error("NFIR cache invalid state-set length");
+            constraint.states.reserve(static_cast<std::size_t>(nstates));
+            for (std::uint64_t k = 0; k < nstates; ++k)
+                constraint.states.push_back(readPod<std::int32_t>(in));
+            node.constraints.push_back(std::move(constraint));
+        }
+        pattern.nodes.push_back(std::move(node));
+    }
+    const auto nbonds = readPod<std::uint64_t>(in);
+    if (nbonds > (1ULL << 30)) throw std::runtime_error("NFIR cache invalid bond length");
+    pattern.bonds.reserve(static_cast<std::size_t>(nbonds));
+    for (std::uint64_t i = 0; i < nbonds; ++i) {
+        PatternIR::Bond bond;
+        bond.first = static_cast<std::size_t>(readPod<std::uint64_t>(in));
+        bond.first_site = readPod<std::uint32_t>(in);
+        bond.second = static_cast<std::size_t>(readPod<std::uint64_t>(in));
+        bond.second_site = readPod<std::uint32_t>(in);
+        pattern.bonds.push_back(bond);
+    }
+    const auto nmolecularity = readPod<std::uint64_t>(in);
+    if (nmolecularity > (1ULL << 30)) throw std::runtime_error("NFIR cache invalid molecularity length");
+    pattern.molecularity.reserve(static_cast<std::size_t>(nmolecularity));
+    for (std::uint64_t i = 0; i < nmolecularity; ++i) {
+        MolecularityConstraint constraint;
+        constraint.kind = static_cast<MolecularityKind>(readPod<std::uint8_t>(in));
+        constraint.left = readPod<std::uint16_t>(in);
+        constraint.right = readPod<std::uint16_t>(in);
+        pattern.molecularity.push_back(constraint);
+    }
+    auto readPairVector = [&in](auto& pairs, const char* label) {
+        const auto n = readPod<std::uint64_t>(in);
+        if (n > (1ULL << 30)) throw std::runtime_error(std::string("NFIR cache invalid ") + label + " length");
+        pairs.reserve(static_cast<std::size_t>(n));
+        for (std::uint64_t i = 0; i < n; ++i)
+            pairs.emplace_back(static_cast<std::size_t>(readPod<std::uint64_t>(in)),
+                               static_cast<std::size_t>(readPod<std::uint64_t>(in)));
+    };
+    readPairVector(pattern.aliases, "alias");
+    readPairVector(pattern.connected_to, "connected-to");
+    const auto ngroups = readPod<std::uint64_t>(in);
+    if (ngroups > (1ULL << 30)) throw std::runtime_error("NFIR cache invalid interchangeable-group length");
+    pattern.interchangeable.reserve(static_cast<std::size_t>(ngroups));
+    for (std::uint64_t i = 0; i < ngroups; ++i) {
+        const auto n = readPod<std::uint64_t>(in);
+        if (n > (1ULL << 30)) throw std::runtime_error("NFIR cache invalid interchangeable-group size");
+        auto& group = pattern.interchangeable.emplace_back();
+        group.reserve(static_cast<std::size_t>(n));
+        for (std::uint64_t j = 0; j < n; ++j)
+            group.push_back(static_cast<std::size_t>(readPod<std::uint64_t>(in)));
+    }
+    return pattern;
 }
 
 void writeAction(std::ostream& out, const ActionIR& a) {
@@ -96,9 +234,11 @@ void ModelCache::save(const ModelIR& model, const std::string& path) {
     for (const auto& f : model.rule_families) {
         writePod(out, f.id); writeString(out, f.name); writePod(out, f.begin_index); writePod(out, f.end_index);
         writePod(out, f.default_rate); writePod(out, static_cast<std::uint8_t>(f.coordinate_parameterized ? 1 : 0));
+        writeRateLaw(out, f.rate_law);
         writeVector<double>(out, f.indexed_rates, [](std::ostream& o, double x){ writePod(o, x); });
         writeVector<PredicateIR>(out, f.predicates, writePredicate);
         writeVector<ActionIR>(out, f.actions, writeAction);
+        writePattern(out, f.pattern);
         writeVector<RuleId>(out, f.source_rules, [](std::ostream& o, RuleId x){ writePod(o, x); });
     }
 
@@ -138,9 +278,11 @@ ModelIR ModelCache::load(const std::string& path) {
         RuleFamilyIR f; f.id = readPod<FamilyId>(in); f.name = readString(in);
         f.begin_index = readPod<std::uint32_t>(in); f.end_index = readPod<std::uint32_t>(in);
         f.default_rate = readPod<double>(in); f.coordinate_parameterized = readPod<std::uint8_t>(in) != 0;
+        f.rate_law = readRateLaw(in);
         f.indexed_rates = readVector<double>(in, [](std::istream& x){ return readPod<double>(x); });
         f.predicates = readVector<PredicateIR>(in, readPredicate);
         f.actions = readVector<ActionIR>(in, readAction);
+        f.pattern = readPattern(in);
         f.source_rules = readVector<RuleId>(in, [](std::istream& x){ return readPod<RuleId>(x); });
         model.rule_families.push_back(std::move(f));
     }

@@ -1,5 +1,9 @@
 # Intentional RED contracts
 
+> Historical contract inventory. Some bounded contracts have since been
+> implemented; use the live checklist and `docs/CURRENT_PROGRESS.md` for
+> current status.
+
 These tests are specifications for proposed APIs and are excluded unless
 `BNG_ENABLE_FUTURE_ENERGY_CONTRACTS=ON`.
 

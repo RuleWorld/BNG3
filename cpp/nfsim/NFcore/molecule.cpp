@@ -59,7 +59,6 @@ Molecule::Molecule(MoleculeType * parentMoleculeType, int listId, Compartment * 
 	hasVisitedMolecule = false;
 	hasEvaluatedMolecule = false;
 	isMatchedTo=0;
-	rxnListMappingId2 = 0;
 	nReactions = 0;
 	useComplex = parentMoleculeType->getSystem()->isUsingComplex();
 	isPrepared = false;
@@ -89,11 +88,22 @@ Molecule::~Molecule()
 	delete [] isObservable;
 	delete [] component;
 	delete [] indexOfBond;
-	delete [] rxnListMappingId2;
 	delete [] hasVisitedBond;
 
 	if(localFunctionValues!=0)
 		delete [] localFunctionValues;
+}
+
+void Molecule::removeActiveReactionMembershipIndex(int rxnIndex)
+{
+	for (vector<int>::iterator it = activeReactionMembershipIndices.begin();
+			it != activeReactionMembershipIndices.end(); ++it) {
+		if (*it == rxnIndex) {
+			*it = activeReactionMembershipIndices.back();
+			activeReactionMembershipIndices.pop_back();
+			return;
+		}
+	}
 }
 
 
@@ -102,8 +112,8 @@ void Molecule::prepareForSimulation()
 	if(isPrepared) return;
 	nReactions = parentMoleculeType->getReactionCount();
 	int mappingCount = parentMoleculeType->getReactionMappingCount();
-	this->rxnListMappingId2 = mappingCount > 0
-			? new MappingIdSet[mappingCount] : 0;
+	activeReactionMembershipIndices.clear();
+	rxnListMappings.init(mappingCount);
 
 	isPrepared = true;
 

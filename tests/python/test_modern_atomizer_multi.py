@@ -196,7 +196,9 @@ def test_multi_spec_features_and_outward_binding_statuses_become_reference_seed_
 
     assert result.bngl_molecule_types == ["A(state~U~P,site)"]
     assert result.seed_patterns == [("A0", "A(state~P,site)")]
-    assert not any("required attribute" in warning.message for warning in result.warnings)
+    assert not any(
+        "required attribute" in warning.message for warning in result.warnings
+    )
 
 
 def test_playground_multi_detects_deep_hierarchy_without_flattening():
@@ -232,7 +234,9 @@ def test_playground_multi_detects_deep_hierarchy_without_flattening():
     assert result.deep is True
     assert result.bngl_molecule_types == []
     assert result.complex_patterns == []
-    assert any("multi-layer hierarchy" in warning.message for warning in result.warnings)
+    assert any(
+        "multi-layer hierarchy" in warning.message for warning in result.warnings
+    )
     assert "complex" in result.warnings[0].message
 
 

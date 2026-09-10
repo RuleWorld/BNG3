@@ -1,5 +1,8 @@
 # Energy/compiler validation matrix
 
+> Archived matrix. Current implementation promotion and remaining gates are
+> tracked in `docs/CURRENT_PROGRESS.md` and the convergence checklist.
+
 | ID | Layer | Contract | Gate |
 |---|---|---|---|
 | E001 | EnergyDeltaPlan | conjunction masks compute literal ΔG | exact, 1e-12 |

@@ -1,5 +1,10 @@
 # Golden bundles
 
+Current branch status is in
+[`../../docs/CURRENT_PROGRESS.md`](../../docs/CURRENT_PROGRESS.md). A golden
+bundle is evidence only for the exact source, oracle, and artifact digests in
+its manifest.
+
 Golden outputs are content-addressed scientific evidence, not ordinary test
 fixtures. A bundle is publishable only when its manifest records the model and
 corpus digests, RuleHub revision, independent oracle revision and artifact,

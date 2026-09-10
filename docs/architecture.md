@@ -1,5 +1,9 @@
 # Architecture
 
+The live branch and validation snapshot for this architecture are maintained
+in [`CURRENT_PROGRESS.md`](CURRENT_PROGRESS.md). This page describes the
+architecture, not completion of every convergence gate.
+
 The canonical semantic-model boundary and staged migration policy are defined
 in [ADR 0001](adr/0001-canonical-semantic-model-and-layer-boundaries.md).
 This page describes the current implementation layout; it does not imply

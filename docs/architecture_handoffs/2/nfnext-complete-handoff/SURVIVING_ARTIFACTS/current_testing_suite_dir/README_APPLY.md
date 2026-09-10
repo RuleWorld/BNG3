@@ -1,5 +1,8 @@
 # Applying this testing tranche
 
+> Archived application instructions. The current repository already promotes
+> selected contracts; see `docs/CURRENT_PROGRESS.md`.
+
 Copy `nextgen/tests/future_contract/` and `nextgen/tests/meta/` into the NFnext
 prototype. Add this opt-in stanza to `nextgen/CMakeLists.txt` if it is not
 already present:

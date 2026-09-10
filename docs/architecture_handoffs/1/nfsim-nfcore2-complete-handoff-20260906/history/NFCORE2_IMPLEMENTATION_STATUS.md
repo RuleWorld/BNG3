@@ -1,5 +1,8 @@
 # NFcore2 implementation status — continuation milestone
 
+> Historical status record. Do not use its checkpoint as current evidence;
+> consult `docs/CURRENT_PROGRESS.md`.
+
 Base target: `akutuva21/nfsim` branch `perf/rasi-translation-optimization`, observed head `d13086bd3cf2fd268be5efea4d83089301479de3`.
 
 ## Implemented in the VM

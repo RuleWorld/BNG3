@@ -1,6 +1,9 @@
 #include "nfnext/generic_state.hpp"
 
 #include <algorithm>
+#include <queue>
+#include <sstream>
+#include <unordered_map>
 
 namespace nfnext {
 
@@ -94,6 +97,111 @@ void GenericGraphState::unbind(ParticleId a, std::uint16_t sa) {
         const auto ob = static_cast<std::size_t>(b.index) * stride_ + sb;
         if (bond_particles_[ob] == a) { bond_particles_[ob] = {}; bond_sites_[ob] = 0; }
     }
+}
+
+std::vector<ParticleId> GenericGraphState::liveParticles() const {
+    std::vector<ParticleId> particles;
+    particles.reserve(live_count_);
+    for (std::size_t index = 0; index < alive_.size(); ++index)
+        if (alive_[index] != 0) particles.push_back({static_cast<std::uint32_t>(index), generations_[index]});
+    return particles;
+}
+
+bool GenericGraphState::sameComplex(ParticleId a, ParticleId b) const {
+    require(a);
+    require(b);
+    if (a == b) return true;
+    std::vector<std::uint8_t> visited(types_.size(), 0);
+    std::queue<ParticleId> pending;
+    pending.push(a);
+    visited[a.index] = 1;
+    while (!pending.empty()) {
+        const auto current = pending.front();
+        pending.pop();
+        const auto count = typeSiteCount(types_[current.index]);
+        for (std::uint16_t site = 0; site < count; ++site) {
+            const auto partner = bond(current, site).particle;
+            if (!alive(partner) || visited[partner.index] != 0) continue;
+            if (partner == b) return true;
+            visited[partner.index] = 1;
+            pending.push(partner);
+        }
+    }
+    return false;
+}
+
+std::uint32_t GenericGraphState::complexId(ParticleId id) const {
+    require(id);
+    std::vector<std::uint8_t> visited(types_.size(), 0);
+    std::queue<ParticleId> pending;
+    pending.push(id);
+    visited[id.index] = 1;
+    std::uint32_t minimum = id.index;
+    while (!pending.empty()) {
+        const auto current = pending.front();
+        pending.pop();
+        minimum = std::min(minimum, current.index);
+        const auto count = typeSiteCount(types_[current.index]);
+        for (std::uint16_t site = 0; site < count; ++site) {
+            const auto partner = bond(current, site).particle;
+            if (!alive(partner) || visited[partner.index] != 0) continue;
+            visited[partner.index] = 1;
+            pending.push(partner);
+        }
+    }
+    return minimum;
+}
+
+std::string GenericGraphState::snapshot() const {
+    std::ostringstream out;
+    out << stride_ << ':' << live_count_ << ':' << types_.size() << ';';
+    for (std::size_t i = 0; i < types_.size(); ++i) {
+        out << types_[i] << ':' << generations_[i] << ':' << static_cast<unsigned>(alive_[i]) << ';';
+        for (std::uint16_t site = 0; site < stride_; ++site) {
+            const auto offset = i * stride_ + site;
+            out << site_states_[offset] << ':' << bond_particles_[offset].index << ':'
+                << bond_particles_[offset].generation << ':' << bond_sites_[offset] << ';';
+        }
+    }
+    out << "free:" << free_.size() << ':';
+    for (const auto slot : free_) out << slot << ',';
+    return out.str();
+}
+
+std::string GenericGraphState::canonicalState() const {
+    auto particles = liveParticles();
+    std::sort(particles.begin(), particles.end(), [this](ParticleId a, ParticleId b) {
+        if (type(a) != type(b)) return type(a) < type(b);
+        if (a.index != b.index) return a.index < b.index;
+        return a.generation < b.generation;
+    });
+    std::unordered_map<std::uint64_t, std::size_t> positions;
+    for (std::size_t i = 0; i < particles.size(); ++i) {
+        const auto key = (static_cast<std::uint64_t>(particles[i].index) << 32) |
+                         particles[i].generation;
+        positions.emplace(key, i);
+    }
+    std::ostringstream out;
+    for (const auto particle : particles) {
+        out << type(particle) << '[';
+        const auto count = typeSiteCount(type(particle));
+        for (std::uint16_t site = 0; site < count; ++site) {
+            if (site != 0) out << ',';
+            out << siteState(particle, site) << '/';
+            const auto bond_info = bond(particle, site);
+            if (!bond_info.particle.valid()) {
+                out << '-';
+            } else {
+                const auto key = (static_cast<std::uint64_t>(bond_info.particle.index) << 32) |
+                                 bond_info.particle.generation;
+                const auto found = positions.find(key);
+                out << (found == positions.end() ? std::numeric_limits<std::size_t>::max() : found->second)
+                    << '.' << bond_info.site;
+            }
+        }
+        out << "]";
+    }
+    return out.str();
 }
 
 bool GenericGraphState::matchesLocal(ParticleId id, const std::vector<PredicateIR>& predicates) const {

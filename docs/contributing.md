@@ -1,5 +1,9 @@
 # Contributing
 
+Read [`CURRENT_PROGRESS.md`](CURRENT_PROGRESS.md) before using historical
+handoff counts or branch names. The current pass batches implementation work
+and performs verification at the end of the pass.
+
 ## Development Setup
 
 ### Prerequisites

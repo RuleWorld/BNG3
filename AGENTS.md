@@ -5,6 +5,10 @@ authoritative convergence exit gate is
 [`docs/BNG3_CONVERGENCE_DONE_CHECKLIST.md`](docs/BNG3_CONVERGENCE_DONE_CHECKLIST.md);
 this file gives working rules, not a completion claim.
 
+For the current implementation snapshot, branch, and validation state, see
+[`docs/CURRENT_PROGRESS.md`](docs/CURRENT_PROGRESS.md). Archived handoff
+documents are historical inputs, not live evidence.
+
 ## What BNG3 is
 Monorepo merging three tools into one in-process platform:
 `cpp/` (C++ engine, = bionetgen-master/src + embedded NFsim + pybind11),

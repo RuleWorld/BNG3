@@ -1,5 +1,8 @@
 # BNG3 energy compiler architecture
 
+> Archived design input. The current implementation and open gates are in
+> `docs/CURRENT_PROGRESS.md` and the convergence checklist.
+
 **Base:** `RuleWorld/BNG3` PR #2, head `3bc7b4ff131f8927421bc8eae170e3b248b75318`
 
 ## Goal
