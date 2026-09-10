@@ -237,6 +237,10 @@ def _multi_namespace(root: Any, source: Optional[str] = None) -> Optional[str]:
         namespace = _namespace(element.tag)
         if "/multi/" in namespace:
             return namespace
+        for attribute in getattr(element, "attrib", {}):
+            namespace = _namespace(attribute)
+            if "/multi/" in namespace:
+                return namespace
     return None
 
 
@@ -729,6 +733,7 @@ class _FlatComponent:
     aliases: set = field(default_factory=set)
     states: List[str] = field(default_factory=list)
     feature_ids: set = field(default_factory=set)
+    feature_values: Dict[str, Dict[str, str]] = field(default_factory=dict)
     active_state: str = ""
     binding_status: str = ""
     bonds: List[int] = field(default_factory=list)
@@ -798,14 +803,6 @@ def _feature_defs(
     return result
 
 
-def _feature_value(species_type: _SpeciesType, feature_id: str, raw_value: str) -> str:
-    definition = species_type.feature_definitions.get(feature_id)
-    if definition is None:
-        return _clean(raw_value)
-    _name, labels = definition
-    return _clean(labels.get(raw_value, raw_value))
-
-
 def _is_complex_type(type_id: str, types: Dict[str, _SpeciesType]) -> bool:
     species_type = types.get(type_id)
     if species_type is None:
@@ -819,37 +816,70 @@ def _is_complex_type(type_id: str, types: Dict[str, _SpeciesType]) -> bool:
 def _find_component(
     flat_type: _FlatType, token: str, parent: str = ""
 ) -> Optional[Tuple[_FlatMolecule, _FlatComponent]]:
+    matches = _find_components(flat_type, token, parent)
+    return matches[0] if matches else None
+
+
+def _find_components(
+    flat_type: _FlatType, token: str, parent: str = ""
+) -> List[Tuple[_FlatMolecule, _FlatComponent]]:
     candidates = flat_type.molecules
     if parent:
         candidates = [molecule for molecule in candidates if parent in molecule.aliases]
-    for molecule in candidates:
-        for component in molecule.components:
-            if token in component.aliases:
-                return molecule, component
-    return None
+    return [
+        (molecule, component)
+        for molecule in candidates
+        for component in molecule.components
+        if token in component.aliases
+    ]
 
 
 def _find_molecule(flat_type: _FlatType, token: str) -> Optional[_FlatMolecule]:
-    return next(
-        (molecule for molecule in flat_type.molecules if token in molecule.aliases),
-        None,
-    )
+    matches = _find_molecules(flat_type, token)
+    return matches[0] if matches else None
 
 
-def _apply_component_indexes(species_type: _SpeciesType, flat_type: _FlatType) -> None:
+def _find_molecules(flat_type: _FlatType, token: str) -> List[_FlatMolecule]:
+    return [molecule for molecule in flat_type.molecules if token in molecule.aliases]
+
+
+def _apply_component_indexes(
+    species_type: _SpeciesType,
+    flat_type: _FlatType,
+    warnings: Optional[List[SBMLImportWarning]] = None,
+) -> None:
     for index_id, (component, parent) in species_type.component_indexes.items():
         if parent:
-            found = _find_component(flat_type, component, parent)
-            if found is not None:
-                found[1].aliases.add(index_id)
+            matches = _find_components(flat_type, component, parent)
+            if len(matches) == 1:
+                matches[0][1].aliases.add(index_id)
+            elif len(matches) > 1 and warnings is not None:
+                warnings.append(
+                    _warning(
+                        f'Multi speciesTypeComponentIndex "{index_id}" in '
+                        f'speciesType "{species_type.id}" is ambiguous for '
+                        f'component "{component}" under parent "{parent}".',
+                        "dropped",
+                    )
+                )
             continue
-        molecule = _find_molecule(flat_type, component)
-        if molecule is not None:
-            molecule.aliases.add(index_id)
+        molecule_matches = _find_molecules(flat_type, component)
+        component_matches = _find_components(flat_type, component)
+        if len(molecule_matches) + len(component_matches) == 1:
+            if molecule_matches:
+                molecule_matches[0].aliases.add(index_id)
+            else:
+                component_matches[0][1].aliases.add(index_id)
             continue
-        found = _find_component(flat_type, component)
-        if found is not None:
-            found[1].aliases.add(index_id)
+        if len(molecule_matches) + len(component_matches) > 1 and warnings is not None:
+            warnings.append(
+                _warning(
+                    f'Multi speciesTypeComponentIndex "{index_id}" in '
+                    f'speciesType "{species_type.id}" is ambiguous for '
+                    f'component "{component}".',
+                    "dropped",
+                )
+            )
 
 
 def _resolve_bond_endpoint(
@@ -875,6 +905,14 @@ def _resolve_bond_endpoint(
     if len(scoped) == 1:
         return scoped[0]
     return None
+
+
+def _bonded_component(flat_type: _FlatType, component: _FlatComponent) -> bool:
+    return any(
+        component is endpoint
+        for bond in flat_type.bonds
+        for endpoint in bond
+    )
 
 
 def _flatten_type(
@@ -938,20 +976,17 @@ def _flatten_type(
             compartment=effective_compartment,
         )
         for feature_id, feature_name, values, occurrence in _feature_defs(species_type):
-            aliases = {feature_id, feature_name, _clean(feature_name)}
-            if occurrence > 1:
-                aliases.update(
-                    {
-                        f"{feature_id}_{occurrence}",
-                        f"{_clean(feature_name)}_{occurrence}",
-                    }
-                )
             molecule.components.append(
                 _FlatComponent(
                     label=_clean(feature_name),
-                    aliases=aliases,
+                    aliases=set(),
                     states=[_clean(value) for value in values],
                     feature_ids={feature_id},
+                    feature_values={
+                        feature_id: dict(
+                            species_type.feature_definitions[feature_id][1]
+                        )
+                    },
                     feature_occurrence=occurrence,
                 )
             )
@@ -1004,16 +1039,12 @@ def _flatten_type(
             }
             states: List[str] = []
             feature_ids = set()
+            feature_values: Dict[str, Dict[str, str]] = {}
             for feature_id, feature_name, values, occurrence in _feature_defs(target):
-                aliases.update({feature_id, feature_name, _clean(feature_name)})
-                if occurrence > 1:
-                    aliases.update(
-                        {
-                            f"{feature_id}_{occurrence}",
-                            f"{_clean(feature_name)}_{occurrence}",
-                        }
-                    )
                 feature_ids.add(feature_id)
+                feature_values[feature_id] = dict(
+                    target.feature_definitions[feature_id][1]
+                )
                 states.extend(_clean(value) for value in values)
             molecule.components.append(
                 _FlatComponent(
@@ -1021,11 +1052,12 @@ def _flatten_type(
                     aliases={alias for alias in aliases if alias},
                     states=list(dict.fromkeys(states)),
                     feature_ids=feature_ids,
+                    feature_values=feature_values,
                     is_binding_site=True,
                 )
             )
         flat.molecules.append(molecule)
-        _apply_component_indexes(species_type, flat)
+        _apply_component_indexes(species_type, flat, warnings)
         for site1, site2 in species_type.bonds:
             endpoint1 = _resolve_bond_endpoint(species_type, flat, site1)
             endpoint2 = _resolve_bond_endpoint(species_type, flat, site2)
@@ -1043,6 +1075,19 @@ def _flatten_type(
                     _warning(
                         f'Multi bond in speciesType "{type_id}" must connect two '
                         "binding-site components.",
+                        "dropped",
+                    )
+                )
+                continue
+            if (
+                endpoint1[1] is endpoint2[1]
+                or _bonded_component(flat, endpoint1[1])
+                or _bonded_component(flat, endpoint2[1])
+            ):
+                warnings.append(
+                    _warning(
+                        f'Multi bond in speciesType "{type_id}" reuses a binding '
+                        "site; Multi bonds are one-to-one.",
                         "dropped",
                     )
                 )
@@ -1089,7 +1134,7 @@ def _flatten_type(
         flat.molecules.extend(child.molecules)
         flat.bonds.extend(child.bonds)
 
-    _apply_component_indexes(species_type, flat)
+    _apply_component_indexes(species_type, flat, warnings)
     for site1, site2 in species_type.bonds:
         endpoint1 = _resolve_bond_endpoint(species_type, flat, site1)
         endpoint2 = _resolve_bond_endpoint(species_type, flat, site2)
@@ -1107,6 +1152,19 @@ def _flatten_type(
                 _warning(
                     f'Multi bond in speciesType "{type_id}" must connect two '
                     "binding-site components.",
+                    "dropped",
+                )
+            )
+            continue
+        if (
+            endpoint1[1] is endpoint2[1]
+            or _bonded_component(flat, endpoint1[1])
+            or _bonded_component(flat, endpoint2[1])
+        ):
+            warnings.append(
+                _warning(
+                    f'Multi bond in speciesType "{type_id}" reuses a binding '
+                    "site; Multi bonds are one-to-one.",
                     "dropped",
                 )
             )
@@ -1236,18 +1294,6 @@ def _species_pattern_from_multi(
             _attribute(value, "value")
             for value in _children(values_parent, "speciesFeatureValue", namespace)
         ]
-        values = []
-        for raw_value in raw_values:
-            definition = None
-            for species_type in types.values():
-                if feature_id in species_type.feature_definitions:
-                    definition = species_type
-                    break
-            values.append(
-                _feature_value(definition, feature_id, raw_value)
-                if definition
-                else _clean(raw_value)
-            )
         targets: List[_FlatComponent] = []
         for molecule in flat.molecules:
             for component in molecule.components:
@@ -1256,12 +1302,9 @@ def _species_pattern_from_multi(
                 elif component_token and component_token in molecule.aliases:
                     if feature_id in component.feature_ids:
                         targets.append(component)
-                elif not component_token and (
-                    feature_id in component.feature_ids
-                    or feature_id in component.aliases
-                ):
+                elif not component_token and feature_id in component.feature_ids:
                     targets.append(component)
-        if not values:
+        if not raw_values:
             warnings.append(
                 _warning(
                     f'Multi speciesFeature "{feature_id}" has no required '
@@ -1287,6 +1330,21 @@ def _species_pattern_from_multi(
                     "dropped",
                 )
             )
+            continue
+        value_labels = occurrence_targets[0].feature_values.get(feature_id, {})
+        values = []
+        for raw_value in raw_values:
+            if raw_value not in value_labels:
+                warnings.append(
+                    _warning(
+                        f'Multi speciesFeature "{feature_id}" value '
+                        f'"{raw_value}" is not defined by its component.',
+                        "dropped",
+                    )
+                )
+                continue
+            values.append(_clean(value_labels[raw_value]))
+        if not values:
             continue
         if len(values) == 1:
             occurrence_targets[0].active_state = values[0]
@@ -1389,10 +1447,15 @@ def _species_pattern_from_multi(
         except (TypeError, ValueError):
             pass
     if has_positive_initial:
+        bonded_components = {
+            id(endpoint)
+            for bond in flat.bonds
+            for endpoint in bond
+        }
         for molecule in flat.molecules:
             for component in molecule.components:
-                if component.is_binding_site and (
-                    component.binding_status != "unbound" or component.bonds
+                if component.is_binding_site and id(component) not in bonded_components and (
+                    component.binding_status != "unbound"
                 ):
                     warnings.append(
                         _warning(
@@ -2458,6 +2521,7 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
     compartment_reference_edges: Dict[str, set] = {}
     compartments = _first_child(model, "listOfCompartments")
     compartment_ids = set()
+    compartment_outside: Dict[str, str] = {}
     for compartment in _children(compartments, "compartment"):
         compartment_id = _attribute(compartment, "id")
         if not compartment_id:
@@ -2473,13 +2537,29 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                 )
             )
         compartment_ids.add(compartment_id)
+        compartment_outside[compartment_id] = _attribute(compartment, "outside")
+
+    def compartment_contains(ancestor: str, child: str) -> bool:
+        seen = set()
+        current = child
+        while current and current not in seen:
+            if current == ancestor:
+                return True
+            seen.add(current)
+            current = compartment_outside.get(current, "")
+        return False
+
     compartment_is_type = {}
+    compartment_types: Dict[str, str] = {}
     for compartment in _children(compartments, "compartment"):
         compartment_id = _attribute(compartment, "id")
         if compartment_id:
             raw_is_type = _namespaced_attribute(compartment, namespace, "isType")
             compartment_is_type[compartment_id] = (
                 "true" if raw_is_type in {"true", "1"} else "false"
+            )
+            compartment_types[compartment_id] = _namespaced_attribute(
+                compartment, namespace, "compartmentType"
             )
     for compartment in _children(compartments, "compartment"):
         compartment_id = _attribute(compartment, "id")
@@ -2544,6 +2624,15 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                     _warning(
                         f'CompartmentReference "{reference_id or "<anonymous>"}" '
                         f'references undefined compartment "{reference_compartment}".',
+                        "dropped",
+                    )
+                )
+            elif compartment_contains(reference_compartment, compartment_id):
+                warnings.append(
+                    _warning(
+                        f'CompartmentReference "{reference_id or "<anonymous>"}" '
+                        f'in compartment "{compartment_id}" references ancestor '
+                        f'compartment "{reference_compartment}".',
                         "dropped",
                     )
                 )
@@ -2652,6 +2741,29 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                             "dropped",
                         )
                     )
+        for instance in species_type.instances:
+            if not instance.compartment_reference or instance.type_id not in types:
+                continue
+            target_compartment = compartment_references.get(
+                species_type.compartment, {}
+            ).get(instance.compartment_reference, "")
+            child_compartment = types[instance.type_id].compartment
+            if (
+                target_compartment
+                and child_compartment
+                and target_compartment != child_compartment
+                and compartment_types.get(target_compartment) != child_compartment
+            ):
+                warnings.append(
+                    _warning(
+                        f'SpeciesTypeInstance "{instance.id}" in '
+                        f'speciesType "{species_type.id}" uses compartmentReference '
+                        f'"{instance.compartment_reference}" whose target '
+                        f'"{target_compartment}" is inconsistent with child '
+                        f'compartment "{child_compartment}".',
+                        "dropped",
+                    )
+                )
 
     parameter_ids = {
         _attribute(parameter, "id")
@@ -2687,11 +2799,21 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
             continue
         component_aliases[type_id] = _flat_component_aliases(flat)
         for index_id in species_type.component_indexes:
-            if index_id not in component_aliases[type_id]:
+            locations = component_aliases[type_id].get(index_id, [])
+            if not locations:
                 structure_warnings.append(
                     _warning(
                         f'Multi speciesTypeComponentIndex "{index_id}" in '
                         f'speciesType "{type_id}" could not resolve its component.',
+                        "dropped",
+                    )
+                )
+            elif len(locations) > 1:
+                structure_warnings.append(
+                    _warning(
+                        f'Multi speciesTypeComponentIndex "{index_id}" in '
+                        f'speciesType "{type_id}" resolves ambiguously to '
+                        f'{len(locations)} components.',
                         "dropped",
                     )
                 )
@@ -2868,11 +2990,12 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
             )
         species_type_by_species[species_id] = type_id
         known_feature_types, ambiguous_feature_ids = visible_feature_types(type_id)
-        feature_elements: List[Any] = []
+        feature_elements: List[Tuple[Any, str]] = []
         for child in list(feature_list) if feature_list is not None else []:
             if _local_name(child.tag) == "speciesFeature":
-                feature_elements.append(child)
+                feature_elements.append((child, ""))
             elif _local_name(child.tag) == "subListOfSpeciesFeatures":
+                inherited_component = _attribute(child, "component")
                 if _attribute(child, "relation", "").lower() == "and":
                     nested_feature_ids = {
                         _attribute(feature, "speciesFeatureType")
@@ -2893,7 +3016,10 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                                 "dropped",
                             )
                         )
-                feature_elements.extend(_children(child, "speciesFeature", namespace))
+                feature_elements.extend(
+                    (feature, inherited_component)
+                    for feature in _children(child, "speciesFeature", namespace)
+                )
         seen_feature_occurrences = set()
         seen_feature_ids = set()
         for child in list(feature_list) if feature_list is not None else []:
@@ -2910,8 +3036,9 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                         )
                     )
                 seen_feature_ids.add(sublist_id)
-        for feature in feature_elements:
+        for feature, inherited_component in feature_elements:
             feature_id = _attribute(feature, "speciesFeatureType")
+            component_token = _attribute(feature, "component") or inherited_component
             feature_object_id = _attribute(feature, "id")
             if feature_object_id:
                 species_feature_ids_by_species.setdefault(species_id, set()).add(
@@ -2949,7 +3076,7 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                     )
                 )
                 continue
-            if feature_id in ambiguous_feature_ids:
+            if feature_id in ambiguous_feature_ids and not component_token:
                 warnings.append(
                     _warning(
                         f'Multi species "{species_id}" references ambiguous '
@@ -2961,7 +3088,7 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
             feature_key = (
                 feature_id,
                 occur,
-                _attribute(feature, "component"),
+                component_token,
             )
             if feature_key in seen_feature_occurrences:
                 warnings.append(
@@ -2973,6 +3100,25 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                 )
             seen_feature_occurrences.add(feature_key)
             known = known_feature_types.get(feature_id)
+            if feature_id in ambiguous_feature_ids and component_token:
+                scoped_definitions = [
+                    species_type.feature_definitions[feature_id]
+                    for species_type in types.values()
+                    if feature_id in species_type.feature_definitions
+                ]
+                if scoped_definitions:
+                    known = (
+                        max(
+                            types[owner_id].feature_occurs.get(feature_id, 1)
+                            for owner_id in types
+                            if feature_id in types[owner_id].feature_definitions
+                        ),
+                        {
+                            value_id
+                            for _name, labels in scoped_definitions
+                            for value_id in labels
+                        },
+                    )
             if known is None:
                 warnings.append(
                     _warning(
@@ -3162,6 +3308,20 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
         for reference in _children(
             _first_child(reaction, "listOfModifiers"), "modifierSpeciesReference"
         ):
+            reference_id = _attribute(reference, "id")
+            if reference_id and reference_id in reference_ids:
+                warnings.append(
+                    _warning(
+                        f'Duplicate speciesReference id "{reference_id}" in '
+                        f'reaction "{reaction_id}".',
+                        "dropped",
+                    )
+                )
+            if reference_id:
+                reference_ids.add(reference_id)
+        for reference in _children(
+            _first_child(reaction, "listOfModifiers"), "modifierSpeciesReference"
+        ):
             modifier_species = _attribute(reference, "species")
             if modifier_species not in species_ids:
                 warnings.append(
@@ -3189,11 +3349,16 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                     )
         product_parent = _first_child(reaction, "listOfProducts")
         product_reference_ids = set()
+        mapping_ids = set()
         for product_index, product in enumerate(
             _children(product_parent, "speciesReference")
         ):
-            product_id = _attribute(product, "id") or f"product_{product_index + 1}"
-            if product_id in product_reference_ids or product_id in reference_ids:
+            raw_product_id = _attribute(product, "id")
+            product_id = raw_product_id or f"product_{product_index + 1}"
+            if raw_product_id and (
+                raw_product_id in product_reference_ids
+                or raw_product_id in reference_ids
+            ):
                 warnings.append(
                     _warning(
                         f'Duplicate product speciesReference id "{product_id}" in '
@@ -3201,7 +3366,8 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                         "dropped",
                     )
                 )
-            product_reference_ids.add(product_id)
+            if raw_product_id:
+                product_reference_ids.add(raw_product_id)
             product_species = _attribute(product, "species")
             if product_species not in species_ids:
                 warnings.append(
@@ -3254,8 +3420,7 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                         "dropped",
                     )
                 )
-            mapping_ids = set()
-            mapped_product_components = set()
+            mapped_product_locations = set()
             for mapping in _children(
                 map_parent, "speciesTypeComponentMapInProduct", namespace
             ):
@@ -3305,29 +3470,34 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                         )
                     )
                     continue
-                if reactant_type and reactant_component not in component_aliases.get(
-                    reactant_type, {}
-                ):
+                reactant_locations = component_aliases.get(reactant_type, {}).get(
+                    reactant_component, []
+                )
+                if len(reactant_locations) != 1:
                     warnings.append(
                         _warning(
                             f'Multi product map in reaction "{reaction_id}" cannot '
-                            f'resolve reactant component "{reactant_component}".',
+                            f'resolve reactant component "{reactant_component}" '
+                            f'unambiguously ({len(reactant_locations)} matches).',
                             "dropped",
                         )
                     )
                     continue
-                if product_type and product_component not in component_aliases.get(
-                    product_type, {}
-                ):
+                product_locations = component_aliases.get(product_type, {}).get(
+                    product_component, []
+                )
+                if len(product_locations) != 1:
                     warnings.append(
                         _warning(
                             f'Multi product map in reaction "{reaction_id}" cannot '
-                            f'resolve product component "{product_component}".',
+                            f'resolve product component "{product_component}" '
+                            f'unambiguously ({len(product_locations)} matches).',
                             "dropped",
                         )
                     )
                     continue
-                if product_component in mapped_product_components:
+                product_location = product_locations[0]
+                if product_location in mapped_product_locations:
                     warnings.append(
                         _warning(
                             f'Multi product map in reaction "{reaction_id}" maps '
@@ -3336,7 +3506,7 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                         )
                     )
                     continue
-                mapped_product_components.add(product_component)
+                mapped_product_locations.add(product_location)
                 maps.append(
                     SBMLMultiComponentMap(
                         reactant=reactant,

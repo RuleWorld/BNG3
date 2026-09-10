@@ -715,6 +715,140 @@ def test_multi_positive_initial_pool_requires_fully_defined_sites():
     assert any("positive initial pool" in warning.message for warning in result.warnings)
 
 
+def test_multi_positive_initial_pool_allows_internal_species_type_bonds():
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      multi:required="true">
+  <model id="bonded_initial_pool">
+    <listOfSpecies>
+      <species id="a0" initialAmount="1" multi:speciesType="aType"/>
+    </listOfSpecies>
+    <multi:listOfSpeciesTypes>
+      <multi:bindingSiteSpeciesType multi:id="xType"/>
+      <multi:bindingSiteSpeciesType multi:id="yType"/>
+      <multi:speciesType multi:id="aType" multi:name="A">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="x" multi:speciesType="xType"/>
+          <multi:speciesTypeInstance multi:id="y" multi:speciesType="yType"/>
+        </multi:listOfSpeciesTypeInstances>
+        <multi:listOfInSpeciesTypeBonds>
+          <multi:inSpeciesTypeBond multi:bindingSite1="x"
+            multi:bindingSite2="y"/>
+        </multi:listOfInSpeciesTypeBonds>
+      </multi:speciesType>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+
+    result = parse_multi_package(xml)
+
+    assert result.executable is True
+    assert result.seed_patterns == [("a0", "A(xType!1,yType!1)")]
+    assert not any("positive initial pool" in warning.message for warning in result.warnings)
+
+
+def test_multi_scopes_repeated_feature_type_ids_by_component():
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      multi:required="true">
+  <model id="scoped_features">
+    <listOfSpecies>
+      <species id="c0" multi:speciesType="cType">
+        <multi:listOfSpeciesFeatures>
+          <multi:speciesFeature multi:speciesFeatureType="state"
+            multi:component="a" multi:occur="1">
+            <multi:listOfSpeciesFeatureValues>
+              <multi:speciesFeatureValue multi:value="a_on"/>
+            </multi:listOfSpeciesFeatureValues>
+          </multi:speciesFeature>
+          <multi:speciesFeature multi:speciesFeatureType="state"
+            multi:component="b" multi:occur="1">
+            <multi:listOfSpeciesFeatureValues>
+              <multi:speciesFeatureValue multi:value="b_on"/>
+            </multi:listOfSpeciesFeatureValues>
+          </multi:speciesFeature>
+        </multi:listOfSpeciesFeatures>
+      </species>
+    </listOfSpecies>
+    <multi:listOfSpeciesTypes>
+      <multi:speciesType multi:id="aType" multi:name="A">
+        <multi:listOfSpeciesFeatureTypes>
+          <multi:speciesFeatureType multi:id="state" multi:occur="1">
+            <multi:listOfPossibleSpeciesFeatureValues>
+              <multi:possibleSpeciesFeatureValue multi:id="a_on" multi:name="A"/>
+            </multi:listOfPossibleSpeciesFeatureValues>
+          </multi:speciesFeatureType>
+        </multi:listOfSpeciesFeatureTypes>
+      </multi:speciesType>
+      <multi:speciesType multi:id="bType" multi:name="B">
+        <multi:listOfSpeciesFeatureTypes>
+          <multi:speciesFeatureType multi:id="state" multi:occur="1">
+            <multi:listOfPossibleSpeciesFeatureValues>
+              <multi:possibleSpeciesFeatureValue multi:id="b_on" multi:name="B"/>
+            </multi:listOfPossibleSpeciesFeatureValues>
+          </multi:speciesFeatureType>
+        </multi:listOfSpeciesFeatureTypes>
+      </multi:speciesType>
+      <multi:speciesType multi:id="cType" multi:name="C">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="a" multi:speciesType="aType"/>
+          <multi:speciesTypeInstance multi:id="b" multi:speciesType="bType"/>
+        </multi:listOfSpeciesTypeInstances>
+      </multi:speciesType>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+
+    result = parse_multi_package(xml)
+
+    assert result.executable is True
+    assert result.species_patterns["c0"] == "A(state~A).B(state~B)"
+
+
+def test_multi_product_component_map_ids_are_unique_across_products():
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      multi:required="true">
+  <model id="duplicate_map_ids">
+    <listOfSpecies>
+      <species id="a0" multi:speciesType="aType"/>
+      <species id="a1" multi:speciesType="aType"/>
+      <species id="a2" multi:speciesType="aType"/>
+    </listOfSpecies>
+    <listOfReactions>
+      <reaction id="r">
+        <listOfReactants><speciesReference id="r1" species="a0"/></listOfReactants>
+        <listOfProducts>
+          <speciesReference id="p1" species="a1">
+            <multi:listOfSpeciesTypeComponentMapsInProduct>
+              <multi:speciesTypeComponentMapInProduct multi:id="map"
+                multi:reactant="r1" multi:reactantComponent="aType"
+                multi:productComponent="aType"/>
+            </multi:listOfSpeciesTypeComponentMapsInProduct>
+          </speciesReference>
+          <speciesReference id="p2" species="a2">
+            <multi:listOfSpeciesTypeComponentMapsInProduct>
+              <multi:speciesTypeComponentMapInProduct multi:id="map"
+                multi:reactant="r1" multi:reactantComponent="aType"
+                multi:productComponent="aType"/>
+            </multi:listOfSpeciesTypeComponentMapsInProduct>
+          </speciesReference>
+        </listOfProducts>
+      </reaction>
+    </listOfReactions>
+    <multi:listOfSpeciesTypes>
+      <multi:speciesType multi:id="aType" multi:name="A"/>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+
+    result = parse_multi_package(xml)
+
+    assert result.executable is False
+    assert any("Duplicate Multi product component map id" in warning.message
+               for warning in result.warnings)
+
+
 def test_multi_rejects_invalid_primitive_values_before_reconstruction():
     xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
       xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
