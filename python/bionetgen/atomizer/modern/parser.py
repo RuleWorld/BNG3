@@ -981,7 +981,7 @@ class SBMLParser:
                         {
                             "category": "missingMath",
                             "message": (
-                                f'{kind} rule'
+                                f"{kind} rule"
                                 + (
                                     f' for "{_attribute(item, "variable")}"'
                                     if _attribute(item, "variable")

@@ -33,7 +33,10 @@ def test_sbml_empty_boolean_identities_and_empty_math_are_safe():
     assert model.rules[0].math == "1"
     assert model.function_definitions["empty"].math == "0"
     assert model.initial_assignments == []
-    assert sum(warning["category"] == "missingMath" for warning in model.import_warnings) == 2
+    assert (
+        sum(warning["category"] == "missingMath" for warning in model.import_warnings)
+        == 2
+    )
 
 
 def test_sbml_event_folding_rejects_mutable_identifiers_and_preserves_false_flag():
@@ -84,7 +87,9 @@ def test_sbml_req_package_is_informational():
 
     model = _model(xml)
 
-    assert any(warning["category"] == "package:req" for warning in model.import_warnings)
+    assert any(
+        warning["category"] == "package:req" for warning in model.import_warnings
+    )
 
 
 def test_sbml_functional_flux_keeps_live_piecewise_condition():
