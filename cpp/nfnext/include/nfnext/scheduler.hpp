@@ -11,6 +11,13 @@ namespace nfnext {
 struct ScheduledChannel {
     std::size_t family{0};
     std::size_t channel{0};
+
+    friend bool operator==(const ScheduledChannel& a, const ScheduledChannel& b) noexcept {
+        return a.family == b.family && a.channel == b.channel;
+    }
+    friend bool operator!=(const ScheduledChannel& a, const ScheduledChannel& b) noexcept {
+        return !(a == b);
+    }
 };
 
 // Two-level exact weighted selector: a top tree chooses a parameterized rule

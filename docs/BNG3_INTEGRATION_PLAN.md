@@ -3,8 +3,29 @@
 **Status:** Active implementation; convergence foundation and direct NFsim migration in progress
 **Plan date:** 2026-08-28
 **Scope:** BioNetGen, NFsim, and PyBioNetGen convergence into one maintained BNG3 codebase
-**Last progress update:** 2026-08-31
-**Implementation:** The current branch owns the active port; this document remains the authoritative backlog and completion contract. Section 11 is not yet satisfied.
+**Last progress update:** 2026-09-10
+**Implementation:** The active port is on `codex/bng3-rest-of-port-20260909`, based on committed head `a8d2a8b`, with a consolidated uncommitted implementation batch. This document remains the authoritative backlog and completion contract. Section 11 is not yet satisfied.
+
+The live implementation and verification snapshot is
+[`CURRENT_PROGRESS.md`](CURRENT_PROGRESS.md). Historical checkpoint counts
+below remain historical unless explicitly refreshed on the exact final tree.
+
+## Implementation progress checkpoint — 2026-09-10
+
+The current batch extends the committed NFsim semantic work with NFnext
+canonical IR, family compilation, dependency scheduling, generic graph
+matching, transformations, validation, cache v2, function/observable helpers,
+compartment/rate helpers, lattice/interval helpers, replay/RNG, and selected
+default architecture contracts. NFsim reaction mappings now use lazy paged
+storage with active-membership tracking. The modern SBML-Multi conflict was
+resolved toward the newer structured resolver, which retains bounded molecule,
+complex, species, alias, compartment-reference, and product-map metadata while
+keeping execution fail-closed until independent evidence exists.
+
+This checkpoint is implementation-only until the final combined-tree build
+and verification sequence completes. It does not close the independent parity,
+SBML-Multi execution, XML-retirement, legacy-removal, packaging, release, or
+hosted gates in Section 11.
 
 ## Implementation progress checkpoint — 2026-08-31
 

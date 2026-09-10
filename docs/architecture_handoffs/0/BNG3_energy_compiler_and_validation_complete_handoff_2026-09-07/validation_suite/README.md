@@ -1,5 +1,8 @@
 # BNG3 energy/compiler validation suite
 
+> Archived validation-suite snapshot. Current promotion and verification state
+> are tracked in `docs/CURRENT_PROGRESS.md`.
+
 This bundle is a tests-first expansion for the proposed BNG3 compiler + generalized energy runtime work.
 It is intentionally test-heavy: some contracts should pass against the current PR branch once the phase-1 patch
 is applied, while `future_*.cpp` files are RED contracts for planned APIs and should not be promoted into the

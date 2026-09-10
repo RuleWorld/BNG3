@@ -90,6 +90,44 @@ int main() {
     }
     {
         ModelIR m;
+        RuleFamilyIR f;
+        f.id = 0;
+        f.name = "scoped";
+        f.default_rate = 2.0;
+        f.rate_law.kind = RateLawKind::Function;
+        f.rate_law.expression = "k*Obs";
+        f.predicates.push_back(PredicateIR::stateSet(0, 0, {1, 3, 5}));
+        f.pattern.addNode(0);
+        f.pattern.addNode(0);
+        f.pattern.node(0).siteStateSet(0, {1, 3, 5});
+        f.pattern.requireBond(0, 1, 1, 1);
+        f.pattern.molecularity.push_back(MolecularityConstraint::sameComplex(0, 1));
+        f.pattern.allowAlias(0, 1);
+        f.pattern.requireConnectedTo(0, 1);
+        f.pattern.markInterchangeable({0, 1});
+        f.source_rules.push_back(0);
+        m.rule_families.push_back(f);
+        const auto before = m.fingerprint();
+        const char* cache = "/tmp/nfnext_semantic_family.nfir";
+        ModelCache::save(m, cache);
+        const auto loaded = ModelCache::load(cache);
+        std::remove(cache);
+        assert(loaded.fingerprint() == before);
+        assert(loaded.rule_families[0].rate_law.expression == "k*Obs");
+        assert(loaded.rule_families[0].predicates[0].state_set ==
+               std::vector<std::int32_t>({1, 3, 5}));
+        assert(loaded.rule_families[0].pattern.molecularity[0].kind ==
+               MolecularityKind::SameComplex);
+        assert(loaded.rule_families[0].pattern.nodes.size() == 2);
+        assert(loaded.rule_families[0].pattern.nodes[0].constraints[0].states ==
+               std::vector<std::int32_t>({1, 3, 5}));
+        assert(loaded.rule_families[0].pattern.bonds.size() == 1);
+        assert(loaded.rule_families[0].pattern.aliases.size() == 1);
+        assert(loaded.rule_families[0].pattern.connected_to.size() == 1);
+        assert(loaded.rule_families[0].pattern.interchangeable.size() == 1);
+    }
+    {
+        ModelIR m;
         MoleculeTypeIR mt; mt.id = 0; mt.name = "A"; mt.sites = {SiteSpec{"x", {"u", "p"}}, SiteSpec{"b", {}}};
         m.molecule_types.push_back(mt);
         RuleFamilyIR f; f.id = 0; f.name = "local";

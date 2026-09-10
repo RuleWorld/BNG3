@@ -1,5 +1,8 @@
 # NFnext / NFsim Rasi Rewrite — Complete Context, Current State, Test-First Handoff, and Remaining Work
 
+> Archived snapshot from 2026-09-06. Current branch state and qualification
+> status are in `docs/CURRENT_PROGRESS.md`.
+
 **Handoff date:** 2026-09-06  
 **Primary target lineage:** `akutuva21/nfsim`, branch `perf/rasi-translation-optimization`  
 **Project:** NFsim Rasi / genome-scale rule-based simulation  

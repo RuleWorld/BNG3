@@ -1,5 +1,9 @@
 # BNG3 Energy Compiler / Generalized NFsim Runtime — Complete Context, Implementation, Validation, and Handoff
 
+> Archived snapshot from 2026-09-07. See `docs/CURRENT_PROGRESS.md` for the
+> live branch and current verification state; counts and branch names below
+> are historical evidence only.
+
 **Prepared:** 2026-09-07  
 **Repository:** `RuleWorld/BNG3`  
 **Primary development branch / PR:** PR #2, `codex/bng3-integration-foundations`  
@@ -1364,4 +1368,3 @@ The largest remaining gap is not lack of design detail. It is **full integration
 The recommended discipline is therefore:
 
 > apply the preserved implementation, install the preserved tests, make each future RED contract green in small slices, and do not remove the legacy fallback or enable generalized execution by default until the complete semantic/oracle/performance gates pass.
-

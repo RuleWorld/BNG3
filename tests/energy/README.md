@@ -1,9 +1,13 @@
 # BNG3 energy/compiler validation suite
 
+See [`../../docs/CURRENT_PROGRESS.md`](../../docs/CURRENT_PROGRESS.md) for the
+current branch and verification state. This suite is now partly integrated;
+its remaining future contracts are still intentionally opt-in and fail closed.
+
 This bundle is a tests-first expansion for the proposed BNG3 compiler + generalized energy runtime work.
-It is intentionally test-heavy: some contracts should pass against the current PR branch once the phase-1 patch
-is applied, while `future_*.cpp` files are RED contracts for planned APIs and should not be promoted into the
-default CTest set until their corresponding implementation lands.
+It is intentionally test-heavy: completed contracts may be promoted into the
+default CTest set only after their implementation and exact-tree evidence are
+verified, while unresolved `future_*.cpp` files remain RED specifications.
 
 Target source checkpoint: RuleWorld/BNG3 PR #2 head `3bc7b4ff131f8927421bc8eae170e3b248b75318`.
 

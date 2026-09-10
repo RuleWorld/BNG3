@@ -2,6 +2,10 @@
 
 BioNetGen 3 is a Python-first, in-process rule-based modeling platform for biochemical reaction systems. It parses BNGL directly in C++, simulates with the bundled backend, and exposes models, results, scans, and exports as ordinary Python objects.
 
+The repository is under active convergence work. The live implementation and
+verification state is recorded in [`docs/CURRENT_PROGRESS.md`](docs/CURRENT_PROGRESS.md);
+the convergence checklist remains the authority for release completion.
+
 ## Install
 
 ```bash

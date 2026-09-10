@@ -4,6 +4,10 @@
 - Date: 2026-09-07
 - Scope: BNG3 parser, semantic model, compilers, and execution backends
 
+> Current implementation status is tracked in
+> [`docs/CURRENT_PROGRESS.md`](../CURRENT_PROGRESS.md). This ADR remains the
+> architectural decision; it is not a completion claim for the active port.
+
 ## Context
 
 BNG3 currently uses `bng::ast::Model` as both the result of parsing and the

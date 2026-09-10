@@ -82,6 +82,25 @@ class SBMLModifierSpeciesReference:
     species: str
 
 
+@dataclass
+class SBMLMultiComponentMap:
+    """Structured SBML Multi component-map record."""
+
+    reactant: str
+    reactant_component: str
+    product_component: str
+    id: Optional[str] = None
+    name: str = ""
+
+    @property
+    def reactantComponent(self) -> str:
+        return self.reactant_component
+
+    @property
+    def productComponent(self) -> str:
+        return self.product_component
+
+
 class SBMLKineticLaw(dict):
     """Mapping-compatible kinetic law with convenient attribute access."""
 
@@ -834,6 +853,7 @@ __all__ = [
     "SBMLKineticLaw",
     "SBMLModel",
     "SBMLModifierSpeciesReference",
+    "SBMLMultiComponentMap",
     "SBMLParameter",
     "SBMLReaction",
     "SBMLRule",

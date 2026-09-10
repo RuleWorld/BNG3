@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 namespace nfnext {
@@ -34,6 +35,12 @@ public:
     void bind(ParticleId a, std::uint16_t sa, ParticleId b, std::uint16_t sb);
     void unbind(ParticleId a, std::uint16_t sa);
 
+    std::vector<ParticleId> liveParticles() const;
+    bool sameComplex(ParticleId a, ParticleId b) const;
+    std::uint32_t complexId(ParticleId id) const;
+    std::string snapshot() const;
+    std::string canonicalState() const;
+
     bool matchesLocal(ParticleId id, const std::vector<PredicateIR>& predicates) const;
     std::vector<FamilyId> affectedFamilies(TypeId type, std::uint16_t site,
                                            PredicateKind kind, std::int32_t value) const;
@@ -41,6 +48,7 @@ public:
     std::size_t liveCount() const noexcept { return live_count_; }
     std::size_t capacity() const noexcept { return types_.size(); }
     std::uint16_t stride() const noexcept { return stride_; }
+    const ModelIR& model() const noexcept { return *model_; }
 
 private:
     std::size_t offset(ParticleId id, std::uint16_t site) const;

@@ -1,5 +1,8 @@
 # NFnext implementation status
 
+> Historical NFnext checkpoint. Current promoted contracts and open work are
+> tracked in `docs/CURRENT_PROGRESS.md`.
+
 Target source lineage: `akutuva21/nfsim:perf/rasi-translation-optimization`.
 
 ## What was executable in the VM in this tranche

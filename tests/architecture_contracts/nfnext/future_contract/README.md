@@ -1,9 +1,15 @@
 # NFnext future-contract test suite
 
+The current promotion state is summarized in
+[`../../../../docs/CURRENT_PROGRESS.md`](../../../../docs/CURRENT_PROGRESS.md).
+This directory contains both promoted contracts and intentionally unresolved
+future specifications; a filename alone is not evidence that a contract is
+implemented.
+
 This directory is an executable specification of the clean-slate NFsim/NFnext
-architecture. It is deliberately **not built by default**. Existing green tests
-remain the regression gate for implemented functionality; this suite defines
-what future implementation must satisfy.
+architecture. Contracts whose implementation is green are registered in the
+default architecture regression suite. Remaining contracts stay opt-in and
+fail closed; this suite defines what future implementation must satisfy.
 
 ## TDD rule
 

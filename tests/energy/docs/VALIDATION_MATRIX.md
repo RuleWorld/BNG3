@@ -1,5 +1,10 @@
 # Energy/compiler validation matrix
 
+This matrix is retained as a historical energy/compiler contract reference.
+Do not read it as evidence that all rows are currently green; exact-tree
+results for the active batch will be recorded only after the consolidated
+verification pass in [`docs/CURRENT_PROGRESS.md`](../../../docs/CURRENT_PROGRESS.md).
+
 | ID | Layer | Contract | Gate |
 |---|---|---|---|
 | E001 | EnergyDeltaPlan | conjunction masks compute literal ΔG | exact, 1e-12 |

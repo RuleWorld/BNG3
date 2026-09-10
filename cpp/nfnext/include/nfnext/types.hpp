@@ -7,10 +7,16 @@
 namespace nfnext {
 
 using TypeId = std::uint32_t;
+using ParameterId = std::uint32_t;
+using MoleculeTypeId = std::uint32_t;
+using ComponentTypeId = std::uint32_t;
+using ObservableId = std::uint32_t;
+using FunctionId = std::uint32_t;
+using CompartmentId = std::uint32_t;
 using RuleId = std::uint32_t;
 using FamilyId = std::uint32_t;
 using FeatureId = std::uint32_t;
-using Position = std::uint32_t;
+using Position = std::uint64_t;
 
 constexpr std::uint32_t kInvalidIndex = std::numeric_limits<std::uint32_t>::max();
 
