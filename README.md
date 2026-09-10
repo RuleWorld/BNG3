@@ -6,6 +6,67 @@ The repository is under active convergence work. The live implementation and
 verification state is recorded in [`docs/CURRENT_PROGRESS.md`](docs/CURRENT_PROGRESS.md);
 the convergence checklist remains the authority for release completion.
 
+## What Is Novel In BNG3
+
+BNG3 is a redesign of the BioNetGen user and execution layers around a
+Python-first, in-process architecture. It is more than a new command name:
+the semantic model, graph algorithms, network-free engine, numerical solvers,
+analysis APIs, and interoperability layers are being separated into explicit
+components with typed contracts between them. BNG2 remains an important
+compatibility and semantic reference while BNG3 converges on this architecture.
+
+| Concern | BNG2 / legacy workflow | BNG3 direction |
+| --- | --- | --- |
+| User interface | Perl actions, generated files, and PyBioNetGen subprocess orchestration | Python objects, a synchronous API, and a unified CLI |
+| Model representation | Parser and action state coupled to legacy execution paths | C++ AST plus a reusable semantic compile stage with typed symbols and diagnostics |
+| Network simulation | External or file-oriented solver workflows | In-process C++ network generation, ODE, SSA, and result objects backed by NumPy |
+| Network-free simulation | NFSim integration commonly treated as a separate executable path | Direct NFcore construction from the canonical AST, with explicit compatibility fallbacks and fail-closed unsupported cases |
+| Rule matching and graphs | Mature legacy graph machinery exposed through older seams | Shared BNGcore graph operations and explicit pattern-lowering boundaries for each backend |
+| Analysis | Manual output-file parsing and repeated command invocation | First-class scans, sensitivities, observable access, data frames, and graph exports |
+| Interoperability | XML and action-based bridges | Versioned BNGIR, typed import/export boundaries, and structured SBML Multi metadata |
+| Validation | Distributed regression scripts and implicit assumptions | Architecture contracts, provenance manifests, parity gates, and an auditable convergence checklist |
+
+The implementation is intentionally staged. The new architecture does not
+claim that every BNG2 feature has parity yet; unsupported or unproven paths
+are reported explicitly rather than silently changing model semantics. See
+[`docs/CURRENT_PROGRESS.md`](docs/CURRENT_PROGRESS.md) for the live evidence
+and [`docs/migration_guide.md`](docs/migration_guide.md) for API changes.
+
+## The Individual BNG3 Parts
+
+- **Python API and CLI** — `bionetgen.load()`, model/result objects, scans,
+  sensitivities, visualization, and command-line workflows provide the primary
+  user surface.
+- **Parser and semantic compiler** — the C++ BNGL parser produces the AST;
+  symbol resolution, typed expressions, capabilities, and pattern descriptors
+  form the reusable semantic boundary between source text and execution.
+- **BNGcore graph layer** — canonicalization, graph matching, pattern
+  lowering, and graph exports are shared by network and network-free paths.
+- **Network engine** — native reaction-network generation, ODE, SSA, CVODE,
+  isolated batch execution, and file/API exporters are available through the
+  in-process C++ backend.
+- **NFcore2 / NFSim path** — the direct network-free adapter maps canonical
+  model constructs into NFcore, including molecule mappings, observables,
+  functions, energy metadata, and rule execution semantics.
+- **NFnext** — the next-generation surface defines NFIR, rule families,
+  dependency scheduling, generic matching, transformations, validation,
+  caching, replay, and batched trajectories as independently testable seams.
+- **Atomizer and SBML Multi** — SBML import and structured Multi metadata are
+  handled in the modern Python atomizer, with unsupported or ambiguous forms
+  kept explicit until independent execution evidence exists.
+- **Analysis and visualization** — results expose NumPy/data-frame access,
+  parameter scans, local sensitivities, contact/regulatory/rule-influence
+  graphs, and notebook-friendly representations.
+- **Compatibility and provenance** — legacy APIs and XML routes remain as
+  scoped transition aids, while schemas, architecture-contract manifests,
+  validation inventories, and documentation record what is implemented,
+  qualified, or still future work.
+
+The architecture and data flow are described in
+[`docs/architecture.md`](docs/architecture.md). The release boundary is
+tracked separately in
+[`docs/BNG3_CONVERGENCE_DONE_CHECKLIST.md`](docs/BNG3_CONVERGENCE_DONE_CHECKLIST.md).
+
 ## Install
 
 ```bash
