@@ -44,7 +44,10 @@ class Component:
 
     def copy(self) -> "Component":
         result = Component(
-            self.name, self.idx, [list(b) if isinstance(b, list) else b for b in self.bonds], list(self.states)
+            self.name,
+            self.idx,
+            [list(b) if isinstance(b, list) else b for b in self.bonds],
+            list(self.states),
         )
         result.active_state = self.active_state
         return result

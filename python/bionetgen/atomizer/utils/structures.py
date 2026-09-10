@@ -452,7 +452,11 @@ class Component:
         >>> [str(c), str(c2)]
         ['first', 'second']
         """
-        component = Component(self.name, [list(b) if isinstance(b, list) else b for b in self.bonds], list(self.states))
+        component = Component(
+            self.name,
+            [list(b) if isinstance(b, list) else b for b in self.bonds],
+            list(self.states),
+        )
         component.activeState = self.activeState
         return component
 
