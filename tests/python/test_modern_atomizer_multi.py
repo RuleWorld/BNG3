@@ -278,7 +278,7 @@ def test_multi_product_component_map_carries_source_wildcard_binding_status():
       <compartment id="c" size="1" multi:isType="false"/>
     </listOfCompartments>
     <listOfSpecies>
-          <species id="A0" compartment="c" initialAmount="1"
+          <species id="A0" compartment="c" initialAmount="0"
                    multi:speciesType="AType" name="human-readable A">
             <multi:listOfOutwardBindingSites>
               <multi:outwardBindingSite multi:component="x"
@@ -418,7 +418,11 @@ def test_multi_compartment_reference_overrides_species_reference_compartment():
     </listOfCompartments>
     <listOfSpecies>
       <species id="A" compartment="c1" initialAmount="1"
-               multi:speciesType="AType" name="A(x)"/>
+               multi:speciesType="AType" name="A(x)">
+        <multi:listOfOutwardBindingSites>
+          <multi:outwardBindingSite multi:component="x" multi:bindingStatus="unbound"/>
+        </multi:listOfOutwardBindingSites>
+      </species>
       <species id="B" compartment="c1" multi:speciesType="AType"
                name="A(x)"/>
     </listOfSpecies>
@@ -592,14 +596,11 @@ def test_multi_binding_site_species_type_is_atomic():
     <listOfSpecies><species id="A0" multi:speciesType="AType"/></listOfSpecies>
     <multi:listOfSpeciesTypes>
       <multi:bindingSiteSpeciesType multi:id="xType">
-        <multi:listOfSpeciesFeatureTypes>
-          <multi:speciesFeatureType multi:id="state" multi:occur="1">
-            <multi:listOfPossibleSpeciesFeatureValues>
-              <multi:possibleSpeciesFeatureValue multi:id="on"/>
-            </multi:listOfPossibleSpeciesFeatureValues>
-          </multi:speciesFeatureType>
-        </multi:listOfSpeciesFeatureTypes>
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="bad" multi:speciesType="yType"/>
+        </multi:listOfSpeciesTypeInstances>
       </multi:bindingSiteSpeciesType>
+      <multi:bindingSiteSpeciesType multi:id="yType"/>
       <multi:speciesType multi:id="AType" multi:name="A">
         <multi:listOfSpeciesTypeInstances>
           <multi:speciesTypeInstance multi:id="x" multi:speciesType="xType"/>
@@ -613,6 +614,105 @@ def test_multi_binding_site_species_type_is_atomic():
 
     assert result.executable is False
     assert any("must be atomic" in warning.message for warning in result.warnings)
+
+
+def test_multi_scopes_local_ids_and_accepts_species_type_identifying_parent():
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      multi:required="true">
+  <model id="scoped_ids">
+    <listOfSpecies>
+      <species id="outer0" multi:speciesType="outerType"/>
+      <species id="a0" multi:speciesType="aType"/>
+      <species id="b0" multi:speciesType="bType"/>
+    </listOfSpecies>
+    <multi:listOfSpeciesTypes>
+      <multi:bindingSiteSpeciesType multi:id="siteType"/>
+      <multi:speciesType multi:id="aType">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="same" multi:speciesType="siteType"/>
+        </multi:listOfSpeciesTypeInstances>
+      </multi:speciesType>
+      <multi:speciesType multi:id="bType">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="same" multi:speciesType="siteType"/>
+        </multi:listOfSpeciesTypeInstances>
+      </multi:speciesType>
+      <multi:speciesType multi:id="innerType">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="innerSite" multi:speciesType="siteType"/>
+        </multi:listOfSpeciesTypeInstances>
+      </multi:speciesType>
+      <multi:speciesType multi:id="outerType">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="inner" multi:speciesType="innerType"/>
+        </multi:listOfSpeciesTypeInstances>
+        <multi:listOfSpeciesTypeComponentIndexes>
+          <multi:speciesTypeComponentIndex multi:id="outerSite"
+            multi:component="innerSite" multi:identifyingParent="innerType"/>
+        </multi:listOfSpeciesTypeComponentIndexes>
+      </multi:speciesType>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+
+    result = parse_multi_package(xml)
+
+    assert result.executable is True
+    assert not any("globally unique" in warning.message for warning in result.warnings)
+    assert not any("unknown component" in warning.message for warning in result.warnings)
+    assert not any("unknown identifyingParent" in warning.message for warning in result.warnings)
+
+
+def test_multi_rejects_type_and_possible_value_global_id_collision():
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      multi:required="true">
+  <model id="global_id_collision">
+    <listOfSpecies><species id="a0" multi:speciesType="aType"/></listOfSpecies>
+    <multi:listOfSpeciesTypes>
+      <multi:speciesType multi:id="aType">
+        <multi:listOfSpeciesFeatureTypes>
+          <multi:speciesFeatureType multi:id="state" multi:occur="1">
+            <multi:listOfPossibleSpeciesFeatureValues>
+              <multi:possibleSpeciesFeatureValue multi:id="aType"/>
+            </multi:listOfPossibleSpeciesFeatureValues>
+          </multi:speciesFeatureType>
+        </multi:listOfSpeciesFeatureTypes>
+      </multi:speciesType>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+
+    result = parse_multi_package(xml)
+
+    assert result.executable is False
+    assert any("globally unique" in warning.message for warning in result.warnings)
+
+
+def test_multi_positive_initial_pool_requires_fully_defined_sites():
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      multi:required="true">
+  <model id="partial_initial_pool">
+    <listOfSpecies>
+      <species id="a0" initialAmount="1" multi:speciesType="aType"/>
+    </listOfSpecies>
+    <multi:listOfSpeciesTypes>
+      <multi:bindingSiteSpeciesType multi:id="siteType"/>
+      <multi:speciesType multi:id="aType">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="site" multi:speciesType="siteType"/>
+        </multi:listOfSpeciesTypeInstances>
+      </multi:speciesType>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+
+    result = parse_multi_package(xml)
+
+    assert result.executable is False
+    assert any("positive initial pool" in warning.message for warning in result.warnings)
 
 
 def test_multi_rejects_invalid_primitive_values_before_reconstruction():
@@ -770,7 +870,7 @@ def test_multi_and_sublist_is_flattened_but_or_sublist_fails_closed():
           multi:required="true">
       <model id="sublist">
         <listOfSpecies>
-          <species id="A0" multi:speciesType="AType" initialAmount="1">
+          <species id="A0" multi:speciesType="AType" initialAmount="0">
             <multi:listOfSpeciesFeatures>
               <multi:subListOfSpeciesFeatures multi:relation="{relation}">
                 <multi:speciesFeature multi:speciesFeatureType="a" multi:occur="1">

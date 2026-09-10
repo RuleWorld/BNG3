@@ -934,7 +934,7 @@ def _flatten_type(
     if not children:
         molecule = _FlatMolecule(
             name=_clean_pattern_name(species_type.name, species_type.id),
-            aliases={species_type.id, species_type.name, _clean(species_type.name)},
+            aliases={species_type.id},
             compartment=effective_compartment,
         )
         for feature_id, feature_name, values, occurrence in _feature_defs(species_type):
@@ -1001,10 +1001,6 @@ def _flatten_type(
                 instance.id,
                 instance.type_id,
                 target.id,
-                target.name,
-                _clean(target.name),
-                instance.name,
-                _clean(instance.name),
             }
             states: List[str] = []
             feature_ids = set()
@@ -1087,8 +1083,6 @@ def _flatten_type(
             molecule.aliases.update(
                 {
                     instance.id,
-                    instance.name,
-                    _clean(instance.name),
                     instance.type_id,
                 }
             )
@@ -1377,6 +1371,46 @@ def _species_pattern_from_multi(
             )
             continue
         targets[0].binding_status = status
+
+    # A positive initial pool must denote one fully defined species, rather
+    # than a pattern that still stands for many pools.  Zero-valued pattern
+    # species are common and remain valid templates.  This mirrors Multi
+    # section 3.19 while keeping the BNGL wildcard mapping explicit.
+    initial_values = [
+        _attribute(species, "initialAmount"),
+        _attribute(species, "initialConcentration"),
+    ]
+    has_positive_initial = False
+    for raw_initial in initial_values:
+        if not raw_initial:
+            continue
+        try:
+            has_positive_initial = has_positive_initial or float(raw_initial) > 0
+        except (TypeError, ValueError):
+            pass
+    if has_positive_initial:
+        for molecule in flat.molecules:
+            for component in molecule.components:
+                if component.is_binding_site and (
+                    component.binding_status != "unbound" or component.bonds
+                ):
+                    warnings.append(
+                        _warning(
+                            f'Multi species "{_attribute(species, "id")}" has a '
+                            "positive initial pool but not all outward binding "
+                            "sites are explicitly unbound.",
+                            "dropped",
+                        )
+                    )
+                if component.feature_ids and not component.active_state:
+                    warnings.append(
+                        _warning(
+                            f'Multi species "{_attribute(species, "id")}" has a '
+                            "positive initial pool but not every speciesFeature "
+                            "occurrence has one value.",
+                            "dropped",
+                        )
+                    )
     # Core Species.name is a human-readable label, not a pattern-bearing
     # attribute.  A Multi speciesType is therefore always reconstructed from
     # the package graph and per-species annotations; accepting a parseable
@@ -1555,7 +1589,15 @@ _MULTI_ALLOWED_CHILDREN = {
         "listOfSpeciesTypeComponentIndexes",
         "listOfInSpeciesTypeBonds",
     },
-    "bindingSiteSpeciesType": set(),
+    # BindingSiteSpeciesType inherits SpeciesType.  The specification only
+    # forbids listOfSpeciesTypeInstances for this class; other inherited lists
+    # remain part of the package grammar and are rejected later only when they
+    # cannot be lowered to an executable BNGL atom.
+    "bindingSiteSpeciesType": {
+        "listOfSpeciesFeatureTypes",
+        "listOfSpeciesTypeComponentIndexes",
+        "listOfInSpeciesTypeBonds",
+    },
     "listOfSpeciesTypeInstances": {"speciesTypeInstance"},
     "speciesTypeInstance": set(),
     "listOfSpeciesTypeComponentIndexes": {"speciesTypeComponentIndex"},
@@ -1819,6 +1861,13 @@ def _validate_multi_markup(
                             "dropped",
                         )
                     )
+                else:
+                    validate_value(
+                        element,
+                        _local_name(key),
+                        str(element.attrib[key]),
+                        namespace,
+                    )
             elif _namespace(key) == "" and (
                 _local_name(key) in expected
                 or _local_name(key)
@@ -1832,13 +1881,6 @@ def _validate_multi_markup(
                 mark(
                     f'Multi attribute "{_local_name(key)}" on core {local} '
                     "must use the Multi namespace."
-                )
-            elif _namespace(key) == namespace:
-                validate_value(
-                    element,
-                    _local_name(key),
-                    str(element.attrib[key]),
-                    namespace,
                 )
         for child in list(element):
             child_namespace = _namespace(child.tag)
@@ -2010,6 +2052,27 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
         *(_children(list_types, "bindingSiteSpeciesType", namespace)),
         *(_children(list_types, "speciesType", namespace)),
     ]
+    all_type_ids = {
+        identifier
+        for element in raw_type_elements
+        if (identifier := _attribute(element, "id"))
+    }
+    all_possible_value_ids = {
+        identifier
+        for element in root.iter()
+        if _namespace(element.tag) == namespace
+        and _local_name(element.tag) == "possibleSpeciesFeatureValue"
+        if (identifier := _attribute(element, "id"))
+    }
+    for identifier in sorted(all_type_ids & all_possible_value_ids):
+        warnings.append(
+            _warning(
+                f'Multi identifier "{identifier}" is used by both a '
+                "speciesType and a possibleSpeciesFeatureValue; these IDs "
+                "must be globally unique.",
+                "dropped",
+            )
+        )
     for item in raw_type_elements:
         type_id = _attribute(item, "id")
         if not type_id:
@@ -2086,7 +2149,7 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                         )
                     )
                     continue
-                if value_id in types:
+                if value_id in all_type_ids:
                     warnings.append(
                         _warning(
                             f'Multi possibleSpeciesFeatureValue id "{value_id}" '
@@ -2140,19 +2203,11 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
         instance_list = _first_child(item, "listOfSpeciesTypeInstances", namespace)
         index_list = _first_child(item, "listOfSpeciesTypeComponentIndexes", namespace)
         bond_list = _first_child(item, "listOfInSpeciesTypeBonds", namespace)
-        if is_binding_site and any(
-            child is not None
-            for child in (
-                feature_list,
-                instance_list,
-                index_list,
-                bond_list,
-            )
-        ):
+        if is_binding_site and instance_list is not None:
             warnings.append(
                 _warning(
                     f'Multi bindingSiteSpeciesType "{type_id}" must be atomic '
-                    "and cannot contain feature, instance, index, or bond children.",
+                    "and cannot contain speciesTypeInstance children.",
                     "dropped",
                 )
             )
@@ -2216,8 +2271,21 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                     )
                 )
 
+        bond_ids = set()
         bond_pairs = set()
         for bond in _children(bond_list, "inSpeciesTypeBond", namespace):
+            bond_id = _attribute(bond, "id")
+            if bond_id and bond_id in bond_ids:
+                warnings.append(
+                    _warning(
+                        f'Duplicate Multi inSpeciesTypeBond id "{bond_id}" '
+                        f'in speciesType "{type_id}".',
+                        "dropped",
+                    )
+                )
+                continue
+            if bond_id:
+                bond_ids.add(bond_id)
             site1 = _attribute(bond, "bindingSite1")
             site2 = _attribute(bond, "bindingSite2")
             if site1 and site2:
@@ -2243,37 +2311,6 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                 )
         types[type_id] = species_type
 
-    # All Multi SId-valued identifiers share SBML's global SId namespace.
-    # Check this before resolving references so duplicate ids cannot be
-    # interpreted differently merely because they occur in different lists.
-    multi_id_owner: Dict[str, str] = {}
-    for element in root.iter():
-        if _namespace(element.tag) != namespace:
-            continue
-        identifier = _namespaced_attribute(element, namespace, "id")
-        if not identifier:
-            continue
-        owner = _local_name(element.tag)
-        previous = multi_id_owner.get(identifier)
-        if previous is not None:
-            warnings.append(
-                _warning(
-                    f'Duplicate Multi id "{identifier}" on {previous} and '
-                    f"{owner}; SBML identifiers are globally unique.",
-                    "dropped",
-                )
-            )
-        else:
-            multi_id_owner[identifier] = owner
-        if identifier in core_model_ids:
-            warnings.append(
-                _warning(
-                    f'Multi id "{identifier}" on {owner} collides with a core '
-                    "SBML identifier.",
-                    "dropped",
-                )
-            )
-
     def scoped_component_tokens(
         owner: _SpeciesType, identifying_parent: str = "", seen: Tuple[str, ...] = ()
     ) -> set:
@@ -2290,6 +2327,10 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
             ]
             if len(direct_instances) == 1:
                 scope = types.get(direct_instances[0].type_id, owner)
+            elif any(
+                instance.type_id == identifying_parent for instance in owner.instances
+            ):
+                scope = types.get(identifying_parent, owner)
             elif identifying_parent in owner.component_indexes:
                 component, parent = owner.component_indexes[identifying_parent]
                 parent_tokens = scoped_component_tokens(owner, parent, seen + (owner.id,))
@@ -2692,7 +2733,7 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
     seed_patterns: List[Tuple[str, str]] = []
     species_type_by_species: Dict[str, str] = {}
     species_compartments: Dict[str, str] = {}
-    species_feature_ids: set = set()
+    species_feature_ids_by_species: Dict[str, set] = {}
     species_parent = _first_child(model, "listOfSpecies")
 
     def visible_feature_types(
@@ -2873,7 +2914,9 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
             feature_id = _attribute(feature, "speciesFeatureType")
             feature_object_id = _attribute(feature, "id")
             if feature_object_id:
-                species_feature_ids.add(feature_object_id)
+                species_feature_ids_by_species.setdefault(species_id, set()).add(
+                    feature_object_id
+                )
                 if feature_object_id in seen_feature_ids:
                     warnings.append(
                         _warning(
@@ -3449,10 +3492,38 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                         "dropped",
                     )
                 )
+            referenced_species = ""
+            if species_reference:
+                for reference in (
+                    *_children(
+                        _first_child(reaction, "listOfReactants"),
+                        "speciesReference",
+                    ),
+                    *_children(
+                        _first_child(reaction, "listOfProducts"),
+                        "speciesReference",
+                    ),
+                    *_children(
+                        _first_child(reaction, "listOfModifiers"),
+                        "modifierSpeciesReference",
+                    ),
+                ):
+                    if _attribute(reference, "id") == species_reference:
+                        referenced_species = _attribute(reference, "species")
+                        break
+            content_is_referenced_feature = (
+                bool(referenced_species)
+                and content in species_feature_ids_by_species.get(
+                    referenced_species, set()
+                )
+            )
+            content_is_referenced_species = (
+                bool(referenced_species) and content == referenced_species
+            )
             if (
                 species_reference
-                and content not in species_ids
-                and content not in species_feature_ids
+                and not content_is_referenced_species
+                and not content_is_referenced_feature
                 and not (
                     representation == "numericValue"
                     and content in possible_value_owner
