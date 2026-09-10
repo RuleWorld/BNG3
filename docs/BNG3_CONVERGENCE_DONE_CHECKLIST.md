@@ -3403,17 +3403,19 @@ completion gate.
 - [x] Current parser detects and exposes conservative canonical single-level
   Multi structures as reference diagnostics.
 - [x] Executable SBML Multi v1 reconstruction checkpoint
-  `4bea999` on dedicated branch `codex/sbml-multi-full-work-v2` expands the
+  `afd2b54` on dedicated branch `codex/sbml-multi-full-work-v2` expands the
   modern Atomizer path to resolve the released namespace and package grammar,
-  namespaced core attributes, species types, binding sites, feature states and
-  occurrences, nested component indexes, in-species bonds, explicit/
-  don't-care species patterns, Multi product component maps, compartment
-  references, `intraSpeciesReaction`, and MathML `sum`/`numericValue`
-  representations. Invalid or non-representable structures fail closed with
-  structured diagnostics. The real fixture
-  `tests/validation/Validate/test_write_sbml_multi_sbml_sbmlmulti.xml` now
+  strict namespace-qualified package attributes, SBML primitive lexical rules,
+  global identifier collisions, scoped/nested component indexes, atomic
+  binding-site types, species types, feature states and occurrences,
+  in-species bonds, explicit/don't-care species patterns, Multi product
+  component maps, compartment references, `intraSpeciesReaction`, and MathML
+  `sum`/`numericValue` representations. Core metadata and foreign package
+  annotations are preserved without false rejection. Invalid or
+  non-representable structures fail closed with structured diagnostics. The
+  real fixture `tests/validation/Validate/test_write_sbml_multi_sbml_sbmlmulti.xml`
   produces executable BNGL and parses through the native `bng_cpp` oracle.
-  Focused Multi tests report `23 passed`; full Python reports `365 passed, 30
+  Focused Multi tests report `24 passed`; full Python reports `369 passed, 30
   skipped`; CTest reports `291/291`; Ruff, C++ syntax, and `git diff --check`
   pass.
 - [x] Canonical Multi molecule types, components, states, complexes,
