@@ -1863,7 +1863,7 @@ def test_reconstructed_sbml_multi_model_runs_in_independent_nfsim(tmp_path):
             "-o",
             str(gdat_path),
             "-sim",
-            "0",
+            "0.1",
             "-oSteps",
             "1",
             "-seed",
@@ -1876,4 +1876,6 @@ def test_reconstructed_sbml_multi_model_runs_in_independent_nfsim(tmp_path):
     )
     assert executed.returncode == 0, executed.stderr or executed.stdout
     assert gdat_path.exists()
-    assert "time" in gdat_path.read_text().splitlines()[0]
+    gdat_lines = gdat_path.read_text().splitlines()
+    assert "time" in gdat_lines[0]
+    assert len(gdat_lines) >= 2
