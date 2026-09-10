@@ -3403,7 +3403,7 @@ completion gate.
 - [x] Current parser detects and exposes conservative canonical single-level
   Multi structures as reference diagnostics.
 - [x] Executable SBML Multi v1 reconstruction checkpoint
-  `5708dfa` on dedicated branch `codex/sbml-multi-full-work-v2` expands the
+  `4bea999` on dedicated branch `codex/sbml-multi-full-work-v2` expands the
   modern Atomizer path to resolve the released namespace and package grammar,
   namespaced core attributes, species types, binding sites, feature states and
   occurrences, nested component indexes, in-species bonds, explicit/
@@ -3413,7 +3413,7 @@ completion gate.
   structured diagnostics. The real fixture
   `tests/validation/Validate/test_write_sbml_multi_sbml_sbmlmulti.xml` now
   produces executable BNGL and parses through the native `bng_cpp` oracle.
-  Focused Multi tests report `19 passed`; full Python reports `361 passed, 30
+  Focused Multi tests report `23 passed`; full Python reports `365 passed, 30
   skipped`; CTest reports `291/291`; Ruff, C++ syntax, and `git diff --check`
   pass.
 - [x] Canonical Multi molecule types, components, states, complexes,
@@ -3776,8 +3776,10 @@ These are known unchecked requirements, not reasons to claim completion:
 - Structured SBML atomization still has a deliberate visible error, and
   local validation has environment-dependent skips; hosted validation green
   does not prove full Tier-P/NF/X parity.
-- SBML-Multi is currently diagnostic/reference extraction, not approved
-  end-to-end simulated execution.
+- SBML-Multi v1 representable structures now enter executable modern
+  Atomizer/BNGL paths with native writer/parser and NFsim evidence;
+  unsupported shapes still fail closed, and full Tier-X capability remains
+  open.
 - Legacy Python core/modelapi/network/simulator trees remain and have not
   passed zero-reference deletion gates.
 - Atomizer writer/helper/parser parity and all format round trips remain
