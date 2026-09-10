@@ -44,16 +44,19 @@ inline AllocationProbeSimulation makeAllocationProbeFixture(const std::string& n
     return AllocationProbeSimulation(name);
 }
 } // namespace nfnext
-inline void* operator new(std::size_t size) {
-    void* memory = std::malloc(size == 0 ? 1 : size);
-    if (memory == nullptr) throw std::bad_alloc();
-    if (::nfnext::allocation_probe_detail::enabled)
-        ::nfnext::allocation_probe_detail::allocations.fetch_add(1, std::memory_order_relaxed);
-    return memory;
-}
 
-inline void* operator new[](std::size_t size) { return ::operator new(size); }
-inline void operator delete(void* memory) noexcept { std::free(memory); }
-inline void operator delete[](void* memory) noexcept { std::free(memory); }
-inline void operator delete(void* memory, std::size_t) noexcept { std::free(memory); }
-inline void operator delete[](void* memory, std::size_t) noexcept { std::free(memory); }
+#ifndef _MSC_VER
+#if defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define NFNEXT_ASAN 1
+#endif
+#endif
+#ifndef NFNEXT_ASAN
+void* operator new(std::size_t size);
+void* operator new[](std::size_t size);
+void operator delete(void* memory) noexcept;
+void operator delete[](void* memory) noexcept;
+void operator delete(void* memory, std::size_t) noexcept;
+void operator delete[](void* memory, std::size_t) noexcept;
+#endif
+#endif
