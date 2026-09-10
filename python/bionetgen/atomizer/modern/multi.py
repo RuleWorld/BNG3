@@ -848,38 +848,65 @@ def _apply_component_indexes(
     flat_type: _FlatType,
     warnings: Optional[List[SBMLImportWarning]] = None,
 ) -> None:
-    for index_id, (component, parent) in species_type.component_indexes.items():
-        if parent:
-            matches = _find_components(flat_type, component, parent)
-            if len(matches) == 1:
-                matches[0][1].aliases.add(index_id)
-            elif len(matches) > 1 and warnings is not None:
+    pending = list(species_type.component_indexes.items())
+    while pending:
+        unresolved = []
+        progress = False
+        for index_id, (component, parent) in pending:
+            if parent:
+                matches = _find_components(flat_type, component, parent)
+                if len(matches) == 1:
+                    matches[0][1].aliases.add(index_id)
+                    progress = True
+                elif len(matches) > 1 and warnings is not None:
+                    warnings.append(
+                        _warning(
+                            f'Multi speciesTypeComponentIndex "{index_id}" in '
+                            f'speciesType "{species_type.id}" is ambiguous for '
+                            f'component "{component}" under parent "{parent}".',
+                            "dropped",
+                        )
+                    )
+                else:
+                    unresolved.append((index_id, component, parent))
+                continue
+            molecule_matches = _find_molecules(flat_type, component)
+            component_matches = _find_components(flat_type, component)
+            match_count = len(molecule_matches) + len(component_matches)
+            if match_count == 1:
+                if molecule_matches:
+                    molecule_matches[0].aliases.add(index_id)
+                else:
+                    component_matches[0][1].aliases.add(index_id)
+                progress = True
+            elif match_count > 1 and warnings is not None:
                 warnings.append(
                     _warning(
                         f'Multi speciesTypeComponentIndex "{index_id}" in '
                         f'speciesType "{species_type.id}" is ambiguous for '
-                        f'component "{component}" under parent "{parent}".',
+                        f'component "{component}".',
                         "dropped",
                     )
                 )
-            continue
-        molecule_matches = _find_molecules(flat_type, component)
-        component_matches = _find_components(flat_type, component)
-        if len(molecule_matches) + len(component_matches) == 1:
-            if molecule_matches:
-                molecule_matches[0].aliases.add(index_id)
             else:
-                component_matches[0][1].aliases.add(index_id)
-            continue
-        if len(molecule_matches) + len(component_matches) > 1 and warnings is not None:
-            warnings.append(
-                _warning(
-                    f'Multi speciesTypeComponentIndex "{index_id}" in '
-                    f'speciesType "{species_type.id}" is ambiguous for '
-                    f'component "{component}".',
-                    "dropped",
-                )
-            )
+                unresolved.append((index_id, component, parent))
+        if not unresolved or not progress:
+            if unresolved and warnings is not None:
+                for index_id, component, parent in unresolved:
+                    scope = f' under parent "{parent}"' if parent else ""
+                    warnings.append(
+                        _warning(
+                            f'Multi speciesTypeComponentIndex "{index_id}" in '
+                            f'speciesType "{species_type.id}" could not resolve '
+                            f'component "{component}"{scope}.',
+                            "dropped",
+                        )
+                    )
+            return
+        pending = [
+            (index_id, (component, parent))
+            for index_id, component, parent in unresolved
+        ]
 
 
 def _resolve_bond_endpoint(
@@ -922,6 +949,7 @@ def _flatten_type(
     stack: Tuple[str, ...] = (),
     compartment_references: Optional[Dict[str, Dict[str, str]]] = None,
     inherited_compartment: str = "",
+    compartment_types: Optional[Dict[str, str]] = None,
 ) -> _FlatType:
     """Resolve any Multi speciesType hierarchy into BNGL molecules."""
 
@@ -1026,6 +1054,25 @@ def _flatten_type(
                             "dropped",
                         )
                     )
+            target_compartment = target.compartment
+            if (
+                not instance.compartment_reference
+                and effective_compartment
+                and target_compartment
+                and effective_compartment != target_compartment
+                and (compartment_types or {}).get(effective_compartment)
+                != target_compartment
+            ):
+                warnings.append(
+                    _warning(
+                        f'Multi binding-site instance "{instance.id}" in '
+                        f'speciesType "{type_id}" uses compartment '
+                        f'"{target_compartment}" inconsistent with containing '
+                        f'compartment "{effective_compartment}" without a '
+                        "compartmentReference.",
+                        "dropped",
+                    )
+                )
             instance_label = (
                 instance.name
                 if instance.name and instance.name != instance.id
@@ -1113,9 +1160,37 @@ def _flatten_type(
                 )
         child_type = types.get(instance.type_id)
         child_compartment = child_type.compartment if child_type is not None else ""
-        target_compartment = (
-            instance_compartment or child_compartment or effective_compartment
-        )
+        if (
+            not instance.compartment_reference
+            and effective_compartment
+            and child_compartment
+            and effective_compartment != child_compartment
+            and (compartment_types or {}).get(effective_compartment)
+            != child_compartment
+        ):
+            warnings.append(
+                _warning(
+                    f'SpeciesTypeInstance "{instance.id}" in speciesType '
+                    f'"{type_id}" uses child compartment "{child_compartment}" '
+                    f'inconsistent with containing compartment '
+                    f'"{effective_compartment}" without a compartmentReference.',
+                    "dropped",
+                )
+            )
+        if instance_compartment:
+            target_compartment = instance_compartment
+        elif (
+            effective_compartment
+            and child_compartment
+            and (
+                effective_compartment == child_compartment
+                or (compartment_types or {}).get(effective_compartment)
+                == child_compartment
+            )
+        ):
+            target_compartment = effective_compartment
+        else:
+            target_compartment = child_compartment or effective_compartment
         child = _flatten_type(
             instance.type_id,
             types,
@@ -1123,6 +1198,7 @@ def _flatten_type(
             stack + (type_id,),
             compartment_references,
             target_compartment,
+            compartment_types,
         )
         for molecule in child.molecules:
             molecule.aliases.update(
@@ -1134,6 +1210,11 @@ def _flatten_type(
         flat.molecules.extend(child.molecules)
         flat.bonds.extend(child.bonds)
 
+    # The containing SpeciesType itself is a valid identifying parent for
+    # component references.  Give flattened molecules that scope alias before
+    # resolving local indexes.
+    for molecule in flat.molecules:
+        molecule.aliases.add(type_id)
     _apply_component_indexes(species_type, flat, warnings)
     for site1, site2 in species_type.bonds:
         endpoint1 = _resolve_bond_endpoint(species_type, flat, site1)
@@ -1237,6 +1318,8 @@ def _species_pattern_from_multi(
     namespace: str,
     warnings: List[SBMLImportWarning],
     compartment_references: Optional[Dict[str, Dict[str, str]]] = None,
+    compartment_types: Optional[Dict[str, str]] = None,
+    species_compartment: str = "",
     initialized_by_assignment: bool = False,
 ) -> Optional[str]:
     flat = _flatten_type(
@@ -1244,9 +1327,20 @@ def _species_pattern_from_multi(
         types,
         warnings,
         compartment_references=compartment_references,
+        compartment_types=compartment_types,
     )
     if not flat.molecules:
         return None
+    type_compartment = types[type_id].compartment
+    if species_compartment and type_compartment != species_compartment:
+        if not type_compartment:
+            for molecule in flat.molecules:
+                if not molecule.compartment:
+                    molecule.compartment = species_compartment
+        elif (compartment_types or {}).get(species_compartment) == type_compartment:
+            for molecule in flat.molecules:
+                if molecule.compartment == type_compartment:
+                    molecule.compartment = species_compartment
     feature_entries: List[Tuple[Any, str]] = []
     feature_parent = _first_child(species, "listOfSpeciesFeatures", namespace)
     for child in list(feature_parent) if feature_parent is not None else []:
@@ -2397,7 +2491,11 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                 scope = types.get(identifying_parent, owner)
             elif identifying_parent in owner.component_indexes:
                 component, parent = owner.component_indexes[identifying_parent]
-                parent_tokens = scoped_component_tokens(owner, parent, seen + (owner.id,))
+                # The parent index is resolved in the current owner's scope.
+                # Do not mark that owner as visited before this lookup: doing
+                # so makes an index with no identifyingParent appear empty,
+                # even though its component is a valid direct instance.
+                parent_tokens = scoped_component_tokens(owner, parent, seen)
                 if component not in parent_tokens:
                     return set()
                 nested_types = [
@@ -2562,6 +2660,12 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
             compartment_types[compartment_id] = _namespaced_attribute(
                 compartment, namespace, "compartmentType"
             )
+
+    def compartment_matches_type(actual: str, expected: str) -> bool:
+        return not actual or not expected or actual == expected or (
+            compartment_types.get(actual) == expected
+        )
+
     for compartment in _children(compartments, "compartment"):
         compartment_id = _attribute(compartment, "id")
         compartment_type = _namespaced_attribute(
@@ -2795,6 +2899,7 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
             types,
             structure_warnings,
             compartment_references=compartment_references,
+            compartment_types=compartment_types,
         )
         if not flat.molecules:
             continue
@@ -2917,10 +3022,7 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
         }
         ambiguous: set = set()
         for instance in species_type.instances:
-            if (
-                instance.type_id in types
-                and not types[instance.type_id].is_binding_site
-            ):
+            if instance.type_id in types:
                 nested, nested_ambiguous = visible_feature_types(
                     instance.type_id, stack + (type_id,)
                 )
@@ -3008,7 +3110,7 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
         if (
             type_compartment
             and species_compartment
-            and type_compartment != species_compartment
+            and not compartment_matches_type(species_compartment, type_compartment)
         ):
             warnings.append(
                 _warning(
@@ -3062,9 +3164,9 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                                 "dropped",
                             )
                         )
+                nested_features = _children(child, "speciesFeature", namespace)
                 feature_elements.extend(
-                    (feature, inherited_component)
-                    for feature in _children(child, "speciesFeature", namespace)
+                    (feature, inherited_component) for feature in nested_features
                 )
         seen_feature_occurrences = set()
         seen_feature_ids = set()
@@ -3207,14 +3309,31 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                             "dropped",
                         )
                     )
+        seen_outward_ids = set()
+        for outward in _children(outward_list, "outwardBindingSite", namespace):
+            outward_id = _attribute(outward, "id")
+            if outward_id:
+                if outward_id in seen_outward_ids:
+                    warnings.append(
+                        _warning(
+                            f'Duplicate Multi outwardBindingSite id "{outward_id}" '
+                            f'in species "{species_id}".',
+                            "dropped",
+                        )
+                    )
+                seen_outward_ids.add(outward_id)
         pattern = _species_pattern_from_multi(
             species,
             type_id,
             types,
             namespace,
             structure_warnings,
-            compartment_references,
-            species_id in initial_assignment_symbols,
+            compartment_references=compartment_references,
+            compartment_types=compartment_types,
+            species_compartment=(
+                species_compartment if package_valid and not namespace_violation else ""
+            ),
+            initialized_by_assignment=species_id in initial_assignment_symbols,
         )
         if pattern:
             species_patterns[species_id] = pattern
@@ -3237,6 +3356,7 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
             types,
             structure_warnings,
             compartment_references=compartment_references,
+            compartment_types=compartment_types,
         )
         if flat.molecules:
             rendered = _render_flat_type(flat, show_states=True)
@@ -3786,7 +3906,7 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
     executable = bool(
         package_valid
         and types
-        and species_patterns
+        and (species_patterns or type_patterns)
         and not untyped_reaction_species
         and not namespace_violation
         and not any(warning.severity == "dropped" for warning in warnings)
