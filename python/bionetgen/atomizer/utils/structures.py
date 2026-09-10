@@ -32,7 +32,8 @@ class Species:
 
     def copy(self):
         species = Species()
-        species.molecules = [molecule.copy() for molecule in self.molecules]
+        for molecule in self.molecules:
+            species.molecules.append(molecule.copy())
         return species
 
     def addMolecule(self, molecule, concatenate=False, iteration=1):
@@ -267,7 +268,8 @@ class Molecule:
 
     def copy(self):
         molecule = Molecule(self.name)
-        molecule.components = [element.copy() for element in self.components]
+        for element in self.components:
+            molecule.components.append(element.copy())
         return molecule
 
     def addChunk(self, chunk):
@@ -452,12 +454,8 @@ class Component:
         >>> [str(c), str(c2)]
         ['first', 'second']
         """
-        component = Component(
-            self.name,
-            [list(b) if isinstance(b, list) else b for b in self.bonds],
-            list(self.states),
-        )
-        component.activeState = self.activeState
+        component = Component(self.name, deepcopy(self.bonds), deepcopy(self.states))
+        component.activeState = deepcopy(self.activeState)
         return component
 
     def addState(self, state, update=True):

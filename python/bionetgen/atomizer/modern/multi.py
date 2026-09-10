@@ -944,7 +944,11 @@ def _resolve_bond_endpoint(
 
 
 def _bonded_component(flat_type: _FlatType, component: _FlatComponent) -> bool:
-    return any(component is endpoint for bond in flat_type.bonds for endpoint in bond)
+    return any(
+        component is endpoint
+        for bond in flat_type.bonds
+        for endpoint in bond
+    )
 
 
 def _flatten_type(
@@ -1036,7 +1040,9 @@ def _flatten_type(
                 continue
             if not target.is_binding_site:
                 continue
-            if any(occurrence > 1 for occurrence in target.feature_occurs.values()):
+            if any(
+                occurrence > 1 for occurrence in target.feature_occurs.values()
+            ):
                 warnings.append(
                     _warning(
                         f'Multi binding-site speciesType "{instance.type_id}" '
@@ -1187,7 +1193,7 @@ def _flatten_type(
                 _warning(
                     f'SpeciesTypeInstance "{instance.id}" in speciesType '
                     f'"{type_id}" uses child compartment "{child_compartment}" '
-                    f"inconsistent with containing compartment "
+                    f'inconsistent with containing compartment '
                     f'"{effective_compartment}" without a compartmentReference.',
                     "dropped",
                 )
@@ -1557,13 +1563,15 @@ def _species_pattern_from_multi(
         except (TypeError, ValueError):
             pass
     if has_positive_initial:
-        bonded_components = {id(endpoint) for bond in flat.bonds for endpoint in bond}
+        bonded_components = {
+            id(endpoint)
+            for bond in flat.bonds
+            for endpoint in bond
+        }
         for molecule in flat.molecules:
             for component in molecule.components:
-                if (
-                    component.is_binding_site
-                    and id(component) not in bonded_components
-                    and (component.binding_status != "unbound")
+                if component.is_binding_site and id(component) not in bonded_components and (
+                    component.binding_status != "unbound"
                 ):
                     warnings.append(
                         _warning(
@@ -1745,7 +1753,9 @@ _MULTI_ALLOWED_PARENTS = {
     "outwardBindingSite": {"listOfOutwardBindingSites"},
     "intraSpeciesReaction": {"listOfReactions"},
     "listOfSpeciesTypeComponentMapsInProduct": {"speciesReference"},
-    "speciesTypeComponentMapInProduct": {"listOfSpeciesTypeComponentMapsInProduct"},
+    "speciesTypeComponentMapInProduct": {
+        "listOfSpeciesTypeComponentMapsInProduct"
+    },
 }
 
 _MULTI_ALLOWED_CHILDREN = {
@@ -1790,7 +1800,9 @@ _MULTI_ALLOWED_CHILDREN = {
         "listOfModifiers",
         "kineticLaw",
     },
-    "listOfSpeciesTypeComponentMapsInProduct": {"speciesTypeComponentMapInProduct"},
+    "listOfSpeciesTypeComponentMapsInProduct": {
+        "speciesTypeComponentMapInProduct"
+    },
     "speciesTypeComponentMapInProduct": set(),
 }
 
@@ -1809,7 +1821,11 @@ def _validate_multi_markup(
     """Check Multi namespace placement and the package element vocabulary."""
 
     invalid = False
-    parents = {id(child): parent for parent in root.iter() for child in list(parent)}
+    parents = {
+        id(child): parent
+        for parent in root.iter()
+        for child in list(parent)
+    }
     metadata_nodes = {
         id(descendant)
         for element in root.iter()
@@ -1829,24 +1845,10 @@ def _validate_multi_markup(
         nonlocal invalid
         if key_namespace not in {namespace, ""}:
             return
-        if key in {
-            "id",
-            "component",
-            "identifyingParent",
-            "bindingSite1",
-            "bindingSite2",
-            "speciesType",
-            "compartmentReference",
-            "compartment",
-            "compartmentType",
-            "reactant",
-            "reactantComponent",
-            "productComponent",
-            "value",
-            "numericValue",
-            "speciesFeatureType",
-            "speciesReference",
-        }:
+        if key in {"id", "component", "identifyingParent", "bindingSite1", "bindingSite2",
+                   "speciesType", "compartmentReference", "compartment", "compartmentType",
+                   "reactant", "reactantComponent", "productComponent", "value",
+                   "numericValue", "speciesFeatureType", "speciesReference"}:
             if not _is_sid(value):
                 mark(
                     f'Multi attribute "{key}" on {_local_name(element.tag)} '
@@ -1889,7 +1891,9 @@ def _validate_multi_markup(
         local = _local_name(element.tag)
         element_namespace = _namespace(element.tag)
         if "/multi/" in element_namespace and element_namespace != namespace:
-            mark(f'Unsupported SBML Multi element namespace "{element_namespace}".')
+            mark(
+                f'Unsupported SBML Multi element namespace "{element_namespace}".'
+            )
             continue
         if element_namespace == namespace:
             if local not in _MULTI_ELEMENTS:
@@ -1931,7 +1935,7 @@ def _validate_multi_markup(
             for required_attribute in _MULTI_REQUIRED_ATTRIBUTES.get(local, set()):
                 if not _attribute(element, required_attribute):
                     mark(
-                        f"Multi {local} is missing required attribute "
+                        f'Multi {local} is missing required attribute '
                         f'"{required_attribute}".'
                     )
             for key in getattr(element, "attrib", {}):
@@ -1940,7 +1944,8 @@ def _validate_multi_markup(
                 if key_namespace == namespace:
                     if key_local not in allowed:
                         mark(
-                            f'Unexpected Multi attribute "{key_local}" on ' f"{local}."
+                            f'Unexpected Multi attribute "{key_local}" on '
+                            f"{local}."
                         )
                     else:
                         validate_value(
@@ -2013,7 +2018,7 @@ def _validate_multi_markup(
                         continue
                     if child_local not in allowed_children:
                         mark(
-                            f"SBML Multi {local} contains unexpected child "
+                            f'SBML Multi {local} contains unexpected child '
                             f'"{child_local}".'
                         )
                     elif child_local in _MULTI_CORE_CHILDREN:
@@ -2056,7 +2061,7 @@ def _validate_multi_markup(
                     "isType",
                     "compartmentReference",
                 }
-            ):
+                ):
                 mark(
                     f'Multi attribute "{_local_name(key)}" on core {local} '
                     "must use the Multi namespace."
@@ -2151,8 +2156,8 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
             if len(containers) > 1:
                 warnings.append(
                     _warning(
-                        f"SBML Multi object {_local_name(parent.tag)} contains "
-                        f"multiple {container_name} containers; the package "
+                        f'SBML Multi object {_local_name(parent.tag)} contains '
+                        f'multiple {container_name} containers; the package '
                         "allows at most one.",
                         "dropped",
                     )
@@ -2196,7 +2201,9 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
             for element in root.iter()
         ) or any(
             _namespace(attribute) == namespace
-            and not (element is root and _local_name(attribute) == "required")
+            and not (
+                element is root and _local_name(attribute) == "required"
+            )
             for element in root.iter()
             for attribute in getattr(element, "attrib", {})
         )
@@ -2214,9 +2221,7 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                 ),
             ]
             + warnings,
-            executable=package_valid
-            and not has_multi_model_use
-            and not namespace_violation,
+            executable=package_valid and not has_multi_model_use and not namespace_violation,
         )
 
     types: Dict[str, _SpeciesType] = {}
@@ -2561,10 +2566,7 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                         "dropped",
                     )
                 )
-        for index_id, (
-            component,
-            identifying_parent,
-        ) in species_type.component_indexes.items():
+        for index_id, (component, identifying_parent) in species_type.component_indexes.items():
             component_ids = scoped_component_tokens(species_type, identifying_parent)
             if component not in component_ids:
                 warnings.append(
@@ -2684,11 +2686,8 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
             )
 
     def compartment_matches_type(actual: str, expected: str) -> bool:
-        return (
-            not actual
-            or not expected
-            or actual == expected
-            or (compartment_types.get(actual) == expected)
+        return not actual or not expected or actual == expected or (
+            compartment_types.get(actual) == expected
         )
 
     for compartment in _children(compartments, "compartment"):
@@ -2800,10 +2799,7 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
             target_counts[target] = target_counts.get(target, 0) + 1
         if any(
             count > 1
-            and any(
-                target == repeated_target and not has_id
-                for target, has_id in reference_targets
-            )
+            and any(target == repeated_target and not has_id for target, has_id in reference_targets)
             for repeated_target, count in target_counts.items()
         ):
             warnings.append(
@@ -2949,7 +2945,7 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                     _warning(
                         f'Multi speciesTypeComponentIndex "{index_id}" in '
                         f'speciesType "{type_id}" resolves ambiguously to '
-                        f"{len(locations)} components.",
+                        f'{len(locations)} components.',
                         "dropped",
                     )
                 )
@@ -3680,7 +3676,7 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                         _warning(
                             f'Multi product map in reaction "{reaction_id}" cannot '
                             f'resolve reactant component "{reactant_component}" '
-                            f"unambiguously ({len(reactant_locations)} matches).",
+                            f'unambiguously ({len(reactant_locations)} matches).',
                             "dropped",
                         )
                     )
@@ -3693,7 +3689,7 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                         _warning(
                             f'Multi product map in reaction "{reaction_id}" cannot '
                             f'resolve product component "{product_component}" '
-                            f"unambiguously ({len(product_locations)} matches).",
+                            f'unambiguously ({len(product_locations)} matches).',
                             "dropped",
                         )
                     )
@@ -3885,10 +3881,11 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                         referenced_species = _attribute(reference, "species")
                         referenced_reference = reference
                         break
-            content_is_referenced_feature = bool(
-                referenced_species
-            ) and content in species_feature_ids_by_species.get(
-                referenced_species, set()
+            content_is_referenced_feature = (
+                bool(referenced_species)
+                and content in species_feature_ids_by_species.get(
+                    referenced_species, set()
+                )
             )
             content_is_referenced_species = (
                 bool(referenced_species) and content == referenced_species
@@ -3898,7 +3895,8 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                 and not content_is_referenced_species
                 and not content_is_referenced_feature
                 and not (
-                    representation == "numericValue" and content in possible_value_owner
+                    representation == "numericValue"
+                    and content in possible_value_owner
                 )
             ):
                 warnings.append(
