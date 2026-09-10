@@ -3403,9 +3403,11 @@ completion gate.
 - [x] Current parser detects and exposes conservative canonical single-level
   Multi structures as reference diagnostics.
 - [x] Executable SBML Multi v1 reconstruction checkpoint
-  `84f124f` on dedicated branch `codex/sbml-multi-full-work-v2` expands the
+  `020fe68` on dedicated branch `codex/sbml-multi-full-work-v2` expands the
   modern Atomizer path to resolve the released namespace and package grammar,
-  strict namespace-qualified package attributes, SBML primitive lexical rules,
+  spec-valid unqualified attributes on Multi-defined elements plus strict
+  namespace placement for Multi extensions to core/MathML elements, SBML
+  primitive lexical rules,
   spec-scoped identifier collisions, scoped/nested component indexes, atomic
   binding-site types, species types, feature states and occurrences,
   in-species bonds, explicit/don't-care species patterns, fully defined
@@ -3420,7 +3422,11 @@ completion gate.
   binding-site ID uniqueness, relation=`and` occurrence constraints, and
   type-only definitions are covered. Nested component indexes resolve through
   indexed parents for feature and bond scopes; component indexes may target
-  either a component instance or a nested SpeciesType object. Core
+  either a component instance or a nested SpeciesType object. Multi hierarchies
+  without an unambiguous BNGL molecule boundary fail closed instead of being
+  flattened. Repeated nested features on binding-site components and
+  unsupported feature-count or sub-compartment-reference MathML `ci` semantics
+  also fail closed with explicit diagnostics. Core
   Reaction-derived Multi identifiers, species-feature identifiers, and
   compartment-reference identifiers are checked in their complete SBML/Multi
   scopes. Invalid or non-representable structures fail closed with structured
@@ -3429,7 +3435,7 @@ completion gate.
   rejection. The real fixture
   `tests/validation/Validate/test_write_sbml_multi_sbml_sbmlmulti.xml`
   produces executable BNGL and parses through the native `bng_cpp` oracle.
-  Focused Multi tests report `41 passed, 3 skipped`; full Python reports `386
+  Focused Multi tests report `45 passed, 3 skipped`; full Python reports `390
   passed, 30 skipped`; CTest reports `291/291`; Ruff, C++ syntax, and `git
   diff --check` pass.
 - [x] Canonical Multi molecule types, components, states, complexes,
