@@ -1,4 +1,4 @@
-"""Source-derived tests for the bounded Playground SBML-Multi extractor."""
+"""Spec-derived regression tests for SBML Level 3 Multi v1 support."""
 
 from __future__ import annotations
 
@@ -283,7 +283,7 @@ def test_multi_product_component_map_carries_source_wildcard_binding_status():
                name="A()"/>
     </listOfSpecies>
     <listOfReactions>
-      <multi:intraSpeciesReaction id="r" reversible="false">
+      <reaction id="r" reversible="false">
         <listOfReactants>
           <speciesReference id="r1" species="A0"/>
         </listOfReactants>
@@ -299,7 +299,7 @@ def test_multi_product_component_map_carries_source_wildcard_binding_status():
         <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
           <cn>1</cn>
         </math></kineticLaw>
-      </multi:intraSpeciesReaction>
+      </reaction>
     </listOfReactions>
     <multi:listOfSpeciesTypes>
       <multi:bindingSiteSpeciesType multi:id="xType" multi:name="x"/>
@@ -315,7 +315,7 @@ def test_multi_product_component_map_carries_source_wildcard_binding_status():
 
     model = SBMLParser().parse(xml)
     assert model.multi_executable is True
-    assert model.reactions["r"].multi_intra_species is True
+    assert model.reactions["r"].multi_intra_species is False
     assert model.reactions["r"].products[0].multi_component_maps
     sct = build_species_composition_table(model)
     molecule_types = get_molecule_types(sct, model.multi_type_patterns.values())
@@ -323,6 +323,70 @@ def test_multi_product_component_map_carries_source_wildcard_binding_status():
 
     reaction = next(line for line in bngl.splitlines() if line.startswith("  r:"))
     assert "M_A(x!+)@c -> M_A(x!+)@c" in reaction
+
+
+def test_multi_intra_species_reaction_requires_association_or_dissociation_shape():
+    valid = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      multi:required="true">
+  <model id="intra_valid">
+    <listOfSpecies>
+      <species id="A1" multi:speciesType="AType">
+        <multi:listOfOutwardBindingSites>
+          <multi:outwardBindingSite multi:component="x" multi:bindingStatus="unbound"/>
+        </multi:listOfOutwardBindingSites>
+      </species>
+      <species id="A2" multi:speciesType="AType">
+        <multi:listOfOutwardBindingSites>
+          <multi:outwardBindingSite multi:component="x" multi:bindingStatus="unbound"/>
+        </multi:listOfOutwardBindingSites>
+      </species>
+      <species id="AA" multi:speciesType="AAType"/>
+    </listOfSpecies>
+    <listOfReactions>
+      <multi:intraSpeciesReaction id="associate" reversible="false">
+        <listOfReactants>
+          <speciesReference species="A1"/>
+          <speciesReference species="A2"/>
+        </listOfReactants>
+        <listOfProducts><speciesReference species="AA"/></listOfProducts>
+      </multi:intraSpeciesReaction>
+    </listOfReactions>
+    <multi:listOfSpeciesTypes>
+      <multi:bindingSiteSpeciesType multi:id="xType"/>
+      <multi:speciesType multi:id="AType" multi:name="A">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="x" multi:speciesType="xType"/>
+        </multi:listOfSpeciesTypeInstances>
+      </multi:speciesType>
+      <multi:speciesType multi:id="AAType" multi:name="AA">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="a1" multi:speciesType="AType"/>
+          <multi:speciesTypeInstance multi:id="a2" multi:speciesType="AType"/>
+        </multi:listOfSpeciesTypeInstances>
+      </multi:speciesType>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+    result = parse_multi_package(valid)
+    assert result.executable is True
+    assert not any("must be a two-reactant" in w.message for w in result.warnings)
+
+    invalid = valid.replace(
+        '<multi:intraSpeciesReaction id="associate" reversible="false">',
+        '<multi:intraSpeciesReaction id="transform" reversible="false">',
+    ).replace(
+        """        <listOfReactants>
+          <speciesReference species="A1"/>
+          <speciesReference species="A2"/>
+        </listOfReactants>
+        <listOfProducts><speciesReference species="AA"/></listOfProducts>""",
+        """        <listOfReactants><speciesReference species="A1"/></listOfReactants>
+        <listOfProducts><speciesReference species="AA"/></listOfProducts>""",
+    )
+    rejected = parse_multi_package(invalid)
+    assert rejected.executable is False
+    assert any("must be a two-reactant" in w.message for w in rejected.warnings)
 
 
 def test_multi_compartment_reference_overrides_species_reference_compartment():
@@ -477,6 +541,106 @@ def test_multi_unprefixed_attributes_on_package_elements_follow_spec_rules():
 
     assert result.executable is True
     assert not any("must use the Multi namespace" in w.message for w in result.warnings)
+
+
+def test_multi_empty_optional_type_list_does_not_block_core_model_import():
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      multi:required="true">
+  <model id="core_only">
+    <listOfSpecies><species id="A" name="A()"/></listOfSpecies>
+  </model>
+</sbml>"""
+
+    result = parse_multi_package(xml)
+
+    assert result.present is True
+    assert result.executable is True
+    assert not any(warning.severity == "dropped" for warning in result.warnings)
+
+
+def test_multi_allows_state_features_and_in_species_bonds_on_one_species_type():
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      multi:required="true">
+  <model id="feature_and_bond">
+    <listOfSpecies><species id="A0" multi:speciesType="AType"/></listOfSpecies>
+    <multi:listOfSpeciesTypes>
+      <multi:bindingSiteSpeciesType multi:id="xType"/>
+      <multi:bindingSiteSpeciesType multi:id="yType"/>
+      <multi:speciesType multi:id="AType" multi:name="A">
+        <multi:listOfSpeciesFeatureTypes>
+          <multi:speciesFeatureType multi:id="state" multi:occur="1">
+            <multi:listOfPossibleSpeciesFeatureValues>
+              <multi:possibleSpeciesFeatureValue multi:id="on"/>
+            </multi:listOfPossibleSpeciesFeatureValues>
+          </multi:speciesFeatureType>
+        </multi:listOfSpeciesFeatureTypes>
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="x1" multi:speciesType="xType"/>
+          <multi:speciesTypeInstance multi:id="x2" multi:speciesType="yType"/>
+        </multi:listOfSpeciesTypeInstances>
+        <multi:listOfInSpeciesTypeBonds>
+          <multi:inSpeciesTypeBond multi:bindingSite1="x1" multi:bindingSite2="x2"/>
+        </multi:listOfInSpeciesTypeBonds>
+      </multi:speciesType>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+
+    result = parse_multi_package(xml)
+
+    assert result.executable is True
+    assert result.type_patterns["AType"] == "A(state~on,xType!1,yType!1)"
+
+
+def test_multi_rejects_same_binding_type_bonds_and_anonymous_reference_cycles():
+    same_type = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      multi:required="true">
+  <model id="same_binding_type">
+    <listOfSpecies><species id="A0" multi:speciesType="AType"/></listOfSpecies>
+    <multi:listOfSpeciesTypes>
+      <multi:bindingSiteSpeciesType multi:id="xType"/>
+      <multi:speciesType multi:id="AType" multi:name="A">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="x1" multi:speciesType="xType"/>
+          <multi:speciesTypeInstance multi:id="x2" multi:speciesType="xType"/>
+        </multi:listOfSpeciesTypeInstances>
+        <multi:listOfInSpeciesTypeBonds>
+          <multi:inSpeciesTypeBond multi:bindingSite1="x1" multi:bindingSite2="x2"/>
+        </multi:listOfInSpeciesTypeBonds>
+      </multi:speciesType>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+    rejected = parse_multi_package(same_type)
+    assert rejected.executable is False
+    assert any("same type" in warning.message for warning in rejected.warnings)
+
+    cycle = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      multi:required="true">
+  <model id="anonymous_cycle">
+    <listOfCompartments>
+      <compartment id="c1" multi:isType="false">
+        <multi:listOfCompartmentReferences>
+          <multi:compartmentReference multi:compartment="c2"/>
+        </multi:listOfCompartmentReferences>
+      </compartment>
+      <compartment id="c2" multi:isType="false">
+        <multi:listOfCompartmentReferences>
+          <multi:compartmentReference multi:compartment="c1"/>
+        </multi:listOfCompartmentReferences>
+      </compartment>
+    </listOfCompartments>
+    <multi:listOfSpeciesTypes>
+      <multi:speciesType multi:id="AType" multi:name="A"/>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+    cycle_result = parse_multi_package(cycle)
+    assert any("contain a cycle" in warning.message for warning in cycle_result.warnings)
 
 
 def test_multi_and_sublist_is_flattened_but_or_sublist_fails_closed():
@@ -681,17 +845,12 @@ def test_cpp_sbml_multi_writer_roundtrip_is_libsbml_consistent(tmp_path):
     assert document.checkInternalConsistency() == 0
     result = parse_multi_package(outputs[0].read_text())
     assert result.present is True
-    if 'multi:required="true"' in outputs[0].read_text():
-        if result.executable:
-            assert not any(warning.severity == "dropped" for warning in result.warnings)
-        else:
-            assert any(
-                "without a Multi speciesType" in warning.message
-                for warning in result.warnings
-            )
-    else:
-        assert result.executable is False
-        assert any('required="false"' in warning.message for warning in result.warnings)
+    output_text = outputs[0].read_text()
+    assert 'multi:required="true"' in output_text
+    assert "multi:listOfOutwardBindingSites" in output_text
+    assert 'multi:bindingStatus="unbound"' in output_text
+    assert result.executable is True
+    assert not any(warning.severity == "dropped" for warning in result.warnings)
 
 
 def test_reconstructed_sbml_multi_model_runs_in_independent_nfsim(tmp_path):

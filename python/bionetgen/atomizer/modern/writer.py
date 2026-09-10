@@ -2855,6 +2855,16 @@ def _reaction_pattern(
     model: SBMLModel,
     compartment_override: Optional[str] = None,
 ) -> str:
+    multi_pattern = model.multi_species_patterns.get(species_id)
+    if model.multi_executable and multi_pattern:
+        try:
+            structure = read_from_string(multi_pattern)
+        except (TypeError, ValueError):
+            structure = None
+        if structure is not None:
+            if compartment_override:
+                structure.add_compartment(standardize_name(compartment_override))
+            return _pattern(structure)
     entry = sct.entries.get(species_id)
     species = model.species.get(species_id)
     if entry is not None:

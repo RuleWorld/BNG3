@@ -21,8 +21,9 @@ namespace bng::io {
  * - <multi:bindingSiteSpeciesType> -- binding site definitions
  * - Species defined as <multi:speciesType> references
  * - Core reactions reference Multi pattern species
- * - Patterns that need a richer hierarchy remain core species names; the
- *   modern importer reports those as non-executable instead of guessing.
+ * - Rule-pattern species remain core species objects because Multi v1 has no
+ *   reaction-rule vocabulary; the modern importer reconstructs parseable BNGL
+ *   pattern names and rejects anything it cannot represent exactly.
  *
  * Reference:
  * - BNG2/bng2/Perl2/BNGOutput.pm::writeSBMLMulti()

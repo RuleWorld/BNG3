@@ -1,5 +1,6 @@
 #include "SbmlMultiWriter.hpp"
 
+#include <algorithm>
 #include <sstream>
 #include <cctype>
 #include <utility>
@@ -263,15 +264,35 @@ std::string SbmlMultiWriter::writeSeedSpecies(const ast::Model& model) {
             return model.getParameters().evaluate(name);
         }, 0.0);
 
-        // Try to match species to a molecule type for multi:speciesType reference
-        std::string speciesTypeRef;
+        // A single-molecule seed can carry its concrete states and outward
+        // binding status in the Multi vocabulary.  Keep richer complexes as
+        // core pattern names: Multi v1 has no reaction-rule element and the
+        // importer will reconstruct them only when the BNGL name is valid.
         const std::string& pattern = seed.getPattern();
-        for (const auto& mt : model.getMoleculeTypes()) {
-            if (pattern.find(mt.getName()) != std::string::npos) {
-                speciesTypeRef = "st_" + makeValidSBMLId(mt.getName());
-                break;
+        const auto& graph = seed.getGraph();
+        std::vector<const BNGcore::Node*> moleculeNodes;
+        std::vector<const BNGcore::Node*> componentNodes;
+        for (auto node = graph.begin(); node != graph.end(); ++node) {
+            const auto& nodeType = (*node)->get_type();
+            if (nodeType < BNGcore::COMPONENT_NODE_TYPE) {
+                componentNodes.push_back(*node);
+            } else if (nodeType < BNGcore::ENTITY_NODE_TYPE) {
+                moleculeNodes.push_back(*node);
             }
         }
+
+        const ast::MoleculeType* moleculeType = nullptr;
+        if (moleculeNodes.size() == 1) {
+            for (const auto& candidate : model.getMoleculeTypes()) {
+                if (candidate.getName() == moleculeNodes.front()->get_type().get_type_name()) {
+                    moleculeType = &candidate;
+                    break;
+                }
+            }
+        }
+        const std::string speciesTypeRef = moleculeType == nullptr
+            ? std::string()
+            : "st_" + makeValidSBMLId(moleculeType->getName());
 
         sbml << "      <species id=\"" << speciesId
              << "\" name=\"" << escapeXml(pattern)
@@ -289,7 +310,85 @@ std::string SbmlMultiWriter::writeSeedSpecies(const ast::Model& model) {
             sbml << " multi:speciesType=\"" << speciesTypeRef << "\"";
         }
 
-        sbml << "/>\n";
+        std::vector<std::string> stateFeatures;
+        std::vector<std::string> outwardSites;
+        if (moleculeType != nullptr) {
+            std::vector<std::size_t> componentIndexes;
+            for (const auto* componentNode : componentNodes) {
+                const auto componentName = componentNode->get_type().get_type_name();
+                std::size_t componentIndex = moleculeType->getComponents().size();
+                for (std::size_t index = 0; index < moleculeType->getComponents().size(); ++index) {
+                    if (moleculeType->getComponents()[index].name != componentName) {
+                        continue;
+                    }
+                    if (std::find(componentIndexes.begin(), componentIndexes.end(), index) ==
+                        componentIndexes.end()) {
+                        componentIndex = index;
+                        break;
+                    }
+                }
+                if (componentIndex >= moleculeType->getComponents().size()) {
+                    continue;
+                }
+                componentIndexes.push_back(componentIndex);
+                const auto& component = moleculeType->getComponents()[componentIndex];
+                const auto stateText = componentNode->get_state().get_BNG2_string();
+                if (!component.allowedStates.empty() && stateText.size() > 1 &&
+                    stateText.front() == '~' && stateText.substr(1) != "?") {
+                    const auto state = stateText.substr(1);
+                    if (std::find(component.allowedStates.begin(),
+                                  component.allowedStates.end(), state) !=
+                        component.allowedStates.end()) {
+                        const auto featureId = "st_" + makeValidSBMLId(moleculeType->getName()) +
+                            "_" + makeValidSBMLId(component.name) + "_" +
+                            std::to_string(componentIndex + 1);
+                        const auto valueId = featureId + "_" + makeValidSBMLId(state);
+                        stateFeatures.push_back(
+                            "        <multi:speciesFeature multi:speciesFeatureType=\"" +
+                            featureId + "\" multi:occur=\"1\"><multi:listOfSpeciesFeatureValues>"
+                            "<multi:speciesFeatureValue multi:value=\"" + valueId +
+                            "\"/></multi:listOfSpeciesFeatureValues></multi:speciesFeature>\n");
+                    }
+                }
+                if (component.allowedStates.empty()) {
+                    std::string bindingStatus;
+                    for (auto edge = componentNode->edges_out_begin();
+                         edge != componentNode->edges_out_end(); ++edge) {
+                        if ((*edge)->get_type() != BNGcore::BOND_NODE_TYPE) {
+                            continue;
+                        }
+                        const auto bond = (*edge)->get_state().get_BNG2_string();
+                        if (bond == "!+") bindingStatus = "bound";
+                        else if (bond == "!?") bindingStatus = "either";
+                        else if (bond == "!-") bindingStatus = "unbound";
+                    }
+                    if (!bindingStatus.empty()) {
+                        const auto componentId = "st_" + makeValidSBMLId(moleculeType->getName()) +
+                            "_component_" + std::to_string(componentIndex + 1);
+                        outwardSites.push_back(
+                            "        <multi:outwardBindingSite multi:component=\"" +
+                            componentId + "\" multi:bindingStatus=\"" + bindingStatus +
+                            "\"/>\n");
+                    }
+                }
+            }
+        }
+        if (stateFeatures.empty() && outwardSites.empty()) {
+            sbml << "/>\n";
+        } else {
+            sbml << ">\n";
+            if (!stateFeatures.empty()) {
+                sbml << "        <multi:listOfSpeciesFeatures>\n";
+                for (const auto& feature : stateFeatures) sbml << feature;
+                sbml << "        </multi:listOfSpeciesFeatures>\n";
+            }
+            if (!outwardSites.empty()) {
+                sbml << "        <multi:listOfOutwardBindingSites>\n";
+                for (const auto& site : outwardSites) sbml << site;
+                sbml << "        </multi:listOfOutwardBindingSites>\n";
+            }
+            sbml << "      </species>\n";
+        }
     }
 
     // Reaction-rule patterns become ordinary core species references.  This
@@ -364,8 +463,9 @@ std::string SbmlMultiWriter::writeReactionRules(const ast::Model& model) {
 
         // Pattern species are emitted by writeSeedSpecies with deterministic
         // ids.  Simple patterns receive Multi speciesType references; richer
-        // patterns remain core species names and the modern importer fails
-        // closed rather than treating that name as complete Multi semantics.
+        // patterns remain core species names because Multi v1 has no rule
+        // element.  The modern importer reconstructs these only when the name
+        // is a valid BNGL pattern.
         if (!rule.getReactants().empty()) {
             sbml << "        <listOfReactants>\n";
             for (std::size_t i = 0; i < rule.getReactants().size(); ++i) {
