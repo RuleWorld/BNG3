@@ -244,7 +244,86 @@ def test_playground_multi_detects_deep_hierarchy_without_flattening():
     assert any(
         "multi-layer hierarchy" in warning.message for warning in result.warnings
     )
-    assert "complex" in result.warnings[0].message
+    assert "boundaries cannot be inferred safely" in result.warnings[0].message
+
+
+def test_multi_required_deep_hierarchy_fails_closed_instead_of_flattening():
+    xml = """<?xml version="1.0"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      multi:required="true">
+  <model id="deep_required">
+    <listOfSpecies>
+      <species id="complex" multi:speciesType="complexType"/>
+    </listOfSpecies>
+    <multi:listOfSpeciesTypes>
+      <multi:bindingSiteSpeciesType multi:id="bst_1" multi:name="site"/>
+      <multi:speciesType multi:id="mol_1" multi:name="mol_1">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="site_1" multi:speciesType="bst_1"/>
+        </multi:listOfSpeciesTypeInstances>
+      </multi:speciesType>
+      <multi:speciesType multi:id="cps_1" multi:name="cps_1">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="mol_instance" multi:speciesType="mol_1"/>
+        </multi:listOfSpeciesTypeInstances>
+      </multi:speciesType>
+      <multi:speciesType multi:id="complexType" multi:name="complex">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="cps_instance" multi:speciesType="cps_1"/>
+        </multi:listOfSpeciesTypeInstances>
+      </multi:speciesType>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+
+    result = parse_multi_package(xml)
+
+    assert result.deep is True
+    assert result.executable is False
+    assert result.bngl_molecule_types == []
+    assert any(
+        warning.severity == "dropped"
+        and "boundaries cannot be inferred safely" in warning.message
+        for warning in result.warnings
+    )
+
+
+def test_multi_repeated_features_on_binding_site_fail_closed():
+    xml = """<?xml version="1.0"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      multi:required="true">
+  <model id="repeated_binding_site_feature">
+    <listOfSpecies><species id="a0" multi:speciesType="aType"/></listOfSpecies>
+    <multi:listOfSpeciesTypes>
+      <multi:bindingSiteSpeciesType multi:id="siteType" multi:name="site">
+        <multi:listOfSpeciesFeatureTypes>
+          <multi:speciesFeatureType multi:id="state" multi:occur="2">
+            <multi:listOfPossibleSpeciesFeatureValues>
+              <multi:possibleSpeciesFeatureValue multi:id="on"/>
+              <multi:possibleSpeciesFeatureValue multi:id="off"/>
+            </multi:listOfPossibleSpeciesFeatureValues>
+          </multi:speciesFeatureType>
+        </multi:listOfSpeciesFeatureTypes>
+      </multi:bindingSiteSpeciesType>
+      <multi:speciesType multi:id="aType" multi:name="A">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="site" multi:speciesType="siteType"/>
+        </multi:listOfSpeciesTypeInstances>
+      </multi:speciesType>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+
+    result = parse_multi_package(xml)
+
+    assert result.executable is False
+    assert any(
+        warning.severity == "dropped"
+        and "repeated speciesFeature occurrences" in warning.message
+        for warning in result.warnings
+    )
 
 
 def test_playground_multi_reports_missing_species_type_list():
@@ -528,13 +607,13 @@ def test_multi_repeated_feature_occurrences_and_numeric_values_are_executable():
     assert result.species_patterns["A0"] == "A(state_1~U,state_2~X)"
 
 
-def test_multi_unprefixed_attributes_on_package_elements_are_rejected():
+def test_multi_unprefixed_attributes_on_package_elements_are_spec_valid():
     xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
       xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
       multi:required="true">
   <model id="unprefixed_multi">
     <listOfSpecies>
-      <species id="A0" multi:speciesType="AType" initialAmount="1"/>
+          <species id="A0" multi:speciesType="AType"/>
     </listOfSpecies>
     <multi:listOfSpeciesTypes>
       <multi:bindingSiteSpeciesType id="xType" name="x"/>
@@ -549,8 +628,9 @@ def test_multi_unprefixed_attributes_on_package_elements_are_rejected():
 
     result = parse_multi_package(xml)
 
-    assert result.executable is False
-    assert any("must use the Multi namespace" in w.message for w in result.warnings)
+    assert result.executable is True
+    assert result.type_patterns["AType"] == "A(x)"
+    assert not any("must use the Multi namespace" in w.message for w in result.warnings)
 
 
 def test_multi_empty_optional_type_list_does_not_block_core_model_import():
@@ -1522,6 +1602,97 @@ def test_multi_mathml_ci_extensions_are_validated_and_reconstructed():
     bngl, _ = generate_bngl(model, sct, molecule_types, get_seed_species(sct, model))
     assert "Molecules __multi_sum_A0" in bngl
     assert "__multi_sum_A0 + p" in bngl
+
+
+def test_multi_mathml_species_reference_compartment_amount_fails_closed():
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      multi:required="true">
+  <model id="mathml_compartment_reference">
+    <listOfCompartments>
+      <compartment id="c1" size="1"/>
+      <compartment id="c2" size="1">
+        <multi:listOfCompartmentReferences>
+          <multi:compartmentReference multi:id="inside" multi:compartment="c2"/>
+        </multi:listOfCompartmentReferences>
+      </compartment>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="A0" compartment="c1" multi:speciesType="AType"/>
+    </listOfSpecies>
+    <listOfReactions>
+      <reaction id="r">
+        <listOfReactants><speciesReference id="r1" species="A0"/></listOfReactants>
+        <listOfProducts>
+          <speciesReference id="p1" species="A0" multi:compartmentReference="inside"/>
+        </listOfProducts>
+        <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+          <ci multi:speciesReference="p1">A0</ci>
+        </math></kineticLaw>
+      </reaction>
+    </listOfReactions>
+    <multi:listOfSpeciesTypes>
+      <multi:speciesType multi:id="AType" multi:name="A"/>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+
+    result = parse_multi_package(xml)
+
+    assert result.executable is False
+    assert any(
+        "reference-specific amount is not representable" in warning.message
+        for warning in result.warnings
+    )
+
+
+def test_multi_mathml_species_feature_count_fails_closed():
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      multi:required="true">
+  <model id="mathml_feature_count">
+    <listOfSpecies>
+      <species id="A0" multi:speciesType="AType">
+        <multi:listOfSpeciesFeatures>
+          <multi:speciesFeature multi:id="sf" multi:speciesFeatureType="state"
+                                multi:occur="1">
+            <multi:listOfSpeciesFeatureValues>
+              <multi:speciesFeatureValue multi:value="on"/>
+            </multi:listOfSpeciesFeatureValues>
+          </multi:speciesFeature>
+        </multi:listOfSpeciesFeatures>
+      </species>
+    </listOfSpecies>
+    <listOfReactions>
+      <reaction id="r">
+        <listOfReactants><speciesReference id="r1" species="A0"/></listOfReactants>
+        <listOfProducts><speciesReference id="p1" species="A0"/></listOfProducts>
+        <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+          <ci multi:speciesReference="r1">sf</ci>
+        </math></kineticLaw>
+      </reaction>
+    </listOfReactions>
+    <multi:listOfSpeciesTypes>
+      <multi:speciesType multi:id="AType" multi:name="A">
+        <multi:listOfSpeciesFeatureTypes>
+          <multi:speciesFeatureType multi:id="state" multi:occur="1">
+            <multi:listOfPossibleSpeciesFeatureValues>
+              <multi:possibleSpeciesFeatureValue multi:id="on"/>
+            </multi:listOfPossibleSpeciesFeatureValues>
+          </multi:speciesFeatureType>
+        </multi:listOfSpeciesFeatureTypes>
+      </multi:speciesType>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+
+    result = parse_multi_package(xml)
+
+    assert result.executable is False
+    assert any(
+        "feature-count rate laws are not representable" in warning.message
+        for warning in result.warnings
+    )
 
 
 def test_multi_invalid_xml_fails_closed_with_diagnostic():

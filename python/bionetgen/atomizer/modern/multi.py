@@ -1040,6 +1040,18 @@ def _flatten_type(
                 continue
             if not target.is_binding_site:
                 continue
+            if any(
+                occurrence > 1 for occurrence in target.feature_occurs.values()
+            ):
+                warnings.append(
+                    _warning(
+                        f'Multi binding-site speciesType "{instance.type_id}" '
+                        "contains repeated speciesFeature occurrences; a BNGL "
+                        "binding-site component cannot represent those nested "
+                        "feature instances without changing the component graph.",
+                        "dropped",
+                    )
+                )
             if instance.compartment_reference:
                 resolved = (
                     (compartment_references or {})
@@ -1949,22 +1961,27 @@ def _validate_multi_markup(
                             f"Multi {local}."
                         )
                 elif key_namespace == "":
+                    # Multi attributes on package-defined elements may be
+                    # unqualified or explicitly in the Multi namespace.
+                    # Attributes added to SBML Core/MathML elements are the
+                    # exception and are required to use the Multi namespace.
                     unqualified_allowed = (
                         _INTRA_REACTION_CORE_ATTRIBUTES
                         if local == "intraSpeciesReaction"
-                        else set()
+                        else allowed
                     )
                     if key_local not in unqualified_allowed:
                         mark(
                             f'Multi attribute "{key_local}" on {local} must '
                             "use the Multi namespace."
                         )
-                    elif local == "intraSpeciesReaction":
-                        if key_local == "id" and not _is_sid(str(element.attrib[key])):
-                            mark(
-                                f'Core reaction id "{element.attrib[key]}" has '
-                                "invalid SId syntax."
-                            )
+                    else:
+                        validate_value(
+                            element,
+                            key_local,
+                            str(element.attrib[key]),
+                            key_namespace,
+                        )
                 else:
                     mark(
                         f'Attribute "{key_local}" on Multi element {local} '
@@ -2947,20 +2964,22 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
         )
         for species_type in types.values()
     )
-    if deep_hierarchy and not package_valid:
-        # Invalid/optional packages cannot be safely flattened: a core-only
-        # consumer is allowed to ignore Multi, so avoid manufacturing a
-        # different executable network from a structure whose package contract
-        # was not asserted by the document.
+    if deep_hierarchy:
+        # Multi permits arbitrary SpeciesType trees, but BNGL requires an
+        # explicit molecule boundary.  A deep tree (for example,
+        # complex->component->molecule->binding-site) does not provide one
+        # structurally; flattening it would silently merge or split molecules.
+        # Preserve the diagnostic and fail closed for both required and
+        # optional packages rather than manufacturing a different network.
         return MultiParseResult(
             present=True,
             deep=True,
             warnings=[
                 _warning(
                     "SBML Multi package uses a multi-layer hierarchy; molecule "
-                    "boundaries cannot be inferred safely, so complexes were not "
-                    "reconstructed.",
-                    "approximated",
+                    "boundaries cannot be inferred safely, so executable BNGL "
+                    "structures were not reconstructed.",
+                    "dropped" if package_valid else "approximated",
                 )
             ]
             + warnings,
@@ -3842,6 +3861,7 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                     )
                 )
             referenced_species = ""
+            referenced_reference = None
             if species_reference:
                 for reference in (
                     *_children(
@@ -3859,6 +3879,7 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                 ):
                     if _attribute(reference, "id") == species_reference:
                         referenced_species = _attribute(reference, "species")
+                        referenced_reference = reference
                         break
             content_is_referenced_feature = (
                 bool(referenced_species)
@@ -3886,6 +3907,34 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                         "dropped",
                     )
                 )
+            if (
+                species_reference
+                and representation not in {"sum", "numericValue"}
+                and referenced_reference is not None
+            ):
+                if content_is_referenced_feature:
+                    warnings.append(
+                        _warning(
+                            f'Reaction "{reaction_id}" MathML ci references '
+                            f'speciesFeature "{content}" through '
+                            "multi:speciesReference; feature-count rate laws "
+                            "are not representable by the BNGL writer.",
+                            "dropped",
+                        )
+                    )
+                elif _namespaced_attribute(
+                    referenced_reference, namespace, "compartmentReference"
+                ):
+                    warnings.append(
+                        _warning(
+                            f'Reaction "{reaction_id}" MathML ci uses '
+                            f'multi:speciesReference="{species_reference}" '
+                            "for a sub-compartment species reference; the "
+                            "reference-specific amount is not representable by "
+                            "the BNGL rate-law contract.",
+                            "dropped",
+                        )
+                    )
             if representation == "numericValue" and content in possible_value_owner:
                 numeric_parameter = next(
                     (
