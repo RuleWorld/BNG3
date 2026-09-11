@@ -757,8 +757,12 @@ def test_multi_scopes_local_ids_and_accepts_species_type_identifying_parent():
 
     assert result.executable is True
     assert not any("globally unique" in warning.message for warning in result.warnings)
-    assert not any("unknown component" in warning.message for warning in result.warnings)
-    assert not any("unknown identifyingParent" in warning.message for warning in result.warnings)
+    assert not any(
+        "unknown component" in warning.message for warning in result.warnings
+    )
+    assert not any(
+        "unknown identifyingParent" in warning.message for warning in result.warnings
+    )
 
 
 def test_multi_rejects_type_and_possible_value_global_id_collision():
@@ -821,8 +825,9 @@ def test_multi_rejects_species_feature_id_collision_with_species_id():
     result = parse_multi_package(xml)
 
     assert result.executable is False
-    assert any("Duplicate Multi speciesFeature id" in w.message
-               for w in result.warnings)
+    assert any(
+        "Duplicate Multi speciesFeature id" in w.message for w in result.warnings
+    )
 
 
 def test_multi_rejects_compartment_reference_id_collision_with_parent():
@@ -847,8 +852,9 @@ def test_multi_rejects_compartment_reference_id_collision_with_parent():
     result = parse_multi_package(xml)
 
     assert result.executable is False
-    assert any("Duplicate compartmentReference id" in w.message
-               for w in result.warnings)
+    assert any(
+        "Duplicate compartmentReference id" in w.message for w in result.warnings
+    )
 
 
 def test_multi_rejects_intra_species_reaction_id_collision_with_species_type():
@@ -895,8 +901,9 @@ def test_multi_rejects_intra_species_reaction_id_collision_with_species_type():
     result = parse_multi_package(xml)
 
     assert result.executable is False
-    assert any("collides with a core Model identifier" in w.message
-               for w in result.warnings)
+    assert any(
+        "collides with a core Model identifier" in w.message for w in result.warnings
+    )
 
 
 def test_multi_positive_initial_pool_requires_fully_defined_sites():
@@ -921,7 +928,9 @@ def test_multi_positive_initial_pool_requires_fully_defined_sites():
     result = parse_multi_package(xml)
 
     assert result.executable is False
-    assert any("positive initial pool" in warning.message for warning in result.warnings)
+    assert any(
+        "positive initial pool" in warning.message for warning in result.warnings
+    )
 
 
 def test_multi_initial_assignment_initializes_species_for_definition_checks():
@@ -953,7 +962,9 @@ def test_multi_initial_assignment_initializes_species_for_definition_checks():
 
     assert result.seed_patterns == [("a0", "aType(siteType)")]
     assert result.executable is False
-    assert any("positive initial pool" in warning.message for warning in result.warnings)
+    assert any(
+        "positive initial pool" in warning.message for warning in result.warnings
+    )
 
 
 def test_multi_initial_assignment_requires_core_target_and_mathml():
@@ -978,8 +989,13 @@ def test_multi_initial_assignment_requires_core_target_and_mathml():
     result = parse_multi_package(xml)
 
     assert result.seed_patterns == []
-    assert any("does not identify a Model element" in warning.message for warning in result.warnings)
-    assert any("missing its required MathML" in warning.message for warning in result.warnings)
+    assert any(
+        "does not identify a Model element" in warning.message
+        for warning in result.warnings
+    )
+    assert any(
+        "missing its required MathML" in warning.message for warning in result.warnings
+    )
 
 
 def test_multi_positive_initial_pool_allows_internal_species_type_bonds():
@@ -1011,7 +1027,9 @@ def test_multi_positive_initial_pool_allows_internal_species_type_bonds():
 
     assert result.executable is True
     assert result.seed_patterns == [("a0", "A(xType!1,yType!1)")]
-    assert not any("positive initial pool" in warning.message for warning in result.warnings)
+    assert not any(
+        "positive initial pool" in warning.message for warning in result.warnings
+    )
 
 
 def test_multi_scopes_repeated_feature_type_ids_by_component():
@@ -1112,8 +1130,7 @@ def test_multi_resolves_component_indexes_independent_of_declaration_order():
     assert result.executable is True
     assert result.species_patterns["x0"] == "inner(siteType)"
     assert not any(
-        "could not resolve component" in warning.message
-        for warning in result.warnings
+        "could not resolve component" in warning.message for warning in result.warnings
     )
 
 
@@ -1164,8 +1181,9 @@ def test_multi_resolves_nested_index_bonds_through_indexed_parents():
 
     assert result.executable is True
     assert result.species_patterns["x0"] == "innerA(siteAType!1).innerB(siteBType!1)"
-    assert not any("must resolve both endpoints" in warning.message
-                   for warning in result.warnings)
+    assert not any(
+        "must resolve both endpoints" in warning.message for warning in result.warnings
+    )
 
 
 def test_multi_product_component_map_ids_are_unique_across_products():
@@ -1208,8 +1226,10 @@ def test_multi_product_component_map_ids_are_unique_across_products():
     result = parse_multi_package(xml)
 
     assert result.executable is False
-    assert any("Duplicate Multi product component map id" in warning.message
-               for warning in result.warnings)
+    assert any(
+        "Duplicate Multi product component map id" in warning.message
+        for warning in result.warnings
+    )
 
 
 def test_multi_rejects_invalid_primitive_values_before_reconstruction():
@@ -1273,8 +1293,10 @@ def test_multi_rejects_duplicate_outward_binding_site_ids():
     result = parse_multi_package(xml)
 
     assert result.executable is False
-    assert any("Duplicate Multi outwardBindingSite id" in warning.message
-               for warning in result.warnings)
+    assert any(
+        "Duplicate Multi outwardBindingSite id" in warning.message
+        for warning in result.warnings
+    )
 
 
 def test_multi_reports_spec_valid_cross_compartment_component_as_nonrepresentable():
@@ -1308,7 +1330,9 @@ def test_multi_reports_spec_valid_cross_compartment_component_as_nonrepresentabl
 
     assert result.present is True
     assert result.executable is False
-    assert any("different compartment" in warning.message for warning in result.warnings)
+    assert any(
+        "different compartment" in warning.message for warning in result.warnings
+    )
 
 
 def test_multi_accepts_species_in_instance_of_species_type_compartment():
@@ -1345,8 +1369,10 @@ def test_multi_accepts_species_in_instance_of_species_type_compartment():
 
     assert result.executable is True
     assert result.species_patterns["x0"] == "A(site)@c1"
-    assert not any("conflicts with speciesType compartment" in warning.message
-                   for warning in result.warnings)
+    assert not any(
+        "conflicts with speciesType compartment" in warning.message
+        for warning in result.warnings
+    )
 
 
 def test_multi_supports_features_defined_on_binding_site_species_types():
@@ -1477,7 +1503,9 @@ def test_multi_rejects_same_binding_type_bonds_and_anonymous_reference_cycles():
   </model>
 </sbml>"""
     cycle_result = parse_multi_package(cycle)
-    assert any("contain a cycle" in warning.message for warning in cycle_result.warnings)
+    assert any(
+        "contain a cycle" in warning.message for warning in cycle_result.warnings
+    )
 
 
 def test_multi_and_sublist_is_flattened_but_or_sublist_fails_closed():

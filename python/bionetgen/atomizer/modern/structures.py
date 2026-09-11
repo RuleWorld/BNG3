@@ -43,10 +43,8 @@ class Component:
         self.active_state = ""
 
     def copy(self) -> "Component":
-        # ⚡ Bolt: copy.deepcopy is a significant bottleneck for small structures like Component.
-        # Since self.bonds and self.states contain primitives/strings, shallow list() copy is safe and much faster.
         result = Component(
-            self.name, self.idx, list(self.bonds), list(self.states)
+            self.name, self.idx, copy.deepcopy(self.bonds), copy.deepcopy(self.states)
         )
         result.active_state = self.active_state
         return result
@@ -317,10 +315,8 @@ class Species:
 
     def copy(self) -> "Species":
         result = Species()
-        # ⚡ Bolt: copy.deepcopy is a significant bottleneck.
-        # Using shallow list() copy since these are lists of primitives/tuples.
-        result.bond_numbers = list(self.bond_numbers)
-        result.bonds = list(self.bonds)
+        result.bond_numbers = copy.deepcopy(self.bond_numbers)
+        result.bonds = copy.deepcopy(self.bonds)
         result.identifier = self.identifier
         result.idx = self.idx
         result.molecules = [molecule.copy() for molecule in self.molecules]
