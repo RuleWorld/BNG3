@@ -1,0 +1,3 @@
+## 2024-05-24 - Atomizer object copy optimization
+**Learning:** In the `python/bionetgen/atomizer` directory, `copy.deepcopy()` was a significant performance bottleneck for copying `Component`, `Molecule`, and `Species` objects because they often just contain primitive types or lists of primitive types (like bonds, states). Additionally, iterating through the list and using `.append` in a for-loop was slow.
+**Action:** Replace `copy.deepcopy()` with shallow `list()` copies when deep copies are unnecessary, and replace manual for-loop appends with list comprehensions for object arrays, which is significantly faster in Python.
