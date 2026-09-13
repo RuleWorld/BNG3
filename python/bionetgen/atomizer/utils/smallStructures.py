@@ -669,9 +669,7 @@ class Component:
         self.activeState = ""
 
     def copy(self):
-        component = Component(
-            self.name, self.idx, list(self.bonds), list(self.states)
-        )
+        component = Component(self.name, self.idx, list(self.bonds), list(self.states))
         component.activeState = self.activeState
         return component
 

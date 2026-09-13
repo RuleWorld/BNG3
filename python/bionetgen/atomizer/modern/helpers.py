@@ -33,8 +33,10 @@ def deepCopy(value: T) -> T:
 
     if isinstance(value, (int, float, str, bool, type(None))):
         return value
-    if isinstance(value, list) and all(isinstance(x, (int, float, str, bool, type(None))) for x in value):
-        return list(value) # type: ignore
+    if isinstance(value, list) and all(
+        isinstance(x, (int, float, str, bool, type(None))) for x in value
+    ):
+        return list(value)  # type: ignore
     return copy.deepcopy(value)
 
 

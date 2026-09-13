@@ -43,9 +43,7 @@ class Component:
         self.active_state = ""
 
     def copy(self) -> "Component":
-        result = Component(
-            self.name, self.idx, list(self.bonds), list(self.states)
-        )
+        result = Component(self.name, self.idx, list(self.bonds), list(self.states))
         result.active_state = self.active_state
         return result
 
