@@ -171,9 +171,11 @@ PatternIR readPattern(std::istream& in) {
         const auto n = readPod<std::uint64_t>(in);
         if (n > (1ULL << 30)) throw std::runtime_error(std::string("NFIR cache invalid ") + label + " length");
         pairs.reserve(static_cast<std::size_t>(n));
-        for (std::uint64_t i = 0; i < n; ++i)
-            pairs.emplace_back(static_cast<std::size_t>(readPod<std::uint64_t>(in)),
-                               static_cast<std::size_t>(readPod<std::uint64_t>(in)));
+        for (std::uint64_t i = 0; i < n; ++i) {
+            const auto first = readPod<std::uint64_t>(in);
+            const auto second = readPod<std::uint64_t>(in);
+            pairs.emplace_back(static_cast<std::size_t>(first), static_cast<std::size_t>(second));
+        }
     };
     readPairVector(pattern.aliases, "alias");
     readPairVector(pattern.connected_to, "connected-to");
