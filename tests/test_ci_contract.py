@@ -100,9 +100,9 @@ def test_formal_workflow_runs_pinned_kernel_and_nfnext_contracts():
     assert "leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9" in workflow
     assert "lake-package-directory: formal/lean" in workflow
     assert "auto-config: false" in workflow
-    assert (REPO / "formal" / "lean" / "lean-toolchain").read_text(encoding="utf-8").strip() == (
-        "leanprover/lean4:v4.33.1"
-    )
+    assert (REPO / "formal" / "lean" / "lean-toolchain").read_text(
+        encoding="utf-8"
+    ).strip() == ("leanprover/lean4:v4.33.1")
     assert "scripts/static_validate.py" in workflow
     assert "scripts/run_nfnext_contract.sh" in workflow
     assert "lake build" in workflow
@@ -197,12 +197,16 @@ def test_msvc_parser_headers_clear_windows_macros_before_antlr():
     assert re.search(r"#\s*undef\s+FALSE", compat)
     assert re.search(r"#\s*undef\s+constant", compat)
 
-    source = (REPO / "cpp" / "nfsim" / "NFinput" / "NFinput_fromAst.cpp").read_text(
-        encoding="utf-8"
-    )
-    parser_include = source.index('#include "PatternGraphBuilder.hpp"')
-    prefix = source[:parser_include]
-    assert '#include "parser/antlr_compat.hpp"' in prefix
+    generated_dir = REPO / "cpp" / "parser" / "generated"
+    generated_headers = sorted(generated_dir.glob("*.h"))
+    assert generated_headers
+    for header in generated_headers:
+        source = header.read_text(encoding="utf-8")
+        if '#include "antlr4-runtime.h"' not in source:
+            continue
+        compat_include = source.index('#include "../antlr_compat.hpp"')
+        runtime_include = source.index('#include "antlr4-runtime.h"')
+        assert compat_include < runtime_include, header.name
 
 
 def test_corpus_parse_inventory_emits_source_and_binary_provenance():
@@ -449,8 +453,13 @@ def test_reference_ci_jobs_run_the_full_corpus_without_exclusions():
     assert "--skip-profile" not in validation_job
     assert "--skip-file" not in weekly_job
     assert "--skip-profile" not in weekly_job
-    assert "--validation-manifest tests/validation/validation_manifest.json" in validation_job
-    assert "--validation-manifest tests/validation/validation_manifest.json" in weekly_job
+    assert (
+        "--validation-manifest tests/validation/validation_manifest.json"
+        in validation_job
+    )
+    assert (
+        "--validation-manifest tests/validation/validation_manifest.json" in weekly_job
+    )
 
 
 def test_validate_loads_the_committed_reference_exclusion_profile():

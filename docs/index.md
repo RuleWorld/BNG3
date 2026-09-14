@@ -2,7 +2,8 @@
 
 For the live implementation snapshot and current validation status, start with
 [`CURRENT_PROGRESS.md`](CURRENT_PROGRESS.md). The convergence checklist is the
-release-completion authority.
+release-completion authority. Historical migration reports are grouped under
+[`archive/reports/`](archive/reports/).
 
 ## Overview
 
@@ -65,3 +66,5 @@ df = result.to_dataframe()
 - [Migration Guide](migration_guide.md) — Migrating from PyBioNetGen 1.x/2.x
 - [Architecture](architecture.md) — Internal design and C++ backend
 - [Contributing](contributing.md) — Development setup and guidelines
+- [Validation harness](../tests/validation/README.md) — Full-corpus commands,
+  references, and oracle boundaries

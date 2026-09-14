@@ -178,6 +178,22 @@ pip install -e .
 
 If you only want the Python package, `pip install -e .` is usually enough; the build system compiles the extension as needed.
 
+## Validation
+
+The full local validation command compares network fixtures with committed
+independent BNG2 references and runs explicit action-output contracts. It must
+finish with 71 passed and zero failures, errors, or skips:
+
+```bash
+python scripts/validate.py --bng-cpp build/cpp/bng_cpp --strict-references \
+  --validation-manifest tests/validation/validation_manifest.json
+```
+
+See [`tests/validation/README.md`](tests/validation/README.md) for the oracle
+boundaries and [`docs/CURRENT_PROGRESS.md`](docs/CURRENT_PROGRESS.md) for
+current evidence. Historical migration reports are organized under
+[`docs/archive/reports/`](docs/archive/reports/).
+
 ## Citation
 
 Please cite BioNetGen when using the platform in publications. See [docs/index.md](docs/index.md) and the project website for current citation information.

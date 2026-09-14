@@ -1,6 +1,6 @@
 # BNG3 Unification Spec — Agent Work-Orders + Validation Framework
 
-> Live status is tracked in [`docs/CURRENT_PROGRESS.md`](docs/CURRENT_PROGRESS.md)
+> Live status is tracked in [`CURRENT_PROGRESS.md`](CURRENT_PROGRESS.md)
 > and the dated convergence checklist. The work orders below are the
 > capability contract; their historical “current state” text is not release
 > evidence unless refreshed on the exact final tree.

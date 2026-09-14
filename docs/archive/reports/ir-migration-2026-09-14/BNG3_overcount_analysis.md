@@ -1,7 +1,7 @@
 # Over-count root cause — analysis and experiment
 
 > This remains a focused historical analysis note. See
-> [`docs/CURRENT_PROGRESS.md`](docs/CURRENT_PROGRESS.md) for the live branch
+> [`CURRENT_PROGRESS.md`](../../../CURRENT_PROGRESS.md) for the live branch
 > and verification state; no unverified current-tree result should be inferred
 > from the experiment record below.
 

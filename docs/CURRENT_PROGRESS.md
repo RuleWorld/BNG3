@@ -25,6 +25,44 @@ The cumulative import retained the three supplied snapshots, with the
 Archive reports, source locks, manifests, and provenance records remain in
 place. Generated Lean build output is not part of the import.
 
+## Full-corpus CI, Windows compatibility, and repository-organization checkpoint — 2026-09-14
+
+Semantic implementation commit `78a1591422ccbe6c4a5607eb748b426bbdbc303f`
+is published on PR #10. The checkpoint closes the former full-corpus
+reference exclusions: independent BNG2 `.net` references now cover the
+previously missing network fixtures, and
+`tests/validation/validation_manifest.json` routes the six action-focused
+fixtures through explicit output contracts in `scripts/validate_actions.py`.
+The native reader also has a narrow, fail-closed legacy structured-SBML
+`atomize=>1` contract for the `plain2` fixture, and reverse local-rate scope is
+preserved during rule expansion.
+
+The live local evidence for that semantic commit is:
+
+| Gate | Result |
+| --- | --- |
+| Native CTest | `308/308` passed |
+| Full validation corpus | `71 passed, 0 failed, 0 errors, 0 skipped` |
+| Action-output contracts | `6/6` passed |
+| CI-contract tests | `26 passed` |
+| Energy Python tests | `66 passed` |
+| Black, Ruff, corpus, provenance, and exception-ledger checks | passed |
+
+The former exclusion ledger is closed with empty PR and weekly profiles. The
+historical migration reports and text metadata are organized under
+[`archive/reports/ir-migration-2026-09-14/`](archive/reports/ir-migration-2026-09-14/);
+obsolete patch snapshots and duplicate package wrappers were removed after
+their changes were applied. Handoff documents remain historical provenance,
+while this page and the convergence checklist are the live status sources.
+
+Fresh hosted checks for the final documentation/organization head remain the
+required exact-head readback. The preceding hosted head also exposed a
+Windows/MSVC-only ANTLR failure: `NFinput.cpp` could enter the runtime through
+generated visitor headers before the translation-unit compatibility include.
+Those generated headers now include `parser/antlr_compat.hpp` themselves, and
+the current local rebuild passes. Broader backend equivalence, release
+qualification, and convergence are still incomplete.
+
 ## Repairs in this checkpoint
 
 - Retain the lowering context owned by generated native graphs so graph node
@@ -38,17 +76,27 @@ place. Generated Lean build output is not part of the import.
   direct AST construction and the XML compatibility path use identical values.
 - Repair ODE observable references in functional rates and add a pinned PR
   workflow for Lean kernel, smoke, and NFnext contract checks.
+- Preserve reverse-direction local-rate scope and accept legacy action argument
+  lists for hybrid, visualization, and network-writing actions.
+- Close the validation exclusions with independent network references and
+  explicit action-output contracts; remove the old skip arguments from PR and
+  weekly validation jobs.
+- Apply the Windows SDK macro compatibility guard to every generated ANTLR
+  parser/visitor header, covering direct include paths used by the legacy NFsim
+  adapter as well as the modern parser targets.
 
 ## Verified gates
 
 | Gate | Current evidence |
 | --- | --- |
-| Native CTest | `307/307` passed after the current rebuild |
+| Native CTest | `308/308` passed after the current rebuild |
 | Python package tests | `399 passed, 28 skipped` excluding SBML import; isolated SBML test `1 passed` |
 | Validation smoke | `4 passed, 14 skipped, 178 deselected`; skips are explicit environment/reference conditions |
 | Export validation | `12 passed, 184 deselected` |
 | BNG2 structural differential | `5/5` selected models passed against locked source revision `e0a5c6d9e6c4730f66102e48d0d0a598337083e7` |
 | BNG2 broad validation subset | `11 passed, 89 skipped, 96 deselected`; this is not full Tier-P qualification |
+| Full validation corpus | `71/71` passed with `0` failures, `0` errors, and `0` skips |
+| Explicit action-output validation | `6/6` passed for the former action-focused exclusions |
 | NFsim direct/XML | `10 passed` for the selected independent NFsim gate: four direct/XML checks, four 200-run ensemble comparisons, and two fixed-seed endpoint checks |
 | Lean/NFnext local checks | static validation `36` files, NFnext contracts `18/18`; local kernel check unavailable because `lean`, `lake`, and `elan` are not installed |
 | Provenance/corpus/ledger | provenance validation, corpus validation/generation check, and zero-active-exception ledger all pass |

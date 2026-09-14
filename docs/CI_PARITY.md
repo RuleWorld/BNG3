@@ -24,12 +24,34 @@ are reproducible; macOS and Windows continue to exercise BNG3's own C++ and
 package paths. A platform-specific oracle disposition must be added here and to
 the provenance/checklist before it is described as parity evidence.
 
+## Full-corpus validation checkpoint — 2026-09-14
+
+The PR and weekly BNG validation jobs invoke `scripts/validate.py` with strict
+references and `tests/validation/validation_manifest.json`. The network corpus
+uses committed independent BNG2 `.net` references; the six action-focused
+fixtures (`ANx`, `hybrid_test`, `test_tfun`, `test_tfun_xml`,
+`test_write_sbml_multi`, and `visualize`) use explicit output contracts in
+`scripts/validate_actions.py`. The former reference-exclusion profiles are
+closed and the full local run at semantic commit `78a1591` reports `71 passed,
+0 failed, 0 errors, 0 skipped`. This closes the CI exclusion repair, not the
+broader convergence, backend-equivalence, or release gates.
+
+The preceding hosted PR head exposed a Windows/MSVC-only parser failure: the
+legacy `NFinput.cpp` include path reached generated ANTLR visitor headers before
+the translation-unit compatibility include, leaving the Windows SDK `constant`
+macro active inside ANTLR. The generated parser, visitor, and base-visitor
+headers now include `cpp/parser/antlr_compat.hpp` directly. The local native
+rebuild is green; hosted Windows and package-matrix jobs must be re-read at the
+new exact head.
+
 ## Reproducibility rules
 
 - Oracle revisions must be full lowercase Git SHAs from the provenance lock.
 - A checkout is detached at the locked revision and must be clean.
 - `BNG3_CI_STRICT_ORACLES=1` turns missing engines and empty oracle output into
-  failures in hosted parity jobs; local runs keep explicit skips for setup work.
+  failures in hosted parity jobs; broader parity jobs may retain explicit,
+  classified setup skips, while the full-corpus `ci.yml` and weekly validation
+  jobs are strict and must report zero skipped fixtures.
 - Missing engines, missing output, comparison errors, and unexpected skips fail
   the claimed parity job; summaries include source revisions and executable
   digests where the runner already provides them.
