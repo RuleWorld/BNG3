@@ -19,6 +19,15 @@ The goal covers all material in:
 
 The archival documents are retained under `docs/architecture_handoffs/`. The exact source paths, SHA-256 values, destinations, and adaptation flags are recorded in `provenance/architecture-imports.json`; imported C++ contract dispositions are recorded in `provenance/architecture-contracts.json`.
 
+## Repository organization checkpoint — 2026-09-14
+
+Historical migration reports and snapshot text metadata now live under
+`docs/archive/reports/ir-migration-2026-09-14/`. Applied patch snapshots and
+redundant package-wrapper files were removed; the adapted source, tests, and
+machine-readable provenance records remain the canonical implementation.
+The full validation repair is tracked in the live progress page and checklist,
+not in the archived handoff narratives.
+
 ## Current port
 
 - Energy compiler types and `EnergyDeltaPlan` are in `cpp/compile/` and connected to the real NFsim energy bridge.

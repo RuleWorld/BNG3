@@ -1,0 +1,24 @@
+# Created by BioNetGen UNKNOWN
+begin parameters
+    1 a              0.5  # Constant
+    2 b              100  # Constant
+    3 gamma          10  # Constant
+    4 d1             0.0005  # Constant
+    5 d0             gamma*d1  # ConstantExpression
+    6 v0             a*d1  # ConstantExpression
+    7 v1             (b*gamma)*d1  # ConstantExpression
+end parameters
+begin species
+    1 mRNA() 0
+    2 Protein() 0
+end species
+begin reactions
+    1 0 1 v0 #_R1
+    2 1 1,2 v1 #_R2
+    3 1 0 d0 #_R3
+    4 2 0 d1 #_R4
+end reactions
+begin groups
+    1 mRNA_Total           1
+    2 Protein_Total        2
+end groups

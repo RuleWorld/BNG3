@@ -91,6 +91,19 @@ TEST_CASE("PatternDescriptor distinguishes wildcard bond constraints") {
           bng::compile::BondConstraintKind::Unspecified);
 }
 
+
+TEST_CASE("PatternDescriptor parses native unbound and compartment-prefix syntax") {
+    const auto descriptor = bng::compile::Pattern::parse("@cell:A(x.,s~?)");
+    REQUIRE(descriptor.moleculeCount() == 1);
+    CHECK(descriptor.compartment() == "cell");
+    CHECK(descriptor.compartmentIsPrefix());
+    REQUIRE(descriptor.molecules().front().sites.size() == 2);
+    CHECK(descriptor.molecules().front().sites[0].bondKind ==
+          bng::compile::BondConstraintKind::Unbound);
+    CHECK(descriptor.molecules().front().sites[0].bondConstraint == "-");
+    CHECK(descriptor.stateConstraint("A", "s") == "?");
+}
+
 TEST_CASE("PatternDescriptor preserves multiple bonds on one component") {
     const auto descriptor = bng::compile::Pattern::parse(
         "A(x!1!2).B(y!1).C(z!2)");

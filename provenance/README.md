@@ -4,6 +4,11 @@ The live branch and current qualification state are summarized in
 [`../docs/CURRENT_PROGRESS.md`](../docs/CURRENT_PROGRESS.md). Provenance
 records remain pending until their stated maintainer and oracle gates are met.
 
+Historical migration reports and snapshot metadata are grouped under
+[`../docs/archive/reports/ir-migration-2026-09-14/`](../docs/archive/reports/ir-migration-2026-09-14/).
+Patch snapshots are not repository inputs; once their changes are applied,
+the source tree, tests, and machine-readable provenance records are canonical.
+
 `upstreams.lock.yml` is the machine-readable source and oracle baseline. It is
 written as JSON-compatible YAML so the repository can validate it with the
 Python standard library.

@@ -83,6 +83,52 @@ std::string stripQuotes(const std::string& text) {
     return text;
 }
 
+std::vector<std::string> parseQuotedStringList(const std::string& text,
+                                               const std::string& name) {
+    auto value = trim(text);
+    if (value.size() < 2 || value.front() != '[' || value.back() != ']') {
+        throw std::runtime_error(name + " must be a comma-separated list in square brackets");
+    }
+
+    value = value.substr(1, value.size() - 2);
+    std::vector<std::string> entries;
+    std::size_t start = 0;
+    char quote = '\0';
+    for (std::size_t i = 0; i <= value.size(); ++i) {
+        const char current = i < value.size() ? value[i] : ',';
+        if (quote != '\0') {
+            if (current == quote) {
+                quote = '\0';
+            }
+            continue;
+        }
+        if (current == '\'' || current == '"') {
+            quote = current;
+            continue;
+        }
+        if (current != ',') {
+            continue;
+        }
+
+        const auto token = trim(value.substr(start, i - start));
+        if (!token.empty()) {
+            if (token.size() < 2 ||
+                !((token.front() == '"' && token.back() == '"') ||
+                  (token.front() == '\'' && token.back() == '\''))) {
+                throw std::runtime_error(name + " entries must be quoted strings");
+            }
+            entries.push_back(stripQuotes(token));
+        } else if (!entries.empty() || i != value.size()) {
+            throw std::runtime_error(name + " must not contain empty entries");
+        }
+        start = i + 1;
+    }
+    if (quote != '\0') {
+        throw std::runtime_error(name + " contains an unterminated quoted string");
+    }
+    return entries;
+}
+
 std::string lowercase(std::string value) {
     std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
         return static_cast<char>(std::tolower(c));
@@ -3085,6 +3131,11 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 hppOpts.nSteps = static_cast<std::size_t>(parseScalarValue(nStepsText, model));
             }
 
+            const auto actionsText = readArgument(action, "actions", "");
+            if (!actionsText.empty()) {
+                hppOpts.actions = parseQuotedStringList(actionsText, "actions");
+            }
+
             engine::HybridModelGenerator gen(model, *network);
             auto genResult = gen.generate(sourcePath, hppOpts);
 
@@ -3419,7 +3470,15 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
         if (actionName == "visualize") {
             const auto vizType = lowercase(stripQuotes(readArgument(action, "type", "contactmap")));
-            const auto outputFormat = lowercase(stripQuotes(readArgument(action, "format", "gml")));
+            const auto outputFormat = lowercase(stripQuotes(
+                readArgument(action, "outType", readArgument(action, "format", "gml"))));
+            const auto suffix = stripQuotes(readArgument(action, "suffix", ""));
+            const auto optionsText = readArgument(action, "opts", "");
+            if (!optionsText.empty()) {
+                // Parse the legacy option-file list even though the native
+                // graph writers currently use their own deterministic defaults.
+                (void)parseQuotedStringList(optionsText, "visualize opts");
+            }
 
             std::string content;
             std::string extension;
@@ -3436,7 +3495,19 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                     content = io::ContactMapWriter::toGML(contactMap);
                     extension = ".gml";
                 }
-                fileSuffix = "_contact";
+                fileSuffix = "_contactmap";
+
+            } else if (vizType == "conventional") {
+                auto patternGraph = io::RulevizPatternWriter::build(model);
+                content = io::RulevizPatternWriter::toGML(patternGraph);
+                extension = ".gml";
+                fileSuffix = "_conventional";
+
+            } else if (vizType == "compact") {
+                auto operationGraph = io::RulevizOperationWriter::build(model);
+                content = io::RulevizOperationWriter::toGML(operationGraph);
+                extension = ".gml";
+                fileSuffix = "_compact";
 
             } else if (vizType == "regulatory") {
                 // Regulatory graph (requires generated network)
@@ -3449,7 +3520,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             } else if (vizType == "reaction_network") {
                 // Reaction network graph (requires generated network)
                 ensureNetwork();
-                auto rxnGraph = io::ReactionNetworkGraphWriter::build(model, *network);
+                auto rxnGraph = io::ReactionNetworkGraphWriter::build(*network);
                 content = io::ReactionNetworkGraphWriter::toGML(rxnGraph);
                 extension = ".gml";
                 fileSuffix = "_reaction_network";
@@ -3471,7 +3542,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             } else if (vizType == "process") {
                 // Bipartite process graph (requires generated network)
                 ensureNetwork();
-                auto procGraph = io::ProcessGraphWriter::build(model, *network);
+                auto procGraph = io::ProcessGraphWriter::build(*network);
                 content = io::ProcessGraphWriter::toGML(procGraph);
                 extension = ".gml";
                 fileSuffix = "_process";
@@ -3479,7 +3550,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             } else if (vizType == "rinf" || vizType == "rule_influence") {
                 // Rule influence graph (requires generated network)
                 ensureNetwork();
-                auto rinfGraph = io::RuleInfluenceGraphWriter::build(model, *network);
+                auto rinfGraph = io::RuleInfluenceGraphWriter::build(*network);
                 content = io::RuleInfluenceGraphWriter::toGML(rinfGraph);
                 extension = ".gml";
                 fileSuffix = "_rinf";
@@ -3512,6 +3583,9 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                     "visualize: unsupported visualization type '" + vizType + "'");
             }
 
+            if (!suffix.empty()) {
+                fileSuffix += "_" + suffix;
+            }
             const auto outputPath = sourcePath.parent_path() / (sourcePath.stem().string() + fileSuffix + extension);
             std::ofstream outFile(outputPath);
             if (!outFile) {
@@ -3594,7 +3668,30 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
         if (actionName == "writenetwork" || actionName == "writenet") {
             ensureNetwork();
-            writeCurrentNetwork();
+            auto prefixText = stripQuotes(readArgument(
+                action, "prefix", sourcePath.stem().string()));
+            if (prefixText.empty()) {
+                prefixText = sourcePath.stem().string();
+            }
+            std::filesystem::path outputPrefix(prefixText);
+            if (!outputPrefix.is_absolute()) {
+                outputPrefix = sourcePath.parent_path() / outputPrefix;
+            }
+            const auto suffix = stripQuotes(readArgument(action, "suffix", ""));
+            if (!suffix.empty()) {
+                outputPrefix += "_" + suffix;
+            }
+            const auto outputPath = outputPrefix.string() + ".net";
+            const bool overwrite = parseBoolean(readArgument(action, "overwrite", "0"));
+            if (!overwrite && std::filesystem::exists(outputPath)) {
+                throw std::runtime_error(
+                    "writeNetwork: file exists: " + outputPath +
+                    "; set overwrite=>1 to replace it");
+            }
+            io::NetWriterOptions options;
+            options.evaluateExpressions = parseBoolean(
+                readArgument(action, "evaluate_expressions", "1"), true);
+            writeNetworkAt(outputPath, options);
             continue;
         }
 

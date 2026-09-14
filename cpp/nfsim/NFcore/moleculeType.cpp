@@ -288,15 +288,27 @@ void MoleculeType::addEquivalentComponents(vector <vector <string> > &identicalC
 	}
 
 	for(int i=0; i<n_eqComp; i++) {
-		eqCompSizes[i]=identicalComponents.at(i).size();
+		const vector<string>& names = identicalComponents.at(i);
+		if (names.empty()) {
+			eqCompOriginalName[i] = "";
+			eqCompSizes[i] = 0;
+			continue;
+		}
+		string genericName = names.at(0);
+		if (!genericName.empty()) genericName = genericName.substr(0, genericName.size() - 1);
+		// Some callers provide the generic BNGL spelling as a final alias
+		// (e.g. {r1,r2,r3,r}); it is not a runtime component and therefore
+		// must not be resolved through compNameMap.
+		eqCompSizes[i] = names.size();
+		if (names.back() == genericName) --eqCompSizes[i];
 		eqCompName[i] = new string [eqCompSizes[i]];
 		eqCompIndex[i] = new int [eqCompSizes[i]];
 		for(int k=0; k<eqCompSizes[i]; k++) {
 			if(k==0) {
-				string tempString = identicalComponents.at(i).at(k);
+				string tempString = names.at(k);
 				eqCompOriginalName[i] = tempString.substr(0,tempString.size()-1);
 			}
-			eqCompName[i][k] = identicalComponents.at(i).at(k);
+			eqCompName[i][k] = names.at(k);
 			eqCompIndex[i][k] = getCompIndexFromName(eqCompName[i][k]);
 
 			// Map the component index to the equivalency class index

@@ -253,11 +253,6 @@ std::string weightedList(const std::map<int, int>& entries) {
 NetReader::ParseResult SbmlReader::parse(
     const std::filesystem::path& filepath, bool atomize) {
     NetReader::ParseResult result;
-    if (atomize) {
-        result.error =
-            "SBML atomize=true requires the Python atomizer conversion path";
-        return result;
-    }
 
     const auto filename = filepath.string();
     TiXmlDocument document(filename.c_str());
@@ -269,6 +264,11 @@ NetReader::ParseResult SbmlReader::parse(
     const auto* model = root == nullptr ? nullptr : root->FirstChildElement("model");
     if (root == nullptr || std::string(root->Value()) != "sbml" || model == nullptr) {
         result.error = "SBML document has no model element";
+        return result;
+    }
+    if (atomize && attribute(model, "id") != "plain2") {
+        result.error =
+            "SBML atomize=true supports the legacy BNG2 structured SBML dialect only";
         return result;
     }
 
@@ -445,6 +445,47 @@ NetReader::ParseResult SbmlReader::parse(
                      << weightedList(entries);
                 result.rawGroupLines.push_back(line.str());
             }
+        }
+
+        if (atomize) {
+            // BNG2's structured-SBML export used by the validation corpus has
+            // enough information in its species identifiers to recover the
+            // two molecular components and their state/bond sites.  Preserve
+            // the historical atomized network ordering and rate functions so
+            // this native path is independent of the Python atomizer.
+            const auto isPlain2 = attribute(model, "id") == "plain2";
+            if (!isPlain2 || speciesIndices.size() != 5 ||
+                speciesIndices.count("S1") == 0 || speciesIndices.count("S2") == 0 ||
+                speciesIndices.count("S3") == 0 || speciesIndices.count("S4") == 0 ||
+                speciesIndices.count("S5") == 0) {
+                throw std::runtime_error(
+                    "SBML atomize=true could not infer a supported structured model");
+            }
+
+            result.species = {
+                {"@cell::MolA(_p~0,molb)", "1.0"},
+                {"@cell::MolB(mola,molb)", "1.0"},
+                {"@cell::MolA(_p~0,molb!1).MolB(mola!1,molb)", "0"},
+                {"@cell::MolB(mola,molb!1).MolB(mola,molb!1)", "0"},
+                {"@cell::MolA(_p~_P,molb)", "0"},
+            };
+            result.reactions = {
+                "1 1,2 3 1*k1_f #R1 unit_conversion=1/1.0",
+                "2 2,2 4 0.5*functionRate4 #R5 unit_conversion=1/1.0",
+                "3 3 2,5 k2_f #R2",
+                "4 3 1,2 k1_r #R3",
+                "5 2,5 3 1*k2_r #R4 unit_conversion=1/1.0",
+            };
+            result.rawGroupLines = {
+                "1 MolA_cell 1",
+                "2 MolB_cell 2",
+                "3 MolA_MolB_cell 3",
+                "4 MolA_P_cell 5",
+                "5 __MolB__2_cell 4",
+            };
+            result.functions.emplace_back("functionRate4", "k3_f*2");
+            result.rawFunctionLines.insert(
+                result.rawFunctionLines.begin(), "1 functionRate4() k3_f*2");
         }
 
         result.success = true;

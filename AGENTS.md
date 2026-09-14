@@ -33,6 +33,9 @@ ctest --test-dir build --output-on-failure
 PYTHONPATH=python:build/cpp python -m pytest -q tests/python
 PYTHONPATH=python:build/cpp python -m pytest -q \
   -c tests/validation/pytest.ini tests/validation -m smoke
+python scripts/validate.py --bng-cpp build/cpp/bng_cpp --strict-references \
+  --validation-manifest tests/validation/validation_manifest.json
+python scripts/validate_actions.py --bng-cpp build/cpp/bng_cpp
 NFSIM_BIN=/absolute/path/to/pinned/native/NFsim \
   PYTHONPATH=python:build/cpp python -m pytest tests/validation -m nf \
   --bng-cpp build/cpp/bng_cpp
@@ -118,7 +121,7 @@ them pass by widening tolerances or hiding skips. The Python API is
 
 ## Conventions
 - Read the tree, not memory. Grep before asserting state.
-- Two-round rule: if a "defect" survives two targeted fixes, question whether it's real (see BNG3_overcount_analysis.md for the cause-1-vs-cause-2 decision before a second attempt). Beware patch-encoding mojibake — verify against the repo tree, never a `.patch` file's text.
+- Two-round rule: if a "defect" survives two targeted fixes, question whether it's real (see docs/archive/reports/ir-migration-2026-09-14/BNG3_overcount_analysis.md for the cause-1-vs-cause-2 decision before a second attempt). Beware patch-encoding mojibake — verify against the repo tree, never a `.patch` file's text.
 - Surgical diffs. One WO = one master function + its deletions + its gate.
 - No regression: a change that turns a passing Tier-S model red is not done.
 - Don't count lines. Don't write changelogs unless asked.
@@ -132,8 +135,8 @@ decisions, not completed work.
 ## Where the merge work is tracked
 `docs/BNG3_CONVERGENCE_DONE_CHECKLIST.md` (exit criteria),
 `docs/BNG3_INTEGRATION_PLAN.md` (completion charter),
-`BNG3_unification_spec.md` (work orders WO-0..WO-7),
-`BNG3_overcount_analysis.md` (WO-1a),
+`docs/BNG3_unification_spec.md` (work orders WO-0..WO-7),
+`docs/archive/reports/ir-migration-2026-09-14/BNG3_overcount_analysis.md` (WO-1a),
 `cpp/CMakeLists.unify.snippet.cmake` (WO-1b/3b/4 build edits),
 `cpp/nfsim/NFinput/NFinput_fromAst.*` (WO-2), and
 `cpp/ast/ExpressionEval.hpp` (WO-3).

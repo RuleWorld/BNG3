@@ -1,0 +1,26 @@
+# Created by BioNetGen UNKNOWN
+begin parameters
+    1 L0   602  # Constant
+    2 R0   1204  # Constant
+    3 kp1  1.661129568106312e-04  # Constant
+    4 km1  1  # Constant
+    5 kp2  1.661129568106312e-03  # Constant
+    6 km2  1  # Constant
+    7 kp3  1.661129568106312e-03  # Constant
+    8 km3  1  # Constant
+end parameters
+begin species
+    1 L(r,r,r) L0
+    2 R(l) R0
+    3 L(r!1,r,r).R(l!1) 0
+    4 L(r!1,r!2,r).R(l!1).R(l!2) 0
+    5 L(r!1,r!2,r!3).R(l!1).R(l!2).R(l!3) 0
+end species
+begin reactions
+    1 1,2 3 3*kp1 #_R1
+    2 3 1,2 km1 #_reverse__R1
+    3 2,3 4 2*kp2 #_R2
+    4 4 2,3 2*km2 #_reverse__R2
+    5 2,4 5 kp3 #_R3
+    6 5 2,4 3*km3 #_reverse__R3
+end reactions

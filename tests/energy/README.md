@@ -40,3 +40,12 @@ Copy:
 - `cmake/energy_tests.cmake` -> include from `tests/cpp/CMakeLists.txt`
 
 Keep `future_*.cpp` behind `BNG_ENABLE_FUTURE_ENERGY_CONTRACTS` until the matching API exists.
+
+## Current integration checkpoint
+
+The applied energy/compiler changes are represented by the source and tests in
+this directory; the imported patch snapshots are no longer repository inputs.
+At the 2026-09-14 checkpoint, the Python energy suite reports `66 passed` and
+the native CTest suite reports `308/308`. Use the live
+[`docs/CURRENT_PROGRESS.md`](../../docs/CURRENT_PROGRESS.md) and convergence
+checklist for current qualification status.

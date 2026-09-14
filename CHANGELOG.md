@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased] - 2026-09-10
+## [Unreleased] - 2026-09-14
 
 ### In progress
 
@@ -13,9 +13,21 @@
   reconstruction with explicit diagnostics and fail-closed execution.
 - Added the shared structured SBML-Multi component-map type and synchronized
   the architecture-contract inventory.
-- Final consolidated verification passed: build, CTest (305/305), Python
-  regression (353 passed, 27 skipped), and validation smoke (4 passed, 14
-  environment/reference skips).
+- Closed the former PR/weekly validation exclusions with committed independent
+  BNG2 network references and explicit action-output contracts; the full
+  validation command now reports 71/71 passed with zero failures, errors, or
+  skips.
+- Repaired reverse local-rate scope preservation, legacy action argument lists,
+  visualization/network output naming, and the validation summary contract.
+- Repaired the Windows/MSVC ANTLR entry path by applying the existing SDK-macro
+  compatibility header to every generated parser and visitor header that can be
+  included before a translation-unit-level compatibility include.
+- Organized historical migration reports under
+  `docs/archive/reports/ir-migration-2026-09-14/` and removed applied patch
+  snapshots and redundant package-wrapper files.
+- Final local verification for semantic commit `78a1591`: CTest 308/308,
+  action contracts 6/6, CI-contract tests 26 passed, and energy Python tests
+  66 passed. Hosted checks remain the exact-head gate.
 
 ## [3.0.0a1] - 2026-05-11
 

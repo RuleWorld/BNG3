@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 
+#include "Expression.hpp"
+
 namespace bng::ast {
 
 /**
@@ -21,7 +23,16 @@ namespace bng::ast {
 struct PopulationMap {
     std::string label;
     std::string patternText;         // raw species pattern text
-    std::string populationFunction;  // function name (e.g., "lumped")
+    // Canonical population-species target and mapping rate. In BNGL a map is
+    // `pattern -> Population(args) rate`; the RHS species is not a function.
+    std::string populationName;
+    std::vector<std::string> populationArgs;
+    Expression rateExpression = Expression::number(0.0);
+    std::string rateText;
+    bool hasExplicitRate = false;
+
+    // Compatibility aliases retained for older callers while they migrate.
+    std::string populationFunction;
     std::vector<std::string> functionArgs;
 };
 

@@ -142,3 +142,15 @@ target_link_libraries(test_nfcore2_native_reader PRIVATE
     Catch2::Catch2WithMain bng_nfcore2 bng_parser)
 include(Catch)
 catch_discover_tests(test_nfcore2_native_reader TEST_PREFIX "native-port::")
+
+# Dependency ratchet: compiled/lowered backend layers may not acquire parser or
+# AST dependencies. Legacy files are explicitly allowlisted and must disappear
+# from that allowlist as they migrate.
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+    add_test(
+        NAME architecture_layer_dependencies
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/check_architecture_dependencies.py)
+    set_tests_properties(architecture_layer_dependencies PROPERTIES
+        LABELS "architecture;dependency-ratchet" TIMEOUT 30)
+endif()

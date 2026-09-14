@@ -47,6 +47,90 @@ std::string trimCopy(const std::string& value) {
     return value.substr(first, last - first + 1);
 }
 
+
+constexpr std::string_view kPopulationRateToken = "__bng3_poprate_";
+
+std::string hexEncode(std::string_view value) {
+    static constexpr char digits[] = "0123456789ABCDEF";
+    std::string result;
+    result.reserve(value.size() * 2);
+    for (unsigned char c : value) {
+        result.push_back(digits[c >> 4]);
+        result.push_back(digits[c & 0x0f]);
+    }
+    return result;
+}
+
+std::string hexDecode(std::string_view value) {
+    const auto digit = [](char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        return -1;
+    };
+    if (value.size() % 2 != 0) throw std::runtime_error("invalid encoded population-map rate");
+    std::string result;
+    result.reserve(value.size() / 2);
+    for (std::size_t i = 0; i < value.size(); i += 2) {
+        const int hi = digit(value[i]);
+        const int lo = digit(value[i + 1]);
+        if (hi < 0 || lo < 0) throw std::runtime_error("invalid encoded population-map rate");
+        result.push_back(static_cast<char>((hi << 4) | lo));
+    }
+    return result;
+}
+
+// The checked-in generated parser historically omitted the trailing mapping
+// rate from population-map lines. Preserve the grammar artifact while making
+// parsing lossless by encoding the trailing expression as a synthetic RHS
+// population argument before ANTLR sees the source; the visitor decodes it.
+std::string normalizePopulationMapRates(const std::string& source) {
+    std::string result;
+    bool inside = false;
+    std::size_t lineStart = 0;
+    while (lineStart <= source.size()) {
+        const auto lineEnd = source.find('\n', lineStart);
+        const auto len = lineEnd == std::string::npos ? source.size() - lineStart : lineEnd - lineStart;
+        std::string line = source.substr(lineStart, len);
+        const std::string header = toLower(trimCopy(line));
+        if (header == "begin population maps") inside = true;
+        else if (header == "end population maps") inside = false;
+        else if (inside) {
+            const auto comment = line.find('#');
+            const std::size_t codeEnd = comment == std::string::npos ? line.size() : comment;
+            const auto arrow = line.find("->");
+            if (arrow != std::string::npos && arrow < codeEnd) {
+                const auto open = line.find('(', arrow + 2);
+                if (open != std::string::npos && open < codeEnd) {
+                    int depth = 0;
+                    std::size_t close = std::string::npos;
+                    for (std::size_t i = open; i < codeEnd; ++i) {
+                        if (line[i] == '(') ++depth;
+                        else if (line[i] == ')' && --depth == 0) { close = i; break; }
+                    }
+                    if (close != std::string::npos) {
+                        const std::string rate = trimCopy(line.substr(close + 1, codeEnd - close - 1));
+                        if (!rate.empty()) {
+                            const std::string token = std::string(kPopulationRateToken) + hexEncode(rate);
+                            const std::string args = trimCopy(line.substr(open + 1, close - open - 1));
+                            line.insert(close, (args.empty() ? "" : ",") + token);
+                            const auto newClose = close + token.size() + (args.empty() ? 0 : 1);
+                            const auto newComment = comment == std::string::npos
+                                ? line.size() : comment + token.size() + (args.empty() ? 0 : 1);
+                            line.erase(newClose + 1, newComment - (newClose + 1));
+                        }
+                    }
+                }
+            }
+        }
+        result += line;
+        if (lineEnd == std::string::npos) break;
+        result.push_back('\n');
+        lineStart = lineEnd + 1;
+    }
+    return result;
+}
+
 std::string normalizeLegacyBlockHeaders(const std::string& source) {
     std::string result;
     result.reserve(source.size());
@@ -1151,7 +1235,8 @@ std::string normalizeBNGLSource(const std::string& sourceText) {
     return normalizeLooseActionsInsideModel(normalizeIntegerStateTransitions(
         normalizeLegacyActionNames(
             normalizeEmptyReactantFunctionDeclarations(
-                normalizeLegacyBlockHeaders(normalizeTfunSyntax(sourceText))))));
+                normalizePopulationMapRates(
+                    normalizeLegacyBlockHeaders(normalizeTfunSyntax(sourceText)))))));
 }
 
 BNGAstVisitor::BNGAstVisitor()
@@ -1484,32 +1569,32 @@ std::any BNGAstVisitor::visitProtocol_block(BNGParser::Protocol_blockContext* ct
 }
 
 std::any BNGAstVisitor::visitPopulation_map_def(BNGParser::Population_map_defContext* ctx) {
-    if (ctx->species_def() == nullptr) {
-        return {};
-    }
+    if (ctx->species_def() == nullptr) return {};
 
     ast::PopulationMap pm;
-
-    // Optional label (STRING before the colon)
     const auto strings = ctx->STRING();
     if (strings.size() >= 2) {
-        // First STRING is the label, second is the function name
         pm.label = strings[0]->getText();
-        pm.populationFunction = strings[1]->getText();
+        pm.populationName = strings[1]->getText();
     } else if (strings.size() == 1) {
-        // Only the function name
-        pm.populationFunction = strings[0]->getText();
+        pm.populationName = strings[0]->getText();
     }
-
+    pm.populationFunction = pm.populationName; // compatibility alias
     pm.patternText = ctx->species_def()->getText();
 
-    // Function arguments from param_list
     if (ctx->param_list() != nullptr) {
         for (auto* token : ctx->param_list()->STRING()) {
-            pm.functionArgs.push_back(token->getText());
+            const std::string text = token->getText();
+            if (text.compare(0, kPopulationRateToken.size(), kPopulationRateToken) == 0) {
+                pm.rateText = hexDecode(text.substr(kPopulationRateToken.size()));
+                pm.rateExpression = parseExpressionImpl(pm.rateText);
+                pm.hasExplicitRate = true;
+            } else {
+                pm.populationArgs.push_back(text);
+            }
         }
     }
-
+    pm.functionArgs = pm.populationArgs; // compatibility alias
     currentModel_->addPopulationMap(std::move(pm));
     return {};
 }

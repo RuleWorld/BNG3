@@ -39,8 +39,10 @@ cmake --build build --target test
 # Python tests
 pytest tests/python/ -v
 
-# Validation (C++ vs reference .net files)
-python scripts/validate.py
+# Full validation corpus: independent .net references plus action contracts
+python scripts/validate.py --bng-cpp build/cpp/bng_cpp --strict-references \
+  --validation-manifest tests/validation/validation_manifest.json
+python scripts/validate_actions.py --bng-cpp build/cpp/bng_cpp
 ```
 
 ## Repository Structure

@@ -2,37 +2,105 @@
 
 #include <sstream>
 #include <algorithm>
+#include <set>
+#include <tuple>
+
+#include "compile/Document.hpp"
 
 namespace bng::io {
 
-ContactMapWriter::ContactMap ContactMapWriter::buildContactMap(const ast::Model& model) {
-    ContactMap map;
+namespace {
 
-    // Add all molecule types
-    for (const auto& mt : model.getMoleculeTypes()) {
-        map.moleculeTypes.insert(mt.getName());
+using ContactKey = std::tuple<std::string, std::string, std::string, std::string>;
+
+ContactKey canonicalContact(std::string mol1, std::string comp1,
+                            std::string mol2, std::string comp2) {
+    if (std::tie(mol2, comp2) < std::tie(mol1, comp1)) {
+        std::swap(mol1, mol2);
+        std::swap(comp1, comp2);
     }
+    return {std::move(mol1), std::move(comp1), std::move(mol2), std::move(comp2)};
+}
 
-    // Scan reaction rules for bonds between different molecules
-    for (const auto& rule : model.getReactionRules()) {
-        // Parse reactants and products to find bonds
-        for (const auto& pattern : rule.getReactantPatterns()) {
-            // Check for inter-molecular bonds in the pattern
-            // This is simplified - full implementation would parse the graph structure
-            // For now, detect patterns like "A(b!1).B(a!1)"
-
-            std::string patternStr = pattern.toString();
-
-            // Simple heuristic: if pattern contains !1, !2 etc. and multiple molecules
-            // then there are bonds between molecules
-            if (patternStr.find('!') != std::string::npos && patternStr.find('.') != std::string::npos) {
-                // Extract molecule names (simplified)
-                // This is a placeholder - full implementation needs proper parsing
-            }
+void collectPatternContacts(const compile::Pattern& pattern, std::set<ContactKey>& contacts) {
+    struct Endpoint { std::string molecule; std::string component; };
+    std::map<std::size_t, std::vector<Endpoint>> groups;
+    for (const auto& molecule : pattern.molecules()) {
+        for (const auto& site : molecule.sites) {
+            const auto add = [&](compile::BondConstraintKind kind,
+                                 compile::PatternBondGroupId group) {
+                if (kind == compile::BondConstraintKind::Exact)
+                    groups[group.value].push_back({molecule.moleculeType, site.componentName});
+            };
+            if (site.bondConstraints.empty()) add(site.bondKind, site.bondGroup);
+            else for (const auto& bond : site.bondConstraints) add(bond.kind, bond.group);
         }
     }
+    for (const auto& [group, endpoints] : groups) {
+        (void)group;
+        if (endpoints.size() != 2) continue;
+        contacts.insert(canonicalContact(endpoints[0].molecule, endpoints[0].component,
+                                         endpoints[1].molecule, endpoints[1].component));
+    }
+}
 
+const compile::PatternSiteDescriptor* siteForRef(
+    const compile::CompiledRuleDirection& direction,
+    const compile::PatternSiteRef& ref,
+    const compile::PatternMoleculeDescriptor** moleculeOut) {
+    const auto& patterns = ref.side == compile::PatternSide::Reactant
+        ? direction.reactantPatterns : direction.productPatterns;
+    if (ref.patternIndex >= patterns.size()) return nullptr;
+    const auto& molecules = patterns[ref.patternIndex].molecules();
+    if (ref.moleculeIndex >= molecules.size()) return nullptr;
+    const auto& molecule = molecules[ref.moleculeIndex];
+    if (ref.siteIndex >= molecule.sites.size()) return nullptr;
+    if (moleculeOut) *moleculeOut = &molecule;
+    return &molecule.sites[ref.siteIndex];
+}
+
+void collectMutationContacts(const compile::CompiledRuleDirection& direction,
+                             std::set<ContactKey>& contacts) {
+    for (const auto& mutation : direction.mutations) {
+        if (mutation.kind != compile::MutationKind::AddBond) continue;
+        const compile::PatternMoleculeDescriptor* leftMol = nullptr;
+        const compile::PatternMoleculeDescriptor* rightMol = nullptr;
+        const auto* left = siteForRef(direction, mutation.source, &leftMol);
+        const auto* right = siteForRef(direction, mutation.partner, &rightMol);
+        if (!left || !right || !leftMol || !rightMol) continue;
+        contacts.insert(canonicalContact(leftMol->moleculeType, left->componentName,
+                                         rightMol->moleculeType, right->componentName));
+    }
+}
+
+} // namespace
+
+ContactMapWriter::ContactMap ContactMapWriter::buildContactMap(
+    const compile::CompiledModel& model) {
+    ContactMap map;
+    for (const auto& molecule : model.moleculeTypes()) map.moleculeTypes.insert(molecule.name);
+
+    std::set<ContactKey> contacts;
+    for (const auto& rule : model.rules()) {
+        for (const auto& pattern : rule.forward().reactantPatterns) collectPatternContacts(pattern, contacts);
+        for (const auto& pattern : rule.forward().productPatterns) collectPatternContacts(pattern, contacts);
+        collectMutationContacts(rule.forward(), contacts);
+        if (rule.reverse().has_value()) {
+            for (const auto& pattern : rule.reverse()->reactantPatterns) collectPatternContacts(pattern, contacts);
+            for (const auto& pattern : rule.reverse()->productPatterns) collectPatternContacts(pattern, contacts);
+            collectMutationContacts(*rule.reverse(), contacts);
+        }
+    }
+    for (const auto& [mol1, comp1, mol2, comp2] : contacts)
+        map.edges.push_back(Edge{mol1, mol2, comp1, comp2});
     return map;
+}
+
+ContactMapWriter::ContactMap ContactMapWriter::buildContactMap(const ast::Model& model) {
+    compile::Document document(model);
+    if (!document.valid())
+        throw std::runtime_error("cannot build contact map from invalid compiled model");
+    return buildContactMap(document.model());
 }
 
 std::string ContactMapWriter::toGML(const ContactMap& contactMap) {
