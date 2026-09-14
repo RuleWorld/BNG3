@@ -1,5 +1,6 @@
 #include "nfnext/nfir.hpp"
 
+#include <cstring>
 #include <iomanip>
 #include <sstream>
 
@@ -12,6 +13,13 @@ inline void mix(std::uint64_t& h, std::uint64_t v) noexcept {
 
 inline void mixString(std::uint64_t& h, const std::string& s) noexcept {
     for (unsigned char c : s) mix(h, c);
+}
+
+inline std::uint64_t doubleBits(double value) noexcept {
+    std::uint64_t bits = 0;
+    static_assert(sizeof(bits) == sizeof(value), "unexpected double width");
+    std::memcpy(&bits, &value, sizeof(bits));
+    return bits;
 }
 
 void mixPattern(std::uint64_t& h, const PatternIR& pattern) noexcept {
@@ -72,8 +80,8 @@ std::uint64_t ModelIR::fingerprint() const noexcept {
         mix(h, f.coordinate_parameterized ? 1 : 0);
         mix(h, static_cast<std::uint8_t>(f.rate_law.kind));
         mixString(h, f.rate_law.expression);
-        union { double d; std::uint64_t u; } rate{f.default_rate}; mix(h, rate.u);
-        for (double r : f.indexed_rates) { union { double d; std::uint64_t u; } rr{r}; mix(h, rr.u); }
+        mix(h, doubleBits(f.default_rate));
+        for (double r : f.indexed_rates) mix(h, doubleBits(r));
         for (const auto& p : f.predicates) {
             mix(h, static_cast<std::uint8_t>(p.kind)); mix(h, p.molecule_type); mix(h, p.node); mix(h, p.site);
             mix(h, static_cast<std::uint32_t>(p.value)); mix(h, static_cast<std::uint32_t>(p.aux));

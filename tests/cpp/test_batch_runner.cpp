@@ -22,7 +22,7 @@ struct TemporaryRoot {
 
 std::string shellQuote(const fs::path& path) {
 #if defined(_WIN32) || defined(__WIN32__) || defined(__CYGWIN__)
-    return "\"" + path.string() + "\"";
+    return "\"" + path.generic_string() + "\"";
 #else
     std::string quoted = "'";
     for (const char character : path.string()) {

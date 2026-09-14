@@ -129,6 +129,7 @@ jobs:
         run: |
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+            -DPython3_EXECUTABLE="$(python -c 'import sys; print(sys.executable)')" \
             -DBUILD_PYTHON_BINDINGS=OFF \
             -DBUILD_CLI=ON \
             -DBUILD_NFSIM_CLI=OFF \
@@ -140,6 +141,7 @@ jobs:
         run: |
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+            -DPython3_EXECUTABLE="$(python -c 'import sys; print(sys.executable)')" \
             -DBUILD_PYTHON_BINDINGS=OFF \
             -DBUILD_CLI=ON \
             -DBUILD_NFSIM_CLI=OFF \
@@ -168,8 +170,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
+          python -m pip install pytest numpy
 
       - name: Configure with ASan
         env:
@@ -178,6 +187,7 @@ jobs:
         run: |
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
+            -DPython3_EXECUTABLE="$(python -c 'import sys; print(sys.executable)')" \
             -DCMAKE_CXX_FLAGS="-fsanitize=address -fno-omit-frame-pointer" \
             -DCMAKE_C_FLAGS="-fsanitize=address -fno-omit-frame-pointer" \
             -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address" \

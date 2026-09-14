@@ -248,9 +248,12 @@ end reaction rules
                             ("bng3-net-writer-groups-" + std::to_string(suffix) + ".net");
     io::NetWriter::write(outputPath, *model, network);
 
-    std::ifstream input(outputPath);
-    REQUIRE(input.good());
-    const std::string output((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+    std::string output;
+    {
+        std::ifstream input(outputPath);
+        REQUIRE(input.good());
+        output.assign((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+    }
     std::filesystem::remove(outputPath);
 
     REQUIRE(output.find("begin groups\n") != std::string::npos);

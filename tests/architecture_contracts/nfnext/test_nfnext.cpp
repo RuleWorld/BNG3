@@ -14,6 +14,7 @@
 
 #include <cassert>
 #include <cstdio>
+#include <filesystem>
 #include <iostream>
 
 using namespace nfnext;
@@ -73,12 +74,12 @@ int main() {
         assert(m.rule_families[0].predicates[0].value == 0); // coordinate offset
         assert(m.preferred_backend == BackendKind::Lattice);
         assert(!m.dependencies.feature_to_families.empty());
-        const char* cache = "nfnext_test.nfir";
-        ModelCache::save(m, cache);
-        auto loaded = ModelCache::load(cache);
+        const auto cache = std::filesystem::temp_directory_path() / "nfnext_test.nfir";
+        ModelCache::save(m, cache.string());
+        auto loaded = ModelCache::load(cache.string());
         assert(loaded.rule_families.size() == 1);
         assert(loaded.fingerprint() == m.fingerprint());
-        std::remove(cache);
+        std::remove(cache.string().c_str());
     }
     {
         auto a = makeElong(1);
@@ -108,10 +109,10 @@ int main() {
         f.source_rules.push_back(0);
         m.rule_families.push_back(f);
         const auto before = m.fingerprint();
-        const char* cache = "/tmp/nfnext_semantic_family.nfir";
-        ModelCache::save(m, cache);
-        const auto loaded = ModelCache::load(cache);
-        std::remove(cache);
+        const auto cache = std::filesystem::temp_directory_path() / "nfnext_semantic_family.nfir";
+        ModelCache::save(m, cache.string());
+        const auto loaded = ModelCache::load(cache.string());
+        std::remove(cache.string().c_str());
         assert(loaded.fingerprint() == before);
         assert(loaded.rule_families[0].rate_law.expression == "k*Obs");
         assert(loaded.rule_families[0].predicates[0].state_set ==

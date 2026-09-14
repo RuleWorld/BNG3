@@ -1,6 +1,7 @@
 #include "nfnext/cache.hpp"
 
 #include <algorithm>
+#include <cstring>
 #include <fstream>
 #include <stdexcept>
 #include <type_traits>
@@ -34,8 +35,9 @@ void writeString(std::ostream& out, const std::string& s) {
 std::string readString(std::istream& in) {
     const std::uint64_t n = readPod<std::uint64_t>(in);
     if (n > (1ULL << 31)) throw std::runtime_error("NFIR cache invalid string length");
+    if (n == 0) return {};
     std::string s(static_cast<std::size_t>(n), '\0');
-    in.read(&s[0], static_cast<std::streamsize>(n));
+    in.read(s.data(), static_cast<std::streamsize>(n));
     if (!in) throw std::runtime_error("NFIR cache truncated");
     return s;
 }
