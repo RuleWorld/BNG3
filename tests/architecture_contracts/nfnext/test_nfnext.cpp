@@ -13,11 +13,18 @@
 #include "nfnext/trajectory.hpp"
 
 #include <cassert>
+#include <chrono>
 #include <cstdio>
 #include <filesystem>
 #include <iostream>
 
 using namespace nfnext;
+
+static std::filesystem::path uniqueCachePath(const char* stem) {
+    const auto stamp = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+    return std::filesystem::temp_directory_path() /
+           (std::string(stem) + "-" + std::to_string(stamp) + ".nfir");
+}
 
 static ExpandedRuleIR makeElong(std::uint32_t i) {
     ExpandedRuleIR r;
@@ -74,7 +81,7 @@ int main() {
         assert(m.rule_families[0].predicates[0].value == 0); // coordinate offset
         assert(m.preferred_backend == BackendKind::Lattice);
         assert(!m.dependencies.feature_to_families.empty());
-        const auto cache = std::filesystem::temp_directory_path() / "nfnext_test.nfir";
+        const auto cache = uniqueCachePath("nfnext-test");
         ModelCache::save(m, cache.string());
         auto loaded = ModelCache::load(cache.string());
         assert(loaded.rule_families.size() == 1);
@@ -109,7 +116,7 @@ int main() {
         f.source_rules.push_back(0);
         m.rule_families.push_back(f);
         const auto before = m.fingerprint();
-        const auto cache = std::filesystem::temp_directory_path() / "nfnext_semantic_family.nfir";
+        const auto cache = uniqueCachePath("nfnext-semantic-family");
         ModelCache::save(m, cache.string());
         const auto loaded = ModelCache::load(cache.string());
         std::remove(cache.string().c_str());
