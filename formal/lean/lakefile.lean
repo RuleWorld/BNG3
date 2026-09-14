@@ -1,7 +1,7 @@
 import Lake
 open Lake DSL
 
-package «bng3-semantics» where
+package bng3_semantics where
   version := v!"0.1.0"
 
 /--
