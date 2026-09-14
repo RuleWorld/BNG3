@@ -1,6 +1,10 @@
 #include "PatternDescriptor.hpp"
 
 #include "ast/SpeciesGraph.hpp"
+#include "ast/Model.hpp"
+#include "ast/MoleculeType.hpp"
+#include "Capabilities.hpp"
+#include "SymbolTable.hpp"
 #include "core/BNGcore.hpp"
 
 #include <algorithm>
@@ -145,6 +149,11 @@ PatternMoleculeDescriptor parseMolecule(std::string moleculeText) {
                     ++pos;
                 }
                 site.label = siteText.substr(valueStart, pos - valueStart);
+            } else if (marker == '.') {
+                PatternBondDescriptor bond;
+                bond.constraint = "-";
+                bond.kind = BondConstraintKind::Unbound;
+                site.bondConstraints.push_back(std::move(bond));
             } else if (!std::isspace(static_cast<unsigned char>(marker))) {
                 throw std::invalid_argument("unrecognized component constraint");
             }
@@ -220,9 +229,27 @@ std::string componentState(const BNGcore::Node& component) {
 Pattern Pattern::parse(std::string_view text) {
     Pattern result;
     result.sourceText_ = trim(std::string(text));
+
+    // The compatibility parser is also used at the semantic boundary for a
+    // small number of source-only constructs (notably observable/filter
+    // patterns). Preserve graph-level prefix compartments rather than asking
+    // each backend to rediscover `@comp:` from source text.
+    std::string patternBody = result.sourceText_;
+    if (!patternBody.empty() && patternBody.front() == '@') {
+        const auto colon = patternBody.find(':');
+        const auto open = patternBody.find('(');
+        if (colon != std::string::npos && (open == std::string::npos || colon < open)) {
+            result.compartment_ = trim(patternBody.substr(1, colon - 1));
+            if (result.compartment_.empty())
+                throw std::invalid_argument("pattern compartment prefix is empty");
+            result.compartmentIsPrefix_ = true;
+            patternBody = trim(patternBody.substr(colon + 1));
+        }
+    }
+
     std::unordered_map<std::string, PatternBondGroupId> bondGroups;
     std::size_t nextBondGroup = 1;
-    for (auto& molecule : splitMolecules(result.sourceText_)) {
+    for (auto& molecule : splitMolecules(patternBody)) {
         auto descriptor = parseMolecule(std::move(molecule));
         descriptor.occurrence.value = result.molecules_.size();
         for (std::size_t siteIndex = 0; siteIndex < descriptor.sites.size(); ++siteIndex) {
@@ -323,10 +350,141 @@ Pattern Pattern::fromPatternGraph(const BNGcore::PatternGraph& graph,
 Pattern Pattern::fromSpeciesGraph(const ast::SpeciesGraph& graph) {
     auto result = fromPatternGraph(graph.getGraph(), graph.getCompartment());
     result.sourceText_ = graph.toString();
+    result.compartmentIsPrefix_ = graph.isCompartmentPrefix();
+    return result;
+}
+
+namespace {
+
+void addResolutionDiagnostic(std::vector<Diagnostic>* diagnostics,
+                             const std::string& entity,
+                             const std::string& message) {
+    if (diagnostics == nullptr) return;
+    Diagnostic diagnostic;
+    diagnostic.code = DiagnosticCode::InvalidModel;
+    diagnostic.severity = Severity::Error;
+    diagnostic.category = ValidationCategory::Patterns;
+    diagnostic.entity = entity;
+    diagnostic.message = message;
+    diagnostics->push_back(std::move(diagnostic));
+}
+
+} // namespace
+
+bool Pattern::resolve(const ast::Model& model,
+                      const SymbolTable& symbols,
+                      std::vector<Diagnostic>* diagnostics) {
+    bool ok = true;
+    compartmentId_.reset();
+    if (!compartment_.empty()) {
+        if (const auto id = symbols.resolveCompartment(compartment_)) {
+            compartmentId_ = *id;
+        } else {
+            addResolutionDiagnostic(diagnostics, sourceText_,
+                                    "unknown pattern compartment '" + compartment_ + "'");
+            ok = false;
+        }
+    }
+
+    for (auto& molecule : molecules_) {
+        molecule.moleculeTypeId.reset();
+        molecule.compartmentId.reset();
+        const auto typeId = symbols.resolveMoleculeType(molecule.moleculeType);
+        const auto* moleculeType = model.findMoleculeType(molecule.moleculeType);
+        if (!typeId.has_value() || moleculeType == nullptr) {
+            addResolutionDiagnostic(diagnostics, sourceText_,
+                                    "unknown molecule type '" + molecule.moleculeType + "'");
+            ok = false;
+            continue;
+        }
+        molecule.moleculeTypeId = *typeId;
+
+        const auto& effectiveCompartment =
+            molecule.compartment.empty() ? compartment_ : molecule.compartment;
+        if (!effectiveCompartment.empty()) {
+            if (const auto id = symbols.resolveCompartment(effectiveCompartment)) {
+                molecule.compartmentId = *id;
+            } else {
+                addResolutionDiagnostic(diagnostics, sourceText_,
+                                        "unknown molecule compartment '" +
+                                            effectiveCompartment + "'");
+                ok = false;
+            }
+        }
+
+        const auto& components = moleculeType->getComponents();
+        // Repeated component names are distinct declaration occurrences in BNGL
+        // (NFsim calls them equivalent/symmetric components).  Resolve the nth
+        // pattern occurrence to the nth declaration occurrence instead of
+        // silently mapping every repeated site to the first component.
+        std::unordered_map<std::string, std::size_t> componentOffsets;
+        for (auto& site : molecule.sites) {
+            site.componentType.reset();
+            site.stateConstraintResolved = PatternStateConstraint{};
+            site.stateConstraintResolved.source = site.stateConstraint;
+
+            const auto desiredOccurrence = componentOffsets[site.componentName]++;
+            auto component = components.end();
+            std::size_t seen = 0;
+            for (auto it = components.begin(); it != components.end(); ++it) {
+                if (it->name != site.componentName) continue;
+                if (seen++ == desiredOccurrence) {
+                    component = it;
+                    break;
+                }
+            }
+            if (component == components.end()) {
+                addResolutionDiagnostic(diagnostics, sourceText_,
+                                        "molecule type '" + molecule.moleculeType +
+                                            "' has too few occurrences of component '" +
+                                            site.componentName + "'");
+                ok = false;
+                continue;
+            }
+
+            const auto componentIndex = static_cast<std::size_t>(
+                std::distance(components.begin(), component));
+            const ComponentTypeId componentId{*typeId, componentIndex};
+            site.componentType = componentId;
+
+            if (site.stateConstraint.empty() || site.stateConstraint == "?") {
+                site.stateConstraintResolved.kind = StateConstraintKind::Any;
+                continue;
+            }
+
+            site.stateConstraintResolved.kind = StateConstraintKind::Exact;
+            const auto state = std::find(component->allowedStates.begin(),
+                                         component->allowedStates.end(),
+                                         site.stateConstraint);
+            if (state == component->allowedStates.end()) {
+                addResolutionDiagnostic(diagnostics, sourceText_,
+                                        "component '" + molecule.moleculeType + "." +
+                                            site.componentName + "' has no state '" +
+                                            site.stateConstraint + "'");
+                ok = false;
+                continue;
+            }
+            site.stateConstraintResolved.exact = StateId{
+                componentId, static_cast<std::size_t>(
+                                 std::distance(component->allowedStates.begin(), state))};
+        }
+    }
+
+    resolved_ = ok;
+    return ok;
+}
+
+Pattern Pattern::fromSpeciesGraph(const ast::SpeciesGraph& graph,
+                                  const ast::Model& model,
+                                  const SymbolTable& symbols,
+                                  std::vector<Diagnostic>* diagnostics) {
+    auto result = fromSpeciesGraph(graph);
+    result.resolve(model, symbols, diagnostics);
     return result;
 }
 
 bool Pattern::semanticEqual(const Pattern& other) const noexcept {
+    if (compartmentIsPrefix_ != other.compartmentIsPrefix_) return false;
     if (molecules_.size() != other.molecules_.size()) {
         return false;
     }

@@ -75,7 +75,7 @@ std::uint64_t ModelIR::fingerprint() const noexcept {
         union { double d; std::uint64_t u; } rate{f.default_rate}; mix(h, rate.u);
         for (double r : f.indexed_rates) { union { double d; std::uint64_t u; } rr{r}; mix(h, rr.u); }
         for (const auto& p : f.predicates) {
-            mix(h, static_cast<std::uint8_t>(p.kind)); mix(h, p.molecule_type); mix(h, p.site);
+            mix(h, static_cast<std::uint8_t>(p.kind)); mix(h, p.molecule_type); mix(h, p.node); mix(h, p.site);
             mix(h, static_cast<std::uint32_t>(p.value)); mix(h, static_cast<std::uint32_t>(p.aux));
             mix(h, p.state_set.size());
             for (const auto state : p.state_set) mix(h, static_cast<std::uint32_t>(state));
@@ -83,6 +83,7 @@ std::uint64_t ModelIR::fingerprint() const noexcept {
         for (const auto& a : f.actions) {
             mix(h, static_cast<std::uint8_t>(a.kind)); mix(h, a.molecule_type); mix(h, a.site);
             mix(h, static_cast<std::uint32_t>(a.value)); mix(h, static_cast<std::uint32_t>(a.aux));
+            mix(h, a.target_node); mix(h, a.partner_node); mix(h, a.partner_site);
         }
         mixPattern(h, f.pattern);
         for (RuleId r : f.source_rules) mix(h, r);

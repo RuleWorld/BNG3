@@ -602,3 +602,7 @@ class viz:
     def write_sbml_multi(model: Model, path: Optional[str] = None) -> str:
         """Write an SBML Multi document and return the serialized content."""
         ...
+
+def _compiled_snapshot(model: Model) -> Dict[str, object]:
+    """Return the resolved compile-model semantic snapshot used by BNGIR v0.2."""
+    ...

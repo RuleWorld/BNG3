@@ -232,9 +232,9 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
     for (const auto& pm : model_.getPopulationMaps()) {
         // The population function name is used as a molecule type for the population
         // In Perl: PopulationTypesList->MolTypes contains the population molecule types
-        if (!pm.populationFunction.empty()) {
-            popTypeNames.insert(pm.populationFunction);
-        }
+        const auto& populationName = !pm.populationName.empty()
+            ? pm.populationName : pm.populationFunction;
+        if (!populationName.empty()) popTypeNames.insert(populationName);
     }
 
     std::size_t nPopTypes = 0;
@@ -266,7 +266,7 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
     for (const auto& pm : model_.getPopulationMaps()) {
         PopInfo pi;
         pi.speciesPattern = pm.patternText;
-        pi.populationName = pm.populationFunction;
+        pi.populationName = !pm.populationName.empty() ? pm.populationName : pm.populationFunction;
         // Build the population species string: just the population function name with args
         // In Perl: $pop->Population is the population molecule SpeciesGraph
         populations.push_back(pi);
@@ -498,16 +498,23 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
         // Build the mapping rule: pattern -> popName()  rate
         // These are typically: species_pattern -> popName()  kmap
         // where kmap is effectively handled by the hybrid simulator
-        std::string ruleStr = pm.patternText + " -> " + pm.populationFunction + "()";
+        const auto& populationName = !pm.populationName.empty()
+            ? pm.populationName : pm.populationFunction;
+        std::string populationPattern = populationName + "(";
+        const auto& args = !pm.populationArgs.empty() ? pm.populationArgs : pm.functionArgs;
+        for (std::size_t i = 0; i < args.size(); ++i) {
+            if (i) populationPattern += ",";
+            populationPattern += args[i];
+        }
+        populationPattern += ")";
 
-        // Add as a reaction rule with a special name
-        std::string mapRuleName = "_map_" + pm.populationFunction;
+        std::string mapRuleName = "_map_" + populationName;
         hybridModel.addReactionRule(ast::ReactionRule(
             mapRuleName,
             pm.label,
             {pm.patternText},
-            {pm.populationFunction + "()"},
-            {ast::Expression::number(0)},  // Mapping rules have zero rate by default
+            {populationPattern},
+            {pm.hasExplicitRate ? pm.rateExpression : ast::Expression::number(0)},
             {},
             false));
     }

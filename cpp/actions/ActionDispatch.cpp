@@ -3449,7 +3449,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             } else if (vizType == "reaction_network") {
                 // Reaction network graph (requires generated network)
                 ensureNetwork();
-                auto rxnGraph = io::ReactionNetworkGraphWriter::build(model, *network);
+                auto rxnGraph = io::ReactionNetworkGraphWriter::build(*network);
                 content = io::ReactionNetworkGraphWriter::toGML(rxnGraph);
                 extension = ".gml";
                 fileSuffix = "_reaction_network";
@@ -3471,7 +3471,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             } else if (vizType == "process") {
                 // Bipartite process graph (requires generated network)
                 ensureNetwork();
-                auto procGraph = io::ProcessGraphWriter::build(model, *network);
+                auto procGraph = io::ProcessGraphWriter::build(*network);
                 content = io::ProcessGraphWriter::toGML(procGraph);
                 extension = ".gml";
                 fileSuffix = "_process";
@@ -3479,7 +3479,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             } else if (vizType == "rinf" || vizType == "rule_influence") {
                 // Rule influence graph (requires generated network)
                 ensureNetwork();
-                auto rinfGraph = io::RuleInfluenceGraphWriter::build(model, *network);
+                auto rinfGraph = io::RuleInfluenceGraphWriter::build(*network);
                 content = io::RuleInfluenceGraphWriter::toGML(rinfGraph);
                 extension = ".gml";
                 fileSuffix = "_rinf";

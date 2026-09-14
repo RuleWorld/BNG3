@@ -42,14 +42,15 @@ std::string readString(std::istream& in) {
 
 void writePredicate(std::ostream& out, const PredicateIR& p) {
     writePod(out, static_cast<std::uint8_t>(p.kind)); writePod(out, p.molecule_type);
-    writePod(out, p.site); writePod(out, p.value); writePod(out, p.aux);
+    writePod(out, p.node); writePod(out, p.site); writePod(out, p.value); writePod(out, p.aux);
     writePod(out, static_cast<std::uint64_t>(p.state_set.size()));
     for (const auto state : p.state_set) writePod(out, state);
 }
 
 PredicateIR readPredicate(std::istream& in) {
     PredicateIR p; p.kind = static_cast<PredicateKind>(readPod<std::uint8_t>(in));
-    p.molecule_type = readPod<TypeId>(in); p.site = readPod<std::uint16_t>(in);
+    p.molecule_type = readPod<TypeId>(in); p.node = readPod<PatternNodeId>(in);
+    p.site = readPod<std::uint16_t>(in);
     p.value = readPod<std::int32_t>(in); p.aux = readPod<std::int32_t>(in);
     const auto nstates = readPod<std::uint64_t>(in);
     if (nstates > (1ULL << 30)) throw std::runtime_error("NFIR cache invalid state-set length");
@@ -191,12 +192,15 @@ PatternIR readPattern(std::istream& in) {
 void writeAction(std::ostream& out, const ActionIR& a) {
     writePod(out, static_cast<std::uint8_t>(a.kind)); writePod(out, a.molecule_type);
     writePod(out, a.site); writePod(out, a.value); writePod(out, a.aux);
+    writePod(out, a.target_node); writePod(out, a.partner_node); writePod(out, a.partner_site);
 }
 
 ActionIR readAction(std::istream& in) {
     ActionIR a; a.kind = static_cast<ActionKind>(readPod<std::uint8_t>(in));
     a.molecule_type = readPod<TypeId>(in); a.site = readPod<std::uint16_t>(in);
-    a.value = readPod<std::int32_t>(in); a.aux = readPod<std::int32_t>(in); return a;
+    a.value = readPod<std::int32_t>(in); a.aux = readPod<std::int32_t>(in);
+    a.target_node = readPod<PatternNodeId>(in); a.partner_node = readPod<PatternNodeId>(in);
+    a.partner_site = readPod<std::uint16_t>(in); return a;
 }
 
 template<class T, class Writer>

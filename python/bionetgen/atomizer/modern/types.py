@@ -75,6 +75,19 @@ class SBMLSpeciesReference:
     id: Optional[str] = None
     stoichiometry_set: bool = False
     variable_stoichiometry: bool = False
+    compartment_reference: Optional[str] = None
+    multi_component_maps: List[Any] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class SBMLMultiComponentMap:
+    """SBML Multi product mapping from a reactant component to a product."""
+
+    reactant: str
+    reactant_component: str
+    product_component: str
+    id: Optional[str] = None
+    name: str = ""
 
 
 @dataclass
@@ -132,6 +145,7 @@ class SBMLReaction:
     kinetic_law: Optional[Any] = None
     compartment: Optional[str] = None
     conversion_factor: Optional[str] = None
+    multi_intra_species: bool = False
 
 
 @dataclass
@@ -310,6 +324,15 @@ class SBMLModel:
     multi_molecule_types: List[str] = field(default_factory=list)
     multi_complex_patterns: List[str] = field(default_factory=list)
     multi_seed_patterns: List[str] = field(default_factory=list)
+    # Executable SBML Multi reconstruction.  The legacy string fields above
+    # remain for callers that only consume diagnostics/comments.
+    multi_species_patterns: Mapping[str, str] = field(default_factory=OrderedDict)
+    multi_type_patterns: Mapping[str, str] = field(default_factory=OrderedDict)
+    multi_component_aliases: Mapping[str, Any] = field(default_factory=OrderedDict)
+    multi_reaction_mappings: Mapping[str, Any] = field(default_factory=OrderedDict)
+    multi_compartment_references: Mapping[str, Any] = field(default_factory=OrderedDict)
+    multi_numeric_values: Mapping[str, str] = field(default_factory=OrderedDict)
+    multi_executable: bool = False
     import_warnings: List[Union[Dict[str, Any], SBMLImportWarning]] = field(
         default_factory=list
     )
@@ -411,12 +434,15 @@ SBMLSpecies.speciesType = _alias_property("species_type")
 
 SBMLSpeciesReference.stoichiometrySet = _alias_property("stoichiometry_set")
 SBMLSpeciesReference.variableStoichiometry = _alias_property("variable_stoichiometry")
+SBMLSpeciesReference.compartmentReference = _alias_property("compartment_reference")
+SBMLSpeciesReference.multiComponentMaps = _alias_property("multi_component_maps")
 
 SBMLKineticLaw.mathML = _alias_property("math_ml")
 SBMLKineticLaw.localParameters = _alias_property("local_parameters")
 
 SBMLReaction.kineticLaw = _alias_property("kinetic_law")
 SBMLReaction.conversionFactor = _alias_property("conversion_factor")
+SBMLReaction.multiIntraSpecies = _alias_property("multi_intra_species")
 
 SBMLEvent.useValuesFromTriggerTime = _alias_property("use_values_from_trigger_time")
 SBMLEvent.triggerInitialValue = _alias_property("trigger_initial_value")
@@ -435,6 +461,13 @@ SBMLModel.constraintCount = _alias_property("constraint_count")
 SBMLModel.multiMoleculeTypes = _alias_property("multi_molecule_types")
 SBMLModel.multiComplexPatterns = _alias_property("multi_complex_patterns")
 SBMLModel.multiSeedPatterns = _alias_property("multi_seed_patterns")
+SBMLModel.multiSpeciesPatterns = _alias_property("multi_species_patterns")
+SBMLModel.multiTypePatterns = _alias_property("multi_type_patterns")
+SBMLModel.multiComponentAliases = _alias_property("multi_component_aliases")
+SBMLModel.multiReactionMappings = _alias_property("multi_reaction_mappings")
+SBMLModel.multiCompartmentReferences = _alias_property("multi_compartment_references")
+SBMLModel.multiNumericValues = _alias_property("multi_numeric_values")
+SBMLModel.multiExecutable = _alias_property("multi_executable")
 SBMLModel.importWarnings = _alias_property("import_warnings")
 
 SCTEntry.sbmlId = _alias_property("sbml_id")

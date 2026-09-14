@@ -141,3 +141,41 @@ end model
     restored = bionetgen.from_bngir(model.to_bngir())
 
     assert bionetgen.semantic_equal(model, restored)
+
+
+def test_bngir_v02_is_structural_and_schema_valid():
+    model = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(MODEL))
+    document = json.loads(model.to_bngir(version="0.2"))
+    assert document["version"] == "0.2"
+    assert "structured_patterns" in document["features"]["required"]
+    assert "structured_expressions" in document["features"]["required"]
+    seed_pattern = document["model"]["seeds"][0]["pattern"]
+    assert seed_pattern["molecules"][0]["type"] == "X"
+    assert not isinstance(seed_pattern, str)
+    assert document["model"]["parameters"][0]["expression"]["kind"] == "number"
+    schema_path = (
+        Path(__file__).parents[2] / "provenance" / "schemas" / "bngir-0.2.schema.json"
+    )
+    jsonschema.validate(document, json.loads(schema_path.read_text()))
+
+
+def test_bngir_v02_round_trip_semantic_equality():
+    model = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(MODEL))
+    restored = bionetgen.from_bngir(model.to_bngir(version="0.2"))
+    assert bionetgen.semantic_equal(model, restored, version="0.2")
+    assert restored.name == "bngir_fixture"
+
+
+def test_bngir_v02_preserves_protocol_scopes():
+    source = MODEL.replace(
+        "end model\n",
+        "begin protocol\nsimulate({method=>ode,t_end=>1,n_steps=>2})\nend protocol\nend model\nbegin actions\ngenerate_network({overwrite=>1})\nend actions\n",
+    )
+    model = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(source))
+    document = json.loads(model.to_bngir(version="0.2"))
+    assert [action["scope"] for action in document["protocol"]["actions"]] == [
+        "model",
+        "simulation_protocol",
+    ]
+    restored = bionetgen.from_bngir(document)
+    assert bionetgen.semantic_equal(model, restored, version="0.2")

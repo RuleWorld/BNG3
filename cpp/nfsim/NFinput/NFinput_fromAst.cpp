@@ -42,6 +42,8 @@
 ///                   that remains their compatibility oracle.
 
 #include "NFinput_fromAst.hh"
+#include "NFinput_fromCompiled.hh"
+#include "compile/Document.hpp"
 #include "NFinput.hh"
 
 #include "ast/Compartment.hpp"
@@ -3832,7 +3834,7 @@ bool addEnergyPatternsFromAst(const bng::ast::Model& model, System* system,
 bool isArrheniusExpression(const bng::ast::Expression& expression) {
     const auto rate = bng::compile::CompiledRateLaw::compile(expression);
     return rate.kind == bng::compile::RateLawKind::ArrheniusEnergy &&
-           rate.arguments.size() == 2;
+           expression.args().size() == 2;
 }
 
 bool addDirectArrheniusBinding(const bng::ast::ReactionRule& rule, System* system,
@@ -4765,7 +4767,7 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
             const bool explicitFunctionProductRate =
                 !rates.empty() &&
                 compiledRate.kind == bng::compile::RateLawKind::FunctionProduct &&
-                compiledRate.arguments.size() == 2;
+                rates.front().args().size() == 2;
             const bool rawFunctionProductShape =
                 !rates.empty() &&
                 rates.front().kind() == bng::ast::ExpressionKind::Binary &&
@@ -5508,7 +5510,7 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
         const auto typedRate = bng::compile::CompiledRateLaw::compile(rate);
         const bool michaelisMenten =
             typedRate.kind == bng::compile::RateLawKind::MichaelisMenten &&
-            typedRate.arguments.size() == 2;
+            rate.args().size() == 2;
         const bool saturationRate =
             typedRate.kind == bng::compile::RateLawKind::Saturation;
         const bool hillRate = typedRate.kind == bng::compile::RateLawKind::Hill;
@@ -5834,7 +5836,13 @@ System* buildSystemFromAstWithSeedOverrides(
         return nullptr;
     }
 
-    const std::string& name = model.getModelName();
+    bng::compile::Document compiledDocument(model);
+    if (!compiledDocument.valid()) {
+        if (verbose) std::cerr << "[nfsim/compiled] semantic compilation failed\n";
+        return nullptr;
+    }
+    const auto& compiledModel = compiledDocument.model();
+    const std::string& name = compiledModel.metadata().name;
     System* s = new System(name.empty() ? "model" : name,
                            useComplex, globalMoleculeLimit);
     // The CLI enables complex-scoped local functions by default.  The direct
@@ -5851,17 +5859,17 @@ System* buildSystemFromAstWithSeedOverrides(
         // Keep dependencies explicit: observables must exist before global
         // functions are prepared, while molecule types and compartments must
         // exist before any pattern is materialized.
-        ok = addOptionsFromAst(model, s, verbose) &&
-             addParametersFromAst(model, s, parameters, verbose) &&
-             addMoleculeTypesFromAst(model, s, allowedStates, verbose) &&
-             addCompartmentsFromAst(model, s, verbose) &&
-             addObservablesFromAst(model, s, parameters, verbose, suggestedTraversalLimit) &&
-             addFunctionsFromAst(model, s, parameters, verbose, sourcePath) &&
-             addEnergyPatternsFromAst(model, s, parameters, verbose) &&
-             addSpeciesFromAstWithOverrides(
-                 model, s, parameters, verbose, seedAmountOverrides) &&
-             addReactionRulesFromAst(model, s, parameters, blockSameComplexBinding,
-                                     verbose, suggestedTraversalLimit, sourcePath);
+        ok = addOptionsFromCompiled(compiledModel, s, verbose) &&
+             addParametersFromCompiled(compiledModel, s, parameters, verbose) &&
+             addMoleculeTypesFromCompiled(compiledModel, s, allowedStates, verbose) &&
+             addCompartmentsFromCompiled(compiledModel, s, verbose) &&
+             addObservablesFromCompiled(compiledModel, s, verbose, suggestedTraversalLimit) &&
+             addFunctionsFromCompiled(compiledModel, s, verbose, sourcePath) &&
+             addEnergyPatternsFromCompiled(compiledModel, s, verbose) &&
+             addSpeciesFromCompiledWithOverrides(
+                 compiledModel, s, verbose, seedAmountOverrides) &&
+             addReactionRulesFromCompiled(compiledModel, s, blockSameComplexBinding,
+                                          verbose, suggestedTraversalLimit, sourcePath);
     } catch (const std::exception& error) {
         if (verbose) {
             std::cerr << "[nfsim/ast] direct construction failed: "

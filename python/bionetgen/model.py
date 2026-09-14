@@ -440,11 +440,15 @@ class BioNetGenModel:
         """Serialize the model to an in-memory BNGL string."""
         return _cpp.io.write_bngl_string(self._model)
 
-    def to_bngir(self, *, provenance=None) -> str:
-        """Serialize semantic model entities as deterministic BNGIR JSON v0.1."""
+    def to_bngir(self, *, provenance=None, version="0.1") -> str:
+        """Serialize semantic model entities as deterministic BNGIR JSON.
+
+        Version ``0.1`` is the compatibility wire format. Version ``0.2`` is
+        the structural semantic format backed by ``bng::compile::CompiledModel``.
+        """
         from bionetgen.bngir import to_bngir
 
-        return to_bngir(self, provenance=provenance)
+        return to_bngir(self, provenance=provenance, version=version)
 
     def write_net(self, path: str) -> None:
         if self._network is None:

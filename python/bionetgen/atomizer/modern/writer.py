@@ -30,7 +30,7 @@ from .rate_rule_constants import (
     RATE_RULE_POS_PREFIX,
     SYNTH_RATE_RULE_SPECIES_PREFIX,
 )
-from .structures import Molecule, Species
+from .structures import Molecule, Species, read_from_string
 from .helpers import logger
 from .types import (
     BNGL_LEXER_KEYWORDS,
@@ -46,6 +46,8 @@ from .types import (
 )
 
 _PROTECTED_BUILTIN_OPERANDS = frozenset({"time", "_pi", "_e", "true", "false"})
+_MULTI_SUM_TOKEN = re.compile(r"__SBML_MULTI_SUM__([A-Za-z_][A-Za-z0-9_]*)__")
+_MULTI_NUMERIC_TOKEN = re.compile(r"__SBML_MULTI_NUMERIC__([A-Za-z_][A-Za-z0-9_]*)__")
 
 # Function identifiers and formal arguments have a narrower reserved-word
 # contract than general SBML/BNGL names.  Keep this aligned with the
@@ -1453,6 +1455,35 @@ def _prepared_kinetic_math(
         {},
         model.function_definitions,
     )
+
+    def replace_sum(match: re.Match[str]) -> str:
+        species_id = match.group(1)
+        if model.multi_executable and model.multi_species_patterns.get(species_id):
+            return f"__multi_sum_{standardize_name(species_id)}"
+        _record_import_warning(
+            model,
+            f'Multi sum representation for species "{species_id}" could not be '
+            "lowered to a BNGL pattern observable.",
+            category="package:multi",
+            severity="dropped",
+        )
+        return standardize_name(species_id)
+
+    def replace_numeric(match: re.Match[str]) -> str:
+        value_id = match.group(1)
+        parameter_id = model.multi_numeric_values.get(value_id)
+        if parameter_id:
+            return standardize_name(parameter_id)
+        _record_import_warning(
+            model,
+            f'Multi numericValue "{value_id}" has no referenced parameter.',
+            category="package:multi",
+            severity="dropped",
+        )
+        return standardize_name(value_id)
+
+    math_expression = _MULTI_SUM_TOKEN.sub(replace_sum, math_expression)
+    math_expression = _MULTI_NUMERIC_TOKEN.sub(replace_numeric, math_expression)
     kinetic_law = reaction.kinetic_law
     local_parameters = (
         kinetic_law.get("localParameters", [])
@@ -2347,6 +2378,17 @@ def write_observables(
         lines.append(f"Species {name} {pattern} # {species_id}")
         observable_map[species_id] = name
 
+    sum_species_ids = {
+        match.group(1)
+        for reaction in model.reactions.values()
+        for match in _MULTI_SUM_TOKEN.finditer(get_kinetic_math(reaction.kinetic_law))
+    }
+    for species_id in sorted(sum_species_ids):
+        pattern = model.multi_species_patterns.get(species_id)
+        if not pattern:
+            continue
+        lines.append(f"Molecules __multi_sum_{standardize_name(species_id)} {pattern}")
+
     # A simple assignment rule such as ``total = A + 2 * B`` is a BNGL
     # observable, not a dynamic function.  Preserve this losslessly when all
     # terms resolve to imported species patterns; more complex rules continue
@@ -2811,13 +2853,205 @@ def _reaction_pattern(
     species_id: str,
     sct: SpeciesCompositionTable,
     model: SBMLModel,
+    compartment_override: Optional[str] = None,
 ) -> str:
+    multi_pattern = model.multi_species_patterns.get(species_id)
+    if model.multi_executable and multi_pattern:
+        try:
+            structure = read_from_string(multi_pattern)
+        except (TypeError, ValueError):
+            structure = None
+        if structure is not None:
+            if compartment_override:
+                structure.add_compartment(standardize_name(compartment_override))
+            return _pattern(structure)
     entry = sct.entries.get(species_id)
     species = model.species.get(species_id)
     if entry is not None:
-        return _pattern(entry.structure, species.compartment if species else "")
+        return _pattern(
+            entry.structure,
+            (
+                compartment_override
+                if compartment_override is not None
+                else (species.compartment if species else "")
+            ),
+        )
     name = standardize_name(species.name if species else species_id)
     return "M_" + name + "()"
+
+
+def _multi_reference_compartment(
+    reference: object, model: SBMLModel, default: str = ""
+) -> str:
+    """Resolve a Multi compartmentReference to its core compartment id."""
+
+    reference_id = getattr(reference, "compartment_reference", None)
+    if not reference_id:
+        return default
+    for compartment_id, references in model.multi_compartment_references.items():
+        if reference_id in references:
+            return references[reference_id]
+    _record_import_warning(
+        model,
+        f'Multi compartmentReference "{reference_id}" has no matching '
+        "compartmentReference declaration; the species compartment was used.",
+        category="package:multi",
+        severity="approximated",
+    )
+    return default
+
+
+def _multi_alias_location(
+    model: SBMLModel, type_id: Optional[str], token: str
+) -> Optional[Tuple[str, int, int]]:
+    if not type_id or not token:
+        return None
+    locations = model.multi_component_aliases.get(type_id, {}).get(token, [])
+    if len(locations) == 1:
+        return tuple(locations[0])
+    return None
+
+
+def _clear_multi_component_state(component: object) -> None:
+    component.states = []
+    component.active_state = ""
+
+
+def _copy_multi_component_state(source: object, target: object) -> None:
+    target.states = list(getattr(source, "states", []))
+    target.active_state = getattr(source, "active_state", "")
+    source_bonds = list(getattr(source, "bonds", []))
+    # Numeric bonds are meaningful only when both mapped endpoints are present;
+    # wildcard outward status remains valid on its own.
+    structural_bonds = [
+        bond for bond in getattr(target, "bonds", []) if bond not in ("+", "?")
+    ]
+    target.bonds = structural_bonds or [
+        bond for bond in source_bonds if bond in ("+", "?")
+    ]
+
+
+def _multi_product_structure(
+    model: SBMLModel,
+    species_id: str,
+    reaction: SBMLReaction,
+    reference: object,
+) -> Optional[Species]:
+    """Reconstruct a mapped Multi product while retaining don't-care fields."""
+
+    species = model.species.get(species_id)
+    if species is None or not model.multi_executable:
+        return None
+    type_pattern = model.multi_type_patterns.get(species.species_type or "")
+    species_pattern = model.multi_species_patterns.get(species_id)
+    if not type_pattern or not species_pattern:
+        return None
+    try:
+        result = read_from_string(type_pattern)
+        explicit = read_from_string(species_pattern)
+    except (TypeError, ValueError):
+        return None
+
+    # Type pattern supplies complete molecule/bond topology.  Species pattern
+    # overlays only explicitly stated components; omitted features remain
+    # don't-care, as required by Multi.
+    used_explicit = set()
+    for target_index, target in enumerate(result.molecules):
+        candidate = None
+        if target_index < len(explicit.molecules):
+            possible = explicit.molecules[target_index]
+            if possible.name == target.name:
+                candidate = possible
+        if candidate is None:
+            for index, possible in enumerate(explicit.molecules):
+                if index not in used_explicit and possible.name == target.name:
+                    candidate = possible
+                    used_explicit.add(index)
+                    break
+        if candidate is None:
+            for component in target.components:
+                _clear_multi_component_state(component)
+            continue
+        used_explicit.add(explicit.molecules.index(candidate))
+        explicit_by_name = {
+            component.name: component for component in candidate.components
+        }
+        for component in target.components:
+            source_component = explicit_by_name.get(component.name)
+            if source_component is None:
+                _clear_multi_component_state(component)
+            else:
+                _copy_multi_component_state(source_component, component)
+
+    for mapping in getattr(reference, "multi_component_maps", []) or []:
+        source_reference = next(
+            (
+                item
+                for item in reaction.reactants
+                if getattr(item, "id", None) == mapping.reactant
+            ),
+            None,
+        )
+        if source_reference is None:
+            _record_import_warning(
+                model,
+                f'Reaction "{reaction.id}" Multi product map references unknown '
+                f'reactant "{mapping.reactant}"; mapping was not applied.',
+                category="package:multi",
+                severity="dropped",
+            )
+            continue
+        source_species = model.species.get(source_reference.species)
+        source_type = source_species.species_type if source_species else None
+        source_pattern = model.multi_species_patterns.get(source_reference.species)
+        if not source_type or not source_pattern:
+            continue
+        try:
+            source_structure = read_from_string(source_pattern)
+        except (TypeError, ValueError):
+            continue
+        source_location = _multi_alias_location(
+            model, source_type, mapping.reactant_component
+        )
+        target_location = _multi_alias_location(
+            model, species.species_type, mapping.product_component
+        )
+        if source_location is None or target_location is None:
+            _record_import_warning(
+                model,
+                f'Reaction "{reaction.id}" Multi product map could not resolve '
+                f'"{mapping.reactant_component}" to "{mapping.product_component}"; '
+                "mapping was not applied.",
+                category="package:multi",
+                severity="dropped",
+            )
+            continue
+        source_kind, source_molecule_index, source_component_index = source_location
+        target_kind, target_molecule_index, target_component_index = target_location
+        if source_molecule_index >= len(source_structure.molecules):
+            continue
+        if target_molecule_index >= len(result.molecules):
+            continue
+        source_molecule = source_structure.molecules[source_molecule_index]
+        target_molecule = result.molecules[target_molecule_index]
+        if source_kind == "molecule" and target_kind == "molecule":
+            for index, target_component in enumerate(target_molecule.components):
+                if index < len(source_molecule.components):
+                    _copy_multi_component_state(
+                        source_molecule.components[index], target_component
+                    )
+        elif (
+            source_kind == "component"
+            and target_kind == "component"
+            and source_component_index < len(source_molecule.components)
+            and target_component_index < len(target_molecule.components)
+        ):
+            _copy_multi_component_state(
+                source_molecule.components[source_component_index],
+                target_molecule.components[target_component_index],
+            )
+    result.renumber_bonds()
+    return result
 
 
 def _compartments_are_adjacent(
@@ -2858,6 +3092,10 @@ def write_reaction_rules(
             if reactant_species is not None
             else None
         )
+        if reaction.reactants:
+            reactant_compartment = _multi_reference_compartment(
+                reaction.reactants[0], model, reactant_compartment or ""
+            )
         if model.compartments and reactant_compartment:
             for reference in reaction.products:
                 if reference.species == "EmptySet":
@@ -2867,6 +3105,9 @@ def write_reaction_rules(
                     getattr(product_species, "compartment", None)
                     if product_species is not None
                     else None
+                )
+                product_compartment = _multi_reference_compartment(
+                    reference, model, product_compartment or ""
                 )
                 if (
                     product_compartment
@@ -2928,16 +3169,43 @@ def write_reaction_rules(
             if reference.species == "EmptySet":
                 continue
             reactants.extend(
-                [_reaction_pattern(reference.species, sct, model)]
+                [
+                    _reaction_pattern(
+                        reference.species,
+                        sct,
+                        model,
+                        _multi_reference_compartment(
+                            reference,
+                            model,
+                            getattr(
+                                model.species.get(reference.species),
+                                "compartment",
+                                "",
+                            ),
+                        ),
+                    )
+                ]
                 * int(round(reference.stoichiometry))
             )
         for reference in reaction.products:
             if reference.species == "EmptySet":
                 continue
-            products.extend(
-                [_reaction_pattern(reference.species, sct, model)]
-                * int(round(reference.stoichiometry))
+            mapped = _multi_product_structure(
+                model, reference.species, reaction, reference
             )
+            product_compartment = _multi_reference_compartment(
+                reference,
+                model,
+                getattr(model.species.get(reference.species), "compartment", ""),
+            )
+            product_pattern = (
+                _pattern(mapped, product_compartment)
+                if mapped is not None
+                else _reaction_pattern(
+                    reference.species, sct, model, product_compartment
+                )
+            )
+            products.extend([product_pattern] * int(round(reference.stoichiometry)))
         label = standardize_name(reaction.name or reaction_id)
         candidate = label
         suffix = 2
@@ -3418,6 +3686,8 @@ def generate_bngl(
         model.multi_molecule_types
         or model.multi_complex_patterns
         or model.multi_seed_patterns
+        or model.multi_species_patterns
+        or model.multi_reaction_mappings
     )
     if model.import_warnings or has_multi:
         model_text += "\n# ==== SBML IMPORT NOTES ====\n"
@@ -3428,19 +3698,24 @@ def generate_bngl(
             count = warning.get("count", 1)
             suffix = f" (x{count})" if count and count != 1 else ""
             model_text += f"# [{severity}] {category}: {message}{suffix}\n"
-        if model.multi_molecule_types:
+        if model.multi_molecule_types and not model.multi_executable:
             model_text += "# SBML Multi molecule-type skeletons (reference only):\n"
             for molecule_type in model.multi_molecule_types:
                 model_text += f"#     {molecule_type}\n"
-        if model.multi_complex_patterns:
+        if model.multi_complex_patterns and not model.multi_executable:
             model_text += "# SBML Multi bonded complex patterns (reference only):\n"
             for pattern in model.multi_complex_patterns:
                 model_text += f"#     {pattern}\n"
-        if model.multi_seed_patterns:
+        if model.multi_seed_patterns and not model.multi_executable:
             model_text += "# SBML Multi seed patterns (reference only):\n"
             for pattern in model.multi_seed_patterns:
                 model_text += f"#     {pattern}\n"
-        if has_multi:
+        if model.multi_executable:
+            model_text += (
+                "# SBML Multi species types, patterns, and product mappings were "
+                "translated into the executable BNGL model.\n"
+            )
+        elif has_multi:
             model_text += (
                 "# Multi structures are not yet fed into the simulated network.\n"
             )

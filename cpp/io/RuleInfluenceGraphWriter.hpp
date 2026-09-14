@@ -5,7 +5,6 @@
 #include <string>
 #include <vector>
 
-#include "ast/Model.hpp"
 #include "engine/NetworkGenerator.hpp"
 
 namespace bng::io {
@@ -38,8 +37,7 @@ public:
     /**
      * Build rule influence graph from generated network
      */
-    static RuleInfluenceGraph build(const ast::Model& model,
-                                    const engine::GeneratedNetwork& network);
+    static RuleInfluenceGraph build(const engine::GeneratedNetwork& network);
 
     /**
      * Export to GML format
