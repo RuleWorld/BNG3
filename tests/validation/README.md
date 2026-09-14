@@ -1,9 +1,12 @@
 # Validation harness
 
 The current combined-tree verification state is recorded in
-[`../../docs/CURRENT_PROGRESS.md`](../../docs/CURRENT_PROGRESS.md). The final
-verification pass for the listed checkpoint has completed, but the remaining
-corpus, backend-equivalence, and release gates are still open.
+[`../../docs/CURRENT_PROGRESS.md`](../../docs/CURRENT_PROGRESS.md). The
+repository validation command runs every fixture in `Validate/`: network
+fixtures compare against committed independent BNG2 `.net` references, while
+action-only fixtures use explicit output contracts from
+`validation_manifest.json`. A successful full-corpus run must report
+`SKIP=0`.
 
 Differential testing against the originals. Nothing merges until it matches.
 
@@ -46,11 +49,16 @@ Engine discovery: `--bng-cpp PATH` / `BNG_CPP` for the CLI; `import bionetgen` f
 The 2026-09-14 independent checkpoint used BNG2 revision
 `e0a5c6d9e6c4730f66102e48d0d0a598337083e7` and NFsim revision
 `a6f9fa945c9d6e1e122e789c952260112c93f157`. The selected structural BNG2
-workflow reported `5/5` passes. The broader parity subset reported `11
-passed, 89 skipped, 96 deselected`; the skips are explicit reference,
-platform, fixture, or legacy-support conditions and do not qualify full
-Tier-P. The selected NFsim gate reported `10 passed`, covering direct/XML
-construction, four 200-run seeded ensembles, and fixed-seed endpoints.
+workflow reported `5/5` passes. The selected NFsim gate reported `10 passed`,
+covering direct/XML construction, four 200-run seeded ensembles, and fixed-seed
+endpoints.
+
+The former reference-exclusion ledger is closed. The six fixtures whose
+primary behavior is an action output (`ANx`, `hybrid_test`, `test_tfun`,
+`test_tfun_xml`, `test_write_sbml_multi`, and `visualize`) are independently
+validated by `scripts/validate_actions.py`; the remaining fixtures are checked
+against committed BNG2 network references. The native reader also has a narrow
+legacy structured-SBML `atomize=>1` contract for the `plain2` validation model.
 
 ## What each gate proves
 - `test_parity_net` — WO-1a. Active expected failures come only from `exceptions.json`; each is signature-checked and an unexpected pass fails. The current ledger is empty: `blbr` now compares equal under structural species identity, including its symmetry-heavy bond-label orientations.

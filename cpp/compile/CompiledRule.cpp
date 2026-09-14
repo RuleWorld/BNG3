@@ -487,12 +487,20 @@ public:
             reverse.reactantPatterns = compiled.forward_.productPatterns;
             reverse.productPatterns = compiled.forward_.reactantPatterns;
             reverse.filters = reversedFilters(compiled.forward_.filters);
-            // Local scope identifiers are meaningful only when present on the
-            // active reactant side. Product-side scope prefixes are uncommon and
-            // are not inferred from forward bindings. A reverse local-rate
-            // direction therefore fails closed unless no local references occur.
-            reverse.localScopes.clear();
-            if (compiled.rateLaws_.size() >= 2) reverse.rateLaw = compiled.rateLaws_[1];
+            // A reversible rule's scope tag is present on both sides of the
+            // BNGL rule, so the same binding becomes active when the product
+            // pattern is used as the reverse reactant. Preserve the resolved
+            // binding instead of silently turning reverse local rates into zero.
+            reverse.localScopes = compiled.forward_.localScopes;
+            // A reversible BNGL rule with one rate law uses that same law for
+            // both directions (for example, a single Arrhenius expression).
+            // Keep an explicit second rate when present, but do not silently
+            // turn the reverse direction into a zero-rate reaction.
+            if (compiled.rateLaws_.size() >= 2) {
+                reverse.rateLaw = compiled.rateLaws_[1];
+            } else if (!compiled.rateLaws_.empty()) {
+                reverse.rateLaw = compiled.rateLaws_.front();
+            }
             reverse.transformationsComplete = true;
 
             auto productSiteForReactant = [&](const PatternSiteRef& reactantRef)

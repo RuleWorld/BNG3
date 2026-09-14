@@ -63,6 +63,26 @@ def load_skip_models(skip_file: Union[Path, str], profile: str) -> list[str]:
     return list(models)
 
 
+def load_validation_manifest(manifest_file: Union[Path, str]) -> list[str]:
+    """Load the named action-output fixtures from the validation manifest."""
+
+    path = Path(manifest_file)
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"cannot read validation manifest {path}: {exc}") from exc
+    if not isinstance(manifest, dict) or manifest.get("schema_version") != 1:
+        raise ValueError(f"validation manifest {path} must use schema_version 1")
+    models = manifest.get("action_models")
+    if not isinstance(models, list) or any(
+        not isinstance(model, str) or not model.strip() for model in models
+    ):
+        raise ValueError(f"validation manifest {path} must contain action_models")
+    if len(models) != len(set(models)):
+        raise ValueError(f"validation manifest {path} contains duplicate action models")
+    return list(models)
+
+
 def copy_referenced_support_files(
     bngl: Path, validate_dir: Path, dat_dir: Path, work_dir: Path
 ) -> list[Path]:
@@ -103,7 +123,12 @@ def copy_referenced_support_files(
 
 
 def run_validation(
-    bng_cpp, validate_dir, verbose=False, skip_models=None, strict_references=False
+    bng_cpp,
+    validate_dir,
+    verbose=False,
+    skip_models=None,
+    strict_references=False,
+    action_models=None,
 ):
     """Run bng_cpp on all .bngl files and compare against reference .net.
 
@@ -113,15 +138,25 @@ def run_validation(
         verbose: Whether to print detailed output
         skip_models: List of model names (without .bngl) to skip
         strict_references: Treat an unskipped missing reference .net as an error
+        action_models: Fixtures validated by action-output contracts below
     """
     if skip_models is None:
         skip_models = []
+    if action_models is None:
+        action_models = []
 
     dat_dir = validate_dir / "DAT_validate"
     bngl_files = sorted(validate_dir.glob("*.bngl"))
-
     results = {"pass": 0, "fail": 0, "skip": 0, "error": 0}
     details = []
+
+    if action_models:
+        from scripts.validate_actions import validate_action_model
+
+        for model_name in action_models:
+            status, detail = validate_action_model(bng_cpp, validate_dir, model_name)
+            results[status] += 1
+            details.append(detail)
 
     for bngl in bngl_files:
         model_name = bngl.stem
@@ -130,6 +165,9 @@ def run_validation(
             results["skip"] += 1
             if verbose:
                 details.append(f"SKIP  {model_name} (excluded)")
+            continue
+
+        if model_name in action_models:
             continue
 
         ref_net = dat_dir / f"{model_name}.net"
@@ -243,9 +281,13 @@ def write_validation_summary(
         or "unavailable"
     )
     skip_note = (
-        "explicit exclusions only"
-        if strict_references
-        else "explicit exclusions or no reference .net"
+        "no exclusions"
+        if results["skip"] == 0
+        else (
+            "explicit exclusions only"
+            if strict_references
+            else "explicit exclusions or no reference .net"
+        )
     )
     lines = [
         "### BNG3 reference validation",
@@ -287,6 +329,12 @@ def main():
         "--skip-profile",
         default=None,
         help="Profile to load from --skip-file",
+    )
+    parser.add_argument(
+        "--validation-manifest",
+        type=Path,
+        default=None,
+        help="Manifest naming action-output fixtures validated with explicit contracts",
     )
     parser.add_argument(
         "--strict-references",
@@ -342,6 +390,13 @@ def main():
         except ValueError as exc:
             parser.error(str(exc))
 
+    action_models = []
+    if args.validation_manifest:
+        try:
+            action_models = load_validation_manifest(args.validation_manifest)
+        except ValueError as exc:
+            parser.error(str(exc))
+
     print(f"BNG C++:    {bng_cpp}")
     print(f"Validation: {validate_dir}")
     print(f"Reference:  {validate_dir / 'DAT_validate'}")
@@ -355,6 +410,7 @@ def main():
         verbose=args.verbose,
         skip_models=skip_models,
         strict_references=args.strict_references,
+        action_models=action_models,
     )
 
     # Print details
@@ -371,9 +427,13 @@ def main():
     print(f"  FAIL:  {results['fail']}")
     print(f"  ERROR: {results['error']}")
     skip_note = (
-        "explicit exclusions only"
-        if args.strict_references
-        else "explicit exclusions or no reference .net"
+        "no exclusions"
+        if results["skip"] == 0
+        else (
+            "explicit exclusions only"
+            if args.strict_references
+            else "explicit exclusions or no reference .net"
+        )
     )
     print(f"  SKIP:  {results['skip']} ({skip_note})")
     print("=" * 60)

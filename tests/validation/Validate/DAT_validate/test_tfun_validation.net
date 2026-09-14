@@ -1,0 +1,18 @@
+# Created by BioNetGen UNKNOWN
+begin parameters
+end parameters
+begin functions
+    1 f_sci() tfun([1e-3,2e-2,3e-1],[1.5e+2,2.5e+2,3.5e+2],time)
+    2 f_space() tfun([0,1,2],[10,20,30],time)
+    3 f_neg() tfun([-2,-1,0,1,2],[5,10,15,20,25],time)
+    4 f_dec() tfun([0.5,1.5,2.5],[100.25,200.75,300.125],time)
+end functions
+begin species
+    1 A() 100
+end species
+begin reactions
+    1 1 0 f_sci #_R1
+end reactions
+begin groups
+    1 Atot                 1
+end groups

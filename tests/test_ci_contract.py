@@ -8,6 +8,7 @@ import pytest
 
 from scripts.validate import (
     load_skip_models,
+    load_validation_manifest,
     run_validation,
     write_validation_summary,
 )
@@ -23,6 +24,7 @@ PYPROJECT = REPO / "pyproject.toml"
 CI_WORKFLOW = REPO / ".github" / "workflows" / "ci.yml"
 WEEKLY_WORKFLOW = REPO / ".github" / "workflows" / "weekly.yml"
 REFERENCE_EXCLUSIONS = REPO / "tests" / "validation" / "reference_exclusions.json"
+VALIDATION_MANIFEST = REPO / "tests" / "validation" / "validation_manifest.json"
 VALIDATE_DIR = REPO / "tests" / "validation" / "Validate"
 PARITY_WORKFLOW = REPO / ".github" / "workflows" / "parity.yml"
 FORMAL_WORKFLOW = REPO / ".github" / "workflows" / "formal.yml"
@@ -421,58 +423,34 @@ def test_cross_validation_summary_records_both_engines_without_duplicate_header(
 
 
 def test_reference_exclusion_manifest_is_explicit_and_corpus_backed():
-    """Reference skips must be centralized, typed, and tied to corpus evidence."""
+    """The former exclusion ledger is closed and contains no skipped models."""
 
     manifest = json.loads(REFERENCE_EXCLUSIONS.read_text(encoding="utf-8"))
     assert manifest["schema_version"] == 1
-    assert manifest["status"] == "pending-maintainer-approval"
+    assert manifest["status"] == "closed"
     assert set(manifest["profiles"]) == {"pull_request", "weekly"}
-    assert set(manifest["reasons"]) == {
-        "missing_reference_net",
-        "unsupported_native_path",
-    }
+    assert manifest["profiles"] == {"pull_request": [], "weekly": []}
+    assert manifest["reasons"] == {}
 
-    pull_request = manifest["profiles"]["pull_request"]
-    weekly = manifest["profiles"]["weekly"]
-    assert len(pull_request) == len(set(pull_request))
-    assert len(weekly) == len(set(weekly))
-    assert set(weekly) == set(pull_request)
-
-    missing_reference = set(manifest["reasons"]["missing_reference_net"])
-    unsupported_native = set(manifest["reasons"]["unsupported_native_path"])
-    assert missing_reference.isdisjoint(unsupported_native)
-    assert set(pull_request) == missing_reference | unsupported_native
-
-    for model in missing_reference | unsupported_native:
-        assert isinstance(model, str) and model
-        assert (VALIDATE_DIR / f"{model}.bngl").is_file(), model
-    assert all(
-        not (VALIDATE_DIR / "DAT_validate" / f"{model}.net").is_file()
-        for model in missing_reference
-    )
-    assert all(
-        (VALIDATE_DIR / "DAT_validate" / f"{model}.net").is_file()
-        for model in unsupported_native
-    )
+    action_models = load_validation_manifest(VALIDATION_MANIFEST)
+    assert action_models
+    assert len(action_models) == len(set(action_models))
+    assert all((VALIDATE_DIR / f"{model}.bngl").is_file() for model in action_models)
 
 
-def test_reference_ci_jobs_consume_profiled_exclusions():
-    """CI must use the committed profile instead of duplicating skip strings."""
+def test_reference_ci_jobs_run_the_full_corpus_without_exclusions():
+    """CI must run both network and action-output fixtures without skips."""
 
     validation_job = _workflow_job("validation")
     weekly_job = _workflow_job_from(WEEKLY_WORKFLOW, "bng-validation")
     assert "SKIP=" not in validation_job
     assert "SKIP=" not in weekly_job
-    assert re.search(
-        r"--skip-file tests/validation/reference_exclusions\.json\s*\\?\s+"
-        r"--skip-profile pull_request",
-        validation_job,
-    )
-    assert re.search(
-        r"--skip-file tests/validation/reference_exclusions\.json\s*\\?\s+"
-        r"--skip-profile weekly",
-        weekly_job,
-    )
+    assert "--skip-file" not in validation_job
+    assert "--skip-profile" not in validation_job
+    assert "--skip-file" not in weekly_job
+    assert "--skip-profile" not in weekly_job
+    assert "--validation-manifest tests/validation/validation_manifest.json" in validation_job
+    assert "--validation-manifest tests/validation/validation_manifest.json" in weekly_job
 
 
 def test_validate_loads_the_committed_reference_exclusion_profile():

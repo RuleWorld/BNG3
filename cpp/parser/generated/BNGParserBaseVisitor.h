@@ -1,10 +1,9 @@
 
-// Generated from BNGParser.g4 by ANTLR 4.13.2
+// Generated from cpp/parser/BNGParser.g4 by ANTLR 4.13.1
 
 #pragma once
 
 
-#include "../antlr_compat.hpp"
 #include "antlr4-runtime.h"
 #include "BNGParserVisitor.h"
 
