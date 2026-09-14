@@ -34,16 +34,25 @@ option(NFSIM_ENABLE_LTO
 # IPO properties to the embedded NFsim library and its consumers.
 set(NFSIM_IPO_SUPPORTED FALSE)
 if(NFSIM_ENABLE_LTO)
-    include(CheckIPOSupported)
-    check_ipo_supported(
-        RESULT NFSIM_IPO_RESULT
-        OUTPUT NFSIM_IPO_ERROR
-        LANGUAGES C CXX)
-    if(NFSIM_IPO_RESULT)
-        set(NFSIM_IPO_SUPPORTED TRUE)
-        message(STATUS "BNG3 release LTO enabled")
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND UNIX AND NOT APPLE)
+        # Clang's Linux driver emits LLVM-bitcode members for this static
+        # archive, while several legacy test executables link it through the
+        # system GNU linker without IPO enabled.  CheckIPOSupported only
+        # probes a single IPO consumer and cannot detect that mixed-consumer
+        # failure, so fail closed for this toolchain combination.
+        message(STATUS "BNG3 release LTO disabled: Linux Clang static-archive consumers are not link-safe")
     else()
-        message(STATUS "BNG3 release LTO disabled: ${NFSIM_IPO_ERROR}")
+        include(CheckIPOSupported)
+        check_ipo_supported(
+            RESULT NFSIM_IPO_RESULT
+            OUTPUT NFSIM_IPO_ERROR
+            LANGUAGES C CXX)
+        if(NFSIM_IPO_RESULT)
+            set(NFSIM_IPO_SUPPORTED TRUE)
+            message(STATUS "BNG3 release LTO enabled")
+        else()
+            message(STATUS "BNG3 release LTO disabled: ${NFSIM_IPO_ERROR}")
+        endif()
     endif()
 endif()
 
