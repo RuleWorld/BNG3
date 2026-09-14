@@ -200,14 +200,17 @@ def _features_v02(snapshot: Mapping[str, Any]) -> dict[str, list[str]]:
             used.append(feature)
     if snapshot.get("actions"):
         used.append("protocol")
-    return {"required": ["structured_patterns", "structured_expressions"],
-            "used": sorted(used + ["structured_patterns", "structured_expressions"])}
+    return {
+        "required": ["structured_patterns", "structured_expressions"],
+        "used": sorted(used + ["structured_patterns", "structured_expressions"]),
+    }
 
 
 def _payload_v02(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, Any]:
     native = _model_of(model)
     try:
         from .model import _cpp
+
         snapshot = _cpp._compiled_snapshot(native)
     except (AttributeError, ImportError) as exc:
         raise RuntimeError(
@@ -247,6 +250,7 @@ def to_bngir(
     return json.dumps(
         payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
     )
+
 
 def _require_mapping(value: Any, where: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
@@ -511,7 +515,14 @@ def _validate_expression_v02(
             raise ValueError(f"BNGIR {where} has invalid reactant_index")
         if reactant_count is not None and value >= reactant_count:
             raise ValueError(f"BNGIR {where} reactant_index is out of range: {value}")
-    elif kind in {"number", "time_ref", "unary", "binary", "builtin_call", "table_function"}:
+    elif kind in {
+        "number",
+        "time_ref",
+        "unary",
+        "binary",
+        "builtin_call",
+        "table_function",
+    }:
         pass
     elif kind == "unresolved":
         raise ValueError(f"BNGIR {where} is unresolved")
@@ -519,13 +530,17 @@ def _validate_expression_v02(
         raise ValueError(f"unsupported BNGIR {where} kind: {kind!r}")
     for i, arg in enumerate(args):
         _validate_expression_v02(
-            _require_mapping(arg, f"{where}.arguments[{i}]"), model,
-            local_names=local_names, reactant_count=reactant_count,
+            _require_mapping(arg, f"{where}.arguments[{i}]"),
+            model,
+            local_names=local_names,
+            reactant_count=reactant_count,
             where=f"{where}.arguments[{i}]",
         )
 
 
-def _validate_pattern_v02(pattern: Mapping[str, Any], model: Mapping[str, Any], where: str) -> None:
+def _validate_pattern_v02(
+    pattern: Mapping[str, Any], model: Mapping[str, Any], where: str
+) -> None:
     pattern = _require_mapping(pattern, where)
     molecule_types = _section_id_map(model, "molecule_types")
     compartments = _section_id_map(model, "compartments")
@@ -536,14 +551,20 @@ def _validate_pattern_v02(pattern: Mapping[str, Any], model: Mapping[str, Any], 
     for mi, raw_molecule in enumerate(molecules):
         molecule = _require_mapping(raw_molecule, f"{where}.molecules[{mi}]")
         occurrence = molecule.get("occurrence", mi)
-        if not isinstance(occurrence, int) or occurrence < 0 or occurrence in seen_occurrences:
+        if (
+            not isinstance(occurrence, int)
+            or occurrence < 0
+            or occurrence in seen_occurrences
+        ):
             raise ValueError(f"BNGIR {where} has invalid/duplicate molecule occurrence")
         seen_occurrences.add(occurrence)
         type_id = molecule.get("type_id")
         declaration = None
         if type_id is not None:
             if not isinstance(type_id, int) or type_id not in molecule_types:
-                raise ValueError(f"BNGIR {where} references unknown molecule type id: {type_id}")
+                raise ValueError(
+                    f"BNGIR {where} references unknown molecule type id: {type_id}"
+                )
             declaration = molecule_types[type_id]
             if molecule.get("type") != declaration.get("name"):
                 raise ValueError(f"BNGIR {where} molecule type name/id disagree")
@@ -551,7 +572,9 @@ def _validate_pattern_v02(pattern: Mapping[str, Any], model: Mapping[str, Any], 
         if compartment_id is not None and (
             not isinstance(compartment_id, int) or compartment_id not in compartments
         ):
-            raise ValueError(f"BNGIR {where} references unknown compartment id: {compartment_id}")
+            raise ValueError(
+                f"BNGIR {where} references unknown compartment id: {compartment_id}"
+            )
         components = declaration.get("components", []) if declaration else []
         for si, raw_site in enumerate(molecule.get("sites", [])):
             site = _require_mapping(raw_site, f"{where}.molecules[{mi}].sites[{si}]")
@@ -561,18 +584,33 @@ def _validate_pattern_v02(pattern: Mapping[str, Any], model: Mapping[str, Any], 
                 if not isinstance(component_index, int) or component_index < 0:
                     raise ValueError(f"BNGIR {where} has invalid component index")
                 component_decl = next(
-                    (c for c in components if int(c.get("index", -1)) == component_index), None
+                    (
+                        c
+                        for c in components
+                        if int(c.get("index", -1)) == component_index
+                    ),
+                    None,
                 )
                 if component_decl is None:
-                    raise ValueError(f"BNGIR {where} references unknown component index")
+                    raise ValueError(
+                        f"BNGIR {where} references unknown component index"
+                    )
                 if site.get("component") != component_decl.get("name"):
                     raise ValueError(f"BNGIR {where} component name/index disagree")
             state = _require_mapping(site.get("state", {}), f"{where}.state")
             state_kind = state.get("kind", "any")
-            if state_kind == "exact" and component_decl is not None and "index" in state:
+            if (
+                state_kind == "exact"
+                and component_decl is not None
+                and "index" in state
+            ):
                 state_index = state["index"]
                 states = component_decl.get("states", [])
-                if not isinstance(state_index, int) or state_index < 0 or state_index >= len(states):
+                if (
+                    not isinstance(state_index, int)
+                    or state_index < 0
+                    or state_index >= len(states)
+                ):
                     raise ValueError(f"BNGIR {where} references unknown state index")
                 if state.get("value") != states[state_index]:
                     raise ValueError(f"BNGIR {where} state value/index disagree")
@@ -580,26 +618,39 @@ def _validate_pattern_v02(pattern: Mapping[str, Any], model: Mapping[str, Any], 
                 indices = state.get("indices", [])
                 values = state.get("values", [])
                 if len(indices) != len(values):
-                    raise ValueError(f"BNGIR {where} state set value/index lengths differ")
+                    raise ValueError(
+                        f"BNGIR {where} state set value/index lengths differ"
+                    )
                 states = component_decl.get("states", [])
                 for state_index, state_value in zip(indices, values):
-                    if not isinstance(state_index, int) or state_index < 0 or state_index >= len(states):
-                        raise ValueError(f"BNGIR {where} references unknown state index")
+                    if (
+                        not isinstance(state_index, int)
+                        or state_index < 0
+                        or state_index >= len(states)
+                    ):
+                        raise ValueError(
+                            f"BNGIR {where} references unknown state index"
+                        )
                     if state_value != states[state_index]:
                         raise ValueError(f"BNGIR {where} state value/index disagree")
             elif state_kind not in {"any", "exact", "set"}:
                 raise ValueError(f"BNGIR {where} has invalid state constraint")
     pattern_compartment_id = pattern.get("compartment_id")
     if pattern_compartment_id is not None and (
-        not isinstance(pattern_compartment_id, int) or pattern_compartment_id not in compartments
+        not isinstance(pattern_compartment_id, int)
+        or pattern_compartment_id not in compartments
     ):
         raise ValueError(f"BNGIR {where} references unknown graph compartment id")
 
 
-def _validate_pattern_ref_v02(ref: Mapping[str, Any], direction: Mapping[str, Any], where: str, *, site: bool) -> None:
+def _validate_pattern_ref_v02(
+    ref: Mapping[str, Any], direction: Mapping[str, Any], where: str, *, site: bool
+) -> None:
     ref = _require_mapping(ref, where)
     side = ref.get("side")
-    section = "reactants" if side == "reactant" else "products" if side == "product" else None
+    section = (
+        "reactants" if side == "reactant" else "products" if side == "product" else None
+    )
     if section is None:
         raise ValueError(f"BNGIR {where}.side must be reactant or product")
     patterns = direction.get(section, [])
@@ -617,15 +668,20 @@ def _validate_pattern_ref_v02(ref: Mapping[str, Any], direction: Mapping[str, An
             raise ValueError(f"BNGIR {where} site reference is out of range")
 
 
-def _validate_direction_v02(direction: Mapping[str, Any], model: Mapping[str, Any], where: str) -> None:
+def _validate_direction_v02(
+    direction: Mapping[str, Any], model: Mapping[str, Any], where: str
+) -> None:
     direction = _require_mapping(direction, where)
     for side in ("reactants", "products"):
         patterns = direction.get(side, [])
         if not isinstance(patterns, list):
             raise ValueError(f"BNGIR {where}.{side} must be an array")
         for i, pattern in enumerate(patterns):
-            _validate_pattern_v02(_require_mapping(pattern, f"{where}.{side}[{i}]"), model,
-                                  f"{where}.{side}[{i}]")
+            _validate_pattern_v02(
+                _require_mapping(pattern, f"{where}.{side}[{i}]"),
+                model,
+                f"{where}.{side}[{i}]",
+            )
     scopes = direction.get("local_scopes", [])
     if not isinstance(scopes, list):
         raise ValueError(f"BNGIR {where}.local_scopes must be an array")
@@ -642,99 +698,184 @@ def _validate_direction_v02(direction: Mapping[str, Any], model: Mapping[str, An
         if kind not in {"molecule", "species"}:
             raise ValueError(f"BNGIR {where} has invalid local scope kind")
         if not isinstance(pi, int) or pi < 0 or pi >= len(reactants):
-            raise ValueError(f"BNGIR {where} local scope reactant pattern is out of range")
+            raise ValueError(
+                f"BNGIR {where} local scope reactant pattern is out of range"
+            )
         occurrence = scope.get("molecule_occurrence")
         if kind == "molecule":
-            molecules = _require_mapping(reactants[pi], f"{where}.reactants[{pi}]").get("molecules", [])
-            if not isinstance(occurrence, int) or occurrence < 0 or occurrence >= len(molecules):
-                raise ValueError(f"BNGIR {where} local scope molecule occurrence is out of range")
+            molecules = _require_mapping(reactants[pi], f"{where}.reactants[{pi}]").get(
+                "molecules", []
+            )
+            if (
+                not isinstance(occurrence, int)
+                or occurrence < 0
+                or occurrence >= len(molecules)
+            ):
+                raise ValueError(
+                    f"BNGIR {where} local scope molecule occurrence is out of range"
+                )
         elif occurrence is not None:
-            raise ValueError(f"BNGIR {where} species scope must not have a molecule occurrence")
+            raise ValueError(
+                f"BNGIR {where} species scope must not have a molecule occurrence"
+            )
     if direction.get("rate"):
         rate = _require_mapping(direction["rate"], f"{where}.rate")
         _validate_expression_v02(
-            _require_mapping(rate.get("expression"), f"{where}.rate.expression"), model,
-            local_names=local_names, reactant_count=len(reactants), where=f"{where}.rate.expression")
+            _require_mapping(rate.get("expression"), f"{where}.rate.expression"),
+            model,
+            local_names=local_names,
+            reactant_count=len(reactants),
+            where=f"{where}.rate.expression",
+        )
     for i, raw_filter in enumerate(direction.get("filters", [])):
         filter_ = _require_mapping(raw_filter, f"{where}.filters[{i}]")
         side = filter_.get("side")
-        patterns = reactants if side == "reactant" else direction.get("products", []) if side == "product" else None
+        patterns = (
+            reactants
+            if side == "reactant"
+            else direction.get("products", []) if side == "product" else None
+        )
         pi = filter_.get("pattern_index")
         if patterns is None or not isinstance(pi, int) or pi < 0 or pi >= len(patterns):
             raise ValueError(f"BNGIR {where} filter target is out of range")
         for j, pattern in enumerate(filter_.get("patterns", [])):
-            _validate_pattern_v02(_require_mapping(pattern, f"{where}.filters[{i}].patterns[{j}]"), model,
-                                  f"{where}.filters[{i}].patterns[{j}]")
+            _validate_pattern_v02(
+                _require_mapping(pattern, f"{where}.filters[{i}].patterns[{j}]"),
+                model,
+                f"{where}.filters[{i}].patterns[{j}]",
+            )
     for i, raw_mutation in enumerate(direction.get("mutations", [])):
         mutation = _require_mapping(raw_mutation, f"{where}.mutations[{i}]")
         kind = mutation.get("kind")
         if kind in {"add_molecule", "delete_molecule"}:
-            _validate_pattern_ref_v02(mutation.get("molecule"), direction,
-                                      f"{where}.mutations[{i}].molecule", site=False)
+            _validate_pattern_ref_v02(
+                mutation.get("molecule"),
+                direction,
+                f"{where}.mutations[{i}].molecule",
+                site=False,
+            )
         elif kind in {"add_bond", "delete_bond", "change_state"}:
-            _validate_pattern_ref_v02(mutation.get("source"), direction,
-                                      f"{where}.mutations[{i}].source", site=True)
+            _validate_pattern_ref_v02(
+                mutation.get("source"),
+                direction,
+                f"{where}.mutations[{i}].source",
+                site=True,
+            )
             if kind in {"add_bond", "delete_bond"}:
-                _validate_pattern_ref_v02(mutation.get("partner"), direction,
-                                          f"{where}.mutations[{i}].partner", site=True)
+                _validate_pattern_ref_v02(
+                    mutation.get("partner"),
+                    direction,
+                    f"{where}.mutations[{i}].partner",
+                    site=True,
+                )
         else:
             raise ValueError(f"BNGIR {where} has unsupported mutation kind: {kind!r}")
 
 
 def _validate_model_v02(model: Mapping[str, Any]) -> None:
     # Construct ID maps up front to catch duplicate IDs even when unreferenced.
-    for section in ("parameters", "molecule_types", "compartments", "observables",
-                    "functions", "energy_patterns", "population_types", "rules"):
+    for section in (
+        "parameters",
+        "molecule_types",
+        "compartments",
+        "observables",
+        "functions",
+        "energy_patterns",
+        "population_types",
+        "rules",
+    ):
         _section_id_map(model, section)
     for i, parameter in enumerate(model.get("parameters", [])):
         parameter = _require_mapping(parameter, f"model.parameters[{i}]")
-        _validate_expression_v02(_require_mapping(parameter.get("expression"), "parameter expression"),
-                                 model, local_names=set(), where=f"model.parameters[{i}].expression")
+        _validate_expression_v02(
+            _require_mapping(parameter.get("expression"), "parameter expression"),
+            model,
+            local_names=set(),
+            where=f"model.parameters[{i}].expression",
+        )
     for i, seed in enumerate(model.get("seeds", [])):
         seed = _require_mapping(seed, f"model.seeds[{i}]")
-        _validate_pattern_v02(_require_mapping(seed.get("pattern"), "seed pattern"), model,
-                              f"model.seeds[{i}].pattern")
-        _validate_expression_v02(_require_mapping(seed.get("amount"), "seed amount"), model,
-                                 local_names=set(), where=f"model.seeds[{i}].amount")
+        _validate_pattern_v02(
+            _require_mapping(seed.get("pattern"), "seed pattern"),
+            model,
+            f"model.seeds[{i}].pattern",
+        )
+        _validate_expression_v02(
+            _require_mapping(seed.get("amount"), "seed amount"),
+            model,
+            local_names=set(),
+            where=f"model.seeds[{i}].amount",
+        )
     for i, observable in enumerate(model.get("observables", [])):
         observable = _require_mapping(observable, f"model.observables[{i}]")
         for j, term in enumerate(observable.get("terms", [])):
             term = _require_mapping(term, f"model.observables[{i}].terms[{j}]")
-            _validate_pattern_v02(_require_mapping(term.get("pattern"), "observable pattern"), model,
-                                  f"model.observables[{i}].terms[{j}].pattern")
+            _validate_pattern_v02(
+                _require_mapping(term.get("pattern"), "observable pattern"),
+                model,
+                f"model.observables[{i}].terms[{j}].pattern",
+            )
     for i, function in enumerate(model.get("functions", [])):
         function = _require_mapping(function, f"model.functions[{i}]")
         args = function.get("arguments", [])
         if not isinstance(args, list) or not all(isinstance(a, str) for a in args):
             raise ValueError(f"BNGIR model.functions[{i}].arguments must be strings")
-        _validate_expression_v02(_require_mapping(function.get("expression"), "function expression"), model,
-                                 local_names=set(args), where=f"model.functions[{i}].expression")
+        _validate_expression_v02(
+            _require_mapping(function.get("expression"), "function expression"),
+            model,
+            local_names=set(args),
+            where=f"model.functions[{i}].expression",
+        )
     for i, factor in enumerate(model.get("energy_patterns", [])):
         factor = _require_mapping(factor, f"model.energy_patterns[{i}]")
-        _validate_pattern_v02(_require_mapping(factor.get("pattern"), "energy pattern"), model,
-                              f"model.energy_patterns[{i}].pattern")
-        _validate_expression_v02(_require_mapping(factor.get("expression"), "energy expression"), model,
-                                 local_names=set(), where=f"model.energy_patterns[{i}].expression")
+        _validate_pattern_v02(
+            _require_mapping(factor.get("pattern"), "energy pattern"),
+            model,
+            f"model.energy_patterns[{i}].pattern",
+        )
+        _validate_expression_v02(
+            _require_mapping(factor.get("expression"), "energy expression"),
+            model,
+            local_names=set(),
+            where=f"model.energy_patterns[{i}].expression",
+        )
     population_types = _section_id_map(model, "population_types")
     for i, mapping in enumerate(model.get("population_maps", [])):
         mapping = _require_mapping(mapping, f"model.population_maps[{i}]")
-        _validate_pattern_v02(_require_mapping(mapping.get("pattern"), "population-map pattern"), model,
-                              f"model.population_maps[{i}].pattern")
+        _validate_pattern_v02(
+            _require_mapping(mapping.get("pattern"), "population-map pattern"),
+            model,
+            f"model.population_maps[{i}].pattern",
+        )
         population_id = mapping.get("population_id")
         if not isinstance(population_id, int) or population_id not in population_types:
-            raise ValueError(f"BNGIR model.population_maps[{i}] references unknown population type")
+            raise ValueError(
+                f"BNGIR model.population_maps[{i}] references unknown population type"
+            )
         if mapping.get("population") != population_types[population_id].get("name"):
-            raise ValueError(f"BNGIR model.population_maps[{i}] population name/id disagree")
-        _validate_expression_v02(_require_mapping(mapping.get("rate"), "population-map rate"), model,
-                                 local_names=set(), where=f"model.population_maps[{i}].rate")
+            raise ValueError(
+                f"BNGIR model.population_maps[{i}] population name/id disagree"
+            )
+        _validate_expression_v02(
+            _require_mapping(mapping.get("rate"), "population-map rate"),
+            model,
+            local_names=set(),
+            where=f"model.population_maps[{i}].rate",
+        )
 
     for i, rule in enumerate(model.get("rules", [])):
         rule = _require_mapping(rule, f"model.rules[{i}]")
-        _validate_direction_v02(_require_mapping(rule.get("forward"), "rule.forward"), model,
-                                f"model.rules[{i}].forward")
+        _validate_direction_v02(
+            _require_mapping(rule.get("forward"), "rule.forward"),
+            model,
+            f"model.rules[{i}].forward",
+        )
         if rule.get("reverse") is not None:
-            _validate_direction_v02(_require_mapping(rule.get("reverse"), "rule.reverse"), model,
-                                    f"model.rules[{i}].reverse")
+            _validate_direction_v02(
+                _require_mapping(rule.get("reverse"), "rule.reverse"),
+                model,
+                f"model.rules[{i}].reverse",
+            )
 
 
 def _load_document_v02(document: str | Mapping[str, Any]) -> Mapping[str, Any]:
@@ -746,7 +887,9 @@ def _load_document_v02(document: str | Mapping[str, Any]) -> Mapping[str, Any]:
     validated: dict[str, list[str]] = {}
     for feature_kind in ("required", "used"):
         values = features.get(feature_kind, [])
-        if not isinstance(values, list) or not all(isinstance(item, str) for item in values):
+        if not isinstance(values, list) or not all(
+            isinstance(item, str) for item in values
+        ):
             raise ValueError(f"BNGIR features.{feature_kind} must be a string array")
         unknown = sorted(set(values) - supported)
         if unknown:
@@ -763,7 +906,9 @@ def _load_document_v02(document: str | Mapping[str, Any]) -> Mapping[str, Any]:
     return root
 
 
-def _section_id_map(model: Mapping[str, Any], section: str) -> dict[int, Mapping[str, Any]]:
+def _section_id_map(
+    model: Mapping[str, Any], section: str
+) -> dict[int, Mapping[str, Any]]:
     values = model.get(section, [])
     if not isinstance(values, list):
         raise ValueError(f"BNGIR model.{section} must be an array")
@@ -772,7 +917,9 @@ def _section_id_map(model: Mapping[str, Any], section: str) -> dict[int, Mapping
         item = _require_mapping(raw, f"model.{section}[{position}]")
         semantic_id = item.get("id", position)
         if not isinstance(semantic_id, int) or semantic_id < 0:
-            raise ValueError(f"BNGIR model.{section}[{position}].id must be a non-negative integer")
+            raise ValueError(
+                f"BNGIR model.{section}[{position}].id must be a non-negative integer"
+            )
         if semantic_id in result:
             raise ValueError(f"duplicate BNGIR {section} id: {semantic_id}")
         result[semantic_id] = item
@@ -806,14 +953,24 @@ def _name_for_symbol(model: Mapping[str, Any], kind: str, index: int) -> str:
 
 
 _BINARY_TOKENS = {
-    "add": "+", "subtract": "-", "multiply": "*", "divide": "/",
-    "power": "^", "less": "<", "less_equal": "<=", "greater": ">",
-    "greater_equal": ">=", "equal": "==", "not_equal": "!=",
-    "and": "&&", "or": "||",
+    "add": "+",
+    "subtract": "-",
+    "multiply": "*",
+    "divide": "/",
+    "power": "^",
+    "less": "<",
+    "less_equal": "<=",
+    "greater": ">",
+    "greater_equal": ">=",
+    "equal": "==",
+    "not_equal": "!=",
+    "and": "&&",
+    "or": "||",
 }
 _UNARY_TOKENS = {"plus": "+", "negate": "-", "not": "!"}
 _BUILTIN_NAMES = {
-    "michaelis_menten": "MM", "function_product": "FunctionProduct",
+    "michaelis_menten": "MM",
+    "function_product": "FunctionProduct",
     "table_function": "tfun",
 }
 
@@ -829,7 +986,9 @@ def _expression_v02(expression: Mapping[str, Any], model: Mapping[str, Any]) -> 
         return repr(float(expression["value"]))
     if kind in {"parameter_ref", "observable_ref", "function_ref"}:
         symbol = _require_mapping(expression.get("symbol"), "expression symbol")
-        name = _name_for_symbol(model, str(symbol.get("kind")), int(symbol.get("index")))
+        name = _name_for_symbol(
+            model, str(symbol.get("kind")), int(symbol.get("index"))
+        )
         if expression.get("call") or args:
             return f"{name}({','.join(args)})"
         return name
@@ -933,7 +1092,12 @@ def _pattern_v02(
             sites.append(text)
         labels = ""
         if molecule_scopes:
-            labels = "".join(f"%{scope}" for scope in molecule_scopes.get(int(molecule.get("occurrence", len(molecules))), []))
+            labels = "".join(
+                f"%{scope}"
+                for scope in molecule_scopes.get(
+                    int(molecule.get("occurrence", len(molecules))), []
+                )
+            )
         mol = f"{name}{labels}({','.join(sites)})"
         if molecule.get("compartment"):
             mol += f"@{molecule['compartment']}"
@@ -952,7 +1116,9 @@ def _pattern_v02(
     return body
 
 
-def _direction_pattern_strings_v02(direction: Mapping[str, Any], side: str) -> list[str]:
+def _direction_pattern_strings_v02(
+    direction: Mapping[str, Any], side: str
+) -> list[str]:
     patterns = direction.get(side, [])
     if side != "reactants":
         return [_pattern_v02(pattern) for pattern in patterns]
@@ -965,7 +1131,9 @@ def _direction_pattern_strings_v02(direction: Mapping[str, Any], side: str) -> l
             species_scopes.setdefault(pi, []).append(str(scope["name"]))
         else:
             occurrence = int(scope["molecule_occurrence"])
-            molecule_scopes.setdefault(pi, {}).setdefault(occurrence, []).append(str(scope["name"]))
+            molecule_scopes.setdefault(pi, {}).setdefault(occurrence, []).append(
+                str(scope["name"])
+            )
     return [
         _pattern_v02(
             pattern,
@@ -979,8 +1147,10 @@ def _direction_pattern_strings_v02(direction: Mapping[str, Any], side: str) -> l
 def _modifier_v02(modifier: Mapping[str, Any]) -> str:
     kind = modifier.get("kind")
     plain = {
-        "delete_molecules": "DeleteMolecules", "move_connected": "MoveConnected",
-        "match_once": "MatchOnce", "total_rate": "TotalRate",
+        "delete_molecules": "DeleteMolecules",
+        "move_connected": "MoveConnected",
+        "match_once": "MatchOnce",
+        "total_rate": "TotalRate",
     }
     if kind in plain:
         return plain[kind]
@@ -995,7 +1165,9 @@ def _filter_v02(filter_: Mapping[str, Any]) -> str:
     include = bool(filter_.get("include"))
     if side not in {"reactant", "product"}:
         raise ValueError("invalid BNGIR filter side")
-    name = ("include_" if include else "exclude_") + ("products" if side == "product" else "reactants")
+    name = ("include_" if include else "exclude_") + (
+        "products" if side == "product" else "reactants"
+    )
     index = int(filter_.get("pattern_index", 0)) + 1
     patterns = [_pattern_v02(item) for item in filter_.get("patterns", [])]
     return f"{name}({index},{','.join(patterns)})"
@@ -1019,7 +1191,9 @@ def _as_bngl_v02(root: Mapping[str, Any]) -> str:
     if parameters:
         lines.append("begin parameters")
         for item in parameters:
-            lines.append(f"  {item['name']} {_expression_v02(item['expression'], model)}")
+            lines.append(
+                f"  {item['name']} {_expression_v02(item['expression'], model)}"
+            )
         lines.append("end parameters")
 
     compartments = model.get("compartments", [])
@@ -1027,7 +1201,9 @@ def _as_bngl_v02(root: Mapping[str, Any]) -> str:
         lines.append("begin compartments")
         for item in compartments:
             suffix = f" {item['parent']}" if item.get("parent") else ""
-            lines.append(f"  {item['name']} {int(item['dimension'])} {item['volume']}{suffix}")
+            lines.append(
+                f"  {item['name']} {int(item['dimension'])} {item['volume']}{suffix}"
+            )
         lines.append("end compartments")
 
     molecule_types = model.get("molecule_types", [])
@@ -1035,7 +1211,8 @@ def _as_bngl_v02(root: Mapping[str, Any]) -> str:
         lines.append("begin molecule types")
         for item in molecule_types:
             components = [
-                component["name"] + "".join(f"~{state}" for state in component.get("states", []))
+                component["name"]
+                + "".join(f"~{state}" for state in component.get("states", []))
                 for component in item.get("components", [])
             ]
             population = " population" if item.get("population") else ""
@@ -1062,7 +1239,9 @@ def _as_bngl_v02(root: Mapping[str, Any]) -> str:
                 pattern = _pattern_v02(term["pattern"])
                 relation = str(term.get("relation", ""))
                 quantity = int(term.get("quantity", 0))
-                rendered_terms.append(f"{pattern}{relation}{quantity}" if relation else pattern)
+                rendered_terms.append(
+                    f"{pattern}{relation}{quantity}" if relation else pattern
+                )
             lines.append(f"  {kind} {item['name']} {','.join(rendered_terms)}")
         lines.append("end observables")
 
@@ -1071,7 +1250,9 @@ def _as_bngl_v02(root: Mapping[str, Any]) -> str:
         lines.append("begin functions")
         for item in functions:
             args = ",".join(item.get("arguments", []))
-            lines.append(f"  {item['name']}({args}) = {_expression_v02(item['expression'], model)}")
+            lines.append(
+                f"  {item['name']}({args}) = {_expression_v02(item['expression'], model)}"
+            )
         lines.append("end functions")
 
     energy_patterns = model.get("energy_patterns", [])
@@ -1079,7 +1260,9 @@ def _as_bngl_v02(root: Mapping[str, Any]) -> str:
         lines.append("begin energy patterns")
         for item in energy_patterns:
             label = f"{item['label']}: " if item.get("label") else ""
-            lines.append(f"  {label}{_pattern_v02(item['pattern'])} {_expression_v02(item['expression'], model)}")
+            lines.append(
+                f"  {label}{_pattern_v02(item['pattern'])} {_expression_v02(item['expression'], model)}"
+            )
         lines.append("end energy patterns")
 
     population_maps = model.get("population_maps", [])
@@ -1100,8 +1283,12 @@ def _as_bngl_v02(root: Mapping[str, Any]) -> str:
         lines.append("begin reaction rules")
         for item in rules:
             forward = _require_mapping(item["forward"], "rule.forward")
-            reactants = " + ".join(_direction_pattern_strings_v02(forward, "reactants")) or "0"
-            products = " + ".join(_direction_pattern_strings_v02(forward, "products")) or "0"
+            reactants = (
+                " + ".join(_direction_pattern_strings_v02(forward, "reactants")) or "0"
+            )
+            products = (
+                " + ".join(_direction_pattern_strings_v02(forward, "products")) or "0"
+            )
             arrow = "<->" if item.get("bidirectional") else "->"
             rates = []
             if forward.get("rate"):
@@ -1114,14 +1301,20 @@ def _as_bngl_v02(root: Mapping[str, Any]) -> str:
             label = str(item.get("label", "")).rstrip(":")
             prefix = f"{label}: " if label else ""
             line = f"  {prefix}{reactants} {arrow} {products} {', '.join(rates)}"
-            modifiers = [value for value in (_modifier_v02(m) for m in item.get("modifiers", [])) if value]
+            modifiers = [
+                value
+                for value in (_modifier_v02(m) for m in item.get("modifiers", []))
+                if value
+            ]
             modifiers.extend(_filter_v02(f) for f in forward.get("filters", []))
             if modifiers:
                 line += " " + " ".join(modifiers)
             lines.append(line)
         lines.append("end reaction rules")
 
-    actions = list(_require_mapping(root.get("protocol", {}), "protocol").get("actions", []))
+    actions = list(
+        _require_mapping(root.get("protocol", {}), "protocol").get("actions", [])
+    )
     protocol_actions = [a for a in actions if a.get("scope") == "simulation_protocol"]
     model_actions = [a for a in actions if a.get("scope") == "model"]
     if protocol_actions:
@@ -1150,7 +1343,9 @@ def from_bngir(document: str | Mapping[str, Any]):
         root = _load_document_v02(root)
         source = _as_bngl_v02(root)
         model_data = _require_mapping(root["model"], "model")
-        name = _require_mapping(model_data.get("metadata", {}), "model.metadata").get("name")
+        name = _require_mapping(model_data.get("metadata", {}), "model.metadata").get(
+            "name"
+        )
 
     native = _cpp.parse_string(source)
     result = BioNetGenModel(native)

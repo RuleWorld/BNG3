@@ -3,6 +3,7 @@
 These intentionally avoid importing the package-level C++ extension so the
 wire-format validation remains testable in dependency-constrained builds.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -35,8 +36,22 @@ def minimal_document() -> dict:
                 "substance_units": "Number",
                 "options": {},
             },
-            "parameters": [{"id": 0, "name": "k", "expression": {"kind": "number", "value": 1.0}, "constant_value": 1.0}],
-            "molecule_types": [{"id": 0, "name": "A", "population": False, "components": [{"index": 0, "name": "x", "states": ["u", "p"]}]}],
+            "parameters": [
+                {
+                    "id": 0,
+                    "name": "k",
+                    "expression": {"kind": "number", "value": 1.0},
+                    "constant_value": 1.0,
+                }
+            ],
+            "molecule_types": [
+                {
+                    "id": 0,
+                    "name": "A",
+                    "population": False,
+                    "components": [{"index": 0, "name": "x", "states": ["u", "p"]}],
+                }
+            ],
             "compartments": [],
             "seeds": [],
             "observables": [],
@@ -59,7 +74,9 @@ def test_v02_validates_used_features_as_well_as_required():
 def test_v02_requires_structural_feature_contract():
     document = minimal_document()
     document["features"]["required"] = ["structured_patterns"]
-    with pytest.raises(ValueError, match="must require structured patterns and expressions"):
+    with pytest.raises(
+        ValueError, match="must require structured patterns and expressions"
+    ):
         bngir._load_document_v02(document)
 
 
@@ -78,23 +95,29 @@ def test_v02_expression_and_pattern_render_without_source_text():
 
     pattern = {
         "compartment_prefix": False,
-        "molecules": [{
-            "occurrence": 0,
-            "type": "A",
-            "type_id": 0,
-            "sites": [{
+        "molecules": [
+            {
                 "occurrence": 0,
-                "component": "x",
-                "component_index": 0,
-                "state": {"kind": "exact", "value": "p", "index": 1},
-                "bond": {"kind": "unbound"},
-            }],
-        }],
+                "type": "A",
+                "type_id": 0,
+                "sites": [
+                    {
+                        "occurrence": 0,
+                        "component": "x",
+                        "component_index": 0,
+                        "state": {"kind": "exact", "value": "p", "index": 1},
+                        "bond": {"kind": "unbound"},
+                    }
+                ],
+            }
+        ],
     }
     assert bngir._pattern_v02(pattern) == "A(x~p.)"
 
 
 def test_v02_minimal_document_matches_schema():
     jsonschema = pytest.importorskip("jsonschema")
-    schema = json.loads((ROOT / "provenance" / "schemas" / "bngir-0.2.schema.json").read_text())
+    schema = json.loads(
+        (ROOT / "provenance" / "schemas" / "bngir-0.2.schema.json").read_text()
+    )
     jsonschema.validate(minimal_document(), schema)
