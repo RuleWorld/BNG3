@@ -368,13 +368,15 @@ bool lowerPatternToNFsimPermutations(
                 occurrences[molecule.sites[siteIndex].componentName].push_back(siteIndex);
             }
         }
-        for (const auto& [genericName, siteIndices] : occurrences) {
+        for (const auto& occurrence : occurrences) {
+            const auto& genericName = occurrence.first;
+            const auto& genericSiteIndices = occurrence.second;
             int* equivalentIndices = nullptr;
             int equivalentCount = 0;
             moleculeType->getEquivalencyClass(
                 equivalentIndices, equivalentCount, genericName);
             if (equivalentIndices == nullptr || equivalentCount <= 0 ||
-                siteIndices.size() > static_cast<std::size_t>(equivalentCount)) {
+                genericSiteIndices.size() > static_cast<std::size_t>(equivalentCount)) {
                 diagnostic = "too many symmetric components named '" + genericName +
                              "' in molecule type '" + molecule.moleculeType + "'";
                 return false;
@@ -387,10 +389,10 @@ bool lowerPatternToNFsimPermutations(
             }
 
             std::vector<std::vector<std::string>> choices;
-            std::vector<std::string> choice(siteIndices.size());
+            std::vector<std::string> choice(genericSiteIndices.size());
             std::vector<bool> used(equivalentNames.size(), false);
             std::function<void(std::size_t)> enumerate = [&](std::size_t position) {
-                if (position == siteIndices.size()) {
+                if (position == genericSiteIndices.size()) {
                     choices.push_back(choice);
                     return;
                 }
@@ -410,8 +412,9 @@ bool lowerPatternToNFsimPermutations(
             for (const auto& base : assignments) {
                 for (const auto& selected : choices) {
                     RuntimeComponentNames variant = base;
-                    for (std::size_t position = 0; position < siteIndices.size(); ++position) {
-                        variant[moleculeIndex][siteIndices[position]] = selected[position];
+                    for (std::size_t position = 0;
+                         position < genericSiteIndices.size(); ++position) {
+                        variant[moleculeIndex][genericSiteIndices[position]] = selected[position];
                     }
                     next.push_back(std::move(variant));
                 }
