@@ -1,3 +1,0 @@
-## 2024-05-24 - N+1 Array Casting in Loops
-**Learning:** Found a severe O(n^2) or worse anti-pattern in `ScanResult.to_dataframe` and `ScanResult2D.to_dataframe` where `np.asarray` is called inside nested loops (per parameter value, per time point, per observable). It repeatedly re-casts lists to arrays inside the innermost loop instead of converting once outside the loop.
-**Action:** When building DataFrames or aggregating results in pandas/numpy, always move array conversions outside the loop. Better yet, create columnar dictionaries and construct the DataFrame from those rather than row-by-row iteration.
