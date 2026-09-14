@@ -97,6 +97,7 @@ def test_formal_workflow_runs_pinned_kernel_and_nfnext_contracts():
     assert re.search(r"^\s+cancel-in-progress:\s+false\s*$", workflow, re.MULTILINE)
     assert "leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9" in workflow
     assert "lake-package-directory: formal/lean" in workflow
+    assert "auto-config: false" in workflow
     assert (REPO / "formal" / "lean" / "lean-toolchain").read_text(encoding="utf-8").strip() == (
         "leanprover/lean4:v4.33.1"
     )
