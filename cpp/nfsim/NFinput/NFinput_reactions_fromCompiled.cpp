@@ -663,6 +663,12 @@ bool renderExpression(const CompiledModel& model,
         case Fn::Sinh: name="sinh"; break; case Fn::Sqrt: name="sqrt"; break;
         case Fn::Sum: name="sum"; break; case Fn::Tan: name="tan"; break;
         case Fn::Tanh: name="tanh"; break;
+        case Fn::Time:
+            // The legacy NFsim parser accepts time() at the source boundary,
+            // but the live runtime binding is a variable named time.
+            usesTime = true;
+            result = "time";
+            return true;
         default: diagnostic = "specialized rate builtin cannot be rendered as a generic function"; return false;
         }
         result = std::string(name) + '(';
@@ -906,12 +912,15 @@ bool addDynamicCompiledRateFunction(
         return false;
     }
 
-    std::string name = "__bng3_compiled_reaction_rate_" + std::to_string(ordinal + 1);
+    // Keep the generated names identical to the direct AST adapter's public
+    // NFsim contract.  Callers and the XML bridge both use these names when
+    // inspecting or wrapping reaction-owned rate functions.
+    std::string name = "__bng3_reaction_rate_" + std::to_string(ordinal + 1);
     std::size_t suffix = 1;
     while (system.getGlobalFunctionByName(name) != nullptr ||
            system.getCompositeFunctionByName(name) != nullptr ||
            system.getLocalFunctionByName(name) != nullptr) {
-        name = "__bng3_compiled_reaction_rate_" + std::to_string(ordinal + 1) +
+        name = "__bng3_reaction_rate_" + std::to_string(ordinal + 1) +
                "_" + std::to_string(suffix++);
     }
 
@@ -943,9 +952,10 @@ bool addDynamicCompiledRateFunction(
     for (const auto& dependency : functions) {
         if (isReactantCountFunctionName(dependency)) continue;
         if (system.getGlobalFunctionByName(dependency) == nullptr &&
-            system.getLocalFunctionByName(dependency) == nullptr) {
-            diagnostic = "dynamic reaction rates only support base global/local "
-                         "function dependencies; '" + dependency + "' is unavailable";
+            system.getLocalFunctionByName(dependency) == nullptr &&
+            system.getCompositeFunctionByName(dependency) == nullptr) {
+            diagnostic = "dynamic reaction rate refers to an unavailable function '" +
+                         dependency + "'";
             return false;
         }
     }
@@ -960,14 +970,14 @@ bool addDynamicCompiledRateFunction(
     std::map<std::string, std::string> observableAliases;
     std::size_t aliasIndex = 1;
     for (const auto& observableName : observables) {
-        std::string aliasName = "__bng3_compiled_reaction_observable_" +
+        std::string aliasName = "__bng3_reaction_observable_" +
                                 std::to_string(ordinal + 1) + "_" +
                                 std::to_string(aliasIndex++);
         std::size_t aliasSuffix = 1;
         while (system.getGlobalFunctionByName(aliasName) != nullptr ||
                system.getCompositeFunctionByName(aliasName) != nullptr ||
                system.getLocalFunctionByName(aliasName) != nullptr) {
-            aliasName = "__bng3_compiled_reaction_observable_" +
+            aliasName = "__bng3_reaction_observable_" +
                         std::to_string(ordinal + 1) + "_" +
                         std::to_string(aliasIndex - 1) + "_" +
                         std::to_string(aliasSuffix++);
@@ -1165,14 +1175,6 @@ bool addCompiledArrheniusDirection(const CompiledModel& model,
         direction.rateLaw->kind != bng::compile::RateLawKind::ArrheniusEnergy) {
         return false;
     }
-    // The legacy energy expander owns reversible context accounting. Until
-    // reverse-rate parity is represented explicitly in the energy IR, keep
-    // reversible Arrhenius rules on the compatibility path rather than double
-    // materializing them from two compiled directions.
-    if (rule.isBidirectional()) {
-        diagnostic = "reversible Arrhenius lowering still uses the compatibility energy expander";
-        return false;
-    }
     if (!direction.filters.empty()) {
         diagnostic = "Arrhenius rules with include/exclude filters require compatibility lowering";
         return false;
@@ -1252,7 +1254,7 @@ bool addCompiledArrheniusDirection(const CompiledModel& model,
             lhsType, runtimeComponentName(model, *lhsSite->componentType),
             rhsType, runtimeComponentName(model, *rhsSite->componentType),
             &system, parameters, states, blockSameComplexBinding, verbose,
-            reactionCount, false);
+            reactionCount, rule.isBidirectional());
         suggestedTraversalLimit = std::max(suggestedTraversalLimit, 2);
     } else if (mutation.kind == MutationKind::ChangeState) {
         if (direction.reactantPatterns.size() != 1 ||
@@ -1288,7 +1290,7 @@ bool addCompiledArrheniusDirection(const CompiledModel& model,
             rule.name(), *phi, *activationEnergy, moleculeType,
             runtimeComponentName(model, *site->componentType), *sourceState,
             mutation.newState, &system, blockSameComplexBinding, verbose,
-            reactionCount, false);
+            reactionCount, rule.isBidirectional());
         suggestedTraversalLimit = std::max(suggestedTraversalLimit, 1);
     } else {
         diagnostic = "Arrhenius structural lowering supports binding or state-change centers";
@@ -1358,8 +1360,7 @@ NFcore::ReactionClass* makeReactionForRate(
         transformations->finalize();
         return new NFcore::HillRxnClass(reactionName, constants[0], constants[1], constants[2], transformations, &system);
     }
-    if (rate.kind == RateKind::ArrheniusEnergy || rate.kind == RateKind::Hybrid ||
-        rate.kind == RateKind::FunctionProduct) {
+    if (rate.kind == RateKind::ArrheniusEnergy || rate.kind == RateKind::Hybrid) {
         diagnostic = "specialized compiled rate requires dedicated NFsim lowering";
         return nullptr;
     }
@@ -1415,8 +1416,15 @@ NFcore::ReactionClass* makeReactionForRate(
             if (!addLocalRateReference(operand, roots, *transformations, diagnostic))
                 return nullptr;
         }
-        const std::string compositeName =
-            "__bng_rule_local_rate_" + std::to_string(ordinal);
+        std::string compositeName =
+            "__bng3_reaction_rate_" + std::to_string(ordinal + 1);
+        std::size_t compositeSuffix = 1;
+        while (system.getGlobalFunctionByName(compositeName) != nullptr ||
+               system.getCompositeFunctionByName(compositeName) != nullptr ||
+               system.getLocalFunctionByName(compositeName) != nullptr) {
+            compositeName = "__bng3_reaction_rate_" + std::to_string(ordinal + 1) +
+                            "_" + std::to_string(compositeSuffix++);
+        }
         auto* composite = new NFcore::CompositeFunction(
             &system, compositeName, scopedRate.expression, scopedRate.functionNames,
             scopedRate.argumentNames, scopedRate.parameterNames);

@@ -93,6 +93,10 @@ CompositeFunction::CompositeFunction(System *s,
 	}
 
 	p=0;
+	this->n_cfs=0;
+	this->cfNames=NULL;
+	this->cfs=NULL;
+	this->cfValues=NULL;
 	this->sysPtr = NULL;
 
 	// AS-2021
@@ -117,6 +121,10 @@ CompositeFunction::~CompositeFunction()
 	delete [] gfNames;
 	delete [] gfs;
 	delete [] gfValues;
+
+	delete [] cfNames;
+	delete [] cfs;
+	delete [] cfValues;
 
 	delete [] lfNames;
 	delete [] lfs;
@@ -154,6 +162,10 @@ void CompositeFunction::setGlobalObservableDependency(ReactionClass *r, System *
 			}
 		}
 	}
+
+	for(int i=0; i<this->n_cfs; i++) {
+		cfs[i]->setGlobalObservableDependency(r, s);
+	}
 }
 
 //call this immediately after you have read in all the functions, but before preparing for the simulation
@@ -175,6 +187,25 @@ void CompositeFunction::finalizeInitialization(System *s)
 		gfNames[i] = gf_tempVector.at(i)->getName();
 		gfValues[i] = 0;
 		gfs[i] = gf_tempVector.at(i);
+	}
+
+	// Find referenced zero-argument composite functions. Older NFsim only
+	// wired global and local dependencies here, but compiled BNG3 functions can
+	// form a bounded chain of zero-argument composites.
+	vector <CompositeFunction *> cf_tempVector;
+	for(unsigned int i=0; i<n_allFuncs; i++) {
+		CompositeFunction *cf=s->getCompositeFunctionByName(allFuncNames[i]);
+		if(cf!=0 && cf!=this) cf_tempVector.push_back(cf);
+	}
+
+	this->n_cfs = cf_tempVector.size();
+	this->cfNames = new string[n_cfs];
+	this->cfValues = new double[n_cfs];
+	this->cfs = new CompositeFunction * [n_cfs];
+	for(int i=0; i<n_cfs; i++) {
+		cfNames[i] = cf_tempVector.at(i)->getName();
+		cfValues[i] = 0;
+		cfs[i] = cf_tempVector.at(i);
 	}
 
 
@@ -223,6 +254,21 @@ void CompositeFunction::finalizeInitialization(System *s)
 	}
 
 //	cout<<"now the expression is: "<<parsedExpression<<endl;
+
+	// Normalize zero-argument calls to nested composites. Their live values
+	// are bound as parser variables during prepareForSimulation().
+	for(int f=0; f<n_cfs; f++) {
+		string::size_type sPos=parsedExpression.find(cfNames[f]);
+		for( ; sPos!=string::npos; sPos=parsedExpression.find(cfNames[f],sPos+1)) {
+			string::size_type openPar = parsedExpression.find_first_of('(',sPos);
+			string::size_type closePar = parsedExpression.find_first_of(')',sPos);
+			if(openPar!=string::npos && closePar!=string::npos && closePar>openPar) {
+				string inBetween = parsedExpression.substr(openPar+1,closePar-openPar-1);
+				NFutil::trim(inBetween);
+				if(inBetween.size()==0) parsedExpression.replace(openPar,closePar-openPar+1,"");
+			}
+		}
+	}
 
 
 	///////// do the same for local functions here (can be a bit tricky, because different
@@ -379,6 +425,9 @@ void CompositeFunction::prepareForSimulation(System *s)
 		for(int f=0; f<n_gfs; f++) {
 			p->DefineVar(gfNames[f],&gfValues[f]);
 		}
+		for(int f=0; f<n_cfs; f++) {
+			p->DefineVar(cfNames[f],&cfValues[f]);
+		}
 
 		//Define local function variables here...
 		for(int f=0; f<this->n_refLfs; f++) {
@@ -521,6 +570,12 @@ double CompositeFunction::evaluateOn(Molecule **molList, int *scope, int *curRea
 		}
 		// AS-2021
 		gfValues[f]=FuncFactory::Eval(gfs[f]->p);
+	}
+
+	// Evaluate nested composites before the current expression so their live
+	// observable, local-function, and time dependencies are current.
+	for(int f=0; f<n_cfs; f++) {
+		cfValues[f]=cfs[f]->evaluateOn(molList,scope,curReactantCounts,n_reactants);
 	}
 
 	//2 evaluate all local functions

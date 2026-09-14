@@ -1,13 +1,13 @@
 # BNG3 Convergence: Definition of Done and Remaining Checklist
 
 **Status:** Active; not complete
-**Last audited:** 2026-09-10
+**Last audited:** 2026-09-14
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-rest-of-port-20260909
 **Historical audited semantic code head:** ccb3ef9efd069bb9375a39ddb64b1861909b4aa8 (local exact head; public synchronization is deferred by the local-only work instruction)
 **Historical checklist refresh base:** ce4575f5c31b94ded5dfac1842a9c8e438f608d4 (local exact-head CI provenance-summary checkpoint; public synchronization is deferred by the local-only work instruction)
 **Historical workflow checkpoint:** ce4575f5c31b94ded5dfac1842a9c8e438f608d4 (local-only; no hosted run was created because this checkpoint has not been pushed)
-**Current audit base:** a8d2a8b on branch `codex/bng3-rest-of-port-20260909`; the working tree contains an uncommitted implementation batch whose final verification is pending.
+**Current audit base:** ca861fa4c482521f11729314f2a1dc897ab019ee on branch `codex/bng3-rest-of-port-20260909`; the current validation repair batch is being prepared for publication.
 **PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -62,6 +62,24 @@ completion.
   the exception ledger merely to make this file easier to check.
 - Re-audit the whole checklist on the exact release-candidate SHA. Earlier
   evidence is stale after a rebase, autofix, merge, or semantic change.
+
+## Live checkpoint — 2026-09-14
+
+The current combined-tree evidence is summarized in
+[`CURRENT_PROGRESS.md`](CURRENT_PROGRESS.md). The native CTest gate is
+`307/307`; Python is `399 passed, 28 skipped` excluding the isolated SBML
+test, which passes separately; export validation is `12 passed`; and the
+selected smoke gate is `4 passed` with `14` explicit environment/reference
+skips. The independent BNG2 structural subset is `5/5`, the broader BNG2
+subset is `11 passed, 89 skipped`, and the selected independent NFsim gate is
+`10 passed` across direct/XML, seeded ensemble, and endpoint checks.
+
+Local Lean static validation checks 36 files and the NFnext contract binary
+reports `18/18`; the Lean kernel is not installed locally. The PR now has a
+pinned formal workflow that performs the hosted Lean 4.33.1 kernel build and
+smoke check. These results are exact-head checkpoint evidence only. Full
+corpus coverage, complete backend equivalence, hosted terminal evidence,
+release qualification, and every other unchecked item below remain open.
 
 ## Current verified checkpoint
 

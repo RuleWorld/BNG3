@@ -251,11 +251,6 @@ GeneratedNetwork NetworkGenerator::generateNative(std::size_t maxIter) {
     const bool logRules = parsePrintRules(document_.protocol());
     const bool checkIso = parseCheckIso(document_.protocol());
 
-    // Runtime graph types belong to this backend lowering context, not the
-    // parser AST. The same context is shared by seeds, filters and all rule
-    // plans so graph type identity is stable throughout one generation.
-    compile::BNGcoreLoweringContext loweringContext(compiled);
-
     // Set compartment maps from the compiled semantic declarations.
     {
         std::unordered_map<std::string, int> compDims;
@@ -268,10 +263,18 @@ GeneratedNetwork NetworkGenerator::generateNative(std::size_t maxIter) {
         ast::setCompartmentParents(compParents);
     }
 
+    GeneratedNetwork network;
+    // Runtime graph types belong to this backend lowering context, not the
+    // parser AST. The same context is shared by seeds, filters and all rule
+    // plans so graph type identity is stable throughout one generation, and
+    // the generated network owns it for as long as its graphs are live.
+    network.loweringContext =
+        std::make_shared<compile::BNGcoreLoweringContext>(compiled);
+    auto& loweringContext = *network.loweringContext;
+
     auto rulePlans = lowerNetworkRules(compiled, loweringContext);
     for (auto& plan : rulePlans) plan.clearPatternMatchCache();
 
-    GeneratedNetwork network;
     network.species.setCheckIso(checkIso);
     for (const auto& seed : compiled.seeds()) {
         if (!seed.evaluatedAmount.has_value()) {

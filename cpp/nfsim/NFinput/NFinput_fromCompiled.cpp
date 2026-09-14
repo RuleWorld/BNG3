@@ -187,6 +187,7 @@ std::string expressionText(const bng::compile::CompiledModel& model,
     switch (expression.kind) {
     case Kind::Number:
         if (!std::isfinite(expression.numberValue)) { ok = false; return {}; }
+        if (expression.operation == "_Na") return "_Na";
         return std::to_string(expression.numberValue);
     case Kind::ParameterRef: {
         if (!expression.symbol.has_value()) { ok = false; return {}; }
@@ -268,7 +269,9 @@ void collectDependencies(const bng::compile::CompiledModel& model,
                 expression.symbol->index))) deps.functions.insert(f->name);
     } else if (expression.kind == Kind::ReactantCountRef) {
         deps.functions.insert("reactant_" + std::to_string(expression.reactantIndex + 1));
-    } else if (expression.kind == Kind::TimeRef) {
+    } else if (expression.kind == Kind::TimeRef ||
+               (expression.kind == Kind::BuiltinCall && expression.builtin.has_value() &&
+                *expression.builtin == bng::compile::BuiltinFunction::Time)) {
         deps.usesTime = true;
     } else if (expression.kind == Kind::LocalRef) {
         deps.hasLocal = true;
@@ -276,6 +279,50 @@ void collectDependencies(const bng::compile::CompiledModel& model,
         deps.hasTable = true;
     }
     for (const auto& child : expression.arguments) collectDependencies(model, child, deps);
+}
+
+std::string replaceCompiledObservableNames(
+    const std::string& expression,
+    const std::map<std::string, std::string>& replacements) {
+    if (replacements.empty()) return expression;
+    std::string result;
+    result.reserve(expression.size());
+    std::size_t index = 0;
+    while (index < expression.size()) {
+        const unsigned char first = static_cast<unsigned char>(expression[index]);
+        if (!std::isalpha(first) && expression[index] != '_') {
+            result.push_back(expression[index++]);
+            continue;
+        }
+        const std::size_t start = index++;
+        while (index < expression.size()) {
+            const unsigned char current = static_cast<unsigned char>(expression[index]);
+            if (!std::isalnum(current) && expression[index] != '_') break;
+            ++index;
+        }
+        const std::string token = expression.substr(start, index - start);
+        const auto found = replacements.find(token);
+        if (found == replacements.end()) {
+            result.append(expression, start, index - start);
+            continue;
+        }
+        std::size_t lookahead = index;
+        while (lookahead < expression.size() &&
+               std::isspace(static_cast<unsigned char>(expression[lookahead]))) ++lookahead;
+        if (lookahead < expression.size() && expression[lookahead] == '(') {
+            std::size_t close = lookahead + 1;
+            while (close < expression.size() &&
+                   std::isspace(static_cast<unsigned char>(expression[close]))) ++close;
+            if (close < expression.size() && expression[close] == ')') {
+                result += found->second;
+                result += "()";
+                index = close + 1;
+                continue;
+            }
+        }
+        result += found->second;
+    }
+    return result;
 }
 
 
@@ -591,18 +638,75 @@ bool addObservablesFromCompiled(const bng::compile::CompiledModel& model,
         std::vector<std::string> relations;
         std::vector<int> quantities;
         for (const auto& term : observable.terms) {
-            std::vector<NFcore::TemplateMolecule*> lowered;
             bool hasDisjointSets = false;
             std::string diagnostic;
-            if (!NFcore2::lowerPatternToNFsim(
-                    term.pattern, *system, lowered, hasDisjointSets,
-                    suggestedTraversalLimit, diagnostic) || lowered.empty()) {
-                std::cerr << "[nfsim/compiled] cannot lower observable '"
-                          << observable.name << "': " << diagnostic << "\n";
-                return false;
+            if (moleculesObservable) {
+                // Legacy NFsim counts every valid symmetric embedding for a
+                // Molecules observable.  Expand the full equivalent-site
+                // orbit here so compiled lowering has the same observable
+                // contract as the XML bridge and the native NFsim oracle.
+                std::set<std::pair<std::size_t, std::size_t>> symmetricSites;
+                for (std::size_t moleculeIndex = 0;
+                     moleculeIndex < term.pattern.molecules().size(); ++moleculeIndex) {
+                    const auto& molecule = term.pattern.molecules()[moleculeIndex];
+                    if (!molecule.moleculeTypeId.has_value()) {
+                        diagnostic = "observable molecule has no resolved type";
+                        break;
+                    }
+                    const auto* type = model.moleculeType(*molecule.moleculeTypeId);
+                    if (type == nullptr) {
+                        diagnostic = "observable molecule refers to an unknown type";
+                        break;
+                    }
+                    for (std::size_t siteIndex = 0; siteIndex < molecule.sites.size();
+                         ++siteIndex) {
+                        const auto& site = molecule.sites[siteIndex];
+                        const auto repeated = std::count_if(
+                            type->components.begin(), type->components.end(),
+                            [&](const auto& component) {
+                                return component.name == site.componentName;
+                            });
+                        if (repeated > 1)
+                            symmetricSites.emplace(moleculeIndex, siteIndex);
+                    }
+                }
+                if (!diagnostic.empty()) {
+                    std::cerr << "[nfsim/compiled] cannot lower observable '"
+                              << observable.name << "': " << diagnostic << "\n";
+                    return false;
+                }
+
+                std::vector<std::vector<NFcore::TemplateMolecule*>> builds;
+                std::vector<NFcore2::RuntimeComponentNames> assignments;
+                if (!NFcore2::lowerPatternToNFsimPermutations(
+                        term.pattern, *system, symmetricSites, builds, assignments,
+                        hasDisjointSets, suggestedTraversalLimit, diagnostic) ||
+                    builds.empty()) {
+                    std::cerr << "[nfsim/compiled] cannot lower observable '"
+                              << observable.name << "': " << diagnostic << "\n";
+                    return false;
+                }
+                for (const auto& build : builds) {
+                    if (build.empty()) {
+                        diagnostic = "observable permutation produced no template";
+                        std::cerr << "[nfsim/compiled] cannot lower observable '"
+                                  << observable.name << "': " << diagnostic << "\n";
+                        return false;
+                    }
+                    roots.push_back(build.front());
+                }
+            } else {
+                std::vector<NFcore::TemplateMolecule*> lowered;
+                if (!NFcore2::lowerPatternToNFsim(
+                        term.pattern, *system, lowered, hasDisjointSets,
+                        suggestedTraversalLimit, diagnostic) || lowered.empty()) {
+                    std::cerr << "[nfsim/compiled] cannot lower observable '"
+                              << observable.name << "': " << diagnostic << "\n";
+                    return false;
+                }
+                roots.push_back(lowered.front());
             }
             if (hasDisjointSets || !term.relation.empty()) system->setUsingComplex(true);
-            roots.push_back(lowered.front());
             relations.push_back(term.relation);
             quantities.push_back(term.quantity);
         }
@@ -634,6 +738,58 @@ bool addObservablesFromCompiled(const bng::compile::CompiledModel& model,
     return true;
 }
 
+std::size_t seedBondCount(const bng::compile::PatternSiteDescriptor& site) {
+    if (site.bondConstraints.empty()) {
+        return site.bondKind == bng::compile::BondConstraintKind::Unbound ? 0 : 1;
+    }
+    return static_cast<std::size_t>(std::count_if(
+        site.bondConstraints.begin(), site.bondConstraints.end(), [](const auto& bond) {
+            return bond.kind != bng::compile::BondConstraintKind::Unbound;
+        }));
+}
+
+bool seedComponentLess(const bng::compile::PatternSiteDescriptor& left,
+                       const bng::compile::PatternSiteDescriptor& right) {
+    if (left.componentName != right.componentName)
+        return left.componentName < right.componentName;
+    const auto leftState = left.stateConstraint == "?" ? std::string{} : left.stateConstraint;
+    const auto rightState = right.stateConstraint == "?" ? std::string{} : right.stateConstraint;
+    if (leftState != rightState) {
+        if (leftState.empty() != rightState.empty()) return leftState.empty();
+        return leftState < rightState;
+    }
+    const auto leftBonds = seedBondCount(left);
+    const auto rightBonds = seedBondCount(right);
+    return leftBonds == rightBonds ? false : leftBonds > rightBonds;
+}
+
+bool seedMoleculeLess(const bng::compile::PatternMoleculeDescriptor& left,
+                      const bng::compile::PatternMoleculeDescriptor& right) {
+    if (left.moleculeType != right.moleculeType)
+        return left.moleculeType < right.moleculeType;
+    if (left.sites.size() != right.sites.size())
+        return left.sites.size() < right.sites.size();
+    if (left.compartment.empty() != right.compartment.empty())
+        return left.compartment.empty();
+    if (left.compartment != right.compartment)
+        return left.compartment < right.compartment;
+    for (std::size_t index = 0; index < left.sites.size(); ++index) {
+        if (seedComponentLess(left.sites[index], right.sites[index])) return true;
+        if (seedComponentLess(right.sites[index], left.sites[index])) return false;
+    }
+    return false;
+}
+
+std::vector<bng::compile::PatternMoleculeDescriptor> canonicalSeedMolecules(
+    const bng::compile::Pattern& pattern) {
+    auto molecules = pattern.molecules();
+    for (auto& molecule : molecules) {
+        std::stable_sort(molecule.sites.begin(), molecule.sites.end(), seedComponentLess);
+    }
+    std::stable_sort(molecules.begin(), molecules.end(), seedMoleculeLess);
+    return molecules;
+}
+
 bool addSpeciesFromCompiledWithOverrides(
     const bng::compile::CompiledModel& model, NFcore::System* system,
     bool verbose, const std::map<std::string, double>& seedAmountOverrides) {
@@ -641,6 +797,21 @@ bool addSpeciesFromCompiledWithOverrides(
     for (const auto& seed : model.seeds()) {
         const auto& pattern = seed.pattern;
         if (!pattern.isResolved() || pattern.molecules().empty()) return false;
+        const auto molecules = canonicalSeedMolecules(pattern);
+
+        // `$Null()`/`$Trash()` are fixed degradation seeds in BNGL.  They are
+        // represented in the compiled model so source/XML provenance remains
+        // intact, but the NFsim runtime intentionally has no corresponding
+        // molecule type.  Consume the sentinel before looking up runtime
+        // molecule types, matching the legacy AST/XML loaders.
+        const bool allDiscard = std::all_of(
+            molecules.begin(), molecules.end(),
+            [](const auto& molecule) {
+                const auto name = lowerCase(molecule.moleculeType);
+                return name == "null" || name == "trash";
+            });
+        if (allDiscard && seed.constant) continue;
+
         int count = 0;
         std::string diagnostic;
         if (!seedCount(seed, seedAmountOverrides, count, diagnostic)) {
@@ -653,9 +824,9 @@ bool addSpeciesFromCompiledWithOverrides(
         bool particle = false;
         std::vector<NFcore::MoleculeType*> types;
         std::vector<NFcore::Compartment*> compartments;
-        types.reserve(pattern.molecules().size());
-        compartments.reserve(pattern.molecules().size());
-        for (const auto& molecule : pattern.molecules()) {
+        types.reserve(molecules.size());
+        compartments.reserve(molecules.size());
+        for (const auto& molecule : molecules) {
             if (!molecule.moleculeTypeId.has_value()) return false;
             const auto* declaration = model.moleculeType(*molecule.moleculeTypeId);
             if (declaration == nullptr) return false;
@@ -673,14 +844,14 @@ bool addSpeciesFromCompiledWithOverrides(
             compartments.push_back(compartment);
         }
         if (population && particle) return false;
-        if (population && pattern.molecules().size() != 1) return false;
+        if (population && molecules.size() != 1) return false;
 
         const int copies = population ? 1 : count;
         std::vector<std::vector<NFcore::Molecule*>> generated(
-            pattern.molecules().size());
+            molecules.size());
         for (std::size_t moleculeIndex = 0;
-             moleculeIndex < pattern.molecules().size(); ++moleculeIndex) {
-            const auto& molecule = pattern.molecules()[moleculeIndex];
+             moleculeIndex < molecules.size(); ++moleculeIndex) {
+            const auto& molecule = molecules[moleculeIndex];
             generated[moleculeIndex].reserve(static_cast<std::size_t>(copies));
             for (int copy = 0; copy < copies; ++copy) {
                 auto* concrete = types[moleculeIndex]->genDefaultMolecule(
@@ -714,8 +885,8 @@ bool addSpeciesFromCompiledWithOverrides(
         struct Endpoint { std::size_t molecule; std::string component; };
         std::unordered_map<std::size_t, std::vector<Endpoint>> bonds;
         for (std::size_t moleculeIndex = 0;
-             moleculeIndex < pattern.molecules().size(); ++moleculeIndex) {
-            for (const auto& site : pattern.molecules()[moleculeIndex].sites) {
+             moleculeIndex < molecules.size(); ++moleculeIndex) {
+            for (const auto& site : molecules[moleculeIndex].sites) {
                 if (!site.componentType.has_value()) return false;
                 const auto runtimeName = runtimeComponentName(model, *site.componentType);
                 const auto collect = [&](const bng::compile::PatternBondDescriptor& bond) {
@@ -744,7 +915,7 @@ bool addSpeciesFromCompiledWithOverrides(
 
         if (population && !generated.front().front()->setPopulation(count)) return false;
         if (seed.constant) {
-            if (pattern.molecules().size() != 1 || population) return false;
+            if (molecules.size() != 1 || population) return false;
             types.front()->setFixed(true, count, compartments.front());
         }
         if (verbose)
@@ -883,6 +1054,11 @@ bool addFunctionsFromCompiled(const bng::compile::CompiledModel& model,
     if (system == nullptr) return false;
     std::unordered_set<std::string> declared;
     for (const auto& function : model.functions()) {
+        // reactant_N() declarations are compiler-visible placeholders for
+        // CompositeFunction's per-reaction mapping counts, not user-defined
+        // runtime functions.  They must not be registered as globals or
+        // composites.
+        if (function.arguments.empty() && isReactantCountName(function.name)) continue;
         if (function.name.empty() || !declared.insert(function.name).second ||
             function.arguments.size() > 1 ||
             system->getGlobalFunctionByName(function.name) != nullptr ||
@@ -972,7 +1148,7 @@ bool addFunctionsFromCompiled(const bng::compile::CompiledModel& model,
     };
     std::vector<Pending> pending;
     for (const auto& function : model.functions()) {
-        if (!function.arguments.empty()) continue;
+        if (!function.arguments.empty() || isReactantCountName(function.name)) continue;
         Pending item;
         item.function = &function;
         collectDependencies(model, function.expression, item.deps);
@@ -1026,11 +1202,46 @@ bool addFunctionsFromCompiled(const bng::compile::CompiledModel& model,
                     system->setHasTimeDependentFunctions(true);
                 }
             } else {
-                if (!it->deps.observables.empty()) return false;
+                std::map<std::string, std::string> observableAliases;
+                std::size_t aliasIndex = 1;
+                for (const auto& observableName : it->deps.observables) {
+                    std::string aliasName = "__bng3_function_observable_" +
+                                            it->function->name + "_" +
+                                            std::to_string(aliasIndex++);
+                    std::size_t aliasSuffix = 1;
+                    while (system->getGlobalFunctionByName(aliasName) != nullptr ||
+                           system->getCompositeFunctionByName(aliasName) != nullptr ||
+                           system->getLocalFunctionByName(aliasName) != nullptr) {
+                        aliasName = "__bng3_function_observable_" +
+                                    it->function->name + "_" +
+                                    std::to_string(aliasIndex - 1) + "_" +
+                                    std::to_string(aliasSuffix++);
+                    }
+                    std::vector<std::string> references{observableName};
+                    std::vector<std::string> referenceTypes{"Observable"};
+                    std::vector<std::string> noParameters;
+                    auto* alias = new NFcore::GlobalFunction(
+                        aliasName, observableName, references, referenceTypes,
+                        noParameters, system);
+                    if (!system->addGlobalFunction(alias)) {
+                        delete alias;
+                        return false;
+                    }
+                    observableAliases.emplace(observableName, std::move(aliasName));
+                }
+
+                std::vector<std::string> functionsCalled;
+                for (const auto& name : modelFunctions) functionsCalled.push_back(name);
+                for (const auto& [observableName, aliasName] : observableAliases) {
+                    (void)observableName;
+                    functionsCalled.push_back(aliasName);
+                }
+                const auto compositeExpression = replaceCompiledObservableNames(
+                    it->expression, observableAliases);
                 std::vector<std::string> arguments;
                 auto* composite = new NFcore::CompositeFunction(
-                    system, it->function->name, it->expression,
-                    modelFunctions, arguments, parameterNames);
+                    system, it->function->name, compositeExpression,
+                    functionsCalled, arguments, parameterNames);
                 if (!it->tables.empty()) {
                     std::string diagnostic;
                     if (!configureTableFunction(model, *it->tables.front(), sourcePath,
@@ -1044,6 +1255,7 @@ bool addFunctionsFromCompiled(const bng::compile::CompiledModel& model,
                     composite->setCounterFromTime(system);
                     system->setHasTimeDependentFunctions(true);
                 }
+
             }
             if (verbose)
                 std::cerr << "[nfsim/compiled] function " << it->function->name

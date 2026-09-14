@@ -9,12 +9,18 @@
 #include "compile/Document.hpp"
 
 namespace bng::ast { class Model; }
+namespace bng::compile { class BNGcoreLoweringContext; }
 
 namespace bng::engine {
 
 struct GeneratedNetwork {
     ast::SpeciesList species;
     ast::RxnList reactions;
+
+    // Species and reaction graphs retain pointers to the BNGcore node/state
+    // types created during compiled lowering. Keep that storage alive for the
+    // lifetime of the generated network rather than the generator call.
+    std::shared_ptr<compile::BNGcoreLoweringContext> loweringContext;
 };
 
 class NetworkGenerator {

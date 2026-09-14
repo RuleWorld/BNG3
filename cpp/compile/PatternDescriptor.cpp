@@ -54,7 +54,7 @@ std::vector<std::string> splitMolecules(std::string_view text) {
 }
 
 bool isDelimiter(char c) {
-    return c == '~' || c == '!' || c == '%' || c == ',' ||
+    return c == '~' || c == '!' || c == '%' || c == ',' || c == '.' ||
            c == ')' || std::isspace(static_cast<unsigned char>(c));
 }
 

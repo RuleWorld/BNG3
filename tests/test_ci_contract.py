@@ -25,6 +25,7 @@ WEEKLY_WORKFLOW = REPO / ".github" / "workflows" / "weekly.yml"
 REFERENCE_EXCLUSIONS = REPO / "tests" / "validation" / "reference_exclusions.json"
 VALIDATE_DIR = REPO / "tests" / "validation" / "Validate"
 PARITY_WORKFLOW = REPO / ".github" / "workflows" / "parity.yml"
+FORMAL_WORKFLOW = REPO / ".github" / "workflows" / "formal.yml"
 
 
 def test_pull_request_runs_keep_exact_head_evidence_available():
@@ -86,6 +87,23 @@ def test_external_parity_jobs_use_pinned_oracle_checkouts_and_fail_closed():
     assert "build/NFsim" in nfsim
     assert "tests/validation/test_parity_nfsim.py" in nfsim
     assert "build/cpp/NFsim" not in nfsim
+
+
+def test_formal_workflow_runs_pinned_kernel_and_nfnext_contracts():
+    """The Lean reference must be kernel-checked on every PR head."""
+
+    workflow = FORMAL_WORKFLOW.read_text(encoding="utf-8")
+    assert "github.event.pull_request.head.sha" in workflow
+    assert re.search(r"^\s+cancel-in-progress:\s+false\s*$", workflow, re.MULTILINE)
+    assert "leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9" in workflow
+    assert "lake-package-directory: formal/lean" in workflow
+    assert (REPO / "formal" / "lean" / "lean-toolchain").read_text(encoding="utf-8").strip() == (
+        "leanprover/lean4:v4.33.1"
+    )
+    assert "scripts/static_validate.py" in workflow
+    assert "scripts/run_nfnext_contract.sh" in workflow
+    assert "lake build" in workflow
+    assert "lake env lean tests/Smoke.lean" in workflow
 
 
 def test_oracle_source_loader_requires_full_locked_revisions(tmp_path):

@@ -19,6 +19,11 @@ std::string lower(std::string value) {
     return value;
 }
 
+bool isReactantCountName(const std::string& name) {
+    return name.size() == 10 && name.compare(0, 9, "reactant_") == 0 &&
+           name.back() >= '1' && name.back() <= '9';
+}
+
 RateLawKind classifyFunction(const std::string& rawName) {
     const auto name = lower(rawName);
     if (name == "arrhenius") return RateLawKind::ArrheniusEnergy;
@@ -152,11 +157,6 @@ ResolvedExpression resolveExpression(const ast::Expression& expression,
             resolved.numberValue = 2.718281828459045235360287471352662498;
             return resolved;
         }
-        if (expression.name() == "_Na") {
-            resolved.kind = ResolvedExpressionKind::Number;
-            resolved.numberValue = 6.02214076e23;
-            return resolved;
-        }
         if (expression.name().size() == 10 &&
             expression.name().compare(0, 9, "reactant_") == 0 &&
             expression.name().back() >= '1' && expression.name().back() <= '9') {
@@ -174,6 +174,13 @@ ResolvedExpression resolveExpression(const ast::Expression& expression,
         } else if (const auto function = symbols.resolveFunction(expression.name())) {
             resolved.kind = ResolvedExpressionKind::FunctionRef;
             resolved.symbol = SymbolRef{SymbolKind::Function, function->value()};
+        } else if (expression.name() == "_Na") {
+            resolved.kind = ResolvedExpressionKind::Number;
+            resolved.numberValue = 6.02214076e23;
+            // Preserve the source token for the NFsim text boundary when the
+            // model does not declare _Na as an overriding parameter.
+            resolved.operation = expression.name();
+            return resolved;
         } else {
             resolved.kind = ResolvedExpressionKind::Unresolved;
             unresolved(diagnostics, expression.name());
@@ -182,6 +189,16 @@ ResolvedExpression resolveExpression(const ast::Expression& expression,
         return resolved;
     }
     case ast::ExpressionKind::Function: {
+        // NFsim exposes reactant_N() as a mapping-local count placeholder.
+        // It is commonly written with call syntax in legacy function/rate
+        // sections even though it is not a user-defined model function.
+        if (expression.args().empty() && isReactantCountName(expression.name())) {
+            resolved.kind = ResolvedExpressionKind::ReactantCountRef;
+            resolved.reactantIndex =
+                static_cast<std::size_t>(expression.name().back() - '1');
+            resolved.localName = expression.name();
+            return resolved;
+        }
         const auto builtin = builtinFunction(expression.name());
         resolved.kind = builtin != BuiltinFunction::Unknown
                             ? ResolvedExpressionKind::BuiltinCall
@@ -205,6 +222,13 @@ ResolvedExpression resolveExpression(const ast::Expression& expression,
         return resolved;
     }
     case ast::ExpressionKind::ObservableRef: {
+        if (expression.args().empty() && isReactantCountName(expression.name())) {
+            resolved.kind = ResolvedExpressionKind::ReactantCountRef;
+            resolved.reactantIndex =
+                static_cast<std::size_t>(expression.name().back() - '1');
+            resolved.localName = expression.name();
+            return resolved;
+        }
         resolved.operation = expression.name();
         if (const auto observable = symbols.resolveObservable(expression.name())) {
             resolved.kind = ResolvedExpressionKind::ObservableRef;

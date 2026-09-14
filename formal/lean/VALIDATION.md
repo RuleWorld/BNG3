@@ -2,13 +2,13 @@
 
 ## Validation performed in this environment
 
-From `BNG3-main/formal/lean/`:
+From `formal/lean/` at the 2026-09-14 checkpoint:
 
 ```bash
 ./scripts/validate_all.sh
 ```
 
-Current result:
+Current local result:
 
 ```text
 STATIC VALIDATION PASSED (36 Lean files checked)
@@ -80,6 +80,12 @@ lake env lean tests/Smoke.lean
 
 No theorem in this repository should be advertised as machine-checked until
 that command succeeds under the pinned `leanprover/lean4:v4.33.1` toolchain.
+
+Pull requests now run the pinned hosted gate in
+[`../../.github/workflows/formal.yml`](../../.github/workflows/formal.yml).
+That job installs `leanprover/lean4:v4.33.1`, runs the static and NFnext
+contract checks, executes `lake build`, and runs the Lean smoke file. A local
+green static/contract result is not a substitute for that kernel check.
 
 
 ### Latest semantic additions

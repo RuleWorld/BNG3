@@ -626,9 +626,9 @@ true    -- A.x-B.y bond exists
 
 # Verification status
 
-The execution environment used for this package does not provide `lean`,
-`lake`, or `elan`, and direct network access from the container is unavailable.
-Therefore the Lean kernel could not type-check the project here.
+The local execution environment used for this package does not provide `lean`,
+`lake`, or `elan`. Therefore the Lean kernel could not type-check the project
+locally at the 2026-09-14 checkpoint.
 
 That means:
 
@@ -638,6 +638,12 @@ That means:
   with the pinned toolchain**.
 
 See `VALIDATION.md` for the exact checks and limitations.
+
+Pull requests run the pinned kernel and smoke gate in
+[`../../.github/workflows/formal.yml`](../../.github/workflows/formal.yml).
+This keeps kernel evidence attached to the exact PR head; local static
+validation and NFnext contract success remain useful preflight checks but are
+not theorem-validation evidence.
 
 ---
 
