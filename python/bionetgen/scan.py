@@ -171,16 +171,20 @@ class ScanResult:
     def to_dataframe(self):
         import pandas as pd
 
-        rows = []
+        df_list = []
         for value, result in zip(self.parameter_values, self.results):
-            for time_index, time_value in enumerate(result.time):
-                row = {self.parameter_name: float(value), "time": float(time_value)}
-                for observable in self.observable_names:
-                    row[observable] = float(
-                        np.asarray(result.observables[observable])[time_index]
-                    )
-                rows.append(row)
-        return pd.DataFrame(rows)
+            data = {
+                self.parameter_name: float(value),
+                "time": np.asarray(result.time, dtype=float),
+            }
+            for observable in self.observable_names:
+                data[observable] = np.asarray(
+                    result.observables[observable], dtype=float
+                )
+            df_list.append(pd.DataFrame(data))
+        if df_list:
+            return pd.concat(df_list, ignore_index=True)
+        return pd.DataFrame()
 
     def plot(self, observable: str, show: bool = True, **kwargs):
         import matplotlib.pyplot as plt
@@ -250,21 +254,22 @@ class ScanResult2D:
     def to_dataframe(self):
         import pandas as pd
 
-        rows = []
+        df_list = []
         for value1, row in zip(self.values1, self.results):
             for value2, result in zip(self.values2, row):
-                for time_index, time_value in enumerate(result.time):
-                    record = {
-                        self.parameter1_name: float(value1),
-                        self.parameter2_name: float(value2),
-                        "time": float(time_value),
-                    }
-                    for observable in self.observable_names:
-                        record[observable] = float(
-                            np.asarray(result.observables[observable])[time_index]
-                        )
-                    rows.append(record)
-        return pd.DataFrame(rows)
+                data = {
+                    self.parameter1_name: float(value1),
+                    self.parameter2_name: float(value2),
+                    "time": np.asarray(result.time, dtype=float),
+                }
+                for observable in self.observable_names:
+                    data[observable] = np.asarray(
+                        result.observables[observable], dtype=float
+                    )
+                df_list.append(pd.DataFrame(data))
+        if df_list:
+            return pd.concat(df_list, ignore_index=True)
+        return pd.DataFrame()
 
     def plot_heatmap(self, observable: str, show: bool = True, **kwargs):
         import matplotlib.pyplot as plt
