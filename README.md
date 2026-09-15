@@ -6,12 +6,6 @@ The repository is under active convergence work. The live implementation and
 verification state is recorded in [`docs/CURRENT_PROGRESS.md`](docs/CURRENT_PROGRESS.md);
 the convergence checklist remains the authority for release completion.
 
-The current continuation is tracked in [PR #13](https://github.com/RuleWorld/BNG3/pull/13).
-It makes direct NFsim construction observable and fail-closed in validation,
-adds fixed-seed endpoint coverage, and checks one typed Lean/production-NFIR
-lowering slice. These are migration evidence, not a claim of complete parity
-or release readiness.
-
 ## What Is Novel In BNG3
 
 BNG3 is a redesign of the BioNetGen user and execution layers around a

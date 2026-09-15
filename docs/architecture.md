@@ -9,8 +9,8 @@ in [ADR 0001](adr/0001-canonical-semantic-model-and-layer-boundaries.md).
 This page describes the current implementation layout; it does not imply
 that every planned semantic/backend seam is complete.
 
-The current continuation is tracked in [PR #13](https://github.com/RuleWorld/BNG3/pull/13).
-It adds a bounded production-boundary NFnext contract and makes the direct
+The current continuation adds a bounded production-boundary NFnext contract
+and makes the direct
 NFsim construction path observable to validation. These contracts strengthen
 the migration boundary without claiming complete backend equivalence.
 

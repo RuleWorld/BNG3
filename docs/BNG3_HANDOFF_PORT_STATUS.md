@@ -30,9 +30,8 @@ not in the archived handoff narratives.
 
 ## Continuation update — 2026-09-15
 
-The current continuation is [PR #13](https://github.com/RuleWorld/BNG3/pull/13)
-on branch `codex/bng3-convergence-continuation-20260915`, based on public
-`main` at `bad50c9cd659efd893e47d8b88bcfebaa4ebc2ba`. It merges the dated
+The current continuation is on branch `codex/bng3-convergence-continuation-20260915`,
+based on public `main` at `bad50c9cd659efd893e47d8b88bcfebaa4ebc2ba`. It merges the dated
 continuation note into the current progress, checklist, parity, integration,
 architecture, and validation documentation.
 

@@ -5,11 +5,10 @@ For the live implementation snapshot and current validation status, start with
 release-completion authority. Historical migration reports are grouped under
 [`archive/reports/`](archive/reports/).
 
-The active continuation is [PR #13](https://github.com/RuleWorld/BNG3/pull/13).
-For its direct NFsim construction-path contract and typed NFnext bridge, see
-[`CI_PARITY.md`](CI_PARITY.md), [`architecture.md`](architecture.md), and the
-current sections of [`CURRENT_PROGRESS.md`](CURRENT_PROGRESS.md) and the
-convergence checklist.
+The current continuation makes direct NFsim construction-path and typed NFnext
+bridge evidence explicit in [`CI_PARITY.md`](CI_PARITY.md),
+[`architecture.md`](architecture.md), and the current sections of
+[`CURRENT_PROGRESS.md`](CURRENT_PROGRESS.md) and the convergence checklist.
 
 ## Overview
 

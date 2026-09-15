@@ -12,9 +12,9 @@ execution instruction.
 
 ## Current continuation checkpoint — 2026-09-15
 
-The continuation is published on [PR #13](https://github.com/RuleWorld/BNG3/pull/13)
-from `origin/main` at `bad50c9cd659efd893e47d8b88bcfebaa4ebc2ba`. Its purpose is
-to make the direct-NFsim and NFnext evidence auditable and to merge the dated
+The continuation is based on public `main` at
+`bad50c9cd659efd893e47d8b88bcfebaa4ebc2ba`. Its purpose is to make the
+direct-NFsim and NFnext evidence auditable and to merge the dated
 continuation note into the current documentation set.
 
 Direct NFsim validation now preserves and asserts the runtime
@@ -60,9 +60,8 @@ place. Generated Lean build output is not part of the import.
 
 ## Previous full-corpus CI, Windows compatibility, and repository-organization checkpoint — 2026-09-15
 
-Semantic validation repair commit `78a1591422ccbe6c4a5607eb748b426bbdbc303f`
-and final documentation/Windows repair commit
-`ed4c59e028b2799a7b8025a8b37dccdc1dec0888` are published on PR #10. The
+The preceding semantic validation and documentation/Windows repair commits
+closed the former full-corpus
 checkpoint closes the former full-corpus
 reference exclusions: independent BNG2 `.net` references now cover the
 previously missing network fixtures, and

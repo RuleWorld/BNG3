@@ -5,7 +5,7 @@
 **Scope:** BioNetGen, NFsim, and PyBioNetGen convergence into one maintained BNG3 codebase
 **Last progress update:** 2026-09-15
 **Implementation:** The active continuation is on
-`codex/bng3-convergence-continuation-20260915` in [PR #13](https://github.com/RuleWorld/BNG3/pull/13),
+`codex/bng3-convergence-continuation-20260915`,
 based on public `main` at `bad50c9cd659efd893e47d8b88bcfebaa4ebc2ba`.
 This document remains the authoritative backlog and completion contract;
 Section 11 is not yet satisfied.
@@ -35,7 +35,7 @@ The local pre-documentation checkpoint reports CTest `308/308`, strict full
 validation `71/71` with zero failures/errors/skips, action contracts `6/6`,
 independent NFsim `10 passed`, and Lean/NFnext static contracts `36` files and
 `18/18`. Exact hosted status is established only by the final post-push `gh`
-check readback for PR #13.
+check readback for the pushed continuation.
 
 ## Previous implementation progress checkpoint — 2026-09-15
 
@@ -881,7 +881,7 @@ Each phase has deliverables and an exit gate. Later phases may prepare in parall
 | Phase | Status | Evidence and next gate |
 |---|---|---|
 | 0 — authority/common ground | In progress | Individual BNG2/NFsim source paths are being used for semantic decisions; the accepted source lock, complete reconciliation ledger, owners, and RuleHub selection manifest remain open. |
-| 1 — honest green CI | In progress | Local CTest 308/308, full validation 71/71 with zero skips, Black/Ruff and CI-contract checks pass; the preceding exact-head hosted multi-OS, oracle, formal, package-smoke, and integration checks are historical, and PR #13 requires fresh exact-head readback after the documentation merge. |
+| 1 — honest green CI | In progress | Local CTest 308/308, full validation 71/71 with zero skips, Black/Ruff and CI-contract checks pass; the preceding exact-head hosted multi-OS, oracle, formal, package-smoke, and integration checks are historical, and the pushed continuation requires fresh exact-head readback after the documentation merge. |
 | 2 — independent validation | In progress | Committed independent BNG2 `.net` references and six explicit action-output contracts now cover the former PR/weekly exclusions; broader BNG2/NFsim matrices, golden provenance, and RuleHub approval remain open. |
 | 4 — semantic core | In progress | BNG2-derived deletion, bond-cardinality, product-molecularity, symmetry, compartment, dynamic-rate, protocol, scan, and sensitivity slices are implemented; broader source differential coverage remains open. |
 | 5 — direct NFsim | In progress | Typed AST-to-NFsim construction, explicit `construction_path` checks, scoped XML rate preservation, legacy DOR2/RNA compatibility, intramolecular product bonds, traversal-limit handling, direct-vs-XML tests, and the full 4-model × 200-seed native Tier-NF gate now cover additional behavior; the AN2 mismatch, protocol NF support, and XML-path retirement remain open. |

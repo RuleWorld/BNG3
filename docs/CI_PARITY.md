@@ -26,8 +26,8 @@ the provenance/checklist before it is described as parity evidence.
 
 ## Continuation parity checkpoint — 2026-09-15
 
-PR [#13](https://github.com/RuleWorld/BNG3/pull/13) is based on public
-`main` at `bad50c9cd659efd893e47d8b88bcfebaa4ebc2ba`. The continuation adds
+The continuation is based on public `main` at
+`bad50c9cd659efd893e47d8b88bcfebaa4ebc2ba` and adds
 these independently auditable requirements to the existing parity gates:
 
 - the XML shadow leg reports `construction_path=in-memory-xml`;

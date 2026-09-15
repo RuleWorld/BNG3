@@ -5,8 +5,7 @@
 **Repository:** RuleWorld/BNG3
 **Working branch:** `codex/bng3-convergence-continuation-20260915`
 **Current base:** `bad50c9cd659efd893e47d8b88bcfebaa4ebc2ba` (`origin/main`)
-**Current PR:** [RuleWorld/BNG3#13](https://github.com/RuleWorld/BNG3/pull/13)
-**Historical audited heads:** The earlier local-only and PR #10/#12 heads remain
+**Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -64,8 +63,8 @@ completion.
 
 ## Current continuation checkpoint — 2026-09-15
 
-PR #13 carries the continuation from the current public `main` base. The
-continuation is deliberately narrow and evidence-oriented:
+The continuation from the current public `main` base is deliberately narrow
+and evidence-oriented:
 
 - [x] Direct NFsim evidence records `construction_path`, requires the XML leg
   to report `in-memory-xml` and the direct leg to report `direct`, clears XML
@@ -93,12 +92,12 @@ static validation `36` files; NFnext contracts `18/18`; Black, Ruff,
 provenance, corpus, and exception-ledger checks passed. The local Lean kernel
 check remains unavailable because Lean/Lake/Elan are not installed.
 
-The hosted PR checks for the final pushed documentation head are the authority
+Hosted checks for the final pushed documentation head are the authority
 for this checkpoint. Record their exact head and terminal check URLs in this
 section only after `gh` readback confirms that no required job is pending.
 The unchecked completion items below remain open.
 
-## Historical checkpoint — 2026-09-15 (PR #10/#12)
+## Historical checkpoint — 2026-09-15
 
 The preceding combined-tree evidence is summarized in
 [`CURRENT_PROGRESS.md`](CURRENT_PROGRESS.md). The native CTest gate is
