@@ -24,7 +24,7 @@ are reproducible; macOS and Windows continue to exercise BNG3's own C++ and
 package paths. A platform-specific oracle disposition must be added here and to
 the provenance/checklist before it is described as parity evidence.
 
-## Full-corpus validation checkpoint — 2026-09-14
+## Full-corpus validation checkpoint — 2026-09-15
 
 The PR and weekly BNG validation jobs invoke `scripts/validate.py` with strict
 references and `tests/validation/validation_manifest.json`. The network corpus
@@ -33,16 +33,23 @@ fixtures (`ANx`, `hybrid_test`, `test_tfun`, `test_tfun_xml`,
 `test_write_sbml_multi`, and `visualize`) use explicit output contracts in
 `scripts/validate_actions.py`. The former reference-exclusion profiles are
 closed and the full local run at semantic commit `78a1591` reports `71 passed,
-0 failed, 0 errors, 0 skipped`. This closes the CI exclusion repair, not the
-broader convergence, backend-equivalence, or release gates.
+0 failed, 0 errors, 0 skipped`. The exact final PR head
+`ed4c59e028b2799a7b8025a8b37dccdc1dec0888` is covered by hosted CI run
+[`34896645707`](https://github.com/RuleWorld/BNG3/actions/runs/34896645707),
+with terminal-success C++, Python, full-corpus, package-smoke, and integration
+jobs; the independent parity, Lean, CodeQL, and formatting runs are also
+terminal-success. This closes the CI exclusion repair, not the broader
+convergence, backend-equivalence, or release gates.
 
 The preceding hosted PR head exposed a Windows/MSVC-only parser failure: the
 legacy `NFinput.cpp` include path reached generated ANTLR visitor headers before
 the translation-unit compatibility include, leaving the Windows SDK `constant`
 macro active inside ANTLR. The generated parser, visitor, and base-visitor
 headers now include `cpp/parser/antlr_compat.hpp` directly. The local native
-rebuild is green; hosted Windows and package-matrix jobs must be re-read at the
-new exact head.
+rebuild is green, and the exact-head hosted Windows and package-matrix jobs
+pass. The scheduled NFsim and release-only artifact/publish jobs are skipped
+only when their event guards do not apply; they are not PR validation-test
+exclusions.
 
 ## Reproducibility rules
 

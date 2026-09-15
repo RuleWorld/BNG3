@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased] - 2026-09-14
+## [Unreleased] - 2026-09-15
 
 ### In progress
 
@@ -27,7 +27,10 @@
   snapshots and redundant package-wrapper files.
 - Final local verification for semantic commit `78a1591`: CTest 308/308,
   action contracts 6/6, CI-contract tests 26 passed, and energy Python tests
-  66 passed. Hosted checks remain the exact-head gate.
+  66 passed. Final hosted PR run `34896645707` at `ed4c59e` is terminal-success
+  for all PR-required build, Python, corpus, parity, formal, package-smoke,
+  and integration gates; release-only and scheduled-only jobs are conditionally
+  skipped by their event guards.
 
 ## [3.0.0a1] - 2026-05-11
 

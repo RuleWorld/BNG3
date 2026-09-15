@@ -1,13 +1,13 @@
 # BNG3 Convergence: Definition of Done and Remaining Checklist
 
 **Status:** Active; not complete
-**Last audited:** 2026-09-14
+**Last audited:** 2026-09-15
 **Repository:** RuleWorld/BNG3
 **Working branch:** codex/bng3-rest-of-port-20260909
 **Historical audited semantic code head:** ccb3ef9efd069bb9375a39ddb64b1861909b4aa8 (local exact head; public synchronization is deferred by the local-only work instruction)
 **Historical checklist refresh base:** ce4575f5c31b94ded5dfac1842a9c8e438f608d4 (local exact-head CI provenance-summary checkpoint; public synchronization is deferred by the local-only work instruction)
 **Historical workflow checkpoint:** ce4575f5c31b94ded5dfac1842a9c8e438f608d4 (local-only; no hosted run was created because this checkpoint has not been pushed)
-**Current audit base:** 78a1591422ccbe6c4a5607eb748b426bbdbc303f on branch `codex/bng3-rest-of-port-20260909`; the full-corpus validation repair is published and the documentation/organization follow-up is in progress.
+**Current audit base:** ed4c59e028b2799a7b8025a8b37dccdc1dec0888 on branch `codex/bng3-rest-of-port-20260909`; the full-corpus validation repair, Windows/MSVC parser repair, and documentation/artifact organization are published.
 **PR:** RuleWorld/BNG3#10
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -63,7 +63,7 @@ completion.
 - Re-audit the whole checklist on the exact release-candidate SHA. Earlier
   evidence is stale after a rebase, autofix, merge, or semantic change.
 
-## Live checkpoint — 2026-09-14
+## Live checkpoint — 2026-09-15
 
 The current combined-tree evidence is summarized in
 [`CURRENT_PROGRESS.md`](CURRENT_PROGRESS.md). The native CTest gate is
@@ -76,13 +76,24 @@ pass.
 Local Lean static validation checks 36 files and the NFnext contract binary
 reports `18/18`; the Lean kernel is not installed locally. The PR now has a
 pinned formal workflow that performs the hosted Lean 4.33.1 kernel build and
-smoke check, which has passed for the published semantic commit. The former
+smoke check, which has passed for the published PR head. The former
 reference-exclusion profiles are closed; the PR and weekly validation jobs now
 run the full corpus using independent BNG2 network references plus explicit
-action contracts. These results are exact-head checkpoint evidence only.
-Complete backend equivalence, hosted terminal evidence for the final
-documentation head, release qualification, and every other unchecked item
-below remain open.
+action contracts. These results are exact-head checkpoint evidence only. The
+exact hosted PR run
+[34896645707](https://github.com/RuleWorld/BNG3/actions/runs/34896645707)
+completed successfully at `ed4c59e`; the cross-tool parity run
+[34896645694](https://github.com/RuleWorld/BNG3/actions/runs/34896645694), Lean
+run [34896645788](https://github.com/RuleWorld/BNG3/actions/runs/34896645788),
+CodeQL run [34896645673](https://github.com/RuleWorld/BNG3/actions/runs/34896645673),
+and formatting run
+[34896645763](https://github.com/RuleWorld/BNG3/actions/runs/34896645763) also
+completed successfully. All PR-required build, Python, corpus, parity,
+formal, package-smoke, and integration checks are terminal-success. The
+scheduled-only NFsim job and release-only source-distribution, wheel, Docker,
+and PyPI jobs remain conditionally skipped by their workflow event guards;
+they are not validation-test exclusions. Complete backend equivalence, release
+qualification, and every other unchecked item below remain open.
 
 ## Current verified checkpoint
 
@@ -112,16 +123,27 @@ completion gate.
   readers to the live progress, checklist, integration, and validation docs.
   Obsolete package-wrapper files and the four applied patch snapshots were
   removed; model/test fixture text files and dated handoff provenance remain
-  in their operational directories. The final documentation head still needs
-  fresh hosted check readback after this cleanup commit.
+  in their operational directories. The final documentation head is covered by
+  hosted CI run `34896645707`, whose required jobs completed successfully.
 
 - [x] Windows/MSVC ANTLR compatibility checkpoint applies the existing
   `cpp/parser/antlr_compat.hpp` guard to `BNGParser.h`, `BNGParserVisitor.h`,
   and `BNGParserBaseVisitor.h`. This closes the direct generated-header include
   path that caused the preceding Windows jobs to fail on the SDK `constant`
   macro before ANTLR's `ParseTreeType` and parser enums were parsed. The local
-  Release/Ninja rebuild passes; fresh hosted Windows and package-matrix checks
-  remain required at the new exact head.
+  Release/Ninja rebuild passes, and the exact-head hosted Windows C++ and
+  Python matrix checks pass in CI run `34896645707`.
+
+- [x] Exact-head hosted validation checkpoint at
+  `ed4c59e028b2799a7b8025a8b37dccdc1dec0888` completed with terminal-success
+  PR-required jobs: all C++ platforms and ASan, the Python 3.9–3.14 matrix on
+  Linux/macOS/Windows, full corpus on all three operating-system families,
+  package smoke, integration, independent BNG2/NFsim parity, PyBioNetGen API
+  compatibility, Lean 4.33.1/NFnext, CodeQL, lint, and formatting. The full
+  corpus reports zero skipped fixtures, and `reference_exclusions.json` has
+  empty PR and weekly profiles. Release-only and scheduled-only jobs are
+  recorded as conditional skips in the hosted UI and are not part of the PR
+  validation gate.
 
 - [x] Local-only initial-assignment writer checkpoint
   `1662820a0222add1cd9d44e8dd64724590c4bce8` ports the pinned Playground

@@ -1,6 +1,6 @@
 # BNG3 current progress
 
-**Audited:** 2026-09-14
+**Audited:** 2026-09-15
 **Repository:** `RuleWorld/BNG3`
 **Branch:** `codex/bng3-rest-of-port-20260909`
 **Status:** implementation and validation checkpoint; convergence and release remain incomplete
@@ -25,10 +25,12 @@ The cumulative import retained the three supplied snapshots, with the
 Archive reports, source locks, manifests, and provenance records remain in
 place. Generated Lean build output is not part of the import.
 
-## Full-corpus CI, Windows compatibility, and repository-organization checkpoint — 2026-09-14
+## Full-corpus CI, Windows compatibility, and repository-organization checkpoint — 2026-09-15
 
-Semantic implementation commit `78a1591422ccbe6c4a5607eb748b426bbdbc303f`
-is published on PR #10. The checkpoint closes the former full-corpus
+Semantic validation repair commit `78a1591422ccbe6c4a5607eb748b426bbdbc303f`
+and final documentation/Windows repair commit
+`ed4c59e028b2799a7b8025a8b37dccdc1dec0888` are published on PR #10. The
+checkpoint closes the former full-corpus
 reference exclusions: independent BNG2 `.net` references now cover the
 previously missing network fixtures, and
 `tests/validation/validation_manifest.json` routes the six action-focused
@@ -55,13 +57,20 @@ obsolete patch snapshots and duplicate package wrappers were removed after
 their changes were applied. Handoff documents remain historical provenance,
 while this page and the convergence checklist are the live status sources.
 
-Fresh hosted checks for the final documentation/organization head remain the
-required exact-head readback. The preceding hosted head also exposed a
+The exact-head hosted CI run
+[`34896645707`](https://github.com/RuleWorld/BNG3/actions/runs/34896645707)
+completed successfully, including the Windows/MSVC matrix, full corpus on
+Ubuntu/macOS/Windows, package smoke, and integration tests. Cross-tool parity,
+Lean, CodeQL, and formatting runs also completed successfully. The preceding
+hosted head exposed a
 Windows/MSVC-only ANTLR failure: `NFinput.cpp` could enter the runtime through
 generated visitor headers before the translation-unit compatibility include.
 Those generated headers now include `parser/antlr_compat.hpp` themselves, and
-the current local rebuild passes. Broader backend equivalence, release
-qualification, and convergence are still incomplete.
+the current local rebuild passes. The scheduled NFsim historical job and
+release-only artifact/publish jobs are conditionally skipped by their event
+guards; the full validation corpus has no skipped fixtures and the exclusion
+ledger is empty. Broader backend equivalence, release qualification, and
+convergence are still incomplete.
 
 ## Repairs in this checkpoint
 

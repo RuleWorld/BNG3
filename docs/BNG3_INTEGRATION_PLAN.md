@@ -3,14 +3,14 @@
 **Status:** Active implementation; convergence foundation and direct NFsim migration in progress
 **Plan date:** 2026-08-28
 **Scope:** BioNetGen, NFsim, and PyBioNetGen convergence into one maintained BNG3 codebase
-**Last progress update:** 2026-09-14
-**Implementation:** The active port is on `codex/bng3-rest-of-port-20260909`, with semantic validation repair commit `78a1591422ccbe6c4a5607eb748b426bbdbc303f` published to PR #10. This document remains the authoritative backlog and completion contract. Section 11 is not yet satisfied.
+**Last progress update:** 2026-09-15
+**Implementation:** The active port is on `codex/bng3-rest-of-port-20260909`, with semantic validation repair commit `78a1591422ccbe6c4a5607eb748b426bbdbc303f` and final Windows/documentation repair commit `ed4c59e028b2799a7b8025a8b37dccdc1dec0888` published to PR #10. This document remains the authoritative backlog and completion contract. Section 11 is not yet satisfied.
 
 The live implementation and verification snapshot is
 [`CURRENT_PROGRESS.md`](CURRENT_PROGRESS.md). Historical checkpoint counts
 below remain historical unless explicitly refreshed on the exact final tree.
 
-## Implementation progress checkpoint — 2026-09-14
+## Implementation progress checkpoint — 2026-09-15
 
 The validation repair closes the former full-corpus reference exclusions. It
 adds independent BNG2 network references for the previously missing network
@@ -23,15 +23,18 @@ needed by those fixtures.
 At semantic commit `78a1591`, the full local validation reports `71/71` passed
 with zero failures, errors, and skips; CTest reports `308/308`; the energy
 Python suite reports `66 passed`; and CI-contract, Black, Ruff, corpus, and
-exception-ledger checks pass. Hosted checks for the exact public head remain
-the required final readback for this checkpoint; broader parity and release
+exception-ledger checks pass. The final public head `ed4c59e` has terminal-
+success hosted PR, parity, Lean, CodeQL, and formatting checks, including the
+Windows/MSVC and package-smoke/integration gates; broader parity and release
 qualification remain open.
 
 The preceding hosted Windows/MSVC jobs also identified an include-order issue
 in the ANTLR compatibility guard. The generated parser, visitor, and
 base-visitor headers now include `cpp/parser/antlr_compat.hpp`, covering the
 legacy NFsim entry path as well as the modern parser targets. The local rebuild
-passes; the new hosted head is the next platform-validation checkpoint.
+passes; the new hosted head is terminal-success on the Windows platform
+matrix. Release-only and scheduled-only jobs remain guarded by their intended
+event conditions.
 
 ## Implementation progress checkpoint — 2026-09-10
 
@@ -823,12 +826,12 @@ Use Jules Playground as a valuable independently implemented differential target
 
 Each phase has deliverables and an exit gate. Later phases may prepare in parallel, but deletion and authority changes follow the stated dependencies.
 
-### Current phase status — 2026-09-14
+### Current phase status — 2026-09-15
 
 | Phase | Status | Evidence and next gate |
 |---|---|---|
 | 0 — authority/common ground | In progress | Individual BNG2/NFsim source paths are being used for semantic decisions; the accepted source lock, complete reconciliation ledger, owners, and RuleHub selection manifest remain open. |
-| 1 — honest green CI | In progress | Local CTest 308/308, full validation 71/71 with zero skips, Black/Ruff and CI-contract checks pass; fresh hosted multi-OS and oracle checks remain the exact-head gate. |
+| 1 — honest green CI | In progress | Local CTest 308/308, full validation 71/71 with zero skips, Black/Ruff and CI-contract checks pass; exact-head hosted multi-OS, oracle, formal, package-smoke, and integration checks are terminal-success. |
 | 2 — independent validation | In progress | Committed independent BNG2 `.net` references and six explicit action-output contracts now cover the former PR/weekly exclusions; broader BNG2/NFsim matrices, golden provenance, and RuleHub approval remain open. |
 | 4 — semantic core | In progress | BNG2-derived deletion, bond-cardinality, product-molecularity, symmetry, compartment, dynamic-rate, protocol, scan, and sensitivity slices are implemented; broader source differential coverage remains open. |
 | 5 — direct NFsim | In progress | Typed AST-to-NFsim construction, scoped XML rate preservation, legacy DOR2/RNA compatibility, intramolecular product bonds, traversal-limit handling, direct-vs-XML tests, and the full 4-model × 200-seed native Tier-NF gate now cover additional behavior; the AN2 mismatch, protocol NF support, and XML-path retirement remain open. |
