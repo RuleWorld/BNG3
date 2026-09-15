@@ -53,6 +53,13 @@ workflow reported `5/5` passes. The selected NFsim gate reported `10 passed`,
 covering direct/XML construction, four 200-run seeded ensembles, and fixed-seed
 endpoints.
 
+The direct/XML tests assert the returned `construction_path`: the shadow leg
+must be `in-memory-xml`, and the direct leg must be `direct` after
+`BNG_NFSIM_ALLOW_XML_FALLBACK` is removed. The ensemble worker explicitly adds
+the repository root and `python/` to `sys.path`, and rejects any member that
+does not report direct construction. This prevents XML-vs-XML comparisons or
+caller-dependent source-tree imports from being counted as direct evidence.
+
 The former reference-exclusion ledger is closed. The six fixtures whose
 primary behavior is an action output (`ANx`, `hybrid_test`, `test_tfun`,
 `test_tfun_xml`, `test_write_sbml_multi`, and `visualize`) are independently

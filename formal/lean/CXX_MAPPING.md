@@ -36,6 +36,16 @@ exactly.
 | `PopulationMapDecl` | proposed compiled population map | Exact execution semantics still future formal work. |
 | `BackendPattern` | proof-only stand-in for NFIR pattern | Replace/extend with real NFIR formal model later. |
 
+## Current tested bridge
+
+The first production-boundary bridge is intentionally narrower than this
+mapping table. `tests/architecture_contracts/nfnext/test_bng_lowering_bridge.cpp` parses the
+rule `A(x~u) + B(y) -> A(x~p!1).B(y!1) k`, builds a real
+`bng::compile::CompiledModel`, and calls `nfnext::lowerFromBioNetGen`. It then
+checks `DifferentComplex`, `SetSiteState`, and `Bind`. The Lean example in
+`BNG/Examples.lean` checks the corresponding typed NFnext shape independently.
+The bridge is a regression contract, not a complete refinement theorem.
+
 ## Suggested C++ consequences
 
 ### `PatternV2`

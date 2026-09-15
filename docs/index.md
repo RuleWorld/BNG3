@@ -5,6 +5,11 @@ For the live implementation snapshot and current validation status, start with
 release-completion authority. Historical migration reports are grouped under
 [`archive/reports/`](archive/reports/).
 
+The current continuation makes direct NFsim construction-path and typed NFnext
+bridge evidence explicit in [`CI_PARITY.md`](CI_PARITY.md),
+[`architecture.md`](architecture.md), and the current sections of
+[`CURRENT_PROGRESS.md`](CURRENT_PROGRESS.md) and the convergence checklist.
+
 ## Overview
 
 BioNetGen 3 is a unified platform for rule-based modeling of biochemical systems. It combines three previously separate tools into a single Python package with a compiled C++ backend:
@@ -68,3 +73,6 @@ df = result.to_dataframe()
 - [Contributing](contributing.md) — Development setup and guidelines
 - [Validation harness](../tests/validation/README.md) — Full-corpus commands,
   references, and oracle boundaries
+- [CI parity](CI_PARITY.md) — Independent BNG2/NFsim gates and exact-head CI
+- [Convergence checklist](BNG3_CONVERGENCE_DONE_CHECKLIST.md) — Release gate
+  and remaining work

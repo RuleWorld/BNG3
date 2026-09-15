@@ -38,6 +38,12 @@
   `manylinux_2_28`; the auxiliary wheel run `34971595435` was canceled before
   its wheel jobs started, so exact-head wheel validation is deferred to the
   first main-push run after merge.
+- Added the 2026-09-15 convergence continuation: direct NFsim checks now
+  assert the construction path and disallow implicit XML fallback; spawned
+  source-tree workers have stable imports; fixed-seed `motor` and `tlbr`
+  endpoint checks are required; and a bounded Lean/production-NFIR bridge
+  contract checks state and bond lowering for distinct reactants. Population
+  maps remain fail-closed on the direct NFsim path.
 
 ## [3.0.0a1] - 2026-05-11
 

@@ -9,14 +9,17 @@ from __future__ import annotations
 import pytest
 
 from tests.validation import compare, corpus, exception_ledger, oracle_perl, runner
+from tests.validation.strict import require_oracle
 
 EXCEPTIONS = exception_ledger.load_ledger()
 
 
 def _net_parity(model_name: str, bng_cpp, work_dir):
     ref_path, ref_src = oracle_perl.net(model_name, work_dir / "perl")
-    if ref_path is None:
-        pytest.skip(f"no reference .net for {model_name}: {ref_src}")
+    require_oracle(
+        ref_path is not None,
+        f"no reference .net for {model_name}: {ref_src}",
+    )
 
     test_net, _, err = runner.run_cli(bng_cpp, model_name, work_dir / "cpp")
     assert test_net is not None, f"engine produced no .net: {err}"

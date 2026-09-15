@@ -2,13 +2,46 @@
 
 **Audited:** 2026-09-15
 **Repository:** `RuleWorld/BNG3`
-**Branch:** `codex/bng3-status-docs-20260915`
+**Branch:** `codex/bng3-convergence-continuation-20260915`
 **Status:** implementation and validation checkpoint; convergence and release remain incomplete
 
 This is the live status page for the combined BNG3 migration tree. The older
 IR migration reports and formalization reports retained in the repository are
 historical inputs and provenance records; their embedded prose is not a new
 execution instruction.
+
+## Current continuation checkpoint — 2026-09-15
+
+The continuation is based on public `main` at
+`bad50c9cd659efd893e47d8b88bcfebaa4ebc2ba`. Its purpose is to make the
+direct-NFsim and NFnext evidence auditable and to merge the dated
+continuation note into the current documentation set.
+
+Direct NFsim validation now preserves and asserts the runtime
+`construction_path`: the compatibility leg must be `in-memory-xml`, while the
+direct leg must be `direct` with XML fallback permission removed. Required
+compiled backends and independent oracles fail closed when unavailable.
+Source-tree ensemble workers receive both the repository root and `python/`
+on `sys.path`, and every ensemble member must use direct construction. The
+hosted parity contract covers the fixed-seed `motor` and `tlbr` endpoint
+fixtures as well as the seeded `simple_system` ensemble.
+
+The typed Lean example and the production C++ contract independently exercise
+the same bounded rule, `A(x~u) + B(y) -> A(x~p!1).B(y!1) k`. The C++ contract
+crosses BNGL parser -> `bng::compile::CompiledModel` ->
+`nfnext::lowerFromBioNetGen`, checking distinct-reactant molecularity, a state
+update, and a new bond. This is correspondence evidence for one NFnext slice,
+not complete Lean kernel verification or backend equivalence. Population maps
+remain fail-closed for direct NFsim and are routed through the hybrid backend.
+
+The local code checkpoint immediately before this documentation merge is CTest
+`308/308`, strict validation `71/71` with zero failures/errors/skips, action
+contracts `6/6`, CI-contract tests `26 passed`, energy tests `66 passed`,
+independent NFsim `10 passed`, Lean static validation `36` files, NFnext
+contracts `18/18`, and passing Black, Ruff, provenance, corpus, and
+exception-ledger checks. The local Lean kernel remains unavailable because
+Lean/Lake/Elan are not installed. Final hosted status is recorded from
+exact-head `gh` readback after the documentation push.
 
 ## Imported material
 
@@ -25,11 +58,10 @@ The cumulative import retained the three supplied snapshots, with the
 Archive reports, source locks, manifests, and provenance records remain in
 place. Generated Lean build output is not part of the import.
 
-## Full-corpus CI, Windows compatibility, and repository-organization checkpoint — 2026-09-15
+## Previous full-corpus CI, Windows compatibility, and repository-organization checkpoint — 2026-09-15
 
-Semantic validation repair commit `78a1591422ccbe6c4a5607eb748b426bbdbc303f`
-and final documentation/Windows repair commit
-`ed4c59e028b2799a7b8025a8b37dccdc1dec0888` are published on PR #10. The
+The preceding semantic validation and documentation/Windows repair commits
+closed the former full-corpus
 checkpoint closes the former full-corpus
 reference exclusions: independent BNG2 `.net` references now cover the
 previously missing network fixtures, and

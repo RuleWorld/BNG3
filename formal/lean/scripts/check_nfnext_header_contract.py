@@ -32,6 +32,28 @@ for path, tokens in checks.items():
         if token not in text:
             errors.append(f"{path.name}: expected token {token!r} not found")
 
+# Keep one executable semantic slice visibly identical across the proof-friendly
+# Lean reference and the production parser/CompiledModel/NFIR boundary test.
+# Behavioral equality is checked by the compiled tests; this textual guard makes
+# fixture drift fail early in the lightweight formal job as well.
+bridge_rule = "A(x~u) + B(y) -> A(x~p!1).B(y!1)"
+bridge_files = {
+    ROOT / "formal" / "lean" / "BNG" / "Examples.lean": [
+        bridge_rule, "nfnextBridgeContract_holds"
+    ],
+    ROOT / "tests" / "architecture_contracts" / "nfnext" / "test_bng_lowering_bridge.cpp": [
+        bridge_rule, "lowerFromBioNetGen"
+    ],
+}
+for path, tokens in bridge_files.items():
+    if not path.exists():
+        errors.append(f"missing {path}")
+        continue
+    text = path.read_text(encoding="utf-8")
+    for token in tokens:
+        if token not in text:
+            errors.append(f"{path.name}: bridge token {token!r} not found")
+
 if errors:
     print("NFNEXT HEADER CONTRACT FAILED")
     for error in errors:

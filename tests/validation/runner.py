@@ -26,10 +26,10 @@ import numpy as np
 
 from . import corpus
 
-
 # --------------------------------------------------------------------------- #
 # CLI path
 # --------------------------------------------------------------------------- #
+
 
 def _cli_env(bng_cpp: Path) -> dict[str, str]:
     env = os.environ.copy()
@@ -95,10 +95,12 @@ def _select_cli_output(work_dir: Path, model_stem: str, suffix: str):
 # API path
 # --------------------------------------------------------------------------- #
 
+
 @dataclass
 class Trajectory:
-    data: np.ndarray          # (n_t, n_col), col 0 = time
-    columns: list[str]        # ["time", obs1, obs2, ...]
+    data: np.ndarray  # (n_t, n_col), col 0 = time
+    columns: list[str]  # ["time", obs1, obs2, ...]
+    construction_path: str | None = None
 
 
 def _result_to_trajectory(result) -> Trajectory:
@@ -108,7 +110,44 @@ def _result_to_trajectory(result) -> Trajectory:
     names = list(obs.keys())
     cols = ["time"] + names
     data = np.column_stack([time] + [np.asarray(obs[n], dtype=float) for n in names])
-    return Trajectory(data=data, columns=cols)
+    return Trajectory(
+        data=data,
+        columns=cols,
+        construction_path=getattr(result, "construction_path", None),
+    )
+
+
+def _ensure_source_python_path() -> None:
+    """Make the in-tree Python package importable in spawned validation workers.
+
+    Installed-package CI does not need this, but source-tree differential runs
+    commonly execute with ``PYTHONPATH=python`` only in the parent process.
+    Spawned workers reconstruct ``sys.path`` and may otherwise lose that
+    repository-relative entry.  Anchor both the repository root (for the
+    validation package itself) and its Python source directory so serial and
+    parallel parity gates exercise the same API implementation.
+    """
+    source_root = str(corpus.REPO.resolve())
+    source_python = str((corpus.REPO / "python").resolve())
+    for path in (source_python, source_root):
+        if path not in sys.path:
+            sys.path.insert(0, path)
+
+
+def api_available() -> bool:
+    """Return whether the modern in-process API backend can execute models.
+
+    Importing :mod:`bionetgen` alone is insufficient in source-only validation
+    environments because ``bionetgen.model`` can be importable while the
+    compiled ``_bionetgen_cpp`` extension is absent.  Parity tests should skip
+    honestly in that case rather than fail inside a spawned worker.
+    """
+    _ensure_source_python_path()
+    try:
+        from bionetgen import model as model_module
+    except ImportError:
+        return False
+    return getattr(model_module, "_cpp", None) is not None
 
 
 def run_api(
@@ -121,6 +160,7 @@ def run_api(
     **kwargs,
 ) -> Trajectory:
     """load(model).simulate(method=...) via the unified Python API."""
+    _ensure_source_python_path()
     import bionetgen
 
     src = corpus.resolve(model_name)
@@ -158,6 +198,7 @@ def run_api_ensemble(
     n_runs: int = 200,
     base_seed: int = 1,
     workers: int | None = None,
+    expected_construction_path: str | None = None,
     **kwargs,
 ) -> list[tuple[np.ndarray, list[str]]]:
     """Run a seeded stochastic ensemble; returns runs in compare.py's shape.
@@ -167,15 +208,11 @@ def run_api_ensemble(
     ``workers=1`` for serial debugging.
     """
     worker_count = _resolve_ensemble_workers(workers, n_runs)
-    payloads = [
-        (model_name, method, base_seed + i, kwargs) for i in range(n_runs)
-    ]
+    payloads = [(model_name, method, base_seed + i, kwargs) for i in range(n_runs)]
     if worker_count == 1:
         trajectories = [_run_api_ensemble_item(payload) for payload in payloads]
     else:
-        repo_path = str(corpus.REPO)
-        if repo_path not in sys.path:
-            sys.path.insert(0, repo_path)
+        _ensure_source_python_path()
         context = multiprocessing.get_context("spawn")
         with concurrent.futures.ProcessPoolExecutor(
             max_workers=worker_count, mp_context=context
@@ -184,6 +221,14 @@ def run_api_ensemble(
 
     runs = []
     for traj in trajectories:
+        if (
+            expected_construction_path is not None
+            and traj.construction_path != expected_construction_path
+        ):
+            raise AssertionError(
+                "ensemble member used construction path "
+                f"{traj.construction_path!r}; expected {expected_construction_path!r}"
+            )
         runs.append((traj.data, traj.columns))
     return runs
 

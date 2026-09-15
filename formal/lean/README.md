@@ -797,6 +797,13 @@ complex destruction.
 
 No binary is checked into the repository.
 
+The current continuation also adds a bounded production-boundary contract.
+Lean and C++ use `A(x~u) + B(y) -> A(x~p!1).B(y!1) k`; the C++ contract
+parses BNGL, builds `bng::compile::CompiledModel`, calls
+`nfnext::lowerFromBioNetGen`, and checks distinct-reactant molecularity, a
+state update, and a bond. This is a regression slice, not complete backend
+equivalence or a machine-checked C++ refinement theorem.
+
 ## What is still not a theorem
 
 The formalization is intentionally explicit about the remaining boundary:

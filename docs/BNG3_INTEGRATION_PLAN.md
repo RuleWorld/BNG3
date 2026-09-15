@@ -4,13 +4,40 @@
 **Plan date:** 2026-08-28
 **Scope:** BioNetGen, NFsim, and PyBioNetGen convergence into one maintained BNG3 codebase
 **Last progress update:** 2026-09-15
-**Implementation:** The active port is on `codex/bng3-rest-of-port-20260909`, with semantic validation repair commit `78a1591422ccbe6c4a5607eb748b426bbdbc303f` and final Windows/documentation repair commit `ed4c59e028b2799a7b8025a8b37dccdc1dec0888` published to PR #10. This document remains the authoritative backlog and completion contract. Section 11 is not yet satisfied.
+**Implementation:** The active continuation is on
+`codex/bng3-convergence-continuation-20260915`,
+based on public `main` at `bad50c9cd659efd893e47d8b88bcfebaa4ebc2ba`.
+This document remains the authoritative backlog and completion contract;
+Section 11 is not yet satisfied.
 
 The live implementation and verification snapshot is
 [`CURRENT_PROGRESS.md`](CURRENT_PROGRESS.md). Historical checkpoint counts
 below remain historical unless explicitly refreshed on the exact final tree.
 
-## Implementation progress checkpoint — 2026-09-15
+## Current continuation checkpoint — 2026-09-15
+
+The continuation makes the direct NFsim and NFnext evidence explicit without
+promoting either to a full convergence claim. Direct-vs-XML checks assert the
+runtime `construction_path`, remove XML fallback permission before the direct
+leg, and fail closed when a compiled backend or independent oracle is missing.
+Spawned source-tree workers receive explicit repository-root and `python/`
+imports, and the fixed-seed NFsim endpoint gate includes `motor` and `tlbr` in
+addition to the seeded `simple_system` ensemble.
+
+The first typed Lean/production C++ NFnext bridge uses
+`A(x~u) + B(y) -> A(x~p!1).B(y!1) k`; the C++ side crosses BNGL parser,
+`bng::compile::CompiledModel`, and `nfnext::lowerFromBioNetGen` and checks
+distinct-reactant molecularity, a state update, and a new bond. It is a small
+correspondence contract, not complete backend equivalence. Population maps
+remain fail-closed for direct NFsim and are routed through the hybrid backend.
+
+The local pre-documentation checkpoint reports CTest `308/308`, strict full
+validation `71/71` with zero failures/errors/skips, action contracts `6/6`,
+independent NFsim `10 passed`, and Lean/NFnext static contracts `36` files and
+`18/18`. Exact hosted status is established only by the final post-push `gh`
+check readback for the pushed continuation.
+
+## Previous implementation progress checkpoint — 2026-09-15
 
 The validation repair closes the former full-corpus reference exclusions. It
 adds independent BNG2 network references for the previously missing network
@@ -854,10 +881,10 @@ Each phase has deliverables and an exit gate. Later phases may prepare in parall
 | Phase | Status | Evidence and next gate |
 |---|---|---|
 | 0 — authority/common ground | In progress | Individual BNG2/NFsim source paths are being used for semantic decisions; the accepted source lock, complete reconciliation ledger, owners, and RuleHub selection manifest remain open. |
-| 1 — honest green CI | In progress | Local CTest 308/308, full validation 71/71 with zero skips, Black/Ruff and CI-contract checks pass; exact-head hosted multi-OS, oracle, formal, package-smoke, and integration checks are terminal-success. |
+| 1 — honest green CI | In progress | Local CTest 308/308, full validation 71/71 with zero skips, Black/Ruff and CI-contract checks pass; the preceding exact-head hosted multi-OS, oracle, formal, package-smoke, and integration checks are historical, and the pushed continuation requires fresh exact-head readback after the documentation merge. |
 | 2 — independent validation | In progress | Committed independent BNG2 `.net` references and six explicit action-output contracts now cover the former PR/weekly exclusions; broader BNG2/NFsim matrices, golden provenance, and RuleHub approval remain open. |
 | 4 — semantic core | In progress | BNG2-derived deletion, bond-cardinality, product-molecularity, symmetry, compartment, dynamic-rate, protocol, scan, and sensitivity slices are implemented; broader source differential coverage remains open. |
-| 5 — direct NFsim | In progress | Typed AST-to-NFsim construction, scoped XML rate preservation, legacy DOR2/RNA compatibility, intramolecular product bonds, traversal-limit handling, direct-vs-XML tests, and the full 4-model × 200-seed native Tier-NF gate now cover additional behavior; the AN2 mismatch, protocol NF support, and XML-path retirement remain open. |
+| 5 — direct NFsim | In progress | Typed AST-to-NFsim construction, explicit `construction_path` checks, scoped XML rate preservation, legacy DOR2/RNA compatibility, intramolecular product bonds, traversal-limit handling, direct-vs-XML tests, and the full 4-model × 200-seed native Tier-NF gate now cover additional behavior; the AN2 mismatch, protocol NF support, and XML-path retirement remain open. |
 | 6–8 — consolidation/release | Not started | Dependent on the authority, parity, packaging, CI, and provenance exit gates above. |
 
 ### Phase 0 — Establish authority and freeze the common ground

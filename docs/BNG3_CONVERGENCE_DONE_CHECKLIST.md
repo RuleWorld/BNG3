@@ -3,12 +3,10 @@
 **Status:** Active; not complete
 **Last audited:** 2026-09-15
 **Repository:** RuleWorld/BNG3
-**Working branch:** codex/bng3-status-docs-20260915
-**Historical audited semantic code head:** ccb3ef9efd069bb9375a39ddb64b1861909b4aa8 (local exact head; public synchronization is deferred by the local-only work instruction)
-**Historical checklist refresh base:** ce4575f5c31b94ded5dfac1842a9c8e438f608d4 (local exact-head CI provenance-summary checkpoint; public synchronization is deferred by the local-only work instruction)
-**Historical workflow checkpoint:** ce4575f5c31b94ded5dfac1842a9c8e438f608d4 (local-only; no hosted run was created because this checkpoint has not been pushed)
-**Current audit base:** `9efa0e9df8903ee616437f8555906fcfdda4c762` on branch `codex/bng3-status-docs-20260915`; the full-corpus validation repair, Windows/MSVC parser repair, documentation/artifact organization, and wheel-environment repair are recorded on the exact follow-up head.
-**PR:** RuleWorld/BNG3#12 (follow-up to merged implementation PR #10)
+**Working branch:** `codex/bng3-convergence-continuation-20260915`
+**Current base:** `bad50c9cd659efd893e47d8b88bcfebaa4ebc2ba` (`origin/main`)
+**Historical audited heads:** Earlier local-only and hosted heads remain
+recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
 6690fda5d9e053df822d0248ebae185f5caca82a; accepted energy-source cutoff
@@ -24,7 +22,7 @@ work items. The unification work orders in docs/BNG3_unification_spec.md remain 
 detailed dependency map; provenance/capability-matrix.yml remains the
 capability inventory.
 
-## Live audit — 2026-09-10
+## Historical audit — 2026-09-10
 
 The active worktree is on `codex/bng3-rest-of-port-20260909` at committed base
 `a8d2a8b`, with a consolidated uncommitted implementation batch. The live
@@ -63,9 +61,45 @@ completion.
 - Re-audit the whole checklist on the exact release-candidate SHA. Earlier
   evidence is stale after a rebase, autofix, merge, or semantic change.
 
-## Live checkpoint — 2026-09-15
+## Current continuation checkpoint — 2026-09-15
 
-The current combined-tree evidence is summarized in
+The continuation from the current public `main` base is deliberately narrow
+and evidence-oriented:
+
+- [x] Direct NFsim evidence records `construction_path`, requires the XML leg
+  to report `in-memory-xml` and the direct leg to report `direct`, clears XML
+  fallback permission before the direct leg, and keeps missing compiled
+  backends/oracles fail-closed.
+- [x] Spawned source-tree validation workers receive both the repository root
+  and `python/` on `sys.path`, so the independent NFsim ensemble does not
+  depend on the caller's import context.
+- [x] Hosted independent NFsim parity includes the fixed-seed `motor` and
+  `tlbr` endpoint contracts in addition to the seeded `simple_system` ensemble;
+  every ensemble member must report direct construction.
+- [x] The typed Lean example and production C++ NFIR contract use the same
+  rule, `A(x~u) + B(y) -> A(x~p!1).B(y!1) k`. The C++ contract crosses
+  BNGL parser -> `bng::compile::CompiledModel` ->
+  `nfnext::lowerFromBioNetGen` and checks distinct-reactant molecularity, a
+  state update, and a new bond.
+- [x] Population maps remain fail-closed for direct NFsim and route through
+  the hybrid population backend; no unsupported direct semantics are inferred.
+
+The exact local evidence for the code head immediately before this
+documentation merge is: CTest `308/308`; strict full validation `71/71` with
+zero failures, errors, or skips; action contracts `6/6`; CI-contract tests
+`26 passed`; energy tests `66 passed`; independent NFsim `10 passed`; Lean
+static validation `36` files; NFnext contracts `18/18`; Black, Ruff,
+provenance, corpus, and exception-ledger checks passed. The local Lean kernel
+check remains unavailable because Lean/Lake/Elan are not installed.
+
+Hosted checks for the final pushed documentation head are the authority
+for this checkpoint. Record their exact head and terminal check URLs in this
+section only after `gh` readback confirms that no required job is pending.
+The unchecked completion items below remain open.
+
+## Historical checkpoint — 2026-09-15
+
+The preceding combined-tree evidence is summarized in
 [`CURRENT_PROGRESS.md`](CURRENT_PROGRESS.md). The native CTest gate is
 `308/308`; the full validation corpus is `71/71` with zero failures, errors,
 or skips; the six explicit action-output contracts are `6/6`; CI-contract
@@ -109,7 +143,7 @@ wheel jobs started so validation could remain paused until merge. The wheel
 checkpoint remains unchecked until the first post-merge main-push run has all
 four platform jobs pass; this does not alter the zero-skip full-corpus result.
 
-## Current verified checkpoint
+## Historical verified checkpoint
 
 These items describe the current checkpoint. They do not satisfy the full
 completion gate.

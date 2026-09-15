@@ -5,6 +5,13 @@
 > capability contract; their historical “current state” text is not release
 > evidence unless refreshed on the exact final tree.
 
+The 2026-09-15 continuation strengthens WO-2 evidence by asserting direct
+NFsim construction rather than
+implicit XML fallback, and it adds a small WO-3/NFnext correspondence contract
+from BNGL parsing through `CompiledModel` to `nfnext::lowerFromBioNetGen`.
+These checks are intentionally bounded; unsupported population-map semantics
+remain fail-closed and the full work-order completion contract remains open.
+
 ## What this is
 
 BNG3 already merges three codebases structurally:

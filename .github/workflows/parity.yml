@@ -162,6 +162,12 @@ jobs:
               tests/validation/test_parity_nfsim.py \
               -k "test_nf_vs_native and simple_system" \
               --bng-cpp build/cpp/bng_cpp -q
+          NFSIM_BIN="$RUNNER_TEMP/oracle-nfsim/build/NFsim" \
+            PYTHONPATH="python:build/cpp" \
+            pytest -c tests/validation/pytest.ini \
+              tests/validation/test_parity_nfsim.py \
+              -k "test_nf_fixed_seed_direct_matches_native_at_final_endpoint" \
+              --bng-cpp build/cpp/bng_cpp -q
           NFSIM_DIGEST=$(sha256sum "$RUNNER_TEMP/oracle-nfsim/build/NFsim" | cut -d ' ' -f 1)
           {
             echo "### Native NFsim parity"

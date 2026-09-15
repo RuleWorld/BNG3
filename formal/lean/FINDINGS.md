@@ -354,10 +354,11 @@ canonicalization implementations.
 ## 24. Real NFnext contract testing is practical today
 
 A small C++ fixture now compiles directly against current NFnext
-`GenericMatcher`, `GenericGraphState`, and `TransformationIR` implementation.
-It currently passes 18/18 semantic checks.  This is exactly the useful middle
-ground between "prove all legacy C++" and "trust unit tests that restate the
-implementation".
+`GenericMatcher`, `GenericGraphState`, and `TransformationIR` implementation,
+and a bounded production contract crosses BNGL parser -> `CompiledModel` ->
+`nfnext::lowerFromBioNetGen` for one typed rule. The NFnext contract passes
+18/18 semantic checks; neither contract establishes complete backend
+equivalence.
 
 ## 25. Formalization is finding design bugs before proving anything deep
 
