@@ -26,10 +26,10 @@ import numpy as np
 
 from . import corpus
 
-
 # --------------------------------------------------------------------------- #
 # CLI path
 # --------------------------------------------------------------------------- #
+
 
 def _cli_env(bng_cpp: Path) -> dict[str, str]:
     env = os.environ.copy()
@@ -95,10 +95,11 @@ def _select_cli_output(work_dir: Path, model_stem: str, suffix: str):
 # API path
 # --------------------------------------------------------------------------- #
 
+
 @dataclass
 class Trajectory:
-    data: np.ndarray          # (n_t, n_col), col 0 = time
-    columns: list[str]        # ["time", obs1, obs2, ...]
+    data: np.ndarray  # (n_t, n_col), col 0 = time
+    columns: list[str]  # ["time", obs1, obs2, ...]
     construction_path: str | None = None
 
 
@@ -122,12 +123,15 @@ def _ensure_source_python_path() -> None:
     Installed-package CI does not need this, but source-tree differential runs
     commonly execute with ``PYTHONPATH=python`` only in the parent process.
     Spawned workers reconstruct ``sys.path`` and may otherwise lose that
-    repository-relative entry.  Anchor it to the repository root so serial
-    and parallel parity gates exercise the same API implementation.
+    repository-relative entry.  Anchor both the repository root (for the
+    validation package itself) and its Python source directory so serial and
+    parallel parity gates exercise the same API implementation.
     """
+    source_root = str(corpus.REPO.resolve())
     source_python = str((corpus.REPO / "python").resolve())
-    if (corpus.REPO / "python" / "bionetgen").is_dir() and source_python not in sys.path:
-        sys.path.insert(0, source_python)
+    for path in (source_python, source_root):
+        if path not in sys.path:
+            sys.path.insert(0, path)
 
 
 def api_available() -> bool:
@@ -204,9 +208,7 @@ def run_api_ensemble(
     ``workers=1`` for serial debugging.
     """
     worker_count = _resolve_ensemble_workers(workers, n_runs)
-    payloads = [
-        (model_name, method, base_seed + i, kwargs) for i in range(n_runs)
-    ]
+    payloads = [(model_name, method, base_seed + i, kwargs) for i in range(n_runs)]
     if worker_count == 1:
         trajectories = [_run_api_ensemble_item(payload) for payload in payloads]
     else:
