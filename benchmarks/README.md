@@ -28,3 +28,17 @@ For each standard model the script records:
 - Species and reaction counts
 
 These results are intended for trend tracking, not gating.
+
+## Atomizer copy benchmark
+
+To measure the modern and legacy structure copy paths against a recursive
+`deepcopy` baseline, run this from the repository root:
+
+```bash
+PYTHONPATH=python python benchmarks/atomizer_copy_benchmark.py
+```
+
+The benchmark checks copy isolation before timing each case and reports the
+Python/platform identity, repeat settings, median and minimum microseconds per
+copy, and peak traced allocations. Run it in a fresh process for each
+checkpoint you compare; benchmark output is not committed by default.
