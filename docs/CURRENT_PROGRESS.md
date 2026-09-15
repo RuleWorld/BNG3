@@ -41,8 +41,10 @@ contracts `6/6`, CI-contract tests `26 passed`, energy tests `66 passed`,
 independent NFsim `10 passed`, Lean static validation `36` files, NFnext
 contracts `18/18`, and passing Black, Ruff, provenance, corpus, and
 exception-ledger checks. The local Lean kernel remains unavailable because
-Lean/Lake/Elan are not installed. Final hosted status is recorded from
-exact-head `gh` readback after the documentation push.
+Lean/Lake/Elan are not installed. This branch remains unpushed: `gh` readback
+keeps `origin/main` at `2af9506a1124ce7ebdc30c6967c771f1cd91c63c`, while the
+current main CI run is still queued. No hosted result is attributed to this
+local head.
 
 ## Material migration-gap batch — 2026-09-15
 

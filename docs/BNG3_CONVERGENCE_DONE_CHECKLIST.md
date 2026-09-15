@@ -92,9 +92,11 @@ static validation `36` files; NFnext contracts `18/18`; Black, Ruff,
 provenance, corpus, and exception-ledger checks passed. The local Lean kernel
 check remains unavailable because Lean/Lake/Elan are not installed.
 
-Hosted checks for the final pushed documentation head are the authority
-for this checkpoint. Record their exact head and terminal check URLs in this
-section only after `gh` readback confirms that no required job is pending.
+This branch remains unpushed. `gh` readback keeps `origin/main` at
+`2af9506a1124ce7ebdc30c6967c771f1cd91c63c`; the current main CI run
+[`35004180160`](https://github.com/RuleWorld/BNG3/actions/runs/35004180160) was
+queued at final inspection. No hosted result is attributed to local head
+`c491f9bcc50301af635ad0203b43a69088b68d6d`.
 The unchecked completion items below remain open.
 
 ## Material migration-gap batch — 2026-09-15
