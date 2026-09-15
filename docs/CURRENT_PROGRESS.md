@@ -2,7 +2,7 @@
 
 **Audited:** 2026-09-15
 **Repository:** `RuleWorld/BNG3`
-**Branch:** `codex/bng3-rest-of-port-20260909`
+**Branch:** `codex/bng3-status-docs-20260915`
 **Status:** implementation and validation checkpoint; convergence and release remain incomplete
 
 This is the live status page for the combined BNG3 migration tree. The older
@@ -72,6 +72,27 @@ guards; the full validation corpus has no skipped fixtures and the exclusion
 ledger is empty. Broader backend equivalence, release qualification, and
 convergence are still incomplete.
 
+## Wheel CI repair checkpoint — 2026-09-15
+
+The main push run
+[`34901298982`](https://github.com/RuleWorld/BNG3/actions/runs/34901298982)
+exposed two independent wheel-environment failures. The macOS x86_64 build
+used deployment target 10.9, which is below the macOS availability of the
+ANTLR runtime's `std::optional::value()` and `std::shared_mutex` usage. The
+manylinux2014 wheel test resolved NumPy 2.5.3 from source, where the image's
+GCC 10.2.1 is below NumPy's GCC 10.3 minimum; no compatible manylinux2014
+binary was available for that target.
+
+The follow-up repairs both `.github/workflows/ci.yml` and
+`.github/workflows/release.yml`: cibuildwheel is pinned to 4.2.1, macOS
+builders use their native runner architecture with deployment targets 10.13
+(macos-13/x86_64) and 11.0 (macos-14/arm64), and Linux wheels use
+`manylinux_2_28` so current NumPy test dependencies resolve to binary wheels.
+The CI workflow also exposes a manual-dispatch path for the wheel matrix so
+this repair can be validated on the exact follow-up head before release
+qualification. The hosted rerun is pending; this checkpoint makes no wheel
+or release-success claim until every matrix job is terminal-success.
+
 ## Repairs in this checkpoint
 
 - Retain the lowering context owned by generated native graphs so graph node
@@ -133,9 +154,9 @@ readiness, or convergence.
    exception ledger.
 4. Connect the typed Lean reference to a small real C++/NFIR lowering slice,
    then promote NFnext contracts only after backend-equivalence evidence exists.
-5. Install the pinned Lean 4.33.1 toolchain in hosted CI, verify the new formal
-   workflow on this PR head, and rerun clean native, Python, oracle, formal,
-   packaging, and release gates before any convergence or release claim.
+5. Run the manual-dispatch wheel matrix on the exact follow-up head, then
+   rerun clean native, Python, oracle, formal, packaging, and release gates
+   before any convergence or release claim.
 
 The authoritative completion criteria remain
 [`BNG3_CONVERGENCE_DONE_CHECKLIST.md`](BNG3_CONVERGENCE_DONE_CHECKLIST.md),

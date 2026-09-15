@@ -3,11 +3,11 @@
 **Status:** Active; not complete
 **Last audited:** 2026-09-15
 **Repository:** RuleWorld/BNG3
-**Working branch:** codex/bng3-rest-of-port-20260909
+**Working branch:** codex/bng3-status-docs-20260915
 **Historical audited semantic code head:** ccb3ef9efd069bb9375a39ddb64b1861909b4aa8 (local exact head; public synchronization is deferred by the local-only work instruction)
 **Historical checklist refresh base:** ce4575f5c31b94ded5dfac1842a9c8e438f608d4 (local exact-head CI provenance-summary checkpoint; public synchronization is deferred by the local-only work instruction)
 **Historical workflow checkpoint:** ce4575f5c31b94ded5dfac1842a9c8e438f608d4 (local-only; no hosted run was created because this checkpoint has not been pushed)
-**Current audit base:** ed4c59e028b2799a7b8025a8b37dccdc1dec0888 on branch `codex/bng3-rest-of-port-20260909`; the full-corpus validation repair, Windows/MSVC parser repair, and documentation/artifact organization are published.
+**Current audit base:** follow-up wheel-repair commit on branch `codex/bng3-status-docs-20260915`; the full-corpus validation repair, Windows/MSVC parser repair, documentation/artifact organization, and wheel-environment repair are being validated on the exact follow-up head.
 **PR:** RuleWorld/BNG3#10
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
@@ -95,6 +95,18 @@ and PyPI jobs remain conditionally skipped by their workflow event guards;
 they are not validation-test exclusions. Complete backend equivalence, release
 qualification, and every other unchecked item below remain open.
 
+The main push run
+[`34901298982`](https://github.com/RuleWorld/BNG3/actions/runs/34901298982)
+then exposed two wheel-only environment failures: macOS x86_64 used a 10.9
+deployment target although the ANTLR runtime requires APIs available from
+10.12/10.13, and the manylinux2014 test image attempted to build NumPy 2.5.3
+with GCC 10.2.1 although NumPy requires GCC 10.3 or newer. The follow-up
+workflow repair pins cibuildwheel 4.2.1, selects native macOS architectures
+with 10.13/11.0 deployment targets, and changes the Linux image to
+`manylinux_2_28`. The CI workflow now permits a manual-dispatch wheel run on
+the exact branch head. The wheel checkpoint remains unchecked until all four
+platform jobs pass; this does not alter the zero-skip full-corpus result.
+
 ## Current verified checkpoint
 
 These items describe the current checkpoint. They do not satisfy the full
@@ -144,6 +156,12 @@ completion gate.
   empty PR and weekly profiles. Release-only and scheduled-only jobs are
   recorded as conditional skips in the hosted UI and are not part of the PR
   validation gate.
+
+- [ ] Cross-platform wheel repair checkpoint: main push run `34901298982`
+  exposed the macOS deployment-target and manylinux2014/NumPy compiler
+  failures described above. The CI and release workflows now use cibuildwheel
+  4.2.1, native macOS targets, and `manylinux_2_28`; the exact follow-up
+  manual-dispatch matrix must pass before this item can be checked.
 
 - [x] Local-only initial-assignment writer checkpoint
   `1662820a0222add1cd9d44e8dd64724590c4bce8` ports the pinned Playground

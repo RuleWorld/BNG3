@@ -31,6 +31,11 @@
   for all PR-required build, Python, corpus, parity, formal, package-smoke,
   and integration gates; release-only and scheduled-only jobs are conditionally
   skipped by their event guards.
+- Repaired the wheel workflows after main push run `34901298982` exposed a
+  macOS 10.9 deployment-target failure in the ANTLR runtime and a
+  manylinux2014/GCC 10.2 failure while resolving NumPy 2.5.3. The workflows
+  now pin cibuildwheel 4.2.1, use native macOS targets at 10.13/11.0, and use
+  `manylinux_2_28`; exact-head hosted wheel validation remains pending.
 
 ## [3.0.0a1] - 2026-05-11
 

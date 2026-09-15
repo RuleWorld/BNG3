@@ -36,6 +36,24 @@ passes; the new hosted head is terminal-success on the Windows platform
 matrix. Release-only and scheduled-only jobs remain guarded by their intended
 event conditions.
 
+## Wheel environment repair checkpoint — 2026-09-15
+
+The main push wheel run
+[`34901298982`](https://github.com/RuleWorld/BNG3/actions/runs/34901298982)
+identified two packaging-environment failures rather than BNG3 source
+failures. The macOS x86_64 builder defaulted to deployment target 10.9,
+below the ANTLR runtime's macOS availability requirements. The manylinux2014
+test image resolved NumPy 2.5.3 from source and stopped at GCC 10.2.1, below
+NumPy's GCC 10.3 minimum.
+
+The CI and release workflows now pin cibuildwheel 4.2.1, build native macOS
+architectures with deployment targets 10.13 on macos-13 and 11.0 on macos-14,
+and use `manylinux_2_28` for current binary NumPy compatibility. This changes
+the Linux wheel compatibility floor to glibc 2.28 and is recorded here as a
+packaging decision, not a semantic convergence claim. CI exposes a manual
+wheel-matrix dispatch so the exact follow-up head can be validated before
+release qualification; that hosted result is still pending.
+
 ## Implementation progress checkpoint — 2026-09-10
 
 The current batch extends the committed NFsim semantic work with NFnext

@@ -51,6 +51,25 @@ pass. The scheduled NFsim and release-only artifact/publish jobs are skipped
 only when their event guards do not apply; they are not PR validation-test
 exclusions.
 
+## Wheel CI repair checkpoint — 2026-09-15
+
+The main push run
+[`34901298982`](https://github.com/RuleWorld/BNG3/actions/runs/34901298982)
+failed its Ubuntu and macOS wheel jobs for environment reasons. The macOS
+x86_64 cibuildwheel target was 10.9, below the ANTLR runtime requirements for
+`std::optional::value()` and `std::shared_mutex`. The manylinux2014 test image
+used GCC 10.2.1, while dependency resolution selected NumPy 2.5.3, which
+requires GCC 10.3 or newer when built from source and has no suitable
+manylinux2014 binary for that target.
+
+Both the CI and release wheel workflows now pin cibuildwheel 4.2.1, build
+native macOS architectures with deployment targets 10.13 on macos-13 and 11.0
+on macos-14, and use `manylinux_2_28` for the Linux wheel image. The Linux
+compatibility floor is consequently glibc 2.28 for these wheels. CI also has a
+manual-dispatch route for running the complete wheel matrix on an exact branch
+head. Hosted validation of this repair remains pending until every wheel job
+is terminal-success.
+
 ## Reproducibility rules
 
 - Oracle revisions must be full lowercase Git SHAs from the provenance lock.
