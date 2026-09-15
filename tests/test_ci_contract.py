@@ -22,6 +22,7 @@ from scripts.cross_validate import (
 REPO = Path(__file__).resolve().parents[1]
 PYPROJECT = REPO / "pyproject.toml"
 CI_WORKFLOW = REPO / ".github" / "workflows" / "ci.yml"
+RELEASE_WORKFLOW = REPO / ".github" / "workflows" / "release.yml"
 WEEKLY_WORKFLOW = REPO / ".github" / "workflows" / "weekly.yml"
 REFERENCE_EXCLUSIONS = REPO / "tests" / "validation" / "reference_exclusions.json"
 VALIDATION_MANIFEST = REPO / "tests" / "validation" / "validation_manifest.json"
@@ -36,6 +37,32 @@ def test_pull_request_runs_keep_exact_head_evidence_available():
     workflow = CI_WORKFLOW.read_text(encoding="utf-8")
     assert "github.event.pull_request.head.sha" in workflow
     assert re.search(r"^\s+cancel-in-progress:\s+false\s*$", workflow, re.MULTILINE)
+
+
+def test_wheel_workflows_use_supported_platform_targets_and_test_dependencies():
+    """Wheel builds must use toolchains compatible with current dependencies."""
+
+    for workflow_path, job_name in (
+        (CI_WORKFLOW, "wheels"),
+        (RELEASE_WORKFLOW, "build-wheels"),
+    ):
+        job = _workflow_job_from(workflow_path, job_name)
+        assert "pip install cibuildwheel==4.2.1" in job
+        assert "CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28" in job
+        assert "CIBW_ARCHS_MACOS: ${{ matrix.macos_arch }}" in job
+        assert "MACOSX_DEPLOYMENT_TARGET=${{ matrix.macos_deployment_target }}" in job
+        assert (
+            "DCMAKE_OSX_DEPLOYMENT_TARGET=${{ matrix.macos_deployment_target }}" in job
+        )
+        assert 'macos_deployment_target: "10.13"' in job
+        assert 'macos_deployment_target: "11.0"' in job
+        assert "CIBW_TEST_REQUIRES: pytest numpy click" in job
+        assert "cp314-*" in job
+
+    ci_workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+    assert re.search(r"^\s+workflow_dispatch:\s*$", ci_workflow, re.MULTILINE)
+    wheels = _workflow_job_from(CI_WORKFLOW, "wheels")
+    assert "github.event_name == 'workflow_dispatch'" in wheels
 
 
 def _workflow_job(name: str) -> str:

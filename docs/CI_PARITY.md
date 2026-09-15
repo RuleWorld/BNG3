@@ -24,7 +24,7 @@ are reproducible; macOS and Windows continue to exercise BNG3's own C++ and
 package paths. A platform-specific oracle disposition must be added here and to
 the provenance/checklist before it is described as parity evidence.
 
-## Full-corpus validation checkpoint — 2026-09-14
+## Full-corpus validation checkpoint — 2026-09-15
 
 The PR and weekly BNG validation jobs invoke `scripts/validate.py` with strict
 references and `tests/validation/validation_manifest.json`. The network corpus
@@ -33,16 +33,46 @@ fixtures (`ANx`, `hybrid_test`, `test_tfun`, `test_tfun_xml`,
 `test_write_sbml_multi`, and `visualize`) use explicit output contracts in
 `scripts/validate_actions.py`. The former reference-exclusion profiles are
 closed and the full local run at semantic commit `78a1591` reports `71 passed,
-0 failed, 0 errors, 0 skipped`. This closes the CI exclusion repair, not the
-broader convergence, backend-equivalence, or release gates.
+0 failed, 0 errors, 0 skipped`. The exact final PR head
+`ed4c59e028b2799a7b8025a8b37dccdc1dec0888` is covered by hosted CI run
+[`34896645707`](https://github.com/RuleWorld/BNG3/actions/runs/34896645707),
+with terminal-success C++, Python, full-corpus, package-smoke, and integration
+jobs; the independent parity, Lean, CodeQL, and formatting runs are also
+terminal-success. This closes the CI exclusion repair, not the broader
+convergence, backend-equivalence, or release gates.
 
 The preceding hosted PR head exposed a Windows/MSVC-only parser failure: the
 legacy `NFinput.cpp` include path reached generated ANTLR visitor headers before
 the translation-unit compatibility include, leaving the Windows SDK `constant`
 macro active inside ANTLR. The generated parser, visitor, and base-visitor
 headers now include `cpp/parser/antlr_compat.hpp` directly. The local native
-rebuild is green; hosted Windows and package-matrix jobs must be re-read at the
-new exact head.
+rebuild is green, and the exact-head hosted Windows and package-matrix jobs
+pass. The scheduled NFsim and release-only artifact/publish jobs are skipped
+only when their event guards do not apply; they are not PR validation-test
+exclusions.
+
+## Wheel CI repair checkpoint — 2026-09-15
+
+The main push run
+[`34901298982`](https://github.com/RuleWorld/BNG3/actions/runs/34901298982)
+failed its Ubuntu and macOS wheel jobs for environment reasons. The macOS
+x86_64 cibuildwheel target was 10.9, below the ANTLR runtime requirements for
+`std::optional::value()` and `std::shared_mutex`. The manylinux2014 test image
+used GCC 10.2.1, while dependency resolution selected NumPy 2.5.3, which
+requires GCC 10.3 or newer when built from source and has no suitable
+manylinux2014 binary for that target.
+
+Both the CI and release wheel workflows now pin cibuildwheel 4.2.1, build
+native macOS architectures with deployment targets 10.13 on macos-13 and 11.0
+on macos-14, and use `manylinux_2_28` for the Linux wheel image. The Linux
+compatibility floor is consequently glibc 2.28 for these wheels. CI also has a
+manual-dispatch route for running the complete wheel matrix on an exact branch
+head. The follow-up PR head `9efa0e9` passed hosted CI run
+[`34971571944`](https://github.com/RuleWorld/BNG3/actions/runs/34971571944),
+including all no-exclusion corpus jobs. Its auxiliary wheel run
+`34971595435` was canceled before wheel jobs started at the user's request.
+The first post-merge main-push run must provide terminal-success results for
+all four wheel jobs before this packaging repair is treated as validated.
 
 ## Reproducibility rules
 

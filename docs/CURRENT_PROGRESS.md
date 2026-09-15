@@ -1,8 +1,8 @@
 # BNG3 current progress
 
-**Audited:** 2026-09-14
+**Audited:** 2026-09-15
 **Repository:** `RuleWorld/BNG3`
-**Branch:** `codex/bng3-rest-of-port-20260909`
+**Branch:** `codex/bng3-status-docs-20260915`
 **Status:** implementation and validation checkpoint; convergence and release remain incomplete
 
 This is the live status page for the combined BNG3 migration tree. The older
@@ -25,10 +25,12 @@ The cumulative import retained the three supplied snapshots, with the
 Archive reports, source locks, manifests, and provenance records remain in
 place. Generated Lean build output is not part of the import.
 
-## Full-corpus CI, Windows compatibility, and repository-organization checkpoint — 2026-09-14
+## Full-corpus CI, Windows compatibility, and repository-organization checkpoint — 2026-09-15
 
-Semantic implementation commit `78a1591422ccbe6c4a5607eb748b426bbdbc303f`
-is published on PR #10. The checkpoint closes the former full-corpus
+Semantic validation repair commit `78a1591422ccbe6c4a5607eb748b426bbdbc303f`
+and final documentation/Windows repair commit
+`ed4c59e028b2799a7b8025a8b37dccdc1dec0888` are published on PR #10. The
+checkpoint closes the former full-corpus
 reference exclusions: independent BNG2 `.net` references now cover the
 previously missing network fixtures, and
 `tests/validation/validation_manifest.json` routes the six action-focused
@@ -55,13 +57,50 @@ obsolete patch snapshots and duplicate package wrappers were removed after
 their changes were applied. Handoff documents remain historical provenance,
 while this page and the convergence checklist are the live status sources.
 
-Fresh hosted checks for the final documentation/organization head remain the
-required exact-head readback. The preceding hosted head also exposed a
+The exact-head hosted CI run
+[`34896645707`](https://github.com/RuleWorld/BNG3/actions/runs/34896645707)
+completed successfully, including the Windows/MSVC matrix, full corpus on
+Ubuntu/macOS/Windows, package smoke, and integration tests. Cross-tool parity,
+Lean, CodeQL, and formatting runs also completed successfully. The preceding
+hosted head exposed a
 Windows/MSVC-only ANTLR failure: `NFinput.cpp` could enter the runtime through
 generated visitor headers before the translation-unit compatibility include.
 Those generated headers now include `parser/antlr_compat.hpp` themselves, and
-the current local rebuild passes. Broader backend equivalence, release
-qualification, and convergence are still incomplete.
+the current local rebuild passes. The scheduled NFsim historical job and
+release-only artifact/publish jobs are conditionally skipped by their event
+guards; the full validation corpus has no skipped fixtures and the exclusion
+ledger is empty. Broader backend equivalence, release qualification, and
+convergence are still incomplete.
+
+The follow-up PR head `9efa0e9df8903ee616437f8555906fcfdda4c762` also passed
+hosted PR CI run
+[`34971571944`](https://github.com/RuleWorld/BNG3/actions/runs/34971571944),
+including the full no-exclusion corpus on Ubuntu, Windows, and macOS. The
+auxiliary manual-dispatch run `34971595435` was canceled before its wheel jobs
+started so wheel validation remains deferred until merge. The first main-push
+CI run after the merge is the authoritative wheel result for this repair.
+
+## Wheel CI repair checkpoint — 2026-09-15
+
+The main push run
+[`34901298982`](https://github.com/RuleWorld/BNG3/actions/runs/34901298982)
+exposed two independent wheel-environment failures. The macOS x86_64 build
+used deployment target 10.9, which is below the macOS availability of the
+ANTLR runtime's `std::optional::value()` and `std::shared_mutex` usage. The
+manylinux2014 wheel test resolved NumPy 2.5.3 from source, where the image's
+GCC 10.2.1 is below NumPy's GCC 10.3 minimum; no compatible manylinux2014
+binary was available for that target.
+
+The follow-up repairs both `.github/workflows/ci.yml` and
+`.github/workflows/release.yml`: cibuildwheel is pinned to 4.2.1, macOS
+builders use their native runner architecture with deployment targets 10.13
+(macos-13/x86_64) and 11.0 (macos-14/arm64), and Linux wheels use
+`manylinux_2_28` so current NumPy test dependencies resolve to binary wheels.
+The CI workflow also exposes a manual-dispatch path for the wheel matrix so
+this repair can be validated on the exact follow-up head before release
+qualification. The auxiliary hosted rerun is paused until merge; this
+checkpoint makes no wheel or release-success claim until the post-merge main
+matrix is terminal-success.
 
 ## Repairs in this checkpoint
 
@@ -124,9 +163,9 @@ readiness, or convergence.
    exception ledger.
 4. Connect the typed Lean reference to a small real C++/NFIR lowering slice,
    then promote NFnext contracts only after backend-equivalence evidence exists.
-5. Install the pinned Lean 4.33.1 toolchain in hosted CI, verify the new formal
-   workflow on this PR head, and rerun clean native, Python, oracle, formal,
-   packaging, and release gates before any convergence or release claim.
+5. After merge, track the main-push wheel matrix on the exact merge head, then
+   rerun clean native, Python, oracle, formal, packaging, and release gates
+   before any convergence or release claim.
 
 The authoritative completion criteria remain
 [`BNG3_CONVERGENCE_DONE_CHECKLIST.md`](BNG3_CONVERGENCE_DONE_CHECKLIST.md),

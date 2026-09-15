@@ -5,6 +5,7 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 concurrency:
   # Keep hosted evidence attached to the exact PR head being evaluated. A
@@ -505,11 +506,23 @@ jobs:
     name: Wheels (${{ matrix.os }})
     needs: [cpp-build, python-test, validation]
     runs-on: ${{ matrix.os }}
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-13, macos-14, windows-2022]
+        include:
+          - os: ubuntu-22.04
+            macos_arch: x86_64
+            macos_deployment_target: "11.0"
+          - os: macos-13
+            macos_arch: x86_64
+            macos_deployment_target: "10.13"
+          - os: macos-14
+            macos_arch: arm64
+            macos_deployment_target: "11.0"
+          - os: windows-2022
+            macos_arch: x86_64
+            macos_deployment_target: "11.0"
 
     steps:
       - uses: actions/checkout@v4
@@ -523,7 +536,7 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Install cibuildwheel
-        run: pip install cibuildwheel==2.21.3
+        run: pip install cibuildwheel==4.2.1
 
       - name: Build wheels
         run: cibuildwheel --output-dir wheelhouse
@@ -534,10 +547,16 @@ jobs:
           CIBW_TEST_REQUIRES: pytest numpy click
           CIBW_TEST_COMMAND: pytest {project}/tests/python/test_cpp_backend.py -v --tb=short
           CIBW_ENVIRONMENT: CMAKE_ARGS="-DBUILD_TESTS=OFF -DBUILD_CLI=OFF"
-          # macOS: build universal2 wheels
-          CIBW_ARCHS_MACOS: "arm64 x86_64"
-          # Linux: manylinux2014 for broad compatibility
-          CIBW_MANYLINUX_X86_64_IMAGE: manylinux2014
+          # Build one native architecture per macOS runner; macos-13 supplies
+          # x86_64 and macos-14 supplies arm64 without cross-target duplication.
+          CIBW_ARCHS_MACOS: ${{ matrix.macos_arch }}
+          CIBW_ENVIRONMENT_MACOS: >-
+            MACOSX_DEPLOYMENT_TARGET=${{ matrix.macos_deployment_target }}
+            CMAKE_ARGS="-DBUILD_TESTS=OFF -DBUILD_CLI=OFF
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=${{ matrix.macos_deployment_target }}"
+          # NumPy 2.5+ wheels require a newer compiler/glibc baseline than
+          # manylinux2014; manylinux_2_28 provides a binary wheel target.
+          CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4
