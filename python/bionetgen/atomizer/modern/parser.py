@@ -903,9 +903,15 @@ class SBMLParser:
             local_parent = _first_child(item, "listOfParameters")
         if local_parent is not None:
             local_aliases: Dict[str, str] = {}
-            for local_index, local in enumerate(
-                _children(local_parent, "localParameter")
-            ):
+            # SBML Level 3 uses ``localParameter`` while SBML Level 2 puts
+            # reaction-local declarations in ``listOfParameters`` as
+            # ``parameter``.  Both spellings have identical scope here.
+            local_items = [
+                child
+                for child in list(local_parent)
+                if _local_name(child.tag) in {"localParameter", "parameter"}
+            ]
+            for local_index, local in enumerate(local_items):
                 raw_local_id = str(_attribute(local, "id", "") or "")
                 if not raw_local_id:
                     continue

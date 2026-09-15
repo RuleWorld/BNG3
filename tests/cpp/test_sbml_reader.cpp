@@ -84,6 +84,11 @@ TEST_CASE("SBML reader recognizes structured BNG2 schema independent of IDs",
     std::string xml((std::istreambuf_iterator<char>(input)),
                     std::istreambuf_iterator<char>());
     replaceAll(xml, "id=\"plain2\"", "id=\"renamed_structured_model\"");
+    replaceAll(xml, "MolA_MolB", "Alpha_Beta");
+    replaceAll(xml, "MolA-P", "Alpha-P");
+    replaceAll(xml, "(MolB)2", "(Beta)2");
+    replaceAll(xml, "MolA", "Alpha");
+    replaceAll(xml, "MolB", "Beta");
     replaceAll(xml, "S1", "species_a");
     replaceAll(xml, "S2", "species_b");
     replaceAll(xml, "S3", "complex_ab");
@@ -102,7 +107,10 @@ TEST_CASE("SBML reader recognizes structured BNG2 schema independent of IDs",
     REQUIRE(parsed.success);
     REQUIRE(parsed.species.size() == 5);
     REQUIRE(parsed.reactions.size() == 5);
-    CHECK(parsed.functions.front().first == "functionRate4");
+    REQUIRE_FALSE(parsed.functions.empty());
+    CHECK(parsed.functions.front().first.rfind("functionRate", 0) == 0);
+    CHECK(parsed.functions.front().second == "k3_f*2");
+    CHECK(parsed.species.front().first.find("Alpha(_p~0,beta)") != std::string::npos);
 }
 
 TEST_CASE("SBML reader rejects fractional stoichiometry instead of rounding",

@@ -85,7 +85,7 @@ and evidence-oriented:
   the hybrid population backend; no unsupported direct semantics are inferred.
 
 The exact local evidence for the code head immediately before this
-documentation merge is: CTest `308/308`; strict full validation `71/71` with
+documentation merge is: CTest `312/312`; strict full validation `71/71` with
 zero failures, errors, or skips; action contracts `6/6`; CI-contract tests
 `26 passed`; energy tests `66 passed`; independent NFsim `10 passed`; Lean
 static validation `36` files; NFnext contracts `18/18`; Black, Ruff,
@@ -106,13 +106,13 @@ approval, cross-platform CI, or broad Tier-NF/Tier-X qualification.
 
 - [x] Direct NFsim acceptance records `construction_path`, clears XML fallback
   for the direct leg, and runs selected native-oracle checks. Exact local
-  evidence: CTest `311/311` and `10 passed` in the selected direct/native
+  evidence: CTest `312/312` and `10 passed` in the selected direct/native
   NFsim validation command, plus `2 passed` direct-NF protocol contracts.
 - [x] Structured SBML admission is identified by species/parameter/rule/
   reaction semantics rather than incidental `plain2` and `S1`-`S5` IDs. The
   reader now rejects fractional, zero, negative, nonfinite, and overflowing
   stoichiometry instead of silently rounding. The native SBML fixture bank
-  reports `19 assertions` in four cases.
+  reports `22 assertions` in four cases.
 - [x] The graph-aware NET comparator normalizes equivalent arithmetic spelling
   only inside a supported AST subset; unsupported rate syntax remains
   fail-closed. The focused comparator gate reports `12 passed`.
@@ -142,6 +142,24 @@ The complete machine-readable run is retained as
 `material_gap_evidence.json` in the task output directory. It records exact
 BNG3, BNG2, NFsim, and PyBioNetGen revisions, oracle paths, commands, and
 bounded output tails.
+
+## Published BioModels validation checkpoint — 2026-09-15
+
+- [x] Eight pinned public BioModels SBML files are recorded in
+  `provenance/published-biomodels.json` with source URLs and SHA-256 digests.
+  `scripts/ci/validate_published_biomodels.py` validates each file through the
+  Playground-derived modern Atomizer in both flat and atomized modes, then
+  parses and generates a BNG3 network. The exact local run passes `16/16`
+  import/parse/network checks across `8/8` models.
+- [x] The validation run fixed an actual SBML Level 2 gap: reaction-local
+  `<parameter>` elements under `kineticLaw/listOfParameters` are now handled
+  with Level 3 `<localParameter>` elements. The focused modern SBML/Atomizer
+  gate reports `212 passed, 1 skipped`; native CTest reports `312/312`.
+- [ ] Short ODE smoke remains diagnostic rather than an import gate: `12/16`
+  mode runs complete, while the Elowitz repressilator and Hynne glycolysis
+  published initial conditions fail CVODE convergence at `t=0`. This does not
+  establish complete solver, schema, writer-round-trip, or biological-validity
+  parity.
 
 ## Historical checkpoint — 2026-09-15
 

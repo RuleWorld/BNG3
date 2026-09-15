@@ -96,7 +96,7 @@ rows:
     tests: tests/cpp/test_sbml_reader.cpp
     oracle: pending
     owner: pending-maintainer
-    notes: Native atomize=true admission is semantic rather than tied to model/species IDs, and stoichiometry accepts only finite positive integers. Arbitrary SBML still fails closed to the Python Atomizer path; broad schema, writer, SBML-Multi, and round-trip parity remain open.
+    notes: Native atomize=true admission is semantic rather than tied to model/species IDs, and stoichiometry accepts only finite positive integers. The bounded structured grammar is exercised with renamed identifiers and eight pinned public BioModels through the Playground-derived Python Atomizer; arbitrary SBML still fails closed to that Python path, and broad schema, writer, SBML-Multi, and round-trip parity remain open.
   - id: pybionetgen.api-cli-atomizer
     source: python/bionetgen and legacy/PyBioNetGen
     bng3_reference: python/bionetgen
@@ -105,7 +105,7 @@ rows:
     tests: tests/python/test_cpp_backend.py, tests/python/test_cli.py, tests/python/test_parameter_scan.py, tests/python/test_sensitivity.py
     oracle: pending
     owner: pending-maintainer
-    notes: Core API and CLI share the in-process backend; source-build and wheel imports, solver controls, scans, and sensitivity have smoke coverage. The bounded legacy method/time override writes PyBioNetGen-style gdat output and is checked against a locked source signature; an isolated CPython 3.14 arm64 wheel qualification runs modern and legacy contracts. Atomizer, serialization, plotting, and format-roundtrip parity remain.
+    notes: Core API and CLI share the in-process backend; source-build and wheel imports, solver controls, scans, and sensitivity have smoke coverage. The bounded legacy method/time override writes PyBioNetGen-style gdat output and is checked against a locked source signature; an isolated CPython 3.14 arm64 wheel qualification runs modern and legacy contracts. The Playground-derived Atomizer now has a pinned public BioModels import/network runner and handles SBML Level 2 reaction-local parameters. Serialization, plotting, and format-roundtrip parity remain.
   - id: validation.oracles-goldens-release
     source: provenance/upstreams.lock.yml and provenance/golden
     bng3_reference: provenance/

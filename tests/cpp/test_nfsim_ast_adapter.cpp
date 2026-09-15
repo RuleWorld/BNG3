@@ -321,6 +321,35 @@ end reaction rules
                         "Cannot build model from source with syntax errors");
 }
 
+TEST_CASE("BNGL parser keeps the historical NFsim t5 gap explicit") {
+    // Source-derived from nfsim/test/testSuite/t5.bngl.  The second legacy
+    // fixture adds multi-argument local functions and mixed whole-species /
+    // molecule scope ($1 and $2); this is not silently accepted as a partial
+    // direct-NFsim implementation.
+    const auto source = R"(
+begin parameters
+    kr 7
+    ReceptorDimerCount 4000
+end parameters
+begin seed species
+    Receptor(m~2,rec!1).Receptor(m~2,rec!1) ReceptorDimerCount
+end seed species
+begin observables
+    Molecules MethSum Receptor(sum(m))
+    Molecules Rtot Receptor()
+end observables
+begin functions
+    methRate($1,$2) = kr*(4-MethSum($2))*(1-(MethSum($1)/Rtot($1)))
+end functions
+begin reaction rules
+    $1::Receptor(rec!1).Receptor$2(m~^[4],rec!1) -> $1::Receptor(rec!1).Receptor$2(m~++,rec!1) methRate($1,$2)
+end reaction rules
+)";
+
+    REQUIRE_THROWS_WITH(bng::parser::parseModel(source),
+                        "Cannot build model from source with syntax errors");
+}
+
 TEST_CASE("XML writer preserves the first explicit bond") {
     auto model = bng::parser::parseModel(R"(
 begin molecule types

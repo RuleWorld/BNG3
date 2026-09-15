@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "source": "BioModels public SBML downloads",
+  "source_documentation": "https://www.ebi.ac.uk/biostudies/BioModels/help",
+  "download_url_template": "https://www.biomodels.org/model/download/{id}?filename={filename}",
+  "models": [
+    {
+      "id": "BIOMD0000000001",
+      "filename": "BIOMD0000000001_url.xml",
+      "sha256": "407fccc883f80e6d120e34d8b0810a206a5cc6535a26d4574611504e683beb08",
+      "description": "Edelstein1996 EPSP ACh event"
+    },
+    {
+      "id": "BIOMD0000000010",
+      "filename": "BIOMD0000000010_url.xml",
+      "sha256": "906964e07ffd570ad94a03c1222e230b54b913cd536b008392bfb6155930a966",
+      "description": "Kholodenko2000 MAPK"
+    },
+    {
+      "id": "BIOMD0000000012",
+      "filename": "BIOMD0000000012_url.xml",
+      "sha256": "d535c84bc5fe68b01728cac5c53f8fed971176e3f0f2367a9ba1e9c043b11a2d",
+      "description": "Elowitz2000 repressilator"
+    },
+    {
+      "id": "BIOMD0000000020",
+      "filename": "BIOMD0000000020_url.xml",
+      "sha256": "5fbf09694a5fc3ec4ccec2bb8ba89909faeabb9ea709f44a555c994954f444cf",
+      "description": "Hodgkin-Huxley"
+    },
+    {
+      "id": "BIOMD0000000029",
+      "filename": "BIOMD0000000029_url.xml",
+      "sha256": "c1eb117678b7d423b8e1d2fd7f493c865fb66559980256f3544938f5a431b530",
+      "description": "Markevich2004 MAPK"
+    },
+    {
+      "id": "BIOMD0000000042",
+      "filename": "BIOMD0000000042_url.xml",
+      "sha256": "3c7946ce1e76401eca4d1b878d435083bf12cf6b16eee6b10316f2aa935109f9",
+      "description": "Nielsen1998 glycolysis"
+    },
+    {
+      "id": "BIOMD0000000050",
+      "filename": "BIOMD0000000050_url.xml",
+      "sha256": "4846396a6621661b5faa775f7f7b48aefe36c3396bb2da41aeb96f3319d084ad",
+      "description": "Martins2003"
+    },
+    {
+      "id": "BIOMD0000000061",
+      "filename": "BIOMD0000000061_url.xml",
+      "sha256": "43ddd75b0dc49eb6c0946465b2e6c1d2c1e1f0da5c580fb784caaf0957fcc2c7",
+      "description": "Hynne2001 glycolysis"
+    }
+  ]
+}

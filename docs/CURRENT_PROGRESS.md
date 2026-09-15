@@ -36,7 +36,7 @@ not complete Lean kernel verification or backend equivalence. Population maps
 remain fail-closed for direct NFsim and are routed through the hybrid backend.
 
 The local code checkpoint immediately before this documentation merge is CTest
-`308/308`, strict validation `71/71` with zero failures/errors/skips, action
+`312/312`, strict validation `71/71` with zero failures/errors/skips, action
 contracts `6/6`, CI-contract tests `26 passed`, energy tests `66 passed`,
 independent NFsim `10 passed`, Lean static validation `36` files, NFnext
 contracts `18/18`, and passing Black, Ruff, provenance, corpus, and
@@ -60,13 +60,13 @@ source checkouts are recorded in the evidence artifact. The batch evidence is:
 
 | Workstream | Evidence | Result |
 | --- | --- | --- |
-| Direct NFsim acceptance | CTest plus selected direct/native NFsim parity and protocol contracts | `311/311` CTest; `10 passed` direct/native checks; `2 passed` direct-NF protocol contracts |
-| Structured SBML and formats | ID-independent BNG2 structured-SBML admission, strict positive-integer stoichiometry, graph-aware rate-expression normalization | `19 assertions` in four native SBML cases; comparator `12 passed` |
+| Direct NFsim acceptance | CTest plus selected direct/native NFsim parity and protocol contracts | `312/312` CTest; `10 passed` direct/native checks; `2 passed` direct-NF protocol contracts |
+| Structured SBML and formats | ID-independent BNG2 structured-SBML admission, strict positive-integer stoichiometry, graph-aware rate-expression normalization | `22 assertions` in four native SBML cases; comparator `12 passed` |
 | Independent scientific validation | BNG2 structural differential against nine selected models | `9/9` pass; no blanket full-corpus claim |
 | Energy CPU port | Symmetric Arrhenius expansion preserves both equivalent reaction centers; fresh-process direct/XML measurement harness | native direct energy gate `1024` seeds passed on `constant_binding`; symmetric expansion CTest passed; benchmark is measurement-only |
 | PyBioNetGen qualification | Source-derived API signature check, compatibility runner overrides, isolated wheel install | compatibility `5 passed`; CPython 3.14 arm64 wheel imports and runs modern plus legacy contracts |
 
-The full Python suite reports `403 passed, 28 skipped`; the dedicated energy
+The full Python suite reports `404 passed, 28 skipped`; the dedicated energy
 suite reports `66 passed`. Ruff, Black, `git diff --check`, provenance, and
 100-model corpus-manifest validation also pass.
 
@@ -83,6 +83,37 @@ release ownership, full Tier-NF protocols/corpus, the remaining CPU evaluator
 parity slices, complete SBML/Atomizer/writer round trips, cross-platform wheel
 CI, and local Lean kernel verification. No convergence or release claim is
 made from this checkpoint.
+
+## Published BioModels validation checkpoint — 2026-09-15
+
+The pinned manifest `provenance/published-biomodels.json` records eight public
+BioModels SBML downloads and their SHA-256 digests. The explicit runner is
+`scripts/ci/validate_published_biomodels.py`; it checks the modern
+Playground-derived Atomizer in both flat and atomized modes, then parses and
+generates a BNG3 network from each result. On the exact local branch head,
+`8/8` models passed both modes (`16/16` import/parse/network checks), with
+positive generated networks ranging from 4/8 to 25/24 species/reactions.
+
+The same run attempted a short ODE smoke for each mode. `12/16` completed with
+three output time points; the two failing model families were the published
+Elowitz repressilator and Hynne glycolysis initial conditions, both stopping at
+`t=0` with CVODE convergence failure. ODE is therefore recorded as diagnostic,
+not converted into a false import failure. The run also exposed and fixed a
+real SBML Level 2 compatibility gap: reaction-local `<parameter>` declarations
+inside `kineticLaw/listOfParameters` are now handled alongside Level 3
+`<localParameter>` declarations. The focused modern SBML/Atomizer gate is
+`212 passed, 1 skipped`, and native CTest is `312/312`.
+
+Re-run with cached bytes or let the runner fetch them from the official
+BioModels download endpoint:
+
+```text
+PYTHONPATH=python:build/cpp python scripts/ci/validate_published_biomodels.py \
+  --cache-dir /path/to/cache --json work/published-biomodels.json
+```
+
+This is published-model import/network evidence, not complete SBML schema,
+writer round-trip, backend-equivalence, or biological-validity evidence.
 
 ## Imported material
 

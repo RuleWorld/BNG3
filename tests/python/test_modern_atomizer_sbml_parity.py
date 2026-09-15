@@ -39,6 +39,41 @@ def test_sbml_empty_boolean_identities_and_empty_math_are_safe():
     )
 
 
+def test_sbml_level2_reaction_local_parameters_are_inlined():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level2/version3">
+      <model id="level2_local_parameter">
+        <listOfCompartments><compartment id="c" size="1"/></listOfCompartments>
+        <listOfSpecies>
+          <species id="A" compartment="c" initialAmount="2"/>
+          <species id="B" compartment="c" initialAmount="0"/>
+        </listOfSpecies>
+        <listOfReactions>
+          <reaction id="r">
+            <listOfReactants><speciesReference species="A"/></listOfReactants>
+            <listOfProducts><speciesReference species="B"/></listOfProducts>
+            <kineticLaw>
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><times/><ci>k_local</ci><ci>A</ci></apply>
+              </math>
+              <listOfParameters>
+                <parameter id="k_local" value="0.25"/>
+              </listOfParameters>
+            </kineticLaw>
+          </reaction>
+        </listOfReactions>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True).atomize(xml)
+
+    assert result.success, result.error
+    assert "  r:" in result.bngl
+    assert "0.25" in result.bngl
+    assert "k_local" not in result.bngl
+
+
 def test_sbml_event_folding_rejects_mutable_identifiers_and_preserves_false_flag():
     from bionetgen.atomizer.modern import (
         build_species_composition_table,

@@ -265,68 +265,128 @@ int stoichiometry(const TiXmlElement* reference) {
     return static_cast<int>(value);
 }
 
+struct StructuredSpeciesName {
+    std::vector<std::string> molecules;
+    std::string state;
+};
+
+bool isMoleculeName(const std::string& name) {
+    if (name.empty() || std::isalpha(static_cast<unsigned char>(name.front())) == 0) {
+        return false;
+    }
+    return std::all_of(name.begin() + 1, name.end(), [](unsigned char c) {
+        return std::isalnum(c) != 0;
+    });
+}
+
+std::string lowerName(std::string name) {
+    std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return name;
+}
+
+bool parseStructuredSpeciesName(
+    const std::string& rawName, StructuredSpeciesName& parsed) {
+    const auto name = trim(rawName);
+    if (name.empty()) {
+        return false;
+    }
+
+    if (name.front() == '(') {
+        const auto close = name.find(')');
+        if (close == std::string::npos || close <= 1 || close + 1 >= name.size() ||
+            !isMoleculeName(name.substr(1, close - 1))) {
+            return false;
+        }
+        const auto countText = name.substr(close + 1);
+        if (!std::all_of(countText.begin(), countText.end(), [](unsigned char c) {
+                return std::isdigit(c) != 0;
+            })) {
+            return false;
+        }
+        const auto count = std::stoul(countText);
+        if (count < 2 || count > 64) {
+            return false;
+        }
+        parsed.molecules.assign(count, name.substr(1, close - 1));
+        return true;
+    }
+
+    const auto parts = splitTopLevel(name, '_');
+    if (parts.empty()) {
+        return false;
+    }
+    for (const auto& part : parts) {
+        if (part.empty()) {
+            return false;
+        }
+        const auto dash = part.find('-');
+        if (dash != std::string::npos) {
+            if (parts.size() != 1 || !parsed.state.empty() || dash == 0 ||
+                dash + 1 >= part.size() ||
+                !isMoleculeName(part.substr(0, dash)) ||
+                !isMoleculeName(part.substr(dash + 1))) {
+                return false;
+            }
+            parsed.molecules.push_back(part.substr(0, dash));
+            parsed.state = "_" + sanitizeName(part.substr(dash + 1));
+        } else {
+            if (!isMoleculeName(part)) {
+                return false;
+            }
+            parsed.molecules.push_back(part);
+        }
+    }
+    return !parsed.molecules.empty();
+}
+
 bool isStructuredBng2Sbml(const TiXmlElement* model) {
-    // This is the only native structured-SBML lowering currently supported.
-    // Identify it by its semantic schema, not by BNG2's incidental model and
-    // species IDs.  Arbitrary SBML remains fail-closed and belongs to the
-    // Python Atomizer path.
-    const std::set<std::string> requiredNames = {
-        "MolA", "MolB", "MolA_MolB", "MolA-P", "(MolB)2"};
+    // Native atomization is deliberately limited to the BNG2 structured-SBML
+    // naming convention.  Unlike the old implementation, admission is based
+    // on a complete semantic grammar and reaction shape, not one fixture's
+    // model/species IDs.  Inputs outside this grammar belong to the modern
+    // Python Playground-derived Atomizer.
     const auto* speciesList = model->FirstChildElement("listOfSpecies");
     if (speciesList == nullptr) {
         return false;
     }
     std::map<std::string, std::string> idToName;
     std::set<std::string> names;
+    std::map<std::string, StructuredSpeciesName> parsedNames;
     for (auto* species = speciesList->FirstChildElement("species"); species != nullptr;
          species = species->NextSiblingElement("species")) {
         const auto id = attribute(species, "id");
         const auto name = attribute(species, "name", id);
-        if (id.empty() || !names.insert(name).second) {
+        StructuredSpeciesName parsed;
+        if (id.empty() || !idToName.emplace(id, name).second ||
+            !names.insert(name).second ||
+            !parseStructuredSpeciesName(name, parsed)) {
             return false;
         }
-        idToName[id] = name;
-    }
-    if (names != requiredNames) {
-        return false;
-    }
-
-    const std::set<std::string> requiredParameters = {
-        "k1_f", "k1_r", "k2_f", "k2_r", "k3_f"};
-    const auto* parameters = model->FirstChildElement("listOfParameters");
-    std::set<std::string> parameterNames;
-    if (parameters != nullptr) {
-        for (auto* parameter = parameters->FirstChildElement("parameter");
-             parameter != nullptr; parameter = parameter->NextSiblingElement("parameter")) {
-            parameterNames.insert(attribute(parameter, "id"));
-        }
-    }
-    if (!std::includes(parameterNames.begin(), parameterNames.end(),
-                       requiredParameters.begin(), requiredParameters.end())) {
-        return false;
+        parsedNames.emplace(name, std::move(parsed));
     }
 
     const auto* rules = model->FirstChildElement("listOfRules");
-    std::set<std::string> ruleNames;
     if (rules != nullptr) {
-        for (auto* rule = rules->FirstChildElement("assignmentRule"); rule != nullptr;
-             rule = rule->NextSiblingElement("assignmentRule")) {
-            ruleNames.insert(attribute(rule, "variable"));
+        for (auto* rule = rules->FirstChildElement(); rule != nullptr;
+             rule = rule->NextSiblingElement()) {
+            if (std::string(rule->Value()) != "assignmentRule") {
+                return false;
+            }
         }
     }
-    if (!ruleNames.count("A____") || !ruleNames.count("B____")) {
-        return false;
-    }
 
-    std::set<std::string> signatures;
     const auto* reactions = model->FirstChildElement("listOfReactions");
     if (reactions == nullptr) {
         return false;
     }
     for (auto* reaction = reactions->FirstChildElement("reaction"); reaction != nullptr;
          reaction = reaction->NextSiblingElement("reaction")) {
-        std::vector<std::string> reactants;
-        std::vector<std::string> products;
+        if (parseBool(attribute(reaction, "reversible")) ||
+            parseBool(attribute(reaction, "fast"))) {
+            return false;
+        }
         const auto collect = [&](const char* listName, std::vector<std::string>& out) {
             const auto* list = reaction->FirstChildElement(listName);
             if (list == nullptr) {
@@ -344,18 +404,241 @@ bool isStructuredBng2Sbml(const TiXmlElement* model) {
                 }
             }
         };
+        std::vector<std::string> reactants;
+        std::vector<std::string> products;
         collect("listOfReactants", reactants);
         collect("listOfProducts", products);
-        std::sort(reactants.begin(), reactants.end());
-        std::sort(products.begin(), products.end());
-        signatures.insert(join(reactants, "+") + "->" + join(products, "+"));
+        const auto* kineticLaw = reaction->FirstChildElement("kineticLaw");
+        const auto* math = kineticLaw == nullptr
+            ? nullptr : kineticLaw->FirstChildElement("math");
+        if (math == nullptr) {
+            return false;
+        }
+        try {
+            (void)mathExpression(math);
+        } catch (const std::exception&) {
+            return false;
+        }
     }
-    return signatures == std::set<std::string>{
-        "MolA+MolB->MolA_MolB",
-        "MolA_MolB->MolA-P+MolB",
-        "MolA_MolB->MolA+MolB",
-        "MolA-P+MolB->MolA_MolB",
-        "MolB+MolB->(MolB)2"};
+    return !parsedNames.empty();
+}
+
+struct StructuredMoleculeType {
+    std::set<std::string> sites;
+    std::set<std::string> states;
+};
+
+std::string renderStructuredMolecule(
+    const std::string& name, const StructuredMoleculeType& type,
+    const std::string& state, const std::map<std::string, int>& bonds) {
+    std::ostringstream result;
+    result << name << '(';
+    bool first = true;
+    if (!type.states.empty()) {
+        result << "_p~" << (state.empty() ? "0" : state);
+        first = false;
+    }
+    for (const auto& site : type.sites) {
+        if (!first) {
+            result << ',';
+        }
+        first = false;
+        result << site;
+        const auto found = bonds.find(site);
+        if (found != bonds.end()) {
+            result << '!' << found->second;
+        }
+    }
+    result << ')';
+    return result.str();
+}
+
+std::string lowerStructuredSpecies(
+    const StructuredSpeciesName& parsed,
+    const std::map<std::string, StructuredMoleculeType>& moleculeTypes) {
+    std::vector<std::string> molecules;
+    for (std::size_t i = 0; i < parsed.molecules.size(); ++i) {
+        const auto& moleculeName = parsed.molecules[i];
+        const auto type = moleculeTypes.find(moleculeName);
+        if (type == moleculeTypes.end()) {
+            throw std::runtime_error("structured SBML molecule type inference failed");
+        }
+        std::map<std::string, int> bonds;
+        if (parsed.molecules.size() > 1) {
+            if (i > 0) {
+                bonds[lowerName(parsed.molecules[i - 1])] = static_cast<int>(i);
+            }
+            if (i + 1 < parsed.molecules.size()) {
+                bonds[lowerName(parsed.molecules[i + 1])] = static_cast<int>(i + 1);
+            }
+        }
+        const auto state = parsed.molecules.size() == 1 && !parsed.state.empty()
+            ? parsed.state : std::string{};
+        molecules.push_back(renderStructuredMolecule(
+            moleculeName, type->second, state, bonds));
+    }
+    return join(molecules, ".");
+}
+
+void lowerStructuredBng2Sbml(
+    const TiXmlElement* model,
+    NetReader::ParseResult& result,
+    const std::unordered_map<std::string, int>& speciesIndices) {
+    const auto* speciesList = model->FirstChildElement("listOfSpecies");
+    std::map<std::string, std::string> idToName;
+    std::map<std::string, StructuredSpeciesName> parsedNames;
+    std::map<std::string, StructuredMoleculeType> moleculeTypes;
+    std::vector<std::string> ids;
+    for (auto* species = speciesList->FirstChildElement("species"); species != nullptr;
+         species = species->NextSiblingElement("species")) {
+        const auto id = attribute(species, "id");
+        const auto name = attribute(species, "name", id);
+        StructuredSpeciesName parsed;
+        if (!parseStructuredSpeciesName(name, parsed)) {
+            throw std::runtime_error(
+                "SBML atomize=true could not infer molecule boundaries from species name " +
+                name);
+        }
+        idToName[id] = name;
+        parsedNames[name] = parsed;
+        ids.push_back(id);
+        for (const auto& molecule : parsed.molecules) {
+            moleculeTypes[molecule];
+        }
+        if (!parsed.state.empty()) {
+            moleculeTypes[parsed.molecules.front()].states.insert("0");
+            moleculeTypes[parsed.molecules.front()].states.insert(parsed.state);
+        }
+    }
+
+    for (const auto& [name, parsed] : parsedNames) {
+        for (std::size_t i = 1; i < parsed.molecules.size(); ++i) {
+            const auto& left = parsed.molecules[i - 1];
+            const auto& right = parsed.molecules[i];
+            moleculeTypes[left].sites.insert(lowerName(right));
+            moleculeTypes[right].sites.insert(lowerName(left));
+        }
+    }
+
+    std::vector<std::string> loweredSpecies;
+    loweredSpecies.reserve(ids.size());
+    std::map<std::string, std::string> groupNames;
+    for (auto* species = speciesList->FirstChildElement("species"); species != nullptr;
+         species = species->NextSiblingElement("species")) {
+        const auto id = attribute(species, "id");
+        const auto name = idToName.at(id);
+        std::string pattern;
+        const auto compartment = attribute(species, "compartment");
+        if (!compartment.empty()) {
+            pattern = "@" + compartment + "::";
+        }
+        if (parseBool(attribute(species, "constant")) ||
+            parseBool(attribute(species, "boundaryCondition"))) {
+            pattern += '$';
+        }
+        pattern += lowerStructuredSpecies(parsedNames.at(name), moleculeTypes);
+        auto amount = attribute(species, "initialAmount");
+        if (amount.empty()) {
+            amount = attribute(species, "initialConcentration", "0");
+        }
+        loweredSpecies.emplace_back(pattern + "\t" + amount);
+        auto groupName = sanitizeName(name);
+        if (!compartment.empty()) {
+            groupName += "_" + sanitizeName(compartment);
+        }
+        if (!groupNames.emplace(id, groupName).second) {
+            throw std::runtime_error("duplicate structured SBML species id " + id);
+        }
+    }
+    result.species.clear();
+    for (const auto& entry : loweredSpecies) {
+        const auto tab = entry.find('\t');
+        result.species.emplace_back(entry.substr(0, tab), entry.substr(tab + 1));
+    }
+
+    result.reactions.clear();
+    result.rawFunctionLines.erase(
+        std::remove_if(result.rawFunctionLines.begin(), result.rawFunctionLines.end(),
+                       [](const std::string& line) {
+                           return line.find("functionRate") != std::string::npos;
+                       }),
+        result.rawFunctionLines.end());
+    int reactionIndex = 0;
+    int generatedFunctionIndex = 1;
+    for (auto* reaction = model->FirstChildElement("listOfReactions")
+             ->FirstChildElement("reaction");
+         reaction != nullptr; reaction = reaction->NextSiblingElement("reaction")) {
+        ++reactionIndex;
+        std::vector<int> reactantIndices;
+        std::vector<std::string> reactantIds;
+        std::vector<int> productIndices;
+        const auto collect = [&](const char* listName, std::vector<int>& indices,
+                                 std::vector<std::string>* names) {
+            const auto* list = reaction->FirstChildElement(listName);
+            if (list == nullptr) {
+                return;
+            }
+            for (auto* reference = list->FirstChildElement("speciesReference");
+                 reference != nullptr;
+                 reference = reference->NextSiblingElement("speciesReference")) {
+                const auto id = attribute(reference, "species");
+                const auto found = speciesIndices.find(id);
+                if (found == speciesIndices.end()) {
+                    throw std::runtime_error("structured SBML references unknown species " + id);
+                }
+                const auto copies = stoichiometry(reference);
+                for (int copy = 0; copy < copies; ++copy) {
+                    indices.push_back(found->second);
+                    if (names != nullptr) {
+                        names->push_back(id);
+                    }
+                }
+            }
+        };
+        collect("listOfReactants", reactantIndices, &reactantIds);
+        collect("listOfProducts", productIndices, nullptr);
+        const auto* kineticLaw = reaction->FirstChildElement("kineticLaw");
+        const auto* math = kineticLaw == nullptr
+            ? nullptr : kineticLaw->FirstChildElement("math");
+        if (math == nullptr) {
+            throw std::runtime_error("reaction has no kinetic law");
+        }
+        auto rate = stripReactantFactors(mathExpression(math), reactantIds);
+        std::map<int, int> counts;
+        for (const auto index : reactantIndices) {
+            ++counts[index];
+        }
+        if (counts.size() < reactantIndices.size()) {
+            if (reactantIndices.size() != 2 || counts.size() != 1 || rate.empty()) {
+                throw std::runtime_error(
+                    "SBML atomize=true supports only binary duplicate-reactant symmetry factors");
+            }
+            const auto functionName = "functionRate" + std::to_string(generatedFunctionIndex++);
+            result.functions.emplace_back(functionName, rate + "*2");
+            result.rawFunctionLines.push_back(
+                std::to_string(generatedFunctionIndex - 1) + " " + functionName + "() " + rate + "*2");
+            rate = "0.5*" + functionName;
+        }
+        std::ostringstream line;
+        line << reactionIndex << ' ' << indexList(reactantIndices) << ' '
+             << indexList(productIndices) << ' ' << rate;
+        const auto id = attribute(reaction, "id");
+        if (!id.empty()) {
+            line << " #" << id;
+        }
+        result.reactions.push_back(line.str());
+    }
+
+    result.rawGroupLines.clear();
+    int groupIndex = 0;
+    for (auto* species = speciesList->FirstChildElement("species"); species != nullptr;
+         species = species->NextSiblingElement("species")) {
+        ++groupIndex;
+        const auto id = attribute(species, "id");
+        result.rawGroupLines.push_back(
+            std::to_string(groupIndex) + " " + groupNames.at(id) + " " +
+            std::to_string(speciesIndices.at(id)));
+    }
 }
 
 }  // namespace
@@ -542,41 +825,12 @@ NetReader::ParseResult SbmlReader::parse(
         }
 
         if (atomize) {
-            // BNG2's structured-SBML export used by the validation corpus has
-            // enough information in its species identifiers to recover the
-            // two molecular components and their state/bond sites.  Preserve
-            // the historical atomized network ordering and rate functions so
-            // this native path is independent of the Python atomizer.
             if (!isStructuredBng2Sbml(model)) {
                 throw std::runtime_error(
                     "SBML atomize=true could not infer the supported BNG2 structured "
                     "dialect; use the Python Atomizer for arbitrary SBML");
             }
-
-            result.species = {
-                {"@cell::MolA(_p~0,molb)", "1.0"},
-                {"@cell::MolB(mola,molb)", "1.0"},
-                {"@cell::MolA(_p~0,molb!1).MolB(mola!1,molb)", "0"},
-                {"@cell::MolB(mola,molb!1).MolB(mola,molb!1)", "0"},
-                {"@cell::MolA(_p~_P,molb)", "0"},
-            };
-            result.reactions = {
-                "1 1,2 3 1*k1_f #R1 unit_conversion=1/1.0",
-                "2 2,2 4 0.5*functionRate4 #R5 unit_conversion=1/1.0",
-                "3 3 2,5 k2_f #R2",
-                "4 3 1,2 k1_r #R3",
-                "5 2,5 3 1*k2_r #R4 unit_conversion=1/1.0",
-            };
-            result.rawGroupLines = {
-                "1 MolA_cell 1",
-                "2 MolB_cell 2",
-                "3 MolA_MolB_cell 3",
-                "4 MolA_P_cell 5",
-                "5 __MolB__2_cell 4",
-            };
-            result.functions.emplace_back("functionRate4", "k3_f*2");
-            result.rawFunctionLines.insert(
-                result.rawFunctionLines.begin(), "1 functionRate4() k3_f*2");
+            lowerStructuredBng2Sbml(model, result, speciesIndices);
         }
 
         result.success = true;
