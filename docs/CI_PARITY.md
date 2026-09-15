@@ -24,7 +24,35 @@ are reproducible; macOS and Windows continue to exercise BNG3's own C++ and
 package paths. A platform-specific oracle disposition must be added here and to
 the provenance/checklist before it is described as parity evidence.
 
-## Full-corpus validation checkpoint — 2026-09-15
+## Continuation parity checkpoint — 2026-09-15
+
+PR [#13](https://github.com/RuleWorld/BNG3/pull/13) is based on public
+`main` at `bad50c9cd659efd893e47d8b88bcfebaa4ebc2ba`. The continuation adds
+these independently auditable requirements to the existing parity gates:
+
+- the XML shadow leg reports `construction_path=in-memory-xml`;
+- the direct leg runs with `BNG_NFSIM_ALLOW_XML_FALLBACK` removed and reports
+  `construction_path=direct`;
+- source-tree multiprocessing workers import from the repository root and
+  `python/` explicitly;
+- the four-model fixed-seed direct/native NFsim endpoint set includes `motor`
+  and `tlbr`, alongside the existing `simple_system` ensemble; and
+- the typed NFnext bridge contract checks
+  `BNGL parser -> CompiledModel -> nfnext::lowerFromBioNetGen` for a distinct
+  reactant pair, state update, and bond creation.
+
+Population maps remain unsupported by direct NFsim and are routed through the
+hybrid population backend. Missing compiled engines or independent oracle
+artifacts remain failures for the gate that requires them, rather than being
+silently replaced by BNG3's embedded target or an XML fallback.
+
+The local continuation evidence immediately before the documentation merge is
+independent NFsim `10 passed`, CTest `308/308`, and strict full validation
+`71/71` with zero failures, errors, or skips. The final hosted check URLs and
+exact head belong to the post-push `gh pr checks 13` readback; this section must
+not be treated as hosted evidence until that readback is terminal-success.
+
+## Previous full-corpus validation checkpoint — 2026-09-15
 
 The PR and weekly BNG validation jobs invoke `scripts/validate.py` with strict
 references and `tests/validation/validation_manifest.json`. The network corpus

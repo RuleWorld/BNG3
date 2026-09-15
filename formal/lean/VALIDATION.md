@@ -17,6 +17,14 @@ NFNEXT CONTRACT PASS: 18/18 checks
 LEAN KERNEL CHECK SKIPPED: lake is not installed
 ```
 
+The current continuation adds a bounded production-boundary contract to the
+normal architecture tests. Lean and C++ independently use
+`A(x~u) + B(y) -> A(x~p!1).B(y!1) k`; the C++ side crosses BNGL parsing,
+`bng::compile::CompiledModel`, and `nfnext::lowerFromBioNetGen`, checking
+distinct-reactant molecularity, a state update, and a new bond. This is
+correspondence evidence for one NFnext slice, not complete kernel verification
+or backend equivalence.
+
 ### Static Lean checks
 
 `static_validate.py` checks:

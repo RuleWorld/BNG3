@@ -13,6 +13,12 @@ the source tree, tests, and machine-readable provenance records are canonical.
 written as JSON-compatible YAML so the repository can validate it with the
 Python standard library.
 
+The current continuation is reviewed on [BNG3 PR #13](https://github.com/RuleWorld/BNG3/pull/13).
+Its direct NFsim evidence uses the locked native oracle revisions and keeps
+missing engines, missing outputs, and unsupported population-map semantics
+fail-closed. Hosted source, artifact, and check details are valid only for the
+exact SHA reported by `gh` for that PR.
+
 The initial document deliberately has `pending-maintainer-approval` status.
 The integration plan records observed revisions, but maintainers have not yet
 chosen the import cutoffs, oracle recipes, immutable build images, or owners.

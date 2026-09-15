@@ -15,6 +15,12 @@ That is like a compiler's machine-code backend asking the source-code parser
 what a variable meant.  It can work, but it prevents one clean semantic
 boundary and makes independent backends more likely to disagree.
 
+The continuation now tests a small exception to this missing complete boundary:
+a production C++ contract lowers one parsed rule through
+`CompiledModel -> nfnext::lowerFromBioNetGen` and checks its molecularity, state,
+and bond actions. This is useful regression coverage, but it does not remove
+the blockers below or establish a complete source-free production lowering.
+
 ## 1. `CompiledModel` is not yet the whole resolved model
 
 The formal `CompiledModel` owns parameters, molecule/component/state

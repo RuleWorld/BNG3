@@ -3,6 +3,13 @@
 The goal is not "prove BioNetGen all at once." The goal is to spend formal
 methods where independent backend implementations could silently disagree.
 
+The current continuation adds a bounded bridge checkpoint: the Lean example
+and production C++ architecture contract both lower
+`A(x~u) + B(y) -> A(x~p!1).B(y!1) k`, while the C++ side crosses BNGL parsing,
+`CompiledModel`, and `nfnext::lowerFromBioNetGen`. This gives a concrete
+regression seam for one rule; it does not close the broader refinement or
+kernel-verification work below.
+
 ## Stage 0 — semantic vocabulary: DONE
 
 Implemented:
