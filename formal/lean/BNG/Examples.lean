@@ -1,5 +1,6 @@
 import Std
 import BNG.Lowering
+import BNG.NFnextIR
 
 namespace BNG.Examples
 
