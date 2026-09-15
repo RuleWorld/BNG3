@@ -2,7 +2,7 @@
 
 **Audited:** 2026-09-15
 **Repository:** `RuleWorld/BNG3`
-**Branch:** `codex/bng3-convergence-continuation-20260915`
+**Branch:** `codex/bng3-material-gap-completion`
 **Status:** implementation and validation checkpoint; convergence and release remain incomplete
 
 This is the live status page for the combined BNG3 migration tree. The older
@@ -12,10 +12,11 @@ execution instruction.
 
 ## Current continuation checkpoint — 2026-09-15
 
-The continuation is based on public `main` at
-`bad50c9cd659efd893e47d8b88bcfebaa4ebc2ba`. Its purpose is to make the
-direct-NFsim and NFnext evidence auditable and to merge the dated
-continuation note into the current documentation set.
+The preceding continuation was based on public `main` at
+`bad50c9cd659efd893e47d8b88bcfebaa4ebc2ba`; the current material-gap batch is
+based on `2af9506a1124ce7ebdc30c6967c771f1cd91c63c` in the isolated branch
+named above. The direct-NFsim and NFnext evidence below remains historical
+context for the current checkpoint.
 
 Direct NFsim validation now preserves and asserts the runtime
 `construction_path`: the compatibility leg must be `in-memory-xml`, while the
@@ -42,6 +43,46 @@ contracts `18/18`, and passing Black, Ruff, provenance, corpus, and
 exception-ledger checks. The local Lean kernel remains unavailable because
 Lean/Lake/Elan are not installed. Final hosted status is recorded from
 exact-head `gh` readback after the documentation push.
+
+## Material migration-gap batch — 2026-09-15
+
+This batch is based on public `main` at
+`2af9506a1124ce7ebdc30c6967c771f1cd91c63c` and is isolated on
+`codex/bng3-material-gap-completion`. It covers the five requested material
+workstreams without changing upstream repositories, pushing, merging, or
+publishing.
+
+The direct NFsim acceptance harness now records the construction route and
+requires `direct` for the BNG3 leg, with XML fallback variables removed. The
+independently built native NFsim oracle is the accepted source cutoff
+`3b046fc1b9f76719d92be22279b24992cdae7c35`; the locked BNG2 and PyBioNetGen
+source checkouts are recorded in the evidence artifact. The batch evidence is:
+
+| Workstream | Evidence | Result |
+| --- | --- | --- |
+| Direct NFsim acceptance | CTest plus selected direct/native NFsim parity and protocol contracts | `311/311` CTest; `10 passed` direct/native checks; `2 passed` direct-NF protocol contracts |
+| Structured SBML and formats | ID-independent BNG2 structured-SBML admission, strict positive-integer stoichiometry, graph-aware rate-expression normalization | `19 assertions` in four native SBML cases; comparator `12 passed` |
+| Independent scientific validation | BNG2 structural differential against nine selected models | `9/9` pass; no blanket full-corpus claim |
+| Energy CPU port | Symmetric Arrhenius expansion preserves both equivalent reaction centers; fresh-process direct/XML measurement harness | native direct energy gate `1024` seeds passed on `constant_binding`; symmetric expansion CTest passed; benchmark is measurement-only |
+| PyBioNetGen qualification | Source-derived API signature check, compatibility runner overrides, isolated wheel install | compatibility `5 passed`; CPython 3.14 arm64 wheel imports and runs modern plus legacy contracts |
+
+The full Python suite reports `403 passed, 28 skipped`; the dedicated energy
+suite reports `66 passed`. Ruff, Black, `git diff --check`, provenance, and
+100-model corpus-manifest validation also pass.
+
+The selected independent energy gate intentionally excludes exact parity for
+the symmetric-site fixture: BNG2/NFsim XML expansion has a known legacy energy
+lookup limitation there. BNG3 now preserves reaction multiplicity and keeps the
+direct physics path explicit, but the independent symmetric statistical result
+is retained as a known limitation rather than relabeled green. The source
+`t4`/`t5` fixtures also remain governed: their legacy syntax is rejected by
+both the current BNG3 parser and the checked BNG2 2.9.3 runner.
+
+Remaining completion work is broader than this batch: approved provenance and
+release ownership, full Tier-NF protocols/corpus, the remaining CPU evaluator
+parity slices, complete SBML/Atomizer/writer round trips, cross-platform wheel
+CI, and local Lean kernel verification. No convergence or release claim is
+made from this checkpoint.
 
 ## Imported material
 

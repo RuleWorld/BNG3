@@ -3,8 +3,8 @@
 **Status:** Active; not complete
 **Last audited:** 2026-09-15
 **Repository:** RuleWorld/BNG3
-**Working branch:** `codex/bng3-convergence-continuation-20260915`
-**Current base:** `bad50c9cd659efd893e47d8b88bcfebaa4ebc2ba` (`origin/main`)
+**Working branch:** `codex/bng3-material-gap-completion`
+**Current base:** `2af9506a1124ce7ebdc30c6967c771f1cd91c63c` (`origin/main`)
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -96,6 +96,52 @@ Hosted checks for the final pushed documentation head are the authority
 for this checkpoint. Record their exact head and terminal check URLs in this
 section only after `gh` readback confirms that no required job is pending.
 The unchecked completion items below remain open.
+
+## Material migration-gap batch — 2026-09-15
+
+The isolated batch on `codex/bng3-material-gap-completion` adds bounded,
+source-derived completion evidence for all five requested workstreams. The
+full checklist remains active because the batch does not replace maintainer
+approval, cross-platform CI, or broad Tier-NF/Tier-X qualification.
+
+- [x] Direct NFsim acceptance records `construction_path`, clears XML fallback
+  for the direct leg, and runs selected native-oracle checks. Exact local
+  evidence: CTest `311/311` and `10 passed` in the selected direct/native
+  NFsim validation command, plus `2 passed` direct-NF protocol contracts.
+- [x] Structured SBML admission is identified by species/parameter/rule/
+  reaction semantics rather than incidental `plain2` and `S1`-`S5` IDs. The
+  reader now rejects fractional, zero, negative, nonfinite, and overflowing
+  stoichiometry instead of silently rounding. The native SBML fixture bank
+  reports `19 assertions` in four cases.
+- [x] The graph-aware NET comparator normalizes equivalent arithmetic spelling
+  only inside a supported AST subset; unsupported rate syntax remains
+  fail-closed. The focused comparator gate reports `12 passed`.
+- [x] Independent scientific validation runs the BNG2 structural oracle over
+  nine selected representative models with `9/9` pass. This is selected
+  differential evidence, not complete Tier-P corpus approval.
+- [x] The CPU energy slice preserves both equivalent reaction centers for a
+  symmetric Arrhenius binding rule. Its source-derived direct test passes, the
+  independent `constant_binding` energy gate passes for `1024` seeds, and the
+  fresh-process direct/XML benchmark records five repeats per route. The
+  benchmark is measurement-only; no speedup or memory claim is made.
+- [x] PyBioNetGen compatibility now supports the bounded method/time override
+  contract through the modern simulator and materializes a legacy `.gdat`.
+  Source-derived compatibility tests report `5 passed`; an isolated CPython
+  3.14 arm64 wheel install runs both modern and legacy contracts.
+- [ ] Symmetric-site independent statistical energy parity remains open and is
+  explicitly retained as a limitation: the legacy BNG2/NFsim XML expansion
+  has a known energy-pattern lookup mismatch on that fixture. The BNG3 direct
+  path preserves multiplicity and does not convert this mismatch into a green
+  parity claim.
+- [ ] Remaining protocol NF/t4/t5 behavior, full CPU evaluator parity, full
+  SBML/Atomizer/writer round trips, complete PyBioNetGen public-contract
+  qualification, approved provenance, cross-platform wheel CI, and release
+  artifacts remain open.
+
+The complete machine-readable run is retained as
+`material_gap_evidence.json` in the task output directory. It records exact
+BNG3, BNG2, NFsim, and PyBioNetGen revisions, oracle paths, commands, and
+bounded output tails.
 
 ## Historical checkpoint — 2026-09-15
 

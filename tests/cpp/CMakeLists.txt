@@ -215,6 +215,9 @@ target_include_directories(test_sbml_reader PRIVATE
     ${CMAKE_SOURCE_DIR}/cpp/nfsim/NFinput
     ${CMAKE_SOURCE_DIR}/cpp/nfsim/NFinput/TinyXML
 )
+target_compile_definitions(test_sbml_reader PRIVATE
+    BNG3_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+)
 target_link_libraries(test_sbml_reader PRIVATE
     Catch2::Catch2WithMain Catch2::Catch2 bionetgen_core)
 catch_discover_tests(test_sbml_reader)

@@ -42,8 +42,9 @@ def test_stochastic_comparison_requires_observations(observables, times):
         statistical.compare_trajectories(observables, observables, times)
 
 
-def test_unimplemented_backend_cannot_pass_an_on_off_comparison(tmp_path):
-    with pytest.raises(NotImplementedError, match="backend activation"):
+def test_independent_energy_gate_requires_named_native_oracle(tmp_path, monkeypatch):
+    monkeypatch.delenv("NFSIM_BIN", raising=False)
+    with pytest.raises(RuntimeError, match="independently built native NFsim"):
         statistical.run_gate(tmp_path / "model.bngl", [1, 2], 1, 1)
 
 

@@ -44,7 +44,9 @@ namespace NFinput {
         bool blockSameComplexBinding,
         bool verbose,
         int &reaction_count,
-        bool includeReverse);
+        bool includeReverse,
+        const std::string& energySite1 = "",
+        const std::string& energySite2 = "");
 
     /*
      * Create expanded BasicRxnClass instances for an energy state-change rule.
@@ -61,7 +63,8 @@ namespace NFinput {
         bool blockSameComplexBinding,
         bool verbose,
         int &reaction_count,
-        bool includeReverse);
+        bool includeReverse,
+        const std::string& energyComponent = "");
 
 } // namespace NFinput
 

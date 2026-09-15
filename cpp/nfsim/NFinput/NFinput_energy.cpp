@@ -161,13 +161,17 @@ bool createExpandedBindingReactions(
     bool blockSameComplexBinding,
     bool verbose,
     int &reaction_count,
-    bool includeReverse)
+    bool includeReverse,
+    const string& energySite1,
+    const string& energySite2)
 {
     EnergyFunction *ef = s->getEnergyFunction();
     if (!ef) return false;
 
     string mt1Name = molType1->getName();
     string mt2Name = molType2->getName();
+    const string energyBindSite1 = energySite1.empty() ? bindSite1 : energySite1;
+    const string energyBindSite2 = energySite2.empty() ? bindSite2 : energySite2;
 
     /* A factorized context can be evaluated from the selected reaction
      * mapping. Keep the legacy materialized expansion for contexts that span
@@ -175,7 +179,7 @@ bool createExpandedBindingReactions(
      * simultaneously; those cases need a more general representation. */
     EnergyBindingContext compactContext;
     bool useCompact = ef->getBindingContext(
-        mt1Name, bindSite1, mt2Name, bindSite2, compactContext);
+        mt1Name, energyBindSite1, mt2Name, energyBindSite2, compactContext);
     if (mt1Name == mt2Name) useCompact = false;
     if (useCompact) {
         int contextReactant = -1;
@@ -249,7 +253,7 @@ bool createExpandedBindingReactions(
 
     // Run the legacy expansion algorithm for non-factorized contexts.
     vector<ExpandedRuleInfo> expanded = ef->expandBindingRule(
-        rxnName, Ea0, phi_val, mt1Name, bindSite1, mt2Name, bindSite2);
+        rxnName, Ea0, phi_val, mt1Name, energyBindSite1, mt2Name, energyBindSite2);
 
     for (const auto &rule : expanded) {
         if (!includeReverse && !rule.isForward) continue;
@@ -316,13 +320,17 @@ bool createExpandedStateChangeReactions(
     bool blockSameComplexBinding,
     bool verbose,
     int &reaction_count,
-    bool includeReverse)
+    bool includeReverse,
+    const string& energyComponent)
 {
     EnergyFunction *ef = s->getEnergyFunction();
     if (!ef || !molType || stateFrom.empty() || stateTo.empty()) return false;
 
+    const string energyStateComponent =
+        energyComponent.empty() ? component : energyComponent;
     vector<ExpandedRuleInfo> expanded = ef->expandStateChangeRule(
-        rxnName, Ea0, phi_val, molType->getName(), component, stateFrom, stateTo);
+        rxnName, Ea0, phi_val, molType->getName(), energyStateComponent,
+        stateFrom, stateTo);
 
     for (const auto &rule : expanded) {
         if (!includeReverse && !rule.isForward) continue;

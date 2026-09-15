@@ -103,6 +103,26 @@ bool isSymmetricComponent(const CompiledModel& model,
                          }) > 1;
 }
 
+std::vector<std::string> equivalentRuntimeNames(
+    const CompiledModel& model, bng::compile::ComponentTypeId id) {
+    const auto* molecule = model.moleculeType(id.moleculeType);
+    const auto* component = model.component(id);
+    if (molecule == nullptr || component == nullptr) return {};
+
+    std::size_t count = 0;
+    for (const auto& candidate : molecule->components) {
+        if (candidate.name == component->name) ++count;
+    }
+    if (count <= 1) return {component->name};
+
+    std::vector<std::string> names;
+    names.reserve(count);
+    for (std::size_t ordinal = 1; ordinal <= count; ++ordinal) {
+        names.push_back(component->name + std::to_string(ordinal));
+    }
+    return names;
+}
+
 std::string compartmentName(const CompiledModel& model,
                             const Pattern& pattern,
                             const bng::compile::PatternMoleculeDescriptor& molecule) {
@@ -1249,12 +1269,27 @@ bool addCompiledArrheniusDirection(const CompiledModel& model,
         }
         std::map<std::string, double> parameters;
         std::map<std::string, int> states;
-        ok = NFinput::createExpandedBindingReactions(
-            rule.name(), *phi, *activationEnergy,
-            lhsType, runtimeComponentName(model, *lhsSite->componentType),
-            rhsType, runtimeComponentName(model, *rhsSite->componentType),
-            &system, parameters, states, blockSameComplexBinding, verbose,
-            reactionCount, rule.isBidirectional());
+        const auto lhsSiteName = runtimeComponentName(model, *lhsSite->componentType);
+        const auto rhsSiteName = runtimeComponentName(model, *rhsSite->componentType);
+        const auto lhsEquivalentNames = equivalentRuntimeNames(
+            model, *lhsSite->componentType);
+        const auto rhsEquivalentNames = equivalentRuntimeNames(
+            model, *rhsSite->componentType);
+        if (lhsSiteName.empty() || rhsSiteName.empty() ||
+            lhsEquivalentNames.empty() || rhsEquivalentNames.empty()) {
+            diagnostic = "Arrhenius binding has invalid reaction-center component names";
+            return false;
+        }
+        for (const auto& lhsName : lhsEquivalentNames) {
+            for (const auto& rhsName : rhsEquivalentNames) {
+                ok = NFinput::createExpandedBindingReactions(
+                    rule.name(), *phi, *activationEnergy, lhsType, lhsName,
+                    rhsType, rhsName, &system, parameters, states,
+                    blockSameComplexBinding, verbose, reactionCount,
+                    rule.isBidirectional(), lhsSiteName, rhsSiteName);
+                if (!ok) return false;
+            }
+        }
         suggestedTraversalLimit = std::max(suggestedTraversalLimit, 2);
     } else if (mutation.kind == MutationKind::ChangeState) {
         if (direction.reactantPatterns.size() != 1 ||
@@ -1286,11 +1321,21 @@ bool addCompiledArrheniusDirection(const CompiledModel& model,
             diagnostic = error.what();
             return false;
         }
-        ok = NFinput::createExpandedStateChangeReactions(
-            rule.name(), *phi, *activationEnergy, moleculeType,
-            runtimeComponentName(model, *site->componentType), *sourceState,
-            mutation.newState, &system, blockSameComplexBinding, verbose,
-            reactionCount, rule.isBidirectional());
+        const auto componentName = runtimeComponentName(model, *site->componentType);
+        const auto equivalentNames = equivalentRuntimeNames(
+            model, *site->componentType);
+        if (componentName.empty() || equivalentNames.empty()) {
+            diagnostic = "Arrhenius state change has an invalid reaction-center component name";
+            return false;
+        }
+        for (const auto& concreteName : equivalentNames) {
+            ok = NFinput::createExpandedStateChangeReactions(
+                rule.name(), *phi, *activationEnergy, moleculeType,
+                concreteName, *sourceState, mutation.newState, &system,
+                blockSameComplexBinding, verbose, reactionCount,
+                rule.isBidirectional(), componentName);
+            if (!ok) return false;
+        }
         suggestedTraversalLimit = std::max(suggestedTraversalLimit, 1);
     } else {
         diagnostic = "Arrhenius structural lowering supports binding or state-change centers";

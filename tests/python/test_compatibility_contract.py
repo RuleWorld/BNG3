@@ -39,6 +39,25 @@ def test_legacy_run_accepts_output_directory_and_returns_file_result(tmp_path):
     assert np.isfinite(result.gdats["test"]["time"]).all()
 
 
+def test_legacy_run_supports_method_and_time_overrides(tmp_path):
+    output = tmp_path / "override-results"
+
+    result = bionetgen.run(
+        MODEL,
+        out=output,
+        method="ode",
+        t_span=(2.0, 3.0),
+        n_points=5,
+    )
+
+    assert isinstance(result, bionetgen.BNGResult)
+    assert result.process_return == 0
+    data = result.gdats["test"]
+    assert data.dtype.names[0] == "time"
+    assert len(data) == 5
+    assert np.allclose(data["time"], np.linspace(2.0, 3.0, 5))
+
+
 def test_module_entry_point_exposes_cli_help():
     env = os.environ.copy()
     source_python = str(REPO / "python")

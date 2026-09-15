@@ -4216,6 +4216,50 @@ end reaction rules
     delete system;
 }
 
+TEST_CASE("NFsim AST adapter preserves Arrhenius multiplicity on symmetric sites") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    phi 0.5
+    Ea 0.0
+    Gbind 1.0
+    RT 1.0
+end parameters
+begin molecule types
+    A(b,b)
+    B(a)
+end molecule types
+begin seed species
+    A(b,b) 1
+    B(a) 1
+end seed species
+begin energy patterns
+    A(b!1,b).B(a!1) Gbind
+end energy patterns
+begin reaction rules
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,Ea)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getEnergyFunction() != nullptr);
+    // Both equivalent A sites are distinct reaction classes.  Collapsing them
+    // changes the stochastic binding law for a symmetric molecule.
+    REQUIRE(system->getAllReactions().size() == 4);
+    for (std::size_t reactionIndex = 0;
+         reactionIndex < system->getAllReactions().size(); reactionIndex += 2) {
+        CHECK(system->getReaction(reactionIndex)->getBaseRate() ==
+              Catch::Approx(std::exp(-0.5)));
+        CHECK(system->getReaction(reactionIndex + 1)->getBaseRate() ==
+              Catch::Approx(std::exp(0.5)));
+    }
+    CHECK(suggestedTraversalLimit >= 2);
+    delete system;
+}
+
 TEST_CASE("NFsim AST adapter expands direct Arrhenius state changes") {
     auto model = bng::parser::parseModel(R"(
 begin parameters

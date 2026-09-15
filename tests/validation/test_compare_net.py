@@ -5,7 +5,18 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
-from tests.validation.compare import compare_net, parse_net, species_isomorphic
+from tests.validation.compare import (
+    _canon_expr,
+    compare_net,
+    parse_net,
+    species_isomorphic,
+)
+
+
+def test_canonical_rate_expression_normalizes_unary_minus_parentheses():
+    left = "exp((-(35/2))*((1/2)-(x/(a+b))))"
+    right = "exp(-(35/2)*((1/2)-(x/(a+b))))"
+    assert _canon_expr(left) == _canon_expr(right)
 
 
 def _net(path: Path, rate: str) -> Path:
@@ -40,9 +51,7 @@ def test_equivalent_built_in_rate_expressions_compare_equal(tmp_path):
 
 def test_net_rate_comparison_preserves_natural_log_semantics(tmp_path):
     reference = parse_net(_net(tmp_path / "reference.net", "ln(2)/120"))
-    generated = parse_net(
-        _net(tmp_path / "generated.net", repr(math.log(2) / 120))
-    )
+    generated = parse_net(_net(tmp_path / "generated.net", repr(math.log(2) / 120)))
     assert reference is not None
     assert generated is not None
     assert compare_net(reference, generated).ok
@@ -101,12 +110,8 @@ def test_function_rate_normalizes_negative_product_parentheses(tmp_path):
         )
         return path
 
-    reference = parse_net(
-        write(tmp_path / "reference.net", "-((2/3)*X)")
-    )
-    generated = parse_net(
-        write(tmp_path / "generated.net", "-(2/3)*X")
-    )
+    reference = parse_net(write(tmp_path / "reference.net", "-((2/3)*X)"))
+    generated = parse_net(write(tmp_path / "generated.net", "-(2/3)*X"))
     assert reference is not None
     assert generated is not None
     assert compare_net(reference, generated).ok
@@ -223,9 +228,7 @@ def _net_with_group(
 
 def test_network_comparison_maps_observable_groups_with_species(tmp_path):
     reference = parse_net(
-        _net_with_group(
-            tmp_path / "reference.net", "A(x!1).B(y!1)", "C()", "1,2*2"
-        )
+        _net_with_group(tmp_path / "reference.net", "A(x!1).B(y!1)", "C()", "1,2*2")
     )
     generated = parse_net(
         _net_with_group(

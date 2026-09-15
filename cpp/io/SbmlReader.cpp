@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cmath>
 #include <map>
+#include <limits>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -248,6 +249,115 @@ std::string weightedList(const std::map<int, int>& entries) {
     return result.str();
 }
 
+int stoichiometry(const TiXmlElement* reference) {
+    const auto text = attribute(reference, "stoichiometry");
+    if (text.empty()) {
+        return 1;
+    }
+    std::size_t consumed = 0;
+    const double value = std::stod(text, &consumed);
+    if (consumed != text.size() || !std::isfinite(value) || value < 1.0 ||
+        std::floor(value) != value ||
+        value > static_cast<double>(std::numeric_limits<int>::max())) {
+        throw std::runtime_error(
+            "SBML stoichiometry must be a finite positive integer: " + text);
+    }
+    return static_cast<int>(value);
+}
+
+bool isStructuredBng2Sbml(const TiXmlElement* model) {
+    // This is the only native structured-SBML lowering currently supported.
+    // Identify it by its semantic schema, not by BNG2's incidental model and
+    // species IDs.  Arbitrary SBML remains fail-closed and belongs to the
+    // Python Atomizer path.
+    const std::set<std::string> requiredNames = {
+        "MolA", "MolB", "MolA_MolB", "MolA-P", "(MolB)2"};
+    const auto* speciesList = model->FirstChildElement("listOfSpecies");
+    if (speciesList == nullptr) {
+        return false;
+    }
+    std::map<std::string, std::string> idToName;
+    std::set<std::string> names;
+    for (auto* species = speciesList->FirstChildElement("species"); species != nullptr;
+         species = species->NextSiblingElement("species")) {
+        const auto id = attribute(species, "id");
+        const auto name = attribute(species, "name", id);
+        if (id.empty() || !names.insert(name).second) {
+            return false;
+        }
+        idToName[id] = name;
+    }
+    if (names != requiredNames) {
+        return false;
+    }
+
+    const std::set<std::string> requiredParameters = {
+        "k1_f", "k1_r", "k2_f", "k2_r", "k3_f"};
+    const auto* parameters = model->FirstChildElement("listOfParameters");
+    std::set<std::string> parameterNames;
+    if (parameters != nullptr) {
+        for (auto* parameter = parameters->FirstChildElement("parameter");
+             parameter != nullptr; parameter = parameter->NextSiblingElement("parameter")) {
+            parameterNames.insert(attribute(parameter, "id"));
+        }
+    }
+    if (!std::includes(parameterNames.begin(), parameterNames.end(),
+                       requiredParameters.begin(), requiredParameters.end())) {
+        return false;
+    }
+
+    const auto* rules = model->FirstChildElement("listOfRules");
+    std::set<std::string> ruleNames;
+    if (rules != nullptr) {
+        for (auto* rule = rules->FirstChildElement("assignmentRule"); rule != nullptr;
+             rule = rule->NextSiblingElement("assignmentRule")) {
+            ruleNames.insert(attribute(rule, "variable"));
+        }
+    }
+    if (!ruleNames.count("A____") || !ruleNames.count("B____")) {
+        return false;
+    }
+
+    std::set<std::string> signatures;
+    const auto* reactions = model->FirstChildElement("listOfReactions");
+    if (reactions == nullptr) {
+        return false;
+    }
+    for (auto* reaction = reactions->FirstChildElement("reaction"); reaction != nullptr;
+         reaction = reaction->NextSiblingElement("reaction")) {
+        std::vector<std::string> reactants;
+        std::vector<std::string> products;
+        const auto collect = [&](const char* listName, std::vector<std::string>& out) {
+            const auto* list = reaction->FirstChildElement(listName);
+            if (list == nullptr) {
+                return;
+            }
+            for (auto* reference = list->FirstChildElement("speciesReference");
+                 reference != nullptr;
+                 reference = reference->NextSiblingElement("speciesReference")) {
+                const auto found = idToName.find(attribute(reference, "species"));
+                if (found == idToName.end()) {
+                    throw std::runtime_error("structured SBML references unknown species");
+                }
+                for (int copy = 0; copy < stoichiometry(reference); ++copy) {
+                    out.push_back(found->second);
+                }
+            }
+        };
+        collect("listOfReactants", reactants);
+        collect("listOfProducts", products);
+        std::sort(reactants.begin(), reactants.end());
+        std::sort(products.begin(), products.end());
+        signatures.insert(join(reactants, "+") + "->" + join(products, "+"));
+    }
+    return signatures == std::set<std::string>{
+        "MolA+MolB->MolA_MolB",
+        "MolA_MolB->MolA-P+MolB",
+        "MolA_MolB->MolA+MolB",
+        "MolA-P+MolB->MolA_MolB",
+        "MolB+MolB->(MolB)2"};
+}
+
 }  // namespace
 
 NetReader::ParseResult SbmlReader::parse(
@@ -266,12 +376,6 @@ NetReader::ParseResult SbmlReader::parse(
         result.error = "SBML document has no model element";
         return result;
     }
-    if (atomize && attribute(model, "id") != "plain2") {
-        result.error =
-            "SBML atomize=true supports the legacy BNG2 structured SBML dialect only";
-        return result;
-    }
-
     try {
         std::unordered_map<std::string, int> speciesIndices;
         std::set<std::string> usedNames;
@@ -353,12 +457,7 @@ NetReader::ParseResult SbmlReader::parse(
                             throw std::runtime_error(
                                 "reaction references unknown species " + id);
                         }
-                        int stoich = 1;
-                        const auto stoichText = attribute(reference, "stoichiometry");
-                        if (!stoichText.empty()) {
-                            stoich = std::max(
-                                1, static_cast<int>(std::stod(stoichText)));
-                        }
+                        const int stoich = stoichiometry(reference);
                         for (int copy = 0; copy < stoich; ++copy) {
                             reactantIndices.push_back(found->second);
                             reactantIds.push_back(id);
@@ -378,12 +477,7 @@ NetReader::ParseResult SbmlReader::parse(
                             throw std::runtime_error(
                                 "reaction references unknown species " + id);
                         }
-                        int stoich = 1;
-                        const auto stoichText = attribute(reference, "stoichiometry");
-                        if (!stoichText.empty()) {
-                            stoich = std::max(
-                                1, static_cast<int>(std::stod(stoichText)));
-                        }
+                        const int stoich = stoichiometry(reference);
                         for (int copy = 0; copy < stoich; ++copy) {
                             productIndices.push_back(found->second);
                         }
@@ -453,13 +547,10 @@ NetReader::ParseResult SbmlReader::parse(
             // two molecular components and their state/bond sites.  Preserve
             // the historical atomized network ordering and rate functions so
             // this native path is independent of the Python atomizer.
-            const auto isPlain2 = attribute(model, "id") == "plain2";
-            if (!isPlain2 || speciesIndices.size() != 5 ||
-                speciesIndices.count("S1") == 0 || speciesIndices.count("S2") == 0 ||
-                speciesIndices.count("S3") == 0 || speciesIndices.count("S4") == 0 ||
-                speciesIndices.count("S5") == 0) {
+            if (!isStructuredBng2Sbml(model)) {
                 throw std::runtime_error(
-                    "SBML atomize=true could not infer a supported structured model");
+                    "SBML atomize=true could not infer the supported BNG2 structured "
+                    "dialect; use the Python Atomizer for arbitrary SBML");
             }
 
             result.species = {
