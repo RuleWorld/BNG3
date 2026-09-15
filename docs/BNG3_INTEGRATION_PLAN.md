@@ -51,8 +51,13 @@ architectures with deployment targets 10.13 on macos-13 and 11.0 on macos-14,
 and use `manylinux_2_28` for current binary NumPy compatibility. This changes
 the Linux wheel compatibility floor to glibc 2.28 and is recorded here as a
 packaging decision, not a semantic convergence claim. CI exposes a manual
-wheel-matrix dispatch so the exact follow-up head can be validated before
-release qualification; that hosted result is still pending.
+wheel-matrix dispatch so an exact branch head can be validated before release
+qualification. Follow-up PR CI run
+[`34971571944`](https://github.com/RuleWorld/BNG3/actions/runs/34971571944)
+passed its no-exclusion corpus and integration gates at `9efa0e9`; auxiliary
+wheel run `34971595435` was canceled before wheel jobs started so the wheel
+gate remains paused until merge. The first main-push run after merge is the
+authoritative result for this repair.
 
 ## Implementation progress checkpoint — 2026-09-10
 

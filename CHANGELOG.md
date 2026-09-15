@@ -35,7 +35,9 @@
   macOS 10.9 deployment-target failure in the ANTLR runtime and a
   manylinux2014/GCC 10.2 failure while resolving NumPy 2.5.3. The workflows
   now pin cibuildwheel 4.2.1, use native macOS targets at 10.13/11.0, and use
-  `manylinux_2_28`; exact-head hosted wheel validation remains pending.
+  `manylinux_2_28`; the auxiliary wheel run `34971595435` was canceled before
+  its wheel jobs started, so exact-head wheel validation is deferred to the
+  first main-push run after merge.
 
 ## [3.0.0a1] - 2026-05-11
 

@@ -7,8 +7,8 @@
 **Historical audited semantic code head:** ccb3ef9efd069bb9375a39ddb64b1861909b4aa8 (local exact head; public synchronization is deferred by the local-only work instruction)
 **Historical checklist refresh base:** ce4575f5c31b94ded5dfac1842a9c8e438f608d4 (local exact-head CI provenance-summary checkpoint; public synchronization is deferred by the local-only work instruction)
 **Historical workflow checkpoint:** ce4575f5c31b94ded5dfac1842a9c8e438f608d4 (local-only; no hosted run was created because this checkpoint has not been pushed)
-**Current audit base:** follow-up wheel-repair commit on branch `codex/bng3-status-docs-20260915`; the full-corpus validation repair, Windows/MSVC parser repair, documentation/artifact organization, and wheel-environment repair are being validated on the exact follow-up head.
-**PR:** RuleWorld/BNG3#10
+**Current audit base:** `9efa0e9df8903ee616437f8555906fcfdda4c762` on branch `codex/bng3-status-docs-20260915`; the full-corpus validation repair, Windows/MSVC parser repair, documentation/artifact organization, and wheel-environment repair are recorded on the exact follow-up head.
+**PR:** RuleWorld/BNG3#12 (follow-up to merged implementation PR #10)
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
 6690fda5d9e053df822d0248ebae185f5caca82a; accepted energy-source cutoff
@@ -103,9 +103,11 @@ deployment target although the ANTLR runtime requires APIs available from
 with GCC 10.2.1 although NumPy requires GCC 10.3 or newer. The follow-up
 workflow repair pins cibuildwheel 4.2.1, selects native macOS architectures
 with 10.13/11.0 deployment targets, and changes the Linux image to
-`manylinux_2_28`. The CI workflow now permits a manual-dispatch wheel run on
-the exact branch head. The wheel checkpoint remains unchecked until all four
-platform jobs pass; this does not alter the zero-skip full-corpus result.
+`manylinux_2_28`. The CI workflow permits a manual-dispatch wheel run on an
+exact branch head, but auxiliary run `34971595435` was canceled before its
+wheel jobs started so validation could remain paused until merge. The wheel
+checkpoint remains unchecked until the first post-merge main-push run has all
+four platform jobs pass; this does not alter the zero-skip full-corpus result.
 
 ## Current verified checkpoint
 
@@ -160,8 +162,8 @@ completion gate.
 - [ ] Cross-platform wheel repair checkpoint: main push run `34901298982`
   exposed the macOS deployment-target and manylinux2014/NumPy compiler
   failures described above. The CI and release workflows now use cibuildwheel
-  4.2.1, native macOS targets, and `manylinux_2_28`; the exact follow-up
-  manual-dispatch matrix must pass before this item can be checked.
+  4.2.1, native macOS targets, and `manylinux_2_28`; the exact post-merge
+  main-push matrix must pass before this item can be checked.
 
 - [x] Local-only initial-assignment writer checkpoint
   `1662820a0222add1cd9d44e8dd64724590c4bce8` ports the pinned Playground

@@ -67,8 +67,12 @@ native macOS architectures with deployment targets 10.13 on macos-13 and 11.0
 on macos-14, and use `manylinux_2_28` for the Linux wheel image. The Linux
 compatibility floor is consequently glibc 2.28 for these wheels. CI also has a
 manual-dispatch route for running the complete wheel matrix on an exact branch
-head. Hosted validation of this repair remains pending until every wheel job
-is terminal-success.
+head. The follow-up PR head `9efa0e9` passed hosted CI run
+[`34971571944`](https://github.com/RuleWorld/BNG3/actions/runs/34971571944),
+including all no-exclusion corpus jobs. Its auxiliary wheel run
+`34971595435` was canceled before wheel jobs started at the user's request.
+The first post-merge main-push run must provide terminal-success results for
+all four wheel jobs before this packaging repair is treated as validated.
 
 ## Reproducibility rules
 
