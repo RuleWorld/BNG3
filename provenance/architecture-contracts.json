@@ -689,6 +689,13 @@
       "empty_bodies": 0
     },
     {
+      "path": "tests/architecture_contracts/nfnext/test_bng_lowering_bridge.cpp",
+      "status": "reference",
+      "target": "bng3_nfnext_bng_lowering_bridge",
+      "declared_cases": 1,
+      "empty_bodies": 0
+    },
+    {
       "path": "tests/architecture_contracts/nfnext/test_nfnext.cpp",
       "status": "reference",
       "target": "bng3_nfnext_reference_tests",

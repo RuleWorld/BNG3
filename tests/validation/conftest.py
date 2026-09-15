@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.validation import corpus
+from tests.validation import corpus, runner
 from tests.validation.strict import require_oracle
 
 
@@ -63,13 +63,7 @@ def bng_cpp(request) -> Path:
 
 @pytest.fixture(scope="session")
 def have_api() -> bool:
-    try:
-        import bionetgen  # noqa: F401
-        import bionetgen.model  # the compiled path, not the Perl fallback
-
-        return True
-    except Exception:
-        return False
+    return runner.api_available()
 
 
 @pytest.fixture

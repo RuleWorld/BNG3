@@ -133,6 +133,30 @@ def badPattern : Pattern :=
 /- This should evaluate to `false`. -/
 #eval badPattern.wellFormed model.signature
 
+/--
+Concrete NFnext lowering contract mirrored by the production C++ boundary test
+in `tests/architecture_contracts/nfnext/test_nfnext.cpp`.  Both start from the
+same biological rule shown at the top of this file.  The C++ side crosses
+BNGL parser → `bng::compile::CompiledModel` → `nfnext::lowerFromBioNetGen`;
+this side checks the proof-friendly typed lowering independently.
+-/
+def nfnextBridgeContract : Bool :=
+  let packing := NFnextPacking.fromSignature model.signature
+  match forward.lowerNFnextTransformation? packing with
+  | none => false
+  | some (flat, transform) =>
+      flat.pattern.nodes.length == 2 &&
+      match flat.pattern.molecularity, transform.ops with
+      | [.differentComplex 0 1],
+        [.setState 0 site state, .addBond 0 leftSite 1 rightSite] =>
+          site.value == 0 && state.value == 1 &&
+          leftSite.value == 0 && rightSite.value == 0
+      | _, _ => false
+
+/-- The typed reference lowers the bridge fixture to the expected NFnext shape. -/
+theorem nfnextBridgeContract_holds : nfnextBridgeContract = true := by
+  native_decide
+
 end BNG.Examples
 
 namespace BNG.Examples

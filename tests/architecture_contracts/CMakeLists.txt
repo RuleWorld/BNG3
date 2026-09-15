@@ -38,6 +38,14 @@ add_test(NAME architecture_nfnext_reference COMMAND bng3_nfnext_reference_tests)
 set_tests_properties(architecture_nfnext_reference PROPERTIES
     LABELS "architecture-reference;nfnext" TIMEOUT 180)
 
+add_executable(bng3_nfnext_bng_lowering_bridge
+    nfnext/test_bng_lowering_bridge.cpp)
+target_link_libraries(bng3_nfnext_bng_lowering_bridge PRIVATE bng_nfnext bng_parser)
+add_test(NAME architecture_nfnext_bng_lowering_bridge
+    COMMAND bng3_nfnext_bng_lowering_bridge)
+set_tests_properties(architecture_nfnext_bng_lowering_bridge PROPERTIES
+    LABELS "architecture-reference;nfnext;formal-bridge" TIMEOUT 180)
+
 add_executable(bng3_nfnext_canonicalization_contract
     nfnext/future_contract/test_nfir_canonicalization_contract.cpp)
 target_link_libraries(bng3_nfnext_canonicalization_contract PRIVATE bng_nfnext)
