@@ -88,34 +88,36 @@ made from this checkpoint.
 
 ## Published BioModels validation checkpoint — 2026-09-15
 
-The pinned manifest `provenance/published-biomodels.json` records eight public
-BioModels SBML downloads and their SHA-256 digests. The explicit runner is
-`scripts/ci/validate_published_biomodels.py`; it checks the modern
-Playground-derived Atomizer in both flat and atomized modes, then parses and
-generates a BNG3 network from each result. On the exact local branch head,
-`8/8` models passed both modes (`16/16` import/parse/network checks), with
-positive generated networks ranging from 4/8 to 25/24 species/reactions.
+The manifest `provenance/published-biomodels.json` is query-backed rather than
+a hand-picked sample: the official manually curated inventory contains 1,096
+records, of which 1,075 are SBML and 21 are explicitly non-SBML formats. The
+runner `scripts/ci/validate_published_biomodels.py` accounts for every record,
+then validates each SBML artifact through modern import, BNG3 network
+generation, C++ SBML writing, modern/native re-import, and direct comparison of
+all generated observables from BNG3 CVODE against libRoadRunner CVODE on a
+shared time grid. The complete report is retained in the task outputs as
+`curated_biomodels_roundtrip.json`; its strict gate remains red where models
+fail representation, integration, parity, or bounded-time checks.
 
-The same run attempted a short ODE smoke for each mode. `12/16` completed with
-three output time points; the two failing model families were the published
-Elowitz repressilator and Hynne glycolysis initial conditions, both stopping at
-`t=0` with CVODE convergence failure. ODE is therefore recorded as diagnostic,
-not converted into a false import failure. The run also exposed and fixed a
-real SBML Level 2 compatibility gap: reaction-local `<parameter>` declarations
-inside `kineticLaw/listOfParameters` are now handled alongside Level 3
-`<localParameter>` declarations. The focused modern SBML/Atomizer gate is
-`212 passed, 1 skipped`, and native CTest is `312/312`.
+The same round-trip/simulation gate runs against the official SBML Test Suite
+release checkout at commit `cf38585fac5de8e0e90112febb62851ee2181816`, covering
+all 1,823 semantic and 100 stochastic canonical cases available there. The
+release checkout has no syntactic case corpus; SBML Test Suite reference-result
+conformance is not claimed. The complete report is retained as
+`sbml_test_suite_roundtrip.json`.
 
-Re-run with cached bytes or let the runner fetch them from the official
-BioModels download endpoint:
+Re-run the BioModels audit with cached bytes or let the runner fetch missing
+files from the official BioModels download endpoint:
 
 ```text
 PYTHONPATH=python:build/cpp python scripts/ci/validate_published_biomodels.py \
-  --cache-dir /path/to/cache --json work/published-biomodels.json
+  --cache-dir /path/to/cache --json work/published-biomodels.json \
+  --isolate-models --jobs 8 --model-timeout 60
 ```
 
-This is published-model import/network evidence, not complete SBML schema,
-writer round-trip, backend-equivalence, or biological-validity evidence.
+These are reproducible import/round-trip and cross-engine numerical-parity
+checks, not a claim of complete SBML schema coverage, reference-result
+conformance, or biological validity.
 
 ## Imported material
 

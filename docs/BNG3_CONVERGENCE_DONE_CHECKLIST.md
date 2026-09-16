@@ -147,21 +147,21 @@ bounded output tails.
 
 ## Published BioModels validation checkpoint — 2026-09-15
 
-- [x] Eight pinned public BioModels SBML files are recorded in
-  `provenance/published-biomodels.json` with source URLs and SHA-256 digests.
-  `scripts/ci/validate_published_biomodels.py` validates each file through the
-  Playground-derived modern Atomizer in both flat and atomized modes, then
-  parses and generates a BNG3 network. The exact local run passes `16/16`
-  import/parse/network checks across `8/8` models.
-- [x] The validation run fixed an actual SBML Level 2 gap: reaction-local
-  `<parameter>` elements under `kineticLaw/listOfParameters` are now handled
-  with Level 3 `<localParameter>` elements. The focused modern SBML/Atomizer
-  gate reports `212 passed, 1 skipped`; native CTest reports `312/312`.
-- [ ] Short ODE smoke remains diagnostic rather than an import gate: `12/16`
-  mode runs complete, while the Elowitz repressilator and Hynne glycolysis
-  published initial conditions fail CVODE convergence at `t=0`. This does not
-  establish complete solver, schema, writer-round-trip, or biological-validity
-  parity.
+- [x] The manifest `provenance/published-biomodels.json` is query-backed and
+  accounts for the complete manually curated BioModels inventory: `1,096`
+  records (`1,075` SBML and `21` explicitly non-SBML formats). The runner
+  `scripts/ci/validate_published_biomodels.py` performs modern import, BNG3
+  network generation, C++ SBML writing, modern/native re-import, and direct
+  all-observable BNG3 CVODE versus libRoadRunner CVODE comparison.
+- [x] The official SBML Test Suite checkout is pinned to
+  `cf38585fac5de8e0e90112febb62851ee2181816`; the round-trip runner covers all
+  `1,823` semantic and `100` stochastic canonical cases available in that
+  release checkout, with the absence of a syntactic corpus recorded.
+- [ ] The complete numerical gates are intentionally not green: model
+  representation limits, solver failures, cross-engine observable mismatches,
+  and bounded timeouts remain explicit in the machine-readable reports. This
+  evidence does not establish full SBML schema coverage, SBML Test Suite
+  reference-result conformance, or biological validity.
 
 ## Historical checkpoint — 2026-09-15
 

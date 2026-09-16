@@ -2937,9 +2937,11 @@ bool ReactionRule::buildReaction(
         for (const auto& [label, count] : patternGroupCounts) {
             if (count > 1) {
                 // 1/n! for this group
-                int factorial = 1;
+                // Keep the accumulator floating-point. An integer factorial
+                // overflows at 13!, producing an infinite statistical factor.
+                double factorial = 1.0;
                 for (int i = 2; i <= count; ++i) factorial *= i;
-                factor /= static_cast<double>(factorial);
+                factor /= factorial;
             }
         }
     }

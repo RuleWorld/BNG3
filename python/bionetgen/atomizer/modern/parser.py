@@ -89,7 +89,7 @@ def _mathml_text(element: Optional[Any]) -> str:
     return "".join(element.itertext()).strip()
 
 
-def _mathml_to_formula(element: Optional[Any]) -> str:
+def _mathml_to_formula(element: Optional[Any], parenthesize: bool = False) -> str:
     """Translate the MathML subset used by SBML into stable infix/function text."""
 
     if element is None:
@@ -102,7 +102,7 @@ def _mathml_to_formula(element: Optional[Any]) -> str:
             (
                 expression
                 for child in children
-                if (expression := _mathml_to_formula(child).strip())
+                if (expression := _mathml_to_formula(child, parenthesize).strip())
             ),
             "",
         )
@@ -112,6 +112,10 @@ def _mathml_to_formula(element: Optional[Any]) -> str:
             return "time"
         if "symbols/avogadro" in definition_url:
             return "__Avogadro__"
+        if "symbols/delay" in definition_url:
+            return "delay"
+        if "symbols/rateof" in definition_url:
+            return "rateOf"
         content = _mathml_text(element)
         representation = str(_attribute(element, "representationType", "") or "")
         if representation == "sum":
@@ -153,7 +157,7 @@ def _mathml_to_formula(element: Optional[Any]) -> str:
         # SBML function bodies are lambda(bvar..., body).  Bound-variable
         # declarations are metadata; the final non-bvar child is the body.
         expressions = [
-            _mathml_to_formula(child).strip()
+            _mathml_to_formula(child, parenthesize).strip()
             for child in children
             if _local_name(child.tag) != "bvar"
         ]
@@ -163,7 +167,7 @@ def _mathml_to_formula(element: Optional[Any]) -> str:
             (
                 expression
                 for child in children
-                if (expression := _mathml_to_formula(child).strip())
+                if (expression := _mathml_to_formula(child, parenthesize).strip())
             ),
             _mathml_text(element) if tag == "bvar" else "",
         )
@@ -212,7 +216,15 @@ def _mathml_to_formula(element: Optional[Any]) -> str:
         operator = _local_name(operator_node.tag)
         if operator in {"ci", "csymbol"}:
             function_name = _mathml_to_formula(operator_node)
-            args = [_mathml_to_formula(child) for child in children[1:]]
+            args = [_mathml_to_formula(child, True) for child in children[1:]]
+            if operator == "csymbol":
+                definition_url = str(
+                    _attribute(operator_node, "definitionURL", "") or ""
+                ).lower()
+                if "symbols/delay" in definition_url or "symbols/rateof" in definition_url:
+                    operand = _mathml_text(operator_node)
+                    if operand and operand.lower() not in {function_name.lower(), "delay", "rateof"}:
+                        args.insert(0, operand)
             return (
                 f"{function_name}({', '.join(args)})"
                 if function_name
@@ -228,7 +240,7 @@ def _mathml_to_formula(element: Optional[Any]) -> str:
             None,
         )
         args = [
-            _mathml_to_formula(child)
+            _mathml_to_formula(child, True)
             for child in children[1:]
             if _local_name(child.tag) not in {"degree", "logbase"}
         ]
@@ -239,6 +251,14 @@ def _mathml_to_formula(element: Optional[Any]) -> str:
         if operator == "not" and not args:
             return "1"
         if operator in {"plus", "times", "minus", "divide", "power"}:
+            if not args:
+                return {
+                    "plus": "0",
+                    "times": "1",
+                    "minus": "0",
+                    "divide": "1",
+                    "power": "1",
+                }[operator]
             symbol = {
                 "plus": "+",
                 "times": "*",
@@ -248,14 +268,24 @@ def _mathml_to_formula(element: Optional[Any]) -> str:
             }[operator]
             if operator == "minus" and len(args) == 1:
                 return f"-({args[0]})"
-            return f" {symbol} ".join(args)
+            if operator == "power" and len(args) >= 2:
+                # The exponent is an expression, not a flat token.  Without
+                # grouping, MathML e^(-t) becomes ``e ^ -1 * t`` and changes
+                # the model to (e^-1)*t.
+                return f"({args[0]}) ^ ({args[1]})"
+            # Child arithmetic nodes carry their own grouping.  Keep the
+            # historical flat spelling for a simple top-level node while
+            # still preserving nested precedence (for example,
+            # ``a / (b + c)``).
+            expression = f" {symbol} ".join(args)
+            return f"({expression})" if parenthesize else expression
         if operator == "root":
             if degree is not None:
-                return f"root({_mathml_to_formula(degree)}, {args[0] if args else ''})"
+                return f"root({_mathml_to_formula(degree, True)}, {args[0] if args else ''})"
             return f"sqrt({args[0] if args else ''})"
         if operator == "log":
             if logbase is not None:
-                return f"log({_mathml_to_formula(logbase)}, {args[0] if args else ''})"
+                return f"log({_mathml_to_formula(logbase, True)}, {args[0] if args else ''})"
             return f"log10({args[0] if args else ''})"
         if operator == "quotient":
             return f"floor(({args[0]}) / ({args[1]}))" if len(args) >= 2 else ""
@@ -272,7 +302,11 @@ def _mathml_to_formula(element: Optional[Any]) -> str:
             "arctan": "atan",
         }
         return f"{direct.get(operator, operator)}({', '.join(args)})"
-    return _mathml_to_formula(children[0]) if children else _mathml_text(element)
+    return (
+        _mathml_to_formula(children[0], parenthesize)
+        if children
+        else _mathml_text(element)
+    )
 
 
 class SBMLParser:
@@ -491,6 +525,20 @@ class SBMLParser:
         result.import_warnings.extend(apply_unit_scaling(result))
         result.import_warnings.extend(parameter_warnings)
         result.import_warnings.extend(math_warnings)
+        for compartment_id, compartment in compartments.items():
+            dimension = compartment.spatial_dimensions
+            if not math.isfinite(dimension) or dimension < 0 or dimension > 3:
+                result.import_warnings.append(
+                    {
+                        "category": "compartment",
+                        "message": (
+                            f'Compartment "{compartment_id}" has spatialDimensions '
+                            f"{dimension:g}; SBML core permits only values 0 through 3."
+                        ),
+                        "count": 1,
+                        "severity": "dropped",
+                    }
+                )
         for reaction_id, reaction in result.reactions.items():
             for reference in [*reaction.reactants, *reaction.products]:
                 value = reference.stoichiometry

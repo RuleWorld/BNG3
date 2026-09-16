@@ -233,7 +233,7 @@ def test_playground_writer_can_preserve_scoped_local_parameter_names():
     )
 
     assert "r_local_rate 7" in result.bngl
-    assert "r: M_A()@cell -> M_P()@cell r_local_rate" in result.bngl
+    assert "r: @cell:M_A() -> @cell:M_P() r_local_rate" in result.bngl
     assert "r: M_A()@cell -> M_P()@cell 7" not in result.bngl
     cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
     cpp.parse_string(result.bngl)

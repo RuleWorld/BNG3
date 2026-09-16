@@ -10,6 +10,7 @@
 #include "io/NetWriter.hpp"
 #include "io/BnglWriter.hpp"
 #include "io/SbmlWriter.hpp"
+#include "io/SbmlReader.hpp"
 #include "io/MatlabWriter.hpp"
 #include "io/LatexWriter.hpp"
 #include "io/MexWriter.hpp"
@@ -62,6 +63,17 @@ void bind_io(py::module_& m) {
         out << content;
     }, py::arg("model"), py::arg("network"), py::arg("path"),
        "Write model to SBML format");
+
+    io.def("read_sbml", [](const std::string& path, bool atomize) {
+        const auto result = SbmlReader::parse(path, atomize);
+        py::dict value;
+        value["success"] = result.success;
+        value["error"] = result.error;
+        value["species_count"] = result.species.size();
+        value["reaction_count"] = result.reactions.size();
+        return value;
+    }, py::arg("path"), py::arg("atomize") = false,
+       "Read flattened SBML and return native parser status and network counts");
 
     io.def("write_matlab", [](const Model& model, const GeneratedNetwork& network,
                               const std::string& path) {

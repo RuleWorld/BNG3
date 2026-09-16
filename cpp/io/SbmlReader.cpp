@@ -67,6 +67,34 @@ std::string sanitizeName(std::string name) {
     return result;
 }
 
+bool looksLikeBnglPattern(const std::string& rawName) {
+    const auto name = trim(rawName);
+    if (name.empty() || name.back() != ')' || name.find('(') == std::string::npos) {
+        return false;
+    }
+
+    int depth = 0;
+    bool sawMolecule = false;
+    for (const unsigned char c : name) {
+        if (c == '(') {
+            ++depth;
+            sawMolecule = true;
+        } else if (c == ')') {
+            if (depth == 0) {
+                return false;
+            }
+            --depth;
+        } else if (std::isalnum(c) != 0 || c == '_' || c == '@' || c == ':' ||
+                   c == '$' || c == '~' || c == '!' || c == ',' || c == '.' ||
+                   c == '-') {
+            continue;
+        } else {
+            return false;
+        }
+    }
+    return sawMolecule && depth == 0;
+}
+
 bool parseBool(const std::string& value) {
     std::string lower;
     lower.reserve(value.size());
@@ -109,8 +137,33 @@ std::string mathExpression(const TiXmlElement* element) {
     if (tag == "math") {
         return mathExpression(element->FirstChildElement());
     }
-    if (tag == "ci" || tag == "cn") {
+    if (tag == "ci" || tag == "cn" || tag == "csymbol") {
         return elementText(element);
+    }
+    if (tag == "piecewise") {
+        std::string result = "0";
+        std::vector<std::pair<std::string, std::string>> pieces;
+        for (auto* part = element->FirstChildElement(); part != nullptr;
+             part = part->NextSiblingElement()) {
+            if (std::string(part->Value()) == "otherwise") {
+                result = mathExpression(part->FirstChildElement());
+                continue;
+            }
+            if (std::string(part->Value()) != "piece") {
+                continue;
+            }
+            const auto children = childElements(part);
+            if (children.size() != 2) {
+                throw std::runtime_error("malformed MathML piecewise expression");
+            }
+            const auto value = mathExpression(children[0]);
+            const auto condition = mathExpression(children[1]);
+            pieces.emplace_back(condition, value);
+        }
+        for (auto part = pieces.rbegin(); part != pieces.rend(); ++part) {
+            result = "if(" + part->first + "," + part->second + "," + result + ")";
+        }
+        return result;
     }
     if (tag != "apply") {
         return {};
@@ -128,25 +181,44 @@ std::string mathExpression(const TiXmlElement* element) {
             args.push_back(value);
         }
     }
+    const auto parenthesized = [](const std::string& value) {
+        return "(" + value + ")";
+    };
     if (op == "plus") {
-        return join(args, "+");
+        return args.size() > 1 ? parenthesized(join(args, "+")) : join(args, "+");
     }
     if (op == "times") {
         return join(args, "*");
     }
     if (op == "divide" && args.size() == 2) {
-        return args[0] + "/" + args[1];
+        return parenthesized(args[0] + "/" + args[1]);
     }
     if (op == "power" && args.size() == 2) {
-        return args[0] + "^" + args[1];
+        return parenthesized(args[0] + "^" + args[1]);
     }
     if (op == "minus") {
-        return args.size() == 1 ? "-" + args[0] : join(args, "-");
+        return args.size() == 1 ? "-" + args[0]
+                                : parenthesized(join(args, "-"));
+    }
+    const std::map<std::string, std::string> binaryOperators = {
+        {"rem", "%"}, {"eq", "=="}, {"neq", "!="}, {"gt", ">"},
+        {"geq", ">="}, {"lt", "<"}, {"leq", "<="}, {"and", "&&"},
+        {"or", "||"}, {"xor", "^^"},
+    };
+    if (const auto found = binaryOperators.find(op);
+        found != binaryOperators.end() && args.size() >= 2) {
+        return parenthesized(join(args, found->second));
+    }
+    if (op == "not" && args.size() == 1) {
+        return "!" + parenthesized(args.front());
     }
     if (args.size() == 1 &&
         (op == "abs" || op == "exp" || op == "ln" || op == "log" ||
-         op == "sqrt" || op == "sin" || op == "cos" || op == "tan")) {
-        return op + "(" + args.front() + ")";
+         op == "sqrt" || op == "root" || op == "sin" || op == "cos" ||
+         op == "tan" || op == "asin" || op == "acos" || op == "atan" ||
+         op == "sinh" || op == "cosh" || op == "tanh" || op == "asinh" ||
+         op == "acosh" || op == "atanh" || op == "floor" || op == "ceiling")) {
+        return (op == "root" ? "sqrt" : op) + "(" + args.front() + ")";
     }
     throw std::runtime_error("unsupported MathML operator: " + op);
 }
@@ -680,7 +752,9 @@ NetReader::ParseResult SbmlReader::parse(
                  species = species->NextSiblingElement("species")) {
                 ++index;
                 const auto id = attribute(species, "id");
-                auto standardized = sanitizeName(attribute(species, "name", id));
+                const auto rawName = attribute(species, "name", id);
+                auto standardized = looksLikeBnglPattern(rawName)
+                    ? trim(rawName) : sanitizeName(rawName);
                 if (!usedNames.insert(standardized).second) {
                     standardized += "_" + id;
                     usedNames.insert(standardized);
@@ -694,7 +768,8 @@ NetReader::ParseResult SbmlReader::parse(
                     parseBool(attribute(species, "boundaryCondition"))) {
                     pattern += '$';
                 }
-                pattern += standardized + "()";
+                pattern += looksLikeBnglPattern(rawName)
+                    ? standardized : standardized + "()";
                 speciesIndices[id] = index;
                 std::string amount = attribute(species, "initialAmount");
                 if (amount.empty()) {
@@ -703,9 +778,10 @@ NetReader::ParseResult SbmlReader::parse(
                 result.species.emplace_back(pattern, amount);
             }
         }
-        if (result.species.empty()) {
-            throw std::runtime_error("SBML model has no species");
-        }
+        // A valid SBML model may contain only compartments, parameters, rules,
+        // or annotations.  Keep the native readback result successful for this
+        // zero-species case; callers can still distinguish it by the returned
+        // empty species/reaction counts.
 
         const auto* parameterList = model->FirstChildElement("listOfParameters");
         if (parameterList != nullptr) {
@@ -773,8 +849,20 @@ NetReader::ParseResult SbmlReader::parse(
                 if (math == nullptr) {
                     throw std::runtime_error("reaction has no kinetic law");
                 }
-                const auto expression = stripReactantFactors(
-                    mathExpression(math), reactantIds);
+                bool totalRate = false;
+                const auto* annotation = reaction->FirstChildElement("annotation");
+                if (annotation != nullptr) {
+                    for (auto* marker = annotation->FirstChildElement(); marker != nullptr;
+                         marker = marker->NextSiblingElement()) {
+                        if (std::string(marker->Value()).find("totalRate") != std::string::npos) {
+                            totalRate = true;
+                            break;
+                        }
+                    }
+                }
+                const auto expression = totalRate
+                    ? mathExpression(math)
+                    : stripReactantFactors(mathExpression(math), reactantIds);
                 std::ostringstream line;
                 line << index << ' ' << indexList(reactantIndices) << ' '
                      << indexList(productIndices) << ' ' << expression;

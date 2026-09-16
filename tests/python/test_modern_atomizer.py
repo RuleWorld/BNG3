@@ -9,6 +9,8 @@ discriminating and easy to compare with the source implementation.
 from __future__ import annotations
 
 from collections import OrderedDict
+import io
+import zipfile
 
 import pytest
 
@@ -84,6 +86,36 @@ def test_playground_structures_preserve_states_bonds_and_compartments():
     component.add_state("P")
     assert component.states == ["P", "0"]
     assert component.str2() == "site~P~0"
+
+
+def test_combine_archive_extracts_manifest_selected_sbml():
+    from bionetgen.atomizer.modern import (
+        Atomizer,
+        extract_sbml_from_archive,
+        extract_sbml_from_combine_archive,
+    )
+
+    sbml = SBML_FIXTURE.replace("playground_fixture", "archive_fixture")
+    manifest = """<?xml version="1.0" encoding="UTF-8"?>
+<omexManifest xmlns="http://identifiers.org/combine.specifications/omex-manifest">
+  <content location="." format="http://identifiers.org/combine.specifications/omex"/>
+  <content location="./model.xml" format="http://identifiers.org/combine.specifications/sbml" master="true"/>
+  <content location="./simulation.sedml" format="http://identifiers.org/combine.specifications/sed-ml"/>
+</omexManifest>
+"""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("manifest.xml", manifest)
+        archive.writestr("model.xml", sbml)
+        archive.writestr("simulation.sedml", "not SBML")
+
+    extraction = extract_sbml_from_combine_archive(buffer.getvalue())
+    assert extract_sbml_from_archive(buffer.getvalue()).member == "model.xml"
+    assert extraction.member == "model.xml"
+    assert extraction.candidates == ("model.xml",)
+    assert "archive_fixture" in extraction.sbml
+    result = Atomizer(quiet_mode=True).atomize_archive(buffer.getvalue())
+    assert result.success
 
 
 def test_playground_species_extend_honors_update_flag_for_equal_molecule_counts():
@@ -387,9 +419,16 @@ def test_playground_parser_disambiguates_duplicate_global_parameters():
         'Duplicate parameter id "k" remapped to "k_2"'
         in duplicate_warnings[0]["message"]
     )
-    assert len(messages) == 1
-    assert messages[0].code == "SBM010"
-    assert messages[0].message.endswith('Duplicate parameter id "k" remapped to "k_2"')
+    duplicate_messages = [
+        message
+        for message in messages
+        if 'Duplicate parameter id "k" remapped to "k_2"' in message.message
+    ]
+    assert len(duplicate_messages) == 1
+    assert duplicate_messages[0].code == "SBM010"
+    assert duplicate_messages[0].message.endswith(
+        'Duplicate parameter id "k" remapped to "k_2"'
+    )
 
 
 def test_playground_parser_normalizes_duplicate_parameter_name_aliases_in_math():
@@ -620,8 +659,19 @@ def test_playground_parser_emits_import_warning_codes_and_counts():
         logger.setLevel("WARNING")
         logger.setQuietMode(False)
 
-    assert len(model.import_warnings) == 1
-    assert [(message.code, message.message) for message in warnings] == [
+    assert any(warning.category == "units" for warning in model.import_warnings)
+    constraint_warnings = [
+        warning
+        for warning in model.import_warnings
+        if warning.category == "constraint"
+    ]
+    assert len(constraint_warnings) == 1
+    constraint_messages = [
+        message
+        for message in warnings
+        if message.code == "SBM022" and "constraint" in message.message
+    ]
+    assert [(message.code, message.message) for message in constraint_messages] == [
         (
             "SBM022",
             "[constraint] 2 SBML constraint element(s) present; "
@@ -1826,7 +1876,7 @@ def test_playground_writer_reports_nonadjacent_transport_reactions():
         logger.setLevel("WARNING")
         logger.setQuietMode(False)
 
-    assert "transport: M_A()@cyto -> M_B()@nuc k" in bngl
+    assert "transport: @cyto:M_A() -> @nuc:M_B() k" in bngl
     assert [(message.code, message.message) for message in messages] == [
         ("BNW004", "Transport reaction transport: B moves from cyto to nuc")
     ]
@@ -2700,3 +2750,89 @@ def test_playground_atomizer_preserves_zero_stoichiometry_and_rejects_unsupporte
     assert "fractional:" not in bngl
     assert "zero: 0 -> M_B()" in bngl
     assert "math: M_A() + M_A() -> M_B()" in bngl
+
+
+def test_cpp_sbml_writer_aggregates_repeated_species_references(tmp_path):
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+
+    model = cpp.parse_string(
+        """begin parameters
+    k 1
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 10
+end seed species
+begin reaction rules
+    R: A() + A() -> B() + B() + B() + B() k TotalRate
+end reaction rules
+"""
+    )
+    network = cpp.generate_network(model, max_iter=10)
+    output = tmp_path / "stoichiometry.xml"
+    cpp.io.write_sbml(model, network, str(output))
+
+    xml = output.read_text()
+    assert (
+        '<speciesReference species="S1" constant="true" stoichiometry="2"/>'
+        in xml
+    )
+    assert (
+        '<speciesReference species="S2" constant="true" stoichiometry="4"/>'
+        in xml
+    )
+    assert xml.count('<speciesReference species="S1"') == 1
+    assert xml.count('<speciesReference species="S2"') == 1
+    assert 'xmlns="http://www.sbml.org/sbml/level3/version2/core"' in xml
+
+    native = cpp.io.read_sbml(str(output))
+    assert native["success"] is True
+    assert native["species_count"] == network.num_species
+    assert native["reaction_count"] == network.num_reactions
+
+
+def test_atomizer_uses_species_level_compartment_prefixes_in_reactions():
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    sbml = """<?xml version="1.0"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core" level="3" version="1">
+  <model id="compartment_transport">
+    <listOfCompartments>
+      <compartment id="cytoplasm" spatialDimensions="3" size="1" constant="true"/>
+      <compartment id="extracellular" spatialDimensions="3" size="1" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="A" compartment="cytoplasm" initialAmount="2"/>
+      <species id="B" compartment="cytoplasm" initialAmount="0"/>
+      <species id="C" compartment="extracellular" initialAmount="0"/>
+    </listOfSpecies>
+    <listOfReactions>
+      <reaction id="r" reversible="false">
+        <listOfReactants><speciesReference species="A"/></listOfReactants>
+        <listOfProducts>
+          <speciesReference species="B"/>
+          <speciesReference species="C"/>
+        </listOfProducts>
+        <kineticLaw formula="1"/>
+      </reaction>
+    </listOfReactions>
+  </model>
+</sbml>
+"""
+    from bionetgen.atomizer.modern import Atomizer
+
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(sbml)
+    assert result.success
+    reaction = next(
+        line
+        for line in result.bngl.splitlines()
+        if line.strip().startswith("r:")
+    )
+    assert "@cytoplasm:M_A()" in reaction
+    assert "@cytoplasm:M_B()" in reaction
+    assert "@extracellular:M_C()" in reaction
+    model = cpp.parse_string(result.bngl)
+    network = cpp.generate_network(model, max_iter=10)
+    assert network.num_species == 3

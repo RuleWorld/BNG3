@@ -112,7 +112,8 @@ void bind_engine(py::module_& m) {
         .def_readwrite("max_sim_steps", &OdeOptions::maxSimSteps)
         .def_readwrite("output_step_interval", &OdeOptions::outputStepInterval)
         .def_readwrite("sparse", &OdeOptions::sparse)
-        .def_readwrite("check_product_scale", &OdeOptions::checkProductScale);
+        .def_readwrite("check_product_scale", &OdeOptions::checkProductScale)
+        .def_readwrite("enforce_nonnegative", &OdeOptions::enforceNonnegative);
 
     m.def("generate_network", [](Model& model, size_t max_iter) {
         py::gil_scoped_release release;

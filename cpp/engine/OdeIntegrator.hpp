@@ -37,6 +37,7 @@ struct OdeOptions {
     bool evaluateExpressions = true; // Evaluate symbolic expressions in .net output
     double checkProductScale = 0.0;  // Warn if product concentrations exceed this (0 = disabled)
     bool binaryOutput = false;     // Write .cdat/.gdat in binary format (4-byte floats, row-major)
+    bool enforceNonnegative = false; // Optional CVODE constraint retry for physical populations
 };
 
 struct OdeResult {
@@ -53,6 +54,9 @@ public:
     void writeOutputFiles(const std::string& prefix, const OdeResult& result, bool printCDAT = true, bool printFunctions = false, bool append = false) const;
     void writeBinaryOutputFiles(const std::string& prefix, const OdeResult& result, bool printCDAT = true) const;
     void derivs(double t, const double* y, double* dydt) const;
+    // CVODE integrates a scaled state to keep very small SBML amounts and
+    // very large converted rate constants numerically well-conditioned.
+    void cvodeDerivs(double t, const double* y, double* dydt) const;
 
     void loadTfun(const std::string& name,
                   const std::string& filePath,
@@ -106,6 +110,9 @@ private:
     bool useCompactConstantReactions_ = false;
     std::vector<std::size_t> functionalRxnIndices_;            // Indices of functional-rate reactions
     io::TfunRegistry tfunRegistry_;                            // Time-function tables for TFUN expressions
+    std::vector<double> cvodeStateScale_;
+    mutable std::vector<double> cvodePhysicalState_;
+    mutable std::vector<double> cvodePhysicalDerivatives_;
 
     void compile();
     void compileGroups();
