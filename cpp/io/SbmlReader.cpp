@@ -220,7 +220,7 @@ std::string mathExpression(const TiXmlElement* element) {
          op == "sinh" || op == "cosh" || op == "tanh" || op == "asinh" ||
          op == "acosh" || op == "atanh" || op == "arcsinh" ||
          op == "arccosh" || op == "arctanh" || op == "floor" ||
-         op == "ceiling")) {
+         op == "ceiling" || op == "factorial")) {
         const std::map<std::string, std::string> bnglNames = {
             {"root", "sqrt"}, {"arcsin", "asin"}, {"arccos", "acos"},
             {"arctan", "atan"}, {"arcsinh", "asinh"},

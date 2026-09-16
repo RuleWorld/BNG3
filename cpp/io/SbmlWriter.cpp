@@ -750,7 +750,7 @@ std::string SbmlWriter::exprToMathML(
                 funcName == "asinh" || funcName == "acosh" || funcName == "atanh" ||
                 funcName == "abs" || funcName == "sqrt" || funcName == "floor" ||
                 funcName == "ceil" || funcName == "ceiling" ||
-                funcName == "min" || funcName == "max") {
+                funcName == "factorial" || funcName == "min" || funcName == "max") {
                 // SBML Level 2 does not permit the Level 3 <min/> and
                 // <max/> MathML operators.  Lower an n-ary extremum to
                 // nested piecewise expressions so the declared L2V3
@@ -803,6 +803,8 @@ std::string SbmlWriter::exprToMathML(
                     out << indent << "  <floor/>\n";
                 } else if (funcName == "ceil" || funcName == "ceiling") {
                     out << indent << "  <ceiling/>\n";
+                } else if (funcName == "factorial") {
+                    out << indent << "  <factorial/>\n";
                 } else {
                     const auto sbmlFunctionName = [&]() -> const char* {
                         if (funcName == "asin") return "arcsin";

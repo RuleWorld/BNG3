@@ -50,6 +50,7 @@ BuiltinFunction builtinFunction(const std::string& rawName) {
     if (name == "cosh") return BuiltinFunction::Cosh;
     if (name == "e") return BuiltinFunction::E;
     if (name == "exp") return BuiltinFunction::Exp;
+    if (name == "factorial") return BuiltinFunction::Factorial;
     if (name == "floor") return BuiltinFunction::Floor;
     if (name == "if") return BuiltinFunction::If;
     if (name == "ln") return BuiltinFunction::Ln;

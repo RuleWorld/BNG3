@@ -153,7 +153,7 @@ bounded output tails.
   integrity gap where variable stoichiometry, fast reactions, lossy MathML,
   or partial Multi semantics could otherwise be reported as numerical passes.
   The focused report-contract tests pass `6/6`; full local gates pass CTest
-  `313/313`, Python `420 passed, 28 skipped`, and validation
+  `315/315`, Python `420 passed, 28 skipped`, and validation
   `84 passed, 117 skipped`.
 - [x] The C++ SBML writer/native reader canonicalize BNGL inverse-trigonometric
   names to the SBML `arcsin`/`arccos`/`arctan` family and hyperbolic variants;
@@ -163,9 +163,9 @@ bounded output tails.
   the generated action phase is present; only untranslated events remain a
   dropped semantic warning. Focused event/lowering and warning-merge tests
   pass `3/3`.
-- [x] The post-gate full SBML Test Suite report is
-  `/private/tmp/bng3-sbml-suite-final-audited.json` (schema 3): `1,923` cases,
-  `673` passed, `1,250` explicitly unsupported, `0` failed, and `0` timed out.
+- [x] The post-change full SBML Test Suite report is
+  `/private/tmp/bng3-sbml-suite-post-factorial.json` (schema 3): `1,923` cases,
+  `687` passed, `1,235` explicitly unsupported, `1` failed, and `0` timed out.
 - [x] The post-gate flat curated BioModels report is
   `/private/tmp/bng3-curated-biomodels-flat-final-audited.json` (schema 4):
   `1,096` records, `591` passed, `459` SBML records explicitly unsupported,
@@ -176,9 +176,19 @@ bounded output tails.
   curated SBML-only `52` constant noninteger, `2` dynamic/
   `stoichiometryMath`, `1` integer above expansion limit.
 - [x] Cause-set projection is recorded as an upper bound: resolving events,
-  MathML, local scope, species assignment, and constraints touches `864` suite
-  records (`470` target-only) and `399` curated SBML records (`378`
+  MathML, local scope, species assignment, and constraints touches `836` suite
+  records (`455` target-only) and `399` curated SBML records (`378`
   target-only); it is not a predicted pass count.
+- [x] The follow-up Core MathML batch adds exact non-negative-integer factorial
+  execution across the evaluator, typed compiler/lowering, BNGL visitor,
+  C++ SBML writer/native reader, and validator diagnostics. Targeted
+  `semantic/00028` and `semantic/00269` pass the full selected round-trip and
+  BNG3-vs-libRoadRunner gate; `semantic/00173` remains failed at its
+  discontinuous rate-rule CVODE comparison and is not relabeled as supported.
+- [x] The follow-up MathML batch removes the false unspecified-rational warning
+  from valid `e-notation` values. All 12 affected selected suite cases pass
+  their semantic checks; the post-change full suite report records the updated
+  aggregate above.
 - [ ] A post-gate full two-mode curated BioModels report is still open: the
   isolated refresh was started but did not reach a terminal report in the
   bounded run. The pre-gate two-mode artifact is not reused as current-head

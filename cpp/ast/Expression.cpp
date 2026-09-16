@@ -214,6 +214,21 @@ double Expression::evaluateWithFunctions(
         if (text_ == "rint") { requireArity(text_, children_, 1); return std::rint(evalArg(0)); }
         if (text_ == "floor") { requireArity(text_, children_, 1); return std::floor(evalArg(0)); }
         if (text_ == "ceil") { requireArity(text_, children_, 1); return std::ceil(evalArg(0)); }
+        if (text_ == "factorial") {
+            requireArity(text_, children_, 1);
+            const double value = evalArg(0);
+            if (!std::isfinite(value) || value < 0.0 || std::floor(value) != value) {
+                throw std::domain_error("Function 'factorial' expects a non-negative integer");
+            }
+            if (value > 170.0) {
+                throw std::overflow_error("Function 'factorial' overflows double precision");
+            }
+            double result = 1.0;
+            for (double i = 2.0; i <= value; i += 1.0) {
+                result *= i;
+            }
+            return result;
+        }
         if (text_ == "min") {
             if (children_.empty()) throw std::runtime_error("Function 'min' expects at least one argument");
             double value = evalArg(0);

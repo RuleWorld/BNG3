@@ -73,6 +73,7 @@ enum class BuiltinFunction {
     Cosh,
     E,
     Exp,
+    Factorial,
     Floor,
     If,
     Ln,

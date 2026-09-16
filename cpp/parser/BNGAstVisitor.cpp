@@ -1043,7 +1043,8 @@ ast::Expression buildObservableRef(BNGParser::Observable_refContext* ctx) {
     // the legacy grammar. Treat their STRING(...) spelling as a built-in
     // function instead of an unresolved observable reference.
     const auto lower = toLower(name);
-    if (lower == "floor" || lower == "ceil" || lower == "ceiling") {
+    if (lower == "floor" || lower == "ceil" || lower == "ceiling" ||
+        lower == "factorial") {
         return ast::Expression::function(
             lower == "ceiling" ? "ceil" : lower, std::move(args));
     }

@@ -786,6 +786,12 @@ def test_playground_parser_preserves_mathml_numeric_and_function_semantics():
     assert rules["call"] == "f(x)"
     assert rules["clock"] == "time * (2 * 10^(3))"
 
+    assert not any(
+        warning.category == "mathml"
+        and "e-notation" in warning.message
+        for warning in model.import_warnings
+    )
+
 
 def test_playground_parser_reports_lossy_mathml_constants_and_operators():
     from bionetgen.atomizer.modern import SBMLParser
@@ -815,10 +821,6 @@ def test_playground_parser_reports_lossy_mathml_constants_and_operators():
     assert {(warning.message, warning.severity) for warning in warnings} == {
         (
             "<infinity> constant encountered in math; emitted as a large finite value.",
-            "approximated",
-        ),
-        (
-            "<factorial> used in math; emitted as factorial(x), which the engine may not support.",
             "approximated",
         ),
     }

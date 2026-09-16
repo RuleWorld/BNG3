@@ -435,10 +435,6 @@ class SBMLParser:
                     add(
                         "<notanumber> constant encountered in math; cannot be represented."
                     )
-                elif tag == "factorial":
-                    add(
-                        "<factorial> used in math; emitted as factorial(x), which the engine may not support."
-                    )
                 elif tag in {"gcd", "lcm"}:
                     add(
                         f"<{tag}> used in math; the engine does not provide it. Emitted as {tag}(...)."
@@ -447,7 +443,12 @@ class SBMLParser:
                     _local_name(child.tag).lower() == "sep" for child in list(element)
                 ):
                     number_type = str(_attribute(element, "type", "") or "").lower()
-                    if number_type != "rational":
+                    # ``sep`` is also the required separator for SBML's
+                    # e-notation form (mantissa <sep/> exponent).  That form
+                    # is already lowered exactly above; only a missing or
+                    # otherwise unknown type needs the conservative
+                    # rational-interpretation diagnostic.
+                    if number_type not in {"rational", "e-notation", "enotation"}:
                         add(
                             "<cn> with <sep/> and unspecified type treated as rational."
                         )

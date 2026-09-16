@@ -42,7 +42,6 @@ UNSUPPORTED_MARKERS = (
     "dropped",
     "cannot be represented",
     "not losslessly representable",
-    "factorial",
     "gcd(",
     "lcm(",
     "notanumber",
@@ -389,7 +388,6 @@ def _unsupported_causes(reason: str) -> list[str]:
         for marker in (
             "mathml",
             "treated as rational",
-            "factorial",
             "gcd(",
             "lcm(",
             "rateof",

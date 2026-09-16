@@ -153,7 +153,8 @@ const char* builtinText(bng::compile::BuiltinFunction op) {
     case Fn::Atanh: return "atanh"; case Fn::Avg: return "avg";
     case Fn::Ceil: return "ceil"; case Fn::Cos: return "cos";
     case Fn::Cosh: return "cosh"; case Fn::E: return "e";
-    case Fn::Exp: return "exp"; case Fn::Floor: return "floor";
+    case Fn::Exp: return "exp"; case Fn::Factorial: return "factorial";
+    case Fn::Floor: return "floor";
     case Fn::If: return "if"; case Fn::Ln: return "ln";
     case Fn::Log10: return "log10"; case Fn::Log2: return "log2";
     case Fn::Max: return "max"; case Fn::Min: return "min";

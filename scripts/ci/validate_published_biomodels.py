@@ -392,7 +392,6 @@ def _unsupported_causes(reason: str) -> list[str]:
         for marker in (
             "mathml",
             "treated as rational",
-            "factorial",
             "gcd(",
             "lcm(",
             "rateof",

@@ -4049,7 +4049,7 @@ def generate_bngl(
             severity="dropped",
         )
 
-    unsupported_functions = ("factorial", "gcd", "lcm", "rint", "delay")
+    unsupported_functions = ("gcd", "lcm", "rint", "delay")
     reaction_local_symbols = set()
     reaction_scopes: Dict[str, Set[str]] = {}
     for reaction_id, reaction in model.reactions.items():
@@ -4455,7 +4455,7 @@ def generate_bngl(
     # the C++ SBML writer cannot serialize these calls losslessly. Record the
     # limitation on the model so validation reports it globally rather than
     # accepting a malformed or semantically altered round trip.
-    for function_name in ("factorial", "gcd", "lcm", "rint", "delay", "rateOf"):
+    for function_name in ("gcd", "lcm", "rint", "delay", "rateOf"):
         if re.search(
             rf"\b{re.escape(function_name)}\s*\(", model_text, re.IGNORECASE
         ):
