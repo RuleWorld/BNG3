@@ -8,6 +8,7 @@ metadata from executable semantic parity.
 
 from __future__ import annotations
 
+import json
 import re
 from collections import OrderedDict
 from typing import Any, Dict, Iterable, Mapping
@@ -158,15 +159,20 @@ def source_metadata_summary(model: SBMLModel) -> Dict[str, Any]:
         "sboTerms": sbo_term_count,
         "metaids": metaid_count,
         "collections": collections,
-        # The ordinary C++ writer does not have a generic metadata channel.
-        # The modern parser retains the source fields and the BNGL writer
-        # emits this classification block; executable parity must not be
-        # inferred from metadata survival alone.
+        # The modern parser retains source fields.  BNGL comments classify
+        # them, while the optional C++ SBML writer channel preserves the
+        # machine-readable payload as non-kinetic annotation.
         "intermediateModelPreserved": True,
         "executableBnglPreserved": False,
+        "executableSbmlPayloadPreserved": bool(
+            getattr(model, "source_metadata_payload", "")
+        ),
         "classification": (
-            "source metadata retained in the intermediate model and reported; "
-            "ordinary executable BNGL/SBML writer path classifies it as non-kinetic"
+            "opaque source metadata payload preserved in executable SBML "
+            "annotation; executable BNGL remains non-kinetic classification"
+            if getattr(model, "source_metadata_payload", "")
+            else "source metadata retained in the intermediate model and "
+            "reported; executable BNGL remains non-kinetic classification"
         ),
     }
 
@@ -191,3 +197,48 @@ def metadata_payload(model: SBMLModel) -> Dict[str, Any]:
         "executableBnglPreserved": summary["executableBnglPreserved"],
     }
     return payload
+
+
+def source_metadata_payload(model: SBMLModel) -> str:
+    """Serialize source metadata for the executable SBML writer channel.
+
+    The payload is intentionally separate from the generated BNGL comment:
+    comments are useful diagnostics, while this compact JSON document is an
+    opaque, namespaced SBML annotation that can survive a normal C++ export.
+    Raw notes/annotation XML is retained per source entity; no metadata is
+    interpreted as executable kinetics.
+    """
+
+    def record(collection: str, item_id: str, item: Any) -> Dict[str, Any]:
+        return {
+            "collection": collection,
+            "id": item_id,
+            **_metadata_fields(item),
+        }
+
+    entities = []
+    for collection, items in _collections(model):
+        for item in items:
+            item_id = getattr(item, "id", None) or getattr(item, "variable", None)
+            fields = _metadata_fields(item)
+            if item_id and any(value for value in fields.values()):
+                entities.append(record(collection, str(item_id), item))
+
+    model_fields = _metadata_fields(model)
+    packages = source_metadata_summary(model)["packages"]
+    if not any(value for value in model_fields.values()) and not entities and not packages:
+        return ""
+
+    payload = {
+        "schemaVersion": 1,
+        "model": {
+            "id": model.id,
+            "name": model.name,
+            **model_fields,
+        },
+        "packages": packages,
+        "entities": entities,
+    }
+    return json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )

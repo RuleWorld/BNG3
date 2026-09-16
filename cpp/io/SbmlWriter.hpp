@@ -37,6 +37,11 @@ public:
         int level = 3;               // SBML level (current core)
         int version = 2;             // SBML version (current core)
         bool networksExport = true;  // Export generated network (vs rules)
+        // Optional opaque source metadata payload supplied by the modern
+        // SBML importer.  It is encoded in a namespaced SBML annotation so
+        // notes/CVTerms/package declarations survive the executable export
+        // without being interpreted as kinetic state.
+        std::string sourceMetadata;
     };
 
     static std::string write(
@@ -73,6 +78,7 @@ private:
         const std::vector<ObservableGroup>& groups);
 
     static std::string writeUnitDefinitions(int level);
+    static std::string writeSourceMetadata(const std::string& payload);
     static std::string writeCompartments(const ast::Model& model, int level);
     static std::string writeParameters(
         const ast::Model& model,

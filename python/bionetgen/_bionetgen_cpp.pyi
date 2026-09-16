@@ -530,7 +530,12 @@ class io:
         ...
 
     @staticmethod
-    def write_sbml(model: Model, network: GeneratedNetwork, path: str) -> None:
+    def write_sbml(
+        model: Model,
+        network: GeneratedNetwork,
+        path: str,
+        source_metadata: str = "",
+    ) -> None:
         """Write model to SBML format."""
         ...
 

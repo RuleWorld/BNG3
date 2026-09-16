@@ -216,9 +216,19 @@ std::string mathExpression(const TiXmlElement* element) {
         (op == "abs" || op == "exp" || op == "ln" || op == "log" ||
          op == "sqrt" || op == "root" || op == "sin" || op == "cos" ||
          op == "tan" || op == "asin" || op == "acos" || op == "atan" ||
+         op == "arcsin" || op == "arccos" || op == "arctan" ||
          op == "sinh" || op == "cosh" || op == "tanh" || op == "asinh" ||
-         op == "acosh" || op == "atanh" || op == "floor" || op == "ceiling")) {
-        return (op == "root" ? "sqrt" : op) + "(" + args.front() + ")";
+         op == "acosh" || op == "atanh" || op == "arcsinh" ||
+         op == "arccosh" || op == "arctanh" || op == "floor" ||
+         op == "ceiling")) {
+        const std::map<std::string, std::string> bnglNames = {
+            {"root", "sqrt"}, {"arcsin", "asin"}, {"arccos", "acos"},
+            {"arctan", "atan"}, {"arcsinh", "asinh"},
+            {"arccosh", "acosh"}, {"arctanh", "atanh"},
+        };
+        const auto found = bnglNames.find(op);
+        const auto& bnglName = found == bnglNames.end() ? op : found->second;
+        return bnglName + "(" + args.front() + ")";
     }
     throw std::runtime_error("unsupported MathML operator: " + op);
 }

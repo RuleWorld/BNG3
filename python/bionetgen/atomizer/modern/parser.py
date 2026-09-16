@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 import re
+import base64
 import xml.etree.ElementTree as ET
 from collections import OrderedDict
 from typing import Any, Dict, Iterable, List, Optional
@@ -115,6 +116,29 @@ def _source_metadata(element: Optional[Any]) -> Dict[str, Any]:
         "notes_xml": _raw_child_xml(element, "notes"),
         "annotation_xml": _raw_child_xml(element, "annotation"),
     }
+
+
+def _source_metadata_payload(element: Optional[Any]) -> str:
+    """Read the optional opaque metadata annotation emitted by BNG3."""
+
+    annotation = _first_child(element, "annotation") if element is not None else None
+    if annotation is None:
+        return ""
+    for candidate in annotation.iter():
+        if _local_name(getattr(candidate, "tag", "")) != "sourceMetadata":
+            continue
+        tag = str(getattr(candidate, "tag", ""))
+        namespace = tag[1:].split("}", 1)[0] if tag.startswith("{") else ""
+        if namespace and namespace != "https://bionetgen.org/sbml":
+            continue
+        value = "".join(candidate.itertext()).strip()
+        if str(_attribute(candidate, "encoding", "")).lower() == "base64":
+            try:
+                return base64.b64decode(value, validate=True).decode("utf-8")
+            except (ValueError, UnicodeDecodeError):
+                return ""
+        return value
+    return ""
 
 
 def _declared_package_uris(sbml_string: str) -> Dict[str, str]:
@@ -586,6 +610,7 @@ class SBMLParser:
                 SBMLParser._xml_items(model, "listOfConstraints", "constraint")
             ),
             **model_metadata,
+            source_metadata_payload=_source_metadata_payload(model),
             declared_packages=declared_package_uris,
             package_required=package_required,
             package_counts=package_counts,

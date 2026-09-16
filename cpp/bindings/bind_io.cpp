@@ -56,12 +56,16 @@ void bind_io(py::module_& m) {
        "Serialize model to BNGL string");
 
     io.def("write_sbml", [](const Model& model, const GeneratedNetwork& network,
-                            const std::string& path) {
-        std::string content = SbmlWriter::write(model, &network);
+                            const std::string& path,
+                            const std::string& source_metadata) {
+        SbmlWriter::Options options;
+        options.sourceMetadata = source_metadata;
+        std::string content = SbmlWriter::write(model, &network, options);
         std::ofstream out(path);
         if (!out) throw std::runtime_error("Cannot open file: " + path);
         out << content;
     }, py::arg("model"), py::arg("network"), py::arg("path"),
+       py::arg("source_metadata") = "",
        "Write model to SBML format");
 
     io.def("read_sbml", [](const std::string& path, bool atomize) {

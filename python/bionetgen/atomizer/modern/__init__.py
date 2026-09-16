@@ -62,7 +62,11 @@ from .archive import (
     extract_sbml_from_omex,
 )
 from .multi import MultiParseResult, parse_multi_package
-from .metadata import metadata_payload, source_metadata_summary
+from .metadata import (
+    metadata_payload,
+    source_metadata_payload,
+    source_metadata_summary,
+)
 from .events import (
     EventActionsResult,
     EventSet,
@@ -507,8 +511,16 @@ class Atomizer:
 
         extraction = extract_sbml_from_combine_archive(archive, member=member)
         result = self.atomize(extraction.sbml)
+        result.archive_metadata = {
+            "format": "COMBINE/OMEX",
+            "member": extraction.member,
+            "candidates": list(extraction.candidates),
+            "manifestMember": extraction.manifest_member,
+            "manifestEntries": [dict(entry) for entry in extraction.manifest_entries],
+        }
         if extraction.warnings:
             result.log.extend(extraction.warnings)
+            result.archive_metadata["warnings"] = list(extraction.warnings)
         return result
 
     def flat_translation(self, sbml_string: str) -> AtomizerResult:
@@ -779,6 +791,7 @@ __all__ = [
     "parse_multi_package",
     "metadata_payload",
     "source_metadata_summary",
+    "source_metadata_payload",
     "parse_resource_uri",
     "parse_species_annotations",
     "sbml_to_bngl",

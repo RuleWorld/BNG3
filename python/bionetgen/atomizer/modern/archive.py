@@ -46,8 +46,10 @@ def _archive_bytes(source: ArchiveSource) -> bytes:
 
 def _manifest_sbml_locations(
     archive: zipfile.ZipFile, members: dict[str, str]
-) -> list[str]:
+) -> tuple[list[str], Optional[str], list[dict[str, str]]]:
     locations: list[str] = []
+    manifest_member: Optional[str] = None
+    entries: list[dict[str, str]] = []
     manifest_names = [
         name
         for name in members
@@ -75,12 +77,34 @@ def _manifest_sbml_locations(
                 ),
                 "",
             )
+            normalised_location = _normalise_member_name(
+                posixpath.join(base, location)
+            )
+            entries.append(
+                {
+                    "location": normalised_location,
+                    "format": format_value,
+                    "master": str(
+                        next(
+                            (
+                                value
+                                for key, value in content.attrib.items()
+                                if key.rsplit("}", 1)[-1] == "master"
+                            ),
+                            "",
+                        )
+                    ).lower(),
+                }
+            )
             if "sbml" not in format_value or not location:
                 continue
-            location = _normalise_member_name(posixpath.join(base, location))
+            location = normalised_location
             if location in members and location not in locations:
                 locations.append(location)
-    return locations
+        if locations:
+            manifest_member = manifest_name
+            break
+    return locations, manifest_member, entries
 
 
 def _sbml_members(archive: zipfile.ZipFile, members: dict[str, str]) -> list[str]:
@@ -108,6 +132,7 @@ class CombineArchiveExtraction:
     member: str
     candidates: tuple[str, ...]
     manifest_member: Optional[str] = None
+    manifest_entries: tuple[dict[str, str], ...] = ()
     warnings: tuple[str, ...] = ()
 
     @property
@@ -151,6 +176,7 @@ def _extract_sbml_from_zip(
         selected: Optional[str] = None
         manifest_member: Optional[str] = None
         warnings: list[str] = []
+        manifest_entries: list[dict[str, str]] = []
         if member is not None:
             selected = _normalise_member_name(member)
             if selected not in candidates:
@@ -159,10 +185,11 @@ def _extract_sbml_from_zip(
                     f"candidates: {', '.join(candidates)}"
                 )
         else:
-            manifest_locations = _manifest_sbml_locations(archive, members)
+            manifest_locations, manifest_member, manifest_entries = (
+                _manifest_sbml_locations(archive, members)
+            )
             if manifest_locations:
                 selected = manifest_locations[0]
-                manifest_member = selected
                 if len(manifest_locations) > 1:
                     warnings.append(
                         f"{archive_label} manifest lists multiple SBML documents; "
@@ -188,6 +215,7 @@ def _extract_sbml_from_zip(
             member=selected,
             candidates=tuple(candidates),
             manifest_member=manifest_member,
+            manifest_entries=tuple(manifest_entries),
             warnings=tuple(warnings),
         )
 

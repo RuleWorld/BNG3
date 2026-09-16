@@ -145,6 +145,45 @@ The complete machine-readable run is retained as
 BNG3, BNG2, NFsim, and PyBioNetGen revisions, oracle paths, commands, and
 bounded output tails.
 
+## SBML semantic-gate correction — 2026-09-16
+
+- [x] The SBML Test Suite and curated BioModels numerical gates now treat
+  semantic `approximated` warnings as unsupported, while retaining
+  informational unit-scale notes as non-blocking. This closes the validator
+  integrity gap where variable stoichiometry, fast reactions, lossy MathML,
+  or partial Multi semantics could otherwise be reported as numerical passes.
+  The focused report-contract tests pass `6/6`; full local gates pass CTest
+  `313/313`, Python `420 passed, 28 skipped`, and validation
+  `84 passed, 117 skipped`.
+- [x] The C++ SBML writer/native reader canonicalize BNGL inverse-trigonometric
+  names to the SBML `arcsin`/`arccos`/`arctan` family and hyperbolic variants;
+  the focused regression passes and the fresh suite moved from `670/1,253`
+  passed/unsupported to `673/1,250`.
+- [x] Fixed-time, constant-valued SBML events are classified as lowered after
+  the generated action phase is present; only untranslated events remain a
+  dropped semantic warning. Focused event/lowering and warning-merge tests
+  pass `3/3`.
+- [x] The post-gate full SBML Test Suite report is
+  `/private/tmp/bng3-sbml-suite-final-audited.json` (schema 3): `1,923` cases,
+  `673` passed, `1,250` explicitly unsupported, `0` failed, and `0` timed out.
+- [x] The post-gate flat curated BioModels report is
+  `/private/tmp/bng3-curated-biomodels-flat-final-audited.json` (schema 4):
+  `1,096` records, `591` passed, `459` SBML records explicitly unsupported,
+  `31` failed, `2` timed out, plus `11` non-SBML records.
+- [x] The reports retain exact unsupported IDs/reasons, non-exclusive cause
+  intersections, and stoichiometry subcauses: suite `188` dynamic/
+  `stoichiometryMath`, `23` constant noninteger, `6` constant negative;
+  curated SBML-only `52` constant noninteger, `2` dynamic/
+  `stoichiometryMath`, `1` integer above expansion limit.
+- [x] Cause-set projection is recorded as an upper bound: resolving events,
+  MathML, local scope, species assignment, and constraints touches `864` suite
+  records (`470` target-only) and `399` curated SBML records (`378`
+  target-only); it is not a predicted pass count.
+- [ ] A post-gate full two-mode curated BioModels report is still open: the
+  isolated refresh was started but did not reach a terminal report in the
+  bounded run. The pre-gate two-mode artifact is not reused as current-head
+  evidence.
+
 ## Published BioModels validation checkpoint — 2026-09-15
 
 - [x] The manifest `provenance/published-biomodels.json` is query-backed and

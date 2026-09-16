@@ -113,9 +113,14 @@ def test_combine_archive_extracts_manifest_selected_sbml():
     assert extract_sbml_from_archive(buffer.getvalue()).member == "model.xml"
     assert extraction.member == "model.xml"
     assert extraction.candidates == ("model.xml",)
+    assert extraction.manifest_member == "manifest.xml"
+    assert extraction.manifest_entries[1]["location"] == "model.xml"
+    assert extraction.manifest_entries[1]["master"] == "true"
     assert "archive_fixture" in extraction.sbml
     result = Atomizer(quiet_mode=True).atomize_archive(buffer.getvalue())
     assert result.success
+    assert result.archive_metadata["manifestMember"] == "manifest.xml"
+    assert result.archive_metadata["member"] == "model.xml"
 
 
 def test_playground_species_extend_honors_update_flag_for_equal_molecule_counts():
@@ -2358,6 +2363,42 @@ def test_playground_atomizer_emits_and_executes_event_actions_and_diagnostics_in
     assert (tmp_path / "event_model.gdat").exists()
 
 
+def test_playground_fixed_time_events_are_not_marked_as_dropped():
+    from bionetgen.atomizer.modern import (
+        SBMLParser,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    source = SBML_FIXTURE.replace(
+        "  </model>",
+        """    <listOfEvents>
+      <event id="dose">
+        <trigger><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><geq/><ci>time</ci><cn>5</cn></apply></math></trigger>
+        <listOfEventAssignments>
+          <eventAssignment variable="A"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>3</cn></math></eventAssignment>
+        </listOfEventAssignments>
+      </event>
+    </listOfEvents>
+  </model>""",
+    )
+    model = SBMLParser().parse(source)
+    sct = build_species_composition_table(model)
+    bngl, _ = generate_bngl(
+        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+    )
+
+    event_warnings = [
+        warning for warning in model.import_warnings if warning.category == "event"
+    ]
+    assert len(event_warnings) == 1
+    assert event_warnings[0].severity == "info"
+    assert "lowered to scheduled BNGL actions" in event_warnings[0].message
+    assert "Events NOT simulated" not in bngl
+
+
 def test_playground_name_standardization_handles_sbml_symbols_and_keywords():
     from bionetgen.atomizer.modern import standardize_name
 
@@ -2798,6 +2839,68 @@ end reaction rules
     assert native["success"] is True
     assert native["species_count"] == network.num_species
     assert native["reaction_count"] == network.num_reactions
+
+
+def test_cpp_sbml_writer_uses_sbml_arc_trigonometric_names(tmp_path):
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    model = cpp.parse_string(
+        """begin parameters
+    x 0.5
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin reaction rules
+    R: A() -> B() asin(x) TotalRate
+end reaction rules
+"""
+    )
+    network = cpp.generate_network(model, max_iter=10)
+    output = tmp_path / "arc-trigonometry.xml"
+    cpp.io.write_sbml(model, network, str(output))
+
+    xml = output.read_text()
+    assert "<arcsin/>" in xml
+    assert "<asin/>" not in xml
+    native = cpp.io.read_sbml(str(output))
+    assert native["success"] is True
+    assert native["species_count"] == network.num_species
+    assert native["reaction_count"] == network.num_reactions
+
+
+def test_cpp_sbml_writer_roundtrips_opaque_source_metadata_payload(tmp_path):
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    from bionetgen.atomizer.modern import SBMLParser
+
+    model = cpp.parse_string(
+        """begin parameters
+    k 1
+end parameters
+begin molecule types
+    A()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin observables
+    Molecules A A()
+end observables
+"""
+    )
+    network = cpp.generate_network(model, max_iter=10)
+    payload = '{"schemaVersion":1,"model":{"metaid":"meta_model"}}'
+    output = tmp_path / "metadata.xml"
+    cpp.io.write_sbml(model, network, str(output), source_metadata=payload)
+
+    xml = output.read_text()
+    assert "bng:sourceMetadata" in xml
+    assert "encoding=\"base64\"" in xml
+    parsed = SBMLParser().parse(xml)
+    assert parsed.source_metadata_payload == payload
 
 
 def test_atomizer_uses_species_level_compartment_prefixes_in_reactions():

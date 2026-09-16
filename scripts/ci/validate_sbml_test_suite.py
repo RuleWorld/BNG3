@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import itertools
 import json
 import math
 import re
@@ -24,7 +25,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-
 
 VERSION_PRIORITY = ("l3v2", "l3v1", "l2v5", "l2v4", "l2v3", "l2v2", "l2v1", "l1v2")
 NUMERICAL_COMPARISON_ATOL_FLOOR = 5e-12
@@ -59,8 +59,7 @@ def _validate_xml(text: str, label: str) -> dict[str, Any]:
     errors = int(document.getNumErrors())
     if errors:
         messages = [
-            document.getError(index).getMessage()
-            for index in range(min(errors, 5))
+            document.getError(index).getMessage() for index in range(min(errors, 5))
         ]
         raise RuntimeError(f"{label} has {errors} libSBML error(s): {messages}")
     consistency_errors = int(document.checkInternalConsistency())
@@ -120,7 +119,9 @@ def _simulate_and_compare(
     missing = []
     for name in names:
         candidates = [sbml_id(name), "obs_" + sbml_id(name)]
-        selected = next((candidate for candidate in candidates if candidate in available), None)
+        selected = next(
+            (candidate for candidate in candidates if candidate in available), None
+        )
         if selected is None:
             missing.append(name)
         else:
@@ -137,9 +138,7 @@ def _simulate_and_compare(
         raise RuntimeError(
             f"libRoadRunner returned shape {rr_values.shape}, expected {expected_shape}"
         )
-    if not np.allclose(
-        rr_values[:, 0], bng_time, rtol=0.0, atol=max(atol, 1e-12)
-    ):
+    if not np.allclose(rr_values[:, 0], bng_time, rtol=0.0, atol=max(atol, 1e-12)):
         raise RuntimeError("BNG3 and libRoadRunner produced different time grids")
     comparison_scale = max(
         [
@@ -277,17 +276,29 @@ def _warning_limitations(warnings: list[dict[str, Any]]) -> list[str]:
         str(warning["message"])
         for warning in warnings
         if any(
-            marker in str(warning["message"]).lower()
-            for marker in UNSUPPORTED_MARKERS
+            marker in str(warning["message"]).lower() for marker in UNSUPPORTED_MARKERS
         )
     ]
 
 
 def _simulation_limitations(warnings: list[dict[str, Any]]) -> list[str]:
+    """Return warnings that prevent an executable numerical claim.
+
+    ``approximated`` is intentionally a hard boundary here.  The parser uses
+    that severity for source constructs such as variable stoichiometry and
+    lossy MathML that can be rendered into BNGL text but cannot be claimed
+    equivalent by this numerical gate.  Informational unit-scale notes are
+    retained because the parser deliberately preserves the source numeric
+    scale in that case.
+    """
+
     limitations = []
     for warning in warnings:
         message = str(warning["message"])
-        if warning["severity"] == "dropped":
+        if (
+            warning["severity"] in {"dropped", "approximated"}
+            and warning.get("category") != "units"
+        ):
             limitations.append(message)
     return limitations
 
@@ -327,6 +338,211 @@ def _warnings(model: Any) -> list[dict[str, Any]]:
     ]
 
 
+def _merge_generated_warnings(
+    source_warnings: list[dict[str, Any]], generated_warnings: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Merge writer diagnostics, replacing parser-only event summaries."""
+
+    if any(warning.get("category") == "event" for warning in generated_warnings):
+        source_warnings = [
+            warning for warning in source_warnings if warning.get("category") != "event"
+        ]
+    for warning in generated_warnings:
+        if warning not in source_warnings:
+            source_warnings.append(warning)
+    return source_warnings
+
+
+def _unsupported_causes(reason: str) -> list[str]:
+    """Normalize an unsupported reason into auditable semantic cause labels."""
+
+    lower = str(reason or "").lower()
+    causes: list[str] = []
+    for package in (
+        "comp",
+        "fbc",
+        "qual",
+        "spatial",
+        "arrays",
+        "distrib",
+        "dyn",
+        "multi",
+    ):
+        if f'"{package}" package' in lower or f"package:{package}" in lower:
+            causes.append(f"package:{package}")
+    if "event" in lower:
+        causes.append("events")
+    if "algebraic rule" in lower:
+        causes.append("algebraic_rules")
+    if "assignment rule targets species" in lower or "speciesassignmentrule" in lower:
+        causes.append("species_assignment_rules")
+    if "stoichiometr" in lower:
+        causes.append("stoichiometry")
+    if "fast-equilibrium" in lower or "marked fast" in lower:
+        causes.append("fast_reactions")
+    if "conversionfactor" in lower or "conversion factor" in lower:
+        causes.append("conversion_factors")
+    if "reaction-local" in lower or "no bngl-wide scope" in lower:
+        causes.append("local_scope")
+    if any(
+        marker in lower
+        for marker in (
+            "mathml",
+            "treated as rational",
+            "factorial",
+            "gcd(",
+            "lcm(",
+            "rateof",
+            "delay",
+        )
+    ):
+        causes.append("mathml")
+    if "constraint" in lower:
+        causes.append("constraints")
+    if "negative numeric rate" in lower or "nonnegative reaction rate" in lower:
+        causes.append("negative_rates")
+    if "no species" in lower or "no species or rate-rule" in lower:
+        causes.append("no_state_variables")
+    if "no reactants or products" in lower:
+        causes.append("reaction_participants")
+    if not causes:
+        causes.append("other")
+    return list(dict.fromkeys(causes))
+
+
+def _record_ref(record: dict[str, Any]) -> str:
+    category = str(record.get("category", "")).strip()
+    identifier = str(record.get("id", "")).strip()
+    return f"{category}/{identifier}" if category else identifier
+
+
+def _stoichiometry_subcauses(reason: str) -> list[str]:
+    """Split the broad stoichiometry boundary into semantic subcauses."""
+
+    lower = str(reason or "").lower()
+    subcauses: list[str] = []
+    if "variable stoichiometry" in lower or "stoichiometrymath" in lower:
+        subcauses.append("dynamic_or_stoichiometryMath")
+    raw_values = re.findall(
+        r"unsupported stoichiometry\s+(-?(?:\d+(?:\.\d*)?|\.\d+))", lower
+    )
+    if any(raw.startswith("-") for raw in raw_values):
+        subcauses.append("constant_negative")
+    if any(
+        not raw.startswith("-") and abs(float(raw) - round(float(raw))) > 1e-12
+        for raw in raw_values
+    ):
+        subcauses.append("constant_noninteger")
+    if any(
+        not raw.startswith("-") and abs(float(raw) - round(float(raw))) <= 1e-12
+        for raw in raw_values
+    ) and any(float(raw) > 100 for raw in raw_values):
+        subcauses.append("constant_integer_above_expansion_limit")
+    if "non-integer reaction stoichiometry" in lower:
+        subcauses.append("constant_noninteger")
+    if "above the bngl expansion limit" in lower:
+        subcauses.append("constant_integer_above_expansion_limit")
+    if "stoichiometr" in lower and not subcauses:
+        subcauses.append("unclassified_stoichiometry")
+    return list(dict.fromkeys(subcauses))
+
+
+def _unsupported_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Attach cause labels and return counts, intersections, and exact IDs."""
+
+    by_cause: dict[str, list[str]] = {}
+    by_cause_records: dict[str, list[str]] = {}
+    by_intersection: dict[tuple[str, ...], list[str]] = {}
+    cardinality: dict[str, int] = {}
+    stoichiometry_subcauses: dict[str, list[str]] = {}
+    unsupported = []
+    for record in records:
+        if record.get("status") != "unsupported":
+            continue
+        reason = str(record.get("unsupported_reason") or record.get("error", ""))
+        if reason and not record.get("unsupported_reason"):
+            record["unsupported_reason"] = reason
+        causes = _unsupported_causes(reason)
+        record["unsupported_causes"] = causes
+        subcauses = _stoichiometry_subcauses(reason)
+        record["unsupported_subcauses"] = (
+            {"stoichiometry": subcauses} if "stoichiometry" in causes else {}
+        )
+        reference = _record_ref(record)
+        unsupported.append(record)
+        unique_causes = tuple(sorted(set(causes)))
+        cardinality[str(len(unique_causes))] = (
+            cardinality.get(str(len(unique_causes)), 0) + 1
+        )
+        by_intersection.setdefault(unique_causes, []).append(reference)
+        for cause in causes:
+            by_cause.setdefault(cause, []).append(str(record.get("id", "")))
+            by_cause_records.setdefault(cause, []).append(reference)
+        for subcause in subcauses:
+            stoichiometry_subcauses.setdefault(subcause, []).append(reference)
+    return {
+        "record_count": len(unsupported),
+        "by_cause": {
+            cause: {
+                "count": len(ids),
+                "ids": ids,
+                "records": by_cause_records[cause],
+            }
+            for cause, ids in sorted(by_cause.items())
+        },
+        "stoichiometry_subsummary": {
+            "record_count": sum(
+                "stoichiometry" in record.get("unsupported_causes", [])
+                for record in unsupported
+            ),
+            "by_subcause": {
+                subcause: {
+                    "count": len(references),
+                    "records": references,
+                }
+                for subcause, references in sorted(stoichiometry_subcauses.items())
+            },
+        },
+        "intersection_summary": {
+            "record_count": len(unsupported),
+            "cause_cardinality": dict(
+                sorted(cardinality.items(), key=lambda item: int(item[0]))
+            ),
+            "by_cause_set": {
+                " + ".join(cause_set) if cause_set else "none": {
+                    "count": len(references),
+                    "records": references,
+                }
+                for cause_set, references in sorted(
+                    by_intersection.items(), key=lambda item: (len(item[0]), item[0])
+                )
+            },
+            "pairwise": {
+                " + ".join(pair): {
+                    "count": sum(
+                        set(pair).issubset(set(record.get("unsupported_causes", [])))
+                        for record in unsupported
+                    ),
+                    "records": [
+                        _record_ref(record)
+                        for record in unsupported
+                        if set(pair).issubset(set(record.get("unsupported_causes", [])))
+                    ],
+                }
+                for pair in sorted(
+                    {
+                        pair
+                        for record in unsupported
+                        for pair in itertools.combinations(
+                            sorted(set(record.get("unsupported_causes", []))), 2
+                        )
+                    }
+                )
+            },
+        },
+    }
+
+
 def _validate_case(
     case: dict[str, Any],
     cpp: Any,
@@ -339,6 +555,7 @@ def _validate_case(
     from bionetgen.atomizer.modern import (
         Atomizer,
         SBMLParser,
+        source_metadata_payload,
         source_metadata_summary,
     )
 
@@ -359,14 +576,15 @@ def _validate_case(
             "warnings": _warnings(parsed),
             "metadata": source_metadata_summary(parsed),
         }
+        source_metadata = source_metadata_payload(parsed)
         atomizer = Atomizer(atomize=False, quiet_mode=True)
         atomized = atomizer.atomize(sbml)
         if not atomized.success:
             raise RuntimeError(atomized.error or "modern Atomizer returned failure")
         source_warnings = record["source_model"]["warnings"]
-        for warning in _warnings(atomizer.model):
-            if warning not in source_warnings:
-                source_warnings.append(warning)
+        source_warnings = _merge_generated_warnings(
+            source_warnings, _warnings(atomizer.model)
+        )
         record["source_model"]["warnings"] = source_warnings
         source_limitations = [
             *_simulation_limitations(source_warnings),
@@ -398,7 +616,12 @@ def _validate_case(
         }
 
         output_path = work_dir / f"{case['category']}_{case['id']}.xml"
-        cpp.io.write_sbml(cpp_model, network, str(output_path))
+        cpp.io.write_sbml(
+            cpp_model,
+            network,
+            str(output_path),
+            source_metadata=source_metadata,
+        )
         output_text = output_path.read_text(encoding="utf-8")
         record["written_xml"] = _validate_xml(output_text, "written SBML")
         reimport_model = SBMLParser().parse(output_text)
@@ -413,14 +636,25 @@ def _validate_case(
             "reimport": record["reimport_model"].get("metadata", {}),
             "status": (
                 "not_present"
-                if not record["source_model"].get("metadata", {}).get("sourcePresent")
-                else "classified_non_kinetic"
+                if not source_metadata
+                else (
+                    "preserved"
+                    if reimport_model.source_metadata_payload == source_metadata
+                    else "dropped"
+                )
+            ),
+            "payloadPresent": bool(reimport_model.source_metadata_payload),
+            "payloadMatch": bool(
+                source_metadata
+                and reimport_model.source_metadata_payload == source_metadata
             ),
         }
         reimport = Atomizer(atomize=False, quiet_mode=True).atomize(output_text)
         if not reimport.success:
             raise RuntimeError(reimport.error or "round-trip Atomizer returned failure")
-        reimport_network = cpp.generate_network(cpp.parse_string(reimport.bngl), max_iter=100)
+        reimport_network = cpp.generate_network(
+            cpp.parse_string(reimport.bngl), max_iter=100
+        )
         record["reimport_network"] = {
             "species": reimport_network.num_species,
             "reactions": reimport_network.num_reactions,
@@ -428,7 +662,9 @@ def _validate_case(
         native = dict(cpp.io.read_sbml(str(output_path), False))
         record["native_reader"] = native
         if not native.get("success"):
-            raise RuntimeError(native.get("error") or "native SBML reader returned failure")
+            raise RuntimeError(
+                native.get("error") or "native SBML reader returned failure"
+            )
         if native["species_count"] != network.num_species:
             raise RuntimeError(
                 f"native species count {native['species_count']} != {network.num_species}"
@@ -480,9 +716,7 @@ def _validate_case(
         record["simulation_comparison"] = comparison
         if not comparison.get("passed", False):
             record["status"] = "failed"
-            record["error"] = comparison.get(
-                "error", "numerical comparison failed"
-            )
+            record["error"] = comparison.get("error", "numerical comparison failed")
         record["core_passed"] = record["status"] == "passed"
     except Exception as exc:
         message = f"{type(exc).__name__}: {exc}"
@@ -499,7 +733,9 @@ def _validate_case(
     return record
 
 
-def _run_isolated_case(case: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
+def _run_isolated_case(
+    case: dict[str, Any], args: argparse.Namespace
+) -> dict[str, Any]:
     """Run one suite case in a bounded child process."""
 
     worker_json = args.json.parent / (
@@ -569,9 +805,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--suite-dir", type=Path, required=True)
     parser.add_argument("--json", type=Path, required=True)
-    parser.add_argument(
-        "--categories", nargs="+", default=["semantic", "stochastic"]
-    )
+    parser.add_argument("--categories", nargs="+", default=["semantic", "stochastic"])
     parser.add_argument("--max-cases", type=int, default=0)
     parser.add_argument("--only-case", help="validate one case as CATEGORY/ID")
     parser.add_argument(
@@ -629,7 +863,9 @@ def main() -> int:
             if args.jobs < 1:
                 raise SystemExit("--jobs must be at least one")
             with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
-                records = list(pool.map(lambda case: _run_isolated_case(case, args), selected))
+                records = list(
+                    pool.map(lambda case: _run_isolated_case(case, args), selected)
+                )
             for case, record in zip(selected, records):
                 print(
                     f"{case['category']}/{case['id']}: {record['status'].upper()}",
@@ -652,6 +888,7 @@ def main() -> int:
                     flush=True,
                 )
 
+    unsupported_summary = _unsupported_summary(records)
     counts = {
         status: sum(record["status"] == status for record in records)
         for status in ("passed", "unsupported", "failed", "timeout")
@@ -667,7 +904,7 @@ def main() -> int:
         for category in args.categories
     }
     report = {
-        "schema_version": 2,
+        "schema_version": 3,
         "suite_dir": str(args.suite_dir.resolve()),
         "suite_commit": commit,
         "writer_sbml_version": "L3V2",
@@ -679,6 +916,8 @@ def main() -> int:
         "counts": counts,
         "by_category": by_category,
         "records": records,
+        "unsupported_summary": unsupported_summary,
+        "sbml_unsupported_summary": unsupported_summary,
         "roundtrip_gate": "SBML XML validation + modern Atomizer/C++ network generation + C++ SBML writer + modern reimport + native C++ reader count check + BNG3 CVODE/libRoadRunner all-observable comparison",
         "simulation": {
             "t_start": 0.0,

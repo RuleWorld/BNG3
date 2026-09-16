@@ -348,6 +348,7 @@ class SBMLModel:
     sbo_term: Optional[str] = None
     notes_xml: str = ""
     annotation_xml: str = ""
+    source_metadata_payload: str = ""
     declared_packages: Mapping[str, str] = field(default_factory=OrderedDict)
     package_required: Mapping[str, bool] = field(default_factory=OrderedDict)
     package_counts: Mapping[str, int] = field(default_factory=OrderedDict)
@@ -419,6 +420,7 @@ class AtomizerResult:
     log: List[Any] = field(default_factory=list)
     success: bool = True
     error: Optional[str] = None
+    archive_metadata: Mapping[str, Any] = field(default_factory=OrderedDict)
 
 
 @dataclass

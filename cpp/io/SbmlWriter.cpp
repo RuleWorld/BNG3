@@ -22,6 +22,38 @@ namespace bng::io {
 
 namespace {
 
+std::string base64Encode(const std::string& input) {
+    static constexpr char alphabet[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string output;
+    output.reserve(((input.size() + 2) / 3) * 4);
+    std::size_t index = 0;
+    while (index + 2 < input.size()) {
+        const auto a = static_cast<unsigned char>(input[index++]);
+        const auto b = static_cast<unsigned char>(input[index++]);
+        const auto c = static_cast<unsigned char>(input[index++]);
+        output.push_back(alphabet[a >> 2]);
+        output.push_back(alphabet[((a & 0x03U) << 4) | (b >> 4)]);
+        output.push_back(alphabet[((b & 0x0fU) << 2) | (c >> 6)]);
+        output.push_back(alphabet[c & 0x3fU]);
+    }
+    const auto remaining = input.size() - index;
+    if (remaining == 1) {
+        const auto a = static_cast<unsigned char>(input[index]);
+        output.push_back(alphabet[a >> 2]);
+        output.push_back(alphabet[(a & 0x03U) << 4]);
+        output += "==";
+    } else if (remaining == 2) {
+        const auto a = static_cast<unsigned char>(input[index++]);
+        const auto b = static_cast<unsigned char>(input[index]);
+        output.push_back(alphabet[a >> 2]);
+        output.push_back(alphabet[((a & 0x03U) << 4) | (b >> 4)]);
+        output.push_back(alphabet[(b & 0x0fU) << 2]);
+        output.push_back('=');
+    }
+    return output;
+}
+
 bool isInternalFunction(const std::string& name) {
     return name.rfind("__assign_rule__", 0) == 0 ||
            name.rfind("__rate_rule_in_", 0) == 0 ||
@@ -167,6 +199,10 @@ std::string SbmlWriter::write(const ast::Model& model, const engine::GeneratedNe
     sbml << "  <model id=\"" << escapeXml(makeValidSBMLId(model.getModelName())) << "\" name=\""
          << escapeXml(model.getModelName()) << "\">\n";
 
+    if (!options.sourceMetadata.empty()) {
+        sbml << writeSourceMetadata(options.sourceMetadata);
+    }
+
     // Unit definitions (Perl: substance = item)
     sbml << writeUnitDefinitions(options.level);
 
@@ -193,6 +229,17 @@ std::string SbmlWriter::write(const ast::Model& model, const engine::GeneratedNe
     sbml << "  </model>\n";
     sbml << "</sbml>\n";
 
+    return sbml.str();
+}
+
+std::string SbmlWriter::writeSourceMetadata(const std::string& payload) {
+    std::ostringstream sbml;
+    sbml << "    <annotation>\n"
+         << "      <bng:sourceMetadata xmlns:bng=\"https://bionetgen.org/sbml\" "
+            "encoding=\"base64\" schemaVersion=\"1\">\n"
+         << "        " << base64Encode(payload) << "\n"
+         << "      </bng:sourceMetadata>\n"
+         << "    </annotation>\n";
     return sbml.str();
 }
 
@@ -757,7 +804,16 @@ std::string SbmlWriter::exprToMathML(
                 } else if (funcName == "ceil" || funcName == "ceiling") {
                     out << indent << "  <ceiling/>\n";
                 } else {
-                    out << indent << "  <" << funcName << "/>\n";
+                    const auto sbmlFunctionName = [&]() -> const char* {
+                        if (funcName == "asin") return "arcsin";
+                        if (funcName == "acos") return "arccos";
+                        if (funcName == "atan") return "arctan";
+                        if (funcName == "asinh") return "arcsinh";
+                        if (funcName == "acosh") return "arccosh";
+                        if (funcName == "atanh") return "arctanh";
+                        return funcName.c_str();
+                    }();
+                    out << indent << "  <" << sbmlFunctionName << "/>\n";
                 }
                 for (const auto& arg : expr.args()) {
                     out << exprToMathML(arg, indent + "  ", symbolIds);

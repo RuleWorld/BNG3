@@ -2303,6 +2303,38 @@ def _record_import_warning(
     )
 
 
+def _update_event_translation_warning(
+    model: SBMLModel, event_result: object
+) -> None:
+    """Make the event diagnostic reflect the executable lowering result."""
+
+    converted = int(getattr(event_result, "converted", 0) or 0)
+    untranslated = list(getattr(event_result, "untranslated", []) or [])
+    if not converted and not untranslated:
+        return
+    if untranslated:
+        message = (
+            f"{len(model.events)} SBML event(s) parsed; {converted} fixed-time "
+            f"event(s) lowered to scheduled actions, while {len(untranslated)} "
+            "state-dependent or non-constant event(s) remain untranslated."
+        )
+        severity = "dropped"
+    else:
+        message = (
+            f"{converted} fixed-time, constant-valued SBML event(s) lowered to "
+            "scheduled BNGL actions; trigger-time semantics are represented by "
+            "explicit simulation phase boundaries."
+        )
+        severity = "info"
+    for warning in getattr(model, "import_warnings", []) or []:
+        if warning.get("category") != "event":
+            continue
+        warning.message = message
+        warning.severity = severity
+        warning.count = len(model.events)
+        return
+
+
 def _curated_parameter_value(model: SBMLModel, parameter_id: str, value: object) -> str:
     """Emit finite BNGL literals for SBML's non-finite parameter values."""
 
@@ -4364,6 +4396,7 @@ def generate_bngl(
                 base_steps=max(1, int(n_steps)),
             ),
         )
+        _update_event_translation_warning(model, event_result)
 
     if event_result is not None and (
         event_result.actions_block or event_result.untranslated

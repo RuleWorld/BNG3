@@ -23,6 +23,7 @@ from bionetgen.atomizer.modern import (
     get_all_annotations,
     parse_resource_uri,
     source_metadata_summary,
+    source_metadata_payload,
 )
 
 
@@ -319,6 +320,35 @@ def test_source_metadata_is_counted_and_classified_in_generated_bngl():
     assert payload["modelId"] == "metadata_model"
     assert payload["packages"]["layout"]["namespace"].endswith("layout/version1")
     assert payload["executableBnglPreserved"] is False
+
+
+def test_source_metadata_payload_is_deterministic_and_contains_raw_entities():
+    from bionetgen.atomizer.modern import SBMLParser
+
+    sbml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
+        xmlns:layout="http://www.sbml.org/sbml/level3/version1/layout/version1"
+        level="3" version="2" layout:required="false">
+      <model id="payload_model" metaid="model_meta">
+        <notes><body xmlns="http://www.w3.org/1999/xhtml">keep me</body></notes>
+        <listOfCompartments><compartment id="cell" size="1"/></listOfCompartments>
+        <listOfSpecies>
+          <species id="A" compartment="cell" initialAmount="1" metaid="species_meta">
+            <annotation><layout:reference>source-reference</layout:reference></annotation>
+          </species>
+        </listOfSpecies>
+      </model>
+    </sbml>"""
+
+    model = SBMLParser().parse(sbml)
+    first = source_metadata_payload(model)
+    second = source_metadata_payload(SBMLParser().parse(sbml))
+
+    assert first == second
+    payload = json.loads(first)
+    assert payload["model"]["metaid"] == "model_meta"
+    assert payload["packages"]["layout"]["required"] is False
+    assert payload["entities"][0]["id"] == "A"
+    assert "source-reference" in payload["entities"][0]["annotationXml"]
 
 
 def test_bng_xml_converter_preserves_reference_sections_and_bonds():

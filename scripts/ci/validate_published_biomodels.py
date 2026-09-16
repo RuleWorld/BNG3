@@ -14,8 +14,10 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import hashlib
+import itertools
 import json
 import math
+import re
 import subprocess
 import sys
 import tempfile
@@ -27,7 +29,6 @@ from pathlib import Path
 from typing import Any, Iterable
 
 import numpy as np
-
 
 USER_AGENT = "BNG3-curated-BioModels-roundtrip-validator/2"
 NUMERICAL_COMPARISON_ATOL_FLOOR = 5e-12
@@ -64,9 +65,7 @@ def _search_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
     hits = payload.get("hits")
     if isinstance(hits, dict) and isinstance(hits.get("hits"), list):
         return [
-            row.get("_source", row)
-            for row in hits["hits"]
-            if isinstance(row, dict)
+            row.get("_source", row) for row in hits["hits"] if isinstance(row, dict)
         ]
     return []
 
@@ -207,8 +206,10 @@ def _enumerate_inventory(
     cache_path = cache_dir / manifest["inventory_cache_name"]
     if cache_path.exists() and not refresh:
         inventory = json.loads(cache_path.read_text(encoding="utf-8"))
-        if fetch_metadata and not offline and _update_cached_artifact_metadata(
-            inventory, manifest
+        if (
+            fetch_metadata
+            and not offline
+            and _update_cached_artifact_metadata(inventory, manifest)
         ):
             cache_path.write_text(
                 json.dumps(inventory, indent=2) + "\n", encoding="utf-8"
@@ -318,8 +319,7 @@ def _validate_xml(text: str, label: str) -> dict[str, Any]:
     errors = int(document.getNumErrors())
     if errors:
         messages = [
-            document.getError(index).getMessage()
-            for index in range(min(errors, 5))
+            document.getError(index).getMessage() for index in range(min(errors, 5))
         ]
         raise RuntimeError(f"{label} has {errors} libSBML error(s): {messages}")
     consistency_errors = int(document.checkInternalConsistency())
@@ -341,11 +341,234 @@ def _warnings(model: Any) -> list[dict[str, Any]]:
     ]
 
 
+def _merge_generated_warnings(
+    source_warnings: list[dict[str, Any]], generated_warnings: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Merge writer diagnostics, replacing parser-only event summaries."""
+
+    if any(warning.get("category") == "event" for warning in generated_warnings):
+        source_warnings = [
+            warning for warning in source_warnings if warning.get("category") != "event"
+        ]
+    for warning in generated_warnings:
+        if warning not in source_warnings:
+            source_warnings.append(warning)
+    return source_warnings
+
+
+def _unsupported_causes(reason: str) -> list[str]:
+    """Normalize an unsupported reason into auditable semantic cause labels."""
+
+    lower = str(reason or "").lower()
+    causes: list[str] = []
+    for package in (
+        "comp",
+        "fbc",
+        "qual",
+        "spatial",
+        "arrays",
+        "distrib",
+        "dyn",
+        "multi",
+    ):
+        if f'"{package}" package' in lower or f"package:{package}" in lower:
+            causes.append(f"package:{package}")
+    if "event" in lower:
+        causes.append("events")
+    if "algebraic rule" in lower:
+        causes.append("algebraic_rules")
+    if "assignment rule targets species" in lower or "speciesassignmentrule" in lower:
+        causes.append("species_assignment_rules")
+    if "stoichiometr" in lower:
+        causes.append("stoichiometry")
+    if "fast-equilibrium" in lower or "marked fast" in lower:
+        causes.append("fast_reactions")
+    if "conversionfactor" in lower or "conversion factor" in lower:
+        causes.append("conversion_factors")
+    if "reaction-local" in lower or "no bngl-wide scope" in lower:
+        causes.append("local_scope")
+    if any(
+        marker in lower
+        for marker in (
+            "mathml",
+            "treated as rational",
+            "factorial",
+            "gcd(",
+            "lcm(",
+            "rateof",
+            "delay",
+        )
+    ):
+        causes.append("mathml")
+    if "constraint" in lower:
+        causes.append("constraints")
+    if "negative numeric rate" in lower or "nonnegative reaction rate" in lower:
+        causes.append("negative_rates")
+    if "no species" in lower or "no species or rate-rule" in lower:
+        causes.append("no_state_variables")
+    if "no reactants or products" in lower:
+        causes.append("reaction_participants")
+    if "no usable sbml" in lower or "not an sbml" in lower:
+        causes.append("format")
+    if not causes:
+        causes.append("other")
+    return list(dict.fromkeys(causes))
+
+
+def _record_ref(record: dict[str, Any]) -> str:
+    category = str(record.get("category", "")).strip()
+    identifier = str(record.get("id", "")).strip()
+    return f"{category}/{identifier}" if category else identifier
+
+
+def _stoichiometry_subcauses(reason: str) -> list[str]:
+    """Split the broad stoichiometry boundary into semantic subcauses."""
+
+    lower = str(reason or "").lower()
+    subcauses: list[str] = []
+    if "variable stoichiometry" in lower or "stoichiometrymath" in lower:
+        subcauses.append("dynamic_or_stoichiometryMath")
+    raw_values = re.findall(
+        r"unsupported stoichiometry\s+(-?(?:\d+(?:\.\d*)?|\.\d+))", lower
+    )
+    if any(raw.startswith("-") for raw in raw_values):
+        subcauses.append("constant_negative")
+    if any(
+        not raw.startswith("-") and abs(float(raw) - round(float(raw))) > 1e-12
+        for raw in raw_values
+    ):
+        subcauses.append("constant_noninteger")
+    if any(
+        not raw.startswith("-") and abs(float(raw) - round(float(raw))) <= 1e-12
+        for raw in raw_values
+    ) and any(float(raw) > 100 for raw in raw_values):
+        subcauses.append("constant_integer_above_expansion_limit")
+    if "non-integer reaction stoichiometry" in lower:
+        subcauses.append("constant_noninteger")
+    if "above the bngl expansion limit" in lower:
+        subcauses.append("constant_integer_above_expansion_limit")
+    if "stoichiometr" in lower and not subcauses:
+        subcauses.append("unclassified_stoichiometry")
+    return list(dict.fromkeys(subcauses))
+
+
+def _unsupported_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Attach cause labels and return counts, intersections, and exact IDs."""
+
+    by_cause: dict[str, list[str]] = {}
+    by_cause_records: dict[str, list[str]] = {}
+    by_intersection: dict[tuple[str, ...], list[str]] = {}
+    cardinality: dict[str, int] = {}
+    stoichiometry_subcauses: dict[str, list[str]] = {}
+    unsupported = []
+    for record in records:
+        if record.get("status") not in {"unsupported", "unsupported_format"}:
+            continue
+        reason = str(record.get("unsupported_reason") or record.get("error", ""))
+        if reason and not record.get("unsupported_reason"):
+            record["unsupported_reason"] = reason
+        causes = (
+            ["format"]
+            if record.get("status") == "unsupported_format"
+            else _unsupported_causes(reason)
+        )
+        record["unsupported_causes"] = causes
+        subcauses = _stoichiometry_subcauses(reason)
+        record["unsupported_subcauses"] = (
+            {"stoichiometry": subcauses} if "stoichiometry" in causes else {}
+        )
+        reference = _record_ref(record)
+        unsupported.append(record)
+        unique_causes = tuple(sorted(set(causes)))
+        cardinality[str(len(unique_causes))] = (
+            cardinality.get(str(len(unique_causes)), 0) + 1
+        )
+        by_intersection.setdefault(unique_causes, []).append(reference)
+        for cause in causes:
+            by_cause.setdefault(cause, []).append(str(record.get("id", "")))
+            by_cause_records.setdefault(cause, []).append(reference)
+        for subcause in subcauses:
+            stoichiometry_subcauses.setdefault(subcause, []).append(reference)
+    return {
+        "record_count": len(unsupported),
+        "by_cause": {
+            cause: {
+                "count": len(ids),
+                "ids": ids,
+                "records": by_cause_records[cause],
+            }
+            for cause, ids in sorted(by_cause.items())
+        },
+        "stoichiometry_subsummary": {
+            "record_count": sum(
+                "stoichiometry" in record.get("unsupported_causes", [])
+                for record in unsupported
+            ),
+            "by_subcause": {
+                subcause: {
+                    "count": len(references),
+                    "records": references,
+                }
+                for subcause, references in sorted(stoichiometry_subcauses.items())
+            },
+        },
+        "intersection_summary": {
+            "record_count": len(unsupported),
+            "cause_cardinality": dict(
+                sorted(cardinality.items(), key=lambda item: int(item[0]))
+            ),
+            "by_cause_set": {
+                " + ".join(cause_set) if cause_set else "none": {
+                    "count": len(references),
+                    "records": references,
+                }
+                for cause_set, references in sorted(
+                    by_intersection.items(), key=lambda item: (len(item[0]), item[0])
+                )
+            },
+            "pairwise": {
+                " + ".join(pair): {
+                    "count": sum(
+                        set(pair).issubset(set(record.get("unsupported_causes", [])))
+                        for record in unsupported
+                    ),
+                    "records": [
+                        _record_ref(record)
+                        for record in unsupported
+                        if set(pair).issubset(set(record.get("unsupported_causes", [])))
+                    ],
+                }
+                for pair in sorted(
+                    {
+                        pair
+                        for record in unsupported
+                        for pair in itertools.combinations(
+                            sorted(set(record.get("unsupported_causes", []))), 2
+                        )
+                    }
+                )
+            },
+        },
+    }
+
+
 def _simulation_limitations(warnings: list[dict[str, Any]]) -> list[str]:
+    """Return warnings that prevent an executable numerical claim.
+
+    ``approximated`` is intentionally a hard boundary here.  A construct may
+    be rendered into BNGL text while still lacking SBML semantic equivalence;
+    the curated numerical gate must not classify that result as passed.
+    Informational unit-scale notes remain non-blocking because the parser
+    preserves the source numeric scale by design.
+    """
+
     limitations = []
     for warning in warnings:
         message = str(warning["message"])
-        if warning["severity"] == "dropped":
+        if (
+            warning["severity"] in {"dropped", "approximated"}
+            and warning.get("category") != "units"
+        ):
             limitations.append(message)
     return limitations
 
@@ -397,7 +620,9 @@ def _sbml_surface_limitations(sbml: str) -> tuple[dict[str, int], list[str]]:
 
     root = ET.fromstring(sbml)
     counts = {
-        "species": sum(_local_name(element.tag) == "species" for element in root.iter()),
+        "species": sum(
+            _local_name(element.tag) == "species" for element in root.iter()
+        ),
         "reactions": sum(
             _local_name(element.tag) == "reaction" for element in root.iter()
         ),
@@ -464,7 +689,10 @@ def _sbml_surface_limitations(sbml: str) -> tuple[dict[str, int], list[str]]:
             "SBML contains variable stoichiometryMath; BNGL reaction rules "
             "require fixed stoichiometry."
         )
-    return {**counts, **{f"package_{key}": value for key, value in package_counts.items()}}, limitations
+    return {
+        **counts,
+        **{f"package_{key}": value for key, value in package_counts.items()},
+    }, limitations
 
 
 def _known_unsupported_error(message: str) -> bool:
@@ -482,7 +710,7 @@ def _known_unsupported_error(message: str) -> bool:
             "assignment rule targets species",
             "unsupported stoichiometry",
             "variable stoichiometry",
-            'package detected',
+            "package detected",
         )
     )
 
@@ -539,7 +767,9 @@ def _simulate_and_compare(
     missing = []
     for name in observable_names:
         candidates = [sbml_id(name), "obs_" + sbml_id(name)]
-        selected = next((candidate for candidate in candidates if candidate in available), None)
+        selected = next(
+            (candidate for candidate in candidates if candidate in available), None
+        )
         if selected is None:
             missing.append(name)
         else:
@@ -556,9 +786,7 @@ def _simulate_and_compare(
         raise RuntimeError(
             f"libRoadRunner returned shape {rr_values.shape}, expected {expected_shape}"
         )
-    if not np.allclose(
-        rr_values[:, 0], bng_time, rtol=0.0, atol=max(atol, 1e-12)
-    ):
+    if not np.allclose(rr_values[:, 0], bng_time, rtol=0.0, atol=max(atol, 1e-12)):
         raise RuntimeError("BNG3 and libRoadRunner produced different time grids")
 
     comparison_scale = max(
@@ -666,6 +894,7 @@ def _validate_mode(
     from bionetgen.atomizer.modern import (
         Atomizer,
         SBMLParser,
+        source_metadata_payload,
         source_metadata_summary,
     )
 
@@ -731,6 +960,7 @@ def _validate_mode(
         "warnings": _warnings(source_model),
         "metadata": source_metadata_summary(source_model),
     }
+    source_metadata = source_metadata_payload(source_model)
     atomizer = Atomizer(atomize=mode_atomize, quiet_mode=True)
     source_warnings = result["source"]["warnings"]
     try:
@@ -752,9 +982,9 @@ def _validate_mode(
         raise
     if not atomized.success:
         raise RuntimeError(atomized.error or "modern Atomizer returned failure")
-    for warning in _warnings(atomizer.model):
-        if warning not in source_warnings:
-            source_warnings.append(warning)
+    source_warnings = _merge_generated_warnings(
+        source_warnings, _warnings(atomizer.model)
+    )
     result["source"]["warnings"] = source_warnings
     source_limitations = [
         *_simulation_limitations(source_warnings),
@@ -787,7 +1017,12 @@ def _validate_mode(
     }
 
     output_path = work_dir / f"{model_id}_{mode}.xml"
-    cpp.io.write_sbml(cpp_model, network, str(output_path))
+    cpp.io.write_sbml(
+        cpp_model,
+        network,
+        str(output_path),
+        source_metadata=source_metadata,
+    )
     roundtrip_sbml = output_path.read_text(encoding="utf-8")
     result["written_xml"] = _validate_xml(roundtrip_sbml, "written SBML")
 
@@ -802,8 +1037,17 @@ def _validate_mode(
         "reimport": result["reimport_parser"].get("metadata", {}),
         "status": (
             "not_present"
-            if not result["source"].get("metadata", {}).get("sourcePresent")
-            else "classified_non_kinetic"
+            if not source_metadata
+            else (
+                "preserved"
+                if roundtrip_model.source_metadata_payload == source_metadata
+                else "dropped"
+            )
+        ),
+        "payloadPresent": bool(roundtrip_model.source_metadata_payload),
+        "payloadMatch": bool(
+            source_metadata
+            and roundtrip_model.source_metadata_payload == source_metadata
         ),
     }
     reimport = Atomizer(atomize=False, quiet_mode=True).atomize(roundtrip_sbml)
@@ -958,13 +1202,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     repo = Path(__file__).resolve().parents[2]
     parser.add_argument(
-        "--manifest", type=Path, default=repo / "provenance" / "published-biomodels.json"
+        "--manifest",
+        type=Path,
+        default=repo / "provenance" / "published-biomodels.json",
     )
     parser.add_argument("--cache-dir", type=Path, required=True)
     parser.add_argument("--json", type=Path, required=True)
-    parser.add_argument(
-        "--mode", choices=("flat", "atomized", "both"), default="flat"
-    )
+    parser.add_argument("--mode", choices=("flat", "atomized", "both"), default="flat")
     parser.add_argument("--refresh-inventory", action="store_true")
     parser.add_argument("--offline", action="store_true")
     parser.add_argument(
@@ -1006,9 +1250,13 @@ def main() -> int:
     if args.only_id:
         selected_models = [entry for entry in all_models if entry["id"] == args.only_id]
         if not selected_models:
-            raise SystemExit(f"BioModels id is not in the curated inventory: {args.only_id}")
+            raise SystemExit(
+                f"BioModels id is not in the curated inventory: {args.only_id}"
+            )
     else:
-        selected_models = all_models[: args.max_models] if args.max_models else all_models
+        selected_models = (
+            all_models[: args.max_models] if args.max_models else all_models
+        )
     partial = bool(args.max_models or args.only_id)
     expected_total = int(manifest["expected_total_records"])
     expected_sbml = int(manifest["expected_sbml_records"])
@@ -1083,9 +1331,7 @@ def main() -> int:
                 try:
                     extraction = extract_sbml_from_archive(path)
                 except ValueError as exc:
-                    reason = (
-                        f"{entry.get('format', 'archive')} contains no usable SBML: {exc}"
-                    )
+                    reason = f"{entry.get('format', 'archive')} contains no usable SBML: {exc}"
                     record.update(
                         status="unsupported",
                         unsupported_reason=reason,
@@ -1149,7 +1395,9 @@ def main() -> int:
                             mode_result["unsupported_reason"] = message
                         mode_results.append(mode_result)
                 record["modes"] = mode_results
-            mode_statuses = [mode_result.get("status", "passed") for mode_result in record["modes"]]
+            mode_statuses = [
+                mode_result.get("status", "passed") for mode_result in record["modes"]
+            ]
             if "failed" in mode_statuses:
                 record["status"] = "failed"
             elif "unsupported" in mode_statuses:
@@ -1179,11 +1427,15 @@ def main() -> int:
         if args.jobs < 1:
             raise SystemExit("--jobs must be at least one")
         if args.jobs == 1:
-            isolated_records = [_run_isolated_model(entry, args) for entry in sbml_selected]
+            isolated_records = [
+                _run_isolated_model(entry, args) for entry in sbml_selected
+            ]
         else:
             with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
                 isolated_records = list(
-                    pool.map(lambda entry: _run_isolated_model(entry, args), sbml_selected)
+                    pool.map(
+                        lambda entry: _run_isolated_model(entry, args), sbml_selected
+                    )
                 )
         records.extend(isolated_records)
         for record in isolated_records:
@@ -1193,6 +1445,7 @@ def main() -> int:
     # concurrently and format-only records were handled inline.
     order = {entry["id"]: index for index, entry in enumerate(selected_models)}
     records.sort(key=lambda record: order[record["id"]])
+    unsupported_summary = _unsupported_summary(records)
 
     sbml_records = [
         record
@@ -1212,7 +1465,7 @@ def main() -> int:
     failed = sum(record.get("status") == "failed" for record in records)
     timeouts = sum(record.get("status") == "timeout" for record in records)
     report = {
-        "schema_version": 3,
+        "schema_version": 4,
         "manifest": str(args.manifest.resolve()),
         "cache_dir": str(args.cache_dir.resolve()),
         "writer_sbml_version": "L3V2",
@@ -1229,6 +1482,8 @@ def main() -> int:
             "engines": ["BNG3 CVODE", "libRoadRunner CVODE"],
         },
         "records": records,
+        "unsupported_summary": unsupported_summary,
+        "sbml_unsupported_summary": _unsupported_summary(sbml_records),
         "summary": {
             "selected_records": len(records),
             "sbml_records": len(sbml_records),
@@ -1257,7 +1512,10 @@ def main() -> int:
             and passed == len(sbml_records)
         ),
         "supported_surface_passed": (
-            not partial and completeness["counts_match"] and failed == 0 and timeouts == 0
+            not partial
+            and completeness["counts_match"]
+            and failed == 0
+            and timeouts == 0
         ),
         "unsupported_formats_are_explicit": True,
         "simulation_comparison_is_required": True,
