@@ -171,7 +171,7 @@ std::string SbmlWriter::write(const ast::Model& model, const engine::GeneratedNe
     sbml << writeUnitDefinitions(options.level);
 
     // Compartments
-    sbml << writeCompartments(model);
+    sbml << writeCompartments(model, options.level);
 
     // Species
     sbml << writeSpecies(model, network);
@@ -213,7 +213,7 @@ std::string SbmlWriter::writeUnitDefinitions(int level) {
     return sbml.str();
 }
 
-std::string SbmlWriter::writeCompartments(const ast::Model& model) {
+std::string SbmlWriter::writeCompartments(const ast::Model& model, int level) {
     std::ostringstream sbml;
     sbml << std::setprecision(17);
 
@@ -233,11 +233,24 @@ std::string SbmlWriter::writeCompartments(const ast::Model& model) {
              << "\" size=\"" << comp.getVolume()
              << "\" constant=\"true\"";
 
-        if (!comp.getParent().empty()) {
+        if (!comp.getParent().empty() && level < 3) {
             sbml << " outside=\"" << makeValidSBMLId(comp.getParent()) << "\"";
         }
 
-        sbml << "/>\n";
+        if (!comp.getParent().empty() && level >= 3) {
+            // SBML L3V2 removed the core `outside` attribute. Preserve the
+            // hierarchy as explicit writer provenance while keeping the
+            // document valid; the current BNG3 compartment model has no
+            // SBML comp-package lowering for hierarchical submodels.
+            sbml << ">\n"
+                 << "        <annotation><bng:outside "
+                    "xmlns:bng=\"https://bionetgen.org/sbml\">"
+                 << escapeXml(makeValidSBMLId(comp.getParent()))
+                 << "</bng:outside></annotation>\n"
+                 << "      </compartment>\n";
+        } else {
+            sbml << "/>\n";
+        }
     }
     sbml << "    </listOfCompartments>\n";
     return sbml.str();

@@ -122,6 +122,24 @@ def test_check_mass_action_matches_source_constant_and_rejects_saturation():
     )
 
 
+def test_check_mass_action_uses_reaction_order_for_concentration_laws():
+    compartments = {"cell": SBMLCompartment(id="cell", size=2)}
+    species_to_compartment = {"A": "cell", "B": "cell"}
+
+    assert (
+        checkMassAction(
+            "k * _c_A() * _c_B()",
+            "A_amt * B_amt",
+            "__compartment_cell__",
+            {"k": 3},
+            compartments,
+            species_to_compartment,
+            reaction_order=2,
+        )
+        == 3
+    )
+
+
 def test_process_reaction_rate_returns_source_shaped_mass_action_result():
     model = _mass_action_model()
 

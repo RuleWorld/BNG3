@@ -2315,7 +2315,9 @@ def test_playground_event_actions_use_source_half_up_step_rounding():
     assert "t_end=>2, n_steps=>3" in result.actions_block
 
 
-def test_playground_atomizer_emits_event_actions_and_diagnostics_in_bngl():
+def test_playground_atomizer_emits_and_executes_event_actions_and_diagnostics_in_bngl(
+    tmp_path,
+):
     from bionetgen.atomizer.modern import (
         SBMLEvent,
         SBMLParser,
@@ -2349,7 +2351,11 @@ def test_playground_atomizer_emits_event_actions_and_diagnostics_in_bngl():
     assert "state_dependent" in bngl
 
     cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
-    cpp.parse_string(bngl)
+    cpp_model = cpp.parse_string(bngl)
+    source_path = tmp_path / "event_model.bngl"
+    source_path.write_text(bngl, encoding="utf-8")
+    cpp.execute(cpp_model, str(source_path))
+    assert (tmp_path / "event_model.gdat").exists()
 
 
 def test_playground_name_standardization_handles_sbml_symbols_and_keywords():

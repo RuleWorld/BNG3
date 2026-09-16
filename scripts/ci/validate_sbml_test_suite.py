@@ -193,10 +193,28 @@ def _simulate_and_compare(
             "passed": passed,
         }
     if failed:
-        raise RuntimeError(
-            "BNG3 CVODE/libRoadRunner observable mismatch: "
-            + ", ".join(failed[:10])
-        )
+        return {
+            "passed": False,
+            "error": (
+                "BNG3 CVODE/libRoadRunner observable mismatch: "
+                + ", ".join(failed[:10])
+            ),
+            "method_bngl": "BNG3 CVODE (simulate method='ode')",
+            "method_sbml": "libRoadRunner CVODE",
+            "roadrunner_version": getattr(roadrunner, "__version__", None),
+            "t_start": 0.0,
+            "t_end": t_end,
+            "n_steps": n_steps,
+            "rtol": rtol,
+            "atol": atol,
+            "comparison_atol_floor": NUMERICAL_COMPARISON_ATOL_FLOOR,
+            "comparison_rtol_floor": NUMERICAL_COMPARISON_RTOL_FLOOR,
+            "comparison_reference_scale": comparison_scale,
+            "observable_count": len(names),
+            "sbml_observable_ids": dict(zip(names, selected_names)),
+            "failed_observables": failed,
+            "observables": comparisons,
+        }
     return {
         "passed": True,
         "method_bngl": "BNG3 CVODE (simulate method='ode')",
@@ -269,12 +287,33 @@ def _simulation_limitations(warnings: list[dict[str, Any]]) -> list[str]:
     limitations = []
     for warning in warnings:
         message = str(warning["message"])
-        lower = message.lower()
-        if warning["severity"] == "dropped" or (
-            "event" in lower and "not executed" in lower
-        ):
+        if warning["severity"] == "dropped":
             limitations.append(message)
     return limitations
+
+
+def _event_translation_limitations(bngl: str) -> list[str]:
+    """Return explicit diagnostics for events the BNGL action lowering rejected."""
+
+    marker = "# Events NOT simulated"
+    if marker not in bngl:
+        return []
+    details = []
+    in_notes = False
+    for line in bngl.splitlines():
+        if line.strip() == marker:
+            in_notes = True
+            continue
+        if in_notes and line.startswith("# ============================"):
+            break
+        if in_notes and line.startswith("#") and line.strip() != "#":
+            details.append(line.lstrip("# "))
+    detail = " | ".join(details[:8])
+    return [
+        "Generated BNGL retained untranslated SBML event(s); "
+        "state-dependent or dynamic event scheduling is outside the BNGL action engine."
+        + (f" Details: {detail}" if detail else "")
+    ]
 
 
 def _warnings(model: Any) -> list[dict[str, Any]]:
@@ -327,6 +366,7 @@ def _validate_case(
         source_limitations = [
             *_simulation_limitations(source_warnings),
             *_warning_limitations(source_warnings),
+            *_event_translation_limitations(atomized.bngl),
         ]
         if not parsed.species and not any(rule.type == "rate" for rule in parsed.rules):
             source_limitations.append(
@@ -414,7 +454,7 @@ def _validate_case(
             record["unsupported_reason"] = " ".join(limitations)
         else:
             record["status"] = "passed"
-        record["simulation_comparison"] = _simulate_and_compare(
+        comparison = _simulate_and_compare(
             cpp_model,
             output_path,
             t_end=simulation_t_end,
@@ -422,6 +462,12 @@ def _validate_case(
             rtol=simulation_rtol,
             atol=simulation_atol,
         )
+        record["simulation_comparison"] = comparison
+        if not comparison.get("passed", False):
+            record["status"] = "failed"
+            record["error"] = comparison.get(
+                "error", "numerical comparison failed"
+            )
         record["core_passed"] = record["status"] == "passed"
     except Exception as exc:
         message = f"{type(exc).__name__}: {exc}"

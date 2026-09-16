@@ -1,8 +1,8 @@
-"""Safe SBML event translation for the Playground-derived atomizer.
+"""SBML event translation for the Playground-derived atomizer.
 
-The simulation engine has no general trigger executor.  The Playground port
-therefore translates only fixed-time, constant-valued events into BNGL action
-phases and records every other event as an explicit diagnostic.
+Fixed-time, constant-valued events are lowered to executable BNGL action
+phases.  State-dependent or otherwise dynamic events remain explicit
+diagnostics because the BNGL action language has no general trigger scheduler.
 """
 
 from __future__ import annotations

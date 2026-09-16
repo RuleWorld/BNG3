@@ -345,12 +345,126 @@ def _simulation_limitations(warnings: list[dict[str, Any]]) -> list[str]:
     limitations = []
     for warning in warnings:
         message = str(warning["message"])
-        lower = message.lower()
-        if warning["severity"] == "dropped" or (
-            "event" in lower and "not executed" in lower
-        ):
+        if warning["severity"] == "dropped":
             limitations.append(message)
     return limitations
+
+
+def _event_translation_limitations(bngl: str) -> list[str]:
+    """Return explicit diagnostics for events the BNGL action lowering rejected."""
+
+    marker = "# Events NOT simulated"
+    if marker not in bngl:
+        return []
+    details = []
+    in_notes = False
+    for line in bngl.splitlines():
+        if line.strip() == marker:
+            in_notes = True
+            continue
+        if in_notes and line.startswith("# ============================"):
+            break
+        if in_notes and line.startswith("#") and line.strip() != "#":
+            details.append(line.lstrip("# "))
+    detail = " | ".join(details[:8])
+    return [
+        "Generated BNGL retained untranslated SBML event(s); "
+        "state-dependent or dynamic event scheduling is outside the BNGL action engine."
+        + (f" Details: {detail}" if detail else "")
+    ]
+
+
+def _local_name(tag: str) -> str:
+    return str(tag).rsplit("}", 1)[-1]
+
+
+def _attribute(element: ET.Element, name: str, default: Any = None) -> Any:
+    for key, value in element.attrib.items():
+        if key == name or key.rsplit("}", 1)[-1] == name:
+            return value
+    return default
+
+
+def _sbml_surface_limitations(sbml: str) -> tuple[dict[str, int], list[str]]:
+    """Detect package and stoichiometry boundaries before expensive atomization.
+
+    This is deliberately structural.  It prevents large package documents
+    from spending the model timeout in a kinetic network expansion while
+    retaining a reproducible, model-independent unsupported reason.  Events
+    are counted for reporting but are translated by the modern writer and
+    therefore are not a surface-level unsupported condition here.
+    """
+
+    root = ET.fromstring(sbml)
+    counts = {
+        "species": sum(_local_name(element.tag) == "species" for element in root.iter()),
+        "reactions": sum(
+            _local_name(element.tag) == "reaction" for element in root.iter()
+        ),
+        "events": sum(_local_name(element.tag) == "event" for element in root.iter()),
+    }
+    package_counts: Counter[str] = Counter()
+    for element in root.iter():
+        tag = str(element.tag)
+        if not tag.startswith("{"):
+            continue
+        namespace = tag[1:].split("}", 1)[0].lower()
+        for package in ("fbc", "qual", "comp", "distrib"):
+            if f"/{package}/" in namespace:
+                package_counts[package] += 1
+
+    limitations: list[str] = []
+    if package_counts["fbc"]:
+        limitations.append(
+            "SBML fbc package is present; flux-balance constraints/objectives "
+            "define a constraint-based model with no kinetic BNGL equivalent."
+        )
+    if package_counts["qual"]:
+        limitations.append(
+            "SBML qual package is present; qualitative/logical transitions "
+            "have no quantitative BNGL reaction-rule equivalent."
+        )
+    if package_counts["comp"]:
+        limitations.append(
+            "SBML comp package is present; hierarchical submodels are not "
+            "flattened by the Atomizer."
+        )
+    if package_counts["distrib"]:
+        limitations.append(
+            "SBML distrib package is present; uncertainty/distribution "
+            "semantics are not imported into BNGL."
+        )
+    for reference in root.iter():
+        if _local_name(reference.tag) not in {
+            "speciesReference",
+            "modifierSpeciesReference",
+        }:
+            continue
+        raw = _attribute(reference, "stoichiometry")
+        if raw is None:
+            continue
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(value) or value < 0 or abs(value - round(value)) > 1e-12:
+            limitations.append(
+                "SBML contains non-integer reaction stoichiometry; BNGL "
+                "reaction rules require fixed nonnegative integer stoichiometry."
+            )
+            break
+        if value > 100:
+            limitations.append(
+                "SBML contains reaction stoichiometry above the BNGL expansion "
+                "limit of 100; this cannot be represented as a fixed BNGL rule."
+            )
+            break
+    if any(_local_name(element.tag) == "stoichiometryMath" for element in root.iter()):
+        limitations.append(
+            "SBML contains variable stoichiometryMath; BNGL reaction rules "
+            "require fixed stoichiometry."
+        )
+    return {**counts, **{f"package_{key}": value for key, value in package_counts.items()}}, limitations
 
 
 def _known_unsupported_error(message: str) -> bool:
@@ -495,10 +609,28 @@ def _simulate_and_compare(
             "passed": passed,
         }
     if failed:
-        raise RuntimeError(
-            "BNG3 CVODE/libRoadRunner observable mismatch: "
-            + ", ".join(failed[:10])
-        )
+        return {
+            "passed": False,
+            "error": (
+                "BNG3 CVODE/libRoadRunner observable mismatch: "
+                + ", ".join(failed[:10])
+            ),
+            "method_bngl": "BNG3 CVODE (simulate method='ode')",
+            "method_sbml": "libRoadRunner CVODE",
+            "roadrunner_version": getattr(roadrunner, "__version__", None),
+            "t_start": 0.0,
+            "t_end": t_end,
+            "n_steps": n_steps,
+            "rtol": rtol,
+            "atol": atol,
+            "comparison_atol_floor": NUMERICAL_COMPARISON_ATOL_FLOOR,
+            "comparison_rtol_floor": NUMERICAL_COMPARISON_RTOL_FLOOR,
+            "comparison_reference_scale": comparison_scale,
+            "observable_count": len(observable_names),
+            "sbml_observable_ids": dict(zip(observable_names, selected_names)),
+            "failed_observables": failed,
+            "observables": comparisons,
+        }
     return {
         "passed": True,
         "method_bngl": "BNG3 CVODE (simulate method='ode')",
@@ -557,6 +689,21 @@ def _validate_mode(
         }
         result["core_passed"] = False
         return result
+    surface_counts, surface_limitations = _sbml_surface_limitations(sbml)
+    result["source"] = surface_counts
+    if surface_limitations:
+        reason = " ".join(dict.fromkeys(surface_limitations))
+        result["status"] = "unsupported"
+        result["unsupported_reason"] = reason
+        result["simulation_comparison"] = {
+            "passed": False,
+            "skipped": True,
+            "reason": reason,
+            "method_bngl": "BNG3 CVODE",
+            "method_sbml": "libRoadRunner CVODE",
+        }
+        result["core_passed"] = False
+        return result
     try:
         source_model = SBMLParser().parse(sbml)
     except ValueError as exc:
@@ -604,7 +751,10 @@ def _validate_mode(
         if warning not in source_warnings:
             source_warnings.append(warning)
     result["source"]["warnings"] = source_warnings
-    source_limitations = _simulation_limitations(source_warnings)
+    source_limitations = [
+        *_simulation_limitations(source_warnings),
+        *_event_translation_limitations(atomized.bngl),
+    ]
     if not source_model.species and not any(
         rule.type == "rate" for rule in source_model.rules
     ):
@@ -687,7 +837,7 @@ def _validate_mode(
         result["core_passed"] = False
         return result
 
-    result["simulation_comparison"] = _simulate_and_compare(
+    comparison = _simulate_and_compare(
         cpp_model,
         model_type,
         output_path,
@@ -696,6 +846,12 @@ def _validate_mode(
         rtol=simulation_rtol,
         atol=simulation_atol,
     )
+    result["simulation_comparison"] = comparison
+    if not comparison.get("passed", False):
+        result["status"] = "failed"
+        result["core_passed"] = False
+        result["error"] = comparison.get("error", "numerical comparison failed")
+        return result
 
     limitations = _simulation_limitations(result["source"]["warnings"])
     if limitations:

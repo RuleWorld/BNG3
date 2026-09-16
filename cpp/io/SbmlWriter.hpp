@@ -73,7 +73,7 @@ private:
         const std::vector<ObservableGroup>& groups);
 
     static std::string writeUnitDefinitions(int level);
-    static std::string writeCompartments(const ast::Model& model);
+    static std::string writeCompartments(const ast::Model& model, int level);
     static std::string writeParameters(
         const ast::Model& model,
         const std::vector<ObservableGroup>& groups,

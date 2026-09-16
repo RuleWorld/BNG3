@@ -1527,13 +1527,16 @@ def check_mass_action(
     compartments: Mapping[str, object],
     species_to_compartment: Mapping[str, str],
     assignment_rule_variables: Optional[Set[str]] = None,
+    reaction_order: Optional[int] = None,
 ) -> Optional[float]:
     """Numerically check whether a processed rate is a constant mass-action law.
 
     This follows the pinned Playground writer's source contract: normalize amount
-    and concentration operands, evaluate the rate times volume divided by the
-    stoichiometric divisor at several positive points, and accept only a finite
-    low-variance result.
+    and concentration operands, evaluate the rate times the appropriate power of
+    volume divided by the stoichiometric divisor at several positive points, and
+    accept only a finite low-variance result.  ``reaction_order`` is the number
+    of reactant molecules; it defaults to one for compatibility with the public
+    helper's historical first-order contract.
     """
 
     assignment_rule_variables = assignment_rule_variables or set()
@@ -1571,6 +1574,14 @@ def check_mass_action(
         {standardize_name(str(value)) for value in assignment_rule_variables},
         key=len,
     )
+    # BNGL's deterministic mass-action rule uses molecule amounts as state
+    # variables, while SBML concentration laws use C = amount / V.  For an
+    # n-th order law, recover the BNGL rate constant with V**n, not a single
+    # volume factor.  The old one-factor probe was correct only for first
+    # order reactions and made tiny-volume bimolecular models numerically
+    # explosive after SBML round-trip.
+    volume_power = max(0, int(reaction_order if reaction_order is not None else 1))
+    volume_factor = f"({volume})**{volume_power}" if volume_power else "1"
     samples = ((1.25, 3.5), (2.5, 11.0), (7.0, 29.0))
     values: List[float] = []
     for index, (volume_value, species_start) in enumerate(samples):
@@ -1581,7 +1592,7 @@ def check_mass_action(
         for offset, name in enumerate(assignment_names):
             context[name] = 2.0 + offset + index * 0.5
         value = _safe_numeric_expression(
-            f"({rate}) * ({volume}) / ({divisor})", context
+            f"({rate}) * ({volume_factor}) / ({divisor})", context
         )
         if value is None:
             return None
@@ -1972,6 +1983,7 @@ def _rate_for_reaction(
                 for species_id in model.species
             },
             assignment_variables,
+            reaction_order=len(reactants),
         )
         if mass_action_constant is not None:
             return apply_conversion(_number(mass_action_constant))
@@ -2061,6 +2073,7 @@ def _rate_for_reaction(
                 for species_id in model.species
             },
             assignment_variables,
+            reaction_order=len(reactants),
         )
         if mass_action_constant is not None:
             return apply_conversion(_number(mass_action_constant))
@@ -2102,11 +2115,39 @@ def _reaction_species_ids(
     return species_ids
 
 
-def _rate_requires_total_rate(rate: str) -> bool:
-    """Identify retained SBML fluxes that already include all state factors."""
+def _rate_requires_total_rate(
+    rate: str, reactant_ids: Optional[Sequence[str]] = None
+) -> bool:
+    """Identify retained SBML fluxes that still contain dynamic state factors.
+
+    A non-numeric rate is not automatically a complete flux: a zero-argument
+    parameter function can be the coefficient of an ordinary mass-action rule.
+    Only retain ``TotalRate`` when the emitted expression still references a
+    reactant (or is a dynamic zero-order flux).
+    """
 
     parts = _split_reversible_rate(rate) or (rate,)
-    return any(_evaluate_arithmetic(convert_math_expression(part)) is None for part in parts)
+    reactants = list(reactant_ids or [])
+    if not reactants:
+        return any(
+            _evaluate_arithmetic(convert_math_expression(part)) is None
+            for part in parts
+        )
+    for part in parts:
+        if _evaluate_arithmetic(convert_math_expression(part)) is not None:
+            continue
+        if any(
+            re.search(
+                rf"(?:\b{re.escape(standardize_name(species_id))}\b|"
+                rf"_c_{re.escape(standardize_name(species_id))}\s*\(|"
+                rf"\b{re.escape(standardize_name(species_id))}_amt\b)",
+                part,
+                re.IGNORECASE,
+            )
+            for species_id in reactants
+        ):
+            return True
+    return False
 
 
 def process_reaction_rate(
@@ -2140,7 +2181,7 @@ def process_reaction_rate(
         return ProcessedRate(
             rate,
             force_irreversible=bool(reaction.reversible),
-            is_total_rate=_rate_requires_total_rate(rate),
+            is_total_rate=_rate_requires_total_rate(rate, _reaction_species_ids(reaction.reactants)),
         )
 
     forward_ids = _reaction_species_ids(reaction.reactants)
@@ -2166,7 +2207,7 @@ def process_reaction_rate(
         return ProcessedRate(
             rate,
             force_irreversible=bool(reaction.reversible),
-            is_total_rate=_rate_requires_total_rate(rate),
+            is_total_rate=_rate_requires_total_rate(rate, _reaction_species_ids(reaction.reactants)),
         )
 
     reverse_ids = _reaction_species_ids(reaction.products)
@@ -2211,8 +2252,8 @@ def process_reaction_rate(
         force_irreversible=False,
         is_split_rxn=False,
         is_total_rate=(
-            _rate_requires_total_rate(forward_rate)
-            or _rate_requires_total_rate(reverse_rate)
+            _rate_requires_total_rate(forward_rate, forward_ids)
+            or _rate_requires_total_rate(reverse_rate, reverse_ids)
         ),
     )
 
@@ -2292,6 +2333,14 @@ def _inline_reaction_fluxes(
 
     cache: Dict[str, Optional[str]] = {}
 
+    reaction_aliases: Dict[str, tuple[str, ...]] = {
+        str(reaction_id): (
+            str(reaction_id),
+            standardize_name(str(reaction_id)),
+        )
+        for reaction_id in model.reactions
+    }
+
     def reaction_flux(reaction_id: str, reaction: SBMLReaction) -> Optional[str]:
         if reaction_id in cache:
             return cache[reaction_id]
@@ -2344,13 +2393,22 @@ def _inline_reaction_fluxes(
 
     result = expression
     for _ in range(4):
+        tokens = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", result))
+        candidates = [
+            (reaction_id, reaction)
+            for reaction_id, reaction in model.reactions.items()
+            if not (exclude_reaction_id and str(reaction_id) == str(exclude_reaction_id))
+            and not (
+                str(reaction_id) in defined
+                or standardize_name(str(reaction_id)) in defined
+            )
+            and any(alias in tokens for alias in reaction_aliases[str(reaction_id)])
+        ]
+        if not candidates:
+            break
         changed = False
-        for reaction_id, reaction in model.reactions.items():
+        for reaction_id, reaction in candidates:
             reaction_id = str(reaction_id)
-            if exclude_reaction_id and reaction_id == str(exclude_reaction_id):
-                continue
-            if reaction_id in defined or standardize_name(reaction_id) in defined:
-                continue
             flux = reaction_flux(reaction_id, reaction)
             if flux is None:
                 continue
@@ -2836,7 +2894,10 @@ def write_observables(
 
 def _rewrite_zero_argument_calls(expression: str, names: Iterable[str]) -> str:
     result = expression
+    tokens = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", result))
     for name in names:
+        if str(name) not in tokens:
+            continue
         result = re.sub(rf"\b{re.escape(name)}\b(?!\s*\()", f"{name}()", result)
     return result
 
@@ -3053,12 +3114,15 @@ def _rewrite_assignment_rule_references(
     """Emit assignment-rule variables as zero-argument BNGL function calls."""
 
     result = expression
+    tokens = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", result))
     names = sorted(
         {str(name) for name in assignment_rule_variables if str(name)},
         key=len,
         reverse=True,
     )
     for name in names:
+        if name not in tokens and standardize_name(name) not in tokens:
+            continue
         result = re.sub(
             rf"\b{re.escape(name)}\b(?!\s*\()",
             f"{standardize_name(name)}()",
