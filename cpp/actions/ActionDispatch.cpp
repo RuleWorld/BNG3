@@ -1526,7 +1526,10 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             for (std::size_t i = 0; i < network->species.size(); ++i) {
                 const auto& sp = network->species.get(i);
                 std::string prefix;
-                if (sp.isConstant()) prefix = "$";
+                if (!sp.getCompartment().empty()) {
+                    prefix = "@" + sp.getCompartment() + "::";
+                }
+                if (sp.isConstant()) prefix += "$";
                 out << "    " << (i + 1) << " " << prefix << sp.getSpeciesGraph().toString() << " ";
                 // Write concentration - use scientific notation for consistency
                 std::ostringstream concStr;

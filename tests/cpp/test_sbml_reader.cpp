@@ -5,6 +5,7 @@
 #include <string>
 
 #include "io/SbmlReader.hpp"
+#include "tinyxml.h"
 
 TEST_CASE("SBML reader imports a flat reaction network", "[SbmlReader]") {
     const auto path = std::filesystem::temp_directory_path() / "bng3_sbml_reader_test.xml";
@@ -59,6 +60,18 @@ TEST_CASE("SBML reader rejects atomized conversion requests", "[SbmlReader]") {
 
     REQUIRE_FALSE(parsed.success);
     CHECK(parsed.error.find("atomize") != std::string::npos);
+}
+
+TEST_CASE("TinyXML parses numeric character references in source order") {
+    TiXmlDocument document;
+    document.Parse("<root>&#x41;&#xA9;&#160;</root>", nullptr, TIXML_ENCODING_UTF8);
+
+    REQUIRE_FALSE(document.Error());
+    const auto* root = document.FirstChildElement("root");
+    REQUIRE(root != nullptr);
+    REQUIRE(root->GetText() != nullptr);
+    const std::string expected = std::string("A") + "\xC2\xA9\xC2\xA0";
+    CHECK(root->GetText() == expected);
 }
 
 TEST_CASE("SBML reader preserves Core unit metadata") {

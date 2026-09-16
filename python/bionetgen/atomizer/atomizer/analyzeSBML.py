@@ -13,6 +13,7 @@ import itertools
 import bionetgen.atomizer.utils.structures as st
 from copy import deepcopy, copy
 from . import detectOntology
+from .annotation_utils import identifiers_org_databases
 import re
 import difflib
 from bionetgen.atomizer.utils.util import logMess
@@ -630,20 +631,8 @@ class SBMLAnalyzer:
                                 ]
                             )
                             if len(baseSet.intersection(modSet)) == 0:
-                                baseDB = set(
-                                    [
-                                        x.split("/")[-2]
-                                        for x in baseSet
-                                        if "identifiers.org" in x
-                                    ]
-                                )
-                                modDB = set(
-                                    [
-                                        x.split("/")[-2]
-                                        for x in modSet
-                                        if "identifiers.org" in x
-                                    ]
-                                )
+                                baseDB = identifiers_org_databases(baseSet)
+                                modDB = identifiers_org_databases(modSet)
                                 # we stil ahve to check that they both reference the same database
                                 if len(baseDB.intersection(modDB)) > 0:
                                     logMess(
