@@ -32,6 +32,7 @@ from .rate_rule_constants import (
 )
 from .structures import Molecule, Species, read_from_string
 from .helpers import logger
+from .metadata import metadata_payload
 from .types import (
     BNGL_LEXER_KEYWORDS,
     SBMLModel,
@@ -1172,6 +1173,23 @@ def _event_metadata_block(
     return lines
 
 
+def _source_metadata_block(model: SBMLModel) -> List[str]:
+    """Classify non-kinetic SBML metadata in generated BNGL comments."""
+
+    payload = metadata_payload(model)
+    if not payload.get("packages") and not payload.get("metadataEntities"):
+        return []
+    encoded = quote(json.dumps(payload, separators=(",", ":")), safe="")
+    return [
+        "# ==== SBML SOURCE METADATA ====",
+        "# Source notes, CVTerms/MIRIAM annotations, SBO terms, and package declarations",
+        "# are retained by the parser but are not executable BNGL state.",
+        "# The ordinary C++ SBML writer does not serialize this metadata channel.",
+        f"# @sbml-metadata {encoded}",
+        "# ================================",
+    ]
+
+
 def _extract_statistical_factor(
     rate: str, reactant_structures: Mapping[str, Species]
 ) -> str:
@@ -1935,6 +1953,7 @@ def _rate_for_reaction(
     )
     if (
         _ENABLE_MASS_ACTION_CHECK
+        and not functional
         and not has_saturation
         and len(model.reactions) < _MASS_ACTION_SKIP_MIN_REACTIONS
         and len(converted_for_check) < _MASS_ACTION_SKIP_EXPR_LEN
@@ -2058,6 +2077,7 @@ def _rate_for_reaction(
     }
     if (
         _ENABLE_MASS_ACTION_CHECK
+        and not functional
         and len(model.reactions) < _MASS_ACTION_SKIP_MIN_REACTIONS
         and len(converted_rate) < _MASS_ACTION_SKIP_EXPR_LEN
         and not re.search(r"\btime\s*\(", converted_rate)
@@ -4392,6 +4412,10 @@ def generate_bngl(
         model_text += (
             "\n" + "\n".join(_event_metadata_block(model, species_to_pattern)) + "\n"
         )
+
+    source_metadata_block = _source_metadata_block(model)
+    if source_metadata_block:
+        model_text += "\n" + "\n".join(source_metadata_block) + "\n"
 
     # Some SBML operators are lowered by the BNGL compatibility layer (for
     # example floor -> rint/piecewise). The generated BNGL is executable, but

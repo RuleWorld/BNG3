@@ -317,7 +317,9 @@ def test_playground_parser_returns_structured_import_warning_records():
     model = SBMLParser().parse(sbml)
 
     assert model.import_warnings
-    warning = model.import_warnings[0]
+    warning = next(
+        warning for warning in model.import_warnings if warning.category == "constraint"
+    )
     assert isinstance(warning, SBMLImportWarning)
     assert warning.category == "constraint"
     assert warning["category"] == warning.category

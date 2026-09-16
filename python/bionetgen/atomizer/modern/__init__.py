@@ -62,6 +62,7 @@ from .archive import (
     extract_sbml_from_omex,
 )
 from .multi import MultiParseResult, parse_multi_package
+from .metadata import metadata_payload, source_metadata_summary
 from .events import (
     EventActionsResult,
     EventSet,
@@ -776,6 +777,8 @@ __all__ = [
     "parse_time_threshold",
     "parseTimeThreshold",
     "parse_multi_package",
+    "metadata_payload",
+    "source_metadata_summary",
     "parse_resource_uri",
     "parse_species_annotations",
     "sbml_to_bngl",

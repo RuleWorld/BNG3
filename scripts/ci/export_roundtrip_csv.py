@@ -43,11 +43,24 @@ FIELDS = [
     "source_species",
     "source_reactions",
     "source_warnings_json",
+    "source_metadata_json",
+    "source_packages_json",
+    "source_package_required_json",
+    "source_package_counts_json",
+    "source_cv_terms",
+    "source_annotation_resources",
+    "source_metadata_entities",
+    "source_notes",
+    "source_annotations",
+    "source_sbo_terms",
+    "source_metaids",
     "generated_species",
     "generated_reactions",
     "written_xml_passed",
     "reimport_species",
     "reimport_reactions",
+    "reimport_metadata_json",
+    "metadata_roundtrip_status",
     "native_reader_success",
     "native_species_count",
     "native_reaction_count",
@@ -175,6 +188,20 @@ def _row(
     )
     if not isinstance(simulation, dict):
         simulation = {}
+    source_metadata = source_info.get("metadata", {})
+    if not isinstance(source_metadata, dict):
+        source_metadata = {}
+    reimport_model = primary.get("reimport_model") or record.get(
+        "reimport_model", {}
+    )
+    if not isinstance(reimport_model, dict):
+        reimport_model = {}
+    reimport_metadata = reimport_model.get("metadata", {})
+    if not isinstance(reimport_metadata, dict):
+        reimport_metadata = {}
+    metadata_roundtrip = record.get("metadata_roundtrip", {})
+    if not isinstance(metadata_roundtrip, dict):
+        metadata_roundtrip = {}
     statuses = [mode.get("status", "passed") for mode in modes]
     mode_errors = {mode.get("mode", "mode"): mode.get("error", "") for mode in modes}
     mode_reasons = {
@@ -223,11 +250,38 @@ def _row(
             "source_species": source_info.get("species", ""),
             "source_reactions": source_info.get("reactions", ""),
             "source_warnings_json": _json(_warnings(record)),
+            "source_metadata_json": _json(source_metadata),
+            "source_packages_json": _json(source_metadata.get("packages")),
+            "source_package_required_json": _json(
+                {
+                    package: value.get("required", False)
+                    for package, value in (source_metadata.get("packages") or {}).items()
+                    if isinstance(value, dict)
+                }
+            ),
+            "source_package_counts_json": _json(
+                {
+                    package: value.get("elementCount", 0)
+                    for package, value in (source_metadata.get("packages") or {}).items()
+                    if isinstance(value, dict)
+                }
+            ),
+            "source_cv_terms": source_metadata.get("cvTerms", ""),
+            "source_annotation_resources": source_metadata.get(
+                "annotationResources", ""
+            ),
+            "source_metadata_entities": source_metadata.get("metadataEntities", ""),
+            "source_notes": source_metadata.get("notes", ""),
+            "source_annotations": source_metadata.get("annotations", ""),
+            "source_sbo_terms": source_metadata.get("sboTerms", ""),
+            "source_metaids": source_metadata.get("metaids", ""),
             "generated_species": generated.get("species", ""),
             "generated_reactions": generated.get("reactions", ""),
             "written_xml_passed": _value(written.get("passed")),
             "reimport_species": reimport.get("species", ""),
             "reimport_reactions": reimport.get("reactions", ""),
+            "reimport_metadata_json": _json(reimport_metadata),
+            "metadata_roundtrip_status": metadata_roundtrip.get("status", ""),
             "native_reader_success": _value(native.get("success")),
             "native_species_count": native.get("species_count", ""),
             "native_reaction_count": native.get("reaction_count", ""),

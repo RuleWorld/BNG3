@@ -120,7 +120,7 @@ def parse_species_annotations(species: SBMLSpecies) -> List[ParsedAnnotation]:
     for annotation in species.annotations:
         if annotation.qualifier_type == 1:
             qualifier_type = "biological"
-            qualifier = BIOLOGICAL_QUALIFIER_NAMES.get(
+            qualifier = annotation.qualifier or BIOLOGICAL_QUALIFIER_NAMES.get(
                 (
                     annotation.biological_qualifier
                     if annotation.biological_qualifier is not None
@@ -130,7 +130,7 @@ def parse_species_annotations(species: SBMLSpecies) -> List[ParsedAnnotation]:
             )
         else:
             qualifier_type = "model"
-            qualifier = MODEL_QUALIFIER_NAMES.get(
+            qualifier = annotation.qualifier or MODEL_QUALIFIER_NAMES.get(
                 (
                     annotation.model_qualifier
                     if annotation.model_qualifier is not None

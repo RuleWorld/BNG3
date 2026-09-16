@@ -407,7 +407,7 @@ def test_multi_product_component_map_carries_source_wildcard_binding_status():
     bngl, _ = generate_bngl(model, sct, molecule_types, get_seed_species(sct, model))
 
     reaction = next(line for line in bngl.splitlines() if line.startswith("  r:"))
-    assert "M_A(x!+)@c -> M_A(x!+)@c" in reaction
+    assert "@c:M_A(x!+) -> @c:M_A(x!+)" in reaction
 
 
 def test_multi_intra_species_reaction_requires_association_or_dissociation_shape():
@@ -532,7 +532,7 @@ def test_multi_compartment_reference_overrides_species_reference_compartment():
     molecule_types = get_molecule_types(sct, model.multi_type_patterns.values())
     bngl, _ = generate_bngl(model, sct, molecule_types, get_seed_species(sct, model))
     reaction = next(line for line in bngl.splitlines() if line.startswith("  move:"))
-    assert "@c1 -> M_A(x)@c2" in reaction
+    assert "@c1:M_A(x) -> @c2:M_A(x)" in reaction
 
 
 def test_multi_namespace_violation_is_parseable_but_not_executable():

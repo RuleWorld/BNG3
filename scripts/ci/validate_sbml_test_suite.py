@@ -336,7 +336,11 @@ def _validate_case(
     simulation_rtol: float,
     simulation_atol: float,
 ) -> dict[str, Any]:
-    from bionetgen.atomizer.modern import Atomizer, SBMLParser
+    from bionetgen.atomizer.modern import (
+        Atomizer,
+        SBMLParser,
+        source_metadata_summary,
+    )
 
     source_path = Path(case["path"])
     sbml = source_path.read_text(encoding="utf-8-sig")
@@ -353,6 +357,7 @@ def _validate_case(
             "species": len(parsed.species),
             "reactions": len(parsed.reactions),
             "warnings": _warnings(parsed),
+            "metadata": source_metadata_summary(parsed),
         }
         atomizer = Atomizer(atomize=False, quiet_mode=True)
         atomized = atomizer.atomize(sbml)
@@ -401,6 +406,16 @@ def _validate_case(
             "species": len(reimport_model.species),
             "reactions": len(reimport_model.reactions),
             "warnings": _warnings(reimport_model),
+            "metadata": source_metadata_summary(reimport_model),
+        }
+        record["metadata_roundtrip"] = {
+            "source": record["source_model"].get("metadata", {}),
+            "reimport": record["reimport_model"].get("metadata", {}),
+            "status": (
+                "not_present"
+                if not record["source_model"].get("metadata", {}).get("sourcePresent")
+                else "classified_non_kinetic"
+            ),
         }
         reimport = Atomizer(atomize=False, quiet_mode=True).atomize(output_text)
         if not reimport.success:

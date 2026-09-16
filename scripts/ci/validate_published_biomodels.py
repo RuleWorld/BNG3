@@ -663,7 +663,11 @@ def _validate_mode(
     simulation_rtol: float,
     simulation_atol: float,
 ) -> dict[str, Any]:
-    from bionetgen.atomizer.modern import Atomizer, SBMLParser
+    from bionetgen.atomizer.modern import (
+        Atomizer,
+        SBMLParser,
+        source_metadata_summary,
+    )
 
     mode = "atomized" if mode_atomize else "flat"
     result: dict[str, Any] = {
@@ -725,6 +729,7 @@ def _validate_mode(
         "species": len(source_model.species),
         "reactions": len(source_model.reactions),
         "warnings": _warnings(source_model),
+        "metadata": source_metadata_summary(source_model),
     }
     atomizer = Atomizer(atomize=mode_atomize, quiet_mode=True)
     source_warnings = result["source"]["warnings"]
@@ -790,6 +795,16 @@ def _validate_mode(
     result["reimport_parser"] = {
         "species": len(roundtrip_model.species),
         "reactions": len(roundtrip_model.reactions),
+        "metadata": source_metadata_summary(roundtrip_model),
+    }
+    result["metadata_roundtrip"] = {
+        "source": result["source"].get("metadata", {}),
+        "reimport": result["reimport_parser"].get("metadata", {}),
+        "status": (
+            "not_present"
+            if not result["source"].get("metadata", {}).get("sourcePresent")
+            else "classified_non_kinetic"
+        ),
     }
     reimport = Atomizer(atomize=False, quiet_mode=True).atomize(roundtrip_sbml)
     if not reimport.success:

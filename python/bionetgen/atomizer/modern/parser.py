@@ -89,6 +89,49 @@ def _mathml_text(element: Optional[Any]) -> str:
     return "".join(element.itertext()).strip()
 
 
+def _raw_child_xml(element: Optional[Any], name: str) -> str:
+    """Serialize source metadata children without treating them as kinetics."""
+
+    if element is None:
+        return ""
+    values = [
+        ET.tostring(child, encoding="unicode")
+        for child in _children(element, name)
+    ]
+    return "\n".join(value.strip() for value in values if value.strip())
+
+
+def _source_metadata(element: Optional[Any]) -> Dict[str, Any]:
+    if element is None:
+        return {
+            "metaid": None,
+            "sbo_term": None,
+            "notes_xml": "",
+            "annotation_xml": "",
+        }
+    return {
+        "metaid": _attribute(element, "metaid"),
+        "sbo_term": _attribute(element, "sboTerm"),
+        "notes_xml": _raw_child_xml(element, "notes"),
+        "annotation_xml": _raw_child_xml(element, "annotation"),
+    }
+
+
+def _declared_package_uris(sbml_string: str) -> Dict[str, str]:
+    """Extract package namespace declarations, including empty packages."""
+
+    result: Dict[str, str] = OrderedDict()
+    pattern = re.compile(
+        r"xmlns(?::[A-Za-z0-9_]+)?\s*=\s*['\"]"
+        r"(https?://www\.sbml\.org/sbml/level3/version\d+/"
+        r"([a-z][a-z0-9_]*)/version\d+)['\"]",
+        re.IGNORECASE,
+    )
+    for match in pattern.finditer(sbml_string):
+        result[match.group(2).lower()] = match.group(1)
+    return result
+
+
 def _mathml_to_formula(element: Optional[Any], parenthesize: bool = False) -> str:
     """Translate the MathML subset used by SBML into stable infix/function text."""
 
@@ -323,16 +366,7 @@ class SBMLParser:
         )
         if model_element is None:
             raise ValueError("SBML document has no model")
-        declared_packages = {
-            match.group(1).lower()
-            for match in re.finditer(
-                r"xmlns(?::[A-Za-z0-9_]+)?\s*=\s*"
-                r"[\"']http://www\.sbml\.org/sbml/level3/version\d+/"
-                r"([a-z]+)/version\d+[\"']",
-                sbml_string,
-                re.IGNORECASE,
-            )
-        }
+        declared_packages = _declared_package_uris(sbml_string)
         return self._parse_xml_model(root, model_element, declared_packages)
 
     @staticmethod
@@ -459,7 +493,9 @@ class SBMLParser:
 
     @staticmethod
     def _parse_xml_model(
-        root: Any, model: Any, declared_packages: Optional[Iterable[str]] = None
+        root: Any,
+        model: Any,
+        declared_packages: Optional[Any] = None,
     ) -> SBMLModel:
         compartments = SBMLParser._parse_xml_compartments(model)
         species = SBMLParser._parse_xml_species(model)
@@ -487,6 +523,35 @@ class SBMLParser:
         except (TypeError, ValueError):
             level_value = None
         model_id = str(_attribute(model, "id", "model") or "model")
+        declared_package_uris = (
+            dict(declared_packages)
+            if isinstance(declared_packages, dict)
+            else {str(package).lower(): "" for package in (declared_packages or [])}
+        )
+        package_required = {
+            package: _bool(root.attrib.get("{" + uri + "}required"), False)
+            for package, uri in declared_package_uris.items()
+            if uri
+        }
+        package_counts: Dict[str, int] = {
+            str(package).lower(): 0 for package in declared_package_uris
+        }
+        package_uri = re.compile(
+            r"^https?://www\.sbml\.org/sbml/level3/version\d+/"
+            r"([a-z][a-z0-9_]*)/version\d+$",
+            re.IGNORECASE,
+        )
+        for element in root.iter():
+            tag = str(getattr(element, "tag", ""))
+            if not tag.startswith("{") or "}" not in tag:
+                continue
+            uri = tag[1:].split("}", 1)[0]
+            match = package_uri.match(uri)
+            if match:
+                package = match.group(1).lower()
+                package_counts[package] = package_counts.get(package, 0) + 1
+
+        model_metadata = _source_metadata(model)
         result = SBMLModel(
             id=model_id,
             name=str(_attribute(model, "name", model_id) or model_id),
@@ -520,6 +585,10 @@ class SBMLParser:
             constraint_count=len(
                 SBMLParser._xml_items(model, "listOfConstraints", "constraint")
             ),
+            **model_metadata,
+            declared_packages=declared_package_uris,
+            package_required=package_required,
+            package_counts=package_counts,
         )
         result.import_warnings.extend(SBMLParser._mathml_import_warnings(root))
         result.import_warnings.extend(apply_unit_scaling(result))
@@ -629,23 +698,6 @@ class SBMLParser:
             "groups": "element grouping",
             "req": "requirements metadata (retired package)",
         }
-        package_counts: Dict[str, int] = {
-            str(package).lower(): 0 for package in (declared_packages or [])
-        }
-        package_uri = re.compile(
-            r"^http://www\.sbml\.org/sbml/level3/version\d+/" r"([a-z]+)/version\d+$",
-            re.IGNORECASE,
-        )
-        for element in root.iter():
-            tag = str(getattr(element, "tag", ""))
-            if not tag.startswith("{") or "}" not in tag:
-                continue
-            uri = tag[1:].split("}", 1)[0]
-            match = package_uri.match(uri)
-            if match:
-                package_counts[match.group(1).lower()] = (
-                    package_counts.get(match.group(1).lower(), 0) + 1
-                )
         package_reasons = {
             "fbc": " This is a constraint-based flux-balance model, not a kinetic time-course model.",
             "qual": " This is a discrete logical model, not a continuous-time kinetic network.",
@@ -762,6 +814,7 @@ class SBMLParser:
                     _attribute(item, "size") is not None
                     or _attribute(item, "volume") is not None
                 ),
+                **_source_metadata(item),
             )
         return result
 
@@ -773,6 +826,7 @@ class SBMLParser:
             qualifier_type = -1
             biological = None
             model_qualifier = None
+            qualifier_name = None
             for descendant in annotation.iter():
                 resource = _attribute(descendant, "resource")
                 if resource is not None and _local_name(descendant.tag) == "li":
@@ -781,9 +835,11 @@ class SBMLParser:
                 if "biology-qualifiers" in namespace:
                     qualifier_type = 1
                     biological = 0 if _local_name(descendant.tag) == "is" else None
+                    qualifier_name = "BQB_" + _local_name(descendant.tag).upper()
                 elif "model-qualifiers" in namespace:
                     qualifier_type = 2
                     model_qualifier = 0 if _local_name(descendant.tag) == "is" else None
+                    qualifier_name = "BQM_" + _local_name(descendant.tag).upper()
             if resources:
                 result.append(
                     AnnotationInfo(
@@ -791,6 +847,7 @@ class SBMLParser:
                         biological_qualifier=biological,
                         model_qualifier=model_qualifier,
                         resources=resources,
+                        qualifier=qualifier_name,
                     )
                 )
         return result
@@ -821,7 +878,6 @@ class SBMLParser:
                 initial_concentration_set=(
                     _attribute(item, "initialConcentration") is not None
                 ),
-                sbo_term=_attribute(item, "sboTerm"),
                 conversion_factor=_attribute(item, "conversionFactor"),
                 charge=(
                     _float(_attribute(item, "charge"))
@@ -829,6 +885,7 @@ class SBMLParser:
                     else None
                 ),
                 species_type=_attribute(item, "speciesType"),
+                **_source_metadata(item),
             )
         return result
 
@@ -851,6 +908,7 @@ class SBMLParser:
                 units=str(_attribute(item, "units", "") or ""),
                 constant=_bool(_attribute(item, "constant"), True),
                 scope="global",
+                **_source_metadata(item),
             )
             existing = result.get(item_id)
             if existing is not None:
@@ -972,6 +1030,7 @@ class SBMLParser:
                     value=_float(_attribute(local, "value"), 0),
                     units=str(_attribute(local, "units", "") or ""),
                     scope="local",
+                    **_source_metadata(local),
                 )
                 local_parameters.append(parameter)
                 SBMLParser._register_alias(local_aliases, raw_local_id, parameter.id)
@@ -1056,6 +1115,7 @@ class SBMLParser:
                 ),
                 conversion_factor=_attribute(item, "conversionFactor"),
                 multi_intra_species=(_local_name(item.tag) == "intraSpeciesReaction"),
+                **_source_metadata(item),
             )
         return result
 
@@ -1109,6 +1169,7 @@ class SBMLParser:
                         else None
                     ),
                     math=math,
+                    **_source_metadata(item),
                 )
             )
         return result
@@ -1168,6 +1229,7 @@ class SBMLParser:
                 name=str(_attribute(item, "name", item_id) or item_id),
                 math=math,
                 arguments=arguments,
+                **_source_metadata(item),
             )
         return result
 
@@ -1231,6 +1293,7 @@ class SBMLParser:
                         SBMLParser._xml_math(priority), parameter_aliases
                     )
                     or None,
+                    **_source_metadata(item),
                 )
             )
         return result
@@ -1268,6 +1331,7 @@ class SBMLParser:
                     SBMLInitialAssignment(
                         symbol=str(symbol),
                         math=math,
+                        **_source_metadata(item),
                     )
                 )
         return result
@@ -1331,6 +1395,8 @@ class SBMLParser:
                 outside=str(item.getOutside() or attrs.get("outside") or "") or None,
                 compartment_type=attrs.get("compartmentType"),
                 size_set="size" in attrs or "volume" in attrs,
+                metaid=attrs.get("metaid"),
+                sbo_term=attrs.get("sboTerm"),
             )
         return result
 
@@ -1364,6 +1430,7 @@ class SBMLParser:
                 conversion_factor=attrs.get("conversionFactor"),
                 charge=_float(attrs["charge"]) if "charge" in attrs else None,
                 species_type=attrs.get("speciesType"),
+                metaid=attrs.get("metaid"),
             )
         return result
 
@@ -1389,8 +1456,11 @@ class SBMLParser:
         return result
 
     @staticmethod
-    def _parse_parameters(model: Any) -> Mapping[str, SBMLParameter]:
+    def _parse_parameters(
+        model: Any, raw: Optional[Dict[str, Dict[str, str]]] = None
+    ) -> Mapping[str, SBMLParameter]:
         result: Dict[str, SBMLParameter] = OrderedDict()
+        raw = raw or {}
         for index in range(model.getNumParameters()):
             item = model.getParameter(index)
             item_id = str(item.getId())
@@ -1403,6 +1473,8 @@ class SBMLParser:
                     bool(item.getConstant()) if hasattr(item, "getConstant") else True
                 ),
                 scope="global",
+                metaid=raw.get(item_id, {}).get("metaid"),
+                sbo_term=raw.get(item_id, {}).get("sboTerm"),
             )
         return result
 
@@ -1501,6 +1573,8 @@ class SBMLParser:
                 )
                 or None,
                 conversion_factor=raw.get(item_id, {}).get("conversionFactor"),
+                metaid=raw.get(item_id, {}).get("metaid"),
+                sbo_term=raw.get(item_id, {}).get("sboTerm"),
             )
         return result
 

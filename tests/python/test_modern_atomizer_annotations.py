@@ -6,8 +6,11 @@ the pinned reference revision, not the implementation under test.
 
 from __future__ import annotations
 
+import json
+import re
 from collections import OrderedDict
 from pathlib import Path
+from urllib.parse import unquote
 
 from bionetgen.atomizer.modern import (
     AnnotationInfo,
@@ -19,6 +22,7 @@ from bionetgen.atomizer.modern import (
     find_equivalent_species,
     get_all_annotations,
     parse_resource_uri,
+    source_metadata_summary,
 )
 
 
@@ -262,6 +266,59 @@ def test_atomizer_annotation_payload_matches_reference_shape():
     assert result.annotation["species"]["A"]["annotations"][0]["resources"] == [
         "uniprot:P12345"
     ]
+
+
+def test_source_metadata_is_counted_and_classified_in_generated_bngl():
+    from bionetgen.atomizer.modern import Atomizer, SBMLParser
+
+    sbml = """<?xml version="1.0"?>
+    <sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
+          xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+          xmlns:bqbiol="http://biomodels.net/biology-qualifiers/"
+          xmlns:layout="http://www.sbml.org/sbml/level3/version1/layout/version1"
+          level="3" version="2" layout:required="false">
+      <model id="metadata_model" metaid="meta_model" sboTerm="SBO:0000001">
+        <notes><body xmlns="http://www.w3.org/1999/xhtml">source note</body></notes>
+        <annotation><rdf:RDF><rdf:Description rdf:about="#meta_model">
+          <bqbiol:is><rdf:Bag><rdf:li rdf:resource="urn:miriam:uniprot:P12345"/></rdf:Bag></bqbiol:is>
+        </rdf:Description></rdf:RDF></annotation>
+        <listOfSpecies>
+          <species id="A" compartment="cell" initialAmount="1" metaid="meta_A" sboTerm="SBO:0000247">
+            <annotation><rdf:RDF><rdf:Description rdf:about="#meta_A">
+              <bqbiol:is><rdf:Bag><rdf:li rdf:resource="uniprot:P12345"/></rdf:Bag></bqbiol:is>
+            </rdf:Description></rdf:RDF></annotation>
+          </species>
+        </listOfSpecies>
+        <listOfCompartments><compartment id="cell" size="1"/></listOfCompartments>
+        <listOfReactions><reaction id="r" sboTerm="SBO:0000176">
+          <listOfReactants><speciesReference species="A"/></listOfReactants>
+          <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></kineticLaw>
+        </reaction></listOfReactions>
+      </model>
+    </sbml>"""
+
+    model = SBMLParser().parse(sbml)
+    summary = source_metadata_summary(model)
+    assert model.metaid == "meta_model"
+    assert model.sbo_term == "SBO:0000001"
+    assert model.species["A"].metaid == "meta_A"
+    assert model.reactions["r"].sbo_term == "SBO:0000176"
+    assert summary["packages"]["layout"]["required"] is False
+    assert summary["cvTerms"] == 2
+    assert summary["annotationResources"] == 2
+    assert summary["sboTerms"] == 3
+    assert summary["intermediateModelPreserved"] is True
+    assert summary["executableBnglPreserved"] is False
+
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(sbml)
+    assert result.success is True
+    line = next(
+        line for line in result.bngl.splitlines() if line.startswith("# @sbml-metadata ")
+    )
+    payload = json.loads(unquote(line.split(" ", 2)[2]))
+    assert payload["modelId"] == "metadata_model"
+    assert payload["packages"]["layout"]["namespace"].endswith("layout/version1")
+    assert payload["executableBnglPreserved"] is False
 
 
 def test_bng_xml_converter_preserves_reference_sections_and_bonds():

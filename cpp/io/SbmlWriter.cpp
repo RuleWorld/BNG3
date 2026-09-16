@@ -797,10 +797,104 @@ std::string SbmlWriter::exprToMathML(
             break;
         }
 
-        case ast::ExpressionKind::TableFunction:
-            throw std::invalid_argument(
-                "SBML writer cannot serialize BNGL table functions without "
-                "an explicit SBML lowering");
+        case ast::ExpressionKind::TableFunction: {
+            // SBML Core has no table-function primitive.  Lower the finite
+            // BNGL table to a MathML piecewise expression.  The interval
+            // boundaries match Expression::evaluate: values below the first
+            // point clamp to y[0], values at x[i] select that point, and
+            // values above the last point clamp to y.back().
+            const auto& xValues = expr.tableXValues();
+            const auto& yValues = expr.tableYValues();
+            if (xValues.empty() || xValues.size() != yValues.size()) {
+                throw std::invalid_argument(
+                    "SBML writer cannot lower an empty or mismatched BNGL table function");
+            }
+            for (std::size_t index = 0; index < xValues.size(); ++index) {
+                if (!std::isfinite(xValues[index]) || !std::isfinite(yValues[index]) ||
+                    (index > 0 && xValues[index] <= xValues[index - 1])) {
+                    throw std::invalid_argument(
+                        "SBML writer cannot lower a non-finite or non-monotone BNGL table function");
+                }
+            }
+            if (expr.args().size() != 1) {
+                throw std::invalid_argument(
+                    "SBML writer cannot lower a table function without one counter expression");
+            }
+
+            auto emitNumber = [&](double value, const std::string& numberIndent) {
+                std::ostringstream number;
+                number << numberIndent << "<cn> " << std::setprecision(17)
+                       << value << " </cn>\n";
+                return number.str();
+            };
+            const auto& counter = expr.args().front();
+            if (xValues.size() == 1) {
+                out << emitNumber(yValues.front(), indent);
+                break;
+            }
+
+            auto emitCondition = [&](double upper, const std::string& conditionIndent) {
+                std::ostringstream condition;
+                condition << conditionIndent << "<apply>\n"
+                          << conditionIndent << "  <lt/>\n"
+                          << exprToMathML(counter, conditionIndent + "  ", symbolIds)
+                          << emitNumber(upper, conditionIndent + "  ")
+                          << conditionIndent << "</apply>\n";
+                return condition.str();
+            };
+
+            out << indent << "<piecewise>\n";
+            // Match the native table evaluator below the first breakpoint.
+            // The interval pieces use only an upper bound so that an exact
+            // breakpoint belongs to the interval starting at that point.
+            {
+                const std::string pieceIndent = indent + "  ";
+                out << pieceIndent << "<piece>\n";
+                const std::string valueIndent = pieceIndent + "  ";
+                out << emitNumber(yValues.front(), valueIndent)
+                    << emitCondition(xValues.front(), valueIndent)
+                    << pieceIndent << "</piece>\n";
+            }
+            for (std::size_t index = 0; index + 1 < xValues.size(); ++index) {
+                const std::string pieceIndent = indent + "  ";
+                out << pieceIndent << "<piece>\n";
+                const std::string valueIndent = pieceIndent + "  ";
+                if (expr.tableMethod() == "step") {
+                    out << emitNumber(yValues[index], valueIndent);
+                } else {
+                    const double denominator = xValues[index + 1] - xValues[index];
+                    out << valueIndent << "<apply>\n"
+                        << valueIndent << "  <plus/>\n"
+                        << emitNumber(yValues[index], valueIndent + "  ")
+                        << valueIndent << "  <apply>\n"
+                        << valueIndent << "    <times/>\n"
+                        << valueIndent << "      <apply>\n"
+                        << valueIndent << "        <divide/>\n"
+                        << valueIndent << "          <apply>\n"
+                        << valueIndent << "            <minus/>\n"
+                        << exprToMathML(counter, valueIndent + "            ", symbolIds)
+                        << emitNumber(xValues[index], valueIndent + "            ")
+                        << valueIndent << "          </apply>\n"
+                        << emitNumber(denominator, valueIndent + "          ")
+                        << valueIndent << "        </apply>\n"
+                        << valueIndent << "        <apply>\n"
+                        << valueIndent << "          <minus/>\n"
+                        << emitNumber(yValues[index + 1], valueIndent + "          ")
+                        << emitNumber(yValues[index], valueIndent + "          ")
+                        << valueIndent << "        </apply>\n"
+                        << valueIndent << "      </apply>\n"
+                        << valueIndent << "    </apply>\n"
+                        << valueIndent << "  </apply>\n";
+                }
+                out << emitCondition(xValues[index + 1], valueIndent)
+                    << pieceIndent << "</piece>\n";
+            }
+            out << indent << "  <otherwise>\n"
+                << emitNumber(yValues.back(), indent + "    ")
+                << indent << "  </otherwise>\n"
+                << indent << "</piecewise>\n";
+            break;
+        }
     }
 
     return out.str();
