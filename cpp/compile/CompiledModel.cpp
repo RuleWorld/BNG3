@@ -1,6 +1,7 @@
 #include "CompiledModel.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <set>
 #include <cctype>
 #include <limits>
@@ -8,6 +9,7 @@
 #include <utility>
 
 #include "ast/Model.hpp"
+#include "UnitAnalysis.hpp"
 
 namespace bng::compile {
 
@@ -52,6 +54,22 @@ struct ObservablePatternText {
     std::string relation;
     int quantity = 0;
 };
+
+std::vector<units::UnitDefinition> authoredUnitDefinitions(const ast::Model& model) {
+    std::vector<units::UnitDefinition> result;
+    for (const auto& definition : model.getUnitSystem().definitions()) {
+        if (!definition.builtin) result.push_back(definition);
+    }
+    return result;
+}
+
+std::optional<units::Unit> defaultUnit(const ast::Model& model,
+                                       const std::string& role) {
+    const auto found = model.getUnitDefaults().find(role);
+    if (found == model.getUnitDefaults().end()) return std::nullopt;
+    const auto parsed = model.getUnitSystem().parse(found->second);
+    return parsed ? parsed.unit : std::nullopt;
+}
 
 std::optional<ObservablePatternText> splitObservablePattern(
     const std::string& source, std::string& error) {
@@ -126,10 +144,15 @@ const CompiledComponentType* CompiledMoleculeType::findComponent(const std::stri
 }
 
 CompiledModel::CompiledModel(const ast::Model& model)
-    : metadata_{model.getModelName(), model.getVersion(), model.getSubstanceUnits(), model.getOptions()},
+    : metadata_{model.getModelName(), model.getVersion(), model.getSubstanceUnits(),
+                model.getOptions(), model.getUnitDefaults(), authoredUnitDefinitions(model)},
       features_(featuresUsed(model)),
       symbols_(SymbolTable::fromModel(model)),
       diagnostics_(symbols_.diagnostics()) {
+
+    const auto unitAnalysis = analyzeUnits(model);
+    diagnostics_.insert(diagnostics_.end(), unitAnalysis.diagnostics.begin(),
+                        unitAnalysis.diagnostics.end());
 
     parameters_.reserve(model.getParameters().size());
     for (std::size_t index = 0; index < model.getParameters().all().size(); ++index) {
@@ -147,6 +170,22 @@ CompiledModel::CompiledModel(const ast::Model& model)
             compiled.constantValue = model.getParameters().evaluate(parameter.getName(), 0.0);
         } catch (const std::exception&) {
             if (parameter.hasValue()) compiled.constantValue = parameter.getValue();
+        }
+        if (parameter.hasUnit()) {
+            compiled.declaredUnit = parameter.getUnit();
+            compiled.unitName = parameter.getUnitName();
+        }
+        const auto inferred = unitAnalysis.inferredParameters.find(parameter.getName());
+        if (inferred != unitAnalysis.inferredParameters.end()) {
+            compiled.inferredUnit = inferred->second;
+            if (compiled.unitName.empty()) compiled.unitName = units::formatUnit(inferred->second);
+        }
+        const auto& normalizedUnit = compiled.inferredUnit.has_value()
+                                         ? compiled.inferredUnit
+                                         : compiled.declaredUnit;
+        if (compiled.constantValue.has_value() && normalizedUnit.has_value()) {
+            const double normalized = *compiled.constantValue * normalizedUnit->factor;
+            if (std::isfinite(normalized)) compiled.normalizedValue = normalized;
         }
         parameters_.push_back(std::move(compiled));
     }
@@ -181,6 +220,19 @@ CompiledModel::CompiledModel(const ast::Model& model)
         compiled.volume = compartment.getVolume();
         compiled.dimension = compartment.getDimension();
         compiled.parentName = compartment.getParent();
+        if (compartment.hasUnit()) {
+            compiled.declaredUnit = compartment.getUnit();
+            compiled.unitName = compartment.getUnitName();
+            const double normalized = compiled.volume * compartment.getUnit()->factor;
+            if (std::isfinite(normalized)) compiled.normalizedVolume = normalized;
+        } else if (unitAnalysis.enabled) {
+            if (const auto unit = defaultUnit(model, "volumeUnits")) {
+                compiled.declaredUnit = unit;
+                compiled.unitName = model.getUnitDefaults().at("volumeUnits");
+                const double normalized = compiled.volume * unit->factor;
+                if (std::isfinite(normalized)) compiled.normalizedVolume = normalized;
+            }
+        }
         if (!compiled.parentName.empty()) {
             compiled.parent = symbols_.resolveCompartment(compiled.parentName);
             if (!compiled.parent.has_value()) {
@@ -195,6 +247,28 @@ CompiledModel::CompiledModel(const ast::Model& model)
     for (std::size_t index = 0; index < model.getReactionRules().size(); ++index) {
         auto compiled = CompiledRule::compile(
             model.getReactionRules()[index], model, symbols_, &diagnostics_);
+        const auto& sourceRates = model.getReactionRules()[index].getRates();
+        const auto annotateRate = [&](CompiledRateLaw& rate,
+                                      const ast::Expression& source) {
+            const auto inferred = unitAnalysis.inferredExpressions.find(source.toString());
+            if (inferred != unitAnalysis.inferredExpressions.end()) {
+                rate.unit = inferred->second;
+                rate.unitName = units::formatUnit(inferred->second);
+            }
+        };
+        for (std::size_t rateIndex = 0;
+             rateIndex < compiled.rateLaws_.size() && rateIndex < sourceRates.size();
+             ++rateIndex) {
+            annotateRate(compiled.rateLaws_[rateIndex], sourceRates[rateIndex]);
+        }
+        if (compiled.forward_.rateLaw.has_value() && !sourceRates.empty()) {
+            annotateRate(*compiled.forward_.rateLaw, sourceRates.front());
+        }
+        if (compiled.reverse_.has_value() && compiled.reverse_->rateLaw.has_value() &&
+            !sourceRates.empty()) {
+            const auto reverseIndex = sourceRates.size() > 1 ? 1u : 0u;
+            annotateRate(*compiled.reverse_->rateLaw, sourceRates[reverseIndex]);
+        }
         compiled.setId(ReactionRuleId::fromDenseIndex(index));
         rules_.push_back(std::move(compiled));
     }
@@ -302,6 +376,15 @@ CompiledModel::CompiledModel(const ast::Model& model)
         compiled.amount = amount.resolvedExpression();
         compiled.constant = seed.isConstant();
         compiled.compartment = seed.getCompartment();
+        if (seed.hasUnit()) {
+            compiled.declaredUnit = seed.getUnit();
+            compiled.unitName = seed.getUnitName();
+        } else if (unitAnalysis.enabled) {
+            if (const auto unit = defaultUnit(model, "substanceUnits")) {
+                compiled.declaredUnit = unit;
+                compiled.unitName = model.getUnitDefaults().at("substanceUnits");
+            }
+        }
         if (!compiled.compartment.empty()) {
             compiled.compartmentId = symbols_.resolveCompartment(compiled.compartment);
             if (!compiled.compartmentId.has_value()) {
@@ -313,6 +396,10 @@ CompiledModel::CompiledModel(const ast::Model& model)
         try {
             compiled.evaluatedAmount = seed.getAmount().evaluate(
                 [&](const std::string& name) { return model.getParameters().evaluate(name); });
+            if (compiled.declaredUnit.has_value()) {
+                const double normalized = *compiled.evaluatedAmount * compiled.declaredUnit->factor;
+                if (std::isfinite(normalized)) compiled.normalizedAmount = normalized;
+            }
         } catch (const std::exception&) {
             // Dynamic/time/function-dependent amounts are intentionally retained
             // as expressions without pretending they are compile-time constants.

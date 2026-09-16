@@ -42,6 +42,7 @@ private:
 
     std::unique_ptr<ast::Model> currentModel_;
     std::unordered_set<const BNGParser::Molecule_type_defContext*> predeclaredMoleculeTypes_;
+    std::size_t seedUnitIndex_ = 0;
 };
 
 std::unique_ptr<ast::Model> parseModel(const std::string& sourceText);

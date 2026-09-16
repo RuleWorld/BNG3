@@ -3,8 +3,8 @@
 **Status:** Active; not complete
 **Last audited:** 2026-09-15
 **Repository:** RuleWorld/BNG3
-**Working branch:** `codex/bng3-convergence-continuation-20260915`
-**Current base:** `bad50c9cd659efd893e47d8b88bcfebaa4ebc2ba` (`origin/main`)
+**Working branch:** `codex/bng3-units-20260915`
+**Current base:** `2af9506a1124ce7ebdc30c6967c771f1cd91c63c` (`origin/main`)
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -60,6 +60,36 @@ completion.
   the exception ledger merely to make this file easier to check.
 - Re-audit the whole checklist on the exact release-candidate SHA. Earlier
   evidence is stale after a rebase, autofix, merge, or semantic change.
+
+## Physical units / dimensional-analysis checkpoint — 2026-09-15
+
+The BNG3-native units work is documented in [`BNG3_UNITS.md`](BNG3_UNITS.md).
+It uses explicit bracket annotations and a normalized `begin units` metadata
+block, while preserving ordinary BNGL identifiers and the legacy
+`substanceUnits`/`NumberPerQuantityUnit` compatibility fields.
+
+- [x] Unit algebra and explicit mole/item bridge are covered by
+  `tests/cpp/test_units` (41 assertions, 7 cases), including metric conversion,
+  concentration-to-item conversion and context-dependent second-order rate
+  conversion.
+- [x] Parser collision behavior, dependency inference, strict dimensional
+  diagnostics and backend capability fail-closed behavior are covered by
+  `tests/cpp/test_parser_units` (42 assertions, 6 cases).
+- [x] Native seed/rate lowering and shared SBML Core/SBML-Multi writer mapping
+  are covered by `tests/cpp/test_sbml_units` (33 assertions, 5 cases); the Multi
+  writer reuses Core unit definitions and emits no `multi:units` system.
+- [x] SBML Core unit-definition/default/object metadata extraction is covered by
+  `tests/cpp/test_sbml_reader` (21 assertions, 3 cases), and the executable
+  action path imports that metadata before reconstruction.
+- [x] Python model/binding/snapshot smoke coverage confirms unit metadata is
+  exposed and unit-free snapshots retain their legacy shape.
+- [ ] Validate emitted Core and Multi documents with libSBML/schema and
+  independent SBML semantic oracles across Level 2 and Level 3 package modes.
+- [ ] Complete cross-backend parity for direct NFsim. BNG3 currently rejects
+  unit-bearing models at that adapter boundary until its count-rate bridge is
+  independently validated.
+- [ ] Re-run the complete release/hosted convergence matrix on the final PR
+  head; focused green tests are not release convergence evidence.
 
 ## Current continuation checkpoint — 2026-09-15
 

@@ -60,3 +60,45 @@ TEST_CASE("SBML reader rejects atomized conversion requests", "[SbmlReader]") {
     REQUIRE_FALSE(parsed.success);
     CHECK(parsed.error.find("atomize") != std::string::npos);
 }
+
+TEST_CASE("SBML reader preserves Core unit metadata") {
+    const auto path = std::filesystem::temp_directory_path() / "bng3_sbml_reader_units.xml";
+    std::ofstream out(path);
+    out << R"xml(<?xml version="1.0"?>
+<sbml xmlns="http://www.sbml.org/sbml/level2/version3" level="2" version="3">
+  <model id="units" substanceUnits="item" volumeUnits="fL">
+    <listOfUnitDefinitions>
+      <unitDefinition id="per_s"><listOfUnits>
+        <unit kind="second" exponent="-1"/>
+      </listOfUnits></unitDefinition>
+      <unitDefinition id="nM"><listOfUnits>
+        <unit kind="mole" exponent="1" scale="-9"/>
+        <unit kind="litre" exponent="-1"/>
+      </listOfUnits></unitDefinition>
+    </listOfUnitDefinitions>
+    <listOfCompartments>
+      <compartment id="cell" size="1" units="fL"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="S1" compartment="cell" initialAmount="2" units="item" name="A()"/>
+    </listOfSpecies>
+    <listOfParameters>
+      <parameter id="k" value="3" units="per_s"/>
+    </listOfParameters>
+  </model>
+</sbml>)xml";
+    out.close();
+
+    const auto parsed = bng::io::SbmlReader::parse(path);
+    std::filesystem::remove(path);
+
+    REQUIRE(parsed.success);
+    CHECK(parsed.unitDefaults.at("substanceUnits") == "item");
+    CHECK(parsed.unitDefaults.at("volumeUnits") == "fL");
+    CHECK(parsed.unitDefinitions.at("per_s") == "second^-1");
+    CHECK(parsed.unitDefinitions.at("nM").find("mole") != std::string::npos);
+    CHECK(parsed.parameterUnits.at("k") == "per_s");
+    CHECK(parsed.compartmentUnits.at("cell") == "fL");
+    REQUIRE(parsed.speciesUnits.size() == 1);
+    CHECK(parsed.speciesUnits.front() == "item");
+}

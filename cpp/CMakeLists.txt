@@ -12,6 +12,15 @@ add_library(nauty STATIC ${NAUTY_SOURCES})
 target_include_directories(nauty PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/nauty)
 
 # =============================================================================
+# bng_units (compile-time physical-unit algebra)
+# =============================================================================
+add_library(bng_units STATIC units/Unit.cpp)
+target_include_directories(bng_units PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/units
+)
+
+# =============================================================================
 # bng_core (pattern graph, node, state, transformations)
 # =============================================================================
 file(GLOB BNG_CORE_SOURCES "core/*.cpp")
@@ -35,7 +44,7 @@ target_include_directories(bng_ast PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/parser
     ${antlr4_runtime_SOURCE_DIR}/runtime/Cpp/runtime/src
 )
-target_link_libraries(bng_ast PUBLIC bng_core antlr4_static)
+target_link_libraries(bng_ast PUBLIC bng_core antlr4_static bng_units)
 if(MSVC)
     target_compile_definitions(bng_ast PRIVATE _USE_MATH_DEFINES)
 endif()
@@ -67,6 +76,7 @@ add_library(bng_compile STATIC
     compile/PatternLowering.cpp
     compile/LegacyAstLowering.cpp
     compile/SymbolTable.cpp
+    compile/UnitAnalysis.cpp
     compile/energy/EnergyDeltaPlan.cpp
     compile/CompiledRateLaw.cpp
     compile/CompiledRule.cpp
@@ -88,6 +98,7 @@ add_library(bng_engine STATIC
     io/NetWriter.cpp
     io/NetReader.cpp
     io/SbmlReader.cpp
+    io/SbmlUnitWriter.cpp
     io/XmlWriter.cpp
     io/BnglWriter.cpp
     io/SbmlWriter.cpp

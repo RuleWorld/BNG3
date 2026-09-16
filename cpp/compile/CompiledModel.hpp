@@ -9,6 +9,7 @@
 #include "CompiledRule.hpp"
 #include "SemanticIds.hpp"
 #include "SymbolTable.hpp"
+#include "units/Unit.hpp"
 
 namespace bng::ast { class Model; }
 
@@ -19,6 +20,8 @@ struct ModelMetadata {
     std::string version;
     std::string substanceUnits;
     std::map<std::string, std::string> options;
+    std::map<std::string, std::string> unitDefaults;
+    std::vector<units::UnitDefinition> unitDefinitions;
 };
 
 struct CompiledParameter {
@@ -28,6 +31,12 @@ struct CompiledParameter {
     std::string sourceExpression;
     ResolvedExpression expression;
     std::optional<double> constantValue;
+    // Compile-time physical-basis value.  Existing consumers continue to use
+    // constantValue until a backend conversion context is available.
+    std::optional<double> normalizedValue;
+    std::optional<units::Unit> declaredUnit;
+    std::optional<units::Unit> inferredUnit;
+    std::string unitName;
 };
 
 struct CompiledComponentType {
@@ -57,6 +66,9 @@ struct CompiledCompartment {
     int dimension = 3;
     std::string parentName;
     std::optional<CompartmentId> parent;
+    std::optional<units::Unit> declaredUnit;
+    std::string unitName;
+    std::optional<double> normalizedVolume;
 };
 
 enum class ObservableKind {
@@ -117,6 +129,9 @@ struct CompiledSeed {
     std::optional<CompartmentId> compartmentId;
     std::string structuralFingerprint;
     Pattern pattern;
+    std::optional<units::Unit> declaredUnit;
+    std::string unitName;
+    std::optional<double> normalizedAmount;
 };
 
 enum class PopulationMapKind {
