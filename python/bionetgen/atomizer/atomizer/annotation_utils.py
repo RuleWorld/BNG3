@@ -1,10 +1,11 @@
 """Helpers for validating and classifying external annotation URLs."""
 
 from collections.abc import Iterable
+from typing import Optional
 from urllib.parse import urlsplit
 
 
-def identifiers_org_database(value: str) -> str | None:
+def identifiers_org_database(value: str) -> Optional[str]:
     """Return the database segment of an identifiers.org URL.
 
     Annotation values are read from user-supplied SBML.  Parse the URL and
