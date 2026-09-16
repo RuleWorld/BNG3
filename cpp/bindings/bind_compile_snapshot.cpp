@@ -298,6 +298,9 @@ py::dict directionSnapshot(const CompiledRuleDirection& direction,
         py::dict rate;
         rate["kind"] = static_cast<int>(direction.rateLaw->kind);
         rate["expression"] = expressionSnapshot(direction.rateLaw->resolvedExpression());
+        if (!direction.rateLaw->unitName.empty()) rate["unit"] = direction.rateLaw->unitName;
+        if (direction.rateLaw->unit.has_value())
+            rate["resolved_unit"] = bng::units::formatUnit(*direction.rateLaw->unit);
         result["rate"] = std::move(rate);
     }
     py::list mutations;
@@ -360,6 +363,22 @@ py::dict compiledSnapshot(const bng::ast::Model& astModel) {
     metadata["version"] = model.metadata().version;
     metadata["substance_units"] = model.metadata().substanceUnits;
     metadata["options"] = model.metadata().options;
+    if (!model.metadata().unitDefaults.empty()) {
+        metadata["unit_defaults"] = model.metadata().unitDefaults;
+    }
+    if (!model.metadata().unitDefinitions.empty()) {
+        py::list unitDefinitions;
+        for (const auto& definition : model.metadata().unitDefinitions) {
+            py::dict item;
+            item["id"] = definition.id;
+            item["expression"] = definition.expression;
+            item["builtin"] = definition.builtin;
+            item["unit"] = bng::units::formatUnit(definition.unit);
+            item["factor"] = definition.unit.factor;
+            unitDefinitions.append(std::move(item));
+        }
+        metadata["unit_definitions"] = std::move(unitDefinitions);
+    }
     root["metadata"] = std::move(metadata);
 
     py::list parameters;
@@ -369,6 +388,12 @@ py::dict compiledSnapshot(const bng::ast::Model& astModel) {
         item["name"] = parameter.name;
         item["expression"] = expressionSnapshot(parameter.expression);
         if (parameter.constantValue.has_value()) item["constant_value"] = *parameter.constantValue;
+        if (!parameter.unitName.empty()) item["unit"] = parameter.unitName;
+        if (parameter.declaredUnit.has_value())
+            item["declared_unit"] = bng::units::formatUnit(*parameter.declaredUnit);
+        if (parameter.inferredUnit.has_value())
+            item["inferred_unit"] = bng::units::formatUnit(*parameter.inferredUnit);
+        if (parameter.normalizedValue.has_value()) item["normalized_value"] = *parameter.normalizedValue;
         parameters.append(std::move(item));
     }
     root["parameters"] = std::move(parameters);
@@ -399,6 +424,10 @@ py::dict compiledSnapshot(const bng::ast::Model& astModel) {
         item["name"] = compartment.name;
         item["dimension"] = compartment.dimension;
         item["volume"] = compartment.volume;
+        if (!compartment.unitName.empty()) item["unit"] = compartment.unitName;
+        if (compartment.declaredUnit.has_value())
+            item["declared_unit"] = bng::units::formatUnit(*compartment.declaredUnit);
+        if (compartment.normalizedVolume.has_value()) item["normalized_volume"] = *compartment.normalizedVolume;
         if (compartment.parent.has_value()) item["parent_id"] = compartment.parent->value();
         if (!compartment.parentName.empty()) item["parent"] = compartment.parentName;
         compartments.append(std::move(item));
@@ -412,6 +441,10 @@ py::dict compiledSnapshot(const bng::ast::Model& astModel) {
         item["pattern"] = patternSnapshot(seed.pattern, model);
         item["amount"] = expressionSnapshot(seed.amount);
         item["constant"] = seed.constant;
+        if (!seed.unitName.empty()) item["unit"] = seed.unitName;
+        if (seed.declaredUnit.has_value())
+            item["declared_unit"] = bng::units::formatUnit(*seed.declaredUnit);
+        if (seed.normalizedAmount.has_value()) item["normalized_amount"] = *seed.normalizedAmount;
         if (!seed.compartment.empty()) item["compartment"] = seed.compartment;
         seeds.append(std::move(item));
     }

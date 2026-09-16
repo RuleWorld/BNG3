@@ -21,10 +21,20 @@
 #include "generated/BNGLexer.h"
 #include "generated/BNGParser.h"
 #include "parser/PatternGraphBuilder.hpp"
+#include "compile/UnitAnalysis.hpp"
 
 namespace bng::io {
 
 namespace {
+
+std::string stripQuotes(std::string value) {
+    if (value.size() >= 2 &&
+        ((value.front() == '"' && value.back() == '"') ||
+         (value.front() == '\'' && value.back() == '\''))) {
+        return value.substr(1, value.size() - 2);
+    }
+    return value;
+}
 
 // BNG built-in rate law functions — written directly in reactions, not as _rateLaw params
 const std::unordered_set<std::string> builtinRateLawFunctions = {
@@ -522,10 +532,111 @@ std::optional<std::string> unitConversionExpression(const ast::Rxn& reaction, co
     return std::nullopt;
 }
 
+std::optional<units::Unit> annotatedRateUnit(const ast::Rxn& reaction,
+                                             const ast::Model& model) {
+    const auto analysis = compile::analyzeUnits(model);
+    if (reaction.getRateExpression().has_value()) {
+        const auto inferred = analysis.inferredExpressions.find(
+            reaction.getRateExpression()->toString());
+        if (inferred != analysis.inferredExpressions.end()) return inferred->second;
+    }
+    auto rateName = compactExpression(reaction.getRateLaw());
+    if (model.getParameters().contains(rateName)) {
+        const auto& parameter = model.getParameters().get(rateName);
+        if (parameter.hasUnit()) return parameter.getUnit();
+    }
+
+    const auto inferred = analysis.inferredParameters.find(rateName);
+    if (inferred != analysis.inferredParameters.end()) return inferred->second;
+    return std::nullopt;
+}
+
+units::ConversionContext unitConversionContext(const ast::Rxn& reaction,
+                                                const ast::Model& model,
+                                                const engine::GeneratedNetwork& network) {
+    units::ConversionContext context;
+    const auto numberPerQuantity = model.getOptions().find("NumberPerQuantityUnit");
+    if (numberPerQuantity != model.getOptions().end()) {
+        const auto value = stripQuotes(numberPerQuantity->second);
+        try {
+            context.numberPerQuantityUnit = std::stod(value);
+        } catch (...) {
+            throw std::runtime_error(
+                "NumberPerQuantityUnit must be numeric for unit-aware rate conversion");
+        }
+    }
+
+    std::string compartmentName;
+    const auto findCompartment = [&](const std::vector<std::size_t>& species) {
+        for (const auto index : species) {
+            const auto& compartment = network.species.get(index).getCompartment();
+            if (!compartment.empty()) {
+                if (compartmentName.empty()) compartmentName = compartment;
+                else if (compartmentName != compartment) {
+                    throw std::runtime_error(
+                        "unit-aware reaction rate spans multiple compartments");
+                }
+            }
+        }
+    };
+    findCompartment(reaction.getReactants());
+    if (compartmentName.empty()) findCompartment(reaction.getProducts());
+
+    const ast::Compartment* selected = nullptr;
+    for (const auto& compartment : model.getCompartments()) {
+        if (compartment.getName() == compartmentName) {
+            selected = &compartment;
+            break;
+        }
+    }
+    if (selected == nullptr) {
+        throw std::runtime_error(
+            "unit-aware concentration rate requires a declared compartment");
+    }
+    if (selected->getDimension() != 3) {
+        throw std::runtime_error(
+            "unit-aware concentration rates require a three-dimensional compartment");
+    }
+
+    std::optional<units::Unit> volumeUnit;
+    if (selected->hasUnit()) {
+        volumeUnit = selected->getUnit();
+    } else {
+        const auto defaultVolume = model.getUnitDefaults().find("volumeUnits");
+        if (defaultVolume != model.getUnitDefaults().end()) {
+            const auto parsed = model.getUnitSystem().parse(defaultVolume->second);
+            if (!parsed) throw std::runtime_error(
+                "invalid volumeUnits default: " + parsed.error);
+            volumeUnit = *parsed.unit;
+        }
+    }
+    if (!volumeUnit.has_value()) {
+        throw std::runtime_error(
+            "unit-aware concentration rate requires a compartment volume unit");
+    }
+    context.compartmentVolume = selected->getVolume();
+    context.volumeUnit = *volumeUnit;
+    return context;
+}
+
 // Perl-faithful unit conversion factor (Rxn.pm:100-197).
 // For bimolecular+ reactions: divide by remaining compartment sizes after anchor.
 // For zero-order synthesis: multiply by product compartment size.
 std::optional<double> unitConversionFactor(const ast::Rxn& reaction, const ast::Model& model, const engine::GeneratedNetwork& network) {
+    if (compile::unitMode(model) != compile::UnitMode::Off) {
+        if (const auto rateUnit = annotatedRateUnit(reaction, model)) {
+            const auto context = unitConversionContext(reaction, model, network);
+            const auto converted = units::stochasticRateFactor(
+                *rateUnit, reaction.getReactants().size(), context);
+            if (!converted) {
+                throw std::runtime_error(
+                    "unit-aware rate conversion failed for '" + reaction.getRateLaw() + "': " +
+                    converted.error);
+            }
+            return converted.factor;
+        }
+    }
+
     if (model.getCompartments().empty()) return std::nullopt;
 
     // Build compartment dimension and size lookups

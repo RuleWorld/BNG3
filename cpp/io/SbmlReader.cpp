@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <iomanip>
 #include <map>
 #include <set>
 #include <sstream>
@@ -64,6 +65,62 @@ std::string sanitizeName(std::string name) {
         result.insert(0, "s");
     }
     return result;
+}
+
+std::string sbmlUnitKind(const std::string& kind) {
+    if (kind == "mole") return "mole";
+    if (kind == "item") return "item";
+    if (kind == "metre") return "metre";
+    if (kind == "litre") return "litre";
+    if (kind == "second") return "second";
+    if (kind == "dimensionless") return "dimensionless";
+    return {};
+}
+
+std::string unitDefinitionExpression(const TiXmlElement* definition) {
+    const auto* list = definition == nullptr
+        ? nullptr : definition->FirstChildElement("listOfUnits");
+    if (list == nullptr) return {};
+
+    std::ostringstream expression;
+    bool first = true;
+    for (auto* unit = list->FirstChildElement("unit"); unit != nullptr;
+         unit = unit->NextSiblingElement("unit")) {
+        const auto kind = sbmlUnitKind(attribute(unit, "kind"));
+        if (kind.empty()) throw std::runtime_error(
+            "SBML unit definition uses unsupported base unit '" + attribute(unit, "kind") + "'");
+        const auto exponentText = attribute(unit, "exponent", "1");
+        int exponent = 0;
+        try {
+            std::size_t consumed = 0;
+            exponent = std::stoi(exponentText, &consumed);
+            if (consumed != exponentText.size()) throw std::runtime_error("not an integer");
+        } catch (...) {
+            throw std::runtime_error("SBML unit exponent must be an integer");
+        }
+        if (exponent == 0) continue;
+
+        double multiplier = 1.0;
+        try {
+            multiplier = std::stod(attribute(unit, "multiplier", "1"));
+            const auto scale = std::stoi(attribute(unit, "scale", "0"));
+            multiplier *= std::pow(10.0, static_cast<double>(scale));
+        } catch (...) {
+            throw std::runtime_error("SBML unit multiplier/scale is invalid");
+        }
+        if (!std::isfinite(multiplier) || multiplier <= 0.0) {
+            throw std::runtime_error("SBML unit multiplier/scale must be positive and finite");
+        }
+
+        if (!first) expression << '*';
+        first = false;
+        if (std::abs(multiplier - 1.0) > 1e-15) {
+            expression << std::setprecision(17) << multiplier << '*';
+        }
+        expression << kind;
+        if (exponent != 1) expression << '^' << exponent;
+    }
+    return first ? "1" : expression.str();
 }
 
 bool parseBool(const std::string& value) {
@@ -276,12 +333,42 @@ NetReader::ParseResult SbmlReader::parse(
         std::unordered_map<std::string, int> speciesIndices;
         std::set<std::string> usedNames;
 
+        const auto* unitDefinitions = model->FirstChildElement("listOfUnitDefinitions");
+        if (unitDefinitions != nullptr) {
+            for (auto* definition = unitDefinitions->FirstChildElement("unitDefinition");
+                 definition != nullptr;
+                 definition = definition->NextSiblingElement("unitDefinition")) {
+                const auto id = attribute(definition, "id");
+                if (id.empty()) continue;
+                const auto expression = unitDefinitionExpression(definition);
+                if (expression.empty()) throw std::runtime_error(
+                    "SBML unit definition '" + id + "' is empty");
+                result.unitDefinitions[id] = expression;
+            }
+        }
+        for (const char* role : {"timeUnits", "substanceUnits", "volumeUnits",
+                                 "areaUnits", "lengthUnits", "extentUnits"}) {
+            const auto value = attribute(model, role);
+            if (!value.empty()) result.unitDefaults[role] = value;
+        }
+
         const auto* compartments = model->FirstChildElement("listOfCompartments");
         if (compartments != nullptr) {
             for (auto* compartment = compartments->FirstChildElement("compartment");
                  compartment != nullptr;
                  compartment = compartment->NextSiblingElement("compartment")) {
-                result.compartments.push_back(attribute(compartment, "id"));
+                const auto id = attribute(compartment, "id");
+                result.compartments.push_back(id);
+                const auto unit = attribute(compartment, "units");
+                if (!unit.empty()) result.compartmentUnits[id] = unit;
+                try {
+                    result.compartmentSizes[id] =
+                        std::stod(attribute(compartment, "size", "1"));
+                    result.compartmentDimensions[id] =
+                        std::stoi(attribute(compartment, "spatialDimensions", "3"));
+                } catch (...) {
+                    throw std::runtime_error("SBML compartment size or dimension is invalid");
+                }
             }
         }
 
@@ -310,10 +397,14 @@ NetReader::ParseResult SbmlReader::parse(
                 pattern += standardized + "()";
                 speciesIndices[id] = index;
                 std::string amount = attribute(species, "initialAmount");
+                const bool initialConcentration = amount.empty() &&
+                    !attribute(species, "initialConcentration").empty();
                 if (amount.empty()) {
                     amount = attribute(species, "initialConcentration", "0");
                 }
                 result.species.emplace_back(pattern, amount);
+                result.speciesUnits.push_back(attribute(species, "units"));
+                result.speciesInitialConcentrations.push_back(initialConcentration);
             }
         }
         if (result.species.empty()) {
@@ -329,6 +420,8 @@ NetReader::ParseResult SbmlReader::parse(
                 const auto value = attribute(parameter, "value");
                 if (!id.empty() && !value.empty()) {
                     result.parameters[id] = std::stod(value);
+                    const auto unit = attribute(parameter, "units");
+                    if (!unit.empty()) result.parameterUnits[id] = unit;
                 }
             }
         }

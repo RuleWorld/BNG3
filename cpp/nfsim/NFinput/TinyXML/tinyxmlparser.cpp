@@ -23,6 +23,7 @@ distribution.
 */
 
 #include <ctype.h>
+#include <limits.h>
 #include <stddef.h>
 
 #include "tinyxml.h"
@@ -446,7 +447,11 @@ const char* TiXmlBase::GetEntity( const char* p, char* value, int* length, TiXml
 	{
 		unsigned long ucs = 0;
 		ptrdiff_t delta = 0;
-		unsigned mult = 1;
+		auto appendDigit = [&ucs](unsigned long digit, unsigned long base) {
+			if (ucs > (ULONG_MAX - digit) / base) return false;
+			ucs = ucs * base + digit;
+			return true;
+		};
 
 		if ( *(p+2) == 'x' )
 		{
@@ -454,25 +459,25 @@ const char* TiXmlBase::GetEntity( const char* p, char* value, int* length, TiXml
 			if ( !*(p+3) ) return 0;
 
 			const char* q = p+3;
-			q = strchr( q, ';' );
+			const char* end = strchr( q, ';' );
 
-			if ( !q || !*q ) return 0;
+			if ( !end || !*end ) return 0;
 
-			delta = q-p;
-			--q;
-
-			while ( *q != 'x' )
+			delta = end-p;
+			while ( q < end )
 			{
-				if ( *q >= '0' && *q <= '9' )
-					ucs += mult * (*q - '0');
-				else if ( *q >= 'a' && *q <= 'f' )
-					ucs += mult * (*q - 'a' + 10);
-				else if ( *q >= 'A' && *q <= 'F' )
-					ucs += mult * (*q - 'A' + 10 );
+				if ( *q >= '0' && *q <= '9' ) {
+					if (!appendDigit(static_cast<unsigned long>(*q - '0'), 16)) return 0;
+				}
+				else if ( *q >= 'a' && *q <= 'f' ) {
+					if (!appendDigit(static_cast<unsigned long>(*q - 'a' + 10), 16)) return 0;
+				}
+				else if ( *q >= 'A' && *q <= 'F' ) {
+					if (!appendDigit(static_cast<unsigned long>(*q - 'A' + 10), 16)) return 0;
+				}
 				else 
 					return 0;
-				mult *= 16;
-				--q;
+				++q;
 			}
 		}
 		else
@@ -481,21 +486,19 @@ const char* TiXmlBase::GetEntity( const char* p, char* value, int* length, TiXml
 			if ( !*(p+2) ) return 0;
 
 			const char* q = p+2;
-			q = strchr( q, ';' );
+			const char* end = strchr( q, ';' );
 
-			if ( !q || !*q ) return 0;
+			if ( !end || !*end ) return 0;
 
-			delta = q-p;
-			--q;
-
-			while ( *q != '#' )
+			delta = end-p;
+			while ( q < end )
 			{
-				if ( *q >= '0' && *q <= '9' )
-					ucs += mult * (*q - '0');
+				if ( *q >= '0' && *q <= '9' ) {
+					if (!appendDigit(static_cast<unsigned long>(*q - '0'), 10)) return 0;
+				}
 				else 
 					return 0;
-				mult *= 10;
-				--q;
+				++q;
 			}
 		}
 		if ( encoding == TIXML_ENCODING_UTF8 )
@@ -1635,4 +1638,3 @@ bool TiXmlText::Blank() const
 			return false;
 	return true;
 }
-

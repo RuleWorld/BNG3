@@ -13,6 +13,7 @@
 #include "generated/BNGParser.h"
 #include "parser/PatternGraphBuilder.hpp"
 #include "core/Ullmann.hpp"
+#include "SbmlUnitWriter.hpp"
 
 namespace bng::io {
 
@@ -78,10 +79,11 @@ std::string SbmlWriter::write(const ast::Model& model, const engine::GeneratedNe
          << "level=\"" << options.level << "\" version=\"" << options.version << "\">\n";
 
     sbml << "  <model id=\"" << escapeXml(makeValidSBMLId(model.getModelName())) << "\" name=\""
-         << escapeXml(model.getModelName()) << "\">\n";
+         << escapeXml(model.getModelName()) << "\""
+         << sbml_units::modelAttributes(model) << ">\n";
 
     // Unit definitions (Perl: substance = item)
-    sbml << writeUnitDefinitions();
+    sbml << writeUnitDefinitions(model);
 
     // Compartments
     sbml << writeCompartments(model);
@@ -109,17 +111,8 @@ std::string SbmlWriter::write(const ast::Model& model, const engine::GeneratedNe
     return sbml.str();
 }
 
-std::string SbmlWriter::writeUnitDefinitions() {
-    std::ostringstream sbml;
-    // Perl BNG2 convention: substance unit = item (molecule count)
-    sbml << "    <listOfUnitDefinitions>\n";
-    sbml << "      <unitDefinition id=\"substance\" name=\"substance\">\n";
-    sbml << "        <listOfUnits>\n";
-    sbml << "          <unit kind=\"item\" exponent=\"1\" multiplier=\"1\"/>\n";
-    sbml << "        </listOfUnits>\n";
-    sbml << "      </unitDefinition>\n";
-    sbml << "    </listOfUnitDefinitions>\n";
-    return sbml.str();
+std::string SbmlWriter::writeUnitDefinitions(const ast::Model& model) {
+    return sbml_units::writeUnitDefinitions(model);
 }
 
 std::string SbmlWriter::writeCompartments(const ast::Model& model) {
@@ -139,7 +132,8 @@ std::string SbmlWriter::writeCompartments(const ast::Model& model) {
              << "\" name=\"" << escapeXml(comp.getName())
              << "\" spatialDimensions=\"" << comp.getDimension()
              << "\" size=\"" << comp.getVolume()
-             << "\" constant=\"true\"";
+             << "\" constant=\"true\""
+             << sbml_units::attribute(model, comp.getUnitName());
 
         if (!comp.getParent().empty()) {
             sbml << " outside=\"" << makeValidSBMLId(comp.getParent()) << "\"";
@@ -160,7 +154,8 @@ std::string SbmlWriter::writeParameters(const ast::Model& model, const std::vect
         sbml << "      <parameter id=\"" << makeValidSBMLId(param.getName())
              << "\" name=\"" << escapeXml(param.getName())
              << "\" value=\"" << param.getValue()
-             << "\" constant=\"true\"/>\n";
+             << "\" constant=\"true\""
+             << sbml_units::attribute(model, param.getUnitName()) << "/>\n";
     }
 
     // Observables as non-constant parameters (Perl: constant=false)
@@ -198,7 +193,13 @@ std::string SbmlWriter::writeSpecies(const ast::Model& model, const engine::Gene
                  << "\" name=\"" << escapeXml(species.getSpeciesGraph().toString())
                  << "\" compartment=\"" << compartmentId
                  << "\" initialAmount=\"" << species.getAmount()
-                 << "\" hasOnlySubstanceUnits=\"true\"";
+                 << "\" hasOnlySubstanceUnits=\"true\""
+                 // Unit-aware generated networks are lowered to item counts;
+                 // make that backend basis explicit even when the model
+                 // default substance unit is mole-based.
+                 << (sbml_units::enabled(model)
+                         ? sbml_units::attribute(model, "item")
+                         : std::string{});
 
             if (species.isConstant()) {
                 sbml << " constant=\"true\" boundaryCondition=\"true\"";
@@ -219,11 +220,19 @@ std::string SbmlWriter::writeSpecies(const ast::Model& model, const engine::Gene
                 return model.getParameters().evaluate(name);
             }, 0.0);
 
+            const bool concentration = seed.hasUnit() &&
+                seed.getUnit()->dimension.substance != 0 &&
+                seed.getUnit()->dimension.length == -3 &&
+                seed.getUnit()->dimension.time == 0;
+
             sbml << "      <species id=\"" << speciesId
                  << "\" name=\"" << escapeXml(seed.getPattern())
                  << "\" compartment=\"" << compartmentId
-                 << "\" initialAmount=\"" << amountValue
-                 << "\" hasOnlySubstanceUnits=\"true\"";
+                 << (concentration ? "\" initialConcentration=\"" :
+                                      "\" initialAmount=\"") << amountValue
+                 << (concentration ? "\" hasOnlySubstanceUnits=\"false\"" :
+                                      "\" hasOnlySubstanceUnits=\"true\"")
+                 << sbml_units::attribute(model, seed.getUnitName());
 
             if (seed.isConstant()) {
                 sbml << " constant=\"true\" boundaryCondition=\"true\"";

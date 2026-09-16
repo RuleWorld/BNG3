@@ -27,6 +27,23 @@ const std::string& Compartment::getParent() const {
     return parent_;
 }
 
+bool Compartment::hasUnit() const {
+    return unit_.has_value();
+}
+
+const std::optional<units::Unit>& Compartment::getUnit() const {
+    return unit_;
+}
+
+const std::string& Compartment::getUnitName() const {
+    return unitName_;
+}
+
+void Compartment::setUnit(units::Unit unit, std::string name) {
+    unit_ = std::move(unit);
+    unitName_ = std::move(name);
+}
+
 bool Compartment::isOutside(const std::string& other, const std::vector<Compartment>& all) const {
     for (const auto& c : all) {
         if (c.getName() == other && c.getParent() == name_) return true;

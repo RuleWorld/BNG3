@@ -231,6 +231,67 @@ bool withinAggLimit(const ast::SpeciesGraph& graph, std::size_t maxAgg) {
     return totalMolecules <= maxAgg;
 }
 
+units::Unit itemUnit() {
+    units::Unit item;
+    item.name = "item";
+    item.dimension.substance = 1;
+    item.baseExponents[units::BaseUnit::Item] = 1;
+    return item;
+}
+
+units::ConversionContext conversionContext(const compile::CompiledModel& model,
+                                           const compile::CompiledSeed& seed) {
+    units::ConversionContext context;
+    const auto numberPerQuantity = model.metadata().options.find("NumberPerQuantityUnit");
+    if (numberPerQuantity != model.metadata().options.end()) {
+        try {
+            context.numberPerQuantityUnit = std::stod(numberPerQuantity->second);
+        } catch (...) {
+            throw std::runtime_error(
+                "NumberPerQuantityUnit must be numeric for unit-aware seed conversion");
+        }
+    }
+    if (seed.compartmentId.has_value()) {
+        const auto& compartment = model.compartments()[seed.compartmentId->value()];
+        context.compartmentVolume = compartment.volume;
+        context.volumeUnit = compartment.declaredUnit;
+    }
+    return context;
+}
+
+double normalizeSeedAmountImpl(const compile::CompiledModel& model,
+                               const compile::CompiledSeed& seed) {
+    if (!seed.evaluatedAmount.has_value() || !seed.declaredUnit.has_value()) {
+        return seed.evaluatedAmount.value_or(0.0);
+    }
+
+    const auto context = conversionContext(model, seed);
+    const auto& unit = *seed.declaredUnit;
+    units::ConversionResult converted;
+    if (unit.dimension.length == -3 && unit.dimension.time == 0) {
+        if (!context.compartmentVolume.has_value() || !context.volumeUnit.has_value()) {
+            throw std::runtime_error(
+                "unit-aware concentration seed requires a declared compartment volume unit");
+        }
+        converted = units::concentrationToItemAmount(
+            *seed.evaluatedAmount, unit, *context.compartmentVolume,
+            *context.volumeUnit, context);
+    } else if (unit.dimension.length == 0 && unit.dimension.time == 0 &&
+               unit.dimension.substance == 1) {
+        converted = units::convertValue(
+            *seed.evaluatedAmount, unit, itemUnit(), context);
+    } else {
+        throw std::runtime_error(
+            "unit-aware seed quantity must be an amount or concentration");
+    }
+    if (!converted) {
+        throw std::runtime_error(
+            "unit-aware seed conversion failed for '" + seed.sourcePattern + "': " +
+            converted.error);
+    }
+    return *converted.factor;
+}
+
 } // namespace
 
 NetworkGenerator::NetworkGenerator(ast::Model& model)
@@ -238,6 +299,11 @@ NetworkGenerator::NetworkGenerator(ast::Model& model)
 
 NetworkGenerator::NetworkGenerator(const compile::Document& document)
     : document_(document) {}
+
+double NetworkGenerator::normalizeSeedAmount(const compile::CompiledModel& model,
+                                             const compile::CompiledSeed& seed) {
+    return normalizeSeedAmountImpl(model, seed);
+}
 
 GeneratedNetwork NetworkGenerator::generateNative(std::size_t maxIter) {
     const auto& compiled = document_.model();
@@ -293,7 +359,8 @@ GeneratedNetwork NetworkGenerator::generateNative(std::size_t maxIter) {
             }
         }
         network.species.add(ast::Species(
-            std::move(seedGraph), *seed.evaluatedAmount, seed.constant, seedComp));
+            std::move(seedGraph), NetworkGenerator::normalizeSeedAmount(compiled, seed),
+            seed.constant, seedComp));
     }
 
     if (logProgress) {
