@@ -3680,6 +3680,11 @@ bool addDynamicReactionRateFunction(
     return true;
 }
 
+// Legacy direct-from-AST energy installer. The live direct path builds through
+// CompiledModel (addEnergyPatternsFromCompiled), which is where barrier-pattern
+// support was added; this function has no callers. Intentionally left without
+// barrier support rather than given an untested second implementation — if it
+// is ever revived, install the barrier table here the same way.
 bool addEnergyPatternsFromAst(const bng::ast::Model& model, System* system,
                               const std::map<std::string, double>& parameters,
                               bool verbose) {

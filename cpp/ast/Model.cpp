@@ -34,6 +34,10 @@ void Model::addEnergyPattern(EnergyPattern energyPattern) {
     energyPatterns_.push_back(std::move(energyPattern));
 }
 
+void Model::addBarrierPattern(BarrierPattern barrierPattern) {
+    barrierPatterns_.push_back(std::move(barrierPattern));
+}
+
 void Model::addObservable(Observable observable) {
     observables_.push_back(std::move(observable));
 }
@@ -194,6 +198,11 @@ void Model::merge(Model& other) {
         energyPatterns_.push_back(ep);
     }
 
+    // Merge barrier patterns (move: each owns a non-copyable ReactionRule)
+    for (auto& bp : other.getBarrierPatterns()) {
+        barrierPatterns_.push_back(std::move(bp));
+    }
+
     // Merge molecules
     for (const auto& mol : other.getMolecules()) {
         molecules.push_back(mol);
@@ -239,6 +248,14 @@ const std::vector<Function>& Model::getFunctions() const {
 
 const std::vector<EnergyPattern>& Model::getEnergyPatterns() const {
     return energyPatterns_;
+}
+
+const std::vector<BarrierPattern>& Model::getBarrierPatterns() const {
+    return barrierPatterns_;
+}
+
+std::vector<BarrierPattern>& Model::getBarrierPatterns() {
+    return barrierPatterns_;
 }
 
 const std::vector<Observable>& Model::getObservables() const {

@@ -1,6 +1,8 @@
 #pragma once
 
+#include <map>
 #include <memory>
+#include <string>
 #include <unordered_set>
 
 #include "ast/Model.hpp"
@@ -36,6 +38,12 @@ public:
     std::any visitProtocol_block(BNGParser::Protocol_blockContext* ctx) override;
     std::any visitPopulation_map_def(BNGParser::Population_map_defContext* ctx) override;
 
+    // Moves synthetic barrier rules out of the model's reaction rules and
+    // attaches driving-work annotations. Must run once, after the whole tree
+    // has been visited, so the result never depends on where the normalizer
+    // chose to place the synthetic barrier block.
+    void finalizeThermodynamicMetadata();
+
 private:
     void addAction(const std::string& name, BNGParser::Action_argsContext* args);
     void predeclareMoleculeTypes(BNGParser::ProgContext* ctx);
@@ -43,6 +51,12 @@ private:
     std::unique_ptr<ast::Model> currentModel_;
     std::unordered_set<const BNGParser::Molecule_type_defContext*> predeclaredMoleculeTypes_;
     std::size_t seedUnitIndex_ = 0;
+
+    // Populated from the synthetic setOption channel emitted by
+    // normalizeThermodynamicSyntax(); keyed by barrier index / ordinary-rule
+    // index respectively.
+    std::map<std::size_t, std::string> pendingBarrierLabels_;
+    std::map<std::size_t, std::string> pendingDrivingWork_;
 };
 
 std::unique_ptr<ast::Model> parseModel(const std::string& sourceText);

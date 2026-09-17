@@ -1219,6 +1219,33 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
             return model.getParameters().evaluate(name);
         };
 
+        // Barrier table for this model, keyed by reaction center. Built once
+        // because every Arrhenius rule consults it.
+        compile::energy::BarrierTable barrierTable;
+        if (!model.getBarrierPatterns().empty()) {
+            std::vector<std::string> barrierDiagnostics;
+            const bool built = compile::energy::buildBarrierTable(
+                model,
+                [&](const ast::BarrierPattern& barrier, double& value,
+                    std::string& diagnostic) {
+                    try {
+                        value = barrier.expression().evaluate(paramResolver, 0.0);
+                    } catch (...) {
+                        diagnostic = "transition-state energy is not statically evaluable";
+                        return false;
+                    }
+                    return true;
+                },
+                barrierTable, barrierDiagnostics);
+            if (!built) {
+                std::string joined;
+                for (const auto& diagnostic : barrierDiagnostics) {
+                    joined += (joined.empty() ? "" : "; ") + diagnostic;
+                }
+                throw std::runtime_error("cannot lower barrier patterns: " + joined);
+            }
+        }
+
         for (const auto& ruleName : arrheniusRules) {
             const bool reverseDirection = ruleName.rfind("_reverse__", 0) == 0;
             const std::string ruleBase = reverseDirection
@@ -1233,6 +1260,63 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
             // Compute per-reaction rates, caching by energy delta fingerprint
             std::unordered_map<std::string, std::pair<std::string, double>> fingerprintToParam;
             std::size_t nextParamIndex = 1;
+
+            // Locate the originating AST rule so its driven_by() annotation
+            // and reaction center are available. A reverse-direction origin
+            // name refers to the same AST rule.
+            const ast::ReactionRule* originRule = nullptr;
+            for (const auto& candidate : model.getReactionRules()) {
+                if (candidate.getRuleName() == ruleBase) {
+                    originRule = &candidate;
+                    break;
+                }
+            }
+
+            // Reservoir work is signed per traversal direction. The reverse
+            // reaction's own dG is already negated (its reactants and products
+            // are swapped), so W must be negated here to match; otherwise the
+            // reverse rate would use exp(-(Ea + (1-phi)(-dG - W))) instead of
+            // the correct exp(-(Ea + (1-phi)(W - dG))).
+            double drivingWork = 0.0;
+            if (originRule != nullptr && originRule->hasDrivingWork()) {
+                if (!compile::energy::generalEnergyEnabled()) {
+                    throw std::runtime_error(
+                        std::string("rule '") + ruleBase +
+                        "' uses driven_by() but " +
+                        compile::energy::generalEnergyGateName() + " is not set");
+                }
+                try {
+                    drivingWork = originRule->drivingWorkExpression().evaluate(
+                        paramResolver, 0.0);
+                } catch (...) {
+                    throw std::runtime_error(
+                        std::string("rule '") + ruleBase +
+                        "' has a driven_by() work expression that is not statically evaluable");
+                }
+                if (!std::isfinite(drivingWork)) {
+                    throw std::runtime_error(
+                        std::string("rule '") + ruleBase +
+                        "' has a non-finite driven_by() work expression");
+                }
+                // Deliberately NOT negated here: networkArrheniusRate() owns
+                // the direction handling and expects the rule's forward work.
+                // Negating here as well would double-negate it.
+            }
+
+            // A barrier is direction-independent: the same transition state is
+            // crossed either way, so no sign flip applies to it.
+            double barrier = 0.0;
+            if (!barrierTable.empty() && originRule != nullptr) {
+                compile::energy::ReactionCenterKey center;
+                std::string centerDiagnostic;
+                if (compile::energy::compileBarrierCenter(
+                        *originRule, center, centerDiagnostic)) {
+                    barrier = barrierTable.lookup(center);
+                }
+                // A rule whose center cannot be keyed simply matches no
+                // barrier; that is not an error, because barrier patterns are
+                // optional annotations rather than required rate components.
+            }
 
             DerivedRateInfo info;
             info.paramName = "__" + ruleName + "_local1"; // fallback name (unused with per-reaction)
@@ -1285,7 +1369,14 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
                         phi = evaluateExpressionString(phiExpr, paramResolver);
                         eact0 = evaluateExpressionString(arrhenius->eaArg, paramResolver);
                     } catch (...) {}
-                    double rate = std::exp(-(eact0 + phi * deltaG));
+                    // `phi` is already (1 - phi) for a reverse direction, and
+                    // `deltaG` is already negated because that reaction's
+                    // reactants and products are swapped. The helper applies
+                    // the matching work negation and the RT-folded convention;
+                    // it is cross-checked against the NFsim formula in
+                    // tests/energy/standalone/check_convention_parity.cpp.
+                    double rate = compile::energy::networkArrheniusRate(
+                        eact0, barrier, deltaG, drivingWork, phi, reverseDirection);
 
                     std::string paramName = paramPrefix + std::to_string(nextParamIndex++);
                     auto paramPair = std::make_pair(paramName, rate);

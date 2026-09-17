@@ -4,6 +4,15 @@ option(BNG_BUILD_ENERGY_FUZZERS "Build libFuzzer targets for energy compiler" OF
 
 set(BNG_ENERGY_CURRENT_TEST_SOURCES
     test_energy_compiler_phase1.cpp
+    # Promoted from BNG_ENABLE_FUTURE_ENERGY_CONTRACTS: the thermodynamic
+    # layer, the barrier/driven surface syntax, and the reaction-center keying
+    # are implemented, so these build and run by default.
+    future_thermodynamic_constraints.cpp
+    future_barrier_driving_syntax.cpp
+    test_thermo_source_normalization.cpp
+    test_barrier_and_driven_energy.cpp
+    test_thermo_model_finalize.cpp
+    test_energy_export_guard.cpp
     test_energy_delta_plan_edge_cases.cpp
     test_energy_delta_plan_property.cpp
     test_compiled_rate_law_contracts.cpp
@@ -53,7 +62,6 @@ if(BNG_ENABLE_FUTURE_ENERGY_CONTRACTS OR BNG_ENERGY_FUTURE_CONTRACT)
         future_energy_context_evaluator.cpp
         future_energy_context_weights_numeric.cpp
         future_energy_plan_canonicalization.cpp
-        future_thermodynamic_constraints.cpp
         future_indexed_rule_family.cpp
         future_compiled_model_cache.cpp
         future_compiled_model_determinism.cpp
@@ -64,7 +72,6 @@ if(BNG_ENABLE_FUTURE_ENERGY_CONTRACTS OR BNG_ENERGY_FUTURE_CONTRACT)
         future_compiled_blueprint.cpp
         future_batch_nf_api.cpp
         future_legacy_binding_compatibility.cpp
-        future_barrier_driving_syntax.cpp
         future_direct_xml_energy_parity.cpp
         future_energy_serialization_roundtrip.cpp
         future_compound_graph_rewrite.cpp

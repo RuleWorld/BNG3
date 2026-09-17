@@ -1,5 +1,8 @@
 #include "BNGAstVisitor.hpp"
 
+#include "ThermoModelFinalize.hpp"
+#include "ThermoSourceNormalization.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -1408,7 +1411,11 @@ std::string normalizeBNGLSource(const std::string& sourceText) {
     normalized = normalizeLegacyActionNames(normalized);
     normalized = normalizeIntegerStateTransitions(normalized);
     normalized = normalizeLooseActionsInsideModel(normalized);
-    return normalizeUnitSyntax(normalized);
+    normalized = normalizeUnitSyntax(normalized);
+    // Runs last so that `begin barrier patterns` has already survived legacy
+    // header canonicalization, and so the synthetic setOption lines it emits
+    // are not re-scanned by the earlier passes.
+    return normalizeThermodynamicSyntax(normalized);
 }
 
 BNGAstVisitor::BNGAstVisitor()
@@ -1486,6 +1493,22 @@ std::any BNGAstVisitor::visitSet_option(BNGParser::Set_optionContext* ctx) {
             currentModel_->setParameterUnit(key.substr(parameterPrefix.size()), value);
         } else if (key.compare(0, compartmentPrefix.size(), compartmentPrefix) == 0) {
             currentModel_->setCompartmentUnit(key.substr(compartmentPrefix.size()), value);
+        } else if (key.compare(0, std::string_view(kBarrierLabelOptionPrefix).size(),
+                               kBarrierLabelOptionPrefix) == 0) {
+            try {
+                pendingBarrierLabels_[static_cast<std::size_t>(std::stoull(
+                    key.substr(std::string_view(kBarrierLabelOptionPrefix).size())))] = value;
+            } catch (const std::exception&) {
+                throw std::runtime_error("invalid synthetic barrier-pattern label annotation");
+            }
+        } else if (key.compare(0, std::string_view(kDrivingWorkOptionPrefix).size(),
+                               kDrivingWorkOptionPrefix) == 0) {
+            try {
+                pendingDrivingWork_[static_cast<std::size_t>(std::stoull(
+                    key.substr(std::string_view(kDrivingWorkOptionPrefix).size())))] = value;
+            } catch (const std::exception&) {
+                throw std::runtime_error("invalid synthetic driving-work annotation");
+            }
         } else if (key.compare(0, seedPrefix.size(), seedPrefix) == 0) {
             try {
                 currentModel_->setSeedUnit(
@@ -1826,6 +1849,17 @@ std::any BNGAstVisitor::visitPopulation_map_def(BNGParser::Population_map_defCon
     return {};
 }
 
+void BNGAstVisitor::finalizeThermodynamicMetadata() {
+    // The lowering itself lives in ThermoModelFinalize so it can be exercised
+    // without the generated parser; only expression parsing is supplied here.
+    const bool rewritten = finalizeThermodynamicMetadata(
+        *currentModel_, pendingBarrierLabels_, pendingDrivingWork_,
+        [](const std::string& text) { return parseExpressionImpl(text); });
+    (void)rewritten;
+    pendingBarrierLabels_.clear();
+    pendingDrivingWork_.clear();
+}
+
 std::unique_ptr<ast::Model> parseModel(const std::string& sourceText) {
     antlr4::ANTLRInputStream input(normalizeBNGLSource(sourceText));
     BNGLexer lexer(&input);
@@ -1838,6 +1872,7 @@ std::unique_ptr<ast::Model> parseModel(const std::string& sourceText) {
 
     BNGAstVisitor visitor;
     visitor.visit(tree);
+    visitor.finalizeThermodynamicMetadata();
     return visitor.takeModel();
 }
 

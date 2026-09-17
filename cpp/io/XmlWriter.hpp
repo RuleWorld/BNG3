@@ -36,6 +36,11 @@ private:
     static std::string writeObservables(const ast::Model& model);
     static std::string writeFunctions(const ast::Model& model);
     static std::string writeEnergyPatterns(const ast::Model& model);
+    // Barrier patterns are emitted as an explicit section rather than folded
+    // into ListOfEnergyPatterns: a transition-state contribution is not a
+    // ground-state energy, and collapsing the two would change the model's
+    // detailed balance when it was read back.
+    static std::string writeBarrierPatterns(const ast::Model& model);
 
     // Pattern serialization helpers
     static std::string writePatternXml(

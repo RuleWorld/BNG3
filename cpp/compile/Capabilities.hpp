@@ -56,6 +56,13 @@ struct Diagnostic {
 
 enum class Feature : std::uint8_t {
     EnergyPatterns,
+    // Transition-state energy contributions matched by reaction center. These
+    // change kinetics without changing local detailed balance.
+    BarrierPatterns,
+    // `driven_by(W)` annotations. Nonzero work shifts local detailed balance
+    // and can sustain a nonzero cycle affinity, so a model using it is no
+    // longer equilibrium-compatible.
+    DrivenReservoirs,
     PopulationMaps,
     Functions,
     LocalFunctions,

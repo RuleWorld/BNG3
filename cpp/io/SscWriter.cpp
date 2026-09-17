@@ -1,5 +1,7 @@
 #include "SscWriter.hpp"
 
+#include "EnergyExportGuard.hpp"
+
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
@@ -11,6 +13,7 @@
 namespace bng::io {
 
 std::string SscWriter::write(const ast::Model& model, const engine::GeneratedNetwork& network) {
+    requireNoEnergySemantics(model, "SSC");
     std::ostringstream out;
 
     const std::string modelName = model.getModelName();

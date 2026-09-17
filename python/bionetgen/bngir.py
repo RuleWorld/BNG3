@@ -20,7 +20,9 @@ SUPPORTED_VERSIONS = frozenset({VERSION, STRUCTURAL_VERSION})
 
 _FEATURES = frozenset(
     {
+        "barrier_patterns",
         "compartments",
+        "driven_reservoirs",
         "energy_patterns",
         "functions",
         "observables",
@@ -102,6 +104,9 @@ def _payload_v01(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, 
             "rates": list(rule.rates),
             "modifiers": list(rule.modifiers),
             "bidirectional": bool(rule.is_bidirectional),
+            # Empty string when absent, which reads as no drive. A zero-valued
+            # expression is equivalent: dG - 0 recovers the undriven rate.
+            "driving_work": rule.driving_work if rule.has_driving_work else "",
         }
         for rule in native.reaction_rules
     ]
@@ -122,6 +127,20 @@ def _payload_v01(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, 
         }
         for pattern in native.energy_patterns
     ]
+    # Barrier patterns are a separate section: a transition-state contribution
+    # is not a ground-state energy, so it must not be folded into
+    # energy_patterns. The transition is carried as reactant/product pattern
+    # strings plus the barrier energy.
+    barrier_patterns = [
+        {
+            "label": barrier.label,
+            "reactants": list(barrier.transition.reactant_patterns),
+            "products": list(barrier.transition.product_patterns),
+            "bidirectional": bool(barrier.transition.is_bidirectional),
+            "expression": barrier.expression,
+        }
+        for barrier in native.barrier_patterns
+    ]
     population_maps = [
         {
             "label": mapping.label,
@@ -137,6 +156,10 @@ def _payload_v01(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, 
         features["used"].append("compartments")
     if energy_patterns:
         features["used"].append("energy_patterns")
+    if barrier_patterns:
+        features["used"].append("barrier_patterns")
+    if any(rule.get("driving_work") for rule in rules):
+        features["used"].append("driven_reservoirs")
     if functions:
         features["used"].append("functions")
     if observables:
@@ -167,6 +190,7 @@ def _payload_v01(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, 
             "observables": observables,
             "functions": functions,
             "energy_patterns": energy_patterns,
+            "barrier_patterns": barrier_patterns,
             "population_maps": population_maps,
             "rules": rules,
         },
@@ -190,6 +214,7 @@ def _features_v02(snapshot: Mapping[str, Any]) -> dict[str, list[str]]:
     for key, feature in (
         ("compartments", "compartments"),
         ("energy_patterns", "energy_patterns"),
+        ("barrier_patterns", "barrier_patterns"),
         ("functions", "functions"),
         ("observables", "observables"),
         ("population_maps", "population_maps"),
@@ -410,6 +435,20 @@ def _as_bngl_v01(root: Mapping[str, Any]) -> str:
             label = f"{item['label']}: " if item.get("label") else ""
             lines.append(f"  {label}{item['pattern']} {item['expression']}")
         lines += ["end energy patterns"]
+    barrier_patterns = model.get("barrier_patterns", [])
+    if barrier_patterns:
+        # Must follow energy patterns: a barrier is only legal in a model that
+        # has a dG for it to modify.
+        lines += ["begin barrier patterns"]
+        for item in barrier_patterns:
+            label = f"{item['label']}: " if item.get("label") else ""
+            arrow = "<->" if item.get("bidirectional") else "->"
+            reactants = " + ".join(item.get("reactants", [])) or "0"
+            products = " + ".join(item.get("products", [])) or "0"
+            lines.append(
+                f"  {label}{reactants} {arrow} {products} {item['expression']}"
+            )
+        lines += ["end barrier patterns"]
     rules = model.get("rules", [])
     if rules:
         lines += ["begin reaction rules"]
@@ -425,6 +464,10 @@ def _as_bngl_v01(root: Mapping[str, Any]) -> str:
                 line += f" {rate}"
             if item.get("modifiers"):
                 line += " " + " ".join(item["modifiers"])
+            # Reservoir work is kinetics, not annotation: dropping it would
+            # silently turn a driven model into an equilibrium one.
+            if item.get("driving_work"):
+                line += f" driven_by({item['driving_work']})"
             lines.append(line)
         lines += ["end reaction rules"]
     actions = list(
@@ -781,6 +824,7 @@ def _validate_model_v02(model: Mapping[str, Any]) -> None:
         "observables",
         "functions",
         "energy_patterns",
+        "barrier_patterns",
         "population_types",
         "rules",
     ):
@@ -935,6 +979,7 @@ def _name_for_symbol(model: Mapping[str, Any], kind: str, index: int) -> str:
         "compartment": "compartments",
         "reaction_rule": "rules",
         "energy_pattern": "energy_patterns",
+        "barrier_pattern": "barrier_patterns",
         "population_type": "population_types",
     }
     section = sections.get(kind)
@@ -945,7 +990,7 @@ def _name_for_symbol(model: Mapping[str, Any], kind: str, index: int) -> str:
         raise ValueError(f"BNGIR {kind} symbol id is unknown: {index}")
     item = values[index]
     name = item.get("name")
-    if section == "energy_patterns":
+    if section in ("energy_patterns", "barrier_patterns"):
         name = item.get("label")
     if not isinstance(name, str) or not name:
         raise ValueError(f"BNGIR {kind} symbol has no reconstructable name")
@@ -1265,6 +1310,21 @@ def _as_bngl_v02(root: Mapping[str, Any]) -> str:
             )
         lines.append("end energy patterns")
 
+    barrier_patterns = model.get("barrier_patterns", [])
+    if barrier_patterns:
+        # Follows energy patterns for the same reason as the v0.1 emitter.
+        lines.append("begin barrier patterns")
+        for item in barrier_patterns:
+            label = f"{item['label']}: " if item.get("label") else ""
+            arrow = "<->" if item.get("bidirectional") else "->"
+            reactants = " + ".join(item.get("reactants", [])) or "0"
+            products = " + ".join(item.get("products", [])) or "0"
+            lines.append(
+                f"  {label}{reactants} {arrow} {products} "
+                f"{_expression_v02(item['expression'], model)}"
+            )
+        lines.append("end barrier patterns")
+
     population_maps = model.get("population_maps", [])
     if population_maps:
         lines.append("begin population maps")
@@ -1309,6 +1369,14 @@ def _as_bngl_v02(root: Mapping[str, Any]) -> str:
             modifiers.extend(_filter_v02(f) for f in forward.get("filters", []))
             if modifiers:
                 line += " " + " ".join(modifiers)
+            # driven_by() follows the rate law and any modifiers, which is
+            # where normalizeThermodynamicSyntax() strips it from on read-back.
+            driving_work = item.get("driving_work")
+            if driving_work:
+                if isinstance(driving_work, str):
+                    line += f" driven_by({driving_work})"
+                else:
+                    line += f" driven_by({_expression_v02(driving_work, model)})"
             lines.append(line)
         lines.append("end reaction rules")
 

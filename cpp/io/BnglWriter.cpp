@@ -100,6 +100,16 @@ std::string BnglWriter::write(const ast::Model& model, const engine::GeneratedNe
         bngl << writeFunctions(model);
     }
 
+    // Energy patterns, then barrier patterns: a barrier modifies the
+    // transition state of an Arrhenius rule, so it is only meaningful once the
+    // ground-state energies exist. Both precede the rules that reference them.
+    if (!model.getEnergyPatterns().empty()) {
+        bngl << writeEnergyPatterns(model);
+    }
+    if (!model.getBarrierPatterns().empty()) {
+        bngl << writeBarrierPatterns(model);
+    }
+
     // Reaction rules
     if (!model.getReactionRules().empty()) {
         bngl << writeReactionRules(model);
@@ -255,6 +265,50 @@ std::string BnglWriter::writeFunctions(const ast::Model& model) {
     return bngl.str();
 }
 
+std::string BnglWriter::writeEnergyPatterns(const ast::Model& model) {
+    std::ostringstream bngl;
+    bngl << "begin energy patterns\n";
+    for (const auto& pattern : model.getEnergyPatterns()) {
+        bngl << "  ";
+        if (!pattern.getLabel().empty()) bngl << pattern.getLabel() << ": ";
+        bngl << pattern.getPattern() << " " << pattern.getExpression().toString()
+             << "\n";
+    }
+    bngl << "end energy patterns\n\n";
+    return bngl.str();
+}
+
+std::string BnglWriter::writeBarrierPatterns(const ast::Model& model) {
+    std::ostringstream bngl;
+    bngl << "begin barrier patterns\n";
+    for (const auto& barrier : model.getBarrierPatterns()) {
+        bngl << "  ";
+        if (!barrier.getLabel().empty()) bngl << barrier.getLabel() << ": ";
+
+        // Re-emit the backing transition. The energy occupies the rate-law
+        // position, which is what normalizeThermodynamicSyntax() expects on
+        // read-back, so this round-trips.
+        const auto& transition = barrier.transition();
+        const auto& reactants = transition.getReactants();
+        for (std::size_t index = 0; index < reactants.size(); ++index) {
+            if (index != 0) bngl << " + ";
+            bngl << reactants[index];
+        }
+        bngl << (transition.isBidirectional() ? " <-> " : " -> ");
+        const auto& products = transition.getProducts();
+        for (std::size_t index = 0; index < products.size(); ++index) {
+            if (index != 0) bngl << " + ";
+            bngl << products[index];
+        }
+        if (barrier.hasExpression()) {
+            bngl << " " << barrier.expression().toString();
+        }
+        bngl << "\n";
+    }
+    bngl << "end barrier patterns\n\n";
+    return bngl.str();
+}
+
 std::string BnglWriter::writeReactionRules(const ast::Model& model) {
     std::ostringstream bngl;
     bngl << "begin reaction rules\n";
@@ -294,6 +348,12 @@ std::string BnglWriter::writeReactionRules(const ast::Model& model) {
             if (rule.isBidirectional() && rates.size() > 1) {
                 bngl << ", " << rates[1].toString();
             }
+        }
+
+        // Reservoir work is part of the rule's kinetics, not a comment: losing
+        // it here would silently turn a driven model into an equilibrium one.
+        if (rule.hasDrivingWork()) {
+            bngl << " driven_by(" << rule.drivingWorkExpression().toString() << ")";
         }
 
         bngl << "\n";

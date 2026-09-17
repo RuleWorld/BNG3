@@ -147,6 +147,16 @@ public:
     bool requiresConservativeInvalidation() const { return conservativeInvalidation_; }
     bool isBidirectional() const { return bidirectional_; }
 
+    // Signed reservoir work from a `driven_by(W)` annotation.
+    //
+    // Semantics: the forward direction consumes +W and the reverse direction
+    // -W, shifting local detailed balance to k_f/k_r = exp[-(dG - W)/RT].
+    // Absent work is reported as hasDrivingWork() == false with a zero value,
+    // so a backend that ignores it still produces the undriven rates.
+    bool hasDrivingWork() const { return hasDrivingWork_; }
+    const std::string& drivingWorkExpression() const { return drivingWorkExpression_; }
+    const std::optional<double>& drivingWorkValue() const { return drivingWorkValue_; }
+
     const CompiledRuleDirection& forward() const { return forward_; }
     const std::optional<CompiledRuleDirection>& reverse() const { return reverse_; }
 
@@ -177,6 +187,9 @@ private:
     std::string label_;
     bool conservativeInvalidation_ = false;
     bool bidirectional_ = false;
+    bool hasDrivingWork_ = false;
+    std::string drivingWorkExpression_;
+    std::optional<double> drivingWorkValue_;
     std::vector<CompiledRateLaw> rateLaws_;
     std::vector<CompiledModifier> modifiers_;
     CompiledRuleDirection forward_;

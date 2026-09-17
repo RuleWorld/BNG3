@@ -10,6 +10,52 @@ IR migration reports and formalization reports retained in the repository are
 historical inputs and provenance records; their embedded prose is not a new
 execution instruction.
 
+## Experimental nonequilibrium energy layer — barrier patterns and driving reservoirs
+
+Added but **gated off by default**. `begin barrier patterns` and `driven_by(W)`
+are accepted at the language surface and lowered through the AST, the compiled
+IR, both NFsim input paths, and XML serialization, implementing
+
+```
+k_f = exp[-(Ea + B + phi       * (dG - W)) / RT]
+k_r = exp[-(Ea + B + (phi - 1) * (dG - W)) / RT]
+```
+
+`BNG_NFSIM_GENERAL_ENERGY` must be set for any backend to accept either
+construct; unset, both report `Unsupported` for the network compiler and for
+NFsim. The gate is not a convenience switch — canonical NFsim and BNG2 do not
+implement these semantics, so the differential-parity evidence BNG3 normally
+requires cannot be produced yet.
+
+State of validation, stated precisely. The authoring environment had no network
+access, so the FetchContent build was never run and nothing has been linked or
+executed through a real parse.
+
+- **Executed and passing** (`tests/energy/standalone/run_checks.sh`, C++17
+  compiler only): the thermodynamic analysis including insertion-order
+  determinism; barrier keying, accumulation and canonical key round-trip; a
+  300-combination sweep proving the NFsim and network energy conventions
+  describe the same kinetics, plus a demonstration that the reverse-direction
+  work negation is load-bearing; the accepted/rejected surface syntax; and the
+  full post-parse lowering with all eight of its fail-closed paths.
+- **Type-checked only** (`-fsyntax-only` against real headers, never run): the
+  AST, capability, compiled-IR, XmlWriter, NFcore energy and NFsim input
+  adapters. `BarrierCompiler`'s graph-diff classification falls here, because
+  `PatternGraph` can only be built through ANTLR parse contexts — that is the
+  largest remaining gap.
+- **Not checked at all** (need the real ANTLR4 runtime): `BNGAstVisitor.cpp`,
+  `NetWriter.cpp`, `NFinput.cpp`, and the parse-dependent contract fixture.
+
+The compact `EnergyRxnClass` evaluator is disabled for any rule with nonzero
+barrier or work; those rules take the materialized Sekar expansion.
+
+Design, fail-closed inventory, and architecture table:
+[`docs/nonequilibrium_energy.md`](nonequilibrium_energy.md).
+
+`tests/energy/standalone/run_checks.sh` runs the network-free subset of the
+above for environments where FetchContent cannot reach GitHub. It is a
+convenience harness, not a substitute for ctest.
+
 ## Current continuation checkpoint — 2026-09-15
 
 The continuation is based on public `main` at

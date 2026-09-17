@@ -60,6 +60,8 @@ add_library(bng_parser STATIC
     ${ANTLR_GEN_DIR}/BNGParserVisitor.cpp
     parser/BNGAstVisitor.cpp
     parser/PatternGraphBuilder.cpp
+    parser/ThermoSourceNormalization.cpp
+    parser/ThermoModelFinalize.cpp
 )
 target_include_directories(bng_parser PUBLIC
     ${ANTLR_GEN_DIR}
@@ -78,6 +80,10 @@ add_library(bng_compile STATIC
     compile/SymbolTable.cpp
     compile/UnitAnalysis.cpp
     compile/energy/EnergyDeltaPlan.cpp
+    compile/energy/ThermodynamicConstraints.cpp
+    compile/energy/BarrierTable.cpp
+    compile/energy/BarrierCompiler.cpp
+    compile/energy/DrivenEnergy.cpp
     compile/CompiledRateLaw.cpp
     compile/CompiledRule.cpp
     compile/CompiledModel.cpp)
@@ -101,6 +107,7 @@ add_library(bng_engine STATIC
     io/SbmlUnitWriter.cpp
     io/XmlWriter.cpp
     io/BnglWriter.cpp
+    io/EnergyExportGuard.cpp
     io/SbmlWriter.cpp
     io/SbmlMultiWriter.cpp
     io/MatlabWriter.cpp
