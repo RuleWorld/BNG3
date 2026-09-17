@@ -2,8 +2,6 @@
 
 #include <string>
 #include <filesystem>
-#include <unordered_map>
-#include <vector>
 #include "ast/Model.hpp"
 #include "engine/NetworkGenerator.hpp"
 
@@ -34,17 +32,6 @@ public:
         std::vector<std::pair<std::string, std::string>> species;  // pattern, concentration (as string - can be number or parameter ref)
         std::vector<std::string> reactions;
         std::unordered_map<std::string, double> parameters;
-        // SBML Core unit metadata.  These maps preserve authored UnitSIds so
-        // callers can rebuild the same AST annotations without guessing from
-        // numeric values.
-        std::unordered_map<std::string, std::string> unitDefinitions;
-        std::unordered_map<std::string, std::string> unitDefaults;
-        std::unordered_map<std::string, std::string> parameterUnits;
-        std::unordered_map<std::string, std::string> compartmentUnits;
-        std::unordered_map<std::string, double> compartmentSizes;
-        std::unordered_map<std::string, int> compartmentDimensions;
-        std::vector<std::string> speciesUnits;
-        std::vector<bool> speciesInitialConcentrations;
         std::vector<std::string> compartments;
         std::vector<std::pair<std::string, std::vector<std::string>>> observables; // name, patterns
         std::vector<std::pair<std::string, std::string>> functions;  // name, expression

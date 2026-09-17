@@ -7,7 +7,6 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <iterator>
 #include <limits>
 #include <optional>
 #include <iomanip>
@@ -19,7 +18,6 @@
 #include <vector>
 
 #include "ast/Parameter.hpp"
-#include "compile/Document.hpp"
 #include "engine/NetworkGenerator.hpp"
 #include "engine/OdeIntegrator.hpp"
 #include "engine/PlaSimulator.hpp"
@@ -83,52 +81,6 @@ std::string stripQuotes(const std::string& text) {
         return text.substr(1, text.size() - 2);
     }
     return text;
-}
-
-std::vector<std::string> parseQuotedStringList(const std::string& text,
-                                               const std::string& name) {
-    auto value = trim(text);
-    if (value.size() < 2 || value.front() != '[' || value.back() != ']') {
-        throw std::runtime_error(name + " must be a comma-separated list in square brackets");
-    }
-
-    value = value.substr(1, value.size() - 2);
-    std::vector<std::string> entries;
-    std::size_t start = 0;
-    char quote = '\0';
-    for (std::size_t i = 0; i <= value.size(); ++i) {
-        const char current = i < value.size() ? value[i] : ',';
-        if (quote != '\0') {
-            if (current == quote) {
-                quote = '\0';
-            }
-            continue;
-        }
-        if (current == '\'' || current == '"') {
-            quote = current;
-            continue;
-        }
-        if (current != ',') {
-            continue;
-        }
-
-        const auto token = trim(value.substr(start, i - start));
-        if (!token.empty()) {
-            if (token.size() < 2 ||
-                !((token.front() == '"' && token.back() == '"') ||
-                  (token.front() == '\'' && token.back() == '\''))) {
-                throw std::runtime_error(name + " entries must be quoted strings");
-            }
-            entries.push_back(stripQuotes(token));
-        } else if (!entries.empty() || i != value.size()) {
-            throw std::runtime_error(name + " must not contain empty entries");
-        }
-        start = i + 1;
-    }
-    if (quote != '\0') {
-        throw std::runtime_error(name + " contains an unterminated quoted string");
-    }
-    return entries;
 }
 
 std::string lowercase(std::string value) {
@@ -684,179 +636,6 @@ std::string formatScalar(double value) {
     return output.str();
 }
 
-void applySbmlUnitMetadata(const io::NetReader::ParseResult& parsed,
-                           ast::Model& model) {
-    for (const auto& [id, expression] : parsed.unitDefinitions) {
-        if (model.getUnitSystem().find(id) == nullptr) {
-            model.defineUnit(id, expression);
-        } else {
-            const auto existing = model.getUnitSystem().parse(id);
-            const auto incoming = model.getUnitSystem().parse(expression);
-            if (!existing || !incoming ||
-                existing.unit->dimension != incoming.unit->dimension ||
-                existing.unit->baseExponents != incoming.unit->baseExponents ||
-                std::abs(existing.unit->factor - incoming.unit->factor) > 1e-15) {
-                throw std::runtime_error(
-                    "SBML unit definition conflicts with existing unit '" + id + "'");
-            }
-        }
-    }
-    for (const auto& [role, unit] : parsed.unitDefaults) {
-        model.setUnitDefault(role, unit);
-        if (role == "substanceUnits") model.setSubstanceUnits(unit);
-    }
-    for (const auto& [name, unitName] : parsed.parameterUnits) {
-        if (!model.getParameters().contains(name)) continue;
-        const auto parameterName = name;
-        const auto parsedUnit = model.getUnitSystem().parse(unitName);
-        if (!parsedUnit) {
-            throw std::runtime_error(
-                "SBML parameter '" + name + "' has invalid units: " + parsedUnit.error);
-        }
-        auto& parameter = *std::find_if(
-            model.getParameters().all().begin(), model.getParameters().all().end(),
-            [&](const auto& candidate) { return candidate.getName() == parameterName; });
-        parameter.setUnit(*parsedUnit.unit, unitName);
-    }
-    for (const auto& name : parsed.compartments) {
-        if (name.empty()) continue;
-        auto existing = std::find_if(
-            model.getCompartments().begin(), model.getCompartments().end(),
-            [&](const auto& compartment) { return compartment.getName() == name; });
-        if (existing == model.getCompartments().end()) {
-            const auto size = parsed.compartmentSizes.find(name);
-            const auto dimension = parsed.compartmentDimensions.find(name);
-            model.addCompartment(ast::Compartment(
-                name,
-                size == parsed.compartmentSizes.end() ? 1.0 : size->second,
-                dimension == parsed.compartmentDimensions.end() ? 3 : dimension->second));
-            existing = std::prev(model.getCompartments().end());
-        }
-        const auto unit = parsed.compartmentUnits.find(name);
-        if (unit != parsed.compartmentUnits.end()) {
-            const auto parsedUnit = model.getUnitSystem().parse(unit->second);
-            if (!parsedUnit) {
-                throw std::runtime_error(
-                    "SBML compartment '" + name + "' has invalid units: " + parsedUnit.error);
-            }
-            existing->setUnit(*parsedUnit.unit, unit->second);
-        }
-    }
-}
-
-units::Unit networkItemUnit() {
-    units::Unit item;
-    item.name = "item";
-    item.dimension.substance = 1;
-    item.baseExponents[units::BaseUnit::Item] = 1;
-    return item;
-}
-
-std::optional<double> networkNumberPerQuantity(const ast::Model& model) {
-    const auto found = model.getOptions().find("NumberPerQuantityUnit");
-    if (found == model.getOptions().end()) return std::nullopt;
-    try {
-        return std::stod(stripQuotes(found->second));
-    } catch (...) {
-        throw std::runtime_error(
-            "NumberPerQuantityUnit must be numeric for SBML species conversion");
-    }
-}
-
-struct ParsedSpeciesPrefix {
-    std::string pattern;
-    std::string compartment;
-    bool constant = false;
-};
-
-ParsedSpeciesPrefix splitSpeciesPrefix(std::string pattern) {
-    ParsedSpeciesPrefix result;
-    if (!pattern.empty() && pattern.front() == '@') {
-        const auto separator = pattern.find("::");
-        if (separator != std::string::npos) {
-            result.compartment = pattern.substr(1, separator - 1);
-            pattern.erase(0, separator + 2);
-        }
-    }
-    if (!pattern.empty() && pattern.front() == '$') {
-        result.constant = true;
-        pattern.erase(pattern.begin());
-    }
-    result.pattern = std::move(pattern);
-    return result;
-}
-
-double normalizeSbmlSpeciesValue(const io::NetReader::ParseResult& parsed,
-                                 std::size_t index,
-                                 const ast::Model& model,
-                                 const ParsedSpeciesPrefix& species,
-                                 double value) {
-    const bool initialConcentration = index < parsed.speciesInitialConcentrations.size() &&
-        parsed.speciesInitialConcentrations[index];
-    std::string resolvedUnit;
-    if (index < parsed.speciesUnits.size()) resolvedUnit = parsed.speciesUnits[index];
-
-    if (resolvedUnit.empty() && !model.getUnitDefaults().empty()) {
-        const auto substance = model.getUnitDefaults().find("substanceUnits");
-        const auto volume = model.getUnitDefaults().find("volumeUnits");
-        if (initialConcentration && substance != model.getUnitDefaults().end() &&
-            volume != model.getUnitDefaults().end()) {
-            resolvedUnit = substance->second + "/" + volume->second;
-        } else if (!initialConcentration && substance != model.getUnitDefaults().end()) {
-            resolvedUnit = substance->second;
-        }
-    }
-    if (resolvedUnit.empty()) return value;
-
-    const auto parsedUnit = model.getUnitSystem().parse(resolvedUnit);
-    if (!parsedUnit) {
-        throw std::runtime_error("SBML species has invalid units '" + resolvedUnit + "': " +
-                                 parsedUnit.error);
-    }
-
-    units::ConversionContext context;
-    context.numberPerQuantityUnit = networkNumberPerQuantity(model);
-    if (initialConcentration || parsedUnit.unit->dimension.length == -3) {
-        const auto compartment = std::find_if(
-            model.getCompartments().begin(), model.getCompartments().end(),
-            [&](const auto& candidate) { return candidate.getName() == species.compartment; });
-        if (compartment == model.getCompartments().end()) {
-            throw std::runtime_error(
-                "SBML concentration species requires a declared compartment");
-        }
-        std::optional<units::Unit> volumeUnit;
-        if (compartment->hasUnit()) {
-            volumeUnit = compartment->getUnit();
-        } else {
-            const auto defaultVolume = model.getUnitDefaults().find("volumeUnits");
-            if (defaultVolume != model.getUnitDefaults().end()) {
-                const auto parsedVolume = model.getUnitSystem().parse(defaultVolume->second);
-                if (!parsedVolume) throw std::runtime_error(
-                    "invalid SBML volumeUnits default: " + parsedVolume.error);
-                volumeUnit = parsedVolume.unit;
-            }
-        }
-        if (!volumeUnit.has_value()) {
-            throw std::runtime_error(
-                "SBML concentration species requires a volume unit");
-        }
-        context.compartmentVolume = compartment->getVolume();
-        context.volumeUnit = *volumeUnit;
-        const auto converted = units::concentrationToItemAmount(
-            value, *parsedUnit.unit, *context.compartmentVolume,
-            *context.volumeUnit, context);
-        if (!converted) throw std::runtime_error(
-            "SBML concentration species conversion failed: " + converted.error);
-        return *converted.factor;
-    }
-
-    const auto converted = units::convertValue(
-        value, *parsedUnit.unit, networkItemUnit(), context);
-    if (!converted) throw std::runtime_error(
-        "SBML amount species conversion failed: " + converted.error);
-    return *converted.factor;
-}
-
 std::string readArgument(const ast::Action& action, const std::string& key, const std::string& fallback = {}) {
     const auto found = action.arguments.find(key);
     if (found == action.arguments.end()) {
@@ -868,12 +647,16 @@ std::string readArgument(const ast::Action& action, const std::string& key, cons
 engine::GeneratedNetwork networkFromParsedData(
     const io::NetReader::ParseResult& parseResult, ast::Model& model) {
     engine::GeneratedNetwork loadedNetwork;
-    for (std::size_t index = 0; index < parseResult.species.size(); ++index) {
-        const auto& [pattern, concStr] = parseResult.species[index];
-        const auto speciesPrefix = splitSpeciesPrefix(pattern);
+    for (const auto& [pattern, concStr] : parseResult.species) {
+        bool isConstant = false;
+        std::string cleanPattern = pattern;
+        if (!cleanPattern.empty() && cleanPattern[0] == '$') {
+            isConstant = true;
+            cleanPattern = cleanPattern.substr(1);
+        }
         BNGcore::PatternGraph pg;
-        pg.set_raw_string(speciesPrefix.pattern);
-        ast::SpeciesGraph sg(std::move(pg), speciesPrefix.compartment);
+        pg.set_raw_string(cleanPattern);
+        ast::SpeciesGraph sg(std::move(pg));
         double concentration = 0.0;
         try {
             concentration = std::stod(concStr);
@@ -884,10 +667,7 @@ engine::GeneratedNetwork networkFromParsedData(
                 concentration = 0.0;
             }
         }
-        concentration = normalizeSbmlSpeciesValue(
-            parseResult, index, model, speciesPrefix, concentration);
-        ast::Species sp(std::move(sg), concentration, speciesPrefix.constant,
-                        speciesPrefix.compartment);
+        ast::Species sp(std::move(sg), concentration, isConstant);
         loadedNetwork.species.add(std::move(sp));
     }
 
@@ -1486,13 +1266,6 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         }
     };
 
-    const auto normalizedSeedAmount = [](const compile::Document& document,
-                                         std::size_t index) {
-        if (index >= document.model().seeds().size()) return 0.0;
-        return engine::NetworkGenerator::normalizeSeedAmount(
-            document.model(), document.model().seeds()[index]);
-    };
-
     const auto writeNetworkAt = [&](const std::filesystem::path& outputPath,
                                     const io::NetWriterOptions& options = {}) {
         if (loadedNetData.has_value()) {
@@ -1526,10 +1299,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             for (std::size_t i = 0; i < network->species.size(); ++i) {
                 const auto& sp = network->species.get(i);
                 std::string prefix;
-                if (!sp.getCompartment().empty()) {
-                    prefix = "@" + sp.getCompartment() + "::";
-                }
-                if (sp.isConstant()) prefix += "$";
+                if (sp.isConstant()) prefix = "$";
                 out << "    " << (i + 1) << " " << prefix << sp.getSpeciesGraph().toString() << " ";
                 // Write concentration - use scientific notation for consistency
                 std::ostringstream concStr;
@@ -1944,12 +1714,14 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 } else if (label != "default") {
                     throw std::runtime_error("resetConcentrations label not found: " + label);
                 } else {
-                    const compile::Document currentDocument(model);
+                    const auto& seeds = model.getSeedSpecies();
                     for (std::size_t i = 0; i < network->species.size(); ++i) {
-                        if (i < currentDocument.model().seeds().size()) {
+                        if (i < seeds.size()) {
                             try {
                                 network->species.get(i).setAmount(
-                                    normalizedSeedAmount(currentDocument, i));
+                                    seeds[i].getAmount().evaluate([&](const std::string& name) {
+                                        return model.getParameters().evaluate(name);
+                                    }));
                             } catch (const std::exception& error) {
                                 throw std::runtime_error(
                                     "resetConcentrations could not evaluate seed species "
@@ -2111,7 +1883,6 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                     model.getParameters().add(
                         ast::Parameter(name, ast::Expression::number(value)));
                 }
-                applySbmlUnitMetadata(parseResult, model);
                 for (const auto& [name, expression] : parseResult.functions) {
                     model.addFunction(ast::Function(
                         name, {}, bng::parser::parseExpression(expression)));
@@ -2537,12 +2308,13 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 restoreConcentrations(*network, found->second);
             } else {
                 // Perl BNG2 behavior: reset to initial seed species concentrations
-                const compile::Document currentDocument(model);
+                const auto& seeds = model.getSeedSpecies();
                 for (std::size_t i = 0; i < network->species.size(); ++i) {
-                    if (i < currentDocument.model().seeds().size()) {
+                    if (i < seeds.size()) {
                         try {
-                            network->species.get(i).setAmount(
-                                normalizedSeedAmount(currentDocument, i));
+                            const double amount = seeds[i].getAmount().evaluate(
+                                [&](const std::string& name) { return model.getParameters().evaluate(name); });
+                            network->species.get(i).setAmount(amount);
                         } catch (...) {
                             network->species.get(i).setAmount(0.0);
                         }
@@ -3313,11 +3085,6 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 hppOpts.nSteps = static_cast<std::size_t>(parseScalarValue(nStepsText, model));
             }
 
-            const auto actionsText = readArgument(action, "actions", "");
-            if (!actionsText.empty()) {
-                hppOpts.actions = parseQuotedStringList(actionsText, "actions");
-            }
-
             engine::HybridModelGenerator gen(model, *network);
             auto genResult = gen.generate(sourcePath, hppOpts);
 
@@ -3652,15 +3419,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
         if (actionName == "visualize") {
             const auto vizType = lowercase(stripQuotes(readArgument(action, "type", "contactmap")));
-            const auto outputFormat = lowercase(stripQuotes(
-                readArgument(action, "outType", readArgument(action, "format", "gml"))));
-            const auto suffix = stripQuotes(readArgument(action, "suffix", ""));
-            const auto optionsText = readArgument(action, "opts", "");
-            if (!optionsText.empty()) {
-                // Parse the legacy option-file list even though the native
-                // graph writers currently use their own deterministic defaults.
-                (void)parseQuotedStringList(optionsText, "visualize opts");
-            }
+            const auto outputFormat = lowercase(stripQuotes(readArgument(action, "format", "gml")));
 
             std::string content;
             std::string extension;
@@ -3677,19 +3436,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                     content = io::ContactMapWriter::toGML(contactMap);
                     extension = ".gml";
                 }
-                fileSuffix = "_contactmap";
-
-            } else if (vizType == "conventional") {
-                auto patternGraph = io::RulevizPatternWriter::build(model);
-                content = io::RulevizPatternWriter::toGML(patternGraph);
-                extension = ".gml";
-                fileSuffix = "_conventional";
-
-            } else if (vizType == "compact") {
-                auto operationGraph = io::RulevizOperationWriter::build(model);
-                content = io::RulevizOperationWriter::toGML(operationGraph);
-                extension = ".gml";
-                fileSuffix = "_compact";
+                fileSuffix = "_contact";
 
             } else if (vizType == "regulatory") {
                 // Regulatory graph (requires generated network)
@@ -3702,7 +3449,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             } else if (vizType == "reaction_network") {
                 // Reaction network graph (requires generated network)
                 ensureNetwork();
-                auto rxnGraph = io::ReactionNetworkGraphWriter::build(*network);
+                auto rxnGraph = io::ReactionNetworkGraphWriter::build(model, *network);
                 content = io::ReactionNetworkGraphWriter::toGML(rxnGraph);
                 extension = ".gml";
                 fileSuffix = "_reaction_network";
@@ -3724,7 +3471,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             } else if (vizType == "process") {
                 // Bipartite process graph (requires generated network)
                 ensureNetwork();
-                auto procGraph = io::ProcessGraphWriter::build(*network);
+                auto procGraph = io::ProcessGraphWriter::build(model, *network);
                 content = io::ProcessGraphWriter::toGML(procGraph);
                 extension = ".gml";
                 fileSuffix = "_process";
@@ -3732,7 +3479,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             } else if (vizType == "rinf" || vizType == "rule_influence") {
                 // Rule influence graph (requires generated network)
                 ensureNetwork();
-                auto rinfGraph = io::RuleInfluenceGraphWriter::build(*network);
+                auto rinfGraph = io::RuleInfluenceGraphWriter::build(model, *network);
                 content = io::RuleInfluenceGraphWriter::toGML(rinfGraph);
                 extension = ".gml";
                 fileSuffix = "_rinf";
@@ -3765,9 +3512,6 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                     "visualize: unsupported visualization type '" + vizType + "'");
             }
 
-            if (!suffix.empty()) {
-                fileSuffix += "_" + suffix;
-            }
             const auto outputPath = sourcePath.parent_path() / (sourcePath.stem().string() + fileSuffix + extension);
             std::ofstream outFile(outputPath);
             if (!outFile) {
@@ -3850,30 +3594,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
         if (actionName == "writenetwork" || actionName == "writenet") {
             ensureNetwork();
-            auto prefixText = stripQuotes(readArgument(
-                action, "prefix", sourcePath.stem().string()));
-            if (prefixText.empty()) {
-                prefixText = sourcePath.stem().string();
-            }
-            std::filesystem::path outputPrefix(prefixText);
-            if (!outputPrefix.is_absolute()) {
-                outputPrefix = sourcePath.parent_path() / outputPrefix;
-            }
-            const auto suffix = stripQuotes(readArgument(action, "suffix", ""));
-            if (!suffix.empty()) {
-                outputPrefix += "_" + suffix;
-            }
-            const auto outputPath = outputPrefix.string() + ".net";
-            const bool overwrite = parseBoolean(readArgument(action, "overwrite", "0"));
-            if (!overwrite && std::filesystem::exists(outputPath)) {
-                throw std::runtime_error(
-                    "writeNetwork: file exists: " + outputPath +
-                    "; set overwrite=>1 to replace it");
-            }
-            io::NetWriterOptions options;
-            options.evaluateExpressions = parseBoolean(
-                readArgument(action, "evaluate_expressions", "1"), true);
-            writeNetworkAt(outputPath, options);
+            writeCurrentNetwork();
             continue;
         }
 

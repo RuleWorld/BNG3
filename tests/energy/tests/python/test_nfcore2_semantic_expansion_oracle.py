@@ -92,7 +92,7 @@ def test_expanded_goal_keeps_broader_ceilings_explicit_and_fail_closed():
     }
     remaining = set(provenance["remaining_fallbacks"])
     assert expected <= remaining
-    status = STATUS.read_text(encoding="utf-8")
+    status = STATUS.read_text()
     for ceiling in expected:
         assert ceiling in status
     assert "No NFsim, NFnext, Rasi, or uORF" in status

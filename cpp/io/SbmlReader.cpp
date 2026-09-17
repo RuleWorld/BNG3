@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
-#include <iomanip>
 #include <map>
 #include <set>
 #include <sstream>
@@ -65,62 +64,6 @@ std::string sanitizeName(std::string name) {
         result.insert(0, "s");
     }
     return result;
-}
-
-std::string sbmlUnitKind(const std::string& kind) {
-    if (kind == "mole") return "mole";
-    if (kind == "item") return "item";
-    if (kind == "metre") return "metre";
-    if (kind == "litre") return "litre";
-    if (kind == "second") return "second";
-    if (kind == "dimensionless") return "dimensionless";
-    return {};
-}
-
-std::string unitDefinitionExpression(const TiXmlElement* definition) {
-    const auto* list = definition == nullptr
-        ? nullptr : definition->FirstChildElement("listOfUnits");
-    if (list == nullptr) return {};
-
-    std::ostringstream expression;
-    bool first = true;
-    for (auto* unit = list->FirstChildElement("unit"); unit != nullptr;
-         unit = unit->NextSiblingElement("unit")) {
-        const auto kind = sbmlUnitKind(attribute(unit, "kind"));
-        if (kind.empty()) throw std::runtime_error(
-            "SBML unit definition uses unsupported base unit '" + attribute(unit, "kind") + "'");
-        const auto exponentText = attribute(unit, "exponent", "1");
-        int exponent = 0;
-        try {
-            std::size_t consumed = 0;
-            exponent = std::stoi(exponentText, &consumed);
-            if (consumed != exponentText.size()) throw std::runtime_error("not an integer");
-        } catch (...) {
-            throw std::runtime_error("SBML unit exponent must be an integer");
-        }
-        if (exponent == 0) continue;
-
-        double multiplier = 1.0;
-        try {
-            multiplier = std::stod(attribute(unit, "multiplier", "1"));
-            const auto scale = std::stoi(attribute(unit, "scale", "0"));
-            multiplier *= std::pow(10.0, static_cast<double>(scale));
-        } catch (...) {
-            throw std::runtime_error("SBML unit multiplier/scale is invalid");
-        }
-        if (!std::isfinite(multiplier) || multiplier <= 0.0) {
-            throw std::runtime_error("SBML unit multiplier/scale must be positive and finite");
-        }
-
-        if (!first) expression << '*';
-        first = false;
-        if (std::abs(multiplier - 1.0) > 1e-15) {
-            expression << std::setprecision(17) << multiplier << '*';
-        }
-        expression << kind;
-        if (exponent != 1) expression << '^' << exponent;
-    }
-    return first ? "1" : expression.str();
 }
 
 bool parseBool(const std::string& value) {
@@ -310,6 +253,11 @@ std::string weightedList(const std::map<int, int>& entries) {
 NetReader::ParseResult SbmlReader::parse(
     const std::filesystem::path& filepath, bool atomize) {
     NetReader::ParseResult result;
+    if (atomize) {
+        result.error =
+            "SBML atomize=true requires the Python atomizer conversion path";
+        return result;
+    }
 
     const auto filename = filepath.string();
     TiXmlDocument document(filename.c_str());
@@ -323,52 +271,17 @@ NetReader::ParseResult SbmlReader::parse(
         result.error = "SBML document has no model element";
         return result;
     }
-    if (atomize && attribute(model, "id") != "plain2") {
-        result.error =
-            "SBML atomize=true supports the legacy BNG2 structured SBML dialect only";
-        return result;
-    }
 
     try {
         std::unordered_map<std::string, int> speciesIndices;
         std::set<std::string> usedNames;
-
-        const auto* unitDefinitions = model->FirstChildElement("listOfUnitDefinitions");
-        if (unitDefinitions != nullptr) {
-            for (auto* definition = unitDefinitions->FirstChildElement("unitDefinition");
-                 definition != nullptr;
-                 definition = definition->NextSiblingElement("unitDefinition")) {
-                const auto id = attribute(definition, "id");
-                if (id.empty()) continue;
-                const auto expression = unitDefinitionExpression(definition);
-                if (expression.empty()) throw std::runtime_error(
-                    "SBML unit definition '" + id + "' is empty");
-                result.unitDefinitions[id] = expression;
-            }
-        }
-        for (const char* role : {"timeUnits", "substanceUnits", "volumeUnits",
-                                 "areaUnits", "lengthUnits", "extentUnits"}) {
-            const auto value = attribute(model, role);
-            if (!value.empty()) result.unitDefaults[role] = value;
-        }
 
         const auto* compartments = model->FirstChildElement("listOfCompartments");
         if (compartments != nullptr) {
             for (auto* compartment = compartments->FirstChildElement("compartment");
                  compartment != nullptr;
                  compartment = compartment->NextSiblingElement("compartment")) {
-                const auto id = attribute(compartment, "id");
-                result.compartments.push_back(id);
-                const auto unit = attribute(compartment, "units");
-                if (!unit.empty()) result.compartmentUnits[id] = unit;
-                try {
-                    result.compartmentSizes[id] =
-                        std::stod(attribute(compartment, "size", "1"));
-                    result.compartmentDimensions[id] =
-                        std::stoi(attribute(compartment, "spatialDimensions", "3"));
-                } catch (...) {
-                    throw std::runtime_error("SBML compartment size or dimension is invalid");
-                }
+                result.compartments.push_back(attribute(compartment, "id"));
             }
         }
 
@@ -397,14 +310,10 @@ NetReader::ParseResult SbmlReader::parse(
                 pattern += standardized + "()";
                 speciesIndices[id] = index;
                 std::string amount = attribute(species, "initialAmount");
-                const bool initialConcentration = amount.empty() &&
-                    !attribute(species, "initialConcentration").empty();
                 if (amount.empty()) {
                     amount = attribute(species, "initialConcentration", "0");
                 }
                 result.species.emplace_back(pattern, amount);
-                result.speciesUnits.push_back(attribute(species, "units"));
-                result.speciesInitialConcentrations.push_back(initialConcentration);
             }
         }
         if (result.species.empty()) {
@@ -420,8 +329,6 @@ NetReader::ParseResult SbmlReader::parse(
                 const auto value = attribute(parameter, "value");
                 if (!id.empty() && !value.empty()) {
                     result.parameters[id] = std::stod(value);
-                    const auto unit = attribute(parameter, "units");
-                    if (!unit.empty()) result.parameterUnits[id] = unit;
                 }
             }
         }
@@ -538,47 +445,6 @@ NetReader::ParseResult SbmlReader::parse(
                      << weightedList(entries);
                 result.rawGroupLines.push_back(line.str());
             }
-        }
-
-        if (atomize) {
-            // BNG2's structured-SBML export used by the validation corpus has
-            // enough information in its species identifiers to recover the
-            // two molecular components and their state/bond sites.  Preserve
-            // the historical atomized network ordering and rate functions so
-            // this native path is independent of the Python atomizer.
-            const auto isPlain2 = attribute(model, "id") == "plain2";
-            if (!isPlain2 || speciesIndices.size() != 5 ||
-                speciesIndices.count("S1") == 0 || speciesIndices.count("S2") == 0 ||
-                speciesIndices.count("S3") == 0 || speciesIndices.count("S4") == 0 ||
-                speciesIndices.count("S5") == 0) {
-                throw std::runtime_error(
-                    "SBML atomize=true could not infer a supported structured model");
-            }
-
-            result.species = {
-                {"@cell::MolA(_p~0,molb)", "1.0"},
-                {"@cell::MolB(mola,molb)", "1.0"},
-                {"@cell::MolA(_p~0,molb!1).MolB(mola!1,molb)", "0"},
-                {"@cell::MolB(mola,molb!1).MolB(mola,molb!1)", "0"},
-                {"@cell::MolA(_p~_P,molb)", "0"},
-            };
-            result.reactions = {
-                "1 1,2 3 1*k1_f #R1 unit_conversion=1/1.0",
-                "2 2,2 4 0.5*functionRate4 #R5 unit_conversion=1/1.0",
-                "3 3 2,5 k2_f #R2",
-                "4 3 1,2 k1_r #R3",
-                "5 2,5 3 1*k2_r #R4 unit_conversion=1/1.0",
-            };
-            result.rawGroupLines = {
-                "1 MolA_cell 1",
-                "2 MolB_cell 2",
-                "3 MolA_MolB_cell 3",
-                "4 MolA_P_cell 5",
-                "5 __MolB__2_cell 4",
-            };
-            result.functions.emplace_back("functionRate4", "k3_f*2");
-            result.rawFunctionLines.insert(
-                result.rawFunctionLines.begin(), "1 functionRate4() k3_f*2");
         }
 
         result.success = true;

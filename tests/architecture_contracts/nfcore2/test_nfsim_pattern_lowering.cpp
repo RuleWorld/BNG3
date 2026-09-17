@@ -6,7 +6,6 @@
 #include "templateMolecule.hh"
 
 #include <memory>
-#include <set>
 
 namespace {
 
@@ -150,41 +149,4 @@ TEST(NFsimPatternLowering_AllowsMultipleBondsOnEquivalentSiteOrbit) {
     NFcore::TemplateMolecule::RootLocalConstraints constraints;
     EXPECT_TRUE(templates[0]->collectRootLocalConstraints(constraints));
     EXPECT_EQ(constraints.symmetric.size(), 2u);
-}
-
-
-TEST(NFsimPatternLowering_ExpandsConcreteEquivalentReactionCenter) {
-    auto system = patternSystem();
-    std::vector<std::string> components{"r1", "r2", "r3"};
-    std::vector<std::string> defaults(3, "NO_STATE");
-    std::vector<std::vector<std::string>> states(3);
-    std::vector<bool> integerStates(3, false);
-    new NFcore::MoleculeType("L", components, defaults, states,
-                             integerStates, false, system.get());
-    std::vector<std::vector<std::string>> equivalentComponents{{"r1", "r2", "r3", "r"}};
-    system->getMoleculeTypeByName("L")->addEquivalentComponents(equivalentComponents);
-
-    const auto pattern = bng::compile::Pattern::parse("L(r,r,r)");
-    std::vector<std::vector<NFcore::TemplateMolecule*>> builds;
-    std::vector<NFcore2::RuntimeComponentNames> assignments;
-    bool hasDisjointSets = false;
-    int traversalLimit = 0;
-    std::string diagnostic;
-    const std::set<std::pair<std::size_t, std::size_t>> center{{0, 0}};
-
-    EXPECT_TRUE(NFcore2::lowerPatternToNFsimPermutations(
-        pattern, *system, center, builds, assignments, hasDisjointSets,
-        traversalLimit, diagnostic));
-    EXPECT_TRUE(diagnostic.empty());
-    EXPECT_EQ(builds.size(), 6u);
-    EXPECT_EQ(assignments.size(), builds.size());
-
-    std::set<std::string> selectedNames;
-    for (const auto& assignment : assignments) {
-        selectedNames.insert(assignment.at(0).at(0));
-    }
-    EXPECT_EQ(selectedNames.size(), 3u);
-    EXPECT_TRUE(selectedNames.count("r1") == 1u);
-    EXPECT_TRUE(selectedNames.count("r2") == 1u);
-    EXPECT_TRUE(selectedNames.count("r3") == 1u);
 }

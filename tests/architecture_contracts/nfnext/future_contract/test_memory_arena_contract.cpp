@@ -1,5 +1,14 @@
 #include "contract_test.hpp"
 
+#if defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define NFNEXT_DISABLE_ALLOCATION_OVERRIDES 1
+#endif
+#endif
+#if defined(__SANITIZE_ADDRESS__)
+#define NFNEXT_DISABLE_ALLOCATION_OVERRIDES 1
+#endif
+
 #if __has_include("nfnext/arena_v2.hpp") && __has_include("nfnext/allocation_probe.hpp")
 #include "nfnext/arena_v2.hpp"
 #include "nfnext/allocation_probe.hpp"
@@ -17,10 +26,12 @@ CONTRACT_CASE("hot type array contains no pointers") { ParticleArenaV2 a;for(int
 CONTRACT_CASE("bond storage uses compact particle IDs not raw pointers") { GenericArenaSchema s=makeBondedArenaSchema();GenericArenaV2 a(s);REQUIRE_EQ(a.layout().bond_partner_element_bytes,sizeof(ParticleId)); }
 CONTRACT_CASE("site-state stride is compiler-known and direct-indexable") { GenericArenaSchema s=makeBondedArenaSchema();GenericArenaV2 a(s);REQUIRE_EQ(a.siteOffset(10,2),10*a.stride()+2); }
 
+#ifndef NFNEXT_DISABLE_ALLOCATION_OVERRIDES
 CONTRACT_CASE("steady-state state-change event performs zero heap allocations") { auto sim=makeAllocationProbeFixture("state_change");sim.warmup(100);AllocationProbe p;sim.run(100000);REQUIRE_EQ(p.allocations(),0u); }
 CONTRACT_CASE("steady-state bind-unbind event performs zero heap allocations") { auto sim=makeAllocationProbeFixture("bind_unbind");sim.warmup(100);AllocationProbe p;sim.run(100000);REQUIRE_EQ(p.allocations(),0u); }
 CONTRACT_CASE("steady-state lattice hop performs zero heap allocations") { auto sim=makeAllocationProbeFixture("lattice");sim.warmup(100);AllocationProbe p;sim.run(100000);REQUIRE_EQ(p.allocations(),0u); }
 CONTRACT_CASE("steady-state population event performs zero heap allocations") { auto sim=makeAllocationProbeFixture("population");sim.warmup(100);AllocationProbe p;sim.run(100000);REQUIRE_EQ(p.allocations(),0u); }
+#endif
 
 CONTRACT_CASE("create-destroy churn reuses capacity instead of unbounded growth") { ParticleArenaV2 a;for(int cycle=0;cycle<10000;++cycle){std::vector<ParticleId> p;for(int i=0;i<1000;++i)p.push_back(a.create(0));for(auto x:p)a.destroy(x);}REQUIRE(a.capacity()<=1000u); }
 CONTRACT_CASE("generic graph create-destroy churn clears all stale site data") { auto s=makeBondedArenaSchema();GenericArenaV2 a(s);for(int cycle=0;cycle<1000;++cycle){auto p=a.create(0);a.setState(p,0,7);a.destroy(p);auto q=a.create(0);REQUIRE_EQ(a.state(q,0),s.defaultState(0,0));a.destroy(q);} }

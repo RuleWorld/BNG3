@@ -23,7 +23,6 @@ enum class SymbolKind {
     Compartment,
     ReactionRule,
     EnergyPattern,
-    PopulationType,
     Count,
 };
 
@@ -60,7 +59,6 @@ struct CompartmentTag;
 struct ReactionRuleTag;
 struct EnergyPatternTag;
 struct SeedSpeciesTag;
-struct PopulationTypeTag;
 
 using ParameterId = SymbolId<ParameterTag>;
 using FunctionId = SymbolId<FunctionTag>;
@@ -70,7 +68,6 @@ using CompartmentId = SymbolId<CompartmentTag>;
 using ReactionRuleId = SymbolId<ReactionRuleTag>;
 using EnergyPatternId = SymbolId<EnergyPatternTag>;
 using SeedSpeciesId = SymbolId<SeedSpeciesTag>;
-using PopulationTypeId = SymbolId<PopulationTypeTag>;
 
 struct SymbolRef {
     SymbolKind kind = SymbolKind::Parameter;
@@ -91,7 +88,6 @@ public:
     std::optional<CompartmentId> resolveCompartment(std::string_view name) const;
     std::optional<ReactionRuleId> resolveReactionRule(std::string_view name) const;
     std::optional<EnergyPatternId> resolveEnergyPattern(std::string_view name) const;
-    std::optional<PopulationTypeId> resolvePopulationType(std::string_view name) const;
 
     std::size_t size(SymbolKind kind) const;
     const std::vector<Diagnostic>& diagnostics() const { return diagnostics_; }

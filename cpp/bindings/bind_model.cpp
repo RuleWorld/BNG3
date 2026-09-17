@@ -25,7 +25,6 @@ void bind_model(py::module_& m) {
 
     py::class_<Parameter>(m, "Parameter")
         .def_property_readonly("name", &Parameter::getName)
-        .def_property_readonly("unit", &Parameter::getUnitName)
         .def_property_readonly("expression", &Parameter::getExpression,
                                py::return_value_policy::reference_internal)
         .def_property("value",
@@ -71,7 +70,6 @@ void bind_model(py::module_& m) {
 
     py::class_<SeedSpecies>(m, "SeedSpecies")
         .def_property_readonly("pattern", &SeedSpecies::getPattern)
-        .def_property_readonly("unit", &SeedSpecies::getUnitName)
         .def_property_readonly("amount", &SeedSpecies::getAmount,
                                py::return_value_policy::reference_internal)
         .def_property_readonly("is_constant", &SeedSpecies::isConstant)
@@ -123,7 +121,6 @@ void bind_model(py::module_& m) {
 
     py::class_<Compartment>(m, "Compartment")
         .def_property_readonly("name", &Compartment::getName)
-        .def_property_readonly("unit", &Compartment::getUnitName)
         .def_property_readonly("volume", &Compartment::getVolume)
         .def_property_readonly("dimension", &Compartment::getDimension)
         .def_property_readonly("parent", &Compartment::getParent)
@@ -187,14 +184,9 @@ void bind_model(py::module_& m) {
         .def_property_readonly("model_name", &Model::getModelName)
         .def_property_readonly("version", &Model::getVersion)
         .def_property_readonly("substance_units", &Model::getSubstanceUnits)
-        .def_property_readonly("unit_defaults", &Model::getUnitDefaults)
         .def_property_readonly("options", &Model::getOptions)
         .def("set_model_name", &Model::setModelName,
              py::arg("name"))
-        .def("define_unit", &Model::defineUnit,
-             py::arg("name"), py::arg("expression"))
-        .def("set_unit_default", &Model::setUnitDefault,
-             py::arg("role"), py::arg("unit"))
         .def("set_parameter", [](Model& model, const std::string& name, double value) {
             auto& params = model.getParameters();
             if (!params.contains(name)) {

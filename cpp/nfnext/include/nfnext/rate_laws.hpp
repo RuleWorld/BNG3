@@ -160,8 +160,7 @@ inline CompiledRateExpression compileRateExpression(
     FunctionEnvironment environment;
     for (const auto& parameter : parameters) environment.addParameter(parameter.first, parameter.second, 0);
     environment.addParameter("t", 0.0, 1);
-    auto function = FunctionCompiler().compile(expression, environment);
-    return {std::move(function), std::move(environment)};
+    return {FunctionCompiler().compile(expression, environment), std::move(environment)};
 }
 
 class PiecewiseTimeRate {

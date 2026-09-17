@@ -5,7 +5,7 @@
 namespace bng::io {
 
 ProcessGraphWriter::ProcessGraph ProcessGraphWriter::build(
-    const engine::GeneratedNetwork& network) {
+    const ast::Model& /*model*/, const engine::GeneratedNetwork& network) {
 
     ProcessGraph graph;
     int nextId = 0;

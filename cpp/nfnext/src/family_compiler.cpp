@@ -88,7 +88,7 @@ bool inferCoordinate(const ExpandedRuleIR& rule, std::uint32_t& index) noexcept 
 }
 
 void appendPredicateKey(std::ostringstream& key, const PredicateIR& p, std::uint32_t index) {
-    key << 'p' << static_cast<int>(p.kind) << ':' << p.molecule_type << ':' << p.node << ':' << p.site << ':';
+    key << 'p' << static_cast<int>(p.kind) << ':' << p.molecule_type << ':' << p.site << ':';
     if (p.kind == PredicateKind::PositionEq || p.kind == PredicateKind::PositionRange)
         key << normalized(p.value, index);
     else
@@ -113,8 +113,7 @@ std::string shapeKey(const ExpandedRuleIR& rule, std::uint32_t index) {
     key << '|';
     for (const auto& action : rule.actions) {
         key << 'a' << static_cast<int>(action.kind) << ':' << action.molecule_type << ':'
-            << action.site << ':' << action.value << ':' << action.aux << ':'
-            << action.target_node << ':' << action.partner_node << ':' << action.partner_site << ';';
+            << action.site << ':' << action.value << ':' << action.aux << ';';
     }
     key << '|';
     for (const auto& constraint : rule.pattern.molecularity) {
@@ -128,8 +127,8 @@ std::string shapeKey(const ExpandedRuleIR& rule, std::uint32_t index) {
 
 bool samePredicateShape(const PredicateIR& a, std::uint32_t ai,
                         const PredicateIR& b, std::uint32_t bi) noexcept {
-    if (a.kind != b.kind || a.molecule_type != b.molecule_type || a.node != b.node ||
-        a.site != b.site || a.state_set != b.state_set)
+    if (a.kind != b.kind || a.molecule_type != b.molecule_type || a.site != b.site ||
+        a.state_set != b.state_set)
         return false;
     const bool coordinate = a.kind == PredicateKind::PositionEq ||
                             a.kind == PredicateKind::PositionRange;
@@ -152,8 +151,7 @@ bool sameRuleShape(const ExpandedRuleIR& a, std::uint32_t ai,
         const auto& x = a.actions[i];
         const auto& y = b.actions[i];
         if (x.kind != y.kind || x.molecule_type != y.molecule_type || x.site != y.site ||
-            x.value != y.value || x.aux != y.aux || x.target_node != y.target_node ||
-            x.partner_node != y.partner_node || x.partner_site != y.partner_site)
+            x.value != y.value || x.aux != y.aux)
             return false;
     }
     return true;
@@ -171,8 +169,7 @@ std::string rejectionReason(const ExpandedRuleIR& a, std::uint32_t ai,
         const auto& x = a.actions[i];
         const auto& y = b.actions[i];
         if (x.kind != y.kind || x.molecule_type != y.molecule_type || x.site != y.site ||
-            x.value != y.value || x.aux != y.aux || x.target_node != y.target_node ||
-            x.partner_node != y.partner_node || x.partner_site != y.partner_site)
+            x.value != y.value || x.aux != y.aux)
             return "action mismatch";
     }
     if (!samePattern(a.pattern, b.pattern)) return "pattern mismatch";
@@ -223,7 +220,6 @@ RuleFamilyIR merged(const std::vector<const ExpandedRuleIR*>& rules,
 void mixPredicate(std::uint64_t& hash, const PredicateIR& predicate) noexcept {
     mix(hash, static_cast<std::uint8_t>(predicate.kind));
     mix(hash, predicate.molecule_type);
-    mix(hash, predicate.node);
     mix(hash, predicate.site);
     mix(hash, static_cast<std::uint32_t>(predicate.value));
     mix(hash, static_cast<std::uint32_t>(predicate.aux));
@@ -246,9 +242,6 @@ void mixFamily(std::uint64_t& hash, const RuleFamilyIR& family) noexcept {
         mix(hash, action.site);
         mix(hash, static_cast<std::uint32_t>(action.value));
         mix(hash, static_cast<std::uint32_t>(action.aux));
-        mix(hash, action.target_node);
-        mix(hash, action.partner_node);
-        mix(hash, action.partner_site);
     }
     for (const auto& constraint : family.pattern.molecularity) {
         mix(hash, static_cast<std::uint8_t>(constraint.kind));

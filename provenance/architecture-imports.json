@@ -14,6 +14,18 @@
       "adapted": false
     },
     {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/bng3_energy_validation_tests_additions.patch",
+      "source_sha256": "44cf65ceb662ed49856315d757f9bbc4027ee88284c154d742688aa3b5e18cf3",
+      "destination": "tests/energy/bng3_energy_validation_tests_additions.patch",
+      "adapted": false
+    },
+    {
+      "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/bng3_energy_validation_tests_additions_root_copy.patch",
+      "source_sha256": "44cf65ceb662ed49856315d757f9bbc4027ee88284c154d742688aa3b5e18cf3",
+      "destination": "tests/energy/bng3_energy_validation_tests_additions_root_copy.patch",
+      "adapted": false
+    },
+    {
       "source": "0/BNG3_energy_compiler_and_validation_complete_handoff_2026-09-07/validation_suite/cmake/energy_tests.cmake",
       "source_sha256": "fa91e6fdeee6dae120b7e0963cba8bed01867a0cfc0bfdd3ab30279f0b44e5cc",
       "destination": "tests/energy/cmake/energy_tests.cmake",

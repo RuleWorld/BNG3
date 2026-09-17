@@ -612,21 +612,6 @@ void OdeIntegrator::compile() {
                 checkedFunctions = true;
             }
 
-            // Observable names are parsed as zero-argument function calls
-            // (e.g. total()) in legacy rate syntax. They are runtime values,
-            // not parameter functions, so preserve the parsed expression and
-            // resolve the name through the compiled group table below.
-            if (!isFunctional &&
-                (rateExpr->kind() == ast::ExpressionKind::Function ||
-                 rateExpr->kind() == ast::ExpressionKind::ObservableRef)) {
-                for (const auto& observable : model_.getObservables()) {
-                    if (observable.getName() == rateExpr->name()) {
-                        isFunctional = true;
-                        break;
-                    }
-                }
-            }
-
             if (isFunctional) {
                 crxn.isFunctional = true;
                 // Use the original parsed rate expression, but wrap with unit

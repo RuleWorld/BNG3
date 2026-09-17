@@ -1,6 +1,0 @@
-name: BNG3 CodeQL configuration
-
-# CMake downloads third-party sources under this ignored directory. They are
-# not part of BNG3's source and should not create repository alerts.
-paths-ignore:
-  - build/**

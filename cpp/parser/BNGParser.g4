@@ -456,7 +456,6 @@ action_arg_value
     | keyword_as_value  // NEW: Allow keywords like 'ode', 'ssa' as unquoted values
     | quoted_string
     | LSBRACKET expression_list RSBRACKET
-    | LSBRACKET quoted_string (COMMA quoted_string)* RSBRACKET
     | LBRACKET nested_hash_list? RBRACKET
     ;
 
@@ -502,7 +501,7 @@ arg_name
     // NFsim options
     | PARAM | COMPLEX | GET_FINAL_STATE | GML | NOCSLF | NOTF | BINARY_OUTPUT | UTL | EQUIL | NFSIM_EXEC
     // Hybrid model options
-    | MOL_THRESHOLD | ACTIONS
+    | MOL_THRESHOLD
     // Parameter scan options
     | PARAMETER | PAR_MIN | PAR_MAX | N_SCAN_PTS | LOG_SCALE | RESET_CONC
     // Mfile options
@@ -510,7 +509,7 @@ arg_name
     // Read/write options
     | ATOMIZE | BLOCKS | SKIPACTIONS | INCLUDE_MODEL | INCLUDE_NETWORK | PRETTY_FORMATTING | EVALUATE_EXPRESSIONS
     // Visualize options
-    | TYPE | BACKGROUND | COLLAPSE | OPTS | GROUPS
+    | TYPE | BACKGROUND | COLLAPSE | OPTS
     // Safe/execute
     // Safe/execute
     | SAFE | EXECUTE

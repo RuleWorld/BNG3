@@ -33,15 +33,14 @@ void appendRateLaw(std::ostringstream& out, const RateLawIR& rate_law) {
 
 void appendPredicate(std::ostringstream& out, const PredicateIR& predicate) {
     out << static_cast<unsigned>(predicate.kind) << ':' << predicate.molecule_type << ':'
-        << predicate.node << ':' << predicate.site << ':' << predicate.value << ':' << predicate.aux << ':'
+        << predicate.site << ':' << predicate.value << ':' << predicate.aux << ':'
         << predicate.state_set.size() << ':';
     for (const auto state : predicate.state_set) out << state << ',';
 }
 
 void appendAction(std::ostringstream& out, const ActionIR& action) {
     out << static_cast<unsigned>(action.kind) << ':' << action.molecule_type << ':'
-        << action.site << ':' << action.value << ':' << action.aux << ':'
-        << action.target_node << ':' << action.partner_node << ':' << action.partner_site;
+        << action.site << ':' << action.value << ':' << action.aux;
 }
 
 void appendPattern(std::ostringstream& out, const PatternIR& pattern) {

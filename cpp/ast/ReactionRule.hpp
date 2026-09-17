@@ -21,24 +21,6 @@ class Model;  // forward declaration
 
 class ReactionRule {
 public:
-    // Optional backend-owned execution hooks. These let compiled backends
-    // provide already-resolved filter and local-rate semantics without
-    // requiring ReactionRule to consult or reparse an ast::Model.
-    struct ExecutionHooks {
-        std::function<bool(std::size_t, const SpeciesGraph&)> reactantFilter;
-        std::function<bool(const std::vector<SpeciesGraph>&)> productFilter;
-        std::function<std::string(
-            std::size_t, std::size_t, const BNGcore::Node*, const BNGcore::PatternGraph&)>
-            localRateFingerprint;
-
-        // Bidirectional rules are materialized as a lazily-created reverse
-        // ReactionRule. Compiled execution metadata is direction-specific, so
-        // the reverse rule must receive its own hooks rather than reusing the
-        // forward filters/local-rate scopes. The pointee is owned by the
-        // backend execution plan and must outlive expandRule().
-        const ExecutionHooks* reverse = nullptr;
-    };
-
     struct ComponentRef {
         std::size_t patternIndex = 0;
         std::size_t moleculeIndex = 0;
@@ -129,21 +111,6 @@ public:
     std::vector<std::pair<ComponentRef, ComponentRef>> getCrossBonds() const;
     std::vector<std::pair<ComponentRef, ComponentRef>> getNewMoleculeBonds() const;
 
-    // Structural graph-matching helpers used by backend adapters that already
-    // own resolved patterns. These do not parse BNGL or consult Model.
-    static bool patternMatchesSpecies(const SpeciesGraph& pattern, const SpeciesGraph& species);
-    static std::size_t countPatternMatches(
-        const SpeciesGraph& pattern,
-        const BNGcore::PatternGraph& speciesGraph);
-    static std::size_t countPatternMatchesForScopedMolecule(
-        const SpeciesGraph& pattern,
-        const SpeciesGraph& species,
-        const BNGcore::Node* scopedMolecule);
-    static std::size_t countPatternMatchesForScopedMolecule(
-        const SpeciesGraph& pattern,
-        const BNGcore::PatternGraph& speciesGraph,
-        const BNGcore::Node* scopedMolecule);
-
     void initialize();
     void clearPatternMatchCache() const;
     void clearPatternMatchCache(ExecutionState& state) const;
@@ -159,8 +126,7 @@ public:
         std::size_t currentIteration,
         const std::function<bool(const SpeciesGraph&)>& productFilter = {},
         std::size_t speciesBoundary = std::numeric_limits<std::size_t>::max(),
-        const Model* model = nullptr,
-        const ExecutionHooks* hooks = nullptr) const;
+        const Model* model = nullptr) const;
     std::size_t expandRule(
         SpeciesList& speciesList,
         RxnList& rxnList,
@@ -168,8 +134,7 @@ public:
         ExecutionState& state,
         const std::function<bool(const SpeciesGraph&)>& productFilter = {},
         std::size_t speciesBoundary = std::numeric_limits<std::size_t>::max(),
-        const Model* model = nullptr,
-        const ExecutionHooks* hooks = nullptr) const;
+        const Model* model = nullptr) const;
 
 private:
     ExecutionState& compatibilityState() const;
@@ -180,16 +145,14 @@ private:
         const SpeciesList& speciesList,
         const std::vector<std::size_t>& candidateSpecies,
         ExecutionState& state,
-        const Model* model = nullptr,
-        const ExecutionHooks* hooks = nullptr) const;
+        const Model* model = nullptr) const;
 
     bool buildReaction(
         const std::vector<EmbeddingResult>& matchSet,
         SpeciesList& speciesList,
         RxnList& rxnList,
         const std::function<bool(const SpeciesGraph&)>& productFilter,
-        const Model* model = nullptr,
-        const ExecutionHooks* hooks = nullptr) const;
+        const Model* model = nullptr) const;
 
     std::string ruleName_;
     std::string label_;

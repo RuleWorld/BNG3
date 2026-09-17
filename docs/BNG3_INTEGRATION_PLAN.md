@@ -3,88 +3,12 @@
 **Status:** Active implementation; convergence foundation and direct NFsim migration in progress
 **Plan date:** 2026-08-28
 **Scope:** BioNetGen, NFsim, and PyBioNetGen convergence into one maintained BNG3 codebase
-**Last progress update:** 2026-09-15
-**Implementation:** The active continuation is on
-`codex/bng3-convergence-continuation-20260915`,
-based on public `main` at `bad50c9cd659efd893e47d8b88bcfebaa4ebc2ba`.
-This document remains the authoritative backlog and completion contract;
-Section 11 is not yet satisfied.
+**Last progress update:** 2026-09-10
+**Implementation:** The active port is on `codex/bng3-rest-of-port-20260909`, based on committed head `a8d2a8b`, with a consolidated uncommitted implementation batch. This document remains the authoritative backlog and completion contract. Section 11 is not yet satisfied.
 
 The live implementation and verification snapshot is
 [`CURRENT_PROGRESS.md`](CURRENT_PROGRESS.md). Historical checkpoint counts
 below remain historical unless explicitly refreshed on the exact final tree.
-
-## Current continuation checkpoint — 2026-09-15
-
-The continuation makes the direct NFsim and NFnext evidence explicit without
-promoting either to a full convergence claim. Direct-vs-XML checks assert the
-runtime `construction_path`, remove XML fallback permission before the direct
-leg, and fail closed when a compiled backend or independent oracle is missing.
-Spawned source-tree workers receive explicit repository-root and `python/`
-imports, and the fixed-seed NFsim endpoint gate includes `motor` and `tlbr` in
-addition to the seeded `simple_system` ensemble.
-
-The first typed Lean/production C++ NFnext bridge uses
-`A(x~u) + B(y) -> A(x~p!1).B(y!1) k`; the C++ side crosses BNGL parser,
-`bng::compile::CompiledModel`, and `nfnext::lowerFromBioNetGen` and checks
-distinct-reactant molecularity, a state update, and a new bond. It is a small
-correspondence contract, not complete backend equivalence. Population maps
-remain fail-closed for direct NFsim and are routed through the hybrid backend.
-
-The local pre-documentation checkpoint reports CTest `308/308`, strict full
-validation `71/71` with zero failures/errors/skips, action contracts `6/6`,
-independent NFsim `10 passed`, and Lean/NFnext static contracts `36` files and
-`18/18`. Exact hosted status is established only by the final post-push `gh`
-check readback for the pushed continuation.
-
-## Previous implementation progress checkpoint — 2026-09-15
-
-The validation repair closes the former full-corpus reference exclusions. It
-adds independent BNG2 network references for the previously missing network
-fixtures, explicit action-output contracts for six action-focused fixtures, a
-strict validation manifest used by PR and weekly jobs, and a native structured
-SBML `atomize=>1` contract for the legacy `plain2` fixture. It also repairs
-reverse local-rate scope preservation and the action argument/output paths
-needed by those fixtures.
-
-At semantic commit `78a1591`, the full local validation reports `71/71` passed
-with zero failures, errors, and skips; CTest reports `308/308`; the energy
-Python suite reports `66 passed`; and CI-contract, Black, Ruff, corpus, and
-exception-ledger checks pass. The final public head `ed4c59e` has terminal-
-success hosted PR, parity, Lean, CodeQL, and formatting checks, including the
-Windows/MSVC and package-smoke/integration gates; broader parity and release
-qualification remain open.
-
-The preceding hosted Windows/MSVC jobs also identified an include-order issue
-in the ANTLR compatibility guard. The generated parser, visitor, and
-base-visitor headers now include `cpp/parser/antlr_compat.hpp`, covering the
-legacy NFsim entry path as well as the modern parser targets. The local rebuild
-passes; the new hosted head is terminal-success on the Windows platform
-matrix. Release-only and scheduled-only jobs remain guarded by their intended
-event conditions.
-
-## Wheel environment repair checkpoint — 2026-09-15
-
-The main push wheel run
-[`34901298982`](https://github.com/RuleWorld/BNG3/actions/runs/34901298982)
-identified two packaging-environment failures rather than BNG3 source
-failures. The macOS x86_64 builder defaulted to deployment target 10.9,
-below the ANTLR runtime's macOS availability requirements. The manylinux2014
-test image resolved NumPy 2.5.3 from source and stopped at GCC 10.2.1, below
-NumPy's GCC 10.3 minimum.
-
-The CI and release workflows now pin cibuildwheel 4.2.1, build native macOS
-architectures with deployment targets 10.13 on macos-13 and 11.0 on macos-14,
-and use `manylinux_2_28` for current binary NumPy compatibility. This changes
-the Linux wheel compatibility floor to glibc 2.28 and is recorded here as a
-packaging decision, not a semantic convergence claim. CI exposes a manual
-wheel-matrix dispatch so an exact branch head can be validated before release
-qualification. Follow-up PR CI run
-[`34971571944`](https://github.com/RuleWorld/BNG3/actions/runs/34971571944)
-passed its no-exclusion corpus and integration gates at `9efa0e9`; auxiliary
-wheel run `34971595435` was canceled before wheel jobs started so the wheel
-gate remains paused until merge. The first main-push run after merge is the
-authoritative result for this repair.
 
 ## Implementation progress checkpoint — 2026-09-10
 
@@ -465,8 +389,8 @@ BNG3 is already structurally a monorepo:
 - `python/bionetgen/` contains a unified API and Atomizer alongside legacy PyBioNetGen modules.
 - `legacy/perl/` contains BNG2 Perl as a compatibility and validation implementation.
 - `tests/validation/`, model fixtures, CMake targets, package metadata, documentation, and GitHub Actions workflows already exist.
-- [BNG3_unification_spec.md](BNG3_unification_spec.md) defines tactical work orders WO-0 through WO-7.
-- [BNG3_overcount_analysis.md](archive/reports/ir-migration-2026-09-14/BNG3_overcount_analysis.md) records the network-overcount investigation.
+- [BNG3_unification_spec.md](../BNG3_unification_spec.md) defines tactical work orders WO-0 through WO-7.
+- [BNG3_overcount_analysis.md](../BNG3_overcount_analysis.md) records the network-overcount investigation.
 - [architecture.md](architecture.md) describes the current runtime, including the XML bridge into NFsim.
 
 The work therefore starts from an incomplete convergence, not from four empty repositories.
@@ -876,15 +800,15 @@ Use Jules Playground as a valuable independently implemented differential target
 
 Each phase has deliverables and an exit gate. Later phases may prepare in parallel, but deletion and authority changes follow the stated dependencies.
 
-### Current phase status — 2026-09-15
+### Current phase status — 2026-08-30
 
 | Phase | Status | Evidence and next gate |
 |---|---|---|
 | 0 — authority/common ground | In progress | Individual BNG2/NFsim source paths are being used for semantic decisions; the accepted source lock, complete reconciliation ledger, owners, and RuleHub selection manifest remain open. |
-| 1 — honest green CI | In progress | Local CTest 308/308, full validation 71/71 with zero skips, Black/Ruff and CI-contract checks pass; the preceding exact-head hosted multi-OS, oracle, formal, package-smoke, and integration checks are historical, and the pushed continuation requires fresh exact-head readback after the documentation merge. |
-| 2 — independent validation | In progress | Committed independent BNG2 `.net` references and six explicit action-output contracts now cover the former PR/weekly exclusions; broader BNG2/NFsim matrices, golden provenance, and RuleHub approval remain open. |
+| 1 — honest green CI | In progress | Local CTest 124/124, Python 155 passed/27 skipped, and Ruff pass; deterministic validation has one explicit structured-SBML error, and the current hosted platform matrix is still running. |
+| 2 — independent validation | In progress | Structural BNG2 `.net` comparison, a fixed 4-model × 200-seed native NFsim gate, pooled-error comparator coverage, and provenance scaffolding exist; the reviewed golden bundle and broader independent-oracle gate remain open. |
 | 4 — semantic core | In progress | BNG2-derived deletion, bond-cardinality, product-molecularity, symmetry, compartment, dynamic-rate, protocol, scan, and sensitivity slices are implemented; broader source differential coverage remains open. |
-| 5 — direct NFsim | In progress | Typed AST-to-NFsim construction, explicit `construction_path` checks, scoped XML rate preservation, legacy DOR2/RNA compatibility, intramolecular product bonds, traversal-limit handling, direct-vs-XML tests, and the full 4-model × 200-seed native Tier-NF gate now cover additional behavior; the AN2 mismatch, protocol NF support, and XML-path retirement remain open. |
+| 5 — direct NFsim | In progress | Typed AST-to-NFsim construction, scoped XML rate preservation, legacy DOR2/RNA compatibility, intramolecular product bonds, traversal-limit handling, direct-vs-XML tests, and the full 4-model × 200-seed native Tier-NF gate now cover additional behavior; the AN2 mismatch, protocol NF support, and XML-path retirement remain open. |
 | 6–8 — consolidation/release | Not started | Dependent on the authority, parity, packaging, CI, and provenance exit gates above. |
 
 ### Phase 0 — Establish authority and freeze the common ground
@@ -1113,4 +1037,4 @@ The implementation should not begin until maintainers decide:
 8. The deprecation and maintenance timeline for the three legacy repositories.
 9. Whether the sanctioned Perl compatibility mode remains a release feature or becomes a developer-only validation tool after migration.
 
-Once these decisions are recorded, [BNG3_unification_spec.md](BNG3_unification_spec.md) can be revised into implementation-ready work orders whose file lists, tests, and deletion gates agree with this plan.
+Once these decisions are recorded, [BNG3_unification_spec.md](../BNG3_unification_spec.md) can be revised into implementation-ready work orders whose file lists, tests, and deletion gates agree with this plan.

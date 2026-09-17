@@ -12,24 +12,12 @@ add_library(nauty STATIC ${NAUTY_SOURCES})
 target_include_directories(nauty PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/nauty)
 
 # =============================================================================
-# bng_units (compile-time physical-unit algebra)
-# =============================================================================
-add_library(bng_units STATIC units/Unit.cpp)
-target_include_directories(bng_units PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/units
-)
-
-# =============================================================================
 # bng_core (pattern graph, node, state, transformations)
 # =============================================================================
 file(GLOB BNG_CORE_SOURCES "core/*.cpp")
 list(FILTER BNG_CORE_SOURCES EXCLUDE REGEX ".*_wrap\\.cxx")
 add_library(bng_core STATIC ${BNG_CORE_SOURCES})
-target_include_directories(bng_core PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/core
-)
+target_include_directories(bng_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/core)
 target_link_libraries(bng_core PUBLIC nauty)
 
 # =============================================================================
@@ -44,7 +32,7 @@ target_include_directories(bng_ast PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/parser
     ${antlr4_runtime_SOURCE_DIR}/runtime/Cpp/runtime/src
 )
-target_link_libraries(bng_ast PUBLIC bng_core antlr4_static bng_units)
+target_link_libraries(bng_ast PUBLIC bng_core antlr4_static)
 if(MSVC)
     target_compile_definitions(bng_ast PRIVATE _USE_MATH_DEFINES)
 endif()
@@ -74,9 +62,7 @@ add_library(bng_compile STATIC
     compile/Document.cpp
     compile/PatternDescriptor.cpp
     compile/PatternLowering.cpp
-    compile/LegacyAstLowering.cpp
     compile/SymbolTable.cpp
-    compile/UnitAnalysis.cpp
     compile/energy/EnergyDeltaPlan.cpp
     compile/CompiledRateLaw.cpp
     compile/CompiledRule.cpp
@@ -88,9 +74,6 @@ target_link_libraries(bng_compile PUBLIC bng_ast)
 # =============================================================================
 add_library(bng_engine STATIC
     engine/NetworkGenerator.cpp
-    engine/NetworkRulePlan.cpp
-    engine/LegacyNetworkRuleKernel.cpp
-    engine/ObservableProjection.cpp
     engine/OdeIntegrator.cpp
     engine/PlaSimulator.cpp
     engine/PsaSimulator.cpp
@@ -98,7 +81,6 @@ add_library(bng_engine STATIC
     io/NetWriter.cpp
     io/NetReader.cpp
     io/SbmlReader.cpp
-    io/SbmlUnitWriter.cpp
     io/XmlWriter.cpp
     io/BnglWriter.cpp
     io/SbmlWriter.cpp
@@ -275,12 +257,12 @@ target_include_directories(bng_nfcore2 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/nfsim/
 target_link_libraries(bng_nfcore2 PUBLIC nfsim_core)
 find_package(Threads REQUIRED)
 add_library(bng_nfnext STATIC
+    nfnext/src/allocation_probe.cpp
     nfnext/src/cache.cpp
     nfnext/src/cache_v2.cpp
     nfnext/src/canonical.cpp
     nfnext/src/compiler.cpp
     nfnext/src/family_compiler.cpp
-    nfnext/src/from_bng.cpp
     nfnext/src/generic_matcher.cpp
     nfnext/src/generic_state.cpp
     nfnext/src/lattice.cpp
@@ -291,7 +273,7 @@ add_library(bng_nfnext STATIC
     nfnext/src/validator.cpp
 )
 target_include_directories(bng_nfnext PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/nfnext/include)
-target_link_libraries(bng_nfnext PUBLIC Threads::Threads bng_compile)
+target_link_libraries(bng_nfnext PUBLIC Threads::Threads)
 
 add_library(bionetgen_core INTERFACE)
 target_link_libraries(bionetgen_core INTERFACE
@@ -350,7 +332,6 @@ if(BUILD_PYTHON_BINDINGS)
     pybind11_add_module(_bionetgen_cpp
         bindings/module.cpp
         bindings/bind_model.cpp
-        bindings/bind_compile_snapshot.cpp
         bindings/bind_parser.cpp
         bindings/bind_engine.cpp
         bindings/bind_nfsim.cpp

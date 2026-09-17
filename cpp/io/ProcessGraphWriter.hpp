@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 
+#include "ast/Model.hpp"
 #include "engine/NetworkGenerator.hpp"
 
 namespace bng::io {
@@ -46,7 +47,8 @@ public:
     /**
      * Build process graph from generated network
      */
-    static ProcessGraph build(const engine::GeneratedNetwork& network);
+    static ProcessGraph build(const ast::Model& model,
+                              const engine::GeneratedNetwork& network);
 
     /**
      * Export to GML format

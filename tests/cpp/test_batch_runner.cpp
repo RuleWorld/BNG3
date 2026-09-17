@@ -5,14 +5,6 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
-#include <vector>
-
-#if defined(_WIN32) || defined(__WIN32__) || defined(__CYGWIN__)
-#include <process.h>
-#else
-#include <sys/wait.h>
-#include <unistd.h>
-#endif
 
 namespace {
 
@@ -28,31 +20,17 @@ struct TemporaryRoot {
     ~TemporaryRoot() { std::error_code error; fs::remove_all(path, error); }
 };
 
-std::string shellQuote(const std::string& value) {
+std::string shellQuote(const fs::path& path) {
+#if defined(_WIN32) || defined(__WIN32__) || defined(__CYGWIN__)
+    return "\"" + path.string() + "\"";
+#else
     std::string quoted = "'";
-    for (const char character : value) {
+    for (const char character : path.string()) {
         if (character == '\'') quoted += "'\\''";
         else quoted += character;
     }
     quoted += "'";
     return quoted;
-}
-
-int runCommand(const fs::path& executable, const std::vector<std::string>& arguments) {
-#if defined(_WIN32) || defined(__WIN32__) || defined(__CYGWIN__)
-    std::vector<std::string> storage;
-    storage.reserve(arguments.size() + 1);
-    storage.push_back(executable.string());
-    storage.insert(storage.end(), arguments.begin(), arguments.end());
-    std::vector<char*> nativeArguments;
-    nativeArguments.reserve(storage.size() + 1);
-    for (auto& argument : storage) nativeArguments.push_back(argument.data());
-    nativeArguments.push_back(nullptr);
-    return static_cast<int>(_spawnv(_P_WAIT, storage.front().c_str(), nativeArguments.data()));
-#else
-    std::string command = shellQuote(executable.string());
-    for (const auto& argument : arguments) command += " " + shellQuote(argument);
-    return std::system(command.c_str());
 #endif
 }
 
@@ -81,6 +59,8 @@ void writeModel(const fs::path& path, bool valid) {
            << "generate_network({overwrite=>1})\n";
 }
 
+int runCommand(const std::string& command) { return std::system(command.c_str()); }
+
 } // namespace
 
 TEST_CASE("bng_cpp parallel mode isolates model outputs", "[batch]") {
@@ -91,10 +71,11 @@ TEST_CASE("bng_cpp parallel mode isolates model outputs", "[batch]") {
     writeModel(modelOne, true);
     writeModel(modelTwo, true);
 
-    const std::vector<std::string> arguments = {
-        "--parallel", "2", "--parallel-dir", outputRoot.string(), modelOne.string(), modelTwo.string()};
+    const auto command = shellQuote(fs::path(BNG_CPP_PATH))
+        + " --parallel 2 --parallel-dir " + shellQuote(outputRoot)
+        + " " + shellQuote(modelOne) + " " + shellQuote(modelTwo);
 
-    REQUIRE(runCommand(fs::path(BNG_CPP_PATH), arguments) == 0);
+    REQUIRE(runCommand(command) == 0);
     REQUIRE(fs::exists(outputRoot / "job_000-one" / "one.bngl"));
     REQUIRE(fs::exists(outputRoot / "job_001-two" / "two.bngl"));
     REQUIRE(fs::exists(outputRoot / "job_000-one" / "one.net"));
@@ -109,10 +90,11 @@ TEST_CASE("bng_cpp parallel mode propagates child failures", "[batch]") {
     writeModel(validModel, true);
     writeModel(invalidModel, false);
 
-    const std::vector<std::string> arguments = {
-        "--parallel", "2", "--parallel-dir", outputRoot.string(), validModel.string(), invalidModel.string()};
+    const auto command = shellQuote(fs::path(BNG_CPP_PATH))
+        + " --parallel 2 --parallel-dir " + shellQuote(outputRoot)
+        + " " + shellQuote(validModel) + " " + shellQuote(invalidModel);
 
-    REQUIRE(runCommand(fs::path(BNG_CPP_PATH), arguments) != 0);
+    REQUIRE(runCommand(command) != 0);
     REQUIRE(fs::exists(outputRoot / "job_000-valid" / "valid.net"));
     REQUIRE(fs::exists(outputRoot / "job_001-invalid" / "invalid.bngl"));
 }

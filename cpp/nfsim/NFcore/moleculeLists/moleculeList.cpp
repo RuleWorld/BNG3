@@ -81,16 +81,12 @@ int MoleculeList::create(Molecule *&m)
 			new_molPos[i] = i;
 		}
 
-		// Swap the copied data with the real data and double the capacity.  Keep
-		// the old allocation in separate variables so the active arrays are
-		// never accessed through a pointer after its allocation is released.
-		Molecule **old_mArray = mArray;
-		int *old_molPos = molPos;
+		//Swap the copied data with the real data and double the capacity
+		delete [] mArray;
+		delete [] molPos;
 		mArray = new_mArray;
 		molPos = new_molPos;
 		capacity=newCapacity;
-		delete [] old_mArray;
-		delete [] old_molPos;
 	}
 
 	//Increase the number of reactants, and return the activated mappingSet

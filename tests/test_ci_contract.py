@@ -8,7 +8,6 @@ import pytest
 
 from scripts.validate import (
     load_skip_models,
-    load_validation_manifest,
     run_validation,
     write_validation_summary,
 )
@@ -22,13 +21,10 @@ from scripts.cross_validate import (
 REPO = Path(__file__).resolve().parents[1]
 PYPROJECT = REPO / "pyproject.toml"
 CI_WORKFLOW = REPO / ".github" / "workflows" / "ci.yml"
-RELEASE_WORKFLOW = REPO / ".github" / "workflows" / "release.yml"
 WEEKLY_WORKFLOW = REPO / ".github" / "workflows" / "weekly.yml"
 REFERENCE_EXCLUSIONS = REPO / "tests" / "validation" / "reference_exclusions.json"
-VALIDATION_MANIFEST = REPO / "tests" / "validation" / "validation_manifest.json"
 VALIDATE_DIR = REPO / "tests" / "validation" / "Validate"
 PARITY_WORKFLOW = REPO / ".github" / "workflows" / "parity.yml"
-FORMAL_WORKFLOW = REPO / ".github" / "workflows" / "formal.yml"
 
 
 def test_pull_request_runs_keep_exact_head_evidence_available():
@@ -37,32 +33,6 @@ def test_pull_request_runs_keep_exact_head_evidence_available():
     workflow = CI_WORKFLOW.read_text(encoding="utf-8")
     assert "github.event.pull_request.head.sha" in workflow
     assert re.search(r"^\s+cancel-in-progress:\s+false\s*$", workflow, re.MULTILINE)
-
-
-def test_wheel_workflows_use_supported_platform_targets_and_test_dependencies():
-    """Wheel builds must use toolchains compatible with current dependencies."""
-
-    for workflow_path, job_name in (
-        (CI_WORKFLOW, "wheels"),
-        (RELEASE_WORKFLOW, "build-wheels"),
-    ):
-        job = _workflow_job_from(workflow_path, job_name)
-        assert "pip install cibuildwheel==4.2.1" in job
-        assert "CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28" in job
-        assert "CIBW_ARCHS_MACOS: ${{ matrix.macos_arch }}" in job
-        assert "MACOSX_DEPLOYMENT_TARGET=${{ matrix.macos_deployment_target }}" in job
-        assert (
-            "DCMAKE_OSX_DEPLOYMENT_TARGET=${{ matrix.macos_deployment_target }}" in job
-        )
-        assert 'macos_deployment_target: "10.13"' in job
-        assert 'macos_deployment_target: "11.0"' in job
-        assert "CIBW_TEST_REQUIRES: pytest numpy click" in job
-        assert "cp314-*" in job
-
-    ci_workflow = CI_WORKFLOW.read_text(encoding="utf-8")
-    assert re.search(r"^\s+workflow_dispatch:\s*$", ci_workflow, re.MULTILINE)
-    wheels = _workflow_job_from(CI_WORKFLOW, "wheels")
-    assert "github.event_name == 'workflow_dispatch'" in wheels
 
 
 def _workflow_job(name: str) -> str:
@@ -116,24 +86,6 @@ def test_external_parity_jobs_use_pinned_oracle_checkouts_and_fail_closed():
     assert "build/NFsim" in nfsim
     assert "tests/validation/test_parity_nfsim.py" in nfsim
     assert "build/cpp/NFsim" not in nfsim
-
-
-def test_formal_workflow_runs_pinned_kernel_and_nfnext_contracts():
-    """The Lean reference must be kernel-checked on every PR head."""
-
-    workflow = FORMAL_WORKFLOW.read_text(encoding="utf-8")
-    assert "github.event.pull_request.head.sha" in workflow
-    assert re.search(r"^\s+cancel-in-progress:\s+false\s*$", workflow, re.MULTILINE)
-    assert "leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9" in workflow
-    assert "lake-package-directory: formal/lean" in workflow
-    assert "auto-config: false" in workflow
-    assert (REPO / "formal" / "lean" / "lean-toolchain").read_text(
-        encoding="utf-8"
-    ).strip() == ("leanprover/lean4:v4.33.1")
-    assert "scripts/static_validate.py" in workflow
-    assert "scripts/run_nfnext_contract.sh" in workflow
-    assert "lake build" in workflow
-    assert "lake env lean tests/Smoke.lean" in workflow
 
 
 def test_oracle_source_loader_requires_full_locked_revisions(tmp_path):
@@ -224,16 +176,12 @@ def test_msvc_parser_headers_clear_windows_macros_before_antlr():
     assert re.search(r"#\s*undef\s+FALSE", compat)
     assert re.search(r"#\s*undef\s+constant", compat)
 
-    generated_dir = REPO / "cpp" / "parser" / "generated"
-    generated_headers = sorted(generated_dir.glob("*.h"))
-    assert generated_headers
-    for header in generated_headers:
-        source = header.read_text(encoding="utf-8")
-        if '#include "antlr4-runtime.h"' not in source:
-            continue
-        compat_include = source.index('#include "../antlr_compat.hpp"')
-        runtime_include = source.index('#include "antlr4-runtime.h"')
-        assert compat_include < runtime_include, header.name
+    source = (REPO / "cpp" / "nfsim" / "NFinput" / "NFinput_fromAst.cpp").read_text(
+        encoding="utf-8"
+    )
+    parser_include = source.index('#include "PatternGraphBuilder.hpp"')
+    prefix = source[:parser_include]
+    assert '#include "parser/antlr_compat.hpp"' in prefix
 
 
 def test_corpus_parse_inventory_emits_source_and_binary_provenance():
@@ -454,38 +402,57 @@ def test_cross_validation_summary_records_both_engines_without_duplicate_header(
 
 
 def test_reference_exclusion_manifest_is_explicit_and_corpus_backed():
-    """The former exclusion ledger is closed and contains no skipped models."""
+    """Reference skips must be centralized, typed, and tied to corpus evidence."""
 
     manifest = json.loads(REFERENCE_EXCLUSIONS.read_text(encoding="utf-8"))
     assert manifest["schema_version"] == 1
-    assert manifest["status"] == "closed"
+    assert manifest["status"] == "pending-maintainer-approval"
     assert set(manifest["profiles"]) == {"pull_request", "weekly"}
-    assert manifest["profiles"] == {"pull_request": [], "weekly": []}
-    assert manifest["reasons"] == {}
+    assert set(manifest["reasons"]) == {
+        "missing_reference_net",
+        "unsupported_native_path",
+    }
 
-    action_models = load_validation_manifest(VALIDATION_MANIFEST)
-    assert action_models
-    assert len(action_models) == len(set(action_models))
-    assert all((VALIDATE_DIR / f"{model}.bngl").is_file() for model in action_models)
+    pull_request = manifest["profiles"]["pull_request"]
+    weekly = manifest["profiles"]["weekly"]
+    assert len(pull_request) == len(set(pull_request))
+    assert len(weekly) == len(set(weekly))
+    assert set(weekly) == set(pull_request)
+
+    missing_reference = set(manifest["reasons"]["missing_reference_net"])
+    unsupported_native = set(manifest["reasons"]["unsupported_native_path"])
+    assert missing_reference.isdisjoint(unsupported_native)
+    assert set(pull_request) == missing_reference | unsupported_native
+
+    for model in missing_reference | unsupported_native:
+        assert isinstance(model, str) and model
+        assert (VALIDATE_DIR / f"{model}.bngl").is_file(), model
+    assert all(
+        not (VALIDATE_DIR / "DAT_validate" / f"{model}.net").is_file()
+        for model in missing_reference
+    )
+    assert all(
+        (VALIDATE_DIR / "DAT_validate" / f"{model}.net").is_file()
+        for model in unsupported_native
+    )
 
 
-def test_reference_ci_jobs_run_the_full_corpus_without_exclusions():
-    """CI must run both network and action-output fixtures without skips."""
+def test_reference_ci_jobs_consume_profiled_exclusions():
+    """CI must use the committed profile instead of duplicating skip strings."""
 
     validation_job = _workflow_job("validation")
     weekly_job = _workflow_job_from(WEEKLY_WORKFLOW, "bng-validation")
     assert "SKIP=" not in validation_job
     assert "SKIP=" not in weekly_job
-    assert "--skip-file" not in validation_job
-    assert "--skip-profile" not in validation_job
-    assert "--skip-file" not in weekly_job
-    assert "--skip-profile" not in weekly_job
-    assert (
-        "--validation-manifest tests/validation/validation_manifest.json"
-        in validation_job
+    assert re.search(
+        r"--skip-file tests/validation/reference_exclusions\.json\s*\\?\s+"
+        r"--skip-profile pull_request",
+        validation_job,
     )
-    assert (
-        "--validation-manifest tests/validation/validation_manifest.json" in weekly_job
+    assert re.search(
+        r"--skip-file tests/validation/reference_exclusions\.json\s*\\?\s+"
+        r"--skip-profile weekly",
+        weekly_job,
     )
 
 

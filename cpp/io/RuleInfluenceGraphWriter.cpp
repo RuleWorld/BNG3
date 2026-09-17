@@ -5,7 +5,7 @@
 namespace bng::io {
 
 RuleInfluenceGraphWriter::RuleInfluenceGraph RuleInfluenceGraphWriter::build(
-    const engine::GeneratedNetwork& network) {
+    const ast::Model& /*model*/, const engine::GeneratedNetwork& network) {
 
     RuleInfluenceGraph graph;
 

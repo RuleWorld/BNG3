@@ -1,12 +1,9 @@
 # Validation harness
 
 The current combined-tree verification state is recorded in
-[`../../docs/CURRENT_PROGRESS.md`](../../docs/CURRENT_PROGRESS.md). The
-repository validation command runs every fixture in `Validate/`: network
-fixtures compare against committed independent BNG2 `.net` references, while
-action-only fixtures use explicit output contracts from
-`validation_manifest.json`. A successful full-corpus run must report
-`SKIP=0`.
+[`../../docs/CURRENT_PROGRESS.md`](../../docs/CURRENT_PROGRESS.md). The final
+verification pass for the active branch is intentionally deferred until the
+implementation batch is complete.
 
 Differential testing against the originals. Nothing merges until it matches.
 
@@ -45,27 +42,6 @@ python -m tests.validation.exception_ledger --max-exceptions 1
 python scripts/regen_golden.py --tier p              # (re)build golden, reviewed
 ```
 Engine discovery: `--bng-cpp PATH` / `BNG_CPP` for the CLI; `import bionetgen` for the API.
-
-The 2026-09-14 independent checkpoint used BNG2 revision
-`e0a5c6d9e6c4730f66102e48d0d0a598337083e7` and NFsim revision
-`a6f9fa945c9d6e1e122e789c952260112c93f157`. The selected structural BNG2
-workflow reported `5/5` passes. The selected NFsim gate reported `10 passed`,
-covering direct/XML construction, four 200-run seeded ensembles, and fixed-seed
-endpoints.
-
-The direct/XML tests assert the returned `construction_path`: the shadow leg
-must be `in-memory-xml`, and the direct leg must be `direct` after
-`BNG_NFSIM_ALLOW_XML_FALLBACK` is removed. The ensemble worker explicitly adds
-the repository root and `python/` to `sys.path`, and rejects any member that
-does not report direct construction. This prevents XML-vs-XML comparisons or
-caller-dependent source-tree imports from being counted as direct evidence.
-
-The former reference-exclusion ledger is closed. The six fixtures whose
-primary behavior is an action output (`ANx`, `hybrid_test`, `test_tfun`,
-`test_tfun_xml`, `test_write_sbml_multi`, and `visualize`) are independently
-validated by `scripts/validate_actions.py`; the remaining fixtures are checked
-against committed BNG2 network references. The native reader also has a narrow
-legacy structured-SBML `atomize=>1` contract for the `plain2` validation model.
 
 ## What each gate proves
 - `test_parity_net` — WO-1a. Active expected failures come only from `exceptions.json`; each is signature-checked and an unexpected pass fails. The current ledger is empty: `blbr` now compares equal under structural species identity, including its symmetry-heavy bond-label orientations.

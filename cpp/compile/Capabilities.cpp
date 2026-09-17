@@ -77,27 +77,6 @@ FeatureSet featuresUsed(const ast::Model& model) {
     if (!model.getPopulationMaps().empty()) features.add(Feature::PopulationMaps);
     if (!model.getFunctions().empty()) features.add(Feature::Functions);
     if (!model.getCompartments().empty()) features.add(Feature::Compartments);
-    for (const auto& parameter : model.getParameters().all()) {
-        if (parameter.hasUnit()) { features.add(Feature::Units); break; }
-    }
-    if (!features.contains(Feature::Units)) {
-        for (const auto& compartment : model.getCompartments()) {
-            if (compartment.hasUnit()) { features.add(Feature::Units); break; }
-        }
-    }
-    if (!features.contains(Feature::Units)) {
-        for (const auto& seed : model.getSeedSpecies()) {
-            if (seed.hasUnit()) { features.add(Feature::Units); break; }
-        }
-    }
-    if (!features.contains(Feature::Units)) {
-        for (const auto& definition : model.getUnitSystem().definitions()) {
-            if (!definition.builtin) { features.add(Feature::Units); break; }
-        }
-    }
-    if (!features.contains(Feature::Units) && !model.getUnitDefaults().empty()) {
-        features.add(Feature::Units);
-    }
     if (!model.getActions().empty() || !model.getSimulationProtocol().empty()) {
         features.add(Feature::ProtocolActions);
     }
@@ -155,20 +134,13 @@ CapabilityReport capabilitiesFor(const ast::Model& model, BackendKind backend) {
         // execution path for the current semantic families.  Population maps
         // are deliberately different: they require HybridModelGenerator and
         // cannot be dropped into an NFcore::System without changing meaning.
-        const auto state = feature == Feature::Units && backend == BackendKind::NFsim
-                               ? CapabilityState::Unsupported
-                           : feature == Feature::Functions ||
+        const auto state = feature == Feature::Functions ||
                                    feature == Feature::LocalFunctions ||
                                    feature == Feature::TableFunctions ||
                                    feature == Feature::ProtocolActions
                                ? CapabilityState::CompatibilityOnly
                                : CapabilityState::ExactLowering;
         report.set(feature, state);
-    }
-
-    if (backend == BackendKind::NFsim && features.contains(Feature::Units)) {
-        addUnsupported(report, Feature::Units, "NFsim",
-                       "physical-unit annotations without a verified count-rate bridge");
     }
 
     if (backend == BackendKind::NFsim &&
