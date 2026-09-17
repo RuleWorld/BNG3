@@ -64,9 +64,9 @@ def test_cmake_compiles_nauty_once_and_links_it_into_nfsim():
     assert 'file(GLOB NAUTY_SOURCES "nauty/*.c")' in cmake
 
     # No second glob feeding nauty sources into another target.
-    assert "NFSIM_NAUTY_C" not in cmake, (
-        "the nfsim-local nauty glob is back in cpp/CMakeLists.txt"
-    )
+    assert (
+        "NFSIM_NAUTY_C" not in cmake
+    ), "the nfsim-local nauty glob is back in cpp/CMakeLists.txt"
     assert "nauty24/*.c" not in cmake
 
     # nfsim_core must consume the shared target rather than a private path.
@@ -84,9 +84,9 @@ def test_cmake_compiles_nauty_once_and_links_it_into_nfsim():
 
 def test_nfsim_includes_the_shared_nauty_header():
     complex_cpp = (CPP / "nfsim" / "NFcore" / "complex.cpp").read_text()
-    assert "../nauty24/nausparse.h" not in complex_cpp, (
-        "complex.cpp is including a relative nfsim-local nauty header again"
-    )
+    assert (
+        "../nauty24/nausparse.h" not in complex_cpp
+    ), "complex.cpp is including a relative nfsim-local nauty header again"
     assert '#include "nausparse.h"' in complex_cpp
 
 
@@ -102,9 +102,9 @@ def test_compiled_nauty_keeps_the_nset_rename(source):
     would break the NFsim side of the shared target.
     """
     text = (CPP / "nauty" / source).read_text(errors="replace")
-    assert "nset" in text, (
-        f"cpp/nauty/{source} lost the nset rename; NFsim cannot include it"
-    )
+    assert (
+        "nset" in text
+    ), f"cpp/nauty/{source} lost the nset rename; NFsim cannot include it"
 
 
 def test_compiled_nauty_header_guards_systypes_on_msvc():
