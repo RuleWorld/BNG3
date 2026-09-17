@@ -1,17 +1,35 @@
 #pragma once
 
+#include <map>
+#include <string>
 #include <vector>
 
 #include "CompiledModel.hpp"
-#include "ast/Model.hpp"
+
+namespace bng::ast { class Model; }
 
 namespace bng::compile {
 
+enum class ActionScope {
+    Model,
+    SimulationProtocol,
+};
+
+struct ProtocolAction {
+    ActionScope scope = ActionScope::Model;
+    std::string name;
+    std::map<std::string, std::string> arguments;
+};
+
 // Execution instructions are intentionally separate from reusable compiled
-// model metadata.  This is the first concrete Document/Protocol seam; the AST
-// remains the compatibility-facing construction type during migration.
+// model metadata. Actions are copied into compile-owned value types so
+// execution clients do not need parser/AST declarations. Model-level writer/
+// generation actions and simulation-protocol actions retain distinct scopes.
 struct SimulationProtocol {
-    std::vector<ast::Action> actions;
+    std::vector<ProtocolAction> actions;
+
+    std::vector<ProtocolAction> modelActions() const;
+    std::vector<ProtocolAction> simulationActions() const;
 };
 
 class Document {
@@ -23,7 +41,7 @@ public:
     const std::vector<Diagnostic>& diagnostics() const noexcept {
         return model_.diagnostics();
     }
-    bool valid() const noexcept;
+    bool valid() const noexcept { return model_.valid(); }
 
 private:
     CompiledModel model_;

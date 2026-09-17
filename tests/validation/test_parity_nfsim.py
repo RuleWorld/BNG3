@@ -38,7 +38,12 @@ def test_nf_vs_native(model_name, api, work_dir):
     require_oracle(bool(native), "native NFsim produced no output for this model")
 
     test = runner.run_api_ensemble(
-        model_name, method="nf", n_runs=n_runs, t_end=t_end, n_steps=n_steps
+        model_name,
+        method="nf",
+        n_runs=n_runs,
+        t_end=t_end,
+        n_steps=n_steps,
+        expected_construction_path="direct",
     )
     diff = compare.compare_stochastic(
         native,
@@ -62,9 +67,16 @@ def test_nf_ast_direct_matches_xml(model_name, api, work_dir, monkeypatch):
     )
 
     monkeypatch.delenv("BNG_NFSIM_FORCE_XML", raising=False)
+    # The direct leg must not be allowed to fall back to XML.  Otherwise this
+    # shadow test can degenerate into XML-vs-XML and report a false green when
+    # direct construction regresses.
+    monkeypatch.delenv("BNG_NFSIM_ALLOW_XML_FALLBACK", raising=False)
     direct_traj = runner.run_api(
         model_name, method="nf", seed=seed, t_end=t_end, n_steps=n_steps
     )
+
+    assert xml_traj.construction_path == "in-memory-xml"
+    assert direct_traj.construction_path == "direct"
 
     # Same seed + same engine RNG => identical trajectories if construction matches.
     diff = compare.compare_trajectories(
@@ -119,6 +131,9 @@ def test_nf_fixed_seed_direct_matches_native_at_final_endpoint(
         seed=1,
     )
 
+    # Native endpoint parity is only evidence for the direct adapter if the
+    # BNG3 leg actually used direct construction rather than XML fallback.
+    assert direct.construction_path == "direct"
     assert direct.columns == native_columns
     assert direct.data.shape == native_data.shape
     assert np.allclose(direct.data[:, 0], native_data[:, 0], rtol=0.0, atol=1e-12)

@@ -7,10 +7,13 @@ paths must be anchored before execution begins.
 from __future__ import annotations
 
 import subprocess
+import sys
 
+import numpy as np
 import pytest
 
 from tests.validation import conftest, oracle_nfsim, oracle_perl, runner
+from tests.validation.strict import require_oracle
 
 
 def test_configured_nfsim_path_is_anchored_to_discovery_directory(
@@ -97,6 +100,8 @@ def test_cli_output_selection_fails_closed_on_ambiguous_artifacts(tmp_path):
 
 
 def test_api_ensemble_parallel_workers_preserve_seed_order():
+    if not runner.api_available():
+        pytest.skip("compiled bionetgen API backend not available")
     runs = runner.run_api_ensemble(
         "simple_system",
         method="nf",
@@ -109,6 +114,24 @@ def test_api_ensemble_parallel_workers_preserve_seed_order():
 
     assert len(runs) == 2
     assert [columns[0] for _, columns in runs] == ["time", "time"]
+
+
+def test_api_ensemble_can_require_actual_construction_route(monkeypatch):
+    fake = runner.Trajectory(
+        data=np.asarray([[0.0], [1.0]]),
+        columns=["time"],
+        construction_path="in-memory-xml",
+    )
+    monkeypatch.setattr(runner, "_run_api_ensemble_item", lambda payload: fake)
+
+    with pytest.raises(AssertionError, match="expected 'direct'"):
+        runner.run_api_ensemble(
+            "simple_system",
+            method="nf",
+            n_runs=1,
+            workers=1,
+            expected_construction_path="direct",
+        )
 
 
 def test_native_ensemble_parallel_workers_preserve_seed_order(tmp_path):
@@ -127,3 +150,19 @@ def test_native_ensemble_parallel_workers_preserve_seed_order(tmp_path):
 
     assert len(runs) == 2
     assert runs[0][0][0, 0] == pytest.approx(0.0)
+
+
+def test_source_python_path_is_anchored_for_spawned_workers(monkeypatch):
+    source_python = str((runner.corpus.REPO / "python").resolve())
+    monkeypatch.setattr(sys, "path", [p for p in sys.path if p != source_python])
+
+    runner._ensure_source_python_path()
+
+    assert sys.path[0] == source_python
+
+
+def test_required_oracle_fails_in_strict_ci(monkeypatch):
+    monkeypatch.setenv("BNG3_CI_STRICT_ORACLES", "1")
+
+    with pytest.raises(pytest.fail.Exception, match="required oracle unavailable"):
+        require_oracle(False, "required oracle unavailable")

@@ -133,6 +133,8 @@ struct PredicateIR {
     std::int32_t value{0};
     std::int32_t aux{0};
     std::vector<std::int32_t> state_set;
+    // Appended after the legacy aggregate-initializer prefix for compatibility.
+    PatternNodeId node{0};
 
     static PredicateIR stateSet(TypeId type, std::uint16_t site,
                                  std::vector<std::int32_t> states) {
@@ -151,6 +153,16 @@ struct ActionIR {
     std::uint16_t site{0};
     std::int32_t value{0};
     std::int32_t aux{0};
+
+    // Logical-node endpoints make transformations unambiguous. Matched
+    // reactant nodes occupy [0, pattern.nodes.size()); Create actions allocate
+    // additional logical node IDs, and later state/bond actions may reference
+    // either namespace. These fields were intentionally appended after the
+    // legacy five-field prefix so existing aggregate initializers retain their
+    // meaning.
+    PatternNodeId target_node{0};
+    PatternNodeId partner_node{0};
+    std::uint16_t partner_site{0};
 };
 
 struct ExpandedRuleIR {
@@ -187,7 +199,7 @@ struct DependencyIndexIR {
 };
 
 struct ModelIR {
-    static constexpr std::uint32_t kFormatVersion = 3;
+    static constexpr std::uint32_t kFormatVersion = 5;
 
     std::string model_name;
     std::vector<MoleculeTypeIR> molecule_types;

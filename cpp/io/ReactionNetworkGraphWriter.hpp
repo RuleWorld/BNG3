@@ -4,7 +4,6 @@
 #include <string>
 #include <vector>
 
-#include "ast/Model.hpp"
 #include "engine/NetworkGenerator.hpp"
 
 namespace bng::io {
@@ -42,8 +41,7 @@ public:
     /**
      * Build reaction network graph from the generated network
      */
-    static ReactionNetworkGraph build(const ast::Model& model,
-                                      const engine::GeneratedNetwork& network);
+    static ReactionNetworkGraph build(const engine::GeneratedNetwork& network);
 
     /**
      * Export reaction network graph to GML format

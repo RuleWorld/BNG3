@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from tests.validation import compare, corpus, oracle_perl, runner
+from tests.validation.strict import require_oracle
 
 # Deterministic ODE models suitable for tight numeric comparison.  Models with
 # only stochastic actions belong in test_parity_stochastic.py, not here.
@@ -22,8 +23,10 @@ ODE_MODELS = [m for m in ODE_MODELS if corpus.resolve(m) is not None]
 @pytest.mark.parametrize("model_name", ODE_MODELS)
 def test_ode_parity(model_name, bng_cpp, work_dir):
     ref_path, ref_src = oracle_perl.gdat(model_name, work_dir / "perl")
-    if ref_path is None:
-        pytest.skip(f"no reference .gdat for {model_name}: {ref_src}")
+    require_oracle(
+        ref_path is not None,
+        f"no reference .gdat for {model_name}: {ref_src}",
+    )
 
     ref_data, ref_cols = compare.parse_gdat(ref_path)
     assert ref_data is not None, f"could not parse reference .gdat ({ref_src})"

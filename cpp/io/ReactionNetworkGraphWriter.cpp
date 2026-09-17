@@ -7,7 +7,7 @@
 namespace bng::io {
 
 ReactionNetworkGraphWriter::ReactionNetworkGraph ReactionNetworkGraphWriter::build(
-    const ast::Model& /*model*/, const engine::GeneratedNetwork& network) {
+    const engine::GeneratedNetwork& network) {
 
     ReactionNetworkGraph graph;
 

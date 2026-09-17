@@ -7,6 +7,7 @@
 #include <fstream>
 #include <iomanip>
 #include <limits>
+#include <map>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -45,6 +46,90 @@ std::string trimCopy(const std::string& value) {
     if (first == std::string::npos) return {};
     const auto last = value.find_last_not_of(" \t\r\n");
     return value.substr(first, last - first + 1);
+}
+
+
+constexpr std::string_view kPopulationRateToken = "__bng3_poprate_";
+
+std::string hexEncode(std::string_view value) {
+    static constexpr char digits[] = "0123456789ABCDEF";
+    std::string result;
+    result.reserve(value.size() * 2);
+    for (unsigned char c : value) {
+        result.push_back(digits[c >> 4]);
+        result.push_back(digits[c & 0x0f]);
+    }
+    return result;
+}
+
+std::string hexDecode(std::string_view value) {
+    const auto digit = [](char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        return -1;
+    };
+    if (value.size() % 2 != 0) throw std::runtime_error("invalid encoded population-map rate");
+    std::string result;
+    result.reserve(value.size() / 2);
+    for (std::size_t i = 0; i < value.size(); i += 2) {
+        const int hi = digit(value[i]);
+        const int lo = digit(value[i + 1]);
+        if (hi < 0 || lo < 0) throw std::runtime_error("invalid encoded population-map rate");
+        result.push_back(static_cast<char>((hi << 4) | lo));
+    }
+    return result;
+}
+
+// The checked-in generated parser historically omitted the trailing mapping
+// rate from population-map lines. Preserve the grammar artifact while making
+// parsing lossless by encoding the trailing expression as a synthetic RHS
+// population argument before ANTLR sees the source; the visitor decodes it.
+std::string normalizePopulationMapRates(const std::string& source) {
+    std::string result;
+    bool inside = false;
+    std::size_t lineStart = 0;
+    while (lineStart <= source.size()) {
+        const auto lineEnd = source.find('\n', lineStart);
+        const auto len = lineEnd == std::string::npos ? source.size() - lineStart : lineEnd - lineStart;
+        std::string line = source.substr(lineStart, len);
+        const std::string header = toLower(trimCopy(line));
+        if (header == "begin population maps") inside = true;
+        else if (header == "end population maps") inside = false;
+        else if (inside) {
+            const auto comment = line.find('#');
+            const std::size_t codeEnd = comment == std::string::npos ? line.size() : comment;
+            const auto arrow = line.find("->");
+            if (arrow != std::string::npos && arrow < codeEnd) {
+                const auto open = line.find('(', arrow + 2);
+                if (open != std::string::npos && open < codeEnd) {
+                    int depth = 0;
+                    std::size_t close = std::string::npos;
+                    for (std::size_t i = open; i < codeEnd; ++i) {
+                        if (line[i] == '(') ++depth;
+                        else if (line[i] == ')' && --depth == 0) { close = i; break; }
+                    }
+                    if (close != std::string::npos) {
+                        const std::string rate = trimCopy(line.substr(close + 1, codeEnd - close - 1));
+                        if (!rate.empty()) {
+                            const std::string token = std::string(kPopulationRateToken) + hexEncode(rate);
+                            const std::string args = trimCopy(line.substr(open + 1, close - open - 1));
+                            line.insert(close, (args.empty() ? "" : ",") + token);
+                            const auto newClose = close + token.size() + (args.empty() ? 0 : 1);
+                            const auto newComment = comment == std::string::npos
+                                ? line.size() : comment + token.size() + (args.empty() ? 0 : 1);
+                            line.erase(newClose + 1, newComment - (newClose + 1));
+                        }
+                    }
+                }
+            }
+        }
+        result += line;
+        if (lineEnd == std::string::npos) break;
+        result.push_back('\n');
+        lineStart = lineEnd + 1;
+    }
+    return result;
 }
 
 std::string normalizeLegacyBlockHeaders(const std::string& source) {
@@ -442,6 +527,174 @@ std::string normalizeIntegerStateTransitions(const std::string& source) {
         normalized << output[index];
     }
     if (hadTrailingNewline) normalized << '\n';
+    return normalized.str();
+}
+
+std::string quoteSyntheticOption(std::string_view key, std::string_view value) {
+    const auto quote = [](std::string_view text) {
+        std::string result;
+        result.reserve(text.size() + 2);
+        result.push_back('"');
+        for (const char character : text) {
+            if (character == '\\' || character == '"') result.push_back('\\');
+            result.push_back(character);
+        }
+        result.push_back('"');
+        return result;
+    };
+    return "setOption(" + quote(key) + "," + quote(value) + ")";
+}
+
+bool removeTrailingUnitAnnotation(std::string& line, std::string& unit) {
+    const auto comment = line.find('#');
+    const auto codeEnd = comment == std::string::npos ? line.size() : comment;
+    const auto code = line.substr(0, codeEnd);
+    const auto close = code.find_last_not_of(" \t\r");
+    if (close == std::string::npos || code[close] != ']') return false;
+    const auto open = code.rfind('[', close);
+    if (open == std::string::npos) return false;
+    unit = trimCopy(code.substr(open + 1, close - open - 1));
+    if (unit.empty()) throw std::runtime_error("empty physical-unit annotation");
+    line = line.substr(0, open) + line.substr(close + 1);
+    return true;
+}
+
+std::string declarationName(const std::string& line) {
+    const auto codeEnd = line.find('#');
+    const auto code = trimCopy(line.substr(0, codeEnd == std::string::npos ? line.size() : codeEnd));
+    std::istringstream words(code);
+    std::vector<std::string> tokens;
+    std::string token;
+    while (words >> token) tokens.push_back(token);
+    if (tokens.empty()) return {};
+    std::size_t index = 0;
+    if (!tokens[index].empty() &&
+        std::all_of(tokens[index].begin(), tokens[index].end(), [](unsigned char value) {
+            return std::isdigit(value) != 0;
+        })) {
+        ++index;
+    }
+    if (index < tokens.size() && !tokens[index].empty() && tokens[index].back() == ':') ++index;
+    return index < tokens.size() ? tokens[index] : std::string {};
+}
+
+std::string normalizeUnitSyntax(const std::string& source) {
+    std::vector<std::string> definitions;
+    std::vector<std::string> defaults;
+    std::vector<std::string> annotations;
+    std::vector<std::string> output;
+    bool insideUnits = false;
+    bool insideParameters = false;
+    bool insideCompartments = false;
+    bool insideSeeds = false;
+    std::size_t seedIndex = 0;
+
+    std::size_t lineStart = 0;
+    while (lineStart <= source.size()) {
+        const auto lineEnd = source.find('\n', lineStart);
+        const auto lineLength = lineEnd == std::string::npos
+                                    ? source.size() - lineStart
+                                    : lineEnd - lineStart;
+        std::string line = source.substr(lineStart, lineLength);
+        const auto trimmed = toLower(trimCopy(line));
+
+        if (trimmed == "begin units") {
+            insideUnits = true;
+            output.push_back("# BNG3: unit declarations normalized before ANTLR");
+        } else if (trimmed == "end units") {
+            insideUnits = false;
+            output.push_back("# BNG3: end normalized unit declarations");
+        } else if (insideUnits) {
+            const auto comment = line.find('#');
+            const auto code = trimCopy(line.substr(0, comment == std::string::npos ? line.size() : comment));
+            if (code.empty()) {
+                output.push_back(line);
+            } else if (code.compare(0, 4, "unit") == 0 &&
+                       (code.size() == 4 || std::isspace(static_cast<unsigned char>(code[4])))) {
+                const auto equals = code.find('=');
+                if (equals == std::string::npos) {
+                    throw std::runtime_error("unit definitions require 'unit name = expression'");
+                }
+                const auto left = trimCopy(code.substr(4, equals - 4));
+                const auto expression = trimCopy(code.substr(equals + 1));
+                if (left.empty() || expression.empty()) {
+                    throw std::runtime_error("unit definitions require a name and expression");
+                }
+                definitions.push_back(quoteSyntheticOption("__bng3_unit_define:" + left, expression));
+                output.push_back("# BNG3: unit definition normalized");
+            } else {
+                std::istringstream words(code);
+                std::string role;
+                words >> role;
+                std::string unit;
+                std::getline(words, unit);
+                unit = trimCopy(unit);
+                if (!unit.empty() && unit.front() == '=') unit = trimCopy(unit.substr(1));
+                const auto normalizedRole = toLower(role);
+                static const std::map<std::string, std::string> canonicalRoles = {
+                    {"timeunits", "timeUnits"},
+                    {"substanceunits", "substanceUnits"},
+                    {"volumeunits", "volumeUnits"},
+                    {"areaunits", "areaUnits"},
+                    {"lengthunits", "lengthUnits"},
+                    {"extentunits", "extentUnits"},
+                };
+                const auto canonicalRole = canonicalRoles.find(normalizedRole);
+                if (canonicalRole == canonicalRoles.end() || unit.empty()) {
+                    throw std::runtime_error("unknown or incomplete unit declaration '" + code + "'");
+                }
+                defaults.push_back(quoteSyntheticOption(
+                    "__bng3_unit_default:" + canonicalRole->second, unit));
+                output.push_back("# BNG3: unit default normalized");
+            }
+        } else {
+            if (trimmed == "begin parameters") insideParameters = true;
+            else if (trimmed == "end parameters") insideParameters = false;
+            else if (trimmed == "begin compartments") insideCompartments = true;
+            else if (trimmed == "end compartments") insideCompartments = false;
+            else if (trimmed == "begin seed species" || trimmed == "begin species") {
+                insideSeeds = true;
+            } else if (trimmed == "end seed species" || trimmed == "end species") {
+                insideSeeds = false;
+            }
+
+            std::string unit;
+            if (insideParameters || insideCompartments || insideSeeds) {
+                if (removeTrailingUnitAnnotation(line, unit)) {
+                    const auto name = declarationName(line);
+                    if (name.empty()) throw std::runtime_error("unit annotation has no declaration name");
+                    if (insideParameters) {
+                        annotations.push_back(quoteSyntheticOption(
+                            "__bng3_unit_parameter:" + name, unit));
+                    } else if (insideCompartments) {
+                        annotations.push_back(quoteSyntheticOption(
+                            "__bng3_unit_compartment:" + name, unit));
+                    } else {
+                        annotations.push_back(quoteSyntheticOption(
+                            "__bng3_unit_seed:" + std::to_string(seedIndex), unit));
+                    }
+                }
+            }
+            const bool seedBoundary = trimmed == "begin seed species" ||
+                                      trimmed == "begin species" ||
+                                      trimmed == "end seed species" ||
+                                      trimmed == "end species";
+            if (insideSeeds && !seedBoundary && !trimmed.empty() && trimmed.front() != '#') ++seedIndex;
+            output.push_back(std::move(line));
+        }
+
+        if (lineEnd == std::string::npos) break;
+        lineStart = lineEnd + 1;
+    }
+
+    std::ostringstream normalized;
+    for (const auto& metadata : definitions) normalized << metadata << '\n';
+    for (const auto& metadata : defaults) normalized << metadata << '\n';
+    for (const auto& metadata : annotations) normalized << metadata << '\n';
+    for (std::size_t index = 0; index < output.size(); ++index) {
+        normalized << output[index];
+        if (index + 1 < output.size() || (!source.empty() && source.back() == '\n')) normalized << '\n';
+    }
     return normalized.str();
 }
 
@@ -1148,10 +1401,14 @@ ast::Expression parseExpressionImpl(const std::string& exprText) {
 } // namespace
 
 std::string normalizeBNGLSource(const std::string& sourceText) {
-    return normalizeLooseActionsInsideModel(normalizeIntegerStateTransitions(
-        normalizeLegacyActionNames(
-            normalizeEmptyReactantFunctionDeclarations(
-                normalizeLegacyBlockHeaders(normalizeTfunSyntax(sourceText))))));
+    auto normalized = normalizeTfunSyntax(sourceText);
+    normalized = normalizeLegacyBlockHeaders(normalized);
+    normalized = normalizePopulationMapRates(normalized);
+    normalized = normalizeEmptyReactantFunctionDeclarations(normalized);
+    normalized = normalizeLegacyActionNames(normalized);
+    normalized = normalizeIntegerStateTransitions(normalized);
+    normalized = normalizeLooseActionsInsideModel(normalized);
+    return normalizeUnitSyntax(normalized);
 }
 
 BNGAstVisitor::BNGAstVisitor()
@@ -1162,6 +1419,7 @@ std::unique_ptr<ast::Model> BNGAstVisitor::takeModel() {
 }
 
 std::any BNGAstVisitor::visitProg(BNGParser::ProgContext* ctx) {
+    seedUnitIndex_ = 0;
     predeclareMoleculeTypes(ctx);
     visitChildren(ctx);
     currentModel_->getParameters().evaluateAll();
@@ -1213,7 +1471,31 @@ std::any BNGAstVisitor::visitSet_option(BNGParser::Set_optionContext* ctx) {
     const auto strings = ctx->quoted_string();
     const auto values = ctx->action_arg_value();
     for (std::size_t i = 0; i < strings.size() && i < values.size(); ++i) {
-        currentModel_->setOption(stripQuotes(strings[i]->getText()), values[i]->getText());
+        const auto key = stripQuotes(strings[i]->getText());
+        const auto value = stripQuotes(values[i]->getText());
+        constexpr std::string_view definitionPrefix = "__bng3_unit_define:";
+        constexpr std::string_view defaultPrefix = "__bng3_unit_default:";
+        constexpr std::string_view parameterPrefix = "__bng3_unit_parameter:";
+        constexpr std::string_view compartmentPrefix = "__bng3_unit_compartment:";
+        constexpr std::string_view seedPrefix = "__bng3_unit_seed:";
+        if (key.compare(0, definitionPrefix.size(), definitionPrefix) == 0) {
+            currentModel_->defineUnit(key.substr(definitionPrefix.size()), value);
+        } else if (key.compare(0, defaultPrefix.size(), defaultPrefix) == 0) {
+            currentModel_->setUnitDefault(key.substr(defaultPrefix.size()), value);
+        } else if (key.compare(0, parameterPrefix.size(), parameterPrefix) == 0) {
+            currentModel_->setParameterUnit(key.substr(parameterPrefix.size()), value);
+        } else if (key.compare(0, compartmentPrefix.size(), compartmentPrefix) == 0) {
+            currentModel_->setCompartmentUnit(key.substr(compartmentPrefix.size()), value);
+        } else if (key.compare(0, seedPrefix.size(), seedPrefix) == 0) {
+            try {
+                currentModel_->setSeedUnit(
+                    static_cast<std::size_t>(std::stoull(key.substr(seedPrefix.size()))), value);
+            } catch (const std::exception&) {
+                throw std::runtime_error("invalid synthetic seed unit annotation");
+            }
+        } else {
+            currentModel_->setOption(key, values[i]->getText());
+        }
     }
     return {};
 }
@@ -1229,7 +1511,13 @@ std::any BNGAstVisitor::visitParameter_def(BNGParser::Parameter_defContext* ctx)
         return {};
     }
 
-    currentModel_->addParameter(ast::Parameter(names.back()->getText(), buildExpression(ctx->expression())));
+    ast::Parameter parameter(names.back()->getText(), buildExpression(ctx->expression()));
+    if (const auto* unitName = currentModel_->findParameterUnit(parameter.getName())) {
+        const auto parsed = currentModel_->getUnitSystem().parse(*unitName);
+        if (!parsed) throw std::runtime_error("unknown parameter unit '" + *unitName + "': " + parsed.error);
+        parameter.setUnit(*parsed.unit, *unitName);
+    }
+    currentModel_->addParameter(std::move(parameter));
     return {};
 }
 
@@ -1258,6 +1546,23 @@ std::any BNGAstVisitor::visitCompartment_def(BNGParser::Compartment_defContext* 
         evaluateExpression(expr, currentModel_->getParameters()),
         std::stoi(ctx->INT()->getText()),
         names.size() > 1 ? names.back()->getText() : std::string {}));
+    auto& compartment = currentModel_->getCompartments().back();
+    std::string inferredUnitName;
+    if (const auto* unitName = currentModel_->findCompartmentUnit(compartment.getName())) {
+        inferredUnitName = *unitName;
+    } else if (expr.kind() == ast::ExpressionKind::Identifier &&
+               currentModel_->getParameters().contains(expr.name()) &&
+               currentModel_->getParameters().get(expr.name()).hasUnit()) {
+        // `cyto 3 Vcell` inherits Vcell's unit in the common SBML spelling.
+        // This is metadata propagation only; the numeric compartment size is
+        // still evaluated exactly as before.
+        inferredUnitName = currentModel_->getParameters().get(expr.name()).getUnitName();
+    }
+    if (!inferredUnitName.empty()) {
+        const auto parsed = currentModel_->getUnitSystem().parse(inferredUnitName);
+        if (!parsed) throw std::runtime_error("unknown compartment unit '" + inferredUnitName + "': " + parsed.error);
+        compartment.setUnit(*parsed.unit, inferredUnitName);
+    }
     return {};
 }
 
@@ -1302,12 +1607,19 @@ std::any BNGAstVisitor::visitSeed_species_def(BNGParser::Seed_species_defContext
         compartment = extractTrailingCompartment(ctx->species_def());
     }
 
-    currentModel_->addSeedSpecies(ast::SeedSpecies(
+    ast::SeedSpecies seed(
         ctx->species_def()->getText(),
         ctx->expression() != nullptr ? buildExpression(ctx->expression()) : ast::Expression::number(0.0),
         ctx->DOLLAR() != nullptr,
         std::move(compartment),
-        buildPatternGraph(ctx->species_def(), *currentModel_, false)));
+        buildPatternGraph(ctx->species_def(), *currentModel_, false));
+    if (const auto* unitName = currentModel_->findSeedUnit(seedUnitIndex_)) {
+        const auto parsed = currentModel_->getUnitSystem().parse(*unitName);
+        if (!parsed) throw std::runtime_error("unknown seed unit '" + *unitName + "': " + parsed.error);
+        seed.setUnit(*parsed.unit, *unitName);
+    }
+    ++seedUnitIndex_;
+    currentModel_->addSeedSpecies(std::move(seed));
     return {};
 }
 
@@ -1484,32 +1796,32 @@ std::any BNGAstVisitor::visitProtocol_block(BNGParser::Protocol_blockContext* ct
 }
 
 std::any BNGAstVisitor::visitPopulation_map_def(BNGParser::Population_map_defContext* ctx) {
-    if (ctx->species_def() == nullptr) {
-        return {};
-    }
+    if (ctx->species_def() == nullptr) return {};
 
     ast::PopulationMap pm;
-
-    // Optional label (STRING before the colon)
     const auto strings = ctx->STRING();
     if (strings.size() >= 2) {
-        // First STRING is the label, second is the function name
         pm.label = strings[0]->getText();
-        pm.populationFunction = strings[1]->getText();
+        pm.populationName = strings[1]->getText();
     } else if (strings.size() == 1) {
-        // Only the function name
-        pm.populationFunction = strings[0]->getText();
+        pm.populationName = strings[0]->getText();
     }
-
+    pm.populationFunction = pm.populationName; // compatibility alias
     pm.patternText = ctx->species_def()->getText();
 
-    // Function arguments from param_list
     if (ctx->param_list() != nullptr) {
         for (auto* token : ctx->param_list()->STRING()) {
-            pm.functionArgs.push_back(token->getText());
+            const std::string text = token->getText();
+            if (text.compare(0, kPopulationRateToken.size(), kPopulationRateToken) == 0) {
+                pm.rateText = hexDecode(text.substr(kPopulationRateToken.size()));
+                pm.rateExpression = parseExpressionImpl(pm.rateText);
+                pm.hasExplicitRate = true;
+            } else {
+                pm.populationArgs.push_back(text);
+            }
         }
     }
-
+    pm.functionArgs = pm.populationArgs; // compatibility alias
     currentModel_->addPopulationMap(std::move(pm));
     return {};
 }

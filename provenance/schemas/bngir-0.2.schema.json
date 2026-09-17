@@ -1,0 +1,1022 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/RuleWorld/BNG3/provenance/schemas/bngir-0.2.schema.json",
+  "title": "BNGIR JSON v0.2 structural semantic model",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "version",
+    "features",
+    "model",
+    "protocol"
+  ],
+  "properties": {
+    "format": {
+      "const": "BNGIR"
+    },
+    "version": {
+      "const": "0.2"
+    },
+    "features": {
+      "$ref": "#/$defs/features"
+    },
+    "model": {
+      "$ref": "#/$defs/model"
+    },
+    "protocol": {
+      "$ref": "#/$defs/protocol"
+    },
+    "provenance": {
+      "type": "object"
+    }
+  },
+  "$defs": {
+    "features": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required",
+        "used"
+      ],
+      "properties": {
+        "required": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "used": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "name",
+        "arguments"
+      ],
+      "properties": {
+        "scope": {
+          "enum": [
+            "model",
+            "simulation_protocol"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "arguments": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "protocol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "actions"
+      ],
+      "properties": {
+        "actions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/action"
+          }
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version",
+        "substance_units",
+        "options"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "substance_units": {
+          "type": "string"
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "symbol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "index"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "parameter",
+            "function",
+            "observable",
+            "molecule_type",
+            "compartment",
+            "reaction_rule",
+            "energy_pattern"
+          ]
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "expression": {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "number",
+            "parameter_ref",
+            "observable_ref",
+            "function_ref",
+            "local_ref",
+            "reactant_count_ref",
+            "time_ref",
+            "unary",
+            "binary",
+            "builtin_call",
+            "table_function",
+            "unresolved"
+          ]
+        },
+        "value": {
+          "type": "number"
+        },
+        "symbol": {
+          "$ref": "#/$defs/symbol"
+        },
+        "name": {
+          "type": "string"
+        },
+        "call": {
+          "type": "boolean"
+        },
+        "operator": {
+          "type": "string"
+        },
+        "builtin": {
+          "type": "string"
+        },
+        "arguments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/expression"
+          }
+        },
+        "x": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
+        },
+        "y": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
+        },
+        "file": {
+          "type": "string"
+        },
+        "method": {
+          "type": "string"
+        },
+        "unresolved_source": {
+          "type": "string"
+        },
+        "reactant_index": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "state_constraint": {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "any",
+            "exact",
+            "set"
+          ]
+        },
+        "value": {
+          "type": "string"
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "indices": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "bond_atom": {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "unspecified",
+            "unbound",
+            "bound",
+            "any",
+            "exact"
+          ]
+        },
+        "group": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "bond_constraint": {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "unspecified",
+            "unbound",
+            "bound",
+            "any",
+            "exact"
+          ]
+        },
+        "group": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "alternatives": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/bond_atom"
+          }
+        }
+      }
+    },
+    "site": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "occurrence",
+        "component",
+        "state",
+        "bond"
+      ],
+      "properties": {
+        "occurrence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "component": {
+          "type": "string"
+        },
+        "component_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "label": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/state_constraint"
+        },
+        "bond": {
+          "$ref": "#/$defs/bond_constraint"
+        }
+      }
+    },
+    "pattern_molecule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "occurrence",
+        "type",
+        "sites"
+      ],
+      "properties": {
+        "occurrence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "type": {
+          "type": "string"
+        },
+        "type_id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "compartment": {
+          "type": "string"
+        },
+        "compartment_id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sites": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/site"
+          }
+        }
+      }
+    },
+    "pattern": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "molecules"
+      ],
+      "properties": {
+        "compartment": {
+          "type": "string"
+        },
+        "molecules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pattern_molecule"
+          }
+        },
+        "compartment_prefix": {
+          "type": "boolean"
+        }
+      }
+    },
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "side",
+        "pattern",
+        "molecule"
+      ],
+      "properties": {
+        "side": {
+          "enum": [
+            "reactant",
+            "product"
+          ]
+        },
+        "pattern": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "molecule": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "site": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "mutation": {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "add_bond",
+            "delete_bond",
+            "change_state",
+            "add_molecule",
+            "delete_molecule"
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/reference"
+        },
+        "partner": {
+          "$ref": "#/$defs/reference"
+        },
+        "molecule": {
+          "$ref": "#/$defs/reference"
+        },
+        "state": {
+          "type": "string"
+        },
+        "state_index": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "filter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "include",
+        "side",
+        "pattern_index",
+        "patterns"
+      ],
+      "properties": {
+        "include": {
+          "type": "boolean"
+        },
+        "side": {
+          "enum": [
+            "reactant",
+            "product"
+          ]
+        },
+        "pattern_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "patterns": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pattern"
+          }
+        }
+      }
+    },
+    "rate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "expression"
+      ],
+      "properties": {
+        "kind": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expression": {
+          "$ref": "#/$defs/expression"
+        }
+      }
+    },
+    "direction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reactants",
+        "products",
+        "transformations_complete",
+        "mutations",
+        "filters"
+      ],
+      "properties": {
+        "reactants": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pattern"
+          }
+        },
+        "products": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pattern"
+          }
+        },
+        "transformations_complete": {
+          "type": "boolean"
+        },
+        "rate": {
+          "$ref": "#/$defs/rate"
+        },
+        "mutations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/mutation"
+          }
+        },
+        "filters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/filter"
+          }
+        },
+        "local_scopes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "kind",
+              "reactant_pattern"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "species",
+                  "molecule"
+                ]
+              },
+              "reactant_pattern": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "molecule_occurrence": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    "mapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "product",
+        "reactant"
+      ],
+      "properties": {
+        "product": {
+          "$ref": "#/$defs/reference"
+        },
+        "reactant": {
+          "$ref": "#/$defs/reference"
+        }
+      }
+    },
+    "modifier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "delete_molecules",
+            "move_connected",
+            "match_once",
+            "total_rate",
+            "include_reactants",
+            "exclude_reactants",
+            "include_products",
+            "exclude_products",
+            "unknown"
+          ]
+        },
+        "unresolved_source": {
+          "type": "string"
+        }
+      }
+    },
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "label",
+        "bidirectional",
+        "forward",
+        "modifiers",
+        "molecule_mappings",
+        "component_mappings"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "name": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "bidirectional": {
+          "type": "boolean"
+        },
+        "forward": {
+          "$ref": "#/$defs/direction"
+        },
+        "reverse": {
+          "$ref": "#/$defs/direction"
+        },
+        "modifiers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/modifier"
+          }
+        },
+        "molecule_mappings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/mapping"
+          }
+        },
+        "component_mappings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/mapping"
+          }
+        }
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "metadata",
+        "parameters",
+        "molecule_types",
+        "compartments",
+        "seeds",
+        "observables",
+        "functions",
+        "energy_patterns",
+        "population_maps",
+        "rules"
+      ],
+      "properties": {
+        "metadata": {
+          "$ref": "#/$defs/metadata"
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "expression"
+            ],
+            "properties": {
+              "id": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "name": {
+                "type": "string"
+              },
+              "expression": {
+                "$ref": "#/$defs/expression"
+              },
+              "constant_value": {
+                "type": "number"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "molecule_types": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "population",
+              "components"
+            ],
+            "properties": {
+              "id": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "name": {
+                "type": "string"
+              },
+              "population": {
+                "type": "boolean"
+              },
+              "components": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "index",
+                    "name",
+                    "states"
+                  ],
+                  "properties": {
+                    "index": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "states": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "compartments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "dimension",
+              "volume"
+            ],
+            "properties": {
+              "id": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "name": {
+                "type": "string"
+              },
+              "dimension": {
+                "type": "integer"
+              },
+              "volume": {
+                "type": "number"
+              },
+              "parent": {
+                "type": "string"
+              },
+              "parent_id": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "seeds": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "pattern",
+              "amount",
+              "constant"
+            ],
+            "properties": {
+              "id": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "pattern": {
+                "$ref": "#/$defs/pattern"
+              },
+              "amount": {
+                "$ref": "#/$defs/expression"
+              },
+              "constant": {
+                "type": "boolean"
+              },
+              "compartment": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "observables": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "name",
+              "kind",
+              "terms"
+            ],
+            "properties": {
+              "id": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "name": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "molecules",
+                  "species",
+                  "unknown"
+                ]
+              },
+              "terms": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "pattern",
+                    "quantity"
+                  ],
+                  "properties": {
+                    "pattern": {
+                      "$ref": "#/$defs/pattern"
+                    },
+                    "relation": {
+                      "enum": [
+                        "==",
+                        ">",
+                        ">=",
+                        "<",
+                        "<="
+                      ]
+                    },
+                    "quantity": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "functions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "arguments",
+              "expression"
+            ],
+            "properties": {
+              "id": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "name": {
+                "type": "string"
+              },
+              "arguments": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "expression": {
+                "$ref": "#/$defs/expression"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "energy_patterns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "label",
+              "pattern",
+              "expression"
+            ],
+            "properties": {
+              "id": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "label": {
+                "type": "string"
+              },
+              "pattern": {
+                "$ref": "#/$defs/pattern"
+              },
+              "expression": {
+                "$ref": "#/$defs/expression"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "population_types": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "name"
+            ],
+            "properties": {
+              "id": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "population_maps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "index",
+              "label",
+              "pattern",
+              "function",
+              "arguments"
+            ],
+            "properties": {
+              "index": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "label": {
+                "type": "string"
+              },
+              "pattern": {
+                "$ref": "#/$defs/pattern"
+              },
+              "function": {
+                "type": "string"
+              },
+              "arguments": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/rule"
+          }
+        }
+      }
+    }
+  }
+}

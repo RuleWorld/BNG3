@@ -3,7 +3,9 @@
 #include <string>
 #include <set>
 #include <map>
-#include "ast/Model.hpp"
+#include "compile/CompiledModel.hpp"
+
+namespace bng::ast { class Model; }
 
 namespace bng::io {
 
@@ -36,6 +38,7 @@ public:
      * @param model The BioNetGen model
      * @return ContactMap structure
      */
+    static ContactMap buildContactMap(const compile::CompiledModel& model);
     static ContactMap buildContactMap(const ast::Model& model);
 
     /**

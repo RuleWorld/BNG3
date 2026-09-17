@@ -54,3 +54,21 @@ def test_plot_runs(sample_result, monkeypatch):
 def test_repr(sample_result):
     r = repr(sample_result)
     assert "SimResult" in r
+
+
+def test_construction_path_metadata_is_preserved():
+    result = SimResult(
+        {
+            "time": np.array([0.0]),
+            "observables": {},
+            "construction_path": "direct",
+        }
+    )
+
+    assert result.construction_path == "direct"
+
+
+def test_construction_path_defaults_to_none():
+    result = SimResult({"time": np.array([0.0]), "observables": {}})
+
+    assert result.construction_path is None

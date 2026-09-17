@@ -5,17 +5,14 @@
 #include <map>
 #include <sstream>
 
-#include "parser/antlr_compat.hpp"
-#include <antlr4-runtime.h>
-#include "generated/BNGLexer.h"
-#include "generated/BNGParser.h"
-#include "parser/PatternGraphBuilder.hpp"
-#include "core/Ullmann.hpp"
+#include "compile/Document.hpp"
+#include "engine/ObservableProjection.hpp"
+
 
 namespace bng::io {
 
 RegulatoryGraphWriter::RegulatoryGraph RegulatoryGraphWriter::build(
-    const ast::Model& model, const engine::GeneratedNetwork& network) {
+    const compile::CompiledModel& model, const engine::GeneratedNetwork& network) {
 
     RegulatoryGraph graph;
 
@@ -30,50 +27,19 @@ RegulatoryGraphWriter::RegulatoryGraph RegulatoryGraphWriter::build(
         }
     }
 
-    // Collect observable names
-    for (const auto& obs : model.getObservables()) {
-        graph.observableNames.push_back(obs.getName());
-    }
+    // Project observables from the already-resolved semantic model. Patterns
+    // are lowered once and shared across every species rather than reparsed.
+    engine::ObservableProjection projection(model);
+    for (std::size_t o = 0; o < projection.size(); ++o)
+        graph.observableNames.push_back(projection.name(o));
 
-    // Compute observable weights per species (which species contribute to which observable)
-    // observableWeights[obsIndex][speciesIndex] = weight
-    auto& mutableModel = const_cast<ast::Model&>(model);
-    const std::size_t nObs = model.getObservables().size();
+    const std::size_t nObs = projection.size();
     const std::size_t nSpecies = network.species.size();
-
     std::vector<std::map<std::size_t, int>> observableWeights(nObs);
-
-    for (std::size_t o = 0; o < nObs; ++o) {
-        const auto& observable = model.getObservables()[o];
-
-        for (std::size_t s = 0; s < nSpecies; ++s) {
-            std::size_t weight = 0;
-
-            for (const auto& patternText : observable.getPatterns()) {
-                try {
-                    antlr4::ANTLRInputStream input(patternText);
-                    BNGLexer lexer(&input);
-                    antlr4::CommonTokenStream tokens(&lexer);
-                    BNGParser parser(&tokens);
-                    auto* species = parser.species_def();
-
-                    if (parser.getNumberOfSyntaxErrors() == 0) {
-                        const auto pattern = bng::parser::buildPatternGraph(species, mutableModel);
-                        BNGcore::UllmannSGIso matcher(pattern,
-                            network.species.get(s).getSpeciesGraph().getGraph());
-                        BNGcore::List<BNGcore::Map> maps;
-                        weight += matcher.find_maps(maps);
-                    }
-                } catch (...) {}
-            }
-
-            if (observable.getType() == "Species" && weight > 0) {
-                weight = 1;
-            }
-
-            if (weight > 0) {
-                observableWeights[o][s] = static_cast<int>(weight);
-            }
+    for (std::size_t s = 0; s < nSpecies; ++s) {
+        const auto weights = projection.weights(network.species.get(s).getSpeciesGraph().getGraph());
+        for (std::size_t o = 0; o < weights.size(); ++o) {
+            if (weights[o] != 0) observableWeights[o][s] = weights[o];
         }
     }
 
@@ -124,6 +90,14 @@ RegulatoryGraphWriter::RegulatoryGraph RegulatoryGraphWriter::build(
     }
 
     return graph;
+}
+
+RegulatoryGraphWriter::RegulatoryGraph RegulatoryGraphWriter::build(
+    const ast::Model& model, const engine::GeneratedNetwork& network) {
+    compile::Document document(model);
+    if (!document.valid())
+        throw std::runtime_error("cannot build regulatory graph from invalid compiled model");
+    return build(document.model(), network);
 }
 
 std::string RegulatoryGraphWriter::toGML(const RegulatoryGraph& graph) {

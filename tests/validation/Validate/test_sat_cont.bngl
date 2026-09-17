@@ -1,2 +1,3 @@
 readFile({file=>"test_sat_cont.net"})
+writeNetwork({overwrite=>1,evaluate_expressions=>0})
 simulate_ode({t_end=>1,n_steps=>10})

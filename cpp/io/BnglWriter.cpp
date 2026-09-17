@@ -48,6 +48,30 @@ std::string BnglWriter::write(const ast::Model& model, const engine::GeneratedNe
 
     bngl << "begin model\n\n";
 
+    const bool hasUnitMetadata = !model.getUnitDefaults().empty() ||
+        std::any_of(model.getUnitSystem().definitions().begin(),
+                    model.getUnitSystem().definitions().end(),
+                    [](const auto& definition) { return !definition.builtin; }) ||
+        std::any_of(model.getParameters().all().begin(), model.getParameters().all().end(),
+                    [](const auto& parameter) { return parameter.hasUnit(); }) ||
+        std::any_of(model.getCompartments().begin(), model.getCompartments().end(),
+                    [](const auto& compartment) { return compartment.hasUnit(); }) ||
+        std::any_of(model.getSeedSpecies().begin(), model.getSeedSpecies().end(),
+                    [](const auto& seed) { return seed.hasUnit(); });
+    if (hasUnitMetadata) {
+        bngl << "begin units\n";
+        for (const auto& [role, unit] : model.getUnitDefaults()) {
+            bngl << "  " << role << " = " << unit << "\n";
+        }
+        for (const auto& definition : model.getUnitSystem().definitions()) {
+            if (!definition.builtin) {
+                bngl << "  unit " << definition.id << " = "
+                     << definition.expression << "\n";
+            }
+        }
+        bngl << "end units\n\n";
+    }
+
     // Parameters
     bngl << writeParameters(model, options);
 
@@ -104,6 +128,7 @@ std::string BnglWriter::writeParameters(const ast::Model& model, const Options& 
             bngl << param.getExpression().toString();
         }
 
+        if (param.hasUnit()) bngl << " [" << param.getUnitName() << "]";
         bngl << "\n";
     }
 
@@ -123,6 +148,8 @@ std::string BnglWriter::writeCompartments(const ast::Model& model) {
         if (!comp.getParent().empty()) {
             bngl << " " << comp.getParent();
         }
+
+        if (comp.hasUnit()) bngl << " [" << comp.getUnitName() << "]";
 
         bngl << "\n";
     }
@@ -184,6 +211,7 @@ std::string BnglWriter::writeSeedSpecies(const ast::Model& model) {
 
         bngl << "  " << seed.getPattern()
              << " " << formatNumber(amountValue)
+             << (seed.hasUnit() ? " [" + seed.getUnitName() + "]" : "")
              << "\n";
     }
 

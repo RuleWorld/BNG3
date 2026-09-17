@@ -115,6 +115,36 @@ target_link_libraries(test_expression_evaluator PRIVATE
     Catch2::Catch2WithMain Catch2::Catch2 bng_ast)
 catch_discover_tests(test_expression_evaluator)
 
+# test_units
+add_executable(test_units test_units.cpp)
+target_include_directories(test_units PRIVATE ${CMAKE_SOURCE_DIR}/cpp)
+target_link_libraries(test_units PRIVATE Catch2::Catch2WithMain Catch2::Catch2 bng_units)
+catch_discover_tests(test_units)
+
+# test_parser_units
+add_executable(test_parser_units test_parser_units.cpp)
+target_include_directories(test_parser_units PRIVATE
+    ${CMAKE_SOURCE_DIR}/cpp
+    ${CMAKE_SOURCE_DIR}/cpp/parser
+    ${CMAKE_SOURCE_DIR}/cpp/parser/generated
+    ${antlr4_runtime_SOURCE_DIR}/runtime/Cpp/runtime/src
+)
+target_link_libraries(test_parser_units PRIVATE
+    Catch2::Catch2WithMain Catch2::Catch2 bng_parser bng_compile)
+catch_discover_tests(test_parser_units)
+
+# SBML Core and SBML-Multi share the same unit definitions and attributes.
+add_executable(test_sbml_units test_sbml_units.cpp)
+target_include_directories(test_sbml_units PRIVATE
+    ${CMAKE_SOURCE_DIR}/cpp
+    ${CMAKE_SOURCE_DIR}/cpp/parser
+    ${CMAKE_SOURCE_DIR}/cpp/parser/generated
+    ${antlr4_runtime_SOURCE_DIR}/runtime/Cpp/runtime/src
+)
+target_link_libraries(test_sbml_units PRIVATE
+    Catch2::Catch2WithMain Catch2::Catch2 bng_engine nfsim_core)
+catch_discover_tests(test_sbml_units)
+
 # test_reaction_rule_expansion
 add_executable(test_reaction_rule_expansion test_reaction_rule_expansion.cpp)
 target_include_directories(test_reaction_rule_expansion PRIVATE

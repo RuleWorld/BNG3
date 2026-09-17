@@ -2,8 +2,6 @@
 
 #include <atomic>
 #include <cstddef>
-#include <cstdlib>
-#include <new>
 #include <string>
 #include <vector>
 
@@ -11,6 +9,13 @@ namespace nfnext {
 namespace allocation_probe_detail {
 inline std::atomic<std::size_t> allocations{0};
 inline thread_local bool enabled = false;
+
+// Allocation sites in a production hot loop can call this explicitly while a
+// probe is active.  Do not replace the process-wide new/delete operators here:
+// sanitizer and platform runtimes must pair their own allocation functions.
+inline void recordAllocation() noexcept {
+    if (enabled) allocations.fetch_add(1, std::memory_order_relaxed);
+}
 } // namespace allocation_probe_detail
 
 class AllocationProbe {
@@ -44,16 +49,3 @@ inline AllocationProbeSimulation makeAllocationProbeFixture(const std::string& n
     return AllocationProbeSimulation(name);
 }
 } // namespace nfnext
-inline void* operator new(std::size_t size) {
-    void* memory = std::malloc(size == 0 ? 1 : size);
-    if (memory == nullptr) throw std::bad_alloc();
-    if (::nfnext::allocation_probe_detail::enabled)
-        ::nfnext::allocation_probe_detail::allocations.fetch_add(1, std::memory_order_relaxed);
-    return memory;
-}
-
-inline void* operator new[](std::size_t size) { return ::operator new(size); }
-inline void operator delete(void* memory) noexcept { std::free(memory); }
-inline void operator delete[](void* memory) noexcept { std::free(memory); }
-inline void operator delete(void* memory, std::size_t) noexcept { std::free(memory); }
-inline void operator delete[](void* memory, std::size_t) noexcept { std::free(memory); }

@@ -171,16 +171,26 @@ class ScanResult:
     def to_dataframe(self):
         import pandas as pd
 
-        rows = []
-        for value, result in zip(self.parameter_values, self.results):
-            for time_index, time_value in enumerate(result.time):
-                row = {self.parameter_name: float(value), "time": float(time_value)}
-                for observable in self.observable_names:
-                    row[observable] = float(
-                        np.asarray(result.observables[observable])[time_index]
-                    )
-                rows.append(row)
-        return pd.DataFrame(rows)
+        if not self.results:
+            return pd.DataFrame()
+
+        # ⚡ Bolt: Vectorize dataframe creation to avoid O(N^2) overhead
+        # Pre-compute column arrays using np.concatenate instead of building frames in loops
+        lengths = [len(result.time) for result in self.results]
+        data = {
+            self.parameter_name: np.repeat(self.parameter_values, lengths),
+            "time": np.concatenate(
+                [np.asarray(result.time, dtype=float) for result in self.results]
+            ),
+        }
+        for observable in self.observable_names:
+            data[observable] = np.concatenate(
+                [
+                    np.asarray(result.observables[observable], dtype=float)
+                    for result in self.results
+                ]
+            )
+        return pd.DataFrame(data)
 
     def plot(self, observable: str, show: bool = True, **kwargs):
         import matplotlib.pyplot as plt
@@ -250,21 +260,37 @@ class ScanResult2D:
     def to_dataframe(self):
         import pandas as pd
 
-        rows = []
-        for value1, row in zip(self.values1, self.results):
-            for value2, result in zip(self.values2, row):
-                for time_index, time_value in enumerate(result.time):
-                    record = {
-                        self.parameter1_name: float(value1),
-                        self.parameter2_name: float(value2),
-                        "time": float(time_value),
-                    }
-                    for observable in self.observable_names:
-                        record[observable] = float(
-                            np.asarray(result.observables[observable])[time_index]
-                        )
-                    rows.append(record)
-        return pd.DataFrame(rows)
+        if not self.results or not self.results[0]:
+            return pd.DataFrame()
+
+        # ⚡ Bolt: Vectorize dataframe creation to avoid O(N^2) overhead
+        # Pre-compute column arrays using np.concatenate instead of building frames in loops
+        num_results1 = len(self.values1)
+        num_results2 = len(self.values2)
+
+        flat_results = [res for row in self.results for res in row]
+        lengths = [len(res.time) for res in flat_results]
+        time_concat = np.concatenate(
+            [np.asarray(res.time, dtype=float) for res in flat_results]
+        )
+
+        data = {
+            self.parameter1_name: np.repeat(
+                np.repeat(self.values1, num_results2), lengths
+            ),
+            self.parameter2_name: np.repeat(
+                np.tile(self.values2, num_results1), lengths
+            ),
+            "time": time_concat,
+        }
+        for observable in self.observable_names:
+            data[observable] = np.concatenate(
+                [
+                    np.asarray(res.observables[observable], dtype=float)
+                    for res in flat_results
+                ]
+            )
+        return pd.DataFrame(data)
 
     def plot_heatmap(self, observable: str, show: bool = True, **kwargs):
         import matplotlib.pyplot as plt
