@@ -602,13 +602,15 @@ class Species:
                 for component in molecule.components
                 if component.active_state not in ("", "0")
             )
+            # ⚡ Bolt: Cache molecule.to_string() computation which avoids redundant heavy string operations
+            molecule_str = molecule.to_string()
             return (
                 -len(molecule.components),
                 min(bonds or [999]),
                 -len(molecule.get_component_with_bonds()),
                 -active,
-                len(molecule.to_string()),
-                molecule.to_string(),
+                len(molecule_str),
+                molecule_str,
             )
 
         self.molecules.sort(key=key)
