@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import operator
+import os
 from pathlib import Path
 import sys
 from typing import Optional, Union
@@ -169,6 +170,7 @@ class BioNetGenModel:
         check_product_scale: float = 0.0,
         equilibrate: float = 0.0,
         traversal_limit: int = -1,
+        backend: Optional[str] = None,
     ) -> SimResult:
         """Run a simulation using the specified method.
 
@@ -349,6 +351,10 @@ class BioNetGenModel:
             )
 
         if method == "nf":
+            # backend is not applicable to network-free; reject explicit bngsim
+            if backend is not None and str(backend).lower() not in ("auto", "native", "nf", "nfsim"):
+                if str(backend).lower() == "bngsim":
+                    raise ValueError("backend='bngsim' is not valid for method='nf'")
             raw = _cpp.simulate_nf(
                 self._model,
                 t_end=t_end,
@@ -361,44 +367,160 @@ class BioNetGenModel:
                 sample_times=normalized_sample_times,
                 traversal_limit=traversal_limit,
             )
+            # NFsim path remains independent; annotate backend for diagnostics.
+            if isinstance(raw, dict) and "backend" not in raw:
+                raw["backend"] = "nfsim"
         else:
+            # Finite-network backend dispatch (ADR 0003).
+            # Default is "auto" -> native during migration; explicit "bngsim"
+            # opts into the canonical BNGsim backend where faithfully lowerable.
+            # Env var BIONETGEN_FINITE_BACKEND provides CI/developer switch.
+            effective_backend = backend
+            if effective_backend is None:
+                effective_backend = os.environ.get("BIONETGEN_FINITE_BACKEND", "auto")
+            if not isinstance(effective_backend, str):
+                raise TypeError("backend must be a string")
+            eb = effective_backend.strip().lower()
+            if eb in ("", "auto", "automatic"):
+                eb = "auto"
+            elif eb in ("native", "bng3", "default"):
+                eb = "native"
+            elif eb in ("bngsim", "bng_sim", "bng-sim"):
+                eb = "bngsim"
+            else:
+                raise ValueError(
+                    f"Unknown backend: {effective_backend!r}. Use 'auto', 'native', or 'bngsim'."
+                )
+
             if self._network is None:
                 self.generate_network()
 
+            # For explicit bngsim we fail closed; for auto we keep native as
+            # default (Phase A-C). Phase D will flip auto to prefer bngsim
+            # when check_bngsim_lowering reports supported.
+            use_bngsim = False
+            bngsim_blockers = None
+            if eb == "bngsim":
+                use_bngsim = True
+            elif eb == "auto":
+                # Conservative: stay on native. Developers can set
+                # BIONETGEN_FINITE_BACKEND=bngsim to exercise the BNGsim path
+                # for supported models in CI.
+                use_bngsim = False
+
+            if use_bngsim:
+                # PLA/PSA not yet claimed for BNGsim — fail closed before any
+                # lowering check so the message is precise even when the build
+                # is unavailable.
+                if method in ("pla", "psa"):
+                    raise RuntimeError(
+                        f"BNGsim backend does not yet support method='{method}'; native fallback required"
+                    )
+                # Preflight lowering check — this also reports availability so we
+                # get precise diagnostics for both semantic and build blockers.
+                if _cpp is None or not hasattr(_cpp, "check_bngsim_lowering"):
+                    raise RuntimeError("BNGsim backend unavailable in this build")
+                try:
+                    chk = _cpp.check_bngsim_lowering(self._model, self._network)
+                    if not chk.get("supported", False):
+                        blockers = chk.get("blockers", [])
+                        bngsim_blockers = "; ".join(blockers) if blockers else "unsupported"
+                        # Distinguish build vs semantic for the error prefix.
+                        if any("unavailable" in b.lower() for b in blockers):
+                            raise RuntimeError(
+                                f"BNGsim backend unavailable: {bngsim_blockers}"
+                            )
+                        raise RuntimeError(
+                            f"BioNetGen finite-network backend cannot represent model for BNGsim: {bngsim_blockers}"
+                        )
+                except RuntimeError:
+                    raise
+                except Exception as exc:
+                    raise RuntimeError(f"BNGsim lowering check failed: {exc}") from exc
+
             if method == "ode":
-                raw = _cpp.simulate_ode(
-                    self._model,
-                    self._network,
-                    t_end=t_end,
-                    n_steps=n_steps,
-                    t_start=t_start,
-                    rtol=rtol,
-                    atol=atol,
-                    method="cvode",
-                    max_step=max_step,
-                    steady_state=steady_state,
-                    steady_state_tol=steady_state_tol,
-                    stop_if=stop_if,
-                    sample_times=normalized_sample_times,
-                    max_sim_steps=max_sim_steps,
-                    output_step_interval=output_step_interval,
-                    sparse=sparse,
-                    check_product_scale=check_product_scale,
-                )
+                if use_bngsim:
+                    raw = _cpp.simulate_ode_bngsim(
+                        self._model,
+                        self._network,
+                        t_end=t_end,
+                        n_steps=n_steps,
+                        t_start=t_start,
+                        rtol=rtol,
+                        atol=atol,
+                        method="cvode",
+                        max_step=max_step,
+                        steady_state=steady_state,
+                        steady_state_tol=steady_state_tol,
+                        stop_if=stop_if,
+                        sample_times=normalized_sample_times,
+                        max_sim_steps=max_sim_steps,
+                        output_step_interval=output_step_interval,
+                        sparse=sparse,
+                        check_product_scale=check_product_scale,
+                    )
+                    if isinstance(raw, dict) and "backend" not in raw:
+                        raw["backend"] = "bngsim"
+                else:
+                    raw = _cpp.simulate_ode(
+                        self._model,
+                        self._network,
+                        t_end=t_end,
+                        n_steps=n_steps,
+                        t_start=t_start,
+                        rtol=rtol,
+                        atol=atol,
+                        method="cvode",
+                        max_step=max_step,
+                        steady_state=steady_state,
+                        steady_state_tol=steady_state_tol,
+                        stop_if=stop_if,
+                        sample_times=normalized_sample_times,
+                        max_sim_steps=max_sim_steps,
+                        output_step_interval=output_step_interval,
+                        sparse=sparse,
+                        check_product_scale=check_product_scale,
+                    )
+                    if isinstance(raw, dict) and "backend" not in raw:
+                        raw["backend"] = "native"
             elif method == "ssa":
-                raw = _cpp.simulate_ssa(
-                    self._model,
-                    self._network,
-                    t_end=t_end,
-                    n_steps=n_steps,
-                    t_start=t_start,
-                    seed=seed,
-                    stop_if=stop_if,
-                    sample_times=normalized_sample_times,
-                    max_sim_steps=max_sim_steps,
-                    output_step_interval=output_step_interval,
-                )
+                if use_bngsim:
+                    raw = _cpp.simulate_ssa_bngsim(
+                        self._model,
+                        self._network,
+                        t_end=t_end,
+                        n_steps=n_steps,
+                        t_start=t_start,
+                        seed=seed,
+                        stop_if=stop_if,
+                        sample_times=normalized_sample_times,
+                        max_sim_steps=max_sim_steps,
+                        output_step_interval=output_step_interval,
+                    )
+                    if isinstance(raw, dict) and "backend" not in raw:
+                        raw["backend"] = "bngsim"
+                else:
+                    raw = _cpp.simulate_ssa(
+                        self._model,
+                        self._network,
+                        t_end=t_end,
+                        n_steps=n_steps,
+                        t_start=t_start,
+                        seed=seed,
+                        stop_if=stop_if,
+                        sample_times=normalized_sample_times,
+                        max_sim_steps=max_sim_steps,
+                        output_step_interval=output_step_interval,
+                    )
+                    if isinstance(raw, dict) and "backend" not in raw:
+                        raw["backend"] = "native"
             elif method == "pla":
+                # PLA/PSA not yet routed through BNGsim in this phase; keep native
+                # but surface a precise message if backend=bngsim was requested.
+                if use_bngsim:
+                    raise RuntimeError(
+                        "BNGsim backend does not yet support method='pla'; native fallback required"
+                    )
                 raw = _cpp.simulate_pla(
                     self._model,
                     self._network,
@@ -407,7 +529,14 @@ class BioNetGenModel:
                     config_str=pla_config,
                     t_start=t_start,
                 )
+                if isinstance(raw, dict) and "backend" not in raw:
+                    raw["backend"] = "native"
             elif method == "psa":
+                if use_bngsim:
+                    # PSA not claimed; fail closed rather than silently running native
+                    raise RuntimeError(
+                        "BNGsim backend does not yet support method='psa'; native fallback required"
+                    )
                 raw = _cpp.simulate_psa(
                     self._model,
                     self._network,
@@ -416,6 +545,8 @@ class BioNetGenModel:
                     poplevel=psa_poplevel,
                     t_start=t_start,
                 )
+                if isinstance(raw, dict) and "backend" not in raw:
+                    raw["backend"] = "native"
             else:
                 raise AssertionError("validated method dispatch is incomplete")
 
