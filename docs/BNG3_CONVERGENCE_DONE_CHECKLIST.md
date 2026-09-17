@@ -2272,8 +2272,19 @@ completion gate.
 
 - [ ] One bng::core::canonicalLabel implementation is used by network
   canonicalization and NFsim complex identity.
-- [ ] The duplicate cpp/nfsim/nauty24 build is removed only after independent
-  identity evidence is green.
+- [x] The duplicate cpp/nfsim/nauty24 build is removed. **Implemented,
+  awaiting build validation.** `cpp/nauty` is now the only compiled nauty
+  tree; `nfsim_core` links the shared `nauty` target and
+  `cpp/nfsim/NFcore/complex.cpp` includes its header. The two trees were
+  verified identical after normalizing the documented `set`->`nset` rename
+  (`diff` clean on all five translation units), and unifying on the NFsim
+  variant also picked up an MSVC `HAVE_SYSTYPES_H` guard the `cpp/nauty` copy
+  lacked. Statically verified plus a pure-Python structural contract
+  (`tests/python/test_single_nauty_contract.py`, 10/10 locally). The
+  *independent identity evidence* this item also asks for — that one low-level
+  Nauty dependency does not alter NFsim complex identity, reaction counts, or
+  seeded trajectories — still **requires full CI and an independent NFsim
+  oracle**, tracked by the last item in this subsection.
 - [ ] NFsim private canonicalization is replaced or explicitly governed without
   changing complex identity semantics.
 - [ ] The HNauty largest-versus-canonical-form decision is resolved against
@@ -2309,12 +2320,44 @@ completion gate.
 
 - [ ] A single parsed/resolved expression representation and error model is
   shared across ODE RHS, SSA/PLA/PSA propensity evaluation, and NFsim
-  local/global functions.
+  local/global functions. **Partial.** The representation is still split:
+  `bng::ast::Expression` serves the engine while NFsim reparses strings with
+  ExprTk, and the `bng::eval` facade in `cpp/ast/ExpressionEval.hpp` has zero
+  consumers in `cpp/`. The *builtin name/arity/semantics metadata* is now
+  unified in `cpp/ast/ExpressionBuiltins.hpp` and consumed by both the shared
+  evaluator and the direct-NFsim gate, which closed three concrete
+  divergences (see 4.x notes below). Unifying the evaluators themselves
+  remains open and is gated on the expression parity suite.
 - [ ] NFsim ExprTk compilation and the NFSIM_USE_EXPRTK build path are removed
   only after the shared evaluator passes all dependent gates.
 - [ ] Numeric literals, parameters, observables, time, roots, logs/bases,
   constants, function definitions, nested functions, and domain errors have
-  cross-backend tests.
+  cross-backend tests. **Partial.** A shared-table contract test now asserts
+  that every NFsim-evaluable builtin is also implemented by the shared
+  evaluator, and three previously divergent cases have focused regressions in
+  `tests/cpp/test_expression_evaluator.cpp`:
+    - `rint` disagreed between backends *and* with the BNG2 oracle. BNG2
+      defines it as `floor(x + 0.5)` (`legacy/perl/Perl2/Expression.pm:74`);
+      the shared evaluator used `std::rint` (half-to-even, wrong at 4 of 7
+      half-integers) and NFsim used `std::round` (half-away-from-zero, wrong at
+      3 of 7). Both now use the oracle definition, checked against values
+      produced by executing the Perl oracle directly.
+    - `sign` was accepted by the NFsim gate and registered in the ExprTk shim
+      but unimplemented in the shared evaluator, so it evaluated under NFsim
+      and fell through to the user-function resolver under ODE/SSA. Now
+      implemented with the shim's definition.
+    - `log` was accepted by the NFsim gate, where ExprTk treats it as natural
+      log, while BNGL has no bare `log` at all. It is now rejected everywhere
+      with a diagnostic naming `ln`, `log10`, and `log2`.
+    - `avg` is a BNG2 builtin implemented in the shared evaluator and native
+      to ExprTk, but the gate rejected it and forced an unnecessary XML
+      fallback. Now admitted.
+    - The gate matched case-insensitively while the shim is compiled with
+      `exprtk_disable_caseinsensitivity`, so `SIN(x)` passed and then failed
+      inside `GlobalFunction::prepareForSimulation()`. The gate is now
+      case-sensitive and reports a "did you mean" hint.
+  These are **implemented but not build-verified**; genuine cross-backend
+  numerical comparison still **requires full CI and an independent oracle**.
 - [ ] Global functions, local functions, molecule/species scopes, TFUN linear
   and step forms, file-backed files, observable/time/parameter counters,
   composite functions, bounded nested functions, and function-counter forms

@@ -93,6 +93,10 @@ void bind_nfsim(py::module_& m) {
         int suggestedTraversalLimit = -1;
         std::unique_ptr<NFcore::System> system;
         std::string construction_path = "direct";
+        // Carries the precise reason the direct adapter declined, so the
+        // fail-closed error names the failing stage instead of only saying
+        // that construction was "unavailable".
+        std::string direct_unavailable_reason;
 
         {
             py::gil_scoped_release release;
@@ -102,17 +106,24 @@ void bind_nfsim(py::module_& m) {
                 -1,       // globalMoleculeLimit (unlimited)
                 verbose,
                 suggestedTraversalLimit,
-                fs::path(source_path)
+                fs::path(source_path),
+                &direct_unavailable_reason
             ));
 
             if (!system) {
+                const std::string because =
+                    direct_unavailable_reason.empty()
+                        ? std::string()
+                        : ": " + direct_unavailable_reason;
                 if (std::getenv("BNG_NFSIM_REQUIRE_DIRECT") != nullptr) {
                     throw std::runtime_error(
-                        "NFsim direct AST initialization required but unavailable");
+                        "NFsim direct AST initialization required but unavailable" +
+                        because);
                 }
                 if (std::getenv("BNG_NFSIM_ALLOW_XML_FALLBACK") == nullptr) {
                     throw std::runtime_error(
-                        "NFsim direct AST initialization unavailable; XML fallback disabled "
+                        "NFsim direct AST initialization unavailable" + because +
+                        "; XML fallback disabled "
                         "(set BNG_NFSIM_ALLOW_XML_FALLBACK=1 to opt in)");
                 }
                 construction_path = "in-memory-xml";
@@ -273,6 +284,9 @@ void bind_nfsim(py::module_& m) {
         }
         result["observables"] = obs_dict;
         result["construction_path"] = construction_path;
+        // Empty on the direct path; set whenever a compatibility path was used
+        // so validation harnesses can assert *why* rather than just *that*.
+        result["direct_unavailable_reason"] = direct_unavailable_reason;
 
         return result;
     },

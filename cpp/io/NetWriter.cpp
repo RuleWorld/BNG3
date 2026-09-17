@@ -22,6 +22,10 @@
 #include "generated/BNGParser.h"
 #include "parser/PatternGraphBuilder.hpp"
 #include "compile/UnitAnalysis.hpp"
+#include "compile/energy/BarrierCompiler.hpp"
+#include "compile/energy/BarrierTable.hpp"
+#include "compile/energy/DrivenEnergy.hpp"
+#include "ast/BarrierPattern.hpp"
 
 namespace bng::io {
 

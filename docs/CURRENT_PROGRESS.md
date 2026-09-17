@@ -10,6 +10,72 @@ IR migration reports and formalization reports retained in the repository are
 historical inputs and provenance records; their embedded prose is not a new
 execution instruction.
 
+## Offline convergence pass — 2026-09-17
+
+A restricted-container static audit and low-risk fix pass. No build, no
+network, and no Git checkout were available, so **nothing in this pass is
+build-verified**. Full detail, including the gap table, changed-files table,
+and deferred validation commands, is in
+[`OFFLINE_CONVERGENCE_PASS_2026-09-17.md`](OFFLINE_CONVERGENCE_PASS_2026-09-17.md).
+
+Implemented, awaiting build validation:
+
+- **One nauty build (WO-1b).** `cpp/nfsim/nauty24/` is deleted; `nfsim_core`
+  links the shared `nauty` target. The trees were identical modulo the
+  documented `set`->`nset` rename, and unifying on the NFsim variant also
+  fixed a missing MSVC `HAVE_SYSTYPES_H` guard. Locked by
+  `tests/python/test_single_nauty_contract.py` (10/10 locally).
+- **`rint` corrected in both expression engines.** BNG2 defines it as
+  `floor(x + 0.5)`; the shared evaluator used `std::rint` (half-to-even) and
+  NFsim used `std::round` (half-away-from-zero), so the two disagreed with
+  each other and each disagreed with the oracle. Oracle values were produced
+  by executing `legacy/perl/Perl2/Expression.pm:74` directly.
+- **One builtin table** (`cpp/ast/ExpressionBuiltins.hpp`) consumed by both
+  the shared evaluator and the direct-NFsim gate. Closed the `sign`/`log`
+  asymmetry, admitted `avg` (removing a false XML fallback), and made the gate
+  case-sensitive to match the ExprTk shim.
+- **`setOption` validation** (`cpp/ast/ModelOptions.hpp`) at the single
+  `Model::setOption` seam. `SpeciesLabel=Quasi` and invalid option values now
+  fail closed instead of being stored and ignored; corpus-present options
+  still load.
+- **Observable counting modes implemented** (`engine/ObservableProjection.cpp`).
+  `MoleculesObservables`/`SpeciesObservables` did not exist in BNG3 at all, so
+  a model requesting `CountUnique` silently received `CountAll` values. The two
+  keys are not the same operation: Molecules `CountUnique` divides each match
+  count by the pattern's automorphism number, while Species `CountUnique`
+  short-circuits the term loop so a species counts once. BNG2 has the symmetry
+  correction commented out on the Species branch. The Molecules division is
+  asserted exact rather than truncated.
+- **Per-stage direct-NFsim fallback reasons**, surfaced at both call sites and
+  as `Result.direct_unavailable_reason`.
+
+**Second pass, same day.** NFsim's separate expression engine is gone: the
+`mu::Parser` interface is retained but backed by
+`bng::parser::parseExpression` + `bng::eval::evaluate`, and ExprTk,
+`NFSIM_USE_EXPRTK`, and the root ExprTk `FetchContent` block are removed
+(WO-3 and WO-3b). The shim's underscore-remapping and logical-operator
+rewriting layers were deleted as unnecessary against the BNGL lexer and
+`Expression`'s native operators. Expect a performance regression on
+function-heavy models: this is a tree walk where ExprTk compiled. `HNauty.hpp`
+is marked UNUSED-reference, `SpeciesLabel=Quasi` is accepted-but-warned as
+UNUSED, and `python/bionetgen/modelapi/` is marked legacy with its live
+default-path dependencies recorded — it is still imported by
+`bionetgen/__init__.py` and cannot be deleted yet. The nested
+local/composite direct-NFsim refusal is root-caused but deliberately NOT
+fixed; see the addendum.
+
+Remaining implementation gaps are not low-hanging: the direct-NFsim refusals
+that are still open are energy lowering (out of scope), population maps
+(fail-closed by design and routed through the hybrid backend), and nested
+local/composite function mapping, which is a semantic mismatch rather than a
+missing translation. `SpeciesLabel=Quasi` would mean adding a second
+canonicalization mode. `cpp/core/HNauty.hpp` still has zero callers pending
+the open largest-vs-canonical-form maintainer decision.
+
+The chief regression risks for the next CI run are the **MSVC matrix** (the
+merged nauty header changes `HAVE_SYSTYPES_H` under `_MSC_VER`) and the
+**strict validation corpus** (`setOption` can now throw).
+
 ## Experimental nonequilibrium energy layer — barrier patterns and driving reservoirs
 
 Added but **gated off by default**. `begin barrier patterns` and `driven_by(W)`
@@ -51,10 +117,6 @@ barrier or work; those rules take the materialized Sekar expansion.
 
 Design, fail-closed inventory, and architecture table:
 [`docs/nonequilibrium_energy.md`](nonequilibrium_energy.md).
-
-`tests/energy/standalone/run_checks.sh` runs the network-free subset of the
-above for environments where FetchContent cannot reach GitHub. It is a
-convenience harness, not a substitute for ctest.
 
 ## Current continuation checkpoint — 2026-09-15
 

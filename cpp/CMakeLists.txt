@@ -1,7 +1,8 @@
 # cpp/CMakeLists.txt — Unified C++ build for BioNetGen core + NFSim
 
-add_compile_definitions(NFSIM_USE_EXPRTK)
-include_directories(${exprtk_SOURCE_DIR})
+# WO-3b: NFSIM_USE_EXPRTK and the ExprTk include path are gone. NFsim shares
+# the platform expression engine; nfsim_core links bng_parser for parsing and
+# bng_ast for evaluation.
 
 
 # =============================================================================
@@ -177,12 +178,14 @@ file(GLOB NFSIM_RXN_RXN "${NFSIM_DIR}/NFreactions/reactions/*.cpp")
 file(GLOB NFSIM_RXN_RLISTS "${NFSIM_DIR}/NFreactions/reactantLists/*.cpp")
 file(GLOB NFSIM_RXN_MAPS "${NFSIM_DIR}/NFreactions/mappings/*.cpp")
 file(GLOB NFSIM_FUNC_SRC "${NFSIM_DIR}/NFfunction/*.cpp")
-# muParser removed: ExprTk (nfsim_funcparser.h shim) is the only parser (NFSIM_USE_EXPRTK defined).
+# muParser and ExprTk both removed: nfsim_funcparser.h is now a thin mu::Parser
+# interface over the shared bng::ast::Expression evaluator (WO-3).
 file(GLOB NFSIM_OUTPUT_SRC "${NFSIM_DIR}/NFoutput/*.cpp")
 file(GLOB NFSIM_SCHED_SRC "${NFSIM_DIR}/NFscheduler/*.cpp")
 file(GLOB NFSIM_UTIL_SRC "${NFSIM_DIR}/NFutil/*.cpp")
 file(GLOB NFSIM_UTIL_MTRAND "${NFSIM_DIR}/NFutil/MTrand/*.cpp")
-file(GLOB NFSIM_NAUTY_C "${NFSIM_DIR}/nauty24/*.c")
+# WO-1b: nfsim_core no longer compiles its own nauty copy. It links the shared
+# `nauty` target instead (see cpp/nauty/README.md).
 
 # Exclude NFsim.cpp (main) and NFtest sources from the library
 set(NFSIM_LIB_SOURCES
@@ -202,7 +205,6 @@ set(NFSIM_LIB_SOURCES
     ${NFSIM_SCHED_SRC}
     ${NFSIM_UTIL_SRC}
     ${NFSIM_UTIL_MTRAND}
-    ${NFSIM_NAUTY_C}
     ${CMAKE_CURRENT_SOURCE_DIR}/nfsim/NFcore2/nfsim_pattern_lowering.cpp
 )
 
@@ -227,7 +229,9 @@ target_include_directories(nfsim_core PUBLIC
     ${NFSIM_DIR}/NFscheduler
     ${NFSIM_DIR}/NFutil
     ${NFSIM_DIR}/NFutil/MTrand
-    ${NFSIM_DIR}/nauty24
+    # Canonical labeling comes from the one shared nauty build. Propagated
+    # PUBLIC because NFcore.hh-consuming targets transitively include it.
+    $<TARGET_PROPERTY:nauty,INTERFACE_INCLUDE_DIRECTORIES>
     # Allow NFinput_fromModel.cpp to include ast/Model.hpp and core/ headers
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/ast
@@ -235,9 +239,8 @@ target_include_directories(nfsim_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/parser
     ${CMAKE_CURRENT_SOURCE_DIR}/parser/generated
 )
-target_compile_definitions(nfsim_core PUBLIC TIXML_USE_STL NFSIM_USE_EXPRTK)
-target_include_directories(nfsim_core PRIVATE ${exprtk_SOURCE_DIR})
-target_link_libraries(nfsim_core PUBLIC bng_parser bng_compile)
+target_compile_definitions(nfsim_core PUBLIC TIXML_USE_STL)
+target_link_libraries(nfsim_core PUBLIC bng_parser bng_compile nauty)
 if(MSVC)
     target_compile_options(nfsim_core PRIVATE /bigobj)
 else()

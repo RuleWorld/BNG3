@@ -1,5 +1,7 @@
 #include "Expression.hpp"
 
+#include "ExpressionBuiltins.hpp"
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -211,9 +213,30 @@ double Expression::evaluateWithFunctions(
         if (text_ == "asinh") { requireArity(text_, children_, 1); return std::asinh(evalArg(0)); }
         if (text_ == "acosh") { requireArity(text_, children_, 1); return std::acosh(evalArg(0)); }
         if (text_ == "atanh") { requireArity(text_, children_, 1); return std::atanh(evalArg(0)); }
-        if (text_ == "rint") { requireArity(text_, children_, 1); return std::rint(evalArg(0)); }
+        // rint: round-half-UP, matching the BNG2 oracle exactly.
+        //   legacy/perl/Perl2/Expression.pm:74
+        //     "rint" => { FPTR => sub { floor( $_[0] + 0.5 ) }, NARGS => 1 }
+        // std::rint() is round-half-to-EVEN under the default FE_TONEAREST
+        // mode, so it disagreed with the oracle at every half-integer with an
+        // even floor: rint(2.5) gave 2 where BNG2 gives 3. std::round() is
+        // round-half-AWAY-from-zero and disagrees on the negative side:
+        // rint(-1.5) gives -2 where BNG2 gives -1. Neither is correct; the
+        // oracle's floor(x + 0.5) is. Keep this identical to the NFsim-side
+        // definition in cpp/nfsim/NFfunction/nfsim_funcparser.h.
+        if (text_ == "rint") { requireArity(text_, children_, 1); return std::floor(evalArg(0) + 0.5); }
         if (text_ == "floor") { requireArity(text_, children_, 1); return std::floor(evalArg(0)); }
         if (text_ == "ceil") { requireArity(text_, children_, 1); return std::ceil(evalArg(0)); }
+        // sign: a BNG3 extension (absent from the BNG2 table), but the NFsim
+        // direct-path gate already admitted it and the ExprTk shim already
+        // registered an adapter for it. Only the shared evaluator was missing
+        // it, so `sign(x)` evaluated under NFsim and fell through to the
+        // user-function resolver under ODE/SSA. Definition matches
+        // detail::SignFunction in cpp/nfsim/NFfunction/nfsim_funcparser.h.
+        if (text_ == "sign") {
+            requireArity(text_, children_, 1);
+            const double value = evalArg(0);
+            return (value > 0.0) ? 1.0 : ((value < 0.0) ? -1.0 : 0.0);
+        }
         if (text_ == "min") {
             if (children_.empty()) throw std::runtime_error("Function 'min' expects at least one argument");
             double value = evalArg(0);
@@ -343,6 +366,16 @@ double Expression::evaluateWithFunctions(
         // Constants
         if (text_ == "_pi") { requireArity(text_, children_, 0); return M_PI; }
         if (text_ == "_e") { requireArity(text_, children_, 0); return M_E; }
+
+        // Names this platform deliberately does not accept as built-ins must
+        // not silently reach the user-function resolver, where they either
+        // throw a generic "unknown function" or, worse, bind to a same-named
+        // model function. `log` is the motivating case: BNG2 has no bare
+        // `log`, and ExprTk's `log` is natural, so admitting it meant a model
+        // written expecting base 10 silently got base e.
+        if (const std::string hint = builtins::rejectionHint(text_); !hint.empty()) {
+            throw std::runtime_error("Unsupported function '" + text_ + "': " + hint);
+        }
 
         // Try resolving as user-defined function (zero-arg call like myFunc())
         if (resolveFunction) {

@@ -1,6 +1,9 @@
 #include "Model.hpp"
 
+#include "ModelOptions.hpp"
+
 #include <cmath>
+#include <iostream>
 #include <utility>
 #include <stdexcept>
 
@@ -75,6 +78,22 @@ void Model::setModelName(std::string modelName) {
 }
 
 void Model::setOption(std::string key, std::string value) {
+    // Single validation seam. Both entry points reach here: the parser's
+    // inline setOption handling (parser/BNGAstVisitor.cpp) and the action
+    // dispatcher (actions/ActionDispatch.cpp), plus option copying in
+    // engine/HybridModelGenerator.cpp. Validating in the setter rather than in
+    // each caller is what keeps an unsupported option from being stored on one
+    // path and rejected on another.
+    const auto validation = options::validate(key, value);
+    if (!validation.accepted()) {
+        throw std::runtime_error("setOption(\"" + key + "\",\"" + value +
+                                 "\"): " + validation.message);
+    }
+    if (validation.status == options::Validation::Status::Accepted &&
+        !validation.message.empty()) {
+        std::cerr << "WARNING: setOption(\"" << key << "\",\"" << value
+                  << "\"): " << validation.message << "\n";
+    }
     options_[std::move(key)] = std::move(value);
 }
 

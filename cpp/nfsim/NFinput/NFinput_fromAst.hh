@@ -49,6 +49,9 @@ using SeedAmountOverrides = std::map<std::string, double>;
 /// @param verbose                  progress messages.
 /// @param suggestedTraversalLimit  out: recommended traversal depth.
 /// @param sourcePath               optional BNGL source path for relative TFUN files.
+/// @param unavailableReason        optional out: on nullptr return, a precise,
+///        human-readable reason (failing stage, capability diagnostic, or
+///        thrown message). Pass nullptr when the reason is not wanted.
 /// @return owned System, or nullptr on error. Callers must make any XML
 ///         compatibility fallback explicit to the user.
 NFcore::System* buildSystemFromAst(
@@ -57,7 +60,8 @@ NFcore::System* buildSystemFromAst(
         int    globalMoleculeLimit,
         bool   verbose,
         int&   suggestedTraversalLimit,
-        const std::filesystem::path& sourcePath = {});
+        const std::filesystem::path& sourcePath = {},
+        std::string* unavailableReason = nullptr);
 
 /// Build an NFcore::System with the native NFsim complex flags separated.
 ///
@@ -72,7 +76,8 @@ NFcore::System* buildSystemFromAst(
         int    globalMoleculeLimit,
         bool   verbose,
         int&   suggestedTraversalLimit,
-        const std::filesystem::path& sourcePath = {});
+        const std::filesystem::path& sourcePath = {},
+        std::string* unavailableReason = nullptr);
 
 /// Build directly while replacing matching seed amounts with current action
 /// state.  Action dispatch uses this for setConcentration/addConcentration
@@ -85,7 +90,8 @@ NFcore::System* buildSystemFromAstWithSeedOverrides(
         bool   verbose,
         int&   suggestedTraversalLimit,
         const std::filesystem::path& sourcePath,
-        const SeedAmountOverrides& seedAmountOverrides);
+        const SeedAmountOverrides& seedAmountOverrides,
+        std::string* unavailableReason = nullptr);
 
 // --- Per-section direct builders (mirror the TiXml-based init* functions) ---
 // Each returns false on error. Implement incrementally; until a builder is

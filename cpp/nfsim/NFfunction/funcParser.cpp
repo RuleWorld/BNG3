@@ -4,7 +4,8 @@
 
 using namespace NFcore;
 // ExprTk-backed mu::Parser shim is used via NFfunction.hh -> nfsim_funcparser.h.
-// NFSIM_USE_EXPRTK is always defined; muParser is not linked.
+// Neither muParser nor ExprTk is linked. mu::Parser is the shared-evaluator
+// shim declared in nfsim_funcparser.h (WO-3).
 
 
 

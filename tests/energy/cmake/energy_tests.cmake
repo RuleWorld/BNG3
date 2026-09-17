@@ -26,7 +26,6 @@ target_include_directories(test_energy_compiler_contracts PRIVATE
     ${CMAKE_SOURCE_DIR}/cpp/parser
     ${CMAKE_SOURCE_DIR}/cpp/parser/generated
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${exprtk_SOURCE_DIR}
 )
 target_link_libraries(test_energy_compiler_contracts PRIVATE
     Catch2::Catch2WithMain Catch2::Catch2 bng_compile bionetgen_core bng_parser)
@@ -42,7 +41,6 @@ target_include_directories(test_energy_compiler_original PRIVATE
     ${CMAKE_SOURCE_DIR}/cpp/parser
     ${CMAKE_SOURCE_DIR}/cpp/parser/generated
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${exprtk_SOURCE_DIR}
 )
 target_link_libraries(test_energy_compiler_original PRIVATE
     Catch2::Catch2WithMain Catch2::Catch2 bng_compile bionetgen_core bng_parser)
@@ -97,7 +95,6 @@ if(BNG_ENABLE_FUTURE_ENERGY_CONTRACTS OR BNG_ENERGY_FUTURE_CONTRACT)
         ${CMAKE_SOURCE_DIR}/cpp/nfsim/NFcore
         ${CMAKE_SOURCE_DIR}/cpp/nfsim/NFinput
         ${CMAKE_CURRENT_SOURCE_DIR}
-        ${exprtk_SOURCE_DIR}
     )
     target_compile_definitions(test_energy_future_contracts PRIVATE
         BNG_ENERGY_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/tests/energy/fixtures/energy")

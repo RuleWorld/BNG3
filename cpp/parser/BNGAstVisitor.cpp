@@ -1517,7 +1517,7 @@ std::any BNGAstVisitor::visitSet_option(BNGParser::Set_optionContext* ctx) {
                 throw std::runtime_error("invalid synthetic seed unit annotation");
             }
         } else {
-            currentModel_->setOption(key, values[i]->getText());
+            currentModel_->setOption(key, value);
         }
     }
     return {};
@@ -1852,7 +1852,7 @@ std::any BNGAstVisitor::visitPopulation_map_def(BNGParser::Population_map_defCon
 void BNGAstVisitor::finalizeThermodynamicMetadata() {
     // The lowering itself lives in ThermoModelFinalize so it can be exercised
     // without the generated parser; only expression parsing is supplied here.
-    const bool rewritten = finalizeThermodynamicMetadata(
+    const bool rewritten = ::bng::parser::finalizeThermodynamicMetadata(
         *currentModel_, pendingBarrierLabels_, pendingDrivingWork_,
         [](const std::string& text) { return parseExpressionImpl(text); });
     (void)rewritten;

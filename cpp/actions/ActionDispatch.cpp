@@ -1693,6 +1693,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
         // Direct construction is the default.  XML remains an explicit
         // compatibility bridge while the direct adapter is being qualified.
+        std::string directUnavailableReason;
         NFcore::System *nfSystem = NFinput::buildSystemFromAstWithSeedOverrides(
             model,
             useComplex,
@@ -1701,20 +1702,28 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             nfVerbose,
             suggestedTraversalLimit,
             sourcePath,
-            seedAmountOverrides);
+            seedAmountOverrides,
+            &directUnavailableReason);
 
         if (!nfSystem) {
+            const std::string because =
+                directUnavailableReason.empty()
+                    ? std::string()
+                    : ": " + directUnavailableReason;
             if (std::getenv("BNG_NFSIM_REQUIRE_DIRECT") != nullptr) {
                 throw std::runtime_error(
-                    "NFsim direct AST initialization required but unavailable");
+                    "NFsim direct AST initialization required but unavailable" +
+                    because);
             }
             if (std::getenv("BNG_NFSIM_ALLOW_XML_FALLBACK") == nullptr) {
                 throw std::runtime_error(
-                    "NFsim direct AST initialization unavailable; XML fallback disabled "
+                    "NFsim direct AST initialization unavailable" + because +
+                    "; XML fallback disabled "
                     "(set BNG_NFSIM_ALLOW_XML_FALLBACK=1 to opt in)");
             }
             if (verbose) {
-                std::cerr << "[bng_cpp] AST adapter returned nullptr; using in-memory XML fallback...\n";
+                std::cerr << "[bng_cpp] AST adapter declined (" << directUnavailableReason
+                          << "); using in-memory XML fallback...\n";
             }
             nfSystem = NFinput::initializeFromModel(
                 &model,
