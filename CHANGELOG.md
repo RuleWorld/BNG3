@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased] - 2026-09-15
+## [Unreleased] - 2026-09-10
 
 ### In progress
 
@@ -13,37 +13,9 @@
   reconstruction with explicit diagnostics and fail-closed execution.
 - Added the shared structured SBML-Multi component-map type and synchronized
   the architecture-contract inventory.
-- Closed the former PR/weekly validation exclusions with committed independent
-  BNG2 network references and explicit action-output contracts; the full
-  validation command now reports 71/71 passed with zero failures, errors, or
-  skips.
-- Repaired reverse local-rate scope preservation, legacy action argument lists,
-  visualization/network output naming, and the validation summary contract.
-- Repaired the Windows/MSVC ANTLR entry path by applying the existing SDK-macro
-  compatibility header to every generated parser and visitor header that can be
-  included before a translation-unit-level compatibility include.
-- Organized historical migration reports under
-  `docs/archive/reports/ir-migration-2026-09-14/` and removed applied patch
-  snapshots and redundant package-wrapper files.
-- Final local verification for semantic commit `78a1591`: CTest 308/308,
-  action contracts 6/6, CI-contract tests 26 passed, and energy Python tests
-  66 passed. Final hosted PR run `34896645707` at `ed4c59e` is terminal-success
-  for all PR-required build, Python, corpus, parity, formal, package-smoke,
-  and integration gates; release-only and scheduled-only jobs are conditionally
-  skipped by their event guards.
-- Repaired the wheel workflows after main push run `34901298982` exposed a
-  macOS 10.9 deployment-target failure in the ANTLR runtime and a
-  manylinux2014/GCC 10.2 failure while resolving NumPy 2.5.3. The workflows
-  now pin cibuildwheel 4.2.1, use native macOS targets at 10.13/11.0, and use
-  `manylinux_2_28`; the auxiliary wheel run `34971595435` was canceled before
-  its wheel jobs started, so exact-head wheel validation is deferred to the
-  first main-push run after merge.
-- Added the 2026-09-15 convergence continuation: direct NFsim checks now
-  assert the construction path and disallow implicit XML fallback; spawned
-  source-tree workers have stable imports; fixed-seed `motor` and `tlbr`
-  endpoint checks are required; and a bounded Lean/production-NFIR bridge
-  contract checks state and bond lowering for distinct reactants. Population
-  maps remain fail-closed on the direct NFsim path.
+- Final consolidated verification passed: build, CTest (305/305), Python
+  regression (353 passed, 27 skipped), and validation smoke (4 passed, 14
+  environment/reference skips).
 
 ## [3.0.0a1] - 2026-05-11
 

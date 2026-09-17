@@ -59,7 +59,7 @@ private:
     static std::string escapeXml(const std::string& text);
     static std::string makeValidSBMLId(const std::string& text);
 
-    static std::string writeUnitDefinitions(const ast::Model& model);
+    static std::string writeUnitDefinitions();
     static std::string writeCompartments(const ast::Model& model);
     static std::string writeParameters(const ast::Model& model, const std::vector<ObservableGroup>& groups);
     static std::string writeSpecies(const ast::Model& model, const engine::GeneratedNetwork* network);

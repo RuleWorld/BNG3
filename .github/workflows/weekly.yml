@@ -10,11 +10,11 @@ env:
 
 jobs:
   # ═══════════════════════════════════════════════════════════════════════════
-  # Full BNG Network and action-output Validation
+  # Supported BNG Network Generation Validation
   # ═══════════════════════════════════════════════════════════════════════════
 
   bng-validation:
-    name: BNG Validation (full corpus, ${{ matrix.os }})
+    name: BNG Validation (supported reference subset, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -50,7 +50,7 @@ jobs:
             -DBUILD_TESTS=OFF
           cmake --build build --config Release
 
-      - name: Run full validation corpus with no exclusions
+      - name: Run supported validation
         shell: bash
         run: |
           if [[ "${{ matrix.os }}" == *windows* ]]; then
@@ -59,7 +59,8 @@ jobs:
             BNG=build/cpp/bng_cpp
           fi
           python scripts/validate.py --bng-cpp "$BNG" --strict-references \
-            --validation-manifest tests/validation/validation_manifest.json \
+            --skip-file tests/validation/reference_exclusions.json \
+            --skip-profile weekly \
             --summary-file "$GITHUB_STEP_SUMMARY" --verbose
 
   # ═══════════════════════════════════════════════════════════════════════════

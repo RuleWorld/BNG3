@@ -63,7 +63,6 @@ enum class Feature : std::uint8_t {
     Compartments,
     IntegerStates,
     ProtocolActions,
-    Units,
     Count,
 };
 

@@ -1779,7 +1779,7 @@ def test_real_sbml_multi_validation_model_reconstructs_and_parses_with_bng_cpp()
 
 
 def test_cpp_sbml_multi_writer_roundtrip_is_libsbml_consistent(tmp_path):
-    libsbml = pytest.importorskip("libsbml", exc_type=ImportError)
+    libsbml = pytest.importorskip("libsbml")
     configured = os.environ.get("BNG_CPP")
     oracle = (
         Path(configured)

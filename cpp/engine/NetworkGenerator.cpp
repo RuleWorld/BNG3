@@ -1,27 +1,24 @@
-#include "engine/NetworkGenerator.hpp"
+﻿#include "engine/NetworkGenerator.hpp"
 
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <unordered_map>
-#include <stdexcept>
 
-#include "compile/LegacyAstLowering.hpp"
-#include "compile/PatternLowering.hpp"
-#include "engine/NetworkRulePlan.hpp"
+#include "ast/ReactionRule.hpp"
 #include "io/NetWriter.hpp"
 
 namespace bng::engine {
 
 namespace {
 
-std::optional<std::size_t> parseMaxIter(const compile::SimulationProtocol& protocol) {
-    for (const auto& action : protocol.actions) {
+std::optional<std::size_t> parseMaxIter(const ast::Model& model) {
+    for (const auto& action : model.getActions()) {
         if (action.name != "generate_network") {
             continue;
         }
@@ -34,8 +31,8 @@ std::optional<std::size_t> parseMaxIter(const compile::SimulationProtocol& proto
     return std::nullopt;
 }
 
-std::map<std::string, std::size_t> parseMaxStoich(const compile::SimulationProtocol& protocol) {
-    for (const auto& action : protocol.actions) {
+std::map<std::string, std::size_t> parseMaxStoich(const ast::Model& model) {
+    for (const auto& action : model.getActions()) {
         if (action.name != "generate_network") {
             continue;
         }
@@ -97,8 +94,8 @@ bool parseBooleanLike(std::string text) {
            caseInsensitiveEqual(text, "on");
 }
 
-std::optional<std::size_t> parseMaxAgg(const compile::SimulationProtocol& protocol) {
-    for (const auto& action : protocol.actions) {
+std::optional<std::size_t> parseMaxAgg(const ast::Model& model) {
+    for (const auto& action : model.getActions()) {
         if (action.name != "generate_network") {
             continue;
         }
@@ -111,13 +108,13 @@ std::optional<std::size_t> parseMaxAgg(const compile::SimulationProtocol& protoc
     return std::nullopt;
 }
 
-bool parsePrintIter(const compile::SimulationProtocol& protocol) {
+bool parsePrintIter(const ast::Model& model) {
     const char* envFlag = std::getenv("BNG_CPP_PROGRESS");
     if (envFlag != nullptr && *envFlag != '\0') {
         return parseBooleanLike(envFlag);
     }
 
-    for (const auto& action : protocol.actions) {
+    for (const auto& action : model.getActions()) {
         if (action.name != "generate_network") {
             continue;
         }
@@ -129,8 +126,8 @@ bool parsePrintIter(const compile::SimulationProtocol& protocol) {
     return false;
 }
 
-bool parseOverwrite(const compile::SimulationProtocol& protocol) {
-    for (const auto& action : protocol.actions) {
+bool parseOverwrite(const ast::Model& model) {
+    for (const auto& action : model.getActions()) {
         if (action.name != "generate_network") {
             continue;
         }
@@ -143,8 +140,8 @@ bool parseOverwrite(const compile::SimulationProtocol& protocol) {
     return true;  // default: always regenerate (overwrite=1)
 }
 
-bool parseCheckIso(const compile::SimulationProtocol& protocol) {
-    for (const auto& action : protocol.actions) {
+bool parseCheckIso(const ast::Model& model) {
+    for (const auto& action : model.getActions()) {
         if (action.name != "generate_network") {
             continue;
         }
@@ -158,13 +155,13 @@ bool parseCheckIso(const compile::SimulationProtocol& protocol) {
     return true;  // default: isomorphism checking enabled
 }
 
-bool parsePrintRules(const compile::SimulationProtocol& protocol) {
+bool parsePrintRules(const ast::Model& model) {
     const char* envFlag = std::getenv("BNG_CPP_PROGRESS_RULES");
     if (envFlag != nullptr && *envFlag != '\0') {
         return parseBooleanLike(envFlag);
     }
 
-    for (const auto& action : protocol.actions) {
+    for (const auto& action : model.getActions()) {
         if (action.name != "generate_network") {
             continue;
         }
@@ -231,136 +228,72 @@ bool withinAggLimit(const ast::SpeciesGraph& graph, std::size_t maxAgg) {
     return totalMolecules <= maxAgg;
 }
 
-units::Unit itemUnit() {
-    units::Unit item;
-    item.name = "item";
-    item.dimension.substance = 1;
-    item.baseExponents[units::BaseUnit::Item] = 1;
-    return item;
-}
-
-units::ConversionContext conversionContext(const compile::CompiledModel& model,
-                                           const compile::CompiledSeed& seed) {
-    units::ConversionContext context;
-    const auto numberPerQuantity = model.metadata().options.find("NumberPerQuantityUnit");
-    if (numberPerQuantity != model.metadata().options.end()) {
-        try {
-            context.numberPerQuantityUnit = std::stod(numberPerQuantity->second);
-        } catch (...) {
-            throw std::runtime_error(
-                "NumberPerQuantityUnit must be numeric for unit-aware seed conversion");
-        }
-    }
-    if (seed.compartmentId.has_value()) {
-        const auto& compartment = model.compartments()[seed.compartmentId->value()];
-        context.compartmentVolume = compartment.volume;
-        context.volumeUnit = compartment.declaredUnit;
-    }
-    return context;
-}
-
-double normalizeSeedAmountImpl(const compile::CompiledModel& model,
-                               const compile::CompiledSeed& seed) {
-    if (!seed.evaluatedAmount.has_value() || !seed.declaredUnit.has_value()) {
-        return seed.evaluatedAmount.value_or(0.0);
-    }
-
-    const auto context = conversionContext(model, seed);
-    const auto& unit = *seed.declaredUnit;
-    units::ConversionResult converted;
-    if (unit.dimension.length == -3 && unit.dimension.time == 0) {
-        if (!context.compartmentVolume.has_value() || !context.volumeUnit.has_value()) {
-            throw std::runtime_error(
-                "unit-aware concentration seed requires a declared compartment volume unit");
-        }
-        converted = units::concentrationToItemAmount(
-            *seed.evaluatedAmount, unit, *context.compartmentVolume,
-            *context.volumeUnit, context);
-    } else if (unit.dimension.length == 0 && unit.dimension.time == 0 &&
-               unit.dimension.substance == 1) {
-        converted = units::convertValue(
-            *seed.evaluatedAmount, unit, itemUnit(), context);
-    } else {
-        throw std::runtime_error(
-            "unit-aware seed quantity must be an amount or concentration");
-    }
-    if (!converted) {
-        throw std::runtime_error(
-            "unit-aware seed conversion failed for '" + seed.sourcePattern + "': " +
-            converted.error);
-    }
-    return *converted.factor;
+double evaluateAmount(const ast::Expression& expr, ast::Model& model) {
+    return expr.evaluate([&](const std::string& dependency) {
+        return model.getParameters().evaluate(dependency);
+    });
 }
 
 } // namespace
 
 NetworkGenerator::NetworkGenerator(ast::Model& model)
-    : sourceModel_(&model), document_(model) {}
-
-NetworkGenerator::NetworkGenerator(const compile::Document& document)
-    : document_(document) {}
-
-double NetworkGenerator::normalizeSeedAmount(const compile::CompiledModel& model,
-                                             const compile::CompiledSeed& seed) {
-    return normalizeSeedAmountImpl(model, seed);
-}
+    : model_(model) {}
 
 GeneratedNetwork NetworkGenerator::generateNative(std::size_t maxIter) {
-    const auto& compiled = document_.model();
-    if (!document_.valid()) {
-        throw std::runtime_error("cannot generate a network from an invalid compiled BioNetGen model");
-    }
+    model_.getParameters().evaluateAll();
+    const auto maxStoich = parseMaxStoich(model_);
+    const auto maxAgg = parseMaxAgg(model_);
+    const bool logProgress = parsePrintIter(model_);
+    const bool logRules = parsePrintRules(model_);
+    const bool checkIso = parseCheckIso(model_);
 
-    const auto maxStoich = parseMaxStoich(document_.protocol());
-    const auto maxAgg = parseMaxAgg(document_.protocol());
-    const bool logProgress = parsePrintIter(document_.protocol());
-    const bool logRules = parsePrintRules(document_.protocol());
-    const bool checkIso = parseCheckIso(document_.protocol());
-
-    // Set compartment maps from the compiled semantic declarations.
+    // Set compartment dimension and parent maps for cross-compartment species assignment
+    // and compartment transport (endocytosis/exocytosis)
     {
         std::unordered_map<std::string, int> compDims;
         std::unordered_map<std::string, std::string> compParents;
-        for (const auto& comp : compiled.compartments()) {
-            compDims[comp.name] = comp.dimension;
-            if (!comp.parentName.empty()) compParents[comp.name] = comp.parentName;
+        for (const auto& comp : model_.getCompartments()) {
+            compDims[comp.getName()] = comp.getDimension();
+            if (!comp.getParent().empty()) {
+                compParents[comp.getName()] = comp.getParent();
+            }
         }
         ast::setCompartmentDimensions(compDims);
         ast::setCompartmentParents(compParents);
     }
 
+    // Keep expansion state with this generation, not with the semantic rule.
+    std::vector<std::unique_ptr<ast::ReactionRule::ExecutionState>> executionStates;
+    executionStates.reserve(model_.getReactionRules().size());
+    for (const auto& rule : model_.getReactionRules()) {
+        executionStates.push_back(rule.createExecutionState());
+    }
+    for (std::size_t ruleIndex = 0; ruleIndex < model_.getReactionRules().size(); ++ruleIndex) {
+        model_.getReactionRules()[ruleIndex].clearPatternMatchCache(*executionStates[ruleIndex]);
+    }
+
     GeneratedNetwork network;
-    // Runtime graph types belong to this backend lowering context, not the
-    // parser AST. The same context is shared by seeds, filters and all rule
-    // plans so graph type identity is stable throughout one generation, and
-    // the generated network owns it for as long as its graphs are live.
-    network.loweringContext =
-        std::make_shared<compile::BNGcoreLoweringContext>(compiled);
-    auto& loweringContext = *network.loweringContext;
-
-    auto rulePlans = lowerNetworkRules(compiled, loweringContext);
-    for (auto& plan : rulePlans) plan.clearPatternMatchCache();
-
     network.species.setCheckIso(checkIso);
-    for (const auto& seed : compiled.seeds()) {
-        if (!seed.evaluatedAmount.has_value()) {
-            throw std::runtime_error(
-                "network seed amount is not compile-time evaluable for pattern '" +
-                seed.sourcePattern + "'");
-        }
-
-        auto seedGraph = compile::lowerPatternToSpeciesGraph(seed.pattern, loweringContext);
-        const auto& seedComp = seed.compartment;
+    for (const auto& seed : model_.getSeedSpecies()) {
+        // Perl's assignCompartment: propagate the species-level compartment to
+        // molecule nodes that lack a per-molecule compartment.  Without this,
+        // rule expansion cannot infer compartments for products because the
+        // molecule nodes in the aggregate graph would have empty compartments.
+        auto seedGraph = seed.getGraph();  // mutable copy
+        const auto& seedComp = seed.getCompartment();
         if (!seedComp.empty()) {
-            for (auto it = seedGraph.getGraph().begin(); it != seedGraph.getGraph().end(); ++it) {
+            for (auto it = seedGraph.begin(); it != seedGraph.end(); ++it) {
+                // Molecule nodes have in_degree == 0 in species graphs
                 if ((*it)->in_degree() == 0 && (*it)->get_compartment().empty()) {
                     (*it)->set_compartment(seedComp);
                 }
             }
         }
         network.species.add(ast::Species(
-            std::move(seedGraph), NetworkGenerator::normalizeSeedAmount(compiled, seed),
-            seed.constant, seedComp));
+            ast::SpeciesGraph(seedGraph),
+            evaluateAmount(seed.getAmount(), model_),
+            seed.isConstant(),
+            seed.getCompartment()));
     }
 
     if (logProgress) {
@@ -374,40 +307,38 @@ GeneratedNetwork NetworkGenerator::generateNative(std::size_t maxIter) {
         const std::size_t previousReactions = network.reactions.size();
         const std::size_t speciesAtIterStart = network.species.size();
 
-        for (auto& plan : rulePlans) {
+        for (std::size_t ruleIndex = 0; ruleIndex < model_.getReactionRules().size(); ++ruleIndex) {
+            const auto& rule = model_.getReactionRules()[ruleIndex];
             const std::size_t beforeSpecies = network.species.size();
             const std::size_t beforeReactions = network.reactions.size();
-            const auto created = plan.expand(
-                network.species, network.reactions, iter,
-                [&](const ast::SpeciesGraph& graph) {
-                    if (!withinStoichLimits(graph, maxStoich)) return false;
-                    if (maxAgg.has_value() && !withinAggLimit(graph, *maxAgg)) return false;
-                    return true;
-                },
-                speciesAtIterStart);
-
+            const auto created = rule.expandRule(network.species, network.reactions, iter, *executionStates[ruleIndex], [&](const ast::SpeciesGraph& graph) {
+                if (!withinStoichLimits(graph, maxStoich)) return false;
+                if (maxAgg.has_value() && !withinAggLimit(graph, *maxAgg)) return false;
+                return true;
+            }, speciesAtIterStart, &model_);
             const bool debugRules = std::getenv("BNG_DEBUG_RULES") != nullptr;
             if (debugRules) {
                 std::cerr << "[generate_network] iter=" << (iter + 1)
-                          << " rule=" << plan.name()
+                          << " rule=" << rule.getRuleName()
                           << " created=" << created
                           << " species=" << network.species.size()
                           << " reactions=" << network.reactions.size()
                           << " d_species=" << (network.species.size() - beforeSpecies)
                           << " d_rxns=" << (network.reactions.size() - beforeReactions) << '\n';
-            } else if (logRules &&
-                       (created > 0 || network.species.size() != beforeSpecies ||
-                        network.reactions.size() != beforeReactions)) {
+            } else if (logRules && (created > 0 || network.species.size() != beforeSpecies || network.reactions.size() != beforeReactions)) {
                 std::cerr << "[generate_network] iter=" << (iter + 1)
-                          << " rule=" << plan.name()
+                          << " rule=" << rule.getRuleName()
                           << " created=" << created
                           << " d_species=" << (network.species.size() - beforeSpecies)
                           << " d_rxns=" << (network.reactions.size() - beforeReactions) << '\n';
             }
         }
 
-        for (std::size_t i = 0; i < speciesAtIterStart; ++i)
+        // Mark only species that existed at the START of this iteration as processed.
+        // Species created during this iteration remain with rulesApplied=false for next iteration.
+        for (std::size_t i = 0; i < speciesAtIterStart; ++i) {
             network.species.get(i).setRulesApplied(true);
+        }
 
         if (logProgress) {
             std::cerr << "[generate_network] iter=" << (iter + 1)
@@ -417,10 +348,10 @@ GeneratedNetwork NetworkGenerator::generateNative(std::size_t maxIter) {
                       << " d_rxns=" << (network.reactions.size() - previousReactions) << '\n';
         }
 
-        if (network.species.size() == previousSpecies &&
-            network.reactions.size() == previousReactions) {
-            if (logProgress)
+        if (network.species.size() == previousSpecies && network.reactions.size() == previousReactions) {
+            if (logProgress) {
                 std::cerr << "[generate_network] converged at iter=" << (iter + 1) << '\n';
+            }
             break;
         }
     }
@@ -429,14 +360,10 @@ GeneratedNetwork NetworkGenerator::generateNative(std::size_t maxIter) {
 }
 
 GeneratedNetwork NetworkGenerator::generate(const std::filesystem::path& sourcePath) {
-    auto network = generateNative(parseMaxIter(document_.protocol()).value_or(100));
+    auto network = generateNative(parseMaxIter(model_).value_or(100));
     if (!sourcePath.empty()) {
-        if (sourceModel_ == nullptr) {
-            throw std::runtime_error(
-                "source-preserving .net output currently requires the AST compatibility constructor");
-        }
         const auto outputPath = sourcePath.parent_path() / (sourcePath.stem().string() + ".net");
-        io::NetWriter::write(outputPath, *sourceModel_, network);
+        io::NetWriter::write(outputPath, model_, network);
     }
     return network;
 }

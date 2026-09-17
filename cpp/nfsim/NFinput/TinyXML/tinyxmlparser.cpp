@@ -23,7 +23,6 @@ distribution.
 */
 
 #include <ctype.h>
-#include <limits.h>
 #include <stddef.h>
 
 #include "tinyxml.h"
@@ -447,11 +446,7 @@ const char* TiXmlBase::GetEntity( const char* p, char* value, int* length, TiXml
 	{
 		unsigned long ucs = 0;
 		ptrdiff_t delta = 0;
-		auto appendDigit = [&ucs](unsigned long digit, unsigned long base) {
-			if (ucs > (ULONG_MAX - digit) / base) return false;
-			ucs = ucs * base + digit;
-			return true;
-		};
+		unsigned mult = 1;
 
 		if ( *(p+2) == 'x' )
 		{
@@ -459,25 +454,25 @@ const char* TiXmlBase::GetEntity( const char* p, char* value, int* length, TiXml
 			if ( !*(p+3) ) return 0;
 
 			const char* q = p+3;
-			const char* end = strchr( q, ';' );
+			q = strchr( q, ';' );
 
-			if ( !end || !*end ) return 0;
+			if ( !q || !*q ) return 0;
 
-			delta = end-p;
-			while ( q < end )
+			delta = q-p;
+			--q;
+
+			while ( *q != 'x' )
 			{
-				if ( *q >= '0' && *q <= '9' ) {
-					if (!appendDigit(static_cast<unsigned long>(*q - '0'), 16)) return 0;
-				}
-				else if ( *q >= 'a' && *q <= 'f' ) {
-					if (!appendDigit(static_cast<unsigned long>(*q - 'a' + 10), 16)) return 0;
-				}
-				else if ( *q >= 'A' && *q <= 'F' ) {
-					if (!appendDigit(static_cast<unsigned long>(*q - 'A' + 10), 16)) return 0;
-				}
+				if ( *q >= '0' && *q <= '9' )
+					ucs += mult * (*q - '0');
+				else if ( *q >= 'a' && *q <= 'f' )
+					ucs += mult * (*q - 'a' + 10);
+				else if ( *q >= 'A' && *q <= 'F' )
+					ucs += mult * (*q - 'A' + 10 );
 				else 
 					return 0;
-				++q;
+				mult *= 16;
+				--q;
 			}
 		}
 		else
@@ -486,19 +481,21 @@ const char* TiXmlBase::GetEntity( const char* p, char* value, int* length, TiXml
 			if ( !*(p+2) ) return 0;
 
 			const char* q = p+2;
-			const char* end = strchr( q, ';' );
+			q = strchr( q, ';' );
 
-			if ( !end || !*end ) return 0;
+			if ( !q || !*q ) return 0;
 
-			delta = end-p;
-			while ( q < end )
+			delta = q-p;
+			--q;
+
+			while ( *q != '#' )
 			{
-				if ( *q >= '0' && *q <= '9' ) {
-					if (!appendDigit(static_cast<unsigned long>(*q - '0'), 10)) return 0;
-				}
+				if ( *q >= '0' && *q <= '9' )
+					ucs += mult * (*q - '0');
 				else 
 					return 0;
-				++q;
+				mult *= 10;
+				--q;
 			}
 		}
 		if ( encoding == TIXML_ENCODING_UTF8 )

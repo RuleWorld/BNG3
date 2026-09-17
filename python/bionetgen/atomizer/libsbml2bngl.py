@@ -8,24 +8,7 @@ Created on Fri Mar  1 16:14:42 2013
 #!/usr/bin/env python
 from collections import OrderedDict
 import time
-
-try:
-    import libsbml  # type: ignore
-except ImportError as _libsbml_exc:  # pragma: no cover
-    libsbml = None  # type: ignore[assignment]
-    _libsbml_import_error = _libsbml_exc
-else:
-    _libsbml_import_error = None  # type: ignore[assignment]
-
-
-def _require_libsbml() -> None:  # pragma: no cover
-    if libsbml is None:
-        raise ImportError(
-            "bionetgen.atomizer.libsbml2bngl requires 'python-libsbml' "
-            f"which is not available: {_libsbml_import_error}"
-        ) from _libsbml_import_error
-
-
+import libsbml
 import bionetgen.atomizer.writer.bnglWriter as writer
 from optparse import OptionParser
 import bionetgen.atomizer.atomizer.moleculeCreation as mc
@@ -85,7 +68,6 @@ def _read_sbml_document(path):
     some Linux wheels.
     """
 
-    _require_libsbml()
     with open(path, "rb") as handle:
         payload = handle.read()
 
@@ -93,7 +75,7 @@ def _read_sbml_document(path):
     declaration = re.search(rb"encoding\s*=\s*['\"]([^'\"]+)['\"]", payload[:256])
     if declaration is not None:
         encoding = declaration.group(1).decode("ascii")
-    return libsbml.readSBMLFromString(payload.decode(encoding))  # type: ignore[union-attr]
+    return libsbml.readSBMLFromString(payload.decode(encoding))
 
 
 def loadBioGrid():
@@ -210,7 +192,6 @@ def readFromString(
     one of the library's main entry methods. Process data from a string
     """
 
-    _require_libsbml()
     # console = None
     # if loggingStream:
     #     console = logging.StreamHandler(loggingStream)
@@ -218,7 +199,7 @@ def readFromString(
 
     #     # setupStreamLog(console)
 
-    reader = libsbml.SBMLReader()  # type: ignore[union-attr]
+    reader = libsbml.SBMLReader()
     document = reader.readSBMLFromString(inputString)
     parser = SBML2BNGL(
         document.getModel(),
@@ -762,11 +743,10 @@ def analyzeFile(
     #     outputFile + ".log", getattr(logging, logLevel.upper()), quietMode=quietMode
     # )
 
-    _require_libsbml()
     logMess.log = []
     logMess.counter = -1
-    reader = libsbml.SBMLReader()  # type: ignore[union-attr]
-    document = reader.readSBMLFromFile(bioNumber)  # type: ignore[union-attr]
+    reader = libsbml.SBMLReader()
+    document = reader.readSBMLFromFile(bioNumber)
 
     if document.getModel() == None:
         print(

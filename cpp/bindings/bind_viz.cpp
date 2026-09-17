@@ -70,7 +70,7 @@ void bind_viz(py::module_& m) {
         "write_rule_influence_graph",
         [](Model& model, const py::object& path) {
             auto network = ensureNetwork(model);
-            auto graph = RuleInfluenceGraphWriter::build(network);
+            auto graph = RuleInfluenceGraphWriter::build(model, network);
             auto content = RuleInfluenceGraphWriter::toGML(graph);
             return writeMaybeToPath(content, path);
         },
@@ -81,7 +81,7 @@ void bind_viz(py::module_& m) {
         "write_reaction_network_graph",
         [](Model& model, const py::object& path) {
             auto network = ensureNetwork(model);
-            auto graph = ReactionNetworkGraphWriter::build(network);
+            auto graph = ReactionNetworkGraphWriter::build(model, network);
             auto content = ReactionNetworkGraphWriter::toGML(graph);
             return writeMaybeToPath(content, path);
         },
@@ -112,7 +112,7 @@ void bind_viz(py::module_& m) {
         "write_process_graph",
         [](Model& model, const py::object& path) {
             auto network = ensureNetwork(model);
-            auto graph = ProcessGraphWriter::build(network);
+            auto graph = ProcessGraphWriter::build(model, network);
             auto content = ProcessGraphWriter::toGML(graph);
             return writeMaybeToPath(content, path);
         },

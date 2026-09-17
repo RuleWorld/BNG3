@@ -5,26 +5,10 @@ Created on Mon Jun 17 11:19:37 2013
 @author: proto
 """
 
+import libsbml
 import json
 from optparse import OptionParser
-
 from .utils.util import get_size
-
-try:  # optional - pure helpers (factorial/comb) must stay importable
-    import libsbml  # type: ignore
-except ImportError as _libsbml_exc:  # pragma: no cover
-    libsbml = None  # type: ignore[assignment]
-    _libsbml_import_error = _libsbml_exc
-else:
-    _libsbml_import_error = None  # type: ignore[assignment]
-
-
-def _require_libsbml() -> None:  # pragma: no cover
-    if libsbml is None:
-        raise ImportError(
-            "bionetgen.atomizer.sbml2json requires 'python-libsbml' "
-            f"which is not available: {_libsbml_import_error}"
-        ) from _libsbml_import_error
 
 
 def factorial(x):
@@ -403,7 +387,6 @@ time	 second	 second
 
 def main():
     # command line arguments
-    _require_libsbml()
     parser = OptionParser()
     parser.add_option(
         "-i",
@@ -423,7 +406,7 @@ def main():
         metavar="FILE",
     )
     options, args = parser.parse_args()
-    reader = libsbml.SBMLReader()  # type: ignore[union-attr]
+    reader = libsbml.SBMLReader()
     nameStr = options.input
     if options.output == None:
         outputFile = nameStr + ".py"

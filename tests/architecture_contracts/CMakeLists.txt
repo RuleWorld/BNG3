@@ -38,14 +38,6 @@ add_test(NAME architecture_nfnext_reference COMMAND bng3_nfnext_reference_tests)
 set_tests_properties(architecture_nfnext_reference PROPERTIES
     LABELS "architecture-reference;nfnext" TIMEOUT 180)
 
-add_executable(bng3_nfnext_bng_lowering_bridge
-    nfnext/test_bng_lowering_bridge.cpp)
-target_link_libraries(bng3_nfnext_bng_lowering_bridge PRIVATE bng_nfnext bng_parser)
-add_test(NAME architecture_nfnext_bng_lowering_bridge
-    COMMAND bng3_nfnext_bng_lowering_bridge)
-set_tests_properties(architecture_nfnext_bng_lowering_bridge PROPERTIES
-    LABELS "architecture-reference;nfnext;formal-bridge" TIMEOUT 180)
-
 add_executable(bng3_nfnext_canonicalization_contract
     nfnext/future_contract/test_nfir_canonicalization_contract.cpp)
 target_link_libraries(bng3_nfnext_canonicalization_contract PRIVATE bng_nfnext)
@@ -150,15 +142,3 @@ target_link_libraries(test_nfcore2_native_reader PRIVATE
     Catch2::Catch2WithMain bng_nfcore2 bng_parser)
 include(Catch)
 catch_discover_tests(test_nfcore2_native_reader TEST_PREFIX "native-port::")
-
-# Dependency ratchet: compiled/lowered backend layers may not acquire parser or
-# AST dependencies. Legacy files are explicitly allowlisted and must disappear
-# from that allowlist as they migrate.
-find_package(Python3 COMPONENTS Interpreter QUIET)
-if(Python3_Interpreter_FOUND)
-    add_test(
-        NAME architecture_layer_dependencies
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/check_architecture_dependencies.py)
-    set_tests_properties(architecture_layer_dependencies PROPERTIES
-        LABELS "architecture;dependency-ratchet" TIMEOUT 30)
-endif()

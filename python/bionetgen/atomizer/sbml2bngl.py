@@ -19,23 +19,7 @@ from bionetgen.atomizer.utils.util import (
     get_size,
     get_item,
 )
-try:
-    import libsbml  # type: ignore
-except ImportError as _libsbml_exc:  # pragma: no cover
-    libsbml = None  # type: ignore[assignment]
-    _libsbml_import_error = _libsbml_exc
-else:
-    _libsbml_import_error = None  # type: ignore[assignment]
-
-
-def _require_libsbml() -> None:  # pragma: no cover
-    if libsbml is None:
-        raise ImportError(
-            "bionetgen.atomizer.sbml2bngl requires 'python-libsbml' "
-            f"which is not available: {_libsbml_import_error}"
-        ) from _libsbml_import_error
-
-
+import libsbml
 from bionetgen.atomizer.bngModel import bngModel
 
 import sympy

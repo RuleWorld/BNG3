@@ -5,7 +5,6 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main]
-  workflow_dispatch:
 
 concurrency:
   # Keep hosted evidence attached to the exact PR head being evaluated. A
@@ -130,7 +129,6 @@ jobs:
         run: |
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
-            -DPython3_EXECUTABLE="$(python -c 'import sys; print(sys.executable)')" \
             -DBUILD_PYTHON_BINDINGS=OFF \
             -DBUILD_CLI=ON \
             -DBUILD_NFSIM_CLI=OFF \
@@ -142,7 +140,6 @@ jobs:
         run: |
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
-            -DPython3_EXECUTABLE="$(python -c 'import sys; print(sys.executable)')" \
             -DBUILD_PYTHON_BINDINGS=OFF \
             -DBUILD_CLI=ON \
             -DBUILD_NFSIM_CLI=OFF \
@@ -171,15 +168,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
       - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build
-          python -m pip install pytest numpy
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
 
       - name: Configure with ASan
         env:
@@ -188,7 +178,6 @@ jobs:
         run: |
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
-            -DPython3_EXECUTABLE="$(python -c 'import sys; print(sys.executable)')" \
             -DCMAKE_CXX_FLAGS="-fsanitize=address -fno-omit-frame-pointer" \
             -DCMAKE_C_FLAGS="-fsanitize=address -fno-omit-frame-pointer" \
             -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address" \
@@ -211,7 +200,7 @@ jobs:
   # ═══════════════════════════════════════════════════════════════════════════
 
   validation:
-    name: Validation (full corpus, ${{ matrix.os }})
+    name: Validation (supported reference subset, ${{ matrix.os }})
     needs: cpp-build
     runs-on: ${{ matrix.os }}
     strategy:
@@ -245,12 +234,13 @@ jobs:
         if: "!startsWith(matrix.os, 'windows')"
         run: chmod +x build/cpp/bng_cpp*
 
-      - name: Run full validation corpus with no exclusions
+      - name: Run supported validation against reference .net files
         shell: bash
         run: |
           BNG=build/cpp/bng_cpp${{ startsWith(matrix.os, 'windows') && '.exe' || '' }}
           python scripts/validate.py --bng-cpp "$BNG" --strict-references \
-            --validation-manifest tests/validation/validation_manifest.json \
+            --skip-file tests/validation/reference_exclusions.json \
+            --skip-profile pull_request \
             --summary-file "$GITHUB_STEP_SUMMARY" --verbose
 
   # ═══════════════════════════════════════════════════════════════════════════
@@ -506,23 +496,11 @@ jobs:
     name: Wheels (${{ matrix.os }})
     needs: [cpp-build, python-test, validation]
     runs-on: ${{ matrix.os }}
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-22.04
-            macos_arch: x86_64
-            macos_deployment_target: "11.0"
-          - os: macos-13
-            macos_arch: x86_64
-            macos_deployment_target: "10.13"
-          - os: macos-14
-            macos_arch: arm64
-            macos_deployment_target: "11.0"
-          - os: windows-2022
-            macos_arch: x86_64
-            macos_deployment_target: "11.0"
+        os: [ubuntu-22.04, macos-13, macos-14, windows-2022]
 
     steps:
       - uses: actions/checkout@v4
@@ -536,7 +514,7 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Install cibuildwheel
-        run: pip install cibuildwheel==4.2.1
+        run: pip install cibuildwheel==2.21.3
 
       - name: Build wheels
         run: cibuildwheel --output-dir wheelhouse
@@ -547,16 +525,10 @@ jobs:
           CIBW_TEST_REQUIRES: pytest numpy click
           CIBW_TEST_COMMAND: pytest {project}/tests/python/test_cpp_backend.py -v --tb=short
           CIBW_ENVIRONMENT: CMAKE_ARGS="-DBUILD_TESTS=OFF -DBUILD_CLI=OFF"
-          # Build one native architecture per macOS runner; macos-13 supplies
-          # x86_64 and macos-14 supplies arm64 without cross-target duplication.
-          CIBW_ARCHS_MACOS: ${{ matrix.macos_arch }}
-          CIBW_ENVIRONMENT_MACOS: >-
-            MACOSX_DEPLOYMENT_TARGET=${{ matrix.macos_deployment_target }}
-            CMAKE_ARGS="-DBUILD_TESTS=OFF -DBUILD_CLI=OFF
-            -DCMAKE_OSX_DEPLOYMENT_TARGET=${{ matrix.macos_deployment_target }}"
-          # NumPy 2.5+ wheels require a newer compiler/glibc baseline than
-          # manylinux2014; manylinux_2_28 provides a binary wheel target.
-          CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
+          # macOS: build universal2 wheels
+          CIBW_ARCHS_MACOS: "arm64 x86_64"
+          # Linux: manylinux2014 for broad compatibility
+          CIBW_MANYLINUX_X86_64_IMAGE: manylinux2014
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4

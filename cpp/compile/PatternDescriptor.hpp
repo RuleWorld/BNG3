@@ -1,15 +1,11 @@
 #pragma once
 
 #include <cstddef>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
-#include "SemanticIds.hpp"
-
 namespace bng::ast {
-class Model;
 class SpeciesGraph;
 }
 
@@ -18,9 +14,6 @@ class PatternGraph;
 }
 
 namespace bng::compile {
-
-struct Diagnostic;
-class SymbolTable;
 
 struct PatternMoleculeOccurrenceId {
     std::size_t value = 0;
@@ -42,28 +35,16 @@ enum class BondConstraintKind {
     Exact,
 };
 
-enum class StateConstraintKind {
-    Any,
-    Exact,
-    Set,
-};
-
-struct PatternStateConstraint {
-    StateConstraintKind kind = StateConstraintKind::Any;
-    std::string source;
-    std::optional<StateId> exact;
-    std::vector<StateId> states;
-};
-
 struct PatternBondDescriptor {
     std::string constraint;
     BondConstraintKind kind = BondConstraintKind::Unspecified;
     PatternBondGroupId group;
 };
 
-// Backend-independent, value-like description of a resolved BNGL site.
-// Human-readable names are retained for diagnostics/round-tripping; semantic
-// consumers should prefer componentType/stateConstraintResolved when present.
+// Backend-independent, value-like description of a BNGL pattern.
+//
+// This is intentionally a small migration seam.  It carries semantic pattern
+// constraints without exposing BNGcore node ownership to compile clients.
 struct PatternSiteDescriptor {
     PatternSiteOccurrenceId occurrence;
     std::string componentName;
@@ -73,8 +54,6 @@ struct PatternSiteDescriptor {
     BondConstraintKind bondKind = BondConstraintKind::Unspecified;
     PatternBondGroupId bondGroup;
     std::vector<PatternBondDescriptor> bondConstraints;
-    std::optional<ComponentTypeId> componentType;
-    PatternStateConstraint stateConstraintResolved;
 };
 
 struct PatternMoleculeDescriptor {
@@ -82,36 +61,24 @@ struct PatternMoleculeDescriptor {
     std::string moleculeType;
     std::string compartment;
     std::vector<PatternSiteDescriptor> sites;
-    std::optional<MoleculeTypeId> moleculeTypeId;
-    std::optional<CompartmentId> compartmentId;
 };
 
 class Pattern {
 public:
-    // Parse compact BNGL pattern text for compatibility/tests. This path is
-    // deliberately not authoritative for backend compilation because it has no
-    // declaration context and therefore cannot assign typed semantic IDs.
+    // Parse the compact BNGL pattern form used by energy and semantic tests.
+    // This parser is deliberately independent of BNGcore and does not mutate
+    // a model registry.
     static Pattern parse(std::string_view text);
 
-    // Build from an already-resolved AST graph. The simple overload preserves
-    // the compatibility API. The context-aware overload additionally resolves
-    // molecule/component/state/compartment identifiers and is the canonical
-    // compiler path.
+    // Build from the already-resolved AST graph.  This is the authoritative
+    // path for compiler consumers; it never reparses source text.
     static Pattern fromSpeciesGraph(const ast::SpeciesGraph& graph);
-    static Pattern fromSpeciesGraph(const ast::SpeciesGraph& graph,
-                                    const ast::Model& model,
-                                    const SymbolTable& symbols,
-                                    std::vector<Diagnostic>* diagnostics = nullptr);
 
+    // Adapter-facing construction for parsed graphs that do not have an
+    // owning SpeciesGraph wrapper. The resulting value still owns no graph
+    // nodes; it copies only semantic pattern constraints.
     static Pattern fromPatternGraph(const BNGcore::PatternGraph& graph,
                                     std::string_view compartment = {});
-
-    // Resolve a parsed/value-like pattern against the semantic declarations.
-    // Returns false and emits diagnostics for unknown declarations/states.
-    bool resolve(const ast::Model& model,
-                 const SymbolTable& symbols,
-                 std::vector<Diagnostic>* diagnostics = nullptr);
-    bool isResolved() const noexcept { return resolved_; }
 
     std::size_t moleculeCount() const noexcept { return molecules_.size(); }
     bool hasSite(std::string_view moleculeType,
@@ -124,22 +91,26 @@ public:
     }
     const std::string& sourceText() const noexcept { return sourceText_; }
     const std::string& compartment() const noexcept { return compartment_; }
-    std::optional<CompartmentId> compartmentId() const noexcept { return compartmentId_; }
-    bool compartmentIsPrefix() const noexcept { return compartmentIsPrefix_; }
 
+    // Compare semantic content only. Source spelling and source formatting
+    // are intentionally excluded so this can be used by future interchange
+    // round-trip tests.
     bool semanticEqual(const Pattern& other) const noexcept;
-    bool operator==(const Pattern& other) const noexcept { return semanticEqual(other); }
-    bool operator!=(const Pattern& other) const noexcept { return !semanticEqual(other); }
+    bool operator==(const Pattern& other) const noexcept {
+        return semanticEqual(other);
+    }
+    bool operator!=(const Pattern& other) const noexcept {
+        return !semanticEqual(other);
+    }
 
 private:
     std::vector<PatternMoleculeDescriptor> molecules_;
     std::string sourceText_;
     std::string compartment_;
-    std::optional<CompartmentId> compartmentId_;
-    bool compartmentIsPrefix_ = false;
-    bool resolved_ = false;
 };
 
+// Compatibility spelling while downstream callers migrate to the canonical
+// semantic name.
 using PatternDescriptor = Pattern;
 
 } // namespace bng::compile

@@ -519,12 +519,6 @@ namespace NFcore {
 				GlobalFunction ** gfs;
 				double * gfValues;
 
-				// referenced zero-argument composite functions
-				int n_cfs;
-				string * cfNames;
-				CompositeFunction ** cfs;
-				double * cfValues;
-
 				//stores list of all local functions
 				int n_lfs;
 				string * lfNames;

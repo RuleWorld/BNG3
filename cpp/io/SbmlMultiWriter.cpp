@@ -5,8 +5,6 @@
 #include <cctype>
 #include <utility>
 
-#include "SbmlUnitWriter.hpp"
-
 namespace bng::io {
 
 std::string SbmlMultiWriter::escapeXml(const std::string& text) {
@@ -66,13 +64,7 @@ std::string SbmlMultiWriter::write(const ast::Model& model, const Options& optio
          << "\" multi:required=\"true\">\n";
 
     sbml << "  <model id=\"" << escapeXml(makeValidSBMLId(model.getModelName())) << "\" name=\""
-         << escapeXml(model.getModelName()) << "\""
-         << sbml_units::modelAttributes(model) << ">\n";
-
-    // SBML Multi reuses SBML Core's unit system.  Emit the exact same Core
-    // unit definitions as the flattened writer; no Multi-specific aliases
-    // or conversion rules are introduced here.
-    sbml << sbml_units::writeUnitDefinitions(model);
+         << escapeXml(model.getModelName()) << "\">\n";
 
     // Species types (molecule types with components and states)
     sbml << writeSpeciesTypes(model);
@@ -112,8 +104,7 @@ std::string SbmlMultiWriter::writeCompartments(const ast::Model& model) {
              << "\" name=\"" << escapeXml(comp.getName())
              << "\" spatialDimensions=\"" << comp.getDimension()
              << "\" size=\"" << comp.getVolume()
-             << "\" constant=\"true\""
-             << sbml_units::attribute(model, comp.getUnitName());
+             << "\" constant=\"true\"";
 
         if (!comp.getParent().empty()) {
             sbml << " outside=\"" << makeValidSBMLId(comp.getParent()) << "\"";
@@ -247,8 +238,7 @@ std::string SbmlMultiWriter::writeParameters(const ast::Model& model) {
         sbml << "      <parameter id=\"" << makeValidSBMLId(param.getName())
              << "\" name=\"" << escapeXml(param.getName())
              << "\" value=\"" << param.getValue()
-             << "\" constant=\"true\""
-             << sbml_units::attribute(model, param.getUnitName()) << "/>\n";
+             << "\" constant=\"true\"/>\n";
     }
 
     sbml << "    </listOfParameters>\n";
@@ -304,19 +294,11 @@ std::string SbmlMultiWriter::writeSeedSpecies(const ast::Model& model) {
             ? std::string()
             : "st_" + makeValidSBMLId(moleculeType->getName());
 
-        const bool concentration = seed.hasUnit() &&
-            seed.getUnit()->dimension.substance != 0 &&
-            seed.getUnit()->dimension.length == -3 &&
-            seed.getUnit()->dimension.time == 0;
-
         sbml << "      <species id=\"" << speciesId
              << "\" name=\"" << escapeXml(pattern)
              << "\" compartment=\"" << compartmentId
-             << (concentration ? "\" initialConcentration=\"" :
-                                  "\" initialAmount=\"") << amountValue
-             << (concentration ? "\" hasOnlySubstanceUnits=\"false\"" :
-                                  "\" hasOnlySubstanceUnits=\"true\"")
-             << sbml_units::attribute(model, seed.getUnitName());
+             << "\" initialAmount=\"" << amountValue
+             << "\" hasOnlySubstanceUnits=\"true\"";
 
         if (seed.isConstant()) {
             sbml << " constant=\"true\" boundaryCondition=\"true\"";

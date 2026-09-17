@@ -5,10 +5,8 @@
 #include <string>
 #include <vector>
 
-#include "compile/CompiledModel.hpp"
+#include "ast/Model.hpp"
 #include "engine/NetworkGenerator.hpp"
-
-namespace bng::ast { class Model; }
 
 namespace bng::io {
 
@@ -42,9 +40,6 @@ public:
     /**
      * Build regulatory graph from the generated network
      */
-    static RegulatoryGraph build(const compile::CompiledModel& model,
-                                 const engine::GeneratedNetwork& network);
-    // Compatibility shim: compile once at the boundary.
     static RegulatoryGraph build(const ast::Model& model,
                                  const engine::GeneratedNetwork& network);
 

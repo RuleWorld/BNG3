@@ -1,8 +1,6 @@
 #include "Model.hpp"
 
-#include <cmath>
 #include <utility>
-#include <stdexcept>
 
 namespace bng {
 namespace ast {
@@ -74,85 +72,10 @@ void Model::setOption(std::string key, std::string value) {
     options_[std::move(key)] = std::move(value);
 }
 
-void Model::defineUnit(std::string id, std::string expression) {
-    const auto result = unitSystem_.define(std::move(id), std::move(expression));
-    if (!result) throw std::runtime_error("Invalid unit definition: " + result.error);
-}
-
-void Model::setUnitDefault(std::string role, std::string unit) {
-    if (unitSystem_.find(unit) == nullptr && !unitSystem_.parse(unit)) {
-        throw std::runtime_error("Unknown unit '" + unit + "' for " + role);
-    }
-    if (role == "substanceUnits") {
-        substanceUnits_ = unit;
-    }
-    unitDefaults_[std::move(role)] = std::move(unit);
-}
-
-void Model::setParameterUnit(std::string parameter, std::string unit) {
-    if (unitSystem_.find(unit) == nullptr && !unitSystem_.parse(unit)) {
-        throw std::runtime_error("Unknown unit '" + unit + "' for parameter '" + parameter + "'");
-    }
-    const auto parsed = unitSystem_.parse(unit);
-    parameterUnits_[parameter] = unit;
-    for (auto& candidate : parameters_.all()) {
-        if (candidate.getName() == parameter) {
-            candidate.setUnit(*parsed.unit, unit);
-            break;
-        }
-    }
-}
-
-void Model::setCompartmentUnit(std::string compartment, std::string unit) {
-    if (unitSystem_.find(unit) == nullptr && !unitSystem_.parse(unit)) {
-        throw std::runtime_error("Unknown unit '" + unit + "' for compartment '" + compartment + "'");
-    }
-    const auto parsed = unitSystem_.parse(unit);
-    compartmentUnits_[compartment] = unit;
-    for (auto& candidate : compartments) {
-        if (candidate.getName() == compartment) {
-            candidate.setUnit(*parsed.unit, unit);
-            break;
-        }
-    }
-}
-
-void Model::setSeedUnit(std::size_t index, std::string unit) {
-    if (unitSystem_.find(unit) == nullptr && !unitSystem_.parse(unit)) {
-        throw std::runtime_error("Unknown unit '" + unit + "' for seed species");
-    }
-    const auto parsed = unitSystem_.parse(unit);
-    seedUnits_[index] = unit;
-    if (index < seedSpecies_.size()) {
-        seedSpecies_[index].setUnit(*parsed.unit, unit);
-    }
-}
-
 void Model::merge(Model& other) {
     // Transfer GraphTypeRegistry entries first so PatternGraph node pointers
     // remain valid after the source model is destroyed.
     graphTypeRegistry_.mergeFrom(other.getGraphTypeRegistry());
-
-    // Unit definitions and model-level defaults are semantic model metadata,
-    // not parser-only state.  Transfer custom definitions before copying
-    // declarations so attached unit names resolve in the destination model.
-    for (const auto& definition : other.getUnitSystem().definitions()) {
-        if (definition.builtin) continue;
-        if (unitSystem_.find(definition.id) == nullptr) {
-            defineUnit(definition.id, definition.expression);
-        } else {
-            const auto existing = unitSystem_.parse(definition.id);
-            if (!existing || existing.unit->dimension != definition.unit.dimension ||
-                existing.unit->baseExponents != definition.unit.baseExponents ||
-                std::abs(existing.unit->factor - definition.unit.factor) > 1e-15) {
-                throw std::runtime_error(
-                    "cannot merge conflicting unit definition '" + definition.id + "'");
-            }
-        }
-    }
-    for (const auto& [role, unit] : other.getUnitDefaults()) {
-        setUnitDefault(role, unit);
-    }
 
     // Merge parameters
     for (const auto& param : other.getParameters().all()) {
@@ -301,29 +224,6 @@ const std::string& Model::getModelName() const {
 
 const std::map<std::string, std::string>& Model::getOptions() const {
     return options_;
-}
-
-const units::UnitSystem& Model::getUnitSystem() const {
-    return unitSystem_;
-}
-
-const std::map<std::string, std::string>& Model::getUnitDefaults() const {
-    return unitDefaults_;
-}
-
-const std::string* Model::findParameterUnit(const std::string& name) const {
-    const auto it = parameterUnits_.find(name);
-    return it == parameterUnits_.end() ? nullptr : &it->second;
-}
-
-const std::string* Model::findCompartmentUnit(const std::string& name) const {
-    const auto it = compartmentUnits_.find(name);
-    return it == compartmentUnits_.end() ? nullptr : &it->second;
-}
-
-const std::string* Model::findSeedUnit(std::size_t index) const {
-    const auto it = seedUnits_.find(index);
-    return it == seedUnits_.end() ? nullptr : &it->second;
 }
 
 GraphTypeRegistry& Model::getGraphTypeRegistry() {

@@ -12,21 +12,13 @@ us information on which reactants are the same, and how do they differ
 """
 try:
     from sbml2bngl import SBML2BNGL
-
-    try:
-        import libsbml  # type: ignore
-    except ImportError:  # pragma: no cover
-        libsbml = None  # type: ignore[assignment]
+    import libsbml
 except ModuleNotFoundError:
     import sys
 
     sys.path.append("..")
     from sbml2bngl import SBML2BNGL
-
-    try:
-        import libsbml  # type: ignore
-    except ImportError:  # pragma: no cover
-        libsbml = None  # type: ignore[assignment]
+    import libsbml
 
 import collections
 

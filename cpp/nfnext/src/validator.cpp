@@ -64,28 +64,12 @@ void validatePredicate(const PredicateIR& predicate,
     }
 }
 
-using LogicalNodeTypes = std::unordered_map<PatternNodeId, TypeId>;
-
-LogicalNodeTypes logicalNodesFor(const PatternIR& pattern) {
-    LogicalNodeTypes nodes;
-    for (std::size_t index = 0; index < pattern.nodes.size(); ++index) {
-        nodes.emplace(static_cast<PatternNodeId>(index), pattern.nodes[index].molecule_type);
-    }
-    return nodes;
-}
-
 void validateAction(const ActionIR& action,
                     const std::unordered_map<TypeId, std::size_t>& types,
                     const std::vector<MoleculeTypeIR>& declarations,
-                    const PatternIR& pattern,
-                    LogicalNodeTypes& logicalNodes,
                     const char* context) {
     const auto& type = typeFor(types, declarations, action.molecule_type, context);
-
-    const bool siteAction = action.kind == ActionKind::SetSiteState ||
-                            action.kind == ActionKind::Bind ||
-                            action.kind == ActionKind::Unbind;
-    if (siteAction && action.site >= type.sites.size()) {
+    if (action.site >= type.sites.size()) {
         std::ostringstream message;
         message << context << " references site " << action.site
                 << " outside molecule type " << action.molecule_type;
@@ -95,36 +79,6 @@ void validateAction(const ActionIR& action,
         const auto& states = type.sites[action.site].states;
         if (action.value < 0 || static_cast<std::size_t>(action.value) >= states.size())
             fail(std::string(context) + " sets a state outside its enumeration");
-    }
-
-    const bool graphSemantics = !pattern.nodes.empty() || !logicalNodes.empty();
-    if (action.kind == ActionKind::Create) {
-        // Create establishes a logical graph namespace even for zero-order
-        // synthesis, where the reactant pattern is intentionally empty.
-        if (!logicalNodes.emplace(action.target_node, action.molecule_type).second) {
-            fail(std::string(context) + " creates a logical node that already exists");
-        }
-        return;
-    }
-
-    // Legacy/lattice producers may intentionally have no graph pattern. When
-    // graph semantics are present, target_node addresses a unified logical-node
-    // namespace containing both matched reactant nodes and prior Create actions.
-    if (graphSemantics && action.kind != ActionKind::MovePosition) {
-        const auto target = logicalNodes.find(action.target_node);
-        if (target == logicalNodes.end())
-            fail(std::string(context) + " references an unknown target logical node");
-        if (target->second != action.molecule_type)
-            fail(std::string(context) + " target node molecule type does not match action type");
-    }
-    if (graphSemantics &&
-        (action.kind == ActionKind::Bind || action.kind == ActionKind::Unbind)) {
-        const auto partnerNode = logicalNodes.find(action.partner_node);
-        if (partnerNode == logicalNodes.end())
-            fail(std::string(context) + " references an unknown partner logical node");
-        const auto& partner = typeFor(types, declarations, partnerNode->second, context);
-        if (action.partner_site >= partner.sites.size())
-            fail(std::string(context) + " references an unknown partner site");
     }
 }
 
@@ -180,9 +134,8 @@ void validateRule(const ExpandedRuleIR& rule,
     validateRateLaw(rule.rate_law, context);
     for (const auto& predicate : rule.predicates)
         validatePredicate(predicate, types, declarations, context);
-    auto logicalNodes = logicalNodesFor(rule.pattern);
     for (const auto& action : rule.actions)
-        validateAction(action, types, declarations, rule.pattern, logicalNodes, context);
+        validateAction(action, types, declarations, context);
     validatePattern(rule.pattern, types, declarations, context);
 }
 
@@ -194,9 +147,8 @@ void validateFamily(const RuleFamilyIR& family,
     for (const auto rate : family.indexed_rates) validateRate(rate, "indexed rule-family rate");
     for (const auto& predicate : family.predicates)
         validatePredicate(predicate, types, declarations, "rule family predicate");
-    auto logicalNodes = logicalNodesFor(family.pattern);
     for (const auto& action : family.actions)
-        validateAction(action, types, declarations, family.pattern, logicalNodes, "rule family action");
+        validateAction(action, types, declarations, "rule family action");
     validatePattern(family.pattern, types, declarations, "rule family");
 }
 

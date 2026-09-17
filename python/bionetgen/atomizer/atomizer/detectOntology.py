@@ -17,22 +17,14 @@ from os.path import isfile, join
 import numpy as np
 
 try:
-    from bionetgen.atomizer.utils.util import pmemoize as memoize
-
-    try:
-        import libsbml  # type: ignore
-    except ImportError:  # pragma: no cover - optional, may be binary-incompatible
-        libsbml = None  # type: ignore[assignment]
+    from utils.util import pmemoize as memoize
+    import libsbml
 except ModuleNotFoundError:
     import sys
 
     sys.path.append("..")
     from bionetgen.atomizer.utils.util import pmemoize as memoize
-
-    try:
-        import libsbml  # type: ignore
-    except ImportError:  # pragma: no cover
-        libsbml = None  # type: ignore[assignment]
+    import libsbml
 
 
 @memoize

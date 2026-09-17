@@ -9,11 +9,6 @@ in [ADR 0001](adr/0001-canonical-semantic-model-and-layer-boundaries.md).
 This page describes the current implementation layout; it does not imply
 that every planned semantic/backend seam is complete.
 
-The current continuation adds a bounded production-boundary NFnext contract
-and makes the direct
-NFsim construction path observable to validation. These contracts strengthen
-the migration boundary without claiming complete backend equivalence.
-
 ## Overview
 
 BioNetGen 3 is a monorepo combining three previously separate projects:
@@ -86,14 +81,6 @@ ast::Model → SymbolTable / diagnostics → CompiledModel
 copied `SimulationProtocol`. The AST remains the construction/compatibility
 surface; protocol actions do not become part of compiled model identity.
 ```
-
-The first production NFnext bridge is exercised by an architecture contract:
-BNGL parser -> `bng::compile::CompiledModel` ->
-`nfnext::lowerFromBioNetGen`. For the bounded rule
-`A(x~u) + B(y) -> A(x~p!1).B(y!1) k`, it checks two distinct reactants,
-`DifferentComplex`, the state transition, and `Bind`. The corresponding Lean
-example checks the same typed NFnext shape independently. This is one tested
-slice, not a proof of complete source-free lowering.
 
 This is the migration seam toward a resolved semantic model. It is not yet a
 replacement for every legacy AST consumer; the compiled model now carries
@@ -198,10 +185,6 @@ qualified. The on-disk XML
 initializer is a last-resort compatibility path for legacy models. Direct
 construction is fail-closed: unsupported AST constructs do not silently change
 semantics by falling back unless the caller opts into XML compatibility.
-Validation records `construction_path` and requires the direct leg to report
-`direct`; the XML shadow leg must report `in-memory-xml`. Source-tree workers
-also receive explicit repository-root and `python/` import paths so ensemble
-evidence cannot depend on the caller's environment.
 
 An independent solver bridge is available only when configured explicitly with
 `BUILD_BNGSIM_ADAPTER=ON`, `BNGSIM_INCLUDE_DIR`, and `BNGSIM_LIBRARY`. It maps

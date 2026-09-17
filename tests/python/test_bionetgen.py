@@ -215,7 +215,6 @@ def test_model_running_lib():
 
 
 def test_atomize_flat():
-    pytest.importorskip("libsbml", exc_type=ImportError)
     if not os.path.exists(os.path.join(tfold, "test")):
         os.mkdir(os.path.join(tfold, "test"))
     argv = [
@@ -234,7 +233,6 @@ def test_atomize_flat():
 
 
 def test_atomize_atomized():
-    pytest.importorskip("libsbml", exc_type=ImportError)
     if not os.path.exists(os.path.join(tfold, "test")):
         os.mkdir(os.path.join(tfold, "test"))
     argv = [

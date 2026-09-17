@@ -19,43 +19,6 @@ The goal covers all material in:
 
 The archival documents are retained under `docs/architecture_handoffs/`. The exact source paths, SHA-256 values, destinations, and adaptation flags are recorded in `provenance/architecture-imports.json`; imported C++ contract dispositions are recorded in `provenance/architecture-contracts.json`.
 
-## Repository organization checkpoint — 2026-09-14
-
-Historical migration reports and snapshot text metadata now live under
-`docs/archive/reports/ir-migration-2026-09-14/`. Applied patch snapshots and
-redundant package-wrapper files were removed; the adapted source, tests, and
-machine-readable provenance records remain the canonical implementation.
-The full validation repair is tracked in the live progress page and checklist,
-not in the archived handoff narratives.
-
-## Continuation update — 2026-09-15
-
-The current continuation is on branch `codex/bng3-convergence-continuation-20260915`,
-based on public `main` at `bad50c9cd659efd893e47d8b88bcfebaa4ebc2ba`. It merges the dated
-continuation note into the current progress, checklist, parity, integration,
-architecture, and validation documentation.
-
-The direct NFsim adapter now exposes its construction path in results and the
-validation harness requires the expected path on each leg: `in-memory-xml` for
-the compatibility shadow and `direct` for the direct adapter. XML fallback is
-removed before the direct leg, missing compiled engines/oracles fail closed,
-and source-tree ensemble workers receive explicit repository-root and
-`python/` imports. The hosted endpoint set includes `motor` and `tlbr`, and
-the ensemble rejects any member that did not construct directly.
-
-The first production-boundary NFnext bridge is intentionally small. Lean and
-C++ use the same `A(x~u) + B(y) -> A(x~p!1).B(y!1) k` rule; the C++ contract
-crosses BNGL parsing, `CompiledModel`, and `nfnext::lowerFromBioNetGen`, then
-checks distinct-reactant molecularity, a state update, and a new bond. This
-does not claim complete NFnext backend equivalence. Population maps remain
-fail-closed for direct NFsim and use the hybrid population backend.
-
-The current local evidence is CTest `308/308`, strict validation `71/71` with
-zero failures/errors/skips, action contracts `6/6`, independent NFsim `10
-passed`, Lean static validation `36` files, NFnext contracts `18/18`, and
-passing formatting, provenance, corpus, and exception-ledger checks. Hosted
-status is recorded only from the final exact-head `gh` readback.
-
 ## Current port
 
 - Energy compiler types and `EnergyDeltaPlan` are in `cpp/compile/` and connected to the real NFsim energy bridge.
@@ -133,7 +96,7 @@ status is recorded only from the final exact-head `gh` readback.
   model versus simulation scope, while population-map reconstruction remains
   explicitly fail-closed. Its focused Python contract suite passes `8/8`.
 
-## Historical evidence from the earlier handoff checkpoint
+## Evidence at this checkpoint
 
 - The branch was created from committed base `a8d2a8b` with pre-existing
   uncommitted implementation changes preserved. The final combined-tree build

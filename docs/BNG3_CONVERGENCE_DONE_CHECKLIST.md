@@ -1,12 +1,14 @@
 # BNG3 Convergence: Definition of Done and Remaining Checklist
 
 **Status:** Active; not complete
-**Last audited:** 2026-09-15
+**Last audited:** 2026-09-10
 **Repository:** RuleWorld/BNG3
-**Working branch:** `codex/bng3-units-20260915`
-**Current base:** `2af9506a1124ce7ebdc30c6967c771f1cd91c63c` (`origin/main`)
-**Historical audited heads:** Earlier local-only and hosted heads remain
-recorded in the historical sections below; they are not current-head evidence.
+**Working branch:** codex/bng3-rest-of-port-20260909
+**Historical audited semantic code head:** ccb3ef9efd069bb9375a39ddb64b1861909b4aa8 (local exact head; public synchronization is deferred by the local-only work instruction)
+**Historical checklist refresh base:** ce4575f5c31b94ded5dfac1842a9c8e438f608d4 (local exact-head CI provenance-summary checkpoint; public synchronization is deferred by the local-only work instruction)
+**Historical workflow checkpoint:** ce4575f5c31b94ded5dfac1842a9c8e438f608d4 (local-only; no hosted run was created because this checkpoint has not been pushed)
+**Current audit base:** a8d2a8b on branch `codex/bng3-rest-of-port-20260909`; the working tree contains an uncommitted implementation batch whose final verification is pending.
+**PR:** RuleWorld/BNG3#2
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
 6690fda5d9e053df822d0248ebae185f5caca82a; accepted energy-source cutoff
@@ -18,11 +20,11 @@ BNG3 port.
 
 This is the execution checklist for the BNG3 convergence goal. It turns the
 completion charter and Section 11 of BNG3_INTEGRATION_PLAN.md into auditable
-work items. The unification work orders in docs/BNG3_unification_spec.md remain the
+work items. The unification work orders in BNG3_unification_spec.md remain the
 detailed dependency map; provenance/capability-matrix.yml remains the
 capability inventory.
 
-## Historical audit — 2026-09-10
+## Live audit — 2026-09-10
 
 The active worktree is on `codex/bng3-rest-of-port-20260909` at committed base
 `a8d2a8b`, with a consolidated uncommitted implementation batch. The live
@@ -61,173 +63,10 @@ completion.
 - Re-audit the whole checklist on the exact release-candidate SHA. Earlier
   evidence is stale after a rebase, autofix, merge, or semantic change.
 
-## Physical units / dimensional-analysis checkpoint — 2026-09-15
-
-The BNG3-native units work is documented in [`BNG3_UNITS.md`](BNG3_UNITS.md).
-It uses explicit bracket annotations and a normalized `begin units` metadata
-block, while preserving ordinary BNGL identifiers and the legacy
-`substanceUnits`/`NumberPerQuantityUnit` compatibility fields.
-
-- [x] Unit algebra and explicit mole/item bridge are covered by
-  `tests/cpp/test_units` (41 assertions, 7 cases), including metric conversion,
-  concentration-to-item conversion and context-dependent second-order rate
-  conversion.
-- [x] Parser collision behavior, dependency inference, strict dimensional
-  diagnostics and backend capability fail-closed behavior are covered by
-  `tests/cpp/test_parser_units` (42 assertions, 6 cases).
-- [x] Native seed/rate lowering and shared SBML Core/SBML-Multi writer mapping
-  are covered by `tests/cpp/test_sbml_units` (33 assertions, 5 cases); the Multi
-  writer reuses Core unit definitions and emits no `multi:units` system.
-- [x] SBML Core unit-definition/default/object metadata extraction is covered by
-  `tests/cpp/test_sbml_reader` (21 assertions, 3 cases), and the executable
-  action path imports that metadata before reconstruction.
-- [x] Python model/binding/snapshot smoke coverage confirms unit metadata is
-  exposed and unit-free snapshots retain their legacy shape.
-- [ ] Validate emitted Core and Multi documents with libSBML/schema and
-  independent SBML semantic oracles across Level 2 and Level 3 package modes.
-- [ ] Complete cross-backend parity for direct NFsim. BNG3 currently rejects
-  unit-bearing models at that adapter boundary until its count-rate bridge is
-  independently validated.
-- [ ] Re-run the complete release/hosted convergence matrix on the final PR
-  head; focused green tests are not release convergence evidence.
-
-## Current continuation checkpoint — 2026-09-15
-
-The continuation from the current public `main` base is deliberately narrow
-and evidence-oriented:
-
-- [x] Direct NFsim evidence records `construction_path`, requires the XML leg
-  to report `in-memory-xml` and the direct leg to report `direct`, clears XML
-  fallback permission before the direct leg, and keeps missing compiled
-  backends/oracles fail-closed.
-- [x] Spawned source-tree validation workers receive both the repository root
-  and `python/` on `sys.path`, so the independent NFsim ensemble does not
-  depend on the caller's import context.
-- [x] Hosted independent NFsim parity includes the fixed-seed `motor` and
-  `tlbr` endpoint contracts in addition to the seeded `simple_system` ensemble;
-  every ensemble member must report direct construction.
-- [x] The typed Lean example and production C++ NFIR contract use the same
-  rule, `A(x~u) + B(y) -> A(x~p!1).B(y!1) k`. The C++ contract crosses
-  BNGL parser -> `bng::compile::CompiledModel` ->
-  `nfnext::lowerFromBioNetGen` and checks distinct-reactant molecularity, a
-  state update, and a new bond.
-- [x] Population maps remain fail-closed for direct NFsim and route through
-  the hybrid population backend; no unsupported direct semantics are inferred.
-
-The exact local evidence for the code head immediately before this
-documentation merge is: CTest `308/308`; strict full validation `71/71` with
-zero failures, errors, or skips; action contracts `6/6`; CI-contract tests
-`26 passed`; energy tests `66 passed`; independent NFsim `10 passed`; Lean
-static validation `36` files; NFnext contracts `18/18`; Black, Ruff,
-provenance, corpus, and exception-ledger checks passed. The local Lean kernel
-check remains unavailable because Lean/Lake/Elan are not installed.
-
-Hosted checks for the final pushed documentation head are the authority
-for this checkpoint. Record their exact head and terminal check URLs in this
-section only after `gh` readback confirms that no required job is pending.
-The unchecked completion items below remain open.
-
-## Historical checkpoint — 2026-09-15
-
-The preceding combined-tree evidence is summarized in
-[`CURRENT_PROGRESS.md`](CURRENT_PROGRESS.md). The native CTest gate is
-`308/308`; the full validation corpus is `71/71` with zero failures, errors,
-or skips; the six explicit action-output contracts are `6/6`; CI-contract
-tests are `26 passed`; and the energy Python tests are `66 passed`. Black,
-Ruff, corpus/provenance validation, and the zero-active-exception ledger also
-pass.
-
-Local Lean static validation checks 36 files and the NFnext contract binary
-reports `18/18`; the Lean kernel is not installed locally. The PR now has a
-pinned formal workflow that performs the hosted Lean 4.33.1 kernel build and
-smoke check, which has passed for the published PR head. The former
-reference-exclusion profiles are closed; the PR and weekly validation jobs now
-run the full corpus using independent BNG2 network references plus explicit
-action contracts. These results are exact-head checkpoint evidence only. The
-exact hosted PR run
-[34896645707](https://github.com/RuleWorld/BNG3/actions/runs/34896645707)
-completed successfully at `ed4c59e`; the cross-tool parity run
-[34896645694](https://github.com/RuleWorld/BNG3/actions/runs/34896645694), Lean
-run [34896645788](https://github.com/RuleWorld/BNG3/actions/runs/34896645788),
-CodeQL run [34896645673](https://github.com/RuleWorld/BNG3/actions/runs/34896645673),
-and formatting run
-[34896645763](https://github.com/RuleWorld/BNG3/actions/runs/34896645763) also
-completed successfully. All PR-required build, Python, corpus, parity,
-formal, package-smoke, and integration checks are terminal-success. The
-scheduled-only NFsim job and release-only source-distribution, wheel, Docker,
-and PyPI jobs remain conditionally skipped by their workflow event guards;
-they are not validation-test exclusions. Complete backend equivalence, release
-qualification, and every other unchecked item below remain open.
-
-The main push run
-[`34901298982`](https://github.com/RuleWorld/BNG3/actions/runs/34901298982)
-then exposed two wheel-only environment failures: macOS x86_64 used a 10.9
-deployment target although the ANTLR runtime requires APIs available from
-10.12/10.13, and the manylinux2014 test image attempted to build NumPy 2.5.3
-with GCC 10.2.1 although NumPy requires GCC 10.3 or newer. The follow-up
-workflow repair pins cibuildwheel 4.2.1, selects native macOS architectures
-with 10.13/11.0 deployment targets, and changes the Linux image to
-`manylinux_2_28`. The CI workflow permits a manual-dispatch wheel run on an
-exact branch head, but auxiliary run `34971595435` was canceled before its
-wheel jobs started so validation could remain paused until merge. The wheel
-checkpoint remains unchecked until the first post-merge main-push run has all
-four platform jobs pass; this does not alter the zero-skip full-corpus result.
-
-## Historical verified checkpoint
+## Current verified checkpoint
 
 These items describe the current checkpoint. They do not satisfy the full
 completion gate.
-
-- [x] Full-corpus validation and exclusion-closure checkpoint
-  `78a1591422ccbe6c4a5607eb748b426bbdbc303f` adds committed independent BNG2
-  `.net` references for the previously missing network fixtures and the
-  explicit action manifest `tests/validation/validation_manifest.json` for
-  `ANx`, `hybrid_test`, `test_tfun`, `test_tfun_xml`,
-  `test_write_sbml_multi`, and `visualize`. The PR and weekly workflows no
-  longer pass reference-exclusion skip arguments. The exact local command
-  `python scripts/validate.py --bng-cpp build/cpp/bng_cpp
-  --strict-references --validation-manifest
-  tests/validation/validation_manifest.json` reports `71 passed, 0 failed, 0
-  errors, 0 skipped`; `python scripts/validate_actions.py --bng-cpp
-  build/cpp/bng_cpp` reports `6/6` action contracts; CTest reports `308/308`;
-  CI-contract tests report `26 passed`; and the energy Python suite reports
-  `66 passed`. The former exclusion ledger is now `closed` with empty PR and
-  weekly profiles. This closes the explicit PR/weekly validation exclusions,
-  not the broader backend-equivalence or release gates.
-
-- [x] Repository documentation and artifact-organization checkpoint moves the
-  historical IR-migration reports and text metadata into
-  `docs/archive/reports/ir-migration-2026-09-14/`, with an index directing
-  readers to the live progress, checklist, integration, and validation docs.
-  Obsolete package-wrapper files and the four applied patch snapshots were
-  removed; model/test fixture text files and dated handoff provenance remain
-  in their operational directories. The final documentation head is covered by
-  hosted CI run `34896645707`, whose required jobs completed successfully.
-
-- [x] Windows/MSVC ANTLR compatibility checkpoint applies the existing
-  `cpp/parser/antlr_compat.hpp` guard to `BNGParser.h`, `BNGParserVisitor.h`,
-  and `BNGParserBaseVisitor.h`. This closes the direct generated-header include
-  path that caused the preceding Windows jobs to fail on the SDK `constant`
-  macro before ANTLR's `ParseTreeType` and parser enums were parsed. The local
-  Release/Ninja rebuild passes, and the exact-head hosted Windows C++ and
-  Python matrix checks pass in CI run `34896645707`.
-
-- [x] Exact-head hosted validation checkpoint at
-  `ed4c59e028b2799a7b8025a8b37dccdc1dec0888` completed with terminal-success
-  PR-required jobs: all C++ platforms and ASan, the Python 3.9–3.14 matrix on
-  Linux/macOS/Windows, full corpus on all three operating-system families,
-  package smoke, integration, independent BNG2/NFsim parity, PyBioNetGen API
-  compatibility, Lean 4.33.1/NFnext, CodeQL, lint, and formatting. The full
-  corpus reports zero skipped fixtures, and `reference_exclusions.json` has
-  empty PR and weekly profiles. Release-only and scheduled-only jobs are
-  recorded as conditional skips in the hosted UI and are not part of the PR
-  validation gate.
-
-- [ ] Cross-platform wheel repair checkpoint: main push run `34901298982`
-  exposed the macOS deployment-target and manylinux2014/NumPy compiler
-  failures described above. The CI and release workflows now use cibuildwheel
-  4.2.1, native macOS targets, and `manylinux_2_28`; the exact post-merge
-  main-push matrix must pass before this item can be checked.
 
 - [x] Local-only initial-assignment writer checkpoint
   `1662820a0222add1cd9d44e8dd64724590c4bce8` ports the pinned Playground
@@ -3574,10 +3413,6 @@ completion gate.
   implemented with evidence or fail with an explicit governed diagnostic.
 - [ ] SBML IDs and display names remain distinct and stable through generated
   parameters, observables, functions, seeds, and reaction rates.
-- [x] The validation-corpus structured-SBML `atomize=>1` fixture `plain2` now
-  passes the native reader and graph-aware `.net` comparison at
-  `78a1591422ccbe6c4a5607eb748b426bbdbc303f`. The implementation is deliberately
-  narrow and fail-closed for other structured SBML models.
 - [ ] The structured SBML atomize=>1 failure is resolved or receives a
   maintainer-approved compatibility disposition with a replacement gate.
 - [ ] Unsupported SBML packages, qualitative models, dictionaries, and
@@ -3863,7 +3698,7 @@ completion gate.
 
 ## 10. Documentation and operational consistency
 
-- [ ] BNG3_INTEGRATION_PLAN.md, docs/BNG3_unification_spec.md, AGENTS.md,
+- [ ] BNG3_INTEGRATION_PLAN.md, BNG3_unification_spec.md, AGENTS.md,
   provenance/README.md, validation/README.md, and this checklist agree on
   current gates, command paths, statuses, and ownership.
 - [ ] Dated progress counts and hosted run references are refreshed after each
@@ -3898,15 +3733,13 @@ versions in the release evidence.
     python scripts/validate_corpus_manifest.py
     python scripts/generate_corpus_manifest.py --check
     python -m tests.validation.exception_ledger --max-exceptions APPROVED_BUDGET
-    python scripts/validate.py --bng-cpp build/cpp/bng_cpp --strict-references --validation-manifest tests/validation/validation_manifest.json
-    python scripts/validate_actions.py --bng-cpp build/cpp/bng_cpp
     PYTHONPATH=python:build/cpp python -m pytest -c tests/validation/pytest.ini tests/validation -m smoke --bng-cpp build/cpp/bng_cpp
     PYTHONPATH=python:build/cpp python -m pytest -c tests/validation/pytest.ini tests/validation -m "parity and not slow" --bng-cpp build/cpp/bng_cpp
     NFSIM_BIN=build/cpp/NFsim PYTHONPATH=python:build/cpp python -m pytest -c tests/validation/pytest.ini tests/validation -m nf --bng-cpp build/cpp/bng_cpp
     PYTHONPATH=python:build/cpp python -m pytest -c tests/validation/pytest.ini tests/validation -m export --bng-cpp build/cpp/bng_cpp
     python -m build --sdist --wheel
-    gh pr view 10 --repo RuleWorld/BNG3
-    gh pr checks 10 --repo RuleWorld/BNG3
+    gh pr view 2 --repo RuleWorld/BNG3
+    gh pr checks 2 --repo RuleWorld/BNG3
 
 The qualification record must include:
 
@@ -3987,11 +3820,9 @@ These are known unchecked requirements, not reasons to claim completion:
   and linked at `4edf4df`, with source-derived `num_site` and `pre_macr`
   contracts. Full Macro/legacy compatibility, independent benchmark evidence,
   and release qualification remain open.
-- Structured SBML atomization now has a native, independently compared
-  `plain2` validation-corpus path; other `atomize=>1` requests still fail
-  closed pending broader support or an approved compatibility disposition.
-  Broader validation tiers retain explicitly classified environment/reference
-  skips, while the full PR/weekly corpus gate reports zero fixture skips.
+- Structured SBML atomization still has a deliberate visible error, and
+  local validation has environment-dependent skips; hosted validation green
+  does not prove full Tier-P/NF/X parity.
 - SBML-Multi v1 representable structures now enter executable modern
   Atomizer/BNGL paths with native writer/parser and NFsim evidence;
   unsupported shapes still fail closed, and full Tier-X capability remains

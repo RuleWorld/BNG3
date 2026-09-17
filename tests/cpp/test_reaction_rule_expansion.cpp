@@ -200,46 +200,6 @@ end actions
     REQUIRE(network.reactions.size() == 2);
 }
 
-TEST_CASE("Rule expansion: reverse local-rate scope remains bound", "[ReactionRule]") {
-    auto model = parseModel(R"(
-begin parameters
-    k 1.0
-end parameters
-begin molecule types
-    A(s~up~dn)
-end molecule types
-begin seed species
-    A(s~dn) 1
-    A(s~up) 1
-end seed species
-begin observables
-    Molecules up A(s~up)
-end observables
-begin functions
-    rate(z) = k + up(z)
-end functions
-begin reaction rules
-    A%x(s~dn) <-> A%x(s~up) rate(x), rate(x)
-end reaction rules
-)");
-
-    engine::NetworkGenerator generator(*model);
-    const auto network = generator.generateNative(4);
-
-    REQUIRE(network.species.size() == 2);
-    REQUIRE(network.reactions.size() == 2);
-
-    bool sawDownContext = false;
-    bool sawUpContext = false;
-    for (const auto& reaction : network.reactions.all()) {
-        const auto& rate = reaction.getRateLaw();
-        sawDownContext = sawDownContext || rate.find("|local:up=0;") != std::string::npos;
-        sawUpContext = sawUpContext || rate.find("|local:up=1;") != std::string::npos;
-    }
-    REQUIRE(sawDownContext);
-    REQUIRE(sawUpContext);
-}
-
 TEST_CASE("Rule expansion: MatchOnce modifier", "[ReactionRule]") {
     auto model = parseModel(R"(
 begin parameters

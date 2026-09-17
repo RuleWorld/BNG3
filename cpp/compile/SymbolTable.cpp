@@ -17,7 +17,6 @@ const char* kindName(SymbolKind kind) {
     case SymbolKind::Compartment: return "compartment";
     case SymbolKind::ReactionRule: return "reaction rule";
     case SymbolKind::EnergyPattern: return "energy pattern";
-    case SymbolKind::PopulationType: return "population type";
     case SymbolKind::Count: break;
     }
     return "symbol";
@@ -47,12 +46,6 @@ SymbolTable SymbolTable::fromModel(const ast::Model& model) {
     }
     for (const auto& energyPattern : model.getEnergyPatterns()) {
         result.add(SymbolKind::EnergyPattern, energyPattern.getLabel());
-    }
-    for (const auto& mapping : model.getPopulationMaps()) {
-        const auto& name = !mapping.populationName.empty()
-            ? mapping.populationName : mapping.populationFunction;
-        if (!name.empty() && !result.resolve(SymbolKind::PopulationType, name).has_value())
-            result.add(SymbolKind::PopulationType, name);
     }
     return result;
 }
@@ -106,10 +99,6 @@ std::optional<ReactionRuleId> SymbolTable::resolveReactionRule(std::string_view 
 
 std::optional<EnergyPatternId> SymbolTable::resolveEnergyPattern(std::string_view name) const {
     return resolveTyped<EnergyPatternId>(SymbolKind::EnergyPattern, name);
-}
-
-std::optional<PopulationTypeId> SymbolTable::resolvePopulationType(std::string_view name) const {
-    return resolveTyped<PopulationTypeId>(SymbolKind::PopulationType, name);
 }
 
 std::size_t SymbolTable::size(SymbolKind kind) const {

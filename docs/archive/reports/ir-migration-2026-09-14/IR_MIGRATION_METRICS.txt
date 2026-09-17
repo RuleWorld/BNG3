@@ -1,5 +1,0 @@
-Baseline compatibility allowlist: 45
-Current compatibility allowlist: 21
-Current changed/untracked paths: 68
-Structural BNGIR tests: 8/8 passed
-Architecture+BNGIR focused tests: 9/9 passed

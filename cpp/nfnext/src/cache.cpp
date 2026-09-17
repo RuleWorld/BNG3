@@ -1,7 +1,6 @@
 #include "nfnext/cache.hpp"
 
 #include <algorithm>
-#include <cstring>
 #include <fstream>
 #include <stdexcept>
 #include <type_traits>
@@ -35,24 +34,22 @@ void writeString(std::ostream& out, const std::string& s) {
 std::string readString(std::istream& in) {
     const std::uint64_t n = readPod<std::uint64_t>(in);
     if (n > (1ULL << 31)) throw std::runtime_error("NFIR cache invalid string length");
-    if (n == 0) return {};
     std::string s(static_cast<std::size_t>(n), '\0');
-    in.read(s.data(), static_cast<std::streamsize>(n));
+    in.read(&s[0], static_cast<std::streamsize>(n));
     if (!in) throw std::runtime_error("NFIR cache truncated");
     return s;
 }
 
 void writePredicate(std::ostream& out, const PredicateIR& p) {
     writePod(out, static_cast<std::uint8_t>(p.kind)); writePod(out, p.molecule_type);
-    writePod(out, p.node); writePod(out, p.site); writePod(out, p.value); writePod(out, p.aux);
+    writePod(out, p.site); writePod(out, p.value); writePod(out, p.aux);
     writePod(out, static_cast<std::uint64_t>(p.state_set.size()));
     for (const auto state : p.state_set) writePod(out, state);
 }
 
 PredicateIR readPredicate(std::istream& in) {
     PredicateIR p; p.kind = static_cast<PredicateKind>(readPod<std::uint8_t>(in));
-    p.molecule_type = readPod<TypeId>(in); p.node = readPod<PatternNodeId>(in);
-    p.site = readPod<std::uint16_t>(in);
+    p.molecule_type = readPod<TypeId>(in); p.site = readPod<std::uint16_t>(in);
     p.value = readPod<std::int32_t>(in); p.aux = readPod<std::int32_t>(in);
     const auto nstates = readPod<std::uint64_t>(in);
     if (nstates > (1ULL << 30)) throw std::runtime_error("NFIR cache invalid state-set length");
@@ -171,11 +168,9 @@ PatternIR readPattern(std::istream& in) {
         const auto n = readPod<std::uint64_t>(in);
         if (n > (1ULL << 30)) throw std::runtime_error(std::string("NFIR cache invalid ") + label + " length");
         pairs.reserve(static_cast<std::size_t>(n));
-        for (std::uint64_t i = 0; i < n; ++i) {
-            const auto first = readPod<std::uint64_t>(in);
-            const auto second = readPod<std::uint64_t>(in);
-            pairs.emplace_back(static_cast<std::size_t>(first), static_cast<std::size_t>(second));
-        }
+        for (std::uint64_t i = 0; i < n; ++i)
+            pairs.emplace_back(static_cast<std::size_t>(readPod<std::uint64_t>(in)),
+                               static_cast<std::size_t>(readPod<std::uint64_t>(in)));
     };
     readPairVector(pattern.aliases, "alias");
     readPairVector(pattern.connected_to, "connected-to");
@@ -196,15 +191,12 @@ PatternIR readPattern(std::istream& in) {
 void writeAction(std::ostream& out, const ActionIR& a) {
     writePod(out, static_cast<std::uint8_t>(a.kind)); writePod(out, a.molecule_type);
     writePod(out, a.site); writePod(out, a.value); writePod(out, a.aux);
-    writePod(out, a.target_node); writePod(out, a.partner_node); writePod(out, a.partner_site);
 }
 
 ActionIR readAction(std::istream& in) {
     ActionIR a; a.kind = static_cast<ActionKind>(readPod<std::uint8_t>(in));
     a.molecule_type = readPod<TypeId>(in); a.site = readPod<std::uint16_t>(in);
-    a.value = readPod<std::int32_t>(in); a.aux = readPod<std::int32_t>(in);
-    a.target_node = readPod<PatternNodeId>(in); a.partner_node = readPod<PatternNodeId>(in);
-    a.partner_site = readPod<std::uint16_t>(in); return a;
+    a.value = readPod<std::int32_t>(in); a.aux = readPod<std::int32_t>(in); return a;
 }
 
 template<class T, class Writer>

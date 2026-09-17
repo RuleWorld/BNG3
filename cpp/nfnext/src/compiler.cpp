@@ -25,7 +25,6 @@ bool ModelCompiler::latticeCompatible(const ModelIR& model) noexcept {
                 case ActionKind::SetSiteState:
                 case ActionKind::Create:
                 case ActionKind::Destroy:
-                case ActionKind::DestroyComplex:
                     break;
                 default:
                     return false;

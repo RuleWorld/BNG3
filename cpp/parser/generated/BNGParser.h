@@ -1,5 +1,5 @@
 
-// Generated from cpp/parser/BNGParser.g4 by ANTLR 4.13.1
+// Generated from BNGParser.g4 by ANTLR 4.13.2
 
 #pragma once
 
@@ -1796,13 +1796,10 @@ public:
     virtual size_t getRuleIndex() const override;
     ExpressionContext *expression();
     Keyword_as_valueContext *keyword_as_value();
-    std::vector<Quoted_stringContext *> quoted_string();
-    Quoted_stringContext* quoted_string(size_t i);
+    Quoted_stringContext *quoted_string();
     antlr4::tree::TerminalNode *LSBRACKET();
     Expression_listContext *expression_list();
     antlr4::tree::TerminalNode *RSBRACKET();
-    std::vector<antlr4::tree::TerminalNode *> COMMA();
-    antlr4::tree::TerminalNode* COMMA(size_t i);
     antlr4::tree::TerminalNode *LBRACKET();
     antlr4::tree::TerminalNode *RBRACKET();
     Nested_hash_listContext *nested_hash_list();
@@ -1944,7 +1941,6 @@ public:
     antlr4::tree::TerminalNode *EQUIL();
     antlr4::tree::TerminalNode *NFSIM_EXEC();
     antlr4::tree::TerminalNode *MOL_THRESHOLD();
-    antlr4::tree::TerminalNode *ACTIONS();
     antlr4::tree::TerminalNode *PARAMETER();
     antlr4::tree::TerminalNode *PAR_MIN();
     antlr4::tree::TerminalNode *PAR_MAX();
@@ -1970,7 +1966,6 @@ public:
     antlr4::tree::TerminalNode *BACKGROUND();
     antlr4::tree::TerminalNode *COLLAPSE();
     antlr4::tree::TerminalNode *OPTS();
-    antlr4::tree::TerminalNode *GROUPS();
     antlr4::tree::TerminalNode *SAFE();
     antlr4::tree::TerminalNode *EXECUTE();
     antlr4::tree::TerminalNode *TEXTREACTION();
