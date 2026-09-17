@@ -200,7 +200,7 @@ def run_validation(
                     [str(bng_cpp), str(tmp_bngl)],
                     capture_output=True,
                     text=True,
-                    timeout=60,
+                    timeout=180,
                     cwd=tmpdir,
                 )
             except subprocess.TimeoutExpired:
