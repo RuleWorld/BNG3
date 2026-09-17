@@ -5,7 +5,7 @@ Created on Tue Dec  6 17:42:31 2011
 @author: proto
 """
 
-from copy import deepcopy, copy
+from copy import deepcopy
 from bionetgen.atomizer.writer import bnglWriter as writer
 
 log = {"species": [], "reactions": []}
@@ -23,7 +23,6 @@ import libsbml
 from bionetgen.atomizer.bngModel import bngModel
 
 import sympy
-from sympy import Function
 from sympy.abc import _clash
 from sympy.printing.str import StrPrinter
 from sympy.core.sympify import SympifyError
@@ -34,8 +33,6 @@ from bionetgen.atomizer.utils.sbml_math import (
     sympyIF,
     sympyGT,
     sympyLT,
-    sympyGEQ,
-    sympyLEQ,
     sympyAnd,
     sympyOr,
     sympyNot,
@@ -184,7 +181,7 @@ class SBML2BNGL:
 
     def getMetaInformation(self, additionalNotes):
         # get unit information
-        unitList = self.getUnitDefinitions()
+        self.getUnitDefinitions()
 
         metaInformation = self.extractModelAnnotation()
         modelHistory = self.model.getModelHistory()
@@ -731,7 +728,7 @@ class SBML2BNGL:
         # with sympify
         form, replace_dict = self.find_all_symbols(math, reactionID)
         # let's pull all names
-        all_names = [i[0] for i in react] + [i[0] for i in prod]
+        [i[0] for i in react] + [i[0] for i in prod]
         # SymPy is wonderful, _clash1 avoids built-ins like E, I etc
         try:
             sym = sympy.sympify(form, locals=self.all_syms)
@@ -1656,7 +1653,6 @@ class SBML2BNGL:
         return newRate
 
     def getSymmetryFactors(self, reaction):
-        zerospecies = ["emptyset", "trash", "sink", "source"]
         if self.useID:
             reactant = [
                 (rElement.getSpecies(), rElement.getStoichiometry())
@@ -1737,7 +1733,6 @@ class SBML2BNGL:
             self.functionFlag = False or (not atomize)
 
         reactions = []
-        reactionStructure = []
         parameters = []
         functions = []
         # We want to keep track of the molecules/species we
@@ -2154,7 +2149,7 @@ class SBML2BNGL:
         # piecewise function forms.
         try:
             sym = sympy.sympify(form, locals=self.all_syms)
-        except SympifyError as e:
+        except SympifyError:
             logMess(
                 "ERROR:SYMP001",
                 "Sympy couldn't parse a function, sorry but we can't handle this function definition.",
@@ -2450,7 +2445,7 @@ class SBML2BNGL:
 
                 # ASS2019 - I'm not sure if this is the right place to fix the tags. Basically, up until this point, the artificial reactions don't have tags. This results in the 0 <-> A type reactions to lack a compartment, leading to a non-functional BNGL file. I think the better solution might be during rule (SBML rule, not BNGL rule) parsing and update the parser/SBML2BNGL tags instead.
                 try:
-                    comp = self.tags[rawArule[0]]
+                    self.tags[rawArule[0]]
                 except KeyError:
                     # ASS - We need to default to an existing compartment if we are going
                     # to remove @cell as a default compartment
@@ -2862,7 +2857,6 @@ class SBML2BNGL:
         else:
             volume = "L"
         concentrationUnits = "{0}/{1}".format(substance, volume)
-        annotationMoleculesText = {}
         moleculesText = []
         speciesText = []
         observablesText = []
@@ -3264,7 +3258,6 @@ class SBML2BNGL:
                 else species.getInitialAmount()
             )
             pparam[species.getId()] = (initConc, extendedStr)
-        from copy import copy
 
         for initialAssignment in self.model.getListOfInitialAssignments():
             symbol = initialAssignment.getSymbol()
@@ -3375,7 +3368,7 @@ class SBML2BNGL:
         lista = libsbml.CVTermList()
         libsbml.RDFAnnotationParser.parseRDFAnnotation(annotationXML, lista)
         if get_size(lista) == 0:
-            modelAnnotations = []
+            pass
         else:
             tempDict = {}
             for element in [2, 3, 4, 5, 6]:
