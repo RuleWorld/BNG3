@@ -1,142 +1,386 @@
 # AGENTS.md
 
-Build/test/conventions for agents working on BNG3. Terse on purpose. The
-authoritative convergence exit gate is
-[`docs/BNG3_CONVERGENCE_DONE_CHECKLIST.md`](docs/BNG3_CONVERGENCE_DONE_CHECKLIST.md);
-this file gives working rules, not a completion claim.
+Instructions for coding agents working on **RuleWorld/BNG3**.
 
-For the current implementation snapshot, branch, and validation state, see
-[`docs/CURRENT_PROGRESS.md`](docs/CURRENT_PROGRESS.md). Archived handoff
-documents are historical inputs, not live evidence.
+Keep this file durable. Current branches, pass counts, open gaps, and temporary work belong in issues, PRs, or `docs/CURRENT_PROGRESS.md`, not here.
 
-## What BNG3 is
-Monorepo merging three tools into one in-process platform:
-`cpp/` (C++ engine, = bionetgen-master/src + embedded NFsim + pybind11),
-`python/bionetgen/` (unified Python API + modern atomizer; legacy modules remain
-until their deletion gate passes),
-`legacy/perl/` (BNG2 Perl, kept only as validation oracle).
+## Goal
 
-## Build
+BNG3 is the modern BioNetGen implementation: one maintained C++/Python system for parsing BNGL, network generation, deterministic/stochastic simulation, NFsim integration, SBML import/export, and the Python API.
+
+Correct semantics matter more than feature count.
+
+A model that is explicitly unsupported is better than a model that silently runs with changed semantics.
+
+## Read before changing code
+
+Inspect the repository and current branch before reasoning from memory:
+
+```bash
+git status
+git branch --show-current
+git log -5 --oneline
+rg <relevant-symbol-or-feature>
+```
+
+Read existing implementation and tests before adding new abstractions.
+
+Use installed engineering skills when relevant, especially:
+
+- source-driven development
+- debugging/error recovery
+- doubt-driven development
+- test-driven development
+- incremental implementation
+- code review
+- code simplification
+- performance optimization
+- Git/CI workflows
+
+Skills supplement these rules; they do not override them.
+
+## Related repositories
+
+Know which repository answers which question.
+
+- **RuleWorld/BNG3** — target implementation. Change code here.
+- **RuleWorld/bionetgen** — canonical BioNetGen / BNG2 behavior and historical implementation. Use it to understand established BNGL semantics and compatibility.
+- **RuleWorld/nfsim** — canonical NFsim reference implementation.
+- **akutuva21/nfsim** — newer NFsim development fork containing performance and energy-modeling work that may be relevant to BNG3. Treat it as a source input, not automatically authoritative over canonical NFsim behavior.
+- **RuleWorld/PyBioNetGen** — existing Python-facing BioNetGen behavior and compatibility reference.
+- **RuleWorld/bngplayground** — independent modern BNGL implementation and useful compatibility/reference corpus. It is not a replacement for canonical BioNetGen or NFsim as a semantic oracle.
+
+Also use authoritative upstream specifications and independent implementations where appropriate, especially:
+
+- SBML specifications
+- official SBML Test Suite
+- published BioModels
+- libRoadRunner for independent SBML simulation comparison
+
+Do not copy another repository wholesale. Identify the behavior needed, understand it, then implement the smallest appropriate version in BNG3.
+
+## GitHub workflow
+
+Use the local **GitHub CLI (`gh`)** for GitHub work.
+
+Prefer:
+
+```bash
+gh pr view
+gh pr diff
+gh pr checks
+gh run list
+gh run view
+gh issue view
+gh api
+```
+
+Use `git` for local history/diffs and `gh` for GitHub state.
+
+Do **not** rely on the ChatGPT GitHub connector, GitHub MCP, or a cached web view when `gh` is available. Repository-local `git` + authenticated `gh` are the authoritative workflow.
+
+Before modifying GitHub state, confirm repository, branch, and current SHA.
+
+Never overwrite unrelated worktree changes.
+
+## KISS
+
+Prefer the simplest implementation that preserves the required semantics.
+
+- Solve the demonstrated problem, not hypothetical future problems.
+- Reuse existing parser, IR, writer, engine, and validation abstractions.
+- Do not create parallel frameworks for one feature.
+- Do not generalize from one failing BioModel.
+- Do not add indirection without a concrete need.
+- Do not rewrite working subsystems unless the existing design prevents the required behavior.
+- Keep diffs surgical.
+- Remove obsolete compatibility code when it is genuinely superseded and tested.
+- Do not optimize for line count, feature count, or headline pass count.
+
+When two designs are equally correct, choose the simpler one.
+
+## Semantic correctness
+
+Treat support as a semantic claim.
+
+These are **not equivalent**:
+
+```text
+parses
+≠ converts
+≠ emits valid BNGL/SBML
+≠ runs
+≠ round-trips
+≠ reproduces source behavior
+```
+
+A feature is supported only to the extent that its relevant semantics are preserved.
+
+When translating between SBML, BNGL, internal IR, generated networks, or NFsim:
+
+1. establish the source semantics;
+2. determine whether BNG3 can represent them;
+3. implement the smallest semantics-preserving lowering;
+4. test the individual behavior;
+5. compare against an independent oracle when possible.
+
+If semantics cannot be preserved, return an explicit unsupported result.
+
+Never turn an unsupported construct into a nominally supported approximation merely to increase coverage.
+
+### Static versus dynamic lowering
+
+Be especially careful when lowering SBML constructs.
+
+A constant expression that can be proven static may often be folded.
+
+A state-dependent rule, assignment, stoichiometry, delay, event, algebraic relation, conversion factor, or package feature must not be treated as static unless that equivalence is established.
+
+Do not infer representability merely because generated BNGL is syntactically valid.
+
+## Debugging
+
+Reproduce before modifying.
+
+For a mismatch, first classify the likely layer:
+
+```text
+source model/specification
+parser
+IR
+lowering/Atomizer
+writer/export
+network generation
+ODE/SSA backend
+NFsim
+numerical solver
+independent oracle
+validation harness
+performance/timeout
+```
+
+Then reduce the problem to the smallest useful reproducer.
+
+Do not initially "fix" a discrepancy by changing:
+
+- tolerances
+- simulation horizons
+- retry counts
+- exclusions
+- skips
+- expected outputs
+- unsupported guards
+
+Those may be changed only after the cause is understood.
+
+Every confirmed defect should get a focused regression test.
+
+If two targeted fixes fail, reassess the diagnosis before making a third.
+
+## Validation
+
+Use the narrowest useful test while developing, then broaden validation according to the affected surface.
+
+### Build
+
 ```bash
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build                  # bng_cpp and, when enabled, bindings
-pip install -e .                     # scikit-build-core package build
-cmake -B build -DBUILD_NFSIM_CLI=ON  # BNG3 standalone NFsim CLI/smoke executable
+cmake --build build
 ```
-Dependencies are fetched by CMake FetchContent (ANTLR4 4.13.2, SUNDIALS
-7.6.0, Catch2, pybind11, and ExprTk while the expression work order remains
-open). A clean build needs network access or a populated dependency cache.
 
-## Test
+For the Python package:
+
+```bash
+pip install -e .
+```
+
+### Core tests
+
 ```bash
 ctest --test-dir build --output-on-failure
-PYTHONPATH=python:build/cpp python -m pytest -q tests/python
-PYTHONPATH=python:build/cpp python -m pytest -q \
-  -c tests/validation/pytest.ini tests/validation -m smoke
-python scripts/validate.py --bng-cpp build/cpp/bng_cpp --strict-references \
-  --validation-manifest tests/validation/validation_manifest.json
-python scripts/validate_actions.py --bng-cpp build/cpp/bng_cpp
-NFSIM_BIN=/absolute/path/to/pinned/native/NFsim \
-  PYTHONPATH=python:build/cpp python -m pytest tests/validation -m nf \
-  --bng-cpp build/cpp/bng_cpp
+
+PYTHONPATH=python:build/cpp \
+python -m pytest -q tests/python
 ```
-Engine discovery for the validation harness is `--bng-cpp PATH` or `BNG_CPP`.
-The local development build places executables and the extension under
-`build/cpp/`. Run the full validation and golden-generation workflows only
-with the pinned oracles and provenance required by the checklist; never make
-them pass by widening tolerances or hiding skips. The Python API is
-`import bionetgen`.
 
-## The rules that matter
+Run focused tests first while iterating.
 
-- No semantic master function lands until its source-derived tests and the
-  dependent validation gate are green. Gates live in `tests/validation/` and
-  must compare against independent BNG2 Perl and native NFsim artifacts when
-  they claim parity.
-- A source-derived fixture for an unsupported capability may land only as an
-  explicitly named rejection contract test while its implementation is open;
-  a red acceptance test must not remain on a public checkpoint.
-- A local green suite, parse inventory, or BNG3-generated output is not
-  independent parity evidence. Missing oracles and validators remain visible
-  failures/skips with an owner and expiry in the exception ledger.
-- `NFSIM_BIN` must name an independently built native NFsim binary from the
-  pinned pre-convergence source. The embedded BNG3 `NFsim` target is a smoke
-  executable only; the validation harness must not silently substitute it for
-  an absent or invalid oracle path.
-- Keep the XML NFsim path as a temporary comparator. The default NFsim route
-  is the direct AST adapter; XML compatibility requires an explicit
-  `BNG_NFSIM_ALLOW_XML_FALLBACK=1`, and `BNG_NFSIM_FORCE_XML=1` selects the
-  shadow path. Do not retire XML until the checklist's three-way Tier-NF gate
-  passes.
-- The direct NFsim API uses the native-compatible endpoint-inclusive
-  `stepTo` form only for its final output checkpoint; the ordinary one-argument
-  `stepTo` contract remains exclusive for intermediate callers. Keep the
-  source-derived fixed-seed `motor`/`tlbr` endpoint test green.
-- Species-observable maintenance must use semantic `add`/`subtract` so
-  dependent functional propensities refresh; reserve `straightAdd`/
-  `straightSubtract` for count-only initialization or rebuild paths. Keep the
-  source-derived Issue86 rate-refresh test green.
-- NF absolute `t_start` is the simulation clock origin: set it before
-  `prepareForSimulation()`, pass `t_end - t_start` to duration-based NFsim
-  loops, keep direct-API/action sample times within `[t_start, t_end]`, and
-  make `equilibrate(duration)` advance from then restore the absolute clock.
-  Keep the source-derived Issue78 direct-API/action and equilibrate tests
-  green.
-- Energy-function ports must be source-anchored to the accepted
-  `akutuva21/nfsim` energy-evaluation cutoff: PR #475, merge
-  `6690fda5d9e053df822d0248ebae185f5caca82a`, source commit
-  `3b046fc1b9f76719d92be22279b24992cdae7c35`. Audit later fork-head changes
-  separately; do not bulk-merge unrelated PRs. Land ports tests-first. The
-  compact `EnergyBindingContext`/`EnergyRxnClass` path is only for proven
-  factorized contexts; retain materialized expansion as the compatibility
-  fallback until broader energy parity, provenance, and direct-NFsim gates
-  pass.
-- Release builds default `NFSIM_ENABLE_LTO=ON`; CMake must probe IPO support
-  before applying it to embedded NFsim and its consumers. Keep the explicit
-  ON/OFF contract green, and do not treat LTO build success as benchmark or
-  parity evidence.
-- Non-main `akutuva21/bionetgen` branches are source inputs, not merge bases:
-  inspect exact branch/PR tips and diffs, port relevant behavior with
-  source-derived tests first, and classify each source commit as equivalent,
-  superseded, non-applicable, pending, or blocked in the convergence
-  checklist. Do not bulk-merge generated benchmark/docs/`.jules` artifacts or
-  parallel branch stacks without a capability-level decision.
-- The convergence session is single-agent: do not delegate implementation or
-  validation work. Use the checklist as the authoritative work queue, keep
-  every open gap visible, and never claim completion while a mandatory item is
-  unchecked or lacks exact evidence.
-- Public GitHub state, commits, pushes, and checks are inspected with `gh`
-  where supported; record full SHAs and revalidate the exact final SHA after
-  every semantic or documentation checkpoint. Preserve unrelated worktree
-  edits, especially the small grammar-only change in
-  `docs/BNG3_INTEGRATION_PLAN.md`.
-- CI pull-request concurrency must key runs by the exact PR head and must not
-  cancel an in-flight head when a later checklist/documentation push lands;
-  preserve this contract with a local workflow test.
-- Before each checkpoint, inspect and preserve unrelated edits, fast-forward
-  pull the selected branch when possible, and record the resulting full SHA;
-  a documentation-only checkpoint still requires fresh exact-head evidence.
-- Do not broaden the exception ledger to hide a new mismatch. The current
-  checklist, not a historical model-specific exception, defines completion.
+### Semantic/parity tests
 
-## Conventions
-- Read the tree, not memory. Grep before asserting state.
-- Two-round rule: if a "defect" survives two targeted fixes, question whether it's real (see docs/archive/reports/ir-migration-2026-09-14/BNG3_overcount_analysis.md for the cause-1-vs-cause-2 decision before a second attempt). Beware patch-encoding mojibake — verify against the repo tree, never a `.patch` file's text.
-- Surgical diffs. One WO = one master function + its deletions + its gate.
-- No regression: a change that turns a passing Tier-S model red is not done.
-- Don't count lines. Don't write changelogs unless asked.
+For changes affecting established BioNetGen behavior, compare against **RuleWorld/bionetgen / BNG2** where applicable.
 
-## Default vs legacy
-The default path must not import legacy parse/sim modules. `BIONETGEN_USE_PERL=1`
-routes through `compat/legacy_runner.py` (subprocess Perl), but its release
-status and the deletion of the remaining legacy trees are still checklist
-decisions, not completed work.
+For NFsim changes, compare against an independently built native NFsim from the relevant pinned source.
 
-## Where the merge work is tracked
-`docs/BNG3_CONVERGENCE_DONE_CHECKLIST.md` (exit criteria),
-`docs/BNG3_INTEGRATION_PLAN.md` (completion charter),
-`docs/BNG3_unification_spec.md` (work orders WO-0..WO-7),
-`docs/archive/reports/ir-migration-2026-09-14/BNG3_overcount_analysis.md` (WO-1a),
-`cpp/CMakeLists.unify.snippet.cmake` (WO-1b/3b/4 build edits),
-`cpp/nfsim/NFinput/NFinput_fromAst.*` (WO-2), and
-`cpp/ast/ExpressionEval.hpp` (WO-3).
+For SBML/Atomizer changes, use:
+
+1. focused regression cases;
+2. round-trip checks where meaningful;
+3. independent simulation comparison with libRoadRunner;
+4. official SBML Test Suite;
+5. curated BioModels.
+
+A BNG3-generated artifact is not an independent oracle for BNG3.
+
+### Interpreting corpus results
+
+Classify results separately:
+
+```text
+passed
+unsupported
+failed
+timed out
+invalid source
+```
+
+Do not combine unsupported with failure.
+
+A larger pass count is not automatically progress. If new support changes:
+
+```text
+654 pass / 429 unsupported / 0 fail
+```
+
+into something like:
+
+```text
+777 pass / 299 unsupported / 5 fail / 2 timeout
+```
+
+triage the newly admitted failures before claiming the expanded surface is correct.
+
+Corpus tests discover cases. They do not define semantics.
+
+## NFsim
+
+BNG3 embeds NFsim behavior but must remain independently checkable against native NFsim.
+
+For NFsim-related work:
+
+- inspect **RuleWorld/nfsim**;
+- inspect **akutuva21/nfsim** when newer energy/performance work is relevant;
+- identify exact source commits when behavior depends on a specific fork revision;
+- add focused parity tests;
+- preserve deterministic seeds when comparing stochastic implementations;
+- distinguish correctness changes from performance changes.
+
+Performance improvements must preserve stochastic semantics unless an intentional behavior change is explicitly documented.
+
+Do not use the embedded BNG3 NFsim implementation as its own parity oracle.
+
+## Atomizer / SBML
+
+The Atomizer should translate the subset of SBML whose semantics BNG3 can represent faithfully.
+
+Do not aim for "all SBML" by approximation.
+
+For every newly supported SBML class, answer:
+
+```text
+What does SBML require?
+Can BNGL/BNG3 represent it exactly?
+What transformation is being applied?
+Under what conditions is that transformation valid?
+What independent test demonstrates this?
+```
+
+Prefer explicit, narrow supported subclasses over broad but incorrect feature claims.
+
+Examples:
+
+- static expressions may be foldable;
+- dynamic assignment rules require dynamic semantics;
+- static integer stoichiometry differs from state-dependent/fractional stoichiometry;
+- events, delays, algebraic rules, constraints, and SBML packages require their own semantics rather than parser-only support.
+
+## Performance
+
+Measure before optimizing.
+
+For performance work:
+
+1. establish a representative benchmark;
+2. profile;
+3. identify the bottleneck;
+4. make one meaningful change;
+5. rerun correctness tests;
+6. rerun the benchmark.
+
+Prefer algorithmic/data-structure improvements over micro-optimizations.
+
+For stochastic engines, report throughput together with parity/reproducibility evidence.
+
+Do not trade correctness for benchmark numbers.
+
+## Python and C++ boundaries
+
+Keep responsibilities clear.
+
+- C++ owns performance-critical model representation and simulation machinery.
+- Python owns user-facing APIs, orchestration, translation utilities, and tooling where appropriate.
+- Avoid duplicating core semantics independently in Python and C++.
+- pybind11 bindings should expose the native implementation rather than recreate it.
+
+The normal Python entry point is:
+
+```python
+import bionetgen
+```
+
+Legacy code is reference/compatibility material, not the preferred implementation path.
+
+## Changes and commits
+
+Before editing:
+
+```bash
+git status --short
+git diff
+```
+
+Preserve unrelated changes.
+
+Before a checkpoint:
+
+```bash
+git diff --check
+git status
+```
+
+Run the tests appropriate to the changed surface.
+
+Do not claim something is complete because local tests happen to be green. State exactly what was tested.
+
+Commit meaningful checkpoints rather than leaving large validated bodies of work only in temporary worktrees.
+
+Do not create changelogs, migration reports, benchmark reports, or new design documents unless they are actually needed or requested.
+
+## Documentation
+
+Keep documentation factual and current.
+
+Do not place temporary branch state or today's test counts in `AGENTS.md`.
+
+Use:
+
+- `AGENTS.md` — durable working rules
+- `docs/CURRENT_PROGRESS.md` — current implementation/validation state
+- issues/PRs — scoped work and discussion
+- archive/history documents — historical provenance only
+
+When documentation disagrees with code or tests, inspect the implementation and current Git history before deciding which is stale.
+
+## Definition of done
+
+A change is done when:
+
+- the intended semantics are understood;
+- the implementation is as simple as practical;
+- focused regression tests pass;
+- existing relevant tests still pass;
+- independent parity evidence is used when available;
+- unsupported behavior remains explicitly unsupported rather than approximated;
+- no unrelated changes were damaged;
+- the result is described without overstating what was validated.
+
+Correct, simple, testable, maintainable.
