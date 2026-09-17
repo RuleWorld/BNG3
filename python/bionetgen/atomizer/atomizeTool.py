@@ -1,8 +1,37 @@
-import bionetgen.atomizer.libsbml2bngl as ls2b
 from bionetgen.core.defaults import BNGDefaults
 import yaml, os
 
 from bionetgen.core.utils.logging import BNGLogger, log_level
+
+# libsbml2bngl is optional — import lazily so pure-Python atomizer helpers
+# remain importable when libsbml is missing or has an incompatible binary.
+try:
+    import bionetgen.atomizer.libsbml2bngl as ls2b
+except ImportError as _ls2b_exc:  # pragma: no cover
+    ls2b = None  # type: ignore[assignment]
+    _ls2b_import_error = _ls2b_exc
+else:
+    _ls2b_import_error = None  # type: ignore[assignment]
+
+
+def _require_ls2b() -> None:  # pragma: no cover
+    if ls2b is None:
+        raise ImportError(
+            "bionetgen.atomizer.atomizeTool requires 'python-libsbml' "
+            f"which is not available: {_ls2b_import_error}"
+        ) from _ls2b_import_error
+    # ls2b may have been imported but its internal libsbml is missing
+    # (e.g. incompatible wheel on arm64). Delegate to its guard.
+    if getattr(ls2b, "libsbml", None) is None:
+        req = getattr(ls2b, "_require_libsbml", None)
+        if req is not None:
+            req()
+        err = getattr(ls2b, "_libsbml_import_error", _ls2b_import_error)
+        raise ImportError(
+            "bionetgen.atomizer.atomizeTool requires 'python-libsbml' "
+            f"which is not available: {err}"
+        ) from err
+
 
 d = BNGDefaults()
 
@@ -79,6 +108,7 @@ class AtomizeTool:
         self.config = self.checkConfig(config)
 
     def checkConfig(self, config):
+        _require_ls2b()
         self.logger.debug(
             "Validating config options", loc=f"{__file__} : AtomizeTool.checkConfig()"
         )
@@ -90,7 +120,7 @@ class AtomizeTool:
                 loc=f"{__file__} : AtomizeTool.checkConfig()",
             )
             raise ValueError("Input file is required but was not provided")
-        conv, useID, naming = ls2b.selectReactionDefinitions(options["inputFile"])
+        conv, useID, naming = ls2b.selectReactionDefinitions(options["inputFile"])  # type: ignore[union-attr]
         options["outputFile"] = (
             config["output"]
             if config["output"] is not None
@@ -128,10 +158,11 @@ class AtomizeTool:
         return options
 
     def run(self):
+        _require_ls2b()
         # TODO: Make atomizer also use cement app logging
         # this involves changing a lot of code in atomizer!
         self.logger.debug("Analyzing SBML file", loc=f"{__file__} : AtomizeTool.run()")
-        self.returnArray = ls2b.analyzeFile(
+        self.returnArray = ls2b.analyzeFile(  # type: ignore[union-attr]
             self.config["inputFile"],
             self.config["conventionFile"],
             self.config["useId"],
