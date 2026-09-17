@@ -244,8 +244,6 @@ class Species:
         return self.__str__()
 
 
-
-
 class Molecule:
     def __init__(self, name):
         """
