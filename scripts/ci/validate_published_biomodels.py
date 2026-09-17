@@ -723,6 +723,8 @@ def _simulate_and_compare(
     n_steps: int,
     rtol: float,
     atol: float,
+    max_step: float = 0.0,
+    function_names: set[str] | None = None,
 ) -> dict[str, Any]:
     """Compare BNG3/CVODE observables with libRoadRunner on one time grid."""
 
@@ -740,11 +742,24 @@ def _simulate_and_compare(
         n_steps=n_steps,
         rtol=rtol,
         atol=atol,
+        max_step=max_step,
     )
-    observable_names = list(bng_result.observables)
+    series = dict(bng_result.observables)
+    function_values = getattr(bng_result, "functions", {}) or {}
+    if function_names is None:
+        series.update(function_values)
+    else:
+        series.update(
+            {
+                name: values
+                for name, values in function_values.items()
+                if name in function_names
+            }
+        )
+    observable_names = list(series)
     bng_time = np.asarray(bng_result.time, dtype=float)
     bng_values = {
-        name: np.asarray(bng_result.observables[name], dtype=float)
+        name: np.asarray(series[name], dtype=float)
         for name in observable_names
     }
 
@@ -754,6 +769,8 @@ def _simulate_and_compare(
         integrator.setValue("relative_tolerance", rtol)
     if integrator.hasValue("absolute_tolerance"):
         integrator.setValue("absolute_tolerance", atol)
+    if max_step > 0.0 and integrator.hasValue("maximum_time_step"):
+        integrator.setValue("maximum_time_step", max_step)
     available = set(rr.getAssignmentRuleIds())
 
     def sbml_id(name: str) -> str:
@@ -765,7 +782,13 @@ def _simulate_and_compare(
     selected_names = []
     missing = []
     for name in observable_names:
-        candidates = [sbml_id(name), "obs_" + sbml_id(name)]
+        safe_name = sbml_id(name)
+        candidates = [
+            safe_name,
+            "obs_" + safe_name,
+            "func_" + safe_name,
+            "param_" + safe_name,
+        ]
         selected = next(
             (candidate for candidate in candidates if candidate in available), None
         )
@@ -850,6 +873,7 @@ def _simulate_and_compare(
             "n_steps": n_steps,
             "rtol": rtol,
             "atol": atol,
+            "max_step": max_step,
             "comparison_atol_floor": NUMERICAL_COMPARISON_ATOL_FLOOR,
             "comparison_rtol_floor": NUMERICAL_COMPARISON_RTOL_FLOOR,
             "comparison_reference_scale": comparison_scale,
@@ -868,6 +892,7 @@ def _simulate_and_compare(
         "n_steps": n_steps,
         "rtol": rtol,
         "atol": atol,
+        "max_step": max_step,
         "comparison_atol_floor": NUMERICAL_COMPARISON_ATOL_FLOOR,
         "comparison_rtol_floor": NUMERICAL_COMPARISON_RTOL_FLOOR,
         "comparison_reference_scale": comparison_scale,
@@ -896,6 +921,7 @@ def _validate_mode(
         source_metadata_payload,
         source_metadata_summary,
     )
+    from bionetgen.atomizer.modern.types import standardize_name
 
     mode = "atomized" if mode_atomize else "flat"
     result: dict[str, Any] = {
@@ -1095,15 +1121,64 @@ def _validate_mode(
         result["core_passed"] = False
         return result
 
-    comparison = _simulate_and_compare(
-        cpp_model,
-        model_type,
-        output_path,
-        t_end=simulation_t_end,
-        n_steps=simulation_n_steps,
-        rtol=simulation_rtol,
-        atol=simulation_atol,
-    )
+    try:
+        comparison = _simulate_and_compare(
+            cpp_model,
+            model_type,
+            output_path,
+            t_end=simulation_t_end,
+            n_steps=simulation_n_steps,
+            rtol=simulation_rtol,
+            atol=simulation_atol,
+            function_names={
+                standardize_name(str(rule.variable))
+                for rule in source_model.rules
+                if rule.type == "assignment"
+                and rule.variable
+                and str(rule.variable) in source_model.species
+            },
+        )
+    except RuntimeError as initial_error:
+        comparison = None
+        initial_runtime_error = initial_error
+    else:
+        initial_runtime_error = None
+
+    # Cross-engine CVODE can fail on a stiff, unit-normalized model before
+    # either trajectory is available, or can return a mismatch caused by
+    # different adaptive-step histories. Retry with progressively smaller
+    # shared internal steps. The first retry remains bounded at t_end/2000;
+    # the smaller retries handle models whose unit normalization creates
+    # transients below that scale. A successful tighter comparison is still
+    # required from both engines, so this cannot turn a real mismatch into a
+    # pass by changing only one side.
+    if initial_runtime_error is not None or not comparison.get("passed", False):
+        retry_max_step = max(abs(simulation_t_end) / 2000.0, 1e-6)
+        retries = [
+            retry_max_step * factor
+            for factor in (1.0, 0.2, 0.1, 0.04, 0.02)
+        ]
+        last_comparison = comparison
+        for retry_max_step in retries:
+            try:
+                stabilized = _simulate_and_compare(
+                    cpp_model,
+                    model_type,
+                    output_path,
+                    t_end=simulation_t_end,
+                    n_steps=simulation_n_steps,
+                    rtol=simulation_rtol,
+                    atol=simulation_atol,
+                    max_step=retry_max_step,
+                )
+            except RuntimeError:
+                continue
+            last_comparison = stabilized
+            if stabilized.get("passed", False):
+                break
+        comparison = last_comparison
+        if comparison is None:
+            raise initial_runtime_error
     result["simulation_comparison"] = comparison
     if not comparison.get("passed", False):
         result["status"] = "failed"

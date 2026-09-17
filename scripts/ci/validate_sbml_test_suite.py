@@ -77,6 +77,7 @@ def _simulate_and_compare(
     n_steps: int,
     rtol: float,
     atol: float,
+    function_names: set[str] | None = None,
 ) -> dict[str, Any]:
     """Compare BNG3/CVODE observables with libRoadRunner on one time grid."""
 
@@ -95,10 +96,22 @@ def _simulate_and_compare(
         rtol=rtol,
         atol=atol,
     )
-    names = list(bng_result.observables)
+    series = dict(bng_result.observables)
+    function_values = getattr(bng_result, "functions", {}) or {}
+    if function_names is None:
+        series.update(function_values)
+    else:
+        series.update(
+            {
+                name: values
+                for name, values in function_values.items()
+                if name in function_names
+            }
+        )
+    names = list(series)
     bng_time = np.asarray(bng_result.time, dtype=float)
     bng_values = {
-        name: np.asarray(bng_result.observables[name], dtype=float) for name in names
+        name: np.asarray(series[name], dtype=float) for name in names
     }
     rr = roadrunner.RoadRunner(str(output_path))
     integrator = rr.integrator
@@ -117,7 +130,15 @@ def _simulate_and_compare(
     selected_names = []
     missing = []
     for name in names:
-        candidates = [sbml_id(name), "obs_" + sbml_id(name)]
+        safe_name = sbml_id(name)
+        # The C++ SBML writer prefixes a function when its source name
+        # collides with a generated network species or parameter ID.
+        candidates = [
+            safe_name,
+            "obs_" + safe_name,
+            "func_" + safe_name,
+            "param_" + safe_name,
+        ]
         selected = next(
             (candidate for candidate in candidates if candidate in available), None
         )
@@ -556,6 +577,7 @@ def _validate_case(
         source_metadata_payload,
         source_metadata_summary,
     )
+    from bionetgen.atomizer.modern.types import standardize_name
 
     source_path = Path(case["path"])
     sbml = source_path.read_text(encoding="utf-8-sig")
@@ -710,6 +732,13 @@ def _validate_case(
             n_steps=simulation_n_steps,
             rtol=simulation_rtol,
             atol=simulation_atol,
+            function_names={
+                standardize_name(str(rule.variable))
+                for rule in parsed.rules
+                if rule.type == "assignment"
+                and rule.variable
+                and str(rule.variable) in parsed.species
+            },
         )
         record["simulation_comparison"] = comparison
         if not comparison.get("passed", False):

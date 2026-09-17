@@ -74,6 +74,166 @@ def test_sbml_level2_reaction_local_parameters_are_inlined():
     assert "k_local" not in result.bngl
 
 
+def test_sbml_rate_of_expands_from_explicit_rate_rule():
+    from bionetgen.atomizer.modern import (
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core">
+      <model id="rate_of_rate_rule">
+        <listOfCompartments><compartment id="c" size="1"/></listOfCompartments>
+        <listOfSpecies>
+          <species id="S" compartment="c" initialAmount="0"/>
+        </listOfSpecies>
+        <listOfParameters>
+          <parameter id="p" value="2" constant="false"/>
+        </listOfParameters>
+        <listOfRules>
+          <rateRule variable="p">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><times/><cn>0.5</cn><ci>p</ci></apply>
+            </math>
+          </rateRule>
+        </listOfRules>
+        <listOfReactions>
+          <reaction id="r">
+            <listOfProducts><speciesReference species="S"/></listOfProducts>
+            <kineticLaw>
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><csymbol definitionURL="http://www.sbml.org/sbml/symbols/rateOf">rateOf</csymbol><ci>p</ci></apply>
+              </math>
+            </kineticLaw>
+          </reaction>
+        </listOfReactions>
+      </model>
+    </sbml>"""
+
+    model = _model(xml)
+    assert model.reactions["r"].kinetic_law.math == "(0.5 * p)"
+
+    sct = build_species_composition_table(model)
+    bngl, _ = generate_bngl(
+        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+    )
+    assert "rateOf(" not in bngl
+    assert "0.5 * p_amt" in bngl
+
+
+def test_sbml_rate_of_uses_species_conversion_factor_for_each_derivative():
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core">
+      <model id="rate_of_mixed_conversion">
+        <listOfCompartments><compartment id="c" size="1"/></listOfCompartments>
+        <listOfSpecies>
+          <species id="S1" compartment="c" initialAmount="1" conversionFactor="s1_factor"/>
+          <species id="S2" compartment="c" initialAmount="0" conversionFactor="s2_factor"/>
+        </listOfSpecies>
+        <listOfParameters>
+          <parameter id="s1_factor" value="2"/>
+          <parameter id="s2_factor" value="3"/>
+          <parameter id="p" value="0" constant="false"/>
+        </listOfParameters>
+        <listOfRules>
+          <assignmentRule variable="p">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><plus/>
+                <apply><csymbol definitionURL="http://www.sbml.org/sbml/symbols/rateOf">rateOf</csymbol><ci>S1</ci></apply>
+                <apply><csymbol definitionURL="http://www.sbml.org/sbml/symbols/rateOf">rateOf</csymbol><ci>S2</ci></apply>
+              </apply>
+            </math>
+          </assignmentRule>
+        </listOfRules>
+        <listOfReactions>
+          <reaction id="r">
+            <listOfReactants><speciesReference species="S1"/></listOfReactants>
+            <listOfProducts><speciesReference species="S2"/></listOfProducts>
+            <kineticLaw>
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><times/><cn>0.5</cn><ci>S1</ci></apply>
+              </math>
+            </kineticLaw>
+          </reaction>
+        </listOfReactions>
+      </model>
+    </sbml>"""
+
+    model = _model(xml)
+
+    assert "(2)" in model.rules[0].math
+    assert "(3)" in model.rules[0].math
+    assert "rateOf" not in model.rules[0].math
+
+
+def test_sbml_rate_of_csymbol_text_is_not_duplicated():
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="rate_of_csymbol_text">
+        <listOfParameters>
+          <parameter id="p1" value="1" constant="false"/>
+          <parameter id="p2" constant="false"/>
+        </listOfParameters>
+        <listOfRules>
+          <rateRule variable="p1">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>2</cn></math>
+          </rateRule>
+          <assignmentRule variable="p2">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><csymbol definitionURL="http://www.sbml.org/sbml/symbols/rateOf">p1</csymbol><ci>p1</ci></apply>
+            </math>
+          </assignmentRule>
+        </listOfRules>
+      </model>
+    </sbml>"""
+
+    model = _model(xml)
+
+    assert model.rules[1].math == "(2)"
+
+
+def test_sbml_rate_of_expands_from_fixed_volume_reaction_flux():
+    from bionetgen.atomizer.modern import (
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core">
+      <model id="rate_of_reaction">
+        <listOfCompartments><compartment id="c" size="1"/></listOfCompartments>
+        <listOfSpecies>
+          <species id="A" compartment="c" initialAmount="1" hasOnlySubstanceUnits="true"/>
+          <species id="B" compartment="c" initialAmount="0" hasOnlySubstanceUnits="true"/>
+        </listOfSpecies>
+        <listOfParameters><parameter id="p" constant="false"/></listOfParameters>
+        <listOfInitialAssignments>
+          <initialAssignment symbol="p">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><csymbol definitionURL="http://www.sbml.org/sbml/symbols/rateOf">rateOf</csymbol><ci>A</ci></apply>
+            </math>
+          </initialAssignment>
+        </listOfInitialAssignments>
+        <listOfReactions>
+          <reaction id="r">
+            <listOfReactants><speciesReference species="A"/></listOfReactants>
+            <listOfProducts><speciesReference species="B"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>2</cn></math></kineticLaw>
+          </reaction>
+        </listOfReactions>
+      </model>
+    </sbml>"""
+
+    model = _model(xml)
+    assert model.initial_assignments[0].math == "((-1) * (2))"
+
+    sct = build_species_composition_table(model)
+    bngl, _ = generate_bngl(
+        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+    )
+    assert "rateOf(" not in bngl
+
+
 def test_sbml_event_folding_rejects_mutable_identifiers_and_preserves_false_flag():
     from bionetgen.atomizer.modern import (
         build_species_composition_table,

@@ -414,6 +414,7 @@ def topological_sort(
     sorted_species: List[str] = []
     visited: Set[str] = set()
     visiting: Set[str] = set()
+    species_order = {species_id: index for index, species_id in enumerate(species_ids)}
 
     def visit(species_id: str, path: Optional[List[str]] = None) -> None:
         if species_id in visited:
@@ -425,7 +426,14 @@ def topological_sort(
             return
         visiting.add(species_id)
         current_path = [*(path or []), species_id]
-        for dependency in dependencies.get(species_id, set()):
+        # Dependencies are stored as sets, but their traversal order must not
+        # leak into the emitted BNGL seed/network order.  Apart from making
+        # artifacts reproducible, stable ordering avoids changing the
+        # numerical path of stiff CVODE models between identical imports.
+        for dependency in sorted(
+            dependencies.get(species_id, set()),
+            key=lambda value: (species_order.get(value, len(species_order)), str(value)),
+        ):
             if dependency in species_ids:
                 visit(dependency, current_path)
         visiting.remove(species_id)

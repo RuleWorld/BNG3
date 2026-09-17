@@ -2012,6 +2012,7 @@ bool ReactionRule::buildReaction(
         std::string uniqSurface, uniqVolume;
         int hasMissing = 0, hasComp = 0;
         bool valid = true;
+        bool hasDistinctVolumes = false;
         for (const auto& match : matchSet) {
             const auto& comp = speciesList.get(match.speciesIndex).getCompartment();
             if (comp.empty()) { hasMissing++; continue; }
@@ -2020,17 +2021,40 @@ bool ReactionRule::buildReaction(
             if (dimIt == g_compartmentDimensions.end()) continue;
             if (dimIt->second == 2) {
                 if (uniqSurface.empty()) uniqSurface = comp;
-                else if (uniqSurface != comp) { valid = false; break; }
+                else if (uniqSurface != comp) valid = false;
             } else if (dimIt->second == 3) {
                 if (uniqVolume.empty()) uniqVolume = comp;
-                else if (uniqVolume != comp) { valid = false; break; }
+                else if (uniqVolume != comp) {
+                    hasDistinctVolumes = true;
+                    valid = false;
+                }
             }
         }
         if (valid && hasMissing > 0 && hasComp > 0) valid = false;
         if (valid && !uniqSurface.empty() && !uniqVolume.empty()) {
             valid = isAdjacentToSurface(uniqVolume, uniqSurface);
         }
-        if (!valid) return false;
+        // A population-level reaction may legitimately consume species from
+        // distinct volume compartments and create a separate product species
+        // (for example, an SBML transport/association law).  The aggregate
+        // graph can represent that case without joining molecules.  Keep the
+        // stricter rejection for rules that actually create or break a bond:
+        // those would require a cross-compartment complex, which BNGL cannot
+        // represent safely.
+        bool hasBondOperation = false;
+        for (const auto& operation : operations_) {
+            if (operation.type == TransformOp::Type::AddBond ||
+                operation.type == TransformOp::Type::DeleteBond) {
+                hasBondOperation = true;
+                break;
+            }
+        }
+        // Only the distinct-3D-volume case is safe to relax.  In particular,
+        // do not let this exception admit unrelated invalid combinations
+        // (different surfaces, surface/volume mixtures, or missing
+        // compartments) merely because the rule has no bond operation.
+        if (!valid && !(hasDistinctVolumes && !hasBondOperation &&
+                        hasMissing == 0 && uniqSurface.empty())) return false;
     }
 
     auto* graph = &aggregateGraph;
@@ -2429,6 +2453,18 @@ bool ReactionRule::buildReaction(
                     auto cloneIt = cloneMaps[pi].find(*nodeIter);
                     if (cloneIt == cloneMaps[pi].end()) continue;
                     auto* clonedMol = cloneIt->second;
+                    // A replacement rule may delete the matched reactant
+                    // molecule before this transport pass (for example,
+                    // `@outer:A() -> @inner:B()`).  cloneMaps intentionally
+                    // retains the original correspondence, so its value can
+                    // be a dangling pointer after DeleteMolecule.  Check
+                    // ownership by address before dereferencing it; the
+                    // replacement product already carries its own explicit
+                    // compartment and needs no remapping here.
+                    if (std::find(aggregateGraph.begin(), aggregateGraph.end(), clonedMol) ==
+                        aggregateGraph.end()) {
+                        continue;
+                    }
                     const auto& molComp = clonedMol->get_compartment();
                     auto mapIt = compMap.find(molComp);
                     if (mapIt != compMap.end()) {

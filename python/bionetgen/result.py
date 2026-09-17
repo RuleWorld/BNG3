@@ -16,6 +16,8 @@ class SimResult:
         1D array of time points.
     observables : dict[str, np.ndarray]
         Observable name → 1D array of values at each time point.
+    functions : dict[str, np.ndarray]
+        Exported zero-argument function name → values at each time point.
     concentrations : np.ndarray or None
         2D array (n_steps × n_species) of species concentrations (ODE/SSA only).
     construction_path : str or None
@@ -26,6 +28,7 @@ class SimResult:
     def __init__(self, raw: dict):
         self.time: np.ndarray = raw.get("time", np.array([]))
         self.observables: Dict[str, np.ndarray] = raw.get("observables", {})
+        self.functions: Dict[str, np.ndarray] = raw.get("functions", {})
         self.concentrations: Optional[np.ndarray] = raw.get("concentrations", None)
         self.construction_path: Optional[str] = raw.get("construction_path", None)
 

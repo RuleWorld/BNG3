@@ -44,6 +44,7 @@ struct OdeResult {
     std::vector<double> timePoints;                    // length = nSteps + 1
     std::vector<std::vector<double>> concentrations;   // [timeIndex][speciesIndex]
     std::vector<std::vector<double>> observables;      // [timeIndex][groupIndex]
+    std::vector<std::vector<double>> functions;        // [timeIndex][zero-arg function]
 };
 
 class OdeIntegrator {
@@ -117,6 +118,9 @@ private:
     void compile();
     void compileGroups();
     void updateGroups(const double* y, std::vector<double>& groupValues) const;
+    void updateFunctions(const std::vector<double>& groupValues,
+                         double time,
+                         std::vector<double>& functionValues) const;
     std::vector<double> outputTimes(const OdeOptions& options) const;
     std::optional<ast::Expression> parseStopIf(const OdeOptions& options) const;
     bool stopConditionMet(const ast::Expression& condition,

@@ -8,6 +8,7 @@
 #include <functional>
 #include <map>
 #include <stdexcept>
+#include <string_view>
 #include <unordered_set>
 
 #include "parser/antlr_compat.hpp"
@@ -57,7 +58,10 @@ std::string base64Encode(const std::string& input) {
 bool isInternalFunction(const std::string& name) {
     return name.rfind("__assign_rule__", 0) == 0 ||
            name.rfind("__rate_rule_in_", 0) == 0 ||
-           name.rfind("__rate_rule_out_", 0) == 0;
+           name.rfind("__rate_rule_out_", 0) == 0 ||
+           name.rfind("__rate_rule__", 0) == 0 ||
+           name.rfind("__rate_rule_pos__", 0) == 0 ||
+           name.rfind("__rate_rule_neg__", 0) == 0;
 }
 
 bool hasTotalRateModifier(const ast::Model& model, const std::string& origin) {
@@ -218,7 +222,7 @@ std::string SbmlWriter::write(const ast::Model& model, const engine::GeneratedNe
 
     // Assignment rules (observables + global functions)
     if (network && options.networksExport) {
-        sbml << writeAssignmentRules(model, groups, symbolIds);
+        sbml << writeAssignmentRules(model, groups, symbolIds, network);
     }
 
     // Reactions
@@ -419,7 +423,8 @@ std::string SbmlWriter::writeSpecies(const ast::Model& model, const engine::Gene
 std::string SbmlWriter::writeAssignmentRules(
     const ast::Model& model,
     const std::vector<ObservableGroup>& groups,
-    const SymbolIds& symbolIds) {
+    const SymbolIds& symbolIds,
+    const engine::GeneratedNetwork* network) {
     std::ostringstream sbml;
     sbml << std::setprecision(17);
 
@@ -487,6 +492,49 @@ std::string SbmlWriter::writeAssignmentRules(
         sbml << "      </assignmentRule>\n";
     }
 
+    // A BNGL rate-rule lowering uses a synthetic zero-reactant reaction so
+    // the continuous state can be represented in the reaction-rule grammar.
+    // SBML has a native rateRule for this exact construct.  Re-emit it here
+    // so readers such as libRoadRunner do not have to evaluate a signed
+    // reaction propensity, which they reject even though the differential
+    // equation itself is well-defined.
+    if (network != nullptr) {
+        static constexpr std::string_view prefix = "__rate_rule_";
+        for (const auto& rxn : network->reactions.all()) {
+            const auto& origin = rxn.getOriginRuleName();
+            std::string target;
+            if (origin.rfind(prefix, 0) == 0 &&
+                origin.rfind("__rate_rule__", 0) != 0) {
+                target = origin.substr(prefix.size());
+            } else {
+                const auto& rateLaw = rxn.getRateLaw();
+                static constexpr std::string_view functionPrefix = "__rate_rule__";
+                if (rateLaw.rfind(functionPrefix, 0) != 0) continue;
+                target = rateLaw.substr(functionPrefix.size());
+                const auto close = target.find('(');
+                if (close != std::string::npos) target.resize(close);
+            }
+            if (target.empty()) {
+                continue;
+            }
+            const auto functionName = std::string("__rate_rule__") + target;
+            const auto function = std::find_if(
+                model.getFunctions().begin(), model.getFunctions().end(),
+                [&](const auto& candidate) {
+                    return candidate.getName() == functionName &&
+                           candidate.getArgs().empty();
+                });
+            if (function == model.getFunctions().end()) continue;
+            const auto& state = rxn.getProducts().empty()
+                ? rxn.getReactants().front() : rxn.getProducts().front();
+            sbml << "      <rateRule variable=\"S" << (state + 1) << "\">\n";
+            sbml << "        <math xmlns=\"http://www.w3.org/1998/Math/MathML\">\n";
+            sbml << exprToMathML(function->getExpression(), "          ", symbolIds);
+            sbml << "        </math>\n";
+            sbml << "      </rateRule>\n";
+        }
+    }
+
     sbml << "    </listOfRules>\n";
     return sbml.str();
 }
@@ -507,6 +555,10 @@ std::string SbmlWriter::writeReactions(
     for (std::size_t r = 0; r < reactions.size(); ++r) {
         const auto& rxn = reactions[r];
         std::string reactionId = "R" + std::to_string(r + 1);
+        const bool syntheticRateRule =
+            (rxn.getOriginRuleName().rfind("__rate_rule_", 0) == 0 &&
+             rxn.getOriginRuleName().rfind("__rate_rule__", 0) != 0) ||
+            rxn.getRateLaw().rfind("__rate_rule__", 0) == 0;
 
         sbml << "      <reaction id=\"" << reactionId << "\" reversible=\"false\">\n";
 
@@ -557,7 +609,11 @@ std::string SbmlWriter::writeReactions(
         }
         sbml << "        <kineticLaw>\n";
         sbml << "          <math xmlns=\"http://www.w3.org/1998/Math/MathML\">\n";
-        sbml << rateLawToMathML(rxn, model, network, "            ", symbolIds);
+        if (syntheticRateRule) {
+            sbml << "            <cn> 0 </cn>\n";
+        } else {
+            sbml << rateLawToMathML(rxn, model, network, "            ", symbolIds);
+        }
         sbml << "          </math>\n";
         sbml << "        </kineticLaw>\n";
 
@@ -976,12 +1032,12 @@ std::string SbmlWriter::rateLawToMathML(
     std::vector<std::string> terms;
     const auto unitFactor = NetWriter::computeUnitConversionFactor(rxn, model, network);
     const bool totalRate = hasTotalRateModifier(model, rxn.getOriginRuleName());
-    // A TotalRate rule already carries the complete SBML flux.  Preserve the
-    // network statistical factor, however: repeated identical reactants use
-    // it to account for reaction multiplicity (for example 1/4! for four
-    // identical reactants).  Only the compartment/unit conversion is already
-    // present in the complete TotalRate expression.
-    double combinedFactor = rxn.getFactor();
+    // A TotalRate rule already carries the complete SBML flux.  Its reaction
+    // center symmetry factor is not part of that flux: multiplying it here
+    // would make a BNGL -> SBML round-trip disagree with the BNGL TotalRate
+    // evaluator (for example, a 3A rule would acquire an erroneous 1/3!).
+    // Ordinary elementary rates still retain the network factor.
+    double combinedFactor = totalRate ? 1.0 : rxn.getFactor();
     if (!totalRate && unitFactor.has_value()) combinedFactor *= *unitFactor;
 
     // Handle the rate expression

@@ -158,6 +158,12 @@ class ProcessedRate:
     force_irreversible: bool = False
     is_split_rxn: bool = False
     is_total_rate: bool = False
+    # A reversible SBML net law can lower to one complete flux in one
+    # direction and one elementary law in the other.  BNGL's trailing
+    # ``TotalRate`` modifier applies to the whole reversible rule, so retain
+    # the directional classification for the writer's two-rule fallback.
+    forward_is_total_rate: bool = False
+    reverse_is_total_rate: bool = False
 
     @property
     def rateString(self) -> str:
@@ -878,12 +884,29 @@ def bngl_function(
     species_with_conc_functions = species_with_conc_functions or set()
     sbml_to_bngl_id = sbml_to_bngl_id or {}
     rate_rule_variables = rate_rule_variables or set()
+    assignment_aliases = {
+        alias
+        for variable in assignment_rule_variables
+        for alias in (str(variable), standardize_name(str(variable)))
+    }
+    rate_rule_aliases = {
+        alias
+        for variable in rate_rule_variables
+        for alias in (str(variable), standardize_name(str(variable)))
+    }
     is_saturation = bool(re.search(r"\b(?:Sat|MM|Hill)\s*\(", result))
 
     def map_token(match: re.Match) -> str:
         token = match.group(1)
         end = match.end()
         if re.match(r"\s*\(", result[end:]):
+            return token
+        # Assignment-rule targets that are also SBML species must resolve as
+        # zero-argument BNGL functions, not as the amount observable that the
+        # ordinary species namespace would select.  Rate-rule targets remain
+        # amount-valued states and keep the historical mapping below.
+        token_aliases = {token, standardize_name(token)}
+        if token_aliases & assignment_aliases and not token_aliases & rate_rule_aliases:
             return token
         mapped = sbml_to_bngl_id.get(token)
         if mapped is not None:
@@ -1503,6 +1526,45 @@ def _safe_numeric_expression(
     return result if math.isfinite(result) else None
 
 
+def _contains_static_zero_divisor(expression: str) -> bool:
+    """Detect a literal arithmetic division by zero in an SBML expression."""
+
+    text = str(expression or "")
+    numeric_only = re.compile(r"[0-9eE+*/^().\s-]+")
+    for match in re.finditer(r"/", text):
+        index = match.end()
+        while index < len(text) and text[index].isspace():
+            index += 1
+        if index >= len(text):
+            continue
+        start = index
+        if text[index] == "(":
+            depth = 0
+            while index < len(text):
+                if text[index] == "(":
+                    depth += 1
+                elif text[index] == ")":
+                    depth -= 1
+                    if depth == 0:
+                        index += 1
+                        break
+                index += 1
+            divisor = text[start:index]
+        else:
+            number = re.match(
+                r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?", text[index:]
+            )
+            if number is None:
+                continue
+            index += number.end()
+            divisor = text[start:index]
+        if not numeric_only.fullmatch(divisor):
+            continue
+        if _safe_numeric_expression(divisor, {}) == 0.0:
+            return True
+    return False
+
+
 def _rewrite_mass_action_symbols(
     expression: str,
     species_to_compartment: Mapping[str, str],
@@ -1617,9 +1679,13 @@ def check_mass_action(
         values.append(value)
 
     mean = sum(values) / len(values)
-    if abs(mean) < 1e-12:
-        return 0.0
     variance = sum((value - mean) ** 2 for value in values) / len(values)
+    # Do not use an absolute-magnitude cutoff here.  A valid SBML flux can be
+    # much smaller than 1e-12 in the source numeric scale.  Treating such a
+    # value as exactly zero can erase a state-dependent law (including a
+    # negative flux) before the nonlinear-rate path has a chance to preserve
+    # it.  Exact zero still passes naturally because its variance and
+    # coefficient of variation are both zero.
     coefficient_of_variation = math.sqrt(variance) / (abs(mean) + 1e-60)
     return mean if coefficient_of_variation < 1e-4 else None
 
@@ -1735,10 +1801,17 @@ def _prepared_kinetic_math(
         for species_id in model.species
         for alias in (species_id, standardize_name(species_id))
     }
+    species_assignment_targets = {
+        standardize_name(variable)
+        for variable in _lowerable_species_assignment_rules(model)
+    }
     concentration_names = {
         standardize_name(species_id)
         for species_id, species in model.species.items()
-        if not species.has_only_substance_units
+        if (
+            not species.has_only_substance_units
+            and standardize_name(species_id) not in species_assignment_targets
+        )
     }
     math_expression = _inline_reaction_fluxes(
         math_expression,
@@ -1754,9 +1827,17 @@ def _prepared_kinetic_math(
 
 
 def _strip_compartment_rate_factors(
-    expression: str, model: SBMLModel, reactants: Sequence[str]
+    expression: str,
+    model: SBMLModel,
+    reactants: Sequence[str],
+    reaction_compartment: Optional[str] = None,
 ) -> str:
-    """Remove BNG2-exported compartment factors before rate decomposition."""
+    """Return the elementary candidate without its reaction volume factor.
+
+    This is used only as a classification candidate.  A complete SBML flux
+    must retain its compartment geometry; the caller keeps the original
+    expression whenever it is nonlinear or state-dependent.
+    """
 
     result = str(expression or "")
     if not reactants:
@@ -1766,38 +1847,30 @@ def _strip_compartment_rate_factors(
         for species_id in reactants
     ):
         return result
-    for compartment_id in model.compartments:
-        standardized = standardize_name(str(compartment_id))
-        result = re.sub(
-            rf"\s*\*\s*__compartment_{re.escape(standardized)}__\s*",
-            " ",
-            result,
+    target_compartment = reaction_compartment
+    if not target_compartment and reactants:
+        first_species = model.species.get(reactants[0])
+        target_compartment = (
+            getattr(first_species, "compartment", None)
+            if first_species is not None
+            else None
         )
-        result = re.sub(
-            rf"\s*\*\s*{re.escape(str(compartment_id))}\b\s*",
-            " ",
-            result,
-        )
-        result = re.sub(
-            rf"\s*/\s*__compartment_{re.escape(standardized)}__\s*",
-            " ",
-            result,
-        )
-        result = re.sub(
-            rf"\s*/\s*{re.escape(str(compartment_id))}\b\s*",
-            " ",
-            result,
-        )
-        result = re.sub(
-            rf"^\s*__compartment_{re.escape(standardized)}__\s*\*\s*",
-            "",
-            result,
-        )
-        result = re.sub(
-            rf"^\s*{re.escape(str(compartment_id))}\b\s*\*\s*",
-            "",
-            result,
-        )
+    if not target_compartment or target_compartment not in model.compartments:
+        return result.strip() or "1"
+    standardized = standardize_name(str(target_compartment))
+    for pattern in (
+        rf"\s*\*\s*__compartment_{re.escape(standardized)}__\s*",
+        rf"\s*\*\s*{re.escape(str(target_compartment))}\b\s*",
+        rf"\s*/\s*__compartment_{re.escape(standardized)}__\s*",
+        rf"\s*/\s*{re.escape(str(target_compartment))}\b\s*",
+    ):
+        result = re.sub(pattern, " ", result)
+    result = re.sub(
+        rf"^\s*__compartment_{re.escape(standardized)}__\s*\*\s*", "", result
+    )
+    result = re.sub(
+        rf"^\s*{re.escape(str(target_compartment))}\b\s*\*\s*", "", result
+    )
     return result.strip() or "1"
 
 
@@ -1884,7 +1957,14 @@ def _rate_for_reaction(
     concentration_names = {
         standardize_name(species_id)
         for species_id, species in model.species.items()
-        if not species.has_only_substance_units
+        if (
+            not species.has_only_substance_units
+            and standardize_name(species_id)
+            not in {
+                standardize_name(variable)
+                for variable in _lowerable_species_assignment_rules(model)
+            }
+        )
     }
     if reactant_structures is not None:
         reactant_structures = {
@@ -1893,13 +1973,6 @@ def _rate_for_reaction(
             if species_id in reactants
         }
 
-    # BNG2-exported elementary SBML laws may carry the reaction compartment as
-    # a leading volume factor (for example ``cell * k * A``).  The Playground
-    # writer removes that factor before normalizing explicit reactant factors;
-    # otherwise the emitted BNGL rate constant is multiplied by the volume a
-    # second time.  Restrict this bounded cleanup to elementary laws that
-    # actually mention a reactant, so zero-order fluxes retain their volume
-    # semantics.
     has_saturation = bool(re.search(r"\b(?:Sat|MM|Hill)\s*\(", math))
     functional = _is_functional_rate_expression(math)
     if reactant_structures:
@@ -1909,31 +1982,62 @@ def _rate_for_reaction(
         # the factor already represented by the BNGL pattern.
         math = _extract_statistical_factor(convert_math_expression(math), reactant_structures)
     compartment_stripped_math = _strip_compartment_rate_factors(
-        math, model, reactants
+        math,
+        model,
+        reactants,
+        reaction_compartment=reaction.compartment,
     )
-    if compartment_stripped_math != math:
-        # BNG2-exported elementary laws may contain a leading/trailing
-        # compartment volume factor.  Remove it before classifying the law;
-        # otherwise a harmless ``/ cell`` makes the expression look
-        # nonlinear and the concentration helper applies the volume twice.
-        math = compartment_stripped_math
+    preserved_compartment_flux = compartment_stripped_math != math
     reactant_names = {standardize_name(species_id) for species_id in reactants}
+
+    def references_species(expression: str, species_id: str) -> bool:
+        standardized = standardize_name(species_id)
+        return bool(
+            re.search(rf"\b{re.escape(standardized)}\b", expression)
+            or re.search(
+                rf"_c_{re.escape(standardized)}\s*\(",
+                expression,
+                re.IGNORECASE,
+            )
+            or re.search(
+                rf"\b{re.escape(standardized)}_amt\b",
+                expression,
+                re.IGNORECASE,
+            )
+        )
+
+    classification_math = compartment_stripped_math
+    # A retained SBML flux is already a complete amount/time expression.  If
+    # it omits any consumed species, it cannot be emitted as an elementary
+    # BNGL coefficient: the reaction pattern would multiply the law by that
+    # species a second time.  Treat this as a nonlinear/complete flux so the
+    # caller can mark the rule TotalRate.
+    has_missing_reactant = bool(reactants) and any(
+        not references_species(classification_math, species_id)
+        for species_id in set(reactants)
+    )
     has_nonreactant_species = any(
-        re.search(rf"\b{re.escape(standardize_name(species_id))}\b", math)
+        references_species(classification_math, species_id)
         and standardize_name(species_id) not in reactant_names
         for species_id in model.species
     )
-    has_inverse_power = bool(
-        re.search(r"\^\s*\(\s*-\s*\d", math)
-        or re.search(r"\^\s*-\s*\d", math)
-    )
     nonlinear = (
         has_saturation
-        or "/" in math
+        or "/" in classification_math
         or functional
         or has_nonreactant_species
-        or has_inverse_power
+        or has_missing_reactant
+        or bool(
+            re.search(r"\^\s*\(\s*-\s*\d", classification_math)
+            or re.search(r"\^\s*-\s*\d", classification_math)
+        )
     )
+
+    # The reaction-compartment factor is redundant only for an elementary
+    # amount law.  Preserve it on complete SBML fluxes, where it converts the
+    # concentration-valued state expression back to an amount/time flux.
+    if not nonlinear:
+        math = compartment_stripped_math
 
     # Algebraically nonlinear-looking SBML syntax can still be an elementary
     # mass-action law (the stochastic suite deliberately exercises this with
@@ -1955,6 +2059,7 @@ def _rate_for_reaction(
         _ENABLE_MASS_ACTION_CHECK
         and not functional
         and not has_saturation
+        and not (preserved_compartment_flux and nonlinear)
         and len(model.reactions) < _MASS_ACTION_SKIP_MIN_REACTIONS
         and len(converted_for_check) < _MASS_ACTION_SKIP_EXPR_LEN
         and not re.search(r"\btime\s*\(", converted_for_check)
@@ -2136,14 +2241,21 @@ def _reaction_species_ids(
 
 
 def _rate_requires_total_rate(
-    rate: str, reactant_ids: Optional[Sequence[str]] = None
+    rate: str,
+    reactant_ids: Optional[Sequence[str]] = None,
+    source_rate: Optional[str] = None,
 ) -> bool:
     """Identify retained SBML fluxes that still contain dynamic state factors.
 
-    A non-numeric rate is not automatically a complete flux: a zero-argument
-    parameter function can be the coefficient of an ordinary mass-action rule.
-    Only retain ``TotalRate`` when the emitted expression still references a
-    reactant (or is a dynamic zero-order flux).
+    Numeric elementary coefficients are emitted without ``TotalRate`` when
+    the original SBML law explicitly contained the reactant factor.  That is
+    the mass-action case: the lowering removes the factor and BNGL must add
+    it back from the reaction pattern.  A parameter-only SBML law is already
+    a complete flux, even when its value is numeric, and must retain
+    ``TotalRate`` so BNGL does not multiply it by the reactant population.
+    Any non-numeric expression that survives rate lowering is likewise a
+    complete SBML flux: it either retains a live reactant operand or has had
+    an explicit reactant factor removed from a functional/compound law.
     """
 
     parts = _split_reversible_rate(rate) or (rate,)
@@ -2153,10 +2265,29 @@ def _rate_requires_total_rate(
             _evaluate_arithmetic(convert_math_expression(part)) is None
             for part in parts
         )
-    for part in parts:
-        if _evaluate_arithmetic(convert_math_expression(part)) is not None:
-            continue
-        if any(
+    saw_dynamic_part = False
+    source_parts = (
+        list(_split_reversible_rate(source_rate) or (source_rate,))
+        if source_rate
+        else []
+    )
+    for index, part in enumerate(parts):
+        source_part = (
+            source_parts[min(index, len(source_parts) - 1)]
+            if source_parts
+            else ""
+        )
+        source_has_reactant = bool(source_part) and any(
+            re.search(
+                rf"(?:\b{re.escape(standardize_name(species_id))}\b|"
+                rf"_c_{re.escape(standardize_name(species_id))}\s*\(|"
+                rf"\b{re.escape(standardize_name(species_id))}_amt\b)",
+                source_part,
+                re.IGNORECASE,
+            )
+            for species_id in reactants
+        )
+        lowered_has_reactant = any(
             re.search(
                 rf"(?:\b{re.escape(standardize_name(species_id))}\b|"
                 rf"_c_{re.escape(standardize_name(species_id))}\s*\(|"
@@ -2165,9 +2296,24 @@ def _rate_requires_total_rate(
                 re.IGNORECASE,
             )
             for species_id in reactants
-        ):
+        )
+        if source_parts:
+            # If the source flux contains no consumed species, it is complete
+            # even when it is numerically constant. If the source does contain
+            # a consumed species, the lowered law is complete only when that
+            # dynamic operand remains in the expression; otherwise BNGL must
+            # supply it from the reaction pattern.
+            if not source_has_reactant:
+                return True
+            if lowered_has_reactant:
+                return True
+            continue
+        if _evaluate_arithmetic(convert_math_expression(part)) is not None:
+            continue
+        saw_dynamic_part = True
+        if lowered_has_reactant:
             return True
-    return False
+    return saw_dynamic_part
 
 
 def process_reaction_rate(
@@ -2201,19 +2347,23 @@ def process_reaction_rate(
         return ProcessedRate(
             rate,
             force_irreversible=bool(reaction.reversible),
-            is_total_rate=_rate_requires_total_rate(rate, _reaction_species_ids(reaction.reactants)),
+            is_total_rate=_rate_requires_total_rate(
+                rate,
+                _reaction_species_ids(reaction.reactants),
+                prepared_math,
+            ),
         )
 
     forward_ids = _reaction_species_ids(reaction.reactants)
-    split = (
-        _split_reversible_rate(
-            _strip_compartment_rate_factors(
-                convert_math_expression(prepared_math), model, forward_ids
-            )
-        )
-        if reaction.reversible
-        else None
-    )
+    split = None
+    if reaction.reversible:
+        converted_prepared = convert_math_expression(prepared_math)
+        # Prefer the source-shaped net flux.  An outer compartment factor is
+        # part of the SBML amount/time flux and must not be dropped merely to
+        # expose two directional laws.  If the source expression has no
+        # directly splittable top-level subtraction, retain the complete net
+        # flux and let the caller lower it to an irreversible TotalRate rule.
+        split = _split_reversible_rate(converted_prepared)
     if split is None:
         rate = _rate_for_reaction(
             reaction,
@@ -2227,7 +2377,11 @@ def process_reaction_rate(
         return ProcessedRate(
             rate,
             force_irreversible=bool(reaction.reversible),
-            is_total_rate=_rate_requires_total_rate(rate, _reaction_species_ids(reaction.reactants)),
+            is_total_rate=_rate_requires_total_rate(
+                rate,
+                _reaction_species_ids(reaction.reactants),
+                prepared_math,
+            ),
         )
 
     reverse_ids = _reaction_species_ids(reaction.products)
@@ -2267,14 +2421,19 @@ def process_reaction_rate(
             force_irreversible=True,
             is_split_rxn=True,
         )
+    forward_is_total_rate = _rate_requires_total_rate(
+        forward_rate, forward_ids, split[0]
+    )
+    reverse_is_total_rate = _rate_requires_total_rate(
+        reverse_rate, reverse_ids, split[1]
+    )
     return ProcessedRate(
         f"{forward_rate}, {reverse_rate}",
         force_irreversible=False,
         is_split_rxn=False,
-        is_total_rate=(
-            _rate_requires_total_rate(forward_rate, forward_ids)
-            or _rate_requires_total_rate(reverse_rate, reverse_ids)
-        ),
+        is_total_rate=forward_is_total_rate or reverse_is_total_rate,
+        forward_is_total_rate=forward_is_total_rate,
+        reverse_is_total_rate=reverse_is_total_rate,
     )
 
 
@@ -2301,6 +2460,104 @@ def _record_import_warning(
             "severity": severity,
         }
     )
+
+
+def _lowerable_species_assignment_rules(
+    model: SBMLModel,
+) -> "OrderedDict[str, SBMLRule]":
+    """Return dynamic species assignment rules that can be emitted as functions.
+
+    A species assignment rule is algebraic rather than a population state.  A
+    zero-argument BNGL function is an exact representation when the target is
+    not also a reaction participant, event target, or part of an ambiguous or
+    cyclic assignment-rule set.  The latter cases remain explicit warnings so
+    the writer never silently changes a state equation into an algebraic one.
+    """
+
+    candidates: "OrderedDict[str, SBMLRule]" = OrderedDict()
+    duplicate_targets: Set[str] = set()
+    participants = {
+        str(reference.species)
+        for reaction in model.reactions.values()
+        for reference in [*reaction.reactants, *reaction.products]
+        if reference.species != "EmptySet"
+    }
+    event_targets = {
+        str(getattr(assignment, "variable", "") or "")
+        for event in model.events
+        for assignment in event.assignments
+        if getattr(assignment, "variable", None)
+    }
+    for rule in model.rules:
+        variable = str(rule.variable or "")
+        if (
+            rule.type != "assignment"
+            or not variable
+            or variable not in model.species
+            or not str(rule.math or "").strip()
+            or getattr(rule, "math_from_empty_boolean", False)
+        ):
+            continue
+        if variable in candidates:
+            duplicate_targets.add(variable)
+        else:
+            candidates[variable] = rule
+
+    for variable in duplicate_targets:
+        candidates.pop(variable, None)
+
+    candidates = OrderedDict(
+        (
+            variable,
+            rule,
+        )
+        for variable, rule in candidates.items()
+        if variable not in participants and variable not in event_targets
+    )
+    if not candidates:
+        return candidates
+
+    # Assignment functions may reference one another.  Reject cycles as a
+    # group; C++ function evaluation is intentionally not a cyclic algebraic
+    # solver and must not recurse indefinitely on malformed input.
+    dependencies: Dict[str, Set[str]] = {}
+    for variable, rule in candidates.items():
+        dependencies[variable] = {
+            dependency
+            for dependency in candidates
+            if dependency != variable
+            and (
+                re.search(rf"\b{re.escape(dependency)}\b", rule.math)
+                or re.search(
+                    rf"\b{re.escape(standardize_name(dependency))}\b", rule.math
+                )
+            )
+        }
+
+    visiting: Set[str] = set()
+    visited: Set[str] = set()
+    cyclic: Set[str] = set()
+
+    def visit(variable: str, path: Tuple[str, ...] = ()) -> None:
+        if variable in visiting:
+            if variable in path:
+                cyclic.update(path[path.index(variable) :])
+            else:
+                cyclic.add(variable)
+            return
+        if variable in visited:
+            return
+        visiting.add(variable)
+        for dependency in dependencies.get(variable, set()):
+            visit(dependency, (*path, variable))
+        visiting.remove(variable)
+        visited.add(variable)
+
+    for variable in candidates:
+        visit(variable)
+    for variable in cyclic:
+        candidates.pop(variable, None)
+    return candidates
 
 
 def _update_event_translation_warning(
@@ -2475,34 +2732,15 @@ def _inline_reaction_fluxes(
     return result
 
 
-def _conversion_factor_for_reaction(
-    reaction: SBMLReaction, model: SBMLModel
+def _conversion_factor_for_species(
+    species_id: str, model: SBMLModel
 ) -> Optional[str]:
-    """Resolve one BNGL-wide scalar, or report an unrepresentable mixed flux."""
+    """Resolve the effective SBML conversion factor for one species."""
 
-    model_factor = getattr(model, "conversion_factor", None) or None
-    effective: List[Optional[str]] = []
-    for reference in [*reaction.reactants, *reaction.products]:
-        if reference.species == "EmptySet":
-            continue
-        species = model.species.get(reference.species)
-        species_factor = (
-            getattr(species, "conversion_factor", None) if species else None
-        )
-        effective.append(species_factor or model_factor)
-    if not effective:
-        return None
-    unique = set(effective)
-    if len(unique) != 1:
-        _record_import_warning(
-            model,
-            f'Reaction "{reaction.id}" has species with differing '
-            "conversionFactors; a single BNGL rule cannot apply different "
-            "scalars per species, so the factor was not applied.",
-            severity="dropped",
-        )
-        return None
-    factor_id = effective[0]
+    species = model.species.get(species_id)
+    factor_id = (
+        getattr(species, "conversion_factor", None) if species else None
+    ) or (getattr(model, "conversion_factor", None) or None)
     if factor_id is None:
         return None
     parameter = model.parameters.get(factor_id)
@@ -2516,6 +2754,47 @@ def _conversion_factor_for_reaction(
     if numeric_value is not None and numeric_value == numeric_value:
         return _number(numeric_value)
     return standardize_name(factor_id)
+
+
+def _mixed_conversion_factor_expressions(
+    reaction: SBMLReaction, model: SBMLModel
+) -> Optional[Dict[str, Optional[str]]]:
+    """Return per-species factors when one SBML flux needs multiple scalars."""
+
+    expressions: "OrderedDict[str, Optional[str]]" = OrderedDict()
+    for reference in [*reaction.reactants, *reaction.products]:
+        if reference.species == "EmptySet":
+            continue
+        species_id = str(reference.species)
+        expressions[species_id] = _conversion_factor_for_species(species_id, model)
+    if len(set(expressions.values())) <= 1:
+        return None
+    return dict(expressions)
+
+
+def _conversion_factor_for_reaction(
+    reaction: SBMLReaction, model: SBMLModel
+) -> Optional[str]:
+    """Resolve one BNGL-wide scalar, or report an unrepresentable mixed flux."""
+
+    factors = _mixed_conversion_factor_expressions(reaction, model)
+    if factors is not None:
+        _record_import_warning(
+            model,
+            f'Reaction "{reaction.id}" has species with differing '
+            "conversionFactors; a single BNGL rule cannot apply different "
+            "scalars per species, so the factor was not applied.",
+            severity="dropped",
+        )
+        return None
+    for factor in [
+        _conversion_factor_for_species(str(reference.species), model)
+        for reference in [*reaction.reactants, *reaction.products]
+        if reference.species != "EmptySet"
+    ]:
+        if factor is not None:
+            return factor
+    return None
 
 
 def write_parameters(
@@ -2677,8 +2956,6 @@ def _seed_symbol_values(
         # passes for dependencies between initial assignments.
         for assignment in model.initial_assignments:
             symbol = getattr(assignment, "symbol", "")
-            if is_species(symbol):
-                continue
             value = _substitute_seed_symbols(
                 str(getattr(assignment, "math", "") or ""), symbols
             )
@@ -2775,7 +3052,18 @@ def write_seed_species(
     # separate fixed and dynamic seed declarations.
     grouped: "OrderedDict[Tuple[bool, str], Tuple[str, object]]" = OrderedDict()
     seed_symbols = _seed_symbol_values(model, seed_species)
+    rate_rule_targets = {
+        str(getattr(rule, "variable", "") or "")
+        for rule in model.rules
+        if getattr(rule, "type", "") == "rate"
+    }
+    species_assignment_targets = set(_lowerable_species_assignment_rules(model))
     for seed in seed_species:
+        if seed.sbml_id in species_assignment_targets:
+            # Assignment-rule species are algebraic outputs, not independent
+            # BNGL populations.  Their values are emitted as zero-argument
+            # functions below.
+            continue
         pattern = _pattern(seed.species, seed.compartment)
         if not pattern:
             continue
@@ -2791,6 +3079,7 @@ def write_seed_species(
         source_species = model.species.get(seed.sbml_id)
         fixed = bool(
             source_species
+            and seed.sbml_id not in rate_rule_targets
             and (source_species.constant or source_species.boundary_condition)
         )
         concentration = seed.concentration
@@ -2825,7 +3114,13 @@ def write_observables(
     lines = []
     observable_map: Dict[str, str] = OrderedDict()
     used = set()
+    species_assignment_targets = set(_lowerable_species_assignment_rules(model))
     for species_id, species in model.species.items():
+        if species_id in species_assignment_targets:
+            # The source species is algebraically defined; exposing its
+            # independent seed population would produce a second, divergent
+            # state variable in the generated BNGL network.
+            continue
         # Expressions are translated from SBML identifiers, not display
         # names.  Keep observable names on that same key so an SBML species
         # such as id="S", name="Substrate" is still referenced as S_amt.
@@ -3196,6 +3491,12 @@ def write_functions(
     synthetic_rate_rule_variables = synthetic_rate_rule_variables or set()
     skip_assignment_rules = skip_assignment_rules or set()
     assignment_rules = _assignment_rules_for_writer(model)
+    lowerable_species_assignment_rules = _lowerable_species_assignment_rules(model)
+    lowerable_species_assignment_variables = {
+        alias
+        for variable in lowerable_species_assignment_rules
+        for alias in (variable, standardize_name(variable))
+    }
     synthetic_names = {
         alias
         for variable in synthetic_rate_rule_variables
@@ -3232,6 +3533,7 @@ def write_functions(
         for rule in model.rules
         if rule.variable and rule.type == "rate"
     )
+    assignment_rule_variables.update(lowerable_species_assignment_variables)
     rate_rule_variables = {
         standardize_name(rule.variable)
         for rule in model.rules
@@ -3249,7 +3551,22 @@ def write_functions(
         for rule in assignment_rules
         if rule.variable and str(rule.variable) not in species_assignment_variables
     }
-    species_map = {species_id: species_id for species_id in model.species}
+    assignment_rule_parameter_ids = {
+        str(rule.variable)
+        for rule in assignment_rules
+        if rule.variable and str(rule.variable) not in species_assignment_variables
+    }
+    assignment_rule_parameter_ids.update(
+        standardize_name(str(rule.variable))
+        for rule in assignment_rules
+        if rule.variable and str(rule.variable) not in species_assignment_variables
+    )
+    species_map = {
+        alias: species_id
+        for species_id in model.species
+        if species_id not in lowerable_species_assignment_rules
+        for alias in (species_id, standardize_name(species_id))
+    }
     for variable in synthetic_rate_rule_variables:
         # Synthetic rate-rule state species use the SBML variable as their
         # lookup key, while their generated molecule pattern is carried by
@@ -3259,7 +3576,14 @@ def write_functions(
     concentration_names = {
         standardize_name(species_id)
         for species_id, species in model.species.items()
-        if not species.has_only_substance_units
+        if (
+            not species.has_only_substance_units
+            and standardize_name(species_id)
+            not in {
+                standardize_name(variable)
+                for variable in _lowerable_species_assignment_rules(model)
+            }
+        )
     }
 
     # SBML species are amount-valued in the BNGL observable block.  The
@@ -3267,6 +3591,8 @@ def write_functions(
     # rational/nonlinear kinetic laws in compartments with volume != 1.
     for species_id, species in model.species.items():
         name = standardize_name(species_id)
+        if species_id in lowerable_species_assignment_rules:
+            continue
         function_name = "_c_" + name
         if function_name in assignment_rule_names:
             # Preserve an explicit SBML assignment rule instead of emitting
@@ -3314,6 +3640,37 @@ def write_functions(
         if not function.arguments:
             zero_argument_functions.append(name)
         emitted_names.add(name)
+
+    # A dynamic SBML assignment rule targeting a species is an algebraic
+    # value, not an independently evolving BNGL population.  BNGL functions
+    # preserve that value exactly for reaction laws and for the C++ SBML
+    # writer, which re-emits them as native assignment rules.
+    for variable, rule in lowerable_species_assignment_rules.items():
+        body = _inline_reaction_fluxes(
+            rule.math,
+            model,
+            assignment_rule_variables,
+            set(),
+            concentration_names,
+            species_map,
+            replace_loc_params,
+        )
+        body = extend_function(body, {}, model.function_definitions)
+        body = bngl_function(
+            body,
+            variable,
+            [],
+            list(model.compartments),
+            assignment_rule_variables=assignment_rule_variables,
+            species_with_conc_functions=concentration_names,
+            sbml_to_bngl_id=species_map,
+            rate_rule_variables=rate_rule_variables,
+        )
+        body = _map_compartment_references(convert_math_expression(body), model)
+        name = standardize_name(variable)
+        lines.append(f"{name}() = {body}")
+        emitted_names.add(name)
+
     emitted_assignment_rules: Set[str] = set()
     for rule in _ordered_assignment_rules(assignment_rules):
         rule_name = standardize_name(rule.variable)
@@ -3339,6 +3696,9 @@ def write_functions(
             {
                 parameter_id: parameter.value
                 for parameter_id, parameter in model.parameters.items()
+                if str(parameter_id) not in assignment_rule_parameter_ids
+                and standardize_name(str(parameter_id))
+                not in assignment_rule_parameter_ids
             },
             model.function_definitions,
         )
@@ -3653,16 +4013,31 @@ def write_reaction_rules(
     max_bngl_stoichiometry = 100
     lines = []
     used_labels = set()
+    # In SBML, a rate rule is the defining derivative for its variable.  A
+    # species may still occur in a reaction in real-world models (including
+    # several BioModels records), but retaining that participant in BNGL would
+    # add the reaction stoichiometric contribution a second time.  Keep the
+    # species in the kinetic expression as a state operand while removing it
+    # from the reaction pattern; the synthetic TotalRate rule below then owns
+    # its derivative, matching libRoadRunner's rate-rule semantics.
+    rate_rule_species = {
+        species_id
+        for species_id in model.species
+        if any(
+            rule.variable == species_id
+            or standardize_name(str(rule.variable or ""))
+            == standardize_name(str(species_id))
+            for rule in model.rules
+            if getattr(rule, "type", "") == "rate" and rule.variable
+        )
+    }
     for reaction_id, reaction in model.reactions.items():
-        if not reaction.reactants and not reaction.products:
-            _record_import_warning(
-                model,
-                f'Reaction "{reaction_id}" has no reactants or products; '
-                "a no-op reaction cannot be preserved by the SBML round-trip.",
-                category="reactionParticipants",
-                severity="dropped",
-            )
-            continue
+        # SBML permits a reaction with no species references.  Preserve its
+        # kinetic-law identity as a zero-effect BNGL rule; BNG3's parser and
+        # SBML writer both retain ``0 -> 0`` reactions.  This is distinct from
+        # a reaction whose participants were removed below because a rate rule
+        # is the sole owner of those species derivatives.
+        source_is_noop = not reaction.reactants and not reaction.products
         reactant_species = (
             model.species.get(reaction.reactants[0].species)
             if reaction.reactants
@@ -3769,7 +4144,7 @@ def write_reaction_rules(
         reactants: List[str] = []
         products: List[str] = []
         for reference in reaction.reactants:
-            if reference.species == "EmptySet":
+            if reference.species == "EmptySet" or reference.species in rate_rule_species:
                 continue
             reactants.extend(
                 [
@@ -3792,7 +4167,7 @@ def write_reaction_rules(
                 * int(round(reference.stoichiometry))
             )
         for reference in reaction.products:
-            if reference.species == "EmptySet":
+            if reference.species == "EmptySet" or reference.species in rate_rule_species:
                 continue
             mapped = _multi_product_structure(
                 model, reference.species, reaction, reference
@@ -3817,6 +4192,11 @@ def write_reaction_rules(
                     species_compartment_prefix=species_compartment_prefix,
                 )
             products.extend([product_pattern] * int(round(reference.stoichiometry)))
+        if not reactants and not products and not source_is_noop:
+            # A reaction whose only participant is rate-rule-controlled has no
+            # independent stoichiometric effect after the target is removed.
+            # Its kinetic law remains available to rate-rule inlining above.
+            continue
         label = standardize_name(reaction.name or reaction_id)
         candidate = label
         suffix = 2
@@ -3824,35 +4204,84 @@ def write_reaction_rules(
             candidate = f"{label}_{suffix}"
             suffix += 1
         used_labels.add(candidate)
-        conversion_factor = _conversion_factor_for_reaction(reaction, model)
         structures = {
             species_id: entry.structure
             for species_id, entry in sct.entries.items()
             if entry.structure is not None
         }
+        mixed_conversion_factors = _mixed_conversion_factor_expressions(
+            reaction, model
+        )
+        mixed_source_rate: Optional[str] = None
+        if mixed_conversion_factors is not None and not atomize:
+            prepared_math = _prepared_kinetic_math(
+                reaction,
+                model,
+                replace_loc_params=replace_loc_params,
+                reaction_id=reaction_id,
+            )
+            reversible_split = (
+                _split_reversible_rate(convert_math_expression(prepared_math))
+                if reaction.reversible
+                else None
+            )
+            # A source-shaped net flux can be projected onto the individual
+            # SBML species derivatives.  A reversible law already split into
+            # forward/reverse propensities needs a separate directional
+            # projection and remains on the conservative unsupported path.
+            if reversible_split is None:
+                mixed_source_rate = _rate_for_reaction(
+                    reaction,
+                    model,
+                    conversion_factor=None,
+                    observable_converted_rules=observable_converted_rules,
+                    reactant_structures=structures,
+                    reactant_ids=[],
+                    prepared_math=prepared_math,
+                    replace_loc_params=replace_loc_params,
+                )
         processed = process_reaction_rate(
             reaction,
             reaction_id,
             model,
             observable_converted_rules=observable_converted_rules,
             reactant_structures=structures,
-            conversion_factor=conversion_factor,
+            conversion_factor=(
+                None
+                if mixed_source_rate is not None
+                else _conversion_factor_for_reaction(reaction, model)
+            ),
             replace_loc_params=replace_loc_params,
         )
         rate = processed.rate_string
+        reversed_numeric_flux = False
         if "," not in rate:
             numeric_rate = _evaluate_arithmetic(convert_math_expression(rate))
             if numeric_rate is not None and numeric_rate < 0:
+                # SBML kinetic laws are signed net fluxes.  BNGL reaction
+                # rates must be nonnegative, but a constant negative flux is
+                # exactly representable by reversing the reaction sides and
+                # using its positive magnitude.  Keep this limited to a
+                # compile-time constant: a state-dependent sign change would
+                # require a conditional propensity that BNGL cannot express
+                # without changing the model semantics.
+                reversed_numeric_flux = True
+                reactants, products = products, reactants
+                rate = f"{-numeric_rate:g}"
                 _record_import_warning(
                     model,
                     f'Reaction "{reaction_id}" has a negative numeric rate '
-                    f"({numeric_rate:g}); BNGL requires nonnegative reaction rates.",
+                    f"({numeric_rate:g}); reversed the reaction sides and "
+                    "emitted the positive flux magnitude.",
                     category="rate",
-                    severity="dropped",
+                    severity="info",
                 )
-                continue
         arrow = (
-            "<->" if reaction.reversible and not processed.force_irreversible else "->"
+            "<->"
+            if reaction.reversible
+            and not processed.force_irreversible
+            and not reversed_numeric_flux
+            else "->"
         )
 
         # A time-only rate has no species/observable marker for BNG2's
@@ -3869,6 +4298,75 @@ def write_reaction_rules(
             function_name = f"_trate_{candidate}{suffix}"
             time_rate_functions.append(f"{function_name}() = {value}")
             return f"{function_name}()"
+
+        if mixed_source_rate is not None and mixed_conversion_factors is not None:
+            net_stoichiometry: "OrderedDict[str, float]" = OrderedDict()
+            for reference in reaction.reactants:
+                if reference.species == "EmptySet":
+                    continue
+                net_stoichiometry[reference.species] = (
+                    net_stoichiometry.get(reference.species, 0.0)
+                    - reference.stoichiometry
+                )
+            for reference in reaction.products:
+                if reference.species == "EmptySet":
+                    continue
+                net_stoichiometry[reference.species] = (
+                    net_stoichiometry.get(reference.species, 0.0)
+                    + reference.stoichiometry
+                )
+            _record_import_warning(
+                model,
+                f'Reaction "{reaction_id}" has differing conversionFactors; '
+                "decomposed its deterministic flux into species-specific "
+                "TotalRate rules. BNGL stochastic trajectories do not retain "
+                "the original shared reaction-event coupling.",
+                category="conversionFactor",
+                severity="info",
+            )
+            for species_id, coefficient in net_stoichiometry.items():
+                if species_id in rate_rule_species or abs(coefficient) <= 1e-12:
+                    continue
+                factor = mixed_conversion_factors.get(species_id)
+                scaled_rate = (
+                    mixed_source_rate
+                    if factor is None
+                    else f"{factor} * ({mixed_source_rate})"
+                )
+                species = model.species.get(species_id)
+                pattern = _reaction_pattern(
+                    species_id,
+                    sct,
+                    model,
+                    getattr(species, "compartment", "") if species else "",
+                    species_compartment_prefix=species_compartment_prefix,
+                )
+                count = int(round(abs(coefficient)))
+                repeated = " + ".join([pattern] * count)
+                side = "produce" if coefficient > 0 else "consume"
+                rule_label = (
+                    f"{candidate}_{side}_{standardize_name(species_id)}"
+                )
+                label_suffix = 2
+                while rule_label in used_labels:
+                    rule_label = (
+                        f"{candidate}_{side}_{standardize_name(species_id)}"
+                        f"_{label_suffix}"
+                    )
+                    label_suffix += 1
+                used_labels.add(rule_label)
+                scaled_rate = wrap_time_rate(
+                    scaled_rate,
+                    f"_{side}_{standardize_name(species_id)}",
+                )
+                if coefficient > 0:
+                    left, right = "0", repeated
+                else:
+                    left, right = repeated, "0"
+                lines.append(
+                    f"{rule_label}: {left} -> {right} {scaled_rate} TotalRate"
+                )
+            continue
 
         if arrow == "<->":
             depth = 0
@@ -3889,6 +4387,40 @@ def write_reaction_rules(
                 rate = wrap_time_rate(rate)
         else:
             rate = wrap_time_rate(rate)
+
+        # BNGL has one TotalRate modifier for a reversible rule, while an
+        # SBML net law may require it for only one directional component.
+        # Emit two ordinary rules in that mixed case so each direction keeps
+        # its source semantics (complete flux versus mass action).
+        if (
+            arrow == "<->"
+            and processed.forward_is_total_rate
+            != processed.reverse_is_total_rate
+            and split_at >= 0
+        ):
+            forward_modifier = (
+                " TotalRate" if processed.forward_is_total_rate else ""
+            )
+            reverse_modifier = (
+                " TotalRate" if processed.reverse_is_total_rate else ""
+            )
+            forward_label = f"{candidate}_forward"
+            reverse_label = f"{candidate}_reverse"
+            while forward_label in used_labels or reverse_label in used_labels:
+                forward_label = f"{forward_label}_2"
+                reverse_label = f"{reverse_label}_2"
+            used_labels.update((forward_label, reverse_label))
+            reactant_text = " + ".join(reactants) if reactants else "0"
+            product_text = " + ".join(products) if products else "0"
+            lines.append(
+                f"{forward_label}: {reactant_text} -> {product_text} "
+                f"{forward}{forward_modifier}"
+            )
+            lines.append(
+                f"{reverse_label}: {product_text} -> {reactant_text} "
+                f"{reverse}{reverse_modifier}"
+            )
+            continue
         total_rate_modifier = " TotalRate" if processed.is_total_rate else ""
         lines.append(
             f"{candidate}: {' + '.join(reactants) if reactants else '0'} "
@@ -3920,10 +4452,7 @@ def write_reaction_rules(
         )
         name = standardize_name(rule.variable)
         lines.append(
-            f"__rate_rule_in_{name}: 0 -> {pattern} {RATE_RULE_POS_PREFIX}{name}()"
-        )
-        lines.append(
-            f"__rate_rule_out_{name}: {pattern} -> 0 {RATE_RULE_NEG_PREFIX}{name}()"
+            f"__rate_rule_{name}: 0 -> {pattern} {RATE_RULE_META_PREFIX}{name}() TotalRate"
         )
     return lines
 
@@ -4033,6 +4562,7 @@ def generate_bngl(
     n_steps: int = 100,
     replace_loc_params: bool = True,
 ) -> BNGLGenerationResult:
+    lowerable_species_assignment_rules = _lowerable_species_assignment_rules(model)
     species_assignment_variables = {
         str(rule.variable)
         for rule in model.rules
@@ -4040,7 +4570,9 @@ def generate_bngl(
         and rule.variable
         and str(rule.variable) in model.species
     }
-    for variable in sorted(species_assignment_variables):
+    for variable in sorted(
+        species_assignment_variables - set(lowerable_species_assignment_rules)
+    ):
         _record_import_warning(
             model,
             f'SBML assignment rule targets species "{variable}"; BNGL cannot '
@@ -4332,6 +4864,21 @@ def generate_bngl(
         sections.insert(-1, _section("functions", function_lines))
     sections.append("end model")
     model_text = "\n\n".join(section for section in sections if section != "") + "\n"
+
+    # Check the emitted, fully lowered expressions rather than only the raw
+    # SBML formulas.  Assignment-rule/function expansion can turn a symbolic
+    # denominator such as ``t_ave`` into the literal zero emitted in BNGL.
+    # Such a source model has undefined numerical semantics and must remain
+    # explicitly unsupported instead of being reported as a solver failure.
+    if _contains_static_zero_divisor(model_text):
+        _record_import_warning(
+            model,
+            "SBML contains a literal division by zero; the affected expression "
+            "has undefined numerical semantics and cannot be represented by a "
+            "finite BNGL model.",
+            category="mathml",
+            severity="dropped",
+        )
 
     event_result = None
     if model.events:

@@ -89,6 +89,7 @@ class SBMLSpeciesReference:
     id: Optional[str] = None
     stoichiometry_set: bool = False
     variable_stoichiometry: bool = False
+    stoichiometry_math: str = ""
     compartment_reference: Optional[str] = None
     multi_component_maps: List[Any] = field(default_factory=list)
 
@@ -160,6 +161,7 @@ class SBMLRule:
     type: str
     variable: Optional[str] = None
     math: str = ""
+    math_from_empty_boolean: bool = False
     metaid: Optional[str] = None
     sbo_term: Optional[str] = None
     notes_xml: str = ""
@@ -715,7 +717,9 @@ _SBML_TO_BNGL_TRANSLATION = {
 
 # Keep this synchronized with the generated BNGL lexer.  Exact keyword
 # collisions are lexical errors, even when the spelling is otherwise a valid
-# identifier (for example, an SBML species named ``time``).
+# identifier (for example, an SBML species named ``time``).  The C++ runtime
+# also treats the legacy spelling ``t`` as the independent-time operand, so
+# SBML model identifiers using that spelling must be renamed before emission.
 BNGL_LEXER_KEYWORDS = frozenset(
     {
         "_e",
@@ -868,6 +872,7 @@ BNGL_LEXER_KEYWORDS = frozenset(
         "substanceUnits",
         "suffix",
         "sum",
+        "t",
         "t_end",
         "t_start",
         "tan",

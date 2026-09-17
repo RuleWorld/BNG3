@@ -349,6 +349,34 @@ end model
         assert result["time"][0] == 0.0
         assert result["time"][-1] == pytest.approx(10.0)
 
+    def test_total_rate_does_not_apply_reactant_symmetry_factor(self):
+        """A complete SBML flux must not be divided by repeated-reactant symmetry."""
+        model = _cpp.parse_string(
+            """
+begin model
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    A()
+end molecule types
+begin seed species
+    A() 10
+end seed species
+begin observables
+    Molecules Atot A()
+end observables
+begin reaction rules
+    A() + A() + A() -> 0 k TotalRate
+end reaction rules
+end model
+"""
+        )
+        network = _cpp.generate_network(model)
+        result = _cpp.simulate_ode(model, network, t_end=1.0, n_steps=1)
+
+        assert result["observables"]["Atot"][-1] == pytest.approx(7.0)
+
     def test_ssa_simulation(self, tmp_path):
         bngl = tmp_path / "ssa.bngl"
         bngl.write_text("""
@@ -1289,6 +1317,41 @@ end model
             method="nf", t_end=1.0, n_steps=1, seed=1, equilibrate=0.1
         )
         assert result.time.tolist() == pytest.approx([0.0, 1.0])
+
+    def test_ode_exports_user_functions_without_internal_helpers(self, tmp_path):
+        bngl = tmp_path / "function_outputs.bngl"
+        bngl.write_text("""
+begin model
+begin parameters
+    k 0.1
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 10
+end seed species
+begin observables
+    Molecules Xtot X()
+end observables
+begin functions
+    _c_X() = Xtot
+    algebraic() = k * _c_X()
+end functions
+begin reaction rules
+    X() -> 0 k
+end reaction rules
+end model
+""")
+
+        result = bionetgen.load(str(bngl)).simulate(
+            method="ode", t_end=1.0, n_steps=2
+        )
+
+        assert set(result.functions) == {"algebraic"}
+        assert result.functions["algebraic"].tolist() == pytest.approx(
+            0.1 * result.observables["Xtot"]
+        )
 
     def test_set_parameter(self, tmp_path):
         bngl = tmp_path / "param.bngl"

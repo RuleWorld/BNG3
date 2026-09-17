@@ -89,7 +89,8 @@ private:
     static std::string writeAssignmentRules(
         const ast::Model& model,
         const std::vector<ObservableGroup>& groups,
-        const SymbolIds& symbolIds);
+        const SymbolIds& symbolIds,
+        const engine::GeneratedNetwork* network);
     static std::string writeReactions(
         const engine::GeneratedNetwork& network,
         const ast::Model& model,

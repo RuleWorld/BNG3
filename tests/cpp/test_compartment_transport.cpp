@@ -105,3 +105,86 @@ end actions
     REQUIRE(network.species.size() == 2);
     REQUIRE(network.reactions.size() == 1);
 }
+
+TEST_CASE("Compartment transport: population reaction may consume distinct volumes", "[Compartment]") {
+    auto model = parseModel(R"(
+begin parameters
+    k_bind 0.1
+end parameters
+begin compartments
+    left 3 1.0
+    right 3 1.0
+end compartments
+begin molecule types
+    R()
+    G()
+    RG()
+end molecule types
+begin seed species
+    @left:R() 10
+    @right:G() 20
+end seed species
+begin reaction rules
+    @left:R() + @right:G() -> @left:RG() k_bind
+end reaction rules
+)");
+
+    engine::NetworkGenerator gen(*model);
+    const auto network = gen.generateNative(1);
+
+    REQUIRE(network.species.size() == 3);
+    REQUIRE(network.reactions.size() == 1);
+}
+
+TEST_CASE("Compartment transport: cross-volume bond formation remains rejected", "[Compartment]") {
+    auto model = parseModel(R"(
+begin parameters
+    k_bind 0.1
+end parameters
+begin compartments
+    left 3 1.0
+    right 3 1.0
+end compartments
+begin molecule types
+    R(b)
+    G(a)
+end molecule types
+begin seed species
+    @left:R(b) 1
+    @right:G(a) 1
+end seed species
+begin reaction rules
+    @left:R(b) + @right:G(a) -> @left:R(b!1).G(a!1) k_bind
+end reaction rules
+)");
+
+    engine::NetworkGenerator gen(*model);
+    const auto network = gen.generateNative(1);
+
+    REQUIRE(network.reactions.size() == 0);
+}
+
+TEST_CASE("Compartment transport: replacement does not dereference deleted reactant", "[Compartment]") {
+    auto model = parseModel(R"(
+begin compartments
+    outer 3 1.0
+    inner 3 1.0
+end compartments
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    @outer:A() 1
+end seed species
+begin reaction rules
+    @outer:A() -> @inner:B() 1
+end reaction rules
+)");
+
+    engine::NetworkGenerator gen(*model);
+    const auto network = gen.generateNative(1);
+
+    REQUIRE(network.species.size() == 2);
+    REQUIRE(network.reactions.size() == 1);
+}
