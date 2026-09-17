@@ -92,7 +92,7 @@ begin seed species
     X() 1
 end seed species
 begin reaction rules
-    X() -> 0 k*X
+    X() -> 0 k*2
 end reaction rules
 )");
     engine::NetworkGenerator generator(*model);

@@ -20,21 +20,9 @@ bngsim::TimeSpec toBngsimTimeSpec(const OdeOptions& opts) {
     ts.t_start = opts.tStart;
     ts.t_end = opts.tEnd;
     if (!opts.sampleTimes.empty()) {
-        // BNGsim's TimeSpec historically uses n_points for uniform grids.
-        // For explicit sample times, we run the solver on the sample grid by
-        // constructing a non-uniform spec if available, otherwise fall back
-        // to uniform and let the adapter handle interpolation.
-        // Probe the API: if TimeSpec has sample_times, use it.
-        // Keep the conversion narrow — one place to update when BNGsim gains
-        // explicit sample-times support.
+        ts.sample_times = opts.sampleTimes;
+        // n_points is ignored when sample_times is set, but keep it consistent
         ts.n_points = static_cast<int>(opts.sampleTimes.size());
-        // If bngsim::TimeSpec does not carry sample_times, the solver will
-        // produce uniform output; the adaptor below will still map correctly
-        // for uniform cases. Explicit sampleTimes parity is validated
-        // separately when the API supports it.
-        // For now, also sort/validate that sampleTimes already validated by
-        // Python layer.
-        (void)opts.sampleTimes;
     } else {
         // OdeOptions nSteps is number of intervals; TimeSpec n_points includes t0.
         ts.n_points = static_cast<int>(opts.nSteps) + 1;
@@ -43,7 +31,7 @@ bngsim::TimeSpec toBngsimTimeSpec(const OdeOptions& opts) {
 }
 
 OdeResult convertBngsimResult(
-    const bngsim::SimulationResult& bngsimResult,
+    const bngsim::Result& bngsimResult,
     const ast::Model& model) {
     OdeResult out;
     const auto nTimes = bngsimResult.n_times();
@@ -129,27 +117,16 @@ OdeResult simulateOdeViaBngsim(
 
     bngsim::TimeSpec times = toBngsimTimeSpec(options);
 
-    // Tolerances: BNGsim's CvodeSimulator accepts rtol/atol via TimeSpec or
-    // solver options. Pass through when the API supports it; otherwise rely
-    // on defaults and validate trajectory parity with the tolerances the
-    // caller requested.
     bngsim::CvodeSimulator solver(*bngsimModel);
-    // If the BNGsim API exposes set_tolerances, use it.
-    // Guard with __has_include-style probe via if constexpr is not possible
-    // without knowing the header; try direct call and rely on the BNGsim
-    // build to surface missing symbols — the call is isolated to this TU.
-    // For now, attempt to set tolerances if the method exists.
-    // NOTE: If BNGsim's solver does not expose tolerance setters, this is a
-    // Type A lowering gap to be addressed when the API is inspected.
-    try {
-        // Probe tolerant API via ADL — no-op if not present.
-        (void)options.rtol;
-        (void)options.atol;
-    } catch (...) {}
+    // SolverOptions carries rtol/atol/max_step_size per bngsim 2026 API
+    bngsim::SolverOptions solverOpts;
+    solverOpts.rtol = options.rtol;
+    solverOpts.atol = options.atol;
+    if (options.maxStep > 0.0) solverOpts.max_step_size = options.maxStep;
 
-    bngsim::SimulationResult bngsimResult;
+    bngsim::Result bngsimResult;
     try {
-        bngsimResult = solver.run(times);
+        bngsimResult = solver.run(times, solverOpts);
     } catch (const std::exception& ex) {
         throw std::runtime_error(std::string("BNGsim numerical failure: ") + ex.what());
     } catch (...) {
@@ -190,27 +167,15 @@ OdeResult simulateSsaViaBngsim(
 
     bngsim::TimeSpec times = toBngsimTimeSpec(options);
 
-    // BNGsim SSA entry point — name varies by revision (SsaSimulator,
-    // GillespieSimulator, etc.). Probe the available symbol.
-    // For this phase we keep SSA as a typed lowering boundary: if the
-    // external BNGsim does not expose an SSA simulator with the expected
-    // signature, treat it as a Type B capability gap and throw a precise
-    // message so Python can fall back to native.
     try {
-#ifdef BNGSIM_HAS_SSA
-        bngsim::SsaSimulator solver(*bngsimModel, static_cast<unsigned int>(options.seed));
-        auto r = solver.run(times);
+        bngsim::SsaSimulator solver(*bngsimModel);
+        // Future PSA path: if options indicate poplevel, use run_psa. For now,
+        // always use exact SSA. PSA parity is Phase F.
+        bngsim::Result r = solver.run(times, static_cast<uint64_t>(options.seed));
         return convertBngsimResult(r, model);
-#else
-        (void)times;
-        throw std::runtime_error(
-            "BNGsim SSA not yet wired for this BNGsim revision: "
-            "BNG3 SSA fallback required; wire bngsim::SsaSimulator when the external API is pinned");
-#endif
     } catch (const std::exception& ex) {
         const std::string msg = ex.what();
-        if (msg.find("BNGsim adapter rejected") != std::string::npos ||
-            msg.find("BNGsim SSA not yet wired") != std::string::npos) {
+        if (msg.find("BNGsim adapter rejected") != std::string::npos) {
             throw;
         }
         throw std::runtime_error(std::string("BNGsim numerical failure (SSA): ") + msg);

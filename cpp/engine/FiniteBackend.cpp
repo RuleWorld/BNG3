@@ -12,6 +12,10 @@
 #include "BngsimBackend.hpp"
 #include "OdeIntegrator.hpp"
 
+#ifdef BNG3_HAS_BNGSIM_ADAPTER
+#include <bngsim/model.hpp>
+#endif
+
 namespace bng::engine {
 
 namespace {
@@ -77,14 +81,34 @@ std::vector<std::string> collectSemanticBlockers(
     }
     // Rate-law and TFUN checks require the generated network; reuse the same
     // messages as BngsimAdapter.cpp but do not require BNGsim headers.
+    auto normalizeRateLaw = [](std::string s) {
+        const auto first = s.find_first_not_of(" \t");
+        if (first != std::string::npos) s.erase(0, first);
+        else s.clear();
+        if (!s.empty()) {
+            const auto last = s.find_last_not_of(" \t");
+            s.erase(last + 1);
+        }
+        if (s.size() >= 2 && s.substr(s.size() - 2) == "()") {
+            s.erase(s.size() - 2);
+            if (!s.empty()) {
+                const auto l2 = s.find_last_not_of(" \t");
+                if (l2 != std::string::npos) s.erase(l2 + 1);
+                const auto f2 = s.find_first_not_of(" \t");
+                if (f2 != std::string::npos) s.erase(0, f2);
+            }
+        }
+        return s;
+    };
     for (std::size_t idx = 0; idx < network.reactions.size(); ++idx) {
         const auto& reaction = network.reactions.all()[idx];
         const auto& rateLaw = reaction.getRateLaw();
+        const std::string normRateLaw = normalizeRateLaw(rateLaw);
         // Check non-reference rate expressions
-        if (!model.getParameters().contains(rateLaw)) {
+        if (!model.getParameters().contains(normRateLaw)) {
             bool isFunction = false;
             for (const auto& function : model.getFunctions()) {
-                if (function.getName() == rateLaw) { isFunction = true; break; }
+                if (function.getName() == normRateLaw) { isFunction = true; break; }
             }
             if (!isFunction) {
                 blockers.push_back(
