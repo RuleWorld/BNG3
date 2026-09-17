@@ -5,7 +5,6 @@ Created on Wed May 30 11:44:17 2012
 @author: proto
 """
 
-from copy import deepcopy
 from lxml import etree
 import re
 from random import randint
@@ -227,7 +226,7 @@ class Species:
             self_molecule_names = {x.name for x in self.molecules}
             for element in species.molecules:
                 if element.name not in self_molecule_names:
-                    self.addMolecule(deepcopy(element), update)
+                    self.addMolecule(element.copy(), update)
                     self_molecule_names.add(element.name)
                 else:
                     for molecule in self.molecules:
@@ -237,7 +236,7 @@ class Species:
                             }
                             for component in element.components:
                                 if component.name not in molecule_component_names:
-                                    molecule.addComponent(deepcopy(component), update)
+                                    molecule.addComponent(component.copy(), update)
                                     molecule_component_names.add(component.name)
                                 else:
                                     comp = molecule.getComponent(component.name)
@@ -245,7 +244,7 @@ class Species:
                                         comp.addState(state, update)
 
     def updateBonds(self, bondNumbers):
-        newBondNumbers = deepcopy(bondNumbers)
+        newBondNumbers = list(bondNumbers)
         correspondence = {}
         intersection = [int(x) for x in newBondNumbers if x in self.getBondNumbers()]
         for element in self.molecules:
@@ -264,11 +263,11 @@ class Species:
                         # intersection = [int(x) for x in newBondNumbers if x in self.getBondNumbers()]
 
     def append(self, species):
-        newSpecies = deepcopy(species)
+        newSpecies = species.copy()
         newSpecies.updateBonds(self.getBondNumbers())
 
         for element in newSpecies.molecules:
-            self.molecules.append(deepcopy(element))
+            self.molecules.append(element.copy())
 
     def sort(self):
         """
@@ -574,7 +573,7 @@ class Molecule:
         for element in molecule.components:
             comp = [x for x in self.components if x.name == element.name]
             if len(comp) == 0:
-                self.components.append(deepcopy(element))
+                self.components.append(element.copy())
             else:
                 for bond in element.bonds:
                     comp[0].addBond(bond)
@@ -588,7 +587,7 @@ class Molecule:
     def update(self, molecule):
         for comp in molecule.components:
             if comp.name not in [x.name for x in self.components]:
-                self.components.append(deepcopy(comp))
+                self.components.append(comp.copy())
 
     def graphVizGraph(self, graph, identifier, components=None, flag=False, options={}):
         moleculeDictionary = {}
@@ -672,9 +671,9 @@ class Component:
 
     def copy(self):
         component = Component(
-            self.name, self.idx, deepcopy(self.bonds), deepcopy(self.states)
+            self.name, self.idx, list(self.bonds), list(self.states)
         )
-        component.activeState = deepcopy(self.activeState)
+        component.activeState = self.activeState
         return component
 
     def addState(self, state, update=True):
