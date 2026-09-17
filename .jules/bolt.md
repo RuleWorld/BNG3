@@ -1,0 +1,3 @@
+## 2024-05-24 - Optimizing deepcopy
+**Learning:** Python's 'copy.deepcopy()' in python/bionetgen/atomizer (Molecule, Species, Component) is a major performance bottleneck. Do not replace it with shallow copies, as this causes mutated shared state. Instead, use the custom `.copy()` methods on these objects (which safely implement deep copying internally) and use explicit list comprehensions or `list()` for primitive lists (like `bonds` and `states`). This drastically reduces overhead while preserving necessary deep-copy correctness.
+**Action:** Use explicit lists comprehension or `[x for x in list]` rather than deepcopy for simple lists. Use .copy() instead of deepcopy() for Species, Molecule and Component objects.
