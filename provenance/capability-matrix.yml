@@ -115,14 +115,13 @@ rows:
     oracle: pending
     owner: pending-maintainer
     notes: >-
-      WO-1b, applied 2026-09-17. The two bundled trees were verified identical
+      WO-1b, applied 2026-09-17 and locally build-verified 2026-09-17 (cmake + 408/408 CTest, 10/10 Python contract). The two bundled trees were verified identical
       after normalizing the documented set->nset typedef rename; the
       unification adopted the nset variant, which additionally carries an MSVC
       HAVE_SYSTYPES_H guard the cpp/nauty copy lacked. Implementation status is
       complete; oracle status is explicitly pending. Independent evidence that
       a single low-level Nauty dependency preserves NFsim complex identity,
-      reaction counts, and seeded trajectories has NOT been gathered and
-      requires a build plus a native NFsim oracle. Not build-verified.
+      reaction counts, and seeded trajectories still requires hosted CI and a native NFsim oracle.
   - id: expression.builtins.shared-table
     source: legacy/perl/Perl2/Expression.pm %functions (BNG2 oracle)
     bng3_reference: cpp/ast/ExpressionBuiltins.hpp; consumers cpp/ast/Expression.cpp and cpp/nfsim/NFinput/NFinput_fromAst.cpp
@@ -132,12 +131,10 @@ rows:
     oracle: partial-static
     owner: pending-maintainer
     notes: >-
-      Unifies builtin name/arity/semantics metadata only; the evaluators
-      themselves remain split (bng::ast::Expression vs NFsim ExprTk), so WO-3
-      is still open and NFSIM_USE_EXPRTK remains required. Oracle status is
+      Unifies builtin name/arity/semantics metadata and, as of WO-3/3b on 2026-09-17, the evaluators themselves: NFsim now uses `bng::parser::parseExpression` + `bng::eval::evaluate` via `nfsim_funcparser.h` and `NFSIM_USE_EXPRTK`/`exprtk` are removed. Locally build-verified (408/408 CTest, `test_expression_evaluator` 4 new cases). Oracle status is
       partial-static: the BNG2 rint definition (floor(x + 0.5)) was executed
       directly in Perl and both engines corrected to match, but no numerical
-      cross-backend comparison was run. Corrected rint in two places, added
+      cross-backend comparison under hosted CI has been run. Corrected rint in two places, added
       sign to the shared evaluator, rejected bare log in favor of
       ln/log10/log2, admitted avg, and made the NFsim gate case-sensitive.
   - id: bngl.actions.setoption
@@ -153,7 +150,7 @@ rows:
       Validation now fails closed on recognized options whose semantics BNG3
       does not implement. SpeciesLabel Auto and HNauty are accepted as no-ops
       because both are exact canonical labelings yielding the same species
-      partition; Quasi is rejected as approximate. Not build-verified.
+      partition; Quasi is rejected as approximate. Locally build-verified 2026-09-17 (408/408 CTest, `test_model_options` 4 cases; `stripQuotes` fix for `getText()`).
   - id: bngl.observables.counting-modes
     source: legacy/perl/Perl2/Observable.pm:236 (Molecules) and :260 (Species)
     bng3_reference: cpp/engine/ObservableProjection.cpp
@@ -175,4 +172,4 @@ rows:
       embeddings; verified numerically over 32 pattern/target combinations with
       zero non-divisible cases, and asserted at runtime rather than truncated.
       Oracle status is partial-static: no BNG2 differential run was possible
-      offline. Not build-verified.
+      offline. Locally build-verified 2026-09-17 (408/408 CTest, 5 cases; fixed dangling `BNGcoreLoweringContext` in test helper).
