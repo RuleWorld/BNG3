@@ -352,7 +352,12 @@ class BioNetGenModel:
 
         if method == "nf":
             # backend is not applicable to network-free; reject explicit bngsim
-            if backend is not None and str(backend).lower() not in ("auto", "native", "nf", "nfsim"):
+            if backend is not None and str(backend).lower() not in (
+                "auto",
+                "native",
+                "nf",
+                "nfsim",
+            ):
                 if str(backend).lower() == "bngsim":
                     raise ValueError("backend='bngsim' is not valid for method='nf'")
             raw = _cpp.simulate_nf(
@@ -424,7 +429,9 @@ class BioNetGenModel:
                     chk = _cpp.check_bngsim_lowering(self._model, self._network)
                     if not chk.get("supported", False):
                         blockers = chk.get("blockers", [])
-                        bngsim_blockers = "; ".join(blockers) if blockers else "unsupported"
+                        bngsim_blockers = (
+                            "; ".join(blockers) if blockers else "unsupported"
+                        )
                         # Distinguish build vs semantic for the error prefix.
                         if any("unavailable" in b.lower() for b in blockers):
                             raise RuntimeError(
