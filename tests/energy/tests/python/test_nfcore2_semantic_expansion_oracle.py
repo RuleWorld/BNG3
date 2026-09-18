@@ -1,7 +1,6 @@
 import json
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[4]
 FIXTURE = ROOT / "tests/energy/fixtures/semantic/nfcore2_semantic_expansion.json"
 PROVENANCE = ROOT / "provenance/semantic-expansion-2026-09-08.json"
@@ -47,14 +46,19 @@ def test_population_transform_oracle():
 def test_connected_to_graph_oracle():
     case, _ = load_cases()
     graph = case["root-graph-connectedTo"]
-    assert connected(graph["edges"], graph["source"], graph["target"]) is graph["expected"]
+    assert (
+        connected(graph["edges"], graph["source"], graph["target"]) is graph["expected"]
+    )
     assert connected(graph["edges"], graph["source"], 99) is False
 
 
 def test_synthesis_oracle():
     case, _ = load_cases()
     data = case["synthesis"]
-    assert data["initial_particles"] + data["created_particles"] == data["expected_particles"]
+    assert (
+        data["initial_particles"] + data["created_particles"]
+        == data["expected_particles"]
+    )
 
 
 def test_compartment_move_oracle():
@@ -77,7 +81,11 @@ def test_local_and_dor_rate_oracle():
 def test_whole_species_deletion_oracle():
     case, _ = load_cases()
     data = case["whole-species-deletion"]
-    component = {node for node in data["initial_nodes"] if connected(data["edges"], data["root"], node)}
+    component = {
+        node
+        for node in data["initial_nodes"]
+        if connected(data["edges"], data["root"], node)
+    }
     assert sorted(set(data["initial_nodes"]) - component) == data["expected_remaining"]
 
 
