@@ -295,7 +295,11 @@ def _canon_expr(expr: str) -> str:
                         inner_depth -= 1
                         if inner_depth == 0:
                             if end + 1 < len(result) and result[end + 1] == ")":
-                                result = result[:index] + result[index + 1 : end + 1] + result[end + 2 :]
+                                result = (
+                                    result[:index]
+                                    + result[index + 1 : end + 1]
+                                    + result[end + 2 :]
+                                )
                                 changed = True
                             break
                 if changed:
@@ -446,9 +450,7 @@ def _parse_species_graph(value: str) -> _SpeciesGraph | None:
         if not name:
             return None
 
-        molecule_vertex = add_vertex(
-            ("molecule", name, molecule_compartment, constant)
-        )
+        molecule_vertex = add_vertex(("molecule", name, molecule_compartment, constant))
         for site in sites:
             site = site.strip()
             if not site:
@@ -494,10 +496,14 @@ def _parse_species_graph(value: str) -> _SpeciesGraph | None:
 
 
 def _edge_profile(graph: _SpeciesGraph, left: int, right: int) -> Counter:
-    return Counter(kind for endpoint, kind in graph.adjacency[left] if endpoint == right)
+    return Counter(
+        kind for endpoint, kind in graph.adjacency[left] if endpoint == right
+    )
 
 
-def _refined_colors(left: _SpeciesGraph, right: _SpeciesGraph) -> tuple[list[int], list[int]]:
+def _refined_colors(
+    left: _SpeciesGraph, right: _SpeciesGraph
+) -> tuple[list[int], list[int]]:
     """Compute comparable Weisfeiler-Lehman colors for two labeled graphs."""
 
     def initial(graph: _SpeciesGraph, vertex: int) -> tuple:
@@ -516,7 +522,9 @@ def _refined_colors(left: _SpeciesGraph, right: _SpeciesGraph) -> tuple[list[int
     signatures += [initial(right, i) for i in range(len(right.labels))]
 
     def assign(values: list[tuple]) -> list[int]:
-        table = {value: index for index, value in enumerate(sorted(set(values), key=repr))}
+        table = {
+            value: index for index, value in enumerate(sorted(set(values), key=repr))
+        }
         return [table[value] for value in values]
 
     colors = assign(signatures)
@@ -595,7 +603,9 @@ def species_isomorphic(left: str, right: str) -> bool:
         return min(
             remaining,
             key=lambda i: (
-                -sum(1 for endpoint, _ in left_graph.adjacency[i] if endpoint in mapping),
+                -sum(
+                    1 for endpoint, _ in left_graph.adjacency[i] if endpoint in mapping
+                ),
                 -len(left_graph.adjacency[i]),
                 len(candidates[i]),
             ),
@@ -1071,12 +1081,18 @@ def _reaction_view(
     payload: dict[tuple, tuple[tuple[str, ...], tuple[str, ...], str]] = {}
     for reactants, products, rate in net._raw:
         reactant_ids = tuple(
-            sorted(species_identity.get(index, ("missing", index)) for index in reactants)
+            sorted(
+                species_identity.get(index, ("missing", index)) for index in reactants
+            )
         )
         product_ids = tuple(
-            sorted(species_identity.get(index, ("missing", index)) for index in products)
+            sorted(
+                species_identity.get(index, ("missing", index)) for index in products
+            )
         )
-        rate_key = _resolve_rate(rate, net.rate_defs, net.rate_mode) if compare_rates else ""
+        rate_key = (
+            _resolve_rate(rate, net.rate_defs, net.rate_mode) if compare_rates else ""
+        )
         key = (
             (reactant_ids, product_ids, rate_key)
             if compare_rates
@@ -1084,8 +1100,12 @@ def _reaction_view(
         )
         counter[key] += 1
         try:
-            reactant_names = tuple(sorted(net.species_by_index[index] for index in reactants))
-            product_names = tuple(sorted(net.species_by_index[index] for index in products))
+            reactant_names = tuple(
+                sorted(net.species_by_index[index] for index in reactants)
+            )
+            product_names = tuple(
+                sorted(net.species_by_index[index] for index in products)
+            )
         except KeyError:
             reactant_names = tuple(sorted(f"?{index}" for index in reactants))
             product_names = tuple(sorted(f"?{index}" for index in products))
