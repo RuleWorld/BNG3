@@ -40,9 +40,7 @@ def test_equivalent_built_in_rate_expressions_compare_equal(tmp_path):
 
 def test_net_rate_comparison_preserves_natural_log_semantics(tmp_path):
     reference = parse_net(_net(tmp_path / "reference.net", "ln(2)/120"))
-    generated = parse_net(
-        _net(tmp_path / "generated.net", repr(math.log(2) / 120))
-    )
+    generated = parse_net(_net(tmp_path / "generated.net", repr(math.log(2) / 120)))
     assert reference is not None
     assert generated is not None
     assert compare_net(reference, generated).ok
@@ -101,12 +99,8 @@ def test_function_rate_normalizes_negative_product_parentheses(tmp_path):
         )
         return path
 
-    reference = parse_net(
-        write(tmp_path / "reference.net", "-((2/3)*X)")
-    )
-    generated = parse_net(
-        write(tmp_path / "generated.net", "-(2/3)*X")
-    )
+    reference = parse_net(write(tmp_path / "reference.net", "-((2/3)*X)"))
+    generated = parse_net(write(tmp_path / "generated.net", "-(2/3)*X"))
     assert reference is not None
     assert generated is not None
     assert compare_net(reference, generated).ok
@@ -223,9 +217,7 @@ def _net_with_group(
 
 def test_network_comparison_maps_observable_groups_with_species(tmp_path):
     reference = parse_net(
-        _net_with_group(
-            tmp_path / "reference.net", "A(x!1).B(y!1)", "C()", "1,2*2"
-        )
+        _net_with_group(tmp_path / "reference.net", "A(x!1).B(y!1)", "C()", "1,2*2")
     )
     generated = parse_net(
         _net_with_group(

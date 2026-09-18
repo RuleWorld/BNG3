@@ -4,6 +4,7 @@
 This is intentionally simple textual validation.  The compiled contract test is
 stronger for behavior; this script catches enum/field vocabulary changes early.
 """
+
 from pathlib import Path
 import sys
 
@@ -11,14 +12,27 @@ ROOT = Path(__file__).resolve().parents[3]
 NF = ROOT / "cpp" / "nfnext" / "include" / "nfnext"
 
 checks = {
-    NF / "transformation.hpp": [
-        "SetState", "AddBond", "DeleteBond", "CreateMolecule",
-        "AddBondExistingToCreated", "AddBondCreated",
-        "DestroyMolecule", "DestroyComplex",
+    NF
+    / "transformation.hpp": [
+        "SetState",
+        "AddBond",
+        "DeleteBond",
+        "CreateMolecule",
+        "AddBondExistingToCreated",
+        "AddBondCreated",
+        "DestroyMolecule",
+        "DestroyComplex",
     ],
-    NF / "nfir.hpp": [
-        "StateSet", "Free", "Bound", "MolecularityConstraint",
-        "SameComplex", "DifferentComplex", "connected_to", "interchangeable",
+    NF
+    / "nfir.hpp": [
+        "StateSet",
+        "Free",
+        "Bound",
+        "MolecularityConstraint",
+        "SameComplex",
+        "DifferentComplex",
+        "connected_to",
+        "interchangeable",
     ],
 }
 

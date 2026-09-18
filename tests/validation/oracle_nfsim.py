@@ -140,9 +140,7 @@ def ensemble(
     if worker_count == 1:
         results = [_run_nfsim_ensemble_item(payload) for payload in payloads]
     else:
-        with concurrent.futures.ThreadPoolExecutor(
-            max_workers=worker_count
-        ) as pool:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as pool:
             results = list(pool.map(_run_nfsim_ensemble_item, payloads))
 
     runs = []
