@@ -6,6 +6,7 @@ CMake. It counts nonblank/non-comment physical lines in include/src versus tests
 Future-contract tests count because they are executable specifications written
 before implementation, exactly as required by the TDD policy.
 """
+
 from __future__ import annotations
 from pathlib import Path
 import sys
