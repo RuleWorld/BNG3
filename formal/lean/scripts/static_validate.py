@@ -6,6 +6,7 @@ packaging/CI environments may not have Lean installed.  It catches mundane
 artifact problems early: broken local imports, unbalanced delimiters/comments,
 and proof placeholders.
 """
+
 from __future__ import annotations
 
 import re
@@ -107,7 +108,9 @@ def main() -> int:
                 continue
             local = local_module_path(m.group(1))
             if local is not None and not local.exists():
-                errors.append(f"{rel}:{line_no}: missing local import {m.group(1)} -> {local}")
+                errors.append(
+                    f"{rel}:{line_no}: missing local import {m.group(1)} -> {local}"
+                )
 
         for err in scan_balancing(path):
             errors.append(f"{rel}: {err}")
@@ -155,9 +158,18 @@ def main() -> int:
 
     umbrella = (ROOT / "BNG.lean").read_text(encoding="utf-8")
     for module in (
-        "BNG.Runtime", "BNG.Graph", "BNG.Operational", "BNG.ExtendedOperational",
-        "BNG.Correspondence", "BNG.MutationCompiler", "BNG.MatcherSpec",
-        "BNG.Species", "BNG.Network", "BNG.NFnextIR", "BNG.BNGIR", "BNG.Lowering"
+        "BNG.Runtime",
+        "BNG.Graph",
+        "BNG.Operational",
+        "BNG.ExtendedOperational",
+        "BNG.Correspondence",
+        "BNG.MutationCompiler",
+        "BNG.MatcherSpec",
+        "BNG.Species",
+        "BNG.Network",
+        "BNG.NFnextIR",
+        "BNG.BNGIR",
+        "BNG.Lowering",
     ):
         if f"import {module}" not in umbrella:
             errors.append(f"BNG.lean does not import {module}")

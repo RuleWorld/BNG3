@@ -6,8 +6,11 @@ import pytest
 
 from tests.validation import compare, corpus, runner
 
-EXPORT_MODELS = [m for m in ("Motivating_example", "egfr_net", "gene_expr", "Repressilator")
-                 if corpus.resolve(m) is not None]
+EXPORT_MODELS = [
+    m
+    for m in ("Motivating_example", "egfr_net", "gene_expr", "Repressilator")
+    if corpus.resolve(m) is not None
+]
 
 
 @pytest.mark.export
@@ -37,13 +40,10 @@ def test_net_roundtrip_idempotent(model_name, bng_cpp, work_dir):
     # the first pass's .net file, not regenerate the BNGL model.
     roundtrip_source = work_dir / f"{model_name}_roundtrip.bngl"
     roundtrip_source.write_text(
-        f'readFile({{file=>"{net1.as_posix()}"}})\n'
-        "writeNetwork({overwrite=>1})\n",
+        f'readFile({{file=>"{net1.as_posix()}"}})\n' "writeNetwork({overwrite=>1})\n",
         encoding="utf-8",
     )
-    net2, _, err2 = runner.run_cli_path(
-        bng_cpp, roundtrip_source, work_dir / "pass2"
-    )
+    net2, _, err2 = runner.run_cli_path(bng_cpp, roundtrip_source, work_dir / "pass2")
     assert net2 is not None, f"second generation failed: {err2}"
     n1, n2 = compare.parse_net(net1), compare.parse_net(net2)
     diff = compare.compare_net(n1, n2)
