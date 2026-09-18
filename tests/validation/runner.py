@@ -26,10 +26,10 @@ import numpy as np
 
 from . import corpus
 
-
 # --------------------------------------------------------------------------- #
 # CLI path
 # --------------------------------------------------------------------------- #
+
 
 def _cli_env(bng_cpp: Path) -> dict[str, str]:
     env = os.environ.copy()
@@ -95,10 +95,11 @@ def _select_cli_output(work_dir: Path, model_stem: str, suffix: str):
 # API path
 # --------------------------------------------------------------------------- #
 
+
 @dataclass
 class Trajectory:
-    data: np.ndarray          # (n_t, n_col), col 0 = time
-    columns: list[str]        # ["time", obs1, obs2, ...]
+    data: np.ndarray  # (n_t, n_col), col 0 = time
+    columns: list[str]  # ["time", obs1, obs2, ...]
 
 
 def _result_to_trajectory(result) -> Trajectory:
@@ -167,9 +168,7 @@ def run_api_ensemble(
     ``workers=1`` for serial debugging.
     """
     worker_count = _resolve_ensemble_workers(workers, n_runs)
-    payloads = [
-        (model_name, method, base_seed + i, kwargs) for i in range(n_runs)
-    ]
+    payloads = [(model_name, method, base_seed + i, kwargs) for i in range(n_runs)]
     if worker_count == 1:
         trajectories = [_run_api_ensemble_item(payload) for payload in payloads]
     else:

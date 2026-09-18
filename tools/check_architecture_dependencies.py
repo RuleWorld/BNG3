@@ -6,6 +6,7 @@ path has already migrated. Existing AST-facing compatibility files are listed in
 ``provenance/architecture/ast_compat_allowlist.txt``. New files are not allowed
 to join that list implicitly.
 """
+
 from __future__ import annotations
 
 import re
@@ -14,7 +15,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ALLOWLIST_PATH = ROOT / "provenance" / "architecture" / "ast_compat_allowlist.txt"
-INCLUDE_RE = re.compile(r'^\s*#\s*include\s*[<"]((?:ast|parser)/[^>"]+)[>"]', re.MULTILINE)
+INCLUDE_RE = re.compile(
+    r'^\s*#\s*include\s*[<"]((?:ast|parser)/[^>"]+)[>"]', re.MULTILINE
+)
 REPARSE_PATTERNS = (
     re.compile(r"\bPattern::parse\s*\("),
     re.compile(r"\bBNGLexer\b"),
@@ -35,12 +38,18 @@ def load_allowlist() -> set[str]:
 
 
 def source_files() -> list[Path]:
-    roots = [ROOT / "cpp" / name for name in ("engine", "io", "actions", "nfsim", "nfnext")]
+    roots = [
+        ROOT / "cpp" / name for name in ("engine", "io", "actions", "nfsim", "nfnext")
+    ]
     result: list[Path] = []
     for base in roots:
         if not base.exists():
             continue
-        result.extend(path for path in base.rglob("*") if path.suffix in {".cpp", ".hpp", ".hh", ".h"})
+        result.extend(
+            path
+            for path in base.rglob("*")
+            if path.suffix in {".cpp", ".hpp", ".hh", ".h"}
+        )
     return sorted(result)
 
 
@@ -65,29 +74,42 @@ def main() -> int:
         forbidden_includes = INCLUDE_RE.findall(text)
         if forbidden_includes:
             if is_strict(path):
-                errors.append(f"{rel}: strict compiled/backend layer includes source-layer header(s): {', '.join(forbidden_includes)}")
+                errors.append(
+                    f"{rel}: strict compiled/backend layer includes source-layer header(s): {', '.join(forbidden_includes)}"
+                )
             elif rel not in allow:
-                errors.append(f"{rel}: new AST/parser dependency is not in the explicit compatibility allowlist")
+                errors.append(
+                    f"{rel}: new AST/parser dependency is not in the explicit compatibility allowlist"
+                )
             else:
                 observed_legacy.add(rel)
 
         if is_strict(path):
-            reparsers = [pattern.pattern for pattern in REPARSE_PATTERNS if pattern.search(text)]
+            reparsers = [
+                pattern.pattern for pattern in REPARSE_PATTERNS if pattern.search(text)
+            ]
             # The compile -> NFIR adapter may refer to Pattern values, but must never
             # reparse text or instantiate the BNGL parser.
             if reparsers:
-                errors.append(f"{rel}: strict compiled/backend layer contains source reparse marker(s): {', '.join(reparsers)}")
+                errors.append(
+                    f"{rel}: strict compiled/backend layer contains source reparse marker(s): {', '.join(reparsers)}"
+                )
 
     stale = sorted(allow - observed_legacy)
     if stale:
-        errors.append("compatibility allowlist contains stale entries (remove them as files migrate): " + ", ".join(stale))
+        errors.append(
+            "compatibility allowlist contains stale entries (remove them as files migrate): "
+            + ", ".join(stale)
+        )
 
     if errors:
         print("BNG3 architecture dependency check failed:", file=sys.stderr)
         for error in errors:
             print(f"  - {error}", file=sys.stderr)
         return 1
-    print(f"BNG3 architecture dependency check passed ({len(observed_legacy)} explicit compatibility files).")
+    print(
+        f"BNG3 architecture dependency check passed ({len(observed_legacy)} explicit compatibility files)."
+    )
     return 0
 
 
