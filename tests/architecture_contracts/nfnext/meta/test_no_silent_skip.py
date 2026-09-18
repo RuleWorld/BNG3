@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Meta-test: future contracts may be opt-in, but individual cases cannot silently skip."""
+
 from pathlib import Path
 import re
 import sys
