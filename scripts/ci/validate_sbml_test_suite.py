@@ -110,9 +110,7 @@ def _simulate_and_compare(
         )
     names = list(series)
     bng_time = np.asarray(bng_result.time, dtype=float)
-    bng_values = {
-        name: np.asarray(series[name], dtype=float) for name in names
-    }
+    bng_values = {name: np.asarray(series[name], dtype=float) for name in names}
     rr = roadrunner.RoadRunner(str(output_path))
     integrator = rr.integrator
     if integrator.hasValue("relative_tolerance"):

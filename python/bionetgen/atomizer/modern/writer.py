@@ -398,7 +398,11 @@ def _evaluate_arithmetic(expression: str) -> Optional[float]:
 
     try:
         value = parse_expression(0)
-        if isinstance(value, complex) or position != len(tokens) or not math.isfinite(value):
+        if (
+            isinstance(value, complex)
+            or position != len(tokens)
+            or not math.isfinite(value)
+        ):
             return None
         return value
     except (ArithmeticError, TypeError, ValueError, OverflowError):
@@ -462,9 +466,7 @@ def convert_math_expression(expression: str) -> str:
     for function, replacement in {
         "sec": lambda args: f"(1/cos({args[0]}))" if args else "sec()",
         "csc": lambda args: f"(1/sin({args[0]}))" if args else "csc()",
-        "cot": lambda args: (
-            f"(cos({args[0]})/sin({args[0]}))" if args else "cot()"
-        ),
+        "cot": lambda args: (f"(cos({args[0]})/sin({args[0]}))" if args else "cot()"),
         "arcsec": lambda args: f"acos(1/({args[0]}))" if args else "arcsec()",
         "arccsc": lambda args: f"asin(1/({args[0]}))" if args else "arccsc()",
         "arccot": lambda args: f"atan(1/({args[0]}))" if args else "arccot()",
@@ -498,11 +500,7 @@ def convert_math_expression(expression: str) -> str:
                 else (
                     args[0]
                     if len(args) == 1
-                    else (
-                        "1"
-                        if function in {"multiply", "times", "divide"}
-                        else "0"
-                    )
+                    else ("1" if function in {"multiply", "times", "divide"} else "0")
                 )
             ),
         )
@@ -548,29 +546,17 @@ def convert_math_expression(expression: str) -> str:
     result = _replace_nested_function(
         result,
         "floor",
-        lambda args: (
-            f"floor({args[0]})"
-            if args
-            else "floor()"
-        ),
+        lambda args: (f"floor({args[0]})" if args else "floor()"),
     )
     result = _replace_nested_function(
         result,
         "ceiling",
-        lambda args: (
-            f"ceil({args[0]})"
-            if args
-            else "ceiling()"
-        ),
+        lambda args: (f"ceil({args[0]})" if args else "ceiling()"),
     )
     result = _replace_nested_function(
         result,
         "ceil",
-        lambda args: (
-            f"ceil({args[0]})"
-            if args
-            else "ceil()"
-        ),
+        lambda args: (f"ceil({args[0]})" if args else "ceil()"),
     )
     for function, operator in {
         "gt": ">",
@@ -588,9 +574,12 @@ def convert_math_expression(expression: str) -> str:
             lambda args, operator=operator, function=function: (
                 f"({(' ' + operator + ' ').join(args)})"
                 if len(args) >= 2
-                else (args[0] if len(args) == 1 else ("1" if function == "and" else "0"))
+                else (
+                    args[0] if len(args) == 1 else ("1" if function == "and" else "0")
+                )
             ),
         )
+
     def logical_xor(args: List[str]) -> str:
         if len(args) == 1:
             return args[0]
@@ -777,9 +766,7 @@ def extend_function(
         replacement = _number(value)
         # An SBML assignment rule can shadow a parameter with the same name;
         # preserve the zero-argument function call in that case.
-        result = re.sub(
-            rf"\b{re.escape(parameter)}\b(?!\s*\()", replacement, result
-        )
+        result = re.sub(rf"\b{re.escape(parameter)}\b(?!\s*\()", replacement, result)
     return result
 
 
@@ -1040,11 +1027,7 @@ def _strip_mass_action_factors(expression: str, reactant_ids: Sequence[str]) -> 
             normalized = normalized[1:-1].strip()
         key = normalized.lower()
         alias_index = next(
-            (
-                index
-                for index, aliases in enumerate(species_aliases)
-                if key in aliases
-            ),
+            (index for index, aliases in enumerate(species_aliases) if key in aliases),
             None,
         )
         if alias_index is not None:
@@ -1868,9 +1851,7 @@ def _strip_compartment_rate_factors(
     result = re.sub(
         rf"^\s*__compartment_{re.escape(standardized)}__\s*\*\s*", "", result
     )
-    result = re.sub(
-        rf"^\s*{re.escape(str(target_compartment))}\b\s*\*\s*", "", result
-    )
+    result = re.sub(rf"^\s*{re.escape(str(target_compartment))}\b\s*\*\s*", "", result)
     return result.strip() or "1"
 
 
@@ -1980,7 +1961,9 @@ def _rate_for_reaction(
         # repeated-site/statistical factor changes the numeric probe and the
         # writer emits that factor as a kinetic constant instead of removing
         # the factor already represented by the BNGL pattern.
-        math = _extract_statistical_factor(convert_math_expression(math), reactant_structures)
+        math = _extract_statistical_factor(
+            convert_math_expression(math), reactant_structures
+        )
     compartment_stripped_math = _strip_compartment_rate_factors(
         math,
         model,
@@ -2273,9 +2256,7 @@ def _rate_requires_total_rate(
     )
     for index, part in enumerate(parts):
         source_part = (
-            source_parts[min(index, len(source_parts) - 1)]
-            if source_parts
-            else ""
+            source_parts[min(index, len(source_parts) - 1)] if source_parts else ""
         )
         source_has_reactant = bool(source_part) and any(
             re.search(
@@ -2560,9 +2541,7 @@ def _lowerable_species_assignment_rules(
     return candidates
 
 
-def _update_event_translation_warning(
-    model: SBMLModel, event_result: object
-) -> None:
+def _update_event_translation_warning(model: SBMLModel, event_result: object) -> None:
     """Make the event diagnostic reflect the executable lowering result."""
 
     converted = int(getattr(event_result, "converted", 0) or 0)
@@ -2706,7 +2685,9 @@ def _inline_reaction_fluxes(
         candidates = [
             (reaction_id, reaction)
             for reaction_id, reaction in model.reactions.items()
-            if not (exclude_reaction_id and str(reaction_id) == str(exclude_reaction_id))
+            if not (
+                exclude_reaction_id and str(reaction_id) == str(exclude_reaction_id)
+            )
             and not (
                 str(reaction_id) in defined
                 or standardize_name(str(reaction_id)) in defined
@@ -2732,15 +2713,13 @@ def _inline_reaction_fluxes(
     return result
 
 
-def _conversion_factor_for_species(
-    species_id: str, model: SBMLModel
-) -> Optional[str]:
+def _conversion_factor_for_species(species_id: str, model: SBMLModel) -> Optional[str]:
     """Resolve the effective SBML conversion factor for one species."""
 
     species = model.species.get(species_id)
-    factor_id = (
-        getattr(species, "conversion_factor", None) if species else None
-    ) or (getattr(model, "conversion_factor", None) or None)
+    factor_id = (getattr(species, "conversion_factor", None) if species else None) or (
+        getattr(model, "conversion_factor", None) or None
+    )
     if factor_id is None:
         return None
     parameter = model.parameters.get(factor_id)
@@ -2883,9 +2862,7 @@ def _set_seed_symbol_if_changed(
         return False
     text = str(name)
     aliases = (text, standardize_name(text))
-    changed = any(
-        alias not in symbols or symbols[alias] != number for alias in aliases
-    )
+    changed = any(alias not in symbols or symbols[alias] != number for alias in aliases)
     _add_seed_symbol(symbols, text, number)
     return changed
 
@@ -3175,10 +3152,9 @@ def write_observables(
         # next import and make the round-trip BNGL invalid.
         variable = standardize_name(rule.variable)
         math_name = standardize_name(rule.math.strip())
-        if (
-            math_name in {standardize_name(species_id) for species_id in model.species}
-            and variable in {math_name, f"{math_name}_amt"}
-        ):
+        if math_name in {
+            standardize_name(species_id) for species_id in model.species
+        } and variable in {math_name, f"{math_name}_amt"}:
             continue
         if re.search(r"[/^()]", rule.math):
             continue
@@ -3676,8 +3652,7 @@ def write_functions(
         rule_name = standardize_name(rule.variable)
         if (
             str(rule.variable) in species_assignment_variables
-            or
-            rule.variable in skip_assignment_rules
+            or rule.variable in skip_assignment_rules
             or rule_name in skip_assignment_rules
             or rule_name in emitted_assignment_rules
         ):
@@ -3706,9 +3681,7 @@ def write_functions(
         body = _rewrite_assignment_rule_references(body, assignment_rule_variables)
         body = _rewrite_zero_argument_calls(body, zero_argument_functions)
         lines.append(f"{rule_name}() = {body}")
-        lines.append(
-            f"{ASSIGN_RULE_META_PREFIX}{rule_name}() = {body}"
-        )
+        lines.append(f"{ASSIGN_RULE_META_PREFIX}{rule_name}() = {body}")
 
     for rule in model.rules:
         if not rule.variable or rule.type != "rate":
@@ -3758,9 +3731,11 @@ def _reaction_pattern(
     species_compartment_prefix: bool = False,
 ) -> str:
     def render(pattern: str) -> str:
-        return _species_compartment_prefix(
-            pattern, compartment_override
-        ) if species_compartment_prefix else pattern
+        return (
+            _species_compartment_prefix(pattern, compartment_override)
+            if species_compartment_prefix
+            else pattern
+        )
 
     multi_pattern = model.multi_species_patterns.get(species_id)
     if model.multi_executable and multi_pattern:
@@ -3775,21 +3750,21 @@ def _reaction_pattern(
     entry = sct.entries.get(species_id)
     species = model.species.get(species_id)
     if entry is not None:
-        return render(_pattern(
-            entry.structure,
-            (
-                compartment_override
-                if compartment_override is not None
-                else (species.compartment if species else "")
-            ),
-        ))
+        return render(
+            _pattern(
+                entry.structure,
+                (
+                    compartment_override
+                    if compartment_override is not None
+                    else (species.compartment if species else "")
+                ),
+            )
+        )
     name = standardize_name(species.name if species else species_id)
     return render("M_" + name + "()")
 
 
-def _species_compartment_prefix(
-    pattern: str, compartment: Optional[str]
-) -> str:
+def _species_compartment_prefix(pattern: str, compartment: Optional[str]) -> str:
     """Convert writer suffixes to a species-level reaction prefix."""
 
     if not compartment:
@@ -4144,7 +4119,10 @@ def write_reaction_rules(
         reactants: List[str] = []
         products: List[str] = []
         for reference in reaction.reactants:
-            if reference.species == "EmptySet" or reference.species in rate_rule_species:
+            if (
+                reference.species == "EmptySet"
+                or reference.species in rate_rule_species
+            ):
                 continue
             reactants.extend(
                 [
@@ -4167,7 +4145,10 @@ def write_reaction_rules(
                 * int(round(reference.stoichiometry))
             )
         for reference in reaction.products:
-            if reference.species == "EmptySet" or reference.species in rate_rule_species:
+            if (
+                reference.species == "EmptySet"
+                or reference.species in rate_rule_species
+            ):
                 continue
             mapped = _multi_product_structure(
                 model, reference.species, reaction, reference
@@ -4209,9 +4190,7 @@ def write_reaction_rules(
             for species_id, entry in sct.entries.items()
             if entry.structure is not None
         }
-        mixed_conversion_factors = _mixed_conversion_factor_expressions(
-            reaction, model
-        )
+        mixed_conversion_factors = _mixed_conversion_factor_expressions(reaction, model)
         mixed_source_rate: Optional[str] = None
         if mixed_conversion_factors is not None and not atomize:
             prepared_math = _prepared_kinetic_math(
@@ -4344,9 +4323,7 @@ def write_reaction_rules(
                 count = int(round(abs(coefficient)))
                 repeated = " + ".join([pattern] * count)
                 side = "produce" if coefficient > 0 else "consume"
-                rule_label = (
-                    f"{candidate}_{side}_{standardize_name(species_id)}"
-                )
+                rule_label = f"{candidate}_{side}_{standardize_name(species_id)}"
                 label_suffix = 2
                 while rule_label in used_labels:
                     rule_label = (
@@ -4363,9 +4340,7 @@ def write_reaction_rules(
                     left, right = "0", repeated
                 else:
                     left, right = repeated, "0"
-                lines.append(
-                    f"{rule_label}: {left} -> {right} {scaled_rate} TotalRate"
-                )
+                lines.append(f"{rule_label}: {left} -> {right} {scaled_rate} TotalRate")
             continue
 
         if arrow == "<->":
@@ -4394,16 +4369,11 @@ def write_reaction_rules(
         # its source semantics (complete flux versus mass action).
         if (
             arrow == "<->"
-            and processed.forward_is_total_rate
-            != processed.reverse_is_total_rate
+            and processed.forward_is_total_rate != processed.reverse_is_total_rate
             and split_at >= 0
         ):
-            forward_modifier = (
-                " TotalRate" if processed.forward_is_total_rate else ""
-            )
-            reverse_modifier = (
-                " TotalRate" if processed.reverse_is_total_rate else ""
-            )
+            forward_modifier = " TotalRate" if processed.forward_is_total_rate else ""
+            reverse_modifier = " TotalRate" if processed.reverse_is_total_rate else ""
             forward_label = f"{candidate}_forward"
             reverse_label = f"{candidate}_reverse"
             while forward_label in used_labels or reverse_label in used_labels:
@@ -4667,7 +4637,10 @@ def generate_bngl(
                 severity="dropped",
             )
     math_sources = [
-        *(get_kinetic_math(reaction.kinetic_law) for reaction in model.reactions.values()),
+        *(
+            get_kinetic_math(reaction.kinetic_law)
+            for reaction in model.reactions.values()
+        ),
         *(str(rule.math or "") for rule in model.rules),
         *(str(function.math or "") for function in model.function_definitions.values()),
     ]
@@ -5003,9 +4976,7 @@ def generate_bngl(
     # limitation on the model so validation reports it globally rather than
     # accepting a malformed or semantically altered round trip.
     for function_name in ("gcd", "lcm", "rint", "delay", "rateOf"):
-        if re.search(
-            rf"\b{re.escape(function_name)}\s*\(", model_text, re.IGNORECASE
-        ):
+        if re.search(rf"\b{re.escape(function_name)}\s*\(", model_text, re.IGNORECASE):
             _record_import_warning(
                 model,
                 f'Generated BNGL math function "{function_name}" is not '

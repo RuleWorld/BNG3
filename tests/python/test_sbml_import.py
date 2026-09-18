@@ -62,4 +62,6 @@ def test_from_sbml_preserves_source_metadata_on_sbml_export(tmp_path):
     source_model = SBMLParser().parse(source.read_text(encoding="utf-8"))
     roundtrip_model = SBMLParser().parse(output.read_text(encoding="utf-8"))
     assert source_metadata_payload(source_model)
-    assert roundtrip_model.source_metadata_payload == source_metadata_payload(source_model)
+    assert roundtrip_model.source_metadata_payload == source_metadata_payload(
+        source_model
+    )

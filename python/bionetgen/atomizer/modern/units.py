@@ -113,16 +113,22 @@ def apply_unit_scaling(model: SBMLModel) -> list[Dict[str, Any]]:
     # factors and a numerically different model.  Preserve that source scale
     # and make the choice auditable instead of guessing a default.
     if not substance_default and not volume_default:
-        has_finite_quantity = any(
-            math.isfinite(float(getattr(parameter, "value", 0) or 0))
-            for parameter in model.parameters.values()
-        ) or any(
-            math.isfinite(float(getattr(species, "initial_amount", 0) or 0))
-            or math.isfinite(float(getattr(species, "initial_concentration", 0) or 0))
-            for species in model.species.values()
-        ) or any(
-            math.isfinite(float(getattr(compartment, "size", 0) or 0))
-            for compartment in model.compartments.values()
+        has_finite_quantity = (
+            any(
+                math.isfinite(float(getattr(parameter, "value", 0) or 0))
+                for parameter in model.parameters.values()
+            )
+            or any(
+                math.isfinite(float(getattr(species, "initial_amount", 0) or 0))
+                or math.isfinite(
+                    float(getattr(species, "initial_concentration", 0) or 0)
+                )
+                for species in model.species.values()
+            )
+            or any(
+                math.isfinite(float(getattr(compartment, "size", 0) or 0))
+                for compartment in model.compartments.values()
+            )
         )
         if not has_finite_quantity and model.unit_definitions:
             return warnings

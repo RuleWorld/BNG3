@@ -96,8 +96,7 @@ def _raw_child_xml(element: Optional[Any], name: str) -> str:
     if element is None:
         return ""
     values = [
-        ET.tostring(child, encoding="unicode")
-        for child in _children(element, name)
+        ET.tostring(child, encoding="unicode") for child in _children(element, name)
     ]
     return "\n".join(value.strip() for value in values if value.strip())
 
@@ -288,7 +287,10 @@ def _mathml_to_formula(element: Optional[Any], parenthesize: bool = False) -> st
                 definition_url = str(
                     _attribute(operator_node, "definitionURL", "") or ""
                 ).lower()
-                if "symbols/delay" in definition_url or "symbols/rateof" in definition_url:
+                if (
+                    "symbols/delay" in definition_url
+                    or "symbols/rateof" in definition_url
+                ):
                     operand = _mathml_text(operator_node)
                     # Some libAntimony exports put the first operand in the
                     # csymbol text. ``rateOf`` has one argument, so a child
@@ -513,15 +515,9 @@ def _evaluate_static_arithmetic(
         )
         if value is None:
             return None
-        result = (
-            result[: call.start()]
-            + format(value, ".15g")
-            + result[closing + 1 :]
-        )
+        result = result[: call.start()] + format(value, ".15g") + result[closing + 1 :]
 
-    tokens = re.findall(
-        r"(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?|[+\-*/^()]", result
-    )
+    tokens = re.findall(r"(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?|[+\-*/^()]", result)
     if not tokens or "".join(tokens) != re.sub(r"\s+", "", result):
         return None
 
@@ -622,9 +618,7 @@ def _expand_rate_of_from_rate_rules(model: SBMLModel) -> None:
         def replace(match: re.Match[str]) -> str:
             identifier = match.group(1)
             key = (
-                identifier
-                if identifier in rate_rules
-                else standardize_name(identifier)
+                identifier if identifier in rate_rules else standardize_name(identifier)
             )
             replacement = rate_rules.get(key)
             if replacement is None or key in stack:
@@ -703,9 +697,7 @@ def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
 
     def key_for(identifier: str) -> str:
         return (
-            identifier
-            if identifier in model.species
-            else standardize_name(identifier)
+            identifier if identifier in model.species else standardize_name(identifier)
         )
 
     def stoichiometry(reference: SBMLSpeciesReference) -> Optional[float]:
@@ -926,7 +918,9 @@ def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
         if law is None:
             continue
         old_math = (
-            law.get("math", "") if isinstance(law, Mapping) else getattr(law, "math", "")
+            law.get("math", "")
+            if isinstance(law, Mapping)
+            else getattr(law, "math", "")
         )
         new_math = str(old_math or "")
         local_parameters = (
@@ -1448,11 +1442,7 @@ class SBMLParser:
     def _fold_static_stoichiometry(model: SBMLModel) -> None:
         """Resolve species-reference stoichiometry that is static for the run."""
 
-        controlled = {
-            str(rule.variable)
-            for rule in model.rules
-            if rule.variable
-        }
+        controlled = {str(rule.variable) for rule in model.rules if rule.variable}
         controlled.update(
             str(assignment.variable)
             for event in model.events
@@ -1570,11 +1560,7 @@ class SBMLParser:
         if not assignment_rules:
             return
 
-        controlled = {
-            str(rule.variable)
-            for rule in model.rules
-            if rule.variable
-        }
+        controlled = {str(rule.variable) for rule in model.rules if rule.variable}
         controlled.update(
             str(assignment.variable)
             for event in model.events
@@ -1633,7 +1619,10 @@ class SBMLParser:
                 for rule in model.rules
                 if rule not in assignment_rules
             ),
-            *(str(function.math or "") for function in model.function_definitions.values()),
+            *(
+                str(function.math or "")
+                for function in model.function_definitions.values()
+            ),
             *(str(event.trigger or "") for event in model.events),
             *(str(event.delay or "") for event in model.events),
             *(str(event.priority or "") for event in model.events),
@@ -1642,22 +1631,24 @@ class SBMLParser:
                 for event in model.events
                 for assignment in event.assignments
             ),
-            *(
-                str(assignment.math or "")
-                for assignment in model.initial_assignments
-            ),
+            *(str(assignment.math or "") for assignment in model.initial_assignments),
         ]
         fold: Dict[int, float] = {}
         for rule in assignment_rules:
             variable = str(rule.variable)
             if (
                 getattr(rule, "math_from_empty_boolean", False)
-                or
-                variable in participants
+                or variable in participants
                 or variable in event_targets
-                or sum(candidate.variable == rule.variable for candidate in assignment_rules)
+                or sum(
+                    candidate.variable == rule.variable
+                    for candidate in assignment_rules
+                )
                 != 1
-                or any(references_identifier(expression, variable) for expression in other_expressions)
+                or any(
+                    references_identifier(expression, variable)
+                    for expression in other_expressions
+                )
             ):
                 continue
             value = _evaluate_static_arithmetic(
@@ -2069,9 +2060,7 @@ class SBMLParser:
                 _local_name(element.tag) == "apply"
                 and len(list(element)) == 1
                 and _local_name(list(element)[0].tag) in {"and", "or"}
-                for element in (
-                    math_element.iter() if math_element is not None else []
-                )
+                for element in (math_element.iter() if math_element is not None else [])
             )
             if not math.strip():
                 if warnings is not None:

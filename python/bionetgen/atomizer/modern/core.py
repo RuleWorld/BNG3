@@ -432,7 +432,10 @@ def topological_sort(
         # numerical path of stiff CVODE models between identical imports.
         for dependency in sorted(
             dependencies.get(species_id, set()),
-            key=lambda value: (species_order.get(value, len(species_order)), str(value)),
+            key=lambda value: (
+                species_order.get(value, len(species_order)),
+                str(value),
+            ),
         ):
             if dependency in species_ids:
                 visit(dependency, current_path)

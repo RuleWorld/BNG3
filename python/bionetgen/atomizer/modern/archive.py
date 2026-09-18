@@ -17,7 +17,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO, Optional, Union
 
-
 ArchiveSource = Union[str, Path, bytes, bytearray, BinaryIO]
 
 
@@ -77,9 +76,7 @@ def _manifest_sbml_locations(
                 ),
                 "",
             )
-            normalised_location = _normalise_member_name(
-                posixpath.join(base, location)
-            )
+            normalised_location = _normalise_member_name(posixpath.join(base, location))
             entries.append(
                 {
                     "location": normalised_location,
@@ -204,8 +201,7 @@ def _extract_sbml_from_zip(
             else:
                 raise ValueError(
                     f"{archive_label} archive contains multiple SBML documents without a "
-                    "manifest selection: "
-                    + ", ".join(candidates)
+                    "manifest selection: " + ", ".join(candidates)
                 )
 
         assert selected is not None
@@ -239,6 +235,7 @@ def extract_sbml_from_archive(
     """
 
     return _extract_sbml_from_zip(source, member, "ZIP")
+
 
 # Short alias for callers that use the OMEX spelling.
 extract_sbml_from_omex = extract_sbml_from_combine_archive

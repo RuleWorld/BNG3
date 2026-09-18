@@ -759,8 +759,7 @@ def _simulate_and_compare(
     observable_names = list(series)
     bng_time = np.asarray(bng_result.time, dtype=float)
     bng_values = {
-        name: np.asarray(series[name], dtype=float)
-        for name in observable_names
+        name: np.asarray(series[name], dtype=float) for name in observable_names
     }
 
     rr = roadrunner.RoadRunner(str(output_path))
@@ -1154,10 +1153,7 @@ def _validate_mode(
     # pass by changing only one side.
     if initial_runtime_error is not None or not comparison.get("passed", False):
         retry_max_step = max(abs(simulation_t_end) / 2000.0, 1e-6)
-        retries = [
-            retry_max_step * factor
-            for factor in (1.0, 0.2, 0.1, 0.04, 0.02)
-        ]
+        retries = [retry_max_step * factor for factor in (1.0, 0.2, 0.1, 0.04, 0.02)]
         last_comparison = comparison
         for retry_max_step in retries:
             try:

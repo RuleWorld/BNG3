@@ -722,9 +722,7 @@ def test_playground_parser_emits_import_warning_codes_and_counts():
 
     assert any(warning.category == "units" for warning in model.import_warnings)
     constraint_warnings = [
-        warning
-        for warning in model.import_warnings
-        if warning.category == "constraint"
+        warning for warning in model.import_warnings if warning.category == "constraint"
     ]
     assert len(constraint_warnings) == 1
     constraint_messages = [
@@ -843,8 +841,7 @@ def test_playground_parser_preserves_mathml_numeric_and_function_semantics():
     assert rules["clock"] == "time * (2 * 10^(3))"
 
     assert not any(
-        warning.category == "mathml"
-        and "e-notation" in warning.message
+        warning.category == "mathml" and "e-notation" in warning.message
         for warning in model.import_warnings
     )
 
@@ -2797,10 +2794,7 @@ def test_playground_writer_materializes_non_species_rate_rule_targets():
     assert f"@cell:{pattern}() 3" in bngl
     assert f"Species X_amt @cell:{pattern}()" in bngl
     assert "__rate_rule__X() = -k*X_amt" in bngl
-    assert (
-        f"__rate_rule_X: 0 -> {pattern}@cell() __rate_rule__X() TotalRate"
-        in bngl
-    )
+    assert f"__rate_rule_X: 0 -> {pattern}@cell() __rate_rule__X() TotalRate" in bngl
     assert [(message.code, message.message) for message in messages] == [
         ("BNW012", "Synthesized 1 rate-rule state species")
     ]
@@ -2972,8 +2966,7 @@ def test_playground_parser_folds_static_user_function_stoichiometry():
 def test_cpp_sbml_writer_aggregates_repeated_species_references(tmp_path):
     cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
 
-    model = cpp.parse_string(
-        """begin parameters
+    model = cpp.parse_string("""begin parameters
     k 1
 end parameters
 begin molecule types
@@ -2986,21 +2979,14 @@ end seed species
 begin reaction rules
     R: A() + A() -> B() + B() + B() + B() k TotalRate
 end reaction rules
-"""
-    )
+""")
     network = cpp.generate_network(model, max_iter=10)
     output = tmp_path / "stoichiometry.xml"
     cpp.io.write_sbml(model, network, str(output))
 
     xml = output.read_text()
-    assert (
-        '<speciesReference species="S1" constant="true" stoichiometry="2"/>'
-        in xml
-    )
-    assert (
-        '<speciesReference species="S2" constant="true" stoichiometry="4"/>'
-        in xml
-    )
+    assert '<speciesReference species="S1" constant="true" stoichiometry="2"/>' in xml
+    assert '<speciesReference species="S2" constant="true" stoichiometry="4"/>' in xml
     assert xml.count('<speciesReference species="S1"') == 1
     assert xml.count('<speciesReference species="S2"') == 1
     assert 'xmlns="http://www.sbml.org/sbml/level3/version2/core"' in xml
@@ -3013,8 +2999,7 @@ end reaction rules
 
 def test_cpp_sbml_writer_uses_sbml_arc_trigonometric_names(tmp_path):
     cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
-    model = cpp.parse_string(
-        """begin parameters
+    model = cpp.parse_string("""begin parameters
     x 0.5
 end parameters
 begin molecule types
@@ -3027,8 +3012,7 @@ end seed species
 begin reaction rules
     R: A() -> B() asin(x) TotalRate
 end reaction rules
-"""
-    )
+""")
     network = cpp.generate_network(model, max_iter=10)
     output = tmp_path / "arc-trigonometry.xml"
     cpp.io.write_sbml(model, network, str(output))
@@ -3046,8 +3030,7 @@ def test_cpp_sbml_writer_roundtrips_opaque_source_metadata_payload(tmp_path):
     cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
     from bionetgen.atomizer.modern import SBMLParser
 
-    model = cpp.parse_string(
-        """begin parameters
+    model = cpp.parse_string("""begin parameters
     k 1
 end parameters
 begin molecule types
@@ -3059,8 +3042,7 @@ end seed species
 begin observables
     Molecules A A()
 end observables
-"""
-    )
+""")
     network = cpp.generate_network(model, max_iter=10)
     payload = '{"schemaVersion":1,"model":{"metaid":"meta_model"}}'
     output = tmp_path / "metadata.xml"
@@ -3068,7 +3050,7 @@ end observables
 
     xml = output.read_text()
     assert "bng:sourceMetadata" in xml
-    assert "encoding=\"base64\"" in xml
+    assert 'encoding="base64"' in xml
     parsed = SBMLParser().parse(xml)
     assert parsed.source_metadata_payload == payload
 
@@ -3105,9 +3087,7 @@ def test_atomizer_uses_species_level_compartment_prefixes_in_reactions():
     result = Atomizer(atomize=False, quiet_mode=True).atomize(sbml)
     assert result.success
     reaction = next(
-        line
-        for line in result.bngl.splitlines()
-        if line.strip().startswith("r:")
+        line for line in result.bngl.splitlines() if line.strip().startswith("r:")
     )
     assert "@cytoplasm:M_A()" in reaction
     assert "@cytoplasm:M_B()" in reaction

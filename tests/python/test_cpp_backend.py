@@ -351,8 +351,7 @@ end model
 
     def test_total_rate_does_not_apply_reactant_symmetry_factor(self):
         """A complete SBML flux must not be divided by repeated-reactant symmetry."""
-        model = _cpp.parse_string(
-            """
+        model = _cpp.parse_string("""
 begin model
 begin parameters
     k 1.0
@@ -370,8 +369,7 @@ begin reaction rules
     A() + A() + A() -> 0 k TotalRate
 end reaction rules
 end model
-"""
-        )
+""")
         network = _cpp.generate_network(model)
         result = _cpp.simulate_ode(model, network, t_end=1.0, n_steps=1)
 
@@ -1344,9 +1342,7 @@ end reaction rules
 end model
 """)
 
-        result = bionetgen.load(str(bngl)).simulate(
-            method="ode", t_end=1.0, n_steps=2
-        )
+        result = bionetgen.load(str(bngl)).simulate(method="ode", t_end=1.0, n_steps=2)
 
         assert set(result.functions) == {"algebraic"}
         assert result.functions["algebraic"].tolist() == pytest.approx(

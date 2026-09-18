@@ -283,9 +283,7 @@ def test_process_reaction_rate_preserves_other_compartment_geometry_factors():
                 id="r",
                 reactants=[SBMLSpeciesReference("A")],
                 products=[SBMLSpeciesReference("P")],
-                kinetic_law=SBMLKineticLaw(
-                    "membrane * k * A * (1 + P)"
-                ),
+                kinetic_law=SBMLKineticLaw("membrane * k * A * (1 + P)"),
             )
         },
     )
@@ -381,12 +379,8 @@ def test_writer_projects_mixed_conversion_factors_per_species():
         id="mixed_conversion_factors",
         compartments={"cell": SBMLCompartment(id="cell", size=1)},
         species={
-            "A": SBMLSpecies(
-                id="A", compartment="cell", conversion_factor="a_factor"
-            ),
-            "B": SBMLSpecies(
-                id="B", compartment="cell", conversion_factor="b_factor"
-            ),
+            "A": SBMLSpecies(id="A", compartment="cell", conversion_factor="a_factor"),
+            "B": SBMLSpecies(id="B", compartment="cell", conversion_factor="b_factor"),
         },
         parameters={
             "a_factor": SBMLParameter(id="a_factor", value=2),
@@ -410,8 +404,7 @@ def test_writer_projects_mixed_conversion_factors_per_species():
     assert "r_consume_A: M_A()@cell -> 0 2 * (k * _c_A()) TotalRate" in result
     assert "r_produce_B: 0 -> M_B()@cell 3 * (k * _c_A()) TotalRate" in result
     assert not any(
-        warning["severity"] == "dropped"
-        and warning["category"] == "conversionFactor"
+        warning["severity"] == "dropped" and warning["category"] == "conversionFactor"
         for warning in model.import_warnings
     )
     assert any(

@@ -9,7 +9,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-
 FIELDS = [
     "report_kind",
     "report_schema_version",
@@ -170,16 +169,16 @@ def _command(report: dict[str, Any], kind: str) -> str:
     )
 
 
-def _row(
-    report: dict[str, Any], record: dict[str, Any], kind: str
-) -> dict[str, Any]:
+def _row(report: dict[str, Any], record: dict[str, Any], kind: str) -> dict[str, Any]:
     modes = [mode for mode in record.get("modes", []) if isinstance(mode, dict)]
     primary = _primary_mode(record)
     source_info = record.get("source_model") or record.get("source") or {}
     if not isinstance(source_info, dict):
         source_info = {}
     source_xml = primary.get("source_xml") or record.get("source_xml") or {}
-    generated = primary.get("generated_network") or record.get("generated_network") or {}
+    generated = (
+        primary.get("generated_network") or record.get("generated_network") or {}
+    )
     written = primary.get("written_xml") or record.get("written_xml") or {}
     reimport = primary.get("reimport_network") or record.get("reimport_network") or {}
     native = primary.get("native_reader") or record.get("native_reader") or {}
@@ -191,9 +190,7 @@ def _row(
     source_metadata = source_info.get("metadata", {})
     if not isinstance(source_metadata, dict):
         source_metadata = {}
-    reimport_model = primary.get("reimport_model") or record.get(
-        "reimport_model", {}
-    )
+    reimport_model = primary.get("reimport_model") or record.get("reimport_model", {})
     if not isinstance(reimport_model, dict):
         reimport_model = {}
     reimport_metadata = reimport_model.get("metadata", {})
@@ -205,8 +202,7 @@ def _row(
     statuses = [mode.get("status", "passed") for mode in modes]
     mode_errors = {mode.get("mode", "mode"): mode.get("error", "") for mode in modes}
     mode_reasons = {
-        mode.get("mode", "mode"): mode.get("unsupported_reason", "")
-        for mode in modes
+        mode.get("mode", "mode"): mode.get("unsupported_reason", "") for mode in modes
     }
     status = str(record.get("status", ""))
     row = {field: "" for field in FIELDS}
@@ -255,14 +251,18 @@ def _row(
             "source_package_required_json": _json(
                 {
                     package: value.get("required", False)
-                    for package, value in (source_metadata.get("packages") or {}).items()
+                    for package, value in (
+                        source_metadata.get("packages") or {}
+                    ).items()
                     if isinstance(value, dict)
                 }
             ),
             "source_package_counts_json": _json(
                 {
                     package: value.get("elementCount", 0)
-                    for package, value in (source_metadata.get("packages") or {}).items()
+                    for package, value in (
+                        source_metadata.get("packages") or {}
+                    ).items()
                     if isinstance(value, dict)
                 }
             ),
@@ -306,8 +306,11 @@ def _row(
             "failed_observables": _json(
                 [
                     name
-                    for name, comparison in (simulation.get("observables") or {}).items()
-                    if isinstance(comparison, dict) and not comparison.get("passed", False)
+                    for name, comparison in (
+                        simulation.get("observables") or {}
+                    ).items()
+                    if isinstance(comparison, dict)
+                    and not comparison.get("passed", False)
                 ]
             ),
             "observables_json": _json(simulation.get("observables")),
@@ -336,9 +339,17 @@ def main() -> int:
     if args.curated is None and args.suite is None:
         parser.error("provide --curated and/or --suite")
     if args.curated:
-        _export(args.curated, args.out_dir / "curated_biomodels_roundtrip.csv", "curated_biomodels")
+        _export(
+            args.curated,
+            args.out_dir / "curated_biomodels_roundtrip.csv",
+            "curated_biomodels",
+        )
     if args.suite:
-        _export(args.suite, args.out_dir / "sbml_test_suite_roundtrip.csv", "sbml_test_suite")
+        _export(
+            args.suite,
+            args.out_dir / "sbml_test_suite_roundtrip.csv",
+            "sbml_test_suite",
+        )
     return 0
 
 

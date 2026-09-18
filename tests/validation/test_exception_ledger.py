@@ -9,7 +9,6 @@ import pytest
 
 from tests.validation import exception_ledger
 
-
 SAMPLE_EXCEPTION = {
     "id": "sample-exception",
     "model": "blbr",
@@ -56,11 +55,14 @@ def test_repository_exception_ledger_is_valid():
     exception_ledger.validate_references(ledger)
 
     assert len(ledger.exceptions) == 0
-    assert ledger.find(
-        "test_parity_net.py::test_net_parity_smoke[blbr]",
-        "blbr",
-        "network_generation",
-    ) is None
+    assert (
+        ledger.find(
+            "test_parity_net.py::test_net_parity_smoke[blbr]",
+            "blbr",
+            "network_generation",
+        )
+        is None
+    )
 
 
 def test_strict_exception_rejects_unexpected_pass():

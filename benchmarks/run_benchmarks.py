@@ -13,7 +13,6 @@ import numpy as np
 
 import bionetgen
 
-
 MODELS = [
     ("simple_system", "tests/python/models/simple_system.bngl"),
     ("egfr_net", "tests/validation/Validate/egfr_net.bngl"),
@@ -70,7 +69,9 @@ def benchmark_model(model_name: str, model_path: Path) -> dict:
         record["n_species"] = network.num_species
         record["n_reactions"] = network.num_reactions
 
-        _, simulate_ms = _measure(lambda: model.simulate(method="ode", t_end=50, n_steps=100))
+        _, simulate_ms = _measure(
+            lambda: model.simulate(method="ode", t_end=50, n_steps=100)
+        )
         record["simulate_ms"] = simulate_ms
 
         scan_parameter, nominal_value = _pick_scan_parameter(model)
@@ -89,7 +90,13 @@ def benchmark_model(model_name: str, model_path: Path) -> dict:
             record["scan_parameter"] = scan_parameter
 
         record["total_ms"] = sum(
-            value for value in [record["parse_ms"], record["generate_ms"], record["simulate_ms"]] if value is not None
+            value
+            for value in [
+                record["parse_ms"],
+                record["generate_ms"],
+                record["simulate_ms"],
+            ]
+            if value is not None
         )
     except Exception as exc:  # pragma: no cover - benchmark environments vary
         record["status"] = "error"
@@ -105,8 +112,21 @@ def _format_ms(value):
 
 
 def _to_markdown(rows: list[dict]) -> str:
-    headers = ["model", "n_species", "n_reactions", "parse_ms", "generate_ms", "simulate_ms", "scan_ms", "total_ms", "status"]
-    lines = ["| " + " | ".join(headers) + " |", "| " + " | ".join(["---"] * len(headers)) + " |"]
+    headers = [
+        "model",
+        "n_species",
+        "n_reactions",
+        "parse_ms",
+        "generate_ms",
+        "simulate_ms",
+        "scan_ms",
+        "total_ms",
+        "status",
+    ]
+    lines = [
+        "| " + " | ".join(headers) + " |",
+        "| " + " | ".join(["---"] * len(headers)) + " |",
+    ]
     for row in rows:
         lines.append(
             "| "
@@ -130,8 +150,18 @@ def _to_markdown(rows: list[dict]) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Benchmark the BioNetGen C++ backend")
-    parser.add_argument("--json", dest="json_path", type=Path, default=Path("benchmarks/results/latest.json"))
-    parser.add_argument("--markdown", dest="markdown_path", type=Path, default=Path("benchmarks/results/latest.md"))
+    parser.add_argument(
+        "--json",
+        dest="json_path",
+        type=Path,
+        default=Path("benchmarks/results/latest.json"),
+    )
+    parser.add_argument(
+        "--markdown",
+        dest="markdown_path",
+        type=Path,
+        default=Path("benchmarks/results/latest.md"),
+    )
     args = parser.parse_args()
 
     rows = []
@@ -140,7 +170,9 @@ def main() -> int:
         if model_path.exists():
             rows.append(benchmark_model(model_name, model_path))
         else:
-            rows.append({"model": model_name, "path": str(model_path), "status": "missing"})
+            rows.append(
+                {"model": model_name, "path": str(model_path), "status": "missing"}
+            )
 
     args.json_path.parent.mkdir(parents=True, exist_ok=True)
     args.markdown_path.parent.mkdir(parents=True, exist_ok=True)

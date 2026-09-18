@@ -314,7 +314,9 @@ def test_source_metadata_is_counted_and_classified_in_generated_bngl():
     result = Atomizer(atomize=False, quiet_mode=True).atomize(sbml)
     assert result.success is True
     line = next(
-        line for line in result.bngl.splitlines() if line.startswith("# @sbml-metadata ")
+        line
+        for line in result.bngl.splitlines()
+        if line.startswith("# @sbml-metadata ")
     )
     payload = json.loads(unquote(line.split(" ", 2)[2]))
     assert payload["modelId"] == "metadata_model"

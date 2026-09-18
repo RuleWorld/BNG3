@@ -101,13 +101,17 @@ def source_metadata_summary(model: SBMLModel) -> Dict[str, Any]:
     # Species CVTerms are parsed into structured records.  For other SBML
     # elements retain a conservative one-term count per annotated element;
     # exact source XML remains available on the corresponding model object.
-    cvterm_count = species_cvterm_count + sum(
-        1
-        for item in all_items
-        if item is not model
-        and id(item) not in species_item_ids
-        and _metadata_fields(item)["annotationXml"]
-    ) + bool(model_fields["annotationXml"])
+    cvterm_count = (
+        species_cvterm_count
+        + sum(
+            1
+            for item in all_items
+            if item is not model
+            and id(item) not in species_item_ids
+            and _metadata_fields(item)["annotationXml"]
+        )
+        + bool(model_fields["annotationXml"])
+    )
     model_metadata_count = sum(
         bool(model_fields[field])
         for field in ("metaid", "notesXml", "annotationXml", "sboTerm")
@@ -226,7 +230,11 @@ def source_metadata_payload(model: SBMLModel) -> str:
 
     model_fields = _metadata_fields(model)
     packages = source_metadata_summary(model)["packages"]
-    if not any(value for value in model_fields.values()) and not entities and not packages:
+    if (
+        not any(value for value in model_fields.values())
+        and not entities
+        and not packages
+    ):
         return ""
 
     payload = {
