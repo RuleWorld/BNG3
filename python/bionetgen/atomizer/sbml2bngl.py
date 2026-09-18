@@ -19,6 +19,7 @@ from bionetgen.atomizer.utils.util import (
     get_size,
     get_item,
 )
+
 try:
     import libsbml  # type: ignore
 except ImportError as _libsbml_exc:  # pragma: no cover
