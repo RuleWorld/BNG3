@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Meta-test: every proposed NFnext architecture area has substantial RED contracts."""
+
 from __future__ import annotations
 from pathlib import Path
 import re
@@ -43,9 +44,13 @@ def main() -> int:
         total += cases
         print(f"{filename}: {cases} cases [{area}]")
         if cases < MIN_CASES_PER_FILE:
-            failures.append(f"{filename}: only {cases} cases; require >= {MIN_CASES_PER_FILE}")
-        if "#error \"RED CONTRACT:" not in text:
-            failures.append(f"{filename}: missing explicit RED-contract error for absent API")
+            failures.append(
+                f"{filename}: only {cases} cases; require >= {MIN_CASES_PER_FILE}"
+            )
+        if '#error "RED CONTRACT:' not in text:
+            failures.append(
+                f"{filename}: missing explicit RED-contract error for absent API"
+            )
     print(f"total_future_contract_cases={total}")
     if failures:
         print("FAIL:", file=sys.stderr)
