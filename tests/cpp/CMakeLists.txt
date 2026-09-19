@@ -249,6 +249,19 @@ target_link_libraries(test_sbml_reader PRIVATE
     Catch2::Catch2WithMain Catch2::Catch2 bionetgen_core)
 catch_discover_tests(test_sbml_reader)
 
+add_executable(test_finite_backend test_finite_backend.cpp)
+target_include_directories(test_finite_backend PRIVATE
+    ${CMAKE_SOURCE_DIR}/cpp
+    ${CMAKE_SOURCE_DIR}/cpp/parser
+    ${CMAKE_SOURCE_DIR}/cpp/parser/generated
+    ${antlr4_runtime_SOURCE_DIR}/runtime/Cpp/runtime/src
+    ${sundials_SOURCE_DIR}/include
+    ${sundials_BINARY_DIR}/include
+)
+target_link_libraries(test_finite_backend PRIVATE
+    Catch2::Catch2WithMain Catch2::Catch2 bng_finite_backend bng_engine bng_ast)
+catch_discover_tests(test_finite_backend)
+
 if(BUILD_BNGSIM_ADAPTER)
     add_executable(test_bngsim_adapter test_bngsim_adapter.cpp)
     target_include_directories(test_bngsim_adapter PRIVATE

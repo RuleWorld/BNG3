@@ -121,9 +121,26 @@ add_library(bng_engine STATIC
     console/Console.cpp
     cli/BatchRunner.cpp
 )
+add_library(bng_finite_backend STATIC
+    engine/FiniteBackend.cpp
+)
+target_include_directories(bng_finite_backend PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${ANTLR_GEN_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/parser
+    ${antlr4_runtime_SOURCE_DIR}/runtime/Cpp/runtime/src
+    ${sundials_SOURCE_DIR}/include
+    ${sundials_BINARY_DIR}/include
+)
+target_link_libraries(bng_finite_backend PUBLIC bng_engine bng_parser bng_ast)
 if(BUILD_BNGSIM_ADAPTER)
+    target_sources(bng_finite_backend PRIVATE engine/BngsimBackend.cpp)
     target_sources(bng_engine PRIVATE engine/BngsimAdapter.cpp)
+    target_link_libraries(bng_finite_backend PUBLIC bngsim_external)
 endif()
+
+# bng_engine always links the finite-backend dispatch (compile-safe without BNGsim)
+target_link_libraries(bng_engine PUBLIC bng_finite_backend)
 target_include_directories(bng_engine PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/nfsim/NFinput/TinyXML

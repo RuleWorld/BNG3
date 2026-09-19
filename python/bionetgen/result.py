@@ -21,6 +21,9 @@ class SimResult:
     construction_path : str or None
         Backend construction route when reported by the simulator. For NFsim this
         is ``"direct"``, ``"in-memory-xml"``, or ``"on-disk-xml"``.
+    backend : str or None
+        Finite-network backend that produced the result: ``"native"``,
+        ``"bngsim"``, or ``"nfsim"`` (diagnostic, ADR 0003).
     """
 
     def __init__(self, raw: dict):
@@ -28,6 +31,8 @@ class SimResult:
         self.observables: Dict[str, np.ndarray] = raw.get("observables", {})
         self.concentrations: Optional[np.ndarray] = raw.get("concentrations", None)
         self.construction_path: Optional[str] = raw.get("construction_path", None)
+        # Finite-network backend diagnostic (ADR 0003): "native", "bngsim", or "nfsim".
+        self.backend: Optional[str] = raw.get("backend", None)
 
     @property
     def n_steps(self) -> int:
@@ -80,8 +85,9 @@ class SimResult:
         return fig, ax
 
     def __repr__(self) -> str:
+        b = f" backend={self.backend}" if self.backend else ""
         return (
-            f"<SimResult steps={self.n_steps} " f"observables={len(self.observables)}>"
+            f"<SimResult steps={self.n_steps} observables={len(self.observables)}{b}>"
         )
 
     def _repr_html_(self) -> str:
