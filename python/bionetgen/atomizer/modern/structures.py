@@ -43,9 +43,8 @@ class Component:
         self.active_state = ""
 
     def copy(self) -> "Component":
-        result = Component(
-            self.name, self.idx, copy.deepcopy(self.bonds), copy.deepcopy(self.states)
-        )
+        # ⚡ Bolt: Use explicit list() for primitive lists to avoid O(N) deepcopy overhead
+        result = Component(self.name, self.idx, list(self.bonds), list(self.states))
         result.active_state = self.active_state
         return result
 
@@ -315,8 +314,9 @@ class Species:
 
     def copy(self) -> "Species":
         result = Species()
-        result.bond_numbers = copy.deepcopy(self.bond_numbers)
-        result.bonds = copy.deepcopy(self.bonds)
+        # ⚡ Bolt: Use explicit list() for primitive lists to avoid O(N) deepcopy overhead
+        result.bond_numbers = list(self.bond_numbers)
+        result.bonds = list(self.bonds)
         result.identifier = self.identifier
         result.idx = self.idx
         result.molecules = [molecule.copy() for molecule in self.molecules]
@@ -602,13 +602,15 @@ class Species:
                 for component in molecule.components
                 if component.active_state not in ("", "0")
             )
+            # ⚡ Bolt: Cache expensive to_string() result instead of calling it twice
+            mol_str = molecule.to_string()
             return (
                 -len(molecule.components),
                 min(bonds or [999]),
                 -len(molecule.get_component_with_bonds()),
                 -active,
-                len(molecule.to_string()),
-                molecule.to_string(),
+                len(mol_str),
+                mol_str,
             )
 
         self.molecules.sort(key=key)
