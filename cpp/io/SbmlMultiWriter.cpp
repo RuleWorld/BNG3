@@ -1,5 +1,7 @@
 #include "SbmlMultiWriter.hpp"
 
+#include "EnergyExportGuard.hpp"
+
 #include <algorithm>
 #include <sstream>
 #include <cctype>
@@ -55,6 +57,7 @@ std::string SbmlMultiWriter::write(const ast::Model& model) {
 }
 
 std::string SbmlMultiWriter::write(const ast::Model& model, const Options& options) {
+    requireNoEnergySemantics(model, "SBML-multi");
     std::ostringstream sbml;
 
     // SBML L3V1 header with Multi package namespace

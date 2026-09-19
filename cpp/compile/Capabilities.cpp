@@ -6,20 +6,21 @@
 
 #include "ast/Expression.hpp"
 #include "ast/Model.hpp"
+#include "energy/DrivenEnergy.hpp"
 
 namespace bng::compile {
 
 namespace {
 
 void addUnsupported(CapabilityReport& report, Feature feature,
-                    const char* backend, const char* detail) {
+                    const std::string& backend, const std::string& detail) {
     report.set(feature, CapabilityState::Unsupported);
     Diagnostic diagnostic;
     diagnostic.code = DiagnosticCode::UnsupportedFeature;
     diagnostic.severity = Severity::Error;
     diagnostic.category = ValidationCategory::BackendCapability;
     diagnostic.entity = backend;
-    diagnostic.message = std::string(backend) + " cannot execute " + detail;
+    diagnostic.message = backend + " cannot execute " + detail;
     report.addDiagnostic(std::move(diagnostic));
 }
 
@@ -41,6 +42,17 @@ bool containsTableFunction(const ast::Expression& expression) {
 
 void inspectExpression(const ast::Expression& expression, FeatureSet& features) {
     if (containsTableFunction(expression)) features.add(Feature::TableFunctions);
+}
+
+// Matches the spelling accepted elsewhere in the pipeline (NetWriter's
+// parseArrhenius and the NFsim adapters both accept either case).
+bool isArrheniusRateLaw(const ast::Expression& expression) {
+    if (expression.kind() != ast::ExpressionKind::Function) return false;
+    std::string name = expression.name();
+    std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return name == "arrhenius";
 }
 
 } // namespace
@@ -74,6 +86,7 @@ std::vector<Feature> FeatureSet::toVector() const {
 FeatureSet featuresUsed(const ast::Model& model) {
     FeatureSet features;
     if (!model.getEnergyPatterns().empty()) features.add(Feature::EnergyPatterns);
+    if (!model.getBarrierPatterns().empty()) features.add(Feature::BarrierPatterns);
     if (!model.getPopulationMaps().empty()) features.add(Feature::PopulationMaps);
     if (!model.getFunctions().empty()) features.add(Feature::Functions);
     if (!model.getCompartments().empty()) features.add(Feature::Compartments);
@@ -119,7 +132,11 @@ FeatureSet featuresUsed(const ast::Model& model) {
     }
     for (const auto& rule : model.getReactionRules()) {
         if (rule.hasScopePrefix()) features.add(Feature::LocalFunctions);
+        if (rule.hasDrivingWork()) features.add(Feature::DrivenReservoirs);
         for (const auto& rate : rule.getRates()) inspectExpression(rate, features);
+    }
+    for (const auto& barrier : model.getBarrierPatterns()) {
+        if (barrier.hasExpression()) inspectExpression(barrier.expression(), features);
     }
     return features;
 }
@@ -164,6 +181,56 @@ CapabilityReport capabilitiesFor(const ast::Model& model, BackendKind backend) {
                                ? CapabilityState::CompatibilityOnly
                                : CapabilityState::ExactLowering;
         report.set(feature, state);
+    }
+
+    // Barrier patterns and driving reservoirs extend eBNGL beyond canonical
+    // NFsim, so no independent oracle exists for them. They stay unsupported
+    // at every backend boundary until the gate is explicitly set, and the gate
+    // itself is documented as experimental rather than as parity.
+    const bool generalEnergy = energy::generalEnergyEnabled();
+    if (!generalEnergy) {
+        if (features.contains(Feature::BarrierPatterns)) {
+            addUnsupported(report, Feature::BarrierPatterns,
+                           backend == BackendKind::NFsim ? "NFsim" : "the network compiler",
+                           std::string("barrier patterns without ") +
+                               energy::generalEnergyGateName() + " set");
+        }
+        if (features.contains(Feature::DrivenReservoirs)) {
+            addUnsupported(report, Feature::DrivenReservoirs,
+                           backend == BackendKind::NFsim ? "NFsim" : "the network compiler",
+                           std::string("driven_by() reservoir work without ") +
+                               energy::generalEnergyGateName() + " set");
+        }
+    } else {
+        // A driving reservoir only has meaning for an Arrhenius rate law: it
+        // shifts dG, and a plain rate constant has no dG to shift. Treating it
+        // as a no-op would silently discard the user's thermodynamics.
+        for (const auto& rule : model.getReactionRules()) {
+            if (!rule.hasDrivingWork()) continue;
+            const bool arrhenius =
+                !rule.getRates().empty() && isArrheniusRateLaw(rule.getRates().front());
+            if (!arrhenius) {
+                addUnsupported(report, Feature::DrivenReservoirs,
+                               backend == BackendKind::NFsim ? "NFsim" : "the network compiler",
+                               "driven_by() on a rule whose rate law is not Arrhenius");
+                break;
+            }
+        }
+        // A barrier pattern needs energy patterns to be meaningful in the same
+        // sense: with no dG in the model there is no Arrhenius expansion for
+        // the barrier to modify.
+        if (features.contains(Feature::BarrierPatterns) &&
+            !features.contains(Feature::EnergyPatterns)) {
+            Diagnostic diagnostic;
+            diagnostic.code = DiagnosticCode::UnsupportedFeature;
+            diagnostic.severity = Severity::Warning;
+            diagnostic.category = ValidationCategory::Energy;
+            diagnostic.entity = "barrier patterns";
+            diagnostic.message =
+                "barrier patterns have no effect without energy patterns and an "
+                "Arrhenius rate law";
+            report.addDiagnostic(std::move(diagnostic));
+        }
     }
 
     if (backend == BackendKind::NFsim && features.contains(Feature::Units)) {

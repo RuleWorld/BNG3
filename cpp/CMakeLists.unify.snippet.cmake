@@ -11,7 +11,18 @@
 # ----------------------------------------------------------------------------
 
 # ============================================================================
-# WO-1b — One nauty C library
+# WO-1b — One nauty C library  [APPLIED 2026-09-17]
+# ----------------------------------------------------------------------------
+# STATUS: applied. cpp/nauty is the only compiled tree, cpp/nfsim/nauty24/ is
+# deleted, nfsim_core links the `nauty` target, and complex.cpp includes the
+# shared header. The trees were verified identical after normalizing the
+# documented set->nset rename, so the unification adopted the nset variant
+# (which also carries an MSVC HAVE_SYSTYPES_H guard cpp/nauty lacked).
+# Locked in by tests/python/test_single_nauty_contract.py. See
+# cpp/nauty/README.md. Link/runtime identity evidence still requires CI and an
+# independent NFsim oracle.
+#
+# Historical instructions retained below for provenance.
 # ----------------------------------------------------------------------------
 # Today: `nauty` is built from cpp/nauty/*.c, and `nfsim_core` *additionally*
 # globs and compiles cpp/nfsim/nauty24/*.c. Two builds of the same upstream
@@ -40,7 +51,14 @@
 # assume. After the build is green, delete cpp/nfsim/nauty24/ (WO-6).
 
 # ============================================================================
-# WO-3b — Drop exprtk from nfsim_core
+# WO-3b — Drop exprtk from nfsim_core  [APPLIED 2026-09-17]
+# ----------------------------------------------------------------------------
+# STATUS: applied, together with the WO-3 evaluator swap it depended on.
+# nfsim_funcparser.h keeps the mu::Parser interface but is backed by
+# bng::parser::parseExpression + bng::eval::evaluate. NFSIM_USE_EXPRTK, the
+# exprtk include paths, and the root FetchContent_Declare(exprtk) block are all
+# removed. Requires full CI: the expression and NFsim parity gates have not
+# been run against the merged evaluator.
 # ----------------------------------------------------------------------------
 # Today: nfsim_core compiles with NFSIM_USE_EXPRTK and fetches exprtk for its
 # function evaluation, parallel to bng::ast::Expression. After WO-3 routes NFsim
@@ -59,6 +77,10 @@
 
 # ============================================================================
 # WO-4 — Stop building the NFsim standalone main on the default path
+#        [ALREADY APPLIED]
+# ----------------------------------------------------------------------------
+# STATUS: applied. cpp/CMakeLists.txt already guards the NFsim executable with
+# if(BUILD_NFSIM_CLI). Historical instructions retained below.
 # ----------------------------------------------------------------------------
 # The `NFsim` executable target stays (the validation harness uses it as the
 # native oracle), but it is opt-in. Guard it so the default `pip install` /

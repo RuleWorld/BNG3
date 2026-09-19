@@ -112,12 +112,27 @@ public:
     ReactionRule& operator=(const ReactionRule&) = delete;
 
     const std::string& getRuleName() const;
+    // Used only by the parser's post-parse pass, which removes synthetic
+    // barrier rules from the model and renumbers the remaining ordinary rules
+    // so the model matches one written without a barrier patterns block.
+    void setRuleName(std::string ruleName);
     const std::string& getLabel() const;
     const std::vector<std::string>& getReactants() const;
     const std::vector<std::string>& getProducts() const;
     const std::vector<Expression>& getRates() const;
     const std::vector<std::string>& getModifiers() const;
     bool isBidirectional() const;
+
+    // Signed chemical work supplied by a driving reservoir, from a
+    // `driven_by(W)` annotation. Work shifts local detailed balance to
+    // k_f / k_r = exp[-(dG - W) / RT], so a nonzero value makes the rule
+    // thermodynamically driven rather than equilibrium-compatible. Absent by
+    // default; drivingWorkExpression() then returns a zero-valued expression.
+    bool hasDrivingWork() const;
+    const Expression& drivingWorkExpression() const;
+    void setDrivingWorkExpression(Expression expression);
+    void clearDrivingWork();
+
     const std::vector<SpeciesGraph>& getReactantPatterns() const;
     const std::vector<SpeciesGraph>& getProductPatterns() const;
     const std::vector<TransformOp>& getOperations() const;
@@ -198,6 +213,8 @@ private:
     std::vector<Expression> rates_;
     std::vector<std::string> modifiers_;
     bool bidirectional_;
+    Expression drivingWork_;
+    bool hasDrivingWork_ = false;
     std::vector<SpeciesGraph> reactantPatterns_;
     std::vector<SpeciesGraph> productPatterns_;
     struct PatternCache;

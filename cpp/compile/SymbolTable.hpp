@@ -23,6 +23,11 @@ enum class SymbolKind {
     Compartment,
     ReactionRule,
     EnergyPattern,
+    // Barrier patterns get their own kind rather than reusing EnergyPattern:
+    // a transition-state contribution is not a ground-state energy, and
+    // conflating the two namespaces would let a barrier label collide with an
+    // energy-pattern label.
+    BarrierPattern,
     PopulationType,
     Count,
 };

@@ -877,6 +877,7 @@ ReactionRule::ReactionRule(
       rates_(std::move(rates)),
       modifiers_(std::move(modifiers)),
       bidirectional_(bidirectional),
+      drivingWork_(Expression::number(0.0)),
       reactantPatterns_(std::move(reactantPatterns)),
       productPatterns_(std::move(productPatterns)) {
     parseReactantFilters();
@@ -885,6 +886,10 @@ ReactionRule::ReactionRule(
 
 const std::string& ReactionRule::getRuleName() const {
     return ruleName_;
+}
+
+void ReactionRule::setRuleName(std::string ruleName) {
+    ruleName_ = std::move(ruleName);
 }
 
 const std::string& ReactionRule::getLabel() const {
@@ -909,6 +914,26 @@ const std::vector<std::string>& ReactionRule::getModifiers() const {
 
 bool ReactionRule::isBidirectional() const {
     return bidirectional_;
+}
+
+bool ReactionRule::hasDrivingWork() const {
+    return hasDrivingWork_;
+}
+
+const Expression& ReactionRule::drivingWorkExpression() const {
+    // Zero is the neutral element: dG - 0 recovers the undriven rate pair, so
+    // callers that do not check hasDrivingWork() still get correct kinetics.
+    return drivingWork_;
+}
+
+void ReactionRule::setDrivingWorkExpression(Expression expression) {
+    drivingWork_ = std::move(expression);
+    hasDrivingWork_ = true;
+}
+
+void ReactionRule::clearDrivingWork() {
+    drivingWork_ = Expression::number(0.0);
+    hasDrivingWork_ = false;
 }
 
 const std::vector<SpeciesGraph>& ReactionRule::getReactantPatterns() const {

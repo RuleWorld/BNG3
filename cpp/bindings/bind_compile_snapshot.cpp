@@ -114,6 +114,7 @@ const char* symbolKindName(SymbolKind kind) {
     case SymbolKind::Compartment: return "compartment";
     case SymbolKind::ReactionRule: return "reaction_rule";
     case SymbolKind::EnergyPattern: return "energy_pattern";
+    case SymbolKind::BarrierPattern: return "barrier_pattern";
     case SymbolKind::PopulationType: return "population_type";
     case SymbolKind::Count: return "invalid";
     }
@@ -491,6 +492,27 @@ py::dict compiledSnapshot(const bng::ast::Model& astModel) {
         energyPatterns.append(std::move(item));
     }
     root["energy_patterns"] = std::move(energyPatterns);
+
+    // Barrier factors are reported separately from energy factors: they carry a
+    // reaction-center key instead of a pattern, and centerResolved=false must
+    // stay visible so a consumer can tell a rejected barrier from an absent one.
+    py::list barrierPatterns;
+    for (const auto& barrier : model.barrierFactors()) {
+        py::dict item;
+        item["index"] = barrier.index;
+        item["label"] = barrier.label;
+        item["transition"] = barrier.sourceTransition;
+        item["expression"] = barrier.energyExpression;
+        item["reaction_center"] = barrier.reactionCenterKey;
+        item["center_resolved"] = barrier.centerResolved;
+        if (barrier.evaluatedValue.has_value()) {
+            item["value"] = *barrier.evaluatedValue;
+        } else {
+            item["value"] = py::none();
+        }
+        barrierPatterns.append(std::move(item));
+    }
+    root["barrier_patterns"] = std::move(barrierPatterns);
 
     py::list populationTypes;
     for (const auto& type : model.populationTypes()) {

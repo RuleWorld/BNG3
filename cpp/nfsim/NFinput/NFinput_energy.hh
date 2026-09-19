@@ -44,7 +44,11 @@ namespace NFinput {
         bool blockSameComplexBinding,
         bool verbose,
         int &reaction_count,
-        bool includeReverse);
+        bool includeReverse,
+        /* Signed reservoir work from a driven_by() annotation. Nonzero work
+         * shifts local detailed balance to exp(-(dG-W)/RT) and forces the
+         * materialized expansion path. */
+        double drivingWork = 0.0);
 
     /*
      * Create expanded BasicRxnClass instances for an energy state-change rule.
@@ -61,7 +65,8 @@ namespace NFinput {
         bool blockSameComplexBinding,
         bool verbose,
         int &reaction_count,
-        bool includeReverse);
+        bool includeReverse,
+        double drivingWork = 0.0);
 
 } // namespace NFinput
 

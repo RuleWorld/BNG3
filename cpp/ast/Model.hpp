@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include "Compartment.hpp"
+#include "BarrierPattern.hpp"
 #include "EnergyPattern.hpp"
 #include "Function.hpp"
 #include "GraphTypeRegistry.hpp"
@@ -34,6 +35,8 @@ public:
     void addAction(Action action);
     void addFunction(Function function);
     void addEnergyPattern(EnergyPattern energyPattern);
+    // Barrier patterns are move-only because they own a ReactionRule.
+    void addBarrierPattern(BarrierPattern barrierPattern);
     void addObservable(Observable observable);
     void addMoleculeType(MoleculeType moleculeType);
     void addSeedSpecies(SeedSpecies seedSpecies);
@@ -65,6 +68,8 @@ public:
     std::vector<Action>& getActions();
     const std::vector<Function>& getFunctions() const;
     const std::vector<EnergyPattern>& getEnergyPatterns() const;
+    const std::vector<BarrierPattern>& getBarrierPatterns() const;
+    std::vector<BarrierPattern>& getBarrierPatterns();
     const std::vector<Observable>& getObservables() const;
     const std::vector<MoleculeType>& getMoleculeTypes() const;
     MoleculeType* findMoleculeType(const std::string& name);
@@ -92,6 +97,7 @@ private:
     std::vector<Action> actions_;
     std::vector<Function> functions_;
     std::vector<EnergyPattern> energyPatterns_;
+    std::vector<BarrierPattern> barrierPatterns_;
     std::vector<Observable> observables_;
     std::vector<MoleculeType> moleculeTypes_;
     std::vector<SeedSpecies> seedSpecies_;

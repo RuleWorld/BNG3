@@ -310,6 +310,32 @@ public:
         compiled.conservativeInvalidation_ = rule.getOperations().empty();
         compiled.bidirectional_ = rule.isBidirectional();
 
+        // Reservoir work must be statically evaluable: a time- or
+        // observable-dependent drive would change the cycle affinity during a
+        // trajectory, which no backend implements. Record the expression
+        // either way so an unevaluable drive fails closed downstream rather
+        // than silently becoming zero work.
+        if (rule.hasDrivingWork()) {
+            compiled.hasDrivingWork_ = true;
+            compiled.drivingWorkExpression_ = rule.drivingWorkExpression().toString();
+            if (model != nullptr) {
+                try {
+                    compiled.drivingWorkValue_ = rule.drivingWorkExpression().evaluate(
+                        [&](const std::string& name) -> double {
+                            return model->getParameters().evaluate(name, 0.0);
+                        }, 0.0);
+                } catch (...) {
+                    compiled.drivingWorkValue_.reset();
+                }
+            }
+            if (!compiled.drivingWorkValue_.has_value()) {
+                addRuleDiagnostic(diagnostics, rule.getRuleName(),
+                                  "driven_by() work expression '" +
+                                      compiled.drivingWorkExpression_ +
+                                      "' is not statically evaluable");
+            }
+        }
+
         compiled.modifiers_.reserve(rule.getModifiers().size());
         for (const auto& modifier : rule.getModifiers()) {
             compiled.modifiers_.push_back(

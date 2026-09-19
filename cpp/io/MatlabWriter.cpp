@@ -1,5 +1,7 @@
 #include "MatlabWriter.hpp"
 
+#include "EnergyExportGuard.hpp"
+
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
@@ -34,6 +36,7 @@ std::string MatlabWriter::write(const ast::Model& model, const engine::Generated
 }
 
 std::string MatlabWriter::write(const ast::Model& model, const engine::GeneratedNetwork& network, const Options& opts) {
+    requireNoEnergySemantics(model, "MATLAB M-file");
     std::ostringstream m;
 
     std::string funcName = makeMatlabFunctionName(model.getModelName());

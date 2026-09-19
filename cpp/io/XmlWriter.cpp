@@ -1,5 +1,7 @@
 #include "XmlWriter.hpp"
 
+#include "compile/energy/BarrierCompiler.hpp"
+
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
@@ -1340,6 +1342,7 @@ std::string XmlWriter::write(const ast::Model& model, const engine::GeneratedNet
     xml << writeObservables(model);
     xml << writeFunctions(model);
     xml << writeEnergyPatterns(model);
+    xml << writeBarrierPatterns(model);
 
     xml << "  </model>\n";
     xml << "</sbml>\n";
@@ -1605,6 +1608,13 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
         xml << "        <RateLaw id=\"" << rrId << "_RateLaw\" type=\"" << type
             << "\" totalrate=\""
             << (hasModifier(rule.getModifiers(), "TotalRate") ? "1" : "0") << "\"";
+        // Signed reservoir work travels with the rate law because it modifies
+        // dG rather than the rule's structure. Emitted only when present, so
+        // ordinary models produce byte-identical XML.
+        if (rule.hasDrivingWork()) {
+            xml << " drivingWork=\"" << escapeXml(rule.drivingWorkExpression().toString())
+                << "\"";
+        }
         if (type == "FunctionProduct") {
             const auto writeOperand = [&](const ast::Expression& operand,
                                            const char* functionAttribute,
@@ -1913,6 +1923,17 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
                 std::vector<ast::Expression>{rule.getRates()[1]},
                 std::move(reverseModifiers), false,
                 rule.getProductPatterns(), rule.getReactantPatterns());
+            // The reverse direction is a freshly constructed rule, so rule-level
+            // metadata does not come along automatically. driven_by() is only
+            // legal on an Arrhenius rate law, and a bidirectional Arrhenius rule
+            // is serialized as a single rate law rather than a rule pair, so
+            // this branch is not reachable for a currently-legal driven model.
+            // Propagate it anyway: if the two-rate path ever admits a driven
+            // rule, silently dropping the work would make the reverse direction
+            // undriven with no diagnostic.
+            if (rule.hasDrivingWork()) {
+                reverse.setDrivingWorkExpression(rule.drivingWorkExpression());
+            }
             writeRule(reverse, rrId + "r", &reverse.getRates().front());
         }
     }
@@ -2191,6 +2212,65 @@ std::string XmlWriter::writeFunctions(const ast::Model& model) {
     }
 
     xml << "    </ListOfFunctions>\n";
+    return xml.str();
+}
+
+std::string XmlWriter::writeBarrierPatterns(const ast::Model& model) {
+    if (model.getBarrierPatterns().empty()) return {};
+
+    std::ostringstream xml;
+    xml << "    <ListOfBarrierPatterns>\n";
+
+    for (std::size_t index = 0; index < model.getBarrierPatterns().size(); ++index) {
+        const auto& barrier = model.getBarrierPatterns()[index];
+        const auto id = "BP" + std::to_string(index + 1);
+        const auto& transition = barrier.transition();
+
+        xml << "      <BarrierPattern id=\"" << id << "\"";
+        if (!barrier.getLabel().empty()) {
+            xml << " name=\"" << escapeXml(barrier.getLabel()) << "\"";
+        }
+        xml << " expression=\""
+            << escapeXml(barrier.hasExpression() ? barrier.expression().toString() : "0")
+            << "\"";
+        // The canonical reaction-center key is emitted so a reader does not
+        // have to re-derive the graph diff, and is produced by the same
+        // compileBarrierCenter() the native backends use, so the XML and
+        // direct paths cannot disagree about which center a barrier hits.
+        compile::energy::ReactionCenterKey center;
+        std::string centerDiagnostic;
+        if (!compile::energy::compileBarrierCenter(
+                transition, center, centerDiagnostic)) {
+            throw std::runtime_error("cannot serialize barrier pattern '" + id +
+                                     "': " + centerDiagnostic);
+        }
+        xml << " reactionCenter=\"" << escapeXml(center.toString()) << "\">\n";
+
+        // Reactant and product sides are written as patterns so a reader can
+        // recompute the reaction center with its own graph diff rather than
+        // trusting a pre-derived key.
+        const auto writeSide = [&](const char* listName,
+                                   const std::vector<std::string>& patterns) {
+            xml << "        <" << listName << ">\n";
+            for (std::size_t side = 0; side < patterns.size(); ++side) {
+                const auto patternId =
+                    id + "_" + listName + "_P" + std::to_string(side + 1);
+                auto parsed = parsePattern(patterns[side]);
+                canonicalizeParsedPattern(parsed);
+                xml << "          <Pattern id=\"" << patternId << "\" pattern=\""
+                    << escapeXml(patternToBngl(parsed, false)) << "\">\n";
+                xml << patternToXml(parsed, patternId, "            ");
+                xml << "          </Pattern>\n";
+            }
+            xml << "        </" << listName << ">\n";
+        };
+        writeSide("ListOfReactantPatterns", transition.getReactants());
+        writeSide("ListOfProductPatterns", transition.getProducts());
+
+        xml << "      </BarrierPattern>\n";
+    }
+
+    xml << "    </ListOfBarrierPatterns>\n";
     return xml.str();
 }
 
