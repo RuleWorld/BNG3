@@ -2407,6 +2407,38 @@ bool getEquivalentNames(MoleculeType* moleculeType,
     return true;
 }
 
+std::vector<std::string> concreteNamesForSite(
+    MoleculeType* moleculeType, const std::string& siteName) {
+    if (moleculeType == nullptr || siteName.empty()) return {};
+    std::string genericName = siteName;
+    if (!moleculeType->isEquivalentComponent(genericName)) {
+        const int componentIndex = moleculeType->getCompIndexFromName(siteName);
+        if (moleculeType->getEquivalenceClassNumber(componentIndex) < 0) {
+            return {siteName};
+        }
+        genericName = moleculeType->getEquivalenceClassComponentNameFromComponentIndex(
+            componentIndex);
+    }
+
+    std::vector<std::string> names;
+    if (!getEquivalentNames(moleculeType, genericName, names) || names.empty()) {
+        return {siteName};
+    }
+    return names;
+}
+
+std::string genericNameForSite(MoleculeType* moleculeType,
+                               const std::string& siteName) {
+    if (moleculeType == nullptr || siteName.empty()) return {};
+    if (moleculeType->isEquivalentComponent(siteName)) return siteName;
+    const int componentIndex = moleculeType->getCompIndexFromName(siteName);
+    if (moleculeType->getEquivalenceClassNumber(componentIndex) < 0) {
+        return siteName;
+    }
+    return moleculeType->getEquivalenceClassComponentNameFromComponentIndex(
+        componentIndex);
+}
+
 using RuntimeNames = std::vector<std::vector<std::string>>;
 
 bool makeRuntimeNameAssignments(const std::vector<GraphMolecule>& molecules,
@@ -3948,11 +3980,25 @@ bool addDirectArrheniusBinding(const bng::ast::ReactionRule& rule, System* syste
     std::map<std::string, int> unusedStates;
     int reactionCount = 0;
     const std::size_t firstNewReaction = system->getAllReactions().size();
-    if (!createExpandedBindingReactions(
-            rule.getRuleName(), phi, activationEnergy, moleculeType1, site1,
-            moleculeType2, site2, system, unusedParameters, unusedStates,
-            blockSameComplexBinding, verbose, reactionCount, rule.isBidirectional())) {
+    const auto concreteSites1 = concreteNamesForSite(moleculeType1, site1);
+    const auto concreteSites2 = concreteNamesForSite(moleculeType2, site2);
+    if (concreteSites1.empty() || concreteSites2.empty()) {
+        std::cerr << "[nfsim/ast] cannot map Arrhenius reaction '"
+                  << rule.getRuleName() << "': invalid reaction-center site\n";
         return false;
+    }
+    const auto energySite1 = genericNameForSite(moleculeType1, site1);
+    const auto energySite2 = genericNameForSite(moleculeType2, site2);
+    for (const auto& concreteSite1 : concreteSites1) {
+        for (const auto& concreteSite2 : concreteSites2) {
+            if (!createExpandedBindingReactions(
+                    rule.getRuleName(), phi, activationEnergy, moleculeType1,
+                    concreteSite1, moleculeType2, concreteSite2, system,
+                    unusedParameters, unusedStates, blockSameComplexBinding, verbose,
+                    reactionCount, rule.isBidirectional(), energySite1, energySite2)) {
+                return false;
+            }
+        }
     }
 
     const auto reactions = system->getAllReactions();
@@ -4048,11 +4094,21 @@ bool addDirectArrheniusStateChange(const bng::ast::ReactionRule& rule, System* s
 
     const std::size_t firstNewReaction = system->getAllReactions().size();
     int reactionCount = 0;
-    if (!createExpandedStateChangeReactions(
-            rule.getRuleName(), phi, activationEnergy, moleculeType, component,
-            stateFrom, stateChange->newState, system, blockSameComplexBinding,
-            verbose, reactionCount, rule.isBidirectional())) {
+    const auto concreteComponents = concreteNamesForSite(moleculeType, component);
+    if (concreteComponents.empty()) {
+        std::cerr << "[nfsim/ast] cannot map Arrhenius reaction '"
+                  << rule.getRuleName() << "': invalid reaction-center component\n";
         return false;
+    }
+    const auto energyComponent = genericNameForSite(moleculeType, component);
+    for (const auto& concreteComponent : concreteComponents) {
+        if (!createExpandedStateChangeReactions(
+                rule.getRuleName(), phi, activationEnergy, moleculeType,
+                concreteComponent, stateFrom, stateChange->newState, system,
+                blockSameComplexBinding, verbose, reactionCount,
+                rule.isBidirectional(), energyComponent)) {
+            return false;
+        }
     }
 
     const auto reactions = system->getAllReactions();

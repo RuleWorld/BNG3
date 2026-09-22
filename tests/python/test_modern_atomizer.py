@@ -9,6 +9,8 @@ discriminating and easy to compare with the source implementation.
 from __future__ import annotations
 
 from collections import OrderedDict
+import io
+import zipfile
 
 import pytest
 
@@ -84,6 +86,41 @@ def test_playground_structures_preserve_states_bonds_and_compartments():
     component.add_state("P")
     assert component.states == ["P", "0"]
     assert component.str2() == "site~P~0"
+
+
+def test_combine_archive_extracts_manifest_selected_sbml():
+    from bionetgen.atomizer.modern import (
+        Atomizer,
+        extract_sbml_from_archive,
+        extract_sbml_from_combine_archive,
+    )
+
+    sbml = SBML_FIXTURE.replace("playground_fixture", "archive_fixture")
+    manifest = """<?xml version="1.0" encoding="UTF-8"?>
+<omexManifest xmlns="http://identifiers.org/combine.specifications/omex-manifest">
+  <content location="." format="http://identifiers.org/combine.specifications/omex"/>
+  <content location="./model.xml" format="http://identifiers.org/combine.specifications/sbml" master="true"/>
+  <content location="./simulation.sedml" format="http://identifiers.org/combine.specifications/sed-ml"/>
+</omexManifest>
+"""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("manifest.xml", manifest)
+        archive.writestr("model.xml", sbml)
+        archive.writestr("simulation.sedml", "not SBML")
+
+    extraction = extract_sbml_from_combine_archive(buffer.getvalue())
+    assert extract_sbml_from_archive(buffer.getvalue()).member == "model.xml"
+    assert extraction.member == "model.xml"
+    assert extraction.candidates == ("model.xml",)
+    assert extraction.manifest_member == "manifest.xml"
+    assert extraction.manifest_entries[1]["location"] == "model.xml"
+    assert extraction.manifest_entries[1]["master"] == "true"
+    assert "archive_fixture" in extraction.sbml
+    result = Atomizer(quiet_mode=True).atomize_archive(buffer.getvalue())
+    assert result.success
+    assert result.archive_metadata["manifestMember"] == "manifest.xml"
+    assert result.archive_metadata["member"] == "model.xml"
 
 
 def test_playground_species_extend_honors_update_flag_for_equal_molecule_counts():
@@ -387,9 +424,16 @@ def test_playground_parser_disambiguates_duplicate_global_parameters():
         'Duplicate parameter id "k" remapped to "k_2"'
         in duplicate_warnings[0]["message"]
     )
-    assert len(messages) == 1
-    assert messages[0].code == "SBM010"
-    assert messages[0].message.endswith('Duplicate parameter id "k" remapped to "k_2"')
+    duplicate_messages = [
+        message
+        for message in messages
+        if 'Duplicate parameter id "k" remapped to "k_2"' in message.message
+    ]
+    assert len(duplicate_messages) == 1
+    assert duplicate_messages[0].code == "SBM010"
+    assert duplicate_messages[0].message.endswith(
+        'Duplicate parameter id "k" remapped to "k_2"'
+    )
 
 
 def test_playground_parser_normalizes_duplicate_parameter_name_aliases_in_math():
@@ -453,6 +497,62 @@ def test_playground_parser_normalizes_duplicate_parameter_name_aliases_in_math()
     assert model.events[0].assignments == [("x", "k")]
     assert model.reactions["r"].kinetic_law.math == "k + k + k_2"
     assert model.reactions["local_alias_precedence"].kinetic_law.math == "local_rate"
+
+
+def test_playground_parser_prefers_exact_parameter_ids_over_display_name_aliases():
+    from bionetgen.atomizer.modern import SBMLParser
+
+    sbml = """<?xml version="1.0"?>
+    <sbml xmlns="http://www.sbml.org/sbml/level3/version1/core" level="3" version="1">
+      <model id="parameter_id_precedence">
+        <listOfParameters>
+          <parameter id="kscig" value="0.002"/>
+          <parameter id="kscig_dash" name="kscig'" value="0.04"/>
+        </listOfParameters>
+        <listOfReactions>
+          <reaction id="r">
+            <kineticLaw>
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><plus/><ci>kscig</ci><ci>kscig_dash</ci></apply>
+              </math>
+            </kineticLaw>
+          </reaction>
+        </listOfReactions>
+      </model>
+    </sbml>
+    """
+
+    model = SBMLParser().parse(sbml)
+
+    assert model.reactions["r"].kinetic_law.math == "kscig + kscig_dash"
+
+
+def test_playground_parser_does_not_alias_parameter_names_over_species_ids():
+    from bionetgen.atomizer.modern import SBMLParser
+
+    sbml = """<?xml version="1.0"?>
+    <sbml xmlns="http://www.sbml.org/sbml/level3/version1/core" level="3" version="1">
+      <model id="symbol_id_precedence">
+        <listOfSpecies>
+          <species id="Infected" compartment="cell"/>
+          <species id="Asymptomatic" compartment="cell"/>
+        </listOfSpecies>
+        <listOfCompartments>
+          <compartment id="cell" size="1"/>
+        </listOfCompartments>
+        <listOfParameters>
+          <parameter id="Infected_0" name="Infected" value="81.218"/>
+        </listOfParameters>
+        <listOfRules>
+          <assignmentRule variable="Infected_0" formula="Infected + Asymptomatic"/>
+        </listOfRules>
+      </model>
+    </sbml>
+    """
+
+    model = SBMLParser().parse(sbml)
+
+    assert model.rules[0].math == "Infected + Asymptomatic"
 
 
 def test_playground_parser_standardizes_parameter_ids_before_formula_aliasing():
@@ -620,8 +720,17 @@ def test_playground_parser_emits_import_warning_codes_and_counts():
         logger.setLevel("WARNING")
         logger.setQuietMode(False)
 
-    assert len(model.import_warnings) == 1
-    assert [(message.code, message.message) for message in warnings] == [
+    assert any(warning.category == "units" for warning in model.import_warnings)
+    constraint_warnings = [
+        warning for warning in model.import_warnings if warning.category == "constraint"
+    ]
+    assert len(constraint_warnings) == 1
+    constraint_messages = [
+        message
+        for message in warnings
+        if message.code == "SBM022" and "constraint" in message.message
+    ]
+    assert [(message.code, message.message) for message in constraint_messages] == [
         (
             "SBM022",
             "[constraint] 2 SBML constraint element(s) present; "
@@ -731,6 +840,11 @@ def test_playground_parser_preserves_mathml_numeric_and_function_semantics():
     assert rules["call"] == "f(x)"
     assert rules["clock"] == "time * (2 * 10^(3))"
 
+    assert not any(
+        warning.category == "mathml" and "e-notation" in warning.message
+        for warning in model.import_warnings
+    )
+
 
 def test_playground_parser_reports_lossy_mathml_constants_and_operators():
     from bionetgen.atomizer.modern import SBMLParser
@@ -760,10 +874,6 @@ def test_playground_parser_reports_lossy_mathml_constants_and_operators():
     assert {(warning.message, warning.severity) for warning in warnings} == {
         (
             "<infinity> constant encountered in math; emitted as a large finite value.",
-            "approximated",
-        ),
-        (
-            "<factorial> used in math; emitted as factorial(x), which the engine may not support.",
             "approximated",
         ),
     }
@@ -1826,7 +1936,7 @@ def test_playground_writer_reports_nonadjacent_transport_reactions():
         logger.setLevel("WARNING")
         logger.setQuietMode(False)
 
-    assert "transport: M_A()@cyto -> M_B()@nuc k" in bngl
+    assert "transport: @cyto:M_A() -> @nuc:M_B() k" in bngl
     assert [(message.code, message.message) for message in messages] == [
         ("BNW004", "Transport reaction transport: B moves from cyto to nuc")
     ]
@@ -2265,7 +2375,9 @@ def test_playground_event_actions_use_source_half_up_step_rounding():
     assert "t_end=>2, n_steps=>3" in result.actions_block
 
 
-def test_playground_atomizer_emits_event_actions_and_diagnostics_in_bngl():
+def test_playground_atomizer_emits_and_executes_event_actions_and_diagnostics_in_bngl(
+    tmp_path,
+):
     from bionetgen.atomizer.modern import (
         SBMLEvent,
         SBMLParser,
@@ -2299,7 +2411,47 @@ def test_playground_atomizer_emits_event_actions_and_diagnostics_in_bngl():
     assert "state_dependent" in bngl
 
     cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
-    cpp.parse_string(bngl)
+    cpp_model = cpp.parse_string(bngl)
+    source_path = tmp_path / "event_model.bngl"
+    source_path.write_text(bngl, encoding="utf-8")
+    cpp.execute(cpp_model, str(source_path))
+    assert (tmp_path / "event_model.gdat").exists()
+
+
+def test_playground_fixed_time_events_are_not_marked_as_dropped():
+    from bionetgen.atomizer.modern import (
+        SBMLParser,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    source = SBML_FIXTURE.replace(
+        "  </model>",
+        """    <listOfEvents>
+      <event id="dose">
+        <trigger><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><geq/><ci>time</ci><cn>5</cn></apply></math></trigger>
+        <listOfEventAssignments>
+          <eventAssignment variable="A"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>3</cn></math></eventAssignment>
+        </listOfEventAssignments>
+      </event>
+    </listOfEvents>
+  </model>""",
+    )
+    model = SBMLParser().parse(source)
+    sct = build_species_composition_table(model)
+    bngl, _ = generate_bngl(
+        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+    )
+
+    event_warnings = [
+        warning for warning in model.import_warnings if warning.category == "event"
+    ]
+    assert len(event_warnings) == 1
+    assert event_warnings[0].severity == "info"
+    assert "lowered to scheduled BNGL actions" in event_warnings[0].message
+    assert "Events NOT simulated" not in bngl
 
 
 def test_playground_name_standardization_handles_sbml_symbols_and_keywords():
@@ -2550,8 +2702,48 @@ def test_playground_writer_synthesizes_source_sink_rules_for_species_rate_rule()
     assert "__rate_rule__A()" in bngl
     assert "__rate_rule_pos__A()" in bngl
     assert "__rate_rule_neg__A()" in bngl
-    assert "__rate_rule_in_A: 0 -> M_A()" in bngl
-    assert "__rate_rule_out_A: M_A() -> 0" in bngl
+    assert "__rate_rule_A: 0 -> M_A() __rate_rule__A() TotalRate" in bngl
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    cpp.parse_string(bngl)
+
+
+def test_playground_writer_keeps_boundary_species_with_rate_rules_dynamic():
+    from bionetgen.atomizer.modern import (
+        SBMLModel,
+        SBMLRule,
+        SBMLSpecies,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    model = SBMLModel(
+        id="boundary_rate_rule",
+        species=OrderedDict(
+            [
+                (
+                    "A",
+                    SBMLSpecies(
+                        id="A",
+                        name="A",
+                        initial_amount=1,
+                        boundary_condition=True,
+                        constant=False,
+                    ),
+                )
+            ]
+        ),
+        rules=[SBMLRule(type="rate", variable="A", math="1")],
+    )
+
+    sct = build_species_composition_table(model)
+    bngl, _ = generate_bngl(
+        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+    )
+
+    assert "M_A() 1" in bngl
+    assert "$M_A()" not in bngl
     cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
     cpp.parse_string(bngl)
 
@@ -2602,8 +2794,7 @@ def test_playground_writer_materializes_non_species_rate_rule_targets():
     assert f"@cell:{pattern}() 3" in bngl
     assert f"Species X_amt @cell:{pattern}()" in bngl
     assert "__rate_rule__X() = -k*X_amt" in bngl
-    assert f"__rate_rule_in_X: 0 -> {pattern}@cell()" in bngl
-    assert f"__rate_rule_out_X: {pattern}@cell() -> 0" in bngl
+    assert f"__rate_rule_X: 0 -> {pattern}@cell() __rate_rule__X() TotalRate" in bngl
     assert [(message.code, message.message) for message in messages] == [
         ("BNW012", "Synthesized 1 rate-rule state species")
     ]
@@ -2690,7 +2881,8 @@ def test_playground_atomizer_preserves_zero_stoichiometry_and_rejects_unsupporte
         0.5
     )
     assert model.reactions["zero"].reactants[0].stoichiometry == 0
-    assert model.reactions["math"].reactants[0].variable_stoichiometry is True
+    assert model.reactions["math"].reactants[0].variable_stoichiometry is False
+    assert model.reactions["math"].reactants[0].stoichiometry == pytest.approx(2)
     assert any(w["category"] == "stoichiometry" for w in model.import_warnings)
 
     sct = build_species_composition_table(model)
@@ -2700,3 +2892,268 @@ def test_playground_atomizer_preserves_zero_stoichiometry_and_rejects_unsupporte
     assert "fractional:" not in bngl
     assert "zero: 0 -> M_B()" in bngl
     assert "math: M_A() + M_A() -> M_B()" in bngl
+
+
+def test_playground_parser_folds_static_species_reference_assignment():
+    from bionetgen.atomizer.modern import SBMLParser
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core">
+      <model id="static_species_reference">
+        <listOfCompartments><compartment id="c" size="1"/></listOfCompartments>
+        <listOfSpecies><species id="X" compartment="c" initialAmount="0"/></listOfSpecies>
+        <listOfParameters><parameter id="k" value="1"/></listOfParameters>
+        <listOfInitialAssignments>
+          <initialAssignment symbol="Xref">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>3</cn></math>
+          </initialAssignment>
+        </listOfInitialAssignments>
+        <listOfReactions>
+          <reaction id="r">
+            <listOfProducts>
+              <speciesReference id="Xref" species="X" constant="false"/>
+            </listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><ci>k</ci></math></kineticLaw>
+          </reaction>
+        </listOfReactions>
+      </model>
+    </sbml>"""
+
+    model = SBMLParser().parse(xml)
+    reference = model.reactions["r"].products[0]
+
+    assert reference.stoichiometry == pytest.approx(3)
+    assert reference.variable_stoichiometry is False
+    assert not any(w["category"] == "stoichiometry" for w in model.import_warnings)
+
+
+def test_playground_parser_folds_static_user_function_stoichiometry():
+    from bionetgen.atomizer.modern import SBMLParser
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level2/version5">
+      <model id="static_function_stoichiometry">
+        <listOfCompartments><compartment id="c" size="1"/></listOfCompartments>
+        <listOfSpecies>
+          <species id="A" compartment="c" initialAmount="1"/>
+          <species id="B" compartment="c" initialAmount="0"/>
+        </listOfSpecies>
+        <listOfParameters><parameter id="p" value="1"/></listOfParameters>
+        <listOfFunctionDefinitions>
+          <functionDefinition id="multiply">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <lambda><bvar><ci>x</ci></bvar><bvar><ci>y</ci></bvar>
+                <apply><times/><ci>x</ci><ci>y</ci></apply>
+              </lambda>
+            </math>
+          </functionDefinition>
+        </listOfFunctionDefinitions>
+        <listOfReactions><reaction id="r">
+          <listOfReactants><speciesReference species="A"/></listOfReactants>
+          <listOfProducts><speciesReference species="B">
+            <stoichiometryMath><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><ci>multiply</ci><cn>2</cn><ci>p</ci></apply>
+            </math></stoichiometryMath>
+          </speciesReference></listOfProducts>
+          <kineticLaw formula="1"/>
+        </reaction></listOfReactions>
+      </model>
+    </sbml>"""
+
+    reference = SBMLParser().parse(xml).reactions["r"].products[0]
+    assert reference.stoichiometry == pytest.approx(2)
+    assert reference.variable_stoichiometry is False
+
+
+def test_cpp_sbml_writer_aggregates_repeated_species_references(tmp_path):
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+
+    model = cpp.parse_string("""begin parameters
+    k 1
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 10
+end seed species
+begin reaction rules
+    R: A() + A() -> B() + B() + B() + B() k TotalRate
+end reaction rules
+""")
+    network = cpp.generate_network(model, max_iter=10)
+    output = tmp_path / "stoichiometry.xml"
+    cpp.io.write_sbml(model, network, str(output))
+
+    xml = output.read_text()
+    assert '<speciesReference species="S1" constant="true" stoichiometry="2"/>' in xml
+    assert '<speciesReference species="S2" constant="true" stoichiometry="4"/>' in xml
+    assert xml.count('<speciesReference species="S1"') == 1
+    assert xml.count('<speciesReference species="S2"') == 1
+    assert 'xmlns="http://www.sbml.org/sbml/level3/version2/core"' in xml
+
+    native = cpp.io.read_sbml(str(output))
+    assert native["success"] is True
+    assert native["species_count"] == network.num_species
+    assert native["reaction_count"] == network.num_reactions
+
+
+def test_cpp_sbml_writer_uses_sbml_arc_trigonometric_names(tmp_path):
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    model = cpp.parse_string("""begin parameters
+    x 0.5
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin reaction rules
+    R: A() -> B() asin(x) TotalRate
+end reaction rules
+""")
+    network = cpp.generate_network(model, max_iter=10)
+    output = tmp_path / "arc-trigonometry.xml"
+    cpp.io.write_sbml(model, network, str(output))
+
+    xml = output.read_text()
+    assert "<arcsin/>" in xml
+    assert "<asin/>" not in xml
+    native = cpp.io.read_sbml(str(output))
+    assert native["success"] is True
+    assert native["species_count"] == network.num_species
+    assert native["reaction_count"] == network.num_reactions
+
+
+def test_cpp_sbml_writer_roundtrips_opaque_source_metadata_payload(tmp_path):
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    from bionetgen.atomizer.modern import SBMLParser
+
+    model = cpp.parse_string("""begin parameters
+    k 1
+end parameters
+begin molecule types
+    A()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin observables
+    Molecules A A()
+end observables
+""")
+    network = cpp.generate_network(model, max_iter=10)
+    payload = '{"schemaVersion":1,"model":{"metaid":"meta_model"}}'
+    output = tmp_path / "metadata.xml"
+    cpp.io.write_sbml(model, network, str(output), source_metadata=payload)
+
+    xml = output.read_text()
+    assert "bng:sourceMetadata" in xml
+    assert 'encoding="base64"' in xml
+    parsed = SBMLParser().parse(xml)
+    assert parsed.source_metadata_payload == payload
+
+
+def test_atomizer_uses_species_level_compartment_prefixes_in_reactions():
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    sbml = """<?xml version="1.0"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core" level="3" version="1">
+  <model id="compartment_transport">
+    <listOfCompartments>
+      <compartment id="cytoplasm" spatialDimensions="3" size="1" constant="true"/>
+      <compartment id="extracellular" spatialDimensions="3" size="1" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="A" compartment="cytoplasm" initialAmount="2"/>
+      <species id="B" compartment="cytoplasm" initialAmount="0"/>
+      <species id="C" compartment="extracellular" initialAmount="0"/>
+    </listOfSpecies>
+    <listOfReactions>
+      <reaction id="r" reversible="false">
+        <listOfReactants><speciesReference species="A"/></listOfReactants>
+        <listOfProducts>
+          <speciesReference species="B"/>
+          <speciesReference species="C"/>
+        </listOfProducts>
+        <kineticLaw formula="1"/>
+      </reaction>
+    </listOfReactions>
+  </model>
+</sbml>
+"""
+    from bionetgen.atomizer.modern import Atomizer
+
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(sbml)
+    assert result.success
+    reaction = next(
+        line for line in result.bngl.splitlines() if line.strip().startswith("r:")
+    )
+    assert "@cytoplasm:M_A()" in reaction
+    assert "@cytoplasm:M_B()" in reaction
+    assert "@extracellular:M_C()" in reaction
+    model = cpp.parse_string(result.bngl)
+    network = cpp.generate_network(model, max_iter=10)
+    assert network.num_species == 3
+
+
+def test_atomizer_preserves_empty_sbml_reactions_as_zero_effect_rules(tmp_path):
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    from bionetgen.atomizer.modern import Atomizer, SBMLParser
+
+    sbml = """<?xml version="1.0"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
+  <model id="empty_reaction">
+    <listOfCompartments><compartment id="cell" size="1" constant="true"/></listOfCompartments>
+    <listOfSpecies><species id="S" compartment="cell" initialAmount="2" hasOnlySubstanceUnits="true"/></listOfSpecies>
+    <listOfParameters><parameter id="k" value="2" constant="true"/></listOfParameters>
+    <listOfReactions>
+      <reaction id="noop" reversible="false">
+        <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><ci>k</ci></math></kineticLaw>
+      </reaction>
+    </listOfReactions>
+  </model>
+</sbml>"""
+
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(sbml)
+    assert result.success
+    assert "0 -> 0" in result.bngl
+    parsed = SBMLParser().parse(sbml)
+    assert not any(
+        warning["category"] == "reactionParticipants"
+        for warning in parsed.import_warnings
+    )
+
+    model = cpp.parse_string(result.bngl)
+    network = cpp.generate_network(model, max_iter=10)
+    output = tmp_path / "empty-reaction.xml"
+    cpp.io.write_sbml(model, network, str(output))
+    written = output.read_text()
+    assert '<reaction id="R1" reversible="false">' in written
+    assert "<listOfReactants>" not in written
+    assert "<listOfProducts>" not in written
+    assert not any(
+        warning.category == "reactionParticipants"
+        for warning in SBMLParser().parse(written).import_warnings
+    )
+
+
+def test_parser_does_not_drop_empty_declared_dynamic_packages():
+    from bionetgen.atomizer.modern import SBMLParser
+
+    sbml = """<?xml version="1.0"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
+      xmlns:comp="http://www.sbml.org/sbml/level3/version1/comp/version1"
+      level="3" version="2" comp:required="true">
+  <model id="empty_comp_package">
+    <listOfCompartments><compartment id="cell" size="1" constant="true"/></listOfCompartments>
+    <listOfSpecies><species id="S" compartment="cell" initialAmount="1" hasOnlySubstanceUnits="true"/></listOfSpecies>
+  </model>
+</sbml>"""
+
+    warnings = SBMLParser().parse(sbml).import_warnings
+    package_warning = next(
+        warning for warning in warnings if warning["category"] == "package:comp"
+    )
+    assert package_warning["severity"] == "info"
+    assert "core kinetic model is unaffected" in package_warning["message"]

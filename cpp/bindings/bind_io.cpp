@@ -10,6 +10,7 @@
 #include "io/NetWriter.hpp"
 #include "io/BnglWriter.hpp"
 #include "io/SbmlWriter.hpp"
+#include "io/SbmlReader.hpp"
 #include "io/MatlabWriter.hpp"
 #include "io/LatexWriter.hpp"
 #include "io/MexWriter.hpp"
@@ -55,13 +56,28 @@ void bind_io(py::module_& m) {
        "Serialize model to BNGL string");
 
     io.def("write_sbml", [](const Model& model, const GeneratedNetwork& network,
-                            const std::string& path) {
-        std::string content = SbmlWriter::write(model, &network);
+                            const std::string& path,
+                            const std::string& source_metadata) {
+        SbmlWriter::Options options;
+        options.sourceMetadata = source_metadata;
+        std::string content = SbmlWriter::write(model, &network, options);
         std::ofstream out(path);
         if (!out) throw std::runtime_error("Cannot open file: " + path);
         out << content;
     }, py::arg("model"), py::arg("network"), py::arg("path"),
+       py::arg("source_metadata") = "",
        "Write model to SBML format");
+
+    io.def("read_sbml", [](const std::string& path, bool atomize) {
+        const auto result = SbmlReader::parse(path, atomize);
+        py::dict value;
+        value["success"] = result.success;
+        value["error"] = result.error;
+        value["species_count"] = result.species.size();
+        value["reaction_count"] = result.reactions.size();
+        return value;
+    }, py::arg("path"), py::arg("atomize") = false,
+       "Read flattened SBML and return native parser status and network counts");
 
     io.def("write_matlab", [](const Model& model, const GeneratedNetwork& network,
                               const std::string& path) {

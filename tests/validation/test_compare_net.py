@@ -5,7 +5,18 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
-from tests.validation.compare import compare_net, parse_net, species_isomorphic
+from tests.validation.compare import (
+    _canon_expr,
+    compare_net,
+    parse_net,
+    species_isomorphic,
+)
+
+
+def test_canonical_rate_expression_normalizes_unary_minus_parentheses():
+    left = "exp((-(35/2))*((1/2)-(x/(a+b))))"
+    right = "exp(-(35/2)*((1/2)-(x/(a+b))))"
+    assert _canon_expr(left) == _canon_expr(right)
 
 
 def _net(path: Path, rate: str) -> Path:

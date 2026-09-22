@@ -1210,7 +1210,17 @@ ast::Expression buildObservableRef(BNGParser::Observable_refContext* ctx) {
             args.push_back(buildExpression(expr));
         }
     }
-    return ast::Expression::observableRef(ctx->STRING()->getText(), std::move(args));
+    const auto name = ctx->STRING()->getText();
+    // floor/ceil are valid BNGL expressions but are not lexer keywords in
+    // the legacy grammar. Treat their STRING(...) spelling as a built-in
+    // function instead of an unresolved observable reference.
+    const auto lower = toLower(name);
+    if (lower == "floor" || lower == "ceil" || lower == "ceiling" ||
+        lower == "factorial") {
+        return ast::Expression::function(
+            lower == "ceiling" ? "ceil" : lower, std::move(args));
+    }
+    return ast::Expression::observableRef(name, std::move(args));
 }
 
 ast::Expression buildLiteral(BNGParser::LiteralContext* ctx) {

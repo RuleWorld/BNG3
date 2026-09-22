@@ -105,6 +105,41 @@ def apply_unit_scaling(model: SBMLModel) -> list[Dict[str, Any]]:
     area_default = getattr(model, "area_units", "")
     length_default = getattr(model, "length_units", "")
 
+    # Without model-level defaults, SBML leaves the units of unqualified
+    # species values implicit.  Several curated VCell/MathSBML models attach
+    # detailed unit definitions but intentionally use their source numeric
+    # scale (and omit both defaults); converting compartments to SI while
+    # leaving those unqualified values unchanged creates artificial 1e18
+    # factors and a numerically different model.  Preserve that source scale
+    # and make the choice auditable instead of guessing a default.
+    if not substance_default and not volume_default:
+        has_finite_quantity = (
+            any(
+                math.isfinite(float(getattr(parameter, "value", 0) or 0))
+                for parameter in model.parameters.values()
+            )
+            or any(
+                math.isfinite(float(getattr(species, "initial_amount", 0) or 0))
+                or math.isfinite(
+                    float(getattr(species, "initial_concentration", 0) or 0)
+                )
+                for species in model.species.values()
+            )
+            or any(
+                math.isfinite(float(getattr(compartment, "size", 0) or 0))
+                for compartment in model.compartments.values()
+            )
+        )
+        if not has_finite_quantity and model.unit_definitions:
+            return warnings
+        warnings.append(
+            _warning(
+                "Model omits substanceUnits and volumeUnits; preserved source "
+                "numeric scale and skipped unit normalization."
+            )
+        )
+        return warnings
+
     def scale_parameter(parameter: Any, scope: str) -> None:
         parameter_id = (
             parameter.get("id", "")

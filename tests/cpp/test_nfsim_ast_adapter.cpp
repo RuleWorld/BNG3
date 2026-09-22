@@ -321,6 +321,35 @@ end reaction rules
                         "Cannot build model from source with syntax errors");
 }
 
+TEST_CASE("BNGL parser keeps the historical NFsim t5 gap explicit") {
+    // Source-derived from nfsim/test/testSuite/t5.bngl.  The second legacy
+    // fixture adds multi-argument local functions and mixed whole-species /
+    // molecule scope ($1 and $2); this is not silently accepted as a partial
+    // direct-NFsim implementation.
+    const auto source = R"(
+begin parameters
+    kr 7
+    ReceptorDimerCount 4000
+end parameters
+begin seed species
+    Receptor(m~2,rec!1).Receptor(m~2,rec!1) ReceptorDimerCount
+end seed species
+begin observables
+    Molecules MethSum Receptor(sum(m))
+    Molecules Rtot Receptor()
+end observables
+begin functions
+    methRate($1,$2) = kr*(4-MethSum($2))*(1-(MethSum($1)/Rtot($1)))
+end functions
+begin reaction rules
+    $1::Receptor(rec!1).Receptor$2(m~^[4],rec!1) -> $1::Receptor(rec!1).Receptor$2(m~++,rec!1) methRate($1,$2)
+end reaction rules
+)";
+
+    REQUIRE_THROWS_WITH(bng::parser::parseModel(source),
+                        "Cannot build model from source with syntax errors");
+}
+
 TEST_CASE("XML writer preserves the first explicit bond") {
     auto model = bng::parser::parseModel(R"(
 begin molecule types
@@ -4212,6 +4241,50 @@ end reaction rules
     REQUIRE(system->getAllReactions().size() == 2);
     CHECK(system->getReaction(0)->getBaseRate() == Catch::Approx(std::exp(-0.5)));
     CHECK(system->getReaction(1)->getBaseRate() == Catch::Approx(std::exp(0.5)));
+    CHECK(suggestedTraversalLimit >= 2);
+    delete system;
+}
+
+TEST_CASE("NFsim AST adapter preserves Arrhenius multiplicity on symmetric sites") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    phi 0.5
+    Ea 0.0
+    Gbind 1.0
+    RT 1.0
+end parameters
+begin molecule types
+    A(b,b)
+    B(a)
+end molecule types
+begin seed species
+    A(b,b) 1
+    B(a) 1
+end seed species
+begin energy patterns
+    A(b!1,b).B(a!1) Gbind
+end energy patterns
+begin reaction rules
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,Ea)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getEnergyFunction() != nullptr);
+    // Both equivalent A sites are distinct reaction classes.  Collapsing them
+    // changes the stochastic binding law for a symmetric molecule.
+    REQUIRE(system->getAllReactions().size() == 4);
+    for (std::size_t reactionIndex = 0;
+         reactionIndex < system->getAllReactions().size(); reactionIndex += 2) {
+        CHECK(system->getReaction(reactionIndex)->getBaseRate() ==
+              Catch::Approx(std::exp(-0.5)));
+        CHECK(system->getReaction(reactionIndex + 1)->getBaseRate() ==
+              Catch::Approx(std::exp(0.5)));
+    }
     CHECK(suggestedTraversalLimit >= 2);
     delete system;
 }

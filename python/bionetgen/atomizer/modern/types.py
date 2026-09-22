@@ -16,6 +16,9 @@ class AnnotationInfo:
     biological_qualifier: Optional[int] = None
     model_qualifier: Optional[int] = None
     resources: List[str] = field(default_factory=list)
+    # Keep the source qualifier spelling when the XML parser can provide it.
+    # Integer enum fields remain the public compatibility contract.
+    qualifier: Optional[str] = None
 
 
 @dataclass
@@ -32,6 +35,10 @@ class SBMLCompartment:
     # compartments remain false by default.
     is_type: bool = False
     size_set: bool = False
+    metaid: Optional[str] = None
+    sbo_term: Optional[str] = None
+    notes_xml: str = ""
+    annotation_xml: str = ""
 
 
 @dataclass
@@ -42,6 +49,10 @@ class SBMLParameter:
     units: str = ""
     constant: bool = True
     scope: str = "global"
+    metaid: Optional[str] = None
+    sbo_term: Optional[str] = None
+    notes_xml: str = ""
+    annotation_xml: str = ""
 
 
 @dataclass
@@ -65,6 +76,9 @@ class SBMLSpecies:
     conversion_factor: Optional[str] = None
     charge: Optional[float] = None
     species_type: Optional[str] = None
+    metaid: Optional[str] = None
+    notes_xml: str = ""
+    annotation_xml: str = ""
 
 
 @dataclass
@@ -75,19 +89,9 @@ class SBMLSpeciesReference:
     id: Optional[str] = None
     stoichiometry_set: bool = False
     variable_stoichiometry: bool = False
+    stoichiometry_math: str = ""
     compartment_reference: Optional[str] = None
     multi_component_maps: List[Any] = field(default_factory=list)
-
-
-@dataclass(frozen=True)
-class SBMLMultiComponentMap:
-    """SBML Multi product mapping from a reactant component to a product."""
-
-    reactant: str
-    reactant_component: str
-    product_component: str
-    id: Optional[str] = None
-    name: str = ""
 
 
 @dataclass
@@ -146,6 +150,10 @@ class SBMLReaction:
     compartment: Optional[str] = None
     conversion_factor: Optional[str] = None
     multi_intra_species: bool = False
+    metaid: Optional[str] = None
+    sbo_term: Optional[str] = None
+    notes_xml: str = ""
+    annotation_xml: str = ""
 
 
 @dataclass
@@ -153,6 +161,11 @@ class SBMLRule:
     type: str
     variable: Optional[str] = None
     math: str = ""
+    math_from_empty_boolean: bool = False
+    metaid: Optional[str] = None
+    sbo_term: Optional[str] = None
+    notes_xml: str = ""
+    annotation_xml: str = ""
 
 
 @dataclass
@@ -161,6 +174,10 @@ class SBMLFunctionDefinition:
     name: str = ""
     math: str = ""
     arguments: List[str] = field(default_factory=list)
+    metaid: Optional[str] = None
+    sbo_term: Optional[str] = None
+    notes_xml: str = ""
+    annotation_xml: str = ""
 
 
 @dataclass
@@ -231,6 +248,10 @@ class SBMLEvent:
     trigger_initial_value: Optional[bool] = None
     trigger_persistent: Optional[bool] = None
     priority: Optional[str] = None
+    metaid: Optional[str] = None
+    sbo_term: Optional[str] = None
+    notes_xml: str = ""
+    annotation_xml: str = ""
 
     def __post_init__(self) -> None:
         self.assignments = [
@@ -242,6 +263,10 @@ class SBMLEvent:
 class SBMLInitialAssignment:
     symbol: str
     math: str
+    metaid: Optional[str] = None
+    sbo_term: Optional[str] = None
+    notes_xml: str = ""
+    annotation_xml: str = ""
 
 
 @dataclass
@@ -321,6 +346,14 @@ class SBMLModel:
     extent_units: str = ""
     conversion_factor: Optional[str] = None
     constraint_count: int = 0
+    metaid: Optional[str] = None
+    sbo_term: Optional[str] = None
+    notes_xml: str = ""
+    annotation_xml: str = ""
+    source_metadata_payload: str = ""
+    declared_packages: Mapping[str, str] = field(default_factory=OrderedDict)
+    package_required: Mapping[str, bool] = field(default_factory=OrderedDict)
+    package_counts: Mapping[str, int] = field(default_factory=OrderedDict)
     multi_molecule_types: List[str] = field(default_factory=list)
     multi_complex_patterns: List[str] = field(default_factory=list)
     multi_seed_patterns: List[str] = field(default_factory=list)
@@ -389,6 +422,7 @@ class AtomizerResult:
     log: List[Any] = field(default_factory=list)
     success: bool = True
     error: Optional[str] = None
+    archive_metadata: Mapping[str, Any] = field(default_factory=OrderedDict)
 
 
 @dataclass
@@ -420,6 +454,11 @@ AnnotationInfo.modelQualifier = _alias_property("model_qualifier")
 SBMLCompartment.spatialDimensions = _alias_property("spatial_dimensions")
 SBMLCompartment.isType = _alias_property("is_type")
 SBMLCompartment.sizeSet = _alias_property("size_set")
+SBMLCompartment.metaId = _alias_property("metaid")
+SBMLCompartment.sboTerm = _alias_property("sbo_term")
+
+SBMLParameter.metaId = _alias_property("metaid")
+SBMLParameter.sboTerm = _alias_property("sbo_term")
 
 SBMLSpecies.initialConcentration = _alias_property("initial_concentration")
 SBMLSpecies.initialAmount = _alias_property("initial_amount")
@@ -431,6 +470,7 @@ SBMLSpecies.initialConcentrationSet = _alias_property("initial_concentration_set
 SBMLSpecies.sboTerm = _alias_property("sbo_term")
 SBMLSpecies.conversionFactor = _alias_property("conversion_factor")
 SBMLSpecies.speciesType = _alias_property("species_type")
+SBMLSpecies.metaId = _alias_property("metaid")
 
 SBMLSpeciesReference.stoichiometrySet = _alias_property("stoichiometry_set")
 SBMLSpeciesReference.variableStoichiometry = _alias_property("variable_stoichiometry")
@@ -443,10 +483,21 @@ SBMLKineticLaw.localParameters = _alias_property("local_parameters")
 SBMLReaction.kineticLaw = _alias_property("kinetic_law")
 SBMLReaction.conversionFactor = _alias_property("conversion_factor")
 SBMLReaction.multiIntraSpecies = _alias_property("multi_intra_species")
+SBMLReaction.metaId = _alias_property("metaid")
+SBMLReaction.sboTerm = _alias_property("sbo_term")
+
+SBMLRule.metaId = _alias_property("metaid")
+SBMLRule.sboTerm = _alias_property("sbo_term")
+SBMLFunctionDefinition.metaId = _alias_property("metaid")
+SBMLFunctionDefinition.sboTerm = _alias_property("sbo_term")
 
 SBMLEvent.useValuesFromTriggerTime = _alias_property("use_values_from_trigger_time")
 SBMLEvent.triggerInitialValue = _alias_property("trigger_initial_value")
 SBMLEvent.triggerPersistent = _alias_property("trigger_persistent")
+SBMLEvent.metaId = _alias_property("metaid")
+SBMLEvent.sboTerm = _alias_property("sbo_term")
+SBMLInitialAssignment.metaId = _alias_property("metaid")
+SBMLInitialAssignment.sboTerm = _alias_property("sbo_term")
 
 SBMLModel.functionDefinitions = _alias_property("function_definitions")
 SBMLModel.speciesByCompartment = _alias_property("species_by_compartment")
@@ -458,6 +509,11 @@ SBMLModel.lengthUnits = _alias_property("length_units")
 SBMLModel.extentUnits = _alias_property("extent_units")
 SBMLModel.conversionFactor = _alias_property("conversion_factor")
 SBMLModel.constraintCount = _alias_property("constraint_count")
+SBMLModel.metaId = _alias_property("metaid")
+SBMLModel.sboTerm = _alias_property("sbo_term")
+SBMLModel.declaredPackages = _alias_property("declared_packages")
+SBMLModel.packageRequired = _alias_property("package_required")
+SBMLModel.packageCounts = _alias_property("package_counts")
 SBMLModel.multiMoleculeTypes = _alias_property("multi_molecule_types")
 SBMLModel.multiComplexPatterns = _alias_property("multi_complex_patterns")
 SBMLModel.multiSeedPatterns = _alias_property("multi_seed_patterns")
@@ -661,7 +717,9 @@ _SBML_TO_BNGL_TRANSLATION = {
 
 # Keep this synchronized with the generated BNGL lexer.  Exact keyword
 # collisions are lexical errors, even when the spelling is otherwise a valid
-# identifier (for example, an SBML species named ``time``).
+# identifier (for example, an SBML species named ``time``).  The C++ runtime
+# also treats the legacy spelling ``t`` as the independent-time operand, so
+# SBML model identifiers using that spelling must be renamed before emission.
 BNGL_LEXER_KEYWORDS = frozenset(
     {
         "_e",
@@ -814,6 +872,7 @@ BNGL_LEXER_KEYWORDS = frozenset(
         "substanceUnits",
         "suffix",
         "sum",
+        "t",
         "t_end",
         "t_start",
         "tan",

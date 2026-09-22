@@ -226,6 +226,22 @@ double Expression::evaluateWithFunctions(
         if (text_ == "rint") { requireArity(text_, children_, 1); return std::floor(evalArg(0) + 0.5); }
         if (text_ == "floor") { requireArity(text_, children_, 1); return std::floor(evalArg(0)); }
         if (text_ == "ceil") { requireArity(text_, children_, 1); return std::ceil(evalArg(0)); }
+        if (text_ == "factorial") {
+            requireArity(text_, children_, 1);
+            const double value = evalArg(0);
+            if (!std::isfinite(value) || value < 0.0 || std::floor(value) != value) {
+                throw std::domain_error("Function 'factorial' expects a non-negative integer");
+            }
+            if (value > 170.0) {
+                throw std::overflow_error("Function 'factorial' overflows double precision");
+            }
+            double result = 1.0;
+            for (double i = 2.0; i <= value; i += 1.0) {
+                result *= i;
+            }
+            return result;
+        }
+
         // sign: a BNG3 extension (absent from the BNG2 table), but the NFsim
         // direct-path gate already admitted it and the ExprTk shim already
         // registered an adapter for it. Only the shared evaluator was missing

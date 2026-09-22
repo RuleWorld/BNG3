@@ -3,8 +3,8 @@
 **Status:** Active; not complete
 **Last audited:** 2026-09-17
 **Repository:** RuleWorld/BNG3
-**Working branch:** `feat/merge-nonequilibrium-convergence`
-**Current base:** `6fe02c5` (merge of `91fe936` + `BNG3-convergence-2026-09-17.zip` + `BNG3-nonequilibrium-energy.zip`; `origin/main` at `91fe936`)
+**Working branch:** `main`
+**Current base:** convergence, nonequilibrium-energy, and SBML material-gap integration checkpoint
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -115,17 +115,132 @@ and evidence-oriented:
   the hybrid population backend; no unsupported direct semantics are inferred.
 
 The exact local evidence for the code head immediately before this
-documentation merge is: CTest `308/308`; strict full validation `71/71` with
+documentation merge is: CTest `312/312`; strict full validation `71/71` with
 zero failures, errors, or skips; action contracts `6/6`; CI-contract tests
 `26 passed`; energy tests `66 passed`; independent NFsim `10 passed`; Lean
 static validation `36` files; NFnext contracts `18/18`; Black, Ruff,
 provenance, corpus, and exception-ledger checks passed. The local Lean kernel
 check remains unavailable because Lean/Lake/Elan are not installed.
 
-Hosted checks for the final pushed documentation head are the authority
-for this checkpoint. Record their exact head and terminal check URLs in this
-section only after `gh` readback confirms that no required job is pending.
+This branch remains unpushed. `gh` readback keeps `origin/main` at
+`2af9506a1124ce7ebdc30c6967c771f1cd91c63c`; the current main CI run
+[`35004180160`](https://github.com/RuleWorld/BNG3/actions/runs/35004180160) was
+queued at final inspection. No hosted result is attributed to local head
+`c491f9bcc50301af635ad0203b43a69088b68d6d`.
 The unchecked completion items below remain open.
+
+## Material migration-gap batch — 2026-09-15
+
+The isolated batch on `codex/bng3-material-gap-completion` adds bounded,
+source-derived completion evidence for all five requested workstreams. The
+full checklist remains active because the batch does not replace maintainer
+approval, cross-platform CI, or broad Tier-NF/Tier-X qualification.
+
+- [x] Direct NFsim acceptance records `construction_path`, clears XML fallback
+  for the direct leg, and runs selected native-oracle checks. Exact local
+  evidence: CTest `312/312` and `10 passed` in the selected direct/native
+  NFsim validation command, plus `2 passed` direct-NF protocol contracts.
+- [x] Structured SBML admission is identified by species/parameter/rule/
+  reaction semantics rather than incidental `plain2` and `S1`-`S5` IDs. The
+  reader now rejects fractional, zero, negative, nonfinite, and overflowing
+  stoichiometry instead of silently rounding. The native SBML fixture bank
+  reports `22 assertions` in four cases.
+- [x] The graph-aware NET comparator normalizes equivalent arithmetic spelling
+  only inside a supported AST subset; unsupported rate syntax remains
+  fail-closed. The focused comparator gate reports `12 passed`.
+- [x] Independent scientific validation runs the BNG2 structural oracle over
+  nine selected representative models with `9/9` pass. This is selected
+  differential evidence, not complete Tier-P corpus approval.
+- [x] The CPU energy slice preserves both equivalent reaction centers for a
+  symmetric Arrhenius binding rule. Its source-derived direct test passes, the
+  independent `constant_binding` energy gate passes for `1024` seeds, and the
+  fresh-process direct/XML benchmark records five repeats per route. The
+  benchmark is measurement-only; no speedup or memory claim is made.
+- [x] PyBioNetGen compatibility now supports the bounded method/time override
+  contract through the modern simulator and materializes a legacy `.gdat`.
+  Source-derived compatibility tests report `5 passed`; an isolated CPython
+  3.14 arm64 wheel install runs both modern and legacy contracts.
+- [ ] Symmetric-site independent statistical energy parity remains open and is
+  explicitly retained as a limitation: the legacy BNG2/NFsim XML expansion
+  has a known energy-pattern lookup mismatch on that fixture. The BNG3 direct
+  path preserves multiplicity and does not convert this mismatch into a green
+  parity claim.
+- [ ] Remaining protocol NF/t4/t5 behavior, full CPU evaluator parity, full
+  SBML/Atomizer/writer round trips, complete PyBioNetGen public-contract
+  qualification, approved provenance, cross-platform wheel CI, and release
+  artifacts remain open.
+
+The complete machine-readable run is retained as
+`material_gap_evidence.json` in the task output directory. It records exact
+BNG3, BNG2, NFsim, and PyBioNetGen revisions, oracle paths, commands, and
+bounded output tails.
+
+## SBML semantic-gate correction — 2026-09-16
+
+- [x] The SBML Test Suite and curated BioModels numerical gates now treat
+  semantic `approximated` warnings as unsupported, while retaining
+  informational unit-scale notes as non-blocking. This closes the validator
+  integrity gap where variable stoichiometry, fast reactions, lossy MathML,
+  or partial Multi semantics could otherwise be reported as numerical passes.
+  The focused report-contract tests pass `6/6`; full local gates pass CTest
+  `315/315`, Python `420 passed, 28 skipped`, and validation
+  `84 passed, 117 skipped`.
+- [x] The C++ SBML writer/native reader canonicalize BNGL inverse-trigonometric
+  names to the SBML `arcsin`/`arccos`/`arctan` family and hyperbolic variants;
+  the focused regression passes and the fresh suite moved from `670/1,253`
+  passed/unsupported to `673/1,250`.
+- [x] Fixed-time, constant-valued SBML events are classified as lowered after
+  the generated action phase is present; only untranslated events remain a
+  dropped semantic warning. Focused event/lowering and warning-merge tests
+  pass `3/3`.
+- [x] The post-change full SBML Test Suite report is
+  `/private/tmp/bng3-sbml-suite-post-factorial.json` (schema 3): `1,923` cases,
+  `687` passed, `1,235` explicitly unsupported, `1` failed, and `0` timed out.
+- [x] The post-gate flat curated BioModels report is
+  `/private/tmp/bng3-curated-biomodels-flat-final-audited.json` (schema 4):
+  `1,096` records, `591` passed, `459` SBML records explicitly unsupported,
+  `31` failed, `2` timed out, plus `11` non-SBML records.
+- [x] The reports retain exact unsupported IDs/reasons, non-exclusive cause
+  intersections, and stoichiometry subcauses: suite `188` dynamic/
+  `stoichiometryMath`, `23` constant noninteger, `6` constant negative;
+  curated SBML-only `52` constant noninteger, `2` dynamic/
+  `stoichiometryMath`, `1` integer above expansion limit.
+- [x] Cause-set projection is recorded as an upper bound: resolving events,
+  MathML, local scope, species assignment, and constraints touches `836` suite
+  records (`455` target-only) and `399` curated SBML records (`378`
+  target-only); it is not a predicted pass count.
+- [x] The follow-up Core MathML batch adds exact non-negative-integer factorial
+  execution across the evaluator, typed compiler/lowering, BNGL visitor,
+  C++ SBML writer/native reader, and validator diagnostics. Targeted
+  `semantic/00028` and `semantic/00269` pass the full selected round-trip and
+  BNG3-vs-libRoadRunner gate; `semantic/00173` remains failed at its
+  discontinuous rate-rule CVODE comparison and is not relabeled as supported.
+- [x] The follow-up MathML batch removes the false unspecified-rational warning
+  from valid `e-notation` values. All 12 affected selected suite cases pass
+  their semantic checks; the post-change full suite report records the updated
+  aggregate above.
+- [ ] A post-gate full two-mode curated BioModels report is still open: the
+  isolated refresh was started but did not reach a terminal report in the
+  bounded run. The pre-gate two-mode artifact is not reused as current-head
+  evidence.
+
+## Published BioModels validation checkpoint — 2026-09-15
+
+- [x] The manifest `provenance/published-biomodels.json` is query-backed and
+  accounts for the complete manually curated BioModels inventory: `1,096`
+  records (`1,075` SBML and `21` explicitly non-SBML formats). The runner
+  `scripts/ci/validate_published_biomodels.py` performs modern import, BNG3
+  network generation, C++ SBML writing, modern/native re-import, and direct
+  all-observable BNG3 CVODE versus libRoadRunner CVODE comparison.
+- [x] The official SBML Test Suite checkout is pinned to
+  `cf38585fac5de8e0e90112febb62851ee2181816`; the round-trip runner covers all
+  `1,823` semantic and `100` stochastic canonical cases available in that
+  release checkout, with the absence of a syntactic corpus recorded.
+- [ ] The complete numerical gates are intentionally not green: model
+  representation limits, solver failures, cross-engine observable mismatches,
+  and bounded timeouts remain explicit in the machine-readable reports. This
+  evidence does not establish full SBML schema coverage, SBML Test Suite
+  reference-result conformance, or biological validity.
 
 ## Historical checkpoint — 2026-09-15
 

@@ -308,7 +308,18 @@ double NetworkGenerator::normalizeSeedAmount(const compile::CompiledModel& model
 GeneratedNetwork NetworkGenerator::generateNative(std::size_t maxIter) {
     const auto& compiled = document_.model();
     if (!document_.valid()) {
-        throw std::runtime_error("cannot generate a network from an invalid compiled BioNetGen model");
+        std::string detail;
+        for (const auto& diagnostic : document_.diagnostics()) {
+            if (diagnostic.severity != compile::Severity::Error) continue;
+            if (!detail.empty()) detail += "; ";
+            if (diagnostic.entity.has_value() && !diagnostic.entity->empty()) {
+                detail += *diagnostic.entity + ": ";
+            }
+            detail += diagnostic.message;
+        }
+        throw std::runtime_error(
+            "cannot generate a network from an invalid compiled BioNetGen model" +
+            (detail.empty() ? std::string{} : ": " + detail));
     }
 
     const auto maxStoich = parseMaxStoich(document_.protocol());

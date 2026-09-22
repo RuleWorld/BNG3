@@ -11,6 +11,7 @@ numbering compare equal; an extra or unmerged reaction still compares unequal.
 
 from __future__ import annotations
 
+import ast
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
@@ -311,7 +312,32 @@ def _canon_expr(expr: str) -> str:
         normalized = format(float(match.group(0)), ".15g")
         return "0" if normalized in {"-0", "-0.0"} else normalized
 
-    return _NUMBER_TOKEN.sub(normalize_number, result)
+    result = _NUMBER_TOKEN.sub(normalize_number, result)
+
+    # BNG2 and BNG3 can serialize the same unary-minus product with different
+    # redundant parentheses, e.g. ``(-(g/2))*x`` vs ``-(g/2)*x``.  Normalize
+    # only the safe arithmetic subset; unsupported rate syntax keeps the
+    # structural spelling above and therefore remains fail-closed.
+    def supported(node: ast.AST) -> bool:
+        if isinstance(node, (ast.Expression, ast.Name, ast.Constant)):
+            return True
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+            return supported(node.operand)
+        if isinstance(node, ast.BinOp) and isinstance(
+            node.op, (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Pow)
+        ):
+            return supported(node.left) and supported(node.right)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            return all(supported(argument) for argument in node.args)
+        return False
+
+    try:
+        tree = ast.parse(result.replace("^", "**"), mode="eval")
+        if supported(tree):
+            result = re.sub(r"\s+", "", ast.unparse(tree))
+    except (SyntaxError, ValueError):
+        pass
+    return result
 
 
 def split_species(s: str) -> list[str]:

@@ -41,6 +41,18 @@ TEST_CASE("unknown top-level function remains generic expression") {
     CHECK_FALSE(r.isEnergyCoupled());
 }
 
+TEST_CASE("SBML factorial lowers as a typed builtin") {
+    const auto expression = bng::parser::parseExpression("factorial(5)");
+    const bng::compile::SymbolTable symbols;
+    const auto rate = bng::compile::CompiledRateLaw::compile(expression, symbols);
+    REQUIRE(rate.diagnostics().empty());
+    CHECK(rate.resolvedExpression().kind ==
+          bng::compile::ResolvedExpressionKind::BuiltinCall);
+    REQUIRE(rate.resolvedExpression().builtin.has_value());
+    CHECK(*rate.resolvedExpression().builtin ==
+          bng::compile::BuiltinFunction::Factorial);
+}
+
 TEST_CASE("rate-law references resolve through typed semantic symbols") {
     auto model = bng::parser::parseModel(R"BNG(
 begin parameters

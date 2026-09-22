@@ -66,6 +66,10 @@ TEST_CASE("Expression: built-in functions", "[Expression]") {
         auto expr = Expression::function("abs", {Expression::number(-5.0)});
         REQUIRE_THAT(expr.evaluate(noResolver), WithinRel(5.0, 1e-10));
     }
+    SECTION("factorial") {
+        auto expr = Expression::function("factorial", {Expression::number(5.0)});
+        REQUIRE_THAT(expr.evaluate(noResolver), WithinRel(120.0, 1e-10));
+    }
     SECTION("min") {
         auto expr = Expression::function("min", {Expression::number(3.0), Expression::number(7.0)});
         REQUIRE_THAT(expr.evaluate(noResolver), WithinRel(3.0, 1e-10));
@@ -80,6 +84,18 @@ TEST_CASE("Expression: built-in functions", "[Expression]") {
         auto exprFalse = Expression::function("if", {Expression::number(0.0), Expression::number(10.0), Expression::number(20.0)});
         REQUIRE_THAT(exprFalse.evaluate(noResolver), WithinRel(20.0, 1e-10));
     }
+}
+
+TEST_CASE("Expression: factorial rejects non-integer and overflowing domains", "[Expression]") {
+    CHECK_THROWS_WITH(
+        Expression::function("factorial", {Expression::number(-1.0)}).evaluate(noResolver),
+        "Function 'factorial' expects a non-negative integer");
+    CHECK_THROWS_WITH(
+        Expression::function("factorial", {Expression::number(2.5)}).evaluate(noResolver),
+        "Function 'factorial' expects a non-negative integer");
+    CHECK_THROWS_WITH(
+        Expression::function("factorial", {Expression::number(171.0)}).evaluate(noResolver),
+        "Function 'factorial' overflows double precision");
 }
 
 TEST_CASE("Expression: TFUN resolution via resolver", "[Expression]") {

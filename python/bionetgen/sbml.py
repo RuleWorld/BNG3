@@ -21,29 +21,39 @@ class BioNetGenError(BNGError):
     """Public SBML import error used by the new API."""
 
 
+def _translate_modern_with_model(
+    sbml_path: str, atomize: bool, options: dict
+) -> tuple[str, object]:
+    """Translate through one Atomizer instance and retain its source model."""
+
+    try:
+        from bionetgen.atomizer.modern import Atomizer
+
+        sbml_text = Path(sbml_path).read_text(encoding="utf-8-sig")
+        atomizer = Atomizer(
+            atomize=atomize,
+            use_id=options.get("use_id", options.get("molecule_id", False)),
+            annotation=options.get("annotation", False),
+            quiet_mode=options.get("quiet_mode", True),
+            actions=options.get("actions", ""),
+            t_end=options.get("t_end", 10),
+            n_steps=options.get("n_steps", 100),
+        )
+        result = atomizer.atomize(sbml_text)
+    except Exception as exc:  # pragma: no cover - depends on optional deps
+        raise BioNetGenError(f"Modern SBML atomizer is unavailable: {exc}") from exc
+    if not result.success or not result.bngl:
+        raise BioNetGenError(
+            f"Modern SBML atomization failed for {sbml_path}: {result.error or 'no BNGL output'}"
+        )
+    return result.bngl, atomizer.get_model()
+
+
 def _translate_sbml(sbml_path: str, atomize: bool = False, **options) -> str:
     backend = str(options.pop("atomizer_backend", "modern")).lower()
     if backend in {"modern", "playground"}:
-        try:
-            from bionetgen.atomizer.modern import Atomizer
-
-            sbml_text = Path(sbml_path).read_text(encoding="utf-8-sig")
-            result = Atomizer(
-                atomize=atomize,
-                use_id=options.get("use_id", options.get("molecule_id", False)),
-                annotation=options.get("annotation", False),
-                quiet_mode=options.get("quiet_mode", True),
-                actions=options.get("actions", ""),
-                t_end=options.get("t_end", 10),
-                n_steps=options.get("n_steps", 100),
-            ).atomize(sbml_text)
-        except Exception as exc:  # pragma: no cover - depends on optional deps
-            raise BioNetGenError(f"Modern SBML atomizer is unavailable: {exc}") from exc
-        if not result.success or not result.bngl:
-            raise BioNetGenError(
-                f"Modern SBML atomization failed for {sbml_path}: {result.error or 'no BNGL output'}"
-            )
-        return result.bngl
+        bngl_text, _ = _translate_modern_with_model(sbml_path, atomize, options)
+        return bngl_text
 
     if backend not in {"legacy", "native"}:
         raise BioNetGenError(
@@ -110,8 +120,21 @@ def from_sbml(sbml_path: str, atomize: bool = False, **options) -> BioNetGenMode
         raise ImportError(
             "The compiled _bionetgen_cpp extension is required to import SBML"
         )
+    backend = str(options.get("atomizer_backend", "modern")).lower()
+    if backend in {"modern", "playground"}:
+        from bionetgen.atomizer.modern import source_metadata_payload
+
+        bngl_text, parsed_model = _translate_modern_with_model(
+            sbml_path, atomize, options
+        )
+        return BioNetGenModel(
+            _cpp.parse_string(bngl_text),
+            source_path=str(sbml_path),
+            source_metadata=source_metadata_payload(parsed_model),
+        )
     return BioNetGenModel(
-        _cpp.parse_string(sbml_to_bngl(sbml_path, atomize=atomize, **options))
+        _cpp.parse_string(sbml_to_bngl(sbml_path, atomize=atomize, **options)),
+        source_path=str(sbml_path),
     )
 
 

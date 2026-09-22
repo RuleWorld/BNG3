@@ -11,6 +11,17 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 REQUIRED_SYMBOLS = {"bngmodel", "run", "sim_getter"}
+REQUIRED_RUN_PARAMETERS = {
+    "inp",
+    "out",
+    "suppress",
+    "timeout",
+    "simulator",
+    "format",
+    "method",
+    "t_span",
+    "n_points",
+}
 
 
 def source_exports(source_root: Path) -> set[str]:
@@ -28,13 +39,33 @@ def source_exports(source_root: Path) -> set[str]:
     return exports
 
 
+def source_run_parameters(source_root: Path) -> set[str]:
+    """Read the source runner signature without importing a second package."""
+
+    path = source_root / "bionetgen" / "modelapi" / "runner.py"
+    if not path.is_file():
+        raise ValueError(f"PyBioNetGen runner is missing: {path}")
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name == "run":
+            return {argument.arg for argument in node.args.args}
+    raise ValueError(f"PyBioNetGen runner has no public run(): {path}")
+
+
 def run_compatibility(source_root: Path, summary_file: Path | None = None) -> int:
     exports = source_exports(source_root)
+    source_parameters = source_run_parameters(source_root)
     missing = REQUIRED_SYMBOLS - exports
     if missing:
         raise ValueError(
             "locked PyBioNetGen source no longer exports required symbols: "
             + ", ".join(sorted(missing))
+        )
+    missing_parameters = REQUIRED_RUN_PARAMETERS - source_parameters
+    if missing_parameters:
+        raise ValueError(
+            "locked PyBioNetGen runner lost required parameters: "
+            + ", ".join(sorted(missing_parameters))
         )
 
     env = os.environ.copy()
@@ -58,6 +89,11 @@ def run_compatibility(source_root: Path, summary_file: Path | None = None) -> in
             stream.write(
                 "- Source-derived root symbols: "
                 + ", ".join(sorted(REQUIRED_SYMBOLS))
+                + "\n"
+            )
+            stream.write(
+                "- Source-derived runner parameters: "
+                + ", ".join(sorted(REQUIRED_RUN_PARAMETERS))
                 + "\n"
             )
             stream.write(f"- Compatibility test return code: `{result.returncode}`\n\n")

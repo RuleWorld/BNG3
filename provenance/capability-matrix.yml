@@ -87,7 +87,16 @@ rows:
     tests: tests/cpp/test_nfsim_ast_adapter.cpp
     oracle: pending
     owner: pending-maintainer
-    notes: Energy patterns plus bounded Arrhenius binding/state-change expansion, time-dependent global functions, file-backed/inline TFUN, time-bearing local functions, bounded nested local and function-counter TFUN composites, and bounded composites are direct; context variants use NFsim EnergyFunction. Local TFUN inside energy/rate-law forms and other energy/rate-law forms remain fail-closed on the direct path.
+    notes: Energy patterns plus bounded Arrhenius binding/state-change expansion, time-dependent global functions, file-backed/inline TFUN, time-bearing local functions, bounded nested local and function-counter TFUN composites, and bounded composites are direct; context variants use NFsim EnergyFunction. Symmetric Arrhenius reaction-center multiplicity is preserved and source-derived in CTest. The independent constant-binding gate passes with 1024 seeds; symmetric-site exact statistical parity remains explicitly unqualified because the legacy XML energy lookup does not match that fixture. Local TFUN inside energy/rate-law forms and other energy/rate-law forms remain fail-closed on the direct path.
+  - id: io.sbml.structured-bng2
+    source: legacy BNG2 structured SBML dialect and cpp/io/SbmlReader.cpp
+    bng3_reference: cpp/io/SbmlReader.cpp:isStructuredBng2Sbml/stoichiometry
+    status: implemented-subset
+    direct_path: native-structured-subset
+    tests: tests/cpp/test_sbml_reader.cpp
+    oracle: pending
+    owner: pending-maintainer
+    notes: Native atomize=true admission is semantic rather than tied to model/species IDs, and stoichiometry accepts only finite positive integers. The query-backed runner accounts for the complete manually curated BioModels inventory and records non-SBML formats explicitly; SBML records receive modern import, C++ writer/native re-import, and all-observable BNG3-CVODE versus libRoadRunner-CVODE checks. Unsupported constructs, solver failures, and parity failures remain explicit rather than being promoted to support.
   - id: pybionetgen.api-cli-atomizer
     source: python/bionetgen and legacy/PyBioNetGen
     bng3_reference: python/bionetgen
@@ -96,7 +105,7 @@ rows:
     tests: tests/python/test_cpp_backend.py, tests/python/test_cli.py, tests/python/test_parameter_scan.py, tests/python/test_sensitivity.py
     oracle: pending
     owner: pending-maintainer
-    notes: Core API and CLI share the in-process backend; source-build and wheel imports, solver controls, scans, and sensitivity have smoke coverage. Atomizer, serialization, plotting, and format-roundtrip parity remain.
+    notes: Core API and CLI share the in-process backend; source-build and wheel imports, solver controls, scans, and sensitivity have smoke coverage. The bounded legacy method/time override writes PyBioNetGen-style gdat output and is checked against a locked source signature; an isolated CPython 3.14 arm64 wheel qualification runs modern and legacy contracts. The Playground-derived Atomizer has a complete manually curated BioModels inventory runner, direct BNG3-CVODE/libRoadRunner observable comparison, and SBML Level 2 reaction-local-parameter handling. Unsupported constructs and failed cross-engine parity remain explicitly reported.
   - id: validation.oracles-goldens-release
     source: provenance/upstreams.lock.yml and provenance/golden
     bng3_reference: provenance/
@@ -105,7 +114,7 @@ rows:
     tests: scripts/validate_provenance.py
     oracle: pending
     owner: pending-maintainer
-    notes: Immutable BNG2/NFsim/PyBioNetGen sources, manifests, tolerances, owners, and release gates are required.
+    notes: Immutable BNG2/NFsim/PyBioNetGen sources, manifests, tolerances, owners, and release gates are required. The material-gap evidence runner records exact local source revisions and independent-oracle commands, but maintainer approval, full corpus coverage, cross-platform qualification, and release gates remain pending.
   - id: core.graph.canonicalization.single-nauty
     source: cpp/nauty (BNG) and cpp/nfsim/nauty24 (NFsim), nauty 2.4
     bng3_reference: cpp/nauty (sole compiled tree); consumers cpp/core/PatternGraph.cpp and cpp/nfsim/NFcore/complex.cpp

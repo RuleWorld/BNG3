@@ -55,6 +55,7 @@ std::string builtinName(BuiltinFunction function) {
     case BuiltinFunction::Cosh: return "cosh";
     case BuiltinFunction::E: return "_e";
     case BuiltinFunction::Exp: return "exp";
+    case BuiltinFunction::Factorial: return "factorial";
     case BuiltinFunction::Floor: return "floor";
     case BuiltinFunction::If: return "if";
     case BuiltinFunction::Ln: return "ln";

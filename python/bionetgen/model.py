@@ -37,9 +37,15 @@ class BioNetGenModel:
     reaction rules, observables, seed species) and simulation methods.
     """
 
-    def __init__(self, cpp_model: _cpp.Model, source_path: Optional[str] = None):
+    def __init__(
+        self,
+        cpp_model: _cpp.Model,
+        source_path: Optional[str] = None,
+        source_metadata: Optional[str] = None,
+    ):
         self._model = cpp_model
         self._source_path = source_path
+        self._source_metadata = source_metadata or ""
         self._network: Optional[_cpp.GeneratedNetwork] = None
 
     @property
@@ -596,7 +602,12 @@ class BioNetGenModel:
     def write_sbml(self, path: str) -> None:
         if self._network is None:
             self.generate_network()
-        _cpp.io.write_sbml(self._model, self._network, path)
+        _cpp.io.write_sbml(
+            self._model,
+            self._network,
+            path,
+            source_metadata=self._source_metadata,
+        )
 
     def write_matlab(self, path: str) -> None:
         if self._network is None:

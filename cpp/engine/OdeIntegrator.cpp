@@ -9,6 +9,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string_view>
+#include <unordered_set>
 
 #include "parser/antlr_compat.hpp"
 #include "antlr4-runtime.h"
@@ -34,6 +35,20 @@
 namespace bng::engine {
 
 namespace {
+
+bool isResultFunction(const std::string& name) {
+    // Internal concentration/rate helper functions are implementation
+    // details.  Keep the result payload bounded to user-visible algebraic
+    // outputs (including species assignment functions), while still allowing
+    // the resolver below to use every zero-argument helper internally.
+    return !name.empty() && name.front() != '_' &&
+           name.rfind("__assign_rule__", 0) != 0 &&
+           name.rfind("__rate_rule_in_", 0) != 0 &&
+           name.rfind("__rate_rule_out_", 0) != 0 &&
+           name.rfind("__rate_rule__", 0) != 0 &&
+           name.rfind("__rate_rule_pos__", 0) != 0 &&
+           name.rfind("__rate_rule_neg__", 0) != 0;
+}
 
 // Recursive expression evaluator for rate strings.
 // Handles: numbers, parameters, +, -, *, /, (), and nested expressions.
@@ -156,6 +171,21 @@ bool hasWordBoundaryMatchCaseInsensitive(std::string_view text, std::string_view
     return false;
 }
 
+bool expressionReferencesObservable(
+    const ast::Expression& expression,
+    const ast::Model& model) {
+    if (expression.kind() == ast::ExpressionKind::ObservableRef ||
+        expression.kind() == ast::ExpressionKind::Function) {
+        for (const auto& observable : model.getObservables()) {
+            if (observable.getName() == expression.name()) return true;
+        }
+    }
+    for (const auto& argument : expression.args()) {
+        if (expressionReferencesObservable(argument, model)) return true;
+    }
+    return false;
+}
+
 } // anonymous namespace
 
 
@@ -220,11 +250,21 @@ void OdeIntegrator::compile() {
     }
 
     std::unordered_map<std::string, bng::compile::RateLawKind> typedRateKinds;
+    std::unordered_set<std::string> totalRateRules;
     for (const auto& rule : model_.getReactionRules()) {
         if (!rule.getRates().empty()) {
             typedRateKinds.emplace(
                 rule.getRuleName(),
                 bng::compile::CompiledRateLaw::compile(rule.getRates().front()).kind);
+        }
+        for (const auto& modifier : rule.getModifiers()) {
+            std::string lowerModifier = modifier;
+            std::transform(lowerModifier.begin(), lowerModifier.end(), lowerModifier.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            if (lowerModifier == "totalrate") {
+                totalRateRules.insert(rule.getRuleName());
+                break;
+            }
         }
     }
     const auto typedRateKindForOrigin = [&](std::string origin)
@@ -247,6 +287,19 @@ void OdeIntegrator::compile() {
         }
         return find(origin);
     };
+    const auto totalRateForOrigin = [&](std::string origin) {
+        if (totalRateRules.find(origin) != totalRateRules.end()) return true;
+        if (origin.rfind("_reverse__", 0) == 0) {
+            origin = origin.substr(std::string("_reverse__").size());
+        } else if (!origin.empty() && origin.front() == '_') {
+            origin.erase(origin.begin());
+        }
+        if (origin.size() > std::string("_reverse").size() &&
+            origin.rfind("_reverse") == origin.size() - std::string("_reverse").size()) {
+            origin.erase(origin.size() - std::string("_reverse").size());
+        }
+        return totalRateRules.find(origin) != totalRateRules.end();
+    };
 
     std::string lowerRawRL;
     bool lowerRawRLPopulated = false;
@@ -257,13 +310,12 @@ void OdeIntegrator::compile() {
         crxn.reactantIndices = rxn.getReactants();
         crxn.productIndices = rxn.getProducts();
         crxn.statFactor = rxn.getFactor();
+        crxn.isTotalRate = totalRateForOrigin(rxn.getOriginRuleName());
 
-        // NOTE: The rule-level TotalRate modifier affects how rate constants
-        // are computed at the RULE level (dividing by number of matching sites),
-        // but the generated per-reaction rate constant already accounts for this.
-        // The ODE solver should ALWAYS multiply rate * [reactants] (mass action).
-        // isTotalRate is only set for Sat/MM/Hill rate laws where the rate
-        // function already includes the reactant concentration dependence.
+        // A TotalRate expression is already a complete flux.  Do not apply
+        // either the reaction-pattern concentration factors or the network
+        // reaction-center symmetry factor to it.  Ordinary elementary rules
+        // retain both pieces of mass-action lowering below.
         const auto& originRuleName = rxn.getOriginRuleName();
 
         // Fast path: If NetWriter pre-computed a per-reaction derived rate parameter
@@ -276,11 +328,11 @@ void OdeIntegrator::compile() {
             auto drIt = perRxnDerivedRates.find(rxnIndex);
             if (drIt != perRxnDerivedRates.end()) {
                 double rate = drIt->second.second;  // numeric value
-                const auto unitFactor = bng::io::NetWriter::computeUnitConversionFactor(rxn, model_, network_);
-                if (unitFactor.has_value()) {
-                    rate *= *unitFactor;
+                if (!crxn.isTotalRate) {
+                    const auto unitFactor = bng::io::NetWriter::computeUnitConversionFactor(rxn, model_, network_);
+                    if (unitFactor.has_value()) rate *= *unitFactor;
                 }
-                if (std::abs(rxn.getFactor() - 1.0) >= 1e-9) {
+                if (!crxn.isTotalRate && std::abs(rxn.getFactor() - 1.0) >= 1e-9) {
                     rate *= rxn.getFactor();
                 }
                 crxn.rateConstant = rate;
@@ -334,11 +386,11 @@ void OdeIntegrator::compile() {
 
                 // Build rate string with unit conversion and derived param
                 // This matches what NetWriter writes: unitFactor*statFactor*derivedParam
-                const auto unitFactor = bng::io::NetWriter::computeUnitConversionFactor(rxn, model_, network_);
-                if (unitFactor.has_value()) {
-                    rateStrBuilder << *unitFactor << "*";
+                if (!crxn.isTotalRate) {
+                    const auto unitFactor = bng::io::NetWriter::computeUnitConversionFactor(rxn, model_, network_);
+                    if (unitFactor.has_value()) rateStrBuilder << *unitFactor << "*";
                 }
-                if (std::abs(rxn.getFactor() - 1.0) >= 1e-9) {
+                if (!crxn.isTotalRate && std::abs(rxn.getFactor() - 1.0) >= 1e-9) {
                     rateStrBuilder << rxn.getFactor() << "*";
                 }
                 rateStrBuilder << derivedParamName;
@@ -347,16 +399,18 @@ void OdeIntegrator::compile() {
                 try {
                     paramResolver(altDerivedName);
                     foundDerived = true;
-                    const auto unitFactor2 = bng::io::NetWriter::computeUnitConversionFactor(rxn, model_, network_);
+                    const auto unitFactor2 = crxn.isTotalRate
+                        ? std::optional<double>{}
+                        : bng::io::NetWriter::computeUnitConversionFactor(rxn, model_, network_);
                     // Reset and rebuild with alternative name
                     rateStrBuilder.str("");
                     rateStrBuilder.clear();
                     if (unitFactor2.has_value()) {
                         rateStrBuilder << *unitFactor2 << "*";
                     }
-                    if (std::abs(rxn.getFactor() - 1.0) >= 1e-9) {
-                        rateStrBuilder << rxn.getFactor() << "*";
-                    }
+                                if (!crxn.isTotalRate && std::abs(rxn.getFactor() - 1.0) >= 1e-9) {
+                                    rateStrBuilder << rxn.getFactor() << "*";
+                                }
                     rateStrBuilder << altDerivedName;
                 } catch (const std::exception&) {
                     // Also try the rate string from .net directly (it may already be the param name)
@@ -371,9 +425,11 @@ void OdeIntegrator::compile() {
                                 foundDerived = true;
                                 rateStrBuilder.str("");
                                 rateStrBuilder.clear();
-                                const auto uf = bng::io::NetWriter::computeUnitConversionFactor(rxn, model_, network_);
+                                const auto uf = crxn.isTotalRate
+                                    ? std::optional<double>{}
+                                    : bng::io::NetWriter::computeUnitConversionFactor(rxn, model_, network_);
                                 if (uf.has_value()) rateStrBuilder << *uf << "*";
-                                if (std::abs(rxn.getFactor() - 1.0) >= 1e-9) rateStrBuilder << rxn.getFactor() << "*";
+                                if (!crxn.isTotalRate && std::abs(rxn.getFactor() - 1.0) >= 1e-9) rateStrBuilder << rxn.getFactor() << "*";
                                 rateStrBuilder << pname;
                                 break;
                             } catch (...) {}
@@ -386,11 +442,11 @@ void OdeIntegrator::compile() {
 
         if (!foundDerived) {
             // No derived parameter — apply volume scaling factor (Bug 3 fix)
-            const auto unitFactor = bng::io::NetWriter::computeUnitConversionFactor(rxn, model_, network_);
-            if (unitFactor.has_value()) {
-                rateStrBuilder << *unitFactor << "*";
+            if (!crxn.isTotalRate) {
+                const auto unitFactor = bng::io::NetWriter::computeUnitConversionFactor(rxn, model_, network_);
+                if (unitFactor.has_value()) rateStrBuilder << *unitFactor << "*";
             }
-            if (std::abs(rxn.getFactor() - 1.0) >= 1e-9) {
+            if (!crxn.isTotalRate && std::abs(rxn.getFactor() - 1.0) >= 1e-9) {
                 rateStrBuilder << rxn.getFactor() << "*";
             }
             rateStrBuilder << rxn.getRateLaw();
@@ -550,9 +606,11 @@ void OdeIntegrator::compile() {
 
                 // Apply unit and stat factors
                 double combinedFactor = 1.0;
-                const auto uf = bng::io::NetWriter::computeUnitConversionFactor(rxn, model_, network_);
-                if (uf.has_value()) combinedFactor *= *uf;
-                if (std::abs(rxn.getFactor() - 1.0) >= 1e-9) combinedFactor *= rxn.getFactor();
+                if (!crxn.isTotalRate) {
+                    const auto uf = bng::io::NetWriter::computeUnitConversionFactor(rxn, model_, network_);
+                    if (uf.has_value()) combinedFactor *= *uf;
+                }
+                if (!crxn.isTotalRate && std::abs(rxn.getFactor() - 1.0) >= 1e-9) combinedFactor *= rxn.getFactor();
                 if (std::abs(combinedFactor - 1.0) >= 1e-9) {
                     baseExpr = ast::Expression::binary("*",
                         ast::Expression::number(combinedFactor), std::move(baseExpr));
@@ -635,9 +693,11 @@ void OdeIntegrator::compile() {
                 ast::Expression funcExpr = *rateExpr;
 
                 double combinedFactor = 1.0;
-                const auto uf = bng::io::NetWriter::computeUnitConversionFactor(rxn, model_, network_);
-                if (uf.has_value()) combinedFactor *= *uf;
-                if (std::abs(rxn.getFactor() - 1.0) >= 1e-9) combinedFactor *= rxn.getFactor();
+                if (!crxn.isTotalRate) {
+                    const auto uf = bng::io::NetWriter::computeUnitConversionFactor(rxn, model_, network_);
+                    if (uf.has_value()) combinedFactor *= *uf;
+                }
+                if (!crxn.isTotalRate && std::abs(rxn.getFactor() - 1.0) >= 1e-9) combinedFactor *= rxn.getFactor();
                 if (std::abs(combinedFactor - 1.0) >= 1e-9) {
                     funcExpr = ast::Expression::binary("*",
                         ast::Expression::number(combinedFactor), std::move(funcExpr));
@@ -670,9 +730,11 @@ void OdeIntegrator::compile() {
 
                     // Apply unit conversion and stat factor
                     double combinedFactor2 = 1.0;
-                    const auto uf2 = bng::io::NetWriter::computeUnitConversionFactor(rxn, model_, network_);
-                    if (uf2.has_value()) combinedFactor2 *= *uf2;
-                    if (std::abs(rxn.getFactor() - 1.0) >= 1e-9) combinedFactor2 *= rxn.getFactor();
+                    if (!crxn.isTotalRate) {
+                        const auto uf2 = bng::io::NetWriter::computeUnitConversionFactor(rxn, model_, network_);
+                        if (uf2.has_value()) combinedFactor2 *= *uf2;
+                    }
+                    if (!crxn.isTotalRate && std::abs(rxn.getFactor() - 1.0) >= 1e-9) combinedFactor2 *= rxn.getFactor();
                     if (std::abs(combinedFactor2 - 1.0) >= 1e-9) {
                         funcExpr2 = ast::Expression::binary("*",
                             ast::Expression::number(combinedFactor2), std::move(funcExpr2));
@@ -704,6 +766,15 @@ void OdeIntegrator::compile() {
                     // functions, time, etc.).  If so, it must be evaluated
                     // at every time-step (functional rate).
                     bool needsRuntime = false;
+
+                    // ObservableRef nodes do not contribute their own name to
+                    // Expression::getDependencies().  A compound law such as
+                    // k*S_amt would otherwise be misclassified as constant,
+                    // then fail closed to a zero rate when its derived
+                    // _rateLaw function is evaluated.
+                    if (expressionReferencesObservable(*rateExpr, model_)) {
+                        needsRuntime = true;
+                    }
 
                     auto deps = parsed.getDependencies();
                     for (const auto& dep : deps) {
@@ -1017,6 +1088,72 @@ void OdeIntegrator::compileGroups() {
     }
 }
 
+void OdeIntegrator::updateFunctions(
+    const std::vector<double>& groupValues,
+    double time,
+    std::vector<double>& functionValues) const {
+    functionValues.clear();
+
+    // Functions are not state variables, but zero-argument functions are
+    // observable model outputs in SBML (including algebraic species lowered
+    // by the modern Atomizer).  Evaluate them against the same observable
+    // snapshot used by the rate-law resolver so exported assignment values
+    // are on exactly the integration output grid.
+    std::unordered_map<std::string, const ast::Function*> zeroArgumentFunctions;
+    for (const auto& function : model_.getFunctions()) {
+        if (function.getArgs().empty()) {
+            zeroArgumentFunctions.emplace(function.getName(), &function);
+        }
+    }
+    std::vector<std::string> functionStack;
+    std::function<double(const std::string&)> resolver;
+    resolver = [&](const std::string& name) -> double {
+        if (name == "time") {
+            return time;
+        }
+        const auto observable = observableIndex_.find(name);
+        if (observable != observableIndex_.end() &&
+            observable->second < groupValues.size()) {
+            return groupValues[observable->second];
+        }
+        const auto function = zeroArgumentFunctions.find(name);
+        if (function != zeroArgumentFunctions.end()) {
+            if (std::find(functionStack.begin(), functionStack.end(), name) !=
+                functionStack.end()) {
+                // Cyclic algebraic helpers are not a solvable BNGL function
+                // graph.  Return a finite sentinel for this optional output
+                // instead of recursing until the worker stack overflows.
+                return 0.0;
+            }
+            functionStack.push_back(name);
+            double value = 0.0;
+            try {
+                value = function->second->getExpression().evaluate(resolver, time);
+            } catch (const std::exception&) {
+                value = 0.0;
+            }
+            functionStack.pop_back();
+            return value;
+        }
+        return model_.getParameters().evaluate(name, time);
+    };
+
+    for (const auto& function : model_.getFunctions()) {
+        if (!function.getArgs().empty() || !isResultFunction(function.getName())) {
+            continue;
+        }
+        try {
+            functionValues.push_back(
+                function.getExpression().evaluate(resolver, time));
+        } catch (const std::exception&) {
+            // Keep a malformed optional function from invalidating an
+            // otherwise executable state trajectory.  The writer/parser
+            // diagnostics remain the source of truth for unsupported math.
+            functionValues.push_back(0.0);
+        }
+    }
+}
+
 void OdeIntegrator::derivs(double t, const double* y, double* dydt) const {
     // Zero derivatives
     std::fill(dydt, dydt + nSpecies_, 0.0);
@@ -1147,6 +1284,23 @@ void OdeIntegrator::derivs(double t, const double* y, double* dydt) const {
     }
 }
 
+void OdeIntegrator::cvodeDerivs(double t, const double* y, double* dydt) const {
+    if (cvodeStateScale_.size() != nSpecies_) {
+        derivs(t, y, dydt);
+        return;
+    }
+
+    cvodePhysicalState_.resize(nSpecies_);
+    cvodePhysicalDerivatives_.resize(nSpecies_);
+    for (std::size_t i = 0; i < nSpecies_; ++i) {
+        cvodePhysicalState_[i] = y[i] * cvodeStateScale_[i];
+    }
+    derivs(t, cvodePhysicalState_.data(), cvodePhysicalDerivatives_.data());
+    for (std::size_t i = 0; i < nSpecies_; ++i) {
+        dydt[i] = cvodePhysicalDerivatives_[i] / cvodeStateScale_[i];
+    }
+}
+
 void OdeIntegrator::updateGroups(const double* y, std::vector<double>& groupValues) const {
     groupValues.resize(compiledGroups_.size(), 0.0);
     for (std::size_t i = 0; i < compiledGroups_.size(); ++i) {
@@ -1268,7 +1422,48 @@ OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
     } else if (options.method == "rk4") {
         return integrateRK4(options);
     } else if (options.method == "cvode") {
-        return integrateCvode(options);
+        if (options.enforceNonnegative) {
+            return integrateCvode(options);
+        }
+        try {
+            // SBML state variables are not inherently nonnegative.  Preserve
+            // that source semantics on the first attempt; use constraints
+            // only as a general solver-stability fallback when CVODE cannot
+            // complete a model with otherwise valid nonnegative initial
+            // populations.
+            return integrateCvode(options);
+        } catch (const std::runtime_error& error) {
+            const std::string message = error.what();
+            if (message.find("CVODE") == std::string::npos) {
+                throw;
+            }
+            OdeOptions retry = options;
+            retry.enforceNonnegative = true;
+            try {
+                return integrateCvode(retry);
+            } catch (const std::runtime_error& constrainedError) {
+                // A few imported SBML models have an extremely small
+                // characteristic timescale (often from a tiny declared
+                // compartment).  With no user-specified max_step, CVODE can
+                // spend its entire internal-step budget chasing that scale.
+                // Retry once with a bounded step only after both ordinary
+                // and nonnegative-constrained CVODE paths fail.  An explicit
+                // user max_step remains authoritative and is never replaced.
+                if (options.maxStep > 0.0 ||
+                    std::string(constrainedError.what()).find("CVODE") ==
+                        std::string::npos) {
+                    throw;
+                }
+                // Preserve the source-sign semantics for the bounded retry;
+                // the unconstrained solver is the path that can recover
+                // valid negative intermediate states in cross-compartment
+                // population models.
+                OdeOptions stepped = options;
+                const double span = std::abs(options.tEnd - options.tStart);
+                stepped.maxStep = std::max(span / 2000.0, 1e-6);
+                return integrateCvode(stepped);
+            }
+        }
     } else if (options.method == "ssa") {
         return integrateSSA(options);
     } else {
@@ -1318,8 +1513,10 @@ OdeResult OdeIntegrator::integrateEuler(const OdeOptions& opts) {
 
     // Compute observables for each time point
     result.observables.resize(result.timePoints.size());
+    result.functions.resize(result.timePoints.size());
     for (std::size_t step = 0; step < result.timePoints.size(); ++step) {
         updateGroups(result.concentrations[step].data(), result.observables[step]);
+        updateFunctions(result.observables[step], result.timePoints[step], result.functions[step]);
     }
 
     return result;
@@ -1406,8 +1603,10 @@ OdeResult OdeIntegrator::integrateRK4(const OdeOptions& opts) {
 
     // Compute observables for each time point
     result.observables.resize(result.timePoints.size());
+    result.functions.resize(result.timePoints.size());
     for (std::size_t step = 0; step < result.timePoints.size(); ++step) {
         updateGroups(result.concentrations[step].data(), result.observables[step]);
+        updateFunctions(result.observables[step], result.timePoints[step], result.functions[step]);
     }
 
     return result;
@@ -1548,7 +1747,7 @@ void OdeIntegrator::writeBinaryOutputFiles(const std::string& prefix, const OdeR
 // Static C-style callback for CVODE (v7: sunrealtype instead of realtype)
 static int cvodeCallbackWrapper(sunrealtype t, N_Vector y, N_Vector ydot, void* user_data) {
     auto* self = static_cast<OdeIntegrator*>(user_data);
-    self->derivs(static_cast<double>(t), NV_DATA_S(y), NV_DATA_S(ydot));
+    self->cvodeDerivs(static_cast<double>(t), NV_DATA_S(y), NV_DATA_S(ydot));
     return 0;
 }
 
@@ -1570,8 +1769,27 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
         throw std::runtime_error("Failed to allocate CVODE state vector");
     }
 
+    std::vector<double> initialState(nSpecies_);
+    std::vector<double> initialDerivatives(nSpecies_);
     for (std::size_t i = 0; i < nSpecies_; ++i) {
-        NV_Ith_S(y, i) = network_.species.get(i).getAmount();
+        initialState[i] = network_.species.get(i).getAmount();
+    }
+    // Converted SBML models can legitimately combine sub-molecular amounts
+    // with molecule-number rate constants.  Integrating those raw values
+    // makes CVODE's initial Newton step ill-conditioned even when the source
+    // model and the generated network are finite.  Use a per-state scale
+    // based on the initial amount and one characteristic time of motion.
+    derivs(opts.tStart, initialState.data(), initialDerivatives.data());
+    const double timeScale = std::max(std::abs(opts.tEnd - opts.tStart), 1.0);
+    cvodeStateScale_.resize(nSpecies_);
+    for (std::size_t i = 0; i < nSpecies_; ++i) {
+        double scale = std::abs(initialState[i]);
+        if (std::isfinite(initialDerivatives[i])) {
+            scale = std::max(scale, std::abs(initialDerivatives[i]) * timeScale);
+        }
+        if (!std::isfinite(scale) || scale < 1e-30) scale = 1.0;
+        cvodeStateScale_[i] = scale;
+        NV_Ith_S(y, i) = initialState[i] / scale;
     }
 
     // Create CVODE solver (v7: BDF with context, Newton is default)
@@ -1590,14 +1808,67 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
         SUNContext_Free(&sunctx);
         throw std::runtime_error("CVodeInit failed with flag " + std::to_string(flag));
     }
+    // Keep the standard BDF order ceiling. The component-scaled state
+    // addresses disparate SBML scales while the normal order ceiling
+    // preserves parity with libRoadRunner CVODE.
+    CVodeSetMaxOrd(cvode_mem, 5);
 
-    // Set tolerances (matching BNG2 defaults: rtol=1e-8, atol=1e-8)
-    flag = CVodeSStolerances(cvode_mem, opts.rtol, opts.atol);
+    // The state is scaled below, so use component-wise absolute tolerances
+    // that map the requested physical ``atol`` back into scaled coordinates.
+    // A scalar tolerance here would be far too strict for sub-molecular SBML
+    // amounts and far too loose for molecule-number states.
+    N_Vector scaledAbsTol = N_VNew_Serial(static_cast<sunindextype>(nSpecies_), sunctx);
+    if (scaledAbsTol == nullptr) {
+        CVodeFree(&cvode_mem);
+        N_VDestroy(y);
+        SUNContext_Free(&sunctx);
+        throw std::runtime_error("Failed to allocate CVODE absolute tolerances");
+    }
+    for (std::size_t i = 0; i < nSpecies_; ++i) {
+        NV_Ith_S(scaledAbsTol, i) = opts.atol / cvodeStateScale_[i];
+    }
+    flag = CVodeSVtolerances(cvode_mem, opts.rtol, scaledAbsTol);
+    N_VDestroy(scaledAbsTol);
     if (flag != CV_SUCCESS) {
         CVodeFree(&cvode_mem);
         N_VDestroy(y);
         SUNContext_Free(&sunctx);
         throw std::runtime_error("CVodeSStolerances failed");
+    }
+
+    if (opts.enforceNonnegative) {
+        // Constraints are an opt-in solver fallback.  Never apply them to
+        // rate-rule states or initially negative values: those are explicit
+        // signs that the source model is not a population-constrained system.
+        bool canConstrainStates = true;
+        for (std::size_t i = 0; i < nSpecies_; ++i) {
+            const auto name = network_.species.get(i).getSpeciesGraph().toString();
+            const bool isRateRuleState = name.find("__rate_rule_state__") != std::string::npos;
+            if (isRateRuleState || initialState[i] < 0.0) {
+                canConstrainStates = false;
+                break;
+            }
+        }
+        if (canConstrainStates) {
+            N_Vector constraints = N_VNew_Serial(static_cast<sunindextype>(nSpecies_), sunctx);
+            if (constraints == nullptr) {
+                CVodeFree(&cvode_mem);
+                N_VDestroy(y);
+                SUNContext_Free(&sunctx);
+                throw std::runtime_error("Failed to allocate CVODE constraints");
+            }
+            for (std::size_t i = 0; i < nSpecies_; ++i) {
+                NV_Ith_S(constraints, i) = 1.0;
+            }
+            flag = CVodeSetConstraints(cvode_mem, constraints);
+            N_VDestroy(constraints);
+            if (flag != CV_SUCCESS) {
+                CVodeFree(&cvode_mem);
+                N_VDestroy(y);
+                SUNContext_Free(&sunctx);
+                throw std::runtime_error("CVodeSetConstraints failed");
+            }
+        }
     }
 
     // Set user data
@@ -1690,7 +1961,22 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
                     break;
                 } else if (flag == CV_TOO_MUCH_WORK) {
                     // Auto-increase max steps (matches BNG2 behavior)
+                    // Keep the retry bounded.  A singular or ill-conditioned
+                    // model must become a diagnostic, not an unbounded loop
+                    // that makes a per-model validation job time out.
+                    constexpr long int maxInternalSteps = 10000;
+                    if (maxSteps >= maxInternalSteps) {
+                        SUNLinSolFree(LS);
+                        if (A) SUNMatDestroy(A);
+                        CVodeFree(&cvode_mem);
+                        N_VDestroy(y);
+                        SUNContext_Free(&sunctx);
+                        throw std::runtime_error(
+                            "CVODE failed with flag " + std::to_string(flag) +
+                            " after reaching the internal step budget");
+                    }
                     maxSteps *= 2;
+                    if (maxSteps > maxInternalSteps) maxSteps = maxInternalSteps;
                     CVodeSetMaxNumSteps(cvode_mem, maxSteps);
                     continue;
                 } else {
@@ -1709,7 +1995,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
         result.timePoints.push_back(tOut);
         std::vector<double> conc(nSpecies_);
         for (std::size_t i = 0; i < nSpecies_; ++i) {
-            conc[i] = NV_Ith_S(y, i);
+            conc[i] = NV_Ith_S(y, i) * cvodeStateScale_[i];
         }
         result.concentrations.push_back(conc);
 
@@ -1737,8 +2023,10 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
 
     // Compute observables for each time point
     result.observables.resize(result.timePoints.size());
+    result.functions.resize(result.timePoints.size());
     for (std::size_t step = 0; step < result.timePoints.size(); ++step) {
         updateGroups(result.concentrations[step].data(), result.observables[step]);
+        updateFunctions(result.observables[step], result.timePoints[step], result.functions[step]);
     }
 
     // Cleanup (v7: also free linear solver, matrix, and context)

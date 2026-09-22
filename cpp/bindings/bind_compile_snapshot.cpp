@@ -76,6 +76,7 @@ const char* builtinName(BuiltinFunction builtin) {
     case BuiltinFunction::Cosh: return "cosh";
     case BuiltinFunction::E: return "e";
     case BuiltinFunction::Exp: return "exp";
+    case BuiltinFunction::Factorial: return "factorial";
     case BuiltinFunction::Floor: return "floor";
     case BuiltinFunction::If: return "if";
     case BuiltinFunction::Ln: return "ln";

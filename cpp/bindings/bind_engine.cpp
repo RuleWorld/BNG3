@@ -22,6 +22,16 @@ using namespace bng::actions;
 
 namespace {
 
+bool isResultFunction(const std::string& name) {
+    return !name.empty() && name.front() != '_' &&
+           name.rfind("__assign_rule__", 0) != 0 &&
+           name.rfind("__rate_rule_in_", 0) != 0 &&
+           name.rfind("__rate_rule_out_", 0) != 0 &&
+           name.rfind("__rate_rule__", 0) != 0 &&
+           name.rfind("__rate_rule_pos__", 0) != 0 &&
+           name.rfind("__rate_rule_neg__", 0) != 0;
+}
+
 py::dict result_to_dict(const OdeResult& result, const Model& model) {
     py::dict d;
 
@@ -63,6 +73,33 @@ py::dict result_to_dict(const OdeResult& result, const Model& model) {
             obs_dict[py::cast(obs_defs[j].getName())] = obs_arr;
         }
         d["observables"] = obs_dict;
+    }
+
+    // Zero-argument BNGL functions are algebraic model outputs as well as
+    // rate-law helpers.  Expose them separately so an SBML assignment rule
+    // lowered from a species can still be compared on the same time grid.
+    if (!result.functions.empty()) {
+        py::dict function_dict;
+        std::size_t function_index = 0;
+        for (const auto& function : model.getFunctions()) {
+            if (function.getArgs().empty() && isResultFunction(function.getName())) {
+                if (function_index >= result.functions.front().size()) break;
+                py::array_t<double> function_arr(result.functions.size());
+                auto function_buf = function_arr.mutable_unchecked<1>();
+                for (std::size_t i = 0; i < result.functions.size(); ++i) {
+                    if (function_index < result.functions[i].size()) {
+                        function_buf(i) = result.functions[i][function_index];
+                    } else {
+                        function_buf(i) = 0.0;
+                    }
+                }
+                function_dict[py::cast(function.getName())] = function_arr;
+                ++function_index;
+            }
+        }
+        if (function_dict.size() > 0) {
+            d["functions"] = function_dict;
+        }
     }
 
     return d;
@@ -114,7 +151,8 @@ void bind_engine(py::module_& m) {
         .def_readwrite("max_sim_steps", &OdeOptions::maxSimSteps)
         .def_readwrite("output_step_interval", &OdeOptions::outputStepInterval)
         .def_readwrite("sparse", &OdeOptions::sparse)
-        .def_readwrite("check_product_scale", &OdeOptions::checkProductScale);
+        .def_readwrite("check_product_scale", &OdeOptions::checkProductScale)
+        .def_readwrite("enforce_nonnegative", &OdeOptions::enforceNonnegative);
 
     m.def("generate_network", [](Model& model, size_t max_iter) {
         py::gil_scoped_release release;

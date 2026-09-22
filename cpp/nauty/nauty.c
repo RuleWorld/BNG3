@@ -160,7 +160,7 @@ DYNALLSTAT(shortish,firsttc,firsttc_sz);
 DYNALLSTAT(nset,active,active_sz);
 
 /* In the dynamically allocated case (MAXN=0), each level of recursion
-   needs one nset (tcell) to represent the target cell.  This is 
+   needs one nset (tcell) to represent the target cell.  This is
    implemented by using a linked list of tcnode anchored at the root
    of the search tree.  Each node points to its child (if any) and to
    the dynamically allocated tcell.  Apart from the the first node of

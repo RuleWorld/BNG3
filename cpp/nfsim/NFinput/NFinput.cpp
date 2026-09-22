@@ -2605,7 +2605,7 @@ bool NFinput::initReactionRules(
 									rxnName, rule_phi, Ea0, arrheniusStateMoleculeType,
 									arrheniusStateComponent, arrheniusStateFrom, arrheniusStateTo,
 									s, blockSameComplexBinding, verbose, reaction_count,
-									includeArrheniusReverse, rule_drivingWork)) {
+									includeArrheniusReverse, "", rule_drivingWork)) {
 								delete ts;
 								return false;
 							}
@@ -2639,7 +2639,7 @@ bool NFinput::initReactionRules(
 						if(!NFinput::createExpandedBindingReactions(
 								rxnName, rule_phi, Ea0, mt1, addBondSite1, mt2, addBondSite2,
 								s, parameter, allowedStates, blockSameComplexBinding, verbose, reaction_count,
-								includeArrheniusReverse, rule_drivingWork))
+								includeArrheniusReverse, "", "", rule_drivingWork))
 						{
 							return false;
 						}

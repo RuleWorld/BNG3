@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Statistical equivalence gate for legacy vs generalized NF energy lowering.
+"""Statistical equivalence gate for direct NFsim energy lowering.
 
 The numerical comparison helpers are usable. Live ON/OFF execution is rejected
-until the engine reports verified backend activation. It does NOT require byte-identical trajectories
-when lowering changes reaction aggregation/RNG consumption. Instead it gates
-observable distributions at every sampled time point.
+until an independently built native NFsim oracle is configured. It does NOT
+require byte-identical trajectories when lowering changes reaction aggregation/
+RNG consumption. Instead it gates observable distributions at every sampled
+time point.
 """
 
 from __future__ import annotations
@@ -14,6 +15,8 @@ import contextlib
 import json
 import math
 import os
+import subprocess
+import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
@@ -214,12 +217,117 @@ def run_gate(
     n_steps: int,
     thresholds: Thresholds = Thresholds(),
 ) -> dict:
-    # The current engine does not consume BNG_NFSIM_GENERAL_ENERGY. Merely
-    # changing that environment variable compares the same backend twice.
-    raise NotImplementedError(
-        "generalized energy backend activation cannot yet be verified; "
-        "use compare_trajectories for separately collected data, not a promotion claim"
+    """Compare BNG3 direct NFsim trajectories with native NFsim.
+
+    The model is serialized once to BNG-XML for the independently built
+    native executable.  The BNG3 leg is required to report ``direct`` so an
+    XML-vs-XML self-comparison cannot pass this gate.
+    """
+    if not seeds:
+        raise ValueError("at least two seeds are required for a statistical gate")
+    if len(seeds) < 2:
+        raise ValueError("at least two seeds are required for a statistical gate")
+    configured = os.environ.get("NFSIM_BIN")
+    if not configured or not Path(configured).is_file():
+        raise RuntimeError(
+            "an independently built native NFsim is required; set NFSIM_BIN"
+        )
+    if not model_path.is_file():
+        raise FileNotFoundError(model_path)
+
+    import bionetgen
+
+    native_bin = str(Path(configured).expanduser().resolve())
+    direct_samples: dict[str, list[np.ndarray]] = {}
+    native_samples: dict[str, list[np.ndarray]] = {}
+    direct_times: np.ndarray | None = None
+    direct_paths: set[str] = set()
+    with tempfile.TemporaryDirectory(prefix="bng3-energy-parity-") as temp:
+        work = Path(temp)
+        model = bionetgen.load(model_path)
+        xml_path = work / f"{model_path.stem}.xml"
+        model.write_xml(str(xml_path))
+        for seed in seeds:
+            direct = bionetgen.load(model_path).simulate(
+                method="nf", t_end=t_end, n_steps=n_steps, seed=int(seed)
+            )
+            direct_paths.add(direct.construction_path or "")
+            if direct.construction_path != "direct":
+                raise RuntimeError(
+                    "energy parity requires BNG3 direct NFsim construction; "
+                    f"seed {seed} used {direct.construction_path!r}"
+                )
+            times = np.asarray(direct.time, dtype=float)
+            if direct_times is None:
+                direct_times = times
+            elif not np.allclose(direct_times, times, rtol=0.0, atol=1e-12):
+                raise RuntimeError("direct NFsim output times differ across seeds")
+            for name, values in direct.observables.items():
+                direct_samples.setdefault(name, []).append(
+                    np.asarray(values, dtype=float)
+                )
+
+            output = work / f"native-{int(seed)}.gdat"
+            command = [
+                native_bin,
+                "-xml",
+                str(xml_path),
+                "-o",
+                str(output),
+                "-sim",
+                str(t_end),
+                "-oSteps",
+                str(n_steps),
+                "-seed",
+                str(int(seed)),
+            ]
+            completed = subprocess.run(
+                command, capture_output=True, text=True, timeout=300
+            )
+            if completed.returncode != 0 or not output.is_file():
+                detail = completed.stderr or completed.stdout
+                raise RuntimeError(
+                    f"native NFsim failed for seed {seed}: {detail.strip()}"
+                )
+            lines = output.read_text(encoding="utf-8").splitlines()
+            if not lines or not lines[0].lstrip().startswith("#"):
+                raise RuntimeError(f"native NFsim output has no named header: {output}")
+            native_names = lines[0].lstrip("#").split()
+            native_data = np.asarray(np.loadtxt(output, comments="#"), dtype=float)
+            native_data = np.atleast_2d(native_data)
+            if native_data.shape[1] != len(native_names):
+                raise RuntimeError(
+                    f"native NFsim output columns are malformed: {output}"
+                )
+            if direct_times is None or not np.allclose(
+                direct_times, native_data[:, 0], rtol=0.0, atol=1e-12
+            ):
+                raise RuntimeError(f"native NFsim times differ for seed {seed}")
+            for column, name in enumerate(native_names[1:], start=1):
+                native_samples.setdefault(name, []).append(native_data[:, column])
+
+    if direct_times is None or set(direct_samples) != set(native_samples):
+        raise RuntimeError(
+            "direct/native observable sets differ: "
+            f"{sorted(direct_samples)} vs {sorted(native_samples)}"
+        )
+    metrics = compare_trajectories(
+        {name: np.asarray(values) for name, values in native_samples.items()},
+        {name: np.asarray(values) for name, values in direct_samples.items()},
+        direct_times,
+        thresholds,
     )
+    return {
+        "passed": all(metric.passed for metric in metrics),
+        "backend": "bng3-direct-vs-independent-native-nfsim",
+        "construction_paths": sorted(direct_paths),
+        "native_nfsim": native_bin,
+        "model": str(model_path.resolve()),
+        "seeds": [int(seed) for seed in seeds],
+        "t_end": float(t_end),
+        "n_steps": int(n_steps),
+        "metrics": [asdict(metric) for metric in metrics],
+    }
 
 
 def main() -> int:
@@ -250,6 +358,7 @@ def main() -> int:
     )
     text = json.dumps(report, indent=2, sort_keys=True)
     if args.json:
+        args.json.parent.mkdir(parents=True, exist_ok=True)
         args.json.write_text(text + "\n", encoding="utf-8")
     print(text)
     return 0 if report["passed"] else 1

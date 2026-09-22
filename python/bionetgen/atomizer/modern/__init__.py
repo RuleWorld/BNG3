@@ -54,7 +54,19 @@ from .parser import (
     extract_go_terms,
     extract_uniprot_ids,
 )
+from .archive import (
+    ArchiveSource,
+    CombineArchiveExtraction,
+    extract_sbml_from_archive,
+    extract_sbml_from_combine_archive,
+    extract_sbml_from_omex,
+)
 from .multi import MultiParseResult, parse_multi_package
+from .metadata import (
+    metadata_payload,
+    source_metadata_payload,
+    source_metadata_summary,
+)
 from .events import (
     EventActionsResult,
     EventSet,
@@ -492,6 +504,25 @@ class Atomizer:
                 error=str(exc),
             )
 
+    def atomize_archive(
+        self, archive: ArchiveSource, member: Optional[str] = None
+    ) -> AtomizerResult:
+        """Extract the selected SBML document from a COMBINE/OMEX archive."""
+
+        extraction = extract_sbml_from_combine_archive(archive, member=member)
+        result = self.atomize(extraction.sbml)
+        result.archive_metadata = {
+            "format": "COMBINE/OMEX",
+            "member": extraction.member,
+            "candidates": list(extraction.candidates),
+            "manifestMember": extraction.manifest_member,
+            "manifestEntries": [dict(entry) for entry in extraction.manifest_entries],
+        }
+        if extraction.warnings:
+            result.log.extend(extraction.warnings)
+            result.archive_metadata["warnings"] = list(extraction.warnings)
+        return result
+
     def flat_translation(self, sbml_string: str) -> AtomizerResult:
         previous = self.options.get("atomize", False)
         self.options["atomize"] = False
@@ -582,6 +613,7 @@ Atomizer.setOptions = Atomizer.set_options
 Atomizer.getOptions = Atomizer.get_options
 Atomizer.flatTranslation = Atomizer.flat_translation
 Atomizer.fullAtomization = Atomizer.full_atomization
+Atomizer.atomizeArchive = Atomizer.atomize_archive
 Atomizer.getModel = Atomizer.get_model
 Atomizer.getSCT = Atomizer.get_sct
 Atomizer.getUniProtIds = Atomizer.get_uniprot_ids
@@ -616,6 +648,7 @@ sbmlToBnglAtomized = sbml_to_bngl_atomized
 
 __all__ = [
     "Action",
+    "ArchiveSource",
     "Atomizer",
     "AtomicPatternResult",
     "AnnotationStats",
@@ -623,6 +656,7 @@ __all__ = [
     "BNGLGenerationResult",
     "BNGL_LEXER_KEYWORDS",
     "Component",
+    "CombineArchiveExtraction",
     "Counter",
     "CycleError",
     "DefaultDict",
@@ -698,6 +732,9 @@ __all__ = [
     "extractGOTerms",
     "extractUniProtIds",
     "extract_uniprot_accessions",
+    "extract_sbml_from_combine_archive",
+    "extract_sbml_from_archive",
+    "extract_sbml_from_omex",
     "extract_uniprot_ids",
     "extract_parameters",
     "extract_transformation_center",
@@ -752,6 +789,9 @@ __all__ = [
     "parse_time_threshold",
     "parseTimeThreshold",
     "parse_multi_package",
+    "metadata_payload",
+    "source_metadata_summary",
+    "source_metadata_payload",
     "parse_resource_uri",
     "parse_species_annotations",
     "sbml_to_bngl",
