@@ -1,10 +1,10 @@
 # BNG3 Convergence: Definition of Done and Remaining Checklist
 
 **Status:** Active; not complete
-**Last audited:** 2026-09-15
+**Last audited:** 2026-09-17
 **Repository:** RuleWorld/BNG3
-**Working branch:** `codex/bng3-material-gap-completion`
-**Current base:** `2af9506a1124ce7ebdc30c6967c771f1cd91c63c` (`origin/main`)
+**Working branch:** `main`
+**Current base:** convergence, nonequilibrium-energy, and SBML material-gap integration checkpoint
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -60,6 +60,36 @@ completion.
   the exception ledger merely to make this file easier to check.
 - Re-audit the whole checklist on the exact release-candidate SHA. Earlier
   evidence is stale after a rebase, autofix, merge, or semantic change.
+
+## Physical units / dimensional-analysis checkpoint — 2026-09-15
+
+The BNG3-native units work is documented in [`BNG3_UNITS.md`](BNG3_UNITS.md).
+It uses explicit bracket annotations and a normalized `begin units` metadata
+block, while preserving ordinary BNGL identifiers and the legacy
+`substanceUnits`/`NumberPerQuantityUnit` compatibility fields.
+
+- [x] Unit algebra and explicit mole/item bridge are covered by
+  `tests/cpp/test_units` (41 assertions, 7 cases), including metric conversion,
+  concentration-to-item conversion and context-dependent second-order rate
+  conversion.
+- [x] Parser collision behavior, dependency inference, strict dimensional
+  diagnostics and backend capability fail-closed behavior are covered by
+  `tests/cpp/test_parser_units` (42 assertions, 6 cases).
+- [x] Native seed/rate lowering and shared SBML Core/SBML-Multi writer mapping
+  are covered by `tests/cpp/test_sbml_units` (33 assertions, 5 cases); the Multi
+  writer reuses Core unit definitions and emits no `multi:units` system.
+- [x] SBML Core unit-definition/default/object metadata extraction is covered by
+  `tests/cpp/test_sbml_reader` (21 assertions, 3 cases), and the executable
+  action path imports that metadata before reconstruction.
+- [x] Python model/binding/snapshot smoke coverage confirms unit metadata is
+  exposed and unit-free snapshots retain their legacy shape.
+- [ ] Validate emitted Core and Multi documents with libSBML/schema and
+  independent SBML semantic oracles across Level 2 and Level 3 package modes.
+- [ ] Complete cross-backend parity for direct NFsim. BNG3 currently rejects
+  unit-bearing models at that adapter boundary until its count-rate bridge is
+  independently validated.
+- [ ] Re-run the complete release/hosted convergence matrix on the final PR
+  head; focused green tests are not release convergence evidence.
 
 ## Current continuation checkpoint — 2026-09-15
 
@@ -2357,8 +2387,17 @@ completion gate.
 
 - [ ] One bng::core::canonicalLabel implementation is used by network
   canonicalization and NFsim complex identity.
-- [ ] The duplicate cpp/nfsim/nauty24 build is removed only after independent
-  identity evidence is green.
+- [x] The duplicate cpp/nfsim/nauty24 build is removed. **Locally build-verified 2026-09-17.** `cpp/nauty` is now the only compiled nauty
+  tree; `nfsim_core` links the shared `nauty` target and
+  `cpp/nfsim/NFcore/complex.cpp` includes its header. The two trees were
+  verified identical after normalizing the documented `set`->`nset` rename
+  (`diff` clean on all five translation units), and unifying on the NFsim
+  variant also picked up an MSVC `HAVE_SYSTYPES_H` guard the `cpp/nauty` copy
+  lacked. Previously statically verified plus `tests/python/test_single_nauty_contract.py` (10/10); now also **linked in `bng_core`/`nfsim_core` and exercised by 408/408 CTest** (incl. `test_observable_counting`, `test_network_generator`, `test_nfsim_*`). The
+  *independent identity evidence* this item also asks for — that one low-level
+  Nauty dependency does not alter NFsim complex identity, reaction counts, or
+  seeded trajectories — still **requires hosted CI and an independent NFsim
+  oracle**, tracked by the last item in this subsection.
 - [ ] NFsim private canonicalization is replaced or explicitly governed without
   changing complex identity semantics.
 - [ ] The HNauty largest-versus-canonical-form decision is resolved against
@@ -2392,14 +2431,39 @@ completion gate.
 
 ## 4. One expression and rate-law contract
 
-- [ ] A single parsed/resolved expression representation and error model is
+- [x] A single parsed/resolved expression representation and error model is
   shared across ODE RHS, SSA/PLA/PSA propensity evaluation, and NFsim
-  local/global functions.
-- [ ] NFsim ExprTk compilation and the NFSIM_USE_EXPRTK build path are removed
-  only after the shared evaluator passes all dependent gates.
+  local/global functions. **Locally build-verified 2026-09-17 (WO-3).** `bng::ast::Expression` is now the single representation: `cpp/nfsim/NFfunction/nfsim_funcparser.h` retains the `mu::Parser` interface but is backed by `bng::parser::parseExpression` + `bng::eval::evaluate` (`cpp/ast/ExpressionEval.hpp` now has consumers in `nfsim_core`), and the builtin metadata is unified in `cpp/ast/ExpressionBuiltins.hpp`. `NFSIM_USE_EXPRTK` and the root `FetchContent(ExprTk)` block are removed. Previously `bng::eval` had zero consumers; now it is the NFsim evaluator.
+- [x] NFsim ExprTk compilation and the NFSIM_USE_EXPRTK build path are removed
+  only after the shared evaluator passes all dependent gates. **Locally build-verified 2026-09-17 (WO-3b).** `cpp/CMakeLists.txt` no longer defines `NFSIM_USE_EXPRTK` or adds `exprtk_SOURCE_DIR`, `nfsim_core` no longer links `exprtk`, and `CMakeLists.txt` root no longer fetches `exprtk`. Part of 408/408 CTest.
 - [ ] Numeric literals, parameters, observables, time, roots, logs/bases,
   constants, function definitions, nested functions, and domain errors have
-  cross-backend tests.
+  cross-backend tests. **Partial.** A shared-table contract test now asserts
+  that every NFsim-evaluable builtin is also implemented by the shared
+  evaluator, and three previously divergent cases have focused regressions in
+  `tests/cpp/test_expression_evaluator.cpp`:
+    - `rint` disagreed between backends *and* with the BNG2 oracle. BNG2
+      defines it as `floor(x + 0.5)` (`legacy/perl/Perl2/Expression.pm:74`);
+      the shared evaluator used `std::rint` (half-to-even, wrong at 4 of 7
+      half-integers) and NFsim used `std::round` (half-away-from-zero, wrong at
+      3 of 7). Both now use the oracle definition, checked against values
+      produced by executing the Perl oracle directly.
+    - `sign` was accepted by the NFsim gate and registered in the ExprTk shim
+      but unimplemented in the shared evaluator, so it evaluated under NFsim
+      and fell through to the user-function resolver under ODE/SSA. Now
+      implemented with the shim's definition.
+    - `log` was accepted by the NFsim gate, where ExprTk treats it as natural
+      log, while BNGL has no bare `log` at all. It is now rejected everywhere
+      with a diagnostic naming `ln`, `log10`, and `log2`.
+    - `avg` is a BNG2 builtin implemented in the shared evaluator and native
+      to ExprTk, but the gate rejected it and forced an unnecessary XML
+      fallback. Now admitted.
+    - The gate matched case-insensitively while the shim is compiled with
+      `exprtk_disable_caseinsensitivity`, so `SIN(x)` passed and then failed
+      inside `GlobalFunction::prepareForSimulation()`. The gate is now
+      case-sensitive and reports a "did you mean" hint.
+  These are **locally build-verified 2026-09-17** (`test_expression_evaluator` 4 new cases, part of 408/408 CTest); genuine cross-backend
+  numerical comparison still **requires hosted CI and an independent oracle**.
 - [ ] Global functions, local functions, molecule/species scopes, TFUN linear
   and step forms, file-backed files, observable/time/parameter counters,
   composite functions, bounded nested functions, and function-counter forms

@@ -21,10 +21,24 @@
 #include "generated/BNGLexer.h"
 #include "generated/BNGParser.h"
 #include "parser/PatternGraphBuilder.hpp"
+#include "compile/UnitAnalysis.hpp"
+#include "compile/energy/BarrierCompiler.hpp"
+#include "compile/energy/BarrierTable.hpp"
+#include "compile/energy/DrivenEnergy.hpp"
+#include "ast/BarrierPattern.hpp"
 
 namespace bng::io {
 
 namespace {
+
+std::string stripQuotes(std::string value) {
+    if (value.size() >= 2 &&
+        ((value.front() == '"' && value.back() == '"') ||
+         (value.front() == '\'' && value.back() == '\''))) {
+        return value.substr(1, value.size() - 2);
+    }
+    return value;
+}
 
 // BNG built-in rate law functions — written directly in reactions, not as _rateLaw params
 const std::unordered_set<std::string> builtinRateLawFunctions = {
@@ -522,10 +536,111 @@ std::optional<std::string> unitConversionExpression(const ast::Rxn& reaction, co
     return std::nullopt;
 }
 
+std::optional<units::Unit> annotatedRateUnit(const ast::Rxn& reaction,
+                                             const ast::Model& model) {
+    const auto analysis = compile::analyzeUnits(model);
+    if (reaction.getRateExpression().has_value()) {
+        const auto inferred = analysis.inferredExpressions.find(
+            reaction.getRateExpression()->toString());
+        if (inferred != analysis.inferredExpressions.end()) return inferred->second;
+    }
+    auto rateName = compactExpression(reaction.getRateLaw());
+    if (model.getParameters().contains(rateName)) {
+        const auto& parameter = model.getParameters().get(rateName);
+        if (parameter.hasUnit()) return parameter.getUnit();
+    }
+
+    const auto inferred = analysis.inferredParameters.find(rateName);
+    if (inferred != analysis.inferredParameters.end()) return inferred->second;
+    return std::nullopt;
+}
+
+units::ConversionContext unitConversionContext(const ast::Rxn& reaction,
+                                                const ast::Model& model,
+                                                const engine::GeneratedNetwork& network) {
+    units::ConversionContext context;
+    const auto numberPerQuantity = model.getOptions().find("NumberPerQuantityUnit");
+    if (numberPerQuantity != model.getOptions().end()) {
+        const auto value = stripQuotes(numberPerQuantity->second);
+        try {
+            context.numberPerQuantityUnit = std::stod(value);
+        } catch (...) {
+            throw std::runtime_error(
+                "NumberPerQuantityUnit must be numeric for unit-aware rate conversion");
+        }
+    }
+
+    std::string compartmentName;
+    const auto findCompartment = [&](const std::vector<std::size_t>& species) {
+        for (const auto index : species) {
+            const auto& compartment = network.species.get(index).getCompartment();
+            if (!compartment.empty()) {
+                if (compartmentName.empty()) compartmentName = compartment;
+                else if (compartmentName != compartment) {
+                    throw std::runtime_error(
+                        "unit-aware reaction rate spans multiple compartments");
+                }
+            }
+        }
+    };
+    findCompartment(reaction.getReactants());
+    if (compartmentName.empty()) findCompartment(reaction.getProducts());
+
+    const ast::Compartment* selected = nullptr;
+    for (const auto& compartment : model.getCompartments()) {
+        if (compartment.getName() == compartmentName) {
+            selected = &compartment;
+            break;
+        }
+    }
+    if (selected == nullptr) {
+        throw std::runtime_error(
+            "unit-aware concentration rate requires a declared compartment");
+    }
+    if (selected->getDimension() != 3) {
+        throw std::runtime_error(
+            "unit-aware concentration rates require a three-dimensional compartment");
+    }
+
+    std::optional<units::Unit> volumeUnit;
+    if (selected->hasUnit()) {
+        volumeUnit = selected->getUnit();
+    } else {
+        const auto defaultVolume = model.getUnitDefaults().find("volumeUnits");
+        if (defaultVolume != model.getUnitDefaults().end()) {
+            const auto parsed = model.getUnitSystem().parse(defaultVolume->second);
+            if (!parsed) throw std::runtime_error(
+                "invalid volumeUnits default: " + parsed.error);
+            volumeUnit = *parsed.unit;
+        }
+    }
+    if (!volumeUnit.has_value()) {
+        throw std::runtime_error(
+            "unit-aware concentration rate requires a compartment volume unit");
+    }
+    context.compartmentVolume = selected->getVolume();
+    context.volumeUnit = *volumeUnit;
+    return context;
+}
+
 // Perl-faithful unit conversion factor (Rxn.pm:100-197).
 // For bimolecular+ reactions: divide by remaining compartment sizes after anchor.
 // For zero-order synthesis: multiply by product compartment size.
 std::optional<double> unitConversionFactor(const ast::Rxn& reaction, const ast::Model& model, const engine::GeneratedNetwork& network) {
+    if (compile::unitMode(model) != compile::UnitMode::Off) {
+        if (const auto rateUnit = annotatedRateUnit(reaction, model)) {
+            const auto context = unitConversionContext(reaction, model, network);
+            const auto converted = units::stochasticRateFactor(
+                *rateUnit, reaction.getReactants().size(), context);
+            if (!converted) {
+                throw std::runtime_error(
+                    "unit-aware rate conversion failed for '" + reaction.getRateLaw() + "': " +
+                    converted.error);
+            }
+            return converted.factor;
+        }
+    }
+
     if (model.getCompartments().empty()) return std::nullopt;
 
     // Build compartment dimension and size lookups
@@ -1108,6 +1223,33 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
             return model.getParameters().evaluate(name);
         };
 
+        // Barrier table for this model, keyed by reaction center. Built once
+        // because every Arrhenius rule consults it.
+        compile::energy::BarrierTable barrierTable;
+        if (!model.getBarrierPatterns().empty()) {
+            std::vector<std::string> barrierDiagnostics;
+            const bool built = compile::energy::buildBarrierTable(
+                model,
+                [&](const ast::BarrierPattern& barrier, double& value,
+                    std::string& diagnostic) {
+                    try {
+                        value = barrier.expression().evaluate(paramResolver, 0.0);
+                    } catch (...) {
+                        diagnostic = "transition-state energy is not statically evaluable";
+                        return false;
+                    }
+                    return true;
+                },
+                barrierTable, barrierDiagnostics);
+            if (!built) {
+                std::string joined;
+                for (const auto& diagnostic : barrierDiagnostics) {
+                    joined += (joined.empty() ? "" : "; ") + diagnostic;
+                }
+                throw std::runtime_error("cannot lower barrier patterns: " + joined);
+            }
+        }
+
         for (const auto& ruleName : arrheniusRules) {
             const bool reverseDirection = ruleName.rfind("_reverse__", 0) == 0;
             const std::string ruleBase = reverseDirection
@@ -1122,6 +1264,63 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
             // Compute per-reaction rates, caching by energy delta fingerprint
             std::unordered_map<std::string, std::pair<std::string, double>> fingerprintToParam;
             std::size_t nextParamIndex = 1;
+
+            // Locate the originating AST rule so its driven_by() annotation
+            // and reaction center are available. A reverse-direction origin
+            // name refers to the same AST rule.
+            const ast::ReactionRule* originRule = nullptr;
+            for (const auto& candidate : model.getReactionRules()) {
+                if (candidate.getRuleName() == ruleBase) {
+                    originRule = &candidate;
+                    break;
+                }
+            }
+
+            // Reservoir work is signed per traversal direction. The reverse
+            // reaction's own dG is already negated (its reactants and products
+            // are swapped), so W must be negated here to match; otherwise the
+            // reverse rate would use exp(-(Ea + (1-phi)(-dG - W))) instead of
+            // the correct exp(-(Ea + (1-phi)(W - dG))).
+            double drivingWork = 0.0;
+            if (originRule != nullptr && originRule->hasDrivingWork()) {
+                if (!compile::energy::generalEnergyEnabled()) {
+                    throw std::runtime_error(
+                        std::string("rule '") + ruleBase +
+                        "' uses driven_by() but " +
+                        compile::energy::generalEnergyGateName() + " is not set");
+                }
+                try {
+                    drivingWork = originRule->drivingWorkExpression().evaluate(
+                        paramResolver, 0.0);
+                } catch (...) {
+                    throw std::runtime_error(
+                        std::string("rule '") + ruleBase +
+                        "' has a driven_by() work expression that is not statically evaluable");
+                }
+                if (!std::isfinite(drivingWork)) {
+                    throw std::runtime_error(
+                        std::string("rule '") + ruleBase +
+                        "' has a non-finite driven_by() work expression");
+                }
+                // Deliberately NOT negated here: networkArrheniusRate() owns
+                // the direction handling and expects the rule's forward work.
+                // Negating here as well would double-negate it.
+            }
+
+            // A barrier is direction-independent: the same transition state is
+            // crossed either way, so no sign flip applies to it.
+            double barrier = 0.0;
+            if (!barrierTable.empty() && originRule != nullptr) {
+                compile::energy::ReactionCenterKey center;
+                std::string centerDiagnostic;
+                if (compile::energy::compileBarrierCenter(
+                        *originRule, center, centerDiagnostic)) {
+                    barrier = barrierTable.lookup(center);
+                }
+                // A rule whose center cannot be keyed simply matches no
+                // barrier; that is not an error, because barrier patterns are
+                // optional annotations rather than required rate components.
+            }
 
             DerivedRateInfo info;
             info.paramName = "__" + ruleName + "_local1"; // fallback name (unused with per-reaction)
@@ -1174,7 +1373,14 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
                         phi = evaluateExpressionString(phiExpr, paramResolver);
                         eact0 = evaluateExpressionString(arrhenius->eaArg, paramResolver);
                     } catch (...) {}
-                    double rate = std::exp(-(eact0 + phi * deltaG));
+                    // `phi` is already (1 - phi) for a reverse direction, and
+                    // `deltaG` is already negated because that reaction's
+                    // reactants and products are swapped. The helper applies
+                    // the matching work negation and the RT-folded convention;
+                    // it is cross-checked against the NFsim formula in
+                    // tests/energy/standalone/check_convention_parity.cpp.
+                    double rate = compile::energy::networkArrheniusRate(
+                        eact0, barrier, deltaG, drivingWork, phi, reverseDirection);
 
                     std::string paramName = paramPrefix + std::to_string(nextParamIndex++);
                     auto paramPair = std::make_pair(paramName, rate);

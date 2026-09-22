@@ -1,5 +1,8 @@
 #include "BNGAstVisitor.hpp"
 
+#include "ThermoModelFinalize.hpp"
+#include "ThermoSourceNormalization.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -7,6 +10,7 @@
 #include <fstream>
 #include <iomanip>
 #include <limits>
+#include <map>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -526,6 +530,174 @@ std::string normalizeIntegerStateTransitions(const std::string& source) {
         normalized << output[index];
     }
     if (hadTrailingNewline) normalized << '\n';
+    return normalized.str();
+}
+
+std::string quoteSyntheticOption(std::string_view key, std::string_view value) {
+    const auto quote = [](std::string_view text) {
+        std::string result;
+        result.reserve(text.size() + 2);
+        result.push_back('"');
+        for (const char character : text) {
+            if (character == '\\' || character == '"') result.push_back('\\');
+            result.push_back(character);
+        }
+        result.push_back('"');
+        return result;
+    };
+    return "setOption(" + quote(key) + "," + quote(value) + ")";
+}
+
+bool removeTrailingUnitAnnotation(std::string& line, std::string& unit) {
+    const auto comment = line.find('#');
+    const auto codeEnd = comment == std::string::npos ? line.size() : comment;
+    const auto code = line.substr(0, codeEnd);
+    const auto close = code.find_last_not_of(" \t\r");
+    if (close == std::string::npos || code[close] != ']') return false;
+    const auto open = code.rfind('[', close);
+    if (open == std::string::npos) return false;
+    unit = trimCopy(code.substr(open + 1, close - open - 1));
+    if (unit.empty()) throw std::runtime_error("empty physical-unit annotation");
+    line = line.substr(0, open) + line.substr(close + 1);
+    return true;
+}
+
+std::string declarationName(const std::string& line) {
+    const auto codeEnd = line.find('#');
+    const auto code = trimCopy(line.substr(0, codeEnd == std::string::npos ? line.size() : codeEnd));
+    std::istringstream words(code);
+    std::vector<std::string> tokens;
+    std::string token;
+    while (words >> token) tokens.push_back(token);
+    if (tokens.empty()) return {};
+    std::size_t index = 0;
+    if (!tokens[index].empty() &&
+        std::all_of(tokens[index].begin(), tokens[index].end(), [](unsigned char value) {
+            return std::isdigit(value) != 0;
+        })) {
+        ++index;
+    }
+    if (index < tokens.size() && !tokens[index].empty() && tokens[index].back() == ':') ++index;
+    return index < tokens.size() ? tokens[index] : std::string {};
+}
+
+std::string normalizeUnitSyntax(const std::string& source) {
+    std::vector<std::string> definitions;
+    std::vector<std::string> defaults;
+    std::vector<std::string> annotations;
+    std::vector<std::string> output;
+    bool insideUnits = false;
+    bool insideParameters = false;
+    bool insideCompartments = false;
+    bool insideSeeds = false;
+    std::size_t seedIndex = 0;
+
+    std::size_t lineStart = 0;
+    while (lineStart <= source.size()) {
+        const auto lineEnd = source.find('\n', lineStart);
+        const auto lineLength = lineEnd == std::string::npos
+                                    ? source.size() - lineStart
+                                    : lineEnd - lineStart;
+        std::string line = source.substr(lineStart, lineLength);
+        const auto trimmed = toLower(trimCopy(line));
+
+        if (trimmed == "begin units") {
+            insideUnits = true;
+            output.push_back("# BNG3: unit declarations normalized before ANTLR");
+        } else if (trimmed == "end units") {
+            insideUnits = false;
+            output.push_back("# BNG3: end normalized unit declarations");
+        } else if (insideUnits) {
+            const auto comment = line.find('#');
+            const auto code = trimCopy(line.substr(0, comment == std::string::npos ? line.size() : comment));
+            if (code.empty()) {
+                output.push_back(line);
+            } else if (code.compare(0, 4, "unit") == 0 &&
+                       (code.size() == 4 || std::isspace(static_cast<unsigned char>(code[4])))) {
+                const auto equals = code.find('=');
+                if (equals == std::string::npos) {
+                    throw std::runtime_error("unit definitions require 'unit name = expression'");
+                }
+                const auto left = trimCopy(code.substr(4, equals - 4));
+                const auto expression = trimCopy(code.substr(equals + 1));
+                if (left.empty() || expression.empty()) {
+                    throw std::runtime_error("unit definitions require a name and expression");
+                }
+                definitions.push_back(quoteSyntheticOption("__bng3_unit_define:" + left, expression));
+                output.push_back("# BNG3: unit definition normalized");
+            } else {
+                std::istringstream words(code);
+                std::string role;
+                words >> role;
+                std::string unit;
+                std::getline(words, unit);
+                unit = trimCopy(unit);
+                if (!unit.empty() && unit.front() == '=') unit = trimCopy(unit.substr(1));
+                const auto normalizedRole = toLower(role);
+                static const std::map<std::string, std::string> canonicalRoles = {
+                    {"timeunits", "timeUnits"},
+                    {"substanceunits", "substanceUnits"},
+                    {"volumeunits", "volumeUnits"},
+                    {"areaunits", "areaUnits"},
+                    {"lengthunits", "lengthUnits"},
+                    {"extentunits", "extentUnits"},
+                };
+                const auto canonicalRole = canonicalRoles.find(normalizedRole);
+                if (canonicalRole == canonicalRoles.end() || unit.empty()) {
+                    throw std::runtime_error("unknown or incomplete unit declaration '" + code + "'");
+                }
+                defaults.push_back(quoteSyntheticOption(
+                    "__bng3_unit_default:" + canonicalRole->second, unit));
+                output.push_back("# BNG3: unit default normalized");
+            }
+        } else {
+            if (trimmed == "begin parameters") insideParameters = true;
+            else if (trimmed == "end parameters") insideParameters = false;
+            else if (trimmed == "begin compartments") insideCompartments = true;
+            else if (trimmed == "end compartments") insideCompartments = false;
+            else if (trimmed == "begin seed species" || trimmed == "begin species") {
+                insideSeeds = true;
+            } else if (trimmed == "end seed species" || trimmed == "end species") {
+                insideSeeds = false;
+            }
+
+            std::string unit;
+            if (insideParameters || insideCompartments || insideSeeds) {
+                if (removeTrailingUnitAnnotation(line, unit)) {
+                    const auto name = declarationName(line);
+                    if (name.empty()) throw std::runtime_error("unit annotation has no declaration name");
+                    if (insideParameters) {
+                        annotations.push_back(quoteSyntheticOption(
+                            "__bng3_unit_parameter:" + name, unit));
+                    } else if (insideCompartments) {
+                        annotations.push_back(quoteSyntheticOption(
+                            "__bng3_unit_compartment:" + name, unit));
+                    } else {
+                        annotations.push_back(quoteSyntheticOption(
+                            "__bng3_unit_seed:" + std::to_string(seedIndex), unit));
+                    }
+                }
+            }
+            const bool seedBoundary = trimmed == "begin seed species" ||
+                                      trimmed == "begin species" ||
+                                      trimmed == "end seed species" ||
+                                      trimmed == "end species";
+            if (insideSeeds && !seedBoundary && !trimmed.empty() && trimmed.front() != '#') ++seedIndex;
+            output.push_back(std::move(line));
+        }
+
+        if (lineEnd == std::string::npos) break;
+        lineStart = lineEnd + 1;
+    }
+
+    std::ostringstream normalized;
+    for (const auto& metadata : definitions) normalized << metadata << '\n';
+    for (const auto& metadata : defaults) normalized << metadata << '\n';
+    for (const auto& metadata : annotations) normalized << metadata << '\n';
+    for (std::size_t index = 0; index < output.size(); ++index) {
+        normalized << output[index];
+        if (index + 1 < output.size() || (!source.empty() && source.back() == '\n')) normalized << '\n';
+    }
     return normalized.str();
 }
 
@@ -1242,11 +1414,18 @@ ast::Expression parseExpressionImpl(const std::string& exprText) {
 } // namespace
 
 std::string normalizeBNGLSource(const std::string& sourceText) {
-    return normalizeLooseActionsInsideModel(normalizeIntegerStateTransitions(
-        normalizeLegacyActionNames(
-            normalizeEmptyReactantFunctionDeclarations(
-                normalizePopulationMapRates(
-                    normalizeLegacyBlockHeaders(normalizeTfunSyntax(sourceText)))))));
+    auto normalized = normalizeTfunSyntax(sourceText);
+    normalized = normalizeLegacyBlockHeaders(normalized);
+    normalized = normalizePopulationMapRates(normalized);
+    normalized = normalizeEmptyReactantFunctionDeclarations(normalized);
+    normalized = normalizeLegacyActionNames(normalized);
+    normalized = normalizeIntegerStateTransitions(normalized);
+    normalized = normalizeLooseActionsInsideModel(normalized);
+    normalized = normalizeUnitSyntax(normalized);
+    // Runs last so that `begin barrier patterns` has already survived legacy
+    // header canonicalization, and so the synthetic setOption lines it emits
+    // are not re-scanned by the earlier passes.
+    return normalizeThermodynamicSyntax(normalized);
 }
 
 BNGAstVisitor::BNGAstVisitor()
@@ -1257,6 +1436,7 @@ std::unique_ptr<ast::Model> BNGAstVisitor::takeModel() {
 }
 
 std::any BNGAstVisitor::visitProg(BNGParser::ProgContext* ctx) {
+    seedUnitIndex_ = 0;
     predeclareMoleculeTypes(ctx);
     visitChildren(ctx);
     currentModel_->getParameters().evaluateAll();
@@ -1308,7 +1488,47 @@ std::any BNGAstVisitor::visitSet_option(BNGParser::Set_optionContext* ctx) {
     const auto strings = ctx->quoted_string();
     const auto values = ctx->action_arg_value();
     for (std::size_t i = 0; i < strings.size() && i < values.size(); ++i) {
-        currentModel_->setOption(stripQuotes(strings[i]->getText()), values[i]->getText());
+        const auto key = stripQuotes(strings[i]->getText());
+        const auto value = stripQuotes(values[i]->getText());
+        constexpr std::string_view definitionPrefix = "__bng3_unit_define:";
+        constexpr std::string_view defaultPrefix = "__bng3_unit_default:";
+        constexpr std::string_view parameterPrefix = "__bng3_unit_parameter:";
+        constexpr std::string_view compartmentPrefix = "__bng3_unit_compartment:";
+        constexpr std::string_view seedPrefix = "__bng3_unit_seed:";
+        if (key.compare(0, definitionPrefix.size(), definitionPrefix) == 0) {
+            currentModel_->defineUnit(key.substr(definitionPrefix.size()), value);
+        } else if (key.compare(0, defaultPrefix.size(), defaultPrefix) == 0) {
+            currentModel_->setUnitDefault(key.substr(defaultPrefix.size()), value);
+        } else if (key.compare(0, parameterPrefix.size(), parameterPrefix) == 0) {
+            currentModel_->setParameterUnit(key.substr(parameterPrefix.size()), value);
+        } else if (key.compare(0, compartmentPrefix.size(), compartmentPrefix) == 0) {
+            currentModel_->setCompartmentUnit(key.substr(compartmentPrefix.size()), value);
+        } else if (key.compare(0, std::string_view(kBarrierLabelOptionPrefix).size(),
+                               kBarrierLabelOptionPrefix) == 0) {
+            try {
+                pendingBarrierLabels_[static_cast<std::size_t>(std::stoull(
+                    key.substr(std::string_view(kBarrierLabelOptionPrefix).size())))] = value;
+            } catch (const std::exception&) {
+                throw std::runtime_error("invalid synthetic barrier-pattern label annotation");
+            }
+        } else if (key.compare(0, std::string_view(kDrivingWorkOptionPrefix).size(),
+                               kDrivingWorkOptionPrefix) == 0) {
+            try {
+                pendingDrivingWork_[static_cast<std::size_t>(std::stoull(
+                    key.substr(std::string_view(kDrivingWorkOptionPrefix).size())))] = value;
+            } catch (const std::exception&) {
+                throw std::runtime_error("invalid synthetic driving-work annotation");
+            }
+        } else if (key.compare(0, seedPrefix.size(), seedPrefix) == 0) {
+            try {
+                currentModel_->setSeedUnit(
+                    static_cast<std::size_t>(std::stoull(key.substr(seedPrefix.size()))), value);
+            } catch (const std::exception&) {
+                throw std::runtime_error("invalid synthetic seed unit annotation");
+            }
+        } else {
+            currentModel_->setOption(key, value);
+        }
     }
     return {};
 }
@@ -1324,7 +1544,13 @@ std::any BNGAstVisitor::visitParameter_def(BNGParser::Parameter_defContext* ctx)
         return {};
     }
 
-    currentModel_->addParameter(ast::Parameter(names.back()->getText(), buildExpression(ctx->expression())));
+    ast::Parameter parameter(names.back()->getText(), buildExpression(ctx->expression()));
+    if (const auto* unitName = currentModel_->findParameterUnit(parameter.getName())) {
+        const auto parsed = currentModel_->getUnitSystem().parse(*unitName);
+        if (!parsed) throw std::runtime_error("unknown parameter unit '" + *unitName + "': " + parsed.error);
+        parameter.setUnit(*parsed.unit, *unitName);
+    }
+    currentModel_->addParameter(std::move(parameter));
     return {};
 }
 
@@ -1353,6 +1579,23 @@ std::any BNGAstVisitor::visitCompartment_def(BNGParser::Compartment_defContext* 
         evaluateExpression(expr, currentModel_->getParameters()),
         std::stoi(ctx->INT()->getText()),
         names.size() > 1 ? names.back()->getText() : std::string {}));
+    auto& compartment = currentModel_->getCompartments().back();
+    std::string inferredUnitName;
+    if (const auto* unitName = currentModel_->findCompartmentUnit(compartment.getName())) {
+        inferredUnitName = *unitName;
+    } else if (expr.kind() == ast::ExpressionKind::Identifier &&
+               currentModel_->getParameters().contains(expr.name()) &&
+               currentModel_->getParameters().get(expr.name()).hasUnit()) {
+        // `cyto 3 Vcell` inherits Vcell's unit in the common SBML spelling.
+        // This is metadata propagation only; the numeric compartment size is
+        // still evaluated exactly as before.
+        inferredUnitName = currentModel_->getParameters().get(expr.name()).getUnitName();
+    }
+    if (!inferredUnitName.empty()) {
+        const auto parsed = currentModel_->getUnitSystem().parse(inferredUnitName);
+        if (!parsed) throw std::runtime_error("unknown compartment unit '" + inferredUnitName + "': " + parsed.error);
+        compartment.setUnit(*parsed.unit, inferredUnitName);
+    }
     return {};
 }
 
@@ -1397,12 +1640,19 @@ std::any BNGAstVisitor::visitSeed_species_def(BNGParser::Seed_species_defContext
         compartment = extractTrailingCompartment(ctx->species_def());
     }
 
-    currentModel_->addSeedSpecies(ast::SeedSpecies(
+    ast::SeedSpecies seed(
         ctx->species_def()->getText(),
         ctx->expression() != nullptr ? buildExpression(ctx->expression()) : ast::Expression::number(0.0),
         ctx->DOLLAR() != nullptr,
         std::move(compartment),
-        buildPatternGraph(ctx->species_def(), *currentModel_, false)));
+        buildPatternGraph(ctx->species_def(), *currentModel_, false));
+    if (const auto* unitName = currentModel_->findSeedUnit(seedUnitIndex_)) {
+        const auto parsed = currentModel_->getUnitSystem().parse(*unitName);
+        if (!parsed) throw std::runtime_error("unknown seed unit '" + *unitName + "': " + parsed.error);
+        seed.setUnit(*parsed.unit, *unitName);
+    }
+    ++seedUnitIndex_;
+    currentModel_->addSeedSpecies(std::move(seed));
     return {};
 }
 
@@ -1609,6 +1859,17 @@ std::any BNGAstVisitor::visitPopulation_map_def(BNGParser::Population_map_defCon
     return {};
 }
 
+void BNGAstVisitor::finalizeThermodynamicMetadata() {
+    // The lowering itself lives in ThermoModelFinalize so it can be exercised
+    // without the generated parser; only expression parsing is supplied here.
+    const bool rewritten = ::bng::parser::finalizeThermodynamicMetadata(
+        *currentModel_, pendingBarrierLabels_, pendingDrivingWork_,
+        [](const std::string& text) { return parseExpressionImpl(text); });
+    (void)rewritten;
+    pendingBarrierLabels_.clear();
+    pendingDrivingWork_.clear();
+}
+
 std::unique_ptr<ast::Model> parseModel(const std::string& sourceText) {
     antlr4::ANTLRInputStream input(normalizeBNGLSource(sourceText));
     BNGLexer lexer(&input);
@@ -1621,6 +1882,7 @@ std::unique_ptr<ast::Model> parseModel(const std::string& sourceText) {
 
     BNGAstVisitor visitor;
     visitor.visit(tree);
+    visitor.finalizeThermodynamicMetadata();
     return visitor.takeModel();
 }
 

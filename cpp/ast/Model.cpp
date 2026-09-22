@@ -1,6 +1,11 @@
 #include "Model.hpp"
 
+#include "ModelOptions.hpp"
+
+#include <cmath>
+#include <iostream>
 #include <utility>
+#include <stdexcept>
 
 namespace bng {
 namespace ast {
@@ -30,6 +35,10 @@ void Model::addFunction(Function function) {
 
 void Model::addEnergyPattern(EnergyPattern energyPattern) {
     energyPatterns_.push_back(std::move(energyPattern));
+}
+
+void Model::addBarrierPattern(BarrierPattern barrierPattern) {
+    barrierPatterns_.push_back(std::move(barrierPattern));
 }
 
 void Model::addObservable(Observable observable) {
@@ -69,13 +78,104 @@ void Model::setModelName(std::string modelName) {
 }
 
 void Model::setOption(std::string key, std::string value) {
+    // Single validation seam. Both entry points reach here: the parser's
+    // inline setOption handling (parser/BNGAstVisitor.cpp) and the action
+    // dispatcher (actions/ActionDispatch.cpp), plus option copying in
+    // engine/HybridModelGenerator.cpp. Validating in the setter rather than in
+    // each caller is what keeps an unsupported option from being stored on one
+    // path and rejected on another.
+    const auto validation = options::validate(key, value);
+    if (!validation.accepted()) {
+        throw std::runtime_error("setOption(\"" + key + "\",\"" + value +
+                                 "\"): " + validation.message);
+    }
+    if (validation.status == options::Validation::Status::Accepted &&
+        !validation.message.empty()) {
+        std::cerr << "WARNING: setOption(\"" << key << "\",\"" << value
+                  << "\"): " << validation.message << "\n";
+    }
     options_[std::move(key)] = std::move(value);
+}
+
+void Model::defineUnit(std::string id, std::string expression) {
+    const auto result = unitSystem_.define(std::move(id), std::move(expression));
+    if (!result) throw std::runtime_error("Invalid unit definition: " + result.error);
+}
+
+void Model::setUnitDefault(std::string role, std::string unit) {
+    if (unitSystem_.find(unit) == nullptr && !unitSystem_.parse(unit)) {
+        throw std::runtime_error("Unknown unit '" + unit + "' for " + role);
+    }
+    if (role == "substanceUnits") {
+        substanceUnits_ = unit;
+    }
+    unitDefaults_[std::move(role)] = std::move(unit);
+}
+
+void Model::setParameterUnit(std::string parameter, std::string unit) {
+    if (unitSystem_.find(unit) == nullptr && !unitSystem_.parse(unit)) {
+        throw std::runtime_error("Unknown unit '" + unit + "' for parameter '" + parameter + "'");
+    }
+    const auto parsed = unitSystem_.parse(unit);
+    parameterUnits_[parameter] = unit;
+    for (auto& candidate : parameters_.all()) {
+        if (candidate.getName() == parameter) {
+            candidate.setUnit(*parsed.unit, unit);
+            break;
+        }
+    }
+}
+
+void Model::setCompartmentUnit(std::string compartment, std::string unit) {
+    if (unitSystem_.find(unit) == nullptr && !unitSystem_.parse(unit)) {
+        throw std::runtime_error("Unknown unit '" + unit + "' for compartment '" + compartment + "'");
+    }
+    const auto parsed = unitSystem_.parse(unit);
+    compartmentUnits_[compartment] = unit;
+    for (auto& candidate : compartments) {
+        if (candidate.getName() == compartment) {
+            candidate.setUnit(*parsed.unit, unit);
+            break;
+        }
+    }
+}
+
+void Model::setSeedUnit(std::size_t index, std::string unit) {
+    if (unitSystem_.find(unit) == nullptr && !unitSystem_.parse(unit)) {
+        throw std::runtime_error("Unknown unit '" + unit + "' for seed species");
+    }
+    const auto parsed = unitSystem_.parse(unit);
+    seedUnits_[index] = unit;
+    if (index < seedSpecies_.size()) {
+        seedSpecies_[index].setUnit(*parsed.unit, unit);
+    }
 }
 
 void Model::merge(Model& other) {
     // Transfer GraphTypeRegistry entries first so PatternGraph node pointers
     // remain valid after the source model is destroyed.
     graphTypeRegistry_.mergeFrom(other.getGraphTypeRegistry());
+
+    // Unit definitions and model-level defaults are semantic model metadata,
+    // not parser-only state.  Transfer custom definitions before copying
+    // declarations so attached unit names resolve in the destination model.
+    for (const auto& definition : other.getUnitSystem().definitions()) {
+        if (definition.builtin) continue;
+        if (unitSystem_.find(definition.id) == nullptr) {
+            defineUnit(definition.id, definition.expression);
+        } else {
+            const auto existing = unitSystem_.parse(definition.id);
+            if (!existing || existing.unit->dimension != definition.unit.dimension ||
+                existing.unit->baseExponents != definition.unit.baseExponents ||
+                std::abs(existing.unit->factor - definition.unit.factor) > 1e-15) {
+                throw std::runtime_error(
+                    "cannot merge conflicting unit definition '" + definition.id + "'");
+            }
+        }
+    }
+    for (const auto& [role, unit] : other.getUnitDefaults()) {
+        setUnitDefault(role, unit);
+    }
 
     // Merge parameters
     for (const auto& param : other.getParameters().all()) {
@@ -115,6 +215,11 @@ void Model::merge(Model& other) {
     // Merge energy patterns
     for (const auto& ep : other.getEnergyPatterns()) {
         energyPatterns_.push_back(ep);
+    }
+
+    // Merge barrier patterns (move: each owns a non-copyable ReactionRule)
+    for (auto& bp : other.getBarrierPatterns()) {
+        barrierPatterns_.push_back(std::move(bp));
     }
 
     // Merge molecules
@@ -162,6 +267,14 @@ const std::vector<Function>& Model::getFunctions() const {
 
 const std::vector<EnergyPattern>& Model::getEnergyPatterns() const {
     return energyPatterns_;
+}
+
+const std::vector<BarrierPattern>& Model::getBarrierPatterns() const {
+    return barrierPatterns_;
+}
+
+std::vector<BarrierPattern>& Model::getBarrierPatterns() {
+    return barrierPatterns_;
 }
 
 const std::vector<Observable>& Model::getObservables() const {
@@ -224,6 +337,29 @@ const std::string& Model::getModelName() const {
 
 const std::map<std::string, std::string>& Model::getOptions() const {
     return options_;
+}
+
+const units::UnitSystem& Model::getUnitSystem() const {
+    return unitSystem_;
+}
+
+const std::map<std::string, std::string>& Model::getUnitDefaults() const {
+    return unitDefaults_;
+}
+
+const std::string* Model::findParameterUnit(const std::string& name) const {
+    const auto it = parameterUnits_.find(name);
+    return it == parameterUnits_.end() ? nullptr : &it->second;
+}
+
+const std::string* Model::findCompartmentUnit(const std::string& name) const {
+    const auto it = compartmentUnits_.find(name);
+    return it == compartmentUnits_.end() ? nullptr : &it->second;
+}
+
+const std::string* Model::findSeedUnit(std::size_t index) const {
+    const auto it = seedUnits_.find(index);
+    return it == seedUnits_.end() ? nullptr : &it->second;
 }
 
 GraphTypeRegistry& Model::getGraphTypeRegistry() {

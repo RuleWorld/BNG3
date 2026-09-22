@@ -115,3 +115,70 @@ rows:
     oracle: pending
     owner: pending-maintainer
     notes: Immutable BNG2/NFsim/PyBioNetGen sources, manifests, tolerances, owners, and release gates are required. The material-gap evidence runner records exact local source revisions and independent-oracle commands, but maintainer approval, full corpus coverage, cross-platform qualification, and release gates remain pending.
+  - id: core.graph.canonicalization.single-nauty
+    source: cpp/nauty (BNG) and cpp/nfsim/nauty24 (NFsim), nauty 2.4
+    bng3_reference: cpp/nauty (sole compiled tree); consumers cpp/core/PatternGraph.cpp and cpp/nfsim/NFcore/complex.cpp
+    status: implemented
+    direct_path: canonical
+    tests: tests/python/test_single_nauty_contract.py
+    oracle: pending
+    owner: pending-maintainer
+    notes: >-
+      WO-1b, applied 2026-09-17 and locally build-verified 2026-09-17 (cmake + 408/408 CTest, 10/10 Python contract). The two bundled trees were verified identical
+      after normalizing the documented set->nset typedef rename; the
+      unification adopted the nset variant, which additionally carries an MSVC
+      HAVE_SYSTYPES_H guard the cpp/nauty copy lacked. Implementation status is
+      complete; oracle status is explicitly pending. Independent evidence that
+      a single low-level Nauty dependency preserves NFsim complex identity,
+      reaction counts, and seeded trajectories still requires hosted CI and a native NFsim oracle.
+  - id: expression.builtins.shared-table
+    source: legacy/perl/Perl2/Expression.pm %functions (BNG2 oracle)
+    bng3_reference: cpp/ast/ExpressionBuiltins.hpp; consumers cpp/ast/Expression.cpp and cpp/nfsim/NFinput/NFinput_fromAst.cpp
+    status: implemented-subset
+    direct_path: canonical
+    tests: tests/cpp/test_expression_evaluator.cpp
+    oracle: partial-static
+    owner: pending-maintainer
+    notes: >-
+      Unifies builtin name/arity/semantics metadata and, as of WO-3/3b on 2026-09-17, the evaluators themselves: NFsim now uses `bng::parser::parseExpression` + `bng::eval::evaluate` via `nfsim_funcparser.h` and `NFSIM_USE_EXPRTK`/`exprtk` are removed. Locally build-verified (408/408 CTest, `test_expression_evaluator` 4 new cases). Oracle status is
+      partial-static: the BNG2 rint definition (floor(x + 0.5)) was executed
+      directly in Perl and both engines corrected to match, but no numerical
+      cross-backend comparison under hosted CI has been run. Corrected rint in two places, added
+      sign to the shared evaluator, rejected bare log in favor of
+      ln/log10/log2, admitted avg, and made the NFsim gate case-sensitive.
+  - id: bngl.actions.setoption
+    source: legacy/perl/Perl2/BNGModel.pm:1911 setOption; SpeciesGraph.pm:128; Observable.pm:236
+    bng3_reference: cpp/ast/ModelOptions.hpp; validated at cpp/ast/Model.cpp Model::setOption
+    status: implemented-subset
+    direct_path: canonical
+    tests: tests/cpp/test_model_options.cpp
+    oracle: partial-static
+    owner: pending-maintainer
+    notes: >-
+      Options were previously stored unvalidated and silently ignored.
+      Validation now fails closed on recognized options whose semantics BNG3
+      does not implement. SpeciesLabel Auto and HNauty are accepted as no-ops
+      because both are exact canonical labelings yielding the same species
+      partition; Quasi is rejected as approximate. Locally build-verified 2026-09-17 (408/408 CTest, `test_model_options` 4 cases; `stripQuotes` fix for `getText()`).
+  - id: bngl.observables.counting-modes
+    source: legacy/perl/Perl2/Observable.pm:236 (Molecules) and :260 (Species)
+    bng3_reference: cpp/engine/ObservableProjection.cpp
+    status: implemented
+    direct_path: canonical
+    tests: tests/cpp/test_observable_counting.cpp
+    oracle: partial-static
+    owner: pending-maintainer
+    notes: >-
+      MoleculesObservables/SpeciesObservables CountUnique was previously ABSENT
+      from BNG3 entirely (zero occurrences in cpp, python, tests, models), so a
+      model requesting it silently received CountAll values. Both modes are now
+      implemented. The two keys are NOT the same operation: Molecules
+      CountUnique divides each pattern match count by the pattern automorphism
+      count, while Species CountUnique short-circuits the term loop so a
+      species contributes once regardless of how many patterns it matches
+      (BNG2 has symmetry correction commented out on the Species branch). The
+      exactness of the Molecules division rests on Aut(P) acting freely on
+      embeddings; verified numerically over 32 pattern/target combinations with
+      zero non-divisible cases, and asserted at runtime rather than truncated.
+      Oracle status is partial-static: no BNG2 differential run was possible
+      offline. Locally build-verified 2026-09-17 (408/408 CTest, 5 cases; fixed dangling `BNGcoreLoweringContext` in test helper).

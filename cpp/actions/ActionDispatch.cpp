@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <limits>
 #include <optional>
 #include <iomanip>
@@ -18,6 +19,7 @@
 #include <vector>
 
 #include "ast/Parameter.hpp"
+#include "compile/Document.hpp"
 #include "engine/NetworkGenerator.hpp"
 #include "engine/OdeIntegrator.hpp"
 #include "engine/PlaSimulator.hpp"
@@ -682,6 +684,179 @@ std::string formatScalar(double value) {
     return output.str();
 }
 
+void applySbmlUnitMetadata(const io::NetReader::ParseResult& parsed,
+                           ast::Model& model) {
+    for (const auto& [id, expression] : parsed.unitDefinitions) {
+        if (model.getUnitSystem().find(id) == nullptr) {
+            model.defineUnit(id, expression);
+        } else {
+            const auto existing = model.getUnitSystem().parse(id);
+            const auto incoming = model.getUnitSystem().parse(expression);
+            if (!existing || !incoming ||
+                existing.unit->dimension != incoming.unit->dimension ||
+                existing.unit->baseExponents != incoming.unit->baseExponents ||
+                std::abs(existing.unit->factor - incoming.unit->factor) > 1e-15) {
+                throw std::runtime_error(
+                    "SBML unit definition conflicts with existing unit '" + id + "'");
+            }
+        }
+    }
+    for (const auto& [role, unit] : parsed.unitDefaults) {
+        model.setUnitDefault(role, unit);
+        if (role == "substanceUnits") model.setSubstanceUnits(unit);
+    }
+    for (const auto& [name, unitName] : parsed.parameterUnits) {
+        if (!model.getParameters().contains(name)) continue;
+        const auto parameterName = name;
+        const auto parsedUnit = model.getUnitSystem().parse(unitName);
+        if (!parsedUnit) {
+            throw std::runtime_error(
+                "SBML parameter '" + name + "' has invalid units: " + parsedUnit.error);
+        }
+        auto& parameter = *std::find_if(
+            model.getParameters().all().begin(), model.getParameters().all().end(),
+            [&](const auto& candidate) { return candidate.getName() == parameterName; });
+        parameter.setUnit(*parsedUnit.unit, unitName);
+    }
+    for (const auto& name : parsed.compartments) {
+        if (name.empty()) continue;
+        auto existing = std::find_if(
+            model.getCompartments().begin(), model.getCompartments().end(),
+            [&](const auto& compartment) { return compartment.getName() == name; });
+        if (existing == model.getCompartments().end()) {
+            const auto size = parsed.compartmentSizes.find(name);
+            const auto dimension = parsed.compartmentDimensions.find(name);
+            model.addCompartment(ast::Compartment(
+                name,
+                size == parsed.compartmentSizes.end() ? 1.0 : size->second,
+                dimension == parsed.compartmentDimensions.end() ? 3 : dimension->second));
+            existing = std::prev(model.getCompartments().end());
+        }
+        const auto unit = parsed.compartmentUnits.find(name);
+        if (unit != parsed.compartmentUnits.end()) {
+            const auto parsedUnit = model.getUnitSystem().parse(unit->second);
+            if (!parsedUnit) {
+                throw std::runtime_error(
+                    "SBML compartment '" + name + "' has invalid units: " + parsedUnit.error);
+            }
+            existing->setUnit(*parsedUnit.unit, unit->second);
+        }
+    }
+}
+
+units::Unit networkItemUnit() {
+    units::Unit item;
+    item.name = "item";
+    item.dimension.substance = 1;
+    item.baseExponents[units::BaseUnit::Item] = 1;
+    return item;
+}
+
+std::optional<double> networkNumberPerQuantity(const ast::Model& model) {
+    const auto found = model.getOptions().find("NumberPerQuantityUnit");
+    if (found == model.getOptions().end()) return std::nullopt;
+    try {
+        return std::stod(stripQuotes(found->second));
+    } catch (...) {
+        throw std::runtime_error(
+            "NumberPerQuantityUnit must be numeric for SBML species conversion");
+    }
+}
+
+struct ParsedSpeciesPrefix {
+    std::string pattern;
+    std::string compartment;
+    bool constant = false;
+};
+
+ParsedSpeciesPrefix splitSpeciesPrefix(std::string pattern) {
+    ParsedSpeciesPrefix result;
+    if (!pattern.empty() && pattern.front() == '@') {
+        const auto separator = pattern.find("::");
+        if (separator != std::string::npos) {
+            result.compartment = pattern.substr(1, separator - 1);
+            pattern.erase(0, separator + 2);
+        }
+    }
+    if (!pattern.empty() && pattern.front() == '$') {
+        result.constant = true;
+        pattern.erase(pattern.begin());
+    }
+    result.pattern = std::move(pattern);
+    return result;
+}
+
+double normalizeSbmlSpeciesValue(const io::NetReader::ParseResult& parsed,
+                                 std::size_t index,
+                                 const ast::Model& model,
+                                 const ParsedSpeciesPrefix& species,
+                                 double value) {
+    const bool initialConcentration = index < parsed.speciesInitialConcentrations.size() &&
+        parsed.speciesInitialConcentrations[index];
+    std::string resolvedUnit;
+    if (index < parsed.speciesUnits.size()) resolvedUnit = parsed.speciesUnits[index];
+
+    if (resolvedUnit.empty() && !model.getUnitDefaults().empty()) {
+        const auto substance = model.getUnitDefaults().find("substanceUnits");
+        const auto volume = model.getUnitDefaults().find("volumeUnits");
+        if (initialConcentration && substance != model.getUnitDefaults().end() &&
+            volume != model.getUnitDefaults().end()) {
+            resolvedUnit = substance->second + "/" + volume->second;
+        } else if (!initialConcentration && substance != model.getUnitDefaults().end()) {
+            resolvedUnit = substance->second;
+        }
+    }
+    if (resolvedUnit.empty()) return value;
+
+    const auto parsedUnit = model.getUnitSystem().parse(resolvedUnit);
+    if (!parsedUnit) {
+        throw std::runtime_error("SBML species has invalid units '" + resolvedUnit + "': " +
+                                 parsedUnit.error);
+    }
+
+    units::ConversionContext context;
+    context.numberPerQuantityUnit = networkNumberPerQuantity(model);
+    if (initialConcentration || parsedUnit.unit->dimension.length == -3) {
+        const auto compartment = std::find_if(
+            model.getCompartments().begin(), model.getCompartments().end(),
+            [&](const auto& candidate) { return candidate.getName() == species.compartment; });
+        if (compartment == model.getCompartments().end()) {
+            throw std::runtime_error(
+                "SBML concentration species requires a declared compartment");
+        }
+        std::optional<units::Unit> volumeUnit;
+        if (compartment->hasUnit()) {
+            volumeUnit = compartment->getUnit();
+        } else {
+            const auto defaultVolume = model.getUnitDefaults().find("volumeUnits");
+            if (defaultVolume != model.getUnitDefaults().end()) {
+                const auto parsedVolume = model.getUnitSystem().parse(defaultVolume->second);
+                if (!parsedVolume) throw std::runtime_error(
+                    "invalid SBML volumeUnits default: " + parsedVolume.error);
+                volumeUnit = parsedVolume.unit;
+            }
+        }
+        if (!volumeUnit.has_value()) {
+            throw std::runtime_error(
+                "SBML concentration species requires a volume unit");
+        }
+        context.compartmentVolume = compartment->getVolume();
+        context.volumeUnit = *volumeUnit;
+        const auto converted = units::concentrationToItemAmount(
+            value, *parsedUnit.unit, *context.compartmentVolume,
+            *context.volumeUnit, context);
+        if (!converted) throw std::runtime_error(
+            "SBML concentration species conversion failed: " + converted.error);
+        return *converted.factor;
+    }
+
+    const auto converted = units::convertValue(
+        value, *parsedUnit.unit, networkItemUnit(), context);
+    if (!converted) throw std::runtime_error(
+        "SBML amount species conversion failed: " + converted.error);
+    return *converted.factor;
+}
+
 std::string readArgument(const ast::Action& action, const std::string& key, const std::string& fallback = {}) {
     const auto found = action.arguments.find(key);
     if (found == action.arguments.end()) {
@@ -693,16 +868,12 @@ std::string readArgument(const ast::Action& action, const std::string& key, cons
 engine::GeneratedNetwork networkFromParsedData(
     const io::NetReader::ParseResult& parseResult, ast::Model& model) {
     engine::GeneratedNetwork loadedNetwork;
-    for (const auto& [pattern, concStr] : parseResult.species) {
-        bool isConstant = false;
-        std::string cleanPattern = pattern;
-        if (!cleanPattern.empty() && cleanPattern[0] == '$') {
-            isConstant = true;
-            cleanPattern = cleanPattern.substr(1);
-        }
+    for (std::size_t index = 0; index < parseResult.species.size(); ++index) {
+        const auto& [pattern, concStr] = parseResult.species[index];
+        const auto speciesPrefix = splitSpeciesPrefix(pattern);
         BNGcore::PatternGraph pg;
-        pg.set_raw_string(cleanPattern);
-        ast::SpeciesGraph sg(std::move(pg));
+        pg.set_raw_string(speciesPrefix.pattern);
+        ast::SpeciesGraph sg(std::move(pg), speciesPrefix.compartment);
         double concentration = 0.0;
         try {
             concentration = std::stod(concStr);
@@ -713,7 +884,10 @@ engine::GeneratedNetwork networkFromParsedData(
                 concentration = 0.0;
             }
         }
-        ast::Species sp(std::move(sg), concentration, isConstant);
+        concentration = normalizeSbmlSpeciesValue(
+            parseResult, index, model, speciesPrefix, concentration);
+        ast::Species sp(std::move(sg), concentration, speciesPrefix.constant,
+                        speciesPrefix.compartment);
         loadedNetwork.species.add(std::move(sp));
     }
 
@@ -1312,6 +1486,13 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         }
     };
 
+    const auto normalizedSeedAmount = [](const compile::Document& document,
+                                         std::size_t index) {
+        if (index >= document.model().seeds().size()) return 0.0;
+        return engine::NetworkGenerator::normalizeSeedAmount(
+            document.model(), document.model().seeds()[index]);
+    };
+
     const auto writeNetworkAt = [&](const std::filesystem::path& outputPath,
                                     const io::NetWriterOptions& options = {}) {
         if (loadedNetData.has_value()) {
@@ -1345,7 +1526,10 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             for (std::size_t i = 0; i < network->species.size(); ++i) {
                 const auto& sp = network->species.get(i);
                 std::string prefix;
-                if (sp.isConstant()) prefix = "$";
+                if (!sp.getCompartment().empty()) {
+                    prefix = "@" + sp.getCompartment() + "::";
+                }
+                if (sp.isConstant()) prefix += "$";
                 out << "    " << (i + 1) << " " << prefix << sp.getSpeciesGraph().toString() << " ";
                 // Write concentration - use scientific notation for consistency
                 std::ostringstream concStr;
@@ -1509,6 +1693,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
         // Direct construction is the default.  XML remains an explicit
         // compatibility bridge while the direct adapter is being qualified.
+        std::string directUnavailableReason;
         NFcore::System *nfSystem = NFinput::buildSystemFromAstWithSeedOverrides(
             model,
             useComplex,
@@ -1517,20 +1702,28 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             nfVerbose,
             suggestedTraversalLimit,
             sourcePath,
-            seedAmountOverrides);
+            seedAmountOverrides,
+            &directUnavailableReason);
 
         if (!nfSystem) {
+            const std::string because =
+                directUnavailableReason.empty()
+                    ? std::string()
+                    : ": " + directUnavailableReason;
             if (std::getenv("BNG_NFSIM_REQUIRE_DIRECT") != nullptr) {
                 throw std::runtime_error(
-                    "NFsim direct AST initialization required but unavailable");
+                    "NFsim direct AST initialization required but unavailable" +
+                    because);
             }
             if (std::getenv("BNG_NFSIM_ALLOW_XML_FALLBACK") == nullptr) {
                 throw std::runtime_error(
-                    "NFsim direct AST initialization unavailable; XML fallback disabled "
+                    "NFsim direct AST initialization unavailable" + because +
+                    "; XML fallback disabled "
                     "(set BNG_NFSIM_ALLOW_XML_FALLBACK=1 to opt in)");
             }
             if (verbose) {
-                std::cerr << "[bng_cpp] AST adapter returned nullptr; using in-memory XML fallback...\n";
+                std::cerr << "[bng_cpp] AST adapter declined (" << directUnavailableReason
+                          << "); using in-memory XML fallback...\n";
             }
             nfSystem = NFinput::initializeFromModel(
                 &model,
@@ -1760,14 +1953,12 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 } else if (label != "default") {
                     throw std::runtime_error("resetConcentrations label not found: " + label);
                 } else {
-                    const auto& seeds = model.getSeedSpecies();
+                    const compile::Document currentDocument(model);
                     for (std::size_t i = 0; i < network->species.size(); ++i) {
-                        if (i < seeds.size()) {
+                        if (i < currentDocument.model().seeds().size()) {
                             try {
                                 network->species.get(i).setAmount(
-                                    seeds[i].getAmount().evaluate([&](const std::string& name) {
-                                        return model.getParameters().evaluate(name);
-                                    }));
+                                    normalizedSeedAmount(currentDocument, i));
                             } catch (const std::exception& error) {
                                 throw std::runtime_error(
                                     "resetConcentrations could not evaluate seed species "
@@ -1929,6 +2120,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                     model.getParameters().add(
                         ast::Parameter(name, ast::Expression::number(value)));
                 }
+                applySbmlUnitMetadata(parseResult, model);
                 for (const auto& [name, expression] : parseResult.functions) {
                     model.addFunction(ast::Function(
                         name, {}, bng::parser::parseExpression(expression)));
@@ -2354,13 +2546,12 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 restoreConcentrations(*network, found->second);
             } else {
                 // Perl BNG2 behavior: reset to initial seed species concentrations
-                const auto& seeds = model.getSeedSpecies();
+                const compile::Document currentDocument(model);
                 for (std::size_t i = 0; i < network->species.size(); ++i) {
-                    if (i < seeds.size()) {
+                    if (i < currentDocument.model().seeds().size()) {
                         try {
-                            const double amount = seeds[i].getAmount().evaluate(
-                                [&](const std::string& name) { return model.getParameters().evaluate(name); });
-                            network->species.get(i).setAmount(amount);
+                            network->species.get(i).setAmount(
+                                normalizedSeedAmount(currentDocument, i));
                         } catch (...) {
                             network->species.get(i).setAmount(0.0);
                         }

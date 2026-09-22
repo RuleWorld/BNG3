@@ -1,7 +1,11 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
+
+#include <cmath>
 
 #include "ast/Expression.hpp"
+#include "ast/ExpressionBuiltins.hpp"
 #include "ast/ExpressionEval.hpp"
 
 using namespace bng::ast;
@@ -164,4 +168,114 @@ TEST_CASE("ExpressionEval facade reports missing symbols", "[ExpressionEval]") {
     CHECK_THROWS_WITH(
         bng::eval::evaluate(expr, bng::eval::Context {}),
         "Expression evaluation requires a symbol resolver");
+}
+
+// ---------------------------------------------------------------------------
+// Convergence regressions: the shared builtin table and the two engines that
+// consume it. Each case below is a behavior that previously differed between
+// bng::ast::Expression (ODE RHS / SSA propensity) and the NFsim ExprTk path.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("Expression: rint matches the BNG2 oracle at half-integers",
+          "[Expression][builtins]") {
+    // Oracle: legacy/perl/Perl2/Expression.pm:74
+    //   "rint" => { FPTR => sub { floor( $_[0] + 0.5 ) }, NARGS => 1 }
+    //
+    // This used to be std::rint here (round-half-to-EVEN) and std::round in
+    // cpp/nfsim/NFfunction/nfsim_funcparser.h (round-half-AWAY-from-zero), so
+    // the two engines disagreed with each other and each disagreed with BNG2
+    // at different inputs. Verified against `perl -e 'use POSIX qw/floor/;
+    // print floor($x+0.5)'` for every value below.
+    struct Case { double input; double expected; };
+    const Case cases[] = {
+        {-2.5, -2.0},  // std::round gave -3
+        {-1.5, -1.0},  // std::rint gave -2, std::round gave -2
+        {-0.5,  0.0},  // std::rint gave -0, std::round gave -1
+        { 0.5,  1.0},  // std::rint gave 0
+        { 1.5,  2.0},  // both engines already agreed
+        { 2.5,  3.0},  // std::rint gave 2
+        { 3.5,  4.0},
+    };
+    for (const auto& c : cases) {
+        const auto expr = Expression::function("rint", {Expression::number(c.input)});
+        CHECK_THAT(expr.evaluate(noResolver), WithinRel(c.expected, 1e-12));
+    }
+}
+
+TEST_CASE("Expression: sign is implemented in the shared evaluator",
+          "[Expression][builtins]") {
+    // sign() was accepted by the direct-NFsim gate and registered in the
+    // ExprTk shim, but had no implementation here, so it evaluated under
+    // NFsim and fell through to the user-function resolver under ODE/SSA.
+    // Definition matches detail::SignFunction in nfsim_funcparser.h.
+    CHECK_THAT(Expression::function("sign", {Expression::number(3.5)})
+                   .evaluate(noResolver), WithinRel(1.0, 1e-12));
+    CHECK_THAT(Expression::function("sign", {Expression::number(-3.5)})
+                   .evaluate(noResolver), WithinRel(-1.0, 1e-12));
+    CHECK(Expression::function("sign", {Expression::number(0.0)})
+              .evaluate(noResolver) == 0.0);
+}
+
+TEST_CASE("Expression: 'log' is rejected with the three explicit spellings",
+          "[Expression][builtins]") {
+    // BNGL has no bare `log`; the BNG2 table exposes ln, log10, and log2
+    // only (Expression.pm:56). ExprTk's `log` is natural, so admitting the
+    // name meant a model written expecting base 10 silently got base e.
+    // It must not reach the user-function resolver either.
+    const auto expr = Expression::function("log", {Expression::number(100.0)});
+    CHECK_THROWS_WITH(expr.evaluate(noResolver),
+                      Catch::Matchers::ContainsSubstring("ln") &&
+                      Catch::Matchers::ContainsSubstring("log10") &&
+                      Catch::Matchers::ContainsSubstring("log2"));
+
+    // The three supported spellings each keep their own base.
+    CHECK_THAT(Expression::function("ln", {Expression::number(std::exp(1.0))})
+                   .evaluate(noResolver), WithinRel(1.0, 1e-10));
+    CHECK_THAT(Expression::function("log10", {Expression::number(100.0)})
+                   .evaluate(noResolver), WithinRel(2.0, 1e-10));
+    CHECK_THAT(Expression::function("log2", {Expression::number(8.0)})
+                   .evaluate(noResolver), WithinRel(3.0, 1e-10));
+}
+
+TEST_CASE("Builtin table: the two engines agree", "[builtins]") {
+    using namespace bng::ast::builtins;
+
+    // The invariant that matters. Before the table existed, the NFsim gate and
+    // the shared evaluator kept independent lists and drifted: `sign` and
+    // `log` were NFsim-only. If someone teaches one engine a new name, this
+    // fails until the other learns it too.
+    for (const auto& builtin : kBuiltins) {
+        if (builtin.nfsim != NfsimBackend::Unavailable) {
+            INFO("NFsim-evaluable builtin missing from the shared evaluator: "
+                 << builtin.name);
+            CHECK(builtin.sharedEvaluator);
+        }
+    }
+
+    CHECK_FALSE(isBuiltin("log"));
+    CHECK(isNfsimEvaluable("avg"));   // BNG2 builtin, was forcing an XML fallback
+    CHECK(isNfsimEvaluable("sign"));
+
+    // Case-SENSITIVE: the shim is compiled with
+    // exprtk_disable_caseinsensitivity, so SIN(x) used to pass the gate and
+    // then fail inside GlobalFunction::prepareForSimulation().
+    CHECK(isNfsimEvaluable("sin"));
+    CHECK_FALSE(isNfsimEvaluable("SIN"));
+
+    // Rate-law and table constructs have dedicated lowering and must never be
+    // admitted by a generic function gate.
+    for (const char* name : {"Sat", "MM", "Hill", "Arrhenius",
+                             "FunctionProduct", "TFUN", "tfun"}) {
+        INFO("rate-law construct leaked into the generic builtin gate: " << name);
+        CHECK_FALSE(isNfsimEvaluable(name));
+    }
+    // mratio is shared-evaluator only: BNG2 has it, ExprTk has no adapter.
+    CHECK_FALSE(isNfsimEvaluable("mratio"));
+
+    CHECK(acceptsArgumentCount("if", 3));
+    CHECK_FALSE(acceptsArgumentCount("if", 2));
+    CHECK(acceptsArgumentCount("min", 4));       // variadic
+    CHECK_FALSE(acceptsArgumentCount("min", 0));
+    CHECK(acceptsArgumentCount("sqrt", 1));
+    CHECK_FALSE(acceptsArgumentCount("sqrt", 2));
 }

@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "compile/energy/DrivenEnergy.hpp"
+
 
 using namespace NFinput;
 using namespace std;
@@ -2481,6 +2483,40 @@ bool NFinput::initReactionRules(
 
 					if(rateLawType=="Arrhenius")
 					{
+						/* Signed reservoir work from driven_by(). Absent means
+						 * W = 0, which reproduces the undriven rates exactly.
+						 * An unreadable or non-finite value fails closed rather
+						 * than defaulting to zero, because a silently dropped
+						 * drive changes the model's cycle affinity. */
+						double rule_drivingWork = 0.0;
+						if (pRateLaw->Attribute("drivingWork")) {
+							if (!bng::compile::energy::generalEnergyEnabled()) {
+								cerr << "Error!! ReactionRule " << rxnName
+								     << " carries drivingWork but "
+								     << bng::compile::energy::generalEnergyGateName()
+								     << " is not set. Quitting." << endl;
+								return false;
+							}
+							const string workText = pRateLaw->Attribute("drivingWork");
+							if (parameter.find(workText) != parameter.end()) {
+								rule_drivingWork = parameter.find(workText)->second;
+							} else {
+								try {
+									rule_drivingWork = NFutil::convertToDouble(workText);
+								} catch (...) {
+									cerr << "Error!! cannot resolve drivingWork '"
+									     << workText << "' for ReactionRule "
+									     << rxnName << ". Quitting." << endl;
+									return false;
+								}
+							}
+							if (!std::isfinite(rule_drivingWork)) {
+								cerr << "Error!! drivingWork for ReactionRule " << rxnName
+								     << " is not finite. Quitting." << endl;
+								return false;
+							}
+						}
+
 						bool includeArrheniusReverse = true;
 						if (pRxnRule->Attribute("energyIncludeReverse")) {
 							try {
@@ -2569,7 +2605,7 @@ bool NFinput::initReactionRules(
 									rxnName, rule_phi, Ea0, arrheniusStateMoleculeType,
 									arrheniusStateComponent, arrheniusStateFrom, arrheniusStateTo,
 									s, blockSameComplexBinding, verbose, reaction_count,
-									includeArrheniusReverse)) {
+									includeArrheniusReverse, "", rule_drivingWork)) {
 								delete ts;
 								return false;
 							}
@@ -2603,7 +2639,7 @@ bool NFinput::initReactionRules(
 						if(!NFinput::createExpandedBindingReactions(
 								rxnName, rule_phi, Ea0, mt1, addBondSite1, mt2, addBondSite2,
 								s, parameter, allowedStates, blockSameComplexBinding, verbose, reaction_count,
-								includeArrheniusReverse))
+								includeArrheniusReverse, "", "", rule_drivingWork))
 						{
 							return false;
 						}

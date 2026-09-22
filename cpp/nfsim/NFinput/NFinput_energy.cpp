@@ -23,6 +23,9 @@
 #include <iostream>
 #include <cmath>
 
+#include "compile/energy/BarrierTable.hpp"
+#include "compile/energy/DrivenEnergy.hpp"
+
 using namespace std;
 using namespace NFcore;
 
@@ -39,7 +42,17 @@ bool parseEnergyPatterns(
     bool verbose)
 {
     TiXmlElement *pList = pModel->FirstChildElement("ListOfEnergyPatterns");
-    if (!pList) return true;
+    if (!pList) {
+        /* Barrier patterns act only through an Arrhenius expansion, which
+         * needs energy patterns. Reject rather than build a system in which
+         * the declared barriers do nothing. */
+        if (pModel->FirstChildElement("ListOfBarrierPatterns")) {
+            cerr << "Error: barrier patterns require energy patterns and an "
+                    "Arrhenius rate law." << endl;
+            return false;
+        }
+        return true;
+    }
 
     if (verbose) cout << "\n\tReading list of Energy Patterns..." << endl;
 
@@ -140,8 +153,75 @@ bool parseEnergyPatterns(
         ef->addEnergyPattern(epInfo);
     }
 
+    /* Barrier patterns: transition-state contributions keyed by reaction
+     * center. They are read from their own list rather than from
+     * ListOfEnergyPatterns because they must not enter any ground-state
+     * energy; folding them in would change detailed balance on read-back. */
+    TiXmlElement *pBarrierList = pModel->FirstChildElement("ListOfBarrierPatterns");
+    if (pBarrierList) {
+        if (!bng::compile::energy::generalEnergyEnabled()) {
+            cerr << "Error: model declares barrier patterns but "
+                 << bng::compile::energy::generalEnergyGateName()
+                 << " is not set." << endl;
+            delete ef;
+            return false;
+        }
+        bng::compile::energy::BarrierTable barrierTable;
+        TiXmlElement *pBP;
+        int barrierIndex = 0;
+        for (pBP = pBarrierList->FirstChildElement("BarrierPattern"); pBP != 0;
+             pBP = pBP->NextSiblingElement("BarrierPattern")) {
+            ++barrierIndex;
+            const string label = pBP->Attribute("id")
+                                     ? pBP->Attribute("id")
+                                     : "barrier_" + NFutil::toString(barrierIndex);
+            if (!pBP->Attribute("expression") || !pBP->Attribute("reactionCenter")) {
+                cerr << "Error: BarrierPattern " << label
+                     << " missing 'expression' or 'reactionCenter'." << endl;
+                delete ef;
+                return false;
+            }
+
+            const string expressionText = pBP->Attribute("expression");
+            double barrierValue = 0.0;
+            if (parameter.find(expressionText) != parameter.end()) {
+                barrierValue = parameter.find(expressionText)->second;
+            } else {
+                try { barrierValue = NFutil::convertToDouble(expressionText); }
+                catch (...) {
+                    cerr << "Error: cannot resolve barrier energy '" << expressionText
+                         << "' for BarrierPattern " << label << endl;
+                    delete ef;
+                    return false;
+                }
+            }
+
+            bng::compile::energy::ReactionCenterKey key;
+            if (!bng::compile::energy::ReactionCenterKey::parse(
+                    pBP->Attribute("reactionCenter"), key)) {
+                cerr << "Error: BarrierPattern " << label
+                     << " has an unreadable reactionCenter '"
+                     << pBP->Attribute("reactionCenter") << "'" << endl;
+                delete ef;
+                return false;
+            }
+
+            string diagnostic;
+            if (!barrierTable.add(key, barrierValue, label, diagnostic)) {
+                cerr << "Error: " << diagnostic << endl;
+                delete ef;
+                return false;
+            }
+            if (verbose)
+                cout << "\n\tBarrier pattern " << label << " = " << barrierValue
+                     << " on " << key.toString() << endl;
+        }
+        ef->setBarrierTable(std::move(barrierTable));
+    }
+
     if (verbose)
-        cout << "\n\tParsed " << ef->getNumPatterns() << " energy pattern(s) with RT=" << RT << endl;
+        cout << "\n\tParsed " << ef->getNumPatterns() << " energy pattern(s) with RT=" << RT
+             << ", " << (ef->hasBarriers() ? "with" : "no") << " barrier patterns" << endl;
     s->setEnergyFunction(ef);
     return true;
 }
@@ -163,7 +243,8 @@ bool createExpandedBindingReactions(
     int &reaction_count,
     bool includeReverse,
     const string& energySite1,
-    const string& energySite2)
+    const string& energySite2,
+    double drivingWork)
 {
     EnergyFunction *ef = s->getEnergyFunction();
     if (!ef) return false;
@@ -172,6 +253,7 @@ bool createExpandedBindingReactions(
     string mt2Name = molType2->getName();
     const string energyBindSite1 = energySite1.empty() ? bindSite1 : energySite1;
     const string energyBindSite2 = energySite2.empty() ? bindSite2 : energySite2;
+    const double barrier = ef->barrierForBinding(mt1Name, bindSite1, mt2Name, bindSite2);
 
     /* A factorized context can be evaluated from the selected reaction
      * mapping. Keep the legacy materialized expansion for contexts that span
@@ -181,6 +263,28 @@ bool createExpandedBindingReactions(
     bool useCompact = ef->getBindingContext(
         mt1Name, energyBindSite1, mt2Name, energyBindSite2, compactContext);
     if (mt1Name == mt2Name) useCompact = false;
+
+    /* Reservoir work forces the materialized Sekar expansion.
+     *
+     * The compact EnergyRxnClass evaluator computes a per-mapping factor from
+     * phi and the context dG. Work enters as exp(phi*W/RT) forward and
+     * exp((phi-1)*W/RT) reverse, so folding it into the DOR base rate is
+     * algebraically valid but direction-dependent and not yet independently
+     * validated. The materialized path computes the full k_fwd/k_rev inside
+     * expandBindingRule and is correct by construction, so use it.
+     *
+     * A barrier is different and does NOT force materialization: it is a
+     * constant that enters both directions identically, so exp(-(Ea0+B)/RT) is
+     * exactly the compact path's base rate with the barrier applied. It never
+     * interacts with the context dG the compact evaluator supplies. */
+    if (drivingWork != 0.0) {
+        if (verbose && useCompact) {
+            cout << "\t  " << rxnName
+                 << ": compact energy path disabled (driven rule); "
+                 << "using materialized expansion" << endl;
+        }
+        useCompact = false;
+    }
     if (useCompact) {
         int contextReactant = -1;
         for (const auto &condition : compactContext.conditions) {
@@ -231,8 +335,12 @@ bool createExpandedBindingReactions(
             ts->finalize();
 
             /* Pull out the activation-only term as DOR's base rate. The
-             * EnergyRxnClass supplies the context factor for each mapping. */
-            double activationRate = std::exp(-Ea0 / ef->getRT());
+             * EnergyRxnClass supplies the context factor for each mapping.
+             * The barrier belongs here: it is direction-independent and
+             * context-independent, so it shifts the base rate and nothing
+             * else. With B = 0 this is bit-identical to the previous
+             * expression. */
+            double activationRate = std::exp(-(Ea0 + barrier) / ef->getRT());
             string directionName = rxnName + (isForward ? "_fwd" : "_rev");
             EnergyRxnClass *r = new EnergyRxnClass(
                 directionName, activationRate, "", ts, 0, compactContext,
@@ -253,7 +361,8 @@ bool createExpandedBindingReactions(
 
     // Run the legacy expansion algorithm for non-factorized contexts.
     vector<ExpandedRuleInfo> expanded = ef->expandBindingRule(
-        rxnName, Ea0, phi_val, mt1Name, energyBindSite1, mt2Name, energyBindSite2);
+        rxnName, Ea0, phi_val, mt1Name, energyBindSite1, mt2Name, energyBindSite2,
+        drivingWork);
 
     for (const auto &rule : expanded) {
         if (!includeReverse && !rule.isForward) continue;
@@ -322,6 +431,8 @@ bool createExpandedStateChangeReactions(
     int &reaction_count,
     bool includeReverse,
     const string& energyComponent)
+    const string& energyComponent,
+    double drivingWork)
 {
     EnergyFunction *ef = s->getEnergyFunction();
     if (!ef || !molType || stateFrom.empty() || stateTo.empty()) return false;
@@ -330,7 +441,7 @@ bool createExpandedStateChangeReactions(
         energyComponent.empty() ? component : energyComponent;
     vector<ExpandedRuleInfo> expanded = ef->expandStateChangeRule(
         rxnName, Ea0, phi_val, molType->getName(), energyStateComponent,
-        stateFrom, stateTo);
+        stateFrom, stateTo, drivingWork);
 
     for (const auto &rule : expanded) {
         if (!includeReverse && !rule.isForward) continue;

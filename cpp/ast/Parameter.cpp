@@ -33,4 +33,21 @@ void Parameter::clearValue() {
     hasValue_ = false;
 }
 
+bool Parameter::hasUnit() const {
+    return unit_.has_value();
+}
+
+const std::optional<units::Unit>& Parameter::getUnit() const {
+    return unit_;
+}
+
+const std::string& Parameter::getUnitName() const {
+    return unitName_;
+}
+
+void Parameter::setUnit(units::Unit unit, std::string name) {
+    unit_ = std::move(unit);
+    unitName_ = std::move(name);
+}
+
 } // namespace bng::ast

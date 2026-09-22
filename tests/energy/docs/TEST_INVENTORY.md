@@ -14,7 +14,7 @@ inventory is defined by the current CMake files and the live status record in
 ## C++ contracts
 
 - `tests/cpp/future_ast_native_pattern_descriptor.cpp` — 1 cases
-- `tests/cpp/future_barrier_driving_syntax.cpp` — 2 cases
+- `tests/cpp/future_barrier_driving_syntax.cpp` — 5 cases (promoted; built by default)
 - `tests/cpp/future_batch_nf_api.cpp` — 1 cases
 - `tests/cpp/future_blueprint_concurrency.cpp` — 1 cases
 - `tests/cpp/future_compiled_blueprint.cpp` — 2 cases
@@ -44,7 +44,7 @@ inventory is defined by the current CMake files and the live status record in
 - `tests/cpp/future_runtime_invalidation.cpp` — 2 cases
 - `tests/cpp/future_runtime_model_contracts.cpp` — 6 cases
 - `tests/cpp/future_runtime_reverse_context.cpp` — 1 cases
-- `tests/cpp/future_thermodynamic_constraints.cpp` — 9 cases
+- `tests/cpp/future_thermodynamic_constraints.cpp` — 15 cases (promoted; built by default)
 - `tests/cpp/fuzz_energy_delta_plan.cpp` — 0 cases
 - `tests/cpp/standalone_energy_delta_plan_smoke.cpp` — 0 cases
 - `tests/cpp/test_compiled_model_contracts.cpp` — 10 cases
@@ -94,3 +94,20 @@ inventory is defined by the current CMake files and the live status record in
 - `scripts/measure_command.py`
 - `scripts/nf_energy_statistical_parity.py`
 - `scripts/run_energy_validation.py`
+
+## Added after this inventory was generated
+
+- `tests/cpp/test_thermo_source_normalization.cpp` — 12 cases
+- `tests/cpp/test_barrier_and_driven_energy.cpp` — 12 cases
+- `tests/cpp/test_thermo_model_finalize.cpp` — 9 cases
+- `tests/cpp/test_energy_export_guard.cpp` — 8 cases
+- `tests/energy/standalone/` — eight network-free check groups covering the
+  thermodynamic analysis, insertion-order determinism, barrier keying, key
+  round-trip, driven-rate math, cross-convention rate parity, surface-syntax
+  normalization, post-parse lowering, and the fail-closed export guard. Nine
+  groups in total, run by `run_checks.sh` with nothing but a C++17 compiler.
+
+`SHA256SUMS` in this directory is a historical manifest of the original energy
+bundle. The digests for `future_barrier_driving_syntax.cpp` and
+`future_thermodynamic_constraints.cpp` are stale by design: both files were
+edited when the contracts were promoted.

@@ -16,7 +16,6 @@ They should be enabled one subsystem at a time as implementation lands.
 - `future_energy_lowering_plan`: backend-neutral lowering policy
 - `future_energy_pattern_store`: versioned/orientation-safe plan cache
 - `future_energy_context_weights`: tested aggregation math
-- `future_thermodynamic_constraints`: cycle/rank/gauge analysis
 - `future_indexed_rule_family`: parametric rule-family IR
 - `future_compiled_model_cache`: concurrent immutable model cache
 - `future_ast_native_pattern_descriptor`: direct `SpeciesGraph` compilation
@@ -30,8 +29,23 @@ They should be enabled one subsystem at a time as implementation lands.
 - `future_direct_xml_energy_parity`: direct AST vs XML semantic parity
 - `future_compound_graph_rewrite`: energy delta of a general graph edit
 - `future_energy_factor_index`: sublinear candidate discovery
-- `future_barrier_driving_syntax`: deliberately last; parser syntax must not be enabled
-  until existing eBNGL semantics and runtime parity are complete.
+
+## Promoted contracts
+
+These are no longer opt-in. They build and run as part of
+`test_energy_compiler_contracts`:
+
+- `future_thermodynamic_constraints`: cycle/rank/gauge analysis, implemented by
+  `compile/energy/ThermodynamicConstraints.{hpp,cpp}`.
+- `future_barrier_driving_syntax`: `begin barrier patterns` and `driven_by()`,
+  implemented by `parser/ThermoSourceNormalization.{hpp,cpp}` plus
+  `ast::BarrierPattern` and `ReactionRule` driving-work metadata.
+
+Promotion of the parser contract does **not** mean the runtime semantics are at
+parity. The language surface is accepted and lowered, but every backend
+boundary still refuses barrier patterns and reservoir work unless
+`BNG_NFSIM_GENERAL_ENERGY` is set. See
+`docs/nonequilibrium_energy.md` for what is and is not validated.
 
 A RED contract becoming green is not enough to enable a feature by default; the
 promotion matrix in `docs/VALIDATION_MATRIX.md` still applies.

@@ -13,12 +13,14 @@ MoleculeHandle MoleculeStore::create() {
     else {
         slot = static_cast<std::uint32_t>(generation_.size());
         generation_.push_back(1); alive_.push_back(1);
-        states_.resize((static_cast<std::size_t>(slot) + 1u) * static_cast<std::size_t>(state_words_), 0);
-        bonds_.resize((slot + 1) * bond_slots_);
-        compartments_.resize(slot + 1, 0);
+        const auto slotIndex = static_cast<std::size_t>(slot);
+        states_.resize((slotIndex + 1u) * static_cast<std::size_t>(state_words_), 0);
+        bonds_.resize((slotIndex + 1u) * static_cast<std::size_t>(bond_slots_));
+        compartments_.resize(slotIndex + 1u, 0);
     }
-    for (std::uint16_t i=0;i<state_words_;++i) states_[slot*state_words_+i]=0;
-    for (std::uint16_t i=0;i<bond_slots_;++i) bonds_[slot*bond_slots_+i]=MoleculeRef();
+    const auto slotIndex = static_cast<std::size_t>(slot);
+    for (std::uint16_t i=0;i<state_words_;++i) states_[slotIndex * state_words_ + i]=0;
+    for (std::uint16_t i=0;i<bond_slots_;++i) bonds_[slotIndex * bond_slots_ + i]=MoleculeRef();
     compartments_[slot] = 0;
     ++live_count_;
     return MoleculeHandle(slot, generation_[slot]);

@@ -46,7 +46,11 @@ namespace NFinput {
         int &reaction_count,
         bool includeReverse,
         const std::string& energySite1 = "",
-        const std::string& energySite2 = "");
+        const std::string& energySite2 = "",
+        /* Signed reservoir work from a driven_by() annotation. Nonzero work
+         * shifts local detailed balance to exp(-(dG-W)/RT) and forces the
+         * materialized expansion path. */
+        double drivingWork = 0.0);
 
     /*
      * Create expanded BasicRxnClass instances for an energy state-change rule.
@@ -64,7 +68,8 @@ namespace NFinput {
         bool verbose,
         int &reaction_count,
         bool includeReverse,
-        const std::string& energyComponent = "");
+        const std::string& energyComponent = "",
+        double drivingWork = 0.0);
 
 } // namespace NFinput
 

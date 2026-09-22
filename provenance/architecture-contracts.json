@@ -290,6 +290,34 @@
       "empty_bodies": 0
     },
     {
+      "path": "tests/energy/tests/cpp/test_barrier_and_driven_energy.cpp",
+      "status": "required",
+      "target": "test_energy_compiler_contracts",
+      "declared_cases": 13,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/test_energy_export_guard.cpp",
+      "status": "required",
+      "target": "test_energy_compiler_contracts",
+      "declared_cases": 8,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/test_thermo_model_finalize.cpp",
+      "status": "required",
+      "target": "test_energy_compiler_contracts",
+      "declared_cases": 9,
+      "empty_bodies": 0
+    },
+    {
+      "path": "tests/energy/tests/cpp/test_thermo_source_normalization.cpp",
+      "status": "required",
+      "target": "test_energy_compiler_contracts",
+      "declared_cases": 13,
+      "empty_bodies": 0
+    },
+    {
       "path": "tests/architecture_contracts/nfcore2/bench_nfcore2.cpp",
       "status": "auxiliary",
       "target": null,

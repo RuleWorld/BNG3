@@ -5,7 +5,6 @@ Created on Wed May 30 11:44:17 2012
 @author: proto
 """
 
-from copy import deepcopy
 import difflib
 import hashlib
 import numpy
@@ -142,7 +141,7 @@ class Species:
             self_molecule_names = {x.name for x in self.molecules}
             for element in species.molecules:
                 if element.name not in self_molecule_names:
-                    self.addMolecule(deepcopy(element), update)
+                    self.addMolecule(element.copy(), update)
                     self_molecule_names.add(element.name)
                 else:
                     bond1 = sum([x.bonds for x in element.components], [])
@@ -161,7 +160,7 @@ class Species:
                     molecule_component_names = {x.name for x in molecule.components}
                     for component in element.components:
                         if component.name not in molecule_component_names:
-                            molecule.addComponent(deepcopy(component), update)
+                            molecule.addComponent(component.copy(), update)
                             molecule_component_names.add(component.name)
                         else:
                             comp = molecule.getComponent(component.name)
@@ -169,7 +168,7 @@ class Species:
                                 comp.addState(state, update)
 
     def updateBonds(self, bondNumbers):
-        newBondNumbers = deepcopy(bondNumbers)
+        newBondNumbers = list(bondNumbers)
         correspondence = {}
         intersection = [int(x) for x in newBondNumbers if x in self.getBondNumbers()]
         newBase = max(bondNumbers) + 1
@@ -191,18 +190,18 @@ class Species:
     def deleteBond(self, moleculePair):
         for molecule in self.molecules:
             if molecule.name in moleculePair:
-                moleculePairCopy = deepcopy(moleculePair)
+                moleculePairCopy = list(moleculePair)
                 moleculePairCopy.remove(molecule.name)
                 for component in molecule.components:
                     if component.name in [x.lower() for x in moleculePairCopy]:
                         component.bonds = []
 
     def append(self, species):
-        newSpecies = deepcopy(species)
+        newSpecies = species.copy()
         newSpecies.updateBonds(self.getBondNumbers())
 
         for element in newSpecies.molecules:
-            self.molecules.append(deepcopy(element))
+            self.molecules.append(element.copy())
 
     def sort(self):
         """
@@ -407,7 +406,7 @@ class Molecule:
         for element in molecule.components:
             comp = [x for x in self.components if x.name == element.name]
             if len(comp) == 0:
-                self.components.append(deepcopy(element))
+                self.components.append(element.copy())
             else:
                 for bond in element.bonds:
                     comp[0].addBond(bond)
@@ -422,7 +421,7 @@ class Molecule:
         self_component_names = {x.name for x in self.components}
         for comp in molecule.components:
             if comp.name not in self_component_names:
-                self.components.append(deepcopy(comp))
+                self.components.append(comp.copy())
                 self_component_names.add(comp.name)
 
 
@@ -454,8 +453,10 @@ class Component:
         >>> [str(c), str(c2)]
         ['first', 'second']
         """
-        component = Component(self.name, deepcopy(self.bonds), deepcopy(self.states))
-        component.activeState = deepcopy(self.activeState)
+        # ⚡ Bolt: Use explicit list() instead of deepcopy for primitive lists to avoid O(N) deepcopy overhead
+        component = Component(self.name, list(self.bonds), list(self.states))
+        # ⚡ Bolt: Direct assignment since activeState is a string (immutable), avoiding deepcopy overhead
+        component.activeState = self.activeState
         return component
 
     def addState(self, state, update=True):

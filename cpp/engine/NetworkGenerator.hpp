@@ -33,6 +33,12 @@ public:
     GeneratedNetwork generate(const std::filesystem::path& sourcePath);
     GeneratedNetwork generateNative(std::size_t maxIter = 32);
 
+    // Normalize one compiled seed into the count basis consumed by native
+    // networks.  Action dispatch uses the same conversion for resets so a
+    // unit-aware model cannot restore raw concentration/amount literals.
+    static double normalizeSeedAmount(const compile::CompiledModel& model,
+                                      const compile::CompiledSeed& seed);
+
     const compile::Document& document() const noexcept { return document_; }
 
 private:

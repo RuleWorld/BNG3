@@ -6,6 +6,7 @@ import itertools
 from copy import deepcopy, copy
 from bionetgen.atomizer.utils.util import logMess, memoize, memoizeMapped
 from . import atomizationAux as atoAux
+from .annotation_utils import identifiers_org_databases
 import bionetgen.atomizer.utils.pathwaycommons as pwcm
 
 
@@ -302,20 +303,8 @@ class SCTSolver:
                                         [baseElement],
                                     )
                             else:
-                                baseDB = set(
-                                    [
-                                        x.split("/")[-2]
-                                        for x in baseSet
-                                        if "identifiers.org" in x
-                                    ]
-                                )
-                                modDB = set(
-                                    [
-                                        x.split("/")[-2]
-                                        for x in modSet
-                                        if "identifiers.org" in x
-                                    ]
-                                )
+                                baseDB = identifiers_org_databases(baseSet)
+                                modDB = identifiers_org_databases(modSet)
                                 # it is still ok if they each refer to different self.databases
                                 if len(baseDB.intersection(modDB)) == 0:
                                     if modElement not in self.database.dependencyGraph:
@@ -435,20 +424,8 @@ class SCTSolver:
                                 and len(baseSet) > 0
                                 and len(modSet) > 0
                             ):
-                                baseDB = set(
-                                    [
-                                        x.split("/")[-2]
-                                        for x in baseSet
-                                        if "identifiers.org" in x
-                                    ]
-                                )
-                                modDB = set(
-                                    [
-                                        x.split("/")[-2]
-                                        for x in modSet
-                                        if "identifiers.org" in x
-                                    ]
-                                )
+                                baseDB = identifiers_org_databases(baseSet)
+                                modDB = identifiers_org_databases(modSet)
                                 # we stil ahve to check that they both reference the same self.database
                                 if len(baseDB.intersection(modDB)) > 0:
                                     logMess(

@@ -4,6 +4,15 @@ option(BNG_BUILD_ENERGY_FUZZERS "Build libFuzzer targets for energy compiler" OF
 
 set(BNG_ENERGY_CURRENT_TEST_SOURCES
     test_energy_compiler_phase1.cpp
+    # Promoted from BNG_ENABLE_FUTURE_ENERGY_CONTRACTS: the thermodynamic
+    # layer, the barrier/driven surface syntax, and the reaction-center keying
+    # are implemented, so these build and run by default.
+    future_thermodynamic_constraints.cpp
+    future_barrier_driving_syntax.cpp
+    test_thermo_source_normalization.cpp
+    test_barrier_and_driven_energy.cpp
+    test_thermo_model_finalize.cpp
+    test_energy_export_guard.cpp
     test_energy_delta_plan_edge_cases.cpp
     test_energy_delta_plan_property.cpp
     test_compiled_rate_law_contracts.cpp
@@ -17,7 +26,6 @@ target_include_directories(test_energy_compiler_contracts PRIVATE
     ${CMAKE_SOURCE_DIR}/cpp/parser
     ${CMAKE_SOURCE_DIR}/cpp/parser/generated
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${exprtk_SOURCE_DIR}
 )
 target_link_libraries(test_energy_compiler_contracts PRIVATE
     Catch2::Catch2WithMain Catch2::Catch2 bng_compile bionetgen_core bng_parser)
@@ -33,7 +41,6 @@ target_include_directories(test_energy_compiler_original PRIVATE
     ${CMAKE_SOURCE_DIR}/cpp/parser
     ${CMAKE_SOURCE_DIR}/cpp/parser/generated
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${exprtk_SOURCE_DIR}
 )
 target_link_libraries(test_energy_compiler_original PRIVATE
     Catch2::Catch2WithMain Catch2::Catch2 bng_compile bionetgen_core bng_parser)
@@ -53,7 +60,6 @@ if(BNG_ENABLE_FUTURE_ENERGY_CONTRACTS OR BNG_ENERGY_FUTURE_CONTRACT)
         future_energy_context_evaluator.cpp
         future_energy_context_weights_numeric.cpp
         future_energy_plan_canonicalization.cpp
-        future_thermodynamic_constraints.cpp
         future_indexed_rule_family.cpp
         future_compiled_model_cache.cpp
         future_compiled_model_determinism.cpp
@@ -64,7 +70,6 @@ if(BNG_ENABLE_FUTURE_ENERGY_CONTRACTS OR BNG_ENERGY_FUTURE_CONTRACT)
         future_compiled_blueprint.cpp
         future_batch_nf_api.cpp
         future_legacy_binding_compatibility.cpp
-        future_barrier_driving_syntax.cpp
         future_direct_xml_energy_parity.cpp
         future_energy_serialization_roundtrip.cpp
         future_compound_graph_rewrite.cpp
@@ -90,7 +95,6 @@ if(BNG_ENABLE_FUTURE_ENERGY_CONTRACTS OR BNG_ENERGY_FUTURE_CONTRACT)
         ${CMAKE_SOURCE_DIR}/cpp/nfsim/NFcore
         ${CMAKE_SOURCE_DIR}/cpp/nfsim/NFinput
         ${CMAKE_CURRENT_SOURCE_DIR}
-        ${exprtk_SOURCE_DIR}
     )
     target_compile_definitions(test_energy_future_contracts PRIVATE
         BNG_ENERGY_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/tests/energy/fixtures/energy")

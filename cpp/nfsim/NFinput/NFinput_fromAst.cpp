@@ -51,6 +51,7 @@
 #include "ast/Model.hpp"
 #include "ast/MoleculeType.hpp"
 #include "ast/Expression.hpp"
+#include "ast/ExpressionBuiltins.hpp"
 #include "ast/Parameter.hpp"
 #include "ast/ParameterList.hpp"
 #include "../NFcore/compartment.hh"
@@ -75,10 +76,12 @@
 #include <antlr4-runtime.h>
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
+#include <functional>
 #include <iostream>
 #include <limits>
 #include <map>
@@ -319,16 +322,33 @@ bool hasModelObservable(const bng::ast::Model& model, const std::string& name) {
 }
 
 bool isSupportedGlobalBuiltin(const std::string& name) {
-    // Keep this list aligned with the functions registered by the NFsim
-    // ExprTk-backed parser.  Rate-law helpers and TFUN need their own
-    // adapters; accepting them here would make the direct path fail later in
+    // Single source of truth: cpp/ast/ExpressionBuiltins.hpp. This function
+    // used to keep its own list, which drifted from both the shared evaluator
+    // and the ExprTk shim. Rate-law helpers and TFUN are absent from the
+    // table on purpose; they have dedicated adapters, and admitting them here
+    // would make the direct path fail later in
     // GlobalFunction::prepareForSimulation().
-    static const std::unordered_set<std::string> supported = {
-        "abs",  "acos", "acosh", "asin", "asinh", "atan", "atanh", "ceil",
-        "cos",  "cosh", "exp",   "floor", "if",    "ln",    "log",   "log10",
-        "log2", "max",  "min",   "rint",  "sign",  "sin",   "sinh",  "sqrt",
-        "sum",  "tan",  "tanh"};
-    return supported.count(lowerCase(name)) != 0;
+    //
+    // The lookup is case-SENSITIVE. The previous lowerCase() match let
+    // spellings such as SIN(x) past this gate even though the shim is
+    // compiled with exprtk_disable_caseinsensitivity, turning an early,
+    // precise rejection into a late hard failure inside NFsim.
+    return bng::ast::builtins::isNfsimEvaluable(name);
+}
+
+/// Diagnostic text for a function name this gate rejects.
+std::string unsupportedBuiltinDiagnostic(const std::string& name) {
+    std::string message = "unsupported NFsim global-function builtin '" + name + "'";
+    const std::string hint = bng::ast::builtins::rejectionHint(name);
+    if (!hint.empty()) {
+        message += " (" + hint + ")";
+    } else if (bng::ast::builtins::isBuiltin(lowerCase(name))) {
+        // Correct builtin, wrong case: say so rather than leaving the caller
+        // to guess why a familiar name was refused.
+        message += " (built-in names are case-sensitive; did you mean '" +
+                   lowerCase(name) + "'?)";
+    }
+    return message;
 }
 
 void collectTableFunctions(const bng::ast::Expression& expression,
@@ -566,7 +586,7 @@ bool expandDynamicRateExpression(
             return true;
         }
         if (!isSupportedGlobalBuiltin(name)) {
-            diagnostic = "unsupported NFsim global-function builtin '" + name + "'";
+            diagnostic = unsupportedBuiltinDiagnostic(name);
             return false;
         }
         std::ostringstream output;
@@ -962,8 +982,7 @@ bool collectGlobalFunctionReferences(
             return true;
         }
         if (!isSupportedGlobalBuiltin(expression.name())) {
-            diagnostic = "unsupported NFsim global-function builtin '" +
-                         expression.name() + "'";
+            diagnostic = unsupportedBuiltinDiagnostic(expression.name());
             return false;
         }
         for (const auto& child : expression.args()) {
@@ -1099,8 +1118,8 @@ bool collectLocalFunctionReferences(
             return false;
         }
         if (!isSupportedGlobalBuiltin(expression.name())) {
-            diagnostic = "unsupported NFsim local-function builtin '" +
-                         expression.name() + "'";
+            diagnostic = "local-function scope: " +
+                         unsupportedBuiltinDiagnostic(expression.name());
             return false;
         }
         for (const auto& child : expression.args()) {
@@ -3712,6 +3731,11 @@ bool addDynamicReactionRateFunction(
     return true;
 }
 
+// Legacy direct-from-AST energy installer. The live direct path builds through
+// CompiledModel (addEnergyPatternsFromCompiled), which is where barrier-pattern
+// support was added; this function has no callers. Intentionally left without
+// barrier support rather than given an untested second implementation — if it
+// is ever revived, install the barrier table here the same way.
 bool addEnergyPatternsFromAst(const bng::ast::Model& model, System* system,
                               const std::map<std::string, double>& parameters,
                               bool verbose) {
@@ -5844,7 +5868,8 @@ System* buildSystemFromAst(const bng::ast::Model& model,
                            int globalMoleculeLimit,
                            bool verbose,
                            int& suggestedTraversalLimit,
-                           const std::filesystem::path& sourcePath) {
+                           const std::filesystem::path& sourcePath,
+                           std::string* unavailableReason) {
     // Preserve the historical API contract: before the direct adapter grew a
     // separate complex-bookkeeping flag, this argument controlled both the
     // System constructor and same-complex binding checks.
@@ -5852,7 +5877,7 @@ System* buildSystemFromAst(const bng::ast::Model& model,
     return buildSystemFromAstWithSeedOverrides(
         model, blockSameComplexBinding, blockSameComplexBinding,
         globalMoleculeLimit, verbose, suggestedTraversalLimit, sourcePath,
-        noOverrides);
+        noOverrides, unavailableReason);
 }
 
 System* buildSystemFromAst(const bng::ast::Model& model,
@@ -5861,11 +5886,13 @@ System* buildSystemFromAst(const bng::ast::Model& model,
                            int globalMoleculeLimit,
                            bool verbose,
                            int& suggestedTraversalLimit,
-                           const std::filesystem::path& sourcePath) {
+                           const std::filesystem::path& sourcePath,
+                           std::string* unavailableReason) {
     static const SeedAmountOverrides noOverrides;
     return buildSystemFromAstWithSeedOverrides(
         model, useComplex, blockSameComplexBinding, globalMoleculeLimit,
-        verbose, suggestedTraversalLimit, sourcePath, noOverrides);
+        verbose, suggestedTraversalLimit, sourcePath, noOverrides,
+        unavailableReason);
 }
 
 System* buildSystemFromAstWithSeedOverrides(
@@ -5876,26 +5903,45 @@ System* buildSystemFromAstWithSeedOverrides(
     bool verbose,
     int& suggestedTraversalLimit,
     const std::filesystem::path& sourcePath,
-    const SeedAmountOverrides& seedAmountOverrides) {
+    const SeedAmountOverrides& seedAmountOverrides,
+    std::string* unavailableReason) {
+    // Every `return nullptr` below records why. Callers previously received a
+    // bare nullptr and reported "direct AST initialization unavailable" with
+    // no cause, even though the individual builders already wrote precise
+    // messages to stderr. Losing the reason at the boundary made the
+    // fail-closed contract hard to audit: an operator could not tell an
+    // unported construct apart from a genuine model error.
+    const auto fail = [&](std::string reason) -> System* {
+        if (unavailableReason != nullptr) *unavailableReason = std::move(reason);
+        return nullptr;
+    };
+    if (unavailableReason != nullptr) unavailableReason->clear();
+
     // Migration escape hatch used by the parity gate: force the XML path.
     if (std::getenv("BNG_NFSIM_FORCE_XML")) {
         if (verbose) std::cerr << "[nfsim/ast] BNG_NFSIM_FORCE_XML set -> XML path\n";
-        return nullptr;  // caller falls back to initializeFromModel (in-memory XML)
+        // Not a capability limit: the operator asked for the XML path.
+        return fail("BNG_NFSIM_FORCE_XML is set; the XML path was requested explicitly");
     }
 
     const auto capability = bng::compile::capabilitiesFor(
         model, bng::compile::BackendKind::NFsim);
     if (!capability.isSupported()) {
+        std::string joined;
         for (const auto& diagnostic : capability.diagnostics()) {
             std::cerr << "[nfsim/ast] capability error: " << diagnostic.message << "\n";
+            if (!joined.empty()) joined += "; ";
+            joined += diagnostic.message;
         }
-        return nullptr;
+        return fail("model is unsupported by the NFsim backend: " +
+                    (joined.empty() ? std::string("no diagnostic reported") : joined));
     }
 
     bng::compile::Document compiledDocument(model);
     if (!compiledDocument.valid()) {
         if (verbose) std::cerr << "[nfsim/compiled] semantic compilation failed\n";
-        return nullptr;
+        return fail("semantic compilation of the model failed before NFsim "
+                    "construction began");
     }
     const auto& compiledModel = compiledDocument.model();
     const std::string& name = compiledModel.metadata().name;
@@ -5910,38 +5956,73 @@ System* buildSystemFromAstWithSeedOverrides(
     std::map<std::string, int> allowedStates;
     suggestedTraversalLimit = 0;
 
-    bool ok = false;
-    try {
-        // Keep dependencies explicit: observables must exist before global
-        // functions are prepared, while molecule types and compartments must
-        // exist before any pattern is materialized.
-        ok = addOptionsFromCompiled(compiledModel, s, verbose) &&
-             addParametersFromCompiled(compiledModel, s, parameters, verbose) &&
-             addMoleculeTypesFromCompiled(compiledModel, s, allowedStates, verbose) &&
-             addCompartmentsFromCompiled(compiledModel, s, verbose) &&
-             addObservablesFromCompiled(compiledModel, s, verbose, suggestedTraversalLimit) &&
-             addFunctionsFromCompiled(compiledModel, s, verbose, sourcePath) &&
-             addEnergyPatternsFromCompiled(compiledModel, s, verbose) &&
-             addSpeciesFromCompiledWithOverrides(
-                 compiledModel, s, verbose, seedAmountOverrides) &&
-             addReactionRulesFromCompiled(compiledModel, s, blockSameComplexBinding,
-                                          verbose, suggestedTraversalLimit, sourcePath);
-    } catch (const std::exception& error) {
-        if (verbose) {
-            std::cerr << "[nfsim/ast] direct construction failed: "
-                      << error.what() << "\n";
+    // Run the builders in dependency order, naming each one so a failure can
+    // be attributed to a stage instead of the whole adapter. Observables must
+    // exist before global functions are prepared, and molecule types and
+    // compartments must exist before any pattern is materialized.
+    const std::array<std::pair<const char*, std::function<bool()>>, 9> stages{{
+        {"options", [&] { return addOptionsFromCompiled(compiledModel, s, verbose); }},
+        {"parameters", [&] {
+            return addParametersFromCompiled(compiledModel, s, parameters, verbose);
+        }},
+        {"molecule types", [&] {
+            return addMoleculeTypesFromCompiled(compiledModel, s, allowedStates, verbose);
+        }},
+        {"compartments", [&] {
+            return addCompartmentsFromCompiled(compiledModel, s, verbose);
+        }},
+        {"observables", [&] {
+            return addObservablesFromCompiled(compiledModel, s, verbose,
+                                              suggestedTraversalLimit);
+        }},
+        {"functions", [&] {
+            return addFunctionsFromCompiled(compiledModel, s, verbose, sourcePath);
+        }},
+        {"energy patterns", [&] {
+            return addEnergyPatternsFromCompiled(compiledModel, s, verbose);
+        }},
+        {"seed species", [&] {
+            return addSpeciesFromCompiledWithOverrides(compiledModel, s, verbose,
+                                                       seedAmountOverrides);
+        }},
+        {"reaction rules", [&] {
+            return addReactionRulesFromCompiled(compiledModel, s, blockSameComplexBinding,
+                                                verbose, suggestedTraversalLimit,
+                                                sourcePath);
+        }},
+    }};
+
+    std::string failure;
+    for (const auto& [stageName, run] : stages) {
+        bool stageOk = false;
+        try {
+            stageOk = run();
+        } catch (const std::exception& error) {
+            if (verbose) {
+                std::cerr << "[nfsim/ast] direct construction failed: "
+                          << error.what() << "\n";
+            }
+            failure = std::string("stage '") + stageName + "' threw: " + error.what();
+            break;
+        }
+        if (!stageOk) {
+            failure = std::string("stage '") + stageName +
+                      "' could not be constructed directly (see preceding "
+                      "[nfsim/*] diagnostics for the specific construct)";
+            break;
         }
     }
 
-    if (!ok) {
+    if (!failure.empty()) {
         // Some section is not yet ported. Discard the partial System and let the
         // caller use the in-memory-XML path. This is the expected state until
         // every builder above returns true.
         delete s;
         if (verbose) {
-            std::cerr << "[nfsim/ast] direct path incomplete -> XML fallback\n";
+            std::cerr << "[nfsim/ast] direct path incomplete (" << failure
+                      << ") -> XML fallback\n";
         }
-        return nullptr;
+        return fail(std::move(failure));
     }
 
     // s->prepareForSimulation() is the caller's responsibility, matching the

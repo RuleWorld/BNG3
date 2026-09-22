@@ -69,6 +69,29 @@ void EnergyFunction::addEnergyPattern(const EnergyPatternInfo &ep) {
         statePatternIndex[key].push_back(patternIndex);
 }
 
+double EnergyFunction::barrierForBinding(
+    const string &molType1, const string &bindSite1,
+    const string &molType2, const string &bindSite2
+) const {
+    if (barrierTable.empty()) return 0.0;
+    /* The key is symmetric in its two endpoints, so a barrier written for
+     * A.x|B.y also applies to a rule whose reactants arrive in the other
+     * order, and applies equally to binding and unbinding. */
+    return barrierTable.lookup(bng::compile::energy::ReactionCenterKey::binding(
+        molType1, bindSite1, molType2, bindSite2));
+}
+
+double EnergyFunction::barrierForStateChange(
+    const string &molType, const string &comp,
+    const string &stateFrom, const string &stateTo
+) const {
+    if (barrierTable.empty()) return 0.0;
+    /* Symmetric in the endpoint states: forward and reverse traversals cross
+     * the same transition state. */
+    return barrierTable.lookup(bng::compile::energy::ReactionCenterKey::stateChange(
+        molType, comp, stateFrom, stateTo));
+}
+
 bng::compile::energy::EnergyDeltaPlan EnergyFunction::compileBindingDeltaPlan(
     const string &molType1, const string &bindSite1,
     const string &molType2, const string &bindSite2
@@ -458,9 +481,21 @@ vector<ExpandedRuleInfo> EnergyFunction::expandBindingRule(
     double Ea0,
     double phi,
     const string &molType1, const string &bindSite1,
-    const string &molType2, const string &bindSite2
+    const string &molType2, const string &bindSite2,
+    double drivingWork
 ) const {
     vector<ExpandedRuleInfo> expanded;
+
+    /* A matched barrier pattern raises (or lowers) the transition state of
+     * both directions equally, so it is added to Ea0 rather than to any
+     * ground-state energy. It therefore never appears in deltaG and never
+     * perturbs k_fwd/k_rev. */
+    const double barrier = barrierForBinding(molType1, bindSite1, molType2, bindSite2);
+    if (barrier != 0.0 || drivingWork != 0.0) {
+        cout << "  " << rxnName << ": transition-state barrier B=" << barrier
+             << ", reservoir work W=" << drivingWork
+             << " (k_fwd/k_rev = exp(-(dG-W)/RT))" << endl;
+    }
 
     // Step 1: Find relevant patterns
     vector<int> relevant = findRelevantPatternsForBinding(
@@ -475,14 +510,14 @@ vector<ExpandedRuleInfo> EnergyFunction::expandBindingRule(
         ExpandedRuleInfo fwd;
         fwd.name = rxnName + "_fwd";
         fwd.deltaG = 0.0;
-        fwd.rate = computeForwardRate(Ea0, 0.0, phi);
+        fwd.rate = computeForwardRate(Ea0, 0.0, phi, barrier, drivingWork);
         fwd.isForward = true;
         expanded.push_back(fwd);
 
         ExpandedRuleInfo rev;
         rev.name = rxnName + "_rev";
         rev.deltaG = 0.0;
-        rev.rate = computeReverseRate(Ea0, 0.0, phi);
+        rev.rate = computeReverseRate(Ea0, 0.0, phi, barrier, drivingWork);
         rev.isForward = false;
         expanded.push_back(rev);
         return expanded;
@@ -542,14 +577,14 @@ vector<ExpandedRuleInfo> EnergyFunction::expandBindingRule(
         ExpandedRuleInfo fwd;
         fwd.name = rxnName + "_fwd";
         fwd.deltaG = baseG;
-        fwd.rate = computeForwardRate(Ea0, baseG, phi);
+        fwd.rate = computeForwardRate(Ea0, baseG, phi, barrier, drivingWork);
         fwd.isForward = true;
         expanded.push_back(fwd);
 
         ExpandedRuleInfo rev;
         rev.name = rxnName + "_rev";
         rev.deltaG = baseG;
-        rev.rate = computeReverseRate(Ea0, baseG, phi);
+        rev.rate = computeReverseRate(Ea0, baseG, phi, barrier, drivingWork);
         rev.isForward = false;
         expanded.push_back(rev);
 
@@ -603,7 +638,7 @@ vector<ExpandedRuleInfo> EnergyFunction::expandBindingRule(
             ss << rxnName << "_fwd_v" << combo;
             rule.name = ss.str();
             rule.deltaG = deltaG;
-            rule.rate = computeForwardRate(Ea0, deltaG, phi);
+            rule.rate = computeForwardRate(Ea0, deltaG, phi, barrier, drivingWork);
             rule.isForward = true;
             rule.constraints = constraints;
             expanded.push_back(rule);
@@ -616,7 +651,7 @@ vector<ExpandedRuleInfo> EnergyFunction::expandBindingRule(
             ss << rxnName << "_rev_v" << combo;
             rule.name = ss.str();
             rule.deltaG = deltaG;
-            rule.rate = computeReverseRate(Ea0, deltaG, phi);
+            rule.rate = computeReverseRate(Ea0, deltaG, phi, barrier, drivingWork);
             rule.isForward = false;
             // Reverse rule has same context constraints
             rule.constraints = constraints;
@@ -624,8 +659,8 @@ vector<ExpandedRuleInfo> EnergyFunction::expandBindingRule(
         }
 
         cout << "    v" << combo << ": ΔG=" << deltaG
-             << "  k_fwd=" << computeForwardRate(Ea0, deltaG, phi)
-             << "  k_rev=" << computeReverseRate(Ea0, deltaG, phi)
+             << "  k_fwd=" << computeForwardRate(Ea0, deltaG, phi, barrier, drivingWork)
+             << "  k_rev=" << computeReverseRate(Ea0, deltaG, phi, barrier, drivingWork)
              << "  context=[";
         for (int ci = 0; ci < nCond; ci++) {
             if (ci > 0) cout << ", ";
@@ -647,9 +682,18 @@ vector<ExpandedRuleInfo> EnergyFunction::expandStateChangeRule(
     double Ea0,
     double phi,
     const string &molType, const string &comp,
-    const string &stateFrom, const string &stateTo
+    const string &stateFrom, const string &stateTo,
+    double drivingWork
 ) const {
     vector<ExpandedRuleInfo> expanded;
+
+    /* See expandBindingRule: the barrier modifies the activation energy only. */
+    const double barrier = barrierForStateChange(molType, comp, stateFrom, stateTo);
+    if (barrier != 0.0 || drivingWork != 0.0) {
+        cout << "  " << rxnName << ": transition-state barrier B=" << barrier
+             << ", reservoir work W=" << drivingWork
+             << " (k_fwd/k_rev = exp(-(dG-W)/RT))" << endl;
+    }
 
     vector<int> relevant = findRelevantPatternsForStateChange(molType, comp);
 
@@ -722,14 +766,14 @@ vector<ExpandedRuleInfo> EnergyFunction::expandStateChangeRule(
         ExpandedRuleInfo fwd;
         fwd.name = rxnName + "_fwd";
         fwd.deltaG = baseG;
-        fwd.rate = computeForwardRate(Ea0, baseG, phi);
+        fwd.rate = computeForwardRate(Ea0, baseG, phi, barrier, drivingWork);
         fwd.isForward = true;
         expanded.push_back(fwd);
 
         ExpandedRuleInfo rev;
         rev.name = rxnName + "_rev";
         rev.deltaG = baseG;
-        rev.rate = computeReverseRate(Ea0, baseG, phi);
+        rev.rate = computeReverseRate(Ea0, baseG, phi, barrier, drivingWork);
         rev.isForward = false;
         expanded.push_back(rev);
 
@@ -793,7 +837,7 @@ vector<ExpandedRuleInfo> EnergyFunction::expandStateChangeRule(
             ss << rxnName << "_fwd_v" << combo;
             rule.name = ss.str();
             rule.deltaG = deltaG;
-            rule.rate = computeForwardRate(Ea0, deltaG, phi);
+            rule.rate = computeForwardRate(Ea0, deltaG, phi, barrier, drivingWork);
             rule.isForward = true;
             rule.constraints = constraints;
             expanded.push_back(rule);
@@ -806,15 +850,15 @@ vector<ExpandedRuleInfo> EnergyFunction::expandStateChangeRule(
             ss << rxnName << "_rev_v" << combo;
             rule.name = ss.str();
             rule.deltaG = deltaG;
-            rule.rate = computeReverseRate(Ea0, deltaG, phi);
+            rule.rate = computeReverseRate(Ea0, deltaG, phi, barrier, drivingWork);
             rule.isForward = false;
             rule.constraints = constraints;
             expanded.push_back(rule);
         }
 
         cout << "    v" << combo << ": ΔG=" << deltaG
-             << "  k_fwd=" << computeForwardRate(Ea0, deltaG, phi)
-             << "  k_rev=" << computeReverseRate(Ea0, deltaG, phi)
+             << "  k_fwd=" << computeForwardRate(Ea0, deltaG, phi, barrier, drivingWork)
+             << "  k_rev=" << computeReverseRate(Ea0, deltaG, phi, barrier, drivingWork)
              << "  context=[";
         for (int ci = 0; ci < nCond; ci++) {
             if (ci > 0) cout << ", ";

@@ -7,6 +7,7 @@
 #include "Capabilities.hpp"
 #include "SymbolTable.hpp"
 #include "ast/Expression.hpp"
+#include "units/Unit.hpp"
 
 namespace bng::compile {
 
@@ -137,6 +138,8 @@ struct CompiledRateLaw {
     // Compatibility view retained for the energy/compiler contract tests;
     // semantic consumers use resolvedExpression() below.
     std::vector<ast::Expression> arguments;
+    std::optional<units::Unit> unit;
+    std::string unitName;
 
     const ResolvedExpression& resolvedExpression() const { return resolved_; }
     const std::vector<SymbolRef>& references() const { return references_; }

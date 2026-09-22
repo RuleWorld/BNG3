@@ -1,6 +1,7 @@
 #include "NFinput_fromCompiled.hh"
 
 #include "compile/CompiledModel.hpp"
+#include "compile/energy/DrivenEnergy.hpp"
 #include "NFcore/NFcore.hh"
 #include "NFcore/compartment.hh"
 #include "NFcore2/nfsim_pattern_lowering.hh"
@@ -1226,6 +1227,29 @@ bool addCompiledArrheniusDirection(const CompiledModel& model,
         return false;
     }
 
+    // Reservoir work is signed per traversal direction: the direction being
+    // built here is always the rule's forward direction (the reverse is
+    // generated inside createExpanded*Reactions from the same forward dG and
+    // W, using phi - 1 instead of phi), so no sign flip belongs here.
+    double drivingWork = 0.0;
+    if (rule.hasDrivingWork()) {
+        if (!bng::compile::energy::generalEnergyEnabled()) {
+            diagnostic = std::string("driven_by() requires ") +
+                         bng::compile::energy::generalEnergyGateName() + " to be set";
+            return false;
+        }
+        if (!rule.drivingWorkValue().has_value()) {
+            diagnostic = "driven_by() work expression '" + rule.drivingWorkExpression() +
+                         "' is not statically resolvable";
+            return false;
+        }
+        drivingWork = *rule.drivingWorkValue();
+        if (!std::isfinite(drivingWork)) {
+            diagnostic = "driven_by() work expression is not finite";
+            return false;
+        }
+    }
+
     const std::size_t firstReaction = system.getAllReactions().size();
     int reactionCount = 0;
     bool ok = false;
@@ -1286,7 +1310,7 @@ bool addCompiledArrheniusDirection(const CompiledModel& model,
                     rule.name(), *phi, *activationEnergy, lhsType, lhsName,
                     rhsType, rhsName, &system, parameters, states,
                     blockSameComplexBinding, verbose, reactionCount,
-                    rule.isBidirectional(), lhsSiteName, rhsSiteName);
+                    rule.isBidirectional(), lhsSiteName, rhsSiteName, drivingWork);
                 if (!ok) return false;
             }
         }
@@ -1333,7 +1357,7 @@ bool addCompiledArrheniusDirection(const CompiledModel& model,
                 rule.name(), *phi, *activationEnergy, moleculeType,
                 concreteName, *sourceState, mutation.newState, &system,
                 blockSameComplexBinding, verbose, reactionCount,
-                rule.isBidirectional(), componentName);
+                rule.isBidirectional(), componentName, drivingWork);
             if (!ok) return false;
         }
         suggestedTraversalLimit = std::max(suggestedTraversalLimit, 1);

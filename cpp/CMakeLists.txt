@@ -1,7 +1,8 @@
 # cpp/CMakeLists.txt — Unified C++ build for BioNetGen core + NFSim
 
-add_compile_definitions(NFSIM_USE_EXPRTK)
-include_directories(${exprtk_SOURCE_DIR})
+# WO-3b: NFSIM_USE_EXPRTK and the ExprTk include path are gone. NFsim shares
+# the platform expression engine; nfsim_core links bng_parser for parsing and
+# bng_ast for evaluation.
 
 
 # =============================================================================
@@ -10,6 +11,15 @@ include_directories(${exprtk_SOURCE_DIR})
 file(GLOB NAUTY_SOURCES "nauty/*.c")
 add_library(nauty STATIC ${NAUTY_SOURCES})
 target_include_directories(nauty PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/nauty)
+
+# =============================================================================
+# bng_units (compile-time physical-unit algebra)
+# =============================================================================
+add_library(bng_units STATIC units/Unit.cpp)
+target_include_directories(bng_units PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/units
+)
 
 # =============================================================================
 # bng_core (pattern graph, node, state, transformations)
@@ -35,7 +45,7 @@ target_include_directories(bng_ast PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/parser
     ${antlr4_runtime_SOURCE_DIR}/runtime/Cpp/runtime/src
 )
-target_link_libraries(bng_ast PUBLIC bng_core antlr4_static)
+target_link_libraries(bng_ast PUBLIC bng_core antlr4_static bng_units)
 if(MSVC)
     target_compile_definitions(bng_ast PRIVATE _USE_MATH_DEFINES)
 endif()
@@ -51,6 +61,8 @@ add_library(bng_parser STATIC
     ${ANTLR_GEN_DIR}/BNGParserVisitor.cpp
     parser/BNGAstVisitor.cpp
     parser/PatternGraphBuilder.cpp
+    parser/ThermoSourceNormalization.cpp
+    parser/ThermoModelFinalize.cpp
 )
 target_include_directories(bng_parser PUBLIC
     ${ANTLR_GEN_DIR}
@@ -67,7 +79,12 @@ add_library(bng_compile STATIC
     compile/PatternLowering.cpp
     compile/LegacyAstLowering.cpp
     compile/SymbolTable.cpp
+    compile/UnitAnalysis.cpp
     compile/energy/EnergyDeltaPlan.cpp
+    compile/energy/ThermodynamicConstraints.cpp
+    compile/energy/BarrierTable.cpp
+    compile/energy/BarrierCompiler.cpp
+    compile/energy/DrivenEnergy.cpp
     compile/CompiledRateLaw.cpp
     compile/CompiledRule.cpp
     compile/CompiledModel.cpp)
@@ -88,8 +105,10 @@ add_library(bng_engine STATIC
     io/NetWriter.cpp
     io/NetReader.cpp
     io/SbmlReader.cpp
+    io/SbmlUnitWriter.cpp
     io/XmlWriter.cpp
     io/BnglWriter.cpp
+    io/EnergyExportGuard.cpp
     io/SbmlWriter.cpp
     io/SbmlMultiWriter.cpp
     io/MatlabWriter.cpp
@@ -159,12 +178,14 @@ file(GLOB NFSIM_RXN_RXN "${NFSIM_DIR}/NFreactions/reactions/*.cpp")
 file(GLOB NFSIM_RXN_RLISTS "${NFSIM_DIR}/NFreactions/reactantLists/*.cpp")
 file(GLOB NFSIM_RXN_MAPS "${NFSIM_DIR}/NFreactions/mappings/*.cpp")
 file(GLOB NFSIM_FUNC_SRC "${NFSIM_DIR}/NFfunction/*.cpp")
-# muParser removed: ExprTk (nfsim_funcparser.h shim) is the only parser (NFSIM_USE_EXPRTK defined).
+# muParser and ExprTk both removed: nfsim_funcparser.h is now a thin mu::Parser
+# interface over the shared bng::ast::Expression evaluator (WO-3).
 file(GLOB NFSIM_OUTPUT_SRC "${NFSIM_DIR}/NFoutput/*.cpp")
 file(GLOB NFSIM_SCHED_SRC "${NFSIM_DIR}/NFscheduler/*.cpp")
 file(GLOB NFSIM_UTIL_SRC "${NFSIM_DIR}/NFutil/*.cpp")
 file(GLOB NFSIM_UTIL_MTRAND "${NFSIM_DIR}/NFutil/MTrand/*.cpp")
-file(GLOB NFSIM_NAUTY_C "${NFSIM_DIR}/nauty24/*.c")
+# WO-1b: nfsim_core no longer compiles its own nauty copy. It links the shared
+# `nauty` target instead (see cpp/nauty/README.md).
 
 # Exclude NFsim.cpp (main) and NFtest sources from the library
 set(NFSIM_LIB_SOURCES
@@ -184,7 +205,6 @@ set(NFSIM_LIB_SOURCES
     ${NFSIM_SCHED_SRC}
     ${NFSIM_UTIL_SRC}
     ${NFSIM_UTIL_MTRAND}
-    ${NFSIM_NAUTY_C}
     ${CMAKE_CURRENT_SOURCE_DIR}/nfsim/NFcore2/nfsim_pattern_lowering.cpp
 )
 
@@ -209,7 +229,9 @@ target_include_directories(nfsim_core PUBLIC
     ${NFSIM_DIR}/NFscheduler
     ${NFSIM_DIR}/NFutil
     ${NFSIM_DIR}/NFutil/MTrand
-    ${NFSIM_DIR}/nauty24
+    # Canonical labeling comes from the one shared nauty build. Propagated
+    # PUBLIC because NFcore.hh-consuming targets transitively include it.
+    $<TARGET_PROPERTY:nauty,INTERFACE_INCLUDE_DIRECTORIES>
     # Allow NFinput_fromModel.cpp to include ast/Model.hpp and core/ headers
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/ast
@@ -217,9 +239,8 @@ target_include_directories(nfsim_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/parser
     ${CMAKE_CURRENT_SOURCE_DIR}/parser/generated
 )
-target_compile_definitions(nfsim_core PUBLIC TIXML_USE_STL NFSIM_USE_EXPRTK)
-target_include_directories(nfsim_core PRIVATE ${exprtk_SOURCE_DIR})
-target_link_libraries(nfsim_core PUBLIC bng_parser bng_compile)
+target_compile_definitions(nfsim_core PUBLIC TIXML_USE_STL)
+target_link_libraries(nfsim_core PUBLIC bng_parser bng_compile nauty)
 if(MSVC)
     target_compile_options(nfsim_core PRIVATE /bigobj)
 else()

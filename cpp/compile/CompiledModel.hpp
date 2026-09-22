@@ -7,8 +7,10 @@
 #include <vector>
 
 #include "CompiledRule.hpp"
+#include "energy/BarrierTable.hpp"
 #include "SemanticIds.hpp"
 #include "SymbolTable.hpp"
+#include "units/Unit.hpp"
 
 namespace bng::ast { class Model; }
 
@@ -19,6 +21,8 @@ struct ModelMetadata {
     std::string version;
     std::string substanceUnits;
     std::map<std::string, std::string> options;
+    std::map<std::string, std::string> unitDefaults;
+    std::vector<units::UnitDefinition> unitDefinitions;
 };
 
 struct CompiledParameter {
@@ -28,6 +32,12 @@ struct CompiledParameter {
     std::string sourceExpression;
     ResolvedExpression expression;
     std::optional<double> constantValue;
+    // Compile-time physical-basis value.  Existing consumers continue to use
+    // constantValue until a backend conversion context is available.
+    std::optional<double> normalizedValue;
+    std::optional<units::Unit> declaredUnit;
+    std::optional<units::Unit> inferredUnit;
+    std::string unitName;
 };
 
 struct CompiledComponentType {
@@ -57,6 +67,9 @@ struct CompiledCompartment {
     int dimension = 3;
     std::string parentName;
     std::optional<CompartmentId> parent;
+    std::optional<units::Unit> declaredUnit;
+    std::string unitName;
+    std::optional<double> normalizedVolume;
 };
 
 enum class ObservableKind {
@@ -75,6 +88,27 @@ struct CompiledEnergyFactor {
     ResolvedExpression expression;
     std::optional<double> evaluatedValue;
     Pattern pattern;
+};
+
+// A transition-state contribution matched by reaction center rather than by
+// species pattern. Unlike CompiledEnergyFactor this never enters a ground-state
+// energy, so it carries a canonical reaction-center key instead of a Pattern.
+struct CompiledBarrierFactor {
+    std::size_t index = 0;
+    std::string label;
+    std::string sourceTransition;
+    std::string energyExpression;
+    ResolvedExpression expression;
+    std::optional<double> evaluatedValue;
+    // Canonical reaction center this barrier applies to. Symmetric under
+    // reversal, so one entry covers both traversal directions.
+    energy::ReactionCenterKey reactionCenter;
+    // Same key in printable form, for diagnostics and XML metadata.
+    std::string reactionCenterKey;
+    // False when the transition could not be lowered to a single supported
+    // reaction center. Backends must reject such a model rather than ignore
+    // the barrier.
+    bool centerResolved = false;
 };
 
 struct CompiledFunction {
@@ -117,6 +151,9 @@ struct CompiledSeed {
     std::optional<CompartmentId> compartmentId;
     std::string structuralFingerprint;
     Pattern pattern;
+    std::optional<units::Unit> declaredUnit;
+    std::string unitName;
+    std::optional<double> normalizedAmount;
 };
 
 enum class PopulationMapKind {
@@ -163,6 +200,7 @@ public:
     const std::vector<CompiledCompartment>& compartments() const noexcept { return compartments_; }
     const std::vector<CompiledRule>& rules() const noexcept { return rules_; }
     const std::vector<CompiledEnergyFactor>& energyFactors() const noexcept { return energyFactors_; }
+    const std::vector<CompiledBarrierFactor>& barrierFactors() const noexcept { return barrierFactors_; }
     const std::vector<CompiledFunction>& functions() const noexcept { return functions_; }
     const std::vector<CompiledObservable>& observables() const noexcept { return observables_; }
     const std::vector<CompiledSeed>& seeds() const noexcept { return seeds_; }
@@ -170,6 +208,7 @@ public:
     const std::vector<CompiledPopulationMap>& populationMaps() const noexcept { return populationMaps_; }
 
     std::size_t energyPatternCount() const noexcept { return energyFactors_.size(); }
+    std::size_t barrierPatternCount() const noexcept { return barrierFactors_.size(); }
     const FeatureSet& features() const noexcept { return features_; }
     const SymbolTable& symbols() const noexcept { return symbols_; }
     const std::vector<Diagnostic>& diagnostics() const noexcept { return diagnostics_; }
@@ -194,6 +233,7 @@ private:
     std::vector<CompiledRule> rules_;
     std::vector<CompiledFunction> functions_;
     std::vector<CompiledEnergyFactor> energyFactors_;
+    std::vector<CompiledBarrierFactor> barrierFactors_;
     std::vector<CompiledObservable> observables_;
     std::vector<CompiledSeed> seeds_;
     std::vector<CompiledPopulationType> populationTypes_;

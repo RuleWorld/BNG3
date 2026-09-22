@@ -1,6 +1,9 @@
 #pragma once
 #include <string>
+#include <optional>
 #include <vector>
+
+#include "units/Unit.hpp"
 
 namespace bng {
 namespace ast {
@@ -14,6 +17,10 @@ public:
     void setVolume(double volume);
     int getDimension() const;
     const std::string& getParent() const;
+    bool hasUnit() const;
+    const std::optional<units::Unit>& getUnit() const;
+    const std::string& getUnitName() const;
+    void setUnit(units::Unit unit, std::string name);
 
     // Topology methods (Perl Compartment.pm parity)
     bool isSurface() const { return dimension_ == 2; }
@@ -29,6 +36,8 @@ private:
     double volume_;
     int dimension_;
     std::string parent_;
+    std::optional<units::Unit> unit_;
+    std::string unitName_;
 };
 
 } // namespace ast

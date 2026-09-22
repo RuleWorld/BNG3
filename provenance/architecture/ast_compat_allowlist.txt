@@ -32,9 +32,12 @@ cpp/io/RulevizPatternWriter.hpp
 cpp/io/SbmlMultiWriter.hpp
 cpp/io/SbmlWriter.cpp
 cpp/io/SbmlWriter.hpp
+cpp/io/SbmlUnitWriter.hpp
 cpp/io/SscWriter.hpp
 cpp/io/XmlWriter.hpp
 cpp/nfsim/NFcore2/legacy_bridge.cpp
 cpp/nfsim/NFinput/NFinput.cpp
 cpp/nfsim/NFinput/NFinput_fromAst.cpp
 cpp/nfsim/NFinput/NFinput_fromModel.cpp
+cpp/io/EnergyExportGuard.cpp
+cpp/nfsim/NFfunction/nfsim_funcparser.h

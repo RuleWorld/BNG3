@@ -2,6 +2,8 @@
 build/
 b_build/
 _build/
+build-bngsim/
+build-clean/
 *.egg-info/
 dist/
 wheelhouse/

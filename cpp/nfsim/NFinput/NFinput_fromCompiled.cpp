@@ -1,6 +1,7 @@
 #include "NFinput_fromCompiled.hh"
 
 #include "compile/CompiledModel.hpp"
+#include "compile/energy/DrivenEnergy.hpp"
 #include "NFcore/NFcore.hh"
 #include "NFcore/compartment.hh"
 #include "NFcore/energyPattern.hh"
@@ -936,6 +937,15 @@ bool addSpeciesFromCompiled(const bng::compile::CompiledModel& model,
 bool addEnergyPatternsFromCompiled(const bng::compile::CompiledModel& model,
                                    NFcore::System* system, bool verbose) {
     if (system == nullptr) return false;
+
+    // Barrier patterns only have meaning through an Arrhenius expansion, which
+    // requires energy patterns. Reject the combination explicitly rather than
+    // building a system in which the barriers silently do nothing.
+    if (model.barrierPatternCount() != 0 && model.energyFactors().empty()) {
+        std::cerr << "[nfsim/compiled] barrier patterns require energy patterns "
+                     "and an Arrhenius rate law\n";
+        return false;
+    }
     if (model.energyFactors().empty()) return true;
 
     double phi = 0.5;
@@ -1044,6 +1054,52 @@ bool addEnergyPatternsFromCompiled(const bng::compile::CompiledModel& model,
             std::cerr << "[nfsim/compiled] energy pattern " << info.id
                       << " = " << info.energyValue << "\n";
     }
+    // Barrier patterns are keyed by reaction center, not by species pattern,
+    // so they are installed as a separate table rather than as energy
+    // patterns. A barrier whose transition did not lower to a single
+    // supported reaction center, or whose energy is not static, fails the
+    // whole construction instead of quietly contributing nothing.
+    if (model.barrierPatternCount() != 0) {
+        if (!bng::compile::energy::generalEnergyEnabled()) {
+            std::cerr << "[nfsim/compiled] barrier patterns require "
+                      << bng::compile::energy::generalEnergyGateName()
+                      << " to be set\n";
+            delete energyFunction;
+            return false;
+        }
+        bng::compile::energy::BarrierTable barrierTable;
+        for (const auto& barrier : model.barrierFactors()) {
+            const std::string label =
+                barrier.label.empty() ? "barrier_" + std::to_string(barrier.index + 1)
+                                      : barrier.label;
+            if (!barrier.centerResolved) {
+                std::cerr << "[nfsim/compiled] barrier pattern '" << label
+                          << "' has no supported reaction center\n";
+                delete energyFunction;
+                return false;
+            }
+            if (!barrier.evaluatedValue.has_value()) {
+                std::cerr << "[nfsim/compiled] barrier pattern '" << label
+                          << "' energy is not statically evaluable\n";
+                delete energyFunction;
+                return false;
+            }
+            std::string diagnostic;
+            if (!barrierTable.add(barrier.reactionCenter, *barrier.evaluatedValue,
+                                  label, diagnostic)) {
+                std::cerr << "[nfsim/compiled] " << diagnostic << "\n";
+                delete energyFunction;
+                return false;
+            }
+            if (verbose) {
+                std::cerr << "[nfsim/compiled] barrier pattern " << label << " = "
+                          << *barrier.evaluatedValue << " on "
+                          << barrier.reactionCenterKey << "\n";
+            }
+        }
+        energyFunction->setBarrierTable(std::move(barrierTable));
+    }
+
     system->setEnergyFunction(energyFunction);
     return true;
 }

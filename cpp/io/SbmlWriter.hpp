@@ -77,7 +77,6 @@ private:
         const engine::GeneratedNetwork* network,
         const std::vector<ObservableGroup>& groups);
 
-    static std::string writeUnitDefinitions(int level);
     static std::string writeSourceMetadata(const std::string& payload);
     static std::string writeCompartments(const ast::Model& model, int level);
     static std::string writeParameters(
