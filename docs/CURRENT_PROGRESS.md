@@ -1,14 +1,141 @@
 # BNG3 current progress
 
-**Audited:** 2026-09-15
+**Audited:** 2026-09-17
 **Repository:** `RuleWorld/BNG3`
-**Branch:** `codex/bng3-convergence-continuation-20260915`
-**Status:** implementation and validation checkpoint; convergence and release remain incomplete
+**Branch:** `feat/merge-nonequilibrium-convergence`
+**Status:** merged convergence + nonequilibrium energy — locally build-verified (408 CTest), awaiting hosted CI
 
 This is the live status page for the combined BNG3 migration tree. The older
 IR migration reports and formalization reports retained in the repository are
 historical inputs and provenance records; their embedded prose is not a new
 execution instruction.
+
+## Merged convergence + nonequilibrium energy — 2026-09-17 (locally build-verified)
+
+This branch merges the two source zips on top of `91fe936`:
+
+- `BNG3-convergence-2026-09-17.zip` — offline convergence pass (WO-1b single-nauty, WO-3/3b shared evaluator, `rint`/`sign`/`log`/`avg`, case-sensitive gate, `ModelOptions` validation, observable counting modes, per-stage NFsim fallback reasons)
+- `BNG3-nonequilibrium-energy.zip` — experimental `begin barrier patterns` / `driven_by(W)` layer gated by `BNG_NFSIM_GENERAL_ENERGY`
+
+Both trees were applied on `feat/merge-nonequilibrium-convergence` (`6fe02c5` on top of `ba35fba`). Build verification was performed in this environment:
+
+- `cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build` — succeeds after three merge fixes (`BNGAstVisitor.cpp:1852` qualified free function, `NetWriter.cpp:24` missing `BarrierCompiler`/`DrivenEnergy` includes, `BNGAstVisitor.cpp:1520` `stripQuotes` vs `getText()`)
+- `ctest --test-dir build --output-on-failure` — **408/408 passed** (was 404/408 before fixes: 4 observable-counting cases failed on dangling `BNGcoreLoweringContext` + double-quoted `setOption` values)
+- `PYTHONPATH=build/cpp:python python -m pytest tests/python -q` — **411 passed, 28 skipped** (3 `test_bngir.py` schema failures are expected: experimental `barrier_patterns`/`driving_work` not in published schema)
+- `tests/energy/standalone/run_checks.sh` — all check groups passed
+- `tools/check_architecture_dependencies.py` and `provenance/architecture-contracts.json` — updated and passing; `tests/energy/tests/cpp/test_barrier_*` etc. now listed as `required` with `test_energy_compiler_contracts`
+
+Remaining gaps per `AGENTS.md` §Validation: hosted CI (MSVC matrix, full corpus `71/71` strict, wheel matrix), independent BNG2/NFsim oracle parity for the new counting modes and for barrier/driven semantics (no oracle for the latter by design), and formal Lean checks.
+
+## Offline convergence pass — 2026-09-17
+
+A restricted-container static audit and low-risk fix pass. No build, no
+network, and no Git checkout were available at authoring time, so the original pass was **not build-verified**. Full detail, including the gap table, changed-files table,
+and deferred validation commands, is in
+[`OFFLINE_CONVERGENCE_PASS_2026-09-17.md`](OFFLINE_CONVERGENCE_PASS_2026-09-17.md).
+
+Previously `Implemented, awaiting build validation`; now **locally build-verified** on the merged branch (see above):
+
+- **One nauty build (WO-1b).** `cpp/nfsim/nauty24/` is deleted; `nfsim_core`
+  links the shared `nauty` target. The trees were identical modulo the
+  documented `set`->`nset` rename, and unifying on the NFsim variant also
+  fixed a missing MSVC `HAVE_SYSTYPES_H` guard. Locked by
+  `tests/python/test_single_nauty_contract.py` (10/10 locally).
+- **`rint` corrected in both expression engines.** BNG2 defines it as
+  `floor(x + 0.5)`; the shared evaluator used `std::rint` (half-to-even) and
+  NFsim used `std::round` (half-away-from-zero), so the two disagreed with
+  each other and each disagreed with the oracle. Oracle values were produced
+  by executing `legacy/perl/Perl2/Expression.pm:74` directly.
+- **One builtin table** (`cpp/ast/ExpressionBuiltins.hpp`) consumed by both
+  the shared evaluator and the direct-NFsim gate. Closed the `sign`/`log`
+  asymmetry, admitted `avg` (removing a false XML fallback), and made the gate
+  case-sensitive to match the ExprTk shim.
+- **`setOption` validation** (`cpp/ast/ModelOptions.hpp`) at the single
+  `Model::setOption` seam. `SpeciesLabel=Quasi` and invalid option values now
+  fail closed instead of being stored and ignored; corpus-present options
+  still load.
+- **Observable counting modes implemented** (`engine/ObservableProjection.cpp`).
+  `MoleculesObservables`/`SpeciesObservables` did not exist in BNG3 at all, so
+  a model requesting `CountUnique` silently received `CountAll` values. The two
+  keys are not the same operation: Molecules `CountUnique` divides each match
+  count by the pattern's automorphism number, while Species `CountUnique`
+  short-circuits the term loop so a species counts once. BNG2 has the symmetry
+  correction commented out on the Species branch. The Molecules division is
+  asserted exact rather than truncated.
+- **Per-stage direct-NFsim fallback reasons**, surfaced at both call sites and
+  as `Result.direct_unavailable_reason`.
+
+All six above are now linked in `bng_parser`/`nfsim_core`/`bng_engine` and exercised locally: `test_single_nauty_contract` (10/10), `test_expression_evaluator` (incl. `rint`/`sign`/`log`/engine-agreement, 4 new cases), `test_model_options` (4 cases), `test_observable_counting` (5 cases, fixed dangling `BNGcoreLoweringContext` + `stripQuotes`), and `test_nfsim_ast_adapter` fallback-reason checks — part of **408/408 CTest**.
+
+**Second pass, same day.** NFsim's separate expression engine is gone: the
+`mu::Parser` interface is retained but backed by
+`bng::parser::parseExpression` + `bng::eval::evaluate`, and ExprTk,
+`NFSIM_USE_EXPRTK`, and the root ExprTk `FetchContent` block are removed
+(WO-3 and WO-3b). The shim's underscore-remapping and logical-operator
+rewriting layers were deleted as unnecessary against the BNGL lexer and
+`Expression`'s native operators. `HNauty.hpp`
+is marked UNUSED-reference, `SpeciesLabel=Quasi` is accepted-but-warned as
+UNUSED, and `python/bionetgen/modelapi/` is marked legacy with its live
+default-path dependencies recorded — it is still imported by
+`bionetgen/__init__.py` and cannot be deleted yet. The nested
+local/composite direct-NFsim refusal is root-caused but deliberately NOT
+fixed; see the addendum. This pass is now also built and linked (`nfsim_core` no longer defines `NFSIM_USE_EXPRTK`, no `exprtk` include) and covered by the same 408/408 run.
+
+Remaining implementation gaps are not low-hanging: the direct-NFsim refusals
+that are still open are energy lowering (out of scope), population maps
+(fail-closed by design and routed through the hybrid backend), and nested
+local/composite function mapping, which is a semantic mismatch rather than a
+missing translation. `SpeciesLabel=Quasi` would mean adding a second
+canonicalization mode. `cpp/core/HNauty.hpp` still has zero callers pending
+the open largest-vs-canonical-form maintainer decision.
+
+The chief regression risks for the next hosted CI run remain the **MSVC matrix** (the
+merged nauty header changes `HAVE_SYSTYPES_H` under `_MSC_VER`) and the
+**strict validation corpus** (`setOption` can now throw; verified locally to still load corpus-present options).
+
+## Experimental nonequilibrium energy layer — barrier patterns and driving reservoirs
+
+Added but **gated off by default**. `begin barrier patterns` and `driven_by(W)`
+are accepted at the language surface and lowered through the AST, the compiled
+IR, both NFsim input paths, and XML serialization, implementing
+
+```
+k_f = exp[-(Ea + B + phi       * (dG - W)) / RT]
+k_r = exp[-(Ea + B + (phi - 1) * (dG - W)) / RT]
+```
+
+`BNG_NFSIM_GENERAL_ENERGY` must be set for any backend to accept either
+construct; unset, both report `Unsupported` for the network compiler and for
+NFsim. The gate is not a convenience switch — canonical NFsim and BNG2 do not
+implement these semantics, so the differential-parity evidence BNG3 normally
+requires cannot be produced yet.
+
+State of validation, stated precisely at authoring time. The original authoring environment had no network
+access, so the FetchContent build was never run and nothing had been linked or
+executed through a real parse.
+
+- **Executed and passing** (`tests/energy/standalone/run_checks.sh`, C++17
+  compiler only): the thermodynamic analysis including insertion-order
+  determinism; barrier keying, accumulation and canonical key round-trip; a
+  300-combination sweep proving the NFsim and network energy conventions
+  describe the same kinetics, plus a demonstration that the reverse-direction
+  work negation is load-bearing; the accepted/rejected surface syntax; and the
+  full post-parse lowering with all eight of its fail-closed paths.
+- **Type-checked only** (`-fsyntax-only` against real headers, never run): the
+  AST, capability, compiled-IR, XmlWriter, NFcore energy and NFsim input
+  adapters. `BarrierCompiler`'s graph-diff classification falls here, because
+  `PatternGraph` can only be built through ANTLR parse contexts — that is the
+  largest remaining gap.
+- **Not checked at all** (need the real ANTLR4 runtime): `BNGAstVisitor.cpp`,
+  `NetWriter.cpp`, `NFinput.cpp`, and the parse-dependent contract fixture.
+
+**Update 2026-09-17 on `feat/merge-nonequilibrium-convergence`:** the four previously `Not checked at all` units are now compiled and linked in `bng_parser`/`bng_engine`/`nfsim_core` (fixes: qualified `finalizeThermodynamicMetadata`, `NetWriter.cpp` includes, `stripQuotes` in `BNGAstVisitor`). `test_energy_compiler_contracts` now builds and passes with the promoted `future_barrier_driving_syntax`/`future_thermodynamic_constraints` plus `test_thermo_source_normalization`/`test_barrier_and_driven_energy`/`test_thermo_model_finalize`/`test_energy_export_guard` (43 cases total) as part of **408/408 CTest**; `standalone/run_checks.sh` still passes. `BarrierCompiler`'s ANTLR-dependent graph-diff remains the largest gap (covered by `standalone` but not yet by an oracle differential), and no independent oracle exists for barrier/driven semantics by design (gated).
+
+The compact `EnergyRxnClass` evaluator is disabled for any rule with nonzero
+barrier or work; those rules take the materialized Sekar expansion.
+
+Design, fail-closed inventory, and architecture table:
+[`docs/nonequilibrium_energy.md`](nonequilibrium_energy.md).
 
 ## Current continuation checkpoint — 2026-09-15
 

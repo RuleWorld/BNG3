@@ -1,308 +1,216 @@
-// nfsim_funcparser.h — ExprTk-based drop-in replacement for mu::Parser in NFsim
+// nfsim_funcparser.h — mu::Parser interface backed by the SHARED BNG3 evaluator
 //
-// Maintained by bngsim to keep expression handling aligned between the
-// ODE/SSA engines and the vendored NFsim runtime.
+// WO-3: one expression engine for the whole platform.
 //
-// This header provides a `mu::Parser` class with the same API surface as muParser
-// but backed by ExprTk. All existing NFsim code that uses `mu::Parser` works without
-// changes to variable names, namespace references, or calling patterns.
+// HISTORY
+// -------
+// BNG3 used to evaluate math two different ways. `bng::ast::Expression` served
+// the ODE RHS, the SSA/PLA/PSA propensities, network generation, observables,
+// and user functions. NFsim did its own thing: this header was an ExprTk-backed
+// drop-in for muParser, so every NFsim global function, local function,
+// composite function, and functional rate law was parsed from a *string* by
+// ExprTk and evaluated by ExprTk.
 //
-// Key design decisions:
-// - "Constants" are stored as mutable variables in internal storage, so
-//   DefineConst() can be called after SetExpr() (used by updateParameters/fileUpdate).
-// - ExprTk's `log` is natural log (matching bngsim). BNG's `ln` is aliased to natural log.
-// - Built-in functions match bngsim's expression.cpp: if(), ln(), rint(), sign(), etc.
-// - Constants: _PI, _e, _Na (NFsim convention) plus bngsim's _pi, _kB, _NA, _R, _h, _F.
+// Two engines for the same language is a correctness problem, not just
+// duplication. They agreed often enough that the places they disagreed went
+// unnoticed:
 //
-// IMPORTANT: ExprTk does not allow identifiers starting with underscore ('_').
-// NFsim uses _PI, _e, _Na as constant names, and BNG XML files may define
-// parameters with leading underscores (e.g., __FREE parameters in PyBNF,
-// __TFUN_VAL__ placeholders for time-dependent functions).
-// This shim transparently remaps: "_X" → "u_X" in both symbol registration
-// and expression preprocessing. The caller never sees this — they continue to
-// use DefineConst("_PI", ...) and SetExpr("sin(_e * _PI)") as before.
+//   - `rint` was `std::rint` (round-half-to-even) on the shared side and
+//     `std::round` (round-half-away-from-zero) here, and BNG2 defines it as
+//     `floor(x + 0.5)` (round-half-up). All three differed.
+//   - `sign` and `log` were accepted by NFsim but unimplemented in the shared
+//     evaluator, so they worked network-free and broke under ODE.
+//   - The direct-path builtin gate matched case-insensitively while ExprTk was
+//     compiled case-sensitively.
 //
-#ifndef NFSIM_FUNCPARSER_H_
-#define NFSIM_FUNCPARSER_H_
+// Those were fixed by reconciling the lists. This file removes the cause: NFsim
+// now parses with the same parser and evaluates with the same tree walker as
+// everything else, so the classes of divergence above cannot recur.
+//
+// WHAT THIS IS NOW
+// ----------------
+// The `mu::Parser` *interface* is retained deliberately. NFsim holds
+// `mu::Parser*` in `GlobalFunction`, `LocalFunction`, `CompositeFunction`, and
+// `Observable::addReferenceToMyself`, and threads it through reaction rate
+// evaluation. Reworking all of that is a separate, riskier change with no
+// semantic benefit. The surface used by NFsim is small and stable:
+//
+//     exception_type / GetMsg()
+//     DefineVar(name, double*)      bind a live pointer
+//     DefineConst(name, value)      store/refresh a value
+//     SetExpr(string)               parse
+//     Eval()                        evaluate
+//     GetExpr()                     original text
+//
+// (`GetVar()` appears only in commented-out code in function.cpp.)
+//
+// WHAT GOT DELETED, AND WHY IT WAS SAFE
+// -------------------------------------
+//   - The ExprTk dependency, and `NFSIM_USE_EXPRTK`. This completes WO-3b.
+//   - `remap_name` / `remap_expression` / `trackUnderscoreName`. These existed
+//     solely because ExprTk rejects identifiers beginning with `_`, so BNG's
+//     `_PI`, `_e`, `_Na` and the injected `__TFUN_VAL__` had to be rewritten to
+//     `u_PI` and friends on the way in and the expression text rescanned. The
+//     BNGL lexer accepts them directly -- `STRING: (LETTER | '_') (LETTER |
+//     DIGIT | '_')*` in BNGLexer.g4 -- so the entire remapping layer is
+//     unnecessary. Deleting it also removes a latent bug: the rescan rewrote
+//     any `_`-leading token anywhere in the string, including inside contexts
+//     it had no business touching.
+//   - `normalize_legacy_logical_operators`, which rewrote `&&` to ` and ` and
+//     `||` to ` or ` for ExprTk. `bng::ast::Expression` implements `&&`, `||`,
+//     `^^`, `!`, `~`, `%`, `**`, and the full comparison set natively, and the
+//     BNGL grammar tokenizes them, so no rewriting is needed.
+//   - `LnFunction`, `RintFunction`, `SignFunction`: adapters for names ExprTk
+//     lacked. The shared evaluator implements `ln`, `rint`, and `sign` itself.
+//   - `IfFunction`: was already unreachable (ExprTk's `if` is a grammar
+//     keyword) and had the wrong truthiness (`cond > 0.5` rather than
+//     `cond != 0`).
+//
+// BEHAVIORAL NOTES FOR REVIEW
+// ---------------------------
+//   - Symbol lookup now happens at *evaluation* time against a live map
+//     instead of being bound into a compiled ExprTk object. `DefineVar` and
+//     `DefineConst` after `SetExpr` therefore no longer force a recompile,
+//     which is what `__TFUN_VAL__` injection depended on and what
+//     `Observable::addReferenceToMyself` exercises on every observable update.
+//   - This is a tree walk rather than ExprTk's compiled form, so per-evaluation
+//     cost is expected to rise. Convergence before performance, per AGENTS.md;
+//     if functional-rate models regress, the fix is to memoize in
+//     `bng::ast::Expression`, which benefits every backend, not to reintroduce
+//     a second engine.
+//   - Unknown symbols throw `exception_type`, matching muParser/ExprTk, so
+//     NFsim's existing catch sites are unchanged.
 
-// ExprTk compilation options — disable features we don't need.
-#define exprtk_disable_string_capabilities
-#define exprtk_disable_rtl_io_file
-#define exprtk_disable_rtl_vecops
-// BNG is case-sensitive for parameter names (e.g., k3 ≠ K3).
-// ExprTk defaults to case-insensitive, which silently merges k3/K3.
-#define exprtk_disable_caseinsensitivity
-#include "exprtk.hpp"
+#pragma once
 
-#include <cmath>
-#include <iostream>
-#include <memory>
+#include "ast/Expression.hpp"
+#include "ast/ExpressionEval.hpp"
+
+#include <functional>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
-#include <vector>
+
+// Declared in cpp/parser/BNGAstVisitor.hpp. Re-declared here rather than
+// included because that header pulls in the generated ANTLR visitor headers,
+// and this file is included broadly across NFsim.
+namespace bng::parser {
+bng::ast::Expression parseExpression(const std::string& exprText);
+}
 
 namespace mu {
-
-// ─── Custom ExprTk function adapters ─────────────────────────────────────────
-
-namespace detail {
-
-// 3-arg: if(cond, true_val, false_val)
-// NOTE: This custom IfFunction is effectively dead code. ExprTk has a
-// built-in `if` keyword that takes precedence over add_function("if", ...).
-// The built-in uses nonzero truthiness (cond != 0), matching BNG Perl semantics.
-template <typename T>
-struct IfFunction : public exprtk::ifunction<T> {
-    IfFunction() : exprtk::ifunction<T>(3) {
-        exprtk::ifunction<T>::allow_zero_parameters() = false;
-    }
-    T operator()(const T& cond, const T& true_val, const T& false_val) override {
-        return (cond > T(0.5)) ? true_val : false_val;  // DEAD CODE — see note above
-    }
-};
-
-// 1-arg: ln(x) — natural logarithm (backward-compat alias)
-template <typename T>
-struct LnFunction : public exprtk::ifunction<T> {
-    LnFunction() : exprtk::ifunction<T>(1) {}
-    T operator()(const T& x) override { return std::log(x); }
-};
-
-// 1-arg: rint(x) — round to nearest integer
-template <typename T>
-struct RintFunction : public exprtk::ifunction<T> {
-    RintFunction() : exprtk::ifunction<T>(1) {}
-    T operator()(const T& x) override { return std::round(x); }
-};
-
-// 1-arg: sign(x) — signum function
-template <typename T>
-struct SignFunction : public exprtk::ifunction<T> {
-    SignFunction() : exprtk::ifunction<T>(1) {}
-    T operator()(const T& x) override {
-        return (x > T(0)) ? T(1) : ((x < T(0)) ? T(-1) : T(0));
-    }
-};
-
-// ─── Underscore name remapping ───────────────────────────────────────────────
-// ExprTk rejects identifiers starting with '_'. NFsim/BNG uses _PI, _e, _Na,
-// and TFUN injects __TFUN_VAL__ after SetExpr(). We remap: "_X" → "u_X"
-// transparently in both symbol names and expressions.
-
-inline std::string remap_name(const std::string& name) {
-    if (!name.empty() && name[0] == '_') {
-        return "u_" + name.substr(1);
-    }
-    return name;
-}
-
-// Remap ALL underscore-prefixed identifiers in an expression string.
-// This scans the expression for any token starting with '_' and applies
-// remap_name() to it, regardless of whether it was previously registered
-// via DefineConst/DefineVar. This is critical for TFUN support where
-// __TFUN_VAL__ is injected via DefineConst *after* SetExpr() — the
-// expression string must be remapped at SetExpr() time even though the
-// name hasn't been tracked yet.
-inline std::string remap_expression(const std::string& expr,
-    const std::vector<std::string>& /* underscore_names — kept for API compat */)
-{
-    std::string result;
-    result.reserve(expr.size() + 16);
-    size_t i = 0;
-    while (i < expr.size()) {
-        // Check for underscore-leading identifier at a word boundary
-        if (expr[i] == '_') {
-            // Verify it's at a word boundary (not mid-identifier)
-            bool at_boundary = (i == 0) ||
-                (!std::isalnum(expr[i - 1]) && expr[i - 1] != '_');
-            if (at_boundary) {
-                // Collect the full identifier: _[A-Za-z0-9_]+
-                size_t start = i;
-                i++;  // skip the leading '_'
-                while (i < expr.size() &&
-                       (std::isalnum(expr[i]) || expr[i] == '_')) {
-                    i++;
-                }
-                std::string token = expr.substr(start, i - start);
-                result += remap_name(token);
-                continue;
-            }
-        }
-        result += expr[i];
-        i++;
-    }
-    return result;
-}
-
-// BNG2/NFsim expressions commonly spell logical conjunction and disjunction
-// as && and ||.  ExprTk deliberately reserves those characters and accepts
-// the word operators instead.  Normalize only the legacy operators here;
-// callers still observe the original expression through GetExpr().
-inline std::string normalize_legacy_logical_operators(const std::string& expr)
-{
-    std::string result;
-    result.reserve(expr.size() + 8);
-    for (std::size_t i = 0; i < expr.size();) {
-        if (expr.compare(i, 2, "&&") == 0) {
-            result += " and ";
-            i += 2;
-        } else if (expr.compare(i, 2, "||") == 0) {
-            result += " or ";
-            i += 2;
-        } else {
-            result.push_back(expr[i++]);
-        }
-    }
-    return result;
-}
-
-}  // namespace detail
-
-// ─── mu::Parser — ExprTk-based drop-in replacement ──────────────────────────
 
 class Parser {
 public:
     struct exception_type : public std::runtime_error {
-        exception_type(const std::string& msg) : std::runtime_error(msg) {}
+        explicit exception_type(const std::string& msg) : std::runtime_error(msg) {}
         std::string GetMsg() const { return what(); }
     };
 
-    Parser()
-        : compiled_(false)
-    {
-        // Register built-in constants (NFsim convention: _PI, _e, _Na)
+    Parser() {
+        // NFsim/BNG convention. Registered as constants so they resolve
+        // through the same symbol path as observables and parameters; the
+        // shared evaluator also understands the `_pi()` and `_e()` call forms.
         DefineConst("_PI", 3.14159265358979323846);
-        DefineConst("_e",  2.71828182845904523536);
+        DefineConst("_e", 2.71828182845904523536);
         DefineConst("_Na", 6.02214076e23);
 
-        // Additional constants supported by bngsim: _pi, _NA, _kB, _R, _h, _F
+        // Additional constants supported by bngsim.
         DefineConst("_pi", 3.14159265358979323846);
         DefineConst("_NA", 6.02214076e23);
         DefineConst("_kB", 1.380649e-23);
-        DefineConst("_R",  8.314462618153241);
-        DefineConst("_h",  6.62607015e-34);
-        DefineConst("_F",  96485.33212331002);
-
-        // Register backward-compatible aliases
-        symbol_table_.add_function("ln",   ln_func_);
-        symbol_table_.add_function("rint", rint_func_);
-        symbol_table_.add_function("sign", sign_func_);
-        symbol_table_.add_function("if",   if_func_);
+        DefineConst("_R", 8.314462618153241);
+        DefineConst("_h", 6.62607015e-34);
+        DefineConst("_F", 96485.33212331002);
     }
 
     ~Parser() = default;
 
-    // Non-copyable (symbol_table holds pointers to internal storage)
+    // Non-copyable: variables_ holds borrowed pointers into caller state.
     Parser(const Parser&) = delete;
     Parser& operator=(const Parser&) = delete;
 
-    // ─── DefineVar: bind a variable name to an external double* ─────────
+    /// Bind a name to a caller-owned double. Read at evaluation time, so the
+    /// caller may update the pointee freely without reparsing.
     void DefineVar(const std::string& name, double* ptr) {
-        std::string mapped = detail::remap_name(name);
-        if (name != mapped) {
-            // Track underscore-prefixed name for expression remapping
-            trackUnderscoreName(name);
+        if (ptr == nullptr) {
+            throw exception_type("DefineVar('" + name + "') was given a null pointer");
         }
-        if (compiled_) {
-            symbol_table_.add_variable(mapped, *ptr);
-            recompile();
-        } else {
-            symbol_table_.add_variable(mapped, *ptr);
-        }
+        variables_[name] = ptr;
     }
 
-    // ─── DefineConst: store value internally, register as variable ──────
+    /// Store or refresh a value. Safe after SetExpr; no reparse occurs.
     void DefineConst(const std::string& name, double value) {
-        std::string mapped = detail::remap_name(name);
-        if (name != mapped) {
-            trackUnderscoreName(name);
-        }
-        auto it = const_storage_.find(mapped);
-        if (it != const_storage_.end()) {
-            *(it->second) = value;
-        } else {
-            auto ptr = std::make_unique<double>(value);
-            double* raw = ptr.get();
-            const_storage_[mapped] = std::move(ptr);
-            symbol_table_.add_variable(mapped, *raw);
-        }
+        constants_[name] = value;
     }
 
-    // ─── SetExpr: compile the expression ────────────────────────────────
+    /// Parse the expression with the shared BNGL expression parser.
     void SetExpr(const std::string& expr) {
-        original_expr_string_ = expr;
-        const std::string normalized_expr =
-            detail::normalize_legacy_logical_operators(expr);
-        // Remap underscore-prefixed identifiers before ExprTk compilation
-        expr_string_ = detail::remap_expression(normalized_expr, underscore_names_);
-        compile();
+        originalExpr_ = expr;
+        try {
+            expression_ = bng::parser::parseExpression(expr);
+        } catch (const std::exception& error) {
+            expression_.reset();
+            throw exception_type("failed to parse expression '" + expr + "': " +
+                                 error.what());
+        }
     }
 
-    // ─── Eval: evaluate the compiled expression ─────────────────────────
     double Eval() {
-        if (!compiled_) {
+        if (!expression_.has_value()) {
             throw exception_type("Expression not compiled (call SetExpr first)");
         }
-        return expression_.value();
+        const auto resolve = [this](const std::string& name) -> double {
+            const auto variable = variables_.find(name);
+            if (variable != variables_.end()) return *variable->second;
+            const auto constant = constants_.find(name);
+            if (constant != constants_.end()) return constant->second;
+            throw exception_type("unknown symbol '" + name + "' in expression '" +
+                                 originalExpr_ + "'");
+        };
+        try {
+            // Through the shared facade, so NFsim and the engine reach the
+            // evaluator by the same route rather than each calling
+            // Expression::evaluate with its own conventions.
+            return bng::eval::evaluate(
+                *expression_,
+                bng::eval::Context{currentTime(),
+                                   std::function<double(const std::string&)>(resolve)});
+        } catch (const exception_type&) {
+            throw;
+        } catch (const std::exception& error) {
+            // Domain errors, arity errors, and unsupported-construct errors
+            // from the shared evaluator become the exception type NFsim's
+            // existing call sites already catch.
+            throw exception_type(std::string("error evaluating '") + originalExpr_ +
+                                 "': " + error.what());
+        }
     }
 
-    // ─── GetExpr: return the ORIGINAL expression string ─────────────────
-    std::string GetExpr() const {
-        return original_expr_string_;
-    }
+    /// The expression as the caller supplied it.
+    std::string GetExpr() const { return originalExpr_; }
 
 private:
-    void trackUnderscoreName(const std::string& name) {
-        for (const auto& n : underscore_names_) {
-            if (n == name) return;  // already tracked
-        }
-        underscore_names_.push_back(name);
+    /// Value supplied to the shared evaluator for `time()` / `t()`.
+    ///
+    /// NFsim exposes simulation time as an ordinary symbol (the XML loader
+    /// records a "Time" varRef; direct construction uses setCounterFromTime),
+    /// so read it from the symbol table to keep the symbol spelling and the
+    /// call form in agreement. Absent means zero, matching the shared
+    /// evaluator's default.
+    double currentTime() const {
+        const auto variable = variables_.find("time");
+        if (variable != variables_.end()) return *variable->second;
+        const auto constant = constants_.find("time");
+        if (constant != constants_.end()) return constant->second;
+        return 0.0;
     }
 
-    void compile() {
-        expression_ = exprtk::expression<double>();  // reset
-        expression_.register_symbol_table(symbol_table_);
-
-        exprtk::parser<double> parser;
-        // Increase max stack depth for deeply nested if() expressions.
-        // ExprTk default is 400 (~200 nested if()), muParser handled 2000.
-        parser.settings().set_max_stack_depth(4096);
-        if (!parser.compile(expr_string_, expression_)) {
-            throw exception_type(
-                "ExprTk compilation failed for '" + original_expr_string_ +
-                "' (remapped: '" + expr_string_ + "'): " +
-                parser.error());
-        }
-        compiled_ = true;
-    }
-
-    void recompile() {
-        if (!expr_string_.empty()) {
-            compile();
-        }
-    }
-
-    // ExprTk objects
-    exprtk::symbol_table<double> symbol_table_;
-    exprtk::expression<double> expression_;
-    std::string expr_string_;           // remapped expression (what ExprTk sees)
-    std::string original_expr_string_;  // original expression (what caller sees)
-    bool compiled_;
-
-    // Internal storage for "constants" (mutable via DefineConst after SetExpr)
-    std::unordered_map<std::string, std::unique_ptr<double>> const_storage_;
-
-    // Track names that start with '_' for expression remapping
-    std::vector<std::string> underscore_names_;
-
-    // Custom function objects (must outlive symbol_table_)
-    detail::IfFunction<double> if_func_;
-    detail::LnFunction<double> ln_func_;
-    detail::RintFunction<double> rint_func_;
-    detail::SignFunction<double> sign_func_;
+    std::unordered_map<std::string, double*> variables_;
+    std::unordered_map<std::string, double> constants_;
+    std::optional<bng::ast::Expression> expression_;
+    std::string originalExpr_;
 };
 
-}  // namespace mu
-
-#endif  // NFSIM_FUNCPARSER_H_
+} // namespace mu

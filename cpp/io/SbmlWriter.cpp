@@ -1,5 +1,7 @@
 #include "SbmlWriter.hpp"
 
+#include "EnergyExportGuard.hpp"
+
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
@@ -63,6 +65,7 @@ std::string SbmlWriter::write(const ast::Model& model, const engine::GeneratedNe
 }
 
 std::string SbmlWriter::write(const ast::Model& model, const engine::GeneratedNetwork* network, const Options& options) {
+    requireNoEnergySemantics(model, "SBML");
     std::ostringstream sbml;
 
     // Compute observable groups (needs network for species matching)

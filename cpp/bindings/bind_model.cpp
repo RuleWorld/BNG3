@@ -7,6 +7,7 @@
 #include "ast/Observable.hpp"
 #include "ast/MoleculeType.hpp"
 #include "ast/SeedSpecies.hpp"
+#include "ast/BarrierPattern.hpp"
 #include "ast/ReactionRule.hpp"
 #include "ast/Function.hpp"
 #include "ast/Compartment.hpp"
@@ -80,9 +81,27 @@ void bind_model(py::module_& m) {
             return "<SeedSpecies '" + ss.getPattern() + "'>";
         });
 
+    // Move-only: it owns a ReactionRule, so expose it by reference only.
+    py::class_<BarrierPattern>(m, "BarrierPattern")
+        .def_property_readonly("label", &BarrierPattern::getLabel)
+        .def_property_readonly("expression", [](const BarrierPattern& bp) {
+            return bp.expression().toString();
+        })
+        .def_property_readonly("has_expression", &BarrierPattern::hasExpression)
+        .def_property_readonly("transition",
+            py::overload_cast<>(&BarrierPattern::transition, py::const_),
+            py::return_value_policy::reference_internal)
+        .def("__repr__", [](const BarrierPattern& bp) {
+            return "<BarrierPattern " + bp.toString() + ">";
+        });
+
     py::class_<ReactionRule>(m, "ReactionRule")
         .def_property_readonly("label", &ReactionRule::getLabel)
         .def_property_readonly("is_bidirectional", &ReactionRule::isBidirectional)
+        .def_property_readonly("has_driving_work", &ReactionRule::hasDrivingWork)
+        .def_property_readonly("driving_work", [](const ReactionRule& rr) {
+            return rr.drivingWorkExpression().toString();
+        })
         .def_property_readonly("rule_name", &ReactionRule::getRuleName)
         .def_property_readonly("reactant_patterns", [](const ReactionRule& rr) {
             std::vector<std::string> result;
@@ -173,6 +192,9 @@ void bind_model(py::module_& m) {
                                py::return_value_policy::reference_internal)
         .def_property_readonly("energy_patterns", &Model::getEnergyPatterns,
                                py::return_value_policy::reference_internal)
+        .def_property_readonly("barrier_patterns",
+            py::overload_cast<>(&Model::getBarrierPatterns, py::const_),
+            py::return_value_policy::reference_internal)
         .def_property_readonly("population_maps", &Model::getPopulationMaps,
                                py::return_value_policy::reference_internal)
         .def_property_readonly("compartments",

@@ -146,18 +146,12 @@ if(BUILD_BNGSIM_ADAPTER)
         INTERFACE_INCLUDE_DIRECTORIES "${BNGSIM_INCLUDE_DIR}")
 endif()
 
-# --- ExprTk (header-only expression parser for NFsim) ---
-FetchContent_Declare(
-    exprtk
-    GIT_REPOSITORY https://github.com/ArashPartow/exprtk.git
-    GIT_TAG        0.0.3
-    CONFIGURE_COMMAND ""
-    BUILD_COMMAND ""
-)
-FetchContent_GetProperties(exprtk)
-if(NOT exprtk_POPULATED)
-    FetchContent_Populate(exprtk)
-endif()
+# --- ExprTk: REMOVED (WO-3b, 2026-09-17) ---
+# NFsim used to parse and evaluate function/rate-law strings with ExprTk,
+# giving BNG3 two expression engines for one language. NFsim now goes through
+# bng::parser::parseExpression + bng::ast::Expression like every other
+# backend; see cpp/nfsim/NFfunction/nfsim_funcparser.h. Removing this
+# FetchContent block also drops a network dependency from a cold configure.
 
 # --- pybind11 ---
 if(BUILD_PYTHON_BINDINGS)

@@ -18,9 +18,8 @@
 
 using namespace std;
 using namespace NFcore;
-#ifndef NFSIM_USE_EXPRTK
-using namespace mu;
-#endif
+// NFSIM_USE_EXPRTK is gone (WO-3b). mu::Parser is the shared-evaluator shim in
+// nfsim_funcparser.h and is referenced explicitly, so no using-directive.
 
 namespace {
 

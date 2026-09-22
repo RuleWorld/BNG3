@@ -1,5 +1,7 @@
 #include "MexWriter.hpp"
 
+#include "EnergyExportGuard.hpp"
+
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
@@ -23,6 +25,7 @@ std::string MexWriter::write(const ast::Model& model, const engine::GeneratedNet
 }
 
 std::string MexWriter::write(const ast::Model& model, const engine::GeneratedNetwork& network, const Options& opts) {
+    requireNoEnergySemantics(model, "MEX");
     std::ostringstream out;
 
     const std::string modelName = model.getModelName();

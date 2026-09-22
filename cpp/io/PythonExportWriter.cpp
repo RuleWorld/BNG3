@@ -1,5 +1,7 @@
 #include "PythonExportWriter.hpp"
 
+#include "EnergyExportGuard.hpp"
+
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
@@ -23,6 +25,7 @@ std::string PythonExportWriter::write(const ast::Model& model, const engine::Gen
 }
 
 std::string PythonExportWriter::write(const ast::Model& model, const engine::GeneratedNetwork& network, const Options& opts) {
+    requireNoEnergySemantics(model, "Python export");
     std::ostringstream py;
 
     const std::string modelName = model.getModelName();

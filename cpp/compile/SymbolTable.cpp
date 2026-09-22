@@ -48,6 +48,15 @@ SymbolTable SymbolTable::fromModel(const ast::Model& model) {
     for (const auto& energyPattern : model.getEnergyPatterns()) {
         result.add(SymbolKind::EnergyPattern, energyPattern.getLabel());
     }
+    for (std::size_t index = 0; index < model.getBarrierPatterns().size(); ++index) {
+        const auto& barrier = model.getBarrierPatterns()[index];
+        // Unlabelled barriers still need a stable symbol so diagnostics can
+        // name them; match the synthetic naming used by the compiler.
+        result.add(SymbolKind::BarrierPattern,
+                   barrier.getLabel().empty()
+                       ? "barrier_" + std::to_string(index + 1)
+                       : barrier.getLabel());
+    }
     for (const auto& mapping : model.getPopulationMaps()) {
         const auto& name = !mapping.populationName.empty()
             ? mapping.populationName : mapping.populationFunction;
