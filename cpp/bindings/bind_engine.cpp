@@ -11,6 +11,8 @@
 #include "engine/OdeIntegrator.hpp"
 #include "engine/PlaSimulator.hpp"
 #include "engine/PsaSimulator.hpp"
+#include "engine/FiniteBackend.hpp"
+#include "engine/BngsimBackend.hpp"
 #include "actions/ActionDispatch.hpp"
 
 namespace py = pybind11;
@@ -306,6 +308,99 @@ void bind_engine(py::module_& m) {
         py::arg("poplevel") = 100,
         py::arg("t_start") = 0.0,
         "Run PSA simulation on a generated network");
+
+    // --- Finite backend dispatch (BNGsim canonical backend) ---
+    m.def("bngsim_available", []() { return isBngsimAvailable(); },
+          "Whether the BNGsim finite backend is available in this build");
+    m.def("bngsim_version", []() { return bngsimVersion(); },
+          "Pinned BNGsim version/revision or 'unavailable'");
+    m.def("bngsim_capabilities", []() {
+        py::dict d;
+        auto caps = getBngsimCapabilities();
+        d["available"] = caps.available;
+        d["version"] = caps.version;
+        d["supports_ode"] = caps.supportsOde;
+        d["supports_ssa"] = caps.supportsSsa;
+        d["supports_psa"] = caps.supportsPsa;
+        d["supports_pla"] = caps.supportsPla;
+        return d;
+    }, "BNGsim capability object for the current build");
+    m.def("check_bngsim_lowering", [](Model& model, GeneratedNetwork& network) {
+        py::dict d;
+        auto check = checkBngsimLowering(model, network);
+        d["supported"] = check.supported;
+        d["blockers"] = check.blockers;
+        return d;
+    }, py::arg("model"), py::arg("network"),
+       "Whether this generated network can be faithfully lowered to BNGsim");
+    m.def("simulate_ode_bngsim", [](Model& model, GeneratedNetwork& network,
+                                     double t_end, int n_steps, double t_start,
+                                     double rtol, double atol, const std::string& method,
+                                     double max_step, bool steady_state,
+                                     double steady_state_tol, const std::string& stop_if,
+                                     const std::vector<double>& sample_times,
+                                     std::size_t max_sim_steps,
+                                     std::size_t output_step_interval, bool sparse,
+                                     double check_product_scale) {
+        OdeOptions opts;
+        opts.tStart = t_start;
+        opts.tEnd = t_end;
+        opts.nSteps = n_steps;
+        opts.rtol = rtol;
+        opts.atol = atol;
+        opts.method = method;
+        opts.maxStep = max_step;
+        opts.steadyState = steady_state;
+        opts.steadyStateTol = steady_state_tol;
+        opts.stopIf = stop_if;
+        opts.sampleTimes = sample_times;
+        opts.maxSimSteps = max_sim_steps;
+        opts.outputStepInterval = output_step_interval;
+        opts.sparse = sparse;
+        opts.checkProductScale = check_product_scale;
+        py::gil_scoped_release release;
+        OdeResult result = simulateFiniteOde(model, network, opts, FiniteBackend::Bngsim);
+        py::gil_scoped_acquire acquire;
+        py::dict d = result_to_dict(result, model);
+        d["backend"] = py::cast(std::string("bngsim"));
+        return d;
+    }, py::arg("model"), py::arg("network"),
+       py::arg("t_end") = 100.0, py::arg("n_steps") = 100,
+       py::arg("t_start") = 0.0, py::arg("rtol") = 1e-8, py::arg("atol") = 1e-8,
+       py::arg("method") = "cvode", py::arg("max_step") = 0.0,
+       py::arg("steady_state") = false, py::arg("steady_state_tol") = 1e-8,
+       py::arg("stop_if") = "", py::arg("sample_times") = std::vector<double>{},
+       py::arg("max_sim_steps") = 0, py::arg("output_step_interval") = 0,
+       py::arg("sparse") = false, py::arg("check_product_scale") = 0.0,
+       "Run ODE via the BNGsim backend (fails closed if model not lowerable)");
+    m.def("simulate_ssa_bngsim", [](Model& model, GeneratedNetwork& network,
+                                     double t_end, int n_steps, double t_start, int seed,
+                                     const std::string& stop_if,
+                                     const std::vector<double>& sample_times,
+                                     std::size_t max_sim_steps,
+                                     std::size_t output_step_interval) {
+        OdeOptions opts;
+        opts.tStart = t_start;
+        opts.tEnd = t_end;
+        opts.nSteps = n_steps;
+        opts.method = "ssa";
+        opts.seed = seed;
+        opts.stopIf = stop_if;
+        opts.sampleTimes = sample_times;
+        opts.maxSimSteps = max_sim_steps;
+        opts.outputStepInterval = output_step_interval;
+        py::gil_scoped_release release;
+        OdeResult result = simulateFiniteSsa(model, network, opts, FiniteBackend::Bngsim);
+        py::gil_scoped_acquire acquire;
+        py::dict d = result_to_dict(result, model);
+        d["backend"] = py::cast(std::string("bngsim"));
+        return d;
+    }, py::arg("model"), py::arg("network"),
+       py::arg("t_end") = 100.0, py::arg("n_steps") = 100,
+       py::arg("t_start") = 0.0, py::arg("seed") = 0,
+       py::arg("stop_if") = "", py::arg("sample_times") = std::vector<double>{},
+       py::arg("max_sim_steps") = 0, py::arg("output_step_interval") = 0,
+       "Run SSA via the BNGsim backend (fails closed if not lowerable or not wired)");
 
     m.def("execute", [](Model& model, const std::string& source_path, bool verbose) {
         py::gil_scoped_release release;

@@ -203,24 +203,61 @@ Validation records `construction_path` and requires the direct leg to report
 also receive explicit repository-root and `python/` import paths so ensemble
 evidence cannot depend on the caller's environment.
 
-An independent solver bridge is available only when configured explicitly with
-`BUILD_BNGSIM_ADAPTER=ON`, `BNGSIM_INCLUDE_DIR`, and `BNGSIM_LIBRARY`. It maps
-the generated network directly to BNGsim without writing a `.net` file, and
-compiles BNGL `Molecules`/`Species` observable patterns with the same
-BNGcore/Ullmann semantics used by the native network path, and lowers bounded
-inline/absolute-path TFUN expressions to BNGsim table functions. It rejects
-non-reference rate expressions, unsupported TFUN provenance, and unsupported
-model/protocol surfaces before solver construction. The default build does not
-require BNGsim; the optional path therefore does not establish NFsim/BNG2
-parity.
+### Finite-network backend boundary (ADR 0003)
+
+BNG3 treats finite-network numerics as an external concern owned by **BNGsim**
+where semantics are supported. The boundary is narrow and explicit:
+
+- `cpp/engine/FiniteBackend.{hpp,cpp}` owns the `FiniteBackend` enum
+  (`native`/`bngsim`), `BngsimCapabilities` (`available`, `version`,
+  `supportsOde/Ssa/Psa`), and `BngsimLoweringCheck` (`supported`, `blockers`).
+  It never throws on capability queries and centralizes the
+  `resolveFiniteBackend()` decision.
+- `cpp/engine/BngsimAdapter.{hpp,cpp}` is the sole lowering that translates a
+  `GeneratedNetwork` into `bngsim::NetworkModel` in memory (no `.net`
+  serialization). It compiles BNGL `Molecules`/`Species` observables with the
+  same BNGcore/Ullmann semantics as the native path and lowers bounded
+  inline/absolute-path TFUN expressions to BNGsim table functions.
+- `cpp/engine/BngsimBackend.{hpp,cpp}` owns simulation execution on the lowered
+  model (`simulateOdeViaBngsim`, `simulateSsaViaBngsim`) and the single result-
+  adaptation boundary `convertBngsimResult → OdeResult` (time, concentration
+  ordering, observable names/values, initial/final point, sample-times,
+  error handling).
+
+The Python layer (`python/bionetgen/model.py:BioNetGenModel.simulate`) is the
+primary dispatch:
+
+```
+model.simulate(method="ode") ─┐
+model.simulate(method="ssa") ─┼─ finite network → FiniteBackend → BNGsim (preferred, opt-in)
+model.simulate(method="nf")  ─── rule model → NFsim (independent)
+```
+
+- `backend="auto"` (default) keeps `native` during migration for stability;
+  developers/CI may set `backend="bngsim"` or `BIONETGEN_FINITE_BACKEND=bngsim`
+  to exercise the BNGsim path for supported models.
+- Unsupported forms fail closed before solver construction with
+  `BNGsim adapter rejected …` and are surfaced as
+  `BioNetGen finite-network backend cannot represent …`; `method="nf"` is never
+  routed through BNGsim.
+- The BNGsim bridge is available only when configured with
+  `BUILD_BNGSIM_ADAPTER=ON`, `BNGSIM_INCLUDE_DIR`, and `BNGSIM_LIBRARY`. The
+  default build does not require BNGsim. The adapter rejects non-reference rate
+  expressions, unsupported TFUN provenance, and unsupported model/protocol
+  surfaces (compartments, energy/barrier patterns, `driven_by()`, population
+  maps, protocol actions, local-function arguments) before solver construction.
+- Result adaptation converts the BNGsim trajectory to the existing BNG3
+  `SimResult` semantics; `SimResult.backend` (`"native"`/`"bngsim"`/`"nfsim"`)
+  is exposed for test/diagnostics without breaking result compatibility.
 
 The evaluated adapter preserves generated species, statistical factors, direct
 elementary/function rate references, and pattern-weighted observables.
 It was tested against BNGsim commit
-`49dc939035f5a272da663f8c9586e3c9f0e1c041`; this evidence does not choose a
-long-term network solver.
-The scope and non-selection decision are recorded in
-[ADR 0002](adr/0002-bngsim-adapter-scope.md).
+`49dc939035f5a272da663f8c9586e3c9f0e1c041`. The selection of BNGsim as the
+intended canonical finite backend and the full rejection inventory are recorded
+in [ADR 0003](adr/0003-bngsim-canonical-finite-backend.md) and
+[bngsim-migration-status.md](bngsim-migration-status.md); ADR 0002 remains the
+historical evaluation record.
 
 ### BNGIR document boundary
 
