@@ -62,7 +62,7 @@
       "repository": "https://github.com/lanl/bngsim.git",
       "branch": "main",
       "revision": "49dc939035f5a272da663f8c9586e3c9f0e1c041",
-      "role": "evaluated-network-backend-candidate",
+      "role": "intended-canonical-finite-network-backend (ADR 0003)",
       "status": "observed",
       "evidence": {
         "kind": "remote-head",

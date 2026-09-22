@@ -364,14 +364,38 @@ std::unique_ptr<bngsim::NetworkModel> buildBngsimNetwork(
         const auto products = checkedIndices(
             reaction.getProducts(), network.species.size(), context);
         const auto& rateLaw = reaction.getRateLaw();
+        // Functional rates may be stored as "rate" or "rate()" depending on
+        // whether the BNGL rule wrote the function with explicit () . Normalize
+        // by stripping a trailing "()" so both forms match the function table.
+        auto normalizeRateLaw = [](std::string s) {
+            // trim
+            const auto first = s.find_first_not_of(" \t");
+            if (first != std::string::npos) s.erase(0, first);
+            else s.clear();
+            if (!s.empty()) {
+                const auto last = s.find_last_not_of(" \t");
+                s.erase(last + 1);
+            }
+            if (s.size() >= 2 && s.substr(s.size() - 2) == "()") {
+                s.erase(s.size() - 2);
+                const auto l2 = s.find_last_not_of(" \t");
+                if (l2 != std::string::npos) s.erase(l2 + 1);
+                const auto f2 = s.find_first_not_of(" \t");
+                if (f2 != std::string::npos) s.erase(0, f2);
+            }
+            return s;
+        };
+        const std::string normRateLaw = normalizeRateLaw(rateLaw);
 
         bngsim::RateLawType type;
-        if (model.getParameters().contains(rateLaw)) {
+        std::string bngsimRateName;
+        if (model.getParameters().contains(normRateLaw)) {
             type = bngsim::RateLawType::Elementary;
+            bngsimRateName = normRateLaw;
         } else {
             bool isFunction = false;
             for (const auto& function : model.getFunctions()) {
-                if (function.getName() == rateLaw) {
+                if (function.getName() == normRateLaw) {
                     isFunction = true;
                     break;
                 }
@@ -382,13 +406,14 @@ std::unique_ptr<bngsim::NetworkModel> buildBngsimNetwork(
                     "' is not a direct parameter or function reference");
             }
             type = bngsim::RateLawType::Functional;
+            bngsimRateName = normRateLaw;
         }
 
         builder.add_reaction(
             reactants,
             products,
             type,
-            rateLaw,
+            bngsimRateName,
             reaction.getFactor(),
             true);
     }
