@@ -430,7 +430,6 @@ bool createExpandedStateChangeReactions(
     bool verbose,
     int &reaction_count,
     bool includeReverse,
-    const string& energyComponent)
     const string& energyComponent,
     double drivingWork)
 {
