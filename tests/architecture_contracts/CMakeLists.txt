@@ -28,7 +28,7 @@ add_executable(bng3_nfcore2_reference_tests
     nfcore2/test_validation_dependency.cpp
 )
 target_link_libraries(bng3_nfcore2_reference_tests PRIVATE bng_nfcore2)
-target_include_directories(bng3_nfcore2_reference_tests PRIVATE ${exprtk_SOURCE_DIR})
+# ExprTk include removed with WO-3b; NFsim uses the shared evaluator.
 add_test(NAME architecture_nfcore2_reference COMMAND bng3_nfcore2_reference_tests)
 set_tests_properties(architecture_nfcore2_reference PROPERTIES
     LABELS "architecture-reference;nfcore2" TIMEOUT 180)
@@ -145,7 +145,7 @@ if(BNG_NFNEXT_CONTRACT)
 endif()
 
 add_executable(test_nfcore2_native_reader test_native_reader.cpp)
-target_include_directories(test_nfcore2_native_reader PRIVATE ${exprtk_SOURCE_DIR})
+# ExprTk include removed with WO-3b; NFsim uses the shared evaluator.
 target_link_libraries(test_nfcore2_native_reader PRIVATE
     Catch2::Catch2WithMain bng_nfcore2 bng_parser)
 include(Catch)

@@ -1,6 +1,9 @@
 #include "Model.hpp"
 
+#include "ModelOptions.hpp"
+
 #include <cmath>
+#include <iostream>
 #include <utility>
 #include <stdexcept>
 
@@ -32,6 +35,10 @@ void Model::addFunction(Function function) {
 
 void Model::addEnergyPattern(EnergyPattern energyPattern) {
     energyPatterns_.push_back(std::move(energyPattern));
+}
+
+void Model::addBarrierPattern(BarrierPattern barrierPattern) {
+    barrierPatterns_.push_back(std::move(barrierPattern));
 }
 
 void Model::addObservable(Observable observable) {
@@ -71,6 +78,22 @@ void Model::setModelName(std::string modelName) {
 }
 
 void Model::setOption(std::string key, std::string value) {
+    // Single validation seam. Both entry points reach here: the parser's
+    // inline setOption handling (parser/BNGAstVisitor.cpp) and the action
+    // dispatcher (actions/ActionDispatch.cpp), plus option copying in
+    // engine/HybridModelGenerator.cpp. Validating in the setter rather than in
+    // each caller is what keeps an unsupported option from being stored on one
+    // path and rejected on another.
+    const auto validation = options::validate(key, value);
+    if (!validation.accepted()) {
+        throw std::runtime_error("setOption(\"" + key + "\",\"" + value +
+                                 "\"): " + validation.message);
+    }
+    if (validation.status == options::Validation::Status::Accepted &&
+        !validation.message.empty()) {
+        std::cerr << "WARNING: setOption(\"" << key << "\",\"" << value
+                  << "\"): " << validation.message << "\n";
+    }
     options_[std::move(key)] = std::move(value);
 }
 
@@ -194,6 +217,11 @@ void Model::merge(Model& other) {
         energyPatterns_.push_back(ep);
     }
 
+    // Merge barrier patterns (move: each owns a non-copyable ReactionRule)
+    for (auto& bp : other.getBarrierPatterns()) {
+        barrierPatterns_.push_back(std::move(bp));
+    }
+
     // Merge molecules
     for (const auto& mol : other.getMolecules()) {
         molecules.push_back(mol);
@@ -239,6 +267,14 @@ const std::vector<Function>& Model::getFunctions() const {
 
 const std::vector<EnergyPattern>& Model::getEnergyPatterns() const {
     return energyPatterns_;
+}
+
+const std::vector<BarrierPattern>& Model::getBarrierPatterns() const {
+    return barrierPatterns_;
+}
+
+std::vector<BarrierPattern>& Model::getBarrierPatterns() {
+    return barrierPatterns_;
 }
 
 const std::vector<Observable>& Model::getObservables() const {

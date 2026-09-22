@@ -286,6 +286,20 @@ std::unique_ptr<bngsim::NetworkModel> buildBngsimNetwork(
         throw std::runtime_error(
             "BNGsim adapter rejected model: energy patterns require an eBNGL rate bridge");
     }
+    if (!model.getBarrierPatterns().empty()) {
+        throw std::runtime_error(
+            "BNGsim adapter rejected model: barrier patterns require an eBNGL rate bridge");
+    }
+    // A driven rule can reach here without energy patterns, and dropping the
+    // reservoir work would turn a nonequilibrium model into an equilibrium one
+    // with no diagnostic.
+    for (const auto& rule : model.getReactionRules()) {
+        if (rule.hasDrivingWork()) {
+            throw std::runtime_error(
+                "BNGsim adapter rejected model: driven_by() reservoir work requires "
+                "an eBNGL rate bridge");
+        }
+    }
     if (!model.getPopulationMaps().empty()) {
         throw std::runtime_error(
             "BNGsim adapter rejected model: population maps are not a generated-network feature");

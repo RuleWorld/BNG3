@@ -21,6 +21,13 @@ class SimResult:
     construction_path : str or None
         Backend construction route when reported by the simulator. For NFsim this
         is ``"direct"``, ``"in-memory-xml"``, or ``"on-disk-xml"``.
+    direct_unavailable_reason : str or None
+        For NFsim, the precise reason the direct AST path declined, when it did.
+        Empty or ``None`` on the ``"direct"`` path. Names the failing
+        construction stage (for example ``stage 'reaction rules' could not be
+        constructed directly``), the capability diagnostic, or the thrown
+        message, so a compatibility fallback can be audited rather than just
+        observed.
     """
 
     def __init__(self, raw: dict):
@@ -28,6 +35,9 @@ class SimResult:
         self.observables: Dict[str, np.ndarray] = raw.get("observables", {})
         self.concentrations: Optional[np.ndarray] = raw.get("concentrations", None)
         self.construction_path: Optional[str] = raw.get("construction_path", None)
+        self.direct_unavailable_reason: Optional[str] = raw.get(
+            "direct_unavailable_reason", None
+        )
 
     @property
     def n_steps(self) -> int:

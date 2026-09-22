@@ -39,3 +39,5 @@ cpp/nfsim/NFcore2/legacy_bridge.cpp
 cpp/nfsim/NFinput/NFinput.cpp
 cpp/nfsim/NFinput/NFinput_fromAst.cpp
 cpp/nfsim/NFinput/NFinput_fromModel.cpp
+cpp/io/EnergyExportGuard.cpp
+cpp/nfsim/NFfunction/nfsim_funcparser.h

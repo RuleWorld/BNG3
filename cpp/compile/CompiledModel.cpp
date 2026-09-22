@@ -1,5 +1,7 @@
 #include "CompiledModel.hpp"
 
+#include "energy/BarrierCompiler.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <set>
@@ -326,6 +328,73 @@ CompiledModel::CompiledModel(const ast::Model& model)
         compiled.pattern = Pattern::fromSpeciesGraph(
             factor.getGraph(), model, symbols_, &diagnostics_);
         energyFactors_.push_back(std::move(compiled));
+    }
+
+    // Barrier factors: a transition-state energy plus the canonical reaction
+    // center its transition lowers to. A barrier whose transition cannot be
+    // reduced to one supported rewrite is recorded with centerResolved=false
+    // and a diagnostic, never dropped.
+    barrierFactors_.reserve(model.getBarrierPatterns().size());
+    for (std::size_t index = 0; index < model.getBarrierPatterns().size(); ++index) {
+        const auto& barrier = model.getBarrierPatterns()[index];
+        CompiledBarrierFactor compiled;
+        compiled.index = index;
+        compiled.label = barrier.getLabel();
+        compiled.sourceTransition = barrier.toString();
+
+        if (!barrier.hasExpression()) {
+            addDiagnostic(diagnostics_, ValidationCategory::Energy, compiled.label,
+                          "barrier pattern has no transition-state energy expression");
+            barrierFactors_.push_back(std::move(compiled));
+            continue;
+        }
+
+        const auto expression = CompiledRateLaw::compile(barrier.expression(), symbols_);
+        diagnostics_.insert(diagnostics_.end(), expression.diagnostics().begin(),
+                            expression.diagnostics().end());
+        compiled.energyExpression = barrier.expression().toString();
+        compiled.expression = expression.resolvedExpression();
+
+        const auto isStaticBarrier =
+            [&](const auto& self, const ResolvedExpression& node) -> bool {
+            using Kind = ResolvedExpressionKind;
+            if (node.kind == Kind::TimeRef || node.kind == Kind::ObservableRef ||
+                node.kind == Kind::FunctionRef || node.kind == Kind::LocalRef ||
+                node.kind == Kind::TableFunction || node.kind == Kind::Unresolved) return false;
+            return std::all_of(node.arguments.begin(), node.arguments.end(),
+                               [&](const auto& child) { return self(self, child); });
+        };
+        if (isStaticBarrier(isStaticBarrier, compiled.expression)) {
+            try {
+                compiled.evaluatedValue = barrier.expression().evaluate(
+                    [&](const std::string& name) -> double {
+                        if (name == "_PI" || name == "_pi") return 3.14159265358979323846;
+                        if (name == "_e") return 2.71828182845904523536;
+                        if (name == "_Na") return 6.02214076e23;
+                        return model.getParameters().evaluate(name, 0.0);
+                    }, 0.0);
+            } catch (...) {
+                compiled.evaluatedValue.reset();
+            }
+        } else {
+            // A time- or observable-dependent transition state would change
+            // the rate during a trajectory; that is not implemented and must
+            // not be folded to its initial value.
+            addDiagnostic(diagnostics_, ValidationCategory::Energy, compiled.label,
+                          "barrier pattern energy must be statically evaluable");
+        }
+
+        energy::ReactionCenterKey key;
+        std::string diagnostic;
+        if (energy::compileBarrierCenter(barrier.transition(), key, diagnostic)) {
+            compiled.reactionCenter = key;
+            compiled.reactionCenterKey = key.toString();
+            compiled.centerResolved = true;
+        } else {
+            addDiagnostic(diagnostics_, ValidationCategory::Energy, compiled.label,
+                          "barrier pattern transition is unsupported: " + diagnostic);
+        }
+        barrierFactors_.push_back(std::move(compiled));
     }
 
     observables_.reserve(model.getObservables().size());

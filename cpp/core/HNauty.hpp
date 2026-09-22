@@ -1,4 +1,34 @@
 #pragma once
+// ============================================================================
+// UNUSED — REFERENCE IMPLEMENTATION ONLY  (verified 2026-09-17)
+// ============================================================================
+// Nothing in the build calls into this header. `hnauty(...)` has zero callers
+// across cpp/, and no translation unit includes HNauty.hpp. It is deliberately
+// retained, not dead weight to delete:
+//
+//   * It is the only in-tree port of BNG2's Perl HNauty.pm, so it is the
+//     reference for the open maintainer decision recorded at the
+//     "largest-versus-canonical-form" comment further down this file (see
+//     docs/BNG3_CONVERGENCE_DONE_CHECKLIST.md, section 3.2). Deleting it
+//     would destroy the evidence needed to settle that question.
+//   * setOption("SpeciesLabel","HNauty") appears in the validation corpus
+//     (blbr, isingspin_energy, isingspin_localfcn). BNG3 honors it through its
+//     single exact canonicalization path in core/PatternGraph.cpp rather than
+//     through this code; see cpp/ast/ModelOptions.hpp for why that is a
+//     semantic no-op rather than a silent substitution.
+//
+// Consequences of it being unused, which reviewers should not mistake for
+// working code:
+//   * It is NOT compiled into any target, so it is not covered by CI and can
+//     rot without any test failing. tests/cpp/test_hnauty.cpp exercises it
+//     directly and is the only thing keeping it honest.
+//   * Do not wire it in as a second canonicalization path. One canonicalizer
+//     is the convergence goal (WO-1); see cpp/nauty/README.md.
+//
+// If the largest-versus-canonical-form decision is resolved in favor of
+// PatternGraph.cpp, this file and test_hnauty.cpp can both go.
+// ============================================================================
+
 // HNauty.hpp - C++ port of Perl HNauty.pm
 // Canonical graph labeling for BioNetGen molecular species graphs.
 //

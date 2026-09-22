@@ -4,6 +4,44 @@
 
 ### In progress
 
+- Added an experimental nonequilibrium energy layer: `begin barrier patterns`
+  (transition-state contributions keyed by reaction center) and `driven_by(W)`
+  (signed reservoir work on a reversible Arrhenius rule), implementing
+  `k = exp[-(Ea + B + phi*(dG - W))/RT]`. A barrier cancels in `k_f/k_r` while
+  work does not. Every backend boundary refuses both constructs unless
+  `BNG_NFSIM_GENERAL_ENERGY` is set, because canonical NFsim and BNG2 do not
+  implement these semantics and no independent oracle exists yet. The compact
+  `EnergyRxnClass` evaluator is disabled for nonzero barrier or work in favor
+  of the materialized Sekar expansion. See `docs/nonequilibrium_energy.md`.
+- Closed the serialization gaps for the new energy constructs: `BnglWriter`
+  now emits `begin energy patterns` (previously dropped entirely) and
+  `begin barrier patterns`, and appends `driven_by()` to rule lines, so a
+  written model round-trips; `XmlWriter` propagates reservoir work to a
+  synthesized reverse rule; the Python IR gained a `barrier_patterns` section
+  and per-rule `driving_work` with matching feature flags; the BNGsim adapter
+  rejects barrier patterns and driven rules rather than ignoring them; and
+  barrier patterns are registered under a new `SymbolKind::BarrierPattern`
+  instead of sharing the energy-pattern namespace.
+- Made the remaining kinetics exporters fail closed on energy semantics. SBML,
+  SBML-multi, MATLAB, LaTeX, MCell MDL, SSC, C++, Python and MEX export now
+  reject models using energy patterns, barrier patterns, `driven_by()` work, or
+  an Arrhenius rate law, via the shared `io::requireNoEnergySemantics()` guard.
+  Only the .net writer resolves `Arrhenius(phi, Ea)` into numeric rates, so
+  these formats previously emitted a literal Arrhenius call or dropped the
+  energy contribution. Structural and visualization writers are intentionally
+  unguarded, as are .net, BNGL and XML, which do carry the semantics.
+- Barrier-only rules keep the compact `EnergyRxnClass` path: a barrier is a
+  direction- and context-independent prefactor, so it folds into the DOR base
+  rate exactly. Only reservoir work forces the materialized Sekar expansion.
+- Added `compile/energy/ThermodynamicConstraints`: cycle rank, gauge degrees of
+  freedom, cycle affinity, and state-potential reconstruction over an abstract
+  annotated state graph. The analysis is deterministic with respect to state
+  and edge insertion order; an earlier formulation let the cycle-affinity sign
+  depend on it.
+- Promoted `future_thermodynamic_constraints` and `future_barrier_driving_syntax`
+  out of `BNG_ENABLE_FUTURE_ENERGY_CONTRACTS`. Both fixtures in the latter
+  opened a model with `end model` and no `begin model`, which the `prog`
+  grammar rule cannot accept; corrected.
 - Added the consolidated NFnext semantic/runtime contract batch, including
   rule-family compilation, canonicalization, matching, transformations,
   cache v2, replay/RNG, and selected default architecture contracts.

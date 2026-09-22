@@ -5,7 +5,11 @@
 // for labeling
 #include <sstream>
 #include <algorithm>
-#include "../nauty24/nausparse.h"
+// WO-1b: one bundled nauty build for the whole platform. Resolved through the
+// `nauty` target's interface include directory (cpp/nauty), which is the same
+// header cpp/core/PatternGraph.cpp uses. The former cpp/nfsim/nauty24/ copy is
+// gone; see cpp/nauty/README.md for the `nset` typedef patch.
+#include "nausparse.h"  /* which includes nauty.h */
 
 using namespace std;
 using namespace NFcore;

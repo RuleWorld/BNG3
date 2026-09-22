@@ -45,6 +45,11 @@ private:
     static std::string writeSeedSpecies(const ast::Model& model);
     static std::string writeObservables(const ast::Model& model);
     static std::string writeFunctions(const ast::Model& model);
+    // Energy and barrier patterns must be written before the reaction rules
+    // that reference them, and barrier patterns must follow energy patterns:
+    // a barrier is only legal in a model that has a dG for it to modify.
+    static std::string writeEnergyPatterns(const ast::Model& model);
+    static std::string writeBarrierPatterns(const ast::Model& model);
     static std::string writeReactionRules(const ast::Model& model);
     static std::string writeActions(const ast::Model& model);
 };

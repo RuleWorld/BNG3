@@ -35,6 +35,8 @@
 #include <cstdint>
 #include <cmath>
 
+#include "compile/energy/BarrierTable.hpp"
+#include "compile/energy/DrivenEnergy.hpp"
 #include "compile/energy/EnergyDeltaPlan.hpp"
 
 namespace NFcore {
@@ -154,6 +156,29 @@ namespace NFcore {
         const EnergyPatternInfo& getPattern(int i) const { return patterns[i]; }
 
         /*
+         * Transition-state (barrier) contributions, keyed by reaction center.
+         * Set by the input adapters after barrier patterns are compiled. A
+         * barrier adds to the activation energy of both directions, so it
+         * changes kinetics without changing k_fwd/k_rev.
+         */
+        void setBarrierTable(bng::compile::energy::BarrierTable table) {
+            barrierTable = std::move(table);
+        }
+        const bng::compile::energy::BarrierTable& getBarrierTable() const {
+            return barrierTable;
+        }
+        bool hasBarriers() const { return !barrierTable.empty(); }
+
+        /* Summed barrier for a binding or state-change reaction center, or 0
+         * when no barrier pattern matches. */
+        double barrierForBinding(
+            const std::string &molType1, const std::string &bindSite1,
+            const std::string &molType2, const std::string &bindSite2) const;
+        double barrierForStateChange(
+            const std::string &molType, const std::string &comp,
+            const std::string &stateFrom, const std::string &stateTo) const;
+
+        /*
          * Compile energy semantics into the backend-neutral local delta-G IR.
          * Unsupported topologies return MaterializedFallback; callers must
          * retain the existing Sekar expansion path in that case.
@@ -202,7 +227,8 @@ namespace NFcore {
             double Ea0,
             double phi,
             const std::string &molType1, const std::string &bindSite1,
-            const std::string &molType2, const std::string &bindSite2
+            const std::string &molType2, const std::string &bindSite2,
+            double drivingWork = 0.0
         ) const;
 
         /*
@@ -214,7 +240,8 @@ namespace NFcore {
             double Ea0,
             double phi,
             const std::string &molType, const std::string &comp,
-            const std::string &stateFrom, const std::string &stateTo
+            const std::string &stateFrom, const std::string &stateTo,
+            double drivingWork = 0.0
         ) const;
 
     private:
@@ -226,6 +253,7 @@ namespace NFcore {
         double RT;    // Gas constant × Temperature
 
         std::vector<EnergyPatternInfo> patterns;
+        bng::compile::energy::BarrierTable barrierTable;
         std::map<BindingPatternKey, std::vector<int>> bindingPatternIndex;
         std::map<StatePatternKey, std::vector<int>> statePatternIndex;
 
@@ -257,15 +285,29 @@ namespace NFcore {
         ) const;
 
         /*
-         * Compute Arrhenius rate constant.
-         *   k_fwd = exp(-(Ea0 + phi * deltaG) / RT)
-         *   k_rev = exp(-(Ea0 + (phi - 1) * deltaG) / RT)
+         * Compute the Arrhenius rate constant.
+         *
+         *   k_fwd = exp(-(Ea0 + B + phi       * (deltaG - W)) / RT)
+         *   k_rev = exp(-(Ea0 + B + (phi - 1) * (deltaG - W)) / RT)
+         *
+         * B is the matched transition-state contribution and W the signed
+         * reservoir work. Both directions take the FORWARD deltaG and the
+         * FORWARD W; the direction enters only through phi vs (phi - 1).
+         * B cancels in k_fwd/k_rev while W does not, which is exactly the
+         * distinction between a catalyst and a driven reaction.
+         *
+         * With B = W = 0 these reduce to the original expressions, so every
+         * existing eBNGL model keeps byte-identical rates.
          */
-        double computeForwardRate(double Ea0, double deltaG, double phi) const {
-            return std::exp(-(Ea0 + phi * deltaG) / RT);
+        double computeForwardRate(double Ea0, double deltaG, double phi,
+                                  double barrier = 0.0, double work = 0.0) const {
+            return bng::compile::energy::drivenArrheniusRate(
+                Ea0, barrier, deltaG, work, phi, RT, true);
         }
-        double computeReverseRate(double Ea0, double deltaG, double phi) const {
-            return std::exp(-(Ea0 + (phi - 1.0) * deltaG) / RT);
+        double computeReverseRate(double Ea0, double deltaG, double phi,
+                                  double barrier = 0.0, double work = 0.0) const {
+            return bng::compile::energy::drivenArrheniusRate(
+                Ea0, barrier, deltaG, work, phi, RT, false);
         }
     };
 
