@@ -1,6 +1,6 @@
 # BNG3 current progress
 
-**Audited:** 2026-09-17
+**Audited:** 2026-09-23 (scoped source-reconciliation update; full convergence checklist not re-audited)
 **Repository:** `RuleWorld/BNG3`
 **Branch:** `main`
 **Status:** merged convergence, nonequilibrium energy, and SBML material-gap work; release validation remains incomplete
@@ -9,6 +9,24 @@ This is the live status page for the combined BNG3 migration tree. The older
 IR migration reports and formalization reports retained in the repository are
 historical inputs and provenance records; their embedded prose is not a new
 execution instruction.
+
+## Upstream source reconciliation — 2026-09-23
+
+The observed RuleWorld heads for BioNetGen, NFsim, and PyBioNetGen have been
+refreshed in [`../provenance/upstreams.lock.yml`](../provenance/upstreams.lock.yml)
+and all 35 commits since the prior recorded source revisions have a
+per-commit disposition in
+[`UPSTREAM_RECONCILIATION_2026-09-23.md`](UPSTREAM_RECONCILIATION_2026-09-23.md)
+and [`../provenance/reconciliation/`](../provenance/reconciliation/). Applicable
+legacy behavior and the PyBioNetGen runtime dependency are ported; newer
+native engine behavior already present in BNG3 is recorded as equivalent.
+Source-site tutorials, generated source references, and repository-specific
+automation are documented as not transplanted.
+
+This was a scoped source and documentation pass, not a full convergence audit.
+No test suites were run for this pass. The source-lock baseline is still
+`pending-maintainer-approval`; the observed source heads do not by themselves
+close any release or independent-oracle gate.
 
 ## Merged convergence + nonequilibrium energy — 2026-09-17 (locally build-verified)
 

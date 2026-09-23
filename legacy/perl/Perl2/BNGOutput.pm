@@ -1248,7 +1248,8 @@ sub writeSBML
     # for the species and the volume that's used here is expected for 
     # kinetic laws. Without this correction, the dynamics of BNG and 
     # SBML tools (e.g. COPASI, libroadrunner) does not match. 
-		( $rstring, $err ) = $rxn->RateLaw->toMathMLString( \@rindices, \@pindices, $rxn->StatFactor, $comp_name );
+		my $stat_factor = ($rxn->RxnRule && $rxn->RxnRule->TotalRate) ? 1 : $rxn->StatFactor;
+		( $rstring, $err ) = $rxn->RateLaw->toMathMLString( \@rindices, \@pindices, $stat_factor, $comp_name );
 		if ($err) { return $err; }
 
 		foreach my $line ( split "\n", $rstring )
@@ -1868,9 +1869,18 @@ EOF
 
 	close(Mscript);
 	print "Wrote M-file script $mscript_path.\n";
-    system('perl', '-pi.bak', '-e', 's/_rateLaw/rateLaw__/g', $mscript_path);
-    my $toRemove = $mscript_path . ".bak";
-    unlink($toRemove);
+	# Rewrite generated identifiers in-process instead of invoking an
+	# external Perl command and creating a temporary backup file.
+	open(my $in, '<', $mscript_path) or die "Cannot open $mscript_path for reading: $!";
+	my @lines = <$in>;
+	close($in);
+
+	open(my $out, '>', $mscript_path) or die "Cannot open $mscript_path for writing: $!";
+	foreach my $line (@lines) {
+		$line =~ s/_rateLaw/rateLaw__/g;
+		print $out $line;
+	}
+	close($out);
 	return ();	
 }
 
@@ -4160,7 +4170,8 @@ EOF
         {
 			++$S{ $p->Index }{$irxn};
 		}
-		my ($flux, $err) = $rxn->RateLaw->toLatexString( $rxn->Reactants, $rxn->StatFactor,
+		my $stat_factor = ($rxn->RxnRule && $rxn->RxnRule->TotalRate) ? 1 : $rxn->StatFactor;
+		my ($flux, $err) = $rxn->RateLaw->toLatexString( $rxn->Reactants, $stat_factor,
 			                                               $model->ParamList );
 		if ($err) { return $err; }
 		push @fluxes, $flux;

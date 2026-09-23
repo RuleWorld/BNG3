@@ -723,6 +723,9 @@ sub simulate
     close Reader;
     close Err;
     waitpid( $pid, 0 );
+    my $wait_status = $?;
+    my $exit_status = $wait_status >> 8;
+    my $signal = $wait_status & 127;
 
     # clear child pid
     $::CHILD_PID = undef;
@@ -731,14 +734,17 @@ sub simulate
     if ($edge_warning)
     {   send_warning("Edge species of truncated network became populated $edge_warning times.");   }
 
-    if (@err)
+    if (@err || $wait_status != 0)
     {   # print any errors received from 
         print @err;
-        return sprintf("%s\n  did not run successfully.", join(" ", @command));
+        my $err_str = join("", @err);
+        return sprintf("Command execution failed:\n%s\nExit status: %d, Signal: %d\nStderr output:\n%s", join(" ", @command), $exit_status, $signal, $err_str);
     }
 
     unless ( $last_msg =~ /^Program times:/ )
-    {   return sprintf("%s\n  did not run successfully.", join(" ", @command));  }
+    {
+        return sprintf("Command execution did not complete successfully (missing 'Program times:' message):\n%s\nExit status: %d, Signal: %d", join(" ", @command), $exit_status, $signal);
+    }
 
 
 
@@ -2207,13 +2213,33 @@ sub LinearParameterSensitivity
                 my $b_head = <$bfh>;
                 my $p_head = <$pfh>;
 
-                chomp $b_head;
-                $b_head =~ s/^\s*#\s*//;
-                my @cols = split(/\s+/, $b_head);
-
                 my @times;
                 my @base_data;
                 my @bump_data;
+                my @cols;
+
+                if ($b_head =~ /^\s*#/) {
+                    chomp $b_head;
+                    $b_head =~ s/^\s*#\s*//;
+                    @cols = split(/\s+/, $b_head);
+                } else {
+                    # Some simulator outputs omit the column-name header.
+                    # Preserve their first data row instead of treating it as
+                    # a header and dropping it from the sensitivity output.
+                    chomp $b_head;
+                    chomp $p_head;
+                    $b_head =~ s/^\s+//;
+                    $p_head =~ s/^\s+//;
+                    my @b_vals = split(/\s+/, $b_head);
+                    my @p_vals = split(/\s+/, $p_head);
+
+                    push @cols, "time";
+                    for my $i (1 .. $#b_vals) { push @cols, "$i"; }
+
+                    push @times, $b_vals[0];
+                    push @base_data, \@b_vals;
+                    push @bump_data, \@p_vals;
+                }
 
                 while(my $b_line = <$bfh>) {
                     chomp $b_line;

@@ -32,6 +32,7 @@ classifiers = [
 dependencies = [
     "numpy>=1.20",
     "click>=8.0",
+    "packaging",
 ]
 
 [project.optional-dependencies]

@@ -1,0 +1,46 @@
+{
+  "$schema": "../schemas/reconciliation-ledger.schema.json",
+  "schema_version": 1,
+  "source": "nfsim",
+  "represented_revision": "a6f9fa945c9d6e1e122e789c952260112c93f157",
+  "cutoff_revision": "9b00d42f734dcc3e695205600f12cae5b44d1daa",
+  "owner": "Unassigned; maintainer assignment pending",
+  "entries": [
+    {
+      "source_revision": "afad408606ee3e8f579ff50269d266bc66dae0b2",
+      "capability": "Repair NFsim absolute-start-time, time-function, observable propensity refresh, and unsupported-rate/flag regressions",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/; tests/python/test_cpp_backend.py",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation; maintainer review pending",
+      "rationale": "BNG3 already carries corresponding native NFsim behavior: absolute start times and generic time dependencies, observable-dependent propensity refresh, explicit TotalRate rejection for unsupported rate families, and distinct complex tracking versus binding-guard flags."
+    },
+    {
+      "source_revision": "74e78d75b35fc7249ceabca497e39d3d81389d66",
+      "capability": "Merge upstream NFsim master into the source issue branch",
+      "classification": "not-applicable",
+      "bng3_reference": "docs/UPSTREAM_RECONCILIATION_2026-09-23.md",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation; maintainer review pending",
+      "rationale": "Merge bookkeeping; independent NFsim behavior changes in this range are classified separately."
+    },
+    {
+      "source_revision": "72d8b6871972862ed7660e9c79b0142ff191ef55",
+      "capability": "Merge pull request #99",
+      "classification": "not-applicable",
+      "bng3_reference": "docs/UPSTREAM_RECONCILIATION_2026-09-23.md",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation; maintainer review pending",
+      "rationale": "Merge container for source-repository work; no independent behavior is assigned to this merge entry."
+    },
+    {
+      "source_revision": "9b00d42f734dcc3e695205600f12cae5b44d1daa",
+      "capability": "Merge pull request #100",
+      "classification": "not-applicable",
+      "bng3_reference": "docs/UPSTREAM_RECONCILIATION_2026-09-23.md",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation; maintainer review pending",
+      "rationale": "Merge container for source-repository work; no independent behavior is assigned to this merge entry."
+    }
+  ]
+}

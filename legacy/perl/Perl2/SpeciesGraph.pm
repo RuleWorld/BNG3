@@ -419,7 +419,6 @@ sub readString
 
 
 # check if a speciesGraph represents a fully-specified species.
-# TODO: need to check that compartments are specified, if we're using compartments!
 sub checkSpecies
 {
     my $sg    = shift @_;
@@ -435,11 +434,14 @@ sub checkSpecies
 	return 0 if ($err);
 
     # check that compartments are specified, if we're using compartments
-    if (defined $model->CompartmentList && @{$model->CompartmentList->Array}) {
+    if (defined $model->CompartmentList && $model->CompartmentList->Used) {
         foreach my $mol (@{$sg->Molecules}) {
-            if (!defined $mol->Compartment && !defined $sg->Compartment) {
-                # Could log an error here, but following the surrounding logic, we just return 0 to indicate not a fully-specified species
-                return 0;
+            my $mol_comp = defined $mol->Compartment ? $mol->Compartment : $sg->Compartment;
+            return 0 if !defined $mol_comp;
+
+            foreach my $component (@{$mol->Components}) {
+                my $ccomp = defined $component->Compartment ? $component->Compartment : $mol_comp;
+                return 0 if !defined $ccomp;
             }
         }
     }
@@ -825,8 +827,12 @@ sub inferSpeciesCompartment
 	my %volumes  = ();    # molecule volume compartments found in $sg
 	my %surfaces = ();    # molecule surface compartments found in $sg
 	my $err = '';  # return error (set string if species compartment is invalid)
+	my @missing_comp_mols = ();
+	my @missing_comp_components = ();
+	my %mol_comps = ();
 
-	# Gather molecule compartments
+	# Gather molecule and component compartments. Component compartments may
+	# inherit from their parent molecule.
 	foreach my $mol ( @{ $sg->Molecules } )
 	{
 		my $comp = $mol->Compartment;
@@ -836,14 +842,42 @@ sub inferSpeciesCompartment
 			$comp = $sg->Compartment;
 		}
 
-		next unless ( defined $comp );
+		push @missing_comp_mols, $mol unless defined $comp;
+		$mol_comps{$mol} = $comp;
 
-		if    ( $comp->SpatialDimensions == 2 ) { $surfaces{$comp} = $comp; }
-		elsif ( $comp->SpatialDimensions == 3 ) { $volumes{$comp}  = $comp; }
+		if ( defined $comp )
+		{
+			if    ( $comp->SpatialDimensions == 2 ) { $surfaces{$comp} = $comp; }
+			elsif ( $comp->SpatialDimensions == 3 ) { $volumes{$comp}  = $comp; }
+		}
+
+		foreach my $component ( @{ $mol->Components } )
+		{
+			my $ccomp = $component->Compartment;
+			$ccomp = $comp if !defined $ccomp && defined $comp;
+			push @missing_comp_components, $component unless defined $ccomp;
+			if ( defined $ccomp )
+			{
+				if    ( $ccomp->SpatialDimensions == 2 ) { $surfaces{$ccomp} = $ccomp; }
+				elsif ( $ccomp->SpatialDimensions == 3 ) { $volumes{$ccomp}  = $ccomp; }
+			}
+		}
 	}
 
 	my $n_surfaces = scalar( keys %surfaces );
 	my $n_volumes  = scalar( keys %volumes );
+
+	if ( @missing_comp_mols > 0 && ($n_surfaces > 0 || $n_volumes > 0 || defined $sg->Compartment) )
+	{
+		$err = sprintf "Molecule %s in SpeciesGraph %s does not have a specified compartment.", $missing_comp_mols[0]->Name, $sg->toString();
+		return ( undef, $err );
+	}
+
+	if ( @missing_comp_components > 0 && ($n_surfaces > 0 || $n_volumes > 0 || defined $sg->Compartment) )
+	{
+		$err = sprintf "Component %s in SpeciesGraph %s does not have a specified compartment.", $missing_comp_components[0]->Name, $sg->toString();
+		return ( undef, $err );
+	}
 
 	# infer Species Compartment
 	if ( $n_surfaces == 0 )
@@ -901,6 +935,34 @@ sub inferSpeciesCompartment
 	if ( defined $sg->Compartment and !( defined $inferred_comp ) )
 	{
 		$inferred_comp = $sg->Compartment;
+	}
+
+	# Reject bonds between molecule compartments that are neither identical nor
+	# adjacent. These errors must be detectable before reaction products are
+	# accepted into the generated network.
+	my %bonds = ();
+	foreach my $mol ( @{$sg->Molecules} )
+	{
+		foreach my $component ( @{$mol->Components} )
+		{
+			foreach my $edge_idx ( @{$component->Edges} )
+			{   push @{ $bonds{$edge_idx} }, $mol;   }
+		}
+	}
+
+	foreach my $bond ( values %bonds )
+	{
+		next if (@$bond != 2);
+		my $comp0 = $mol_comps{$bond->[0]};
+		my $comp1 = $mol_comps{$bond->[1]};
+		if (defined $comp0 and defined $comp1)
+		{
+			unless ( $comp0 == $comp1 or $comp0->adjacent($comp1) )
+			{
+				$err = sprintf "Molecule Compartments of %s define invalid Species Compartment.", $sg->toString();
+				return ( undef, $err );
+			}
+		}
 	}
 
 	# return inferred compartment
@@ -2025,11 +2087,11 @@ sub toXML
 	}
 
 
-	# add support for Automorphism count (TODO: disabled for now)
-	#if ( defined $sg->Automorphisms )
-    #{
-	#	$string .= " automorphisms=\"" . $sg->Automorphisms . "\"";
-	#}
+	# add support for Automorphism count
+	if ( defined $sg->Automorphisms )
+    {
+		$string .= " automorphisms=\"" . $sg->Automorphisms . "\"";
+    }
 
 	# add quantifiers
 	if ( $sg->Quantifier )
@@ -2273,12 +2335,12 @@ sub toSBMLMultiSpeciesType
     my @parentEntry;
 
 
-    # TODO: we should only include fully specified full bonds and states. other stuff doesnt need to be here
+    # Include only fully specified states and full bonds in SBML-Multi indexes.
     # technically this is only necessary for symmetric stuff but its easier to just index everything
-        
     if($n_mol > 1){
         my %rreferenceClone = %{dclone(\%{$speciesIdHash_ref->{'References'}->{"ST".$id}->{'reverseReferences'}})};
-        my %needed_compkeys;
+        my %needed_compkeys = ();
+        my %needed_molkeys = ();
 
         my $mindex =0;
         foreach my $molecule (@{$sg->Molecules}){
@@ -2289,8 +2351,9 @@ sub toSBMLMultiSpeciesType
                 $speciesIdHash_ref->{'References'}->{"ST".$id}->{'bng2multi'}->{"$mindex.$cindex"} = $compkey;
                 splice(@{$rreferenceClone{$fullstring}}, 0, 1);
 
-                if (defined $component->State && $component->State ne '') {
+                if (defined $component->State && $component->State ne '' && $component->State !~ /^[?*+]$/) {
                     $needed_compkeys{$compkey} = 1;
+                    $needed_molkeys{$molecule->Name} = 1;
                 }
 
                 $cindex += 1;
@@ -2307,26 +2370,30 @@ sub toSBMLMultiSpeciesType
         if ( @{$sg->Edges} ) {
             foreach my $edge ( @{$sg->Edges} ) {
                 my ($p1, $p2) = split ' ', $edge;
-                next unless (defined $p2);
+                next unless (defined $p1 && defined $p2);
                 my $compkey1 = $speciesIdHash_ref->{'References'}->{"ST".$id}->{'bng2multi'}->{$p1};
                 my $compkey2 = $speciesIdHash_ref->{'References'}->{"ST".$id}->{'bng2multi'}->{$p2};
                 if ($compkey1) {
                     $needed_compkeys{$compkey1} = 1;
+                    $needed_molkeys{$sg->Molecules->[(split '\\.', $p1)[0]]->Name} = 1;
                 }
                 if ($compkey2) {
                     $needed_compkeys{$compkey2} = 1;
+                    $needed_molkeys{$sg->Molecules->[(split '\\.', $p2)[0]]->Name} = 1;
                 }
             }
         }
 
         $string .= $indent . "<multi:listOfSpeciesTypeComponentIndexes>\n";
         foreach my $molkey (keys %{$speciesIdHash_ref->{'References'}->{"ST".$id}{'Molecules'}}){
-            foreach my $entry (@{$speciesIdHash_ref->{'References'}->{"ST".$id}->{'Molecules'}->{$molkey}}){
-                #remove the cmp prefix to get the parent sbml_id.
-                @parentEntry = split(/_/,$entry);
-                my $parentEntryStr = join('_',@parentEntry[1..$#parentEntry]);
+            if ($needed_molkeys{$molkey}) {
+                foreach my $entry (@{$speciesIdHash_ref->{'References'}->{"ST".$id}->{'Molecules'}->{$molkey}}){
+                    #remove the cmp prefix to get the parent sbml_id.
+                    @parentEntry = split(/_/,$entry);
+                    my $parentEntryStr = join('_',@parentEntry[1..$#parentEntry]);
 
-                $string .= $indent2. sprintf("<multi:speciesTypeComponentIndex multi:id=\"%s\" multi:component=\"%s\"/>\n", $entry, $parentEntryStr);
+                    $string .= $indent2. sprintf("<multi:speciesTypeComponentIndex multi:id=\"%s\" multi:component=\"%s\"/>\n", $entry, $parentEntryStr);
+                }
             }
         }
 
@@ -3591,11 +3658,30 @@ sub cmp_component
         return -1;
     }
 
-	# Comparison of number of edges
-	# NOTE: the usual order of a and b are switched!!
-	#  so the components with more edges are before components with fewer edges
-	if ( $cmp = ( @{$b->Edges} <=> @{$a->Edges} ) )
-	{   return $cmp;   }
+	# Compare concrete bonds and bond wildcards separately. Treating every
+	# edge as interchangeable can make wildcard patterns sort as if they were
+	# fully specified bonds.
+	my %edge_count_a = ( explicit => 0, plus => 0, question => 0, star => 0 );
+	my %edge_count_b = ( explicit => 0, plus => 0, question => 0, star => 0 );
+	for my $edge ( @{$a->Edges} )
+	{
+		if    ( $edge eq '+' ) { ++$edge_count_a{plus}; }
+		elsif ( $edge eq '?' ) { ++$edge_count_a{question}; }
+		elsif ( $edge eq '*' ) { ++$edge_count_a{star}; }
+		else                  { ++$edge_count_a{explicit}; }
+	}
+	for my $edge ( @{$b->Edges} )
+	{
+		if    ( $edge eq '+' ) { ++$edge_count_b{plus}; }
+		elsif ( $edge eq '?' ) { ++$edge_count_b{question}; }
+		elsif ( $edge eq '*' ) { ++$edge_count_b{star}; }
+		else                  { ++$edge_count_b{explicit}; }
+	}
+	for my $kind ( qw(explicit plus question star) )
+	{
+		if ( $cmp = ($edge_count_b{$kind} <=> $edge_count_a{$kind}) )
+		{   return $cmp;   }
+	}
 
 	# Comparison of edges
 	#  for my $i (0..$#a_edges){

@@ -16,6 +16,16 @@ recorded in the historical sections below; they are not current-head evidence.
 non-energy PRs #476 and #477 are deliberately not silently included in the
 BNG3 port.
 
+## Scoped source-lock refresh — 2026-09-23
+
+The live RuleWorld BioNetGen, NFsim, and PyBioNetGen heads were refreshed and
+their 35 commits since the previously recorded source revisions were
+classified in [`UPSTREAM_RECONCILIATION_2026-09-23.md`](UPSTREAM_RECONCILIATION_2026-09-23.md)
+and `provenance/reconciliation/`. This does not re-audit the full checklist,
+approve the observed source cutoffs, or change any convergence item to
+complete. No test suites were run for this scoped source update; historical
+evidence below retains its original date and scope.
+
 This is the execution checklist for the BNG3 convergence goal. It turns the
 completion charter and Section 11 of BNG3_INTEGRATION_PLAN.md into auditable
 work items. The unification work orders in docs/BNG3_unification_spec.md remain the

@@ -3,16 +3,31 @@
 **Status:** Active implementation; convergence foundation and direct NFsim migration in progress
 **Plan date:** 2026-08-28
 **Scope:** BioNetGen, NFsim, and PyBioNetGen convergence into one maintained BNG3 codebase
-**Last progress update:** 2026-09-15
-**Implementation:** The active continuation is on
-`codex/bng3-convergence-continuation-20260915`,
-based on public `main` at `bad50c9cd659efd893e47d8b88bcfebaa4ebc2ba`.
+**Last progress update:** 2026-09-23
+**Implementation:** The scoped source reconciliation is applied on the
+user-requested local `main` checkout, based on BNG3 `main` at
+`7b61ecc704e6ef775a2f6a3f2c22e8d721fc6701` before this port.
 This document remains the authoritative backlog and completion contract;
 Section 11 is not yet satisfied.
 
 The live implementation and verification snapshot is
 [`CURRENT_PROGRESS.md`](CURRENT_PROGRESS.md). Historical checkpoint counts
 below remain historical unless explicitly refreshed on the exact final tree.
+
+## Scoped upstream source reconciliation — 2026-09-23
+
+The local `main` checkout was refreshed before this reconciliation. Against
+its prior source locks, the live RuleWorld heads add 29 BioNetGen, 4 NFsim,
+and 2 PyBioNetGen commits. Applicable Perl compatibility fixes and the
+explicit `packaging` dependency were ported; equivalent BNG3-native behavior,
+source-specific documentation/assets, and repository workflows are recorded
+per commit in [`UPSTREAM_RECONCILIATION_2026-09-23.md`](UPSTREAM_RECONCILIATION_2026-09-23.md)
+and `provenance/reconciliation/`.
+
+This source snapshot is not an approved import cutoff. Phase 0 remains open
+for maintainer ownership and cutoff approval, immutable oracle/build inputs,
+and exact-head verification. No test suites were run for this scoped update;
+the historical counts below are not evidence for the reconciled tree.
 
 ## Current continuation checkpoint — 2026-09-15
 

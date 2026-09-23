@@ -1103,10 +1103,13 @@ sub depends
         my @arglist = @{ $expr->Arglist };
         # Skip function name if this is a function
         if ( $type eq 'FunctionCall' ) {  shift @arglist;  }
-        foreach my $expr (@arglist)
+        foreach my $arg (@arglist)
         {
-            ($retval, $err) = $expr->depends($plist, $varname, $level + 1, $dep);
-            last if $retval;
+            if (ref($arg) and $arg->can('depends'))
+            {
+                ($retval, $err) = $arg->depends($plist, $varname, $level + 1, $dep);
+                last if $retval;
+            }
         }
     }
 
@@ -1169,11 +1172,7 @@ sub evaluate
         # first argument is function name
         my $name  = $expr->Arglist->[0];
 
-        if ( ref $name eq "Function" )
-        {   # anonymous function (TODO: double-check that its ok to be lazy about evaluating the args
-            $val = $name->evaluate( $expr->Arglist, $plist, $level+1);
-        }
-        elsif ( exists $functions{$name} )
+        if ( exists $functions{$name} )
         {   # built-in function
             my $f = $functions{$name}->{FPTR};
             # evaluate all the remaining arguments
@@ -1188,11 +1187,28 @@ sub evaluate
         }
         
         else
-        {   # lookup user-defined function in paramlist
-            unless (defined $plist)
-            {  die "Expression->evaluate: Error! Cannot evaluate user Function without ParamList.";  }
-        
-            $val = $plist->evaluate( $name, $expr->Arglist, $level+1 );
+        {
+            # Evaluate arguments in the caller's scope before invoking a
+            # user-defined function. This prevents the callee's parameter
+            # bindings from changing how caller expressions resolve.
+            my $eval_args = [];
+            push @$eval_args, $name;
+            my $ii = 1;
+            while ( $ii < @{$expr->Arglist} )
+            {
+                my $arg_val = $expr->Arglist->[$ii]->evaluate($plist, $level+1);
+                push @$eval_args, Expression->new( Type=>'NUM', Arglist=>[$arg_val] );
+                ++$ii;
+            }
+
+            if ( ref $name eq "Function" )
+            {   $val = $name->evaluate( $eval_args, $plist, $level+1);   }
+            else
+            {
+                unless (defined $plist)
+                {  die "Expression->evaluate: Error! Cannot evaluate user Function without ParamList.";  }
+                $val = $plist->evaluate( $name, $eval_args, $level+1 );
+            }
         }
     }
     else
@@ -1213,10 +1229,15 @@ sub evaluate
             elsif ( $operator eq '!' ) { $val = !$v ? 1 : 0; }
             else {
                 # fallback for math functions if they somehow end up here
-                my $eval_string = "$operator(\$v)";
-                local $SIG{__WARN__} = sub {};
-                $val = eval "$eval_string";
-                if ($@) { die $@; }
+                if ( exists $functions{$operator} )
+                {
+                    my $f = $functions{$operator}->{FPTR};
+                    $val = $f->($v);
+                }
+                else
+                {
+                    die "Expression->evaluate: Unrecognized unary operator $operator\n";
+                }
             }
         }
         else
@@ -1624,7 +1645,11 @@ sub toString
             my @sarr = ();
             foreach my $i ( 1 .. $#{$expr->Arglist} )
             {
-                push @sarr, $expr->Arglist->[$i]->toString( $plist, $level + 1 );
+                my $arg = $expr->Arglist->[$i];
+                if ( ref $arg )
+                {   push @sarr, $arg->toString( $plist, $level + 1 );   }
+                else
+                {   push @sarr, $arg;   }
             }
             $string = $name . '(' . join( ',', @sarr ) . ')';
         }
@@ -1635,7 +1660,10 @@ sub toString
         {
             my @sarr = ();
             foreach my $e ( @{ $expr->Arglist } ) {
-                push @sarr, $e->toString( $plist, $level+1, $expand );
+                if ( ref $e )
+                {   push @sarr, $e->toString( $plist, $level+1, $expand );   }
+                else
+                {   push @sarr, $e;   }
             }
             if ( $#sarr > 0 )
             {   $string = join( $type, @sarr );   }
@@ -1651,7 +1679,10 @@ sub toString
         {
             my @sarr = ();
             foreach my $e ( @{ $expr->Arglist } ) {
-                push @sarr, $e->toString( $plist, $level + 1 );
+                if ( ref $e )
+                {   push @sarr, $e->toString( $plist, $level + 1 );   }
+                else
+                {   push @sarr, $e;   }
             }
             if ( $#sarr > 0 )
             {
@@ -2147,7 +2178,10 @@ sub toMatlabString
         '<=' => 'leq',
         '>=' => 'geq',
         '!=' => 'neq',
-        '==' => 'equivalent'
+        '==' => 'equivalent',
+        '~=' => 'neq',
+        '!'  => 'not',
+        '~'  => 'not'
     );
 
 	my %fnhash =
@@ -2479,14 +2513,21 @@ sub getVariables
         # handle the function arguments
         foreach my $i ( 1 .. $#{$expr->Arglist} )
         {
-            $expr->Arglist->[$i]->getVariables($plist, $level+1, $rethash);
+            my $arg = $expr->Arglist->[$i];
+            if ( ref($arg) && $arg->can('getVariables') )
+            {
+                $arg->getVariables($plist, $level+1, $rethash);
+            }
         }
     }
     else
     {
         foreach my $e ( @{$expr->Arglist} )
         {
-            $e->getVariables($plist, $level + 1, $rethash);
+            if ( ref($e) && $e->can('getVariables') )
+            {
+                $e->getVariables($plist, $level + 1, $rethash);
+            }
         }
     }
 

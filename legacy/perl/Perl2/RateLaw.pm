@@ -1239,25 +1239,49 @@ sub validate
         if ( defined $model )
         {
             my ($actE_param, $err2) = $model->ParamList->lookup($rl->Constants->[1]);
-            if ( !$err2 && defined $actE_param && defined $actE_param->Expr )
+            if ( !$err2 && defined $actE_param && defined $actE_param->Expr && defined $model->EnergyPatterns )
             {
-                if ( defined $model->EnergyPatterns )
+                # Variables present in every energy pattern's Gf expression
+                # (for example RT used to normalize all free energies) are
+                # shared normalization constants, not motif-specific energy
+                # parameters. Dependence on those variables does not double
+                # count a structural contribution to deltaG.
+                my $shared_vars;
+                foreach my $epatt ( @{$model->EnergyPatterns} )
                 {
-                    foreach my $epatt ( @{$model->EnergyPatterns} )
+                    next unless defined $epatt->Gf;
+                    my $epatt_vars = $epatt->Gf->getVariables( $model->ParamList );
+                    my %varnames = ();
+                    foreach my $type ( keys %$epatt_vars )
                     {
-                        if ( defined $epatt->Gf )
+                        foreach my $varname ( keys %{$epatt_vars->{$type}} )
                         {
-                            my $epatt_vars = $epatt->Gf->getVariables( $model->ParamList );
-                            foreach my $type ( keys %$epatt_vars )
+                            $varnames{$varname} = 1;
+                        }
+                    }
+                    if ( !defined $shared_vars )
+                    {   $shared_vars = { %varnames };   }
+                    else
+                    {
+                        foreach my $varname ( keys %$shared_vars )
+                        {   delete $shared_vars->{$varname} unless exists $varnames{$varname};   }
+                    }
+                }
+                $shared_vars ||= {};
+
+                foreach my $epatt ( @{$model->EnergyPatterns} )
+                {
+                    next unless defined $epatt->Gf;
+                    my $epatt_vars = $epatt->Gf->getVariables( $model->ParamList );
+                    foreach my $type ( keys %$epatt_vars )
+                    {
+                        foreach my $varname ( keys %{$epatt_vars->{$type}} )
+                        {
+                            next if exists $shared_vars->{$varname};
+                            my ($dep, $dep_err) = $actE_param->Expr->depends( $model->ParamList, $varname );
+                            if ( $dep )
                             {
-                                foreach my $varname ( keys %{$epatt_vars->{$type}} )
-                                {
-                                    my ($dep, $dep_err) = $actE_param->Expr->depends( $model->ParamList, $varname );
-                                    if ( $dep )
-                                    {
-                                        return sprintf("Arrhenius ratelaw activation energy '%s' must be independent of energy pattern parameter '%s'", $rl->Constants->[1], $varname);
-                                    }
-                                }
+                                return sprintf("Arrhenius ratelaw activation energy '%s' must be independent of energy pattern parameter '%s'", $rl->Constants->[1], $varname);
                             }
                         }
                     }

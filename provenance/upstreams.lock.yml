@@ -2,49 +2,49 @@
   "$schema": "schemas/upstreams-lock.schema.json",
   "schema_version": 1,
   "baseline": {
-    "date": "2026-09-08",
+    "date": "2026-09-23",
     "status": "pending-maintainer-approval",
     "approved_by": null,
     "approved_at": null,
     "notes": [
-      "Revisions are observed local HEADs, not accepted import cutoffs.",
-      "BNG3 and NFsim worktrees were dirty; revisions identify HEAD only, not uncommitted content.",
-      "Remote refresh was attempted on 2026-09-07 but blocked by unavailable DNS; maintainer approval and oracle locks remain pending.",
-      "Observed local revisions were refreshed on 2026-09-08 after the validated semantic-model checkpoint."
+      "Revisions remain observed snapshots, not accepted import cutoffs; maintainer approval, oracle recipes, artifact digests, and compiler images remain pending.",
+      "On 2026-09-23, gh verified the current RuleWorld/bionetgen, RuleWorld/nfsim, and RuleWorld/PyBioNetGen remote heads. The BNG3 revision records the local main base used for this reconciliation.",
+      "Other source rows retain their earlier observation dates and were not refreshed in this pass.",
+      "The 2026-09-23 per-commit triage is recorded in provenance/reconciliation/ and docs/UPSTREAM_RECONCILIATION_2026-09-23.md."
     ]
   },
   "sources": {
     "bng3": {
       "repository": "https://github.com/RuleWorld/BNG3.git",
       "branch": "main",
-      "revision": "7d88977ca4bf7fbd98933ee8338fab9b05b9950a",
+      "revision": "7b61ecc704e6ef775a2f6a3f2c22e8d721fc6701",
       "role": "destination-and-future-authority",
       "status": "observed",
       "evidence": {
         "kind": "local-checkout",
-        "checked_at": "2026-09-09"
+        "checked_at": "2026-09-23"
       }
     },
     "bionetgen": {
       "repository": "https://github.com/RuleWorld/bionetgen.git",
       "branch": "master",
-      "revision": "e0a5c6d9e6c4730f66102e48d0d0a598337083e7",
+      "revision": "9601746f8884ed19ab2acea49fe87fc4660ace46",
       "role": "reconciliation-source-and-bng2-oracle-lineage",
       "status": "observed",
       "evidence": {
-        "kind": "local-checkout",
-        "checked_at": "2026-09-08"
+        "kind": "remote-head",
+        "checked_at": "2026-09-23"
       }
     },
     "nfsim": {
       "repository": "https://github.com/RuleWorld/NFsim.git",
       "branch": "master",
-      "revision": "a6f9fa945c9d6e1e122e789c952260112c93f157",
+      "revision": "9b00d42f734dcc3e695205600f12cae5b44d1daa",
       "role": "reconciliation-source-and-native-oracle-lineage",
       "status": "observed",
       "evidence": {
-        "kind": "local-checkout",
-        "checked_at": "2026-09-08"
+        "kind": "remote-head",
+        "checked_at": "2026-09-23"
       }
     },
     "nfsim-rasi": {
@@ -72,12 +72,12 @@
     "pybionetgen": {
       "repository": "https://github.com/RuleWorld/PyBioNetGen.git",
       "branch": "main",
-      "revision": "43b09a5346402986d48b1defba5eaec0ae2f7802",
+      "revision": "28bf351a9bbfc197e19487c26dedda683716bb64",
       "role": "python-and-atomizer-reconciliation-source",
       "status": "observed",
       "evidence": {
-        "kind": "local-checkout",
-        "checked_at": "2026-09-08"
+        "kind": "remote-head",
+        "checked_at": "2026-09-23"
       }
     },
     "bngplayground": {

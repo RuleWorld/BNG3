@@ -982,7 +982,6 @@ sub toStringSSC
 	    if ( $p == 1 ) {
 		    if ( exists $pattern2{$m} ) {
 		    	$curLabel = $pattern2{$m};
-		    	++$mol_index;   # TODO: missing increment here, is this correct now?  --Justin, 15dec2010
 		    }
 		    else {
 		    	$pattern2{$m} = $mol_index;
@@ -3296,12 +3295,11 @@ sub build_reaction
             # (2) Assign product species to inferred compartment (possibly undefined).  Note that
             #  this will force all unassigned molecules to the inferred compartment.
 		    $err = $p->assignCompartment($infer_comp);
-		    if ($err)
-		    {
-			    exit_error("$err\n" . "RxnRule>" . $rr->toString() . "\n");
-		    }
 
-            # (3) Check topology of bonds wwith 
+		    # Check topology before handling assignment errors: assigning a
+		    # compartment may report the same invalid bond topology, but a
+		    # compartment-agnostic rule producing such a product is a recoverable
+		    # rejected reaction rather than a reason to abort the whole run.
 		    unless ( $p->verifyTopology(1) )
 		    {
 			    print "WARNING: Reaction rule generated a product with invalid bonds with respect"
@@ -3310,6 +3308,13 @@ sub build_reaction
 				     ."RxnRule>", $rr->toString(), "\n"
                      ."Product> ", $p->toString(), "\n";
 			    return undef;
+		    }
+
+		    # Any remaining error is an assignment problem unrelated to bond
+		    # topology and remains fatal.
+		    if ($err)
+		    {
+			    exit_error("$err\n" . "RxnRule>" . $rr->toString() . "\n");
 		    }
 
 		    # Check that product species is same compartment as the product pattern!
@@ -3387,12 +3392,15 @@ sub build_reaction
     
 	# Add any reactants with Fixed attribute to products list
 	# to insure concentration does not change
-    # TODO: the Fixed reactant feature will be depreacted in a future release
+	our $warned_fixed_reactant;
 	my $ri = 0;
 	foreach my $rpatt ( @{$rr->Reactants} )
 	{
 		if ( $rpatt->Fixed )
-		{   push @$product_species, $reactant_species->[$ri];   }
+		{
+			send_warning("The Fixed reactant feature will be deprecated in a future release.") unless $warned_fixed_reactant++;
+			push @$product_species, $reactant_species->[$ri];
+		}
 		++$ri;
 	}
         
@@ -3773,9 +3781,11 @@ sub apply_operations
 			# printf "prod: %s\n", $g->toString();
 			# Should add pointer from product pattern to new molecules in $g
 
-			# save molecule addition for canonical labeling
-			# TODO: get real canonical label for molecule!!
-			push @$stack, $newMol->toString;
+			# Save a canonical molecule label for reaction canonicalization.
+			my $sg_tmp = SpeciesGraph->new();
+			push @{$sg_tmp->Molecules}, $newMol->copy();
+			$sg_tmp->sortLabel();
+			push @$stack, $sg_tmp->StringExact;
 		}
 
 		# add molecule addition operations to the canonical label
@@ -4038,7 +4048,7 @@ sub apply_operations
 				}
 				$ip1++;
 			}
-			unless ( defined $ref1 ) {  $ref1 = $g_ref1;  }
+			unless ( defined $ref1 ) {  $ref1 = '-1.' . $eadd->[0];  }
 
 			# now for the other end of the edge...
 			my $ref2 = undef;
@@ -4058,7 +4068,7 @@ sub apply_operations
 				}
 				$ip2++;
 			}
-			unless ( defined $ref2 ) {  $ref2 = $g_ref2;  }
+			unless ( defined $ref2 ) {  $ref2 = '-1.' . $eadd->[1];  }
 
 			# APPLY edge addition now
 			$g->addEdge( "ne${nedge}", $g_ref1, $g_ref2 );

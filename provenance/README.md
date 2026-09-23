@@ -13,6 +13,16 @@ the source tree, tests, and machine-readable provenance records are canonical.
 written as JSON-compatible YAML so the repository can validate it with the
 Python standard library.
 
+The 2026-09-23 snapshot refreshes the observed RuleWorld heads for BioNetGen,
+NFsim, and PyBioNetGen. Each observed range is reconciled commit by commit in
+[`reconciliation/`](reconciliation/) and summarized in
+[`../docs/UPSTREAM_RECONCILIATION_2026-09-23.md`](../docs/UPSTREAM_RECONCILIATION_2026-09-23.md).
+The starting revisions in those ledgers are the previously locked source
+revisions; the cutoffs are the newly observed source heads. This refresh does
+not approve those cutoffs. The baseline remains pending maintainer approval,
+and ledger owners remain explicitly unassigned. Empty `tests` arrays mean
+this reconciliation pass makes no test-execution claim.
+
 The current continuation uses the locked native oracle revisions and keeps
 missing engines, missing outputs, and unsupported population-map semantics
 fail-closed. Hosted source, artifact, and check details are valid only for the

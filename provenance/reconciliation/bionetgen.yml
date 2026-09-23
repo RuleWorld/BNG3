@@ -1,0 +1,273 @@
+{
+  "$schema": "../schemas/reconciliation-ledger.schema.json",
+  "schema_version": 1,
+  "source": "bionetgen",
+  "represented_revision": "e0a5c6d9e6c4730f66102e48d0d0a598337083e7",
+  "cutoff_revision": "9601746f8884ed19ab2acea49fe87fc4660ace46",
+  "owner": "Unassigned; maintainer assignment pending",
+  "entries": [
+    {
+      "source_revision": "897e8a29a93dc42db8c1af74b0fbce968e52cb23",
+      "capability": "Constrain generic BNGcore inequality overloads to BNGcore value types",
+      "classification": "not-applicable",
+      "bng3_reference": null,
+      "tests": [],
+      "reviewer": "Codex technical reconciliation; maintainer review pending",
+      "rationale": "BNG3 does not carry the legacy BNGcore generic comparison overloads; this portability fix targets types and code absent from the migrated runtime."
+    },
+    {
+      "source_revision": "20fe141452e79d01fd4a669d801da59c73d38588",
+      "capability": "Guard empty graph canonicalization, reject invalid bridge-bond dissociation products, and report action exceptions",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/core/PatternGraph.cpp; cpp/ast/ReactionRule.cpp; cpp/main.cpp",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation; maintainer review pending",
+      "rationale": "All three behaviors are present in the BNG3-native implementation: empty graphs short-circuit canonicalization, pure bond-breaking rules reject undeclared fragments, and action exceptions are reported with a nonzero process result."
+    },
+    {
+      "source_revision": "dca95a6aa80e249f1adf981037b61bf020f7b5ad",
+      "capability": "Repair legacy parser, expression, compartment, reaction, and export regressions",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "legacy/perl/Perl2/BNGAction.pm; BNGOutput.pm; Expression.pm; MacroBNGModel.pm; RateLaw.pm; RxnRule.pm; SpeciesGraph.pm",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation; maintainer review pending",
+      "rationale": "Applicable legacy behavior changes were ported to BNG3 compatibility code, including scan-header preservation, child-process status handling, safer expression handling, compartment checks, canonical reaction labels, export corrections, and fail-closed input parsing. BNG3-specific unsupported semantics remain fail-closed."
+    },
+    {
+      "source_revision": "39ec47764ac6ad97a2bd4ca16e7762bd55d2ca57",
+      "capability": "Record upstream issue triage and validation notes",
+      "classification": "not-applicable",
+      "bng3_reference": "docs/UPSTREAM_RECONCILIATION_2026-09-23.md",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation; maintainer review pending",
+      "rationale": "This is source-repository issue-triage documentation; BNG3 tracks its implementation status in its own progress and reconciliation records."
+    },
+    {
+      "source_revision": "659164eae2d38526833547e9ddac9bdf5836bfd3",
+      "capability": "Record an upstream PR base revision",
+      "classification": "not-applicable",
+      "bng3_reference": "docs/UPSTREAM_RECONCILIATION_2026-09-23.md",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation; maintainer review pending",
+      "rationale": "The PR-base note is provenance for the source repository workflow and does not change BNG3 runtime behavior."
+    },
+    {
+      "source_revision": "f05a113ba1720dbf5f4acdc814913fc56c7b89b9",
+      "capability": "Merge upstream master into the source issue branch",
+      "classification": "not-applicable",
+      "bng3_reference": "docs/UPSTREAM_RECONCILIATION_2026-09-23.md",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation; maintainer review pending",
+      "rationale": "Merge bookkeeping is not a BNG3 source change; the individual behavior commits in the locked range are classified separately."
+    },
+    {
+      "source_revision": "1423c3552b1e990d2d97c0ac531562990815f6f6",
+      "capability": "Record final upstream merge details",
+      "classification": "not-applicable",
+      "bng3_reference": "docs/UPSTREAM_RECONCILIATION_2026-09-23.md",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation; maintainer review pending",
+      "rationale": "This is source-repository merge documentation and has no independent BNG3 runtime behavior."
+    },
+    {
+      "source_revision": "1f92663066cfccfa33876f8e3b61c8dd21e10742",
+      "capability": "Clean merge whitespace",
+      "classification": "not-applicable",
+      "bng3_reference": "docs/UPSTREAM_RECONCILIATION_2026-09-23.md",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation; maintainer review pending",
+      "rationale": "Whitespace-only cleanup in the source checkout is not an independent BNG3 capability."
+    },
+    {
+      "source_revision": "55168a4e2ed2f524a68c397daa87b08dd0726232",
+      "capability": "Merge origin master into the source issue branch",
+      "classification": "not-applicable",
+      "bng3_reference": "docs/UPSTREAM_RECONCILIATION_2026-09-23.md",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation; maintainer review pending",
+      "rationale": "Merge bookkeeping is not a BNG3 source change; the individual behavior commits in the locked range are classified separately."
+    },
+    {
+      "source_revision": "b918914ee4cd3f109b0b5adff3a3a5089619167f",
+      "capability": "Escape a greater-than relation in the hybrid validation XML reference",
+      "classification": "incorporated-identically",
+      "bng3_reference": "tests/validation/Validate/DAT_validate/hybrid_test_hpp.xml",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation; maintainer review pending",
+      "rationale": "The affected reference relation is XML-escaped in the matching BNG3 fixture."
+    },
+    {
+      "source_revision": "d132702da784237aa10576c7373f691ffdc05071",
+      "capability": "Add native isolated parallel batch execution",
+      "classification": "not-applicable",
+      "bng3_reference": "legacy/perl/Perl2/BNGAction.pm; python/bionetgen/",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation; maintainer review pending",
+      "rationale": "BNG3 already has its own parameter-scan worker isolation and platform-specific serial fallback; importing the BNG2 batch runner would duplicate a source-specific implementation."
+    },
+    {
+      "source_revision": "16c910d272d5e254a041a33ba0b1349e4241ec75",
+      "capability": "Merge pull request #334",
+      "classification": "not-applicable",
+      "bng3_reference": "docs/UPSTREAM_RECONCILIATION_2026-09-23.md",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation; maintainer review pending",
+      "rationale": "Merge container for source-repository work; constituent behavior changes are classified separately."
+    },
+    {
+      "source_revision": "079cffa69015725b5258c82c037bcf70694b4c77",
+      "capability": "Merge pull request #337",
+      "classification": "not-applicable",
+      "bng3_reference": "docs/UPSTREAM_RECONCILIATION_2026-09-23.md",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation; maintainer review pending",
+      "rationale": "Merge container for source-repository work; constituent behavior changes are classified separately."
+    },
+    {
+      "source_revision": "f4e308f44fd65e24016aa987c303fc888ed30822",
+      "capability": "Add a compartment-transport/local-function teaching model and source validation reference",
+      "classification": "not-applicable",
+      "bng3_reference": "docs/user_guide.md; models/",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation; maintainer review pending",
+      "rationale": "This adds BNG2 tutorial and validation assets. BNG3 has a distinct Markdown guide and independent validation corpus; the BNG2 generated .net reference is not imported as an oracle."
+    },
+    {
+      "source_revision": "ccfeb846f95ab269a58f0e00faad9db27c3c91d1",
+      "capability": "Simplify the local-function example explanation",
+      "classification": "not-applicable",
+      "bng3_reference": "docs/UPSTREAM_RECONCILIATION_2026-09-23.md",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation; maintainer review pending",
+      "rationale": "This refines the source repository tutorial explanation and does not change engine behavior."
+    },
+    {
+      "source_revision": "47834322364e80f0141955c8b63ff71e83075800",
+      "capability": "Add a ReadTheDocs tutorial for cBNGL transport and local functions",
+      "classification": "not-applicable",
+      "bng3_reference": "docs/UPSTREAM_RECONCILIATION_2026-09-23.md",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation; maintainer review pending",
+      "rationale": "The source tutorial is part of its Sphinx/ReadTheDocs site. BNG3 has no Sphinx documentation build; this reconciliation does not copy a parallel site tree."
+    },
+    {
+      "source_revision": "fd1b333f7fe477a7a95a97d37f5f97ff54abd780",
+      "capability": "Create an Advanced Tutorials section and reorganize the source documentation",
+      "classification": "not-applicable",
+      "bng3_reference": "docs/UPSTREAM_RECONCILIATION_2026-09-23.md",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation; maintainer review pending",
+      "rationale": "Documentation navigation and Sphinx page moves are specific to the source documentation site."
+    },
+    {
+      "source_revision": "86d7b31a6bb23afba86284f91ec7cdcc017387bd",
+      "capability": "Add FceRI and EGFR teaching tutorials and annotate an existing model",
+      "classification": "not-applicable",
+      "bng3_reference": "models/fceRI_compendium/fceri_ji.bngl; docs/user_guide.md",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation; maintainer review pending",
+      "rationale": "The tutorial pages and model citation are educational content in the source ReadTheDocs site; BNG3 retains its own FceRI model and docs structure."
+    },
+    {
+      "source_revision": "9769ae08af6fdad046c3ca1778d948eec3451557",
+      "capability": "Add a simplified JAK-STAT teaching model and tutorial",
+      "classification": "not-applicable",
+      "bng3_reference": "docs/user_guide.md; models/",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation; maintainer review pending",
+      "rationale": "This is a new source-repository example and tutorial rather than a change to the shared engine contract; BNG3 has not imported its generated source validation reference."
+    },
+    {
+      "source_revision": "86015cdbe8fc5e96489fc84e7ae2de7afec9a421",
+      "capability": "Add a LAT polymerization teaching model and tutorial",
+      "classification": "not-applicable",
+      "bng3_reference": "docs/user_guide.md; models/",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation; maintainer review pending",
+      "rationale": "This is a source-repository example/tutorial addition; its generated network and trajectory references are not accepted as BNG3 oracle evidence."
+    },
+    {
+      "source_revision": "7c1a7c7543bf52bd356099cde44f0a7589a9897a",
+      "capability": "Add a TASEP-inspired translation teaching model and tutorial",
+      "classification": "not-applicable",
+      "bng3_reference": "docs/user_guide.md; models/",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation; maintainer review pending",
+      "rationale": "This is source-repository teaching content and generated validation data, outside this engine-behavior port."
+    },
+    {
+      "source_revision": "6b7f493b5e9d6b049909fca4cc8b7e0fa26a2db4",
+      "capability": "Add an energy-based cooperative-binding teaching model and tutorial",
+      "classification": "not-applicable",
+      "bng3_reference": "docs/user_guide.md; models/",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation; maintainer review pending",
+      "rationale": "This is source-repository teaching content and generated validation data; BNG3 keeps its own nonequilibrium-energy and energy-parity scope."
+    },
+    {
+      "source_revision": "27fcb1429f36ae33335476bd2cd3cbce281db4ad",
+      "capability": "Add simulate action behavior and ODE trajectory regressions for source tutorial models",
+      "classification": "not-applicable",
+      "bng3_reference": "docs/UPSTREAM_RECONCILIATION_2026-09-23.md",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation; maintainer review pending",
+      "rationale": "This commit adds source tutorial-model ODE trajectories and documentation, not a shared runtime implementation. Its BNG2 fixture outputs are not copied or treated as BNG3 validation evidence."
+    },
+    {
+      "source_revision": "0a6d6d9fd92aa8dcd02c452f1190ae472e2b249d",
+      "capability": "Demonstrate NFsim on the LAT tutorial model",
+      "classification": "not-applicable",
+      "bng3_reference": "docs/UPSTREAM_RECONCILIATION_2026-09-23.md",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation; maintainer review pending",
+      "rationale": "This is an additional source tutorial workflow; BNG3 independent NFsim qualification remains governed by its own exact-head gates."
+    },
+    {
+      "source_revision": "5745819787cad5e2a2f3899470adb33dc05ea82c",
+      "capability": "Synchronize the source citation-watch workflow",
+      "classification": "not-applicable",
+      "bng3_reference": "docs/UPSTREAM_RECONCILIATION_2026-09-23.md",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation; maintainer review pending",
+      "rationale": "A GitHub Pages/citation maintenance workflow is repository-specific automation, not BNG3 product behavior."
+    },
+    {
+      "source_revision": "ab5167ae01ed21fdb83df6e5886c2e69dba3eb30",
+      "capability": "Collapse the source citation-watch workflow into a wrapper",
+      "classification": "not-applicable",
+      "bng3_reference": "docs/UPSTREAM_RECONCILIATION_2026-09-23.md",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation; maintainer review pending",
+      "rationale": "A repository-specific citation workflow refactor does not apply to BNG3 runtime parity."
+    },
+    {
+      "source_revision": "ce41aa3b0ec425d88a5c3bfa625c0f2f75d31a2b",
+      "capability": "Remove the source recent-models workflow",
+      "classification": "not-applicable",
+      "bng3_reference": "docs/UPSTREAM_RECONCILIATION_2026-09-23.md",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation; maintainer review pending",
+      "rationale": "The workflow is specific to the source repository website and is not present in BNG3."
+    },
+    {
+      "source_revision": "6c6a972330b81ab6e138e303f77aac7137ec32e3",
+      "capability": "Restore recoverable rejection for products with invalid compartment bonds (#339)",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "legacy/perl/Perl2/RxnRule.pm; legacy/perl/Perl2/SpeciesGraph.pm",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation; maintainer review pending",
+      "rationale": "Invalid compartment-bond products now follow topology rejection in the retained Perl compatibility engine rather than aborting the run.",
+      "issue": "#339"
+    },
+    {
+      "source_revision": "9601746f8884ed19ab2acea49fe87fc4660ace46",
+      "capability": "Allow a shared energy-pattern normalization variable in Arrhenius actE (#340)",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "legacy/perl/Perl2/RateLaw.pm",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation; maintainer review pending",
+      "rationale": "Arrhenius activation energy validation now excludes only variables shared by every energy-pattern free-energy expression, preserving rejection for motif-specific dependencies.",
+      "issue": "#340"
+    }
+  ]
+}
