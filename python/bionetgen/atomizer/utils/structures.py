@@ -32,7 +32,8 @@ class Species:
     def copy(self):
         species = Species()
         species.molecules = [molecule.copy() for molecule in self.molecules]
-        if hasattr(self, "bonds"): species.bonds = list(self.bonds)
+        if hasattr(self, "bonds"):
+            species.bonds = list(self.bonds)
         return species
 
     def addMolecule(self, molecule, concatenate=False, iteration=1):
@@ -270,7 +271,8 @@ class Molecule:
         molecule.components = [element.copy() for element in self.components]
         molecule.compartment = self.compartment
         molecule.trueName = self.trueName
-        if hasattr(self, "idx"): molecule.idx = self.idx
+        if hasattr(self, "idx"):
+            molecule.idx = self.idx
         return molecule
 
     def addChunk(self, chunk):

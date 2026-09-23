@@ -118,7 +118,8 @@ class Species:
         species = Species()
         species.identifier = randint(0, 1000000)
         species.molecules = [molecule.copy() for molecule in self.molecules]
-        if hasattr(self, "bonds"): species.bonds = list(self.bonds)
+        if hasattr(self, "bonds"):
+            species.bonds = list(self.bonds)
         return species
 
     def getMoleculeById(self, idx):
@@ -491,7 +492,8 @@ class Molecule:
         molecule.components = [element.copy() for element in self.components]
         molecule.compartment = self.compartment
         molecule.uniqueIdentifier = self.uniqueIdentifier
-        if hasattr(self, "trueName"): molecule.trueName = self.trueName
+        if hasattr(self, "trueName"):
+            molecule.trueName = self.trueName
         return molecule
 
     def addChunk(self, chunk):
