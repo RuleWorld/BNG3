@@ -72,7 +72,8 @@ legacy stub.
 This pass checks source revisions, reconciles the listed commit ranges, and
 updates the code and provenance records. It does not run test suites or claim
 that the complete BNG3 convergence checklist has been re-audited. The
-provenance schema validator and whitespace checks are recorded with the
-resulting commit. Maintainers still need to assign ledger owners, accept or
+provenance schema validator, frozen corpus manifest validation and
+regeneration, Perl syntax checks, and whitespace checks are recorded with the
+resulting commits. Maintainers still need to assign ledger owners, accept or
 adjust the source cutoffs, and approve the oracle/build recipes before the
 source lock can become an approved baseline.
