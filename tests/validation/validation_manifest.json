@@ -7,5 +7,14 @@
     "test_tfun_xml",
     "test_write_sbml_multi",
     "visualize"
-  ]
+  ],
+  "reference_molecule_name_aliases": {
+    "test_sbml_flat": {
+      "A____": "A",
+      "AA____": "AA",
+      "B____": "B",
+      "C____": "C",
+      "D____": "D"
+    }
+  }
 }

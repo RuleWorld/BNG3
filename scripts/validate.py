@@ -63,8 +63,8 @@ def load_skip_models(skip_file: Union[Path, str], profile: str) -> list[str]:
     return list(models)
 
 
-def load_validation_manifest(manifest_file: Union[Path, str]) -> list[str]:
-    """Load the named action-output fixtures from the validation manifest."""
+def _read_validation_manifest(manifest_file: Union[Path, str]) -> dict:
+    """Read the versioned validation manifest."""
 
     path = Path(manifest_file)
     try:
@@ -73,14 +73,61 @@ def load_validation_manifest(manifest_file: Union[Path, str]) -> list[str]:
         raise ValueError(f"cannot read validation manifest {path}: {exc}") from exc
     if not isinstance(manifest, dict) or manifest.get("schema_version") != 1:
         raise ValueError(f"validation manifest {path} must use schema_version 1")
+    return manifest
+
+
+def load_validation_manifest(manifest_file: Union[Path, str]) -> list[str]:
+    """Load the named action-output fixtures from the validation manifest."""
+
+    manifest = _read_validation_manifest(manifest_file)
     models = manifest.get("action_models")
     if not isinstance(models, list) or any(
         not isinstance(model, str) or not model.strip() for model in models
     ):
-        raise ValueError(f"validation manifest {path} must contain action_models")
+        raise ValueError(
+            f"validation manifest {manifest_file} must contain action_models"
+        )
     if len(models) != len(set(models)):
-        raise ValueError(f"validation manifest {path} contains duplicate action models")
+        raise ValueError(
+            f"validation manifest {manifest_file} contains duplicate action models"
+        )
     return list(models)
+
+
+def load_validation_molecule_name_aliases(
+    manifest_file: Union[Path, str],
+) -> dict[str, dict[str, str]]:
+    """Load explicit BNG2-to-BNG3 molecule-name aliases for reference checks."""
+
+    manifest = _read_validation_manifest(manifest_file)
+    aliases_by_model = manifest.get("reference_molecule_name_aliases", {})
+    if not isinstance(aliases_by_model, dict):
+        raise ValueError(
+            "validation manifest reference_molecule_name_aliases must be an object"
+        )
+
+    validated: dict[str, dict[str, str]] = {}
+    for model_name, aliases in aliases_by_model.items():
+        if not isinstance(model_name, str) or not model_name.strip():
+            raise ValueError(
+                "reference molecule-name alias model names must be nonempty"
+            )
+        if not isinstance(aliases, dict) or any(
+            not isinstance(source, str)
+            or not source.strip()
+            or not isinstance(generated, str)
+            or not generated.strip()
+            for source, generated in aliases.items()
+        ):
+            raise ValueError(
+                f"reference molecule-name aliases for {model_name!r} must be string mappings"
+            )
+        if len(set(aliases.values())) != len(aliases):
+            raise ValueError(
+                f"reference molecule-name aliases for {model_name!r} must be one-to-one"
+            )
+        validated[model_name] = dict(aliases)
+    return validated
 
 
 def copy_referenced_support_files(
@@ -129,6 +176,7 @@ def run_validation(
     skip_models=None,
     strict_references=False,
     action_models=None,
+    molecule_name_aliases_by_model=None,
 ):
     """Run bng_cpp on all .bngl files and compare against reference .net.
 
@@ -139,11 +187,14 @@ def run_validation(
         skip_models: List of model names (without .bngl) to skip
         strict_references: Treat an unskipped missing reference .net as an error
         action_models: Fixtures validated by action-output contracts below
+        molecule_name_aliases_by_model: Explicit reference-to-output type-name aliases
     """
     if skip_models is None:
         skip_models = []
     if action_models is None:
         action_models = []
+    if molecule_name_aliases_by_model is None:
+        molecule_name_aliases_by_model = {}
 
     dat_dir = validate_dir / "DAT_validate"
     bngl_files = sorted(validate_dir.glob("*.bngl"))
@@ -240,7 +291,13 @@ def run_validation(
                 details.append(f"ERROR {model_name} (parse failure)")
                 continue
 
-            diff = compare_net(ref_network, test_network)
+            diff = compare_net(
+                ref_network,
+                test_network,
+                molecule_name_aliases=molecule_name_aliases_by_model.get(
+                    model_name, {}
+                ),
+            )
             if diff.ok:
                 results["pass"] += 1
                 if verbose:
@@ -391,9 +448,13 @@ def main():
             parser.error(str(exc))
 
     action_models = []
+    molecule_name_aliases_by_model = {}
     if args.validation_manifest:
         try:
             action_models = load_validation_manifest(args.validation_manifest)
+            molecule_name_aliases_by_model = load_validation_molecule_name_aliases(
+                args.validation_manifest
+            )
         except ValueError as exc:
             parser.error(str(exc))
 
@@ -411,6 +472,7 @@ def main():
         skip_models=skip_models,
         strict_references=args.strict_references,
         action_models=action_models,
+        molecule_name_aliases_by_model=molecule_name_aliases_by_model,
     )
 
     # Print details

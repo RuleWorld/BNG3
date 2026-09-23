@@ -9,6 +9,7 @@ import pytest
 from scripts.validate import (
     load_skip_models,
     load_validation_manifest,
+    load_validation_molecule_name_aliases,
     run_validation,
     write_validation_summary,
 )
@@ -467,6 +468,18 @@ def test_reference_exclusion_manifest_is_explicit_and_corpus_backed():
     assert action_models
     assert len(action_models) == len(set(action_models))
     assert all((VALIDATE_DIR / f"{model}.bngl").is_file() for model in action_models)
+
+    aliases = load_validation_molecule_name_aliases(VALIDATION_MANIFEST)
+    assert aliases == {
+        "test_sbml_flat": {
+            "A____": "A",
+            "AA____": "AA",
+            "B____": "B",
+            "C____": "C",
+            "D____": "D",
+        }
+    }
+    assert (VALIDATE_DIR / "test_sbml_flat.bngl").is_file()
 
 
 def test_reference_ci_jobs_run_the_full_corpus_without_exclusions():

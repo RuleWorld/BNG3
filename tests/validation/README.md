@@ -78,7 +78,7 @@ legacy structured-SBML `atomize=>1` contract for the `plain2` validation model.
 - `test_export_formats` — WO-5. BNG-XML/SBML valid, `.net` idempotent.
 
 ## Comparator notes
-`.net` reactions are keyed by structural species identity, not indices or raw bond-label strings. Molecule/site order and explicit bond numbers are ignored; site states, compartments, connectivity, stoichiometry, multiplicity, and rate values remain significant. A duplicated reaction is detected and named.
+`.net` reactions are keyed by structural species identity, not indices or raw bond-label strings. Molecule/site order and explicit bond numbers are ignored; site states, compartments, connectivity, stoichiometry, multiplicity, and rate values remain significant. Molecule names remain significant except where the validation manifest records an explicit, one-to-one source-specific alias. The `test_sbml_flat` aliases cover BNG2's historical `A()` to `A____` sanitization while keeping the network topology, compartments, stoichiometry, group membership, and rates under strict comparison. A duplicated reaction is detected and named.
 
 ## Exceptions
 `exceptions.json` is the only expected-failure ledger. Every entry names exact tests, model, method/platform scope, tracking URL, technical reason, owner, introduction/review dates, and expected assertion signature. `exception_ledger.py` rejects incomplete, duplicate, expired, or stale references and exposes `--max-exceptions` for a non-increasing budget gate.

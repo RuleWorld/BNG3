@@ -581,19 +581,28 @@ def _refined_colors(
 
 
 @lru_cache(maxsize=4096)
-def species_isomorphic(left: str, right: str) -> bool:
+def species_isomorphic(
+    left: str,
+    right: str,
+    molecule_name_aliases: tuple[tuple[str, str], ...] = (),
+) -> bool:
     """Return whether two concrete species have the same labeled graph.
 
     Molecule/site order and explicit bond numbers may differ.  Molecule names,
     site names/states, wildcard bonds, compartments, and bond connectivity must
-    match.  The implementation uses refinement followed by constrained
-    backtracking, which keeps the symmetry-heavy ``blbr`` complexes tractable.
+    match after any explicit source-specific molecule-name aliases are applied.
+    The implementation uses refinement followed by constrained backtracking,
+    which keeps the symmetry-heavy ``blbr`` complexes tractable.
     """
 
     left_graph = _parse_species_graph(left)
     right_graph = _parse_species_graph(right)
     if left_graph is None or right_graph is None:
         return _norm(left) == _norm(right)
+    aliases = dict(molecule_name_aliases)
+    for index, label in enumerate(left_graph.labels):
+        if label[0] == "molecule" and label[1] in aliases:
+            left_graph.labels[index] = (label[0], aliases[label[1]], *label[2:])
     if left_graph.header != right_graph.header:
         return False
     if len(left_graph.labels) != len(right_graph.labels):
@@ -1060,7 +1069,11 @@ def set_rate_mode(net: Network, rate_mode: str) -> Network:
     return net
 
 
-def _species_index_mapping(ref: Network, test: Network) -> dict[int, int]:
+def _species_index_mapping(
+    ref: Network,
+    test: Network,
+    molecule_name_aliases: tuple[tuple[str, str], ...] = (),
+) -> dict[int, int]:
     """Find a one-to-one structural mapping from reference to test species."""
 
     reference_indices = list(ref.species_by_index)
@@ -1070,7 +1083,9 @@ def _species_index_mapping(ref: Network, test: Network) -> dict[int, int]:
             test_index
             for test_index in test_indices
             if species_isomorphic(
-                ref.species_by_index[ref_index], test.species_by_index[test_index]
+                ref.species_by_index[ref_index],
+                test.species_by_index[test_index],
+                molecule_name_aliases,
             )
         ]
         for ref_index in reference_indices
@@ -1154,15 +1169,26 @@ def _group_view(
     return view
 
 
-def compare_net(ref: Network, test: Network, *, compare_rates: bool = True) -> NetDiff:
+def compare_net(
+    ref: Network,
+    test: Network,
+    *,
+    compare_rates: bool = True,
+    molecule_name_aliases: dict[str, str] | None = None,
+) -> NetDiff:
     """Compare networks by graph identity and reaction multiset.
 
     Molecule/site order and explicit bond numbers are serialization details.
-    Molecule names, site states, compartments, explicit connectivity,
-    stoichiometry, multiplicity, and (when enabled) rate values remain
-    significant.
+    Molecule names remain significant unless an explicit source-specific alias
+    maps a reference name to its generated name. Site states, compartments,
+    explicit connectivity, stoichiometry, multiplicity, and (when enabled) rate
+    values always remain significant.
     """
-    mapping = _species_index_mapping(ref, test)
+    aliases = molecule_name_aliases or {}
+    if len(set(aliases.values())) != len(aliases):
+        raise ValueError("molecule name aliases must map to unique generated names")
+    alias_items = tuple(sorted(aliases.items()))
+    mapping = _species_index_mapping(ref, test, alias_items)
     matched_test = set(mapping.values())
     ref_identity = {
         index: ("species", mapping[index]) if index in mapping else ("ref", index)

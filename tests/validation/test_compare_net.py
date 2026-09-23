@@ -199,6 +199,40 @@ def test_network_comparison_uses_graph_identity_for_reactions(tmp_path):
     assert compare_net(reference, generated).ok
 
 
+def test_explicit_molecule_name_aliases_preserve_strict_network_checks(tmp_path):
+    reference_path = (
+        Path(__file__).parent / "Validate" / "DAT_validate" / "test_sbml_flat.net"
+    )
+    aliases = {
+        "A____": "A",
+        "AA____": "AA",
+        "B____": "B",
+        "C____": "C",
+        "D____": "D",
+    }
+    reference_text = reference_path.read_text(encoding="utf-8")
+    generated_text = reference_text
+    for source, generated in aliases.items():
+        generated_text = generated_text.replace(source, generated)
+    generated_path = tmp_path / "generated.net"
+    generated_path.write_text(generated_text, encoding="utf-8")
+
+    reference = parse_net(reference_path)
+    generated = parse_net(generated_path)
+    assert reference is not None
+    assert generated is not None
+    assert not compare_net(reference, generated).ok
+    assert compare_net(reference, generated, molecule_name_aliases=aliases).ok
+
+    changed_rate_path = tmp_path / "changed-rate.net"
+    changed_rate_path.write_text(
+        generated_text.replace("1*k1_f", "2*k1_f", 1), encoding="utf-8"
+    )
+    changed_rate = parse_net(changed_rate_path)
+    assert changed_rate is not None
+    assert not compare_net(reference, changed_rate, molecule_name_aliases=aliases).ok
+
+
 def _net_with_group(
     path: Path, first: str, second: str, group: str, reaction: str = "1 2"
 ) -> Path:
