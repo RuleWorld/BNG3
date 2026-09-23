@@ -1,0 +1,3 @@
+## 2024-05-24 - Avoiding dynamic attribute loss with custom deepcopy
+**Learning:** When replacing Python's slow `copy.deepcopy()` with custom `.copy()` methods on objects like `Molecule` or `Species` to avoid O(N) overhead, standard `.copy()` implementations typically only copy explicitly known attributes. This app heavily uses dynamically assigned attributes like `trueName`, `uniqueIdentifier`, or `compartment` dynamically added in specific algorithms.
+**Action:** When creating custom `.copy()` overrides, always explicitly check and copy dynamically assigned attributes (e.g. `if hasattr(self, 'trueName'): result.trueName = self.trueName`) to ensure strict parity with `deepcopy` behavior and avoid functional regressions.

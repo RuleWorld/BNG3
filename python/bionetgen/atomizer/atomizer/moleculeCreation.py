@@ -635,7 +635,7 @@ def createCatalysisRBM(
 
         # modified species needs to start from the base speceis sine componentStateArray should contain the full set of modifications
         # check that this works correctly for double modifications
-        modifiedSpecies = deepcopy(translator[baseName])
+        modifiedSpecies = translator[baseName].copy()
         # this counter is here for multi level modification events (e.g. double
         # phosporylation)
         modificationCounter = {
@@ -673,7 +673,7 @@ def createCatalysisRBM(
             addStateToComponent(species, baseName, componentState[0], "0")
         # update the base species
         if len(componentStateArray) > 0:
-            translator[baseName] = deepcopy(species)
+            translator[baseName] = species.copy()
             translator[element[0]] = modifiedSpecies
 
 
@@ -714,11 +714,11 @@ def createBindingRBM(
                 tmpSpecies.molecules[0].trueName = molecule
             else:
                 tmpSpecies.molecules[0].trueName = tmpSpecies.molecules[0].name
-            species.addMolecule(deepcopy(tmpSpecies.molecules[0]))
+            species.addMolecule(tmpSpecies.molecules[0].copy())
         else:
             mol = st.Molecule(molecule)
             mol.trueName = molecule
-            # dependencyGraph[molecule] = deepcopy(mol)
+            # dependencyGraph[molecule] = mol.copy()
             species.addMolecule(mol)
     dependencyGraphCounter = Counter(dependencyGraph[element[0]][0])
 
@@ -802,7 +802,7 @@ def createBindingRBM(
                     )
                 if newComponent1.name not in translator_components[mol0_name]:
                     translator[mol0_name].molecules[0].components.append(
-                        deepcopy(newComponent1)
+                        newComponent1.copy()
                     )
                     translator_components[mol0_name].add(newComponent1.name)
             except KeyError as e:
@@ -831,7 +831,7 @@ def createBindingRBM(
                     )
                 if newComponent2.name not in translator_components[mol1_name]:
                     translator[mol1_name].molecules[0].components.append(
-                        deepcopy(newComponent2)
+                        newComponent2.copy()
                     )
                     translator_components[mol1_name].add(newComponent2.name)
             molecule[1].components[-1].bonds.append(bondIdx)
@@ -1077,13 +1077,13 @@ def updateSpecies(species, referenceMolecule):
                 if count > 0:
                     for _ in range(0, count):
                         # just make a copy of the reference component and set active state to 0
-                        componentCopy = deepcopy(component)
+                        componentCopy = component.copy()
                         componentCopy.setActiveState("0")
                         moleculeStructure.addComponent(componentCopy)
                 elif count < 0:
                     for _ in range(0, -count):
                         # FIXME: does not fully copy the states
-                        referenceMolecule.addComponent(deepcopy(newComponent))
+                        referenceMolecule.addComponent(newComponent.copy())
                         flag = True
                 elif count == 0:
                     localComponents = [
@@ -1121,10 +1121,10 @@ def updateSpecies(species, referenceMolecule):
                     newComponent.addState("0")
                 if count > 0:
                     for idx in range(0, count):
-                        moleculeStructure.addComponent(deepcopy(newComponent))
+                        moleculeStructure.addComponent(newComponent.copy())
                 elif count < 0:
                     for idx in range(0, -count):
-                        referenceMolecule.addComponent(deepcopy(newComponent))
+                        referenceMolecule.addComponent(newComponent.copy())
                         flag = True
 
     return flag
