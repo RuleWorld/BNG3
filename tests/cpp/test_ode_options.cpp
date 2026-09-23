@@ -3,6 +3,7 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <chrono>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -56,6 +57,24 @@ TEST_CASE("OdeIntegrator honors explicit nonuniform sample times", "[OdeOptions]
     REQUIRE(result.timePoints == options.sampleTimes);
     REQUIRE(result.concentrations.size() == options.sampleTimes.size());
     REQUIRE(result.observables.size() == options.sampleTimes.size());
+}
+
+TEST_CASE("OdeIntegrator default tolerances preserve an analytic decay trajectory",
+          "[OdeOptions][issue-208]") {
+    auto model = parseDecayModel();
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tEnd = 10.0;
+    options.nSteps = 10;
+    const auto result = engine::OdeIntegrator(*model, network).integrate(options);
+
+    REQUIRE_FALSE(result.concentrations.empty());
+    const double expected = 100.0 * std::exp(-0.1 * options.tEnd);
+    CHECK_THAT(result.concentrations.back().front(),
+               Catch::Matchers::WithinAbs(expected, 2e-6));
 }
 
 TEST_CASE("OdeIntegrator rejects malformed stop conditions", "[OdeOptions]") {
@@ -259,6 +278,41 @@ end reaction rules
     REQUIRE(output.find("begin groups\n") != std::string::npos);
     REQUIRE(output.find("    1 total 1,2\n") != std::string::npos);
     REQUIRE(output.find("    2 present 1\n") != std::string::npos);
+}
+
+TEST_CASE("NetWriter preserves inline parameter comments from BNGL", "[NetWriter][issue-216]") {
+    auto model = parser::parseModel(R"(
+begin parameters
+    k 2  # units=s-1
+end parameters
+begin molecule types
+    A()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin reaction rules
+    A() -> 0 k
+end reaction rules
+)");
+
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    const auto suffix = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto outputPath = std::filesystem::temp_directory_path() /
+        ("bng3-net-writer-parameter-comment-" + std::to_string(suffix) + ".net");
+    io::NetWriter::write(outputPath, *model, network);
+
+    std::string output;
+    {
+        std::ifstream input(outputPath);
+        REQUIRE(input.good());
+        output.assign(std::istreambuf_iterator<char>(input),
+                      std::istreambuf_iterator<char>());
+    }
+    std::filesystem::remove(outputPath);
+
+    CHECK(output.find("    1 k 2  # units=s-1\n") != std::string::npos);
 }
 
 TEST_CASE("CVODE honors steady-state stopping", "[OdeOptions]") {

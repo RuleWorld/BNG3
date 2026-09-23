@@ -183,6 +183,25 @@ def test_write_functions_emits_non_species_initial_assignments_in_dependency_ord
     ]
 
 
+def test_initial_assignment_can_depend_on_an_assignment_rule_parameter():
+    """Keep SBML parameter initialization independent of source declaration order."""
+
+    model = SBMLModel(
+        id="issue-122-initial-assignment-order",
+        rules=[SBMLRule(type="assignment", variable="derived", math="2")],
+        initial_assignments=[
+            SBMLInitialAssignment(symbol="initial", math="derived + 1")
+        ],
+    )
+
+    assert write_functions(model) == [
+        "derived() = 2",
+        "__assign_rule__derived() = 2",
+        "initial() = (2) + 1",
+        "__assign_rule__initial() = (2) + 1",
+    ]
+
+
 def test_generate_bngl_maps_parameter_initial_assignment_to_function():
     """An initial assignment supersedes a parameter literal in BNGL output."""
 

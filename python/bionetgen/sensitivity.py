@@ -91,7 +91,7 @@ def sensitivity_analysis(
     n_steps: int = 100,
     t_start: float = 0.0,
     rtol: float = 1e-8,
-    atol: float = 1e-8,
+    atol: float = 1e-12,
     seed: int = 0,
     pla_config: str = "",
     psa_poplevel: float = 100.0,

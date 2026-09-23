@@ -50,6 +50,7 @@ public:
     void defineUnit(std::string id, std::string expression);
     void setUnitDefault(std::string role, std::string unit);
     void setParameterUnit(std::string parameter, std::string unit);
+    void setParameterComment(std::string parameter, std::string comment);
     void setCompartmentUnit(std::string compartment, std::string unit);
     void setSeedUnit(std::size_t index, std::string unit);
 
@@ -86,6 +87,7 @@ public:
     const units::UnitSystem& getUnitSystem() const;
     const std::map<std::string, std::string>& getUnitDefaults() const;
     const std::string* findParameterUnit(const std::string& name) const;
+    const std::string* findParameterComment(const std::string& name) const;
     const std::string* findCompartmentUnit(const std::string& name) const;
     const std::string* findSeedUnit(std::size_t index) const;
     GraphTypeRegistry& getGraphTypeRegistry();
@@ -112,6 +114,7 @@ private:
     units::UnitSystem unitSystem_;
     std::map<std::string, std::string> unitDefaults_;
     std::map<std::string, std::string> parameterUnits_;
+    std::map<std::string, std::string> parameterComments_;
     std::map<std::string, std::string> compartmentUnits_;
     std::map<std::size_t, std::string> seedUnits_;
 };

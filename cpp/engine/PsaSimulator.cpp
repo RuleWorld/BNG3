@@ -87,6 +87,46 @@ PsaSimulator::PsaSimulator(const ast::Model& model, const GeneratedNetwork& netw
     compile();
 }
 
+void PsaSimulator::PropensityTree::assign(const std::vector<double>& values) {
+    tree_.assign(values.size() + 1, 0.0);
+    total_ = 0.0;
+    for (std::size_t i = 1; i < tree_.size(); ++i) {
+        total_ += values[i - 1];
+        tree_[i] += values[i - 1];
+        const auto parent = i + (i & (~i + 1));
+        if (parent < tree_.size()) {
+            tree_[parent] += tree_[i];
+        }
+    }
+}
+
+void PsaSimulator::PropensityTree::add(std::size_t index, double delta) {
+    total_ += delta;
+    for (std::size_t i = index + 1; i < tree_.size(); i += i & (~i + 1)) {
+        tree_[i] += delta;
+    }
+}
+
+std::size_t PsaSimulator::PropensityTree::select(double target) const {
+    const std::size_t count = tree_.empty() ? 0 : tree_.size() - 1;
+    std::size_t bit = 1;
+    while (bit <= count / 2) {
+        bit <<= 1;
+    }
+
+    std::size_t prefixLength = 0;
+    double prefixSum = 0.0;
+    while (bit != 0) {
+        const auto next = prefixLength + bit;
+        if (next <= count && prefixSum + tree_[next] < target) {
+            prefixLength = next;
+            prefixSum += tree_[next];
+        }
+        bit >>= 1;
+    }
+    return prefixLength;
+}
+
 void PsaSimulator::compile() {
     nSpecies_ = network_.species.size();
     fixedSpecies_.resize(nSpecies_, false);
@@ -412,13 +452,15 @@ void PsaSimulator::updateRxnRatesPsa(std::size_t irxn,
                                        double& aTot,
                                        const std::vector<double>& state,
                                        double poplevel,
-                                       bool pScaleChecker) const {
+                                       bool pScaleChecker,
+                                       PropensityTree& propensityTree) const {
     // Faithful port of update_rxn_rates_psa() from network.cpp.
     // Recompute propensities only for reactions in the dependency list of irxn.
 
     for (const auto jrxn : rxnUpdateRxn_[irxn]) {
         double anew = rxnRateScaled(jrxn, state, poplevel, pScaleChecker, scaling[jrxn]);
         aTot += anew - propensities[jrxn];
+        propensityTree.add(jrxn, anew - propensities[jrxn]);
         propensities[jrxn] = anew;
     }
 
@@ -428,6 +470,7 @@ void PsaSimulator::updateRxnRatesPsa(std::size_t irxn,
         for (std::size_t i = 0; i < nReactions_; ++i) {
             aTot += propensities[i];
         }
+        propensityTree.assign(propensities);
         if (aTot < 0.0) {
             // This should never happen; treat as zero
             aTot = 0.0;
@@ -435,47 +478,19 @@ void PsaSimulator::updateRxnRatesPsa(std::size_t irxn,
     }
 }
 
-std::size_t PsaSimulator::selectNextRxn(const std::vector<double>& propensities,
-                                          double aTot,
-                                          std::vector<std::size_t>& propOrder,
-                                          std::mt19937_64& rng) const {
-    // Faithful port of select_next_rxn() from network.cpp.
-    // Uses sorted linear search with propensity ordering for speedup.
-
-    std::uniform_real_distribution<double> dist(0.0, aTot);
-    const std::size_t na = propOrder.size();
-
-    while (true) {
-        // Generate random number between 0 and aTot
-        double f = dist(rng);
-        while (f == 0.0) {
-            f = dist(rng);
-        }
-
-        // Find reaction corresponding to random sample (sorted linear search)
-        double aSum = 0.0;
-        std::size_t irxn = 0;
-        for (irxn = 0; irxn < na; ++irxn) {
-            aSum += propensities[propOrder[irxn]];
-            if (f <= aSum) break;
-            // Speed up: if neighboring propensities are in descending order, swap
-            if (irxn > 0 && propensities[propOrder[irxn]] > propensities[propOrder[irxn - 1]]) {
-                std::swap(propOrder[irxn], propOrder[irxn - 1]);
-            }
-        }
-
-        if (irxn == na) {
-            // Picked a reaction that doesn't exist - recalculate aTot
-            double newATot = aSum;
-            if (newATot == 0.0) {
-                return na;  // No reactions have positive propensity
-            }
-            // Update distribution bounds and retry
-            dist = std::uniform_real_distribution<double>(0.0, newATot);
-        } else {
-            return propOrder[irxn];
-        }
+std::size_t PsaSimulator::selectNextRxn(const PropensityTree& propensityTree,
+                                       std::mt19937_64& rng) const {
+    const double total = propensityTree.total();
+    if (total <= 0.0) {
+        return nReactions_;
     }
+
+    std::uniform_real_distribution<double> dist(0.0, 1.0);
+    double fraction = dist(rng);
+    while (fraction == 0.0 || fraction == 1.0) {
+        fraction = dist(rng);
+    }
+    return propensityTree.select(fraction * total);
 }
 
 void PsaSimulator::updateObservables(const std::vector<double>& state,
@@ -523,12 +538,8 @@ OdeResult PsaSimulator::simulate(const OdeOptions& opts, double poplevel,
         a[i] = rxnRateScaled(i, c, poplevel, pScaleChecker, s[i]);
         aTot += a[i];
     }
-
-    // Initialize propensity ordering (for sorted linear search in select_next_rxn)
-    std::vector<std::size_t> propOrder(nReactions_);
-    for (std::size_t i = 0; i < nReactions_; ++i) {
-        propOrder[i] = i;
-    }
+    PropensityTree propensityTree;
+    propensityTree.assign(a);
 
     // rxn_rate_update_interval = 1 (always update, matching network.cpp)
     const int rxnRateUpdateInterval = 1;
@@ -583,7 +594,7 @@ OdeResult PsaSimulator::simulate(const OdeOptions& opts, double poplevel,
             if (tRemain < 0.0) break;
 
             // Select next reaction to fire
-            std::size_t irxn = selectNextRxn(a, aTot, propOrder, rng);
+            std::size_t irxn = selectNextRxn(propensityTree, rng);
             if (irxn == nReactions_) break;  // a_tot = 0.0
 
             // Fire reaction by updating concentrations (PSA version)
@@ -595,7 +606,9 @@ OdeResult PsaSimulator::simulate(const OdeOptions& opts, double poplevel,
             double gspInterval = static_cast<double>(rxnRateUpdateInterval);
             double fmod = nSteps - static_cast<double>(static_cast<long>(nSteps / gspInterval)) * gspInterval;
             if (rxnRateUpdate || fmod <= 1e-12) {
-                updateRxnRatesPsa(irxn, a, s, aTot, c, poplevel, pScaleChecker);
+                updateRxnRatesPsa(
+                    irxn, a, s, aTot, c, poplevel, pScaleChecker,
+                    propensityTree);
             }
         }
 

@@ -16,7 +16,7 @@ struct OdeOptions {
     double tEnd = 1.0;
     std::size_t nSteps = 100;
     double rtol = 1e-8;
-    double atol = 1e-8;
+    double atol = 1e-12;
     std::string method = "euler";  // "euler", "rk4", "cvode" (cvode not yet implemented)
     double maxStep = 0.0;          // 0 = no limit
     std::string stopCondition;     // muParser expression (empty = none)

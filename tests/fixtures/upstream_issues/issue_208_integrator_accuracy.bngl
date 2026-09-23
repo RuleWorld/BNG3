@@ -1,0 +1,32 @@
+begin model
+begin parameters
+	L0 5.0e-3
+	R0 1.0e-6
+	k1 2e-2
+	k2 0.01
+	k4 0.02
+	k3 10*k4/R0
+end parameters
+begin molecule types
+	L(r,r)
+	R(l)
+end molecule types
+begin seed species
+	L(r,r) L0
+	R(l) R0
+end seed species
+begin observables
+	Molecules LR L(r,r!1).R(l!1)
+	Molecules LR2 R(l!1).L(r!1,r!2).R(l!2)
+	Molecules R R(l)
+end observables
+begin reaction rules
+	LRbind: L(r,r) + R(l) <-> L(r,r!1).R(l!1) k1,k2
+	LR2bind: L(r,r!1).R(l!1) + R(l) <-> R(l!1).L(r!1,r!2).R(l!2) k3,k4
+end reaction rules
+end model
+
+# Does not give accurate results
+simulate({method=>"ode", t_end=>10000,n_steps=>1000})
+# Gives more accurate results but still glitches are apparent on timescale t>1000s.
+#simulate({method=>"ode", t_end=>10000,n_steps=>1000,atol=>1e-10,rtol=>1e-10})

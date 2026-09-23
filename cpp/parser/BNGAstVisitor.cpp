@@ -1870,6 +1870,52 @@ void BNGAstVisitor::finalizeThermodynamicMetadata() {
     pendingDrivingWork_.clear();
 }
 
+namespace {
+
+void captureParameterComments(const std::string& source, ast::Model& model) {
+    bool inParameters = false;
+    std::istringstream lines(source);
+    std::string line;
+    while (std::getline(lines, line)) {
+        const auto commentStart = line.find('#');
+        const std::string code = trimCopy(line.substr(0, commentStart));
+        const std::string header = toLower(code);
+        if (header == "begin parameters") {
+            inParameters = true;
+            continue;
+        }
+        if (header == "end parameters") {
+            inParameters = false;
+            continue;
+        }
+        if (!inParameters || commentStart == std::string::npos) continue;
+
+        std::istringstream tokens(code);
+        std::vector<std::string> fields;
+        std::string field;
+        while (tokens >> field) fields.push_back(field);
+        if (fields.empty()) continue;
+
+        std::size_t nameIndex = 0;
+        const auto& first = fields.front();
+        if (!first.empty() && first.back() == ':') {
+            nameIndex = 1;
+        } else if (std::all_of(first.begin(), first.end(), [](unsigned char c) {
+                       return std::isdigit(c) != 0;
+                   })) {
+            nameIndex = 1;
+        }
+        if (nameIndex >= fields.size()) continue;
+        const auto& name = fields[nameIndex];
+        if (!model.getParameters().contains(name)) continue;
+
+        const auto comment = trimCopy(line.substr(commentStart));
+        if (!comment.empty()) model.setParameterComment(name, comment);
+    }
+}
+
+} // namespace
+
 std::unique_ptr<ast::Model> parseModel(const std::string& sourceText) {
     antlr4::ANTLRInputStream input(normalizeBNGLSource(sourceText));
     BNGLexer lexer(&input);
@@ -1883,7 +1929,9 @@ std::unique_ptr<ast::Model> parseModel(const std::string& sourceText) {
     BNGAstVisitor visitor;
     visitor.visit(tree);
     visitor.finalizeThermodynamicMetadata();
-    return visitor.takeModel();
+    auto model = visitor.takeModel();
+    captureParameterComments(sourceText, *model);
+    return model;
 }
 
 std::unique_ptr<ast::Model> parseModelFromFile(const std::string& filePath) {

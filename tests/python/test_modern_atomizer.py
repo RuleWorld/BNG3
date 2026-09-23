@@ -1236,6 +1236,11 @@ def test_playground_math_rewrites_match_writer_contract():
     assert convert_math_expression("pi * exponentiale * true * false") == (
         "3.14159265358979 * 2.71828182845905 * 1 * 0"
     )
+    # Issue #128 operators are translated to expressions accepted by BNGL.
+    assert convert_math_expression("xor(a,b)") == (
+        "(((a) || (b)) && !((a) && (b)))"
+    )
+    assert convert_math_expression("factorial(x)") == "factorial(x)"
 
 
 def test_playground_writer_emits_zero_argument_functions_and_assignment_rules():

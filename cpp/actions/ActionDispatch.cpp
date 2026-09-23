@@ -1261,6 +1261,11 @@ void runSimulation(
     // When continue=1 and no explicit t_start, use the previous simulation's end time
     if (continueSimulation && tStartText.empty() && lastSimulationEndTime > 0.0) {
         opts.tStart = lastSimulationEndTime;
+        // BNG2 treats t_end as the duration of a continued run when t_start
+        // is omitted. Explicit sample_times remain absolute timestamps.
+        if (!tEnd.empty() && !hasSampleTimes) {
+            opts.tEnd += lastSimulationEndTime;
+        }
     }
 
     // Parse save_progress flag (BNG2 parity: write .net checkpoint at each output step)
@@ -2999,7 +3004,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
             // Optional parameters (Perl BNG2 defaults)
             const double bump = parseScalarValue(readArgument(action, "bump", "5"), model);
-            const double atol = parseScalarValue(readArgument(action, "atol", "1e-8"), model);
+            const double atol = parseScalarValue(readArgument(action, "atol", "1e-12"), model);
             const double rtol = parseScalarValue(readArgument(action, "rtol", "1e-8"), model);
             const auto nSteps = static_cast<std::size_t>(parseScalarValue(readArgument(action, "n_steps", "50"), model));
             const auto suffix = stripQuotes(readArgument(action, "suffix", ""));

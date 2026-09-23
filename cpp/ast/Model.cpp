@@ -126,6 +126,10 @@ void Model::setParameterUnit(std::string parameter, std::string unit) {
     }
 }
 
+void Model::setParameterComment(std::string parameter, std::string comment) {
+    parameterComments_[std::move(parameter)] = std::move(comment);
+}
+
 void Model::setCompartmentUnit(std::string compartment, std::string unit) {
     if (unitSystem_.find(unit) == nullptr && !unitSystem_.parse(unit)) {
         throw std::runtime_error("Unknown unit '" + unit + "' for compartment '" + compartment + "'");
@@ -181,6 +185,8 @@ void Model::merge(Model& other) {
     for (const auto& param : other.getParameters().all()) {
         parameters_.add(param);
     }
+    parameterComments_.insert(other.parameterComments_.begin(),
+                              other.parameterComments_.end());
 
     // Merge compartments
     for (const auto& comp : other.getCompartments()) {
@@ -350,6 +356,11 @@ const std::map<std::string, std::string>& Model::getUnitDefaults() const {
 const std::string* Model::findParameterUnit(const std::string& name) const {
     const auto it = parameterUnits_.find(name);
     return it == parameterUnits_.end() ? nullptr : &it->second;
+}
+
+const std::string* Model::findParameterComment(const std::string& name) const {
+    const auto it = parameterComments_.find(name);
+    return it == parameterComments_.end() ? nullptr : &it->second;
 }
 
 const std::string* Model::findCompartmentUnit(const std::string& name) const {

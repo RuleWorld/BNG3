@@ -1462,6 +1462,10 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
 
     out << "begin parameters\n";
     std::size_t parameterIndex = 1;
+    const auto parameterCommentSuffix = [&](const std::string& name) {
+        const auto* comment = model.findParameterComment(name);
+        return comment == nullptr ? std::string() : "  " + *comment;
+    };
     for (const auto& parameter : model.getParameters().all()) {
         // Skip derived parameters - they'll be written later with symbolic expressions
         if (derivedParamNames.count(parameter.getName()) > 0) {
@@ -1469,11 +1473,13 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
         }
         if (!writerOpts.evaluateExpressions) {
             out << "    " << parameterIndex++ << " " << parameter.getName() << " "
-                << parameter.getExpression().toString() << '\n';
+                << parameter.getExpression().toString()
+                << parameterCommentSuffix(parameter.getName()) << '\n';
         } else {
             std::ostringstream valStr;
             valStr << std::setprecision(15) << parameter.getValue();
-            out << "    " << parameterIndex++ << " " << parameter.getName() << " " << valStr.str() << '\n';
+            out << "    " << parameterIndex++ << " " << parameter.getName() << " "
+                << valStr.str() << parameterCommentSuffix(parameter.getName()) << '\n';
         }
     }
     // Seed species initial amounts are written directly in species section

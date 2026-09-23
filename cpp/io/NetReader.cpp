@@ -49,6 +49,8 @@ NetReader::ParseResult NetReader::parse(const std::filesystem::path& filepath) {
 
             // Remove comments (everything after #)
             auto commentPos = line.find('#');
+            const auto inlineComment = commentPos == std::string::npos
+                ? std::string() : trim(line.substr(commentPos));
             if (commentPos != std::string::npos) {
                 line = line.substr(0, commentPos);
             }
@@ -73,6 +75,17 @@ NetReader::ParseResult NetReader::parse(const std::filesystem::path& filepath) {
             // Parse section content
             if (currentSection == "parameters") {
                 parseParameterLine(line, result);
+                if (!inlineComment.empty()) {
+                    auto tokens = split(line, ' ');
+                    std::vector<std::string> filtered;
+                    for (const auto& token : tokens) {
+                        const auto value = trim(token);
+                        if (!value.empty()) filtered.push_back(value);
+                    }
+                    if (filtered.size() >= 2) {
+                        result.parameterComments[filtered[1]] = inlineComment;
+                    }
+                }
             } else if (currentSection == "compartments") {
                 parseCompartmentLine(line, result);
             } else if (currentSection == "species") {

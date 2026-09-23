@@ -41,7 +41,7 @@ def main():
 @click.option("--t-end", "-t", default=100.0, type=float, help="End time.")
 @click.option("--n-steps", "-n", default=100, type=int, help="Number of output steps.")
 @click.option("--rtol", default=1e-8, type=float, help="Relative ODE tolerance.")
-@click.option("--atol", default=1e-8, type=float, help="Absolute ODE tolerance.")
+@click.option("--atol", default=1e-12, type=float, help="Absolute ODE tolerance.")
 @click.option("--seed", default=0, type=int, help="Random seed for stochastic methods.")
 @click.option("--pla-config", default="", help="PLA configuration string.")
 @click.option(
@@ -370,7 +370,7 @@ def atomize(input_path, output_path, atomize, no_conversion, no_pathwaycommons):
     "--t-start", default=0.0, type=float, show_default=True, help="Start time."
 )
 @click.option("--rtol", default=1e-8, type=float, show_default=True)
-@click.option("--atol", default=1e-8, type=float, show_default=True)
+@click.option("--atol", default=1e-12, type=float, show_default=True)
 @click.option("--seed", default=0, type=int, show_default=True)
 @click.option("--pla-config", default="", show_default=False)
 @click.option("--psa-poplevel", default=100.0, type=float, show_default=True)
@@ -457,7 +457,7 @@ def scan(
 @click.option("--n-steps", default=100, type=int, show_default=True)
 @click.option("--t-start", default=0.0, type=float, show_default=True)
 @click.option("--rtol", default=1e-8, type=float, show_default=True)
-@click.option("--atol", default=1e-8, type=float, show_default=True)
+@click.option("--atol", default=1e-12, type=float, show_default=True)
 @click.option("--seed", default=0, type=int, show_default=True)
 @click.option("--pla-config", default="", show_default=False)
 @click.option("--psa-poplevel", default=100.0, type=float, show_default=True)

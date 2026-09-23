@@ -62,6 +62,45 @@ TEST_CASE("SBML reader imports a flat reaction network", "[SbmlReader]") {
     CHECK(parsed.reactions.front().find("1 1 0 k") != std::string::npos);
 }
 
+TEST_CASE("NET reader preserves expression rates and integer reaction references",
+          "[NetReader][issue-105][issue-111]") {
+    const auto path = std::filesystem::temp_directory_path() /
+        "bng3_net_reader_expression_rate.net";
+    {
+        std::ofstream out(path);
+        out << R"net(# reaction expression round-trip contract
+begin parameters
+    1 kcat 3  # units=s-1
+    2 Km 4
+end parameters
+begin species
+    1 A() 2
+    2 B() 0
+end species
+begin functions
+    1 rate() kcat/(Km + S1)
+end functions
+begin reactions
+    1 1 2 kcat/(Km + S1)
+end reactions
+)net";
+    }
+
+    const auto parsed = bng::io::NetReader::parse(path);
+    std::filesystem::remove(path);
+
+    REQUIRE(parsed.success);
+    REQUIRE(parsed.species.size() == 2);
+    CHECK(parsed.species[0].first == "A()");
+    CHECK(parsed.parameterComments.at("kcat") == "# units=s-1");
+    REQUIRE(parsed.functions.size() == 1);
+    const std::pair<std::string, std::string> expectedFunction{
+        "rate()", "kcat/(Km + S1)"};
+    CHECK(parsed.functions[0] == expectedFunction);
+    REQUIRE(parsed.reactions.size() == 1);
+    CHECK(parsed.reactions.front() == "1 1 2 kcat/(Km + S1)");
+}
+
 TEST_CASE("SBML reader rejects atomized conversion requests", "[SbmlReader]") {
     const auto path = std::filesystem::temp_directory_path() / "bng3_sbml_reader_atomize.xml";
     std::ofstream out(path);

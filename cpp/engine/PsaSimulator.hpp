@@ -50,6 +50,18 @@ public:
                        bool pScaleChecker = true);
 
 private:
+    class PropensityTree {
+    public:
+        void assign(const std::vector<double>& values);
+        void add(std::size_t index, double delta);
+        double total() const { return total_; }
+        std::size_t select(double target) const;
+
+    private:
+        std::vector<double> tree_;
+        double total_ = 0.0;
+    };
+
     struct CompiledReaction {
         std::vector<std::size_t> reactantIndices;  // 0-based species indices
         std::vector<std::size_t> productIndices;
@@ -107,18 +119,13 @@ private:
     void updateRxnRatesPsa(std::size_t irxn, std::vector<double>& propensities,
                            std::vector<double>& scaling, double& aTot,
                            const std::vector<double>& state,
-                           double poplevel, bool pScaleChecker) const;
+                           double poplevel, bool pScaleChecker,
+                           PropensityTree& propensityTree) const;
 
     /**
-     * Select next reaction to fire using sorted linear search.
-     * Faithful port of select_next_rxn() from network.cpp.
-     *
-     * Uses a propensity ordering vector that is dynamically sorted
-     * to speed up selection (most likely reactions bubble to front).
+     * Select a reaction from cumulative propensity in logarithmic time.
      */
-    std::size_t selectNextRxn(const std::vector<double>& propensities,
-                              double aTot,
-                              std::vector<std::size_t>& propOrder,
+    std::size_t selectNextRxn(const PropensityTree& propensityTree,
                               std::mt19937_64& rng) const;
 
     /**

@@ -1407,6 +1407,111 @@ end model
         ]
         assert [float(row[0]) for row in rows] == [0.0, 0.25, 1.5, 2.0]
 
+    def test_continue_t_end_is_a_duration_when_t_start_is_omitted(self, tmp_path):
+        bngl = tmp_path / "continue_duration.bngl"
+        bngl.write_text("""
+begin model
+begin parameters
+    k 0
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 1
+end seed species
+begin observables
+    Molecules Xtot X()
+end observables
+begin reaction rules
+    X() -> 0 k
+end reaction rules
+begin actions
+    simulate_ode({prefix=>"continue",t_end=>100,n_steps=>1})
+    setConcentration("X()", 2)
+    simulate_ode({prefix=>"continue",continue=>1,t_end=>10,n_steps=>1})
+end actions
+end model
+""")
+
+        model = bionetgen.load(str(bngl))
+        model.execute()
+
+        rows = [
+            line.split()
+            for line in (tmp_path / "continue.gdat").read_text().splitlines()
+            if line and not line.startswith("#")
+        ]
+        assert [float(row[0]) for row in rows] == [0.0, 100.0, 110.0]
+        assert float(rows[-1][1]) == pytest.approx(2.0)
+
+    def test_ssa_output_step_interval_records_internal_step_cadence(self, tmp_path):
+        bngl = tmp_path / "ssa_output_step_interval.bngl"
+        bngl.write_text("""
+begin model
+begin parameters
+    k 100
+end parameters
+begin molecule types
+    X()
+    Y()
+end molecule types
+begin seed species
+    X() 10
+    Y() 0
+end seed species
+begin observables
+    Molecules Xtot X()
+end observables
+begin reaction rules
+    X() -> Y() k
+end reaction rules
+begin actions
+    simulate({method=>"ssa",prefix=>"cadence",t_end=>1,n_steps=>10,output_step_interval=>2,max_sim_steps=>5,seed=>1,print_CDAT=>0})
+end actions
+end model
+""")
+
+        model = bionetgen.load(str(bngl))
+        model.execute()
+
+        rows = [
+            line.split()
+            for line in (tmp_path / "cadence.gdat").read_text().splitlines()
+            if line and not line.startswith("#")
+        ]
+        assert len(rows) == 4  # initial state, steps 2 and 4, then final step 5
+        assert float(rows[0][0]) == 0.0
+        assert 0.0 < float(rows[1][0]) < float(rows[2][0])
+        assert float(rows[2][0]) < float(rows[3][0]) <= 1.0
+
+    def test_issue_208_default_ode_tolerance_tracks_tight_reference(self):
+        fixture = (
+            Path(__file__).parent.parent
+            / "fixtures"
+            / "upstream_issues"
+            / "issue_208_integrator_accuracy.bngl"
+        )
+        model = _cpp.parse_file(str(fixture))
+        network = _cpp.generate_network(model)
+
+        default = _cpp.simulate_ode(model, network, t_end=10000, n_steps=1000)
+        reference = _cpp.simulate_ode(
+            model,
+            network,
+            t_end=10000,
+            n_steps=1000,
+            atol=1e-13,
+            rtol=1e-13,
+        )
+
+        for name in ("LR", "LR2", "R"):
+            actual = default["observables"][name]
+            expected = reference["observables"][name]
+            assert len(actual) == len(expected) == 1001
+            for observed, target in zip(actual, expected):
+                assert observed == pytest.approx(target, rel=1e-3, abs=1e-14)
+
     def test_parameter_scan_action_writes_final_observables(self, tmp_path):
         bngl = tmp_path / "scan_action.bngl"
         bngl.write_text("""
