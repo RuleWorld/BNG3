@@ -197,9 +197,10 @@ void addAffectedComponent(std::vector<PatternSiteRef>& refs, const PatternSiteRe
 std::vector<CompiledLocalScope> collectLocalScopes(const ast::ReactionRule& rule,
                                                        std::vector<Diagnostic>* diagnostics) {
     std::vector<CompiledLocalScope> scopes;
-    const auto& reactants = rule.getReactants();
-    for (std::size_t patternIndex = 0; patternIndex < reactants.size(); ++patternIndex) {
-        const auto& pattern = reactants[patternIndex];
+    const auto collectSide = [&](const std::vector<std::string> &patterns,
+                               PatternSide side) {
+    for (std::size_t patternIndex = 0; patternIndex < patterns.size(); ++patternIndex) {
+        const auto& pattern = patterns[patternIndex];
         std::size_t moleculeIndex = 0;
         int depth = 0;
         for (std::size_t cursor = 0; cursor < pattern.size(); ++cursor) {
@@ -230,7 +231,8 @@ std::vector<CompiledLocalScope> collectLocalScopes(const ast::ReactionRule& rule
             }
             CompiledLocalScope candidate;
             candidate.name = name;
-            candidate.reactantPatternIndex = patternIndex;
+            candidate.side = side;
+        candidate.patternIndex = patternIndex;
             candidate.kind = speciesScope ? LocalScopeKind::Species : LocalScopeKind::Molecule;
             if (!speciesScope) candidate.moleculeOccurrence = moleculeIndex;
 
@@ -238,7 +240,15 @@ std::vector<CompiledLocalScope> collectLocalScopes(const ast::ReactionRule& rule
                 [&](const auto& scope) { return scope.name == name; });
             if (found == scopes.end()) {
                 scopes.push_back(std::move(candidate));
-            } else if (found->reactantPatternIndex != candidate.reactantPatternIndex ||
+            } else if (found->side != candidate.side) {
+          // Preserve the long-standing meaning of a tag present on both
+          // sides: it binds to the reactant instance. Product-only tags
+          // remain available for product-local rate expressions.
+          if (found->side == PatternSide::Product &&
+              candidate.side == PatternSide::Reactant) {
+            *found = std::move(candidate);
+          }
+        } else if (found->patternIndex != candidate.patternIndex ||
                        found->kind != candidate.kind ||
                        found->moleculeOccurrence != candidate.moleculeOccurrence) {
                 addRuleDiagnostic(diagnostics, rule.getRuleName(),
@@ -248,7 +258,10 @@ std::vector<CompiledLocalScope> collectLocalScopes(const ast::ReactionRule& rule
             cursor = end - 1;
         }
     }
-    return scopes;
+  };
+  collectSide(rule.getReactants(), PatternSide::Reactant);
+  collectSide(rule.getProducts(), PatternSide::Product);
+  return scopes;
 }
 
 std::vector<std::string> localScopeNames(const std::vector<CompiledLocalScope>& scopes) {
@@ -518,11 +531,16 @@ public:
             // pattern is used as the reverse reactant. Preserve the resolved
             // binding instead of silently turning reverse local rates into zero.
             reverse.localScopes = compiled.forward_.localScopes;
-            // A reversible BNGL rule with one rate law uses that same law for
-            // both directions (for example, a single Arrhenius expression).
-            // Keep an explicit second rate when present, but do not silently
-            // turn the reverse direction into a zero-rate reaction.
-            if (compiled.rateLaws_.size() >= 2) {
+      for (auto &scope : reverse.localScopes) {
+        scope.side = scope.side == PatternSide::Reactant
+                         ? PatternSide::Product
+                         : PatternSide::Reactant;
+      }
+      // A reversible BNGL rule with one rate law uses that same law for
+      // both directions (for example, a single Arrhenius expression).
+      // Keep an explicit second rate when present, but do not silently
+      // turn the reverse direction into a zero-rate reaction.
+      if (compiled.rateLaws_.size() >= 2) {
                 reverse.rateLaw = compiled.rateLaws_[1];
             } else if (!compiled.rateLaws_.empty()) {
                 reverse.rateLaw = compiled.rateLaws_.front();

@@ -315,6 +315,146 @@ end reaction rules
     CHECK(output.find("    1 k 2  # units=s-1\n") != std::string::npos);
 }
 
+TEST_CASE(
+    "finite-network FunctionProduct rates use each reaction's local scopes",
+    "[NetWriter][issue-162]") {
+  auto model = parser::parseModel(R"BNG(
+begin molecule types
+    A(s~u~p)
+    B()
+end molecule types
+begin seed species
+    A(s~u) 1
+    B() 1
+end seed species
+begin observables
+    Molecules A_unphosphorylated A(s~u)
+    Molecules A_phosphorylated A(s~p)
+    Molecules B_total B()
+end observables
+begin functions
+    fA(x) = A_unphosphorylated(x)
+    fB(y) = B_total(y)
+end functions
+begin reaction rules
+    %x::A(s~u) + %y::B() -> %x::A(s~p) + %y::B() FunctionProduct("fA(x)", "fB(y)")
+end reaction rules
+)BNG");
+
+  REQUIRE(model != nullptr);
+  engine::NetworkGenerator generator(*model);
+  const auto network = generator.generateNative();
+  REQUIRE(network.reactions.all().size() == 1);
+  INFO(network.reactions.all().front().getRateLaw());
+
+  const auto derived = io::NetWriter::buildDerivedRateParams(*model, network);
+  REQUIRE(derived.size() == 1);
+  const auto found =
+      derived.find(model->getReactionRules().front().getRuleName());
+  REQUIRE(found != derived.end());
+  REQUIRE(found->second.perReactionRates.size() == 1);
+  CHECK(found->second.perReactionRates.begin()->second.second == 1.0);
+
+  engine::OdeIntegrator integrator(*model, network);
+  std::vector<double> concentrations(network.species.size(), 0.0);
+  std::vector<double> derivatives(network.species.size(), 0.0);
+  for (const auto reactant : network.reactions.all().front().getReactants()) {
+    concentrations[reactant] = 1.0;
+  }
+  integrator.derivs(0.0, concentrations.data(), derivatives.data());
+  CHECK_THAT(
+      derivatives[network.reactions.all().front().getReactants().front()],
+      Catch::Matchers::WithinAbs(-1.0, 1e-12));
+
+  const auto outputPath =
+      std::filesystem::temp_directory_path() /
+      ("bng3-function-product-" +
+       std::to_string(
+           std::chrono::steady_clock::now().time_since_epoch().count()) +
+       ".net");
+  io::NetWriter::write(outputPath, *model, network);
+  std::ifstream input(outputPath);
+  REQUIRE(input.good());
+  const std::string output((std::istreambuf_iterator<char>(input)),
+                           std::istreambuf_iterator<char>());
+  input.close();
+  std::filesystem::remove(outputPath);
+  CHECK(output.find("R1_local1 1") != std::string::npos);
+  CHECK(output.find("R1_local1 #R1") != std::string::npos);
+}
+
+TEST_CASE("finite-network local functions can inspect product scopes",
+          "[NetWriter][issue-132]") {
+  auto model = parser::parseModel(R"BNG(
+begin parameters
+    k 1
+    threshold 0.5
+    p 0.1
+end parameters
+begin molecule types
+    L(s)
+    R(s)
+end molecule types
+begin seed species
+    L(s!1).R(s!1) 1
+end seed species
+begin observables
+    Molecules Rtot R()
+end observables
+begin functions
+    large(x) = if(Rtot(x) > threshold, 1, 0)
+    both_large(x,y) = FunctionProduct("large(x)", "large(y)")
+end functions
+begin reaction rules
+    L(s!1).R(s!1) -> L(s!+)%x + R(s)%y k*if(both_large(x,y) > 0.5, p, 1.0)
+end reaction rules
+)BNG");
+
+  REQUIRE(model != nullptr);
+  engine::NetworkGenerator generator(*model);
+  const auto network = generator.generateNative();
+  REQUIRE(network.reactions.all().size() == 1);
+  INFO(model->getReactionRules().front().getRates().front().toString());
+  INFO(network.reactions.all().front().getRateLaw());
+  INFO(model->getFunctions()[1].getExpression().toString());
+  CHECK(network.reactions.all().front().getRateLaw().find("x::Rtot=0") !=
+        std::string::npos);
+  CHECK(network.reactions.all().front().getRateLaw().find("y::Rtot=1") !=
+        std::string::npos);
+  const auto derived = io::NetWriter::buildDerivedRateParams(*model, network);
+  const auto found =
+      derived.find(model->getReactionRules().front().getRuleName());
+  REQUIRE(found != derived.end());
+  REQUIRE(found->second.perReactionRates.size() == 1);
+  CHECK(found->second.perReactionRates.begin()->second.second == 1.0);
+
+  engine::OdeIntegrator integrator(*model, network);
+  std::vector<double> concentrations(network.species.size(), 0.0);
+  std::vector<double> derivatives(network.species.size(), 0.0);
+  const auto &reaction = network.reactions.all().front();
+  for (const auto reactant : reaction.getReactants())
+    concentrations[reactant] = 1.0;
+  integrator.derivs(0.0, concentrations.data(), derivatives.data());
+  CHECK_THAT(derivatives[reaction.getReactants().front()],
+             Catch::Matchers::WithinAbs(-1.0, 1e-12));
+
+  const auto outputPath =
+      std::filesystem::temp_directory_path() /
+      ("bng3-product-local-function-" +
+       std::to_string(
+           std::chrono::steady_clock::now().time_since_epoch().count()) +
+       ".net");
+  io::NetWriter::write(outputPath, *model, network);
+  std::ifstream input(outputPath);
+  REQUIRE(input.good());
+  const std::string output((std::istreambuf_iterator<char>(input)),
+                           std::istreambuf_iterator<char>());
+  input.close();
+  std::filesystem::remove(outputPath);
+  CHECK(output.find("R1_local1 1") != std::string::npos);
+  CHECK(output.find("R1_local1 #R1") != std::string::npos);
+}
+
 TEST_CASE("CVODE honors steady-state stopping", "[OdeOptions]") {
     auto model = parseDecayModel();
     engine::NetworkGenerator generator(*model);

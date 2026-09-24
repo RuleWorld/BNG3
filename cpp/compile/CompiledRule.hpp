@@ -69,7 +69,8 @@ enum class LocalScopeKind {
 
 struct CompiledLocalScope {
     std::string name;
-    std::size_t reactantPatternIndex = 0;
+  PatternSide side = PatternSide::Reactant;
+  std::size_t patternIndex = 0;
     LocalScopeKind kind = LocalScopeKind::Molecule;
     // Exact molecule occurrence for molecule-local scopes. Species scopes do
     // not require an anchor and leave this unset.
