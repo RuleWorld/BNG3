@@ -16,7 +16,9 @@ struct DerivedRateInfo {
     ast::Expression exprTree;
     bool reverseDirection = false;
     bool asFunction = false;  // true if should be written as function (references observables)
-    bool isLocalFunction = false;  // true if this is a per-species local function rate
+    bool isLocalFunction =
+      false; // true if this is a per-species local function rate
+  bool isPerReactionLocalFunction = false;  // true if this is a per-species local function rate
     bool isPerReactionArrhenius = false;  // true for energy-pattern per-reaction rates
     // Per-species rate parameters for local function rules:
     // maps reactant species index -> (param name, numeric value)

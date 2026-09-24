@@ -30,6 +30,12 @@ public:
         std::function<std::string(
             std::size_t, std::size_t, const BNGcore::Node*, const BNGcore::PatternGraph&)>
             localRateFingerprint;
+    std::function<std::string(std::size_t, std::size_t, const BNGcore::Node *,
+                              const BNGcore::PatternGraph &)>
+        productScopeMatchSignature;
+    std::function<std::string(const std::vector<SpeciesGraph> &,
+                              const std::vector<std::size_t> &)>
+        productLocalRateFingerprint;
 
         // Bidirectional rules are materialized as a lazily-created reverse
         // ReactionRule. Compiled execution metadata is direction-specific, so

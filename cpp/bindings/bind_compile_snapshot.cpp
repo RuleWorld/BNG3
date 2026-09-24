@@ -343,7 +343,11 @@ py::dict directionSnapshot(const CompiledRuleDirection& direction,
         py::dict item;
         item["name"] = scope.name;
         item["kind"] = scope.kind == LocalScopeKind::Species ? "species" : "molecule";
-        item["reactant_pattern"] = scope.reactantPatternIndex;
+        item["side"] = scope.side == PatternSide::Reactant ? "reactant" : "product";
+        item["pattern_index"] = scope.patternIndex;
+        item["reactant_pattern"] = scope.side == PatternSide::Reactant
+                                        ? py::cast(scope.patternIndex)
+                                        : py::none();
         if (scope.moleculeOccurrence.has_value())
             item["molecule_occurrence"] = *scope.moleculeOccurrence;
         localScopes.append(std::move(item));

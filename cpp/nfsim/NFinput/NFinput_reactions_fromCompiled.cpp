@@ -829,11 +829,19 @@ bool addLocalRateReference(const LocalRateOperand& operand,
                            const std::vector<NFcore::TemplateMolecule*>& roots,
                            NFcore::TransformationSet& transformations,
                            std::string& diagnostic) {
-    if (operand.scope == nullptr || operand.scope->reactantPatternIndex >= roots.size()) {
+    if (operand.scope == nullptr) {
         diagnostic = "local-function scope is outside the reactant list";
         return false;
     }
-    auto* root = roots[operand.scope->reactantPatternIndex];
+    if (operand.scope->side != PatternSide::Reactant) {
+        diagnostic = "product-side local-function scopes are unsupported by direct NFsim";
+        return false;
+    }
+    if (operand.scope->patternIndex >= roots.size()) {
+        diagnostic = "local-function scope is outside the reactant list";
+        return false;
+    }
+    auto* root = roots[operand.scope->patternIndex];
     if (root == nullptr || root->getMoleculeType()->isPopulationType()) {
         diagnostic = "local functions cannot scope population reactants";
         return false;
@@ -859,17 +867,22 @@ bool addLocalScopeReferences(
     std::optional<std::size_t> commonPattern;
     for (const auto& name : localNames) {
         const auto* scope = direction.findLocalScope(name);
-        if (scope == nullptr || scope->reactantPatternIndex >= roots.size()) {
+        if (scope == nullptr || scope->side != PatternSide::Reactant ||
+            scope->patternIndex >= roots.size()) {
+            if (scope != nullptr && scope->side == PatternSide::Product) {
+                diagnostic = "product-side local-function scopes are unsupported by direct NFsim";
+                return false;
+            }
             diagnostic = "local-function scope identifier '" + name +
                          "' has no matching compiled reactant";
             return false;
         }
-        if (commonPattern.has_value() && *commonPattern != scope->reactantPatternIndex) {
+        if (commonPattern.has_value() && *commonPattern != scope->patternIndex) {
             diagnostic = "local-function scope identifiers must refer to one reactant";
             return false;
         }
-        commonPattern = scope->reactantPatternIndex;
-        auto* root = roots[scope->reactantPatternIndex];
+        commonPattern = scope->patternIndex;
+        auto* root = roots[scope->patternIndex];
         if (root == nullptr || root->getMoleculeType()->isPopulationType()) {
             diagnostic = "local functions cannot scope population reactants";
             return false;
@@ -1087,7 +1100,7 @@ bool collectScopedRateOperands(
         }
         const auto found = locals.find(operand.argument);
         if (found != locals.end() &&
-            found->second.scope->reactantPatternIndex != operand.scope->reactantPatternIndex) {
+            found->second.scope->patternIndex != operand.scope->patternIndex) {
             diagnostic = "local pointer name resolves to more than one reactant";
             return false;
         }
@@ -1137,8 +1150,8 @@ bool prepareScopedCompositeRate(const CompiledModel& model,
     for (const auto& [argument, operand] : locals) {
         (void)argument;
         if (operand.scope == nullptr) return false;
-        if (!dorReactant.has_value()) dorReactant = operand.scope->reactantPatternIndex;
-        else if (*dorReactant != operand.scope->reactantPatternIndex) {
+        if (!dorReactant.has_value()) dorReactant = operand.scope->patternIndex;
+        else if (*dorReactant != operand.scope->patternIndex) {
             diagnostic = "NFsim generic DOR rates can reference local functions on only one reactant";
             return false;
         }
@@ -1437,7 +1450,7 @@ NFcore::ReactionClass* makeReactionForRate(
 
     LocalRateOperand productFirst, productSecond;
     if (functionProductOperands(model, direction, expression, productFirst, productSecond)) {
-        if (productFirst.scope->reactantPatternIndex == productSecond.scope->reactantPatternIndex) {
+        if (productFirst.scope->patternIndex == productSecond.scope->patternIndex) {
             diagnostic = "FunctionProduct requires two different scoped reactants";
             return nullptr;
         }

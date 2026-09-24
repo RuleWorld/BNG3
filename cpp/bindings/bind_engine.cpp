@@ -206,7 +206,7 @@ void bind_engine(py::module_& m) {
         py::arg("n_steps") = 100,
         py::arg("t_start") = 0.0,
         py::arg("rtol") = 1e-8,
-        py::arg("atol") = 1e-8,
+        py::arg("atol") = 1e-12,
         py::arg("method") = "cvode",
         py::arg("max_step") = 0.0,
         py::arg("steady_state") = false,
@@ -366,7 +366,7 @@ void bind_engine(py::module_& m) {
         return d;
     }, py::arg("model"), py::arg("network"),
        py::arg("t_end") = 100.0, py::arg("n_steps") = 100,
-       py::arg("t_start") = 0.0, py::arg("rtol") = 1e-8, py::arg("atol") = 1e-8,
+       py::arg("t_start") = 0.0, py::arg("rtol") = 1e-8, py::arg("atol") = 1e-12,
        py::arg("method") = "cvode", py::arg("max_step") = 0.0,
        py::arg("steady_state") = false, py::arg("steady_state_tol") = 1e-8,
        py::arg("stop_if") = "", py::arg("sample_times") = std::vector<double>{},

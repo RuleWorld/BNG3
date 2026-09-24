@@ -1,5 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
+#include <string>
+
 #include "parser/BNGAstVisitor.hpp"
 #include "engine/NetworkGenerator.hpp"
 
@@ -187,4 +190,102 @@ end reaction rules
 
     REQUIRE(network.species.size() == 2);
     REQUIRE(network.reactions.size() == 1);
+}
+
+TEST_CASE("Issue 232 preserves both seeded reversible compartment directions",
+          "[Compartment][issue-232]") {
+    auto model = parseModel(R"(
+begin parameters
+    kf 2
+    kr 3
+end parameters
+begin compartments
+    C1 3 1
+    C2 2 1 C1
+    C3 3 1 C2
+end compartments
+begin molecule types
+    A()
+    B()
+    C()
+end molecule types
+begin seed species
+    A()@C1 1
+    B()@C3 1
+    C()@C3 1
+end seed species
+begin reaction rules
+    R1: A()@C1 + B()@C3 <-> C()@C3 kf,kr
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative(1);
+
+    REQUIRE(network.reactions.size() == 2);
+    const auto reverseCount = std::count_if(
+        network.reactions.all().begin(), network.reactions.all().end(),
+        [](const auto& reaction) {
+            return reaction.getOriginRuleName().find("reverse") !=
+                std::string::npos;
+        });
+    CHECK(reverseCount == 1);
+}
+
+TEST_CASE("Issue 246 does not infer adjacency for parentless compartments",
+          "[Compartment][issue-246]") {
+    auto model = parseModel(R"(
+begin parameters
+    kon 1.0e-4
+end parameters
+begin compartments
+    EC 3 1
+    mem 2 1
+end compartments
+begin molecule types
+    Lig(Site0)
+    Receptor(Site0~U~P)
+end molecule types
+begin seed species
+    @mem:Receptor(Site0~U) 1
+    @EC:Lig(Site0) 1
+end seed species
+begin reaction rules
+    @EC:Lig(Site0) + @mem:Receptor(Site0~U) -> @mem:Lig(Site0!1).Receptor(Site0~U!1) kon
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative(1);
+
+    CHECK(network.reactions.size() == 0);
+}
+
+TEST_CASE("Issue 124 permits parameters after rules and seed species",
+          "[Parser][issue-124]") {
+    auto model = parseModel(R"(
+begin reaction rules
+    A() -> B() k2
+end reaction rules
+begin seed species
+    A() 2
+    B() 0
+end seed species
+begin molecule types
+    A()
+    B()
+end molecule types
+begin parameters
+    k1 1
+    k2 k1 + 1
+end parameters
+)");
+    REQUIRE(model != nullptr);
+    CHECK(model->getParameters().get("k2").getValue() == 2.0);
+
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    CHECK(network.reactions.size() == 1);
 }

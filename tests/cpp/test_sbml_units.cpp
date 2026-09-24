@@ -86,6 +86,54 @@ end parameters
     CHECK(xml.find("kind=\"second\" exponent=\"-2\" multiplier=\"1\" scale=\"0\"") != std::string::npos);
 }
 
+TEST_CASE("SBML serializes Sat rates as MathML rather than an unresolved symbol",
+          "[SbmlWriter][issue-277]") {
+    const auto model = bng::parser::parseModel(R"BNGL(
+begin parameters
+  kcat 1.52
+  Km 114.4
+  n 2
+end parameters
+begin molecule types
+  A()
+  E()
+end molecule types
+begin seed species
+  A() 10
+  E() 10
+end seed species
+begin reaction rules
+  A() + E() -> E() Sat(kcat, Km)
+  A() + E() -> E() MM(kcat, Km)
+  A() + E() -> E() Hill(kcat, Km, n)
+end reaction rules
+)BNGL");
+    REQUIRE(model != nullptr);
+
+    bng::engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    const auto xml = bng::io::SbmlWriter::write(*model, &network);
+    std::size_t rateStart = 0;
+    std::size_t macroCount = 0;
+    while ((rateStart = xml.find("<kineticLaw>", rateStart)) != std::string::npos) {
+        const auto rateEnd = xml.find("</kineticLaw>", rateStart);
+        REQUIRE(rateEnd != std::string::npos);
+        const auto kineticLaw = xml.substr(rateStart, rateEnd - rateStart);
+        CHECK(kineticLaw.find("<ci> sat </ci>") == std::string::npos);
+        CHECK(kineticLaw.find("<ci> mm </ci>") == std::string::npos);
+        CHECK(kineticLaw.find("<ci> hill </ci>") == std::string::npos);
+        CHECK(kineticLaw.find("<ci> kcat </ci>") != std::string::npos);
+        CHECK(kineticLaw.find("<ci> Km </ci>") != std::string::npos);
+        CHECK(kineticLaw.find("<ci> S1 </ci>") != std::string::npos);
+        // BNG2 RateLaw.pm and BNG3 OdeIntegrator retain additional reactants
+        // as multiplicative factors for Sat and Hill; keep SBML aligned.
+        CHECK(kineticLaw.find("<ci> S2 </ci>") != std::string::npos);
+        ++macroCount;
+        rateStart = rateEnd + std::string("</kineticLaw>").size();
+    }
+    CHECK(macroCount == 3);
+}
+
 TEST_CASE("unit-free SBML retains the legacy substance definition") {
     const auto model = bng::parser::parseModel(R"BNGL(
 begin parameters

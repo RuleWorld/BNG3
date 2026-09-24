@@ -7,6 +7,7 @@
 #include "ast/Expression.hpp"
 #include "ast/ExpressionBuiltins.hpp"
 #include "ast/ExpressionEval.hpp"
+#include "parser/BNGAstVisitor.hpp"
 
 using namespace bng::ast;
 using Catch::Matchers::WithinRel;
@@ -39,6 +40,17 @@ TEST_CASE("Expression: nested arithmetic", "[Expression]") {
 TEST_CASE("Expression: power operator", "[Expression]") {
     auto expr = Expression::binary("^", Expression::number(2.0), Expression::number(10.0));
     REQUIRE_THAT(expr.evaluate(noResolver), WithinRel(1024.0, 1e-10));
+}
+
+TEST_CASE("Legacy expression operators remain accepted", "[Expression][issue-54]") {
+    const auto evaluate = [](const std::string& source) {
+        return bng::parser::parseExpression(source).evaluate(noResolver);
+    };
+
+    CHECK(evaluate("2**3") == 8.0);
+    CHECK(evaluate("1~=2") == 1.0);
+    CHECK(evaluate("!0") == 1.0);
+    CHECK(evaluate("~1") == 0.0);
 }
 
 TEST_CASE("Expression: built-in functions", "[Expression]") {

@@ -15,6 +15,16 @@ add_test(
         -P ${CMAKE_CURRENT_SOURCE_DIR}/test_bng_cpp_action_errors.cmake
 )
 
+add_test(
+    NAME psa_issue_265_reaction_order_stress
+    COMMAND ${CMAKE_COMMAND}
+        -DBNG_CPP_PATH=$<TARGET_FILE:bng_cpp>
+        -DFIXTURE_DIR=${CMAKE_SOURCE_DIR}/tests/fixtures/upstream_issues
+        -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/issue_265_stress
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/test_psa_issue265_stress.cmake
+)
+set_tests_properties(psa_issue_265_reaction_order_stress PROPERTIES TIMEOUT 15)
+
 add_executable(test_batch_runner test_batch_runner.cpp)
 target_compile_definitions(test_batch_runner PRIVATE
     BNG_CPP_PATH="$<TARGET_FILE:bng_cpp>"
@@ -61,6 +71,12 @@ target_link_libraries(test_pla_simulator PRIVATE
     antlr4_static
 )
 catch_discover_tests(test_pla_simulator)
+
+# test_psa_simulator
+add_executable(test_psa_simulator test_psa_simulator.cpp)
+target_link_libraries(test_psa_simulator PRIVATE
+    Catch2::Catch2WithMain Catch2::Catch2 bng_engine bng_ast)
+catch_discover_tests(test_psa_simulator)
 
 # test_ode_options
 add_executable(test_ode_options test_ode_options.cpp)
@@ -112,7 +128,7 @@ target_include_directories(test_expression_evaluator PRIVATE
     ${CMAKE_SOURCE_DIR}/cpp
 )
 target_link_libraries(test_expression_evaluator PRIVATE
-    Catch2::Catch2WithMain Catch2::Catch2 bng_ast)
+    Catch2::Catch2WithMain Catch2::Catch2 bng_ast bng_parser)
 catch_discover_tests(test_expression_evaluator)
 
 # test_observable_counting — BNG2 CountAll/CountUnique observable modes
@@ -180,6 +196,9 @@ catch_discover_tests(test_reaction_rule_expansion)
 
 # test_hnauty
 add_executable(test_hnauty test_hnauty.cpp)
+target_compile_definitions(test_hnauty PRIVATE
+    BNG3_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+)
 target_include_directories(test_hnauty PRIVATE
     ${CMAKE_SOURCE_DIR}/cpp
     ${CMAKE_SOURCE_DIR}/cpp/parser

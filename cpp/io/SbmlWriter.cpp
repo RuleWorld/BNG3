@@ -81,6 +81,28 @@ bool hasTotalRateModifier(const ast::Model& model, const std::string& origin) {
     return false;
 }
 
+const ast::Expression* rateExpressionForOrigin(
+    const ast::Model& model, const std::string& origin) {
+    bool reverse = false;
+    std::string ruleName = origin;
+    if (ruleName.rfind("_reverse__", 0) == 0) {
+        ruleName.erase(0, std::string("_reverse__").size());
+        reverse = true;
+    } else if (ruleName.rfind("__reverse__", 0) == 0) {
+        ruleName.erase(0, std::string("__reverse__").size());
+        reverse = true;
+    } else if (!ruleName.empty() && ruleName.front() == '_') {
+        ruleName.erase(ruleName.begin());
+    }
+
+    for (const auto& rule : model.getReactionRules()) {
+        if (rule.getRuleName() != ruleName || rule.getRates().empty()) continue;
+        const auto index = reverse && rule.getRates().size() > 1 ? 1U : 0U;
+        return &rule.getRates()[index];
+    }
+    return nullptr;
+}
+
 }  // namespace
 
 std::string SbmlWriter::escapeXml(const std::string& text) {
@@ -1052,6 +1074,163 @@ std::string SbmlWriter::rateLawToMathML(
     // A bare identifier still uses the elementary branch below so model
     // parameters and zero-argument user functions retain their existing
     // representation.
+    const ast::Expression* macroRate = nullptr;
+    if (rateExpr.has_value() &&
+        rateExpr->kind() == ast::ExpressionKind::Function) {
+        macroRate = &*rateExpr;
+    }
+    if (macroRate == nullptr) {
+        macroRate = rateExpressionForOrigin(model, rxn.getOriginRuleName());
+    }
+
+    if (macroRate != nullptr &&
+        macroRate->kind() == ast::ExpressionKind::Function) {
+        std::string macroName = macroRate->name();
+        std::transform(macroName.begin(), macroName.end(), macroName.begin(),
+                       [](unsigned char c) {
+                           return static_cast<char>(std::tolower(c));
+                       });
+        const auto& args = macroRate->args();
+        const auto& reactants = rxn.getReactants();
+
+        if (macroName == "sat" || macroName == "mm" || macroName == "hill") {
+            const auto emitApply = [](const std::string& op,
+                                      const std::vector<std::string>& children,
+                                      const std::string& levelIndent) {
+                std::ostringstream math;
+                math << levelIndent << "<apply>\n"
+                     << levelIndent << "  <" << op << "/>\n";
+                for (const auto& child : children) math << child;
+                math << levelIndent << "</apply>\n";
+                return math.str();
+            };
+            const auto expression = [&](const ast::Expression& value,
+                                        const std::string& levelIndent) {
+                return exprToMathML(value, levelIndent, symbolIds);
+            };
+            const auto species = [](std::size_t index,
+                                    const std::string& levelIndent) {
+                return levelIndent + "<ci> S" + std::to_string(index + 1) +
+                    " </ci>\n";
+            };
+            const auto number = [](double value,
+                                   const std::string& levelIndent) {
+                std::ostringstream math;
+                math << levelIndent << "<cn> " << std::setprecision(17)
+                     << value << " </cn>\n";
+                return math.str();
+            };
+            const std::string childIndent = indent + "  ";
+            const auto scaled = [&](std::vector<std::string> factors) {
+                if (std::abs(combinedFactor - 1.0) > 1e-12) {
+                    factors.insert(factors.begin(),
+                                   number(combinedFactor, childIndent + "  "));
+                }
+                if (factors.size() == 1) return factors.front();
+                return emitApply("times", factors, childIndent);
+            };
+
+            if (macroName == "sat") {
+                if (args.empty()) {
+                    throw std::invalid_argument(
+                        "SBML writer cannot lower Sat without a rate constant");
+                }
+                if (args.size() == 1) {
+                    out << scaled({expression(args.front(), childIndent + "  ")});
+                    return out.str();
+                }
+                if (args.size() - 1 > reactants.size()) {
+                    throw std::invalid_argument(
+                        "SBML writer cannot lower Sat with more saturation constants than reactants");
+                }
+
+                std::vector<std::string> numeratorFactors;
+                numeratorFactors.push_back(expression(args.front(), childIndent + "  "));
+                for (const auto index : reactants) {
+                    numeratorFactors.push_back(species(index, childIndent + "  "));
+                }
+                std::vector<std::string> denominatorFactors;
+                for (std::size_t i = 1; i < args.size(); ++i) {
+                    denominatorFactors.push_back(emitApply(
+                        "plus",
+                        {expression(args[i], childIndent + "    "),
+                         species(reactants[i - 1], childIndent + "    ")},
+                        childIndent + "  "));
+                }
+                const auto denominator = denominatorFactors.size() == 1
+                    ? denominatorFactors.front()
+                    : emitApply("times", denominatorFactors, childIndent);
+                out << emitApply("divide", {scaled(std::move(numeratorFactors)),
+                                             denominator}, indent);
+                return out.str();
+            }
+
+            if (macroName == "mm") {
+                if (args.size() != 2 || reactants.size() != 2) {
+                    throw std::invalid_argument(
+                        "SBML writer requires MM to have two constants and two reactants");
+                }
+                const auto enzyme = species(reactants[1], childIndent + "      ");
+                const auto km = expression(args[1], childIndent + "      ");
+                const auto b = emitApply(
+                    "minus",
+                    {emitApply("minus", {species(reactants[0], childIndent + "        "),
+                                          species(reactants[1], childIndent + "        ")},
+                               childIndent + "      "),
+                     expression(args[1], childIndent + "      ")},
+                    childIndent + "    ");
+                const auto discriminant = emitApply(
+                    "plus",
+                    {emitApply("power", {b, number(2.0, childIndent + "        ")},
+                               childIndent + "      "),
+                     emitApply("times",
+                               {number(4.0, childIndent + "        "),
+                                species(reactants[0], childIndent + "        "),
+                                km},
+                               childIndent + "      ")},
+                    childIndent + "    ");
+                const auto freeSubstrate = emitApply(
+                    "times",
+                    {number(0.5, childIndent + "      "),
+                     emitApply("plus",
+                               {b, emitApply("root", {discriminant},
+                                             childIndent + "        ")},
+                               childIndent + "      ")},
+                    childIndent + "    ");
+                const auto numerator = scaled(
+                    {expression(args[0], childIndent + "  "), enzyme, freeSubstrate});
+                const auto denominator = emitApply(
+                    "plus", {km, freeSubstrate}, childIndent);
+                out << emitApply("divide", {numerator, denominator}, indent);
+                return out.str();
+            }
+
+            if (args.size() != 3 || reactants.empty()) {
+                throw std::invalid_argument(
+                    "SBML writer requires Hill to have three constants and at least one reactant");
+            }
+            const auto substrate = species(reactants[0], childIndent + "  ");
+            const auto exponent = expression(args[2], childIndent + "  ");
+            const auto substratePower = emitApply(
+                "power", {substrate, exponent}, childIndent);
+            std::vector<std::string> numeratorFactors{
+                expression(args[0], childIndent + "  "), substratePower};
+            for (std::size_t i = 1; i < reactants.size(); ++i) {
+                numeratorFactors.push_back(species(reactants[i], childIndent + "  "));
+            }
+            const auto denominator = emitApply(
+                "plus",
+                {emitApply("power", {expression(args[1], childIndent + "    "),
+                                     expression(args[2], childIndent + "    ")},
+                           childIndent + "  "),
+                 substratePower},
+                childIndent);
+            out << emitApply("divide", {scaled(std::move(numeratorFactors)),
+                                         denominator}, indent);
+            return out.str();
+        }
+    }
+
     bool hasExpressionRate = rateExpr.has_value() &&
         rateExpr->kind() != ast::ExpressionKind::Identifier;
 

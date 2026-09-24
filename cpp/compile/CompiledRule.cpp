@@ -88,6 +88,15 @@ void addRuleDiagnostic(std::vector<Diagnostic>* diagnostics,
                        const std::string& ruleName,
                        const std::string& message) {
     if (diagnostics == nullptr) return;
+    const auto duplicate = std::find_if(
+        diagnostics->begin(), diagnostics->end(),
+        [&](const Diagnostic& existing) {
+            return existing.code == DiagnosticCode::InvalidModel &&
+                   existing.severity == Severity::Error &&
+                   existing.category == ValidationCategory::Rules &&
+                   existing.entity == ruleName && existing.message == message;
+        });
+    if (duplicate != diagnostics->end()) return;
     Diagnostic diagnostic;
     diagnostic.code = DiagnosticCode::InvalidModel;
     diagnostic.severity = Severity::Error;
@@ -194,12 +203,15 @@ void addAffectedComponent(std::vector<PatternSiteRef>& refs, const PatternSiteRe
     if (std::find(refs.begin(), refs.end(), ref) == refs.end()) refs.push_back(ref);
 }
 
-std::vector<CompiledLocalScope> collectLocalScopes(const ast::ReactionRule& rule,
-                                                       std::vector<Diagnostic>* diagnostics) {
+std::vector<CompiledLocalScope> collectLocalScopes(
+    const ast::ReactionRule& rule,
+    std::vector<Diagnostic>* diagnostics,
+    PatternSide preferredSide) {
     std::vector<CompiledLocalScope> scopes;
-    const auto& reactants = rule.getReactants();
-    for (std::size_t patternIndex = 0; patternIndex < reactants.size(); ++patternIndex) {
-        const auto& pattern = reactants[patternIndex];
+    const auto collectSide = [&](const std::vector<std::string> &patterns,
+                               PatternSide side) {
+    for (std::size_t patternIndex = 0; patternIndex < patterns.size(); ++patternIndex) {
+        const auto& pattern = patterns[patternIndex];
         std::size_t moleculeIndex = 0;
         int depth = 0;
         for (std::size_t cursor = 0; cursor < pattern.size(); ++cursor) {
@@ -230,7 +242,8 @@ std::vector<CompiledLocalScope> collectLocalScopes(const ast::ReactionRule& rule
             }
             CompiledLocalScope candidate;
             candidate.name = name;
-            candidate.reactantPatternIndex = patternIndex;
+            candidate.side = side;
+        candidate.patternIndex = patternIndex;
             candidate.kind = speciesScope ? LocalScopeKind::Species : LocalScopeKind::Molecule;
             if (!speciesScope) candidate.moleculeOccurrence = moleculeIndex;
 
@@ -238,7 +251,15 @@ std::vector<CompiledLocalScope> collectLocalScopes(const ast::ReactionRule& rule
                 [&](const auto& scope) { return scope.name == name; });
             if (found == scopes.end()) {
                 scopes.push_back(std::move(candidate));
-            } else if (found->reactantPatternIndex != candidate.reactantPatternIndex ||
+            } else if (found->side != candidate.side) {
+                // A repeated tag may anchor both sides. Resolve each rule
+                // direction against its own reactants: forward prefers the
+                // source reactants, reverse prefers the source products.
+                if (candidate.side == preferredSide &&
+                    found->side != preferredSide) {
+                    *found = std::move(candidate);
+                }
+        } else if (found->patternIndex != candidate.patternIndex ||
                        found->kind != candidate.kind ||
                        found->moleculeOccurrence != candidate.moleculeOccurrence) {
                 addRuleDiagnostic(diagnostics, rule.getRuleName(),
@@ -248,7 +269,10 @@ std::vector<CompiledLocalScope> collectLocalScopes(const ast::ReactionRule& rule
             cursor = end - 1;
         }
     }
-    return scopes;
+  };
+  collectSide(rule.getReactants(), PatternSide::Reactant);
+  collectSide(rule.getProducts(), PatternSide::Product);
+  return scopes;
 }
 
 std::vector<std::string> localScopeNames(const std::vector<CompiledLocalScope>& scopes) {
@@ -370,7 +394,8 @@ public:
             }
         }
 
-        compiled.forward_.localScopes = collectLocalScopes(rule, diagnostics);
+        compiled.forward_.localScopes = collectLocalScopes(
+            rule, diagnostics, PatternSide::Reactant);
         const auto rateLocalScopeNames = localScopeNames(compiled.forward_.localScopes);
         compiled.rateLaws_.reserve(rule.getRates().size());
         for (const auto& rate : rule.getRates()) {
@@ -513,16 +538,21 @@ public:
             reverse.reactantPatterns = compiled.forward_.productPatterns;
             reverse.productPatterns = compiled.forward_.reactantPatterns;
             reverse.filters = reversedFilters(compiled.forward_.filters);
-            // A reversible rule's scope tag is present on both sides of the
-            // BNGL rule, so the same binding becomes active when the product
-            // pattern is used as the reverse reactant. Preserve the resolved
-            // binding instead of silently turning reverse local rates into zero.
-            reverse.localScopes = compiled.forward_.localScopes;
-            // A reversible BNGL rule with one rate law uses that same law for
-            // both directions (for example, a single Arrhenius expression).
-            // Keep an explicit second rate when present, but do not silently
-            // turn the reverse direction into a zero-rate reaction.
-            if (compiled.rateLaws_.size() >= 2) {
+            // Compile reverse scopes from the source products first so tags
+            // shared across both sides bind to reverse reactants. Then flip
+            // side labels into the reverse direction's coordinate system.
+            reverse.localScopes = collectLocalScopes(
+                rule, diagnostics, PatternSide::Product);
+            for (auto& scope : reverse.localScopes) {
+                scope.side = scope.side == PatternSide::Reactant
+                    ? PatternSide::Product
+                    : PatternSide::Reactant;
+            }
+      // A reversible BNGL rule with one rate law uses that same law for
+      // both directions (for example, a single Arrhenius expression).
+      // Keep an explicit second rate when present, but do not silently
+      // turn the reverse direction into a zero-rate reaction.
+      if (compiled.rateLaws_.size() >= 2) {
                 reverse.rateLaw = compiled.rateLaws_[1];
             } else if (!compiled.rateLaws_.empty()) {
                 reverse.rateLaw = compiled.rateLaws_.front();

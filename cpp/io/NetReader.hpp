@@ -34,6 +34,7 @@ public:
         std::vector<std::pair<std::string, std::string>> species;  // pattern, concentration (as string - can be number or parameter ref)
         std::vector<std::string> reactions;
         std::unordered_map<std::string, double> parameters;
+        std::unordered_map<std::string, std::string> parameterComments;
         // SBML Core unit metadata.  These maps preserve authored UnitSIds so
         // callers can rebuild the same AST annotations without guessing from
         // numeric values.

@@ -284,7 +284,7 @@ def simulate_ode(
     n_steps: int = 100,
     t_start: float = 0.0,
     rtol: float = 1e-8,
-    atol: float = 1e-8,
+    atol: float = 1e-12,
     method: str = "cvode",
     max_step: float = 0.0,
     steady_state: bool = False,

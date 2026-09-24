@@ -4,6 +4,7 @@
 
 
 #include <algorithm>
+#include <cstdint>
 #include <map>
 #include <optional>
 #include <set>
@@ -12,15 +13,25 @@
 #include <tuple>
 #include <utility>
 
-#include "engine/LegacyNetworkRuleKernel.hpp"
 #include "compile/LegacyAstLowering.hpp"
+#include "core/List.hpp"
 #include "core/PatternMatching.hpp"
+#include "core/Ullmann.hpp"
+#include "engine/LegacyNetworkRuleKernel.hpp"
 
 namespace bng::engine {
 namespace {
 
+bool isPatternMoleculeNode(const BNGcore::Node &node) {
+  const auto &name = node.get_type().get_type_name();
+  return name != BNGcore::BOND_NODE_TYPE.get_type_name() &&
+         name != BNGcore::COMPONENT_NODE_TYPE.get_type_name();
+}
+
 struct ScopeBinding {
-    std::size_t patternIndex = 0;
+  std::string localName;
+  compile::PatternSide side = compile::PatternSide::Reactant;
+  std::size_t patternIndex = 0;
     compile::LocalScopeKind kind = compile::LocalScopeKind::Molecule;
     std::optional<std::size_t> moleculeOccurrence;
 };
@@ -35,21 +46,54 @@ std::optional<ScopeBinding> resolveScopeArgument(
     const auto bound = environment.find(expression.localName);
     if (bound != environment.end()) return bound->second;
     if (const auto* scope = direction.findLocalScope(expression.localName)) {
-        return ScopeBinding{scope->reactantPatternIndex, scope->kind, scope->moleculeOccurrence};
+        return ScopeBinding{scope->name, scope->side, scope->patternIndex, scope->kind, scope->moleculeOccurrence};
     }
     return std::nullopt;
 }
 
+bool expressionUsesFunctionProduct(
+    const compile::ResolvedExpression &expression,
+    const compile::CompiledModel &model,
+    std::set<std::size_t> &activeFunctions) {
+  using Kind = compile::ResolvedExpressionKind;
+  if (expression.kind == Kind::BuiltinCall &&
+      expression.builtin == compile::BuiltinFunction::FunctionProduct) {
+    return true;
+  }
+  if (expression.kind == Kind::FunctionRef && expression.symbol.has_value()) {
+    const auto functionIndex = expression.symbol->index;
+    if (activeFunctions.insert(functionIndex).second) {
+      if (const auto *function = model.function(
+              compile::FunctionId::fromDenseIndex(functionIndex))) {
+        const bool found = expressionUsesFunctionProduct(
+            function->expression, model, activeFunctions);
+        activeFunctions.erase(functionIndex);
+        if (found)
+          return true;
+      } else {
+        activeFunctions.erase(functionIndex);
+      }
+    }
+  }
+  for (const auto &argument : expression.arguments) {
+    if (expressionUsesFunctionProduct(argument, model, activeFunctions))
+      return true;
+  }
+  return false;
+}
+
 struct ScopedObservableKey {
-    std::size_t patternIndex = 0;
+  std::string localScopeName;
+  compile::PatternSide side = compile::PatternSide::Reactant;
+  std::size_t patternIndex = 0;
     compile::LocalScopeKind scopeKind = compile::LocalScopeKind::Molecule;
     std::optional<std::size_t> moleculeOccurrence;
     std::size_t observableIndex = 0;
 
     friend bool operator<(const ScopedObservableKey& lhs,
                           const ScopedObservableKey& rhs) noexcept {
-        return std::tie(lhs.patternIndex, lhs.scopeKind, lhs.moleculeOccurrence, lhs.observableIndex) <
-               std::tie(rhs.patternIndex, rhs.scopeKind, rhs.moleculeOccurrence, rhs.observableIndex);
+        return std::tie(lhs.localScopeName, lhs.side, lhs.patternIndex, lhs.scopeKind, lhs.moleculeOccurrence, lhs.observableIndex) <
+               std::tie(rhs.localScopeName, rhs.side, rhs.patternIndex, rhs.scopeKind, rhs.moleculeOccurrence, rhs.observableIndex);
     }
 };
 
@@ -70,7 +114,7 @@ void collectScopedObservableDependencies(
             if (const auto scope = resolveScopeArgument(
                     expression.arguments.front(), direction, environment)) {
                 observables.insert(ScopedObservableKey{
-                    scope->patternIndex, scope->kind, scope->moleculeOccurrence,
+            scope->localName, scope->side, scope->patternIndex, scope->kind, scope->moleculeOccurrence,
                     expression.symbol->index});
             }
         }
@@ -115,10 +159,15 @@ struct RuntimeFilter {
 
 struct RuntimeObservable {
     std::string name;
-    std::size_t patternIndex = 0;
+    std::string localScopeName;
+  compile::PatternSide side = compile::PatternSide::Reactant;
+  std::size_t patternIndex = 0;
     compile::LocalScopeKind scopeKind = compile::LocalScopeKind::Molecule;
     std::optional<std::size_t> moleculeOccurrence;
-    std::vector<ast::SpeciesGraph> patterns;
+    std::optional<std::size_t> inputPatternIndex;
+  std::optional<std::size_t> inputMoleculeOccurrence;
+  std::vector<ast::SpeciesGraph> patterns;
+  std::optional<ast::SpeciesGraph> scopePattern;
 };
 
 std::vector<RuntimeFilter> lowerFilters(
@@ -142,9 +191,10 @@ std::vector<RuntimeFilter> lowerFilters(
 }
 
 std::vector<RuntimeObservable> lowerLocalObservableDependencies(
+    const compile::CompiledRule &compiledRule,
     const compile::CompiledRuleDirection& direction,
     const compile::CompiledModel& model,
-    compile::BNGcoreLoweringContext& context) {
+    compile::BNGcoreLoweringContext& context, bool reverseDirection) {
     std::vector<RuntimeObservable> result;
     if (direction.localScopes.empty() || !direction.rateLaw.has_value()) return result;
 
@@ -161,10 +211,40 @@ std::vector<RuntimeObservable> lowerLocalObservableDependencies(
 
         RuntimeObservable runtime;
         runtime.name = observable->name;
-        runtime.patternIndex = key.patternIndex;
+        runtime.localScopeName = key.localScopeName;
+    runtime.side = key.side;
+    runtime.patternIndex = key.patternIndex;
         runtime.scopeKind = key.scopeKind;
         runtime.moleculeOccurrence = key.moleculeOccurrence;
-        runtime.patterns.reserve(observable->terms.size());
+    if (key.side == compile::PatternSide::Product &&
+        key.moleculeOccurrence.has_value()) {
+      for (const auto &[product, reactant] : compiledRule.moleculeMappings()) {
+        if (!reverseDirection &&
+            product.side == compile::PatternSide::Product &&
+            product.patternIndex == key.patternIndex &&
+            product.moleculeIndex == *key.moleculeOccurrence &&
+            reactant.side == compile::PatternSide::Reactant) {
+          runtime.inputPatternIndex = reactant.patternIndex;
+          runtime.inputMoleculeOccurrence = reactant.moleculeIndex;
+          break;
+        }
+        if (reverseDirection &&
+            reactant.side == compile::PatternSide::Reactant &&
+            reactant.patternIndex == key.patternIndex &&
+            reactant.moleculeIndex == *key.moleculeOccurrence &&
+            product.side == compile::PatternSide::Product) {
+          runtime.inputPatternIndex = product.patternIndex;
+          runtime.inputMoleculeOccurrence = product.moleculeIndex;
+          break;
+        }
+      }
+    }
+    if (key.side == compile::PatternSide::Product &&
+        key.patternIndex < direction.productPatterns.size()) {
+      runtime.scopePattern = compile::lowerPatternToSpeciesGraph(
+          direction.productPatterns[key.patternIndex], context);
+    }
+    runtime.patterns.reserve(observable->terms.size());
         for (const auto& term : observable->terms) {
             // Local functions evaluate ordinary pattern counts. Stoichiometric
             // comparison terms (R==2, R>=3, ...) require separate boolean/count
@@ -182,8 +262,8 @@ std::vector<RuntimeObservable> lowerLocalObservableDependencies(
         result.push_back(std::move(runtime));
     }
     std::sort(result.begin(), result.end(), [](const auto& lhs, const auto& rhs) {
-        return std::tie(lhs.patternIndex, lhs.name) <
-               std::tie(rhs.patternIndex, rhs.name);
+        return std::tie(lhs.side, lhs.patternIndex, lhs.localScopeName, lhs.name) <
+               std::tie(rhs.side, rhs.patternIndex, rhs.localScopeName, rhs.name);
     });
     return result;
 }
@@ -207,8 +287,9 @@ struct NetworkRulePlan::Impl {
     std::vector<RuntimeFilter> filters;
     std::vector<RuntimeObservable> localObservables;
     LegacyNetworkRuleHooks hooks;
+  bool functionProductRate = false;
 
-    Impl(const compile::CompiledRule& compiledRule,
+  Impl(const compile::CompiledRule& compiledRule,
          const compile::CompiledRuleDirection& direction,
          const compile::CompiledModel& model,
          compile::BNGcoreLoweringContext& context,
@@ -216,7 +297,15 @@ struct NetworkRulePlan::Impl {
         : kernel(std::make_unique<LegacyNetworkRuleKernel>(
               compiledRule, direction, model, context, reverseDirection)),
           filters(lowerFilters(direction, context)),
-          localObservables(lowerLocalObservableDependencies(direction, model, context)) {
+          localObservables(lowerLocalObservableDependencies(
+            compiledRule, direction, model, context, reverseDirection)),
+        functionProductRate([&]() {
+          if (!direction.rateLaw.has_value())
+            return false;
+          std::set<std::size_t> activeFunctions;
+          return expressionUsesFunctionProduct(
+              direction.rateLaw->resolvedExpression(), model, activeFunctions);
+        }()) {
         if (!filters.empty()) {
             hooks.reactantFilter = [this](std::size_t patternIndex,
                                           const ast::SpeciesGraph& species) {
@@ -244,7 +333,9 @@ struct NetworkRulePlan::Impl {
                 const BNGcore::PatternGraph& speciesGraph) {
                 std::ostringstream out;
                 for (const auto& observable : localObservables) {
-                    if (observable.patternIndex != patternIndex) continue;
+                    if (observable.side != compile::PatternSide::Reactant)
+                continue;
+              if (observable.patternIndex != patternIndex) continue;
                     if (observable.scopeKind == compile::LocalScopeKind::Molecule &&
                         observable.moleculeOccurrence.has_value() &&
                         *observable.moleculeOccurrence != moleculeIndex) continue;
@@ -257,11 +348,127 @@ struct NetworkRulePlan::Impl {
                                 pattern, speciesGraph, scopedMolecule);
                         }
                     }
-                    out << observable.name << '=' << count << ';';
+              if (functionProductRate) {
+                out << observable.localScopeName << "::" << observable.name
+                    << '=' << count << ';';
+              } else {
+                out << observable.name << '=' << count << ';';
+              }
+            }
+            return out.str();
+          };
+
+      const bool hasProductLocalObservables =
+          std::any_of(localObservables.begin(), localObservables.end(),
+                      [](const auto &observable) {
+                        return observable.side == compile::PatternSide::Product;
+                      });
+      if (hasProductLocalObservables) {
+        hooks.productScopeMatchSignature =
+            [this](std::size_t patternIndex, std::size_t moleculeIndex,
+                   const BNGcore::Node *scopedMolecule,
+                   const BNGcore::PatternGraph &) {
+              std::ostringstream out;
+              for (const auto &observable : localObservables) {
+                if (observable.side != compile::PatternSide::Product ||
+                    !observable.inputPatternIndex.has_value() ||
+                    !observable.inputMoleculeOccurrence.has_value()) {
+                  continue;
+                }
+                if (*observable.inputPatternIndex != patternIndex ||
+                    *observable.inputMoleculeOccurrence != moleculeIndex) {
+                  continue;
+                }
+                out << observable.localScopeName << '@'
+                    << reinterpret_cast<std::uintptr_t>(scopedMolecule) << ';';
+              }
+              return out.str();
+            };
+
+        hooks.productLocalRateFingerprint =
+            [this](const std::vector<ast::SpeciesGraph> &products,
+                   const std::vector<std::size_t> &productPatternIndices) {
+              std::ostringstream out;
+              for (const auto &observable : localObservables) {
+                if (observable.side != compile::PatternSide::Product)
+                  continue;
+                if (observable.scopeKind == compile::LocalScopeKind::Molecule &&
+                    (!observable.scopePattern ||
+                     !observable.moleculeOccurrence.has_value())) {
+                  throw std::runtime_error("product local function scope '" +
+                                           observable.localScopeName +
+                                           "' has no compiled molecule anchor");
+                }
+
+                const BNGcore::Node *scopePatternMolecule = nullptr;
+                if (observable.scopePattern &&
+                    observable.moleculeOccurrence.has_value()) {
+                  std::size_t moleculeIndex = 0;
+                  for (auto node = observable.scopePattern->getGraph().begin();
+                       node != observable.scopePattern->getGraph().end();
+                       ++node) {
+                    if (!isPatternMoleculeNode(**node))
+                      continue;
+                    if (moleculeIndex++ == *observable.moleculeOccurrence) {
+                      scopePatternMolecule = *node;
+                      break;
+                    }
+                  }
+                  if (scopePatternMolecule == nullptr) {
+                    throw std::runtime_error(
+                        "product local function scope '" +
+                        observable.localScopeName +
+                        "' refers to a missing product molecule");
+                  }
+                }
+
+                bool foundScopeProduct = false;
+                std::size_t count = 0;
+                for (std::size_t productIndex = 0;
+                     productIndex < products.size() &&
+                     productIndex < productPatternIndices.size();
+                     ++productIndex) {
+                  if (productPatternIndices[productIndex] !=
+                      observable.patternIndex) {
+                    continue;
+                  }
+                  foundScopeProduct = true;
+                  const auto &productGraph = products[productIndex].getGraph();
+                  if (observable.scopeKind ==
+                      compile::LocalScopeKind::Species) {
+                    for (const auto &pattern : observable.patterns) {
+                      count += core::countPatternMatches(pattern, productGraph);
+                    }
+                    continue;
+                  }
+
+                  BNGcore::UllmannSGIso matcher(
+                      observable.scopePattern->getGraph(), productGraph);
+                  BNGcore::List<BNGcore::Map> maps;
+                  matcher.find_maps(maps);
+                  if (maps.begin() == maps.end())
+                    continue;
+                  auto *scopedMolecule = maps.begin()->mapf(
+                      const_cast<BNGcore::Node *>(scopePatternMolecule));
+                  if (scopedMolecule == nullptr)
+                    continue;
+                  for (const auto &pattern : observable.patterns) {
+                    count += core::countPatternMatchesForScopedMolecule(
+                        pattern, productGraph, scopedMolecule);
+                  }
+                }
+                if (!foundScopeProduct) {
+                  throw std::runtime_error(
+                      "product local function scope '" +
+                      observable.localScopeName +
+                      "' has no generated product species");
+                }
+                out << observable.localScopeName << "::" << observable.name << '=' << count << ';';
                 }
                 return out.str();
             };
-        }
+      }
+    }
         kernel->setHooks(hooks);
     }
 };

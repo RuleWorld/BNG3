@@ -1,0 +1,42 @@
+begin model
+
+begin compartments
+EC	3	1
+mem	2	1 #EC
+end compartments
+
+begin parameters
+end parameters
+
+begin molecule types
+Lig(Site0)
+Receptor(Site0~U~P)
+LCK()
+end molecule types
+
+begin seed species
+1 @mem:Receptor(Site0~U) 1500.0
+2 @mem:LCK() 4000.0
+3 @EC:Lig(Site0) 10.0
+end seed species
+
+begin observables
+Molecules Lig_tot @EC:Lig(Site0)
+Molecules Receptor_complex @mem:Lig(Site0!1).Receptor(Site0!1)
+Molecules Phosph_Receptor_complex @mem:Lig(Site0!1).Receptor(Site0~P!1)
+end observables
+
+begin functions
+end functions
+
+begin reaction rules
+r0:	@EC:Lig(Site0) + @mem:Receptor(Site0~U) -> @mem:Lig(Site0!1).Receptor(Site0~U!1)		1.0E-4
+r1:	@mem:Lig(Site0!1).Receptor(Site0~U!1) + @mem:LCK() -> @mem:Lig(Site0!1).Receptor(Site0~P!1) + @mem:LCK()		0.05
+r2:	@mem:Lig(Site0!1).Receptor(Site0~P!1) -> @mem:Lig(Site0!1).Receptor(Site0~U!1)		0.003
+r3:	@mem:Lig(Site0!1).Receptor(Site0!1) -> @EC:Lig(Site0) + @mem:Receptor(Site0)		5.0E-4
+end reaction rules
+
+end model
+
+
+generate_network({max_iter=>100,max_agg=>10,max_stoich=>{Lig=>100,Receptor=>100,LCK=>100},overwrite=>1})

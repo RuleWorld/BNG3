@@ -11,23 +11,23 @@
 #include <string_view>
 #include <unordered_set>
 
-#include "parser/antlr_compat.hpp"
-#include "antlr4-runtime.h"
 #include "BNGLexer.h"
 #include "BNGParser.h"
-#include "parser/PatternGraphBuilder.hpp"
-#include "parser/BNGAstVisitor.hpp"
+#include "antlr4-runtime.h"
+#include "ast/Function.hpp"
+#include "ast/ReactionRule.hpp"
+#include "compile/CompiledRateLaw.hpp"
 #include "core/Ullmann.hpp"
 #include "io/NetWriter.hpp"
-#include "ast/ReactionRule.hpp"
-#include "ast/Function.hpp"
-#include "compile/CompiledRateLaw.hpp"
+#include "parser/BNGAstVisitor.hpp"
+#include "parser/PatternGraphBuilder.hpp"
+#include "parser/antlr_compat.hpp"
 
 // SUNDIALS/CVODE includes (v7.x API)
-#include "sundials/sundials_context.h"
-#include "sundials/sundials_types.h"
 #include "cvode/cvode.h"
 #include "nvector/nvector_serial.h"
+#include "sundials/sundials_context.h"
+#include "sundials/sundials_types.h"
 #include "sunlinsol/sunlinsol_dense.h"
 #include "sunlinsol/sunlinsol_spgmr.h"
 #include "sunmatrix/sunmatrix_dense.h"
@@ -214,7 +214,7 @@ void OdeIntegrator::compile() {
     {
         auto derived = bng::io::NetWriter::buildDerivedRateParams(model_, network_);
         for (const auto& [ruleName, info] : derived) {
-            if (info.isPerReactionArrhenius || info.isLocalFunction) {
+            if (info.isPerReactionArrhenius || info.isPerReactionLocalFunction || info.isLocalFunction) {
                 for (const auto& [rxnIdx, paramPair] : info.perReactionRates) {
                     perRxnDerivedRates[rxnIdx] = paramPair;
                 }

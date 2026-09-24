@@ -1571,7 +1571,10 @@ std::vector<ReactionRule::EmbeddingResult> ReactionRule::findEmbeddingsForSpecie
             // the scoped molecule. Different observable counts → different rate values.
             const bool hasCompiledFingerprint = hooks != nullptr &&
                 static_cast<bool>(hooks->localRateFingerprint);
-            if (hasCompiledFingerprint) {
+      const bool hasProductScopeSignature =
+          hooks != nullptr &&
+          static_cast<bool>(hooks->productScopeMatchSignature);
+      if (hasCompiledFingerprint) {
                 std::size_t moleculeIndex = 0;
                 for (auto pn = pattern.begin(); pn != pattern.end(); ++pn) {
                     if (!isMoleculeNode(**pn)) continue;
@@ -1580,7 +1583,23 @@ std::vector<ReactionRule::EmbeddingResult> ReactionRule::findEmbeddingsForSpecie
                         const std::string fp = hooks->localRateFingerprint(
                             patternIndex, moleculeIndex, target, targetGraph);
                         if (!fp.empty()) sigBase += "|obs:" + fp;
-                    }
+          }
+          ++moleculeIndex;
+        }
+      }
+      if (hasProductScopeSignature) {
+        std::size_t moleculeIndex = 0;
+        for (auto pn = pattern.begin(); pn != pattern.end(); ++pn) {
+          if (!isMoleculeNode(**pn))
+            continue;
+          auto *target = mapIter->mapf(*pn);
+          if (target != nullptr) {
+            const std::string signature = hooks->productScopeMatchSignature(
+                patternIndex, moleculeIndex, target, targetGraph);
+            if (!signature.empty()) {
+              sigBase += "|product-scope:" + signature;
+            }
+          }
                     ++moleculeIndex;
                 }
             }
@@ -2389,8 +2408,9 @@ bool ReactionRule::buildReaction(
 
     std::vector<std::size_t> productIndices;
     std::vector<std::string> productLabels;
+  std::string productLocalRateContext;
 
-    if (debug) {
+  if (debug) {
         std::cerr << "[BUILD_RXN] rule=" << ruleName_ << " operations=" << operations_.size() << "\n";
         for (std::size_t i = 0; i < operations_.size(); ++i) {
             const auto& op = operations_[i];
@@ -2841,7 +2861,12 @@ bool ReactionRule::buildReaction(
             return false;
         }
 
-        for (std::size_t i = 0; i < productGraphs.size(); ++i) {
+    if (hooks != nullptr && hooks->productLocalRateFingerprint) {
+      productLocalRateContext = hooks->productLocalRateFingerprint(
+          productGraphs, productPatternIndices);
+    }
+
+    for (std::size_t i = 0; i < productGraphs.size(); ++i) {
             auto& productGraph = productGraphs[i];
             if (productFilter && !productFilter(productGraph)) {
                 return false;
@@ -3033,8 +3058,11 @@ bool ReactionRule::buildReaction(
             }
         }
     }
+  if (!productLocalRateContext.empty()) {
+    rateLawStr += "|local:" + productLocalRateContext;
+  }
 
-    const std::string label = reactionLabel(*this, reactantIndices, productLabels);
+  const std::string label = reactionLabel(*this, reactantIndices, productLabels);
     const bool added = rxnList.add(Rxn(
         label,
         reactantIndices,

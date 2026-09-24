@@ -25,6 +25,12 @@ struct LegacyNetworkRuleHooks {
     std::function<bool(const std::vector<ast::SpeciesGraph>&)> productFilter;
     std::function<std::string(std::size_t, std::size_t, const BNGcore::Node*,
                               const BNGcore::PatternGraph&)> localRateFingerprint;
+  std::function<std::string(std::size_t, std::size_t, const BNGcore::Node *,
+                            const BNGcore::PatternGraph &)>
+      productScopeMatchSignature;
+  std::function<std::string(const std::vector<ast::SpeciesGraph> &,
+                            const std::vector<std::size_t> &)>
+      productLocalRateFingerprint;
 };
 
 class LegacyNetworkRuleKernel {

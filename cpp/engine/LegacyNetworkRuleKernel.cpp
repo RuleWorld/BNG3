@@ -72,7 +72,11 @@ struct LegacyNetworkRuleKernel::Impl {
         astHooks.reactantFilter = publicHooks.reactantFilter;
         astHooks.productFilter = publicHooks.productFilter;
         astHooks.localRateFingerprint = publicHooks.localRateFingerprint;
-    }
+    astHooks.productScopeMatchSignature =
+        publicHooks.productScopeMatchSignature;
+    astHooks.productLocalRateFingerprint =
+        publicHooks.productLocalRateFingerprint;
+  }
 };
 
 LegacyNetworkRuleKernel::LegacyNetworkRuleKernel(
