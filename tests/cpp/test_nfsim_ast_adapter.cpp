@@ -3962,6 +3962,39 @@ end reaction rules
     delete system;
 }
 
+TEST_CASE("NFsim AST adapter rejects product-side FunctionProduct scopes") {
+    auto model = bng::parser::parseModel(R"BNG(
+begin molecule types
+    L(s)
+    R(s)
+end molecule types
+begin seed species
+    L(s!1).R(s!1) 1
+end seed species
+begin observables
+    Molecules rtotal R()
+end observables
+begin functions
+    count(x) = rtotal(x)
+end functions
+begin reaction rules
+    L(s!1).R(s!1) -> L(s!+)%x + R(s)%y FunctionProduct("count(x)", "count(y)")
+end reaction rules
+)BNG");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    std::string unavailableReason;
+    auto* system = NFinput::buildSystemFromAst(
+        *model, false, 100, false, suggestedTraversalLimit, {},
+        &unavailableReason);
+    CHECK(system == nullptr);
+    CHECK_FALSE(unavailableReason.empty());
+    CHECK(unavailableReason.find("stage 'reaction rules'") !=
+          std::string::npos);
+    delete system;
+}
+
 TEST_CASE("NFsim AST adapter maps a raw local-function product rate") {
     auto model = bng::parser::parseModel(R"BNG(
 begin molecule types
