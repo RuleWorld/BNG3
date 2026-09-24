@@ -244,9 +244,9 @@ double evaluateScopedRateExpression(
       return local->second.number;
     }
     if (expression.name() == "_pi" || expression.name() == "pi")
-      return M_PI;
+      return std::acos(-1.0);
     if (expression.name() == "_e" || expression.name() == "e")
-      return M_E;
+      return std::exp(1.0);
     if (expression.name() == "time" || expression.name() == "t") {
       throw std::runtime_error(
           "time-dependent local rate is not constant in a finite network");

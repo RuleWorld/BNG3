@@ -333,8 +333,8 @@ begin observables
     Molecules B_total B()
 end observables
 begin functions
-    fA(x) = A_unphosphorylated(x)
-    fB(y) = B_total(y)
+    fA(x) = A_unphosphorylated(x) + _pi - _pi
+    fB(y) = B_total(y) + _e - _e
 end functions
 begin reaction rules
     %x::A(s~u) + %y::B() -> %x::A(s~p) + %y::B() FunctionProduct("fA(x)", "fB(y)")
