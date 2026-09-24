@@ -468,7 +468,7 @@ class SCTSolver:
                 #if its not supposed to be a basic element
                 tmp = [x for x in namingEquivalence[1] if x not in namingEquivalence[2]]
                 tmp.extend([x for x in namingEquivalence[2] if x not in namingEquivalence[1]])
-                tmp2 = deepcopy(tmp)
+                tmp2 = list(tmp)
                 tmp2.reverse()
                 ##TODO: map back for the elements in namingEquivalence[2]
                 if tmp not in self.database.dependencyGraph[namingEquivalence[3][0]] \

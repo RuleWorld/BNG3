@@ -2423,13 +2423,13 @@ class SBMLAnalyzer:
 
                 tmp2.addComponent(tmp3)
             stmp = st.Species()
-            stmp.addMolecule(deepcopy(tmp2))
+            stmp.addMolecule(tmp2.copy())
             stmp.reset()
             # in case one definition overlaps another
             if molecule[0] in dictionary:
-                dictionary[molecule[0]].extend(deepcopy(stmp))
+                dictionary[molecule[0]].extend(stmp.copy())
             else:
-                dictionary[molecule[0]] = deepcopy(stmp)
+                dictionary[molecule[0]] = stmp.copy()
             labelDictionary[molecule[0]] = [(molecule[0],)]
             label.append(molecule[0])
 
@@ -2438,9 +2438,9 @@ class SBMLAnalyzer:
             #        component.setActiveState(molecule[2][1])
             tmp.addMolecule(tmp2)
         if patternName in dictionary:
-            dictionary[patternName].extend(deepcopy(tmp))
+            dictionary[patternName].extend(tmp.copy())
         else:
-            dictionary[patternName] = deepcopy(tmp)
+            dictionary[patternName] = tmp.copy()
         labelDictionary[patternName] = [tuple(label)]
 
     def getUserDefinedComplexes(self):
