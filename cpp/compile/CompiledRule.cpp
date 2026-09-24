@@ -88,6 +88,15 @@ void addRuleDiagnostic(std::vector<Diagnostic>* diagnostics,
                        const std::string& ruleName,
                        const std::string& message) {
     if (diagnostics == nullptr) return;
+    const auto duplicate = std::find_if(
+        diagnostics->begin(), diagnostics->end(),
+        [&](const Diagnostic& existing) {
+            return existing.code == DiagnosticCode::InvalidModel &&
+                   existing.severity == Severity::Error &&
+                   existing.category == ValidationCategory::Rules &&
+                   existing.entity == ruleName && existing.message == message;
+        });
+    if (duplicate != diagnostics->end()) return;
     Diagnostic diagnostic;
     diagnostic.code = DiagnosticCode::InvalidModel;
     diagnostic.severity = Severity::Error;
@@ -194,8 +203,10 @@ void addAffectedComponent(std::vector<PatternSiteRef>& refs, const PatternSiteRe
     if (std::find(refs.begin(), refs.end(), ref) == refs.end()) refs.push_back(ref);
 }
 
-std::vector<CompiledLocalScope> collectLocalScopes(const ast::ReactionRule& rule,
-                                                       std::vector<Diagnostic>* diagnostics) {
+std::vector<CompiledLocalScope> collectLocalScopes(
+    const ast::ReactionRule& rule,
+    std::vector<Diagnostic>* diagnostics,
+    PatternSide preferredSide) {
     std::vector<CompiledLocalScope> scopes;
     const auto collectSide = [&](const std::vector<std::string> &patterns,
                                PatternSide side) {
@@ -241,13 +252,13 @@ std::vector<CompiledLocalScope> collectLocalScopes(const ast::ReactionRule& rule
             if (found == scopes.end()) {
                 scopes.push_back(std::move(candidate));
             } else if (found->side != candidate.side) {
-          // Preserve the long-standing meaning of a tag present on both
-          // sides: it binds to the reactant instance. Product-only tags
-          // remain available for product-local rate expressions.
-          if (found->side == PatternSide::Product &&
-              candidate.side == PatternSide::Reactant) {
-            *found = std::move(candidate);
-          }
+                // A repeated tag may anchor both sides. Resolve each rule
+                // direction against its own reactants: forward prefers the
+                // source reactants, reverse prefers the source products.
+                if (candidate.side == preferredSide &&
+                    found->side != preferredSide) {
+                    *found = std::move(candidate);
+                }
         } else if (found->patternIndex != candidate.patternIndex ||
                        found->kind != candidate.kind ||
                        found->moleculeOccurrence != candidate.moleculeOccurrence) {
@@ -383,7 +394,8 @@ public:
             }
         }
 
-        compiled.forward_.localScopes = collectLocalScopes(rule, diagnostics);
+        compiled.forward_.localScopes = collectLocalScopes(
+            rule, diagnostics, PatternSide::Reactant);
         const auto rateLocalScopeNames = localScopeNames(compiled.forward_.localScopes);
         compiled.rateLaws_.reserve(rule.getRates().size());
         for (const auto& rate : rule.getRates()) {
@@ -526,16 +538,16 @@ public:
             reverse.reactantPatterns = compiled.forward_.productPatterns;
             reverse.productPatterns = compiled.forward_.reactantPatterns;
             reverse.filters = reversedFilters(compiled.forward_.filters);
-            // A reversible rule's scope tag is present on both sides of the
-            // BNGL rule, so the same binding becomes active when the product
-            // pattern is used as the reverse reactant. Preserve the resolved
-            // binding instead of silently turning reverse local rates into zero.
-            reverse.localScopes = compiled.forward_.localScopes;
-      for (auto &scope : reverse.localScopes) {
-        scope.side = scope.side == PatternSide::Reactant
-                         ? PatternSide::Product
-                         : PatternSide::Reactant;
-      }
+            // Compile reverse scopes from the source products first so tags
+            // shared across both sides bind to reverse reactants. Then flip
+            // side labels into the reverse direction's coordinate system.
+            reverse.localScopes = collectLocalScopes(
+                rule, diagnostics, PatternSide::Product);
+            for (auto& scope : reverse.localScopes) {
+                scope.side = scope.side == PatternSide::Reactant
+                    ? PatternSide::Product
+                    : PatternSide::Reactant;
+            }
       // A reversible BNGL rule with one rate law uses that same law for
       // both directions (for example, a single Arrhenius expression).
       // Keep an explicit second rate when present, but do not silently
