@@ -477,7 +477,11 @@ def _sanitize_structure(species: Species) -> None:
                 )
                 for state in component.states
             ]
-            if component.active_state:
+            if (
+                component.active_state
+                and component.active_state not in ("+", "?")
+                and not re.fullmatch(r"-?\d+(?:\.\d+)?", component.active_state)
+            ):
                 component.active_state = standardize_name(component.active_state)
 
 
@@ -496,8 +500,14 @@ def _elemental_species(sbml_species: SBMLSpecies) -> Species:
     name_without_compartment = re.sub(r"^@[^:]+::", "", name)
     try:
         parsed = read_from_string(name_without_compartment)
-        if parsed.molecules and any(
-            molecule.components for molecule in parsed.molecules
+        # BNG3 SBML exports put explicit BNGL molecule patterns in species
+        # names; keep site-free patterns when reading those exports back.
+        explicit_bngl_pattern = name_without_compartment.startswith("M_") and (
+            "(" in name_without_compartment and ")" in name_without_compartment
+        )
+        if parsed.molecules and (
+            explicit_bngl_pattern
+            or any(molecule.components for molecule in parsed.molecules)
         ):
             _sanitize_structure(parsed)
             for molecule in parsed.molecules:
@@ -617,6 +627,7 @@ def build_species_composition_table(
     **_: object,
 ) -> SpeciesCompositionTable:
     species_ids = list(model.species.keys())
+    species_order = {species_id: index for index, species_id in enumerate(species_ids)}
     relationships = analyze_reactions(model)
     binding = relationships["bindingReactions"]
     modifications = relationships["modificationReactions"]
@@ -647,7 +658,10 @@ def build_species_composition_table(
 
     reverse: Dict[str, Set[str]] = OrderedDict()
     for species_id, deps in dependencies.items():
-        for dependency in deps:
+        for dependency in sorted(
+            deps,
+            key=lambda value: (species_order.get(value, len(species_order)), value),
+        ):
             reverse.setdefault(dependency, set()).add(species_id)
 
     sorted_species = topological_sort(species_ids, dependencies)
@@ -695,7 +709,10 @@ def build_species_composition_table(
             else:
                 structure = _elemental_species(item)
         elif atomize and dependencies.get(species_id):
-            dependency_ids = list(dependencies[species_id])
+            dependency_ids = sorted(
+                dependencies[species_id],
+                key=lambda value: (species_order.get(value, len(species_order)), value),
+            )
             components = dependency_ids
             is_elemental = False
             if len(dependency_ids) == 1:

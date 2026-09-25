@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import statistics
 import time
 from pathlib import Path
 
@@ -13,13 +14,13 @@ import numpy as np
 
 import bionetgen
 
-MODELS = [
-    ("simple_system", "tests/python/models/simple_system.bngl"),
-    ("egfr_net", "tests/validation/Validate/egfr_net.bngl"),
-    ("fceri_ji", "tests/validation/Validate/fceri_ji.bngl"),
-    ("tlbr", "tests/validation/Validate/tlbr.bngl"),
-    ("blbr", "tests/validation/Validate/blbr.bngl"),
-]
+MODELS = {
+    "simple_system": "tests/python/models/simple_system.bngl",
+    "egfr_net": "tests/validation/Validate/egfr_net.bngl",
+    "fceri_ji": "tests/validation/Validate/fceri_ji.bngl",
+    "tlbr": "tests/validation/Validate/tlbr.bngl",
+    "blbr": "tests/validation/Validate/blbr.bngl",
+}
 
 
 def _measure(callable_obj):
@@ -45,14 +46,23 @@ def _scan_values(nominal_value: float | None, n_points: int = 100) -> np.ndarray
     return np.logspace(math.log10(low), math.log10(high), n_points)
 
 
-def benchmark_model(model_name: str, model_path: Path) -> dict:
+def benchmark_model(
+    model_name: str,
+    model_path: Path,
+    *,
+    repeats: int = 1,
+    generation_only: bool = False,
+) -> dict:
     record = {
         "model": model_name,
         "path": str(model_path),
         "n_species": None,
         "n_reactions": None,
         "parse_ms": None,
+        "parse_runs_ms": [],
         "generate_ms": None,
+        "generate_runs_ms": [],
+        "network_runs": [],
         "simulate_ms": None,
         "scan_ms": None,
         "total_ms": None,
@@ -61,33 +71,48 @@ def benchmark_model(model_name: str, model_path: Path) -> dict:
     }
 
     try:
-        model, parse_ms = _measure(lambda: bionetgen.load(str(model_path)))
-        record["parse_ms"] = parse_ms
-
-        network, generate_ms = _measure(model.generate_network)
-        record["generate_ms"] = generate_ms
+        model = None
+        network = None
+        for _ in range(repeats):
+            model, parse_ms = _measure(lambda: bionetgen.load(str(model_path)))
+            network, generate_ms = _measure(model.generate_network)
+            record["parse_runs_ms"].append(parse_ms)
+            record["generate_runs_ms"].append(generate_ms)
+            counts = {
+                "n_species": network.num_species,
+                "n_reactions": network.num_reactions,
+            }
+            if record["network_runs"] and counts != record["network_runs"][0]:
+                raise RuntimeError(
+                    "network species/reaction counts changed across repetitions: "
+                    f"{record['network_runs'][0]} != {counts}"
+                )
+            record["network_runs"].append(counts)
+        record["parse_ms"] = statistics.median(record["parse_runs_ms"])
+        record["generate_ms"] = statistics.median(record["generate_runs_ms"])
         record["n_species"] = network.num_species
         record["n_reactions"] = network.num_reactions
 
-        _, simulate_ms = _measure(
-            lambda: model.simulate(method="ode", t_end=50, n_steps=100)
-        )
-        record["simulate_ms"] = simulate_ms
-
-        scan_parameter, nominal_value = _pick_scan_parameter(model)
-        if scan_parameter is not None:
-            scan_values = _scan_values(nominal_value, n_points=100)
-            _, scan_ms = _measure(
-                lambda: model.parameter_scan(
-                    parameter=scan_parameter,
-                    values=scan_values,
-                    method="ode",
-                    t_end=50,
-                    n_steps=100,
-                )
+        if not generation_only:
+            _, simulate_ms = _measure(
+                lambda: model.simulate(method="ode", t_end=50, n_steps=100)
             )
-            record["scan_ms"] = scan_ms
-            record["scan_parameter"] = scan_parameter
+            record["simulate_ms"] = simulate_ms
+
+            scan_parameter, nominal_value = _pick_scan_parameter(model)
+            if scan_parameter is not None:
+                scan_values = _scan_values(nominal_value, n_points=100)
+                _, scan_ms = _measure(
+                    lambda: model.parameter_scan(
+                        parameter=scan_parameter,
+                        values=scan_values,
+                        method="ode",
+                        t_end=50,
+                        n_steps=100,
+                    )
+                )
+                record["scan_ms"] = scan_ms
+                record["scan_parameter"] = scan_parameter
 
         record["total_ms"] = sum(
             value
@@ -151,6 +176,24 @@ def _to_markdown(rows: list[dict]) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Benchmark the BioNetGen C++ backend")
     parser.add_argument(
+        "--models",
+        nargs="+",
+        choices=sorted(MODELS),
+        default=sorted(MODELS),
+        help="models to measure (default: all standard models)",
+    )
+    parser.add_argument(
+        "--repeats",
+        type=int,
+        default=1,
+        help="fresh load and network-generation repetitions per model",
+    )
+    parser.add_argument(
+        "--generation-only",
+        action="store_true",
+        help="skip ODE simulation and parameter scans",
+    )
+    parser.add_argument(
         "--json",
         dest="json_path",
         type=Path,
@@ -163,12 +206,22 @@ def main() -> int:
         default=Path("benchmarks/results/latest.md"),
     )
     args = parser.parse_args()
+    if args.repeats < 1:
+        parser.error("--repeats must be at least 1")
 
     rows = []
-    for model_name, relative_path in MODELS:
+    for model_name in args.models:
+        relative_path = MODELS[model_name]
         model_path = Path(relative_path)
         if model_path.exists():
-            rows.append(benchmark_model(model_name, model_path))
+            rows.append(
+                benchmark_model(
+                    model_name,
+                    model_path,
+                    repeats=args.repeats,
+                    generation_only=args.generation_only,
+                )
+            )
         else:
             rows.append(
                 {"model": model_name, "path": str(model_path), "status": "missing"}
@@ -176,7 +229,19 @@ def main() -> int:
 
     args.json_path.parent.mkdir(parents=True, exist_ok=True)
     args.markdown_path.parent.mkdir(parents=True, exist_ok=True)
-    args.json_path.write_text(json.dumps({"models": rows}, indent=2), encoding="utf-8")
+    args.json_path.write_text(
+        json.dumps(
+            {
+                "benchmark": {
+                    "repeats": args.repeats,
+                    "generation_only": args.generation_only,
+                },
+                "models": rows,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
     args.markdown_path.write_text(_to_markdown(rows) + "\n", encoding="utf-8")
 
     print(_to_markdown(rows))

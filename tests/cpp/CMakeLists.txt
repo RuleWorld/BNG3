@@ -194,6 +194,13 @@ target_link_libraries(test_reaction_rule_expansion PRIVATE
     Catch2::Catch2WithMain Catch2::Catch2 bng_engine bng_ast)
 catch_discover_tests(test_reaction_rule_expansion)
 
+# test_symbol_table
+add_executable(test_symbol_table test_symbol_table.cpp)
+target_include_directories(test_symbol_table PRIVATE ${CMAKE_SOURCE_DIR}/cpp)
+target_link_libraries(test_symbol_table PRIVATE
+    Catch2::Catch2WithMain Catch2::Catch2 bng_compile bng_ast)
+catch_discover_tests(test_symbol_table)
+
 # test_hnauty
 add_executable(test_hnauty test_hnauty.cpp)
 target_compile_definitions(test_hnauty PRIVATE

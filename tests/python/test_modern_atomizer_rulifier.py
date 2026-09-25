@@ -90,6 +90,15 @@ def test_build_state_transition_diagram_matches_reference_contract():
     assert transition.rule is rule
 
 
+def test_state_transition_fallback_is_deterministic_without_unmodified_state():
+    rule = _state_rule("ordered-fallback", from_state="B", to_state="A")
+
+    diagram = build_state_transition_diagram([rule], "A", "b")
+
+    assert diagram.states == {"A", "B"}
+    assert diagram.initial_state == "A"
+
+
 def test_build_state_transition_diagram_ignores_non_state_changes_and_defaults_rate():
     rule = _state_rule("state-change")
     rule.actions[0].set_action("AddBond", "b_site", "other_site")

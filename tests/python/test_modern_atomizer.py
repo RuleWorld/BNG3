@@ -88,6 +88,91 @@ def test_playground_structures_preserve_states_bonds_and_compartments():
     assert component.str2() == "site~P~0"
 
 
+def test_molecule_type_writer_normalizes_component_names_for_bngl():
+    from bionetgen.atomizer.modern import Component, Molecule, write_molecule_types
+
+    erk = Molecule("ERK")
+    erk.add_component(Component("double-phosphorylation", states=["0", "PP"]))
+
+    assert write_molecule_types([erk]) == ["M_ERK(double_phosphorylation~0~PP)"]
+
+
+def test_molecule_type_writer_preserves_existing_bngl_molecule_prefix():
+    from bionetgen.atomizer.modern import Molecule, write_molecule_types
+
+    assert write_molecule_types([Molecule("M_ERK")]) == ["M_ERK()"]
+
+
+def test_atomizer_preserves_explicit_pattern_names_for_site_free_seeds():
+    from bionetgen.atomizer.modern import (
+        SBMLModel,
+        SBMLSpecies,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    model = SBMLModel(
+        id="explicit_pattern_name",
+        species=OrderedDict(
+            [
+                (
+                    "S1",
+                    SBMLSpecies(
+                        id="S1",
+                        name="M_ERK()",
+                        initial_amount=1,
+                        initial_amount_set=True,
+                    ),
+                )
+            ]
+        ),
+    )
+    sct = build_species_composition_table(model)
+    bngl, _ = generate_bngl(
+        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+    )
+
+    assert "  M_ERK()" in bngl
+    assert "  M_ERK() 1" in bngl
+
+
+def test_atomizer_preserves_numeric_active_state_in_explicit_pattern_name():
+    from bionetgen.atomizer.modern import (
+        SBMLModel,
+        SBMLSpecies,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    model = SBMLModel(
+        id="numeric_pattern_state",
+        species=OrderedDict(
+            [
+                (
+                    "S1",
+                    SBMLSpecies(
+                        id="S1",
+                        name="M_ERK(phosphorylation~0)",
+                        initial_amount=1,
+                        initial_amount_set=True,
+                    ),
+                )
+            ]
+        ),
+    )
+    sct = build_species_composition_table(model)
+    bngl, _ = generate_bngl(
+        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+    )
+
+    assert "  M_ERK(phosphorylation~0)" in bngl
+    assert "  M_ERK(phosphorylation~0) 1" in bngl
+
+
 def test_combine_archive_extracts_manifest_selected_sbml():
     from bionetgen.atomizer.modern import (
         Atomizer,
@@ -658,7 +743,7 @@ def test_playground_writer_groups_duplicate_seed_patterns():
         ),
     )
 
-    assert lines == ["@cell:M_A() 1", "$@cell:M_A() 3"]
+    assert lines == ["@cell:M_A() 1", "@cell:$M_A() 3"]
     assert species_to_pattern == {
         "A": "@cell:M_A()",
         "B": "@cell:M_A()",
@@ -668,6 +753,7 @@ def test_playground_writer_groups_duplicate_seed_patterns():
     assert pattern_to_id == {
         "@cell:M_A()": "A",
         "$@cell:M_A()": "C",
+        "@cell:$M_A()": "C",
     }
 
 
@@ -2261,6 +2347,59 @@ def test_playground_writer_folds_expression_seed_amounts_before_emission():
     cpp.parse_string(bngl)
 
 
+def test_playground_writer_resolves_piecewise_initial_assignment_seed_dependencies():
+    from bionetgen.atomizer.modern import (
+        SBMLCompartment,
+        SBMLInitialAssignment,
+        SBMLModel,
+        SBMLParameter,
+        SBMLSpecies,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    model = SBMLModel(
+        id="piecewise_seed_dependencies",
+        compartments=OrderedDict(
+            [("cell", SBMLCompartment(id="cell", size=1, spatial_dimensions=3))]
+        ),
+        species=OrderedDict(
+            (
+                species_id,
+                SBMLSpecies(
+                    id=species_id,
+                    name=species_id,
+                    compartment="cell",
+                    initial_amount=0,
+                    initial_amount_set=False,
+                ),
+            )
+            for species_id in ("A", "B")
+        ),
+        parameters=OrderedDict(
+            [
+                ("p1", SBMLParameter(id="p1", value=1)),
+                ("p2", SBMLParameter(id="p2", value=0)),
+            ]
+        ),
+        initial_assignments=[
+            SBMLInitialAssignment(symbol="A", math="((B + 1) * 2)"),
+            SBMLInitialAssignment(
+                symbol="B", math="if(((p1 == 1) && (p2 == 0)), 3, (1 / 0))"
+            ),
+        ],
+    )
+    sct = build_species_composition_table(model)
+    bngl, _ = generate_bngl(
+        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+    )
+
+    assert "@cell:M_A() 8" in bngl
+    assert "@cell:M_B() 3" in bngl
+
+
 def test_playground_seed_selection_honors_explicit_unset_initial_values():
     from bionetgen.atomizer.modern import (
         SBMLModel,
@@ -2378,6 +2517,171 @@ def test_playground_event_actions_use_source_half_up_step_rounding():
     assert "t_end=>2, n_steps=>3" in result.actions_block
 
 
+def test_playground_event_actions_fold_time_at_trigger_or_execution_time():
+    from bionetgen.atomizer.modern import SBMLEvent
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+
+    context = EventTranslationContext(
+        resolve_species_pattern=lambda _variable: None,
+        resolve_param=lambda _variable: None,
+        is_param=lambda variable: variable in {"trigger_value", "execution_value"},
+        base_t_end=8,
+        base_steps=16,
+    )
+    result = synthesize_event_actions(
+        [
+            SBMLEvent(
+                id="trigger_time_value",
+                trigger="geq(time, 5)",
+                delay="time / 5",
+                assignments=[("trigger_value", "time + 2")],
+            ),
+            SBMLEvent(
+                id="execution_time_value",
+                trigger="geq(time, 5)",
+                delay="1",
+                use_values_from_trigger_time=False,
+                assignments=[("execution_value", "time + 2")],
+            ),
+        ],
+        context,
+    )
+
+    assert result.converted == 2
+    assert not result.untranslated
+    assert result.actions_block is not None
+    assert 'setParameter("trigger_value", "7")' in result.actions_block
+    assert 'setParameter("execution_value", "8")' in result.actions_block
+    assert "continue=>1" in result.actions_block
+
+
+def test_playground_event_actions_fold_math_functions_of_known_time():
+    from bionetgen.atomizer.modern import SBMLEvent
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+
+    result = synthesize_event_actions(
+        [
+            SBMLEvent(
+                id="cosh_at_time",
+                trigger="gt(time, 4.5)",
+                delay="1",
+                assignments=[("p", "cosh(time)")],
+            )
+        ],
+        EventTranslationContext(
+            resolve_species_pattern=lambda _variable: None,
+            resolve_param=lambda _variable: None,
+            is_param=lambda variable: variable == "p",
+            base_t_end=10,
+            base_steps=20,
+        ),
+    )
+
+    assert result.converted == 1
+    assert result.actions_block is not None
+    assert 'setParameter("p", "45.0141201485")' in result.actions_block
+
+
+def test_playground_event_actions_resolve_static_species_triggers():
+    from bionetgen.atomizer.modern import SBMLEvent
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+
+    result = synthesize_event_actions(
+        [
+            SBMLEvent(
+                id="true_at_start",
+                trigger="lt(S, 0.1)",
+                trigger_initial_value=False,
+                assignments=[("dose", "2")],
+            ),
+            SBMLEvent(
+                id="false_forever",
+                trigger="gt(S, 1)",
+                trigger_initial_value=False,
+                assignments=[("dose", "3")],
+            ),
+        ],
+        EventTranslationContext(
+            resolve_species_pattern=lambda _variable: None,
+            resolve_param=lambda _variable: None,
+            resolve_constant=lambda variable: {"S": 0.05}.get(variable),
+            is_param=lambda variable: variable == "dose",
+            base_t_end=10,
+            base_steps=20,
+        ),
+    )
+
+    assert result.converted == 1
+    assert not result.untranslated
+    assert result.actions_block is not None
+    assert 'setParameter("dose", "2")' in result.actions_block
+    assert 'setParameter("dose", "3")' not in result.actions_block
+
+
+def test_playground_event_actions_solve_positive_scaled_time_triggers():
+    from bionetgen.atomizer.modern import SBMLEvent
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+
+    context = EventTranslationContext(
+        resolve_species_pattern=lambda _variable: None,
+        resolve_param=lambda variable: {"timeconv": 60}.get(variable),
+        is_param=lambda variable: variable == "t5",
+        is_compile_time_constant=lambda variable: variable == "timeconv",
+        base_t_end=240,
+        base_steps=24,
+    )
+    result = synthesize_event_actions(
+        [
+            SBMLEvent(
+                id="scaled_time",
+                trigger="gt((time / timeconv), 3)",
+                delay="timeconv * (1 / (time / timeconv))",
+                assignments=[("t5", "time / timeconv")],
+            )
+        ],
+        context,
+    )
+
+    assert result.converted == 1
+    assert result.actions_block is not None
+    assert 't_end=>200' in result.actions_block
+    assert 'setParameter("t5", "3")' in result.actions_block
+
+
+def test_playground_event_actions_reject_nonpositive_scaled_time_triggers():
+    from bionetgen.atomizer.modern import SBMLEvent
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+
+    result = synthesize_event_actions(
+        [SBMLEvent(id="negative_scale", trigger="gt((time / scale), 3)", assignments=[("k", "1")])],
+        EventTranslationContext(
+            resolve_species_pattern=lambda _variable: None,
+            resolve_param=lambda variable: {"scale": -2}.get(variable),
+            is_param=lambda variable: variable == "k",
+            is_compile_time_constant=lambda variable: variable == "scale",
+        ),
+    )
+
+    assert result.converted == 0
+    assert result.untranslated
+    assert "positive constant" in result.untranslated[0][1]
+
+
 def test_playground_atomizer_emits_and_executes_event_actions_and_diagnostics_in_bngl(
     tmp_path,
 ):
@@ -2465,6 +2769,196 @@ def test_playground_name_standardization_handles_sbml_symbols_and_keywords():
     assert standardize_name("A/B") == "A_B"
     assert standardize_name("αβ") == "ab"
     assert standardize_name("7 days") == "_7_days"
+
+
+def test_sbml_comp_models_are_flattened_before_atomizer_import():
+    from bionetgen.atomizer.modern import (
+        SBMLParser,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    source = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
+          xmlns:comp="http://www.sbml.org/sbml/level3/version1/comp/version1"
+          level="3" version="2" comp:required="true">
+      <model id="parent">
+        <comp:listOfSubmodels>
+          <comp:submodel comp:id="child" comp:modelRef="childModel"/>
+        </comp:listOfSubmodels>
+      </model>
+      <comp:listOfModelDefinitions>
+        <comp:modelDefinition id="childModel">
+          <listOfCompartments>
+            <compartment id="cell" size="1" constant="true"/>
+          </listOfCompartments>
+          <listOfSpecies>
+            <species id="A" compartment="cell" initialAmount="2"
+                     hasOnlySubstanceUnits="true" boundaryCondition="false"
+                     constant="false"/>
+          </listOfSpecies>
+          <listOfReactions>
+            <reaction id="synthesis" reversible="false">
+              <listOfProducts>
+                <speciesReference species="A" stoichiometry="1" constant="true"/>
+              </listOfProducts>
+              <kineticLaw>
+                <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>3</cn></math>
+              </kineticLaw>
+            </reaction>
+          </listOfReactions>
+        </comp:modelDefinition>
+      </comp:listOfModelDefinitions>
+    </sbml>"""
+
+    model = SBMLParser().parse(source)
+
+    assert list(model.species) == ["child__A"]
+    assert list(model.reactions) == ["child__synthesis"]
+    assert not any(
+        w.get("category") == "package" and "comp" in w.get("message", "")
+        for w in model.import_warnings
+    )
+    assert any(w.get("category") == "compFlattened" for w in model.import_warnings)
+    sct = build_species_composition_table(model)
+    bngl, _ = generate_bngl(
+        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+    )
+    assert "child__A()" in bngl
+    assert "child__synthesis" in bngl
+
+
+def test_sbml_comp_external_models_stay_explicit_without_source_path():
+    from bionetgen.atomizer.modern import SBMLParser
+
+    source = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
+          xmlns:comp="http://www.sbml.org/sbml/level3/version1/comp/version1"
+          level="3" version="2" comp:required="true">
+      <model id="parent">
+        <comp:listOfSubmodels>
+          <comp:submodel comp:id="child" comp:modelRef="childModel"/>
+        </comp:listOfSubmodels>
+      </model>
+      <comp:listOfExternalModelDefinitions>
+        <comp:externalModelDefinition comp:id="childModel" comp:source="child.xml"
+                                      comp:modelRef="childModel"/>
+      </comp:listOfExternalModelDefinitions>
+    </sbml>"""
+
+    model = SBMLParser().parse(source)
+
+    assert not model.species
+    assert any(
+        warning.get("category") == "compFlattening"
+        and "source-relative resolver" in warning.get("message", "")
+        for warning in model.import_warnings
+    )
+
+
+def test_sbml_comp_external_models_flatten_with_source_path(tmp_path):
+    from bionetgen.atomizer.modern import Atomizer, SBMLParser
+
+    parent_path = tmp_path / "parent.xml"
+    child_path = tmp_path / "child.xml"
+    child_path.write_text(
+        """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
+            level="3" version="2">
+          <model id="childModel">
+            <listOfCompartments><compartment id="cell" size="1" constant="true"/></listOfCompartments>
+            <listOfSpecies>
+              <species id="A" compartment="cell" initialAmount="2"
+                       hasOnlySubstanceUnits="true" boundaryCondition="false"
+                       constant="false"/>
+            </listOfSpecies>
+            <listOfReactions>
+              <reaction id="synthesis" reversible="false">
+                <listOfProducts>
+                  <speciesReference species="A" stoichiometry="1" constant="true"/>
+                </listOfProducts>
+                <kineticLaw>
+                  <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>3</cn></math>
+                </kineticLaw>
+              </reaction>
+            </listOfReactions>
+          </model>
+        </sbml>"""
+    )
+    parent = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
+        xmlns:comp="http://www.sbml.org/sbml/level3/version1/comp/version1"
+        level="3" version="2" comp:required="true">
+      <model id="parent">
+        <comp:listOfSubmodels>
+          <comp:submodel comp:id="child" comp:modelRef="childModel"/>
+        </comp:listOfSubmodels>
+      </model>
+      <comp:listOfExternalModelDefinitions>
+        <comp:externalModelDefinition comp:id="childModel" comp:source="child.xml"
+                                      comp:modelRef="childModel"/>
+      </comp:listOfExternalModelDefinitions>
+    </sbml>"""
+    parent_path.write_text(parent)
+
+    model = SBMLParser().parse(parent, source_path=parent_path)
+
+    assert list(model.species) == ["child__A"], model.import_warnings
+    assert list(model.reactions) == ["child__synthesis"]
+    assert any(w.get("category") == "compFlattened" for w in model.import_warnings)
+
+    atomized = Atomizer(quiet_mode=True).atomize(parent, source_path=parent_path)
+    assert atomized.success
+    assert "child__A()" in atomized.bngl
+
+
+def test_sbml_comp_external_source_cannot_escape_source_directory(tmp_path):
+    from bionetgen.atomizer.modern import SBMLParser
+
+    model_dir = tmp_path / "models"
+    model_dir.mkdir()
+    parent_path = model_dir / "parent.xml"
+    (tmp_path / "child.xml").write_text(
+        """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
+            level="3" version="2"><model id="childModel"/></sbml>"""
+    )
+    parent = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
+        xmlns:comp="http://www.sbml.org/sbml/level3/version1/comp/version1"
+        level="3" version="2" comp:required="true">
+      <model id="parent">
+        <comp:listOfSubmodels>
+          <comp:submodel comp:id="child" comp:modelRef="childModel"/>
+        </comp:listOfSubmodels>
+      </model>
+      <comp:listOfExternalModelDefinitions>
+        <comp:externalModelDefinition comp:id="childModel" comp:source="../child.xml"
+                                      comp:modelRef="childModel"/>
+      </comp:listOfExternalModelDefinitions>
+    </sbml>"""
+    parent_path.write_text(parent)
+
+    model = SBMLParser().parse(parent, source_path=parent_path)
+
+    assert not model.species
+    assert any(
+        warning.get("category") == "compFlattening"
+        and "outside the source directory" in warning.get("message", "")
+        for warning in model.import_warnings
+    )
+
+
+def test_sbml_mathml_implies_lowers_to_bngl_conditional():
+    import xml.etree.ElementTree as ET
+
+    from bionetgen.atomizer.modern.parser import _mathml_to_formula
+
+    math = ET.fromstring("""<math xmlns="http://www.w3.org/1998/Math/MathML">
+      <apply><implies/><apply><gt/><ci>a</ci><cn>0</cn></apply>
+        <apply><gt/><ci>b</ci><cn>0</cn></apply></apply>
+    </math>""")
+
+    formula = _mathml_to_formula(math)
+
+    assert formula.startswith("if(")
+    assert formula.endswith(", 1)")
 
 
 def test_playground_parser_scales_declared_units_and_records_audit_warning():

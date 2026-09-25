@@ -27,7 +27,8 @@ bool isIsomorphic(const SpeciesGraph& lhs, const SpeciesGraph& rhs) {
         for (auto nodeIter = lhs.getGraph().begin(); nodeIter != lhs.getGraph().end(); ++nodeIter) {
             auto* mapped = mapIter->mapf(*nodeIter);
             if (mapped == nullptr || !((*nodeIter)->get_type() == mapped->get_type()) ||
-                !((*nodeIter)->get_state() == mapped->get_state())) {
+                !((*nodeIter)->get_state() == mapped->get_state()) ||
+                (*nodeIter)->get_compartment() != mapped->get_compartment()) {
                 compatible = false;
                 break;
             }
@@ -127,9 +128,6 @@ std::pair<std::size_t, bool> SpeciesList::addChecked(
     // serialization. Only compute it after the exact-key fast path misses;
     // product graphs are frequently exact duplicates of an existing species.
     const std::string label = species.getSpeciesGraph().canonicalLabel();
-    // The fingerprint is also compartment-aware at the molecule level.  It
-    // is the semantic guard needed when a graph's serialization order differs
-    // between two otherwise isomorphic products.
     const std::string fp = species.getSpeciesGraph().fingerprint();
     // Canonical labeling may change node-index tie breakers used by the
     // serializer, so use the canonicalized key for compartmented fallback and
@@ -137,6 +135,18 @@ std::pair<std::size_t, bool> SpeciesList::addChecked(
     // serializing every new species a second time.
     if (!species.getCompartment().empty()) {
         exact = species.getSpeciesGraph().toStringForDedup();
+    }
+
+    // Canonical labeling can reorder symmetric nodes and change the
+    // compartment-aware serialization. Check that normalized key before
+    // falling back to graph isomorphism.
+    const auto canonicalExactBucket = indicesByExactString_.find(exact);
+    if (canonicalExactBucket != indicesByExactString_.end()) {
+        for (const auto index : canonicalExactBucket->second) {
+            if (species_[index].getCompartment() == species.getCompartment()) {
+                return {index, false};
+            }
+        }
     }
 
     // Fast path 2: canonical label match (O(1))
@@ -151,10 +161,11 @@ std::pair<std::size_t, bool> SpeciesList::addChecked(
             if (existingSpecies.getCompartment() != species.getCompartment()) {
                 continue;
             }
-            // Canonical labels omit molecule compartments.  Require the
-            // compartment-aware fingerprint instead of the serialization key:
-            // equivalent graphs may list root molecules in different orders.
-            if (existingSpecies.getSpeciesGraph().fingerprint() != fp) {
+            // Fingerprints can differ for equivalent graphs with ambiguous
+            // repeated subgraphs. Confirm graph isomorphism and molecule
+            // compartments directly.
+            if (!isIsomorphic(
+                    existingSpecies.getSpeciesGraph(), species.getSpeciesGraph())) {
                 continue;
             }
             if (existingSpecies.getCompartment().empty() && !species.getCompartment().empty()) {
@@ -164,11 +175,8 @@ std::pair<std::size_t, bool> SpeciesList::addChecked(
         }
     }
 
-    // Fast path 3: structural fingerprint match (O(1) lookup + targeted Ullmann).
-    // The fingerprint is a graph-structure invariant: isomorphic species always produce
-    // the same fingerprint. This replaces the old O(n) scan over all species with an
-    // O(1) hash lookup. Only species in the same fingerprint bucket need Ullmann
-    // confirmation (which now correctly handles in-edges for full isomorphism).
+    // Fast path 3: structural fingerprint match. This catches equivalent
+    // species when canonical labels differ, with isomorphism as confirmation.
     const auto fpBucket = indicesByFingerprint_.find(fp);
     if (fpBucket != indicesByFingerprint_.end()) {
         for (const auto index : fpBucket->second) {

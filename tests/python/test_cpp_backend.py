@@ -92,6 +92,28 @@ end model
         assert len(model.parameters) == 1
         assert len(model.molecule_types) == 1
 
+    @pytest.mark.parametrize("seed_pattern", ["@cell:$A() 3", "$@cell:A() 3"])
+    def test_parse_fixed_seed_marker_after_compartment_prefix(self, seed_pattern):
+        text = f"""
+begin model
+begin compartments
+    cell 3 1
+end compartments
+begin molecule types
+    A()
+end molecule types
+begin seed species
+    {seed_pattern}
+end seed species
+end model
+"""
+
+        model = _cpp.parse_string(text)
+
+        assert len(model.seed_species) == 1
+        assert model.seed_species[0].is_constant
+        assert model.seed_species[0].compartment == "cell"
+
     def test_parse_error(self, tmp_path):
         bngl = tmp_path / "bad.bngl"
         bngl.write_text("this is not valid BNGL syntax {{{{")
@@ -292,6 +314,81 @@ end model
 
 
 class TestSimulation:
+    def test_parameter_only_model_simulates_without_zero_state_cvode(self):
+        model = _cpp.parse_string("""
+begin model
+begin parameters
+    k 2
+end parameters
+begin functions
+    signal() = k + time
+end functions
+end model
+""")
+        network = _cpp.generate_network(model)
+
+        result = _cpp.simulate_ode(model, network, t_end=1.0, n_steps=2)
+
+        assert result["time"].tolist() == pytest.approx([0.0, 0.5, 1.0])
+        assert result["concentrations"].shape == (3, 0)
+        assert result["functions"]["signal"].tolist() == pytest.approx([2.0, 2.5, 3.0])
+
+    def test_unused_species_degradation_parameter_does_not_change_ode(self):
+        model = _cpp.parse_string("""
+begin model
+begin parameters
+    proAUR1_degradation_rate 0.1
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 0
+end seed species
+begin observables
+    Species X X()
+end observables
+begin reaction rules
+    synth: 0 -> X() 1
+    degrade: X() -> 0 0.07
+end reaction rules
+end model
+""")
+        network = _cpp.generate_network(model)
+        result = _cpp.simulate_ode(
+            model, network, t_end=1.0, n_steps=1, rtol=1e-7, atol=1e-12
+        )
+
+        assert result["observables"]["X"][-1] == pytest.approx(0.9658024875, rel=1e-7)
+
+    def test_ode_derived_rate_fallback_matches_rule_rate_prefix(self):
+        model = _cpp.parse_string("""
+begin model
+begin parameters
+    R1Rate_2 0.5
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 0
+end seed species
+begin observables
+    Species X X()
+end observables
+begin reaction rules
+    R1: 0 -> X() 1
+    degrade: X() -> 0 0.07
+end reaction rules
+end model
+""")
+        network = _cpp.generate_network(model)
+        result = _cpp.simulate_ode(
+            model, network, t_end=1.0, n_steps=1, rtol=1e-7, atol=1e-12
+        )
+
+        assert result["observables"]["X"][-1] == pytest.approx(0.48290124, rel=1e-7)
+
     def test_bng2_zero_argument_function_rates_execute(self, tmp_path):
         """The BNG2 test_time fixture must execute through the action path."""
         source = Path(VALIDATION_DIR) / "Validate" / "test_time.bngl"
@@ -513,6 +610,32 @@ end model
         obs_values = next(iter(result["observables"].values()))
         assert len(obs_values) == 11
 
+    def test_nf_negative_composite_rate_raises_value_error(self, tmp_path):
+        bngl = tmp_path / "nf_negative_composite_rate.bngl"
+        bngl.write_text("""
+begin model
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 0
+end seed species
+begin observables
+    Molecules Xtot X()
+end observables
+begin functions
+    bad() = -1 + 0 * Xtot
+end functions
+begin reaction rules
+    birth: 0 -> X() bad()
+end reaction rules
+end model
+""")
+
+        model = bionetgen.load(str(bngl))
+        with pytest.raises(ValueError, match="R1.*negative propensity"):
+            model.simulate(method="nf", t_end=0.0, n_steps=1, seed=1)
+
     def test_nf_simulation_honors_absolute_start_time(self, tmp_path):
         # Source-derived from NFsim test/Issue78/issue78.bngl and afad408:
         # absolute start time must affect both the output axis and a generic
@@ -575,6 +698,28 @@ end model
         for _ in range(20):
             expected.append(expected[-1] + dt)
         assert result["time"].tolist() == expected
+
+    def test_nf_final_sample_excludes_event_after_stopping_time(self, tmp_path):
+        bngl = tmp_path / "nf_final_sample_excludes_crossing_event.bngl"
+        bngl.write_text("""
+begin model
+begin molecule types
+    X()
+end molecule types
+begin observables
+    Molecules Xtot X()
+end observables
+begin reaction rules
+    birth: 0 -> X() 1.0
+end reaction rules
+end model
+""")
+
+        model = _cpp.parse_file(str(bngl))
+        result = _cpp.simulate_nf(model, t_end=1e-6, n_steps=1, seed=1)
+
+        assert result["construction_path"] == "direct"
+        assert result["observables"]["Xtot"].tolist() == [0.0, 0.0]
 
     def test_nf_simulation_accepts_traversal_limit(self, tmp_path):
         bngl = tmp_path / "nf_traversal_limit.bngl"

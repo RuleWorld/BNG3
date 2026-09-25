@@ -315,6 +315,39 @@ end reaction rules
     CHECK(output.find("    1 k 2  # units=s-1\n") != std::string::npos);
 }
 
+TEST_CASE("NetWriter keeps nested model-function rates dynamic", "[NetWriter]") {
+    auto model = parser::parseModel(R"BNG(
+begin parameters
+    k 0.5
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin observables
+    Molecules A_total A()
+end observables
+begin functions
+    f() = A_total
+end functions
+begin reaction rules
+    A() -> B() k * f()
+end reaction rules
+)BNG");
+
+    REQUIRE(model != nullptr);
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    const auto derived = io::NetWriter::buildDerivedRateParams(*model, network);
+    REQUIRE(derived.size() == 1);
+    const auto found = derived.find(model->getReactionRules().front().getRuleName());
+    REQUIRE(found != derived.end());
+    CHECK(found->second.asFunction);
+}
+
 TEST_CASE(
     "finite-network FunctionProduct rates use each reaction's local scopes",
     "[NetWriter][issue-162]") {

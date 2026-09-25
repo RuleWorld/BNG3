@@ -93,6 +93,83 @@ TEST_CASE("SpeciesList preserves compartment-aware deduplication", "[SpeciesList
     REQUIRE(list.size() == 3);
 }
 
+TEST_CASE(
+    "SpeciesList checks exact keys again after canonical labeling", "[SpeciesList]") {
+    BNGcore::EntityType rootType(
+        "Root", BNGcore::ENTITY_NODE_TYPE, BNGcore::NULL_STATE_TYPE);
+    BNGcore::EntityType xType("X", BNGcore::ENTITY_NODE_TYPE, BNGcore::NULL_STATE_TYPE);
+    BNGcore::EntityType yType("Y", BNGcore::ENTITY_NODE_TYPE, BNGcore::NULL_STATE_TYPE);
+    BNGcore::EntityType aType(
+        "a", BNGcore::COMPONENT_NODE_TYPE, BNGcore::NULL_STATE_TYPE);
+    BNGcore::EntityType bType(
+        "b", BNGcore::COMPONENT_NODE_TYPE, BNGcore::NULL_STATE_TYPE);
+    BNGcore::EntityType xSiteType(
+        "x", BNGcore::COMPONENT_NODE_TYPE, BNGcore::NULL_STATE_TYPE);
+    BNGcore::EntityType ySiteType(
+        "y", BNGcore::COMPONENT_NODE_TYPE, BNGcore::NULL_STATE_TYPE);
+
+    auto makeSpecies = [&](bool reverseRoots) {
+        BNGcore::PatternGraph graph;
+        std::vector<BNGcore::Node*> roots(2);
+        std::vector<BNGcore::Node*> rootA(2);
+        std::vector<BNGcore::Node*> rootB(2);
+        for (const auto index : reverseRoots ? std::vector<std::size_t>{1, 0}
+                                             : std::vector<std::size_t>{0, 1}) {
+            BNGcore::Node root(rootType);
+            BNGcore::Node siteA(aType);
+            BNGcore::Node siteB(bType);
+            roots[index] = graph.add_node(root);
+            rootA[index] = graph.add_node(siteA);
+            rootB[index] = graph.add_node(siteB);
+            roots[index]->set_compartment("C");
+            graph.add_edge(roots[index], rootA[index]);
+            graph.add_edge(roots[index], rootB[index]);
+        }
+        BNGcore::Node x(xType);
+        BNGcore::Node y(yType);
+        BNGcore::Node xSite(xSiteType);
+        BNGcore::Node ySite(ySiteType);
+        auto* xNode = graph.add_node(x);
+        auto* yNode = graph.add_node(y);
+        auto* xSiteNode = graph.add_node(xSite);
+        auto* ySiteNode = graph.add_node(ySite);
+        xNode->set_compartment("C");
+        yNode->set_compartment("C");
+        graph.add_edge(xNode, xSiteNode);
+        graph.add_edge(yNode, ySiteNode);
+
+        const auto addBond = [&](BNGcore::Node* lhs, BNGcore::Node* rhs) {
+            BNGcore::Node bond(BNGcore::BOND_NODE_TYPE);
+            bond.set_state(BNGcore::BOUND_STATE);
+            auto* bondNode = graph.add_node(bond);
+            graph.add_edge(lhs, bondNode);
+            graph.add_edge(rhs, bondNode);
+        };
+        addBond(rootA[0], xSiteNode);
+        addBond(rootB[0], ySiteNode);
+        addBond(rootA[1], ySiteNode);
+        addBond(rootB[1], xSiteNode);
+        return bng::ast::Species(
+            bng::ast::SpeciesGraph(std::move(graph), "C"), 0.0, false, "C");
+    };
+
+    auto first = makeSpecies(false);
+    auto reordered = makeSpecies(true);
+    REQUIRE(first.getSpeciesGraph().toStringForDedup() !=
+            reordered.getSpeciesGraph().toStringForDedup());
+    REQUIRE(first.getSpeciesGraph().canonicalLabel() ==
+            reordered.getSpeciesGraph().canonicalLabel());
+    REQUIRE(first.getSpeciesGraph().toStringForDedup() ==
+            reordered.getSpeciesGraph().toStringForDedup());
+
+    bng::ast::SpeciesList list;
+    const auto firstResult = list.add(std::move(first));
+    const auto duplicateResult = list.add(std::move(reordered));
+    REQUIRE(firstResult.second);
+    REQUIRE_FALSE(duplicateResult.second);
+    REQUIRE(duplicateResult.first == firstResult.first);
+}
+
 TEST_CASE("MacroBNGModel num_site preserves Perl dependency semantics", "[MacroBNGModel]") {
     // Source-derived from legacy/perl/Perl2/MacroBNGModel.pm:num_site:
     // duplicate sites are numbered from the molecule-site inventory, while

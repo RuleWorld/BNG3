@@ -135,6 +135,49 @@ std::string normalizePopulationMapRates(const std::string& source) {
     return result;
 }
 
+// Accept the legacy seed spelling with the fixed marker after a compartment
+// prefix (for example, @cell:$A()). Normalize it to the parser's canonical
+// form ($@cell:A()) before the grammar sees the source.
+std::string normalizeFixedSeedCompartmentMarkers(const std::string& source) {
+    std::string result;
+    bool insideSeedSpecies = false;
+    std::size_t lineStart = 0;
+    while (lineStart <= source.size()) {
+        const auto lineEnd = source.find('\n', lineStart);
+        const auto length = lineEnd == std::string::npos ? source.size() - lineStart
+                                                         : lineEnd - lineStart;
+        std::string line = source.substr(lineStart, length);
+        const auto header = toLower(trimCopy(line));
+        if (header == "begin seed species" || header == "begin species") {
+            insideSeedSpecies = true;
+        } else if (header == "end seed species" || header == "end species") {
+            insideSeedSpecies = false;
+        } else if (insideSeedSpecies) {
+            const auto comment = line.find('#');
+            const auto codeEnd = comment == std::string::npos ? line.size() : comment;
+            std::size_t search = 0;
+            while (search < codeEnd) {
+                const auto at = line.find('@', search);
+                if (at == std::string::npos || at >= codeEnd) break;
+                const auto colon = line.find(':', at + 1);
+                if (colon != std::string::npos && colon + 1 < codeEnd &&
+                    line[colon + 1] == '$') {
+                    line.insert(at, 1, '$');
+                    line.erase(colon + 2, 1);
+                    search = at + 2;
+                } else {
+                    search = at + 1;
+                }
+            }
+        }
+        result += line;
+        if (lineEnd == std::string::npos) break;
+        result.push_back('\n');
+        lineStart = lineEnd + 1;
+    }
+    return result;
+}
+
 std::string normalizeLegacyBlockHeaders(const std::string& source) {
     std::string result;
     result.reserve(source.size());
@@ -1416,6 +1459,7 @@ ast::Expression parseExpressionImpl(const std::string& exprText) {
 std::string normalizeBNGLSource(const std::string& sourceText) {
     auto normalized = normalizeTfunSyntax(sourceText);
     normalized = normalizeLegacyBlockHeaders(normalized);
+    normalized = normalizeFixedSeedCompartmentMarkers(normalized);
     normalized = normalizePopulationMapRates(normalized);
     normalized = normalizeEmptyReactantFunctionDeclarations(normalized);
     normalized = normalizeLegacyActionNames(normalized);

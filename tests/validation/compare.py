@@ -284,6 +284,16 @@ def _canon_expr(expr: str) -> str:
                 return value
 
     result = strip_negative_product_parentheses(result)
+
+    # BNG3 may wrap a compartment-scaled observable in a no-argument call,
+    # e.g. ``(A/cell)()``; BNG2 writes the same term as ``A/cell()``. Remove
+    # only the redundant outer call around a simple identifier quotient.
+    result = re.sub(
+        r"\(([A-Za-z_]\w*/(?:[A-Za-z_]\w*|(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?))\)\(\)",
+        r"\1()",
+        result,
+    )
+
     while True:
         changed = False
         for index in range(len(result) - 1):

@@ -191,6 +191,171 @@ def test_sbml_rate_of_csymbol_text_is_not_duplicated():
     assert model.rules[1].math == "(2)"
 
 
+def test_sbml_rate_of_unruled_mutable_parameter_is_zero():
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="rate_of_unruled_parameter">
+        <listOfParameters>
+          <parameter id="p1" value="1" constant="false"/>
+          <parameter id="p2" constant="false"/>
+        </listOfParameters>
+        <listOfInitialAssignments>
+          <initialAssignment symbol="p2">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><csymbol definitionURL="http://www.sbml.org/sbml/symbols/rateOf">rateOf</csymbol><ci>p1</ci></apply>
+            </math>
+          </initialAssignment>
+        </listOfInitialAssignments>
+      </model>
+    </sbml>"""
+
+    model = _model(xml)
+
+    assert model.initial_assignments[0].math == "(0)"
+
+
+def test_sbml_rate_of_species_accounts_for_rate_ruled_compartment_volume():
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="rate_of_dynamic_volume">
+        <listOfCompartments><compartment id="C" size="1" constant="false"/></listOfCompartments>
+        <listOfSpecies><species id="S1" compartment="C" initialConcentration="1"/></listOfSpecies>
+        <listOfRules>
+          <rateRule variable="C"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1.3</cn></math></rateRule>
+          <assignmentRule variable="x"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><csymbol definitionURL="http://www.sbml.org/sbml/symbols/rateOf">rateOf</csymbol><ci>S1</ci></apply></math></assignmentRule>
+        </listOfRules>
+        <listOfParameters><parameter id="x" constant="false"/></listOfParameters>
+        <listOfReactions><reaction id="r"><listOfProducts><speciesReference species="S1" stoichiometry="1"/></listOfProducts><kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>2</cn></math></kineticLaw></reaction></listOfReactions>
+      </model>
+    </sbml>"""
+
+    model = _model(xml)
+
+    assert "rateOf" not in model.rules[1].math
+    assert "(1) * (2) / (C)" in model.rules[1].math
+    assert "(-(S1) * (1.3) / (C))" in model.rules[1].math
+
+
+def test_sbml_simple_algebraic_rule_lowers_unique_mutable_parameter():
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="simple_algebraic_parameter">
+        <listOfParameters>
+          <parameter id="k1" value="1" constant="true"/>
+          <parameter id="k2" constant="false"/>
+        </listOfParameters>
+        <listOfRules>
+          <algebraicRule>
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><minus/><ci>k2</ci><cn>0.9</cn></apply>
+            </math>
+          </algebraicRule>
+        </listOfRules>
+      </model>
+    </sbml>"""
+
+    model = _model(xml)
+
+    assert [(rule.type, rule.variable, rule.math) for rule in model.rules] == [
+        ("assignment", "k2", "0.9")
+    ]
+    assert not any(
+        warning["category"] == "algebraicRule"
+        for warning in model.import_warnings
+    )
+
+
+def test_sbml_simple_algebraic_rule_lowers_unique_mutable_compartment():
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="simple_algebraic_compartment">
+        <listOfCompartments>
+          <compartment id="cell" size="1" constant="false"/>
+        </listOfCompartments>
+        <listOfRules><algebraicRule>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><minus/><ci>cell</ci><cn>2</cn></apply>
+          </math>
+        </algebraicRule></listOfRules>
+      </model>
+    </sbml>"""
+
+    model = _model(xml)
+
+    assert [(rule.type, rule.variable, rule.math) for rule in model.rules] == [
+        ("assignment", "cell", "2")
+    ]
+    assert not any(
+        warning["category"] == "algebraicRule"
+        for warning in model.import_warnings
+    )
+
+
+def test_sbml_nonlinear_algebraic_rule_stays_explicitly_unsupported():
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="nonlinear_algebraic_parameter">
+        <listOfParameters><parameter id="k" constant="false"/></listOfParameters>
+        <listOfRules><algebraicRule>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><minus/><apply><power/><ci>k</ci><cn>2</cn></apply><cn>1</cn></apply>
+          </math>
+        </algebraicRule></listOfRules>
+      </model>
+    </sbml>"""
+
+    model = _model(xml)
+
+    assert model.rules[0].type == "algebraic"
+    assert any(
+        warning["category"] == "algebraicRule"
+        and warning["severity"] == "dropped"
+        for warning in model.import_warnings
+    )
+
+
+def test_sbml_coupled_algebraic_unknowns_stay_explicitly_unsupported():
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="coupled_algebraic_parameters">
+        <listOfParameters>
+          <parameter id="k1" constant="false"/><parameter id="k2" constant="false"/>
+        </listOfParameters>
+        <listOfRules><algebraicRule>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><minus/><apply><plus/><ci>k1</ci><ci>k2</ci></apply><cn>1</cn></apply>
+          </math>
+        </algebraicRule></listOfRules>
+      </model>
+    </sbml>"""
+
+    model = _model(xml)
+
+    assert model.rules[0].type == "algebraic"
+    assert any(
+        warning["category"] == "algebraicRule"
+        and warning["severity"] == "dropped"
+        for warning in model.import_warnings
+    )
+
+
+def test_sbml_delay_of_unchanging_parameter_lowers_to_value():
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="delay_of_static_parameter">
+        <listOfParameters>
+          <parameter id="k" value="2" constant="false"/>
+          <parameter id="y" constant="false"/>
+        </listOfParameters>
+        <listOfRules>
+          <assignmentRule variable="y">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><plus/><cn>1</cn><apply><csymbol definitionURL="http://www.sbml.org/sbml/symbols/delay">delay</csymbol><ci>k</ci><cn>5</cn></apply></apply>
+            </math>
+          </assignmentRule>
+        </listOfRules>
+      </model>
+    </sbml>"""
+
+    model = _model(xml)
+
+    assert model.rules[0].math == "1 + k"
+    assert "delay(" not in model.rules[0].math
+
+
 def test_sbml_rate_of_expands_from_fixed_volume_reaction_flux():
     from bionetgen.atomizer.modern import (
         build_species_composition_table,

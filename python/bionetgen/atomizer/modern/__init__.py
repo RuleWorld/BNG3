@@ -12,6 +12,7 @@ from __future__ import annotations
 import math
 import os
 from collections import OrderedDict
+from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Optional
 
 from .core import (
@@ -395,10 +396,12 @@ class Atomizer:
             seed_species,
         )
 
-    def atomize(self, sbml_string: str) -> AtomizerResult:
+    def atomize(
+        self, sbml_string: str, source_path: Optional[Path] = None
+    ) -> AtomizerResult:
         try:
             logger.info("ATM003", "Parsing SBML model...")
-            self.model = self.parser.parse(sbml_string)
+            self.model = self.parser.parse(sbml_string, source_path=source_path)
             logger.info(
                 "ATM004",
                 f'Model "{self.model.name}": {len(self.model.species)} species, '

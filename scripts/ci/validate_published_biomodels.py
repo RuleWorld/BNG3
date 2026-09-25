@@ -37,6 +37,20 @@ NUMERICAL_COMPARISON_ATOL_FLOOR = 5e-12
 NUMERICAL_COMPARISON_RTOL_FLOOR = 1e-5
 
 
+def _json_compatible(value: Any) -> Any:
+    """Replace IEEE non-finite numbers with JSON null recursively."""
+
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, dict):
+        return {key: _json_compatible(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_compatible(item) for item in value]
+    if isinstance(value, tuple):
+        return [_json_compatible(item) for item in value]
+    return value
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -913,6 +927,7 @@ def _validate_mode(
     simulation_n_steps: int,
     simulation_rtol: float,
     simulation_atol: float,
+    source_path: Path | None = None,
 ) -> dict[str, Any]:
     from bionetgen.atomizer.modern import (
         Atomizer,
@@ -962,7 +977,7 @@ def _validate_mode(
         result["core_passed"] = False
         return result
     try:
-        source_model = SBMLParser().parse(sbml)
+        source_model = SBMLParser().parse(sbml, source_path=source_path)
     except ValueError as exc:
         message = str(exc)
         if 'SBML "qual"' not in message and "qualitative/logical" not in message:
@@ -988,7 +1003,7 @@ def _validate_mode(
     atomizer = Atomizer(atomize=mode_atomize, quiet_mode=True)
     source_warnings = result["source"]["warnings"]
     try:
-        atomized = atomizer.atomize(sbml)
+        atomized = atomizer.atomize(sbml, source_path=source_path)
     except ValueError as exc:
         message = str(exc)
         if 'SBML "qual"' in message or "qualitative/logical" in message:
@@ -1014,13 +1029,6 @@ def _validate_mode(
         *_simulation_limitations(source_warnings),
         *_event_translation_limitations(atomized.bngl),
     ]
-    if not source_model.species and not any(
-        rule.type == "rate" for rule in source_model.rules
-    ):
-        source_limitations.append(
-            "SBML model has no species or rate-rule state variable for a "
-            "BNGL network/simulation round-trip."
-        )
     if source_limitations:
         result["status"] = "unsupported"
         result["unsupported_reason"] = " ".join(source_limitations)
@@ -1099,27 +1107,6 @@ def _validate_mode(
             f"{native['reaction_count']} != {network.num_reactions}"
         )
 
-    # Empty SBML models are valid documents, but they have no BNGL state
-    # variables or observables on which to run the requested numerical parity
-    # gate. Keep this as an explicit model-class limitation rather than
-    # allowing the zero-state simulator path to segfault.
-    if network.num_species == 0:
-        result["status"] = "unsupported"
-        result["unsupported_reason"] = (
-            "Zero-species SBML model has no BNGL state variables or "
-            "observables for numerical comparison."
-        )
-        result["simulation_comparison"] = {
-            "passed": False,
-            "skipped": True,
-            "reason": result["unsupported_reason"],
-            "method_bngl": "BNG3 CVODE",
-            "method_sbml": "libRoadRunner CVODE",
-            "observable_count": 0,
-        }
-        result["core_passed"] = False
-        return result
-
     try:
         comparison = _simulate_and_compare(
             cpp_model,
@@ -1134,7 +1121,11 @@ def _validate_mode(
                 for rule in source_model.rules
                 if rule.type == "assignment"
                 and rule.variable
-                and str(rule.variable) in source_model.species
+            }
+            | {
+                standardize_name(str(assignment.symbol))
+                for assignment in source_model.initial_assignments
+                if assignment.symbol
             },
         )
     except RuntimeError as initial_error:
@@ -1447,6 +1438,7 @@ def main() -> int:
                                 args.simulation_n_steps,
                                 args.simulation_rtol,
                                 args.simulation_atol,
+                                source_path=path if not is_archive else None,
                             )
                         )
                     except Exception as exc:
@@ -1593,12 +1585,19 @@ def main() -> int:
     args.json.parent.mkdir(parents=True, exist_ok=True)
     if args.worker:
         args.json.write_text(
-            json.dumps({"records": records, "summary": report["summary"]}, indent=2)
+            json.dumps(
+                _json_compatible({"records": records, "summary": report["summary"]}),
+                indent=2,
+                allow_nan=False,
+            )
             + "\n",
             encoding="utf-8",
         )
     else:
-        args.json.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        args.json.write_text(
+            json.dumps(_json_compatible(report), indent=2, allow_nan=False) + "\n",
+            encoding="utf-8",
+        )
     print(
         f"records={len(records)} sbml_passed={passed}/{len(sbml_records)} "
         f"unsupported={unsupported} failed={failed} timeouts={timeouts} "

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <fstream>
+#include <functional>
 #include <iomanip>
 #include <map>
 #include <optional>
@@ -1016,6 +1017,29 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
         return false;
     };
 
+    auto referencesModelFunction = [&](const ast::Expression& expression) {
+        std::function<bool(const ast::Expression&)> visit = [&](
+            const ast::Expression& current) {
+            if (current.kind() == ast::ExpressionKind::Function ||
+                current.kind() == ast::ExpressionKind::ObservableRef) {
+                for (const auto& function : model.getFunctions()) {
+                    if (function.getName() == current.name()) return true;
+                }
+            }
+            for (const auto& child : current.args()) {
+                if (visit(child)) return true;
+            }
+            return false;
+        };
+        return visit(expression);
+    };
+
+    auto isDynamicRateExpression = [&](const std::string& expression,
+                                       const ast::Expression& expressionTree) {
+        return referencesObservables(expression) ||
+               referencesModelFunction(expressionTree);
+    };
+
     // Process rules in BNGL order to match Perl output
     for (const auto& rule : model.getReactionRules()) {
         const std::string ruleName = rule.getRuleName();
@@ -1475,7 +1499,8 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
                         }
                     }
                     if (!reverseIsModelFunction && !isSimpleExpression(reverseRateExpr)) {
-                        const bool reverseAsFunction = referencesObservables(reverseRateExpr);
+                        const bool reverseAsFunction = isDynamicRateExpression(
+                            reverseRateExpr, reverseRateExprObj);
                         const std::string reverseParamName =
                             (reverseAsFunction ? "_rateLaw" : "rateLaw") +
                             std::to_string(rateLawCounter++);
@@ -1517,7 +1542,7 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
         // Complex expression - create rateLaw entry
         // Perl convention: _rateLaw (underscore) for functions referencing observables,
         // rateLaw (no underscore) for pure constant expressions.
-        bool asFunction = referencesObservables(rateExpr);
+        bool asFunction = isDynamicRateExpression(rateExpr, rateExprObj);
         std::string paramName = (asFunction ? "_rateLaw" : "rateLaw") + std::to_string(rateLawCounter++);
 
         derived.emplace(
@@ -1536,7 +1561,8 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
             const std::string reverseRateExpr = rule.getRates()[1].toString();
 
             if (!isSimpleExpression(reverseRateExpr)) {
-                bool reverseAsFunction = referencesObservables(reverseRateExpr);
+                bool reverseAsFunction = isDynamicRateExpression(
+                    reverseRateExpr, rule.getRates()[1]);
                 std::string reverseParamName = (reverseAsFunction ? "_rateLaw" : "rateLaw") + std::to_string(rateLawCounter++);
 
                 derived.emplace(

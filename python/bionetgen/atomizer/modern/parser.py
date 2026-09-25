@@ -10,9 +10,12 @@ from __future__ import annotations
 import math
 import re
 import base64
+import ast
 import xml.etree.ElementTree as ET
 from collections import OrderedDict
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional
+from urllib.parse import unquote, urlsplit
 
 from .types import (
     AnnotationInfo,
@@ -153,6 +156,115 @@ def _declared_package_uris(sbml_string: str) -> Dict[str, str]:
     for match in pattern.finditer(sbml_string):
         result[match.group(2).lower()] = match.group(1)
     return result
+
+
+def _resolve_comp_external_sources(
+    document: Any, source_path: Path, libsbml: Any
+) -> Optional[str]:
+    """Resolve local comp references below the source directory, fail closed."""
+
+    source_path = source_path.expanduser().resolve()
+    if not source_path.is_file():
+        return f'comp source document "{source_path}" is not a file'
+    root_dir = source_path.parent
+    visited: set[Path] = {source_path}
+
+    def resolve_document(current: Any, current_path: Path) -> Optional[str]:
+        plugin = current.getPlugin("comp")
+        if plugin is None:
+            return None
+        for index in range(plugin.getNumExternalModelDefinitions()):
+            external = plugin.getExternalModelDefinition(index)
+            source = str(external.getSource() or "").strip()
+            parsed = urlsplit(source)
+            if parsed.scheme not in {"", "file"} or parsed.netloc not in {"", "localhost"}:
+                return f'comp external source "{source}" is not a local file URI'
+            reference = unquote(parsed.path if parsed.scheme == "file" else parsed.path)
+            if not reference:
+                return f'comp external source "{source}" has no file path'
+            referenced_path = Path(reference)
+            if not referenced_path.is_absolute():
+                referenced_path = current_path.parent / referenced_path
+            referenced_path = referenced_path.resolve()
+            try:
+                referenced_path.relative_to(root_dir)
+            except ValueError:
+                return (
+                    f'comp external source "{source}" resolves outside the '
+                    "source directory"
+                )
+            if not referenced_path.is_file():
+                return f'comp external source file "{referenced_path}" does not exist'
+            if referenced_path in visited:
+                continue
+            visited.add(referenced_path)
+            nested = libsbml.readSBMLFromFile(str(referenced_path))
+            if nested is None or nested.getModel() is None:
+                return f'comp external source "{referenced_path}" is not readable SBML'
+            failure = resolve_document(nested, referenced_path)
+            if failure:
+                return failure
+        return None
+
+    return resolve_document(document, source_path)
+
+
+def _flatten_comp_package(
+    sbml_string: str, source_path: Optional[Path] = None
+) -> tuple[str, Optional[str]]:
+    """Flatten local and inline SBML comp models with libSBML, preserving failures."""
+
+    if "comp" not in _declared_package_uris(sbml_string):
+        return sbml_string, None
+    try:
+        import libsbml
+    except ImportError:
+        return sbml_string, "libSBML is unavailable; composition was not flattened"
+
+    document = libsbml.readSBMLFromString(sbml_string)
+    if document is None or document.getModel() is None:
+        return sbml_string, "libSBML could not parse source for comp flattening"
+    comp_plugin = document.getPlugin("comp")
+    if comp_plugin is not None and comp_plugin.getNumExternalModelDefinitions() > 0:
+        if source_path is None:
+            return (
+                sbml_string,
+                "comp externalModelDefinitions need a source-relative resolver; "
+                "hierarchy was not flattened",
+            )
+        resolution_failure = _resolve_comp_external_sources(
+            document, source_path, libsbml
+        )
+        if resolution_failure:
+            return sbml_string, f"comp external model resolution failed: {resolution_failure}"
+    if source_path is not None:
+        source_location = Path(source_path).expanduser().resolve()
+        if source_location.is_file():
+            document.setLocationURI(source_location.as_uri())
+    properties = libsbml.ConversionProperties()
+    properties.addOption("flatten comp", True)
+    # Refuse a partial flatten if any required package has no supported
+    # flattener. In particular, do not silently erase FBC or other semantics.
+    properties.addOption("abortIfUnflattenable", "all")
+    properties.addOption("stripUnflattenablePackages", False)
+    try:
+        status = document.convert(properties)
+    except Exception as exc:  # libSBML SWIG may throw for unresolved submodels
+        return sbml_string, f"libSBML comp flattening failed: {exc}"
+    if status != libsbml.LIBSBML_OPERATION_SUCCESS:
+        detail = next(
+            (
+                document.getError(index).getMessage().strip()
+                for index in range(document.getNumErrors())
+                if document.getError(index).getSeverity() >= libsbml.LIBSBML_SEV_ERROR
+            ),
+            f"libSBML returned conversion status {status}",
+        )
+        return sbml_string, f"libSBML comp flattening failed: {detail}"
+    flattened = libsbml.writeSBMLToString(document)
+    if not flattened or "comp" in _declared_package_uris(flattened):
+        return sbml_string, "libSBML left comp constructs after flattening"
+    return flattened, None
 
 
 def _mathml_to_formula(element: Optional[Any], parenthesize: bool = False) -> str:
@@ -379,6 +491,13 @@ def _mathml_to_formula(element: Optional[Any], parenthesize: bool = False) -> st
                 if len(args) >= 2
                 else ""
             )
+        if operator == "implies":
+            return f"if({args[0]}, {args[1]}, 1)" if len(args) == 2 else ""
+        if operator == "arccoth":
+            # MathML arccoth(x) is atanh(1/x) on the real domain |x| > 1.
+            # Lower to BNGL's existing portable builtin instead of extending
+            # its grammar or changing NFsim's builtin contract.
+            return f"atanh(1/({args[0]}))" if len(args) == 1 else ""
         direct = {
             "ceiling": "ceil",
             "arcsin": "asin",
@@ -662,11 +781,12 @@ def _expand_rate_of_from_rate_rules(model: SBMLModel) -> None:
 def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
     """Inline reaction-derived ``rateOf`` for a conservative ODE subset.
 
-    For a fixed-volume, non-event species, SBML's derivative is the sum of
-    reaction stoichiometry times reaction extent rates.  This lowering is
-    intentionally limited to ordinary reactions with fixed finite
-    stoichiometry and static conversion factors.  Any target touched by an
-    unsafe reaction is left unresolved so the writer can report it.
+    For non-event species, SBML's amount derivative is the sum of reaction
+    stoichiometry times reaction extent rates. Concentration derivatives also
+    include dilution from a rate-ruled compartment volume. This lowering stays
+    limited to ordinary reactions with fixed finite stoichiometry, static
+    conversion factors, and explicitly defined volume derivatives. Any target
+    touched by an unsafe reaction is left unresolved for the writer to report.
     """
 
     explicit_rate_targets = {
@@ -799,6 +919,34 @@ def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
         rate_of_expressions[identifier] = "0"
         rate_of_expressions[standardize_name(identifier)] = "0"
 
+    # Mutable SBML parameters and compartments without a rule or event
+    # assignment are constant during simulation, even though their `constant`
+    # attribute is false (that flag permits rules/events to modify them).
+    for parameter_id, parameter in model.parameters.items():
+        key = standardize_name(str(parameter_id))
+        if (
+            not getattr(parameter, "constant", True)
+            and key not in explicit_rate_targets
+            and key not in assignment_targets
+            and key not in event_targets
+        ):
+            add_rate_of_zero(str(parameter_id))
+    for compartment_id, compartment in model.compartments.items():
+        key = standardize_name(str(compartment_id))
+        if (
+            not getattr(compartment, "constant", True)
+            and key not in explicit_rate_targets
+            and key not in assignment_targets
+            and key not in event_targets
+        ):
+            add_rate_of_zero(str(compartment_id))
+
+    rate_rule_math = {
+        standardize_name(str(rule.variable)): str(rule.math or "")
+        for rule in model.rules
+        if rule.type == "rate" and rule.variable and str(rule.math or "").strip()
+    }
+
     for parameter_id, parameter in model.parameters.items():
         if getattr(parameter, "constant", True):
             add_rate_of_zero(str(parameter_id))
@@ -870,13 +1018,21 @@ def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
             if not target.has_only_substance_units:
                 compartment_id = str(target.compartment or "")
                 compartment = model.compartments.get(compartment_id)
-                if (
-                    not compartment_id
-                    or compartment is None
-                    or not compartment.constant
-                    or not math.isfinite(float(compartment.size))
-                    or float(compartment.size) == 0
-                ):
+                if not compartment_id or compartment is None:
+                    unsafe.add(target_key)
+                    continue
+                if compartment.constant:
+                    try:
+                        size = float(compartment.size)
+                    except (TypeError, ValueError):
+                        unsafe.add(target_key)
+                        continue
+                    if not math.isfinite(size) or size == 0:
+                        unsafe.add(target_key)
+                        continue
+                elif not rate_rule_math.get(standardize_name(compartment_id)):
+                    # Assignment-rule or event-driven volume derivatives need
+                    # a separate symbolic derivative and stay fail-closed.
                     unsafe.add(target_key)
                     continue
                 volume = f" / ({compartment_id})"
@@ -898,7 +1054,15 @@ def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
             or target_key not in terms
         ):
             continue
-        rate_of_expressions[target_key] = " + ".join(terms[target_key])
+        expression_terms = list(terms[target_key])
+        if not target.has_only_substance_units:
+            compartment_id = str(target.compartment or "")
+            volume_rate = rate_rule_math.get(standardize_name(compartment_id))
+            if volume_rate:
+                expression_terms.append(
+                    f"(-({species_id}) * ({volume_rate}) / ({compartment_id}))"
+                )
+        rate_of_expressions[target_key] = " + ".join(expression_terms)
         rate_of_expressions[str(species_id)] = rate_of_expressions[target_key]
     if not rate_of_expressions:
         return
@@ -966,10 +1130,428 @@ def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
         assignment.math = replace(assignment.math)
 
 
+def _lower_simple_algebraic_parameters(model: SBMLModel) -> None:
+    """Lower unambiguous linear algebraic rules for a mutable parameter.
+
+    SBML algebraic rules normally require a DAE solver. A narrow subset is an
+    explicit assignment in disguise: one otherwise-uncontrolled mutable
+    parameter occurs linearly with a finite numeric coefficient. Only that
+    parameter is solved for; species constraints, multiple unknowns, nonlinear
+    expressions, and multiply-constrained parameters remain algebraic.
+    """
+
+    controlled = {
+        standardize_name(str(rule.variable))
+        for rule in model.rules
+        if rule.type in {"assignment", "rate"} and rule.variable
+    }
+    controlled.update(
+        standardize_name(str(item.symbol))
+        for item in model.initial_assignments
+        if item.symbol
+    )
+    controlled.update(
+        standardize_name(str(assignment.variable))
+        for event in model.events
+        for assignment in event.assignments
+        if getattr(assignment, "variable", None)
+    )
+    algebraic = [rule for rule in model.rules if rule.type == "algebraic"]
+    mutable_parameters = {
+        standardize_name(str(identifier)): str(identifier)
+        for identifier, parameter in model.parameters.items()
+        if not getattr(parameter, "constant", True)
+        and standardize_name(str(identifier)) not in controlled
+    }
+    mutable_compartments = {
+        standardize_name(str(identifier)): str(identifier)
+        for identifier, compartment in model.compartments.items()
+        if not getattr(compartment, "constant", True)
+        and standardize_name(str(identifier)) not in controlled
+    }
+    possible_algebraic_variables = set(mutable_parameters)
+    possible_algebraic_variables.update(
+        standardize_name(str(identifier))
+        for identifier, species in model.species.items()
+        if not getattr(species, "constant", True)
+        and not getattr(species, "boundary_condition", False)
+        and standardize_name(str(identifier)) not in controlled
+    )
+    possible_algebraic_variables.update(
+        standardize_name(str(identifier))
+        for identifier, compartment in model.compartments.items()
+        if not getattr(compartment, "constant", True)
+        and standardize_name(str(identifier)) not in controlled
+    )
+
+    def parse_expression(source: str) -> ast.Expression:
+        # SBML/BNGL function names that collide with Python keywords remain
+        # regular calls in the source expression language.
+        safe_source = re.sub(
+            r"\b(if|and|or|not)\s*(?=\()",
+            lambda match: "bng_" + match.group(1),
+            source,
+        )
+        safe_source = safe_source.replace("^", "**")
+        return ast.parse(safe_source, mode="eval")
+
+    def render(node: ast.AST) -> str:
+        source = re.sub(r"\bbng_(if|and|or|not)\b", r"\1", ast.unparse(node))
+        return source.replace("**", "^")
+
+    uses: Dict[str, int] = {}
+    parsed: Dict[int, ast.Expression] = {}
+    candidates: Dict[int, str] = {}
+    for rule in algebraic:
+        try:
+            expression = parse_expression(str(rule.math))
+        except (SyntaxError, ValueError):
+            continue
+        parsed[id(rule)] = expression
+        names = {
+            node.id
+            for node in ast.walk(expression)
+            if isinstance(node, ast.Name)
+        }
+        matching_symbols = {
+            standardize_name(name)
+            for name in names
+            if standardize_name(name) in possible_algebraic_variables
+        }
+        if len(matching_symbols) != 1:
+            continue
+        variable_key = next(iter(matching_symbols))
+        variable = mutable_parameters.get(variable_key) or mutable_compartments.get(
+            variable_key
+        )
+        if variable is None:
+            continue
+        key = standardize_name(variable)
+        uses[key] = uses.get(key, 0) + 1
+        candidates[id(rule)] = variable
+
+    def number(value: float) -> str:
+        return format(float(value), ".15g")
+
+    def numeric(node: ast.AST) -> Optional[float]:
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+            value = float(node.value)
+            return value if math.isfinite(value) else None
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+            value = numeric(node.operand)
+            if value is None:
+                return None
+            return value if isinstance(node.op, ast.UAdd) else -value
+        if isinstance(node, ast.BinOp) and isinstance(
+            node.op, (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Pow)
+        ):
+            left = numeric(node.left)
+            right = numeric(node.right)
+            if left is None or right is None:
+                return None
+            try:
+                value = {
+                    ast.Add: lambda: left + right,
+                    ast.Sub: lambda: left - right,
+                    ast.Mult: lambda: left * right,
+                    ast.Div: lambda: left / right,
+                    ast.Pow: lambda: left**right,
+                }[type(node.op)]()
+            except (ArithmeticError, OverflowError, ValueError):
+                return None
+            return (
+                value
+                if isinstance(value, (int, float)) and math.isfinite(value)
+                else None
+            )
+        return None
+
+    def linear(node: ast.AST, variable: str) -> Optional[tuple[float, str]]:
+        key = standardize_name(variable)
+        if isinstance(node, ast.Name):
+            if standardize_name(node.id) == key:
+                return 1.0, "0"
+            return 0.0, render(node)
+        if numeric(node) is not None:
+            return 0.0, number(numeric(node) or 0.0)
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+            inner = linear(node.operand, variable)
+            if inner is None:
+                return None
+            sign = 1.0 if isinstance(node.op, ast.UAdd) else -1.0
+            coefficient, remainder = inner
+            if remainder == "0":
+                remainder = "0"
+            elif sign < 0:
+                remainder = f"-({remainder})"
+            return sign * coefficient, remainder
+        if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Sub)):
+            left = linear(node.left, variable)
+            right = linear(node.right, variable)
+            if left is None or right is None:
+                return None
+            sign = 1.0 if isinstance(node.op, ast.Add) else -1.0
+            left_coef, left_rest = left
+            right_coef, right_rest = right
+            if left_rest == "0":
+                remainder = right_rest if sign > 0 else f"-({right_rest})"
+            elif right_rest == "0":
+                remainder = left_rest
+            else:
+                operator = "+" if sign > 0 else "-"
+                remainder = f"({left_rest}) {operator} ({right_rest})"
+            return left_coef + sign * right_coef, remainder
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mult):
+            left = linear(node.left, variable)
+            right = linear(node.right, variable)
+            if left is None or right is None:
+                return None
+            left_coef, left_rest = left
+            right_coef, right_rest = right
+            if left_coef and right_coef:
+                return None
+            if left_coef:
+                scalar = numeric(node.right)
+                if scalar is None:
+                    return None
+                remainder = "0" if left_rest == "0" else f"({left_rest}) * ({number(scalar)})"
+                return left_coef * scalar, remainder
+            if right_coef:
+                scalar = numeric(node.left)
+                if scalar is None:
+                    return None
+                remainder = "0" if right_rest == "0" else f"({right_rest}) * ({number(scalar)})"
+                return right_coef * scalar, remainder
+            return 0.0, render(node)
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+            denominator = numeric(node.right)
+            numerator = linear(node.left, variable)
+            if numerator is None:
+                return None
+            if denominator is None:
+                if numerator[0] == 0:
+                    return 0.0, render(node)
+                return None
+            if denominator == 0:
+                return None
+            coefficient, remainder = numerator
+            return coefficient / denominator, (
+                "0" if remainder == "0" else f"({remainder}) / ({number(denominator)})"
+            )
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            operator_type = {
+                "add": ast.Add,
+                "plus": ast.Add,
+                "subtract": ast.Sub,
+                "minus": ast.Sub,
+                "multiply": ast.Mult,
+                "times": ast.Mult,
+                "divide": ast.Div,
+                "quotient": ast.Div,
+            }.get(node.func.id.lower())
+            if operator_type is not None and len(node.args) == 2:
+                return linear(
+                    ast.BinOp(
+                        left=node.args[0],
+                        op=operator_type(),
+                        right=node.args[1],
+                    ),
+                    variable,
+                )
+            if any(
+                isinstance(child, ast.Name) and standardize_name(child.id) == key
+                for child in ast.walk(node)
+            ):
+                return None
+            return 0.0, render(node)
+        if any(
+            isinstance(child, ast.Name) and standardize_name(child.id) == key
+            for child in ast.walk(node)
+        ):
+            return None
+        return 0.0, render(node)
+
+    replacements: Dict[int, SBMLRule] = {}
+    for rule in algebraic:
+        variable = candidates.get(id(rule))
+        expression = parsed.get(id(rule))
+        if variable is None or expression is None:
+            continue
+        if uses.get(standardize_name(variable)) != 1:
+            continue
+        form = linear(expression.body, variable)
+        if form is None:
+            continue
+        coefficient, remainder = form
+        if not math.isfinite(coefficient) or coefficient == 0:
+            continue
+        if remainder == "0":
+            value = "0"
+        elif coefficient == 1:
+            value = f"-({remainder})"
+        elif coefficient == -1:
+            value = remainder
+        else:
+            value = f"-({remainder}) / ({number(coefficient)})"
+        # Keep the output compact for the common x - constant = 0 form.
+        try:
+            folded = numeric(parse_expression(value).body)
+        except (SyntaxError, ValueError):
+            folded = None
+        if folded is not None:
+            value = number(folded)
+        replacements[id(rule)] = SBMLRule(
+            type="assignment",
+            variable=variable,
+            math=value,
+            math_from_empty_boolean=rule.math_from_empty_boolean,
+            metaid=rule.metaid,
+            sbo_term=rule.sbo_term,
+            notes_xml=rule.notes_xml,
+            annotation_xml=rule.annotation_xml,
+        )
+    if replacements:
+        model.rules = [replacements.get(id(rule), rule) for rule in model.rules]
+
+
+def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
+    """Remove SBML ``delay`` calls whose value operand cannot change in-run."""
+
+    controlled = {
+        standardize_name(str(rule.variable))
+        for rule in model.rules
+        if rule.variable
+    }
+    controlled.update(
+        standardize_name(str(assignment.variable))
+        for event in model.events
+        for assignment in event.assignments
+        if getattr(assignment, "variable", None)
+    )
+    algebraic_symbols = {
+        standardize_name(name)
+        for rule in model.rules
+        if rule.type == "algebraic"
+        for name in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", rule.math)
+    }
+    intrinsic_functions = {
+        "abs", "acos", "acosh", "and", "asin", "asinh", "atan", "atanh",
+        "ceil", "cos", "cosh", "cot", "csc", "exp", "floor", "gcd",
+        "if", "lcm", "ln", "log", "log10", "max", "min", "not", "or",
+        "pow", "power", "root", "sec", "sin", "sinh", "sqrt", "tan",
+        "tanh", "xor",
+    }
+
+    def is_static(expression: str) -> bool:
+        identifiers = re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", expression)
+        for index, identifier in enumerate(identifiers):
+            key = standardize_name(identifier)
+            if key in {"time", "avogadro"}:
+                return False
+            if identifier.lower() in intrinsic_functions:
+                continue
+            if key in algebraic_symbols:
+                return False
+            parameter = next(
+                (item for name, item in model.parameters.items() if standardize_name(name) == key),
+                None,
+            )
+            if parameter is not None:
+                if parameter.constant or key not in controlled:
+                    continue
+                return False
+            compartment = next(
+                (item for name, item in model.compartments.items() if standardize_name(name) == key),
+                None,
+            )
+            if compartment is not None:
+                if compartment.constant or key not in controlled:
+                    continue
+                return False
+            species = next(
+                (item for name, item in model.species.items() if standardize_name(name) == key),
+                None,
+            )
+            if species is not None:
+                compartment = model.compartments.get(str(species.compartment or ""))
+                if (
+                    species.constant
+                    and not key in controlled
+                    and compartment is not None
+                    and compartment.constant
+                ):
+                    continue
+                return False
+            return False
+        return True
+
+    def replace(expression: str) -> str:
+        result: List[str] = []
+        cursor = 0
+        while True:
+            match = re.search(r"\bdelay\s*\(", expression[cursor:], re.IGNORECASE)
+            if match is None:
+                result.append(expression[cursor:])
+                break
+            start = cursor + match.start()
+            opening = cursor + match.end() - 1
+            depth = 1
+            separator: Optional[int] = None
+            closing: Optional[int] = None
+            for index in range(opening + 1, len(expression)):
+                char = expression[index]
+                if char == "(":
+                    depth += 1
+                elif char == ")":
+                    depth -= 1
+                    if depth == 0:
+                        closing = index
+                        break
+                elif char == "," and depth == 1 and separator is None:
+                    separator = index
+            if closing is None or separator is None:
+                result.append(expression[cursor:])
+                break
+            first = replace(expression[opening + 1 : separator].strip())
+            second = replace(expression[separator + 1 : closing].strip())
+            result.append(expression[cursor:start])
+            result.append(
+                first if is_static(first) else f"delay({first}, {second})"
+            )
+            cursor = closing + 1
+        return "".join(result)
+
+    def update_law(law: Any) -> None:
+        if isinstance(law, Mapping):
+            law["math"] = replace(str(law.get("math", "") or ""))
+        elif hasattr(law, "math"):
+            law.math = replace(str(getattr(law, "math", "") or ""))
+
+    for reaction in model.reactions.values():
+        update_law(reaction.kinetic_law)
+    for rule in model.rules:
+        rule.math = replace(rule.math)
+    for function in model.function_definitions.values():
+        function.math = replace(function.math)
+    for event in model.events:
+        event.trigger = replace(event.trigger)
+        event.delay = replace(event.delay) if event.delay else event.delay
+        event.priority = replace(event.priority) if event.priority else event.priority
+        for assignment in event.assignments:
+            if hasattr(assignment, "math"):
+                assignment.math = replace(assignment.math)
+    for assignment in model.initial_assignments:
+        assignment.math = replace(assignment.math)
+
+
 class SBMLParser:
     """Parse SBML text into the atomizer's stable intermediate model."""
 
-    def parse(self, sbml_string: str) -> SBMLModel:
+    def parse(
+        self, sbml_string: str, source_path: Optional[Path] = None
+    ) -> SBMLModel:
+        original_packages = _declared_package_uris(sbml_string)
+        sbml_string, comp_failure = _flatten_comp_package(sbml_string, source_path)
         try:
             root = ET.fromstring(sbml_string)
         except ET.ParseError as exc:
@@ -981,7 +1563,33 @@ class SBMLParser:
         if model_element is None:
             raise ValueError("SBML document has no model")
         declared_packages = _declared_package_uris(sbml_string)
-        return self._parse_xml_model(root, model_element, declared_packages)
+        result = self._parse_xml_model(root, model_element, declared_packages)
+        if "comp" in original_packages:
+            if comp_failure is None:
+                result.import_warnings.append(
+                    {
+                        "category": "compFlattened",
+                        "message": (
+                            "SBML comp hierarchy was flattened with libSBML before "
+                            "Atomizer import."
+                        ),
+                        "count": 1,
+                        "severity": "info",
+                    }
+                )
+            else:
+                result.import_warnings.append(
+                    {
+                        "category": "compFlattening",
+                        "message": comp_failure,
+                        "count": 1,
+                        "severity": "dropped",
+                    }
+                )
+            result.import_warnings = [
+                coerce_import_warning(warning) for warning in result.import_warnings
+            ]
+        return result
 
     @staticmethod
     def _xml_math(parent: Optional[Any]) -> str:
@@ -1217,10 +1825,12 @@ class SBMLParser:
             package_required=package_required,
             package_counts=package_counts,
         )
+        _lower_simple_algebraic_parameters(result)
         result.import_warnings.extend(SBMLParser._mathml_import_warnings(root))
         result.import_warnings.extend(apply_unit_scaling(result))
         result.import_warnings.extend(parameter_warnings)
         result.import_warnings.extend(math_warnings)
+        _lower_delays_of_static_expressions(result)
         _expand_rate_of_from_rate_rules(result)
         _expand_rate_of_from_simple_reactions(result)
         SBMLParser._fold_static_stoichiometry(result)
@@ -1487,7 +2097,27 @@ class SBMLParser:
             for assignment in event.assignments
             if getattr(assignment, "variable", None)
         }
+        controlled_targets = controlled | event_targets
         static_symbols = dict(symbols)
+        reference_ids: set[str] = set()
+        for reaction in model.reactions.values():
+            for reference in [*reaction.reactants, *reaction.products]:
+                reference_id = str(reference.id or "")
+                if not reference_id:
+                    if not reference.stoichiometry_math and reference_id not in controlled_targets:
+                        reference.variable_stoichiometry = False
+                    continue
+                reference_ids.add(reference_id)
+                if (
+                    reference_id not in controlled_targets
+                    and math.isfinite(reference.stoichiometry)
+                ):
+                    # In SBML Level 3 the SpeciesReference id is a model-level
+                    # symbol whose value is that reference's stoichiometry.
+                    # When no rule/event overrides it, its literal value is a
+                    # valid compile-time operand even if constant=false.
+                    for name in (reference_id, standardize_name(reference_id)):
+                        static_symbols[name] = reference.stoichiometry
         for _ in range(len(model.rules) + len(model.initial_assignments) + 1):
             changed = False
             for rule in model.rules:
@@ -1545,6 +2175,35 @@ class SBMLParser:
                     continue
                 reference.stoichiometry = value
                 reference.variable_stoichiometry = False
+
+        folded_reference_ids = {
+            str(reference.id)
+            for reaction in model.reactions.values()
+            for reference in [*reaction.reactants, *reaction.products]
+            if reference.id and not reference.variable_stoichiometry
+        }
+        for reference_id in folded_reference_ids:
+            value = static_symbols.get(reference_id)
+            if value is None:
+                value = static_symbols.get(standardize_name(reference_id))
+            if value is None or reference_id in model.parameters:
+                continue
+            model.parameters[reference_id] = SBMLParameter(
+                id=reference_id,
+                value=float(value),
+                constant=True,
+            )
+        if folded_reference_ids:
+            model.rules = [
+                rule
+                for rule in model.rules
+                if str(rule.variable or "") not in folded_reference_ids
+            ]
+            model.initial_assignments = [
+                assignment
+                for assignment in model.initial_assignments
+                if str(assignment.symbol or "") not in folded_reference_ids
+            ]
 
     @staticmethod
     def _fold_static_species_assignments(model: SBMLModel) -> None:

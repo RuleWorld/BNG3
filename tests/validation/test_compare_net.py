@@ -19,6 +19,15 @@ def test_canonical_rate_expression_normalizes_unary_minus_parentheses():
     assert _canon_expr(left) == _canon_expr(right)
 
 
+def test_canonical_rate_expression_normalizes_compartment_observable_call():
+    legacy = "1*(694.731*A/cell()*B/cell()/(B/cell()+6086070))"
+    modern = "1*(694.731*(A/cell)()*(B/cell)()/((B/cell)()+6086070))"
+    changed = modern.replace("694.731", "694.732")
+
+    assert _canon_expr(legacy) == _canon_expr(modern)
+    assert _canon_expr(legacy) != _canon_expr(changed)
+
+
 def _net(path: Path, rate: str) -> Path:
     path.write_text(
         "\n".join(

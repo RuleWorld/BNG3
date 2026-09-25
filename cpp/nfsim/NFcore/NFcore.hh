@@ -779,10 +779,6 @@ namespace NFcore
 
 			/* Run up to, but not across, the stopping time without file output. */
 			double stepTo(double stoppingTime);
-			/* API compatibility form: native System::sim may fire the pending event
-			 * that crosses its final output endpoint; ordinary stepTo callers retain
-			 * the exclusive boundary above. */
-			double stepTo(double stoppingTime, bool includeEndpointEvent);
 
 			void singleStep();
 

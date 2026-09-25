@@ -248,10 +248,9 @@ void bind_nfsim(py::module_& m) {
                 record_observables();
                 for (int step = 1; step <= n_steps; ++step) {
                     // Match NFsim::sim's repeated checkpoint accumulation.
-                    // Multiplication can round a final boundary differently
-                    // and change whether an event is included at that edge.
+                    // Multiplication can round sample times differently.
                     t_current += dt;
-                    system->stepTo(t_current, step == n_steps);
+                    system->stepTo(t_current);
                     time_points.push_back(t_current);
                     record_observables();
                 }
@@ -259,7 +258,7 @@ void bind_nfsim(py::module_& m) {
                 time_points.reserve(output_times.size());
                 for (std::size_t index = 0; index < output_times.size(); ++index) {
                     const double time = output_times[index];
-                    system->stepTo(time, index + 1 == output_times.size());
+                    system->stepTo(time);
                     time_points.push_back(time);
                     record_observables();
                 }

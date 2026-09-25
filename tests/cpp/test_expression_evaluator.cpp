@@ -21,6 +21,11 @@ TEST_CASE("Expression: numeric literals", "[Expression]") {
     REQUIRE(expr.evaluate(noResolver) == 42.0);
 }
 
+TEST_CASE("Expression numeric rendering preserves round-trip precision", "[Expression]") {
+    const auto rendered = Expression::number(3.141592653589793).toString();
+    CHECK(rendered == "3.1415926535897931");
+}
+
 TEST_CASE("Expression: parameter references", "[Expression]") {
     auto expr = Expression::identifier("k1");
     auto resolver = [](const std::string& name) -> double {

@@ -332,80 +332,84 @@ def _factorial(value: float) -> int:
 
 
 def _evaluate_arithmetic(expression: str) -> Optional[float]:
-    """Evaluate only the arithmetic grammar accepted for constant seed folding."""
+    """Evaluate a restricted numeric expression used for constant seed folding."""
 
-    tokens = re.findall(
-        r"(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?|[+\-*/^()]",
-        expression,
-    )
-    if not tokens or "".join(tokens) != re.sub(r"\s+", "", expression):
+    normalized = re.sub(r"\bif\s*\(", "if_(", expression)
+    normalized = normalized.replace("&&", " and ").replace("||", " or ")
+    normalized = normalized.replace("^", "**")
+    try:
+        tree = ast.parse(normalized, mode="eval")
+    except (RecursionError, SyntaxError, ValueError):
         return None
 
-    position = 0
-
-    def peek() -> Optional[str]:
-        return tokens[position] if position < len(tokens) else None
-
-    def precedence(operator: str) -> int:
-        return {"+": 1, "-": 1, "*": 2, "/": 2, "^": 3}.get(operator, 0)
-
-    def parse_expression(min_precedence: int) -> float:
-        nonlocal position
-        token = peek()
-        if token is None:
-            raise ValueError("missing operand")
-        if token == "(":
-            position += 1
-            value = parse_expression(0)
-            if peek() != ")":
-                raise ValueError("unbalanced parentheses")
-            position += 1
-        elif token in {"+", "-"}:
-            position += 1
-            operand = parse_expression(3)
-            value = operand if token == "+" else -operand
-        else:
-            try:
-                value = float(token)
-            except (TypeError, ValueError) as error:
-                raise ValueError("invalid number") from error
-            position += 1
-
-        while position < len(tokens):
-            operator = peek()
-            if operator == ")":
-                break
-            if operator is None:
-                break
-            current_precedence = precedence(operator)
-            if current_precedence == 0 or current_precedence < min_precedence:
-                break
-            position += 1
-            right = parse_expression(
-                current_precedence if operator == "^" else current_precedence + 1
-            )
-            if operator == "+":
-                value += right
-            elif operator == "-":
-                value -= right
-            elif operator == "*":
-                value *= right
-            elif operator == "/":
-                value /= right
-            else:
-                value = value**right
-        return value
+    def evaluate(node: ast.AST) -> object:
+        if isinstance(node, ast.Expression):
+            return evaluate(node.body)
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+            return float(node.value)
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+            value = evaluate(node.operand)
+            return value if isinstance(node.op, ast.UAdd) else -value
+        if isinstance(node, ast.BinOp) and isinstance(
+            node.op, (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Pow)
+        ):
+            left = evaluate(node.left)
+            right = evaluate(node.right)
+            if isinstance(node.op, ast.Add):
+                return left + right
+            if isinstance(node.op, ast.Sub):
+                return left - right
+            if isinstance(node.op, ast.Mult):
+                return left * right
+            if isinstance(node.op, ast.Div):
+                return left / right
+            return left**right
+        if isinstance(node, ast.BoolOp) and isinstance(node.op, (ast.And, ast.Or)):
+            values = iter(node.values)
+            result = evaluate(next(values))
+            for value_node in values:
+                if isinstance(node.op, ast.And) and not result:
+                    return result
+                if isinstance(node.op, ast.Or) and result:
+                    return result
+                result = evaluate(value_node)
+            return result
+        if isinstance(node, ast.Compare):
+            left = evaluate(node.left)
+            for operator, comparator in zip(node.ops, node.comparators):
+                right = evaluate(comparator)
+                if isinstance(operator, ast.Eq):
+                    matched = left == right
+                elif isinstance(operator, ast.NotEq):
+                    matched = left != right
+                elif isinstance(operator, ast.Lt):
+                    matched = left < right
+                elif isinstance(operator, ast.LtE):
+                    matched = left <= right
+                elif isinstance(operator, ast.Gt):
+                    matched = left > right
+                elif isinstance(operator, ast.GtE):
+                    matched = left >= right
+                else:
+                    raise ValueError("unsupported comparison")
+                if not matched:
+                    return False
+                left = right
+            return True
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            if node.func.id != "if_" or len(node.args) != 3 or node.keywords:
+                raise ValueError("unsupported function")
+            condition = evaluate(node.args[0])
+            return evaluate(node.args[1] if condition else node.args[2])
+        raise ValueError("unsupported expression")
 
     try:
-        value = parse_expression(0)
-        if (
-            isinstance(value, complex)
-            or position != len(tokens)
-            or not math.isfinite(value)
-        ):
+        value = evaluate(tree)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
             return None
-        return value
-    except (ArithmeticError, TypeError, ValueError, OverflowError):
+        number = float(value)
+        return number if math.isfinite(number) else None
+    except (ArithmeticError, OverflowError, RecursionError, TypeError, ValueError):
         return None
 
 
@@ -2835,10 +2839,13 @@ def write_molecule_types(molecule_types: Sequence[Molecule]) -> List[str]:
         declaration = molecule.copy()
         for component in declaration.components:
             component.bonds = []
-        value = declaration.str2().split("@", 1)[0]
+        # Pattern output normalizes hyphens across molecule, component, and
+        # state identifiers. Apply the same rule here so the declared site
+        # schema accepts every emitted pattern.
+        value = declaration.str2().replace("-", "_").split("@", 1)[0]
         if "(" not in value:
             value += "()"
-        lines.append("M_" + value)
+        lines.append(value if value.startswith("M_") else "M_" + value)
     return sorted(dict.fromkeys(lines))
 
 
@@ -3017,6 +3024,15 @@ def _map_seed_identifiers(expression: str, model: SBMLModel) -> str:
     return result
 
 
+def _format_seed_pattern(pattern: str, fixed: bool) -> str:
+    if not fixed:
+        return pattern
+    compartment, separator, molecule_pattern = pattern.partition(":")
+    if separator and pattern.startswith("@"):
+        return f"{compartment}:${molecule_pattern}"
+    return f"${pattern}"
+
+
 def write_seed_species(
     seed_species: Sequence[SeedSpeciesEntry],
     sct: SpeciesCompositionTable,
@@ -3074,12 +3090,14 @@ def write_seed_species(
         sbml_to_pattern[seed.sbml_id] = pattern
         pattern_to_id.setdefault(pattern, seed.sbml_id)
         if fixed:
-            # Keep the canonical lookup and the seed-declaration lookup in
-            # sync.  The Playground emits '$' only on fixed seed lines but
-            # accepts both spellings when resolving the returned mapping.
+            # Accept the historical prefix form and the standard compartment
+            # form returned in the emitted seed block.
             pattern_to_id.setdefault(f"${pattern}", seed.sbml_id)
+            pattern_to_id.setdefault(
+                _format_seed_pattern(pattern, fixed=True), seed.sbml_id
+            )
     for (fixed, _group_pattern), (pattern, concentration) in grouped.items():
-        lines.append(f"{'$' if fixed else ''}{pattern} {concentration}")
+        lines.append(f"{_format_seed_pattern(pattern, fixed)} {concentration}")
     return lines, sbml_to_pattern, pattern_to_id
 
 
@@ -4876,6 +4894,45 @@ def generate_bngl(
             )
         )
 
+        changing_species_ids = {
+            str(rule.variable)
+            for rule in model.rules
+            if rule.variable and rule.type in {"assignment", "rate"}
+        }
+        changing_species_ids.update(
+            str(assignment.symbol)
+            for assignment in model.initial_assignments
+            if assignment.symbol
+        )
+        changing_species_ids.update(
+            str(assignment.variable)
+            for event in model.events
+            for assignment in event.assignments
+            if getattr(assignment, "variable", None)
+        )
+        changing_species_ids.update(
+            str(reference.species)
+            for reaction in model.reactions.values()
+            for reference in [*reaction.reactants, *reaction.products]
+            if reference.species and reference.stoichiometry != 0
+        )
+        changing_compartments = {
+            standardize_name(str(rule.variable))
+            for rule in model.rules
+            if rule.variable and rule.type in {"assignment", "rate"}
+        }
+        changing_compartments.update(
+            standardize_name(str(assignment.symbol))
+            for assignment in model.initial_assignments
+            if assignment.symbol
+        )
+        changing_compartments.update(
+            standardize_name(str(assignment.variable))
+            for event in model.events
+            for assignment in event.assignments
+            if getattr(assignment, "variable", None)
+        )
+
         def is_compile_time_constant(identifier: str) -> bool:
             parameter = model.parameters.get(identifier)
             if parameter is not None:
@@ -4886,6 +4943,37 @@ def generate_bngl(
                 and compartment.constant
                 and identifier not in mutable_event_ids
             )
+
+        def resolve_constant(identifier: str) -> Optional[float]:
+            species = next(
+                (
+                    value
+                    for species_id, value in model.species.items()
+                    if standardize_name(species_id) == standardize_name(identifier)
+                ),
+                None,
+            )
+            if species is None or any(
+                standardize_name(species_id) == standardize_name(identifier)
+                for species_id in changing_species_ids
+            ):
+                return None
+            compartment = model.compartments.get(species.compartment or "")
+            if species.compartment and (
+                compartment is None
+                or standardize_name(species.compartment) in changing_compartments
+            ):
+                return None
+            volume = float(compartment.size) if compartment is not None else 1.0
+            amount = float(species.initial_amount)
+            concentration = float(species.initial_concentration)
+            if species.has_only_substance_units:
+                if species.initial_amount_set:
+                    return amount
+                return concentration * volume
+            if species.initial_concentration_set:
+                return concentration
+            return amount / volume if volume != 0 else None
 
         event_result = synthesize_event_actions(
             model.events,
@@ -4905,6 +4993,7 @@ def generate_bngl(
                 is_param=lambda identifier: identifier in model.parameters
                 or identifier in model.compartments,
                 is_compile_time_constant=is_compile_time_constant,
+                resolve_constant=resolve_constant,
                 method=(
                     "ssa"
                     if re.search(

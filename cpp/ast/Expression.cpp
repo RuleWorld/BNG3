@@ -6,6 +6,7 @@
 #include <cctype>
 #include <cmath>
 #include <iomanip>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 
@@ -462,7 +463,8 @@ std::string Expression::toString() const {
     switch (kind_) {
     case ExpressionKind::Number: {
         std::ostringstream out;
-        out << numberValue_;
+        out << std::setprecision(std::numeric_limits<double>::max_digits10)
+            << numberValue_;
         return out.str();
     }
     case ExpressionKind::Identifier:

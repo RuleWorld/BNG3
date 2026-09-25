@@ -127,7 +127,9 @@ def build_state_transition_diagram(
     elif "U" in states:
         initial_state = "U"
     elif states:
-        initial_state = next(iter(states))
+        # State collection is a set. Choose a stable fallback so identical
+        # SBML imports do not emit different component-state declarations.
+        initial_state = sorted(states)[0]
 
     return StateTransitionDiagram(states, transitions, initial_state)
 

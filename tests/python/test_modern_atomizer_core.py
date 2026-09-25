@@ -452,3 +452,29 @@ def test_playground_sct_builder_reports_summary():
     assert len(table.entries) == 1
     assert len(messages) == 1
     assert messages[0].message == "Built SCT: 1 species (1 elemental, 0 complex)"
+
+
+def test_atomized_complex_orders_set_dependencies_by_sbml_species_order():
+    model = SBMLModel(
+        id="stable-complex-dependencies",
+        species={
+            "A": SBMLSpecies(id="A"),
+            "B": SBMLSpecies(id="B"),
+            "AB": SBMLSpecies(id="AB"),
+        },
+        reactions={
+            "bind": SBMLReaction(
+                id="bind",
+                reactants=[SBMLSpeciesReference("A"), SBMLSpeciesReference("B")],
+                products=[SBMLSpeciesReference("AB")],
+            )
+        },
+    )
+
+    table = build_species_composition_table(model, atomize=True)
+
+    assert table.entries["AB"].components == ["A", "B"]
+    assert [molecule.name for molecule in table.entries["AB"].structure.molecules] == [
+        "A",
+        "B",
+    ]

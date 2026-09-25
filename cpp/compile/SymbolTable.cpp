@@ -17,6 +17,7 @@ const char* kindName(SymbolKind kind) {
     case SymbolKind::Compartment: return "compartment";
     case SymbolKind::ReactionRule: return "reaction rule";
     case SymbolKind::EnergyPattern: return "energy pattern";
+    case SymbolKind::BarrierPattern: return "barrier pattern";
     case SymbolKind::PopulationType: return "population type";
     case SymbolKind::Count: break;
     }

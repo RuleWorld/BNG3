@@ -5,6 +5,8 @@
 #include "reaction.hh"
 
 #include <cmath>
+#include <sstream>
+#include <stdexcept>
 #include <utility>
 
 
@@ -176,14 +178,11 @@ double FunctionalRxnClass::update_a() {
 	}
 
 	if(a<0) {
-		cout<<"Warning!!  The function you provided for functional rxn: '"<<name<<"' evaluates\n";
-		cout<<"to a value less than zero!  You cannot have a negative propensity!";
-		cout<<"here is the offending function: \n";
-		gf->printDetails();
-		cout<<"\nhere is the offending reaction: \n";
-		this->printDetails();
-		cout<<"\n\nquitting."<<endl;
-		exit(1);
+		std::ostringstream message;
+		message << "NFsim functional reaction '" << name
+				<< "' produced a negative propensity (" << a
+				<< "); reaction propensities must be non-negative";
+		throw std::domain_error(message.str());
 	}
 
 

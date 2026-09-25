@@ -1325,11 +1325,6 @@ double System::sim(double duration, long int sampleTimes, bool verbose)
 
 double System::stepTo(double stoppingTime)
 {
-	return stepTo(stoppingTime, false);
-}
-
-double System::stepTo(double stoppingTime, bool includeEndpointEvent)
-{
 	while(current_time < stoppingTime)
 	{
 		if(!pendingStepEventValid) {
@@ -1347,7 +1342,7 @@ double System::stepTo(double stoppingTime, bool includeEndpointEvent)
 		}
 
 		// Check if we've reached stopping time
-		if(pendingStepEventTime >= stoppingTime && !includeEndpointEvent) {
+		if(pendingStepEventTime >= stoppingTime) {
 			break;
 		}
 
@@ -1374,9 +1369,6 @@ double System::stepTo(double stoppingTime, bool includeEndpointEvent)
 			}
 			recompute_A_tot();
 		}
-
-		if (includeEndpointEvent && current_time >= stoppingTime)
-			break;
 	}
 
 	current_time = stoppingTime;

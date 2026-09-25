@@ -955,6 +955,31 @@
             "additionalProperties": false
           }
         },
+        "barrier_patterns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "index",
+              "label",
+              "transition",
+              "expression",
+              "reaction_center",
+              "center_resolved",
+              "value"
+            ],
+            "properties": {
+              "index": {"type": "integer", "minimum": 0},
+              "label": {"type": "string"},
+              "transition": {"type": "string"},
+              "expression": {"type": "string"},
+              "reaction_center": {"type": "string"},
+              "center_resolved": {"type": "boolean"},
+              "value": {"type": ["number", "null"]}
+            }
+          }
+        },
         "population_types": {
           "type": "array",
           "items": {

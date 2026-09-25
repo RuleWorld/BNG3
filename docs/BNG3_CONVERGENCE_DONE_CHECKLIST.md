@@ -1,10 +1,10 @@
 # BNG3 Convergence: Definition of Done and Remaining Checklist
 
 **Status:** Active; not complete
-**Last audited:** 2026-09-17
+**Last targeted audit:** 2026-09-25 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
 **Working branch:** `main`
-**Current base:** convergence, nonequilibrium-energy, and SBML material-gap integration checkpoint
+**Current base:** `main` at PR #24 merge `a5f65ae05e26926b013f4ec3305dab34a3e9c84f`; working tree also contains targeted SymbolTable, BNGIR schema, and Atomizer writer fixes
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -229,10 +229,136 @@ bounded output tails.
   from valid `e-notation` values. All 12 affected selected suite cases pass
   their semantic checks; the post-change full suite report records the updated
   aggregate above.
-- [ ] A post-gate full two-mode curated BioModels report is still open: the
-  isolated refresh was started but did not reach a terminal report in the
-  bounded run. The pre-gate two-mode artifact is not reused as current-head
-  evidence.
+- [x] The 2026-09-25 full two-mode curated BioModels refresh has a terminal
+  report (see the current-head checkpoint below). This supersedes the older
+  bounded run note; the core gate itself remains open because unsupported,
+  failed, and timed-out models remain.
+
+## Exact-head SBML Test Suite rerun — 2026-09-25
+
+- [x] Rebuilt the Python extension with `BUILD_PYTHON_BINDINGS=ON` before
+  validation. The checked-in `build/CMakeCache.txt` had bindings disabled and
+  its Sep 17 extension lacked `write_sbml(..., source_metadata=...)`; the
+  first run therefore produced 869 harness-induced `failed` records. That
+  report is invalid as semantic evidence and is excluded below.
+- [x] On BNG3 `a5f65ae05e26926b013f4ec3305dab34a3e9c84f`, reran all 1,923
+  canonical cases from SBML Test Suite `cf38585fac5de8e0e90112febb62851ee2181816`.
+  The latest full rerun, after the initial-assignment and species-pattern
+  fixes, is `/private/tmp/bng3-sbml-suite-current-patternfix.json`, SHA-256
+  `9499f41242ec04d4ea850cfcab4a8c35bfea23354a58081ccc70f74530ea1827`.
+  Results: 869 passed, 1,054 explicitly unsupported, 0 failed, and 0 timed
+  out. The 1,823 semantic cases yielded 869 passed and 954 unsupported; all
+  100 stochastic cases remain unsupported. Each pass completed SBML input
+  validation, modern Atomizer import, C++ network generation, SBML write and
+  reimport, native-reader checks, and all-observable BNG3 CVODE versus
+  libRoadRunner CVODE comparison. SBML Test Suite reference-result conformance
+  was not run. Unsupported cause counts overlap: events 499, no state
+  variables 254, stoichiometry 180, constraints 151, SBML comp package 123,
+  algebraic rules 118, and MathML 70.
+- [ ] The expanded supported surface still has 1,054 unsupported suite cases;
+  this targeted rerun does not satisfy the complete Tier-X or release gate.
+- [x] SBML Test Suite `semantic/00001` passed Atomizer import, network
+  generation, SBML write/reimport, native-reader checks, and all-observable
+  comparison against libRoadRunner 2.10.0 after the current Atomizer pattern
+  round-trip fixes. This is a selected regression, not a full-suite pass.
+  Report: `/private/tmp/bng3-sbml-case-00001-final-pattern-roundtrip.json`,
+  SHA-256 `6eb1281a24165ec12b5e5bc3f0203b0166ac46bff3df32ce3bba7524e024afc`.
+
+## Current independent-oracle checks — 2026-09-25
+
+- [x] Full curated BioModels inventory rerun after the 2026-09-25
+  initial-assignment and SBML-pattern fixes. All 1,096 inventory records are
+  accounted for (1,075 declared SBML and 21 non-SBML); the SBML path includes
+  8 archive-extracted SBML files. Each mode passed 651 records, reported 298
+  unsupported SBML records, and failed on `BIOMD0000000584`; 133 records
+  timed out across the combined run. The two newly fixed models,
+  `BIOMD0000000429` and `BIOMD0000000202`, pass both modes. Aggregate core
+  gate: **failed**. Report:
+  `/private/tmp/bng3-curated-current-post-patternfix.json`, SHA-256
+  `5e5f46244c71f8bea7f34c23eb784e504abdf3cef9b07ef57cec1f8cb02767da`.
+- [x] After restoring the baseline matcher, curated BioModels
+  `BIOMD0000000832` passed flat and Atomized routes, each comparing 40
+  observables against libRoadRunner 2.10.0. Its record core status passed;
+  the one-record command's corpus-level gate remained false by design. Report:
+  `/private/tmp/bng3-biomodel-0832-final-roundtrip.json`, SHA-256
+  `b8ecf106528322a0b96bc1dffbd53afe7bcda4ff391426bb62b8f31dc2125630`.
+- [ ] The BioModels core gate remains failed until unsupported semantics,
+  failures, and timeouts are resolved or explicitly excluded by an approved
+  support boundary.
+- [x] Fixed the `BIOMD0000000584` numerical mismatch. ODE derived-rate
+  fallback matched reaction label `R1` as a substring of unrelated parameter
+  `proAUR1_degradation_rate`, replacing synthesis rate `1` with `0.1`. The
+  fallback now requires the NetWriter prefix `R1Rate_`. Red-first regressions
+  cover the collision and the valid `R1Rate_2` fallback. The selected model
+  passes flat and Atomized routes, all 56 observables versus libRoadRunner:
+  `/private/tmp/bng3-biomodel-0584-after-ratefix.json`, SHA-256
+  `dea4af9150c7622d0ecc6781c5a1600caa1dc409328640af15ca2e057970df72`.
+- [ ] Full BioModels inventory rerun after the ODE rate-name fix is still
+  running. Reconcile its aggregate counts and failures before treating the
+  full-corpus gate as current.
+
+- [x] BNG2 structural NET comparison on BNG3 `a5f65ae`: 9/9 selected models
+  pass with the canonical sibling `bng2/BNG2.pl` at BNG2 revision
+  `8726b30b94c081d5f0ce8b8d38338e27be1b38fc`. Result summary:
+  `/private/tmp/bng3-crossvalidate-a5f65ae-vs-bng2-8726b30.txt`.
+- [x] PyBioNetGen source-derived public API compatibility against revision
+  `43b09a5346402986d48b1defba5eaec0ae2f7802`: 5 tests pass.
+- [x] Direct BNG3/native NFsim selected parity against independently rebuilt
+  `RuleWorld/nfsim` revision `c51c7a34128d188189485bd318aeae4d936bcb29`:
+  10 tests pass. Binary SHA-256:
+  `093707031f70e0c376179e1d8bf89ab1373b3132b6211d7d9759f1d646c4ce9e`.
+- [x] The SymbolTable now names duplicate `BarrierPattern` declarations
+  explicitly. `tests/cpp/test_symbol_table.cpp` failed first on the generic
+  diagnostic, then CTest case `duplicate barrier labels name their symbol
+  kind` passed 1/1 after the minimal `kindName` mapping fix.
+- [x] Rebuilt the current working tree after the diagnostic fix: full CTest
+  passed 441/441; Python suite passed 477 with 28 skipped. The Python suite
+  initially exposed BNGIR 0.1/0.2 schema drift for emitted barrier-pattern and
+  driving-work fields. Both schemas now describe those optional fields while
+  remaining compatible with older documents.
+- [x] Final formatting and whitespace checks after the Atomizer round-trip
+  fixes: Black, Ruff, and `git diff --check` pass.
+- [x] Fixed an Atomizer self-parse defect in molecule-type output: component
+  and state names had hyphens normalized in generated patterns but not in the
+  molecule-type declaration. The regression was red before the writer change
+  and green after; all 15 curated models previously failing Atomized-mode
+  BNGL parsing now parse on the current tree. Two of those models pass the
+  full two-mode validation. The other 13 exceed the combined 90-second
+  per-model timeout after reaching network generation; a staged reproduction
+  for `BIOMD0000000049` showed network explosion: at 30 seconds it was still
+  on iteration 3, with 88,030 species and 99,600 reactions. The bounded debug
+  log is `/private/tmp/bng3-biomodel-0049-network-profile.log` (12,658,622
+  bytes; SHA-256 `786fddfe0967c9109d2ac4859c484f21989a4f9b4a1c3e7cfe0269618ab448ff`).
+  Four other selected Atomized models also timed out under concurrent
+  180-second limits. The current full report retains these as timeouts, not
+  passes.
+- [x] Built and smoke-installed the local alpha wheel
+  `/private/tmp/bng3-wheel-a5f65ae-hyphenfix/bionetgen-3.0.0a1-cp314-cp314-macosx_26_0_arm64.whl`
+  from the current working tree. Installation, native extension import, valid
+  hyphen-normalized writer output, and native parsing pass. SHA-256:
+  `066d4491cad2fd0beb0439db47d1cb2cc99ff82aab800d602055d80564af8c0c`.
+  This is a macOS arm64 CPython 3.14 local preview; it is not a qualified
+  release. Windows `.exe`, other platform wheels, clean-user dependency
+  installation, hosted release jobs, and the failed corpus gates remain open.
+- [x] PR #24 hosted checks are green at this merge head, including platform
+  C++/Python matrices, independent BNG2/NFsim parity, full-corpus validation,
+  and integration checks. Release-only wheels, sdist, Docker, and PyPI jobs
+  were skipped by event guards. PR #16's earlier head `192dfff` had build
+  failures; do not use that historical head as current validation evidence.
+- [ ] PR #24's legacy Atomizer structure-copy optimization has a controlled
+  wall-time comparison on curated BioModels `BIOMD0000000832`: 10 interleaved
+  fresh-process runs per revision, with the parent `1ccf76d` and current
+  `a5f65ae` producing the same canonical BNGL SHA-256
+  `e53e0d2c256df2ff7a01c2f8b9bb2971f1579149aa0da77a797f3f7bad4c2b47`.
+  Parent median was `1152.704 ms` (SD `44.779 ms`); current median was
+  `1148.664 ms` (SD `82.756 ms`); paired median ratio was `0.9982`. This does
+  not show a measurable speedup. Peak-memory comparison remains open. Input
+  SHA-256: `b35ee199b0b2a7ee7bdfb50ef78e76edf649f280f7131b2e4ca170efd26e424e`.
+  Runner: [`benchmarks/benchmark_legacy_atomizer.py`](../benchmarks/benchmark_legacy_atomizer.py).
+  Report: `/private/tmp/bng3-legacy-atomizer-0832-pr24-interleaved.json`
+  (SHA-256 `c171fe22a2b395b6cffd4f4bc68b6159461e7ae11128597eabfc87b855490039`).
+  The benchmark's all-model memory/latency budgets remain open; round-trip
+  pass counts are correctness evidence, not performance evidence.
 
 ## Published BioModels validation checkpoint — 2026-09-15
 
@@ -3737,6 +3863,17 @@ completion gate.
   passes the native reader and graph-aware `.net` comparison at
   `78a1591422ccbe6c4a5607eb748b426bbdbc303f`. The implementation is deliberately
   narrow and fail-closed for other structured SBML models.
+- [x] Static, acyclic initial-assignment seed dependencies with piecewise
+  conditions fold to numeric BNGL seed amounts. Regression:
+  `tests/python/test_modern_atomizer.py::test_playground_writer_resolves_piecewise_initial_assignment_seed_dependencies`
+  (including an unselected divide-by-zero branch). Curated BioModels
+  `BIOMD0000000429` now passes flat and Atomized SBML round trips and all 30
+  observable comparisons against libRoadRunner 2.10.0; input SHA-256
+  `a1353c11190c33b80c881cb4ed5ad9a8cd41facf89d1efc5c73a22cde561c839`;
+  report `/private/tmp/bng3-biomodel-0429-final-roundtrip.json`
+  (SHA-256 `ea33737bae5efb0e7de27ac4fab180ddb92add092bd42af2c3255f93b8165b5e`).
+  The full curated inventory has not been rerun, so this closes only the
+  selected model path.
 - [ ] The structured SBML atomize=>1 failure is resolved or receives a
   maintainer-approved compatibility disposition with a replacement gate.
 - [ ] Unsupported SBML packages, qualitative models, dictionaries, and
@@ -3801,6 +3938,16 @@ completion gate.
 ### 7.4 All supported formats and graph writers
 
 - [ ] BNGL import/export is semantically round-trippable.
+- [x] Curated BioModels `BIOMD0000000202` now completes flat and Atomized
+  SBML-to-BNGL-to-SBML routes after preserving explicit site-free `M_...()`
+  molecule names through reimport and keeping numeric active state `0`
+  unchanged. Regressions cover both behaviors. Both round-trip networks
+  contain 8 species and 16 reactions; all 17 observables pass against
+  libRoadRunner 2.10.0.
+  Source SHA-256 `c841590d8ed0e219d5a0cc0d761030ddf00f898a1bfafb2fa705d9aa07322506`;
+  report `/private/tmp/bng3-biomodel-0202-final-roundtrip.json` (SHA-256
+  `40a5e1c8863b8f18b539ebcf90c1a39dc630b25b4dd6a54ff8ba9d21e1a43f18`).
+  This closes one selected model path, not the general format gate.
 - [ ] BNG-XML import/export is well-formed, schema/semantic validated, and
   preserves supported annotations and rate laws.
 - [ ] NET write/read/write is idempotent and graph-aware.
@@ -3972,15 +4119,41 @@ completion gate.
   checks, and integration tests pass without hidden infrastructure failures.
 - [ ] Performance benchmarks, memory budgets, and reproducibility rebuilds
   pass their approved thresholds.
+- [x] The benchmark runner supports selected models, repeated fresh
+  parse/generation runs, generation-only mode, and cross-run network-count
+  checks. Its three-run `simple_system` smoke produced 4 species/4 reactions;
+  see `/private/tmp/bng3-simple-system-generation.json` (SHA-256
+  `3034af37d84717221582572d5f0dc47e411a7c79f91556941d378a48b85de97e`). This
+  does not establish the Atomizer matcher speedup or satisfy benchmark gates.
+- [x] Evaluated and reverted a candidate one-pass molecule-type prefilter
+  after 25-run BNG3 measurements on `blbr`: baseline 19.079 ms median
+  (0.278 ms SD), candidate 18.996 ms median (0.421 ms SD), with identical
+  20-species/92-reaction output. The difference is within run variation; the
+  pre-existing repeated per-type scan remains in production. Reports:
+  `/private/tmp/bng3-blbr-generation-before.json` (SHA-256
+  `697e4726818cb8f3e4b1d98ccb6f92f33b3b08cbad6525022fdbbea3d00e805f`) and
+  `/private/tmp/bng3-blbr-generation-after.json` (SHA-256
+  `aa9bc9e4c14d9af97a40ee6eb1c0beaec9265ab25a245b55c75a06b41c508a29`). The
+  standard five-model benchmark was active during both runs, so this remains
+  exploratory and establishes no speedup.
+- [ ] Complete a controlled before/after network-generation and memory
+  benchmark for PR #24's Atomizer copy path. The original unbounded five-model
+  runner was terminated with SIGTERM after producing no result report; bounded
+  repeated runs now use selectable model sets and generation-only mode.
+- [x] The multi-type reactant matching regression verifies an
+  `A().B()` rule fires on the mixed species and does not match the `A()`-only
+  seed; it passes in the exact-tree CTest run `441/441`.
 - [ ] CodeQL or equivalent security analysis passes on the exact release head.
 - [ ] Hosted weekly full validation and cross-validation complete with
   independent BNG2/NFsim inputs, not just parser inventory.
 
 ### 8.3 Packaging and release
 
-- [ ] pyproject metadata has the correct BNG3 project/repository URLs,
-  supported Python range, dependency policy, package data, and extension
-  contents.
+- [x] Corrected the package repository URL in `pyproject.toml` to
+  `https://github.com/RuleWorld/BNG3`.
+- [ ] Complete the pyproject metadata audit: supported Python range, dependency
+  policy, package data, and extension contents still require isolated artifact
+  builds and installed-package checks.
 - [x] The pull-request package-smoke job builds and installs a source
   distribution on the exact head (CI run
   [33449613101](https://github.com/RuleWorld/BNG3/actions/runs/33449613101));
@@ -4192,3 +4365,571 @@ These are known unchecked requirements, not reasons to claim completion:
 
 No completion claim is valid until the checklist, the capability matrix, the
 unification work orders, and the exact release evidence all agree.
+
+## Full curated BioModels refresh after ODE rate-name fix — 2026-09-25
+
+- [x] Reran all 1,096 curated records in flat and Atomized modes after fixing
+  `OdeIntegrator`'s unanchored derived-rate fallback. Inventory matched 1,075
+  declared SBML records plus 8 archive-extracted SBML files; 13 other records
+  remain explicit non-SBML/unsupported-format inventory entries.
+- [x] Both modes now pass 652 SBML records, classify 298 SBML records as
+  unsupported, and time out on 133. There are zero numerical or other failed
+  records. `BIOMD0000000584` now passes both modes, including all 56 observable
+  comparisons against libRoadRunner. Aggregate corpus gate remains open due to
+  unsupported records and timeouts.
+- [x] Exact report:
+  `/private/tmp/bng3-curated-post-ode-ratefix.json`, SHA-256
+  `ec12c4c1b41947346c963c867280d831512a5e254cbd6f2ab6e6270f258ba108`.
+  Command used the offline published-BioModels manifest, both modes, isolated
+  model processes, 8 workers, and the existing 90-second per-model cutoff.
+- [x] Rerun the full SBML Test Suite on this exact working tree after the ODE
+  rate-name fix; prior suite counts predate that fix.
+- [ ] The curated and SBML Test Suite gates still require explicit support or
+  reviewed compatibility dispositions for unsupported semantics and model
+  timeouts. No release qualification follows from this corpus update.
+- [x] The post-fix full SBML Test Suite rerun completed all 1,923 canonical
+  cases at suite revision `cf38585fac5de8e0e90112febb62851ee2181816` on the
+  current working tree: 869 passed, 1,054 unsupported, 0 failed, and 0 timed
+  out. Semantic cases: 869 passed and 954 unsupported; all 100 stochastic
+  cases remain unsupported. Each pass includes Atomizer import, network
+  generation, SBML write/reimport, native-reader checks, and all-observable
+  BNG3 CVODE/libRoadRunner CVODE comparison. Reference-result conformance was
+  not run. Report `/private/tmp/bng3-sbml-suite-post-ode-ratefix.json`,
+  SHA-256 `afc05cec62e1453a025a00d01052e17e66691ebbbee16ff7b3a6fd452087c61f`.
+- [ ] The SBML Test Suite core gate remains open because 1,054 cases are
+  explicitly unsupported; the full result does not qualify release.
+
+## Atomizer cross-engine benchmark — 2026-09-25
+
+- [x] Added repeatable harness
+  `benchmarks/benchmark_atomizer_cross_engine.py`. It runs modern BNG3 and
+  independent PyBioNetGen legacy Atomizers in flat and Atomized modes, feeds
+  each output BNGL model to both BNG3 and Perl BNG2, records three-repeat
+  conversion and network timings, hashes outputs, and reports structural
+  parity separately from rate-expression parity. Run instructions are in
+  `benchmarks/README.md`.
+- [x] Ran two curated models, `BIOMD0000000584` and `BIOMD0000000202`, in both
+  modes, three repetitions each. Modern BNG3 Atomizer outputs generated
+  structurally matching BNG2/BNG3 networks in all 12 runs: 21 species/14
+  reactions for `0584`, and 8 species/16 reactions for `0202`. Rate-expression
+  comparison remains fail-closed and failed all 12 runs due to differing
+  function/rate serialization; this is not reported as rate equivalence.
+- [x] The legacy PyBioNetGen Atomizer completed only some conversions and did
+  not produce a BNG2-parseable network in any successful run. Observed causes
+  include unresolved `LAMDAR_ar`, `fRate*`, and `S2_ar` symbols, BNGL parse
+  errors, `NameError: longEnough`, and an `IndexError` in annotation matching.
+  Its raw output hash also varied between repeats on two model/mode cases.
+  These failures are recorded as compatibility gaps, not waived.
+- [x] Report:
+  `/private/tmp/bng3-atomizer-cross-engine-584-0202.json`, SHA-256
+  `170c11f7965c601d42d60591b38633df29e45b05776b4d98e929e161ff6513f1`.
+  It records Git heads, dirty-state hashes, and relevant BNG3 Atomizer/C++
+  source hashes. On this macOS arm64 / CPython 3.14 host, modern Atomizer
+  medians ranged from 25.4–25.6 ms for `0202` to 267.7–296.4 ms for `0584`;
+  successful legacy medians ranged from 354.9–546.5 ms. BNG3/BNG2 network
+  process medians were 12.3–16.6/87.6–111.4 ms on the modern outputs. These
+  are bounded timings from this host, not cross-platform performance claims.
+- [ ] Extend Atomizer cross-engine measurements to the full supported curated
+  and SBML Test Suite intersections; resolve rate serializer comparisons and
+  add eligible NFsim trajectory comparisons. This two-model report is a
+  harness smoke and partial evidence only.
+
+## NFsim invalid-propensity handling and Atomizer ensemble boundary — 2026-09-25
+
+- [x] Fixed embedded NFsim's negative functional-propensity path to raise a
+  named error instead of calling `GlobalFunction::printDetails()` when the
+  reaction is backed by a composite function. The old path dereferenced null
+  and crashed the Python process. ASan reproduced the null dereference; the
+  same seed after the change returns a clear invalid-propensity error.
+- [x] Added `benchmarks/benchmark_atomizer_nfsim.py` to compare fresh-process
+  BNG3 direct NFsim and standalone NFsim ensembles, with the latter consuming
+  BNG-XML written by Perl BNG2. Failed seeds are recorded and suppress ensemble
+  mean comparisons to avoid censoring bias.
+- [x] Ran 200 seeds in flat and Atomized modes on curated model
+  `BIOMD0000001037`. Both modes had 197 valid trajectories and the same invalid
+  seeds (8, 149, 194); each invalid trajectory produces a negative propensity
+  in reaction `R3`. BNG3 now reports this cleanly. Standalone NFsim segfaults
+  on those invalid trajectories, so this model is not eligible for an
+  unbiased NFsim ensemble comparison. No ensemble-parity result is claimed.
+- [x] Report `/private/tmp/bng3-atomizer-nfsim-1037-flat-atomized-200runs.json`,
+  SHA-256 `ac3976e97346286976a5e2f81a891d0880df724c3f0fd2c49362b81c7b0f2f29`.
+  Its process medians include Python startup and are not simulator-only
+  performance measurements.
+- [ ] Select curated models with valid stochastic semantics and complete
+  matched BNG3/standalone NFsim ensemble gates. Six eligible cases are now
+  covered by the endpoint correction below; broad corpus coverage remains
+  open. The invalid-model probe does not qualify a release.
+
+## NFsim final-sample boundary and Atomizer ensemble parity — 2026-09-25
+
+- [x] Traced the direct-vs-standalone discrepancy to the BNG3 binding firing
+  the pending reaction that crossed the final requested sample. Native NFsim
+  writes the sample before firing that event. Removed the special final-step
+  event inclusion from `System::stepTo` and the binding; all sampled values now
+  use the same exclusive stopping-time semantics.
+- [x] Added a focused regression: a birth reaction with a waiting time beyond
+  a very short simulation horizon leaves the final observable at zero. The
+  prior exact-seed native test encoded an incorrect endpoint assumption and
+  was removed; exact trajectories remain separate from ensemble evidence.
+- [x] Rebuilt the CPython 3.14 extension. Focused Python tests for final-sample
+  exclusion and accumulated sample-grid parity pass (2 passed); the full
+  `test_cpp_backend.py` file passes (68 passed). An exact-seed comparison
+  against standalone NFsim still shows a one-event difference at the last
+  point on `motor` and `tlbr`; those cases are not claimed as exact trajectory
+  matches. Rebuilt the native adapter test target and passed all 85 NFsim AST
+  adapter CTest cases.
+- [x] Repeated 200-run Atomizer flat and Atomized comparisons for
+  `BIOMD0000001038`. Both modes had 200 valid runs per engine; all 66 sampled
+  comparisons pass the pooled-error criterion (worst z 0.0). Report
+  `/private/tmp/bng3-atomizer-nfsim-1038-post-endpoint-fix-200runs.json`,
+  SHA-256 `2587d27ff7430e50c57742757facffdfc29966f459567573fa37db7871afbd2d`.
+- [x] Repeated 200-run Atomizer flat and Atomized comparisons for
+  `BIOMD0000000485`. Both modes had 200 valid runs per engine; all 44 sampled
+  comparisons pass the pooled-error criterion (worst z 0.0). Report
+  `/private/tmp/bng3-atomizer-nfsim-0485-post-endpoint-fix-200runs.json`,
+  SHA-256 `d2e6f444a05980b5413b45b42bc92b6f6d632a35c5b51068cbd9f24fa3e0af2f`.
+- [x] Added `BIOMD0000000414` to the same 200-run flat and Atomized matrix.
+  Both modes had 200 valid runs per engine; all 22 sampled comparisons pass
+  (worst z 0.0). Report `/private/tmp/bng3-atomizer-nfsim-0414-200runs.json`,
+  SHA-256 `24f5e3dd133e28a76ccf22c9d5ff0d3861f416183ee14e032fb2303ddc6c8af5`.
+- [x] Added `BIOMD0000000425`: 200 valid runs per engine in both modes, with
+  all 22 sampled comparisons passing (worst z 0.0). Report
+  `/private/tmp/bng3-atomizer-nfsim-0425-200runs.json`, SHA-256
+  `ddf0f49dd104df5fac89e71573c54063e89515ff13000855956e17a54c81422e`.
+- [x] Added `BIOMD0000000850`: 200 valid runs per engine in both modes, with
+  all 66 sampled comparisons passing (worst z 0.0). Report
+  `/private/tmp/bng3-atomizer-nfsim-0850-200runs.json`, SHA-256
+  `ee739d211722cb8b6a3cc3c67d0f9af6c39a3a82216a54af8ac47bc3ecc5478f`.
+- [x] Added `BIOMD0000000906`: 200 valid runs per engine in both modes, with
+  all 66 sampled comparisons passing (worst z 0.0). Report
+  `/private/tmp/bng3-atomizer-nfsim-0906-200runs.json`, SHA-256
+  `43e110a36e07c4c2f27ec566879900ff199a587f3ac58255fa60cbd8852d1f7c`.
+- [x] Rechecked molecular Atomizer model `BIOMD0000000584` in both modes.
+  BNG3 direct produced 200 valid runs per mode; the independent NFsim rejected
+  all runs while parsing the BNG2 XML because nested function `LAMDAR()` was
+  undefined inside a generated rate law. No ensemble comparison was made.
+  This repeats the existing legacy-function compatibility gap with a hashed
+  native-run report: `/private/tmp/bng3-atomizer-nfsim-0584-post-endpoint-fix-200runs.json`,
+  SHA-256 `bd40306f9560d496b98f57a3e9e38bfaa676579ccf7f25a6031bd5118ec950ec`.
+- [x] Rechecked molecular Atomizer model `BIOMD0000000202` in both modes. No
+  runs were valid: BNG3 direct rejected fractional seed amounts, while
+  standalone NFsim rejected composite functions that reference observables.
+  No comparison was made. Report
+  `/private/tmp/bng3-atomizer-nfsim-0202-post-endpoint-fix-200runs.json`,
+  SHA-256 `2c64b24e845e62efc6837bc4eae1fc47fcf72539528bc2ea1c6eea6453eb9de9`.
+- [x] Updated the benchmark reporter to group repeated seed failures by
+  engine/signature while retaining each affected seed in JSON. A two-seed
+  `0584` smoke confirms correct grouping and concise console output.
+- [ ] Expand the valid-model ensemble matrix across the supported curated
+  corpus. These bounded results do not close broad NFsim parity or qualify a
+  release.
+
+## Atomizer compartment fixed-seed syntax — 2026-09-25
+
+- [x] Corrected modern Atomizer output for fixed seeds in compartments to the
+  BNG2-compatible form `@cell:$Molecule()`. The prior `$@cell:Molecule()` form
+  was rejected by BNG2. Kept the parser tolerant of both spellings by
+  normalizing the compartment-prefix form before parsing.
+- [x] Added regression coverage for both fixed-seed spellings and updated the
+  Atomizer writer mapping/output test. The C++ backend suite passes (70
+  passed), and the modern Atomizer suite passes (85 passed) with the locally
+  built CPython 3.14 extension loaded.
+- [x] Rechecked curated BioModel `BIOMD0000000033` through both flat and
+  Atomized BNG3 conversion, network generation, SBML write/re-import, and
+  libRoadRunner comparison. Each mode generated 32 species and 26 reactions;
+  all 64 observables per mode passed the numerical comparison. The selected record
+  passed, while the validator's full-corpus gate correctly remains incomplete
+  because this invocation selected one of 1,096 records. Report
+  `/private/tmp/bng3-curated-0033-final-seed-prefix.json`, SHA-256
+  `678f73ceecfc855837b3ee06344d4230454f7b0a9783b064f817e1d57c99c9d3`.
+- [x] Manually rewrote the emitted fixed-seed marker in the captured BNGL and
+  confirmed Perl BNG2 2.9.3 parsed it and generated a 32-species/26-reaction
+  network and XML. This isolates and confirms the BNG2 syntax compatibility;
+  it is not a 200-run NFsim comparison.
+- [x] Re-ran the complete curated BioModels and SBML Test Suite gates after
+  this compartment seed parser/writer change; see the exact full-run reports
+  below.
+- [ ] Expand matched BNG2, PyBioNetGen, standalone NFsim, and libRoadRunner
+  benchmarks across the supported intersection. Broad corpus parity,
+  cross-platform packaging, and release qualification remain open.
+
+## Full SBML gates and expanded Atomizer comparison — 2026-09-25
+
+- [x] Re-ran the complete curated BioModels inventory after the compartment
+  fixed-seed syntax change: all 1,096 inventory entries accounted for, 652
+  SBML records passed, 298 SBML records unsupported, 311 total unsupported
+  entries, 133 timeouts, and no hard failures. The supported-surface gate is
+  still open. Report `/private/tmp/bng3-curated-fixed-seed-full.json`,
+  SHA-256 `fb5023510d46c87e4d25c32a1ea01aae9c59f914c0148355bc96245f8724eda4`.
+- [x] Re-ran the full SBML Test Suite at pinned revision
+  `cf38585fac5de8e0e90112febb62851ee2181816`: 869 passed, 1,054 unsupported,
+  zero failures, and zero timeouts. Semantic cases: 869 passed and 954
+  unsupported; stochastic cases: all 100 unsupported. The pass path includes
+  Atomizer, network generation, SBML write/re-import, native-reader checks,
+  and all-observable BNG3 CVODE/libRoadRunner CVODE comparisons. Reference
+  result conformance remains unrun. Report
+  `/private/tmp/bng3-sbml-suite-fixed-seed-full.json`, SHA-256
+  `2a60212f9a69fac936d28cc22c3afca76ea82bfbb9836f09b7875a5a0eb6f379`.
+- [x] Expanded the three-repeat BNG3/BNG2/PyBioNetGen Atomizer benchmark to
+  ten curated models, both flat and Atomized modes. BNG3 modern output had
+  60/60 successful structural network comparisons against BNG2. Added a
+  narrowly scoped rate normalizer for BNG3's `(A/cell)()` serialization of the
+  BNG2 `A/cell()` compartment-scaled observable form; a regression confirms a
+  changed constant remains a mismatch. Rate comparison now passes 48/60
+  modern cases. Remaining failures are concentrated in `0202` (including a
+  small constant-rate difference) and nested rate wrappers in `0584`.
+  PyBioNetGen generated output in 54/60 cases; only 21/60 produced
+  structurally matching BNG2/BNG3 networks, and 3/60 passed the strict rate
+  comparison. Legacy Atomized failures remain reported, not waived.
+- [x] Ran `tests/validation/test_compare_net.py`: 14 passed. Black, Ruff, and
+  `git diff --check` pass for the comparator and benchmark changes.
+- [x] The benchmark now records the exact `bng_cpp` executable SHA-256 and
+  parser source hash; the earlier trial exposed that the CLI can be stale
+  relative to the Python extension. The exact-binary report is
+  `/private/tmp/bng3-atomizer-cross-engine-curated-10-rate-normalized.json`,
+  SHA-256 `94c7333c4eb17b54368de09f983fa9874d471d2675b136e6764e5b06d98d5a91`;
+  `bng_cpp` SHA-256 is `115fbfbbb80773e5f716894eedcadba2ccdbfb8ec3d749394deb8f6eef1312d8`.
+- [ ] Expand cross-engine network/rate/trajectory checks across the supported
+  curated set and SBML Test Suite intersection; resolve the remaining 12
+  modern rate-expression cases only with semantic evidence. The 10-model
+  sample and full BNG3/libRoadRunner gates do not close legacy Atomizer,
+  NFsim, reference conformance, or release qualification.
+
+## SBML Test Suite cross-engine slice — 2026-09-25
+
+- [x] Ran the three-repeat cross-engine harness on eight SBML Test Suite
+  semantic cases already passed by the full BNG3/libRoadRunner round-trip
+  gate: `00001`, `01232`, `00829`, `00142`, `00015`, `00270`, `00308`, and
+  `01564` (2–52 source species, 1–52 source reactions). Both flat and
+  Atomized outputs were compared.
+- [x] Modern BNG3 output had 47/48 structural BNG2/BNG3 network comparisons
+  and 42/48 strict rate comparisons. PyBioNetGen output succeeded in all 48
+  conversions; 36/48 had structural parity and 30/48 passed rate comparison.
+  Legacy `fRate*`, unsupported math symbol, and Atomized syntax failures on
+  `00270`, `00308`, and `01564` remain explicit gaps. The modern `01564`
+  Atomized structure mismatch remains open.
+- [x] Report `/private/tmp/bng3-atomizer-cross-engine-sbml-suite-8-rate-normalized.json`,
+  SHA-256 `19048c0e65205de967529b0a36acb7e53151425c444675591599d29f802287bd`.
+- [ ] Extend this from the selected eight cases to the supported SBML Test
+  Suite intersection, and add matched NFsim trajectories where stochastic
+  semantics and legacy network inputs are valid.
+
+## Species deduplication repair — 2026-09-25
+
+- [x] Traced the modern Atomized `01564` extra network row to a missed
+  compartment-aware exact-key lookup after canonical labeling reordered the
+  generated product graph. `SpeciesList::addChecked` now checks the normalized
+  key after canonicalization, and graph-isomorphism matches verify molecule
+  compartments node by node.
+- [x] Reproduced nondeterministic Atomized output across separate Python
+  hash seeds. `build_species_composition_table` converted dependency sets to
+  ordered complexes; dependencies are now ordered by SBML species order.
+  Four subprocess runs at hash seeds 0, 0, 1, and 7 emitted byte-identical
+  BNGL; the targeted core and Rulifier tests pass (37 total).
+- [x] Rebuilt `bng_cpp` and the Python extension, passed the focused C++
+  `SpeciesList` CTest, and reran modern Atomizer `01564` three times in flat
+  and Atomized modes. All six runs generated 52 species and 52 reactions and
+  matched BNG2 species, reactions, and observable groups. The Atomized output
+  hash was identical across repeats. Strict rates matched in 0/6 because
+  `NetWriter`'s scientific formatter retains 8 significant digits while BNG2
+  emits these rates to 12. Align output precision and rerun this slice before
+  treating rate parity as complete. The PyBioNetGen legacy Atomizer did not
+  parse this model, so it has no network comparison.
+- [x] Latest focused report:
+  `/private/tmp/bng3-atomizer-cross-engine-01564-final-source.json`,
+  SHA-256 `9647795e68abd8001039d2fce4460581c3540783d29dbc352ac4e2631d89204f`;
+  rebuilt `bng_cpp` SHA-256 `1a50ed38cfc63312888203b566dafc6195f3a214f9171f3b91f8ef7758531859`.
+- [x] Refreshed the complete SBML Test Suite round-trip after both source
+  changes: revision `cf38585fac5de8e0e90112febb62851ee2181816`, 869 passed,
+  1,054 unsupported, zero failed, and zero timed out. This remains an import
+  and round-trip result; reference-result conformance is not run. Report
+  `/private/tmp/bng3-sbml-suite-species-dedup-stable-fix.json`, SHA-256
+  `697f6ff362829b5d889e69de1a68084a6f7d7472e11787d247a08b4f462d5d6c`.
+- [x] Ran a 20-seed NFsim comparison for `01564` in both modes. Both direct
+  BNG3 and standalone NFsim rejected every run because generated reaction
+  `J47` has negative propensity `1*atanh(-0.7)`; no ensemble comparison is
+  valid. Report `/private/tmp/bng3-atomizer-nfsim-01564-stable-fix.json`,
+  SHA-256 `ad73f013a305c3862dd65f7407c75735c7b04e3e513b84e2dc59afbd9e0aa003`.
+- [x] Added a focused C++ `SpeciesList` regression using isomorphic reordered
+  connected graphs. It confirms the original serialization keys differ,
+  canonicalized keys match, and insertion reuses the existing species. Both
+  compartment-aware and canonical-key CTests pass.
+- [x] Refreshed the full curated BioModels gate in both modes with per-model
+  isolation and a 90-second timeout: 654 passed SBML records, 298 unsupported
+  SBML records, 131 timed out, and zero hard failures across 1,096 inventory
+  records (1,083 SBML records). Report
+  `/private/tmp/bng3-curated-species-dedup-stable-fix.json`, SHA-256
+  `be79a50587ecbf13b6ae2812f8d624e334606a0d54231dd642bb1a2c01a6d5ef`.
+- [ ] Resolve or explicitly govern the 298 unsupported SBML records and 131
+  timeouts; this inventory refresh is not a full supported-surface pass and
+  does not qualify a release.
+
+## Numeric expression rendering and refreshed gates — 2026-09-25
+
+- [x] Cross-engine 01564 benchmarking isolated numeric truncation to
+  `Expression::toString()`, which used default stream precision. Added a
+  regression that failed with `3.14159`; numeric AST rendering now uses
+  `max_digits10` so serialized values round-trip as doubles.
+- [x] The focused numeric regression and all 17 CTest cases tagged
+  `Expression` pass.
+- [x] Rebuilt `bng_cpp` and the Python extension. The three-repeat modern
+  BNG3/BNG2 comparison passes structure and strict rates in all six cases
+  (flat and Atomized); modern Atomizer output hashes are stable across repeats.
+  Legacy PyBioNetGen Atomizer output is repeatable but its 01564 network
+  generation still errors. Report
+  `/private/tmp/bng3-atomizer-cross-engine-01564-precision-fix.json`, SHA-256
+  `ff25298b20a9778cd90cd1bc44b3ca5c8cf92f1aea05161941e33140d8fd5496`;
+  `bng_cpp` SHA-256
+  `54095750f38c327bd4e99f05a60a4cbc83aaad6a08cc89184dd29d7533b6c95a`.
+- [x] Refreshed the complete SBML Test Suite at revision
+  `cf38585fac5de8e0e90112febb62851ee2181816`: 869 passed, 1,054 unsupported,
+  zero failed, and zero timed out. The 869 supported cases pass the XML,
+  Atomizer, network, SBML write/reimport, native-reader, and BNG3 CVODE versus
+  libRoadRunner CVODE all-observable gate. The 954 unsupported semantic cases
+  and all 100 stochastic cases remain outside the supported surface; SBML
+  reference-result conformance remains unrun. Overall core status is failed
+  due to the unsupported inventory. Report
+  `/private/tmp/bng3-sbml-suite-expression-precision-fix.json`, SHA-256
+  `0cf26c1efa4760db2327dad4bf64ebd271230550c7ef76041ad3aafb3232f0f8`.
+- [x] Repeated the same eight-case, three-repeat cross-engine benchmark after
+  the precision fix, in flat and Atomized modes. Modern Atomizer BNG3 matched
+  BNG2 structure and strict numeric rates in all 48 comparisons, with stable
+  output per model and mode. Legacy PyBioNetGen had 36/48 structural and 30/48
+  strict-rate matches; its remaining failures include zero-rate rows on
+  `00270`/`00308` and network-generation failures on `01564`. Report
+  `/private/tmp/bng3-atomizer-cross-engine-sbml-suite-8-precision-fix.json`,
+  SHA-256 `e3316389e6f88a717e466e20d3253b1e782b579f2775bc0e536a37593de3f528`.
+- [x] Refreshed the ten curated-model, three-repeat cross-engine sample after
+  numeric rendering. Modern BNG3 had 60/60 structural BNG2 matches and 48/60
+  strict-rate matches across flat and Atomized modes; the 12 rate mismatches
+  remain concentrated in `BIOMD0000000202` and `BIOMD0000000584`. PyBioNetGen
+  emitted 54/60 BNGL outputs; 21/60 generated structurally matching networks
+  and 3/60 passed the
+  rate comparison. Report
+  `/private/tmp/bng3-atomizer-cross-engine-curated-10-precision-fix.json`,
+  SHA-256 `ea04f672f62baaea6f31df3807427e09209053c330f8e37f477ad0f958c787cf`.
+- [x] Refreshed 200-seed-per-engine Atomizer NFsim ensembles on six curated
+  models in flat and Atomized modes: all 12 model/mode ensembles passed with
+  200 valid runs per side and zero stochastic mean violations. Aggregate
+  `/private/tmp/bng3-atomizer-nfsim-curated-6-precision-fix.json`, SHA-256
+  `335354192736464793d826b04ff9ddda515684b907e6611242aef2b84cbe686d`, records
+  the six source hashes, each report checksum, and the standalone NFsim binary
+  checksum. `0202` has non-integer seed amounts and legacy composite-function
+  failures; `0584` has standalone `LAMDAR` resolution failure, so neither has
+  a valid matched ensemble. A current-source `0033` 200-run attempt produced
+  only three native trajectories in over six minutes before interruption; it
+  has no ensemble result and remains outside this passing sample.
+- [x] Refreshed the full curated BioModels gate after numeric rendering using
+  both modes, isolated model processes, a 90-second per-model timeout, and six
+  workers. Across 1,096 inventory records (1,083 SBML), 654 SBML records
+  passed, 298 SBML records were unsupported, 131 timed out, and zero hard
+  failures occurred. Report
+  `/private/tmp/bng3-curated-expression-precision-fix.json`, SHA-256
+  `1f21b340aee754e01f75c4784e4387e1560cf6c4b5b86f6969e3a9edee15abf1`.
+- [ ] Resolve or explicitly govern the 298 unsupported SBML records and 131
+  timeouts; the broad curated supported-surface gate and release qualification
+  remain open.
+
+## Dynamic NET rate serialization — 2026-09-25
+
+- [x] Reproduced `BIOMD0000000202` NET rates for `S2a` and `S4` as zero even
+  though the BNGL rate calls a model function. `NetWriter` only classified
+  direct observable references as dynamic. It now walks rate ASTs for nested
+  model-function calls, so those rates are emitted in the functions block.
+- [x] Added a regression that failed before the fix; it checks a composite
+  rate `k * f()` where `f()` depends on an observable. All 20 Expression and
+  NetWriter CTests pass.
+- [x] Repeated the ten-model, three-repeat curated cross-engine benchmark.
+  Modern BNG3 retained 60/60 structural matches and 48/60 rate matches; the
+  former zero-valued `0202` rates are now dynamic expressions, but strict
+  expression-form comparisons still fail for 0202 and 0584. PyBioNetGen remains
+  at 54/60 generated outputs, 21/60 structural matches, and 3/60 rate matches.
+  Report `/private/tmp/bng3-atomizer-cross-engine-curated-10-dynamic-rate-fix.json`,
+  SHA-256 `3d71dbde754db2396a4ef98e7d2dc64a6768268c00b49ef4a0e9ba0e5174bbfa`;
+  rebuilt `bng_cpp` SHA-256
+  `b43f9733fe979e23ff7c71a340d7f3f0a61d2537a02965c2a475c768edc741a1`.
+- [x] Reran the full SBML Test Suite at pinned revision
+  `cf38585fac5de8e0e90112febb62851ee2181816`: 869 passed, 1,054 unsupported,
+  zero failed, zero timed out. The supported-surface gate passed; overall core
+  status remains failed by the unsupported inventory. Reference-result
+  conformance remains unrun. Report
+  `/private/tmp/bng3-sbml-suite-dynamic-rate-fix.json`, SHA-256
+  `dba04385da6ff768f4f5c777544c72dfbf1fc345301a92f3707171c0068dbdb3`.
+- [x] Completed the full curated BioModels rerun against this writer change
+  using the offline published-model manifest, both flat and Atomized modes,
+  isolated model processes, a 90-second per-model timeout, and six workers.
+  The 1,096-record inventory contains 1,083 SBML records: 654 passed the
+  round-trip and libRoadRunner observable comparison, 298 were unsupported,
+  131 timed out, and zero SBML records failed hard. The other 13 records are
+  explicit non-SBML/unsupported-format inventory entries. The counts match the
+  prior exact-source run; the NET fix repaired the affected 0202 serialization
+  but did not expand the full-corpus supported surface. Report
+  `/private/tmp/bng3-curated-dynamic-rate-fix.json`, SHA-256
+  `f470fdd1993ced1fc52fc33fb096ae27d45a08d0bacf5235bff9e6c40a42b14e`.
+- [ ] Resolve or explicitly govern the 298 unsupported SBML records and 131
+  timeouts; the broad curated supported-surface gate and release qualification
+  remain open.
+
+## Package repository metadata — 2026-09-25
+
+- [x] Corrected the PyPI project repository link from the legacy BioNetGen
+  repository to the current BNG3 repository. This metadata edit has not yet
+  been validated by a clean sdist or wheel build; the broader package audit
+  and release gates remain open.
+
+## SBML composition, empty-state models, and MathML — 2026-09-25
+
+- [x] Modern Atomizer now flattens self-contained SBML `comp` hierarchies
+  through libSBML before import. Flattening refuses partial conversion when a
+  required package has no flattener. At the time of this report, external
+  model definitions were unsupported; source-relative local-file resolution
+  was implemented in the later section below.
+- [x] BNG3 ODE simulation now handles zero-species networks without passing an
+  empty vector to CVODE. It returns requested time points and evaluates
+  time/parameter-only functions. SBML suite 00174, 00920, and 00921 pass,
+  including comparison of initial-assignment and parameter-rule outputs with
+  libRoadRunner.
+- [x] Atomizer lowers MathML `implies` to BNGL `if` and `arccoth(x)` to
+  `atanh(1/x)` on SBML's real-valued domain. Former compiler failures on
+  00957–00959, 01274, 01279, 01486, 01488, and 01497 now pass targeted suite
+  round-trip/numerical comparisons.
+- [x] Full pinned SBML Test Suite now reports 1,042 passed, 881 unsupported,
+  zero failed, and zero timeouts (revision
+  `cf38585fac5de8e0e90112febb62851ee2181816`). Supported-surface gate passes;
+  overall core gate remains open because 881 cases are unsupported. Report
+  `/private/tmp/bng3-sbml-suite-final-slices.json`, SHA-256
+  `52e03b789a7019497493af2c26414d47dd3088e36506757e7a9ec1d34993bdb2`.
+- [x] Refresh the full curated BioModels comparison after zero-state support
+  and expanded parameter/initial-assignment comparisons. In the 1,083 SBML
+  records, 657 passed, 293 were unsupported, 2 failed numerical comparison,
+  and 131 timed out. The 13 non-SBML inventory entries remain unsupported
+  format. Raw report `/private/tmp/bng3-curated-comp-empty-mathml.json`, SHA-256
+  `a57150abb837bb8018943cb14837bde95a4f9ecb27525a672b8bc4afbce94eca`;
+  normalized strict-JSON copy for spreadsheet import
+  `/private/tmp/bng3-curated-comp-empty-mathml-strict.json`, SHA-256
+  `4a2fafc68c1e82ffcb5b9ea0042f4da494a25006671acef0d196149c59cbffc5` (IEEE
+  non-finite metric values represented as JSON `null`).
+  Failed records are BIOMD0000000731 (`log_Treg = ln(func_TRegs)`, with the
+  source `func_TRegs` initially zero) and BIOMD0000000973 (`s =
+  (ModelValue_6 - P) / N`, with `N` initially zero); both expose non-finite
+  derived values at the initial time. They remain failures, not parity passes.
+- [x] Refresh the full unsupported-model triage workbook using this BioModels
+  report and the final SBML Test Suite report. It contains all 1,096 curated
+  BioModels inventory entries and 1,923 SBML Test Suite records, with per-mode
+  round-trip evidence, precise diagnostics, source links, hashes, and cause
+  summaries: `bng3_unsupported_model_triage.xlsx`.
+- [ ] Resolve remaining event scheduling, fractional/variable stoichiometry,
+  algebraic-rule, unsupported MathML, and other non-FBC semantics; rerun full
+  BNG2/PyBioNetGen/NFsim and libRoadRunner gates after each material slice.
+
+The remaining supported-surface gap is semantic: the reaction-oriented BNGL
+runtime does not yet represent state-triggered event scheduling, DAE algebraic
+constraints, or fractional/dynamic reaction stoichiometry. In the latest suite,
+cause tags overlap: events=508, stoichiometry=180 (132 dynamic/MathML-defined),
+algebraic rules=84, and FBC=34. Flux balance remains intentionally out of scope;
+the other groups remain implementation targets.
+
+## SBML external comp references and additional rateOf lowering — 2026-09-25
+
+- [x] Source-backed Atomizer imports now flatten local external `comp` model
+  definitions. Resolution is restricted to existing local files below the
+  source model directory; network and path-escape references remain fail-closed.
+  Focused tests cover source-relative flattening, path escape rejection, and
+  explicit unsupported behavior when source provenance is absent.
+- [x] `rateOf` lowering now resolves mutable parameters/compartments with no
+  rule or event driver to zero, and derives concentration `rateOf` expressions
+  for simple reactions in rate-ruled compartments, including volume dilution.
+  Suite cases `semantic/01249` and `semantic/01822` now pass.
+- [x] Atomizer tests: `257 passed, 1 skipped`. Full pinned SBML Test Suite:
+  `1,054` passed, `869` explicitly unsupported, `0` failed, `0` timed out;
+  supported-surface gate passes, overall core gate remains open. Report
+  `/private/tmp/bng3-sbml-suite-rateof.json`, SHA-256
+  `6abe9c80631d0809d647ea0461336787347ecb6e277a9cae1316fef37960e871`.
+- [ ] `semantic/01461` remains unsupported because its rate rule has no MathML
+  expression; `semantic/01543` remains unsupported because the reaction uses
+  dynamic stoichiometry, which cannot be represented as a fixed BNGL pattern.
+  Broader event, algebraic-rule, and stoichiometry support and independent
+  reference-result conformance remain open.
+
+## Explicit linear algebraic-parameter rules — 2026-09-25
+
+- [x] A single algebraic constraint now lowers to an assignment rule when one
+  otherwise-uncontrolled mutable parameter is its unique unknown and the
+  expression is linear with finite numeric coefficient. Nonlinear equations,
+  coupled unknowns, species targets, and multiply-constrained parameters stay
+  explicit and unsupported.
+- [x] Added regression coverage for successful `k - 0.9 = 0` lowering and
+  fail-closed nonlinear/coupled cases. Nine official cases (`00533`, `00534`,
+  `00536`, `00537`, `00538`, `00569`, `00570`, `01502`, `01503`) pass, including
+  suite round-trip checks.
+- [x] Full Atomizer Python tests pass `260`, with `1` skipped; Ruff and
+  `git diff --check` pass. Full pinned SBML Test Suite now reports `1,080`
+  passed, `843` unsupported, zero failed, zero timed out. The supported-surface
+  gate passes; overall core and reference-result conformance remain open.
+- [x] Stable-source report `/private/tmp/bng3-sbml-suite-algebraic-verified.json`,
+  SHA-256 `0ae76dd61447a4bd694ad68a3cb6fa9ebafc8c5297c91d828a1a93172af39dc6`.
+- [ ] Algebraic-rule cause tags fell from `125` to `84`; the remaining
+  unsupported cases include constraints without a single safe parameter
+  assignment (often species variables, nonlinear/coupled equations, or cases
+  that also have other blockers). Continue case-level triage; this subset does
+  not add a general DAE solver.
+
+## Fixed-time event calculations — 2026-09-25
+
+- [x] Fixed-time event folding substitutes trigger or execution time according
+  to `useValuesFromTriggerTime`; delays evaluate at trigger time, priorities at
+  execution time. Safe constant real math calls (including `cosh`) can be
+  folded after time substitution. Positive constant-scaled triggers of the
+  form `time / scale > threshold` are solved for the trigger time; nonpositive
+  or mutable scales remain unsupported.
+- [x] Six official cases now pass: `01177`, `01528`, `01529`, `01597`, `01598`,
+  and `01604`. `01142` now lowers its event schedule but remains unsupported
+  for separate SBML `delay` function semantics.
+- [x] Atomizer Python suite passes `264`, `1` skipped; Ruff and diff checks
+  pass. Full pinned SBML Test Suite: `1,086` passed, `837` unsupported, no hard
+  failures or timeouts. Supported-surface gate passes; core remains open.
+  Report `/private/tmp/bng3-sbml-suite-event-time-final.json`, SHA-256
+  `ef6dda150f3b8cddf6682b6913eea864bd7b661c85568399a56bd24a5e0ae20c`.
+- [ ] State-dependent triggers still require runtime event scheduling. General
+  SBML `delay` functions and their history semantics also remain unsupported.
+
+## Exact static-operand delay lowering — 2026-09-25
+
+- [x] `delay(value, duration)` now reduces to `value` only when the value
+  expression references no changing model state. Dynamic rules, event targets,
+  time, dynamic species, and algebraic unknowns remain protected and retain the
+  delay call.
+- [x] Added a parser regression for an unruled mutable parameter delayed by a
+  finite duration. Suite cases `00941`, `00943`, and `01174` now pass.
+- [x] Atomizer Python tests pass `265`, `1` skipped; Ruff and diff checks pass.
+  Full pinned suite now reports `1,089` passed, `834` unsupported, no failed or
+  timed-out cases. Supported-surface gate passes; core remains open. Report
+  `/private/tmp/bng3-sbml-suite-static-delay.json`, SHA-256
+  `5112cf447c9f156b6e1ecece01cd855ad6d98768f26ce306660aca20dbd60c10`.
+- [ ] General state-history delays remain unsupported. Re-run curated BioModels
+  round-trip and libRoadRunner comparisons to measure whether the static-delay
+  slice expands that corpus.
+
+## Algebraic compartments and static-state events — 2026-09-25
+
+- [x] The safe single-unknown linear algebraic lowering now also accepts an
+  otherwise-uncontrolled mutable compartment. Nonlinear, coupled, species-
+  constrained, and multiple-constraint cases remain explicit. Official cases
+  `00539`, `00540`, `00541`, `00542`, `00544`, `00545`, `00547`, `00548`,
+  `01785`, `01786`, and `01791` now pass.
+- [x] Event triggers depending only on species that cannot change during the
+  simulation are evaluated at time zero with SBML `trigger.initialValue`
+  semantics. Constant-true events schedule at zero only for a false initial
+  trigger; constant-false events are safely discarded. Dynamic/state-dependent
+  events remain unsupported. Official cases `00995`, `01373`-`01376`, and
+  `01527` now pass.
+- [x] Atomizer tests pass `267`, with `1` skipped. Ruff and `git diff --check`
+  pass. The stable-source pinned suite reports `1,106` passed, `817`
+  unsupported, `0` failed, `0` timed out; supported-surface passes and core
+  remains open. Event causes fell to `502`, algebraic-rule causes to `73`.
+  Report `/private/tmp/bng3-sbml-suite-static-events.json`, SHA-256
+  `8582bd4a35c6a7e42812a35ea22febcc549bc5b4f48f6c32def3d681fc171ae6`.
+- [ ] Re-run the complete curated BioModels flat/Atomized and libRoadRunner
+  comparison after these changes. General dynamic event scheduling, DAE
+  constraints, and fractional or time-varying reaction stoichiometry remain
+  the largest non-FBC feature gaps.

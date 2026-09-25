@@ -587,7 +587,7 @@ def _validate_case(
     }
     try:
         record["source_xml"] = _validate_xml(sbml, "source SBML")
-        parsed = SBMLParser().parse(sbml)
+        parsed = SBMLParser().parse(sbml, source_path=source_path)
         record["source_model"] = {
             "species": len(parsed.species),
             "reactions": len(parsed.reactions),
@@ -596,7 +596,7 @@ def _validate_case(
         }
         source_metadata = source_metadata_payload(parsed)
         atomizer = Atomizer(atomize=False, quiet_mode=True)
-        atomized = atomizer.atomize(sbml)
+        atomized = atomizer.atomize(sbml, source_path=source_path)
         if not atomized.success:
             raise RuntimeError(atomized.error or "modern Atomizer returned failure")
         source_warnings = record["source_model"]["warnings"]
@@ -609,11 +609,6 @@ def _validate_case(
             *_warning_limitations(source_warnings),
             *_event_translation_limitations(atomized.bngl),
         ]
-        if not parsed.species and not any(rule.type == "rate" for rule in parsed.rules):
-            source_limitations.append(
-                "SBML model has no species or rate-rule state variable for a "
-                "BNGL network/simulation round-trip."
-            )
         if source_limitations:
             record["status"] = "unsupported"
             record["unsupported_reason"] = " ".join(source_limitations)
@@ -692,27 +687,6 @@ def _validate_case(
                 f"native reaction count {native['reaction_count']} != {network.num_reactions}"
             )
 
-        # Empty SBML models are valid documents, but they have no BNGL state
-        # variables or observables on which to run the requested numerical
-        # parity gate. Keep this as an explicit model-class limitation rather
-        # than allowing the zero-state simulator path to segfault.
-        if network.num_species == 0:
-            record["status"] = "unsupported"
-            record["unsupported_reason"] = (
-                "Zero-species SBML model has no BNGL state variables or "
-                "observables for numerical comparison."
-            )
-            record["simulation_comparison"] = {
-                "passed": False,
-                "skipped": True,
-                "reason": record["unsupported_reason"],
-                "method_bngl": "BNG3 CVODE",
-                "method_sbml": "libRoadRunner CVODE",
-                "observable_count": 0,
-            }
-            record["core_passed"] = False
-            return record
-
         warnings = record["source_model"]["warnings"]
         limitations = [
             *_simulation_limitations(warnings),
@@ -735,7 +709,11 @@ def _validate_case(
                 for rule in parsed.rules
                 if rule.type == "assignment"
                 and rule.variable
-                and str(rule.variable) in parsed.species
+            }
+            | {
+                standardize_name(str(assignment.symbol))
+                for assignment in parsed.initial_assignments
+                if assignment.symbol
             },
         )
         record["simulation_comparison"] = comparison

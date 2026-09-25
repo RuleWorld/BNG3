@@ -30,6 +30,8 @@ class EventTranslationContext:
     # Only immutable SBML identifiers may be folded into scheduled actions.
     # Default keeps the older direct-call contract source-compatible.
     is_compile_time_constant: Callable[[str], bool] = lambda _identifier: True
+    # Optional values for immutable species and other non-parameter symbols.
+    resolve_constant: Callable[[str], Optional[float]] = lambda _identifier: None
 
     @property
     def resolveSpeciesPattern(self):
@@ -111,7 +113,7 @@ def _tokenize(expression: str) -> Optional[List[str]]:
         r"\s*("
         r"[A-Za-z_][A-Za-z0-9_]*|"
         r"(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?|"
-        r"[()+\-*/^])"
+        r"[(),+\-*/^])"
     )
     tokens: List[str] = []
     position = 0
@@ -149,7 +151,11 @@ class _NumericParser:
         value = self.parse_expression()
         if value is None or self.position != len(self.tokens):
             return None
-        return value if math.isfinite(value) else None
+        return value if self._finite(value) else None
+
+    @staticmethod
+    def _finite(value: object) -> bool:
+        return isinstance(value, (int, float)) and math.isfinite(value)
 
     def parse_expression(self) -> Optional[float]:
         left = self.parse_term()
@@ -188,7 +194,7 @@ class _NumericParser:
                 base = base**exponent
             except (OverflowError, ValueError):
                 return None
-        return base if math.isfinite(base) else None
+        return base if self._finite(base) else None
 
     def parse_unary(self) -> Optional[float]:
         if self.peek() == "+":
@@ -215,16 +221,84 @@ class _NumericParser:
             value = float(token)
             return value if math.isfinite(value) else None
         if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", token):
-            # Function calls are intentionally not folded.  This keeps the
-            # action translation fail-closed for unknown or dynamic functions.
             if (
                 self.position + 1 < len(self.tokens)
                 and self.tokens[self.position + 1] == "("
             ):
-                return None
+                function_name = token.lower()
+                self.take()
+                self.take()  # opening parenthesis
+                arguments: List[float] = []
+                if self.peek() != ")":
+                    while True:
+                        argument = self.parse_expression()
+                        if argument is None:
+                            return None
+                        arguments.append(argument)
+                        if self.peek() != ",":
+                            break
+                        self.take()
+                if self.take() != ")":
+                    return None
+                unary = {
+                    "abs": abs,
+                    "sqrt": math.sqrt,
+                    "exp": math.exp,
+                    "ln": math.log,
+                    "log10": math.log10,
+                    "sin": math.sin,
+                    "cos": math.cos,
+                    "tan": math.tan,
+                    "asin": math.asin,
+                    "acos": math.acos,
+                    "atan": math.atan,
+                    "sinh": math.sinh,
+                    "cosh": math.cosh,
+                    "tanh": math.tanh,
+                    "floor": math.floor,
+                    "ceil": math.ceil,
+                }
+                try:
+                    comparisons = {
+                        "lt": lambda a, b: a < b,
+                        "leq": lambda a, b: a <= b,
+                        "gt": lambda a, b: a > b,
+                        "geq": lambda a, b: a >= b,
+                        "eq": lambda a, b: a == b,
+                        "neq": lambda a, b: a != b,
+                    }
+                    if function_name in comparisons and len(arguments) == 2:
+                        return float(comparisons[function_name](*arguments))
+                    if function_name == "and" and arguments:
+                        return float(all(value != 0 for value in arguments))
+                    if function_name == "or" and arguments:
+                        return float(any(value != 0 for value in arguments))
+                    if function_name == "not" and len(arguments) == 1:
+                        return float(arguments[0] == 0)
+                    if function_name in unary and len(arguments) == 1:
+                        value = unary[function_name](arguments[0])
+                    elif function_name == "log" and len(arguments) == 1:
+                        value = math.log10(arguments[0])
+                    elif function_name == "log" and len(arguments) == 2:
+                        value = math.log(arguments[1], arguments[0])
+                    elif function_name in {"pow", "power"} and len(arguments) == 2:
+                        value = arguments[0] ** arguments[1]
+                    elif function_name == "root" and len(arguments) == 2:
+                        value = arguments[1] ** (1 / arguments[0])
+                    elif function_name == "sec" and len(arguments) == 1:
+                        value = 1 / math.cos(arguments[0])
+                    elif function_name == "csc" and len(arguments) == 1:
+                        value = 1 / math.sin(arguments[0])
+                    elif function_name == "cot" and len(arguments) == 1:
+                        value = 1 / math.tan(arguments[0])
+                    else:
+                        return None
+                except (ArithmeticError, OverflowError, TypeError, ValueError):
+                    return None
+                return value if self._finite(value) else None
             self.take()
             value = self.resolve(token)
-            return value if value is not None and math.isfinite(value) else None
+            return value if value is not None and self._finite(value) else None
         return None
 
 
@@ -312,6 +386,22 @@ def parse_time_threshold(trigger: str) -> Optional[str]:
     return None
 
 
+def _parse_scaled_time_threshold(trigger: str) -> Optional[Tuple[str, str]]:
+    """Solve ``time / positive_constant > threshold`` for ``time``."""
+
+    match = re.match(
+        r"^(?:geq|gt)\s*\(\s*\(?\s*time\s*/\s*"
+        r"([A-Za-z_][A-Za-z0-9_]*)\s*\)?\s*,\s*(.+)\)\s*$",
+        str(trigger or "").strip(),
+        re.IGNORECASE,
+    )
+    if match is None:
+        return None
+    scale_identifier = match.group(1)
+    threshold = _strip_outer_parens(_balanced_inner(match.group(2)))
+    return f"({threshold}) * ({scale_identifier})", scale_identifier
+
+
 def _event_assignment(assignment: object) -> Tuple[str, str]:
     if isinstance(assignment, Mapping):
         return str(assignment.get("variable", "")), str(assignment.get("math", ""))
@@ -339,29 +429,60 @@ def synthesize_event_actions(
     untranslated: List[Tuple[SBMLEvent, str]] = []
     scheduled: List[Tuple[float, List[Tuple[str, str, float]], float]] = []
 
-    def fold(expression: str) -> Optional[float]:
-        return fold_numeric(
-            expression,
-            lambda identifier: (
-                context.resolve_param(identifier)
-                if context.is_compile_time_constant(identifier)
-                else None
-            ),
-        )
+    def fold(expression: str, time_value: Optional[float] = None) -> Optional[float]:
+        if time_value is not None:
+            expression = re.sub(
+                r"\btime\b", _format_number(time_value), expression, flags=re.IGNORECASE
+            )
+        def resolve(identifier: str) -> Optional[float]:
+            if context.is_compile_time_constant(identifier):
+                value = context.resolve_param(identifier)
+                if value is not None:
+                    return value
+            return context.resolve_constant(identifier)
+
+        return fold_numeric(expression, resolve)
 
     for event in events:
         threshold = parse_time_threshold(event.trigger)
+        scale_identifier: Optional[str] = None
         if threshold is None:
-            untranslated.append(
-                (
-                    event,
-                    "trigger is not a simple time threshold (state-dependent "
-                    "triggers cannot be scheduled)",
+            scaled_threshold = _parse_scaled_time_threshold(event.trigger)
+            if scaled_threshold is not None:
+                threshold, scale_identifier = scaled_threshold
+                scale = (
+                    context.resolve_param(scale_identifier)
+                    if context.is_compile_time_constant(scale_identifier)
+                    else None
                 )
-            )
-            continue
-        time = fold(threshold)
-        if time is None:
+                if scale is None or not math.isfinite(scale) or scale <= 0:
+                    untranslated.append(
+                        (
+                            event,
+                            f'time scale "{scale_identifier}" is not a positive constant',
+                        )
+                    )
+                    continue
+        if threshold is None:
+            constant_trigger = fold(event.trigger)
+            if constant_trigger is not None and constant_trigger in {0, 1}:
+                # A time-invariant trigger fires only when SBML's declared
+                # pre-simulation trigger value is false and the actual value
+                # at t=0 is true. A permanently false trigger never fires.
+                if constant_trigger == 0 or event.trigger_initial_value:
+                    continue
+                threshold = "0"
+            else:
+                untranslated.append(
+                    (
+                        event,
+                        "trigger is not a simple time threshold (state-dependent "
+                        "triggers cannot be scheduled)",
+                    )
+                )
+                continue
+        trigger_time = fold(threshold)
+        if trigger_time is None:
             untranslated.append(
                 (
                     event,
@@ -369,8 +490,9 @@ def synthesize_event_actions(
                 )
             )
             continue
+        execution_time = trigger_time
         if event.delay:
-            delay = fold(event.delay)
+            delay = fold(event.delay, trigger_time)
             if delay is None:
                 untranslated.append(
                     (
@@ -379,13 +501,18 @@ def synthesize_event_actions(
                     )
                 )
                 continue
-            time += delay
+            execution_time += delay
 
         sets: List[Tuple[str, str, float]] = []
         failure: Optional[str] = None
         for assignment in event.assignments:
             variable, expression = _event_assignment(assignment)
-            value = fold(expression)
+            evaluation_time = (
+                trigger_time
+                if event.use_values_from_trigger_time
+                else execution_time
+            )
+            value = fold(expression, evaluation_time)
             if value is None:
                 failure = (
                     f'assignment "{variable} := {expression}" is not constant '
@@ -409,7 +536,7 @@ def synthesize_event_actions(
 
         priority = 0.0
         if getattr(event, "priority", None):
-            folded_priority = fold(event.priority or "")
+            folded_priority = fold(event.priority or "", execution_time)
             if folded_priority is None:
                 untranslated.append(
                     (
@@ -419,7 +546,7 @@ def synthesize_event_actions(
                 )
                 continue
             priority = folded_priority
-        scheduled.append((time, sets, priority))
+        scheduled.append((execution_time, sets, priority))
 
     if not scheduled:
         return EventTranslationResult(None, 0, untranslated)

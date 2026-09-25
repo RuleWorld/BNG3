@@ -416,10 +416,23 @@ void OdeIntegrator::compile() {
                     // Also try the rate string from .net directly (it may already be the param name)
                     // The .net writes "R1Rate_1" but the Rxn has "Arrhenius(phi,Ea_AB)"
                     // Check all model parameters for one matching the reaction's origin rule
+                    const auto rateNameSeparator = altDerivedName.rfind('_');
+                    // Rule labels such as R1 can occur inside unrelated
+                    // parameters (for example proAUR1_degradation_rate).
+                    // Keep the legacy fallback anchored to the NetWriter
+                    // derived-rate prefix.
+                    const std::string derivedRatePrefix =
+                        rateNameSeparator == std::string::npos
+                            ? std::string{}
+                            : altDerivedName.substr(0, rateNameSeparator + 1);
                     for (const auto& param : model_.getParameters().all()) {
                         const auto& pname = param.getName();
-                        if (pname.find(ruleBase) != std::string::npos &&
-                            (pname.find("Rate") != std::string::npos || pname.find("rate") != std::string::npos)) {
+                        if (derivedRatePrefix.empty() ||
+                            pname.compare(0, derivedRatePrefix.size(), derivedRatePrefix) != 0) {
+                            continue;
+                        }
+                        if (pname.find("Rate") != std::string::npos ||
+                            pname.find("rate") != std::string::npos) {
                             try {
                                 paramResolver(pname);
                                 foundDerived = true;
@@ -1416,6 +1429,40 @@ OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
         (options.maxSimSteps > 0 || options.outputStepInterval > 0)) {
         throw std::runtime_error(
             "max_sim_steps and output_step_interval are supported only for SSA");
+    }
+    if (nSpecies_ == 0 &&
+        (options.method == "euler" || options.method == "rk4" ||
+         options.method == "cvode" || options.method == "ssa")) {
+        // SBML permits models with parameters and no dynamic state. CVODE
+        // cannot allocate a zero-length state vector, but these models still
+        // have a well-defined output grid and may expose time/parameter-only
+        // functions. Evaluate those outputs without entering a numerical
+        // solver.
+        const auto times = outputTimes(options);
+        const auto stopIfExpr = parseStopIf(options);
+        const std::vector<double> emptyState;
+        OdeResult result;
+        result.timePoints.reserve(times.size());
+        result.concentrations.reserve(times.size());
+        result.observables.reserve(times.size());
+        result.functions.reserve(times.size());
+        for (std::size_t step = 0; step < times.size(); ++step) {
+            const double time = times[step];
+            result.timePoints.push_back(time);
+            result.concentrations.emplace_back();
+            result.observables.emplace_back();
+            result.functions.emplace_back();
+            updateGroups(emptyState.data(), result.observables.back());
+            updateFunctions(result.observables.back(), time,
+                            result.functions.back());
+            if (step > 0 &&
+                ((options.steadyState && steadyStateReached(options, time, emptyState)) ||
+                 (stopIfExpr.has_value() &&
+                  stopConditionMet(*stopIfExpr, time, emptyState)))) {
+                break;
+            }
+        }
+        return result;
     }
     if (options.method == "euler") {
         return integrateEuler(options);

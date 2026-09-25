@@ -84,7 +84,7 @@ bionetgen = "bionetgen.cli:main"
 
 [project.urls]
 Homepage = "https://bionetgen.org"
-Repository = "https://github.com/RuleWorld/bionetgen"
+Repository = "https://github.com/RuleWorld/BNG3"
 
 [tool.scikit-build]
 wheel.packages = ["python/bionetgen"]

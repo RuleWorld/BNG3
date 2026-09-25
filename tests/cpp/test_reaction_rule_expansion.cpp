@@ -104,6 +104,29 @@ end actions
     REQUIRE(network.reactions.size() == 1);
 }
 
+TEST_CASE("Rule expansion: multi-type reactant pattern requires every molecule type", "[ReactionRule]") {
+    auto model = parseModel(R"(
+begin molecule types
+    A()
+    B()
+    C()
+end molecule types
+begin seed species
+    A().B() 1
+    A() 1
+end seed species
+begin reaction rules
+    A().B() -> C() 1
+end reaction rules
+)");
+
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative(5);
+
+    REQUIRE(network.species.size() == 3);
+    REQUIRE(network.reactions.size() == 1);
+}
+
 TEST_CASE("Rule expansion: DeleteMolecules degradation", "[ReactionRule]") {
     auto model = parseModel(R"(
 begin parameters
