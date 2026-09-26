@@ -56,16 +56,31 @@ capability inventory.
 - [x] Cached BioModels scan parsed 6,759 XML files (9 parse errors) and found
   no single-event, rank-one state-threshold candidates. No curated gain is
   claimed; the complete curated inventory remains open.
-- [x] The hosted Python matrix failure was traced to platform libSBML crashing
-  while parsing the existing inline-comp regression fixture. A narrow XML-only
-  flattener now handles a single inline submodel with core compartments,
-  species, parameters, and reactions; complex comp models retain the general
-  libSBML path. Focused comp tests pass (`4 passed`).
-- [x] The repair preserves the full pinned-suite result: `1,589 passed, 334
-  unsupported, 0 failed, 0 timed out`; comparison with the prior report found
-  zero gains and zero regressions. Report `/private/tmp/bng3-sbml-comp-fallback-full.json`,
-  SHA-256 `7e2d2c2386dfa7ae00751ccba9b26c3b450cfba920829a3efb441e67db6d3a1c`.
-- [ ] Exact-head hosted CI for the repair is pending push and recheck.
+- [x] Hosted Python logs showed libSBML crashes parsing an inline comp parent
+  and an external child file. The XML-only fallback now handles one simple
+  inline model and one source-relative external child, each limited to core
+  compartments, species, parameters, and reactions. Complex hierarchies remain
+  on the guarded general libSBML path. Comp tests pass (`4 passed`), including
+  an assertion that the supported external path never calls
+  `libsbml.readSBMLFromFile`.
+
+## SBML event comparison aliases — 2026-09-26
+
+- [x] Exact affine threshold analysis accepts SBML's comparison names
+  `lessThan`, `greaterThan`, and inclusive forms in addition to short aliases.
+  This unlocks `00355`, `00412`, `01701`, and `01702`.
+- [x] All four cases pass 10-unit/100-step libRoadRunner 2.10.0 comparisons
+  across 14 observables; maximum absolute error `3.36e-12`.
+- [x] Full Python suite: `579 passed, 28 skipped`; Black, Ruff, and
+  `git diff --check` pass.
+- [ ] Full pinned-suite result is not a clean gate: `1,582 passed, 338
+  unsupported, 3 failed, 0 timed out`. Report
+  `/private/tmp/bng3-sbml-alias-final.json`. Three cases fail CVODE in
+  `00955`, `01148`, and `01487`; seven earlier delay-history cases became
+  unsupported. Continue triage before claiming zero regressions.
+- [ ] Exact-head hosted CI for external comp flattening remains pending push.
+  The prior `107da3c` run still segfaulted in the external child file parser;
+  the supported path now avoids that call and needs a fresh hosted check.
 
 ## Static event assignment histories — 2026-09-26
 

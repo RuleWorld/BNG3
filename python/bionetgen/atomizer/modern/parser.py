@@ -266,6 +266,161 @@ def _flatten_simple_inline_comp(sbml_string: str) -> Optional[str]:
     return ET.tostring(root, encoding="unicode")
 
 
+def _flatten_simple_external_comp(
+    sbml_string: str, source_path: Optional[Path]
+) -> Optional[str]:
+    """Flatten one safe, source-relative external comp model using XML only."""
+    if source_path is None:
+        return None
+    try:
+        root = ET.fromstring(sbml_string)
+    except ET.ParseError:
+        return None
+    core_namespace = root.tag[1:].split("}", 1)[0] if root.tag.startswith("{") else ""
+    comp_namespace = _declared_package_uris(sbml_string).get("comp")
+    if not core_namespace or not comp_namespace:
+        return None
+    comp_tag = lambda name: f"{{{comp_namespace}}}{name}"
+    core_tag = lambda name: f"{{{core_namespace}}}{name}"
+    model = next((e for e in list(root) if e.tag == core_tag("model")), None)
+    if model is None:
+        return None
+    submodels_list = next(
+        (e for e in list(model) if e.tag == comp_tag("listOfSubmodels")), None
+    )
+    external_lists = [
+        e for e in list(root) if e.tag == comp_tag("listOfExternalModelDefinitions")
+    ]
+    if (
+        submodels_list is None
+        or len(list(submodels_list)) != 1
+        or len(external_lists) != 1
+    ):
+        return None
+    submodel = list(submodels_list)[0]
+    external_definitions = list(external_lists[0])
+    if len(external_definitions) != 1:
+        return None
+    external = external_definitions[0]
+    submodel_id = submodel.get(comp_tag("id"))
+    external_id = external.get(comp_tag("id"))
+    if (
+        submodel.tag != comp_tag("submodel")
+        or external.tag != comp_tag("externalModelDefinition")
+        or not submodel_id
+        or not external_id
+        or submodel.get(comp_tag("modelRef")) != external_id
+        or external.get(comp_tag("modelRef")) is None
+        or set(submodel.attrib) != {comp_tag("id"), comp_tag("modelRef")}
+        or any(
+            child is not submodels_list
+            and child.tag not in {core_tag("notes"), core_tag("annotation")}
+            for child in list(model)
+        )
+    ):
+        return None
+    source = str(external.get(comp_tag("source"), "")).strip()
+    parsed = urlsplit(source)
+    if parsed.scheme not in {"", "file"} or parsed.netloc not in {"", "localhost"}:
+        return None
+    reference = unquote(parsed.path)
+    if not reference:
+        return None
+    source_path = source_path.expanduser().resolve()
+    referenced_path = Path(reference)
+    if not referenced_path.is_absolute():
+        referenced_path = source_path.parent / referenced_path
+    referenced_path = referenced_path.resolve()
+    try:
+        referenced_path.relative_to(source_path.parent)
+    except ValueError:
+        return None
+    if not referenced_path.is_file():
+        return None
+    try:
+        child_root = ET.parse(referenced_path).getroot()
+    except (ET.ParseError, OSError):
+        return None
+    if not child_root.tag.startswith("{"):
+        return None
+    child_namespace = child_root.tag[1:].split("}", 1)[0]
+    child_model = next(
+        (e for e in list(child_root) if e.tag == f"{{{child_namespace}}}model"), None
+    )
+    if child_namespace != core_namespace or child_model is None:
+        return None
+    if child_model.get("id") != external.get(comp_tag("modelRef")):
+        return None
+    allowed_lists = {
+        "listOfCompartments",
+        "listOfSpecies",
+        "listOfParameters",
+        "listOfReactions",
+    }
+    if any(
+        _local_name(child.tag) not in allowed_lists
+        and child.tag not in {core_tag("notes"), core_tag("annotation")}
+        for child in list(child_model)
+    ):
+        return None
+    if any(
+        _local_name(element.tag)
+        in {"listOfSubmodels", "listOfPorts", "listOfLocalParameters"}
+        for element in child_model.iter()
+    ):
+        return None
+    if any(
+        _local_name(element.tag) in {"parameter", "localParameter"}
+        for kinetic_law in child_model.iter()
+        if _local_name(kinetic_law.tag) == "kineticLaw"
+        for element in kinetic_law.iter()
+    ):
+        return None
+
+    identifiers: Dict[str, str] = {}
+    for element in child_model.iter():
+        identifier = element.get("id")
+        if identifier:
+            if identifier in identifiers:
+                return None
+            identifiers[identifier] = f"{submodel_id}__{identifier}"
+    for element in child_model.iter():
+        identifier = element.get("id")
+        if identifier in identifiers:
+            element.set("id", identifiers[identifier])
+        for attribute in ("compartment", "species", "variable", "symbol", "units"):
+            value = element.get(attribute)
+            if value in identifiers:
+                element.set(attribute, identifiers[value])
+        if _local_name(element.tag) == "ci" and element.text:
+            symbol = element.text.strip()
+            if symbol in identifiers:
+                element.text = identifiers[symbol]
+
+    for child in list(child_model):
+        if _local_name(child.tag) not in allowed_lists:
+            continue
+        target = next(
+            (e for e in list(model) if e.tag == core_tag(_local_name(child.tag))),
+            None,
+        )
+        if target is None:
+            target = ET.Element(core_tag(_local_name(child.tag)))
+            model.append(target)
+        for item in list(child):
+            target.append(copy.deepcopy(item))
+
+    model.remove(submodels_list)
+    for element in list(root):
+        if element.tag == external_lists[0].tag:
+            root.remove(element)
+    for attribute in list(root.attrib):
+        if attribute.startswith(f"{{{comp_namespace}}}"):
+            del root.attrib[attribute]
+    ET.register_namespace("", core_namespace)
+    return ET.tostring(root, encoding="unicode")
+
+
 def _resolve_comp_external_sources(
     document: Any, source_path: Path, libsbml: Any
 ) -> Optional[str]:
@@ -330,6 +485,9 @@ def _flatten_comp_package(
     simple_inline = _flatten_simple_inline_comp(sbml_string)
     if simple_inline is not None:
         return simple_inline, None
+    simple_external = _flatten_simple_external_comp(sbml_string, source_path)
+    if simple_external is not None:
+        return simple_external, None
     try:
         import libsbml
     except ImportError:

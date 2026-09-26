@@ -703,17 +703,33 @@ def _parse_affine_state_threshold(
     trigger: str,
 ) -> Optional[Tuple[str, str, str]]:
     """Parse one state comparison, dropping statically true ``and`` terms."""
-
-    match = re.match(r"^(gt|geq|lt|leq)\s*\((.*)\)$", str(trigger or "").strip(), re.I)
+    value = str(trigger or "").strip()
+    aliases = {
+        "greaterthan": "gt",
+        "greaterorequal": "geq",
+        "greaterthanorequal": "geq",
+        "lessthan": "lt",
+        "lessorequal": "leq",
+        "lessthanorequal": "leq",
+    }
+    alias_pattern = "|".join(sorted(aliases, key=len, reverse=True))
+    value = re.sub(
+        rf"^({alias_pattern})\s*(?=\()",
+        lambda match: aliases[match.group(1).lower()],
+        value,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+    match = re.match(r"^(gt|geq|lt|leq)\s*\((.*)\)$", value, re.I)
     if match is None:
-        conjunction = _split_call_arguments(str(trigger or ""))
+        conjunction = _split_call_arguments(value)
         if conjunction is not None:
             dynamic_terms = []
             for term in conjunction:
-                value = fold_numeric(term, lambda _identifier: None)
-                if value is None:
+                static_value = fold_numeric(term, lambda _identifier: None)
+                if static_value is None:
                     dynamic_terms.append(term)
-                elif value == 0:
+                elif static_value == 0:
                     return None
             if len(dynamic_terms) == 1:
                 return _parse_affine_state_threshold(dynamic_terms[0])

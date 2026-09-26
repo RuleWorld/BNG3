@@ -22,14 +22,21 @@ crossing. This gains 31 official SBML Test Suite cases with no regressions:
 error is `0.0476`. Full Python passes `578` tests with `28` skipped. Cached
 BioModels scan found no eligible models; no curated gain claimed.
 
-Hosted Python matrix logs traced the earlier failure to libSBML segfaulting
-while parsing the inline comp regression fixture. A narrowly scoped XML-only
-fallback now flattens simple single-submodel documents before libSBML import;
-complex comp documents keep the general libSBML path. Focused comp tests pass
-(`4 passed`), and the full Python suite passes (`578 passed, 28 skipped`). The
-full pinned SBML suite remains `1,589 passed / 334 unsupported`, with zero
-failures, timeouts, gains, or regressions from the prior report. Exact-head
-hosted CI for this repair is pending push and recheck.
+Hosted Python logs showed libSBML crashes parsing both an inline comp parent
+and an external comp child file. The XML-only fallback now handles one simple
+inline model and one source-relative external child. Comp tests pass
+(`4 passed`), including a guard that prevents the supported external case from
+calling `libsbml.readSBMLFromFile`. The full Python suite passes (`579 passed,
+28 skipped`). The external fix still needs exact-head hosted CI.
+
+SBML comparison-name aliases now lower four additional event cases:
+`00355`, `00412`, `01701`, and `01702`. All pass 10-unit/100-step libRoadRunner
+2.10.0 comparisons over 14 observables; maximum absolute error is `3.36e-12`.
+The full pinned-suite report is not a clean gate: `1,582 passed, 338
+unsupported, 3 failed, 0 timed out`. CVODE failures are `00955`, `01148`, and
+`01487`; seven delay-history cases are newly unsupported. Report:
+`/private/tmp/bng3-sbml-alias-final.json`. Continue triage before claiming no
+regressions.
 
 SBML report: `/private/tmp/bng3-sbml-riccati-full.json`, SHA-256
 `bcb141eb61f9533acc525dc578fdf0cc055d9dfe56281d56127c493a07c83dd8`.

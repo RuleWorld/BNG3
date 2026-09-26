@@ -453,6 +453,44 @@ def test_affine_threshold_event_reads_species_at_trigger_time():
     assert 'setParameter("P", "5.5")' in result.actions_block
 
 
+def test_sbml_comparison_operator_aliases_schedule_affine_thresholds():
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLEventAssignment
+
+    for trigger, initial, derivative in (
+        ("lessthan(x, 0.5)", 1.0, -1.0),
+        ("greaterthan(x, 0.5)", 0.0, 1.0),
+        ("lessThanOrEqual(x, 0.5)", 1.0, -1.0),
+        ("greaterOrEqual(x, 0.5)", 0.0, 1.0),
+    ):
+        result = synthesize_event_actions(
+            [
+                SBMLEvent(
+                    id="operator-alias",
+                    trigger=trigger,
+                    assignments=[SBMLEventAssignment("P", "1")],
+                )
+            ],
+            EventTranslationContext(
+                resolve_species_pattern=lambda _identifier: None,
+                resolve_param=lambda _identifier: None,
+                is_param=lambda _identifier: True,
+                is_compile_time_constant=lambda _identifier: False,
+                resolve_affine_rate=lambda identifier: (
+                    (initial, derivative) if identifier == "x" else None
+                ),
+            ),
+        )
+        assert result.converted == 1
+        assert result.untranslated == []
+        assert result.actions_block is not None
+        assert f'setParameter("P", "1")' in result.actions_block
+        assert "t_end=>0.5" in result.actions_block
+
+
 def test_exponential_threshold_event_reads_trigger_or_execution_state():
     from bionetgen.atomizer.modern.events import (
         EventTranslationContext,

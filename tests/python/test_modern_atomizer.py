@@ -3186,7 +3186,9 @@ def test_sbml_comp_external_models_stay_explicit_without_source_path():
     )
 
 
-def test_sbml_comp_external_models_flatten_with_source_path(tmp_path):
+def test_sbml_comp_external_models_flatten_with_source_path(tmp_path, monkeypatch):
+    import libsbml
+
     from bionetgen.atomizer.modern import Atomizer, SBMLParser
 
     parent_path = tmp_path / "parent.xml"
@@ -3226,6 +3228,13 @@ def test_sbml_comp_external_models_flatten_with_source_path(tmp_path):
       </comp:listOfExternalModelDefinitions>
     </sbml>"""
     parent_path.write_text(parent)
+
+    def reject_native_child_file_parse(*_args, **_kwargs):
+        raise AssertionError(
+            "simple external comp flattening must not parse child via libSBML"
+        )
+
+    monkeypatch.setattr(libsbml, "readSBMLFromFile", reject_native_child_file_parse)
 
     model = SBMLParser().parse(parent, source_path=parent_path)
 
