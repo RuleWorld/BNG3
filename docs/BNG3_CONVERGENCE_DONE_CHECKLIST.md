@@ -1,7 +1,7 @@
 # BNG3 Convergence: Definition of Done and Remaining Checklist
 
 **Status:** Active; not complete
-**Last targeted audit:** 2026-09-25 (full convergence checklist remains open)
+**Last targeted audit:** 2026-09-26 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
 **Working branch:** `main`
 **Current base:** `main` at PR #24 merge `a5f65ae05e26926b013f4ec3305dab34a3e9c84f`; working tree also contains targeted SymbolTable, BNGIR schema, and Atomizer writer fixes
@@ -5845,3 +5845,34 @@ the other groups remain implementation targets.
   BioModels XML files found no direct single-state exponential self-reset
   event candidate; no curated gain is claimed and the previous full inventory
   report remains the current curated benchmark evidence.
+
+## Delayed affine rate-rule self-reset events — 2026-09-26
+
+- [x] For one event with a constant-slope parameter rate rule, lower a direct
+  rising threshold crossing and delayed self-assignment when event assignment
+  depends only on proven affine trajectories. Preserve both
+  `useValuesFromTriggerTime` modes. Schedule repeated events only when a
+  self-reset returns the trigger to its false side; schedule a single event
+  when its assignment leaves the monotone trigger true.
+- [x] Resolve reaction-local SBML parameters before global symbols when
+  proving constant reaction flux. This preserves SBML local scope in exact
+  affine trajectory analysis; dynamic/coupled fluxes remain unsupported.
+- [x] Full pinned one-unit suite: `1,500 passed, 423 unsupported, 0 failed,
+  0 timeouts`; four gains (`semantic/01710`, `01711`, `01715`, `01716`) and no
+  regressions from `1,496/427`. Report
+  `/private/tmp/bng3-sbml-affine-self-reset-full.json`, SHA-256
+  `61c3554b914955f5ea86d17844f1ca7d4ba02d45675dc2da1ffbe0ce5b7dbc8c`.
+  The default one-unit horizon still leaves `01701` and `01702` unsupported
+  because their first trigger occurs after that horizon.
+- [x] At a 10-unit/100-step horizon, `semantic/01701`, `01702`, `01715`, and
+  `01716` pass SBML roundtrip and BNG3-CVODE/libRoadRunner comparison. Maximum
+  absolute differences: `5.33e-15` for `01701`/`01702` (one observable) and
+  `2.85e-14` for `01715`/`01716` (three observables). Individual targeted
+  reports are `/private/tmp/bng3-affine-01701.json` through
+  `/private/tmp/bng3-affine-01716.json` for the four case IDs.
+- [x] Full Python suite with the compiled extension on `PYTHONPATH`:
+  `562 passed, 28 skipped`; changed-file Ruff, compileall, and diff checks
+  pass. Default-environment run without `build/cpp` had 23 unrelated
+  compatibility/backend failures; the supported build environment passed.
+- [ ] Refresh full curated BioModels inventory after the local-parameter
+  scope fix; no curated gain/regression claim until report completes.

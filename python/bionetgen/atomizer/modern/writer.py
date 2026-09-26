@@ -5994,8 +5994,21 @@ def generate_bngl(
                     rate_expression = extend_function(
                         rate_expression, {}, model.function_definitions
                     )
+                    local_parameters = (
+                        kinetic_law.get("localParameters", [])
+                        if isinstance(kinetic_law, Mapping)
+                        else getattr(kinetic_law, "local_parameters", [])
+                    )
+                    local_parameter_values = {
+                        str(parameter.id): float(parameter.value)
+                        for parameter in local_parameters or []
+                        if getattr(parameter, "id", None)
+                        and getattr(parameter, "value", None) is not None
+                    }
 
                     def resolve_immutable(identifier: str) -> Optional[float]:
+                        if identifier in local_parameter_values:
+                            return local_parameter_values[identifier]
                         if is_compile_time_constant(identifier):
                             parameter_value = resolve_event_parameter(identifier)
                             if parameter_value is not None:
@@ -6040,6 +6053,7 @@ def generate_bngl(
             ) or any(
                 event_assignment.variable == identifier
                 for event in model.events
+                if event is not event_context
                 for event_assignment in event.assignments
             ):
                 return None

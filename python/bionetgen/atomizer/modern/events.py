@@ -1418,6 +1418,158 @@ def synthesize_event_actions(
             periodic_handled.add(id(event))
             periodic_converted += 1
 
+    # A constant-slope rate-rule parameter can also reset itself through an
+    # affine assignment. Preserve delayed-event value semantics by evaluating
+    # the assignment at trigger or execution time as requested by SBML.
+    for event in events:
+        if id(event) in periodic_handled or len(events) != 1:
+            continue
+        parsed = _parse_affine_state_threshold(event.trigger)
+        if parsed is None:
+            continue
+        identifier, operator, threshold_expression = parsed
+        threshold = fold(threshold_expression)
+        trajectory = context.resolve_affine_rate_for_event(identifier, event)
+        assignments = [_event_assignment(item) for item in event.assignments]
+        delay = 0.0 if not event.delay else fold(event.delay)
+        if (
+            threshold is None
+            or trajectory is None
+            or delay is None
+            or not math.isfinite(delay)
+            or delay < 0
+            or len(assignments) != 1
+            or assignments[0][0] != identifier
+            or not context.is_param(identifier)
+            or (event.priority and fold(event.priority) is None)
+        ):
+            continue
+        initial, slope = trajectory
+        threshold = float(threshold)
+        if (
+            not math.isfinite(initial)
+            or not math.isfinite(slope)
+            or slope == 0
+            or not math.isfinite(threshold)
+        ):
+            continue
+        rising = (operator in {"lt", "leq"} and slope < 0) or (
+            operator in {"gt", "geq"} and slope > 0
+        )
+        if not rising:
+            continue
+        initially_true = (
+            initial > threshold
+            if operator == "gt"
+            else initial >= threshold
+            if operator == "geq"
+            else initial < threshold
+            if operator == "lt"
+            else initial <= threshold
+        )
+        if initially_true:
+            if event.trigger_initial_value:
+                periodic_handled.add(id(event))
+                periodic_converted += 1
+                continue
+            first_trigger = 0.0
+        else:
+            first_trigger = (threshold - initial) / slope
+            if not math.isfinite(first_trigger) or first_trigger < 0:
+                continue
+
+        assignment = assignments[0][1]
+        trigger_state = initial if first_trigger == 0 and initially_true else threshold
+        execution_state = trigger_state + slope * float(delay)
+        value_time = (
+            first_trigger
+            if event.use_values_from_trigger_time
+            else first_trigger + float(delay)
+        )
+        assignment_state = (
+            trigger_state if event.use_values_from_trigger_time else execution_state
+        )
+        reset_value = fold_at_state(
+            assignment, value_time, {identifier: assignment_state}
+        )
+        if reset_value is None or not math.isfinite(reset_value):
+            continue
+        reset_is_false = (
+            reset_value >= threshold
+            if operator == "lt"
+            else reset_value > threshold
+            if operator == "leq"
+            else reset_value <= threshold
+            if operator == "gt"
+            else reset_value < threshold
+        )
+        if not reset_is_false:
+            scheduled.append(
+                (
+                    first_trigger + float(delay),
+                    [("param", standardize_name(identifier), reset_value)],
+                    0.0,
+                )
+            )
+            periodic_handled.add(id(event))
+            periodic_converted += 1
+            continue
+        # Repeated resets need a closed-form recurrence. Keep that path
+        # restricted to assignments that fold with the reset state alone.
+        reset_value = fold(
+            assignment,
+            value_time,
+            dynamic_values={identifier: assignment_state},
+        )
+        if reset_value is None or not math.isfinite(reset_value):
+            continue
+        period = (threshold - reset_value) / slope
+        if not math.isfinite(period) or period <= 0:
+            continue
+
+        recurrence: List[Tuple[float, List[Tuple[str, str, float]], float]] = []
+        trigger_time = first_trigger
+        count = 0
+        while trigger_time <= context.base_t_end + 1e-12:
+            execution_time = trigger_time + float(delay)
+            if not math.isfinite(execution_time):
+                recurrence = []
+                break
+            trigger_state = (
+                initial
+                if trigger_time == 0 and initially_true
+                else threshold
+            )
+            execution_state = trigger_state + slope * float(delay)
+            assignment_state = (
+                trigger_state
+                if event.use_values_from_trigger_time
+                else execution_state
+            )
+            value_time = (
+                trigger_time
+                if event.use_values_from_trigger_time
+                else execution_time
+            )
+            value = fold(
+                assignment, value_time, dynamic_values={identifier: assignment_state}
+            )
+            if value is None or not math.isfinite(value):
+                recurrence = []
+                break
+            recurrence.append(
+                (execution_time, [("param", standardize_name(identifier), value)], 0.0)
+            )
+            count += 1
+            if count > 10_000:
+                recurrence = []
+                break
+            trigger_time = execution_time + period
+        if recurrence:
+            scheduled.extend(recurrence)
+            periodic_handled.add(id(event))
+            periodic_converted += 1
+
     affine_interval_schedules: dict[
         int, Tuple[str, float, float, float, float, float, float, str, str]
     ] = {}

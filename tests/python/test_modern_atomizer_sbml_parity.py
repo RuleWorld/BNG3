@@ -1074,6 +1074,44 @@ def test_exponential_rate_rule_self_reset_schedules_repeated_threshold_events():
     assert "untranslated" not in result.bngl.lower()
 
 
+def test_delayed_affine_rate_rule_self_reset_respects_value_time():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="delayed_affine_trigger_value_reset">
+        <listOfParameters><parameter id="P" value="10" constant="false"/></listOfParameters>
+        <listOfRules><rateRule variable="P">
+          <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>-1</cn></math>
+        </rateRule></listOfRules>
+        <listOfEvents><event id="reset" useValuesFromTriggerTime="{trigger_time}">
+          <trigger initialValue="true" persistent="true">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><leq/><ci>P</ci><cn>8.9</cn></apply>
+            </math>
+          </trigger>
+          <delay><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>2</cn></math></delay>
+          <listOfEventAssignments><eventAssignment variable="P">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><apply><plus/>
+              <ci>P</ci><cn>3</cn>
+            </apply></math>
+          </eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    for trigger_time, expected_value, expected_count in (
+        ("true", "11.9", 2),
+        ("false", "9.9", 3),
+    ):
+        result = Atomizer(quiet_mode=True).atomize(
+            xml.format(trigger_time=trigger_time)
+        )
+
+        assert result.success, result.error
+        assert result.bngl.count(f'setParameter("P", "{expected_value}")') == expected_count
+        assert "untranslated" not in result.bngl.lower()
+
+
 def test_delay_of_affine_species_uses_initial_history_before_delay_boundary():
     from bionetgen.atomizer.modern import Atomizer
 

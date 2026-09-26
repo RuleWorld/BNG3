@@ -1,6 +1,6 @@
 # BNG3 current progress
 
-**Last targeted audit:** 2026-09-25 (full convergence checklist not re-audited)
+**Last targeted audit:** 2026-09-26 (full convergence checklist not re-audited)
 **Repository:** `RuleWorld/BNG3`
 **Branch:** `main`
 **Status:** merged convergence, nonequilibrium energy, and SBML material-gap work; release validation remains incomplete
@@ -9,6 +9,23 @@ This is the live status page for the combined BNG3 migration tree. The older
 IR migration reports and formalization reports retained in the repository are
 historical inputs and provenance records; their embedded prose is not a new
 execution instruction.
+
+## Delayed affine event follow-up — 2026-09-26
+
+Atomizer now schedules delayed self-reset events for affine parameter
+rate-rules while respecting `useValuesFromTriggerTime`; one-shot threshold
+events can also snapshot values from other proven affine trajectories. Exact
+reaction-flux analysis now honors reaction-local parameter scope, which
+recovered constant flux for `S1` in cases `01715` and `01716`.
+
+The full pinned one-unit SBML Test Suite moved from `1,496 passed / 427
+unsupported` to `1,500 / 423`, with zero regressions. Four cases gained
+`01710`, `01711`, `01715`, and `01716`; full report digest and boundaries are
+in the convergence checklist. At 10 units/100 steps, `01701`, `01702`,
+`01715`, and `01716` all roundtrip and match libRoadRunner across all
+observables, with maximum absolute difference `2.85e-14`. Full Python suite
+passes `562` tests with `28` skipped when run with the compiled extension.
+The full curated BioModels refresh is running; its result is not yet known.
 
 ## Current-head Atomizer and oracle validation — 2026-09-25
 
