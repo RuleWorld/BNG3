@@ -6049,6 +6049,28 @@ the other groups remain implementation targets.
   the suite's one-unit horizon (maximum absolute difference `8.88e-16`); a
   targeted three-unit run also passes after the delayed event executes.
 - [x] Full Python suite: `571 passed, 28 skipped`; repository-wide Black,
-  Ruff, and `git diff --check` pass. The current full BioModels refresh predates
-  this feature; a fresh full run is still in progress, so no curated-model gain
-  is claimed yet.
+  Ruff, and `git diff --check` pass. A targeted screen of 6,724 cached
+  BioModels XML files found no compartment rate-rule event triggers; no
+  curated-model gain is claimed.
+
+## Exponential self-reset events beyond the requested horizon — 2026-09-26
+
+- [x] A single exponential threshold-reset event whose first rising crossing
+  occurs after the configured simulation horizon is now classified as having
+  no state changes within that run. The event is omitted with an informational
+  horizon-bounded diagnostic; longer horizons retain exact recurrence
+  scheduling. Other events and unsupported trajectories remain fail-closed.
+- [x] `semantic/00026`, `00071`, `00073`, `00074`, and `00172` now pass the
+  one-unit gate. Full pinned suite: `1,524 passed, 399 unsupported, 0 failed,
+  0 timeouts`; five gains, no regressions, and supported-surface gate passes.
+  Report `/private/tmp/bng3-sbml-horizon-full.json`, SHA-256
+  `5a959bb2fbb3d5de1f71db0b59e64319f959e9ddedf3c146808499aeee70fcba`.
+  All five match libRoadRunner 2.10.0 exactly across generated observables at
+  the one-unit horizon.
+- [x] Full Python suite: `572 passed, 28 skipped`; repository-wide Black,
+  Ruff, and `git diff --check` pass. A targeted scan of 6,724 cached BioModels
+  XML files found no single-event exponential self-reset candidate (9 XML
+  parse errors); no curated-model gain is claimed. The earlier full curated
+  refresh was canceled because it predated this code and the compartment
+  source screen had no matching models; the prior inventory report remains the
+  last full BioModels benchmark.

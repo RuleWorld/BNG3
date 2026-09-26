@@ -3009,7 +3009,21 @@ def _update_event_translation_warning(model: SBMLModel, event_result: object) ->
 
     converted = int(getattr(event_result, "converted", 0) or 0)
     untranslated = list(getattr(event_result, "untranslated", []) or [])
+    horizon_limited = int(getattr(event_result, "horizon_limited", 0) or 0)
     if not converted and not untranslated:
+        if horizon_limited:
+            message = (
+                f"{horizon_limited} SBML event(s) are proven to make no state "
+                "changes through the configured simulation horizon; no "
+                "scheduled actions are required."
+            )
+            for warning in getattr(model, "import_warnings", []) or []:
+                if warning.get("category") != "event":
+                    continue
+                warning.message = message
+                warning.severity = "info"
+                warning.count = len(model.events)
+                return
         if model.events:
             message = (
                 f"{len(model.events)} SBML event(s) were proven not to fire; "

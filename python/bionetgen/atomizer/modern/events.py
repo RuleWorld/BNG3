@@ -144,6 +144,7 @@ class EventTranslationResult:
     actions_block: Optional[str]
     converted: int
     untranslated: List[Tuple[SBMLEvent, str]]
+    horizon_limited: int = 0
 
     @property
     def actionsBlock(self):
@@ -887,6 +888,7 @@ def synthesize_event_actions(
 
     untranslated: List[Tuple[SBMLEvent, str]] = []
     scheduled: List[Tuple[float, List[Tuple[str, str, float]], float]] = []
+    horizon_limited = 0
 
     def fold(
         expression: str,
@@ -1594,6 +1596,10 @@ def synthesize_event_actions(
                 continue
             first_trigger = math.log(ratio) / exponent
             if not math.isfinite(first_trigger) or first_trigger < 0:
+                continue
+            if first_trigger > context.base_t_end + 1e-12:
+                periodic_handled.add(id(event))
+                horizon_limited += 1
                 continue
 
         reset_ratio = threshold / reset_value
@@ -2564,7 +2570,10 @@ def synthesize_event_actions(
 
     if not scheduled:
         return EventTranslationResult(
-            None, periodic_converted + normal_converted, untranslated
+            None,
+            periodic_converted + normal_converted,
+            untranslated,
+            horizon_limited,
         )
 
     scheduled.sort(key=lambda item: (item[0], -item[2]))
@@ -2637,7 +2646,10 @@ def synthesize_event_actions(
         )
 
     return EventTranslationResult(
-        "\n".join(lines), periodic_converted + normal_converted, untranslated
+        "\n".join(lines),
+        periodic_converted + normal_converted,
+        untranslated,
+        horizon_limited,
     )
 
 

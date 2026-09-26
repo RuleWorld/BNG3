@@ -769,6 +769,47 @@ def test_rate_of_exponential_parameter_lowers_exact_event_crossing():
     assert "untranslated" not in result.bngl.lower()
 
 
+def test_exponential_self_reset_after_requested_horizon_is_informational():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="exponential_self_reset_after_horizon">
+        <listOfCompartments><compartment id="c" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies>
+          <species id="A" compartment="c" initialAmount="1" hasOnlySubstanceUnits="true"/>
+          <species id="B" compartment="c" initialAmount="0" hasOnlySubstanceUnits="true"/>
+        </listOfSpecies>
+        <listOfParameters><parameter id="k" value="1" constant="true"/></listOfParameters>
+        <listOfReactions><reaction id="decay" reversible="false">
+          <listOfReactants><speciesReference species="A" stoichiometry="1"/></listOfReactants>
+          <listOfProducts><speciesReference species="B" stoichiometry="1"/></listOfProducts>
+          <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><times/><ci>k</ci><ci>A</ci></apply>
+          </math></kineticLaw>
+        </reaction></listOfReactions>
+        <listOfEvents><event id="reset">
+          <trigger initialValue="true" persistent="true">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><lt/><ci>A</ci><cn>0.1</cn></apply>
+            </math>
+          </trigger>
+          <listOfEventAssignments><eventAssignment variable="A">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math>
+          </eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True, t_end=1).atomize(xml)
+
+    assert result.success, result.error
+    assert "state-dependent or non-constant event" not in result.bngl
+    assert (
+        "make no state changes through the configured simulation horizon" in result.bngl
+    )
+    assert "begin actions" not in result.bngl
+
+
 def test_exponential_parameter_event_rejects_dynamic_coefficient():
     from bionetgen.atomizer.modern import Atomizer
 

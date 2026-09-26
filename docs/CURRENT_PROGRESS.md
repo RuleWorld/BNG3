@@ -1770,4 +1770,15 @@ derivatives. SBML Test Suite `semantic/01120` passes, raising the full count to
 BNG3 CVODE observables agree with libRoadRunner to `8.88e-16` maximum absolute
 difference; targeted three-unit validation also covers delayed execution.
 Full Python: 571 passed, 28 skipped; Black, Ruff, and diff checks pass. A new
-full BioModels refresh remains in progress.
+cached BioModels screen found no model with this compartment-trigger pattern;
+no curated-model gain is claimed.
+
+The Atomizer now marks a single exponential self-reset event as inactive when
+its first threshold crossing is after the configured simulation horizon.
+Five SBML Test Suite cases pass with exact observable parity versus
+libRoadRunner: `00026`, `00071`, `00073`, `00074`, and `00172`. Full suite:
+1,524 passed, 399 unsupported, zero failed or timed out; no regressions. Full
+Python: 572 passed, 28 skipped; Black, Ruff, and diff checks pass. A scan of
+6,724 cached BioModels XML files found no matching exponential self-reset
+candidate; the previous full BioModels inventory remains the last complete
+benchmark.
