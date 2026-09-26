@@ -314,11 +314,31 @@ class _NumericParser:
                             )
                         )
                     if (
-                        function_name in {"eq", "neq"}
+                        function_name == "eq"
+                        and len(arguments) >= 2
+                        and all(value is not None for value in arguments)
+                    ):
+                        return float(all(value == arguments[0] for value in arguments[1:]))
+                    if (
+                        function_name == "neq"
                         and len(arguments) == 2
                         and all(value is not None for value in arguments)
                     ):
                         return float(comparisons[function_name](*arguments))
+                    if function_name == "if" and len(arguments) == 3:
+                        condition = arguments[0]
+                        if condition is None:
+                            return None
+                        return arguments[1] if condition != 0 else arguments[2]
+                    if function_name == "piecewise" and arguments:
+                        pair_limit = len(arguments) - (1 if len(arguments) % 2 else 0)
+                        for index in range(0, pair_limit, 2):
+                            condition = arguments[index + 1]
+                            if condition is None:
+                                return None
+                            if condition != 0:
+                                return arguments[index]
+                        return arguments[-1] if len(arguments) % 2 else 0.0
                     if function_name == "and" and arguments:
                         if any(value == 0 for value in arguments):
                             return 0.0
@@ -1815,7 +1835,7 @@ def synthesize_event_actions(
             and not event.trigger_persistent
             and execution_time >= window_end
         ):
-            if affine_interval is not None:
+            if affine_interval is not None or window_end is not None:
                 normal_converted += 1
                 continue
             untranslated.append(

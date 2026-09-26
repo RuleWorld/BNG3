@@ -1595,3 +1595,15 @@ and diff checks pass. The case has no observables, so its libRoadRunner
 simulation comparison is vacuous. Rate-rule-driven parameters and models with
 other dynamics remain outside this proof. The full curated BioModels refresh
 predates this slice. See the checklist for the report digest and scope.
+
+Event-value folding now evaluates constant SBML `piecewise` branches and
+n-ary chained equality/inequality predicates. A nonpersistent event whose
+fixed delay places execution at or after its proven time-window end is safely
+omitted as canceled. Five more official cases pass with no regressions:
+`01212`, `01213`, `01214`, `01526`, and `01661`. The full suite is `1,495
+passed, 428 unsupported, 0 failed, 0 timed out`; event blockers fell from 331
+to 326. Full Python: `560 passed, 28 skipped`; Ruff, compileall, and diff
+checks pass. All five new cases have no observables, so their libRoadRunner
+simulation comparisons are vacuous. A cached BioModels source scan found no
+matching piecewise event or nonpersistent time-window cancellation shape; the
+full curated report predates this slice. See the convergence checklist.

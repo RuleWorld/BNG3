@@ -253,7 +253,7 @@ def test_static_state_threshold_can_use_another_static_species():
     assert result.untranslated == []
 
 
-def test_nonpersistent_delayed_window_event_is_rejected_after_window_closes():
+def test_nonpersistent_delayed_window_event_is_omitted_after_window_closes():
     from bionetgen.atomizer.modern.events import (
         EventTranslationContext,
         synthesize_event_actions,
@@ -277,9 +277,9 @@ def test_nonpersistent_delayed_window_event_is_rejected_after_window_closes():
         ),
     )
 
-    assert result.converted == 0
+    assert result.converted == 1
     assert result.actions_block is None
-    assert "may be canceled" in result.untranslated[0][1]
+    assert result.untranslated == []
 
 
 def test_constant_false_mathml_conjunction_folds_with_unknown_time_term():

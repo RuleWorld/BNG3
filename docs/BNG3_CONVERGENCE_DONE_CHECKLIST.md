@@ -5793,3 +5793,29 @@ the other groups remain implementation targets.
 - [x] Full Python suite: `558 passed, 28 skipped`; changed-file Ruff,
   compileall, and `git diff --check` pass. The full curated BioModels rerun
   predates this slice.
+
+## Constant piecewise event values and exact window cancellation — 2026-09-26
+
+- [x] Fold constant `piecewise` and `if` branches lazily so unselected
+  expressions may remain dynamic; evaluate n-ary chained equality predicates
+  according to their adjacent comparisons. For nonpersistent events, omit the
+  scheduled action when a proven fixed time-window end occurs at or before its
+  delayed execution time.
+- [x] Five official cases now pass: `semantic/01212`, `01213`, `01214`,
+  `01526`, and `01661`. Full pinned suite: `1,495 passed, 428 unsupported,
+  0 failed, 0 timeouts`; five gains and zero regressions from `1,490/433`.
+  Event blockers fell from 331 to 326. Report
+  `/private/tmp/bng3-sbml-piecewise-events-full.json`, SHA-256
+  `9a0ce425da2b887492ba1c9a9e75767585ff6c219e1f2e1afa36037ab7069474`.
+- [x] The full SBML report records all five new cases as having zero
+  observables; generated-model/libRoadRunner comparisons are therefore
+  vacuous. This slice establishes event parsing/lowering and roundtrip checks,
+  not numerical simulation parity.
+- [x] Full Python suite: `560 passed, 28 skipped`; changed-file Ruff,
+  compileall, and `git diff --check` pass. The prior cached-source screen
+  covered 1,084 curated BioModels XML files: 167 had events, only three events
+  used a piecewise expression, and those had a complex dynamic trigger. A
+  second screen found no model with a literal-delay, nonpersistent bounded-time
+  event whose delay reaches the window end. The prior full curated report
+  remains the only full-inventory result for this slice; no curated gain is
+  claimed.
