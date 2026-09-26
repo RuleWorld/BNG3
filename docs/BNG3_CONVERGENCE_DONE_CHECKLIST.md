@@ -4,7 +4,7 @@
 **Last targeted audit:** 2026-09-26 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
 **Working branch:** `main`
-**Current base:** `main` at `f23d9eb3b2e34da746e5804db7ea2f8a03cd6222`; species-difference threshold work is pushed and exact-head CI is running
+**Current base:** `main` at `2f6a9a768942eac858e17bb0b1156505c7305f93`; fixed-component species-difference extension is in progress
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -39,19 +39,22 @@ capability inventory.
   coordinate and the resulting ODE remains autonomous quadratic. The resolver
   rejects event assignments that alter either component or read either
   component at a snapshot where the supported lowering cannot preserve it.
-- [x] Five SBML Test Suite cases gained relative to the immediately preceding
+  A fixed or boundary component is allowed as the non-coordinate side; the
+  dynamic component supplies the reaction coordinate.
+- [x] Seven SBML Test Suite cases gained relative to the earlier
   `1,582 passed / 338 unsupported / 3 failed` working report:
-  `00351`, `00408`, `00429`, `00746`, and `00766`. No case regressed against
-  that report. Current pinned suite: `1,587 passed, 333 unsupported, 3 failed,
-  0 timed out`; the three existing CVODE failures are `00955`, `01148`, and
-  `01487`. Report `/private/tmp/bng3-sbml-difference-working.json`, SHA-256
-  `17f0b59e400fa60f70cd42788c8a061e5089b0626f0465b47f99e76fb9055e05`.
-- [x] All five gains pass BNG3/libRoadRunner 2.10.0 comparisons over eight
+  `00351`, `00384`, `00408`, `00429`, `00441`, `00746`, and `00766`. No case
+  regressed against that report. Current pinned suite: `1,589 passed, 331
+  unsupported, 3 failed, 0 timed out`; the three CVODE failures are `00955`,
+  `01148`, and `01487`. Report
+  `/private/tmp/bng3-sbml-difference-final-working.json`, SHA-256
+  `66fc2b08c9dacd4d484ee43888c2e395a46b9e6c97ed14ed56597456c054afeb`.
+- [x] All seven gains pass BNG3/libRoadRunner 2.10.0 comparisons over eight
   observables each (10-unit horizon, 100 steps). Maximum absolute error is
-  `3.01e-9`; maximum scaled error is `0.0352`.
+  `4.72e-8`; maximum scaled error is `0.0352`.
 - [x] Full Python suite: `581 passed, 28 skipped`; Black, Ruff, and
   `git diff --check` pass.
-- [ ] Exact-head CI for `f23d9eb3b2e34da746e5804db7ea2f8a03cd6222` is running (CI workflow `36277294500`; cross-tool parity `36277294520`; CodeQL `36277294478`).
+- [ ] Exact-head CI for the fixed-component extension is pending push.
 
 ## Scalar quadratic event threshold crossing — 2026-09-26
 

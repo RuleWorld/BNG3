@@ -9,18 +9,20 @@
 
 Atomizer now resolves a restricted trigger comparing two species when their
 difference follows an exact autonomous quadratic ODE along a rank-one reaction
-coordinate. Event assignments that change either component or read those
-components in an unsupported assignment snapshot remain fail-closed. This
-gains SBML Test Suite cases `00351`, `00408`, `00429`, `00746`, and `00766`,
-with no regressions against the immediately preceding working report. All five
-pass 10-unit/100-step BNG3/libRoadRunner 2.10.0 comparisons over eight
-observables each; maximum absolute error is `3.01e-9` and maximum scaled error
-is `0.0352`. Full Python passes (`581 passed, 28 skipped`). The current full
-pinned suite is `1,587 passed, 333 unsupported, 3 failed, 0 timed out`; the
-three CVODE failures are `00955`, `01148`, and `01487`. Report:
-`/private/tmp/bng3-sbml-difference-working.json`, SHA-256
-`17f0b59e400fa60f70cd42788c8a061e5089b0626f0465b47f99e76fb9055e05`.
-Exact-head CI is running for `f23d9eb3b2e34da746e5804db7ea2f8a03cd6222` (CI workflow `36277294500`; cross-tool parity `36277294520`; CodeQL `36277294478`).
+coordinate. Either side can be a fixed species; the dynamic side supplies the
+reaction coordinate. Event assignments that alter either component or read
+those components in an unsupported assignment snapshot remain fail-closed.
+This gains seven SBML Test Suite cases (`00351`, `00384`, `00408`, `00429`,
+`00441`, `00746`, `00766`) with no regressions against the immediately
+preceding `1,582 passed / 338 unsupported / 3 failed` report. All seven pass
+10-unit/100-step BNG3/libRoadRunner 2.10.0 comparisons over eight observables
+each; maximum absolute error is `4.72e-8` and maximum scaled error is `0.0352`.
+Full Python passes (`581 passed, 28 skipped`). Current pinned suite is `1,589
+passed, 331 unsupported, 3 failed, 0 timed out`; the three CVODE failures are
+`00955`, `01148`, and `01487`. Report:
+`/private/tmp/bng3-sbml-difference-final-working.json`, SHA-256
+`66fc2b08c9dacd4d484ee43888c2e395a46b9e6c97ed14ed56597456c054afeb`.
+Exact-head CI for this fixed-component extension is pending push.
 
 This is the live status page for the combined BNG3 migration tree. The older
 IR migration reports and formalization reports retained in the repository are

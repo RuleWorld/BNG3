@@ -6746,7 +6746,17 @@ def generate_bngl(
                     ):
                         return None
                 state_expression = ((left_species, 1.0), (right_species, -1.0))
-                target_id = left_species
+                target_id = next(
+                    (
+                        species_id
+                        for species_id in (left_species, right_species)
+                        if not model.species[species_id].constant
+                        and not model.species[species_id].boundary_condition
+                    ),
+                    None,
+                )
+                if target_id is None:
+                    return None
             target = model.species.get(target_id) if target_id else None
             if target is None or target.constant or target.boundary_condition:
                 return None
