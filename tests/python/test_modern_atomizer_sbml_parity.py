@@ -1112,6 +1112,47 @@ def test_delayed_affine_rate_rule_self_reset_respects_value_time():
         assert "untranslated" not in result.bngl.lower()
 
 
+def test_affine_rate_rule_self_reset_supports_static_companion_assignment():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="affine_rate_rule_event_multiple_assignments">
+        <listOfParameters>
+          <parameter id="P" value="10" constant="false"/>
+          <parameter id="Q" value="0" constant="false"/>
+        </listOfParameters>
+        <listOfRules><rateRule variable="P">
+          <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>-1</cn></math>
+        </rateRule></listOfRules>
+        <listOfEvents><event id="reset" useValuesFromTriggerTime="true">
+          <trigger initialValue="true" persistent="true">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><leq/><ci>P</ci><cn>8.9</cn></apply>
+            </math>
+          </trigger>
+          <delay><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0.5</cn></math></delay>
+          <listOfEventAssignments>
+            <eventAssignment variable="P">
+              <math xmlns="http://www.w3.org/1998/Math/MathML"><apply><plus/>
+                <ci>P</ci><cn>3</cn>
+              </apply></math>
+            </eventAssignment>
+            <eventAssignment variable="Q">
+              <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>5</cn></math>
+            </eventAssignment>
+          </listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True).atomize(xml)
+
+    assert result.success, result.error
+    assert result.bngl.count('setParameter("P", "11.9")') == 3
+    assert result.bngl.count('setParameter("Q", "5")') == 3
+    assert "untranslated" not in result.bngl.lower()
+
+
 def test_initial_affine_species_event_uses_rate_rule_concentration_state():
     from bionetgen.atomizer.modern import Atomizer
 

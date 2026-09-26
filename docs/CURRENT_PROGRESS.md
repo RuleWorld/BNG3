@@ -47,6 +47,18 @@ matching unsupported case, so no curated gain is claimed; prior full curated
 BioModels status is unchanged. Details and report digest are in the
 convergence checklist.
 
+## Multi-assignment affine reset events — 2026-09-26
+
+Exact affine rate-rule self-reset events can now schedule multiple unique
+parameter/species assignments when companion values are finite constants.
+Dynamic companion values remain untranslated because later recurrence values
+could depend on prior event state. A synthetic repeated-reset regression and
+the full Python suite pass (`564 passed, 28 skipped`). The full SBML suite is
+unchanged at `1,502 passed / 421 unsupported`, with zero failures or timeouts;
+the cached BioModels screen found no matching event shape in 6,538 XML files,
+so this slice gains no benchmark models. See the convergence checklist for the
+report digest and limits.
+
 ## Current-head Atomizer and oracle validation — 2026-09-25
 
 Current BNG3 committed `main` base is `a5f65ae05e26926b013f4ec3305dab34a3e9c84f`

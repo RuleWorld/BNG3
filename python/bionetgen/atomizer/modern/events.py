@@ -1418,9 +1418,10 @@ def synthesize_event_actions(
             periodic_handled.add(id(event))
             periodic_converted += 1
 
-    # A constant-slope rate-rule parameter can also reset itself through an
-    # affine assignment. Preserve delayed-event value semantics by evaluating
-    # the assignment at trigger or execution time as requested by SBML.
+    # A constant-slope rate-rule state can reset itself through an affine
+    # assignment, with additional assignments limited to static values.
+    # Preserve delayed-event semantics by evaluating the reset at trigger or
+    # execution time as requested by SBML.
     for event in events:
         if id(event) in periodic_handled or len(events) != 1:
             continue
@@ -1436,17 +1437,30 @@ def synthesize_event_actions(
         species_target = (
             None if is_parameter else context.resolve_species_pattern(identifier)
         )
-        action_kind = "param" if is_parameter else "conc"
-        action_target = standardize_name(identifier) if is_parameter else species_target
+        assignment_map = dict(assignments)
+        companion_values = {
+            variable: fold(expression)
+            for variable, expression in assignments
+            if variable != identifier
+        }
         if (
             threshold is None
             or trajectory is None
             or delay is None
             or not math.isfinite(delay)
             or delay < 0
-            or len(assignments) != 1
-            or assignments[0][0] != identifier
+            or len(assignment_map) != len(assignments)
+            or identifier not in assignment_map
             or (not is_parameter and species_target is None)
+            or any(
+                not context.is_param(variable)
+                and not context.resolve_species_pattern(variable)
+                for variable in assignment_map
+            )
+            or any(
+                value is None or not math.isfinite(value)
+                for value in companion_values.values()
+            )
             or (event.priority and fold(event.priority) is None)
         ):
             continue
@@ -1484,7 +1498,7 @@ def synthesize_event_actions(
             if not math.isfinite(first_trigger) or first_trigger < 0:
                 continue
 
-        assignment = assignments[0][1]
+        assignment = assignment_map[identifier]
         trigger_state = initial if first_trigger == 0 and initially_true else threshold
         execution_state = trigger_state + slope * float(delay)
         value_time = (
@@ -1500,6 +1514,24 @@ def synthesize_event_actions(
         )
         if reset_value is None or not math.isfinite(reset_value):
             continue
+
+        def assignment_actions(self_value: float) -> List[Tuple[str, str, float]]:
+            values = {identifier: self_value, **companion_values}
+            actions: List[Tuple[str, str, float]] = []
+            for variable in assignment_map:
+                target_species = (
+                    None
+                    if context.is_param(variable)
+                    else context.resolve_species_pattern(variable)
+                )
+                if target_species:
+                    actions.append(("conc", target_species, float(values[variable])))
+                else:
+                    actions.append(
+                        ("param", standardize_name(variable), float(values[variable]))
+                    )
+            return actions
+
         reset_is_false = (
             reset_value >= threshold
             if operator == "lt"
@@ -1513,7 +1545,7 @@ def synthesize_event_actions(
             scheduled.append(
                 (
                     first_trigger + float(delay),
-                    [(action_kind, action_target, reset_value)],
+                    assignment_actions(float(reset_value)),
                     0.0,
                 )
             )
@@ -1564,7 +1596,7 @@ def synthesize_event_actions(
                 recurrence = []
                 break
             recurrence.append(
-                (execution_time, [(action_kind, action_target, value)], 0.0)
+                (execution_time, assignment_actions(float(value)), 0.0)
             )
             count += 1
             if count > 10_000:

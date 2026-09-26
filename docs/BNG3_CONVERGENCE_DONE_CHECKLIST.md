@@ -5901,3 +5901,21 @@ the other groups remain implementation targets.
   compileall, and `git diff --check` pass. Cached curated BioModels XML screen
   found no matching unsupported one-event, species rate-rule self-assignment;
   no curated gain is claimed. Prior full BioModels status remains unchanged.
+
+## Multiple assignments on affine reset events — 2026-09-26
+
+- [x] Exact affine rate-rule self-reset events can schedule multiple unique
+  parameter/species assignments together when the self-reset assignment is
+  affine and each companion assignment folds to a finite static value. Dynamic
+  companion values remain untranslated to avoid using stale event snapshots in
+  later recurrence cycles.
+- [x] Added a synthetic regression for repeated delayed event execution with a
+  static companion assignment. Focused event regressions pass (`3 passed`);
+  full Python suite passes `564 passed, 28 skipped`. Ruff, compileall, and
+  `git diff --check` pass.
+- [x] Full pinned SBML Test Suite remains `1,502 passed, 421 unsupported,
+  0 failed, 0 timeouts`, identical to the prior report (SHA-256
+  `598cd9b1c5f04e1f457894b1b36ca51c5366c8faccd198e461c36842a7f629a8`). This
+  slice adds no official-suite pass. A cached scan of 6,538 BioModels XML files
+  found zero multi-assignment events that target a rate-rule variable; no
+  curated-model gain is claimed and the full inventory was not rerun.
