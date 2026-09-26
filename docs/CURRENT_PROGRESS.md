@@ -1574,3 +1574,12 @@ libRoadRunner on generated observables (maximum absolute difference
 `1.78e-15`). Full Python: `556 passed, 28 skipped`; Ruff, compileall, and diff
 checks pass. Curated BioModels was not rerun. See the convergence checklist
 for report digest, exact scope, and validation limits.
+
+The full offline curated BioModels roundtrip was then rerun in both flat and
+atomized modes against the same 1,096-record inventory. Statuses were
+identical to the prior full refresh: 781/1,083 SBML records passed, 127 were
+unsupported, 5 failed, and 170 timed out; 13 non-SBML records remain explicit
+inventory exclusions. No curated gain or regression is attributable to this
+slice. All 1,562 passing per-mode comparisons and 260 nonpassing comparison
+statuses are unchanged. Report digest and comparison details are recorded in
+the convergence checklist.

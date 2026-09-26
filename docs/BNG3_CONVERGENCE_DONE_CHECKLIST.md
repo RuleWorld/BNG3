@@ -5763,3 +5763,13 @@ the other groups remain implementation targets.
 - [x] Full Python suite: `556 passed, 28 skipped`; changed-file Ruff,
   compileall, and `git diff --check` pass. Full curated BioModels was not
   rerun, so no curated-model gain is claimed.
+- [x] After the SBML suite completed, reran the full offline curated BioModels
+  inventory in both Atomizer modes. All 1,096 records were present. Counts and
+  per-mode outcomes exactly match the prior full refresh: 781/1,083 SBML
+  records passed, 127 unsupported, 5 failed, and 170 timed out; 13 additional
+  non-SBML records are explicit inventory exclusions. Across 1,826 per-mode
+  results, 1,562 passed, 254 were unsupported, and 10 failed. Of 1,822
+  numerical comparisons, 1,562 passed and 260 did not; all mode and comparison
+  statuses match the prior report. Report
+  `/private/tmp/bng3-biomodel-affine-interval-full.json`, SHA-256
+  `7ed6cb084c9b9c6759b9fd02ad411928e7f95004fe80b66f359291dde2dcc66c`.
