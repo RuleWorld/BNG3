@@ -4,7 +4,7 @@
 **Last targeted audit:** 2026-09-26 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
 **Working branch:** `main`
-**Current base:** `main` at `da36c91218e84a52faaaee9424f88604adc8faf7`; static event-history folding is the current feature slice
+**Current base:** `main` at `60959f5b0df84c1f8dbaf178e212e7c0823cf9e5`; scalar quadratic event crossing is the current feature slice
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -31,6 +31,33 @@ completion charter and Section 11 of BNG3_INTEGRATION_PLAN.md into auditable
 work items. The unification work orders in docs/BNG3_unification_spec.md remain the
 detailed dependency map; provenance/capability-matrix.yml remains the
 capability inventory.
+
+## Scalar quadratic event threshold crossing — 2026-09-26
+
+- [x] A rank-one reaction network with no rules or initial assignments can
+  resolve a single species trajectory when its kinetic laws reduce to an
+  autonomous quadratic ODE `dx/dt = a*x^2 + b*x + c`. The exact first
+  threshold crossing is scheduled for simple state triggers. Variable
+  stoichiometry, conversion factors, dynamic compartments, unsupported kinetic
+  math, and nonpersistent delayed triggers fail closed.
+- [x] Full Python suite: `578 passed, 28 skipped`; Black, Ruff, and
+  `git diff --check` pass.
+- [x] Full pinned SBML Test Suite `cf38585fac5de8e0e90112febb62851ee2181816`:
+  `1,589 passed, 334 unsupported, 0 failed, 0 timed out`. Compared per case
+  with the previous full report, 31 cases gained and none regressed:
+  `00348`, `00354`, `00360`-`00362`, `00369`, `00372`, `00375`-`00377`,
+  `00386`, `00389`, `00405`, `00411`, `00417`-`00419`, `00426`, `00432`-
+  `00434`, `00443`, `00446`, `00743`, `00763`, `00845`, `00848`, `00883`,
+  `00886`, `01045`, and `01048`. Report
+  `/private/tmp/bng3-sbml-riccati-full.json`, SHA-256
+  `bcb141eb61f9533acc525dc578fdf0cc055d9dfe56281d56127c493a07c83dd8`.
+- [x] All 31 gains pass 10-unit/100-step BNG3 vs libRoadRunner 2.10.0
+  comparisons across 184 observables; maximum scaled error is `0.0476`.
+- [x] Cached BioModels scan parsed 6,759 XML files (9 parse errors) and found
+  no single-event, rank-one state-threshold candidates. No curated gain is
+  claimed; the complete curated inventory remains open.
+- [ ] Exact-head hosted CI still needs triage: earlier Python matrix jobs
+  segfaulted in libSBML while parsing the comp-flatten regression fixture.
 
 ## Static event assignment histories — 2026-09-26
 

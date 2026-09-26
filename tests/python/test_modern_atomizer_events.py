@@ -786,3 +786,32 @@ def test_rate_reset_event_folds_delayed_history_at_each_trigger():
     assert result.actions_block is not None
     assert 'setParameter("Q", "0.01")' in result.actions_block
     assert 'setParameter("Q", "0.02")' in result.actions_block
+
+
+def test_quadratic_trajectory_crossings_match_exact_state_solution():
+    import math
+
+    from bionetgen.atomizer.modern.events import (
+        _quadratic_crossing_time,
+        _quadratic_state_at_time,
+    )
+
+    cases = (
+        (1.0, 0.75, -0.75, -1.0, 0.5),
+        (0.0, 1.0, 1.0, 0.0, 1.0),
+        (1.0, 2.0, 1.0, 0.0, 0.0),
+        (0.0, 1.0, 0.0, 2.0, 1.0),
+    )
+    for initial, target, quadratic, linear, constant in cases:
+        crossing_time = _quadratic_crossing_time(
+            initial, target, quadratic, linear, constant
+        )
+        assert crossing_time is not None and crossing_time > 0
+        assert math.isclose(
+            _quadratic_state_at_time(
+                initial, quadratic, linear, constant, crossing_time
+            ),
+            target,
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        )

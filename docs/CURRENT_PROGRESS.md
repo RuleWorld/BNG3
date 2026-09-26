@@ -10,6 +10,24 @@ IR migration reports and formalization reports retained in the repository are
 historical inputs and provenance records; their embedded prose is not a new
 execution instruction.
 
+## Scalar quadratic event threshold crossing — 2026-09-26
+
+Atomizer now solves a narrow rank-one reaction family: one dynamic species
+state with kinetic laws reducible to `dx/dt = a*x^2 + b*x + c`, no rules or
+initial assignments, fixed compartments, and no dynamic stoichiometry or
+conversion factors. It schedules the exact first simple state-threshold
+crossing. This gains 31 official SBML Test Suite cases with no regressions:
+`1,589 passed / 334 unsupported`, zero failures or timeouts. All 31 gains pass
+10-unit BNG3/libRoadRunner comparisons across 184 observables; largest scaled
+error is `0.0476`. Full Python passes `578` tests with `28` skipped. Cached
+BioModels scan found no eligible models; no curated gain claimed.
+
+The earlier hosted Python matrix segfaulted inside libSBML while parsing the
+comp-flatten regression fixture; exact-head CI is still under investigation.
+
+SBML report: `/private/tmp/bng3-sbml-riccati-full.json`, SHA-256
+`bcb141eb61f9533acc525dc578fdf0cc055d9dfe56281d56127c493a07c83dd8`.
+
 ## Static event assignment histories — 2026-09-26
 
 For static SBML models with no reactions, rules, or initial assignments,

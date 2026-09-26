@@ -39,6 +39,12 @@ def _no_event_reaction_rate(_identifier: str, _event: SBMLEvent) -> Optional[flo
     return None
 
 
+def _no_event_quadratic_rate(
+    _identifier: str, _event: SBMLEvent
+) -> Optional[Tuple[float, float, float, float]]:
+    return None
+
+
 from .types import standardize_name
 
 
@@ -93,6 +99,11 @@ class EventTranslationContext:
     resolve_square_linear_rate_for_event: Callable[
         [str, SBMLEvent], Optional[Tuple[float, float]]
     ] = _no_event_square_linear_rate
+    # Return (initial, quadratic, linear, constant) for a proven scalar ODE
+    # dx/dt = quadratic*x^2 + linear*x + constant.
+    resolve_quadratic_rate_for_event: Callable[
+        [str, SBMLEvent], Optional[Tuple[float, float, float, float]]
+    ] = _no_event_quadratic_rate
     # Resolve a reaction identifier as its kinetic-law rate when that rate is
     # exactly foldable before the event executes.
     resolve_reaction_rate_for_event: Callable[[str, SBMLEvent], Optional[float]] = (
@@ -893,6 +904,114 @@ def _format_number(value: float) -> str:
     if float(value).is_integer():
         return str(int(value))
     return str(float(f"{value:.12g}"))
+
+
+def _quadratic_state_at_time(
+    initial: float, quadratic: float, linear: float, constant: float, time: float
+) -> Optional[float]:
+    if time < 0 or not all(
+        math.isfinite(value) for value in (initial, quadratic, linear, constant, time)
+    ):
+        return None
+    if time == 0:
+        return initial
+    scale = max(1.0, abs(quadratic), abs(linear), abs(constant))
+    if abs(quadratic) <= 1e-14 * scale:
+        if abs(linear) <= 1e-14 * scale:
+            value = initial + constant * time
+            return value if math.isfinite(value) else None
+        equilibrium = -constant / linear
+        try:
+            value = equilibrium + (initial - equilibrium) * math.exp(linear * time)
+        except OverflowError:
+            return None
+        return value if math.isfinite(value) else None
+    discriminant = linear * linear - 4.0 * quadratic * constant
+    tolerance = 1e-14 * max(1.0, linear * linear, abs(4.0 * quadratic * constant))
+    if discriminant > tolerance:
+        root = math.sqrt(discriminant)
+        first = (-linear + root) / (2.0 * quadratic)
+        second = (-linear - root) / (2.0 * quadratic)
+        if abs(initial - first) <= tolerance or abs(initial - second) <= tolerance:
+            return initial
+        initial_ratio = (initial - first) / (initial - second)
+        try:
+            ratio = initial_ratio * math.exp(quadratic * (first - second) * time)
+        except OverflowError:
+            return None
+        denominator = ratio - 1.0
+        if not math.isfinite(ratio) or abs(denominator) <= 1e-14:
+            return None
+        value = (ratio * second - first) / denominator
+    elif discriminant < -tolerance:
+        root = math.sqrt(-discriminant)
+        angle = math.atan((2.0 * quadratic * initial + linear) / root)
+        angle += root * time / 2.0
+        if angle >= math.pi / 2.0:
+            return None
+        value = (root * math.tan(angle) - linear) / (2.0 * quadratic)
+    else:
+        repeated = -linear / (2.0 * quadratic)
+        delta = initial - repeated
+        if delta == 0:
+            return initial
+        denominator = 1.0 - quadratic * delta * time
+        if abs(denominator) <= 1e-14:
+            return None
+        value = repeated + delta / denominator
+    return value if math.isfinite(value) else None
+
+
+def _quadratic_crossing_time(
+    initial: float,
+    target: float,
+    quadratic: float,
+    linear: float,
+    constant: float,
+) -> Optional[float]:
+    if not all(
+        math.isfinite(value) for value in (initial, target, quadratic, linear, constant)
+    ):
+        return None
+    if initial == target:
+        return 0.0
+    scale = max(1.0, abs(quadratic), abs(linear), abs(constant))
+    if abs(quadratic) <= 1e-14 * scale:
+        if abs(linear) <= 1e-14 * scale:
+            return (target - initial) / constant if constant else None
+        initial_derivative = linear * initial + constant
+        if initial_derivative == 0:
+            return None
+        ratio = (target + constant / linear) / (initial + constant / linear)
+        if ratio <= 0:
+            return None
+        time = math.log(ratio) / linear
+    else:
+        discriminant = linear * linear - 4.0 * quadratic * constant
+        tolerance = 1e-14 * max(1.0, linear * linear, abs(4.0 * quadratic * constant))
+        if discriminant > tolerance:
+            root = math.sqrt(discriminant)
+            first = (-linear + root) / (2.0 * quadratic)
+            second = (-linear - root) / (2.0 * quadratic)
+            initial_ratio = (initial - first) / (initial - second)
+            target_ratio = (target - first) / (target - second)
+            ratio = target_ratio / initial_ratio if initial_ratio else -1.0
+            if ratio <= 0 or not math.isfinite(ratio):
+                return None
+            time = math.log(ratio) / (quadratic * (first - second))
+        elif discriminant < -tolerance:
+            root = math.sqrt(-discriminant)
+            initial_angle = math.atan((2.0 * quadratic * initial + linear) / root)
+            target_angle = math.atan((2.0 * quadratic * target + linear) / root)
+            time = 2.0 * (target_angle - initial_angle) / root
+        else:
+            repeated = -linear / (2.0 * quadratic)
+            initial_delta = initial - repeated
+            target_delta = target - repeated
+            if initial_delta == 0 or target_delta == 0:
+                return None
+            time = (1.0 / initial_delta - 1.0 / target_delta) / quadratic
+    return time if math.isfinite(time) and time >= 0 else None
 
 
 def _render_set(kind: str, target: str, value: float) -> str:
@@ -2555,6 +2674,61 @@ def synthesize_event_actions(
                                         initial_value,
                                         squared_slope,
                                     )
+                                    trigger_state_values = {identifier: crossing_value}
+                    if (
+                        threshold is None
+                        and not event_changes_trigger_state
+                        and not rate_of_threshold
+                        and (not event.delay or event.trigger_persistent)
+                    ):
+                        quadratic_trajectory = context.resolve_quadratic_rate_for_event(
+                            identifier, event
+                        )
+                        if quadratic_trajectory is not None:
+                            (
+                                initial_value,
+                                quadratic,
+                                linear,
+                                constant,
+                            ) = quadratic_trajectory
+                            initially_true = (
+                                initial_value > crossing_value
+                                if operator == "gt"
+                                else (
+                                    initial_value >= crossing_value
+                                    if operator == "geq"
+                                    else (
+                                        initial_value < crossing_value
+                                        if operator == "lt"
+                                        else initial_value <= crossing_value
+                                    )
+                                )
+                            )
+                            if initially_true:
+                                if not event.trigger_initial_value:
+                                    threshold = "0"
+                                    trigger_state_values = {identifier: initial_value}
+                                else:
+                                    normal_converted += 1
+                                    continue
+                            else:
+                                crossing_time = _quadratic_crossing_time(
+                                    initial_value,
+                                    crossing_value,
+                                    quadratic,
+                                    linear,
+                                    constant,
+                                )
+                                derivative = (
+                                    quadratic * crossing_value * crossing_value
+                                    + linear * crossing_value
+                                    + constant
+                                )
+                                rising = (
+                                    operator in {"gt", "geq"} and derivative > 0
+                                ) or (operator in {"lt", "leq"} and derivative < 0)
+                                if rising and crossing_time is not None:
+                                    threshold = _format_number(crossing_time)
                                     trigger_state_values = {identifier: crossing_value}
         if threshold is None:
             window = _parse_gated_time_window(

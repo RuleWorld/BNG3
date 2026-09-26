@@ -6670,6 +6670,265 @@ def generate_bngl(
             squared_slope = 2.0 * amount_rate_coefficient
             return (initial, squared_slope) if math.isfinite(squared_slope) else None
 
+        def resolve_quadratic_event_rate(
+            identifier: str, event_context: SBMLEvent
+        ) -> Optional[Tuple[float, float, float, float]]:
+            """Resolve a scalar quadratic ODE in a rank-one reaction network."""
+            if (
+                model.rules
+                or model.initial_assignments
+                or any(
+                    event is not event_context and event.assignments
+                    for event in model.events
+                )
+            ):
+                return None
+            compartment_names = {
+                standardize_name(compartment_id)
+                for compartment_id in model.compartments
+            }
+            if (
+                model.conversion_factor
+                or any(species.conversion_factor for species in model.species.values())
+                or any(
+                    standardize_name(assignment.variable) in compartment_names
+                    for assignment in event_context.assignments
+                )
+            ):
+                return None
+            target_id = next(
+                (
+                    sid
+                    for sid in model.species
+                    if standardize_name(sid) == standardize_name(identifier)
+                ),
+                None,
+            )
+            target = model.species.get(target_id) if target_id else None
+            if target is None or target.constant or target.boundary_condition:
+                return None
+            target_compartment = model.compartments.get(target.compartment or "")
+            if not target.has_only_substance_units and (
+                target_compartment is None
+                or not target_compartment.constant
+                or target_compartment.size <= 0
+            ):
+                return None
+            target_units = (
+                1.0
+                if target.has_only_substance_units
+                else 1.0 / float(target_compartment.size)
+            )
+            initial = resolve_initial_event_value(target_id)
+            if initial is None or not math.isfinite(initial):
+                return None
+
+            dynamic_species = {
+                sid: species
+                for sid, species in model.species.items()
+                if not species.constant and not species.boundary_condition
+            }
+            reaction_vectors: List[Tuple[object, Dict[str, float]]] = []
+            for reaction in model.reactions.values():
+                if reaction.fast or reaction.conversion_factor:
+                    return None
+                vector = {sid: 0.0 for sid in dynamic_species}
+                for sign, side in (
+                    (-1.0, reaction.reactants),
+                    (1.0, reaction.products),
+                ):
+                    for reference in side:
+                        if reference.variable_stoichiometry:
+                            return None
+                        if reference.species in vector:
+                            vector[reference.species] += sign * float(
+                                reference.stoichiometry
+                            )
+                if any(abs(value) > 1e-14 for value in vector.values()):
+                    reaction_vectors.append((reaction, vector))
+            base_vector = next(
+                (
+                    vector
+                    for _reaction, vector in reaction_vectors
+                    if abs(vector.get(target_id, 0.0)) > 1e-14
+                ),
+                None,
+            )
+            if base_vector is None:
+                return None
+            target_stoich = base_vector[target_id]
+            for _reaction, vector in reaction_vectors:
+                ratio = vector[target_id] / target_stoich
+                if any(
+                    abs(vector[sid] - ratio * base_vector[sid])
+                    > 1e-12 * max(1.0, abs(vector[sid]), abs(ratio * base_vector[sid]))
+                    for sid in dynamic_species
+                ):
+                    return None
+
+            species_polynomials: Dict[str, Tuple[float, float]] = {}
+            for sid, species in model.species.items():
+                state_initial = resolve_initial_event_value(sid)
+                if state_initial is None or not math.isfinite(state_initial):
+                    return None
+                slope = 0.0
+                if sid in dynamic_species:
+                    compartment = model.compartments.get(species.compartment or "")
+                    if not species.has_only_substance_units and (
+                        compartment is None
+                        or not compartment.constant
+                        or compartment.size <= 0
+                    ):
+                        return None
+                    units = (
+                        1.0
+                        if species.has_only_substance_units
+                        else 1.0 / float(compartment.size)
+                    )
+                    slope = base_vector[sid] * units / (target_stoich * target_units)
+                species_polynomials[standardize_name(sid)] = (
+                    float(state_initial) - slope * float(initial),
+                    slope,
+                )
+
+            assigned_here = {
+                standardize_name(assignment.variable)
+                for assignment in event_context.assignments
+            }
+
+            def rate_polynomial(
+                node: ast.AST, local_values: Mapping[str, float]
+            ) -> Optional[Tuple[float, float, float]]:
+                if isinstance(node, ast.Constant) and isinstance(
+                    node.value, (int, float)
+                ):
+                    return (0.0, 0.0, float(node.value))
+                if isinstance(node, ast.Name):
+                    symbol = standardize_name(node.id)
+                    if symbol in species_polynomials:
+                        offset, slope = species_polynomials[symbol]
+                        return (0.0, slope, offset)
+                    if symbol in local_values:
+                        return (0.0, 0.0, float(local_values[symbol]))
+                    if is_compile_time_constant(node.id):
+                        value = resolve_event_parameter(node.id)
+                    elif symbol in assigned_here:
+                        if any(
+                            assignment.variable == node.id
+                            for event in model.events
+                            if event is not event_context
+                            for assignment in event.assignments
+                        ):
+                            return None
+                        value = resolve_event_parameter(node.id)
+                    else:
+                        value = None
+                    return (0.0, 0.0, float(value)) if value is not None else None
+                if isinstance(node, ast.UnaryOp) and isinstance(
+                    node.op, (ast.UAdd, ast.USub)
+                ):
+                    value = rate_polynomial(node.operand, local_values)
+                    if value is None:
+                        return None
+                    sign = -1.0 if isinstance(node.op, ast.USub) else 1.0
+                    return tuple(sign * part for part in value)
+                if not isinstance(node, ast.BinOp):
+                    return None
+                left = rate_polynomial(node.left, local_values)
+                right = rate_polynomial(node.right, local_values)
+                if left is None or right is None:
+                    return None
+                if isinstance(node.op, (ast.Add, ast.Sub)):
+                    sign = -1.0 if isinstance(node.op, ast.Sub) else 1.0
+                    return tuple(a + sign * b for a, b in zip(left, right))
+                if isinstance(node.op, ast.Mult):
+                    degree_three = left[0] * right[1] + left[1] * right[0]
+                    degree_four = left[0] * right[0]
+                    if abs(degree_three) > 1e-12 or abs(degree_four) > 1e-12:
+                        return None
+                    return (
+                        left[0] * right[2] + left[1] * right[1] + left[2] * right[0],
+                        left[1] * right[2] + left[2] * right[1],
+                        left[2] * right[2],
+                    )
+                if isinstance(node.op, ast.Div):
+                    if abs(right[0]) > 1e-14 or abs(right[1]) > 1e-14 or right[2] == 0:
+                        return None
+                    return tuple(value / right[2] for value in left)
+                if isinstance(node.op, ast.Pow):
+                    if any(abs(value) > 1e-14 for value in right[:2]):
+                        return None
+                    power = right[2]
+                    if power not in (0, 1, 2):
+                        return None
+                    if power == 0:
+                        return (0.0, 0.0, 1.0)
+                    if power == 1:
+                        return left
+                    return rate_polynomial(
+                        ast.BinOp(left=node.left, op=ast.Mult(), right=node.left),
+                        local_values,
+                    )
+                return None
+
+            flux_coefficients = (0.0, 0.0, 0.0)
+            for reaction, vector in reaction_vectors:
+                net_target = vector.get(target_id, 0.0)
+                if abs(net_target) <= 1e-14:
+                    continue
+                kinetic_law = reaction.kinetic_law
+                expression = str(
+                    getattr(kinetic_law, "math", "")
+                    or (
+                        kinetic_law.get("math", "")
+                        if isinstance(kinetic_law, Mapping)
+                        else ""
+                    )
+                    or ""
+                ).strip()
+                if not expression:
+                    return None
+                expression = extend_function(expression, {}, model.function_definitions)
+                try:
+                    parsed = ast.parse(expression, mode="eval").body
+                except (TypeError, ValueError, SyntaxError):
+                    return None
+                local_parameters = (
+                    kinetic_law.get("localParameters", [])
+                    if isinstance(kinetic_law, Mapping)
+                    else getattr(kinetic_law, "local_parameters", [])
+                )
+                local_values: Dict[str, float] = {}
+                for parameter in local_parameters or []:
+                    local_id = str(
+                        parameter.get("id", "")
+                        if isinstance(parameter, Mapping)
+                        else getattr(parameter, "id", "")
+                    )
+                    raw_value = (
+                        parameter.get("value")
+                        if isinstance(parameter, Mapping)
+                        else getattr(parameter, "value", None)
+                    )
+                    try:
+                        local_values[standardize_name(local_id)] = float(raw_value)
+                    except (TypeError, ValueError):
+                        return None
+                polynomial = rate_polynomial(parsed, local_values)
+                if polynomial is None:
+                    return None
+                factor = net_target * target_units
+                flux_coefficients = tuple(
+                    total + factor * value
+                    for total, value in zip(flux_coefficients, polynomial)
+                )
+            quadratic, linear, constant = flux_coefficients
+            if not all(
+                math.isfinite(value) for value in (initial, quadratic, linear, constant)
+            ):
+                return None
+            return initial, quadratic, linear, constant
+
         def resolve_rate_event_reset(
             identifier: str,
         ) -> Optional[Tuple[float, float]]:
@@ -6826,6 +7085,7 @@ def generate_bngl(
                     resolve_exponential_event_rate(identifier, event)
                 ),
                 resolve_square_linear_rate_for_event=(resolve_square_linear_event_rate),
+                resolve_quadratic_rate_for_event=resolve_quadratic_event_rate,
                 resolve_reaction_rate_for_event=resolve_event_reaction_rate,
                 resolve_rate_reset=resolve_rate_event_reset,
                 static_event_state=(
