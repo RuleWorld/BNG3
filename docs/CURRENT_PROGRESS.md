@@ -10,6 +10,26 @@ IR migration reports and formalization reports retained in the repository are
 historical inputs and provenance records; their embedded prose is not a new
 execution instruction.
 
+## Event-local delayed values and simultaneous priorities — 2026-09-26
+
+Atomizer now folds delayed event values against event-local affine histories
+and resolves dynamic priority for a narrow, provable pair: exactly two
+no-delay events with identical triggers, one affine-state priority strictly
+higher than the other's static priority. This gains 11 official SBML Test
+Suite cases: `01267`, `01298`, `01508`, `01509`, `01512`, `01681`-`01683`,
+and `01705`-`01707`. Full suite is `1,536 passed / 387 unsupported`, with zero
+failures, timeouts, or regressions; event blockers fell from 296 to 285. Full
+Python passes `574` tests with `28` skipped. Targeted 10-unit BNG3/libRoadRunner
+comparisons pass all 11 models across 1-5 observables; largest absolute error
+is `6.51e-11`. Cached BioModels screen parsed 6,759 XML files with 9 parse
+errors and found no matching two-event priority pairs; no curated gain claimed.
+Hosted CI query remains unavailable.
+
+SBML report: `/private/tmp/bng3-sbml-priority-full.json`, SHA-256
+`3231f4a6d1e8259ea91a452fcc7a4832ee7486af1c44450dc366d129269c1525`.
+Target comparison summary: `/private/tmp/bng3-sbml-priority-h10-summary.json`,
+SHA-256 `36011f242f6087f43978b0ef9fdc136bd07cb8067c899f054617dfe3335e54ba`.
+
 ## Reciprocal-flux threshold event — 2026-09-26
 
 Atomizer now schedules direct threshold events for an isolated positive species
@@ -20,9 +40,11 @@ failures, timeouts, or regressions. The 10-unit BNG3/libRoadRunner comparison
 passes both observables with maximum absolute error `3.56e-15`. Cases `00945`
 and `00947`, where events change compartment volume, remain unsupported because
 that introduces a concentration jump outside this proof. Full Python passes
-`573` tests with `28` skipped. A full offline curated BioModels refresh is
-running; results will be added to the convergence checklist. Hosted CI could
-not be queried because `gh` could not reach `api.github.com`.
+`573` tests with `28` skipped. Cached curated BioModels screening parsed
+6,756 XML files with 9 parse errors and found zero reciprocal-flux species
+threshold candidates, so no curated gain is claimed. Full inventory remains
+unrefreshed for this slice. Hosted CI could not be queried because `gh` could
+not reach `api.github.com`.
 
 SBML suite report: `/private/tmp/bng3-sbml-reciprocal-full.json`, SHA-256
 `6b3dd84145054f52ed7667c6c8b847122c6f00576b99e90c9479ca29d4b581c9`.

@@ -5892,7 +5892,23 @@ def generate_bngl(
         def resolve_affine_event_rate(
             identifier: str,
             event_context: Optional[SBMLEvent] = None,
+            *,
+            ignore_simultaneous: bool = False,
         ) -> Optional[Tuple[float, float]]:
+            def controls_before_event(candidate: SBMLEvent) -> bool:
+                if candidate is event_context:
+                    return False
+                if (
+                    ignore_simultaneous
+                    and event_context is not None
+                    and str(candidate.trigger or "").strip()
+                    == str(event_context.trigger or "").strip()
+                    and str(candidate.delay or "").strip()
+                    == str(event_context.delay or "").strip()
+                ):
+                    return False
+                return True
+
             parameter = model.parameters.get(identifier)
             if parameter is None:
                 compartment_id = next(
@@ -5911,7 +5927,7 @@ def generate_bngl(
                     ) or any(
                         assignment.variable == compartment_id
                         for event in model.events
-                        if event is not event_context
+                        if controls_before_event(event)
                         for assignment in event.assignments
                     ):
                         return None
@@ -5957,7 +5973,7 @@ def generate_bngl(
                     ) or any(
                         assignment.variable == identifier
                         for event in model.events
-                        if event is not event_context
+                        if controls_before_event(event)
                         for assignment in event.assignments
                     ):
                         return None
@@ -6010,7 +6026,7 @@ def generate_bngl(
                     ) or any(
                         assignment.variable == species_id
                         for event in model.events
-                        if event is not event_context
+                        if controls_before_event(event)
                         for assignment in event.assignments
                     ):
                         return None
@@ -6049,7 +6065,7 @@ def generate_bngl(
                     if any(
                         assignment.variable == species_id
                         for event in model.events
-                        if event is not event_context
+                        if controls_before_event(event)
                         for assignment in event.assignments
                     ):
                         return None
@@ -6063,7 +6079,7 @@ def generate_bngl(
                         or any(
                             assignment.variable == species.compartment
                             for event in model.events
-                            if event is not event_context
+                            if controls_before_event(event)
                             for assignment in event.assignments
                         )
                     ):
@@ -6089,7 +6105,7 @@ def generate_bngl(
                     or any(
                         assignment.variable == species_id
                         for event in model.events
-                        if event is not event_context
+                        if controls_before_event(event)
                         for assignment in event.assignments
                     )
                 ):
@@ -6190,7 +6206,7 @@ def generate_bngl(
                         or any(
                             assignment.variable == species.compartment
                             for event in model.events
-                            if event is not event_context
+                            if controls_before_event(event)
                             for assignment in event.assignments
                         )
                     ):
@@ -6205,7 +6221,7 @@ def generate_bngl(
             ) or any(
                 event_assignment.variable == identifier
                 for event in model.events
-                if event is not event_context
+                if controls_before_event(event)
                 for event_assignment in event.assignments
             ):
                 return None
@@ -6706,6 +6722,11 @@ def generate_bngl(
                 resolve_affine_rate=resolve_affine_event_rate,
                 resolve_affine_rate_for_event=lambda identifier, event: (
                     resolve_affine_event_rate(identifier, event)
+                ),
+                resolve_affine_priority_rate=lambda identifier, event: (
+                    resolve_affine_event_rate(
+                        identifier, event, ignore_simultaneous=True
+                    )
                 ),
                 resolve_exponential_rate=resolve_exponential_event_rate,
                 resolve_exponential_rate_for_event=lambda identifier, event: (

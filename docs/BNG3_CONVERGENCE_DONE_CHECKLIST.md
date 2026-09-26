@@ -4,7 +4,7 @@
 **Last targeted audit:** 2026-09-26 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
 **Working branch:** `main`
-**Current base:** `main` at `fed1208415c00755f539e1ab05f021b8806b5abe`; current feature work is reciprocal-flux event scheduling
+**Current base:** `main` at `116b311a5608ab99d5cefbdfb42b6d7ea594ebb3`; current feature work is reciprocal-flux event scheduling
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -32,6 +32,35 @@ work items. The unification work orders in docs/BNG3_unification_spec.md remain 
 detailed dependency map; provenance/capability-matrix.yml remains the
 capability inventory.
 
+## Event-local delayed values and simultaneous priorities — 2026-09-26
+
+- [x] Event-value folding now uses event-local affine trajectories for the
+  pre-execution snapshot, so a future assignment by that event does not
+  invalidate its own exact delayed value. Dynamic priority is also folded
+  from an exact affine state only for two no-delay events with identical
+  triggers, one state-dependent priority, and a strictly higher value than
+  the other event's static priority. Unsupported ordering cases fail closed.
+- [x] Pinned SBML Test Suite `cf38585fac5de8e0e90112febb62851ee2181816`:
+  `1,536 passed, 387 unsupported, 0 failed, 0 timed out`. Compared per case
+  with the previous report, 11 cases gained pass and none regressed:
+  `01267`, `01298`, `01508`, `01509`, `01512`, `01681`-`01683`, and
+  `01705`-`01707`. Event blockers fell from 296 to 285. Full report
+  `/private/tmp/bng3-sbml-priority-full.json`, SHA-256
+  `3231f4a6d1e8259ea91a452fcc7a4832ee7486af1c44450dc366d129269c1525`.
+- [x] Targeted 10-unit/100-step comparisons pass against libRoadRunner 2.10.0
+  for all 11 gains, across 1-5 observables each. Largest absolute difference
+  is `6.51e-11`, below configured comparison tolerance. Summary
+  `/private/tmp/bng3-sbml-priority-h10-summary.json`, SHA-256
+  `36011f242f6087f43978b0ef9fdc136bd07cb8067c899f054617dfe3335e54ba`.
+- [x] Full Python suite: `574 passed, 28 skipped` with compiled extension;
+  repository-wide Black, Ruff, and `git diff --check` pass.
+- [x] Cached curated BioModels screen parsed 6,759 XML files, with 9 parse
+  errors, and found zero two-event identical-trigger priority pairs. Full
+  curated inventory was not rerun; previous full inventory remains last
+  round-trip/oracle evidence, and no curated gain is claimed.
+- [ ] Hosted CI remains unverified: GitHub CLI could not connect to
+  `api.github.com` after push.
+
 ## Reciprocal-flux threshold events — 2026-09-26
 
 - [x] Exact trigger scheduling now handles a positive concentration whose
@@ -54,7 +83,12 @@ capability inventory.
 - [x] `semantic/00945` and `00947` remain unsupported because event-driven
   compartment changes alter species concentration discontinuously; trajectory
   proof correctly fails closed.
-- [ ] Full curated BioModels refresh is still running; no curated gain claimed.
+- [x] Cached curated BioModels screening parsed 6,756 XML files with 9 parse
+  errors and found zero models with the reciprocal-flux species threshold
+  shape. No curated gain is claimed; prior full matched-timeout BioModels
+  report remains last full-inventory evidence. A full offline refresh was
+  canceled after screening because it was substantially slower and could not
+  affect this feature's curated coverage.
 - [ ] Hosted checks have not been queried successfully; `gh` could not connect
   to `api.github.com` during this pass.
 

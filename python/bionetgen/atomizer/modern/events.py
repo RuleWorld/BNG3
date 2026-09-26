@@ -70,6 +70,12 @@ class EventTranslationContext:
     resolve_affine_rate_for_event: Callable[
         [str, SBMLEvent], Optional[Tuple[float, float]]
     ] = _no_event_affine_rate
+    # Priority evaluation may inspect pre-execution trajectories when only
+    # simultaneous, same-trigger assignments would otherwise make them
+    # ambiguous.
+    resolve_affine_priority_rate: Callable[
+        [str, SBMLEvent], Optional[Tuple[float, float]]
+    ] = _no_event_affine_rate
     # Return (initial value, exponent) for independently exponential states
     # whose exact trajectory is initial * exp(exponent * time).
     resolve_exponential_rate: Callable[[str], Optional[Tuple[float, float]]] = (
@@ -932,6 +938,8 @@ def synthesize_event_actions(
         time_value: float,
         state_values: Optional[Mapping[str, float]] = None,
         event_context: Optional[SBMLEvent] = None,
+        *,
+        priority_evaluation: bool = False,
     ) -> Optional[float]:
         """Fold an event value using only proven state trajectories."""
         values = dict(state_values or {})
@@ -1006,7 +1014,15 @@ def synthesize_event_actions(
         for identifier in identifiers:
             if identifier in values:
                 continue
-            trajectory = context.resolve_affine_rate(identifier)
+            trajectory = (
+                context.resolve_affine_priority_rate(identifier, event_context)
+                if priority_evaluation and event_context is not None
+                else (
+                    context.resolve_affine_rate_for_event(identifier, event_context)
+                    if event_context is not None
+                    else context.resolve_affine_rate(identifier)
+                )
+            )
             try:
                 if trajectory is not None:
                     initial, slope = trajectory
@@ -2648,6 +2664,31 @@ def synthesize_event_actions(
         priority = 0.0
         if getattr(event, "priority", None):
             folded_priority = fold(event.priority or "", execution_time)
+            if folded_priority is None and len(events) == 2 and not event.delay:
+                other_event = next(
+                    candidate for candidate in events if candidate is not event
+                )
+                event_time = parse_time_threshold(event.trigger)
+                other_time = parse_time_threshold(other_event.trigger)
+                if (
+                    not other_event.delay
+                    and event.trigger.strip() == other_event.trigger.strip()
+                    and event_time is not None
+                    and other_time is not None
+                ):
+                    other_priority = fold(other_event.priority or "0", execution_time)
+                    state_priority = fold_at_state(
+                        event.priority or "",
+                        execution_time,
+                        event_context=event,
+                        priority_evaluation=True,
+                    )
+                    if (
+                        other_priority is not None
+                        and state_priority is not None
+                        and state_priority > other_priority
+                    ):
+                        folded_priority = state_priority
             if folded_priority is None:
                 untranslated.append(
                     (

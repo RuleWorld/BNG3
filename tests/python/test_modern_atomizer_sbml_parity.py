@@ -1214,6 +1214,51 @@ def test_reciprocal_species_flux_schedules_exact_threshold_event():
     assert "state-dependent or non-constant event" not in result.bngl
 
 
+def test_simultaneous_events_resolve_dynamic_priority_before_assignments():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="simultaneous_dynamic_event_priority">
+        <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies>
+          <species id="S" compartment="C" initialAmount="2" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+          <species id="T" compartment="C" initialAmount="0" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+        </listOfSpecies>
+        <listOfReactions><reaction id="convert" reversible="false">
+          <listOfReactants><speciesReference species="S" stoichiometry="1" constant="true"/></listOfReactants>
+          <listOfProducts><speciesReference species="T" stoichiometry="1" constant="true"/></listOfProducts>
+          <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0.05</cn></math></kineticLaw>
+        </reaction></listOfReactions>
+        <listOfEvents>
+          <event id="dynamic" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><gt/><csymbol encoding="text" definitionURL="http://www.sbml.org/sbml/symbols/time">time</csymbol><cn>3.5</cn></apply></math></trigger>
+            <priority><math xmlns="http://www.w3.org/1998/Math/MathML"><ci>S</ci></math></priority>
+            <listOfEventAssignments>
+              <eventAssignment variable="S"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></eventAssignment>
+              <eventAssignment variable="T"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>3</cn></math></eventAssignment>
+            </listOfEventAssignments>
+          </event>
+          <event id="constant" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><gt/><csymbol encoding="text" definitionURL="http://www.sbml.org/sbml/symbols/time">time</csymbol><cn>3.5</cn></apply></math></trigger>
+            <priority><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1.82</cn></math></priority>
+            <listOfEventAssignments>
+              <eventAssignment variable="S"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>4</cn></math></eventAssignment>
+              <eventAssignment variable="T"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>4</cn></math></eventAssignment>
+            </listOfEventAssignments>
+          </event>
+        </listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True).atomize(xml)
+
+    assert result.success, result.error
+    assert "Events NOT simulated" not in result.bngl
+    first_reset = result.bngl.index('setConcentration("@C:M_S()", "1")')
+    second_reset = result.bngl.index('setConcentration("@C:M_S()", "4")')
+    assert first_reset < second_reset
+
+
 def test_affine_rate_rule_compartment_schedules_delayed_threshold_event():
     from bionetgen.atomizer.modern import Atomizer
 
