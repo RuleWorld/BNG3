@@ -54,6 +54,9 @@ class EventTranslationContext:
     resolve_exponential_rate: Callable[[str], Optional[Tuple[float, float]]] = (
         lambda _identifier: None
     )
+    resolve_exponential_rate_for_event: Callable[
+        [str, SBMLEvent], Optional[Tuple[float, float]]
+    ] = lambda _identifier, _event: None
     # Allow periodic reset lowering to inspect a constant rate-rule state even
     # when the event itself assigns that state.
     resolve_rate_reset: Callable[[str], Optional[Tuple[float, float]]] = (
@@ -1282,6 +1285,138 @@ def synthesize_event_actions(
                 )
                 for event in group
             )
+
+    # A single exponential rate-rule state can be reset to a fixed value by
+    # its own threshold event. A monotone trajectory gives an exact recurrence
+    # for each later rising edge and execution time.
+    for event in events:
+        if id(event) in periodic_handled or len(events) != 1:
+            continue
+        parsed = _parse_affine_state_threshold(event.trigger)
+        if parsed is None:
+            continue
+        identifier, operator, threshold_expression = parsed
+        threshold = fold(threshold_expression)
+        trajectory = context.resolve_exponential_rate_for_event(identifier, event)
+        assignments = [_event_assignment(item) for item in event.assignments]
+        delay = 0.0 if not event.delay else fold(event.delay)
+        if (
+            threshold is None
+            or trajectory is None
+            or delay is None
+            or not math.isfinite(delay)
+            or delay < 0
+            or not assignments
+            or sum(variable == identifier for variable, _ in assignments) != 1
+            or len({variable for variable, _ in assignments}) != len(assignments)
+            or any(
+                not context.is_param(variable)
+                and not context.resolve_species_pattern(variable)
+                for variable, _ in assignments
+            )
+            or (event.priority and fold(event.priority) is None)
+        ):
+            continue
+        assignment_values = {
+            variable: fold(expression) for variable, expression in assignments
+        }
+        if any(
+            value is None or not math.isfinite(float(value))
+            for value in assignment_values.values()
+        ):
+            continue
+        reset_value = assignment_values[identifier]
+        initial, exponent = trajectory
+        threshold = float(threshold)
+        if (
+            not math.isfinite(initial)
+            or not math.isfinite(exponent)
+            or exponent == 0
+            or not math.isfinite(threshold)
+            or threshold <= 0
+        ):
+            continue
+        reset_value = float(reset_value)
+        if not math.isfinite(reset_value) or reset_value <= 0:
+            continue
+        rising = (operator in {"lt", "leq"} and exponent < 0) or (
+            operator in {"gt", "geq"} and exponent > 0
+        )
+        if not rising:
+            continue
+        reset_is_false = (
+            reset_value >= threshold
+            if operator == "lt"
+            else reset_value > threshold
+            if operator == "leq"
+            else reset_value <= threshold
+            if operator == "gt"
+            else reset_value < threshold
+        )
+        if not reset_is_false:
+            continue
+
+        initially_true = (
+            initial > threshold
+            if operator == "gt"
+            else initial >= threshold
+            if operator == "geq"
+            else initial < threshold
+            if operator == "lt"
+            else initial <= threshold
+        )
+        if initially_true:
+            if event.trigger_initial_value:
+                periodic_handled.add(id(event))
+                periodic_converted += 1
+                continue
+            first_trigger = 0.0
+        else:
+            ratio = threshold / initial if initial != 0 else math.nan
+            if ratio <= 0 or not math.isfinite(ratio):
+                continue
+            first_trigger = math.log(ratio) / exponent
+            if not math.isfinite(first_trigger) or first_trigger < 0:
+                continue
+
+        reset_ratio = threshold / reset_value
+        if reset_ratio <= 0 or not math.isfinite(reset_ratio):
+            continue
+        period = math.log(reset_ratio) / exponent
+        if not math.isfinite(period) or period <= 0:
+            continue
+        recurrence: List[Tuple[float, List[Tuple[str, str, float]], float]] = []
+        trigger_time = first_trigger
+        count = 0
+        while trigger_time <= context.base_t_end + 1e-12:
+            execution_time = trigger_time + float(delay)
+            if not math.isfinite(execution_time):
+                recurrence = []
+                break
+            recurrence.append(
+                (
+                    execution_time,
+                    [
+                        (
+                            "conc" if context.resolve_species_pattern(variable) else "param",
+                            context.resolve_species_pattern(variable)
+                            or standardize_name(variable),
+                            float(value),
+                        )
+                        for variable, value in assignment_values.items()
+                    ],
+                    0.0,
+                )
+            )
+            count += 1
+            if count > 10_000:
+                recurrence = []
+                break
+            trigger_time = execution_time + period
+        if recurrence:
+            scheduled.extend(recurrence)
+            periodic_handled.add(id(event))
+            periodic_converted += 1
 
     affine_interval_schedules: dict[
         int, Tuple[str, float, float, float, float, float, float, str, str]

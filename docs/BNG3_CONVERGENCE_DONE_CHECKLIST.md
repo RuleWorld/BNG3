@@ -5819,3 +5819,29 @@ the other groups remain implementation targets.
   event whose delay reaches the window end. The prior full curated report
   remains the only full-inventory result for this slice; no curated gain is
   claimed.
+
+## Repeated exponential threshold resets — 2026-09-26
+
+- [x] When one event resets its own parameter/species threshold state to a
+  constant on the trigger's false side, and its exact exponential trajectory
+  has immutable coefficients, schedule each subsequent rising edge and fixed
+  delayed execution time. Other assignments must be unique, constant, and
+  parameter/species targets. Require one event and reject nonpositive resets,
+  non-rising thresholds, dynamic/coupled coefficients, or non-finite times.
+- [x] The full pinned one-unit suite reports `1,496 passed, 427 unsupported,
+  0 failed, 0 timeouts`; one gain (`semantic/00684`) and zero regressions from
+  `1,495/428`. Event blockers fell from 326 to 325. Report
+  `/private/tmp/bng3-sbml-exp-reset-full.json`, SHA-256
+  `1d02fd20bbed61a3094f73c4c17032de51e48c1d8b9004064b4493bee5a0fdc1`.
+  `00684` matched libRoadRunner across five observables at the suite's
+  one-unit horizon (maximum absolute difference `2.50e-11`).
+- [x] With a 10-unit, 100-step horizon, targeted cases `semantic/00026`,
+  `00071`, `00073`, `00074`, and `00172` pass and match libRoadRunner across
+  all generated observables; maximum absolute difference was `1.88e-14`.
+  These events occur after the one-unit suite horizon, so targeted long-horizon
+  results are listed separately from the full-suite count.
+- [x] Full Python suite: `561 passed, 28 skipped`; changed-file Ruff,
+  compileall, and `git diff --check` pass. A cached scan of 1,084 curated
+  BioModels XML files found no direct single-state exponential self-reset
+  event candidate; no curated gain is claimed and the previous full inventory
+  report remains the current curated benchmark evidence.

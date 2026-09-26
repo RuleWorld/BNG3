@@ -6061,6 +6061,7 @@ def generate_bngl(
 
         def resolve_exponential_event_rate(
             identifier: str,
+            event_context: Optional[SBMLEvent] = None,
         ) -> Optional[Tuple[float, float]]:
             """Resolve an exact exponential species or parameter trajectory."""
             parameter = model.parameters.get(identifier)
@@ -6076,6 +6077,7 @@ def generate_bngl(
                     or any(
                         assignment.variable == identifier
                         for event in model.events
+                        if event is not event_context
                         for assignment in event.assignments
                     )
                 ):
@@ -6182,6 +6184,7 @@ def generate_bngl(
                 or any(
                     assignment.variable == species_id
                     for event in model.events
+                    if event is not event_context
                     for assignment in event.assignments
                 )
             ):
@@ -6379,6 +6382,9 @@ def generate_bngl(
                     resolve_affine_event_rate(identifier, event)
                 ),
                 resolve_exponential_rate=resolve_exponential_event_rate,
+                resolve_exponential_rate_for_event=lambda identifier, event: (
+                    resolve_exponential_event_rate(identifier, event)
+                ),
                 resolve_rate_reset=resolve_rate_event_reset,
                 static_event_state=(
                     not model.reactions

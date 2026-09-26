@@ -1607,3 +1607,18 @@ checks pass. All five new cases have no observables, so their libRoadRunner
 simulation comparisons are vacuous. A cached BioModels source scan found no
 matching piecewise event or nonpersistent time-window cancellation shape; the
 full curated report predates this slice. See the convergence checklist.
+
+The Atomizer now lowers repeated delayed or immediate events that reset a
+single exponentially evolving parameter/species to a fixed value on the false
+side of its threshold. It computes each rising edge and recurrence from the
+proven exponential trajectory; coupled events, mutable coefficients, and
+unsafe assignments stay unsupported. The full one-unit SBML suite gained
+`semantic/00684` with no regressions: `1,496 passed, 427 unsupported, 0
+failed, 0 timed out`, and event blockers fell to 325. At a 10-unit/100-step
+horizon, `00026`, `00071`, `00073`, `00074`, and `00172` also pass targeted
+roundtrip and BNG3/libRoadRunner comparison (maximum absolute error
+`1.88e-14`). Full Python: `561 passed, 28 skipped`; Ruff, compileall, and diff
+checks pass. A cached scan of 1,084 BioModels XML files found no matching
+single-state exponential self-reset event; the prior full curated result
+remains the current inventory evidence. See the checklist for the exact
+report digest and limits.

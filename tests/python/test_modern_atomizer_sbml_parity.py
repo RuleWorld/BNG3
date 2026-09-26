@@ -1038,6 +1038,42 @@ def test_nonpersistent_delayed_event_canceled_beyond_time_window_is_noop():
     assert "untranslated" not in result.bngl.lower()
 
 
+def test_exponential_rate_rule_self_reset_schedules_repeated_threshold_events():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="exponential_rate_rule_event_reset">
+        <listOfParameters>
+          <parameter id="A" value="1" constant="false"/>
+          <parameter id="k" value="1" constant="true"/>
+        </listOfParameters>
+        <listOfRules><rateRule variable="A">
+          <math xmlns="http://www.w3.org/1998/Math/MathML"><apply><times/>
+            <cn>-1</cn><ci>k</ci><ci>A</ci>
+          </apply></math>
+        </rateRule></listOfRules>
+        <listOfEvents><event id="reset" useValuesFromTriggerTime="true">
+          <trigger initialValue="true" persistent="true">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><lt/><ci>A</ci><cn>0.1</cn></apply>
+            </math>
+          </trigger>
+          <listOfEventAssignments><eventAssignment variable="A">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math>
+          </eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True).atomize(xml)
+
+    assert result.success, result.error
+    assert result.bngl.count(
+        'setConcentration("M___rate_rule_state__A()", "1")'
+    ) == 4
+    assert "untranslated" not in result.bngl.lower()
+
+
 def test_delay_of_affine_species_uses_initial_history_before_delay_boundary():
     from bionetgen.atomizer.modern import Atomizer
 
