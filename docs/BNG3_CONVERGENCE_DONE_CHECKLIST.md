@@ -4,7 +4,7 @@
 **Last targeted audit:** 2026-09-26 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
 **Working branch:** `main`
-**Current base:** `main` at `f208ae6284c0daf8408328e89947a2d91303f412`; trigger-time species snapshots for quadratic events are in progress
+**Current base:** `main` at `8dfbb3d6f4daf94f808505bf5df6a0cbe974e5b6`; scalar quadratic trigger-time snapshots are in progress
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -54,9 +54,15 @@ capability inventory.
 - [x] All eight gains pass BNG3/libRoadRunner 2.10.0 comparisons over eight
   observables each (10-unit horizon, 100 steps). Maximum absolute error is
   `4.72e-8`; maximum scaled error is `0.0352`.
-- [x] Full Python suite: `581 passed, 28 skipped`; Black, Ruff, and
+- [x] Composite-trigger full Python suite: `581 passed, 28 skipped`; Black, Ruff, and
   `git diff --check` pass.
-- [ ] Exact-head CI for the trigger-time snapshot extension is pending push.
+- [x] Scalar quadratic triggers now expose the same rank-one species snapshot
+  to trigger-time assignments. The updated full Python suite passes
+  `582 passed, 28 skipped`; all 1,923 SBML cases retain their prior status
+  (`1,590 passed, 330 unsupported, 3 failed, 0 timed out`), with no gains or
+  regressions. The full report hash remains
+  `44cdb83bf4bbc0b2bc43c6104131d013e4b31ae8964ed5eb101fa5360d1a4b42`.
+- [ ] Exact-head CI for scalar quadratic trigger-time snapshots is pending push.
 
 ## Scalar quadratic event threshold crossing — 2026-09-26
 

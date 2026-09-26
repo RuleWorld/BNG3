@@ -6981,8 +6981,9 @@ def generate_bngl(
                 )
             quadratic, linear, constant = flux_coefficients
             initial = float(coordinate_initial)
+            offset = 0.0
+            state_slope = 1.0
             if state_expression is not None:
-                offset = 0.0
                 state_slope = 0.0
                 for species_id, multiplier in state_expression:
                     species_offset, species_slope = species_polynomials[
@@ -6993,9 +6994,6 @@ def generate_bngl(
                 initial = offset + state_slope * float(coordinate_initial)
                 if abs(state_slope) <= 1e-14:
                     return (initial, 0.0, 0.0, 0.0)
-                quadratic_state_snapshots[
-                    (id(event_context), standardize_name(identifier))
-                ] = (dict(species_polynomials), offset, state_slope)
                 quadratic, linear, constant = (
                     quadratic / state_slope,
                     linear - 2.0 * quadratic * offset / state_slope,
@@ -7003,6 +7001,9 @@ def generate_bngl(
                     - linear * offset
                     + state_slope * constant,
                 )
+            quadratic_state_snapshots[
+                (id(event_context), standardize_name(identifier))
+            ] = (dict(species_polynomials), offset, state_slope)
             if not all(
                 math.isfinite(value) for value in (initial, quadratic, linear, constant)
             ):

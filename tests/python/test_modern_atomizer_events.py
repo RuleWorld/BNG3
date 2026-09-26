@@ -567,6 +567,43 @@ def test_quadratic_state_difference_threshold_uses_composite_trajectory():
     assert 'setParameter("P", "4")' in result.actions_block
 
 
+def test_quadratic_state_threshold_supplies_trigger_time_species_snapshot():
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLEventAssignment
+
+    event = SBMLEvent(
+        id="quadratic-trigger-snapshot",
+        trigger="gt(A, 0)",
+        assignments=[SBMLEventAssignment("P", "B * time")],
+    )
+    result = synthesize_event_actions(
+        [event],
+        EventTranslationContext(
+            resolve_species_pattern=lambda _identifier: None,
+            resolve_param=lambda _identifier: None,
+            is_param=lambda _identifier: True,
+            is_compile_time_constant=lambda _identifier: False,
+            resolve_initial_value=lambda identifier: {"A": -1.0, "B": 2.0}.get(
+                identifier
+            ),
+            resolve_quadratic_rate_for_event=lambda identifier, _event: (
+                (-1.0, 0.0, 0.0, 1.0) if identifier == "A" else None
+            ),
+            resolve_quadratic_state_values_for_event=lambda identifier, value, _event: (
+                {"A": value, "B": 4.0} if identifier == "A" and value == 0 else None
+            ),
+        ),
+    )
+
+    assert result.converted == 1
+    assert result.untranslated == []
+    assert result.actions_block is not None
+    assert 'setParameter("P", "4")' in result.actions_block
+
+
 def test_exponential_threshold_event_reads_trigger_or_execution_state():
     from bionetgen.atomizer.modern.events import (
         EventTranslationContext,

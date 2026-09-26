@@ -18,12 +18,15 @@ eight SBML Test Suite cases (`00351`, `00384`, `00408`, `00429`, `00441`,
 `1,582 passed / 338 unsupported / 3 failed` report. All eight pass
 10-unit/100-step BNG3/libRoadRunner 2.10.0 comparisons over eight observables
 each; maximum absolute error is `4.72e-8` and maximum scaled error is `0.0352`.
-Full Python passes (`581 passed, 28 skipped`). Current pinned suite is `1,590
+Full Python passes (`582 passed, 28 skipped`). The same rank-one snapshot is
+also available to scalar quadratic threshold assignments. That extension
+retains all SBML classifications (`1,590 passed, 330 unsupported, 3 failed,
+0 timed out`), with no additional gains or regressions. Current pinned suite is `1,590
 passed, 330 unsupported, 3 failed, 0 timed out`; the three CVODE failures are
 `00955`, `01148`, and `01487`. Report:
 `/private/tmp/bng3-sbml-difference-snapshot-working.json`, SHA-256
 `44cdb83bf4bbc0b2bc43c6104131d013e4b31ae8964ed5eb101fa5360d1a4b42`.
-Exact-head CI for this trigger-time snapshot extension is pending push.
+Exact-head CI for scalar quadratic trigger-time snapshots is pending push.
 
 This is the live status page for the combined BNG3 migration tree. The older
 IR migration reports and formalization reports retained in the repository are
