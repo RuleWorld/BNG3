@@ -73,6 +73,23 @@ completion.
 
 ## Fixed-delay affine event trigger interval checkpoint — 2026-09-26
 
+- [x] A variable species-reference ID with one constant rate rule now resolves
+  as an affine trigger trajectory when its initial stoichiometry and derivative
+  are finite and no competing initial assignment or event controls it.
+- [x] Full Python suite: `568 passed, 28 skipped`.
+- [x] Full pinned SBML Test Suite at
+  `cf38585fac5de8e0e90112febb62851ee2181816`: `1,513 passed, 410 unsupported,
+  0 failed, 0 timed out`. Compared per-case with the prior full report, only
+  `semantic/01717`–`01721` changed from unsupported to passed.
+- [x] All five gains match libRoadRunner 2.10.0 across three observables;
+  maximum absolute difference is `3.85e-12`.
+- [x] Report: `/private/tmp/bng3-sbml-affine-stoich-events-full.json`,
+  SHA-256 `2802c1a1fd66d15e0e550b3be71ef590dcd16bb789e52b259c1c007157311054`.
+- [x] Cached BioModels XML scan found no rate-ruled species-reference IDs in
+  event triggers; no curated BioModels gain is claimed.
+
+## Fixed-delay affine event trigger interval checkpoint — 2026-09-26
+
 - [x] The isolated two-bound trigger `and(gt(delay(S, d), lower),
   lt(delay(S, d), upper))` now lowers when both bounds use the same state and
   nonnegative constant delay and that state has a proven affine trajectory.

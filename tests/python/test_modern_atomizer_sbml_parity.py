@@ -1049,6 +1049,42 @@ def test_event_assignment_delay_function_uses_affine_state_history():
         assert "state-dependent or non-constant event" not in result.bngl
 
 
+def test_affine_rate_rule_on_species_reference_schedules_interval_event():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="affine_stoichiometry_interval_event">
+        <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies><species id="S" compartment="C" initialConcentration="0"
+          hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/></listOfSpecies>
+        <listOfParameters><parameter id="P" value="0" constant="false"/></listOfParameters>
+        <listOfRules><rateRule variable="sr">
+          <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math>
+        </rateRule></listOfRules>
+        <listOfReactions><reaction id="r" reversible="false">
+          <listOfProducts><speciesReference id="sr" species="S" stoichiometry="1" constant="false"/></listOfProducts>
+          <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0.1</cn></math></kineticLaw>
+        </reaction></listOfReactions>
+        <listOfEvents><event id="interval" useValuesFromTriggerTime="true">
+          <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><and/><apply><geq/><ci>sr</ci><cn>2.3</cn></apply>
+              <apply><leq/><ci>sr</ci><cn>3.3</cn></apply></apply>
+          </math></trigger>
+          <delay><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>2</cn></math></delay>
+          <listOfEventAssignments><eventAssignment variable="P">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>3</cn></math>
+          </eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True).atomize(xml)
+
+    assert result.success, result.error
+    assert 'setParameter("P", "3")' in result.bngl
+    assert "state-dependent or non-constant event" not in result.bngl
+
+
 def test_constant_piecewise_event_delay_and_assignment_fold_exactly():
     from bionetgen.atomizer.modern import Atomizer
 

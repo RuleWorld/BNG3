@@ -5885,6 +5885,52 @@ def generate_bngl(
         ) -> Optional[Tuple[float, float]]:
             parameter = model.parameters.get(identifier)
             if parameter is None:
+                references = [
+                    reference
+                    for reaction in model.reactions.values()
+                    for reference in [*reaction.reactants, *reaction.products]
+                    if reference.id
+                    and standardize_name(reference.id) == standardize_name(identifier)
+                    and reference.variable_stoichiometry
+                ]
+                if len(references) == 1:
+                    reference = references[0]
+                    if any(
+                        assignment.symbol == identifier
+                        for assignment in model.initial_assignments
+                    ) or any(
+                        assignment.variable == identifier
+                        for event in model.events
+                        if event is not event_context
+                        for assignment in event.assignments
+                    ):
+                        return None
+                    rules = [
+                        rule
+                        for rule in model.rules
+                        if standardize_name(rule.variable)
+                        == standardize_name(identifier)
+                    ]
+                    if len(rules) != 1 or rules[0].type != "rate":
+                        return None
+                    derivative = extend_function(
+                        rules[0].math, {}, model.function_definitions
+                    )
+
+                    def resolve_immutable(symbol: str) -> Optional[float]:
+                        if not is_compile_time_constant(symbol):
+                            return None
+                        return resolve_event_parameter(symbol)
+
+                    slope = fold_numeric(derivative, resolve_immutable)
+                    initial = float(reference.stoichiometry)
+                    if (
+                        slope is None
+                        or not math.isfinite(initial)
+                        or not math.isfinite(slope)
+                    ):
+                        return None
+                    return initial, slope
                 species_id = next(
                     (
                         species_id

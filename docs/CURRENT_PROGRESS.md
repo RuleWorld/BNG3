@@ -10,7 +10,21 @@ IR migration reports and formalization reports retained in the repository are
 historical inputs and provenance records; their embedded prose is not a new
 execution instruction.
 
-## Delayed affine event follow-up — 2026-09-26
+## Affine stoichiometry event follow-up — 2026-09-26
+
+Rate-rule-driven variable species-reference stoichiometry can now provide an
+affine trigger trajectory when its derivative is a finite immutable constant
+and no competing initial assignment/event controls it. This recovers five
+full-suite cases (`01717`–`01721`), moving status from `1,508 passed / 415
+unsupported` to `1,513 / 410`, with zero failures, timeouts, or regressions.
+All five match libRoadRunner 2.10.0 across three observables; maximum absolute
+difference is `3.85e-12`. Full Python passes `568` tests with `28` skipped.
+The cached BioModels scan found no rate-ruled species-reference ID used by an
+event trigger. Report:
+`/private/tmp/bng3-sbml-affine-stoich-events-full.json`, SHA-256
+`2802c1a1fd66d15e0e550b3be71ef590dcd16bb789e52b259c1c007157311054`.
+
+## Delayed interval event follow-up — 2026-09-26
 
 Atomizer now schedules an isolated conjunction of lower and upper bounds over
 the same fixed-delay affine state history. The exact entry and exit times shift
