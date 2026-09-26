@@ -4,7 +4,7 @@
 **Last targeted audit:** 2026-09-26 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
 **Working branch:** `main`
-**Current base:** `main` at `60959f5b0df84c1f8dbaf178e212e7c0823cf9e5`; scalar quadratic event crossing is the current feature slice
+**Current base:** `main` at `e69fd31ce116b9faa0662e54aa136a94079a3cd4`; comp-flatten hosted-CI repair is the current slice
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -56,8 +56,16 @@ capability inventory.
 - [x] Cached BioModels scan parsed 6,759 XML files (9 parse errors) and found
   no single-event, rank-one state-threshold candidates. No curated gain is
   claimed; the complete curated inventory remains open.
-- [ ] Exact-head hosted CI still needs triage: earlier Python matrix jobs
-  segfaulted in libSBML while parsing the comp-flatten regression fixture.
+- [x] The hosted Python matrix failure was traced to platform libSBML crashing
+  while parsing the existing inline-comp regression fixture. A narrow XML-only
+  flattener now handles a single inline submodel with core compartments,
+  species, parameters, and reactions; complex comp models retain the general
+  libSBML path. Focused comp tests pass (`4 passed`).
+- [x] The repair preserves the full pinned-suite result: `1,589 passed, 334
+  unsupported, 0 failed, 0 timed out`; comparison with the prior report found
+  zero gains and zero regressions. Report `/private/tmp/bng3-sbml-comp-fallback-full.json`,
+  SHA-256 `7e2d2c2386dfa7ae00751ccba9b26c3b450cfba920829a3efb441e67db6d3a1c`.
+- [ ] Exact-head hosted CI for the repair is pending push and recheck.
 
 ## Static event assignment histories — 2026-09-26
 

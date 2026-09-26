@@ -11,6 +11,7 @@ import math
 import re
 import base64
 import ast
+import copy
 import xml.etree.ElementTree as ET
 from collections import OrderedDict
 from pathlib import Path
@@ -158,6 +159,113 @@ def _declared_package_uris(sbml_string: str) -> Dict[str, str]:
     return result
 
 
+def _flatten_simple_inline_comp(sbml_string: str) -> Optional[str]:
+    """Flatten a single inline comp submodel using only the XML standard library."""
+    try:
+        root = ET.fromstring(sbml_string)
+    except ET.ParseError:
+        return None
+    core_namespace = root.tag[1:].split("}", 1)[0] if root.tag.startswith("{") else ""
+    comp_namespace = _declared_package_uris(sbml_string).get("comp")
+    if not core_namespace or not comp_namespace:
+        return None
+    comp_tag = lambda name: f"{{{comp_namespace}}}{name}"
+    core_tag = lambda name: f"{{{core_namespace}}}{name}"
+    model = next((e for e in list(root) if e.tag == core_tag("model")), None)
+    definitions = [e for e in root.iter() if e.tag == comp_tag("modelDefinition")]
+    if model is None or len(definitions) != 1:
+        return None
+    submodels_list = next(
+        (e for e in list(model) if e.tag == comp_tag("listOfSubmodels")), None
+    )
+    if submodels_list is None or len(list(submodels_list)) != 1:
+        return None
+    submodel = list(submodels_list)[0]
+    submodel_id = submodel.get(comp_tag("id"))
+    if (
+        submodel.tag != comp_tag("submodel")
+        or not submodel_id
+        or submodel.get(comp_tag("modelRef")) != definitions[0].get("id")
+        or set(submodel.attrib) != {comp_tag("id"), comp_tag("modelRef")}
+    ):
+        return None
+    if any(
+        child is not submodels_list
+        and child.tag not in {core_tag("notes"), core_tag("annotation")}
+        for child in list(model)
+    ):
+        return None
+    definition = definitions[0]
+    allowed_lists = {
+        "listOfCompartments",
+        "listOfSpecies",
+        "listOfParameters",
+        "listOfReactions",
+    }
+    if any(_local_name(child.tag) not in allowed_lists for child in list(definition)):
+        return None
+    if any(
+        _local_name(element.tag) in {"listOfSubmodels", "listOfPorts"}
+        for element in definition.iter()
+    ):
+        return None
+    # Local kinetic-law parameters and function definitions need separate
+    # scoping rules; leave those models to libSBML's general comp flattener.
+    if any(
+        _local_name(element.tag) in {"listOfLocalParameters"}
+        for element in definition.iter()
+    ) or any(
+        _local_name(element.tag) in {"parameter", "localParameter"}
+        for kinetic_law in definition.iter()
+        if _local_name(kinetic_law.tag) == "kineticLaw"
+        for element in kinetic_law.iter()
+    ):
+        return None
+
+    identifiers: Dict[str, str] = {}
+    for element in definition.iter():
+        identifier = element.get("id")
+        if identifier:
+            if identifier in identifiers:
+                return None
+            identifiers[identifier] = f"{submodel_id}__{identifier}"
+    for element in definition.iter():
+        if element.get("id") in identifiers:
+            element.set("id", identifiers[element.get("id")])
+        for attribute in ("compartment", "species", "variable", "symbol", "units"):
+            value = element.get(attribute)
+            if value in identifiers:
+                element.set(attribute, identifiers[value])
+        if _local_name(element.tag) == "ci" and element.text:
+            symbol = element.text.strip()
+            if symbol in identifiers:
+                element.text = identifiers[symbol]
+
+    for child in list(definition):
+        target = next(
+            (e for e in list(model) if e.tag == core_tag(_local_name(child.tag))),
+            None,
+        )
+        if target is None:
+            target = ET.Element(core_tag(_local_name(child.tag)))
+            model.append(target)
+        for item in list(child):
+            target.append(copy.deepcopy(item))
+
+    model.remove(submodels_list)
+    for element in list(root):
+        if element.tag in {
+            comp_tag("listOfModelDefinitions"),
+            comp_tag("modelDefinition"),
+        }:
+            root.remove(element)
+    for attribute in list(root.attrib):
+        if attribute.startswith(f"{{{comp_namespace}}}"):
+            del root.attrib[attribute]
+    ET.register_namespace("", core_namespace)
+    return ET.tostring(root, encoding="unicode")
+
+
 def _resolve_comp_external_sources(
     document: Any, source_path: Path, libsbml: Any
 ) -> Optional[str]:
@@ -219,6 +327,9 @@ def _flatten_comp_package(
 
     if "comp" not in _declared_package_uris(sbml_string):
         return sbml_string, None
+    simple_inline = _flatten_simple_inline_comp(sbml_string)
+    if simple_inline is not None:
+        return simple_inline, None
     try:
         import libsbml
     except ImportError:
@@ -2328,8 +2439,7 @@ class SBMLParser:
                     {
                         "category": "compFlattened",
                         "message": (
-                            "SBML comp hierarchy was flattened with libSBML before "
-                            "Atomizer import."
+                            "SBML comp hierarchy was flattened before Atomizer import."
                         ),
                         "count": 1,
                         "severity": "info",

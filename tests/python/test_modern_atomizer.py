@@ -3090,7 +3090,9 @@ def test_playground_name_standardization_handles_sbml_symbols_and_keywords():
     assert standardize_name("7 days") == "_7_days"
 
 
-def test_sbml_comp_models_are_flattened_before_atomizer_import():
+def test_sbml_comp_models_are_flattened_before_atomizer_import(monkeypatch):
+    import builtins
+
     from bionetgen.atomizer.modern import (
         SBMLParser,
         build_species_composition_table,
@@ -3130,6 +3132,15 @@ def test_sbml_comp_models_are_flattened_before_atomizer_import():
         </comp:modelDefinition>
       </comp:listOfModelDefinitions>
     </sbml>"""
+
+    original_import = builtins.__import__
+
+    def import_without_libsbml(name, *args, **kwargs):
+        if name == "libsbml":
+            raise AssertionError("simple inline comp flattening must not call libSBML")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", import_without_libsbml)
 
     model = SBMLParser().parse(source)
 

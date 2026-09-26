@@ -22,11 +22,20 @@ crossing. This gains 31 official SBML Test Suite cases with no regressions:
 error is `0.0476`. Full Python passes `578` tests with `28` skipped. Cached
 BioModels scan found no eligible models; no curated gain claimed.
 
-The earlier hosted Python matrix segfaulted inside libSBML while parsing the
-comp-flatten regression fixture; exact-head CI is still under investigation.
+Hosted Python matrix logs traced the earlier failure to libSBML segfaulting
+while parsing the inline comp regression fixture. A narrowly scoped XML-only
+fallback now flattens simple single-submodel documents before libSBML import;
+complex comp documents keep the general libSBML path. Focused comp tests pass
+(`4 passed`), and the full Python suite passes (`578 passed, 28 skipped`). The
+full pinned SBML suite remains `1,589 passed / 334 unsupported`, with zero
+failures, timeouts, gains, or regressions from the prior report. Exact-head
+hosted CI for this repair is pending push and recheck.
 
 SBML report: `/private/tmp/bng3-sbml-riccati-full.json`, SHA-256
 `bcb141eb61f9533acc525dc578fdf0cc055d9dfe56281d56127c493a07c83dd8`.
+
+Comp fallback report: `/private/tmp/bng3-sbml-comp-fallback-full.json`, SHA-256
+`7e2d2c2386dfa7ae00751ccba9b26c3b450cfba920829a3efb441e67db6d3a1c`.
 
 ## Static event assignment histories — 2026-09-26
 
