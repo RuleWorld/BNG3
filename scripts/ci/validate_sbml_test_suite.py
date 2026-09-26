@@ -69,6 +69,48 @@ def _validate_xml(text: str, label: str) -> dict[str, Any]:
     return {"passed": True, "validator": "libsbml", "errors": errors}
 
 
+def _max_finite_abs(values: np.ndarray) -> float:
+    finite = np.asarray(values, dtype=float)
+    finite = finite[np.isfinite(finite)]
+    return float(np.max(np.abs(finite))) if finite.size else 0.0
+
+
+def _compare_observable_samples(
+    left: np.ndarray, right: np.ndarray, tolerance: float
+) -> dict[str, Any]:
+    """Compare finite values and require exact agreement on nonfinite classes."""
+    left = np.asarray(left, dtype=float)
+    right = np.asarray(right, dtype=float)
+    if left.shape != right.shape:
+        raise RuntimeError("observable samples have mismatched shapes")
+    left_finite = np.isfinite(left)
+    right_finite = np.isfinite(right)
+    nonfinite_equivalent = bool(
+        np.array_equal(left_finite, right_finite)
+        and np.array_equal(np.isnan(left), np.isnan(right))
+        and np.array_equal(np.isposinf(left), np.isposinf(right))
+        and np.array_equal(np.isneginf(left), np.isneginf(right))
+    )
+    finite_pairs = left_finite & right_finite
+    differences = np.abs(left[finite_pairs] - right[finite_pairs])
+    max_abs = float(np.max(differences)) if differences.size else 0.0
+    scale = max(_max_finite_abs(left), _max_finite_abs(right))
+    passed = nonfinite_equivalent and max_abs <= tolerance
+    return {
+        "finite": bool(left_finite.all() and right_finite.all()),
+        "nonfinite_equivalent": nonfinite_equivalent,
+        "finite_sample_count": int(finite_pairs.sum()),
+        "nonfinite_sample_count": (
+            int((~left_finite).sum()) if nonfinite_equivalent else None
+        ),
+        "max_abs_difference": max_abs,
+        "tolerance": tolerance,
+        "max_scaled_error": max_abs / tolerance if tolerance else math.inf,
+        "passed": passed,
+        "scale": scale,
+    }
+
+
 def _simulate_and_compare(
     cpp_model: Any,
     output_path: Path,
@@ -160,13 +202,9 @@ def _simulate_and_compare(
         raise RuntimeError("BNG3 and libRoadRunner produced different time grids")
     comparison_scale = max(
         [
+            *(_max_finite_abs(values) for values in bng_values.values() if values.size),
             *(
-                float(np.max(np.abs(values)))
-                for values in bng_values.values()
-                if values.size
-            ),
-            *(
-                float(np.max(np.abs(rr_values[:, index])))
+                _max_finite_abs(rr_values[:, index])
                 for index in range(1, rr_values.shape[1])
                 if rr_values.shape[0]
             ),
@@ -180,11 +218,9 @@ def _simulate_and_compare(
         right = rr_values[:, index]
         if left.shape != right.shape:
             raise RuntimeError(f"observable {name!r} returned mismatched shapes")
-        finite = bool(np.isfinite(left).all() and np.isfinite(right).all())
-        difference = np.abs(left - right)
         scale = max(
-            float(np.max(np.abs(left))) if left.size else 0.0,
-            float(np.max(np.abs(right))) if right.size else 0.0,
+            _max_finite_abs(left) if left.size else 0.0,
+            _max_finite_abs(right) if right.size else 0.0,
         )
         # BNG3 and libRoadRunner both use CVODE, but their dense-output and
         # RHS evaluation paths differ. Keep a small global floor for
@@ -197,18 +233,11 @@ def _simulate_and_compare(
             NUMERICAL_COMPARISON_ATOL_FLOOR
             + NUMERICAL_COMPARISON_RTOL_FLOOR * comparison_scale,
         )
-        max_abs = float(np.max(difference)) if difference.size else 0.0
-        scaled_error = max_abs / tolerance if tolerance else math.inf
-        passed = finite and max_abs <= tolerance
-        if not passed:
+        comparison = _compare_observable_samples(left, right, tolerance)
+        if not comparison["passed"]:
             failed.append(name)
-        comparisons[name] = {
-            "finite": finite,
-            "max_abs_difference": max_abs,
-            "tolerance": tolerance,
-            "max_scaled_error": scaled_error,
-            "passed": passed,
-        }
+        comparison.pop("scale")
+        comparisons[name] = comparison
     if failed:
         return {
             "passed": False,

@@ -155,3 +155,34 @@ def test_unsupported_summary_promotes_error_to_reason():
     summary = validator._unsupported_summary(records)
     assert records[0]["unsupported_reason"] == "MathML writer rejected arcsin"
     assert summary["by_cause"]["mathml"]["records"] == ["semantic/writer-error"]
+
+
+def test_observable_comparison_accepts_matching_nonfinite_math_results():
+    import numpy as np
+
+    validator = _load_validator("validate_sbml_test_suite")
+    result = validator._compare_observable_samples(
+        np.array([1.0, np.nan, np.inf, -np.inf]),
+        np.array([1.0 + 1e-9, np.nan, np.inf, -np.inf]),
+        tolerance=1e-6,
+    )
+
+    assert result["passed"] is True
+    assert result["finite"] is False
+    assert result["nonfinite_equivalent"] is True
+    assert result["finite_sample_count"] == 1
+    assert result["nonfinite_sample_count"] == 3
+
+
+def test_observable_comparison_rejects_different_nonfinite_math_results():
+    import numpy as np
+
+    validator = _load_validator("validate_sbml_test_suite")
+    result = validator._compare_observable_samples(
+        np.array([np.nan, np.inf, -np.inf]),
+        np.array([np.inf, np.inf, -np.inf]),
+        tolerance=1e-6,
+    )
+
+    assert result["passed"] is False
+    assert result["nonfinite_equivalent"] is False

@@ -4,7 +4,7 @@
 **Last targeted audit:** 2026-09-26 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
 **Working branch:** `main`
-**Current base:** `main` at `2ddb80dc5bfb1203260923f42c4614e837d0cfbc`; scalar quadratic trigger-time snapshots are pushed
+**Current base:** `main` at `c2e0a869af14abc3ca839300303052267fefe419`; nonfinite CVODE parity validation is in progress
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -31,6 +31,23 @@ completion charter and Section 11 of BNG3_INTEGRATION_PLAN.md into auditable
 work items. The unification work orders in docs/BNG3_unification_spec.md remain the
 detailed dependency map; provenance/capability-matrix.yml remains the
 capability inventory.
+
+## SBML numerical parity for matching nonfinite results — 2026-09-26
+
+- [x] The comparison gate now compares finite samples numerically and requires
+  exact pointwise agreement for NaN, positive infinity, and negative infinity
+  masks. It no longer rejects a model solely because both engines produce the
+  same SBML MathML domain result.
+- [x] SBML Test Suite cases `00955` and `01487` now pass. BNG3 and
+  libRoadRunner produce identical nonfinite masks for `P4`-`P7`, with finite
+  samples compared under the existing model-wide tolerance. No case regressed.
+- [x] Full pinned suite: `1,592 passed, 330 unsupported, 1 failed, 0 timed
+  out`. Remaining failure is `01148`, CVODE internal step budget exhaustion.
+  Report `/private/tmp/bng3-sbml-nonfinite-equivalence.json`, SHA-256
+  `7917fde9b7c37132eca4cd3f54b7ac45c64f8a7a22680a61f881121ab7e82979`.
+- [x] Full Python suite: `584 passed, 28 skipped`; the focused validation
+  contracts pass (`8 passed`); Black, Ruff, and `git diff --check` pass.
+- [ ] Exact-head hosted CI is pending push.
 
 ## Quadratic species-difference event thresholds — 2026-09-26
 

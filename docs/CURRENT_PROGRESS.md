@@ -5,6 +5,20 @@
 **Branch:** `main`
 **Status:** merged convergence, nonequilibrium energy, and SBML material-gap work; release validation remains incomplete
 
+## SBML nonfinite oracle comparison — 2026-09-26
+
+The SBML suite comparator now compares finite trajectory samples numerically
+and accepts nonfinite samples only when BNG3 and libRoadRunner agree pointwise
+on NaN, positive-infinity, and negative-infinity classifications. This fixes
+the false failures in cases `00955` and `01487`, whose out-of-domain inverse
+trigonometric values produced matching NaNs in both engines. Full pinned suite
+is now `1,592 passed, 330 unsupported, 1 failed, 0 timed out`, with no
+regressions; `01148` remains a CVODE internal-step-budget failure. Report:
+`/private/tmp/bng3-sbml-nonfinite-equivalence.json`, SHA-256
+`7917fde9b7c37132eca4cd3f54b7ac45c64f8a7a22680a61f881121ab7e82979`.
+Full Python passes (`584 passed, 28 skipped`); focused comparator contracts
+pass (`8 passed`). Hosted CI is pending push.
+
 ## Quadratic species-difference event thresholds — 2026-09-26
 
 Atomizer now resolves a restricted trigger comparing two species when their
