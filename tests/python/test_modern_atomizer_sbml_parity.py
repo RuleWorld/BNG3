@@ -976,6 +976,39 @@ def test_static_initial_rising_event_uses_its_initial_edge_once():
     assert "untranslated" not in result.bngl.lower()
 
 
+def test_affine_threshold_drops_constant_true_conjunction_terms():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="affine_threshold_boolean_conjunction">
+        <listOfParameters>
+          <parameter id="P" value="0" constant="false"/>
+          <parameter id="Q" value="0" constant="false"/>
+        </listOfParameters>
+        <listOfRules><rateRule variable="P">
+          <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math>
+        </rateRule></listOfRules>
+        <listOfEvents><event id="event">
+          <trigger initialValue="true" persistent="true">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><apply><and/>
+              <apply><gt/><ci>P</ci><cn>1</cn></apply>
+              <apply><not/><cn>0</cn></apply>
+            </apply></math>
+          </trigger>
+          <listOfEventAssignments><eventAssignment variable="Q">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>5</cn></math>
+          </eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True).atomize(xml)
+
+    assert result.success, result.error
+    assert 'setParameter("Q", "5")' in result.bngl
+    assert "state-dependent or non-constant event" not in result.bngl
+
+
 def test_constant_piecewise_event_delay_and_assignment_fold_exactly():
     from bionetgen.atomizer.modern import Atomizer
 

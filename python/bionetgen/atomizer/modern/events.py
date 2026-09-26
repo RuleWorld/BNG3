@@ -647,10 +647,21 @@ def _parse_scaled_time_threshold(trigger: str) -> Optional[Tuple[str, str]]:
 def _parse_affine_state_threshold(
     trigger: str,
 ) -> Optional[Tuple[str, str, str]]:
-    """Parse one comparison between a state symbol and a constant threshold."""
+    """Parse one state comparison, dropping statically true ``and`` terms."""
 
     match = re.match(r"^(gt|geq|lt|leq)\s*\((.*)\)$", str(trigger or "").strip(), re.I)
     if match is None:
+        conjunction = _split_call_arguments(str(trigger or ""))
+        if conjunction is not None:
+            dynamic_terms = []
+            for term in conjunction:
+                value = fold_numeric(term, lambda _identifier: None)
+                if value is None:
+                    dynamic_terms.append(term)
+                elif value == 0:
+                    return None
+            if len(dynamic_terms) == 1:
+                return _parse_affine_state_threshold(dynamic_terms[0])
         return None
     arguments = _split_arguments(match.group(2))
     if arguments is None or len(arguments) != 2:

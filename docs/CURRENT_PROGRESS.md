@@ -59,6 +59,18 @@ the cached BioModels screen found no matching event shape in 6,538 XML files,
 so this slice gains no benchmark models. See the convergence checklist for the
 report digest and limits.
 
+## Constant Boolean terms in affine event triggers — 2026-09-26
+
+Atomizer now simplifies statically true operands in conjunctions before
+solving a direct affine state threshold. This removes three blockers in
+`semantic/01531`: the full pinned SBML suite moves to `1,503 passed / 420
+unsupported`, with zero failures, timeouts, or regressions. The full Python
+suite passes `565` tests with `28` skipped. The gained case has no observables,
+so its result establishes roundtrip and native-reader support, not numerical
+libRoadRunner parity. A cached scan of 6,538 BioModels XML files found no
+matching event shape; no curated gain is claimed. Report digest and exact
+validation limits are in the convergence checklist.
+
 ## Current-head Atomizer and oracle validation — 2026-09-25
 
 Current BNG3 committed `main` base is `a5f65ae05e26926b013f4ec3305dab34a3e9c84f`

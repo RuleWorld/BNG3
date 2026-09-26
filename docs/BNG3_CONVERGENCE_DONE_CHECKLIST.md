@@ -5919,3 +5919,22 @@ the other groups remain implementation targets.
   slice adds no official-suite pass. A cached scan of 6,538 BioModels XML files
   found zero multi-assignment events that target a rate-rule variable; no
   curated-model gain is claimed and the full inventory was not rerun.
+
+## Constant Boolean terms in affine event triggers — 2026-09-26
+
+- [x] An affine state threshold parser now drops statically true terms from an
+  `and(...)` trigger before solving its exact crossing time. It leaves false
+  or dynamic conjunctions untranslated unless the remaining trigger reduces
+  to one supported state threshold.
+- [x] Official `semantic/01531` now passes; its three previously untranslated
+  triggers were affine rate-rule thresholds conjoined with constant-true
+  Boolean terms. The full pinned SBML suite reports `1,503 passed, 420
+  unsupported, 0 failed, 0 timeouts`: one gain and zero regressions from
+  `1,502/421`. Report `/private/tmp/bng3-sbml-bool-affine-events-final.json`,
+  SHA-256 `8558585d47a4fe2c6683709a35432f7348e0c12238614a8f50bab59dcae71d64`.
+- [x] Full Python suite: `565 passed, 28 skipped`; `semantic/01531` passes the
+  import, schedule, SBML roundtrip, and native-reader checks. It has no
+  observables, so no numerical libRoadRunner comparison is claimed. A cached
+  scan of 6,538 curated BioModels XML files found no rate-rule threshold
+  conjunction with explicit Boolean terms; the full BioModels inventory was
+  not rerun and no curated gain is claimed.
