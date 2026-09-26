@@ -633,6 +633,69 @@ def _parse_affine_state_threshold(
     return None
 
 
+def _parse_rate_of_state_threshold(
+    trigger: str,
+) -> Optional[Tuple[str, str, str]]:
+    """Parse one comparison between ``rateOf(state)`` and a constant."""
+
+    match = re.match(r"^(gt|geq|lt|leq)\s*\((.*)\)$", str(trigger or "").strip(), re.I)
+    if match is None:
+        return None
+    arguments = _split_arguments(match.group(2))
+    if arguments is None or len(arguments) != 2:
+        return None
+    left, right = (_strip_outer_parens(value) for value in arguments)
+    rate_of = re.compile(
+        r"^rateof\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)$", re.I
+    )
+    left_match, right_match = rate_of.fullmatch(left), rate_of.fullmatch(right)
+    if left_match is not None:
+        return left_match.group(1), match.group(1).lower(), right
+    if right_match is not None:
+        reverse = {"gt": "lt", "geq": "leq", "lt": "gt", "leq": "geq"}
+        return right_match.group(1), reverse[match.group(1).lower()], left
+    return None
+
+
+def _parse_scaled_state_threshold(
+    trigger: str,
+) -> Optional[Tuple[str, str, str, str]]:
+    """Parse a comparison of a constant multiple of one state to a value."""
+
+    match = re.match(r"^(gt|geq|lt|leq)\s*\((.*)\)$", str(trigger or "").strip(), re.I)
+    if match is None:
+        return None
+    arguments = _split_arguments(match.group(2))
+    if arguments is None or len(arguments) != 2:
+        return None
+    left, right = (_strip_outer_parens(value) for value in arguments)
+    identifier = r"[A-Za-z_][A-Za-z0-9_]*"
+
+    def parse_scaled(value: str) -> Optional[Tuple[str, str]]:
+        expression = _strip_outer_parens(value)
+        product = re.fullmatch(rf"(.+?)\s*\*\s*({identifier})", expression)
+        if product is not None:
+            return product.group(2), product.group(1)
+        product = re.fullmatch(rf"({identifier})\s*\*\s*(.+)", expression)
+        if product is not None:
+            return product.group(1), product.group(2)
+        return None
+
+    left_scaled = parse_scaled(left)
+    if left_scaled is not None:
+        return left_scaled[0], match.group(1).lower(), right, left_scaled[1]
+    right_scaled = parse_scaled(right)
+    if right_scaled is not None:
+        reverse = {"gt": "lt", "geq": "leq", "lt": "gt", "leq": "geq"}
+        return (
+            right_scaled[0],
+            reverse[match.group(1).lower()],
+            left,
+            right_scaled[1],
+        )
+    return None
+
+
 def _parse_periodic_reset_trigger(
     trigger: str,
 ) -> Optional[Tuple[str, str, str]]:
@@ -723,6 +786,35 @@ def synthesize_event_actions(
     def fold_initial(expression: str) -> Optional[float]:
         expression = context.expand_functions(str(expression or ""))
         return fold_numeric(expression, context.resolve_initial_value)
+
+    def fold_at_state(
+        expression: str,
+        time_value: float,
+        state_values: Optional[Mapping[str, float]] = None,
+    ) -> Optional[float]:
+        """Fold an event value using only proven state trajectories."""
+        values = dict(state_values or {})
+        expanded = context.expand_functions(str(expression or ""))
+        identifiers = set(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", expanded))
+        for identifier in identifiers:
+            if identifier in values:
+                continue
+            trajectory = context.resolve_affine_rate(identifier)
+            try:
+                if trajectory is not None:
+                    initial, slope = trajectory
+                    value = initial + slope * time_value
+                else:
+                    exponential = context.resolve_exponential_rate(identifier)
+                    if exponential is None:
+                        continue
+                    initial, exponent = exponential
+                    value = initial * math.exp(exponent * time_value)
+            except OverflowError:
+                continue
+            if math.isfinite(value):
+                values[identifier] = value
+        return fold(expression, time_value, dynamic_values=values)
 
     periodic_groups: dict[Tuple[str, str, float], List[SBMLEvent]] = {}
     periodic_handled: set[int] = set()
@@ -1290,10 +1382,48 @@ def synthesize_event_actions(
         scale_identifier: Optional[str] = None
         if threshold is None:
             state_threshold = _parse_affine_state_threshold(event.trigger)
+            rate_of_threshold = False
+            state_threshold_scale = "1"
+            if state_threshold is None:
+                state_threshold = _parse_rate_of_state_threshold(event.trigger)
+                rate_of_threshold = state_threshold is not None
+            if state_threshold is None:
+                scaled_threshold = _parse_scaled_state_threshold(event.trigger)
+                if scaled_threshold is not None:
+                    (
+                        scaled_identifier,
+                        scaled_operator,
+                        scaled_expression,
+                        scale_expression,
+                    ) = scaled_threshold
+                    scale_value = fold(scale_expression)
+                    if scale_value is not None and math.isfinite(scale_value):
+                        if scale_value < 0:
+                            scaled_operator = {
+                                "gt": "lt",
+                                "geq": "leq",
+                                "lt": "gt",
+                                "leq": "geq",
+                            }[scaled_operator]
+                            scale_value = -scale_value
+                        if scale_value > 0:
+                            state_threshold = (
+                                scaled_identifier,
+                                scaled_operator,
+                                scaled_expression,
+                            )
+                            state_threshold_scale = _format_number(scale_value)
             if state_threshold is not None:
                 identifier, operator, threshold_expression = state_threshold
-                trajectory = context.resolve_affine_rate(identifier)
+                trajectory = (
+                    None
+                    if rate_of_threshold
+                    else context.resolve_affine_rate(identifier)
+                )
                 crossing_value = fold(threshold_expression)
+                if crossing_value is not None:
+                    scale_value = float(state_threshold_scale)
+                    crossing_value /= scale_value
                 if trajectory is not None and crossing_value is not None:
                     initial_value, slope = trajectory
                     trigger_state_trajectory = (
@@ -1346,16 +1476,30 @@ def synthesize_event_actions(
                             initial_value,
                             exponent,
                         )
-                        initially_true = (
-                            initial_value > crossing_value
-                            if operator == "gt"
-                            else initial_value >= crossing_value
-                            if operator == "geq"
-                            else initial_value < crossing_value
-                            if operator == "lt"
-                            else initial_value <= crossing_value
+                        initial_trigger_value = (
+                            initial_value * exponent
+                            if rate_of_threshold
+                            else initial_value
                         )
-                        if exponent == 0 or initial_value == 0:
+                        crossing_state_value = (
+                            crossing_value / exponent
+                            if rate_of_threshold and exponent != 0
+                            else crossing_value
+                        )
+                        initially_true = (
+                            initial_trigger_value > crossing_value
+                            if operator == "gt"
+                            else initial_trigger_value >= crossing_value
+                            if operator == "geq"
+                            else initial_trigger_value < crossing_value
+                            if operator == "lt"
+                            else initial_trigger_value <= crossing_value
+                        )
+                        if (
+                            exponent == 0
+                            or initial_trigger_value == 0
+                            or (rate_of_threshold and not math.isfinite(crossing_state_value))
+                        ):
                             if initially_true and not event.trigger_initial_value:
                                 threshold = "0"
                                 trigger_state_values = {identifier: initial_value}
@@ -1370,13 +1514,13 @@ def synthesize_event_actions(
                                 normal_converted += 1
                                 continue
                         else:
-                            derivative_sign = initial_value * exponent
+                            derivative_sign = initial_trigger_value * exponent
                             rising = (
                                 operator in {"gt", "geq"} and derivative_sign > 0
                             ) or (
                                 operator in {"lt", "leq"} and derivative_sign < 0
                             )
-                            ratio = crossing_value / initial_value
+                            ratio = crossing_value / initial_trigger_value
                             if not rising or ratio <= 0:
                                 normal_converted += 1
                                 continue
@@ -1384,7 +1528,7 @@ def synthesize_event_actions(
                             if math.isfinite(crossing_time) and crossing_time >= 0:
                                 threshold = _format_number(crossing_time)
                                 trigger_state_values = {
-                                    identifier: crossing_value
+                                    identifier: crossing_state_value
                                 }
         if threshold is None:
             window = _parse_gated_time_window(event.trigger, fold)
@@ -1480,7 +1624,7 @@ def synthesize_event_actions(
             continue
         execution_time = trigger_time
         if event.delay:
-            delay = fold(event.delay, trigger_time)
+            delay = fold_at_state(event.delay, trigger_time)
             if delay is None:
                 untranslated.append(
                     (
@@ -1524,10 +1668,10 @@ def synthesize_event_actions(
                     failure = "event state at execution time is not finite"
                     break
                 assignment_state_values = {identifier: state_value}
-            value = fold(
+            value = fold_at_state(
                 expression,
                 evaluation_time,
-                dynamic_values=assignment_state_values,
+                state_values=assignment_state_values,
             )
             if value is None and execution_time == 0:
                 value = fold_initial(expression)

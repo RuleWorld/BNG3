@@ -6048,7 +6048,106 @@ def generate_bngl(
         def resolve_exponential_event_rate(
             identifier: str,
         ) -> Optional[Tuple[float, float]]:
-            """Resolve an isolated species with exact x' = rate * x dynamics."""
+            """Resolve an exact exponential species or parameter trajectory."""
+            parameter = model.parameters.get(identifier)
+            if parameter is not None:
+                rules = [rule for rule in model.rules if rule.variable == identifier]
+                if (
+                    len(rules) != 1
+                    or rules[0].type != "rate"
+                    or any(
+                        assignment.symbol == identifier
+                        for assignment in model.initial_assignments
+                    )
+                    or any(
+                        assignment.variable == identifier
+                        for event in model.events
+                        for assignment in event.assignments
+                    )
+                ):
+                    return None
+                initial = float(parameter.value)
+                if not math.isfinite(initial):
+                    return None
+                derivative = extend_function(
+                    rules[0].math, {}, model.function_definitions
+                )
+
+                def resolve_immutable(symbol: str) -> Optional[float]:
+                    if not is_compile_time_constant(symbol) or any(
+                        rule.variable == symbol for rule in model.rules
+                    ):
+                        return None
+                    return resolve_event_parameter(symbol)
+
+                def parameter_polynomial(
+                    node: ast.AST,
+                ) -> Optional[Tuple[float, float]]:
+                    if isinstance(node, ast.Constant) and isinstance(
+                        node.value, (int, float)
+                    ):
+                        return float(node.value), 0.0
+                    if isinstance(node, ast.Name):
+                        if standardize_name(node.id) == standardize_name(identifier):
+                            return 0.0, 1.0
+                        value = resolve_immutable(node.id)
+                        return (float(value), 0.0) if value is not None else None
+                    if isinstance(node, ast.UnaryOp) and isinstance(
+                        node.op, (ast.UAdd, ast.USub)
+                    ):
+                        value = parameter_polynomial(node.operand)
+                        if value is None:
+                            return None
+                        sign = -1.0 if isinstance(node.op, ast.USub) else 1.0
+                        return sign * value[0], sign * value[1]
+                    if isinstance(node, ast.BinOp):
+                        left = parameter_polynomial(node.left)
+                        right = parameter_polynomial(node.right)
+                        if left is None or right is None:
+                            return None
+                        if isinstance(node.op, ast.Add):
+                            return left[0] + right[0], left[1] + right[1]
+                        if isinstance(node.op, ast.Sub):
+                            return left[0] - right[0], left[1] - right[1]
+                        if isinstance(node.op, ast.Mult):
+                            if left[1] != 0 and right[1] != 0:
+                                return None
+                            return (
+                                left[0] * right[0],
+                                left[0] * right[1] + left[1] * right[0],
+                            )
+                        if isinstance(node.op, ast.Div) and right[1] == 0:
+                            if right[0] == 0:
+                                return None
+                            return left[0] / right[0], left[1] / right[0]
+                        if isinstance(node.op, ast.Pow) and right[1] == 0:
+                            if right[0] == 0:
+                                return 1.0, 0.0
+                            if right[0] == 1:
+                                return left
+                        return None
+                    if isinstance(node, ast.Call):
+                        args = [parameter_polynomial(arg) for arg in node.args]
+                        if any(value is None or value[1] != 0 for value in args):
+                            return None
+                    try:
+                        folded = fold_numeric(ast.unparse(node), resolve_immutable)
+                    except (TypeError, ValueError, SyntaxError):
+                        return None
+                    if folded is None or not math.isfinite(folded):
+                        return None
+                    return folded, 0.0
+
+                try:
+                    parsed = ast.parse(derivative, mode="eval")
+                except (TypeError, ValueError, SyntaxError):
+                    return None
+                coefficients = parameter_polynomial(parsed.body)
+                if coefficients is None or coefficients[0] != 0:
+                    return None
+                exponent = coefficients[1]
+                return (initial, exponent) if math.isfinite(exponent) else None
+
             species_id = next(
                 (
                     sid

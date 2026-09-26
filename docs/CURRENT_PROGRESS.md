@@ -1550,3 +1550,13 @@ regressions: `1,471 passed, 452 unsupported, 0 failed, 0 timed out`. For
 all three observables per model (maximum absolute error `4.44e-16`). Full
 Python: `551 passed, 28 skipped`; modern Atomizer: `317 passed, 1 skipped`.
 See the checklist for the report digest and scope limits.
+
+SBML event translation now resolves assignments and delays that read exact
+affine or exponential state trajectories, and lowers simple parameter
+rate-rule thresholds including `rateOf`-style scaled expressions. Five more
+official cases pass without regressions: `1,476 passed, 447 unsupported, 0
+failed, 0 timed out`. Five 10-time-unit generated-model comparisons match
+libRoadRunner within `4.06e-12` maximum absolute error. Full Python: `554
+passed, 28 skipped`. Full BioModels was not rerun; the cached `rateOf` source
+screen found no model matching the new simple parameter threshold form. See
+the convergence checklist for report digest and detailed scope.

@@ -5712,3 +5712,26 @@ the other groups remain implementation targets.
   `317 passed, 1 skipped`. Changed-file Ruff, compileall, and diff checks pass.
 - [x] A cached scan of 1,084 curated BioModels XML files found no fixed-delay
   call whose history target is a single symbol of this lowering shape.
+
+## Exponential rate-rule event values and delays — 2026-09-26
+
+- [x] Lower threshold events over a parameter with a rate rule of the exact
+  form `p' = k*p` when `k` is immutable and no event or initial assignment can
+  reset `p`. Also resolve fixed-time event assignments and event delays from
+  independently proven affine or exponential trajectories. Mutable, coupled,
+  nonlinear, or reset-controlled states remain untranslated.
+- [x] Extend exact state-threshold parsing to constant-scaled state expressions
+  such as `0.01*p`; reject dynamic or zero scales.
+- [x] Five additional official cases pass: `semantic/01261`, `01266`, `01268`,
+  `01297`, and `01299`. Full pinned suite: `1,476 passed, 447 unsupported,
+  0 failed, 0 timeouts`; five gains, zero regressions from `1,471/452`. Event
+  blockers fell from 350 to 345. Report
+  `/private/tmp/bng3-sbml-exp-rate-param-final.json`, SHA-256
+  `c8c23ebfb0bf079004c29b65e5cf4f78f694927f081067cf2d3559ef71f0c9f4`.
+- [x] Extended-horizon (10 time units, 100 steps) generated-model CVODE
+  comparisons against libRoadRunner passed for all five cases. Maximum
+  absolute errors were `0` for `01261` and `4.06e-12` for each other case.
+- [x] Full Python suite: `554 passed, 28 skipped`; Ruff, compileall, and
+  `git diff --check` pass. Full BioModels inventory was not rerun; a cached
+  source screen found four XML files using `rateOf`, none matching the simple
+  immutable-coefficient parameter rate-rule trigger implemented here.

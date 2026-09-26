@@ -733,6 +733,119 @@ def test_first_order_reaction_threshold_lowers_exponential_crossing():
     assert "untranslated" not in result.bngl.lower()
 
 
+def test_rate_of_exponential_parameter_lowers_exact_event_crossing():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="exponential_parameter_event_crossing">
+        <listOfParameters>
+          <parameter id="p" value="1" constant="false"/>
+          <parameter id="k" value="0.01" constant="true"/>
+          <parameter id="out" value="0" constant="false"/>
+        </listOfParameters>
+        <listOfRules><rateRule variable="p">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><times/><ci>k</ci><ci>p</ci></apply>
+          </math>
+        </rateRule></listOfRules>
+        <listOfEvents><event id="threshold">
+          <trigger initialValue="true" persistent="true">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><geq/><apply><times/><cn>0.01</cn><ci>p</ci></apply><cn>0.015</cn></apply>
+            </math>
+          </trigger>
+          <listOfEventAssignments><eventAssignment variable="out">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>5</cn></math>
+          </eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True).atomize(xml)
+
+    assert result.success, result.error
+    assert "t_end=>40.5465108108" in result.bngl
+    assert 'setParameter("out", "5")' in result.bngl
+    assert "untranslated" not in result.bngl.lower()
+
+
+def test_exponential_parameter_event_rejects_dynamic_coefficient():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="dynamic_exponential_coefficient_event">
+        <listOfParameters>
+          <parameter id="p" value="1" constant="false"/>
+          <parameter id="q" value="0.01" constant="false"/>
+          <parameter id="k" value="0.1" constant="true"/>
+          <parameter id="out" value="0" constant="false"/>
+        </listOfParameters>
+        <listOfRules>
+          <rateRule variable="p"><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><times/><ci>q</ci><ci>p</ci></apply>
+          </math></rateRule>
+          <rateRule variable="q"><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><times/><ci>k</ci><ci>q</ci></apply>
+          </math></rateRule>
+        </listOfRules>
+        <listOfEvents><event id="threshold">
+          <trigger initialValue="true" persistent="true">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><geq/><ci>p</ci><cn>1.5</cn></apply>
+            </math>
+          </trigger>
+          <listOfEventAssignments><eventAssignment variable="out">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>5</cn></math>
+          </eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True).atomize(xml)
+
+    assert result.success, result.error
+    assert "untranslated" in result.bngl.lower()
+
+
+def test_fixed_time_event_reads_exact_exponential_parameter_value():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="fixed_time_exponential_parameter_event">
+        <listOfParameters>
+          <parameter id="p" value="1" constant="false"/>
+          <parameter id="k" value="0.5" constant="true"/>
+          <parameter id="out" value="0" constant="false"/>
+        </listOfParameters>
+        <listOfRules><rateRule variable="p">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><times/><ci>k</ci><ci>p</ci></apply>
+          </math>
+        </rateRule></listOfRules>
+        <listOfEvents><event id="fixed">
+          <trigger initialValue="true" persistent="true">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><geq/><csymbol definitionURL="http://www.sbml.org/sbml/symbols/time">time</csymbol><cn>1</cn></apply>
+            </math>
+          </trigger>
+          <delay><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><times/><cn>2</cn><ci>p</ci></apply>
+          </math></delay>
+          <listOfEventAssignments><eventAssignment variable="out">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><ci>p</ci></math>
+          </eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True).atomize(xml)
+
+    assert result.success, result.error
+    assert "t_end=>4.2974425414" in result.bngl
+    assert 'setParameter("out", "1.6487212707")' in result.bngl
+    assert "untranslated" not in result.bngl.lower()
+
+
 def test_delay_of_affine_species_uses_initial_history_before_delay_boundary():
     from bionetgen.atomizer.modern import Atomizer
 
