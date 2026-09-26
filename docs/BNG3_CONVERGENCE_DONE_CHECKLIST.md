@@ -5691,3 +5691,24 @@ the other groups remain implementation targets.
   absolute difference is `1.69e-13`.
 - [x] A cached-source scan of 1,084 curated BioModels XML files found no
   first-order threshold event matching this exact lowering shape.
+
+## Affine delayed-history lowering — 2026-09-26
+
+- [x] Lower `delay(x, d)` exactly for zero delay, initial-only history bounded
+  by the requested horizon, or an independently affine state with constant
+  nonnegative delay. The generated piecewise expression uses the SBML initial
+  history for `t <= d` and the exact shifted affine trajectory afterward.
+  Resolve a unique time-zero initial assignment when its expression is
+  compile-time evaluable; keep ambiguous or coupled histories untranslated.
+- [x] Three official cases now pass: `semantic/00938`, `00940`, and `00942`.
+  Full pinned suite: `1,471 passed, 452 unsupported, 0 failed, 0 timeouts`,
+  three new passes and no regressions. Report
+  `/private/tmp/bng3-sbml-affine-delay-full.json`, SHA-256
+  `d5fb9c846058d242b84b809d8772c75ab7360dcbd8e6b444936f944d4a135a60`.
+- [x] Targeted generated-model ODE comparisons against libRoadRunner passed
+  for all three cases (three observables each), maximum absolute differences:
+  `00938: 4.44e-16`, `00940: 0`, `00942: 0`.
+- [x] Full Python suite: `551 passed, 28 skipped`; modern Atomizer:
+  `317 passed, 1 skipped`. Changed-file Ruff, compileall, and diff checks pass.
+- [x] A cached scan of 1,084 curated BioModels XML files found no fixed-delay
+  call whose history target is a single symbol of this lowering shape.

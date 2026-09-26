@@ -733,6 +733,35 @@ def test_first_order_reaction_threshold_lowers_exponential_crossing():
     assert "untranslated" not in result.bngl.lower()
 
 
+def test_delay_of_affine_species_uses_initial_history_before_delay_boundary():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="affine_delayed_history">
+        <listOfCompartments><compartment id="c" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies><species id="x" compartment="c" initialAmount="0" hasOnlySubstanceUnits="false"/></listOfSpecies>
+        <listOfParameters><parameter id="y" constant="false"/></listOfParameters>
+        <listOfRules><assignmentRule variable="y"><math xmlns="http://www.w3.org/1998/Math/MathML">
+          <apply><plus/><cn>2</cn><apply>
+            <csymbol definitionURL="http://www.sbml.org/sbml/symbols/delay">delay</csymbol>
+            <ci>x</ci><cn>0.2</cn>
+          </apply></apply>
+        </math></assignmentRule></listOfRules>
+        <listOfReactions><reaction id="source" reversible="false">
+          <listOfProducts><speciesReference species="x" stoichiometry="1"/></listOfProducts>
+          <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></kineticLaw>
+        </reaction></listOfReactions>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True).atomize(xml)
+
+    assert result.success, result.error
+    assert "delay(" not in result.bngl
+    assert "if((time() - (0.2)) <= 0" in result.bngl
+    assert "time() - (0.2)" in result.bngl
+
+
 def test_sbml_delay_of_unchanging_parameter_lowers_to_value():
     xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
       <model id="delay_of_static_parameter">

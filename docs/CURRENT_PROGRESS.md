@@ -1542,3 +1542,11 @@ scan of 1,084 curated BioModels found no matching event shape. See the
 convergence checklist for the exact case list and report digest. For
 `semantic/00619`, generated-model CVODE matches libRoadRunner across five
 observables to `1.69e-13` maximum absolute difference.
+
+Affine delayed history now lowers through an exact initial-history branch and
+shifted trajectory for fixed delays. Three more official cases pass with no
+regressions: `1,471 passed, 452 unsupported, 0 failed, 0 timed out`. For
+`00938`, `00940`, and `00942`, generated-model CVODE matches libRoadRunner on
+all three observables per model (maximum absolute error `4.44e-16`). Full
+Python: `551 passed, 28 skipped`; modern Atomizer: `317 passed, 1 skipped`.
+See the checklist for the report digest and scope limits.

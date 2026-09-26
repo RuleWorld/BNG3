@@ -2531,9 +2531,19 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
 
     def initial_value(target: str) -> Optional[float]:
         target_rules = [rule for rule in model.rules if rule.variable == target]
-        if target in initial_assignment_targets or any(
-            rule.type == "assignment" for rule in target_rules
-        ):
+        if target in initial_assignment_targets:
+            assignments = [
+                assignment
+                for assignment in model.initial_assignments
+                if assignment.symbol == target
+            ]
+            if len(assignments) != 1:
+                return None
+            expression = re.sub(
+                r"\btime\b", "0", str(assignments[0].math or ""), flags=re.I
+            )
+            return initial_expression(expression, require_immutable_symbols=True)
+        if any(rule.type == "assignment" for rule in target_rules):
             return None
         parameter = model.parameters.get(target)
         if parameter is not None:
@@ -2609,6 +2619,100 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
 
         return fold_numeric(expanded, resolve)
 
+    def affine_trajectory(target: str) -> Optional[Tuple[float, float]]:
+        """Prove a target has an independent constant-rate trajectory."""
+        initial = initial_value(target)
+        if initial is None or not math.isfinite(initial):
+            return None
+        target_rules = [rule for rule in model.rules if rule.variable == target]
+        if any(rule.type == "assignment" for rule in target_rules):
+            return None
+        if any(
+            variable == target
+            for event in model.events
+            for assignment in event.assignments
+            for variable, _expression in [_event_assignment(assignment)]
+        ):
+            return None
+
+        rate_rule = [rule for rule in target_rules if rule.type == "rate"]
+        if rate_rule:
+            if len(rate_rule) != 1:
+                return None
+            derivative = inline_sbml_functions(
+                str(rate_rule[0].math or ""), model.function_definitions
+            )
+            slope = initial_expression(derivative, require_immutable_symbols=True)
+            return (initial, slope) if slope is not None else None
+
+        species = model.species.get(target)
+        if species is None:
+            return None
+        if species.constant or species.boundary_condition:
+            return initial, 0.0
+        if species.conversion_factor or model.conversion_factor:
+            return None
+        net_amount_rate = 0.0
+        found = False
+        for reaction in model.reactions.values():
+            references = [
+                reference
+                for reference in (*reaction.reactants, *reaction.products)
+                if reference.species == target
+            ]
+            if not references:
+                continue
+            if reaction.fast or reaction.conversion_factor:
+                return None
+            net_coefficient = 0.0
+            for sign, side in (
+                (-1.0, reaction.reactants),
+                (1.0, reaction.products),
+            ):
+                for reference in side:
+                    if reference.species != target:
+                        continue
+                    if reference.variable_stoichiometry:
+                        return None
+                    net_coefficient += sign * float(reference.stoichiometry)
+            if net_coefficient == 0:
+                continue
+            law = reaction.kinetic_law
+            expression = str(
+                law.get("math", "")
+                if isinstance(law, Mapping)
+                else getattr(law, "math", "") or ""
+            ).strip()
+            if not expression:
+                return None
+            flux = initial_expression(expression, require_immutable_symbols=True)
+            if flux is None or not math.isfinite(flux):
+                return None
+            net_amount_rate += net_coefficient * flux
+            found = True
+        if not found:
+            # An unruled species with no net stoichiometric participation has
+            # no state equation; its initial value is constant.
+            return initial, 0.0
+        if not species.has_only_substance_units:
+            compartment = model.compartments.get(species.compartment or "")
+            if (
+                compartment is None
+                or not compartment.constant
+                or compartment.size == 0
+                or any(rule.variable == species.compartment for rule in model.rules)
+                or species.compartment in initial_assignment_targets
+                or any(
+                    variable == species.compartment
+                    for event in model.events
+                    for assignment in event.assignments
+                    for variable, _expression in [_event_assignment(assignment)]
+                )
+            ):
+                return None
+            net_amount_rate /= float(compartment.size)
+        return (initial, net_amount_rate) if math.isfinite(net_amount_rate) else None
+
     def fold_bounded_delays(expression: str) -> Tuple[str, int]:
         replacements: List[Tuple[int, int, str]] = []
         position = 0
@@ -2632,16 +2736,36 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
                 duration = initial_expression(
                     arguments[1], require_immutable_symbols=True
                 )
-                value = initial_expression(arguments[0])
             except (TypeError, ValueError):
                 return expression, 0
-            if (
-                duration is None
-                or not math.isfinite(duration)
-                or duration < t_end
-                or value is None
-                or not math.isfinite(value)
-            ):
+            if duration is None or not math.isfinite(duration) or duration < 0:
+                return expression, 0
+            delayed_expression = arguments[0].strip()
+            if duration == 0:
+                replacements.append((match.start(), call_end, delayed_expression))
+                position = call_end
+                continue
+            state_match = re.fullmatch(
+                r"[A-Za-z_][A-Za-z0-9_]*", delayed_expression
+            )
+            if 0 < duration < t_end and state_match:
+                target = state_match.group(0)
+                trajectory = affine_trajectory(target)
+                if trajectory is not None:
+                    initial, slope = trajectory
+                    displacement = slope * duration
+                    if math.isfinite(displacement):
+                        replacement = (
+                            f"if(time < {duration!r}, {initial!r}, "
+                            f"({target} - {displacement!r}))"
+                        )
+                        replacements.append((match.start(), call_end, replacement))
+                        position = call_end
+                        continue
+            if duration < t_end:
+                return expression, 0
+            value = initial_expression(delayed_expression)
+            if value is None or not math.isfinite(value):
                 return expression, 0
             delayed_symbols = set(
                 re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", arguments[0])
@@ -2736,9 +2860,9 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
         return 0
     _record_import_warning(
         model,
-        "Delayed history that stays at or before t=0 was replaced by initial "
-        "values "
-        f"values for the bounded simulation horizon t <= {t_end:g}.",
+        "SBML delay calls with zero duration, bounded initial history, or "
+        "provable affine-state history were lowered exactly for simulation "
+        f"horizon t <= {t_end:g}.",
         category="delay",
         severity="info",
     )
