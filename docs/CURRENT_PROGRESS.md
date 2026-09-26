@@ -25,7 +25,12 @@ in the convergence checklist. At 10 units/100 steps, `01701`, `01702`,
 `01715`, and `01716` all roundtrip and match libRoadRunner across all
 observables, with maximum absolute difference `2.85e-14`. Full Python suite
 passes `562` tests with `28` skipped when run with the compiled extension.
-The full curated BioModels refresh is running; its result is not yet known.
+The matched-timeout full curated BioModels refresh completed all 1,096
+records. It matches the prior full inventory exactly by record status, mode
+status, and simulation-comparison status: 781/1,083 SBML records passed, 127
+were unsupported, 5 failed, and 170 timed out. No curated gain/regression is
+claimed. Its aggregate core gate remains failed; report digest and details
+are in the convergence checklist.
 
 ## Current-head Atomizer and oracle validation — 2026-09-25
 

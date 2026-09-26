@@ -5874,5 +5874,11 @@ the other groups remain implementation targets.
   `562 passed, 28 skipped`; changed-file Ruff, compileall, and diff checks
   pass. Default-environment run without `build/cpp` had 23 unrelated
   compatibility/backend failures; the supported build environment passed.
-- [ ] Refresh full curated BioModels inventory after the local-parameter
-  scope fix; no curated gain/regression claim until report completes.
+- [x] Full curated BioModels inventory rerun with the prior 120-second
+  per-model limit: all 1,096 records; 781/1,083 SBML records passed, 127 were
+  unsupported, 5 failed, and 170 timed out. Both modes and every comparison
+  status match the prior full run across all records; no curated gain or
+  regression. Report `/private/tmp/bng3-biomodel-affine-self-reset-biomodels-120s.json`,
+  SHA-256 `61277f9c247f78cac66079e60750a714fbf9c3967cd2ead32d79b76633c973b9`.
+  Thirteen inventory records remain non-SBML exclusions. The aggregate core
+  gate remains failed.
