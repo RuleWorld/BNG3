@@ -10,6 +10,25 @@ IR migration reports and formalization reports retained in the repository are
 historical inputs and provenance records; their embedded prose is not a new
 execution instruction.
 
+## RateOf event histories and dynamic delays — 2026-09-26
+
+Atomizer now folds `rateOf(x)` from exact affine, exponential, and
+square-linear histories at the proper SBML trigger or execution time. It also
+schedules dynamic delays when those histories give finite nonnegative values,
+and resolves simultaneous dynamic priority when two events share a trigger and
+resolved delay. This gains five official SBML Test Suite cases: `01270`,
+`01507`, and `01672`-`01674`. Full suite is `1,541 passed / 382 unsupported`,
+with zero failures, timeouts, or regressions; event blockers fell from 285 to
+280. Full Python passes `575` tests with `28` skipped. All five gains pass
+10-unit BNG3/libRoadRunner comparisons across 3-5 observables; largest error
+is `1.61e-10`. Cached BioModels scan found no matching models; no curated gain
+claimed.
+
+SBML report: `/private/tmp/bng3-sbml-rateof-events-full.json`, SHA-256
+`3250bee4f7ea11e97a1a44d3d38424611ef788ad91a623d6507c30f7b88364f4`.
+Target comparison summary: `/private/tmp/bng3-sbml-rateof-h10-summary.json`,
+SHA-256 `aff2338c393e9380fe654bec43a4120cbafa0cd58ebd5446cd5554e61df0ebb7`.
+
 ## Event-local delayed values and simultaneous priorities — 2026-09-26
 
 Atomizer now folds delayed event values against event-local affine histories

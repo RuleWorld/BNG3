@@ -4,7 +4,7 @@
 **Last targeted audit:** 2026-09-26 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
 **Working branch:** `main`
-**Current base:** `main` at `116b311a5608ab99d5cefbdfb42b6d7ea594ebb3`; current feature work is reciprocal-flux event scheduling
+**Current base:** `main` at `ae9f5a131391d578ef0f676b1034bc983c09c2b1`; current feature work is exact event-history folding
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -31,6 +31,34 @@ completion charter and Section 11 of BNG3_INTEGRATION_PLAN.md into auditable
 work items. The unification work orders in docs/BNG3_unification_spec.md remain the
 detailed dependency map; provenance/capability-matrix.yml remains the
 capability inventory.
+
+## RateOf histories and dynamic event delays — 2026-09-26
+
+- [x] Event-value folding evaluates `rateOf(x)` from a proven affine,
+  exponential, or square-linear trajectory at the SBML trigger or execution
+  time. Exact nonnegative delays derived from those histories are scheduled.
+  Two same-trigger delayed events can use dynamic priority only when resolved
+  delays match and the dynamic priority is strictly greater than the other
+  event's static priority.
+- [x] Pinned SBML Test Suite `cf38585fac5de8e0e90112febb62851ee2181816`:
+  `1,541 passed, 382 unsupported, 0 failed, 0 timed out`. Compared per case
+  with the previous report, five cases gained pass and none regressed:
+  `01270`, `01507`, and `01672`-`01674`. Event blockers fell from 285 to 280.
+  Full report `/private/tmp/bng3-sbml-rateof-events-full.json`, SHA-256
+  `3250bee4f7ea11e97a1a44d3d38424611ef788ad91a623d6507c30f7b88364f4`.
+- [x] Targeted 10-unit/100-step comparisons pass against libRoadRunner 2.10.0
+  for all five gains, across 3-5 observables each. Maximum absolute error is
+  `1.61e-10`, below configured comparison tolerance. Summary
+  `/private/tmp/bng3-sbml-rateof-h10-summary.json`, SHA-256
+  `aff2338c393e9380fe654bec43a4120cbafa0cd58ebd5446cd5554e61df0ebb7`.
+- [x] Full Python suite: `575 passed, 28 skipped` with compiled extension;
+  repository-wide Black, Ruff, and `git diff --check` pass.
+- [x] Cached curated BioModels screening parsed 6,759 XML files with 9 parse
+  errors and found zero identical-trigger two-event models using `rateOf` in
+  event delays, priorities, or assignments. No curated gain claimed; full
+  curated inventory remains unrefreshed.
+- [ ] Hosted CI after the latest push remains unverified; GitHub CLI could not
+  connect to `api.github.com`.
 
 ## Event-local delayed values and simultaneous priorities — 2026-09-26
 

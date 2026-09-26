@@ -983,8 +983,55 @@ def synthesize_event_actions(
                 return None
             return value if math.isfinite(value) else None
 
+        def rate_of_state_value(identifier: str, query_time: float) -> Optional[float]:
+            affine = (
+                context.resolve_affine_priority_rate(identifier, event_context)
+                if priority_evaluation and event_context is not None
+                else (
+                    context.resolve_affine_rate_for_event(identifier, event_context)
+                    if event_context is not None
+                    else context.resolve_affine_rate(identifier)
+                )
+            )
+            if affine is not None:
+                return float(affine[1]) if math.isfinite(affine[1]) else None
+            exponential = (
+                context.resolve_exponential_rate_for_event(identifier, event_context)
+                if event_context is not None
+                else context.resolve_exponential_rate(identifier)
+            )
+            if exponential is not None:
+                initial, exponent = exponential
+                try:
+                    rate = exponent * initial * math.exp(exponent * query_time)
+                except OverflowError:
+                    return None
+                return rate if math.isfinite(rate) else None
+            square_linear = (
+                context.resolve_square_linear_rate_for_event(identifier, event_context)
+                if event_context is not None
+                else None
+            )
+            if square_linear is None:
+                return None
+            initial, squared_slope = square_linear
+            radicand = initial * initial + squared_slope * query_time
+            if radicand <= 0:
+                return None
+            rate = squared_slope / (2.0 * math.sqrt(radicand))
+            return rate if math.isfinite(rate) else None
+
         class DelayHistoryRewriter(ast.NodeTransformer):
             def visit_Call(self, node: ast.Call) -> ast.AST:
+                if (
+                    isinstance(node.func, ast.Name)
+                    and node.func.id.lower() == "rateof"
+                    and len(node.args) == 1
+                    and isinstance(node.args[0], ast.Name)
+                ):
+                    value = rate_of_state_value(node.args[0].id, time_value)
+                    if value is not None:
+                        return ast.copy_location(ast.Constant(value=value), node)
                 if (
                     isinstance(node.func, ast.Name)
                     and node.func.id.lower() == "delay"
@@ -2531,8 +2578,9 @@ def synthesize_event_actions(
             )
             continue
         execution_time = trigger_time
+        delay = 0.0
         if event.delay:
-            delay = fold_at_state(event.delay, trigger_time)
+            delay = fold_at_state(event.delay, trigger_time, event_context=event)
             if delay is None:
                 untranslated.append(
                     (
@@ -2664,17 +2712,29 @@ def synthesize_event_actions(
         priority = 0.0
         if getattr(event, "priority", None):
             folded_priority = fold(event.priority or "", execution_time)
-            if folded_priority is None and len(events) == 2 and not event.delay:
+            if folded_priority is None and len(events) == 2:
                 other_event = next(
                     candidate for candidate in events if candidate is not event
                 )
                 event_time = parse_time_threshold(event.trigger)
                 other_time = parse_time_threshold(other_event.trigger)
+                other_delay = (
+                    fold_at_state(
+                        other_event.delay,
+                        trigger_time,
+                        event_context=other_event,
+                    )
+                    if other_event.delay
+                    else 0.0
+                )
                 if (
-                    not other_event.delay
-                    and event.trigger.strip() == other_event.trigger.strip()
+                    event.trigger.strip() == other_event.trigger.strip()
                     and event_time is not None
                     and other_time is not None
+                    and other_delay is not None
+                    and math.isfinite(other_delay)
+                    and other_delay >= 0
+                    and abs(float(other_delay) - delay) <= 1e-12
                 ):
                     other_priority = fold(other_event.priority or "0", execution_time)
                     state_priority = fold_at_state(

@@ -1259,6 +1259,45 @@ def test_simultaneous_events_resolve_dynamic_priority_before_assignments():
     assert first_reset < second_reset
 
 
+def test_simultaneous_rateof_delay_and_priority_use_exponential_history():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="simultaneous_rateof_event_priority">
+        <listOfParameters>
+          <parameter id="p1" value="2" constant="false"/>
+          <parameter id="p2" value="10" constant="false"/>
+        </listOfParameters>
+        <listOfRules><rateRule variable="p1"><math xmlns="http://www.w3.org/1998/Math/MathML">
+          <apply><times/><cn>0.01</cn><ci>p1</ci></apply>
+        </math></rateRule></listOfRules>
+        <listOfEvents>
+          <event id="static-priority" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><gt/><csymbol encoding="text" definitionURL="http://www.sbml.org/sbml/symbols/time">time</csymbol><cn>4.5</cn></apply></math></trigger>
+            <delay><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><csymbol encoding="text" definitionURL="http://www.sbml.org/sbml/symbols/rateOf">rateOf</csymbol><ci>p1</ci></apply></math></delay>
+            <priority><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0.02</cn></math></priority>
+            <listOfEventAssignments><eventAssignment variable="p2"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><plus/><apply><csymbol encoding="text" definitionURL="http://www.sbml.org/sbml/symbols/rateOf">rateOf</csymbol><ci>p1</ci></apply><cn>2</cn></apply></math></eventAssignment></listOfEventAssignments>
+          </event>
+          <event id="dynamic-priority" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><gt/><csymbol encoding="text" definitionURL="http://www.sbml.org/sbml/symbols/time">time</csymbol><cn>4.5</cn></apply></math></trigger>
+            <delay><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><csymbol encoding="text" definitionURL="http://www.sbml.org/sbml/symbols/rateOf">rateOf</csymbol><ci>p1</ci></apply></math></delay>
+            <priority><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><csymbol encoding="text" definitionURL="http://www.sbml.org/sbml/symbols/rateOf">rateOf</csymbol><ci>p1</ci></apply></math></priority>
+            <listOfEventAssignments><eventAssignment variable="p2"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><plus/><apply><csymbol encoding="text" definitionURL="http://www.sbml.org/sbml/symbols/rateOf">rateOf</csymbol><ci>p1</ci></apply><cn>5</cn></apply></math></eventAssignment></listOfEventAssignments>
+          </event>
+        </listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True).atomize(xml)
+
+    assert result.success, result.error
+    assert "Events NOT simulated" not in result.bngl
+    assert "t_end=>4.5209205572" in result.bngl
+    high_priority = result.bngl.index('setParameter("p2", "5.0209205572")')
+    low_priority = result.bngl.index('setParameter("p2", "2.0209205572")')
+    assert high_priority < low_priority
+
+
 def test_affine_rate_rule_compartment_schedules_delayed_threshold_event():
     from bionetgen.atomizer.modern import Atomizer
 
