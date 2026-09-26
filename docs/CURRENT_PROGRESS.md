@@ -20,7 +20,7 @@ pinned suite is `1,587 passed, 333 unsupported, 3 failed, 0 timed out`; the
 three CVODE failures are `00955`, `01148`, and `01487`. Report:
 `/private/tmp/bng3-sbml-difference-working.json`, SHA-256
 `17f0b59e400fa60f70cd42788c8a061e5089b0626f0465b47f99e76fb9055e05`.
-Exact-head hosted CI is pending push.
+Exact-head CI is running for `f23d9eb3b2e34da746e5804db7ea2f8a03cd6222` (CI workflow `36277294500`; cross-tool parity `36277294520`; CodeQL `36277294478`).
 
 This is the live status page for the combined BNG3 migration tree. The older
 IR migration reports and formalization reports retained in the repository are

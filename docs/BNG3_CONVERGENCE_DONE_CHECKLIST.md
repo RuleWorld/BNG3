@@ -4,7 +4,7 @@
 **Last targeted audit:** 2026-09-26 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
 **Working branch:** `main`
-**Current base:** `main` at `1441c96cade859f741b3139f4878627064265a3f`; species-difference threshold work is in progress
+**Current base:** `main` at `f23d9eb3b2e34da746e5804db7ea2f8a03cd6222`; species-difference threshold work is pushed and exact-head CI is running
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -51,7 +51,7 @@ capability inventory.
   `3.01e-9`; maximum scaled error is `0.0352`.
 - [x] Full Python suite: `581 passed, 28 skipped`; Black, Ruff, and
   `git diff --check` pass.
-- [ ] Hosted CI for this change remains pending push and exact-head run.
+- [ ] Exact-head CI for `f23d9eb3b2e34da746e5804db7ea2f8a03cd6222` is running (CI workflow `36277294500`; cross-tool parity `36277294520`; CodeQL `36277294478`).
 
 ## Scalar quadratic event threshold crossing — 2026-09-26
 
