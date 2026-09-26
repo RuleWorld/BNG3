@@ -10,19 +10,20 @@
 Atomizer now resolves a restricted trigger comparing two species when their
 difference follows an exact autonomous quadratic ODE along a rank-one reaction
 coordinate. Either side can be a fixed species; the dynamic side supplies the
-reaction coordinate. Event assignments that alter either component or read
-those components in an unsupported assignment snapshot remain fail-closed.
-This gains seven SBML Test Suite cases (`00351`, `00384`, `00408`, `00429`,
-`00441`, `00746`, `00766`) with no regressions against the immediately
-preceding `1,582 passed / 338 unsupported / 3 failed` report. All seven pass
+reaction coordinate. At proven quadratic crossings, trigger-time assignments
+can read any species value mapped onto that rank-one coordinate. Event
+assignments that alter either trigger component remain fail-closed. This gains
+eight SBML Test Suite cases (`00351`, `00384`, `00408`, `00429`, `00441`,
+`00746`, `00766`, `00885`) with no regressions against the earlier
+`1,582 passed / 338 unsupported / 3 failed` report. All eight pass
 10-unit/100-step BNG3/libRoadRunner 2.10.0 comparisons over eight observables
 each; maximum absolute error is `4.72e-8` and maximum scaled error is `0.0352`.
-Full Python passes (`581 passed, 28 skipped`). Current pinned suite is `1,589
-passed, 331 unsupported, 3 failed, 0 timed out`; the three CVODE failures are
+Full Python passes (`581 passed, 28 skipped`). Current pinned suite is `1,590
+passed, 330 unsupported, 3 failed, 0 timed out`; the three CVODE failures are
 `00955`, `01148`, and `01487`. Report:
-`/private/tmp/bng3-sbml-difference-final-working.json`, SHA-256
-`66fc2b08c9dacd4d484ee43888c2e395a46b9e6c97ed14ed56597456c054afeb`.
-Exact-head CI for this fixed-component extension is pending push.
+`/private/tmp/bng3-sbml-difference-snapshot-working.json`, SHA-256
+`44cdb83bf4bbc0b2bc43c6104131d013e4b31ae8964ed5eb101fa5360d1a4b42`.
+Exact-head CI for this trigger-time snapshot extension is pending push.
 
 This is the live status page for the combined BNG3 migration tree. The older
 IR migration reports and formalization reports retained in the repository are

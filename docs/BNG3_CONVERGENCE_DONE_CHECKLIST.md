@@ -4,7 +4,7 @@
 **Last targeted audit:** 2026-09-26 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
 **Working branch:** `main`
-**Current base:** `main` at `2f6a9a768942eac858e17bb0b1156505c7305f93`; fixed-component species-difference extension is in progress
+**Current base:** `main` at `f208ae6284c0daf8408328e89947a2d91303f412`; trigger-time species snapshots for quadratic events are in progress
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -40,21 +40,23 @@ capability inventory.
   rejects event assignments that alter either component or read either
   component at a snapshot where the supported lowering cannot preserve it.
   A fixed or boundary component is allowed as the non-coordinate side; the
-  dynamic component supplies the reaction coordinate.
-- [x] Seven SBML Test Suite cases gained relative to the earlier
+  dynamic component supplies the reaction coordinate. At a proven quadratic
+  crossing, trigger-time assignments can read any species value mapped onto
+  that same rank-one coordinate.
+- [x] Eight SBML Test Suite cases gained relative to the earlier
   `1,582 passed / 338 unsupported / 3 failed` working report:
-  `00351`, `00384`, `00408`, `00429`, `00441`, `00746`, and `00766`. No case
-  regressed against that report. Current pinned suite: `1,589 passed, 331
-  unsupported, 3 failed, 0 timed out`; the three CVODE failures are `00955`,
-  `01148`, and `01487`. Report
-  `/private/tmp/bng3-sbml-difference-final-working.json`, SHA-256
-  `66fc2b08c9dacd4d484ee43888c2e395a46b9e6c97ed14ed56597456c054afeb`.
-- [x] All seven gains pass BNG3/libRoadRunner 2.10.0 comparisons over eight
+  `00351`, `00384`, `00408`, `00429`, `00441`, `00746`, `00766`, and `00885`.
+  No case regressed against that report. Current pinned suite: `1,590 passed,
+  330 unsupported, 3 failed, 0 timed out`; the three CVODE failures are
+  `00955`, `01148`, and `01487`. Report
+  `/private/tmp/bng3-sbml-difference-snapshot-working.json`, SHA-256
+  `44cdb83bf4bbc0b2bc43c6104131d013e4b31ae8964ed5eb101fa5360d1a4b42`.
+- [x] All eight gains pass BNG3/libRoadRunner 2.10.0 comparisons over eight
   observables each (10-unit horizon, 100 steps). Maximum absolute error is
   `4.72e-8`; maximum scaled error is `0.0352`.
 - [x] Full Python suite: `581 passed, 28 skipped`; Black, Ruff, and
   `git diff --check` pass.
-- [ ] Exact-head CI for the fixed-component extension is pending push.
+- [ ] Exact-head CI for the trigger-time snapshot extension is pending push.
 
 ## Scalar quadratic event threshold crossing — 2026-09-26
 

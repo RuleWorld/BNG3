@@ -536,7 +536,7 @@ def test_quadratic_state_difference_threshold_uses_composite_trajectory():
     event = SBMLEvent(
         id="difference-threshold",
         trigger="gt(A, B)",
-        assignments=[SBMLEventAssignment("P", "1")],
+        assignments=[SBMLEventAssignment("P", "A * time")],
     )
     result = synthesize_event_actions(
         [event],
@@ -552,6 +552,11 @@ def test_quadratic_state_difference_threshold_uses_composite_trajectory():
             resolve_quadratic_rate_for_event=lambda expression, _event: (
                 (-1.0, 0.0, 0.0, 1.0) if expression == "(A) - (B)" else None
             ),
+            resolve_quadratic_state_values_for_event=lambda expression, value, _event: (
+                {"A": 4.0, "B": 4.0}
+                if expression == "(A) - (B)" and value == 0
+                else None
+            ),
         ),
     )
 
@@ -559,6 +564,7 @@ def test_quadratic_state_difference_threshold_uses_composite_trajectory():
     assert result.untranslated == []
     assert result.actions_block is not None
     assert "t_end=>1" in result.actions_block
+    assert 'setParameter("P", "4")' in result.actions_block
 
 
 def test_exponential_threshold_event_reads_trigger_or_execution_state():

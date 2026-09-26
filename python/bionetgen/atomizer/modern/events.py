@@ -45,6 +45,12 @@ def _no_event_quadratic_rate(
     return None
 
 
+def _no_event_quadratic_state_values(
+    _identifier: str, _value: float, _event: SBMLEvent
+) -> Optional[Mapping[str, float]]:
+    return None
+
+
 from .types import standardize_name
 
 
@@ -104,6 +110,11 @@ class EventTranslationContext:
     resolve_quadratic_rate_for_event: Callable[
         [str, SBMLEvent], Optional[Tuple[float, float, float, float]]
     ] = _no_event_quadratic_rate
+    # Resolve model states at a proven quadratic trigger crossing for
+    # trigger-time event assignment snapshots.
+    resolve_quadratic_state_values_for_event: Callable[
+        [str, float, SBMLEvent], Optional[Mapping[str, float]]
+    ] = _no_event_quadratic_state_values
     # Resolve a reaction identifier as its kinetic-law rate when that rate is
     # exactly foldable before the event executes.
     resolve_reaction_rate_for_event: Callable[[str, SBMLEvent], Optional[float]] = (
@@ -2847,6 +2858,14 @@ def synthesize_event_actions(
                                 if rising and crossing_time is not None:
                                     threshold = _format_number(crossing_time)
                                     trigger_state_values = {identifier: crossing_value}
+                                    if event.use_values_from_trigger_time:
+                                        trigger_snapshot = context.resolve_quadratic_state_values_for_event(
+                                            identifier, crossing_value, event
+                                        )
+                                        if trigger_snapshot is not None:
+                                            trigger_state_values.update(
+                                                trigger_snapshot
+                                            )
         if threshold is None:
             window = _parse_gated_time_window(
                 event_trigger,

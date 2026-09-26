@@ -6670,6 +6670,10 @@ def generate_bngl(
             squared_slope = 2.0 * amount_rate_coefficient
             return (initial, squared_slope) if math.isfinite(squared_slope) else None
 
+        quadratic_state_snapshots: Dict[
+            Tuple[int, str], Tuple[Dict[str, Tuple[float, float]], float, float]
+        ] = {}
+
         def resolve_quadratic_event_rate(
             identifier: str, event_context: SBMLEvent
         ) -> Optional[Tuple[float, float, float, float]]:
@@ -6989,6 +6993,9 @@ def generate_bngl(
                 initial = offset + state_slope * float(coordinate_initial)
                 if abs(state_slope) <= 1e-14:
                     return (initial, 0.0, 0.0, 0.0)
+                quadratic_state_snapshots[
+                    (id(event_context), standardize_name(identifier))
+                ] = (dict(species_polynomials), offset, state_slope)
                 quadratic, linear, constant = (
                     quadratic / state_slope,
                     linear - 2.0 * quadratic * offset / state_slope,
@@ -7001,6 +7008,32 @@ def generate_bngl(
             ):
                 return None
             return initial, quadratic, linear, constant
+
+        def resolve_quadratic_event_state_values(
+            identifier: str, value: float, event_context: SBMLEvent
+        ) -> Optional[Mapping[str, float]]:
+            key = (id(event_context), standardize_name(identifier))
+            snapshot = quadratic_state_snapshots.get(key)
+            if snapshot is None:
+                if resolve_quadratic_event_rate(identifier, event_context) is None:
+                    return None
+                snapshot = quadratic_state_snapshots.get(key)
+            if snapshot is None:
+                return None
+            species_polynomials, offset, state_slope = snapshot
+            if abs(state_slope) <= 1e-14 or not math.isfinite(value):
+                return None
+            coordinate = (value - offset) / state_slope
+            values: Dict[str, float] = {}
+            for species_id in model.species:
+                species_offset, species_slope = species_polynomials[
+                    standardize_name(species_id)
+                ]
+                state_value = species_offset + species_slope * coordinate
+                if not math.isfinite(state_value):
+                    return None
+                values[species_id] = state_value
+            return values
 
         def resolve_rate_event_reset(
             identifier: str,
@@ -7159,6 +7192,9 @@ def generate_bngl(
                 ),
                 resolve_square_linear_rate_for_event=(resolve_square_linear_event_rate),
                 resolve_quadratic_rate_for_event=resolve_quadratic_event_rate,
+                resolve_quadratic_state_values_for_event=(
+                    resolve_quadratic_event_state_values
+                ),
                 resolve_reaction_rate_for_event=resolve_event_reaction_rate,
                 resolve_rate_reset=resolve_rate_event_reset,
                 static_event_state=(
