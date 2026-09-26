@@ -1141,6 +1141,37 @@ def test_affine_rate_rule_identity_event_assignments_preserve_thresholds():
     assert "state-dependent or non-constant event" not in result.bngl
 
 
+def test_affine_rate_rule_compartment_schedules_delayed_threshold_event():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="affine_compartment_event">
+        <listOfCompartments><compartment id="C" size="5" constant="false"/></listOfCompartments>
+        <listOfSpecies><species id="S" compartment="C" initialAmount="2"
+          hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/></listOfSpecies>
+        <listOfRules><rateRule variable="C">
+          <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math>
+        </rateRule></listOfRules>
+        <listOfEvents><event id="volume-threshold" useValuesFromTriggerTime="true">
+          <trigger initialValue="false" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><leq/><ci>C</ci><cn>5.1</cn></apply>
+          </math></trigger>
+          <delay><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1.05</cn></math></delay>
+          <listOfEventAssignments><eventAssignment variable="S">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>4</cn></math>
+          </eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True).atomize(xml)
+
+    assert result.success, result.error
+    assert "state-dependent or non-constant event" not in result.bngl
+    assert "begin actions" in result.bngl
+    assert "Events NOT simulated" not in result.bngl
+
+
 def test_constant_piecewise_event_delay_and_assignment_fold_exactly():
     from bionetgen.atomizer.modern import Atomizer
 

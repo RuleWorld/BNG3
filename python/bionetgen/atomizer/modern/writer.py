@@ -5881,6 +5881,52 @@ def generate_bngl(
         ) -> Optional[Tuple[float, float]]:
             parameter = model.parameters.get(identifier)
             if parameter is None:
+                compartment_id = next(
+                    (
+                        compartment_id
+                        for compartment_id in model.compartments
+                        if standardize_name(compartment_id)
+                        == standardize_name(identifier)
+                    ),
+                    None,
+                )
+                if compartment_id is not None:
+                    if any(
+                        assignment.symbol == compartment_id
+                        for assignment in model.initial_assignments
+                    ) or any(
+                        assignment.variable == compartment_id
+                        for event in model.events
+                        if event is not event_context
+                        for assignment in event.assignments
+                    ):
+                        return None
+                    rate_rules = [
+                        rule
+                        for rule in model.rules
+                        if standardize_name(rule.variable)
+                        == standardize_name(compartment_id)
+                    ]
+                    if len(rate_rules) != 1 or rate_rules[0].type != "rate":
+                        return None
+                    derivative = extend_function(
+                        rate_rules[0].math, {}, model.function_definitions
+                    )
+
+                    def resolve_immutable(symbol: str) -> Optional[float]:
+                        if not is_compile_time_constant(symbol):
+                            return None
+                        return resolve_event_parameter(symbol)
+
+                    initial = float(model.compartments[compartment_id].size)
+                    slope = fold_numeric(derivative, resolve_immutable)
+                    if (
+                        slope is None
+                        or not math.isfinite(initial)
+                        or not math.isfinite(slope)
+                    ):
+                        return None
+                    return initial, slope
                 references = [
                     reference
                     for reaction in model.reactions.values()

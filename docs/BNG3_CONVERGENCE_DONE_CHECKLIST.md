@@ -6034,3 +6034,21 @@ the other groups remain implementation targets.
   scan of 6,538 curated BioModels XML files found no rate-rule threshold
   conjunction with explicit Boolean terms; the full BioModels inventory was
   not rerun and no curated gain is claimed.
+
+## Affine rate-rule compartment thresholds — 2026-09-26
+
+- [x] Resolve a compartment's finite initial size and unique constant-foldable
+  rate rule as an affine trajectory for event threshold scheduling. Initial
+  assignments, competing event assignments, duplicate/non-rate rules, and
+  non-constant derivatives remain fail-closed.
+- [x] `semantic/01120` now passes. Full pinned SBML Test Suite: `1,519 passed,
+  404 unsupported, 0 failed, 0 timeouts`; one gain and no regressions from
+  `1,518/405`. Report `/private/tmp/bng3-sbml-compartment-full.json`, SHA-256
+  `fd363ed5719db29c9266eef791b38d8677d3ed7800562a4fc04cdd310da6bae0`.
+  BNG3 CVODE agrees with libRoadRunner 2.10.0 across all three observables at
+  the suite's one-unit horizon (maximum absolute difference `8.88e-16`); a
+  targeted three-unit run also passes after the delayed event executes.
+- [x] Full Python suite: `571 passed, 28 skipped`; repository-wide Black,
+  Ruff, and `git diff --check` pass. The current full BioModels refresh predates
+  this feature; a fresh full run is still in progress, so no curated-model gain
+  is claimed yet.

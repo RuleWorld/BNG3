@@ -1763,3 +1763,11 @@ checks pass. A cached scan of 1,084 BioModels XML files found no matching
 single-state exponential self-reset event; the prior full curated result
 remains the current inventory evidence. See the checklist for the exact
 report digest and limits.
+
+Affine rate-rule event thresholds now include compartments with constant
+derivatives. SBML Test Suite `semantic/01120` passes, raising the full count to
+1,519/1,923 with zero failed cases or timeouts and no regressions. Its three
+BNG3 CVODE observables agree with libRoadRunner to `8.88e-16` maximum absolute
+difference; targeted three-unit validation also covers delayed execution.
+Full Python: 571 passed, 28 skipped; Black, Ruff, and diff checks pass. A new
+full BioModels refresh remains in progress.
