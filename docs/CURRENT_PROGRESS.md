@@ -12,9 +12,13 @@ their trajectories are independently proven affine, and supplies both
 crossing-time values to event assignments. Changes to either trigger species
 remain fail-closed. The focused event tests pass (`29 passed`) and the full
 Python suite passes (`585 passed, 28 skipped`). Black, Ruff, and
-`git diff --check` pass. The five initial SBML targets did not gain support
-because their species are not independently affine; the full SBML suite and
-curated BioModels inventory are still running, so no corpus gain is claimed.
+`git diff --check` pass. The full pinned SBML suite remains `1,592 passed,
+330 unsupported, 1 failed, 0 timed out`; comparison with the preceding report
+shows no gains or regressions, and `01148` retains the same CVODE step-budget
+failure. The five initial targets did not gain support because their species
+are not independently affine. Full curated BioModels inventory is still
+running. Exact-head CI for `0fbf50981b4bd5ffbe75bc6840a62d1f3d13ce9b`:
+cross-tool parity, CodeQL, and CI queued; formatting and Lean checks in progress.
 
 ## SBML nonfinite oracle comparison — 2026-09-26
 
