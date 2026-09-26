@@ -4,7 +4,7 @@
 **Last targeted audit:** 2026-09-26 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
 **Working branch:** `main`
-**Current base:** `main` at PR #24 merge `a5f65ae05e26926b013f4ec3305dab34a3e9c84f`; working tree also contains targeted SymbolTable, BNGIR schema, and Atomizer writer fixes
+**Current base:** `main` at `fed1208415c00755f539e1ab05f021b8806b5abe`; current feature work is reciprocal-flux event scheduling
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -31,6 +31,32 @@ completion charter and Section 11 of BNG3_INTEGRATION_PLAN.md into auditable
 work items. The unification work orders in docs/BNG3_unification_spec.md remain the
 detailed dependency map; provenance/capability-matrix.yml remains the
 capability inventory.
+
+## Reciprocal-flux threshold events — 2026-09-26
+
+- [x] Exact trigger scheduling now handles a positive concentration whose
+  isolated net reaction flux has the form `k/S`, giving
+  `S(t)^2 = S(0)^2 + 2*k*t`. Proof rejects nonpositive initial/threshold
+  values, variable compartments, variable stoichiometry, conversion factors,
+  coupled or controlled species, and unsupported kinetic-law forms.
+- [x] Synthetic regression verifies event at `t=1.705` for `S(0)=1`,
+  `S'=1/S`, threshold `S>2.1`, and event assignment `k=10`.
+- [x] Full Python suite: `573 passed, 28 skipped` with compiled extension.
+- [x] Pinned SBML Test Suite `cf38585fac5de8e0e90112febb62851ee2181816`:
+  `1,525 passed, 398 unsupported, 0 failed, 0 timed out`; only
+  `semantic/00944` gained pass vs prior `1,524/399`; no regressions. Full
+  report `/private/tmp/bng3-sbml-reciprocal-full.json`, SHA-256
+  `6b3dd84145054f52ed7667c6c8b847122c6f00576b99e90c9479ca29d4b581c9`.
+- [x] `semantic/00944` matches libRoadRunner 2.10.0 at 10 units / 100 steps
+  across both observables; maximum absolute error `3.56e-15`. Target report
+  `/private/tmp/bng3-sbml-reciprocal-00944.json`, SHA-256
+  `94a194c7b00a865384bcaf1bfed58ecf55bbef4a23244fdfbb8033fd26911c13`.
+- [x] `semantic/00945` and `00947` remain unsupported because event-driven
+  compartment changes alter species concentration discontinuously; trajectory
+  proof correctly fails closed.
+- [ ] Full curated BioModels refresh is still running; no curated gain claimed.
+- [ ] Hosted checks have not been queried successfully; `gh` could not connect
+  to `api.github.com` during this pass.
 
 ## Historical audit — 2026-09-10
 

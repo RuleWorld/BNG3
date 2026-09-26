@@ -29,6 +29,12 @@ def _no_event_exponential_rate(
     return None
 
 
+def _no_event_square_linear_rate(
+    _identifier: str, _event: SBMLEvent
+) -> Optional[Tuple[float, float]]:
+    return None
+
+
 from .types import standardize_name
 
 
@@ -72,6 +78,11 @@ class EventTranslationContext:
     resolve_exponential_rate_for_event: Callable[
         [str, SBMLEvent], Optional[Tuple[float, float]]
     ] = _no_event_exponential_rate
+    # Return (initial value, squared-state slope) for exact trajectories
+    # satisfying state(t)^2 = initial^2 + slope * time.
+    resolve_square_linear_rate_for_event: Callable[
+        [str, SBMLEvent], Optional[Tuple[float, float]]
+    ] = _no_event_square_linear_rate
     # Allow periodic reset lowering to inspect a constant rate-rule state even
     # when the event itself assigns that state.
     resolve_rate_reset: Callable[[str], Optional[Tuple[float, float]]] = (
@@ -945,7 +956,18 @@ def synthesize_event_actions(
                 else context.resolve_exponential_rate(identifier)
             )
             if exponential is None:
-                return None
+                square_linear = (
+                    context.resolve_square_linear_rate_for_event(
+                        identifier, event_context
+                    )
+                    if event_context is not None
+                    else None
+                )
+                if square_linear is None:
+                    return None
+                initial, squared_slope = square_linear
+                radicand = initial * initial + squared_slope * query_time
+                return math.sqrt(radicand) if radicand >= 0 else None
             initial, exponent = exponential
             try:
                 value = initial * math.exp(exponent * query_time)
@@ -991,10 +1013,22 @@ def synthesize_event_actions(
                     value = initial + slope * time_value
                 else:
                     exponential = context.resolve_exponential_rate(identifier)
-                    if exponential is None:
+                    if exponential is not None:
+                        initial, exponent = exponential
+                        value = initial * math.exp(exponent * time_value)
+                    elif event_context is not None:
+                        square_linear = context.resolve_square_linear_rate_for_event(
+                            identifier, event_context
+                        )
+                        if square_linear is None:
+                            continue
+                        initial, squared_slope = square_linear
+                        radicand = initial * initial + squared_slope * time_value
+                        if radicand < 0:
+                            continue
+                        value = math.sqrt(radicand)
+                    else:
                         continue
-                    initial, exponent = exponential
-                    value = initial * math.exp(exponent * time_value)
             except OverflowError:
                 continue
             if math.isfinite(value):
@@ -2334,6 +2368,60 @@ def synthesize_event_actions(
                                 trigger_state_values = {
                                     identifier: crossing_state_value
                                 }
+                    elif not event_changes_trigger_state and not rate_of_threshold:
+                        square_linear = context.resolve_square_linear_rate_for_event(
+                            identifier, event
+                        )
+                        if square_linear is not None:
+                            initial_value, squared_slope = square_linear
+                            if initial_value <= 0 or crossing_value <= 0:
+                                continue
+                            initially_true = (
+                                initial_value > crossing_value
+                                if operator == "gt"
+                                else (
+                                    initial_value >= crossing_value
+                                    if operator == "geq"
+                                    else (
+                                        initial_value < crossing_value
+                                        if operator == "lt"
+                                        else initial_value <= crossing_value
+                                    )
+                                )
+                            )
+                            if initially_true:
+                                if not event.trigger_initial_value:
+                                    threshold = "0"
+                                    trigger_state_values = {identifier: initial_value}
+                                else:
+                                    normal_converted += 1
+                                    continue
+                            else:
+                                rising = (
+                                    operator in {"gt", "geq"} and squared_slope > 0
+                                ) or (operator in {"lt", "leq"} and squared_slope < 0)
+                                crossing_time = (
+                                    (
+                                        crossing_value * crossing_value
+                                        - initial_value * initial_value
+                                    )
+                                    / squared_slope
+                                    if squared_slope != 0
+                                    else math.inf
+                                )
+                                if (
+                                    rising
+                                    and math.isfinite(crossing_time)
+                                    and crossing_time >= 0
+                                ):
+                                    threshold = _format_number(crossing_time)
+                                    trigger_state_trajectory = (
+                                        identifier,
+                                        "square_linear",
+                                        initial_value,
+                                        squared_slope,
+                                    )
+                                    trigger_state_values = {identifier: crossing_value}
         if threshold is None:
             window = _parse_gated_time_window(event.trigger, fold)
             if window is not None:
@@ -2464,11 +2552,15 @@ def synthesize_event_actions(
                     trigger_state_trajectory
                 )
                 try:
-                    state_value = (
-                        initial_value + rate * evaluation_time
-                        if trajectory_kind == "affine"
-                        else initial_value * math.exp(rate * evaluation_time)
-                    )
+                    if trajectory_kind == "affine":
+                        state_value = initial_value + rate * evaluation_time
+                    elif trajectory_kind == "square_linear":
+                        radicand = (
+                            initial_value * initial_value + rate * evaluation_time
+                        )
+                        state_value = math.sqrt(radicand) if radicand >= 0 else math.inf
+                    else:
+                        state_value = initial_value * math.exp(rate * evaluation_time)
                 except OverflowError:
                     state_value = math.inf
                 if not math.isfinite(state_value):

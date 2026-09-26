@@ -6492,6 +6492,168 @@ def generate_bngl(
                 exponent /= float(compartment.size)
             return (initial, exponent) if math.isfinite(exponent) else None
 
+        def resolve_square_linear_event_rate(
+            identifier: str, event_context: SBMLEvent
+        ) -> Optional[Tuple[float, float]]:
+            """Resolve an isolated positive species with dS/dt = k/S."""
+            species_id = next(
+                (
+                    sid
+                    for sid in model.species
+                    if standardize_name(sid) == standardize_name(identifier)
+                ),
+                None,
+            )
+            species = model.species.get(species_id) if species_id else None
+            if species is None or species.constant or species.boundary_condition:
+                return None
+            if (
+                any(rule.variable == species_id for rule in model.rules)
+                or any(
+                    assignment.symbol == species_id
+                    for assignment in model.initial_assignments
+                )
+                or any(
+                    assignment.variable == species_id
+                    for event in model.events
+                    if event is not event_context
+                    for assignment in event.assignments
+                )
+            ):
+                return None
+            initial = resolve_initial_event_value(species_id)
+            if initial is None or not math.isfinite(initial) or initial <= 0:
+                return None
+
+            compartment = model.compartments.get(species.compartment or "")
+            if not species.has_only_substance_units and (
+                compartment is None
+                or not compartment.constant
+                or compartment.size <= 0
+                or any(rule.variable == species.compartment for rule in model.rules)
+                or any(
+                    assignment.symbol == species.compartment
+                    for assignment in model.initial_assignments
+                )
+                or any(
+                    assignment.variable == species.compartment
+                    for event in model.events
+                    for assignment in event.assignments
+                )
+            ):
+                return None
+
+            assigned_by_trigger = {
+                standardize_name(assignment.variable)
+                for assignment in event_context.assignments
+            }
+
+            def resolve_flux_constant(symbol: str) -> Optional[float]:
+                if is_compile_time_constant(symbol):
+                    return resolve_event_parameter(symbol)
+                if standardize_name(symbol) not in assigned_by_trigger:
+                    return None
+                if (
+                    any(rule.variable == symbol for rule in model.rules)
+                    or any(
+                        assignment.symbol == symbol
+                        for assignment in model.initial_assignments
+                    )
+                    or any(
+                        assignment.variable == symbol
+                        for event in model.events
+                        if event is not event_context
+                        for assignment in event.assignments
+                    )
+                ):
+                    return None
+                parameter = next(
+                    (
+                        value
+                        for key, value in model.parameters.items()
+                        if standardize_name(key) == standardize_name(symbol)
+                    ),
+                    None,
+                )
+                if parameter is not None and parameter.value is not None:
+                    return float(parameter.value)
+                compartment_value = next(
+                    (
+                        value
+                        for key, value in model.compartments.items()
+                        if standardize_name(key) == standardize_name(symbol)
+                    ),
+                    None,
+                )
+                if compartment_value is not None:
+                    return float(compartment_value.size)
+                return None
+
+            amount_rate_coefficient = 0.0
+            found = False
+            for reaction in model.reactions.values():
+                references = [
+                    reference
+                    for reference in [*reaction.reactants, *reaction.products]
+                    if reference.species == species_id
+                ]
+                if not references:
+                    continue
+                if (
+                    reaction.fast
+                    or reaction.conversion_factor
+                    or model.conversion_factor
+                    or species.conversion_factor
+                ):
+                    return None
+                net_coefficient = 0.0
+                for sign, side in (
+                    (-1.0, reaction.reactants),
+                    (1.0, reaction.products),
+                ):
+                    for reference in side:
+                        if reference.species != species_id:
+                            continue
+                        if reference.variable_stoichiometry:
+                            return None
+                        net_coefficient += sign * float(reference.stoichiometry)
+                if net_coefficient == 0:
+                    continue
+                kinetic_law = reaction.kinetic_law
+                expression = str(
+                    getattr(kinetic_law, "math", "")
+                    or (kinetic_law.get("math", "") if kinetic_law else "")
+                    or ""
+                ).strip()
+                if not expression:
+                    return None
+                expression = extend_function(expression, {}, model.function_definitions)
+                try:
+                    parsed = ast.parse(expression, mode="eval").body
+                except (TypeError, ValueError, SyntaxError):
+                    return None
+                if not (
+                    isinstance(parsed, ast.BinOp)
+                    and isinstance(parsed.op, ast.Div)
+                    and isinstance(parsed.right, ast.Name)
+                    and standardize_name(parsed.right.id)
+                    == standardize_name(species_id)
+                ):
+                    return None
+                numerator = fold_numeric(
+                    ast.unparse(parsed.left), resolve_flux_constant
+                )
+                if numerator is None or not math.isfinite(numerator):
+                    return None
+                amount_rate_coefficient += net_coefficient * numerator
+                found = True
+            if not found:
+                return None
+            if not species.has_only_substance_units:
+                amount_rate_coefficient /= float(compartment.size)
+            squared_slope = 2.0 * amount_rate_coefficient
+            return (initial, squared_slope) if math.isfinite(squared_slope) else None
+
         def resolve_rate_event_reset(
             identifier: str,
         ) -> Optional[Tuple[float, float]]:
@@ -6549,6 +6711,7 @@ def generate_bngl(
                 resolve_exponential_rate_for_event=lambda identifier, event: (
                     resolve_exponential_event_rate(identifier, event)
                 ),
+                resolve_square_linear_rate_for_event=(resolve_square_linear_event_rate),
                 resolve_rate_reset=resolve_rate_event_reset,
                 static_event_state=(
                     not model.reactions

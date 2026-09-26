@@ -10,6 +10,25 @@ IR migration reports and formalization reports retained in the repository are
 historical inputs and provenance records; their embedded prose is not a new
 execution instruction.
 
+## Reciprocal-flux threshold event — 2026-09-26
+
+Atomizer now schedules direct threshold events for an isolated positive species
+with exact concentration dynamics `dS/dt = k/S`, using
+`S(t)^2 = S(0)^2 + 2*k*t`. This gains official SBML Test Suite case
+`semantic/00944`; full suite is `1,525 passed / 398 unsupported`, with no
+failures, timeouts, or regressions. The 10-unit BNG3/libRoadRunner comparison
+passes both observables with maximum absolute error `3.56e-15`. Cases `00945`
+and `00947`, where events change compartment volume, remain unsupported because
+that introduces a concentration jump outside this proof. Full Python passes
+`573` tests with `28` skipped. A full offline curated BioModels refresh is
+running; results will be added to the convergence checklist. Hosted CI could
+not be queried because `gh` could not reach `api.github.com`.
+
+SBML suite report: `/private/tmp/bng3-sbml-reciprocal-full.json`, SHA-256
+`6b3dd84145054f52ed7667c6c8b847122c6f00576b99e90c9479ca29d4b581c9`.
+Targeted 00944 report: `/private/tmp/bng3-sbml-reciprocal-00944.json`, SHA-256
+`94a194c7b00a865384bcaf1bfed58ecf55bbef4a23244fdfbb8033fd26911c13`.
+
 ## Identity event assignments on affine states — 2026-09-26
 
 Events that assign a rate-rule target to itself no longer count as trajectory

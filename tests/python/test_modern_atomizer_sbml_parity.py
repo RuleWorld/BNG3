@@ -1182,6 +1182,38 @@ def test_affine_rate_rule_identity_event_assignments_preserve_thresholds():
     assert "state-dependent or non-constant event" not in result.bngl
 
 
+def test_reciprocal_species_flux_schedules_exact_threshold_event():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="reciprocal_species_flux_event">
+        <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies><species id="S" compartment="C" initialAmount="1"
+          hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/></listOfSpecies>
+        <listOfParameters><parameter id="k" value="1" constant="false"/></listOfParameters>
+        <listOfReactions><reaction id="source" reversible="false">
+          <listOfProducts><speciesReference species="S" stoichiometry="1" constant="true"/></listOfProducts>
+          <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><divide/>
+            <apply><times/><ci>C</ci><ci>k</ci></apply><ci>S</ci>
+          </apply></math></kineticLaw>
+        </reaction></listOfReactions>
+        <listOfEvents><event id="threshold" useValuesFromTriggerTime="true">
+          <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><gt/><ci>S</ci><cn>2.1</cn></apply>
+          </math></trigger>
+          <listOfEventAssignments><eventAssignment variable="k"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>10</cn></math></eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True).atomize(xml)
+
+    assert result.success, result.error
+    assert "t_end=>1.705" in result.bngl
+    assert 'setParameter("k", "10")' in result.bngl
+    assert "state-dependent or non-constant event" not in result.bngl
+
+
 def test_affine_rate_rule_compartment_schedules_delayed_threshold_event():
     from bionetgen.atomizer.modern import Atomizer
 
