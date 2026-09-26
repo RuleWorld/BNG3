@@ -71,7 +71,24 @@ completion.
 - Re-audit the whole checklist on the exact release-candidate SHA. Earlier
   evidence is stale after a rebase, autofix, merge, or semantic change.
 
-## Fixed-delay affine event trigger interval checkpoint — 2026-09-26
+## Amount-based affine event checkpoint — 2026-09-26
+
+- [x] Rate-rule species with `hasOnlySubstanceUnits=true` resolve exact affine
+  event trigger trajectories in amount units.
+- [x] Full Python suite: `569 passed, 28 skipped`.
+- [x] Full pinned SBML Test Suite at
+  `cf38585fac5de8e0e90112febb62851ee2181816`: `1,517 passed, 406 unsupported,
+  0 failed, 0 timed out`. Compared per-case with the prior full report, only
+  `semantic/01703`, `01704`, `01708`, and `01709` changed from unsupported to
+  passed.
+- [x] All four gains match libRoadRunner 2.10.0 across two observables;
+  maximum absolute difference is `1.78e-15`.
+- [x] Report: `/private/tmp/bng3-sbml-amount-affine-events-full.json`, SHA-256
+  `877372a20ed07fbfdd8bd2a16085115714b4cc978a3bad0ade184c5393130186`.
+- [x] Cached BioModels scan found no amount-based rate-rule species used by an
+  event trigger; no curated gain is claimed.
+
+## Affine species-reference event checkpoint — 2026-09-26
 
 - [x] A variable species-reference ID with one constant rate rule now resolves
   as an affine trigger trajectory when its initial stoichiometry and derivative

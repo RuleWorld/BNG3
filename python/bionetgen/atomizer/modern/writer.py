@@ -5947,7 +5947,7 @@ def generate_bngl(
                     for rule in model.rules
                     if rule.variable == species_id and rule.type == "rate"
                 ]
-                if len(rate_rules) == 1 and not species.has_only_substance_units:
+                if len(rate_rules) == 1:
                     if any(
                         assignment.symbol == species_id
                         for assignment in model.initial_assignments
@@ -5960,15 +5960,22 @@ def generate_bngl(
                         return None
                     compartment = model.compartments.get(species.compartment or "")
                     volume = float(compartment.size) if compartment is not None else 1.0
-                    initial = (
-                        float(species.initial_concentration)
-                        if species.initial_concentration_set
-                        else (
-                            float(species.initial_amount) / volume
-                            if volume != 0
-                            else None
+                    if species.has_only_substance_units:
+                        initial = (
+                            float(species.initial_amount)
+                            if species.initial_amount_set
+                            else float(species.initial_concentration) * volume
                         )
-                    )
+                    else:
+                        initial = (
+                            float(species.initial_concentration)
+                            if species.initial_concentration_set
+                            else (
+                                float(species.initial_amount) / volume
+                                if volume != 0
+                                else None
+                            )
+                        )
                     derivative = extend_function(
                         rate_rules[0].math, {}, model.function_definitions
                     )

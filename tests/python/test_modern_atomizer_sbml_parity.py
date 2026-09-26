@@ -1085,6 +1085,36 @@ def test_affine_rate_rule_on_species_reference_schedules_interval_event():
     assert "state-dependent or non-constant event" not in result.bngl
 
 
+def test_affine_amount_species_rate_rule_schedules_threshold_event():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="affine_amount_species_event">
+        <listOfCompartments><compartment id="C" size="2" constant="true"/></listOfCompartments>
+        <listOfSpecies><species id="S" compartment="C" initialAmount="10"
+          hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/></listOfSpecies>
+        <listOfParameters><parameter id="Q" value="0" constant="false"/></listOfParameters>
+        <listOfRules><rateRule variable="S">
+          <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>-1</cn></math>
+        </rateRule></listOfRules>
+        <listOfEvents><event id="threshold">
+          <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><leq/><ci>S</ci><cn>8.9</cn></apply>
+          </math></trigger>
+          <listOfEventAssignments><eventAssignment variable="Q">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>3</cn></math>
+          </eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True).atomize(xml)
+
+    assert result.success, result.error
+    assert 'setParameter("Q", "3")' in result.bngl
+    assert "state-dependent or non-constant event" not in result.bngl
+
+
 def test_constant_piecewise_event_delay_and_assignment_fold_exactly():
     from bionetgen.atomizer.modern import Atomizer
 

@@ -12,6 +12,19 @@ execution instruction.
 
 ## Affine stoichiometry event follow-up — 2026-09-26
 
+Affine threshold/interval event scheduling now also resolves rate-rule species
+in amount semantics, using amount-valued initial state and derivative. This
+recovers `01703`, `01704`, `01708`, and `01709`; the full pinned SBML Test
+Suite moves from `1,513 passed / 410 unsupported` to `1,517 / 406`, with zero
+failures, timeouts, or regressions. All four gains match libRoadRunner 2.10.0
+on two observables; maximum absolute error is `1.78e-15`. Full Python passes
+`569` tests with `28` skipped. Cached BioModels scan found no amount-based
+rate-rule species referenced by an event trigger. Report:
+`/private/tmp/bng3-sbml-amount-affine-events-full.json`, SHA-256
+`877372a20ed07fbfdd8bd2a16085115714b4cc978a3bad0ade184c5393130186`.
+
+## Affine species-reference event checkpoint — 2026-09-26
+
 Rate-rule-driven variable species-reference stoichiometry can now provide an
 affine trigger trajectory when its derivative is a finite immutable constant
 and no competing initial assignment/event controls it. This recovers five
