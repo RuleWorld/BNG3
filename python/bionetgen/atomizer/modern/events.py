@@ -747,6 +747,44 @@ def _parse_affine_state_threshold(
     return None
 
 
+def _parse_gated_affine_state_threshold(
+    trigger: str, fold_static: Callable[[str], Optional[float]]
+) -> Optional[Tuple[str, List[str], List[str], bool]]:
+    """Parse one state threshold conjoined with fixed time bounds/constants."""
+    terms = _split_call_arguments(str(trigger or "").strip())
+    if terms is None:
+        return None
+    lower: List[str] = []
+    upper: List[str] = []
+    dynamic: List[str] = []
+    comparison = re.compile(r"^(geq|gt|leq|lt)\s*\((.*)\)$", re.IGNORECASE)
+    for term in terms:
+        match = comparison.match(term)
+        if match is not None:
+            arguments = _split_arguments(match.group(2))
+            if arguments is None or len(arguments) != 2:
+                return None
+            left, right = (_strip_outer_parens(value) for value in arguments)
+            operator = match.group(1).lower()
+            if left.lower() == "time" and "time" not in right.lower():
+                (lower if operator in {"geq", "gt"} else upper).append(right)
+                continue
+            if right.lower() == "time" and "time" not in left.lower():
+                (lower if operator in {"leq", "lt"} else upper).append(left)
+                continue
+        value = fold_static(term)
+        if value is not None:
+            if value == 0:
+                return ("", [], [], False)
+            continue
+        dynamic.append(term)
+    if len(dynamic) != 1 or not lower:
+        return None
+    if _parse_affine_state_threshold(dynamic[0]) is None:
+        return None
+    return dynamic[0], lower, upper, True
+
+
 def _parse_affine_state_interval(
     trigger: str,
 ) -> Optional[Tuple[str, List[Tuple[str, str]]]]:
@@ -2414,6 +2452,43 @@ def synthesize_event_actions(
         if id(event) in affine_interval_no_action:
             normal_converted += 1
             continue
+        event_trigger = event.trigger
+        gated_time_bounds: Optional[Tuple[float, float]] = None
+        gated_state = _parse_gated_affine_state_threshold(
+            event.trigger, lambda expression: fold(expression, event_context=event)
+        )
+        if gated_state is not None:
+            state_expression, lower_expressions, upper_expressions, gate_is_true = (
+                gated_state
+            )
+            if not gate_is_true:
+                normal_converted += 1
+                continue
+            lower_values = [
+                fold(value, event_context=event) for value in lower_expressions
+            ]
+            upper_values = [
+                fold(value, event_context=event) for value in upper_expressions
+            ]
+            initial_state_truth = fold_initial(state_expression)
+            if (
+                all(
+                    value is not None and math.isfinite(value) for value in lower_values
+                )
+                and all(
+                    value is not None and math.isfinite(value) for value in upper_values
+                )
+                and initial_state_truth == 0
+            ):
+                lower_bound = max(float(value) for value in lower_values)
+                upper_bound = (
+                    min(float(value) for value in upper_values)
+                    if upper_values
+                    else math.inf
+                )
+                if lower_bound <= upper_bound:
+                    event_trigger = state_expression
+                    gated_time_bounds = (lower_bound, upper_bound)
         trigger_state_values: Optional[dict[str, float]] = None
         trigger_state_trajectory: Optional[Tuple[str, str, float, float]] = None
         affine_interval = affine_interval_schedules.get(id(event))
@@ -2446,18 +2521,18 @@ def synthesize_event_actions(
                 interval_slope,
             )
         else:
-            threshold = parse_time_threshold(event.trigger)
+            threshold = parse_time_threshold(event_trigger)
             window_end = None
         scale_identifier: Optional[str] = None
         if threshold is None:
-            state_threshold = _parse_affine_state_threshold(event.trigger)
+            state_threshold = _parse_affine_state_threshold(event_trigger)
             rate_of_threshold = False
             state_threshold_scale = "1"
             if state_threshold is None:
-                state_threshold = _parse_rate_of_state_threshold(event.trigger)
+                state_threshold = _parse_rate_of_state_threshold(event_trigger)
                 rate_of_threshold = state_threshold is not None
             if state_threshold is None:
-                scaled_threshold = _parse_scaled_state_threshold(event.trigger)
+                scaled_threshold = _parse_scaled_state_threshold(event_trigger)
                 if scaled_threshold is not None:
                     (
                         scaled_identifier,
@@ -2748,7 +2823,7 @@ def synthesize_event_actions(
                                     trigger_state_values = {identifier: crossing_value}
         if threshold is None:
             window = _parse_gated_time_window(
-                event.trigger,
+                event_trigger,
                 lambda expression: fold(expression, event_context=event),
             )
             if window is not None:
@@ -2785,7 +2860,7 @@ def synthesize_event_actions(
                         continue
                     threshold = _format_number(trigger_time)
         if threshold is None:
-            scaled_threshold = _parse_scaled_time_threshold(event.trigger)
+            scaled_threshold = _parse_scaled_time_threshold(event_trigger)
             if scaled_threshold is not None:
                 threshold, scale_identifier = scaled_threshold
                 scale = (
@@ -2802,7 +2877,7 @@ def synthesize_event_actions(
                     )
                     continue
         if threshold is None:
-            constant_trigger = fold(event.trigger, event_context=event)
+            constant_trigger = fold(event_trigger, event_context=event)
             if constant_trigger is not None and constant_trigger in {0, 1}:
                 # A time-invariant trigger fires only when SBML's declared
                 # pre-simulation trigger value is false and the actual value
@@ -2815,7 +2890,7 @@ def synthesize_event_actions(
                 # evaluates the actual initial model state. If those differ,
                 # the trigger has an exact rising edge at t=0, regardless of
                 # whether a referenced parameter/species changes afterwards.
-                initial_trigger = fold_initial(event.trigger)
+                initial_trigger = fold_initial(event_trigger)
                 zero_delay = (
                     not event.delay or fold(event.delay, 0, event_context=event) == 0
                 )
@@ -2843,6 +2918,19 @@ def synthesize_event_actions(
                 )
             )
             continue
+        if gated_time_bounds is not None:
+            lower_bound, upper_bound = gated_time_bounds
+            if trigger_time < lower_bound - 1e-12 or trigger_time > upper_bound + 1e-12:
+                untranslated.append(
+                    (
+                        event,
+                        "state threshold crosses outside its fixed time gate",
+                    )
+                )
+                continue
+            window_end = (
+                min(window_end, upper_bound) if window_end is not None else upper_bound
+            )
         execution_time = trigger_time
         delay = 0.0
         if event.delay:

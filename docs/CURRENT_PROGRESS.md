@@ -34,9 +34,25 @@ SBML comparison-name aliases now lower four additional event cases:
 2.10.0 comparisons over 14 observables; maximum absolute error is `3.36e-12`.
 The full pinned-suite report is not a clean gate: `1,582 passed, 338
 unsupported, 3 failed, 0 timed out`. CVODE failures are `00955`, `01148`, and
-`01487`; seven delay-history cases are newly unsupported. Report:
-`/private/tmp/bng3-sbml-alias-final.json`. Continue triage before claiming no
-regressions.
+`01487`; seven delay-history cases are newly classified unsupported in this
+run. Report:
+`/private/tmp/bng3-sbml-final-60efb85-working.json`, SHA-256
+`ea15c9b2e3038a6bd9146ebb6de19e70767059b9760ed00cf153d58415f50bb1`.
+Continue triage before claiming no regressions.
+
+An empty comp package declaration now bypasses libSBML conversion unchanged,
+retaining the source package declaration for informational classification.
+The hosted `60efb85` failure logs showed the inline and external comp tests
+passing, then a libSBML segfault in conversion of this empty declaration. The
+no-op path passes the local regression and full Python suite (`580 passed,
+28 skipped`); exact-head hosted CI after this correction is pending.
+
+Event lowering now also supports an affine species threshold gated by fixed
+time bounds when the state begins outside the trigger and crosses inside that
+window. Thresholds outside the window and multi-event priority/reset models
+remain fail-closed. Focused tests pass; the full suite found no additional
+official gain from this slice. Case `00935` has three same-trigger events with
+conflicting assignments and priorities and remains unsupported.
 
 SBML report: `/private/tmp/bng3-sbml-riccati-full.json`, SHA-256
 `bcb141eb61f9533acc525dc578fdf0cc055d9dfe56281d56127c493a07c83dd8`.

@@ -3998,6 +3998,7 @@ def test_atomizer_preserves_empty_sbml_reactions_as_zero_effect_rules(tmp_path):
 
 def test_parser_does_not_drop_empty_declared_dynamic_packages():
     from bionetgen.atomizer.modern import SBMLParser
+    from bionetgen.atomizer.modern.parser import _flatten_comp_package
 
     sbml = """<?xml version="1.0"?>
 <sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
@@ -4009,6 +4010,9 @@ def test_parser_does_not_drop_empty_declared_dynamic_packages():
   </model>
 </sbml>"""
 
+    flattened, failure = _flatten_comp_package(sbml)
+    assert flattened == sbml
+    assert failure is None
     warnings = SBMLParser().parse(sbml).import_warnings
     package_warning = next(
         warning for warning in warnings if warning["category"] == "package:comp"

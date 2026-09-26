@@ -491,6 +491,41 @@ def test_sbml_comparison_operator_aliases_schedule_affine_thresholds():
         assert "t_end=>0.5" in result.actions_block
 
 
+def test_affine_state_threshold_with_fixed_time_gate():
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLEventAssignment
+
+    event = SBMLEvent(
+        id="time-gated-threshold",
+        trigger="and(geq(time, 1), geq(x, 3))",
+        assignments=[SBMLEventAssignment("P", "1")],
+    )
+    context = EventTranslationContext(
+        resolve_species_pattern=lambda _identifier: None,
+        resolve_param=lambda _identifier: None,
+        is_param=lambda _identifier: True,
+        is_compile_time_constant=lambda _identifier: False,
+        resolve_initial_value=lambda identifier: 1.0 if identifier == "x" else None,
+        resolve_affine_rate=lambda identifier: (
+            (1.0, 1.0) if identifier == "x" else None
+        ),
+    )
+    result = synthesize_event_actions([event], context)
+
+    assert result.converted == 1
+    assert result.untranslated == []
+    assert result.actions_block is not None
+    assert "t_end=>2" in result.actions_block
+
+    event.trigger = "and(geq(time, 3), geq(x, 2))"
+    result = synthesize_event_actions([event], context)
+    assert result.converted == 0
+    assert len(result.untranslated) == 1
+
+
 def test_exponential_threshold_event_reads_trigger_or_execution_state():
     from bionetgen.atomizer.modern.events import (
         EventTranslationContext,

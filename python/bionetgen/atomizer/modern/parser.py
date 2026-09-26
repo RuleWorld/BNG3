@@ -159,6 +159,19 @@ def _declared_package_uris(sbml_string: str) -> Dict[str, str]:
     return result
 
 
+def _has_comp_constructs(sbml_string: str) -> bool:
+    """Return whether a document contains comp elements beyond declarations."""
+    comp_namespace = _declared_package_uris(sbml_string).get("comp")
+    if not comp_namespace:
+        return False
+    try:
+        root = ET.fromstring(sbml_string)
+    except ET.ParseError:
+        return False
+    prefix = f"{{{comp_namespace}}}"
+    return any(element.tag.startswith(prefix) for element in root.iter())
+
+
 def _flatten_simple_inline_comp(sbml_string: str) -> Optional[str]:
     """Flatten a single inline comp submodel using only the XML standard library."""
     try:
@@ -481,6 +494,8 @@ def _flatten_comp_package(
     """Flatten local and inline SBML comp models with libSBML, preserving failures."""
 
     if "comp" not in _declared_package_uris(sbml_string):
+        return sbml_string, None
+    if not _has_comp_constructs(sbml_string):
         return sbml_string, None
     simple_inline = _flatten_simple_inline_comp(sbml_string)
     if simple_inline is not None:
@@ -2578,6 +2593,7 @@ class SBMLParser:
 
     def parse(self, sbml_string: str, source_path: Optional[Path] = None) -> SBMLModel:
         original_packages = _declared_package_uris(sbml_string)
+        original_comp_constructs = _has_comp_constructs(sbml_string)
         sbml_string, comp_failure = _flatten_comp_package(sbml_string, source_path)
         try:
             root = ET.fromstring(sbml_string)
@@ -2591,7 +2607,7 @@ class SBMLParser:
             raise ValueError("SBML document has no model")
         declared_packages = _declared_package_uris(sbml_string)
         result = self._parse_xml_model(root, model_element, declared_packages)
-        if "comp" in original_packages:
+        if "comp" in original_packages and original_comp_constructs:
             if comp_failure is None:
                 result.import_warnings.append(
                     {

@@ -4,7 +4,7 @@
 **Last targeted audit:** 2026-09-26 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
 **Working branch:** `main`
-**Current base:** `main` at `e69fd31ce116b9faa0662e54aa136a94079a3cd4`; comp-flatten hosted-CI repair is the current slice
+**Current base:** `main` at `60efb85c20b94e8b21a18555b1298f4028ff2591`; empty comp-package CI repair and gated event thresholds are current
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -81,6 +81,28 @@ capability inventory.
 - [ ] Exact-head hosted CI for external comp flattening remains pending push.
   The prior `107da3c` run still segfaulted in the external child file parser;
   the supported path now avoids that call and needs a fresh hosted check.
+
+## Empty comp declarations and fixed-time-gated event thresholds — 2026-09-26
+
+- [x] A comp namespace declaration with no comp elements now bypasses libSBML
+  conversion unchanged. The original package declaration remains available to
+  report as informational metadata. Regression test checks the no-op path.
+- [x] Exact affine state threshold lowering can handle one monotone state
+  threshold conjoined with fixed time bounds and static predicates, provided
+  the initial state is outside the trigger and the state crossing falls inside
+  the time window. Thresholds outside the window remain unsupported. A focused
+  fixture verifies both the accepted crossing and fail-closed late gate.
+- [x] Full Python suite: `580 passed, 28 skipped`; Black, Ruff, and
+  `git diff --check` pass.
+- [ ] The full pinned SBML report remains `1,582 passed, 338 unsupported, 3
+  failed, 0 timed out`; no new official gain came from the gated-threshold
+  slice. `00935` remains unsupported because it has three same-trigger events
+  with conflicting assignments and priorities. Report
+  `/private/tmp/bng3-sbml-final-60efb85-working.json`, SHA-256
+  `ea15c9b2e3038a6bd9146ebb6de19e70767059b9760ed00cf153d58415f50bb1`.
+- [ ] Hosted Ubuntu Python CI at `60efb85` passed all four comp-specific tests,
+  then segfaulted in libSBML conversion of the empty declared comp package.
+  The no-op fast path fixes that case locally; next exact-head CI is pending.
 
 ## Static event assignment histories — 2026-09-26
 
