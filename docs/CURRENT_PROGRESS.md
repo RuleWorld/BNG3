@@ -27,6 +27,12 @@ and Ruff checks are now clean after formatting the edited Atomizer files and
 two existing validation files. CI should be checked again on the corrective
 push.
 
+Exact-head Cross-tool parity on `c9c5a0b` also exposed a stale workflow
+selector for a missing fixed-seed NFsim test. The test now exists and compares
+the direct BNG3 NFsim route against the separately built native NFsim with the
+same seed; its local run passes `1/1`. The corrected workflow is pending a
+fresh hosted run.
+
 ## Affine stoichiometry event follow-up — 2026-09-26
 
 Affine threshold/interval event scheduling now also resolves rate-rule species

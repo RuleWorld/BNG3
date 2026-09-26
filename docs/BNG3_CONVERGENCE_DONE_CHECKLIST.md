@@ -85,9 +85,14 @@ completion.
   observables. Report: `/private/tmp/bng3-sbml-identity-event-full.json`,
   SHA-256 `d4e48b75fad1b71f9aba73f26d729952d99eed39a0da112411fd643444d7fc7d`.
 - [ ] Curated BioModels inventory not rerun for this slice.
-- [ ] Formatting workflow failure on `31d4b8a` is addressed locally by
-  repository-wide Black/Ruff formatting; exact-head CI remains to be checked
-  after corrective commit.
+- [x] Formatting workflow failure on `31d4b8a` is fixed: repository-wide
+  Black and Ruff pass, and exact-head Formatting patch succeeds on `c9c5a0b`.
+- [x] Fixed-seed direct BNG3/native NFsim endpoint parity test was restored
+  after the `c9c5a0b` Cross-tool parity run exposed its missing selector
+  target. Local run with independent NFsim `c51c7a34128d188189485bd318aeae4d936bcb29`
+  passes `1/1`.
+- [ ] Hosted Cross-tool parity must be rerun on the corrective commit; hosted
+  CI and CodeQL for `c9c5a0b` are still pending.
 
 ## Amount-based affine event checkpoint — 2026-09-26
 
