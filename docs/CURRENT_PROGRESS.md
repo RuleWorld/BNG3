@@ -1523,3 +1523,12 @@ suite is `1,431 passed, 492 unsupported, 0 failed, 0 timed out`. Full Python:
 compileall, and diff checks pass. The full curated BioModels refresh predates
 this slice and is still running. See the convergence checklist for the exact
 report digest and case list.
+
+The full offline curated BioModels refresh completed with `781 passed, 127
+unsupported, 5 failed, 170 timed out` among 1,083 SBML records. Six unsupported
+records passed versus the prior full run; two timeouts recovered, one
+unsupported record timed out, and no prior pass regressed. Those three status
+changes are run-to-run variance. This refresh predates constant-flux event
+lowering; a cached-source scan found no curated model matching that new shape,
+so no curated gain is attributed to it. Exact IDs and the report digest are in
+the convergence checklist.

@@ -5654,5 +5654,15 @@ the other groups remain implementation targets.
   `65c48e10c88e6e285d97ec321556139b53c549b87d8c04c6d57226c35d0bd774`.
 - [x] Full Python suite: `548 passed, 28 skipped`; modern Atomizer tests:
   `314 passed, 1 skipped`. Ruff, compileall, and `git diff --check` pass.
-- [ ] Refresh the full curated BioModels inventory against this exact code
-  revision; the earlier full refresh is still running and predates this slice.
+- [x] Full curated BioModels refresh completed before this constant-flux event
+  slice: `781 passed, 127 unsupported, 5 failed, 170 timed out` among 1,083
+  SBML records (13 non-SBML inventory entries remain explicit exclusions).
+  Relative to the preceding full report, six unsupported models passed
+  (`BIOMD0000000960`, `0570`, `0025`, `0154`, `0034`, `0955`), two timeouts
+  recovered (`0579`, `0637`), and one unsupported model timed out
+  (`BIOMD0000000735`); no prior pass regressed. The two timeout recoveries and
+  one timeout regression are run-to-run variance. A cached-source scan found
+  no curated model with the exact constant-flux event shape, so no curated
+  gain is attributed to the newer event slice. Report
+  `/private/tmp/bng3-biomodel-final-feature-refresh.json`, SHA-256
+  `5c323485bc9ea61a3d26018750b59f43cafc54ea0de0ad68790866289c4feb74`.
