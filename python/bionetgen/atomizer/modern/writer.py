@@ -539,9 +539,7 @@ def convert_math_expression(expression: str) -> str:
         lambda args: (
             f"(ln({args[1]})/ln({args[0]}))"
             if len(args) >= 2
-            else f"ln({args[0]})"
-            if args
-            else "log()"
+            else f"ln({args[0]})" if args else "log()"
         ),
     )
     result = _replace_nested_function(
@@ -555,9 +553,7 @@ def convert_math_expression(expression: str) -> str:
         lambda args: (
             f"(({args[1]})^(1/({args[0]})))"
             if len(args) >= 2
-            else f"(({args[0]})^(1/2))"
-            if args
-            else "root()"
+            else f"(({args[0]})^(1/2))" if args else "root()"
         ),
     )
     result = _replace_nested_function(

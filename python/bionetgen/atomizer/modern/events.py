@@ -839,8 +839,7 @@ def _parse_periodic_reset_trigger(
         return None
     elapsed, interval = (_strip_outer_parens(value) for value in arguments)
     elapsed_match = re.fullmatch(
-        r"(?:minus|subtract)\s*\(\s*time\s*,\s*"
-        r"([A-Za-z_][A-Za-z0-9_]*)\s*\)",
+        r"(?:minus|subtract)\s*\(\s*time\s*,\s*" r"([A-Za-z_][A-Za-z0-9_]*)\s*\)",
         elapsed,
         re.IGNORECASE,
     )
@@ -1392,11 +1391,15 @@ def synthesize_event_actions(
         initially_true = (
             initial_reset > threshold
             if operator == "gt"
-            else initial_reset >= threshold
-            if operator == "geq"
-            else initial_reset < threshold
-            if operator == "lt"
-            else initial_reset <= threshold
+            else (
+                initial_reset >= threshold
+                if operator == "geq"
+                else (
+                    initial_reset < threshold
+                    if operator == "lt"
+                    else initial_reset <= threshold
+                )
+            )
         )
         if initially_true and trigger_initial_value:
             periodic_converted += len(group)
@@ -1557,11 +1560,15 @@ def synthesize_event_actions(
         reset_is_false = (
             reset_value >= threshold
             if operator == "lt"
-            else reset_value > threshold
-            if operator == "leq"
-            else reset_value <= threshold
-            if operator == "gt"
-            else reset_value < threshold
+            else (
+                reset_value > threshold
+                if operator == "leq"
+                else (
+                    reset_value <= threshold
+                    if operator == "gt"
+                    else reset_value < threshold
+                )
+            )
         )
         if not reset_is_false:
             continue
@@ -1569,11 +1576,11 @@ def synthesize_event_actions(
         initially_true = (
             initial > threshold
             if operator == "gt"
-            else initial >= threshold
-            if operator == "geq"
-            else initial < threshold
-            if operator == "lt"
-            else initial <= threshold
+            else (
+                initial >= threshold
+                if operator == "geq"
+                else initial < threshold if operator == "lt" else initial <= threshold
+            )
         )
         if initially_true:
             if event.trigger_initial_value:
@@ -1608,9 +1615,11 @@ def synthesize_event_actions(
                     execution_time,
                     [
                         (
-                            "conc"
-                            if context.resolve_species_pattern(variable)
-                            else "param",
+                            (
+                                "conc"
+                                if context.resolve_species_pattern(variable)
+                                else "param"
+                            ),
                             context.resolve_species_pattern(variable)
                             or standardize_name(variable),
                             float(value),
@@ -1693,11 +1702,11 @@ def synthesize_event_actions(
         initially_true = (
             initial > threshold
             if operator == "gt"
-            else initial >= threshold
-            if operator == "geq"
-            else initial < threshold
-            if operator == "lt"
-            else initial <= threshold
+            else (
+                initial >= threshold
+                if operator == "geq"
+                else initial < threshold if operator == "lt" else initial <= threshold
+            )
         )
         if initially_true:
             if event.trigger_initial_value:
@@ -1750,11 +1759,15 @@ def synthesize_event_actions(
         reset_is_false = (
             reset_value >= threshold
             if operator == "lt"
-            else reset_value > threshold
-            if operator == "leq"
-            else reset_value <= threshold
-            if operator == "gt"
-            else reset_value < threshold
+            else (
+                reset_value > threshold
+                if operator == "leq"
+                else (
+                    reset_value <= threshold
+                    if operator == "gt"
+                    else reset_value < threshold
+                )
+            )
         )
         if not reset_is_false:
             scheduled.append(
@@ -1839,11 +1852,15 @@ def synthesize_event_actions(
                 initially_true = (
                     initial > threshold
                     if operator == "gt"
-                    else initial >= threshold
-                    if operator == "geq"
-                    else initial < threshold
-                    if operator == "lt"
-                    else initial <= threshold
+                    else (
+                        initial >= threshold
+                        if operator == "geq"
+                        else (
+                            initial < threshold
+                            if operator == "lt"
+                            else initial <= threshold
+                        )
+                    )
                 )
                 if not initially_true or event.trigger_initial_value:
                     static_event_no_action.add(id(event))
@@ -2159,9 +2176,13 @@ def synthesize_event_actions(
             if state_threshold is not None:
                 identifier, operator, threshold_expression = state_threshold
                 event_changes_trigger_state = any(
-                    variable == identifier
+                    standardize_name(variable) == standardize_name(identifier)
+                    and standardize_name(_strip_outer_parens(assignment_expression))
+                    != standardize_name(identifier)
                     for assignment in event.assignments
-                    for variable, _value in [_event_assignment(assignment)]
+                    for variable, assignment_expression in [
+                        _event_assignment(assignment)
+                    ]
                 )
                 trajectory = (
                     None
@@ -2190,11 +2211,15 @@ def synthesize_event_actions(
                     initially_true = (
                         initial_value > crossing_value
                         if operator == "gt"
-                        else initial_value >= crossing_value
-                        if operator == "geq"
-                        else initial_value < crossing_value
-                        if operator == "lt"
-                        else initial_value <= crossing_value
+                        else (
+                            initial_value >= crossing_value
+                            if operator == "geq"
+                            else (
+                                initial_value < crossing_value
+                                if operator == "lt"
+                                else initial_value <= crossing_value
+                            )
+                        )
                     )
                     if slope == 0:
                         if initially_true and not event.trigger_initial_value:
@@ -2257,11 +2282,15 @@ def synthesize_event_actions(
                         initially_true = (
                             initial_trigger_value > crossing_value
                             if operator == "gt"
-                            else initial_trigger_value >= crossing_value
-                            if operator == "geq"
-                            else initial_trigger_value < crossing_value
-                            if operator == "lt"
-                            else initial_trigger_value <= crossing_value
+                            else (
+                                initial_trigger_value >= crossing_value
+                                if operator == "geq"
+                                else (
+                                    initial_trigger_value < crossing_value
+                                    if operator == "lt"
+                                    else initial_trigger_value <= crossing_value
+                                )
+                            )
                         )
                         if (
                             exponent == 0

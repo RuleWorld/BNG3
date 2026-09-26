@@ -73,6 +73,24 @@ completion.
 
 ## Amount-based affine event checkpoint — 2026-09-26
 
+- [x] An event assignment syntactically identical to its rate-rule trigger
+  target is treated as a no-op for affine trajectory proof, preserving the
+  state value and one rising-edge schedule.
+- [x] Full Python suite: `570 passed, 28 skipped`.
+- [x] Full pinned SBML Test Suite at
+  `cf38585fac5de8e0e90112febb62851ee2181816`: `1,518 passed, 405 unsupported,
+  0 failed, 0 timed out`. Compared per-case with the prior full report, only
+  `semantic/01798` changed from unsupported to passed.
+- [x] The gained case matches libRoadRunner 2.10.0 exactly across three
+  observables. Report: `/private/tmp/bng3-sbml-identity-event-full.json`,
+  SHA-256 `d4e48b75fad1b71f9aba73f26d729952d99eed39a0da112411fd643444d7fc7d`.
+- [ ] Curated BioModels inventory not rerun for this slice.
+- [ ] Formatting workflow failure on `31d4b8a` is addressed locally by
+  repository-wide Black/Ruff formatting; exact-head CI remains to be checked
+  after corrective commit.
+
+## Amount-based affine event checkpoint — 2026-09-26
+
 - [x] Rate-rule species with `hasOnlySubstanceUnits=true` resolve exact affine
   event trigger trajectories in amount units.
 - [x] Full Python suite: `569 passed, 28 skipped`.

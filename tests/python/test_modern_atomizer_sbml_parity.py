@@ -1115,6 +1115,32 @@ def test_affine_amount_species_rate_rule_schedules_threshold_event():
     assert "state-dependent or non-constant event" not in result.bngl
 
 
+def test_affine_rate_rule_identity_event_assignments_preserve_thresholds():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="affine_identity_event_assignments">
+        <listOfParameters><parameter id="P1" value="0" constant="false"/>
+          <parameter id="P2" value="0" constant="false"/>
+          <parameter id="P3" value="0" constant="false"/></listOfParameters>
+        <listOfRules><rateRule variable="P1"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></rateRule>
+          <rateRule variable="P2"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></rateRule>
+          <rateRule variable="P3"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></rateRule></listOfRules>
+        <listOfEvents>
+          <event id="e1"><trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><geq/><ci>P1</ci><cn>1.5</cn></apply></math></trigger><listOfEventAssignments><eventAssignment variable="P1"><math xmlns="http://www.w3.org/1998/Math/MathML"><ci>P1</ci></math></eventAssignment></listOfEventAssignments></event>
+          <event id="e2"><trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><geq/><ci>P2</ci><cn>1.5</cn></apply></math></trigger><listOfEventAssignments><eventAssignment variable="P2"><math xmlns="http://www.w3.org/1998/Math/MathML"><ci>P2</ci></math></eventAssignment></listOfEventAssignments></event>
+          <event id="e3"><trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><geq/><ci>P3</ci><cn>1.5</cn></apply></math></trigger><listOfEventAssignments><eventAssignment variable="P3"><math xmlns="http://www.w3.org/1998/Math/MathML"><ci>P3</ci></math></eventAssignment></listOfEventAssignments></event>
+        </listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True).atomize(xml)
+
+    assert result.success, result.error
+    assert result.bngl.count("event") >= 3
+    assert "state-dependent or non-constant event" not in result.bngl
+
+
 def test_constant_piecewise_event_delay_and_assignment_fold_exactly():
     from bionetgen.atomizer.modern import Atomizer
 

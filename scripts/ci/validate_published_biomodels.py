@@ -1120,8 +1120,7 @@ def _validate_mode(
             function_names={
                 standardize_name(str(rule.variable))
                 for rule in source_model.rules
-                if rule.type == "assignment"
-                and rule.variable
+                if rule.type == "assignment" and rule.variable
             }
             | {
                 standardize_name(str(assignment.symbol))

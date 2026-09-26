@@ -10,6 +10,23 @@ IR migration reports and formalization reports retained in the repository are
 historical inputs and provenance records; their embedded prose is not a new
 execution instruction.
 
+## Identity event assignments on affine states — 2026-09-26
+
+Events that assign a rate-rule target to itself no longer count as trajectory
+controllers for threshold scheduling. The event keeps its one rising-edge
+schedule while preserving the exact state value. This recovers `01798`, moving
+the full pinned SBML Test Suite from `1,517 passed / 406 unsupported` to
+`1,518 / 405`, with zero failures, timeouts, or regressions. It matches
+libRoadRunner 2.10.0 exactly on three observables. Full Python passes `570`
+tests with `28` skipped. Report:
+`/private/tmp/bng3-sbml-identity-event-full.json`, SHA-256
+`d4e48b75fad1b71f9aba73f26d729952d99eed39a0da112411fd643444d7fc7d`.
+
+The formatting workflow had failed on pushed `31d4b8a`. Repository-wide Black
+and Ruff checks are now clean after formatting the edited Atomizer files and
+two existing validation files. CI should be checked again on the corrective
+push.
+
 ## Affine stoichiometry event follow-up — 2026-09-26
 
 Affine threshold/interval event scheduling now also resolves rate-rule species

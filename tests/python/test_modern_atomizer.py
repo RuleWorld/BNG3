@@ -3180,8 +3180,7 @@ def test_sbml_comp_external_models_flatten_with_source_path(tmp_path):
 
     parent_path = tmp_path / "parent.xml"
     child_path = tmp_path / "child.xml"
-    child_path.write_text(
-        """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
+    child_path.write_text("""<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
             level="3" version="2">
           <model id="childModel">
             <listOfCompartments><compartment id="cell" size="1" constant="true"/></listOfCompartments>
@@ -3201,8 +3200,7 @@ def test_sbml_comp_external_models_flatten_with_source_path(tmp_path):
               </reaction>
             </listOfReactions>
           </model>
-        </sbml>"""
-    )
+        </sbml>""")
     parent = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
         xmlns:comp="http://www.sbml.org/sbml/level3/version1/comp/version1"
         level="3" version="2" comp:required="true">

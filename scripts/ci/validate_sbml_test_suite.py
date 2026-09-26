@@ -717,8 +717,7 @@ def _validate_case(
             function_names={
                 standardize_name(str(rule.variable))
                 for rule in parsed.rules
-                if rule.type == "assignment"
-                and rule.variable
+                if rule.type == "assignment" and rule.variable
             }
             | {
                 standardize_name(str(assignment.symbol))

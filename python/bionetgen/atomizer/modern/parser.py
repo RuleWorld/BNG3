@@ -2203,9 +2203,7 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
             result.append(
                 first
                 if zero_delay or is_static(first, extra_static)
-                else shifted
-                if shifted is not None
-                else f"delay({first}, {second})"
+                else shifted if shifted is not None else f"delay({first}, {second})"
             )
             cursor = closing + 1
         return "".join(result)
