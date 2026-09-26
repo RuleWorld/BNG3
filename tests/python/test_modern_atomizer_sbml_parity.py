@@ -921,6 +921,61 @@ def test_affine_interval_event_uses_species_conversion_factor():
     assert "untranslated" not in result.bngl.lower()
 
 
+def test_constant_false_state_event_is_removed_without_model_dynamics():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="constant_false_state_event">
+        <listOfParameters>
+          <parameter id="S1" value="1" constant="false"/>
+          <parameter id="S2" value="0" constant="false"/>
+        </listOfParameters>
+        <listOfEvents><event id="never_fires">
+          <trigger initialValue="false" persistent="true">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><lt/><ci>S1</ci><cn>0.1</cn></apply>
+            </math>
+          </trigger>
+          <listOfEventAssignments><eventAssignment variable="S1">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math>
+          </eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True).atomize(xml)
+
+    assert result.success, result.error
+    assert "untranslated" not in result.bngl.lower()
+
+
+def test_static_initial_rising_event_uses_its_initial_edge_once():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="static_initial_rising_event">
+        <listOfParameters><parameter id="x" value="3" constant="false"/></listOfParameters>
+        <listOfEvents><event id="initial_rise">
+          <trigger initialValue="false" persistent="true">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><gt/><ci>x</ci><cn>2</cn></apply>
+            </math>
+          </trigger>
+          <delay><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>2.5</cn></math></delay>
+          <listOfEventAssignments><eventAssignment variable="x">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>7</cn></math>
+          </eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True).atomize(xml)
+
+    assert result.success, result.error
+    assert 'setParameter("x", "7")' in result.bngl
+    assert "untranslated" not in result.bngl.lower()
+
+
 def test_delay_of_affine_species_uses_initial_history_before_delay_boundary():
     from bionetgen.atomizer.modern import Atomizer
 

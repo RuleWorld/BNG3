@@ -6380,6 +6380,11 @@ def generate_bngl(
                 ),
                 resolve_exponential_rate=resolve_exponential_event_rate,
                 resolve_rate_reset=resolve_rate_event_reset,
+                static_event_state=(
+                    not model.reactions
+                    and not model.rules
+                    and not model.initial_assignments
+                ),
             ),
         )
         _update_event_translation_warning(model, event_result)

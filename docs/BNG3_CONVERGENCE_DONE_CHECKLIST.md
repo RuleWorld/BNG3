@@ -5773,3 +5773,23 @@ the other groups remain implementation targets.
   statuses match the prior report. Report
   `/private/tmp/bng3-biomodel-affine-interval-full.json`, SHA-256
   `7ed6cb084c9b9c6759b9fd02ad411928e7f95004fe80b66f359291dde2dcc66c`.
+
+## Static state-trigger events — 2026-09-26
+
+- [x] For one-event models with no reactions, rules, or initial assignments,
+  evaluate a direct state threshold from its initial value. Omit it only when
+  it stays false, or when it starts true and `trigger.initialValue` suppresses
+  the initial edge. When it starts true with `initialValue=false`, schedule
+  the one initial event edge and its fixed delay. Rate-rule-driven symbols and
+  models with other dynamic state remain untranslated.
+- [x] Official `semantic/01335` now passes. The full pinned SBML suite reports
+  `1,490 passed, 433 unsupported, 0 failed, 0 timeouts`; one new pass, no
+  regressions from `1,489/434`, and event blockers fell from 332 to 331. Report
+  `/private/tmp/bng3-sbml-static-events-full.json`, SHA-256
+  `ae3d91d7e0575975eac6a5e1a045d56b0e81c769f05e6e907778c940b00479fc`.
+- [x] `01335` has no observables, so the report's libRoadRunner simulation
+  comparison is vacuous; its pass establishes import, event lowering, network
+  generation, SBML write/reimport, and native-reader checks only.
+- [x] Full Python suite: `558 passed, 28 skipped`; changed-file Ruff,
+  compileall, and `git diff --check` pass. The full curated BioModels rerun
+  predates this slice.

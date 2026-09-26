@@ -59,6 +59,10 @@ class EventTranslationContext:
     resolve_rate_reset: Callable[[str], Optional[Tuple[float, float]]] = (
         lambda _identifier: None
     )
+    # True only when the model has no reactions, rules, or initial assignments;
+    # event-local mutable symbols then remain at their initial values unless
+    # an event fires.
+    static_event_state: bool = False
 
     @property
     def resolveSpeciesPattern(self):
@@ -1263,6 +1267,39 @@ def synthesize_event_actions(
         int, Tuple[str, float, float, float, float, float, float, str, str]
     ] = {}
     affine_interval_no_action: set[int] = set()
+    static_event_no_action: set[int] = set()
+    static_event_initial_fires: dict[int, dict[str, float]] = {}
+    if context.static_event_state and len(events) == 1:
+        event = events[0]
+        static_threshold = _parse_affine_state_threshold(event.trigger)
+        if static_threshold is not None:
+            identifier, operator, expression = static_threshold
+            initial = context.resolve_initial_value(identifier)
+            threshold = fold_initial(expression)
+            if (
+                initial is not None
+                and threshold is not None
+                and math.isfinite(float(initial))
+                and math.isfinite(float(threshold))
+            ):
+                initial = float(initial)
+                threshold = float(threshold)
+                initially_true = (
+                    initial > threshold
+                    if operator == "gt"
+                    else initial >= threshold
+                    if operator == "geq"
+                    else initial < threshold
+                    if operator == "lt"
+                    else initial <= threshold
+                )
+                if not initially_true or event.trigger_initial_value:
+                    static_event_no_action.add(id(event))
+                else:
+                    static_event_initial_fires[id(event)] = {
+                        identifier: initial
+                    }
+
     for event in events:
         parsed_interval = _parse_affine_state_interval(event.trigger)
         if parsed_interval is None or len(events) != 1:
@@ -1478,13 +1515,21 @@ def synthesize_event_actions(
     for event in events:
         if id(event) in periodic_handled:
             continue
+        if id(event) in static_event_no_action:
+            normal_converted += 1
+            continue
         if id(event) in affine_interval_no_action:
             normal_converted += 1
             continue
         trigger_state_values: Optional[dict[str, float]] = None
         trigger_state_trajectory: Optional[Tuple[str, str, float, float]] = None
         affine_interval = affine_interval_schedules.get(id(event))
-        if affine_interval is not None:
+        static_initial_values = static_event_initial_fires.get(id(event))
+        if static_initial_values is not None:
+            threshold = "0"
+            window_end: Optional[float] = None
+            trigger_state_values = dict(static_initial_values)
+        elif affine_interval is not None:
             (
                 interval_identifier,
                 interval_initial,

@@ -1583,3 +1583,15 @@ inventory exclusions. No curated gain or regression is attributable to this
 slice. All 1,562 passing per-mode comparisons and 260 nonpassing comparison
 statuses are unchanged. Report digest and comparison details are recorded in
 the convergence checklist.
+
+Single-event models with no reactions, rules, or initial assignments can now
+prove a direct state threshold static from its initial value. Permanently
+false triggers are omitted; a true-at-zero trigger with
+`initialValue=false` schedules its one initial edge, including fixed delay.
+Official `semantic/01335` now passes. Full SBML suite: `1,490 passed, 433
+unsupported, 0 failed, 0 timed out`, one gain and no regressions; event
+blockers fell to 331. Full Python: `558 passed, 28 skipped`; Ruff, compileall,
+and diff checks pass. The case has no observables, so its libRoadRunner
+simulation comparison is vacuous. Rate-rule-driven parameters and models with
+other dynamics remain outside this proof. The full curated BioModels refresh
+predates this slice. See the checklist for the report digest and scope.
