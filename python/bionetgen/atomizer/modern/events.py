@@ -44,6 +44,11 @@ class EventTranslationContext:
     resolve_affine_rate: Callable[[str], Optional[Tuple[float, float]]] = (
         lambda _identifier: None
     )
+    # Return (initial value, exponent) for independently exponential states
+    # whose exact trajectory is initial * exp(exponent * time).
+    resolve_exponential_rate: Callable[[str], Optional[Tuple[float, float]]] = (
+        lambda _identifier: None
+    )
     # Allow periodic reset lowering to inspect a constant rate-rule state even
     # when the event itself assigns that state.
     resolve_rate_reset: Callable[[str], Optional[Tuple[float, float]]] = (
@@ -1279,7 +1284,7 @@ def synthesize_event_actions(
         if id(event) in periodic_handled:
             continue
         trigger_state_values: Optional[dict[str, float]] = None
-        trigger_state_trajectory: Optional[Tuple[str, float, float]] = None
+        trigger_state_trajectory: Optional[Tuple[str, str, float, float]] = None
         threshold = parse_time_threshold(event.trigger)
         window_end: Optional[float] = None
         scale_identifier: Optional[str] = None
@@ -1291,7 +1296,12 @@ def synthesize_event_actions(
                 crossing_value = fold(threshold_expression)
                 if trajectory is not None and crossing_value is not None:
                     initial_value, slope = trajectory
-                    trigger_state_trajectory = (identifier, initial_value, slope)
+                    trigger_state_trajectory = (
+                        identifier,
+                        "affine",
+                        initial_value,
+                        slope,
+                    )
                     initially_true = (
                         initial_value > crossing_value
                         if operator == "gt"
@@ -1301,20 +1311,81 @@ def synthesize_event_actions(
                         if operator == "lt"
                         else initial_value <= crossing_value
                     )
-                    trigger_state_values = {identifier: crossing_value}
                     if slope == 0:
                         if initially_true and not event.trigger_initial_value:
                             threshold = "0"
+                            trigger_state_values = {identifier: initial_value}
                         else:
                             normal_converted += 1
                             continue
-                    rising = (operator in {"gt", "geq"} and slope > 0) or (
-                        operator in {"lt", "leq"} and slope < 0
-                    )
-                    if threshold is None and not initially_true and rising:
+                    elif initially_true:
+                        if not event.trigger_initial_value:
+                            threshold = "0"
+                            trigger_state_values = {identifier: initial_value}
+                        else:
+                            normal_converted += 1
+                            continue
+                    else:
+                        rising = (operator in {"gt", "geq"} and slope > 0) or (
+                            operator in {"lt", "leq"} and slope < 0
+                        )
+                        if not rising:
+                            normal_converted += 1
+                            continue
                         crossing_time = (crossing_value - initial_value) / slope
                         if math.isfinite(crossing_time) and crossing_time >= 0:
                             threshold = _format_number(crossing_time)
+                            trigger_state_values = {identifier: crossing_value}
+                elif crossing_value is not None:
+                    exponential = context.resolve_exponential_rate(identifier)
+                    if exponential is not None:
+                        initial_value, exponent = exponential
+                        trigger_state_trajectory = (
+                            identifier,
+                            "exponential",
+                            initial_value,
+                            exponent,
+                        )
+                        initially_true = (
+                            initial_value > crossing_value
+                            if operator == "gt"
+                            else initial_value >= crossing_value
+                            if operator == "geq"
+                            else initial_value < crossing_value
+                            if operator == "lt"
+                            else initial_value <= crossing_value
+                        )
+                        if exponent == 0 or initial_value == 0:
+                            if initially_true and not event.trigger_initial_value:
+                                threshold = "0"
+                                trigger_state_values = {identifier: initial_value}
+                            else:
+                                normal_converted += 1
+                                continue
+                        elif initially_true:
+                            if not event.trigger_initial_value:
+                                threshold = "0"
+                                trigger_state_values = {identifier: initial_value}
+                            else:
+                                normal_converted += 1
+                                continue
+                        else:
+                            derivative_sign = initial_value * exponent
+                            rising = (
+                                operator in {"gt", "geq"} and derivative_sign > 0
+                            ) or (
+                                operator in {"lt", "leq"} and derivative_sign < 0
+                            )
+                            ratio = crossing_value / initial_value
+                            if not rising or ratio <= 0:
+                                normal_converted += 1
+                                continue
+                            crossing_time = math.log(ratio) / exponent
+                            if math.isfinite(crossing_time) and crossing_time >= 0:
+                                threshold = _format_number(crossing_time)
+                                trigger_state_values = {
+                                    identifier: crossing_value
+                                }
         if threshold is None:
             window = _parse_gated_time_window(event.trigger, fold)
             if window is not None:
@@ -1438,10 +1509,21 @@ def synthesize_event_actions(
             )
             assignment_state_values = trigger_state_values
             if not event.use_values_from_trigger_time and trigger_state_trajectory:
-                identifier, initial_value, slope = trigger_state_trajectory
-                assignment_state_values = {
-                    identifier: initial_value + slope * evaluation_time
-                }
+                identifier, trajectory_kind, initial_value, rate = (
+                    trigger_state_trajectory
+                )
+                try:
+                    state_value = (
+                        initial_value + rate * evaluation_time
+                        if trajectory_kind == "affine"
+                        else initial_value * math.exp(rate * evaluation_time)
+                    )
+                except OverflowError:
+                    state_value = math.inf
+                if not math.isfinite(state_value):
+                    failure = "event state at execution time is not finite"
+                    break
+                assignment_state_values = {identifier: state_value}
             value = fold(
                 expression,
                 evaluation_time,

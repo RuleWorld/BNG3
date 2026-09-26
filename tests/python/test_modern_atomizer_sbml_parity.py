@@ -691,6 +691,48 @@ def test_constant_reaction_flux_state_threshold_lowers_exact_crossing():
     assert "untranslated" not in result.bngl.lower()
 
 
+def test_first_order_reaction_threshold_lowers_exponential_crossing():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="first_order_event_crossing">
+        <listOfCompartments><compartment id="c" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies>
+          <species id="A" compartment="c" initialAmount="4" hasOnlySubstanceUnits="false"/>
+          <species id="B" compartment="c" initialAmount="0" hasOnlySubstanceUnits="false"/>
+        </listOfSpecies>
+        <listOfParameters>
+          <parameter id="k" value="0.5" constant="true"/>
+          <parameter id="P" value="0" constant="false"/>
+        </listOfParameters>
+        <listOfReactions><reaction id="decay" reversible="false">
+          <listOfReactants><speciesReference species="A" stoichiometry="1"/></listOfReactants>
+          <listOfProducts><speciesReference species="B" stoichiometry="1"/></listOfProducts>
+          <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><times/><ci>k</ci><ci>A</ci></apply>
+          </math></kineticLaw>
+        </reaction></listOfReactions>
+        <listOfEvents><event id="threshold">
+          <trigger initialValue="true" persistent="true">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><leq/><ci>A</ci><cn>2</cn></apply>
+            </math>
+          </trigger>
+          <listOfEventAssignments><eventAssignment variable="P">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><ci>A</ci></math>
+          </eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True).atomize(xml)
+
+    assert result.success, result.error
+    assert "t_end=>1.38629436112" in result.bngl
+    assert 'setParameter("P", "2")' in result.bngl
+    assert "untranslated" not in result.bngl.lower()
+
+
 def test_sbml_delay_of_unchanging_parameter_lowers_to_value():
     xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
       <model id="delay_of_static_parameter">

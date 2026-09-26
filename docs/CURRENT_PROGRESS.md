@@ -1532,3 +1532,13 @@ changes are run-to-run variance. This refresh predates constant-flux event
 lowering; a cached-source scan found no curated model matching that new shape,
 so no curated gain is attributed to it. Exact IDs and the report digest are in
 the convergence checklist.
+
+Event scheduling now also handles exact first-order exponential trajectories
+whose reaction rates are provably linear in one species with immutable
+coefficients. It adds 37 official SBML cases with no regressions; the full
+suite is `1,468 passed, 455 unsupported, 0 failed, 0 timed out`. Full Python:
+`550 passed, 28 skipped`; modern Atomizer: `316 passed, 1 skipped`. A cached
+scan of 1,084 curated BioModels found no matching event shape. See the
+convergence checklist for the exact case list and report digest. For
+`semantic/00619`, generated-model CVODE matches libRoadRunner across five
+observables to `1.69e-13` maximum absolute difference.

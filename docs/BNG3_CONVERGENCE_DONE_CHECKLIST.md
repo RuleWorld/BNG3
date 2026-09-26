@@ -5666,3 +5666,28 @@ the other groups remain implementation targets.
   gain is attributed to the newer event slice. Report
   `/private/tmp/bng3-biomodel-final-feature-refresh.json`, SHA-256
   `5c323485bc9ea61a3d26018750b59f43cafc54ea0de0ad68790866289c4feb74`.
+
+## First-order exponential event crossings — 2026-09-26
+
+- [x] Solve direct species thresholds when every affecting reaction rate is
+  symbolically first-degree in that species with immutable coefficients,
+  yielding an exact `x(t) = x(0) * exp(k*t)` trajectory. Compute crossing times
+  logarithmically and evaluate delayed event assignments at trigger or
+  execution time as declared. Nonlinear, coupled, rule-controlled, mutable,
+  fast-reaction, and conversion-factor trajectories remain untranslated.
+- [x] The latest full pinned SBML suite reports `1,468 passed, 455
+  unsupported, 0 failed, 0 timeouts`; 37 new passes and no regressions from
+  `1,431/492`. Event blockers fell from 387 to 350. New cases:
+  `00619`-`00624`, `00634`-`00639`, `00646`, `00648`-`00649`, `00651`,
+  `00679`-`00683`, `00689`-`00690`, `00700`, `00702`, `00707`-`00708`,
+  `00723`, `00730`, `00736`-`00737`, `00749`-`00750`, `00769`-`00770`,
+  `00996`, and `01094`. Report
+  `/private/tmp/bng3-sbml-exponential-event-full.json`, SHA-256
+  `c7eba8e7929477cf22fbebfdc93a719f6be372ec3483995d60d1f3af96253830`.
+- [x] Full Python suite: `550 passed, 28 skipped`; modern Atomizer tests:
+  `316 passed, 1 skipped`. Changed-file Ruff, compileall, and diff checks pass.
+- [x] A generated-model ODE comparison for `semantic/00619` passes against
+  libRoadRunner across five observables at `t_end=10`, 100 steps; maximum
+  absolute difference is `1.69e-13`.
+- [x] A cached-source scan of 1,084 curated BioModels XML files found no
+  first-order threshold event matching this exact lowering shape.

@@ -5921,6 +5921,173 @@ def generate_bngl(
                 return None
             return initial, slope
 
+        def resolve_exponential_event_rate(
+            identifier: str,
+        ) -> Optional[Tuple[float, float]]:
+            """Resolve an isolated species with exact x' = rate * x dynamics."""
+            species_id = next(
+                (
+                    sid
+                    for sid in model.species
+                    if standardize_name(sid) == standardize_name(identifier)
+                ),
+                None,
+            )
+            species = model.species.get(species_id) if species_id else None
+            if species is None or species.constant or species.boundary_condition:
+                return None
+            if (
+                any(rule.variable == species_id for rule in model.rules)
+                or any(
+                    assignment.symbol == species_id
+                    for assignment in model.initial_assignments
+                )
+                or any(
+                    assignment.variable == species_id
+                    for event in model.events
+                    for assignment in event.assignments
+                )
+            ):
+                return None
+            initial = resolve_initial_event_value(species_id)
+            if initial is None or not math.isfinite(initial):
+                return None
+
+            def resolve_immutable(symbol: str) -> Optional[float]:
+                if is_compile_time_constant(symbol):
+                    value = resolve_event_parameter(symbol)
+                    if value is not None:
+                        return value
+                return resolve_constant(symbol)
+
+            def polynomial(node: ast.AST) -> Optional[Tuple[float, float]]:
+                if isinstance(node, ast.Constant) and isinstance(
+                    node.value, (int, float)
+                ):
+                    return float(node.value), 0.0
+                if isinstance(node, ast.Name):
+                    if standardize_name(node.id) == standardize_name(species_id):
+                        return 0.0, 1.0
+                    value = resolve_immutable(node.id)
+                    return (float(value), 0.0) if value is not None else None
+                if isinstance(node, ast.UnaryOp) and isinstance(
+                    node.op, (ast.UAdd, ast.USub)
+                ):
+                    value = polynomial(node.operand)
+                    if value is None:
+                        return None
+                    sign = -1.0 if isinstance(node.op, ast.USub) else 1.0
+                    return sign * value[0], sign * value[1]
+                if isinstance(node, ast.BinOp):
+                    left, right = polynomial(node.left), polynomial(node.right)
+                    if left is None or right is None:
+                        return None
+                    if isinstance(node.op, ast.Add):
+                        return left[0] + right[0], left[1] + right[1]
+                    if isinstance(node.op, ast.Sub):
+                        return left[0] - right[0], left[1] - right[1]
+                    if isinstance(node.op, ast.Mult):
+                        if left[1] != 0 and right[1] != 0:
+                            return None
+                        return (
+                            left[0] * right[0],
+                            left[0] * right[1] + left[1] * right[0],
+                        )
+                    if isinstance(node.op, ast.Div) and right[1] == 0:
+                        if right[0] == 0:
+                            return None
+                        return left[0] / right[0], left[1] / right[0]
+                    if isinstance(node.op, ast.Pow) and right[1] == 0:
+                        if right[0] == 0:
+                            return 1.0, 0.0
+                        if right[0] == 1:
+                            return left
+                    return None
+                if isinstance(node, ast.Call):
+                    args = [polynomial(arg) for arg in node.args]
+                    if any(value is None or value[1] != 0 for value in args):
+                        return None
+                try:
+                    folded = fold_numeric(ast.unparse(node), resolve_immutable)
+                except (TypeError, ValueError, SyntaxError):
+                    return None
+                if folded is None or not math.isfinite(folded):
+                    return None
+                return folded, 0.0
+
+            exponent = 0.0
+            found = False
+            for reaction in model.reactions.values():
+                references = [
+                    reference
+                    for reference in [*reaction.reactants, *reaction.products]
+                    if reference.species == species_id
+                ]
+                if not references:
+                    continue
+                if (
+                    reaction.fast
+                    or reaction.conversion_factor
+                    or model.conversion_factor
+                    or species.conversion_factor
+                ):
+                    return None
+                net_coefficient = 0.0
+                for sign, side in (
+                    (-1.0, reaction.reactants),
+                    (1.0, reaction.products),
+                ):
+                    for reference in side:
+                        if reference.species != species_id:
+                            continue
+                        if reference.variable_stoichiometry:
+                            return None
+                        net_coefficient += sign * float(reference.stoichiometry)
+                if net_coefficient == 0:
+                    continue
+                kinetic_law = reaction.kinetic_law
+                expression = str(
+                    getattr(kinetic_law, "math", "")
+                    or (kinetic_law.get("math", "") if kinetic_law else "")
+                    or ""
+                ).strip()
+                if not expression:
+                    return None
+                expression = extend_function(
+                    expression, {}, model.function_definitions
+                )
+                try:
+                    parsed = ast.parse(expression, mode="eval")
+                except (TypeError, ValueError, SyntaxError):
+                    return None
+                coefficients = polynomial(parsed.body)
+                if coefficients is None or coefficients[0] != 0:
+                    return None
+                exponent += net_coefficient * coefficients[1]
+                found = True
+            if not found:
+                return None
+            if not species.has_only_substance_units:
+                compartment = model.compartments.get(species.compartment or "")
+                if (
+                    compartment is None
+                    or not compartment.constant
+                    or compartment.size == 0
+                    or any(rule.variable == species.compartment for rule in model.rules)
+                    or any(
+                        assignment.symbol == species.compartment
+                        for assignment in model.initial_assignments
+                    )
+                    or any(
+                        assignment.variable == species.compartment
+                        for event in model.events
+                        for assignment in event.assignments
+                    )
+                ):
+                    return None
+                exponent /= float(compartment.size)
+            return (initial, exponent) if math.isfinite(exponent) else None
+
         def resolve_rate_event_reset(
             identifier: str,
         ) -> Optional[Tuple[float, float]]:
@@ -5971,6 +6138,7 @@ def generate_bngl(
                 base_steps=max(1, int(n_steps)),
                 resolve_initial_value=resolve_initial_event_value,
                 resolve_affine_rate=resolve_affine_event_rate,
+                resolve_exponential_rate=resolve_exponential_event_rate,
                 resolve_rate_reset=resolve_rate_event_reset,
             ),
         )

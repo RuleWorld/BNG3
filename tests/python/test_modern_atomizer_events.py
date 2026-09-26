@@ -416,6 +416,45 @@ def test_affine_threshold_event_reads_species_at_trigger_time():
     assert 'setParameter("P", "5.5")' in result.actions_block
 
 
+def test_exponential_threshold_event_reads_trigger_or_execution_state():
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLEventAssignment
+
+    event = SBMLEvent(
+        id="exponential-threshold",
+        trigger="geq(x, 2)",
+        delay="1",
+        assignments=[SBMLEventAssignment("P", "x")],
+        use_values_from_trigger_time=True,
+    )
+    context = EventTranslationContext(
+        resolve_species_pattern=lambda _identifier: None,
+        resolve_param=lambda _identifier: None,
+        is_param=lambda _identifier: True,
+        is_compile_time_constant=lambda _identifier: False,
+        resolve_exponential_rate=lambda identifier: (
+            (1.0, 0.5) if identifier == "x" else None
+        ),
+    )
+    result = synthesize_event_actions([event], context)
+
+    assert result.converted == 1
+    assert result.untranslated == []
+    assert result.actions_block is not None
+    assert "t_end=>2.38629436112" in result.actions_block
+    assert 'setParameter("P", "2")' in result.actions_block
+
+    event.use_values_from_trigger_time = False
+    result = synthesize_event_actions([event], context)
+    assert result.converted == 1
+    assert result.untranslated == []
+    assert result.actions_block is not None
+    assert 'setParameter("P", "3.2974425414")' in result.actions_block
+
+
 def test_fold_numeric_supports_mathml_nary_and_inverse_hyperbolic_functions():
     from bionetgen.atomizer.modern.events import fold_numeric
 
