@@ -526,6 +526,41 @@ def test_affine_state_threshold_with_fixed_time_gate():
     assert len(result.untranslated) == 1
 
 
+def test_quadratic_state_difference_threshold_uses_composite_trajectory():
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLEventAssignment
+
+    event = SBMLEvent(
+        id="difference-threshold",
+        trigger="gt(A, B)",
+        assignments=[SBMLEventAssignment("P", "1")],
+    )
+    result = synthesize_event_actions(
+        [event],
+        EventTranslationContext(
+            resolve_species_pattern=lambda _identifier: None,
+            resolve_param=lambda _identifier: None,
+            is_param=lambda _identifier: True,
+            is_compile_time_constant=lambda _identifier: False,
+            resolve_initial_value=lambda identifier: {
+                "A": 1.0,
+                "B": 2.0,
+            }.get(identifier),
+            resolve_quadratic_rate_for_event=lambda expression, _event: (
+                (-1.0, 0.0, 0.0, 1.0) if expression == "(A) - (B)" else None
+            ),
+        ),
+    )
+
+    assert result.converted == 1
+    assert result.untranslated == []
+    assert result.actions_block is not None
+    assert "t_end=>1" in result.actions_block
+
+
 def test_exponential_threshold_event_reads_trigger_or_execution_state():
     from bionetgen.atomizer.modern.events import (
         EventTranslationContext,

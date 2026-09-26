@@ -747,6 +747,23 @@ def _parse_affine_state_threshold(
     return None
 
 
+def _parse_state_difference_threshold(
+    trigger: str,
+) -> Optional[Tuple[str, str, str]]:
+    """Parse a comparison between two state symbols as a zero threshold."""
+    match = re.match(r"^(gt|geq|lt|leq)\s*\((.*)\)$", str(trigger or "").strip(), re.I)
+    if match is None:
+        return None
+    arguments = _split_arguments(match.group(2))
+    if arguments is None or len(arguments) != 2:
+        return None
+    left, right = (_strip_outer_parens(value) for value in arguments)
+    identifier = r"[A-Za-z_][A-Za-z0-9_]*"
+    if re.fullmatch(identifier, left) and re.fullmatch(identifier, right):
+        return f"({left}) - ({right})", match.group(1).lower(), "0"
+    return None
+
+
 def _parse_gated_affine_state_threshold(
     trigger: str, fold_static: Callable[[str], Optional[float]]
 ) -> Optional[Tuple[str, List[str], List[str], bool]]:
@@ -2528,6 +2545,15 @@ def synthesize_event_actions(
             state_threshold = _parse_affine_state_threshold(event_trigger)
             rate_of_threshold = False
             state_threshold_scale = "1"
+            difference_threshold = _parse_state_difference_threshold(event_trigger)
+            if (
+                difference_threshold is not None
+                and context.resolve_quadratic_rate_for_event(
+                    difference_threshold[0], event
+                )
+                is not None
+            ):
+                state_threshold = difference_threshold
             if state_threshold is None:
                 state_threshold = _parse_rate_of_state_threshold(event_trigger)
                 rate_of_threshold = state_threshold is not None

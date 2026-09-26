@@ -6696,6 +6696,7 @@ def generate_bngl(
                 )
             ):
                 return None
+            state_expression: Optional[Tuple[Tuple[str, float], ...]] = None
             target_id = next(
                 (
                     sid
@@ -6704,6 +6705,48 @@ def generate_bngl(
                 ),
                 None,
             )
+            if target_id is None:
+                difference = re.fullmatch(
+                    r"\(?\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)?\s*-\s*"
+                    r"\(?\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)?",
+                    str(identifier).strip(),
+                )
+                if difference is None:
+                    return None
+                left_id, right_id = difference.groups()
+                species_ids = {standardize_name(sid): sid for sid in model.species}
+                left_species = species_ids.get(standardize_name(left_id))
+                right_species = species_ids.get(standardize_name(right_id))
+                if left_species is None or right_species is None:
+                    return None
+                if any(
+                    standardize_name(assignment.variable)
+                    in {
+                        standardize_name(left_species),
+                        standardize_name(right_species),
+                    }
+                    for assignment in event_context.assignments
+                ):
+                    return None
+                component_ids = {
+                    standardize_name(left_species),
+                    standardize_name(right_species),
+                }
+                for assignment in event_context.assignments:
+                    try:
+                        assignment_math = ast.parse(
+                            str(assignment.math or ""), mode="eval"
+                        )
+                    except (SyntaxError, TypeError, ValueError):
+                        return None
+                    if any(
+                        standardize_name(node.id) in component_ids
+                        for node in ast.walk(assignment_math)
+                        if isinstance(node, ast.Name)
+                    ):
+                        return None
+                state_expression = ((left_species, 1.0), (right_species, -1.0))
+                target_id = left_species
             target = model.species.get(target_id) if target_id else None
             if target is None or target.constant or target.boundary_condition:
                 return None
@@ -6719,8 +6762,8 @@ def generate_bngl(
                 if target.has_only_substance_units
                 else 1.0 / float(target_compartment.size)
             )
-            initial = resolve_initial_event_value(target_id)
-            if initial is None or not math.isfinite(initial):
+            coordinate_initial = resolve_initial_event_value(target_id)
+            if coordinate_initial is None or not math.isfinite(coordinate_initial):
                 return None
 
             dynamic_species = {
@@ -6787,7 +6830,7 @@ def generate_bngl(
                     )
                     slope = base_vector[sid] * units / (target_stoich * target_units)
                 species_polynomials[standardize_name(sid)] = (
-                    float(state_initial) - slope * float(initial),
+                    float(state_initial) - slope * float(coordinate_initial),
                     slope,
                 )
 
@@ -6923,6 +6966,26 @@ def generate_bngl(
                     for total, value in zip(flux_coefficients, polynomial)
                 )
             quadratic, linear, constant = flux_coefficients
+            initial = float(coordinate_initial)
+            if state_expression is not None:
+                offset = 0.0
+                state_slope = 0.0
+                for species_id, multiplier in state_expression:
+                    species_offset, species_slope = species_polynomials[
+                        standardize_name(species_id)
+                    ]
+                    offset += multiplier * species_offset
+                    state_slope += multiplier * species_slope
+                initial = offset + state_slope * float(coordinate_initial)
+                if abs(state_slope) <= 1e-14:
+                    return (initial, 0.0, 0.0, 0.0)
+                quadratic, linear, constant = (
+                    quadratic / state_slope,
+                    linear - 2.0 * quadratic * offset / state_slope,
+                    quadratic * offset * offset / state_slope
+                    - linear * offset
+                    + state_slope * constant,
+                )
             if not all(
                 math.isfinite(value) for value in (initial, quadratic, linear, constant)
             ):
