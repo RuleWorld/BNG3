@@ -846,6 +846,81 @@ def test_fixed_time_event_reads_exact_exponential_parameter_value():
     assert "untranslated" not in result.bngl.lower()
 
 
+def test_affine_state_interval_event_lowers_with_a_safe_delayed_self_update():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="affine_state_interval_event">
+        <listOfCompartments><compartment id="c" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies><species id="A" compartment="c" initialAmount="1.8" hasOnlySubstanceUnits="false"/></listOfSpecies>
+        <listOfParameters><parameter id="out" value="0" constant="false"/></listOfParameters>
+        <listOfReactions><reaction id="source" reversible="false">
+          <listOfProducts><speciesReference species="A" stoichiometry="1"/></listOfProducts>
+          <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0.01</cn></math></kineticLaw>
+        </reaction></listOfReactions>
+        <listOfEvents><event id="interval">
+          <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><and/>
+              <apply><geq/><ci>A</ci><cn>1.84</cn></apply>
+              <apply><leq/><ci>A</ci><cn>1.88</cn></apply>
+            </apply>
+          </math></trigger>
+          <delay><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></delay>
+          <listOfEventAssignments>
+            <eventAssignment variable="A"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>6</cn></math></eventAssignment>
+            <eventAssignment variable="out"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>3</cn></math></eventAssignment>
+          </listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True).atomize(xml)
+
+    assert result.success, result.error
+    assert "t_end=>5" in result.bngl
+    assert 'setConcentration("@c:M_A()", "6")' in result.bngl
+    assert 'setParameter("out", "3")' in result.bngl
+    assert "untranslated" not in result.bngl.lower()
+
+
+def test_affine_interval_event_uses_species_conversion_factor():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="affine_interval_species_conversion_factor" conversionFactor="model_cf">
+        <listOfCompartments><compartment id="c" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies><species id="A" compartment="c" initialAmount="1.8" hasOnlySubstanceUnits="false" conversionFactor="species_cf"/></listOfSpecies>
+        <listOfParameters>
+          <parameter id="model_cf" value="3" constant="true"/>
+          <parameter id="species_cf" value="5" constant="true"/>
+        </listOfParameters>
+        <listOfReactions><reaction id="source" reversible="false">
+          <listOfProducts><speciesReference species="A" stoichiometry="1"/></listOfProducts>
+          <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0.01</cn></math></kineticLaw>
+        </reaction></listOfReactions>
+        <listOfEvents><event id="interval">
+          <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><and/>
+              <apply><geq/><ci>A</ci><cn>1.84</cn></apply>
+              <apply><leq/><ci>A</ci><cn>1.88</cn></apply>
+            </apply>
+          </math></trigger>
+          <delay><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0.2</cn></math></delay>
+          <listOfEventAssignments><eventAssignment variable="A">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>6</cn></math>
+          </eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True).atomize(xml)
+
+    assert result.success, result.error
+    assert "t_end=>1" in result.bngl
+    assert 'setConcentration("@c:M_A()", "6")' in result.bngl
+    assert "untranslated" not in result.bngl.lower()
+
+
 def test_delay_of_affine_species_uses_initial_history_before_delay_boundary():
     from bionetgen.atomizer.modern import Atomizer
 

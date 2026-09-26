@@ -1560,3 +1560,17 @@ libRoadRunner within `4.06e-12` maximum absolute error. Full Python: `554
 passed, 28 skipped`. Full BioModels was not rerun; the cached `rateOf` source
 screen found no model matching the new simple parameter threshold form. See
 the convergence checklist for report digest and detailed scope.
+
+Event lowering now handles a single conjunction defining a bounded interval
+over one proven affine state, including delayed trigger-time snapshots,
+nonpersistent cancellation, and static model/species conversion factors.
+Thirteen additional official SBML cases pass with no regressions: `01580`-
+`01582`, `01675`-
+`01680`, `01687`-
+`01688`, and `01690`-
+`01691`. The full pinned suite is `1,489 passed, 434 unsupported, 0 failed,
+0 timed out`; event blockers fell from 345 to 332. All 13 new cases match
+libRoadRunner on generated observables (maximum absolute difference
+`1.78e-15`). Full Python: `556 passed, 28 skipped`; Ruff, compileall, and diff
+checks pass. Curated BioModels was not rerun. See the convergence checklist
+for report digest, exact scope, and validation limits.

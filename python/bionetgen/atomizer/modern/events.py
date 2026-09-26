@@ -44,6 +44,11 @@ class EventTranslationContext:
     resolve_affine_rate: Callable[[str], Optional[Tuple[float, float]]] = (
         lambda _identifier: None
     )
+    # Event-local affine proof may ignore that event's own future assignment
+    # while rejecting every other controller of the state.
+    resolve_affine_rate_for_event: Callable[
+        [str, SBMLEvent], Optional[Tuple[float, float]]
+    ] = lambda _identifier, _event: None
     # Return (initial value, exponent) for independently exponential states
     # whose exact trajectory is initial * exp(exponent * time).
     resolve_exponential_rate: Callable[[str], Optional[Tuple[float, float]]] = (
@@ -631,6 +636,27 @@ def _parse_affine_state_threshold(
         reverse = {"gt": "lt", "geq": "leq", "lt": "gt", "leq": "geq"}
         return right, reverse[match.group(1).lower()], left
     return None
+
+
+def _parse_affine_state_interval(
+    trigger: str,
+) -> Optional[Tuple[str, List[Tuple[str, str]]]]:
+    """Parse a conjunction of lower and upper bounds on one state."""
+
+    comparisons = _split_call_arguments(str(trigger or "").strip())
+    if comparisons is None or len(comparisons) != 2:
+        return None
+    parsed = [_parse_affine_state_threshold(term) for term in comparisons]
+    if any(item is None for item in parsed):
+        return None
+    concrete = [item for item in parsed if item is not None]
+    identifiers = {item[0] for item in concrete}
+    operators = [item[1] for item in concrete]
+    if len(identifiers) != 1 or not any(op in {"gt", "geq"} for op in operators):
+        return None
+    if not any(op in {"lt", "leq"} for op in operators):
+        return None
+    return next(iter(identifiers)), [(op, value) for _identifier, op, value in concrete]
 
 
 def _parse_rate_of_state_threshold(
@@ -1233,6 +1259,83 @@ def synthesize_event_actions(
                 for event in group
             )
 
+    affine_interval_schedules: dict[
+        int, Tuple[str, float, float, float, float, float, float, str, str]
+    ] = {}
+    affine_interval_no_action: set[int] = set()
+    for event in events:
+        parsed_interval = _parse_affine_state_interval(event.trigger)
+        if parsed_interval is None or len(events) != 1:
+            continue
+        identifier, comparisons = parsed_interval
+        lower_bounds = [
+            (operator, fold(expression))
+            for operator, expression in comparisons
+            if operator in {"gt", "geq"}
+        ]
+        upper_bounds = [
+            (operator, fold(expression))
+            for operator, expression in comparisons
+            if operator in {"lt", "leq"}
+        ]
+        if (
+            len(lower_bounds) != 1
+            or len(upper_bounds) != 1
+            or lower_bounds[0][1] is None
+            or upper_bounds[0][1] is None
+        ):
+            continue
+        lower_operator, lower_value = lower_bounds[0]
+        upper_operator, upper_value = upper_bounds[0]
+        lower = float(lower_value)
+        upper = float(upper_value)
+        if not math.isfinite(lower) or not math.isfinite(upper) or lower >= upper:
+            continue
+        trajectory = context.resolve_affine_rate_for_event(identifier, event)
+        if trajectory is None:
+            continue
+        initial, slope = trajectory
+        if not math.isfinite(initial) or not math.isfinite(slope) or slope == 0:
+            continue
+
+        def inside_interval(value: float) -> bool:
+            lower_ok = value > lower if lower_operator == "gt" else value >= lower
+            upper_ok = value < upper if upper_operator == "lt" else value <= upper
+            return lower_ok and upper_ok
+
+        initially_inside = inside_interval(initial)
+        if initially_inside and event.trigger_initial_value:
+            affine_interval_no_action.add(id(event))
+            continue
+        if slope > 0:
+            entry = 0.0 if initially_inside else (lower - initial) / slope
+            exit_time = (upper - initial) / slope
+        else:
+            entry = 0.0 if initially_inside else (upper - initial) / slope
+            exit_time = (lower - initial) / slope
+        if (
+            not math.isfinite(entry)
+            or not math.isfinite(exit_time)
+            or entry < 0
+            or exit_time <= entry
+        ):
+            affine_interval_no_action.add(id(event))
+            continue
+        if initially_inside and event.trigger_initial_value:
+            affine_interval_no_action.add(id(event))
+            continue
+        affine_interval_schedules[id(event)] = (
+            identifier,
+            initial,
+            slope,
+            entry,
+            lower,
+            upper,
+            exit_time,
+            lower_operator,
+            upper_operator,
+        )
+
     def provably_false_in_horizon(
         expression: str, dynamic_values: Mapping[str, float]
     ) -> bool:
@@ -1375,10 +1478,38 @@ def synthesize_event_actions(
     for event in events:
         if id(event) in periodic_handled:
             continue
+        if id(event) in affine_interval_no_action:
+            normal_converted += 1
+            continue
         trigger_state_values: Optional[dict[str, float]] = None
         trigger_state_trajectory: Optional[Tuple[str, str, float, float]] = None
-        threshold = parse_time_threshold(event.trigger)
-        window_end: Optional[float] = None
+        affine_interval = affine_interval_schedules.get(id(event))
+        if affine_interval is not None:
+            (
+                interval_identifier,
+                interval_initial,
+                interval_slope,
+                interval_entry,
+                _interval_lower,
+                _interval_upper,
+                interval_exit,
+                _interval_lower_operator,
+                _interval_upper_operator,
+            ) = affine_interval
+            threshold = _format_number(interval_entry)
+            window_end: Optional[float] = interval_exit
+            trigger_state_values = {
+                interval_identifier: interval_initial + interval_slope * interval_entry
+            }
+            trigger_state_trajectory = (
+                interval_identifier,
+                "affine",
+                interval_initial,
+                interval_slope,
+            )
+        else:
+            threshold = parse_time_threshold(event.trigger)
+            window_end = None
         scale_identifier: Optional[str] = None
         if threshold is None:
             state_threshold = _parse_affine_state_threshold(event.trigger)
@@ -1639,6 +1770,9 @@ def synthesize_event_actions(
             and not event.trigger_persistent
             and execution_time >= window_end
         ):
+            if affine_interval is not None:
+                normal_converted += 1
+                continue
             untranslated.append(
                 (event, "nonpersistent delayed event may be canceled at the window end")
             )
@@ -1681,6 +1815,49 @@ def synthesize_event_actions(
                     "(depends on species/time or a function)"
                 )
                 break
+            if affine_interval is not None and standardize_name(
+                variable
+            ) == standardize_name(affine_interval[0]):
+                (
+                    _identifier,
+                    initial,
+                    slope,
+                    _entry,
+                    lower,
+                    upper,
+                    _exit,
+                    lower_operator,
+                    upper_operator,
+                ) = affine_interval
+
+                def in_interval(state: float) -> bool:
+                    lower_ok = state > lower if lower_operator == "gt" else state >= lower
+                    upper_ok = state < upper if upper_operator == "lt" else state <= upper
+                    return lower_ok and upper_ok
+
+                state_before = initial + slope * execution_time
+                no_reentry_within_run = False
+                if slope > 0 and value < lower:
+                    next_entry = execution_time + (lower - value) / slope
+                    no_reentry_within_run = next_entry > max(
+                        context.base_t_end, execution_time
+                    )
+                elif slope < 0 and value > upper:
+                    next_entry = execution_time + (upper - value) / slope
+                    no_reentry_within_run = next_entry > max(
+                        context.base_t_end, execution_time
+                    )
+                if not (
+                    (in_interval(state_before) and in_interval(value))
+                    or (slope > 0 and value >= upper)
+                    or (slope < 0 and value <= lower)
+                    or no_reentry_within_run
+                ):
+                    failure = (
+                        "delayed interval assignment can create another rising "
+                        "trigger edge"
+                    )
+                    break
             pattern = context.resolve_species_pattern(variable)
             if pattern:
                 sets.append(("conc", pattern, value))

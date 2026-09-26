@@ -40,6 +40,7 @@ from .helpers import logger
 from .metadata import metadata_payload
 from .types import (
     BNGL_LEXER_KEYWORDS,
+    SBMLEvent,
     SBMLModel,
     SBMLKineticLaw,
     SBMLReaction,
@@ -5873,6 +5874,7 @@ def generate_bngl(
 
         def resolve_affine_event_rate(
             identifier: str,
+            event_context: Optional[SBMLEvent] = None,
         ) -> Optional[Tuple[float, float]]:
             parameter = model.parameters.get(identifier)
             if parameter is None:
@@ -5891,6 +5893,7 @@ def generate_bngl(
                     if any(
                         assignment.variable == species_id
                         for event in model.events
+                        if event is not event_context
                         for assignment in event.assignments
                     ):
                         return None
@@ -5907,6 +5910,7 @@ def generate_bngl(
                         or any(
                             assignment.variable == species.compartment
                             for event in model.events
+                            if event is not event_context
                             for assignment in event.assignments
                         )
                     ):
@@ -5932,6 +5936,7 @@ def generate_bngl(
                     or any(
                         assignment.variable == species_id
                         for event in model.events
+                        if event is not event_context
                         for assignment in event.assignments
                     )
                 ):
@@ -5939,6 +5944,19 @@ def generate_bngl(
                 initial = resolve_initial_event_value(species_id)
                 if initial is None or not math.isfinite(initial):
                     return None
+                conversion_factor_id = (
+                    species.conversion_factor or model.conversion_factor
+                )
+                conversion_factor = 1.0
+                if conversion_factor_id:
+                    if any(
+                        rule.variable == conversion_factor_id for rule in model.rules
+                    ):
+                        return None
+                    resolved_factor = resolve_event_parameter(conversion_factor_id)
+                    if resolved_factor is None or not math.isfinite(resolved_factor):
+                        return None
+                    conversion_factor = float(resolved_factor)
                 net_amount_rate = 0.0
                 affecting_reaction = False
                 for reaction in model.reactions.values():
@@ -5950,12 +5968,7 @@ def generate_bngl(
                     if not references:
                         continue
                     affecting_reaction = True
-                    if (
-                        reaction.fast
-                        or reaction.conversion_factor
-                        or model.conversion_factor
-                        or species.conversion_factor
-                    ):
+                    if reaction.fast or reaction.conversion_factor:
                         return None
                     net_coefficient = 0.0
                     for sign, side in (
@@ -5992,7 +6005,7 @@ def generate_bngl(
                     flux = fold_numeric(rate_expression, resolve_immutable)
                     if flux is None or not math.isfinite(flux):
                         return None
-                    net_amount_rate += net_coefficient * flux
+                    net_amount_rate += net_coefficient * conversion_factor * flux
                 if not affecting_reaction:
                     return None
                 if not species.has_only_substance_units:
@@ -6012,6 +6025,7 @@ def generate_bngl(
                         or any(
                             assignment.variable == species.compartment
                             for event in model.events
+                            if event is not event_context
                             for assignment in event.assignments
                         )
                     ):
@@ -6361,6 +6375,9 @@ def generate_bngl(
                 base_steps=max(1, int(n_steps)),
                 resolve_initial_value=resolve_initial_event_value,
                 resolve_affine_rate=resolve_affine_event_rate,
+                resolve_affine_rate_for_event=lambda identifier, event: (
+                    resolve_affine_event_rate(identifier, event)
+                ),
                 resolve_exponential_rate=resolve_exponential_event_rate,
                 resolve_rate_reset=resolve_rate_event_reset,
             ),

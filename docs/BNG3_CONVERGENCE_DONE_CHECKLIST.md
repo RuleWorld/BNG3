@@ -5735,3 +5735,31 @@ the other groups remain implementation targets.
   `git diff --check` pass. Full BioModels inventory was not rerun; a cached
   source screen found four XML files using `rateOf`, none matching the simple
   immutable-coefficient parameter rate-rule trigger implemented here.
+
+## Affine interval events and static conversion factors — 2026-09-26
+
+- [x] Lower a single event whose trigger is a conjunction of one state's
+  lower and upper bounds when the state has a proven affine trajectory. Schedule
+  the rising edge and interval end exactly; preserve trigger-time values and
+  nonpersistent cancellation. Permit the event's own update only when its next
+  rising edge is proven outside the simulation horizon. Reject coupled,
+  dynamically controlled, ambiguous, or unsafe re-entry cases.
+- [x] Include immutable species/model conversion factors in the affine
+  trajectory proof, with the species factor taking precedence. Dynamic factors,
+  fast reactions, and reaction-level conversion factors remain unsupported.
+- [x] Thirteen additional official cases pass: `semantic/01580`-`01582`,
+  `01675`-`01680`, `01687`-`01688`, and `01690`-`01691`. Full pinned suite:
+  `1,489 passed, 434 unsupported, 0 failed, 0 timeouts`; 13 gains and zero
+  regressions from `1,476/447`. Event blockers fell from 345 to 332. Report
+  `/private/tmp/bng3-sbml-affine-interval-full.json`, SHA-256
+  `0a4fe386e23fec4841980f7164a72d5af383ab16f5c534577736e40bb8278b4c`.
+- [x] The generated-model CVODE comparison in the full report passed against
+  libRoadRunner 2.10.0 for all 13 newly passing cases. Each had 3 or 4
+  observables; maximum absolute difference was `1.78e-15`. The harness used
+  the suite model's one-unit horizon and 10 steps. Separately, cases
+  `01675`-`01679` passed the targeted 20-unit/100-step validator run. This is
+  BNG3/libRoadRunner parity evidence, not SBML Test Suite reference-result
+  conformance.
+- [x] Full Python suite: `556 passed, 28 skipped`; changed-file Ruff,
+  compileall, and `git diff --check` pass. Full curated BioModels was not
+  rerun, so no curated-model gain is claimed.
