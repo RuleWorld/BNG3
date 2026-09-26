@@ -4,7 +4,7 @@
 **Last targeted audit:** 2026-09-26 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
 **Working branch:** `main`
-**Current base:** `main` at `8dfbb3d6f4daf94f808505bf5df6a0cbe974e5b6`; scalar quadratic trigger-time snapshots are in progress
+**Current base:** `main` at `2ddb80dc5bfb1203260923f42c4614e837d0cfbc`; scalar quadratic trigger-time snapshots are pushed
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -62,7 +62,13 @@ capability inventory.
   (`1,590 passed, 330 unsupported, 3 failed, 0 timed out`), with no gains or
   regressions. The full report hash remains
   `44cdb83bf4bbc0b2bc43c6104131d013e4b31ae8964ed5eb101fa5360d1a4b42`.
-- [ ] Exact-head CI for scalar quadratic trigger-time snapshots is pending push.
+- [x] Cached BioModels screen parsed 6,759 XML files (9 parse errors), found
+  no two-species event-threshold triggers, and identified three scalar-event
+  assignment candidates: `BIOMD0000000144`, `0195`, and `0196`. Targeted
+  round-trip attempts leave all three unsupported for other event/path limits;
+  no curated gain is claimed and the full inventory was not rerun.
+- [ ] Exact-head CI for `2ddb80dc5bfb1203260923f42c4614e837d0cfbc` is queued:
+  CI `36278416862`, cross-tool parity `36278416900`, CodeQL `36278416850`.
 
 ## Scalar quadratic event threshold crossing — 2026-09-26
 

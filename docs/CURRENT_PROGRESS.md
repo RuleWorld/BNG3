@@ -26,7 +26,13 @@ passed, 330 unsupported, 3 failed, 0 timed out`; the three CVODE failures are
 `00955`, `01148`, and `01487`. Report:
 `/private/tmp/bng3-sbml-difference-snapshot-working.json`, SHA-256
 `44cdb83bf4bbc0b2bc43c6104131d013e4b31ae8964ed5eb101fa5360d1a4b42`.
-Exact-head CI for scalar quadratic trigger-time snapshots is pending push.
+Cached BioModels screen parsed 6,759 XML files (9 parse errors), found no
+two-species event-threshold triggers, and identified three scalar-event
+assignment candidates (`BIOMD0000000144`, `0195`, `0196`). Targeted attempts
+left those models unsupported for other event/path limits; no curated gain is
+claimed and the full inventory was not rerun. Exact-head CI is queued for
+`2ddb80dc5bfb1203260923f42c4614e837d0cfbc`: CI `36278416862`, cross-tool
+parity `36278416900`, CodeQL `36278416850`.
 
 This is the live status page for the combined BNG3 migration tree. The older
 IR migration reports and formalization reports retained in the repository are
