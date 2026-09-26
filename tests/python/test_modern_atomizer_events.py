@@ -567,6 +567,42 @@ def test_quadratic_state_difference_threshold_uses_composite_trajectory():
     assert 'setParameter("P", "4")' in result.actions_block
 
 
+def test_affine_state_difference_threshold_preserves_trigger_snapshot():
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLEventAssignment
+
+    event = SBMLEvent(
+        id="affine-difference-threshold",
+        trigger="gt(A, B)",
+        assignments=[SBMLEventAssignment("P", "A + B + time")],
+    )
+    trajectories = {"A": (1.0, 1.0), "B": (2.0, 0.0)}
+    result = synthesize_event_actions(
+        [event],
+        EventTranslationContext(
+            resolve_species_pattern=lambda _identifier: None,
+            resolve_param=lambda _identifier: None,
+            is_param=lambda _identifier: True,
+            is_compile_time_constant=lambda _identifier: False,
+            resolve_initial_value=lambda identifier: trajectories.get(
+                identifier, (None,)
+            )[0],
+            resolve_affine_rate_for_event=lambda identifier, _event: trajectories.get(
+                identifier
+            ),
+        ),
+    )
+
+    assert result.converted == 1
+    assert result.untranslated == []
+    assert result.actions_block is not None
+    assert "t_end=>1" in result.actions_block
+    assert 'setParameter("P", "5")' in result.actions_block
+
+
 def test_quadratic_state_threshold_supplies_trigger_time_species_snapshot():
     from bionetgen.atomizer.modern.events import (
         EventTranslationContext,

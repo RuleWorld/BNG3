@@ -775,6 +775,16 @@ def _parse_state_difference_threshold(
     return None
 
 
+def _state_difference_components(expression: str) -> Optional[Tuple[str, str]]:
+    """Return the two state IDs in the normalized ``left - right`` form."""
+    match = re.fullmatch(
+        r"\(?\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)?\s*-\s*"
+        r"\(?\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)?",
+        str(expression or "").strip(),
+    )
+    return match.groups() if match is not None else None
+
+
 def _parse_gated_affine_state_threshold(
     trigger: str, fold_static: Callable[[str], Optional[float]]
 ) -> Optional[Tuple[str, List[str], List[str], bool]]:
@@ -2557,12 +2567,16 @@ def synthesize_event_actions(
             rate_of_threshold = False
             state_threshold_scale = "1"
             difference_threshold = _parse_state_difference_threshold(event_trigger)
-            if (
-                difference_threshold is not None
-                and context.resolve_quadratic_rate_for_event(
-                    difference_threshold[0], event
-                )
+            if difference_threshold is not None and (
+                context.resolve_quadratic_rate_for_event(difference_threshold[0], event)
                 is not None
+                or all(
+                    context.resolve_affine_rate_for_event(identifier, event) is not None
+                    for identifier in _state_difference_components(
+                        difference_threshold[0]
+                    )
+                    or ()
+                )
             ):
                 state_threshold = difference_threshold
             if state_threshold is None:
@@ -2596,24 +2610,47 @@ def synthesize_event_actions(
                             state_threshold_scale = _format_number(scale_value)
             if state_threshold is not None:
                 identifier, operator, threshold_expression = state_threshold
+                difference_components = _state_difference_components(identifier)
+                trigger_state_ids = difference_components or (identifier,)
                 event_changes_trigger_state = any(
-                    standardize_name(variable) == standardize_name(identifier)
+                    standardize_name(variable)
+                    in {standardize_name(state_id) for state_id in trigger_state_ids}
                     and standardize_name(_strip_outer_parens(assignment_expression))
-                    != standardize_name(identifier)
+                    != standardize_name(variable)
                     for assignment in event.assignments
                     for variable, assignment_expression in [
                         _event_assignment(assignment)
                     ]
                 )
-                trajectory = (
-                    None
-                    if rate_of_threshold or event_changes_trigger_state
-                    else context.resolve_affine_rate_for_event(identifier, event)
+                difference_trajectories = (
+                    [
+                        context.resolve_affine_rate_for_event(state_id, event)
+                        for state_id in difference_components
+                    ]
+                    if difference_components is not None
+                    and not event_changes_trigger_state
+                    and (
+                        event.use_values_from_trigger_time
+                        or not event.delay
+                        or fold(event.delay, event_context=event) == 0
+                    )
+                    else None
                 )
+                trajectory = None
+                if not rate_of_threshold and not event_changes_trigger_state:
+                    if difference_trajectories and all(difference_trajectories):
+                        left, right = difference_trajectories
+                        assert left is not None and right is not None
+                        trajectory = (left[0] - right[0], left[1] - right[1])
+                    elif difference_components is None:
+                        trajectory = context.resolve_affine_rate_for_event(
+                            identifier, event
+                        )
                 if (
                     trajectory is None
                     and not rate_of_threshold
                     and not event_changes_trigger_state
+                    and difference_components is None
                     and context.resolve_affine_rate_for_event is _no_event_affine_rate
                 ):
                     trajectory = context.resolve_affine_rate(identifier)
@@ -2645,14 +2682,38 @@ def synthesize_event_actions(
                     if slope == 0:
                         if initially_true and not event.trigger_initial_value:
                             threshold = "0"
-                            trigger_state_values = {identifier: initial_value}
+                            trigger_state_values = (
+                                {
+                                    difference_components[0]: difference_trajectories[
+                                        0
+                                    ][0],
+                                    difference_components[1]: difference_trajectories[
+                                        1
+                                    ][0],
+                                }
+                                if difference_components is not None
+                                and difference_trajectories is not None
+                                else {identifier: initial_value}
+                            )
                         else:
                             normal_converted += 1
                             continue
                     elif initially_true:
                         if not event.trigger_initial_value:
                             threshold = "0"
-                            trigger_state_values = {identifier: initial_value}
+                            trigger_state_values = (
+                                {
+                                    difference_components[0]: difference_trajectories[
+                                        0
+                                    ][0],
+                                    difference_components[1]: difference_trajectories[
+                                        1
+                                    ][0],
+                                }
+                                if difference_components is not None
+                                and difference_trajectories is not None
+                                else {identifier: initial_value}
+                            )
                         else:
                             normal_converted += 1
                             continue
@@ -2666,7 +2727,21 @@ def synthesize_event_actions(
                         crossing_time = (crossing_value - initial_value) / slope
                         if math.isfinite(crossing_time) and crossing_time >= 0:
                             threshold = _format_number(crossing_time)
-                            trigger_state_values = {identifier: crossing_value}
+                            trigger_state_values = (
+                                {
+                                    difference_components[0]: difference_trajectories[
+                                        0
+                                    ][0]
+                                    + difference_trajectories[0][1] * crossing_time,
+                                    difference_components[1]: difference_trajectories[
+                                        1
+                                    ][0]
+                                    + difference_trajectories[1][1] * crossing_time,
+                                }
+                                if difference_components is not None
+                                and difference_trajectories is not None
+                                else {identifier: crossing_value}
+                            )
                 elif crossing_value is not None:
                     exponential = (
                         None

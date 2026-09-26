@@ -5,6 +5,17 @@
 **Branch:** `main`
 **Status:** merged convergence, nonequilibrium energy, and SBML material-gap work; release validation remains incomplete
 
+## Affine species-difference event thresholds — 2026-09-26
+
+Atomizer can now schedule a difference threshold between two species when
+their trajectories are independently proven affine, and supplies both
+crossing-time values to event assignments. Changes to either trigger species
+remain fail-closed. The focused event tests pass (`29 passed`) and the full
+Python suite passes (`585 passed, 28 skipped`). Black, Ruff, and
+`git diff --check` pass. The five initial SBML targets did not gain support
+because their species are not independently affine; the full SBML suite and
+curated BioModels inventory are still running, so no corpus gain is claimed.
+
 ## SBML nonfinite oracle comparison — 2026-09-26
 
 The SBML suite comparator now compares finite trajectory samples numerically
