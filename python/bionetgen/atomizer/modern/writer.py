@@ -5889,6 +5889,49 @@ def generate_bngl(
                 species = model.species.get(species_id) if species_id else None
                 if species is None:
                     return None
+                rate_rules = [
+                    rule
+                    for rule in model.rules
+                    if rule.variable == species_id and rule.type == "rate"
+                ]
+                if len(rate_rules) == 1 and not species.has_only_substance_units:
+                    if (
+                        any(
+                            assignment.symbol == species_id
+                            for assignment in model.initial_assignments
+                        )
+                        or any(
+                            assignment.variable == species_id
+                            for event in model.events
+                            if event is not event_context
+                            for assignment in event.assignments
+                        )
+                    ):
+                        return None
+                    compartment = model.compartments.get(species.compartment or "")
+                    volume = float(compartment.size) if compartment is not None else 1.0
+                    initial = (
+                        float(species.initial_concentration)
+                        if species.initial_concentration_set
+                        else (
+                            float(species.initial_amount) / volume
+                            if volume != 0
+                            else None
+                        )
+                    )
+                    derivative = extend_function(
+                        rate_rules[0].math, {}, model.function_definitions
+                    )
+
+                    def resolve_immutable(symbol: str) -> Optional[float]:
+                        if not is_compile_time_constant(symbol):
+                            return None
+                        return resolve_event_parameter(symbol)
+
+                    slope = fold_numeric(derivative, resolve_immutable)
+                    if initial is None or slope is None:
+                        return None
+                    return (initial, slope) if math.isfinite(slope) else None
                 if species.constant or species.boundary_condition:
                     if any(
                         assignment.variable == species_id

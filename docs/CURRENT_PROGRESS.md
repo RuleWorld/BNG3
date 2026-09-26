@@ -32,6 +32,21 @@ were unsupported, 5 failed, and 170 timed out. No curated gain/regression is
 claimed. Its aggregate core gate remains failed; report digest and details
 are in the convergence checklist.
 
+## Rate-rule species threshold event — 2026-09-26
+
+Atomizer now resolves a direct species rate rule as an affine concentration
+trajectory when the species uses concentration semantics and its derivative
+folds to a constant. This handles time-zero threshold events and self-reset
+assignments while rejecting initial assignments or competing events that make
+the trajectory ambiguous. `semantic/01510` and `01511` are the two new full
+suite gains: `1,502 passed / 421 unsupported`, with zero failures, timeouts, or
+regressions. Each case matches libRoadRunner 2.10.0 across five observables;
+maximum absolute differences are `0` and `3.34e-16`. Full Python passes `563`
+tests with `28` skipped. Cached curated BioModels XML screening found no
+matching unsupported case, so no curated gain is claimed; prior full curated
+BioModels status is unchanged. Details and report digest are in the
+convergence checklist.
+
 ## Current-head Atomizer and oracle validation — 2026-09-25
 
 Current BNG3 committed `main` base is `a5f65ae05e26926b013f4ec3305dab34a3e9c84f`

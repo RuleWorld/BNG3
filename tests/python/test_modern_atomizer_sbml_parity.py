@@ -1112,6 +1112,37 @@ def test_delayed_affine_rate_rule_self_reset_respects_value_time():
         assert "untranslated" not in result.bngl.lower()
 
 
+def test_initial_affine_species_event_uses_rate_rule_concentration_state():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="initial_rate_rule_species_event">
+        <listOfCompartments><compartment id="C" size="0.5" constant="false"/></listOfCompartments>
+        <listOfSpecies><species id="S" compartment="C" initialConcentration="1"
+          hasOnlySubstanceUnits="false" boundaryCondition="true" constant="false"/></listOfSpecies>
+        <listOfRules><rateRule variable="S">
+          <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0.4</cn></math>
+        </rateRule></listOfRules>
+        <listOfEvents><event id="reset">
+          <trigger initialValue="false" persistent="true">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><gt/><ci>S</ci><cn>-1</cn></apply>
+            </math>
+          </trigger>
+          <listOfEventAssignments><eventAssignment variable="S">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0</cn></math>
+          </eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True).atomize(xml)
+
+    assert result.success, result.error
+    assert 'setConcentration("@C:M_S()", "0")' in result.bngl
+    assert "untranslated" not in result.bngl.lower()
+
+
 def test_delay_of_affine_species_uses_initial_history_before_delay_boundary():
     from bionetgen.atomizer.modern import Atomizer
 

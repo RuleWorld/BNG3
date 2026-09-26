@@ -5882,3 +5882,22 @@ the other groups remain implementation targets.
   SHA-256 `61277f9c247f78cac66079e60750a714fbf9c3967cd2ead32d79b76633c973b9`.
   Thirteen inventory records remain non-SBML exclusions. The aggregate core
   gate remains failed.
+
+## Rate-rule species threshold events — 2026-09-26
+
+- [x] Resolve a direct rate rule for a species symbol as an affine
+  concentration trajectory when `hasOnlySubstanceUnits=false`, its derivative
+  is constant-foldable, and no initial assignment or other event changes the
+  species. This supports time-zero initial edges and self-assignments through
+  the matching BNGL species pattern; unknown/coupled states remain rejected.
+- [x] `semantic/01510` and `01511` now pass the full one-unit suite. Aggregate
+  result: `1,502 passed, 421 unsupported, 0 failed, 0 timeouts`; two gains and
+  zero regressions from `1,500/423`. Report
+  `/private/tmp/bng3-sbml-rate-rule-species-event-full-corrected.json`, SHA-256
+  `598cd9b1c5f04e1f457894b1b36ca51c5366c8faccd198e461c36842a7f629a8`.
+  Both new cases pass all five observable comparisons versus libRoadRunner
+  2.10.0: maximum absolute differences are `0` and `3.34e-16`.
+- [x] Full Python suite: `563 passed, 28 skipped`; changed-file Ruff,
+  compileall, and `git diff --check` pass. Cached curated BioModels XML screen
+  found no matching unsupported one-event, species rate-rule self-assignment;
+  no curated gain is claimed. Prior full BioModels status remains unchanged.

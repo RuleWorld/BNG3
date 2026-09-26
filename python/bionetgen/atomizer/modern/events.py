@@ -1432,6 +1432,12 @@ def synthesize_event_actions(
         trajectory = context.resolve_affine_rate_for_event(identifier, event)
         assignments = [_event_assignment(item) for item in event.assignments]
         delay = 0.0 if not event.delay else fold(event.delay)
+        is_parameter = context.is_param(identifier)
+        species_target = (
+            None if is_parameter else context.resolve_species_pattern(identifier)
+        )
+        action_kind = "param" if is_parameter else "conc"
+        action_target = standardize_name(identifier) if is_parameter else species_target
         if (
             threshold is None
             or trajectory is None
@@ -1440,7 +1446,7 @@ def synthesize_event_actions(
             or delay < 0
             or len(assignments) != 1
             or assignments[0][0] != identifier
-            or not context.is_param(identifier)
+            or (not is_parameter and species_target is None)
             or (event.priority and fold(event.priority) is None)
         ):
             continue
@@ -1507,7 +1513,7 @@ def synthesize_event_actions(
             scheduled.append(
                 (
                     first_trigger + float(delay),
-                    [("param", standardize_name(identifier), reset_value)],
+                    [(action_kind, action_target, reset_value)],
                     0.0,
                 )
             )
@@ -1558,7 +1564,7 @@ def synthesize_event_actions(
                 recurrence = []
                 break
             recurrence.append(
-                (execution_time, [("param", standardize_name(identifier), value)], 0.0)
+                (execution_time, [(action_kind, action_target, value)], 0.0)
             )
             count += 1
             if count > 10_000:
