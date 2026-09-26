@@ -1214,6 +1214,37 @@ def test_reciprocal_species_flux_schedules_exact_threshold_event():
     assert "state-dependent or non-constant event" not in result.bngl
 
 
+def test_event_math_folds_constant_reaction_identifier_rate():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="event_reaction_identifier_rate">
+        <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies><species id="S" compartment="C" initialAmount="0"
+          hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/></listOfSpecies>
+        <listOfParameters><parameter id="k1" value="1" constant="false"/></listOfParameters>
+        <listOfReactions><reaction id="J0" reversible="false">
+          <listOfProducts><speciesReference species="S" stoichiometry="1" constant="true"/></listOfProducts>
+          <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><ci>k1</ci></math></kineticLaw>
+        </reaction></listOfReactions>
+        <listOfEvents><event id="update" useValuesFromTriggerTime="true">
+          <trigger initialValue="false" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><gt/><csymbol encoding="text" definitionURL="http://www.sbml.org/sbml/symbols/time">time</csymbol><ci>J0</ci></apply>
+          </math></trigger>
+          <listOfEventAssignments><eventAssignment variable="k1"><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><plus/><cn>1</cn><ci>J0</ci></apply>
+          </math></eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True).atomize(xml)
+
+    assert result.success, result.error
+    assert 'setParameter("k1", "2")' in result.bngl
+    assert "Events NOT simulated" not in result.bngl
+
+
 def test_simultaneous_events_resolve_dynamic_priority_before_assignments():
     from bionetgen.atomizer.modern import Atomizer
 

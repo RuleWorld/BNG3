@@ -4,7 +4,7 @@
 **Last targeted audit:** 2026-09-26 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
 **Working branch:** `main`
-**Current base:** `main` at `ae9f5a131391d578ef0f676b1034bc983c09c2b1`; current feature work is exact event-history folding
+**Current base:** `main` at `ecd449caf4d79111da2666005d79e2d3689d4e50`; reaction-ID event folding is the current feature slice
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -31,6 +31,33 @@ completion charter and Section 11 of BNG3_INTEGRATION_PLAN.md into auditable
 work items. The unification work orders in docs/BNG3_unification_spec.md remain the
 detailed dependency map; provenance/capability-matrix.yml remains the
 capability inventory.
+
+## Constant reaction IDs in event math — 2026-09-26
+
+- [x] Event triggers, delays, priorities, and assignment expressions can fold
+  a reaction ID when its kinetic-law rate reduces to a finite constant. Local
+  kinetic-law parameters and compile-time constants are allowed; a mutable
+  parameter is allowed only when this event alone assigns it and no rule,
+  initial assignment, or other event controls it. Dynamic/species-dependent
+  fluxes remain unsupported.
+- [x] Full Python suite: `576 passed, 28 skipped`; Black, Ruff, and
+  `git diff --check` pass.
+- [x] Full pinned SBML Test Suite `cf38585fac5de8e0e90112febb62851ee2181816`:
+  `1,551 passed, 372 unsupported, 0 failed, 0 timed out`. Compared per case
+  with the prior full report, 10 cases gained and none regressed:
+  `01227`, `01228`, `01230`, and `01303`-`01305`, `01346`-`01349`. The
+  validator exits nonzero because the remaining unsupported cases keep its
+  aggregate core gate red. Report `/private/tmp/bng3-sbml-event-reaction-final.json`,
+  SHA-256 `8dcd4ce858349252964cdbbf51f395aa8d3800e0cb9ffb766b43b2e8e3da6e42`.
+- [x] Targeted 10-unit/100-step comparisons pass against libRoadRunner 2.10.0
+  for all 10 gains. Eight models have two observables each; two models have no
+  comparable observables. Maximum absolute error among compared observables is
+  `3.91e-14`.
+- [x] Cached curated BioModels screen parsed 6,759 XML files (9 parse errors)
+  and found no event expressions referencing reaction IDs. No curated-model
+  gain is claimed; the full curated inventory remains unrefreshed.
+- [ ] Hosted CI remains unverified; GitHub CLI could not connect to
+  `api.github.com` on the prior push.
 
 ## RateOf histories and dynamic event delays — 2026-09-26
 

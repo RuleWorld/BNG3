@@ -10,6 +10,24 @@ IR migration reports and formalization reports retained in the repository are
 historical inputs and provenance records; their embedded prose is not a new
 execution instruction.
 
+## Constant reaction IDs in event math — 2026-09-26
+
+Atomizer now resolves reaction identifiers in event triggers, delays, priorities,
+and assignments when their kinetic-law rate folds to a finite constant. It
+accepts local kinetic-law parameters and compile-time constants; a mutable
+parameter is allowed only when the event itself assigns it and no rule, initial
+assignment, or other event controls it. This gains 10 official SBML Test Suite
+cases (`01227`, `01228`, `01230`, `01303`-`01305`, `01346`-`01349), with no
+regressions: `1,551 passed / 372 unsupported`, zero failures and timeouts. Eight
+gains pass direct 10-unit BNG3/libRoadRunner comparisons across two observables
+each, with maximum absolute error `3.91e-14`; two models have no comparable
+observables. Full Python passes `576` tests with `28` skipped. The cached
+curated BioModels screen parsed 6,759 XML files with 9 parse errors and found no
+event expressions referencing reaction IDs; no curated gain claimed.
+
+SBML report: `/private/tmp/bng3-sbml-event-reaction-final.json`, SHA-256
+`8dcd4ce858349252964cdbbf51f395aa8d3800e0cb9ffb766b43b2e8e3da6e42`.
+
 ## RateOf event histories and dynamic delays — 2026-09-26
 
 Atomizer now folds `rateOf(x)` from exact affine, exponential, and

@@ -6695,6 +6695,99 @@ def generate_bngl(
                 return None
             return initial, slope
 
+        def resolve_event_reaction_rate(
+            identifier: str, event_context: SBMLEvent
+        ) -> Optional[float]:
+            reaction = next(
+                (
+                    value
+                    for key, value in model.reactions.items()
+                    if standardize_name(str(key)) == standardize_name(identifier)
+                    or standardize_name(str(getattr(value, "id", "")))
+                    == standardize_name(identifier)
+                ),
+                None,
+            )
+            if reaction is None:
+                return None
+            kinetic_law = reaction.kinetic_law
+            expression = str(
+                getattr(kinetic_law, "math", "")
+                or (
+                    kinetic_law.get("math", "")
+                    if isinstance(kinetic_law, Mapping)
+                    else ""
+                )
+                or ""
+            ).strip()
+            if not expression:
+                return None
+            expression = extend_function(expression, {}, model.function_definitions)
+            local_parameters = (
+                kinetic_law.get("localParameters", [])
+                if isinstance(kinetic_law, Mapping)
+                else getattr(kinetic_law, "local_parameters", [])
+            )
+            local_values: Dict[str, float] = {}
+            for local in local_parameters or []:
+                local_id = str(
+                    local.get("id", "")
+                    if isinstance(local, Mapping)
+                    else getattr(local, "id", "")
+                )
+                raw_value = (
+                    local.get("value")
+                    if isinstance(local, Mapping)
+                    else getattr(local, "value", None)
+                )
+                try:
+                    local_values[standardize_name(local_id)] = float(raw_value)
+                except (TypeError, ValueError):
+                    return None
+
+            assigned_here = {
+                standardize_name(assignment.variable)
+                for assignment in event_context.assignments
+            }
+
+            def resolve_rate_symbol(symbol: str) -> Optional[float]:
+                normalized = standardize_name(symbol)
+                if normalized in local_values:
+                    return local_values[normalized]
+                if is_compile_time_constant(symbol):
+                    return resolve_event_parameter(symbol)
+                parameter = next(
+                    (
+                        value
+                        for key, value in model.parameters.items()
+                        if standardize_name(key) == normalized
+                    ),
+                    None,
+                )
+                if parameter is None or normalized not in assigned_here:
+                    return None
+                if (
+                    any(
+                        standardize_name(rule.variable) == normalized
+                        for rule in model.rules
+                    )
+                    or any(
+                        standardize_name(assignment.symbol) == normalized
+                        for assignment in model.initial_assignments
+                    )
+                    or any(
+                        standardize_name(assignment.variable) == normalized
+                        for other_event in model.events
+                        if other_event is not event_context
+                        for assignment in other_event.assignments
+                    )
+                ):
+                    return None
+                return resolve_event_parameter(symbol)
+
+            value = fold_numeric(expression, resolve_rate_symbol)
+            return value if value is not None and math.isfinite(value) else None
+
         event_result = synthesize_event_actions(
             model.events,
             EventTranslationContext(
@@ -6733,6 +6826,7 @@ def generate_bngl(
                     resolve_exponential_event_rate(identifier, event)
                 ),
                 resolve_square_linear_rate_for_event=(resolve_square_linear_event_rate),
+                resolve_reaction_rate_for_event=resolve_event_reaction_rate,
                 resolve_rate_reset=resolve_rate_event_reset,
                 static_event_state=(
                     not model.reactions

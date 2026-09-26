@@ -35,6 +35,10 @@ def _no_event_square_linear_rate(
     return None
 
 
+def _no_event_reaction_rate(_identifier: str, _event: SBMLEvent) -> Optional[float]:
+    return None
+
+
 from .types import standardize_name
 
 
@@ -89,6 +93,11 @@ class EventTranslationContext:
     resolve_square_linear_rate_for_event: Callable[
         [str, SBMLEvent], Optional[Tuple[float, float]]
     ] = _no_event_square_linear_rate
+    # Resolve a reaction identifier as its kinetic-law rate when that rate is
+    # exactly foldable before the event executes.
+    resolve_reaction_rate_for_event: Callable[[str, SBMLEvent], Optional[float]] = (
+        _no_event_reaction_rate
+    )
     # Allow periodic reset lowering to inspect a constant rate-rule state even
     # when the event itself assigns that state.
     resolve_rate_reset: Callable[[str], Optional[Tuple[float, float]]] = (
@@ -911,6 +920,7 @@ def synthesize_event_actions(
         expression: str,
         time_value: Optional[float] = None,
         dynamic_values: Optional[Mapping[str, float]] = None,
+        event_context: Optional[SBMLEvent] = None,
     ) -> Optional[float]:
         if time_value is not None:
             expression = re.sub(
@@ -921,6 +931,12 @@ def synthesize_event_actions(
         def resolve(identifier: str) -> Optional[float]:
             if dynamic_values is not None and identifier in dynamic_values:
                 return dynamic_values[identifier]
+            if event_context is not None:
+                reaction_rate = context.resolve_reaction_rate_for_event(
+                    identifier, event_context
+                )
+                if reaction_rate is not None:
+                    return reaction_rate
             if context.is_compile_time_constant(identifier):
                 value = context.resolve_param(identifier)
                 if value is not None:
@@ -1038,7 +1054,9 @@ def synthesize_event_actions(
                     and len(node.args) == 2
                     and isinstance(node.args[0], ast.Name)
                 ):
-                    duration = fold(ast.unparse(node.args[1]))
+                    duration = fold(
+                        ast.unparse(node.args[1]), event_context=event_context
+                    )
                     if (
                         duration is not None
                         and math.isfinite(duration)
@@ -1075,23 +1093,39 @@ def synthesize_event_actions(
                     initial, slope = trajectory
                     value = initial + slope * time_value
                 else:
-                    exponential = context.resolve_exponential_rate(identifier)
+                    exponential = (
+                        context.resolve_exponential_rate_for_event(
+                            identifier, event_context
+                        )
+                        if event_context is not None
+                        else context.resolve_exponential_rate(identifier)
+                    )
                     if exponential is not None:
                         initial, exponent = exponential
                         value = initial * math.exp(exponent * time_value)
-                    elif event_context is not None:
-                        square_linear = context.resolve_square_linear_rate_for_event(
-                            identifier, event_context
-                        )
-                        if square_linear is None:
-                            continue
-                        initial, squared_slope = square_linear
-                        radicand = initial * initial + squared_slope * time_value
-                        if radicand < 0:
-                            continue
-                        value = math.sqrt(radicand)
                     else:
-                        continue
+                        square_linear = (
+                            context.resolve_square_linear_rate_for_event(
+                                identifier, event_context
+                            )
+                            if event_context is not None
+                            else None
+                        )
+                        if square_linear is not None:
+                            initial, squared_slope = square_linear
+                            radicand = initial * initial + squared_slope * time_value
+                            if radicand < 0:
+                                continue
+                            value = math.sqrt(radicand)
+                        elif event_context is not None:
+                            reaction_rate = context.resolve_reaction_rate_for_event(
+                                identifier, event_context
+                            )
+                            if reaction_rate is None:
+                                continue
+                            value = reaction_rate
+                        else:
+                            continue
             except OverflowError:
                 continue
             if math.isfinite(value):
@@ -2486,7 +2520,10 @@ def synthesize_event_actions(
                                     )
                                     trigger_state_values = {identifier: crossing_value}
         if threshold is None:
-            window = _parse_gated_time_window(event.trigger, fold)
+            window = _parse_gated_time_window(
+                event.trigger,
+                lambda expression: fold(expression, event_context=event),
+            )
             if window is not None:
                 lower_expressions, upper_expressions, gate_is_true = window
                 if not gate_is_true:
@@ -2538,7 +2575,7 @@ def synthesize_event_actions(
                     )
                     continue
         if threshold is None:
-            constant_trigger = fold(event.trigger)
+            constant_trigger = fold(event.trigger, event_context=event)
             if constant_trigger is not None and constant_trigger in {0, 1}:
                 # A time-invariant trigger fires only when SBML's declared
                 # pre-simulation trigger value is false and the actual value
@@ -2552,7 +2589,9 @@ def synthesize_event_actions(
                 # the trigger has an exact rising edge at t=0, regardless of
                 # whether a referenced parameter/species changes afterwards.
                 initial_trigger = fold_initial(event.trigger)
-                zero_delay = not event.delay or fold(event.delay, 0) == 0
+                zero_delay = (
+                    not event.delay or fold(event.delay, 0, event_context=event) == 0
+                )
                 if (
                     initial_trigger == 1
                     and not event.trigger_initial_value
@@ -2568,7 +2607,7 @@ def synthesize_event_actions(
                         )
                     )
                     continue
-        trigger_time = fold(threshold)
+        trigger_time = fold(threshold, event_context=event)
         if trigger_time is None:
             untranslated.append(
                 (
@@ -2711,7 +2750,9 @@ def synthesize_event_actions(
 
         priority = 0.0
         if getattr(event, "priority", None):
-            folded_priority = fold(event.priority or "", execution_time)
+            folded_priority = fold(
+                event.priority or "", execution_time, event_context=event
+            )
             if folded_priority is None and len(events) == 2:
                 other_event = next(
                     candidate for candidate in events if candidate is not event
@@ -2736,7 +2777,11 @@ def synthesize_event_actions(
                     and other_delay >= 0
                     and abs(float(other_delay) - delay) <= 1e-12
                 ):
-                    other_priority = fold(other_event.priority or "0", execution_time)
+                    other_priority = fold(
+                        other_event.priority or "0",
+                        execution_time,
+                        event_context=other_event,
+                    )
                     state_priority = fold_at_state(
                         event.priority or "",
                         execution_time,
