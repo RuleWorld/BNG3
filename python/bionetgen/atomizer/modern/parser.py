@@ -177,7 +177,10 @@ def _resolve_comp_external_sources(
             external = plugin.getExternalModelDefinition(index)
             source = str(external.getSource() or "").strip()
             parsed = urlsplit(source)
-            if parsed.scheme not in {"", "file"} or parsed.netloc not in {"", "localhost"}:
+            if parsed.scheme not in {"", "file"} or parsed.netloc not in {
+                "",
+                "localhost",
+            }:
                 return f'comp external source "{source}" is not a local file URI'
             reference = unquote(parsed.path if parsed.scheme == "file" else parsed.path)
             if not reference:
@@ -236,7 +239,10 @@ def _flatten_comp_package(
             document, source_path, libsbml
         )
         if resolution_failure:
-            return sbml_string, f"comp external model resolution failed: {resolution_failure}"
+            return (
+                sbml_string,
+                f"comp external model resolution failed: {resolution_failure}",
+            )
     if source_path is not None:
         source_location = Path(source_path).expanduser().resolve()
         if source_location.is_file():
@@ -784,9 +790,10 @@ def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
     For non-event species, SBML's amount derivative is the sum of reaction
     stoichiometry times reaction extent rates. Concentration derivatives also
     include dilution from a rate-ruled compartment volume. This lowering stays
-    limited to ordinary reactions with fixed finite stoichiometry, static
-    conversion factors, and explicitly defined volume derivatives. Any target
-    touched by an unsafe reaction is left unresolved for the writer to report.
+    limited to ordinary reactions with finite fixed or explicitly defined
+    dynamic stoichiometry, static conversion factors, and explicitly defined
+    volume derivatives. Any target touched by an unsafe reaction is left
+    unresolved for the writer to report.
     """
 
     explicit_rate_targets = {
@@ -820,20 +827,37 @@ def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
             identifier if identifier in model.species else standardize_name(identifier)
         )
 
-    def stoichiometry(reference: SBMLSpeciesReference) -> Optional[float]:
+    def stoichiometry(reference: SBMLSpeciesReference) -> Optional[str]:
         value = getattr(reference, "stoichiometry", None)
         try:
             number = float(value)
         except (TypeError, ValueError):
-            return None
+            number = None
+        if not getattr(reference, "variable_stoichiometry", False):
+            if number is None or not math.isfinite(number) or number < 0:
+                return None
+            return format(number, ".15g")
+        expression = str(getattr(reference, "stoichiometry_math", "") or "").strip()
+        reference_id = str(getattr(reference, "id", "") or "").strip()
+        if expression:
+            return expression
+        controlled_references = {
+            standardize_name(str(rule.variable))
+            for rule in model.rules
+            if rule.type in {"assignment", "rate"} and rule.variable
+        }
+        controlled_references.update(
+            standardize_name(str(item.symbol))
+            for item in model.initial_assignments
+            if item.symbol
+        )
         if (
-            getattr(reference, "variable_stoichiometry", False)
-            or not math.isfinite(number)
-            or number < 0
-            or abs(number - round(number)) > 1e-12
+            reference_id
+            and standardize_name(reference_id) in controlled_references
+            and standardize_name(reference_id) not in event_targets
         ):
-            return None
-        return number
+            return reference_id
+        return None
 
     def kinetic_math(reaction: SBMLReaction) -> str:
         law = reaction.kinetic_law
@@ -955,7 +979,7 @@ def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
             add_rate_of_zero(str(compartment_id))
 
     for reaction in model.reactions.values():
-        net: Dict[str, float] = {}
+        net_terms: Dict[str, List[tuple[int, str, Optional[float]]]] = {}
         valid = True
         for reference in reaction.reactants:
             value = stoichiometry(reference)
@@ -963,19 +987,37 @@ def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
             if value is None:
                 valid = False
             elif species_id != "EmptySet":
-                net[species_id] = net.get(species_id, 0.0) - value
+                try:
+                    numeric_value = float(value)
+                except ValueError:
+                    numeric_value = None
+                net_terms.setdefault(species_id, []).append((-1, value, numeric_value))
         for reference in reaction.products:
             value = stoichiometry(reference)
             species_id = str(reference.species)
             if value is None:
                 valid = False
             elif species_id != "EmptySet":
-                net[species_id] = net.get(species_id, 0.0) + value
-        affected = {
-            species_id: coefficient
-            for species_id, coefficient in net.items()
-            if abs(coefficient) > 1e-12
-        }
+                try:
+                    numeric_value = float(value)
+                except ValueError:
+                    numeric_value = None
+                net_terms.setdefault(species_id, []).append((1, value, numeric_value))
+        affected = {}
+        for species_id, coefficients in net_terms.items():
+            if all(value is not None for _sign, _text, value in coefficients):
+                net_coefficient = sum(
+                    sign * float(value) for sign, _text, value in coefficients
+                )
+                if abs(net_coefficient) <= 1e-12:
+                    continue
+                affected[species_id] = format(net_coefficient, ".15g")
+                continue
+            signed = [
+                f"({text})" if sign > 0 else f"-({text})"
+                for sign, text, _value in coefficients
+            ]
+            affected[species_id] = " + ".join(signed)
         if not affected:
             continue
         touched.update(key_for(species_id) for species_id in affected)
@@ -1038,10 +1080,9 @@ def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
                 volume = f" / ({compartment_id})"
             else:
                 volume = ""
-            coefficient_text = format(coefficient, ".15g")
             flux = f"({factor}) * ({expression})" if factor else expression
             terms.setdefault(target_key, []).append(
-                f"({coefficient_text}) * ({flux}){volume}"
+                f"({coefficient}) * ({flux}){volume}"
             )
 
     for species_id, target in model.species.items():
@@ -1156,6 +1197,11 @@ def _lower_simple_algebraic_parameters(model: SBMLModel) -> None:
         for assignment in event.assignments
         if getattr(assignment, "variable", None)
     )
+    controlled.update(
+        standardize_name(str(assignment.symbol))
+        for assignment in model.initial_assignments
+        if assignment.symbol
+    )
     algebraic = [rule for rule in model.rules if rule.type == "algebraic"]
     mutable_parameters = {
         standardize_name(str(identifier)): str(identifier)
@@ -1169,20 +1215,29 @@ def _lower_simple_algebraic_parameters(model: SBMLModel) -> None:
         if not getattr(compartment, "constant", True)
         and standardize_name(str(identifier)) not in controlled
     }
-    possible_algebraic_variables = set(mutable_parameters)
-    possible_algebraic_variables.update(
-        standardize_name(str(identifier))
+    reaction_species = {
+        standardize_name(str(reference.species))
+        for reaction in model.reactions.values()
+        for reference in [*reaction.reactants, *reaction.products]
+        if reference.species and reference.species != "EmptySet"
+    }
+    event_targets = {
+        standardize_name(str(assignment.variable))
+        for event in model.events
+        for assignment in event.assignments
+        if getattr(assignment, "variable", None)
+    }
+    mutable_algebraic_species = {
+        standardize_name(str(identifier)): str(identifier)
         for identifier, species in model.species.items()
         if not getattr(species, "constant", True)
-        and not getattr(species, "boundary_condition", False)
         and standardize_name(str(identifier)) not in controlled
-    )
-    possible_algebraic_variables.update(
-        standardize_name(str(identifier))
-        for identifier, compartment in model.compartments.items()
-        if not getattr(compartment, "constant", True)
-        and standardize_name(str(identifier)) not in controlled
-    )
+        and standardize_name(str(identifier)) not in reaction_species
+        and standardize_name(str(identifier)) not in event_targets
+    }
+    possible_algebraic_variables = set(mutable_parameters)
+    possible_algebraic_variables.update(mutable_compartments)
+    possible_algebraic_variables.update(mutable_algebraic_species)
 
     def parse_expression(source: str) -> ast.Expression:
         # SBML/BNGL function names that collide with Python keywords remain
@@ -1208,11 +1263,7 @@ def _lower_simple_algebraic_parameters(model: SBMLModel) -> None:
         except (SyntaxError, ValueError):
             continue
         parsed[id(rule)] = expression
-        names = {
-            node.id
-            for node in ast.walk(expression)
-            if isinstance(node, ast.Name)
-        }
+        names = {node.id for node in ast.walk(expression) if isinstance(node, ast.Name)}
         matching_symbols = {
             standardize_name(name)
             for name in names
@@ -1221,8 +1272,10 @@ def _lower_simple_algebraic_parameters(model: SBMLModel) -> None:
         if len(matching_symbols) != 1:
             continue
         variable_key = next(iter(matching_symbols))
-        variable = mutable_parameters.get(variable_key) or mutable_compartments.get(
-            variable_key
+        variable = (
+            mutable_parameters.get(variable_key)
+            or mutable_compartments.get(variable_key)
+            or mutable_algebraic_species.get(variable_key)
         )
         if variable is None:
             continue
@@ -1233,10 +1286,63 @@ def _lower_simple_algebraic_parameters(model: SBMLModel) -> None:
     def number(value: float) -> str:
         return format(float(value), ".15g")
 
+    def immutable_symbol_value(identifier: str) -> Optional[float]:
+        key = standardize_name(identifier)
+        if key in controlled:
+            return None
+        parameter = next(
+            (
+                value
+                for symbol, value in model.parameters.items()
+                if standardize_name(str(symbol)) == key
+            ),
+            None,
+        )
+        if parameter is not None:
+            return float(parameter.value) if parameter.constant else None
+        compartment = next(
+            (
+                value
+                for symbol, value in model.compartments.items()
+                if standardize_name(str(symbol)) == key
+            ),
+            None,
+        )
+        if compartment is not None:
+            return float(compartment.size) if compartment.constant else None
+        species = next(
+            (
+                value
+                for symbol, value in model.species.items()
+                if standardize_name(str(symbol)) == key
+            ),
+            None,
+        )
+        if species is None or not species.constant:
+            return None
+        species_compartment = model.compartments.get(species.compartment or "")
+        if species.compartment and (
+            species_compartment is None or not species_compartment.constant
+        ):
+            return None
+        volume = float(species_compartment.size) if species_compartment else 1.0
+        amount = float(species.initial_amount)
+        concentration = float(species.initial_concentration)
+        if species.has_only_substance_units:
+            value = amount if species.initial_amount_set else concentration * volume
+        elif species.initial_concentration_set:
+            value = concentration
+        else:
+            value = amount / volume if volume else math.nan
+        return value if math.isfinite(value) else None
+
     def numeric(node: ast.AST) -> Optional[float]:
         if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
             value = float(node.value)
             return value if math.isfinite(value) else None
+        if isinstance(node, ast.Name):
+            value = immutable_symbol_value(node.id)
+            return value if value is not None and math.isfinite(value) else None
         if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
             value = numeric(node.operand)
             if value is None:
@@ -1314,13 +1420,17 @@ def _lower_simple_algebraic_parameters(model: SBMLModel) -> None:
                 scalar = numeric(node.right)
                 if scalar is None:
                     return None
-                remainder = "0" if left_rest == "0" else f"({left_rest}) * ({number(scalar)})"
+                remainder = (
+                    "0" if left_rest == "0" else f"({left_rest}) * ({number(scalar)})"
+                )
                 return left_coef * scalar, remainder
             if right_coef:
                 scalar = numeric(node.left)
                 if scalar is None:
                     return None
-                remainder = "0" if right_rest == "0" else f"({right_rest}) * ({number(scalar)})"
+                remainder = (
+                    "0" if right_rest == "0" else f"({right_rest}) * ({number(scalar)})"
+                )
                 return right_coef * scalar, remainder
             return 0.0, render(node)
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
@@ -1415,12 +1525,10 @@ def _lower_simple_algebraic_parameters(model: SBMLModel) -> None:
 
 
 def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
-    """Remove SBML ``delay`` calls whose value operand cannot change in-run."""
+    """Lower delay calls for static values or closed-form time assignments."""
 
     controlled = {
-        standardize_name(str(rule.variable))
-        for rule in model.rules
-        if rule.variable
+        standardize_name(str(rule.variable)) for rule in model.rules if rule.variable
     }
     controlled.update(
         standardize_name(str(assignment.variable))
@@ -1435,17 +1543,105 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
         for name in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", rule.math)
     }
     intrinsic_functions = {
-        "abs", "acos", "acosh", "and", "asin", "asinh", "atan", "atanh",
-        "ceil", "cos", "cosh", "cot", "csc", "exp", "floor", "gcd",
-        "if", "lcm", "ln", "log", "log10", "max", "min", "not", "or",
-        "pow", "power", "root", "sec", "sin", "sinh", "sqrt", "tan",
-        "tanh", "xor",
+        "abs",
+        "acos",
+        "acosh",
+        "and",
+        "asin",
+        "asinh",
+        "atan",
+        "atanh",
+        "ceil",
+        "cos",
+        "cosh",
+        "cot",
+        "csc",
+        "exp",
+        "floor",
+        "gcd",
+        "if",
+        "lcm",
+        "ln",
+        "log",
+        "log10",
+        "max",
+        "min",
+        "not",
+        "or",
+        "pow",
+        "power",
+        "root",
+        "sec",
+        "sin",
+        "sinh",
+        "sqrt",
+        "tan",
+        "tanh",
+        "xor",
     }
+    intrinsic_functions.update(str(name).lower() for name in model.function_definitions)
+    static_symbols: Dict[str, float] = {}
+    for name, parameter in model.parameters.items():
+        key = standardize_name(name)
+        if parameter.constant or key not in controlled:
+            static_symbols[name] = float(parameter.value)
+    for name, compartment in model.compartments.items():
+        key = standardize_name(name)
+        if compartment.constant or key not in controlled:
+            static_symbols[name] = float(compartment.size)
+    assignment_expressions: Dict[str, str] = {}
+    ambiguous_assignments: set[str] = set()
+    for rule in model.rules:
+        if rule.type != "assignment" or not rule.variable:
+            continue
+        key = standardize_name(str(rule.variable))
+        if key in assignment_expressions:
+            ambiguous_assignments.add(key)
+        else:
+            assignment_expressions[key] = str(rule.math or "")
+    for key in ambiguous_assignments:
+        assignment_expressions.pop(key, None)
 
-    def is_static(expression: str) -> bool:
+    def time_expression(
+        expression: str,
+        stack: tuple[str, ...] = (),
+        extra_static: frozenset[str] = frozenset(),
+    ) -> Optional[str]:
+        """Inline assignment rules that depend only on time and static symbols."""
+        result = str(expression or "")
+        identifiers = list(
+            dict.fromkeys(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", result))
+        )
+        for identifier in identifiers:
+            key = standardize_name(identifier)
+            if (
+                identifier.lower() == "time"
+                or identifier.lower() in intrinsic_functions
+            ):
+                continue
+            assignment = assignment_expressions.get(key)
+            if assignment is not None:
+                if key in stack:
+                    return None
+                expanded = time_expression(assignment, (*stack, key), extra_static)
+                if expanded is None:
+                    return None
+                result = re.sub(
+                    rf"\b{re.escape(identifier)}\b",
+                    lambda _match, value=expanded: f"({value})",
+                    result,
+                )
+                continue
+            if not is_static(identifier, extra_static):
+                return None
+        return result
+
+    def is_static(expression: str, extra_static: frozenset[str] = frozenset()) -> bool:
         identifiers = re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", expression)
         for index, identifier in enumerate(identifiers):
             key = standardize_name(identifier)
+            if key in extra_static:
+                continue
             if key in {"time", "avogadro"}:
                 return False
             if identifier.lower() in intrinsic_functions:
@@ -1453,7 +1649,11 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
             if key in algebraic_symbols:
                 return False
             parameter = next(
-                (item for name, item in model.parameters.items() if standardize_name(name) == key),
+                (
+                    item
+                    for name, item in model.parameters.items()
+                    if standardize_name(name) == key
+                ),
                 None,
             )
             if parameter is not None:
@@ -1461,7 +1661,11 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
                     continue
                 return False
             compartment = next(
-                (item for name, item in model.compartments.items() if standardize_name(name) == key),
+                (
+                    item
+                    for name, item in model.compartments.items()
+                    if standardize_name(name) == key
+                ),
                 None,
             )
             if compartment is not None:
@@ -1469,13 +1673,17 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
                     continue
                 return False
             species = next(
-                (item for name, item in model.species.items() if standardize_name(name) == key),
+                (
+                    item
+                    for name, item in model.species.items()
+                    if standardize_name(name) == key
+                ),
                 None,
             )
             if species is not None:
                 compartment = model.compartments.get(str(species.compartment or ""))
                 if (
-                    species.constant
+                    (species.constant or species.boundary_condition)
                     and not key in controlled
                     and compartment is not None
                     and compartment.constant
@@ -1485,7 +1693,396 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
             return False
         return True
 
-    def replace(expression: str) -> str:
+    def is_nonnegative_time_delay(
+        expression: str,
+        extra_static: frozenset[str],
+        extra_symbols: Mapping[str, float],
+    ) -> bool:
+        """Prove an affine time-dependent delay stays nonnegative for t >= 0."""
+        expanded = time_expression(expression, extra_static=extra_static)
+        if expanded is None:
+            return False
+        try:
+            node = ast.parse(expanded.replace("^", "**"), mode="eval").body
+        except (SyntaxError, ValueError, TypeError):
+            return False
+        symbols = dict(static_symbols)
+        symbols.update(extra_symbols)
+
+        def static_number(value: ast.AST) -> Optional[float]:
+            try:
+                rendered = ast.unparse(value)
+            except (AttributeError, ValueError):
+                return None
+            if any(
+                standardize_name(name) == "time"
+                for name in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", rendered)
+            ):
+                return None
+            return _evaluate_static_arithmetic(
+                rendered, symbols, model.function_definitions
+            )
+
+        def affine_time(value: ast.AST) -> Optional[tuple[float, float]]:
+            if isinstance(value, ast.Name) and value.id.lower() == "time":
+                return 1.0, 0.0
+            constant = static_number(value)
+            if constant is not None:
+                return 0.0, constant
+            if isinstance(value, ast.UnaryOp) and isinstance(
+                value.op, (ast.UAdd, ast.USub)
+            ):
+                inner = affine_time(value.operand)
+                if inner is None:
+                    return None
+                factor = -1.0 if isinstance(value.op, ast.USub) else 1.0
+                return factor * inner[0], factor * inner[1]
+            if isinstance(value, ast.BinOp) and isinstance(
+                value.op, (ast.Add, ast.Sub)
+            ):
+                left, right = affine_time(value.left), affine_time(value.right)
+                if left is None or right is None:
+                    return None
+                sign = -1.0 if isinstance(value.op, ast.Sub) else 1.0
+                return left[0] + sign * right[0], left[1] + sign * right[1]
+            if isinstance(value, ast.BinOp) and isinstance(value.op, ast.Mult):
+                left, right = affine_time(value.left), affine_time(value.right)
+                if left is None or right is None:
+                    return None
+                if left[0] == 0:
+                    return right[0] * left[1], right[1] * left[1]
+                if right[0] == 0:
+                    return left[0] * right[1], left[1] * right[1]
+            if isinstance(value, ast.BinOp) and isinstance(value.op, ast.Div):
+                numerator, denominator = (
+                    affine_time(value.left),
+                    affine_time(value.right),
+                )
+                if (
+                    numerator is not None
+                    and denominator is not None
+                    and denominator[0] == 0
+                    and denominator[1] > 0
+                ):
+                    return numerator[0] / denominator[1], numerator[1] / denominator[1]
+            return None
+
+        coefficients = affine_time(node)
+        return (
+            coefficients is not None and coefficients[0] >= 0 and coefficients[1] >= 0
+        )
+
+    rate_rules: Dict[str, SBMLRule] = {}
+    ambiguous_rate_rules: set[str] = set()
+    for rule in model.rules:
+        if rule.type != "rate" or not rule.variable:
+            continue
+        key = standardize_name(str(rule.variable))
+        if key in rate_rules:
+            ambiguous_rate_rules.add(key)
+        else:
+            rate_rules[key] = rule
+    for key in ambiguous_rate_rules:
+        rate_rules.pop(key, None)
+    event_targets = {
+        standardize_name(str(assignment.variable))
+        for event in model.events
+        for assignment in event.assignments
+        if getattr(assignment, "variable", None)
+    }
+    initial_assignment_targets = {
+        standardize_name(str(assignment.symbol))
+        for assignment in model.initial_assignments
+        if assignment.symbol
+    }
+
+    def reaction_affine_derivative(
+        species: SBMLSpecies,
+    ) -> Optional[tuple[float, float]]:
+        """Derive an affine ODE from reactions with affine target fluxes."""
+        if species.boundary_condition:
+            return None
+        factor_id = species.conversion_factor or model.conversion_factor
+        conversion = 1.0
+        if factor_id:
+            conversion_parameter = next(
+                (
+                    item
+                    for name, item in model.parameters.items()
+                    if standardize_name(name) == standardize_name(str(factor_id))
+                ),
+                None,
+            )
+            if conversion_parameter is None or not conversion_parameter.constant:
+                return None
+            conversion = float(conversion_parameter.value)
+        compartment = model.compartments.get(str(species.compartment or ""))
+        if compartment is None or not compartment.constant or compartment.size <= 0:
+            return None
+        coefficient_sum = 0.0
+        offset_sum = 0.0
+        affected = False
+        target = standardize_name(species.id)
+
+        def affine(
+            node: ast.AST, symbols: Mapping[str, float]
+        ) -> Optional[tuple[float, float]]:
+            if isinstance(node, ast.Name) and standardize_name(node.id) == target:
+                return 1.0, 0.0
+            try:
+                static = _evaluate_static_arithmetic(
+                    ast.unparse(node), dict(symbols), model.function_definitions
+                )
+            except (AttributeError, ValueError):
+                static = None
+            if static is not None:
+                return 0.0, static
+            if isinstance(node, ast.UnaryOp) and isinstance(
+                node.op, (ast.UAdd, ast.USub)
+            ):
+                inner = affine(node.operand, symbols)
+                if inner is None:
+                    return None
+                factor = -1.0 if isinstance(node.op, ast.USub) else 1.0
+                return factor * inner[0], factor * inner[1]
+            if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Sub)):
+                left, right = affine(node.left, symbols), affine(node.right, symbols)
+                if left is None or right is None:
+                    return None
+                sign = -1.0 if isinstance(node.op, ast.Sub) else 1.0
+                return left[0] + sign * right[0], left[1] + sign * right[1]
+            if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mult):
+                left, right = affine(node.left, symbols), affine(node.right, symbols)
+                if left is None or right is None:
+                    return None
+                if left[0] == 0:
+                    return right[0] * left[1], right[1] * left[1]
+                if right[0] == 0:
+                    return left[0] * right[1], left[1] * right[1]
+            if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+                numerator, denominator = (
+                    affine(node.left, symbols),
+                    affine(node.right, symbols),
+                )
+                if (
+                    numerator is not None
+                    and denominator is not None
+                    and denominator[0] == 0
+                    and denominator[1] != 0
+                ):
+                    return numerator[0] / denominator[1], numerator[1] / denominator[1]
+            return None
+
+        for reaction in model.reactions.values():
+            net = 0.0
+            for reference, sign in (
+                *((item, -1.0) for item in reaction.reactants),
+                *((item, 1.0) for item in reaction.products),
+            ):
+                if standardize_name(str(reference.species)) != target:
+                    continue
+                if getattr(reference, "variable_stoichiometry", False):
+                    return None
+                try:
+                    coefficient = float(reference.stoichiometry)
+                except (TypeError, ValueError):
+                    return None
+                if not math.isfinite(coefficient) or coefficient < 0:
+                    return None
+                net += sign * coefficient
+            if net == 0:
+                continue
+            affected = True
+            law = reaction.kinetic_law
+            if law is None:
+                return None
+            expression = (
+                law.get("math", "")
+                if isinstance(law, Mapping)
+                else getattr(law, "math", "")
+            )
+            local_parameters = (
+                law.get("localParameters", [])
+                if isinstance(law, Mapping)
+                else getattr(law, "local_parameters", [])
+            )
+            symbols = dict(static_symbols)
+            for parameter in local_parameters or []:
+                name = (
+                    parameter.get("id")
+                    if isinstance(parameter, Mapping)
+                    else getattr(parameter, "id", None)
+                )
+                value = (
+                    parameter.get("value")
+                    if isinstance(parameter, Mapping)
+                    else getattr(parameter, "value", None)
+                )
+                try:
+                    if name:
+                        symbols[str(name)] = float(value)
+                except (TypeError, ValueError):
+                    return None
+            try:
+                expression_ast = ast.parse(
+                    str(expression or "").replace("^", "**"), mode="eval"
+                ).body
+                flux = affine(expression_ast, symbols)
+            except (SyntaxError, ValueError, TypeError):
+                flux = None
+            if flux is None:
+                return None
+            coefficient_sum += net * flux[0] * conversion
+            offset_sum += net * flux[1] * conversion
+        if not species.has_only_substance_units:
+            coefficient_sum /= float(compartment.size)
+            offset_sum /= float(compartment.size)
+        if not math.isfinite(coefficient_sum) or not math.isfinite(offset_sum):
+            return None
+        return (coefficient_sum, offset_sum) if affected else None
+
+    reaction_rate_rules = {
+        standardize_name(species.id): derivative
+        for species in model.species.values()
+        if (derivative := reaction_affine_derivative(species)) is not None
+    }
+
+    def delayed_constant_rate(value: str, duration: str) -> Optional[str]:
+        """Return exact delayed history for a scalar affine rate rule."""
+        key = standardize_name(value)
+        rule = rate_rules.get(key)
+        if key in ambiguous_rate_rules:
+            return None
+        if key in event_targets or key in initial_assignment_targets:
+            return None
+        initial: Optional[float] = None
+        parameter = next(
+            (
+                item
+                for name, item in model.parameters.items()
+                if standardize_name(name) == key
+            ),
+            None,
+        )
+        compartment = next(
+            (
+                item
+                for name, item in model.compartments.items()
+                if standardize_name(name) == key
+            ),
+            None,
+        )
+        species: Optional[SBMLSpecies] = None
+        slope: Optional[tuple[float, float]] = None
+        if parameter is not None:
+            initial = float(parameter.value)
+        elif compartment is not None:
+            initial = float(compartment.size)
+        else:
+            species = next(
+                (
+                    item
+                    for name, item in model.species.items()
+                    if standardize_name(name) == key
+                ),
+                None,
+            )
+            if species is not None:
+                compartment = model.compartments.get(str(species.compartment or ""))
+                if compartment is None or compartment.size <= 0:
+                    return None
+                if species.has_only_substance_units:
+                    initial = float(species.initial_amount)
+                elif species.initial_concentration_set:
+                    initial = float(species.initial_concentration)
+                else:
+                    initial = float(species.initial_amount) / float(compartment.size)
+                if rule is None:
+                    slope = reaction_rate_rules.get(key)
+        if initial is None:
+            return None
+        symbols = dict(static_symbols)
+
+        def static_value(node: ast.AST) -> Optional[float]:
+            try:
+                expression = ast.unparse(node)
+            except (AttributeError, ValueError):
+                return None
+            return _evaluate_static_arithmetic(
+                expression, symbols, model.function_definitions
+            )
+
+        def affine(node: ast.AST) -> Optional[tuple[float, float]]:
+            if isinstance(node, ast.Name) and standardize_name(node.id) == key:
+                return 1.0, 0.0
+            constant = static_value(node)
+            if constant is not None:
+                return 0.0, constant
+            if isinstance(node, ast.UnaryOp) and isinstance(
+                node.op, (ast.UAdd, ast.USub)
+            ):
+                inner = affine(node.operand)
+                if inner is None:
+                    return None
+                sign = -1.0 if isinstance(node.op, ast.USub) else 1.0
+                return sign * inner[0], sign * inner[1]
+            if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Sub)):
+                left, right = affine(node.left), affine(node.right)
+                if left is None or right is None:
+                    return None
+                sign = -1.0 if isinstance(node.op, ast.Sub) else 1.0
+                return left[0] + sign * right[0], left[1] + sign * right[1]
+            if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mult):
+                left, right = affine(node.left), affine(node.right)
+                if left is None or right is None:
+                    return None
+                if left[0] == 0:
+                    return right[0] * left[1], right[1] * left[1]
+                if right[0] == 0:
+                    return left[0] * right[1], left[1] * right[1]
+                return None
+            if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+                numerator, denominator = affine(node.left), affine(node.right)
+                if (
+                    numerator is None
+                    or denominator is None
+                    or denominator[0] != 0
+                    or denominator[1] == 0
+                ):
+                    return None
+                return numerator[0] / denominator[1], numerator[1] / denominator[1]
+            return None
+
+        if rule is not None:
+            try:
+                formula = str(rule.math or "").replace("^", "**")
+                derivative = affine(ast.parse(formula, mode="eval").body)
+            except (SyntaxError, ValueError, TypeError):
+                derivative = None
+            if derivative is None:
+                return None
+            linear, offset = derivative
+        elif species is not None and slope is not None:
+            linear, offset = slope
+        else:
+            return None
+        shifted_time = f"(time - ({duration}))"
+        if linear == 0:
+            evolved = f"{initial:.15g} + ({offset:.15g}) * {shifted_time}"
+        else:
+            equilibrium = offset / linear
+            evolved = (
+                f"({initial:.15g} + ({equilibrium:.15g})) * "
+                f"exp(({linear:.15g}) * {shifted_time}) - ({equilibrium:.15g})"
+            )
+        return f"if({shifted_time} <= 0, {initial:.15g}, {evolved})"
+
+    def replace(
+        expression: str,
+        extra_static: frozenset[str] = frozenset(),
+        extra_symbols: Optional[Mapping[str, float]] = None,
+    ) -> str:
+        extra_symbols = extra_symbols or {}
         result: List[str] = []
         cursor = 0
         while True:
@@ -1512,20 +2109,131 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
             if closing is None or separator is None:
                 result.append(expression[cursor:])
                 break
-            first = replace(expression[opening + 1 : separator].strip())
-            second = replace(expression[separator + 1 : closing].strip())
+            first = replace(
+                expression[opening + 1 : separator].strip(), extra_static, extra_symbols
+            )
+            second = replace(
+                expression[separator + 1 : closing].strip(), extra_static, extra_symbols
+            )
+            try:
+                zero_delay = float(second) == 0.0
+            except ValueError:
+                zero_delay = False
+            shifted: Optional[str] = None
+            delay_symbols = dict(static_symbols)
+            delay_symbols.update(extra_symbols)
+            delay_value = _evaluate_static_arithmetic(
+                second, delay_symbols, model.function_definitions
+            )
+            nonnegative_time_delay = is_nonnegative_time_delay(
+                second, extra_static, extra_symbols
+            )
+            if (
+                not zero_delay
+                and (
+                    (delay_value is not None and delay_value >= 0)
+                    or nonnegative_time_delay
+                )
+                and (is_static(second, extra_static) or nonnegative_time_delay)
+            ):
+                expanded_first = time_expression(first, extra_static=extra_static)
+                if expanded_first is not None and re.search(
+                    r"\btime\b", expanded_first, re.IGNORECASE
+                ):
+                    shifted = re.sub(
+                        r"\btime\b",
+                        f"(time - ({second}))",
+                        expanded_first,
+                        flags=re.IGNORECASE,
+                    )
+                if shifted is None:
+                    identifiers = list(
+                        dict.fromkeys(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", first))
+                    )
+                    dynamic = [
+                        identifier
+                        for identifier in identifiers
+                        if standardize_name(identifier) in rate_rules
+                        or standardize_name(identifier) in reaction_rate_rules
+                    ]
+                    safe = bool(dynamic)
+                    for identifier in identifiers:
+                        if identifier in dynamic or is_static(identifier, extra_static):
+                            continue
+                        safe = False
+                        break
+                    if safe:
+                        shifted_expression = first
+                        for identifier in dynamic:
+                            history = delayed_constant_rate(identifier, second)
+                            if history is None:
+                                safe = False
+                                break
+                            shifted_expression = re.sub(
+                                rf"\b{re.escape(identifier)}\b",
+                                lambda _match, replacement=history: f"({replacement})",
+                                shifted_expression,
+                            )
+                        if safe:
+                            shifted = shifted_expression
+                    elif re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", first):
+                        shifted = delayed_constant_rate(first, second)
             result.append(expression[cursor:start])
             result.append(
-                first if is_static(first) else f"delay({first}, {second})"
+                first
+                if zero_delay or is_static(first, extra_static)
+                else shifted
+                if shifted is not None
+                else f"delay({first}, {second})"
             )
             cursor = closing + 1
         return "".join(result)
 
     def update_law(law: Any) -> None:
         if isinstance(law, Mapping):
-            law["math"] = replace(str(law.get("math", "") or ""))
+            local_parameters = law.get("localParameters", [])
+        else:
+            local_parameters = getattr(law, "local_parameters", [])
+        local_names = frozenset(
+            standardize_name(
+                str(
+                    parameter.get("id")
+                    if isinstance(parameter, Mapping)
+                    else getattr(parameter, "id", "")
+                )
+            )
+            for parameter in (local_parameters or [])
+            if (
+                parameter.get("id")
+                if isinstance(parameter, Mapping)
+                else getattr(parameter, "id", None)
+            )
+        )
+        local_values: Dict[str, float] = {}
+        for parameter in local_parameters or []:
+            name = (
+                parameter.get("id")
+                if isinstance(parameter, Mapping)
+                else getattr(parameter, "id", None)
+            )
+            value = (
+                parameter.get("value")
+                if isinstance(parameter, Mapping)
+                else getattr(parameter, "value", None)
+            )
+            try:
+                if name:
+                    local_values[str(name)] = float(value)
+            except (TypeError, ValueError):
+                continue
+        if isinstance(law, Mapping):
+            law["math"] = replace(
+                str(law.get("math", "") or ""), local_names, local_values
+            )
         elif hasattr(law, "math"):
-            law.math = replace(str(getattr(law, "math", "") or ""))
+            law.math = replace(
+                str(getattr(law, "math", "") or ""), local_names, local_values
+            )
 
     for reaction in model.reactions.values():
         update_law(reaction.kinetic_law)
@@ -1543,13 +2251,44 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
     for assignment in model.initial_assignments:
         assignment.math = replace(assignment.math)
 
+    expressions = [rule.math for rule in model.rules]
+    expressions.extend(
+        function.math for function in model.function_definitions.values()
+    )
+    expressions.extend(assignment.math for assignment in model.initial_assignments)
+    for reaction in model.reactions.values():
+        law = reaction.kinetic_law
+        if law is not None:
+            expressions.append(
+                str(
+                    law.get("math", "")
+                    if isinstance(law, Mapping)
+                    else getattr(law, "math", "")
+                )
+            )
+    for event in model.events:
+        expressions.extend([event.trigger, event.delay, event.priority])
+        expressions.extend(
+            str(getattr(assignment, "math", "")) for assignment in event.assignments
+        )
+    if not any(
+        re.search(r"\bdelay\s*\(", str(expression or ""), re.IGNORECASE)
+        for expression in expressions
+    ):
+        model.import_warnings = [
+            warning
+            for warning in model.import_warnings
+            if not (
+                warning.get("category") == "mathml"
+                and "delay" in str(warning.get("message", "")).lower()
+            )
+        ]
+
 
 class SBMLParser:
     """Parse SBML text into the atomizer's stable intermediate model."""
 
-    def parse(
-        self, sbml_string: str, source_path: Optional[Path] = None
-    ) -> SBMLModel:
+    def parse(self, sbml_string: str, source_path: Optional[Path] = None) -> SBMLModel:
         original_packages = _declared_package_uris(sbml_string)
         sbml_string, comp_failure = _flatten_comp_package(sbml_string, source_path)
         try:
@@ -1830,10 +2569,10 @@ class SBMLParser:
         result.import_warnings.extend(apply_unit_scaling(result))
         result.import_warnings.extend(parameter_warnings)
         result.import_warnings.extend(math_warnings)
-        _lower_delays_of_static_expressions(result)
+        SBMLParser._fold_static_stoichiometry(result)
         _expand_rate_of_from_rate_rules(result)
         _expand_rate_of_from_simple_reactions(result)
-        SBMLParser._fold_static_stoichiometry(result)
+        _lower_delays_of_static_expressions(result)
         SBMLParser._fold_static_species_assignments(result)
         for compartment_id, compartment in compartments.items():
             dimension = compartment.spatial_dimensions
@@ -1859,19 +2598,16 @@ class SBMLParser:
                         {
                             "category": "stoichiometry",
                             "message": (
-                                f'Reaction "{reaction_id}" has variable '
-                                f'stoichiometry for species "{reference.species}"; '
-                                f"BNGL will use the parsed fixed value {value:g}."
+                                f'Reaction "{reaction_id}" has a time-varying '
+                                f'coefficient for species "{reference.species}"; '
+                                "the expression was retained for deterministic "
+                                "lowering or a clear import diagnostic."
                             ),
                             "count": 1,
-                            "severity": "approximated",
+                            "severity": "info",
                         }
                     )
-                elif (
-                    not math.isfinite(value)
-                    or value < 0
-                    or abs(value - round(value)) > 1e-9
-                ):
+                elif not math.isfinite(value) or value < 0:
                     result.import_warnings.append(
                         {
                             "category": "stoichiometry",
@@ -1882,6 +2618,20 @@ class SBMLParser:
                             ),
                             "count": 1,
                             "severity": "dropped",
+                        }
+                    )
+                elif abs(value - round(value)) > 1e-9:
+                    result.import_warnings.append(
+                        {
+                            "category": "stoichiometry",
+                            "message": (
+                                f'Reaction "{reaction_id}" has fixed fractional '
+                                f"stoichiometry {value:g} for species "
+                                f'"{reference.species}"; a deterministic flux '
+                                "lowering will be selected by the writer."
+                            ),
+                            "count": 1,
+                            "severity": "info",
                         }
                     )
             if reaction.fast:
@@ -2104,13 +2854,15 @@ class SBMLParser:
             for reference in [*reaction.reactants, *reaction.products]:
                 reference_id = str(reference.id or "")
                 if not reference_id:
-                    if not reference.stoichiometry_math and reference_id not in controlled_targets:
+                    if (
+                        not reference.stoichiometry_math
+                        and reference_id not in controlled_targets
+                    ):
                         reference.variable_stoichiometry = False
                     continue
                 reference_ids.add(reference_id)
-                if (
-                    reference_id not in controlled_targets
-                    and math.isfinite(reference.stoichiometry)
+                if reference_id not in controlled_targets and math.isfinite(
+                    reference.stoichiometry
                 ):
                     # In SBML Level 3 the SpeciesReference id is a model-level
                     # symbol whose value is that reference's stoichiometry.

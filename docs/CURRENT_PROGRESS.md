@@ -1118,3 +1118,408 @@ Report `/private/tmp/bng3-sbml-suite-static-events.json`, SHA-256
 Dynamic triggers remain unsupported. The curated BioModels rerun begun after
 the static-delay slice is still in progress and must be refreshed after these
 new Atomizer paths.
+
+Latest suite slice: SBML Level 3 species-reference IDs are treated as
+model-level stoichiometry symbols. Literal/static values are promoted for
+global formulas and fixed reaction patterns; rate/event-controlled references
+remain dynamic. This follows the [SBML Level 3 Version 2 Core specification](https://sbml.org/specifications/sbml-level-3/version-2/core/release-2/sbml-level-3-version-2-release-2-core.pdf).
+Cases `00974`, `01380`-`01388`, `01395`, `01566`, `01651`-`01656`, and
+`01764`-`01768`/`01774` now pass, along with all applicable stochastic
+`00001`-`00039` cases. Atomizer tests pass 270 (1 skipped), Ruff and diff
+checks pass. Full suite: 1,169 passed, 754 unsupported, 0 failed/timeouts;
+stoichiometry causes=132, local-scope causes=1. Report
+`/private/tmp/bng3-sbml-suite-static-stoich-ids.json`, SHA-256
+`7c09ca58396fb5f99446bfac081d62e86bd379937d6db605d1ff4b1f2eb4e845`.
+Supported-surface gate passes; overall core remains open. The full curated
+BioModels baseline completed with 657/1,083 SBML records passed, 293
+unsupported, 2 failed, and 131 timeouts; report
+`/private/tmp/bng3-curated-current-atomizer.json`, SHA-256
+`5e44c2695b55747969785485b90b7cf490e9298b9284fb78f34019b9f6bbb73f`.
+
+Remaining stoichiometry triage: 55 semantic records carry a constant-noninteger
+stoichiometry cause across 60 reactions. A read-only rational scan finds 47
+records with fixed nonnegative values representable using a shared quantum
+and scaled coefficients at most 100. This is a candidate set only; ODE
+preservation, event/conversion-factor interactions, and SSA jump semantics
+still need an exact implementation and libRoadRunner validation. FBC and
+other overlapping blockers reduce the possible suite gain.
+
+2026-09-25 continuation: corrected a false positive in reaction-local symbol
+scope validation. SBML function-definition lambda formals are function-scoped,
+so their bodies are no longer scanned as model-global expressions; global
+rules, initial assignments, and event formulas remain checked. A regression
+passes for local kinetic parameter `k` passed to a function with formal `k`.
+Atomizer test files: 91 passed, 24 skipped; Ruff and diff checks pass.
+
+Focused two-mode revalidation of the 90 curated records formerly blocked by
+`local_scope`: 58 passed, 16 remain unsupported for independent event/species
+assignment limits, 15 timed out, and 1 failed. `BIOMD0000000174` now passes
+the Atomizer/BNG3/SBML roundtrip and libRoadRunner comparison. Report
+`/private/tmp/bng3-curated-scope-targeted.json`, SHA-256
+`6b7ac2038ed92218ae5d86c2c28a94dc600f8f9fb6b35c453833f1b5c589ef91`.
+The first post-scope full rerun was interrupted before summary. A subsequent
+full rerun completed; its aggregate is recorded below. The focused cohort is
+not the full-inventory rate.
+
+The fixed-time event parser now also recognizes equality crossings
+`time == t` and MathML `eq(time, t)` and schedules compile-time-constant
+assignments at `t`. Direct tests cover parsing and action output. Curated
+`BIOMD0000001043` now passes; its static assignment was triggered by
+`eq(time, 20)`. The pinned suite has no newly supported case using this exact
+trigger form. The
+focused rerun of `semantic/01626` remains unsupported for dynamic
+stoichiometry and six state-dependent events; the obsolete `scope` cause is
+absent.
+
+Fixed-time event thresholds and constant event-assignment expressions now
+inline SBML user-defined functions before numeric folding. An end-to-end
+regression covers zero-argument threshold and argument-taking assignment
+functions. The current pinned-suite and curated BioModels event-blocker
+inventories have no fixed-time assignments calling user-defined functions;
+therefore no benchmark count gain is claimed for this slice.
+Final Atomizer suite before compartment-event correction: `248 passed, 26 skipped`; Ruff and
+`git diff --check` pass.
+
+The full current curated inventory rerun completed: `715/1,083` SBML records
+passed, `218` were unsupported, `3` failed, and `147` timed out; `13` non-SBML
+records are explicit unsupported formats. Compared with the previous complete
+snapshot, 58 former local-scope blockers now pass and `BIOMD0000001043` adds one
+pass through equality-trigger lowering. Report
+`/private/tmp/bng3-curated-post-scope-equality-functions.json`, SHA-256
+`420d7e038407bf4340d1ec11f3105d7c7c59e6c0ced3745473f7abaa5ace8495`.
+Every passed model completed the two-mode Atomizer/BNG3 SBML roundtrip and
+libRoadRunner comparison. Core remains open.
+
+A final scope audit now treats all `SpeciesReference` IDs as model-global,
+while leaving dynamic stoichiometry values unsupported. This removes the last
+spurious `local_scope` cause from `semantic/01626`; it remains unsupported for
+variable stoichiometry and six state-dependent events. The refreshed full
+SBML Test Suite is still `1,169 passed, 754 unsupported, 0 failed, 0 timeouts`;
+all other cause counts are unchanged. Report
+`/private/tmp/bng3-sbml-suite-post-all-scope-fixes.json`, SHA-256
+`9150a27e3b954a4945fe611e3f2019a5c065b0c722ae2fca9ef6faab12086f2b`.
+
+Fixed-time compartment assignments now emit the native BNG3 `setVolume` action
+with its structured target/value arguments. An end-to-end generated BNGL run
+successfully executes a `setVolume` between two ODE phases. Atomizer regression
+suite: `250 passed, 26 skipped`; Ruff and diff checks pass. Curated
+`BIOMD0000000338` and `BIOMD0000000339` contain this event shape, but remain
+unsupported because each also has state-triggered events. Their targeted
+reports are `/private/tmp/bng3-curated-0338-volume-event.json` and
+`/private/tmp/bng3-curated-0339-volume-event.json`. Current pinned-suite
+inventory contains no fixed-time compartment-assignment events; no suite pass
+gain is claimed.
+
+2026-09-25: fixed-time event folding now recognizes SBML's built-in Avogadro
+constant at its exact value, while retaining BNG3's normalized `__Avogadro__`
+parameter for model expressions. This lowers triggers whose source-unit time is
+computed from Avogadro. Atomizer suite: `251 passed, 26 skipped`; Ruff and
+`git diff --check` pass. The full pinned SBML Test Suite now reports `1,174`
+passed, `749` unsupported, `0` failed, and `0` timed out; five cases newly pass
+(`semantic/01658`, `01659`, `01662`, `01663`, `01664`) with no regressions.
+Report `/private/tmp/bng3-sbml-suite-post-avogadro.json`, SHA-256
+`8640210892d72b05780ce6ed411e0c05d16a9af3216282bcb045e5035128d33b`.
+No unsupported curated BioModels event record was found to reference this
+built-in constant, so no BioModels count gain is claimed.
+
+Fixed-time conjunctions of constant time bounds now lower at their rising
+edge. For delayed nonpersistent events, lowering is allowed only when the
+event fires before the trigger window closes; state predicates, empty windows,
+and cancellation cases remain explicit. The Atomizer suite passes `253`, with
+`26` skips. Pinned-suite cases `semantic/01525` and `01660` newly pass; `01526`
+remains unsupported because its nonpersistent delay exceeds its one-unit
+trigger window. Full suite: `1,176 passed, 747 unsupported, 0 failed, 0
+timeouts`, no regressions. Report `/private/tmp/bng3-sbml-suite-post-time-window.json`,
+SHA-256 `f5b3e2d23e1d702c8d9fc790ec89fefa4487763a54e2861eadf1caeed091a770`.
+
+Targeted two-mode BioModels/libRoadRunner validation of 15 unsupported models
+with this time-window shape recovered four complete passes: `BIOMD0000000121`,
+`0126`, `0943`, and `0976`. Ten still fail only on additional event
+semantics; `BIOMD0000000149` exceeded the outer timeout. Per-model reports and
+the aggregate are under `/private/tmp/bng3-curated-time-window-cohort/`; summary
+`/private/tmp/bng3-curated-time-window-cohort-summary.json`, SHA-256
+`05ff17da2ac5831f6a92c20d67035eb2853f46e217feea7e1d469c5d348b7ae2`.
+The full curated inventory has not been rerun, so its previous aggregate is
+not refreshed by these targeted results.
+
+The recovered-scope cross-engine benchmark was narrowed from 58 models after
+its full run exceeded the practical window without producing a report. The
+completed smallest-eight sample uses three repeats and both output modes;
+report `/private/tmp/bng3-atomizer-cross-engine-scope-sample.json`, SHA-256
+`76d5f5393e1c05315e39130ebd3b9d4e33e7611ab9f1a3da0b4bd54adda06ebd`. Modern
+Atomizer outputs all built with BNG3 and BNG2 in both modes. Modern structural
+parity: flat 24/24 repeats, atomized 21/24; rate parity: flat 21/24 and
+atomized 18/24. Legacy flat had structural parity 24/24 but rate parity 0/24;
+legacy atomized converted 15/24 repeats and did not produce comparable
+networks for the rest. This is cross-engine network evidence; the separate
+full suite and targeted BioModels gates provide libRoadRunner comparisons.
+
+The event constant folder now handles chained SBML relational comparisons and
+short-circuits `and`/`or` when one operand proves the result. This marks a
+provably false event as informational instead of a dropped feature. It
+recovers `semantic/01211`; the full suite is now `1,177 passed, 746
+unsupported, 0 failed, 0 timeouts`, with no regressions. Event causes fell to
+490. Atomizer tests: `255 passed, 26 skipped`; Ruff and diff checks pass.
+Report `/private/tmp/bng3-sbml-suite-post-static-window-logic.json`, SHA-256
+`15a01a0e033aceec0b5dcc56f37239bc202b30fa20b3ab4dcecf267beab6e515`.
+
+The simple algebraic-rule solver now also selects one mutable, non-boundary
+species when it is not a reaction participant or event target. Its linear
+constraint becomes a species assignment rule and is emitted as a derived
+function; constraints involving mutable reaction species still fail closed.
+The full suite newly passes 31 cases (no regressions): `1,208 passed, 715
+unsupported, 0 failed, 0 timeouts`. Algebraic-rule causes fell from 73 to 34;
+constraint-tagged records fell from 106 to 67. Atomizer tests: `256 passed,
+26 skipped`; Ruff and diff checks pass. Report
+`/private/tmp/bng3-sbml-suite-post-algebraic-species.json`, SHA-256
+`9b0e847576431ca336a2d0d67d6393773133665d74a614c224afc3b28acf0ba7`.
+The unsupported curated inventory has no algebraic-rule cause, so no curated
+pass gain is claimed for this change.
+
+Fixed finite fractional stoichiometry now lowers to deterministic per-species
+signed `TotalRate` source/sink rules. Import notes state stochastic shared-event
+coupling is not retained; dynamic stoichiometry, fast reactions, FBC, and
+executable Multi remain rejected. The full SBML Test Suite gains 19 passes
+with no regressions: `1,227 passed, 696 unsupported, 0 failed, 0 timeouts`.
+New pass IDs are recorded in the convergence checklist. Three formerly blocked
+curated models (`BIOMD0000000039`, `0059`, `0206`) pass flat and Atomized
+round-trips and all-observable BNG3/libRoadRunner comparisons. Reports live in
+`/private/tmp/`; exact suite digest and paths are in the checklist.
+Irreversible fractional rules now use one direction-specific TotalRate rule per
+affected species; reversible laws retain signed-flux splitting. Optimized
+three-repeat BNG3/BNG2 comparison has 18/18 structure matches and 6/18 strict
+rate-string matches (up from 0/18). PyBioNetGen flat output matched structure
+6/6, rates 0/6; atomized output failed conversion. Independent libRoadRunner
+ODE comparisons still pass for all three selected models. This is deterministic
+support only; NFsim shared-event parity is not claimed.
+
+Full curated inventory run before this compacting change: 730/1,083 SBML
+records passed, 192 unsupported, 4 failed, 157 timed out, with all 1,096
+inventory entries accounted for. Nine models with a stoichiometry-only blocker
+newly pass; total passes rose by 78 versus prior full report, including gains
+from scope/event changes in the worktree. Failures: worker signal -11 on
+BIOMD0000000081 (targeted rerun timed out at 180 s), CVODE failure on 0606, and
+new all-observable non-finite parameter comparisons on 0731/0973. Compacting
+did not change full suite counts. Full curated inventory after compaction
+remains open. Exact report paths/digests are in the checklist.
+
+Focused Atomizer/parity/event and curated gate checks: `129 passed`; Ruff and
+whitespace checks pass. Full Python suite has one unrelated BNGIR
+float-serialization assertion failure (`0.1` vs `0.10000000000000001`);
+`515` other tests pass and `28` skip. Full curated inventory rerun after
+compacting remains open.
+
+Fixed-time event scheduling now treats `constant="false"` parameters and
+compartments as constant only when no rule, initial assignment, or event targets
+them. Regression covers both safe folding and retained diagnostics for a
+controlled value. Atomizer, event, and SBML parity checks pass (`128 passed`);
+Ruff and whitespace checks pass. The active full curated BioModels run began
+before this change, so its results will not measure the new behavior.
+
+The full compact-fractional curated refresh completed with all 1,096 inventory
+records accounted for: 731/1,083 SBML pass, 191 unsupported, 3 failed, and 158
+timed out. Relative to the pre-compaction report, BIOMD0000000040 moved from
+unsupported to pass; BIOMD0000000081 moved from failed to timeout. This run
+started before the uncontrolled-mutable-symbol event edit. Remaining failures:
+libRoadRunner CVODE failure on BIOMD0000000606, and non-finite all-observable
+comparisons for `log_Treg` in BIOMD0000000731 and `s` in BIOMD0000000973. Exact
+report digest and boundaries are in the convergence checklist.
+
+Reaction-participating algebraic assignment targets now become BNGL functions;
+their reaction state patterns are removed while their values remain in kinetic
+laws. Deterministic semantics are explicitly bounded from NFsim-style stochastic
+trajectories. Thirty-seven selected previously blocked BioModels pass flat and
+Atomized paths and all-observable BNG3/libRoadRunner comparisons. Report index
+and digest are in the convergence checklist. Focused checks: 131 pass. Full
+curated and SBML Test Suite refreshes remain in progress.
+
+Fixed integer stoichiometry above 100 now lowers to deterministic per-species
+TotalRate rules; high dynamic stoichiometry remains rejected. The curated
+prefilter delegates fixed values to Atomizer. Flat-mode all-observable
+libRoadRunner comparisons pass for BIOMD0000000463 and BIOMD0000000608; both
+mode selected runs timed out at 90 seconds. Exact report digests and this
+validation boundary are in the convergence checklist.
+
+The final-code pinned SBML Test Suite refresh passes `1,282/1,923` cases, with
+641 unsupported, zero failed, and zero timed out. This is 55 more passes than
+the prior exact-source run and has no regressions; every gain is a stochastic
+case with an event proven never to fire. The gate checks BNG3 CVODE/libRoadRunner
+parity, not official SBML Test Suite reference-trajectory conformance. Report
+`/private/tmp/bng3-sbml-suite-final-code.json`, SHA-256
+`f4df13b873836a4931edb117aec238938fa1227aec6a0e624697148010470b84`.
+
+The final-code curated BioModels inventory accounts for all 1,096 entries:
+`774/1,083` SBML pass, `134` unsupported, `5` fail, and `170` time out. Versus
+the prior assignment-species full report, passes rise by 2, unsupported fall
+by 4, failures fall by 2, and timeouts rise by 4. Rate-rule mapping recovers
+BIOMD0000000245; fixed large stoichiometry recovers BIOMD0000000353 in both
+modes with all-observable BNG3/libRoadRunner parity. BIOMD0000000463 times out
+in the full both-mode scan despite its targeted flat-mode pass. Report
+`/private/tmp/bng3-curated-atomizer-final-code-full.json`, SHA-256
+`aa1fcaebd8b69beeb4c3274d6e3813f9b3e98d1d787dcc0bdcb71f4771b209ad`.
+
+The three-model cross-engine slice covers BIOMD0000000307, 0384, and 0503 in
+flat and Atomized modes with three repeats. Modern BNG3 output is deterministic
+in all 18 samples; BNG3 and BNG2 generate all networks and have 18/18 structural
+parity. Strict rate-string parity is 0/18, so this does not imply exact
+serializer agreement. PyBioNetGen emits output in 9/18 samples; the other nine
+fail in legacy code, including an undefined `longEnough` error, and its outputs
+do not produce comparable networks. Report
+`/private/tmp/bng3-atomizer-assignment-cross-engine.json`, SHA-256
+`86d75a81691c85cbcaa22698e0bea00d57a6cad5381ee244d5e984f716c3ae7d`.
+
+Dynamic SBML species-reference coefficients now lower into deterministic
+species-specific `TotalRate` ODE rules. This handles rate-rule/MathML values
+without expanding dynamic stoichiometry into BNGL patterns and also replaces
+dynamic reference symbols inside kinetic laws. Fast, Multi, FBC, unresolvable
+expressions, and shared stochastic event semantics remain explicit boundaries.
+The full SBML Test Suite gains 43 cases with zero regressions: `1,325 passed,
+598 unsupported, 0 failed, 0 timeouts`. Remaining stoichiometry causes are six
+negative coefficients and ten dynamic cases overlapping state-dependent events
+or fast reactions. Report `/private/tmp/bng3-sbml-suite-dynamic-stoichiometry.json`,
+SHA-256 `770c8a46b81a4ab2e0eeb54bdd184e903f1babc851de158004cd4e057fa31190`.
+Focused Atomizer tests pass (`131 passed`). Full Python suite: `519 passed,
+28 skipped`, with one unrelated BNGIR float-serialization assertion failure
+(`0.1` vs `0.10000000000000001`). Ruff and `git diff --check` pass. The curated
+BioModels inventory needs a refreshed check against this latest writer
+revision. The three-model dynamic-stoichiometry BNG2/PyBioNetGen comparison is
+complete; report details are in the convergence checklist.
+
+Reaction-derived `rateOf(species)` now supports finite dynamic stoichiometry
+when reference value has an assignment/rate rule, initial assignment, or
+MathML expression; event-controlled references remain fail-closed. Fixed
+fractional coefficients are supported for deterministic ODE derivatives.
+`delay(expression, 0)` now simplifies exactly; nonzero history-dependent delay
+remains unsupported. SBML Test Suite is `1,326 passed, 597 unsupported, 0
+failed, 0 timed out`; `semantic/01543` newly passes with four all-observable
+BNG3/libRoadRunner comparisons. Three-repeat BNG2 parity matches structure
+`6/6`, but strict rate-string parity is `0/6` due algebraically equivalent
+directional expressions. PyBioNetGen fails to produce output for this model.
+The full curated BioModels refresh completed: `774/1,083` SBML pass, `134`
+unsupported, `5` fail, `170` timeout, all 1,096 inventory records accounted.
+No model status changed versus the prior full-code run, so this `rateOf` gain is
+SBML Test Suite-only. Report digest is in `docs/BNG3_CONVERGENCE_DONE_CHECKLIST.md`.
+
+Closed-form time-dependent assignment rules now lower safely inside SBML
+`delay`: inline only assignment chains using time and immutable symbols, then
+substitute `time - delay`. General history remains unsupported. The full SBML
+Test Suite rises to `1,331 passed, 592 unsupported, 0 failed, 0 timed out`,
+with five new passes and no regressions: `00937`, `01173`, `01176`, `01318`,
+`01319`. `00937` matches libRoadRunner exactly. Modern output is deterministic
+across three repeats in flat/Atomized modes; BNG2 has no reaction network to
+compare and legacy PyBioNetGen fails dependency resolution. Targeted checks of
+all seven cached curated models containing delay found no new pass. Exact
+reports and boundaries are in the convergence checklist.
+
+Atomizer now lowers fixed, nonnegative delays of scalar affine histories from
+rate rules or reaction fluxes, including `rateOf` expressions and fixed
+conversion factors. Static species-reference values fold before delay lowering.
+The pinned SBML Test Suite reaches `1,349 passed, 574 unsupported, 0 failed,
+0 timed out`, with 18 new passes and no regressions; ten representative
+cases pass direct BNG3/libRoadRunner comparisons (maximum absolute error
+`1.45e-6`). Seven cached curated BioModels containing delay math remain
+unsupported because they need general history or event execution; a full
+curated inventory refresh accounted for all 1,096 records (`774/1,083` SBML
+pass, `134` unsupported, `5` failed, `170` timeouts), with no model-status
+change from the preceding full-code report. A second safe delay slice now
+supports nonnegative affine time lengths (`time/2`, including assignment and
+algebraic aliases): `1,352 passed, 571 unsupported, 0 failed, 0 timed out`,
+three new passes since the affine-history report, no regressions. `00981–00983`
+match libRoadRunner to `3.6e-15`; the seven cached curated delay models remain
+blocked by general history/events. Modern Atomizer tests: `291 passed,
+1 skipped`; Ruff, compileall, and diff checks pass. Linear algebraic rules can
+also define an unreacted boundary species: `semantic/00554` is newly supported
+and matches libRoadRunner on seven observables (max absolute error
+`6.93e-12`). Full SBML suite now reports `1,353 passed, 570 unsupported, 0
+failed, 0 timed out`, one gain and no regressions. Modern Atomizer tests are
+`292 passed, 1 skipped`.
+See `docs/BNG3_CONVERGENCE_DONE_CHECKLIST.md` for report paths and boundaries.
+
+SBML events with `trigger initialValue=false` now schedule an exact t=0 rising
+edge when their initial trigger evaluates true. This is restricted to immediate
+events and excludes rule- or initial-assignment-controlled variables. The full
+suite rose to `1,366 passed, 557 unsupported, 0 failed, 0 timed out`, with 13
+new passes and no regressions. Three new cases (`01684`-`01686`) also passed
+four-observable BNG3/libRoadRunner comparisons each (maximum absolute error
+`6.94e-18`). `01332` roundtrips but has no observables, so its simulation
+comparison is vacuous. Modern Atomizer tests: `293 passed, 1 skipped`; Ruff,
+compileall, and diff checks pass. Curated BioModels refresh remains pending.
+See `docs/BNG3_CONVERGENCE_DONE_CHECKLIST.md` for the exact report digest.
+
+Event translation now also solves direct thresholds of single parameters with
+constant rate rules, with fail-closed guards for mutable/coupled trajectories.
+MathML constant folding covers SBML n-ary arithmetic and inverse trig/hyperbolic
+functions used by scheduled delays. `semantic/01530`, `01532`, and `01533` now
+pass; the 53 events in `01532` match libRoadRunner's one observable within
+`1.8e-15`. Full SBML suite is `1,369 passed, 554 unsupported, 0 failed, 0
+timed out`, with no regressions. Modern Atomizer: `295 passed, 1 skipped`.
+Cached-source triage covered 1,084 BioModels XML files (nine parse failures):
+no direct affine-rate trigger candidates. Only one non-time initialValue=false
+case was found; `BIOMD0000000825` starts with its trigger false and remains
+unsupported because execution requires later state-event scheduling. No
+curated gain is claimed; the redundant full scan was stopped after this
+targeted audit. See the convergence checklist for the targeted run report.
+
+The full Python suite now passes: `532 passed, 28 skipped`. This also fixes
+the existing BNGIR float formatting regression (`0.10000000000000001` now
+serializes as shortest round-tripping `0.1`). Ruff, compileall, and diff checks
+pass. The prior complete curated baseline remains `774/1,083` SBML pass,
+`134` unsupported, `5` failed, `170` timed out; this event slice has no newly
+supported curated model.
+
+Periodic reset events (`time - reset >= interval`, `reset := time`) now expand
+to repeated exact actions using prior scheduled parameter values. Parameter-
+only triggers proven false through those updates are marked never-firing; other
+dynamic triggers stay fail-closed. The full SBML suite is `1,373 passed, 550
+unsupported, 0 failed, 0 timed out`, with four new passes and no regressions:
+`00952`, `00953`, `00963`, and `00964`. The three nonempty observable
+comparisons match libRoadRunner exactly. Modern Atomizer: `298 passed,
+1 skipped`. No matching periodic-reset pattern appeared in the cached curated
+BioModels source scan. Detailed evidence is in the convergence checklist.
+
+Constant-rate reset, delayed periodic events, bounded delayed assignment
+history, and constant initial-assignment folding now pass eight additional
+official SBML cases: `00962`, `01588`-`01593`, and `01599`. The full pinned suite
+is `1,381 passed, 542 unsupported, 0 failed, 0 timed out`, with zero
+regressions; event-related unsupported records fell to 401. Cases `01588` and
+`01590`-`01593` match libRoadRunner on all generated observables (maximum
+absolute difference `0`). The suite runners now pass simulation horizon and
+step count into Atomizer for source and reimport conversion. Full Python suite:
+`537 passed, 28 skipped`; Modern Atomizer: `303 passed, 1 skipped`.
+Full offline BioModels inventory: `773 passed, 134 unsupported, 5 failed, 171
+timed out` among 1,083 SBML records. No feature-related curated gain; one
+previously passing model (`BIOMD0000000637`) timed out in the full run but
+passed an isolated both-mode recheck, consistent with runtime variance.
+
+Horizon-bounded SBML delay history now folds to exact initial values across
+rules, reaction rates, events, function expressions, and time-varying
+stoichiometry when the delay is fixed and at least as long as the simulation.
+This added seven official cases (`01410`-`01412`, `01419`, `01480`-`01481`,
+`01535`), with no regressions. Static event triggers on unchanging species
+added `00699` and `00701`. The full SBML suite now reports `1,390 passed, 533
+unsupported, 0 failed, 0 timed out`, with no regressions. Targeted curated
+roundtrip plus BNG3/libRoadRunner checks also pass for BioModels `0025`, `0154`,
+and `0034`. Mutable delay lengths and later-state event/history semantics
+remain unsupported. Full Python: `544 passed, 28 skipped`; Modern Atomizer:
+`310 passed, 1 skipped`. See the convergence checklist for report digests and
+case details.
+
+The Atomizer now lowers single-unknown linear algebraic rules whose
+coefficients fold from immutable SBML symbols. Twenty-nine more official
+cases pass with no regressions; `00531` matches libRoadRunner over seven
+observables to `2.23e-16`. Static species-trigger handling adds two further
+passes. The full SBML suite is now `1,419 passed, 504 unsupported, 0 failed,
+0 timed out`; 399 event blockers remain, alongside the explicitly unsupported
+FBC/flux-balance models and other dynamic semantics. Full Python: `546 passed,
+28 skipped`; modern Atomizer: `312 passed, 1 skipped`. Detailed per-case data
+and digest are in the convergence checklist.
+
+The Atomizer now also schedules exact crossings for species with constant net
+reaction flux. Delayed assignments read the trigger-time or execution-time
+species value according to SBML semantics, when the affine trajectory is
+provable. This adds 12 SBML Test Suite passes with no regressions: the pinned
+suite is `1,431 passed, 492 unsupported, 0 failed, 0 timed out`. Full Python:
+`548 passed, 28 skipped`; modern Atomizer: `314 passed, 1 skipped`. Ruff,
+compileall, and diff checks pass. The full curated BioModels refresh predates
+this slice and is still running. See the convergence checklist for the exact
+report digest and case list.

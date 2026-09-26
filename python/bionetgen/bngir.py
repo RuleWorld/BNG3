@@ -35,9 +35,13 @@ _FEATURES = frozenset(
 
 
 def _expression(value: Any) -> str:
-    if hasattr(value, "to_string"):
-        return value.to_string()
-    return str(value)
+    rendered = value.to_string() if hasattr(value, "to_string") else str(value)
+    if re.fullmatch(r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?", rendered):
+        # C++ may print a binary double with 17 digits (0.10000000000000001).
+        # Python's repr chooses the shortest decimal that round-trips to the
+        # same value, keeping numeric expressions stable and readable.
+        return repr(float(rendered))
+    return rendered
 
 
 def _action(action: Any, scope: str) -> dict[str, Any]:

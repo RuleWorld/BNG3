@@ -1369,6 +1369,166 @@ def test_playground_writer_emits_zero_argument_functions_and_assignment_rules():
     assert "v() = (k + 1)" in bngl
 
 
+def test_bounded_delay_of_event_parameters_uses_initial_history_only():
+    from bionetgen.atomizer.modern.types import (
+        SBMLModel,
+        SBMLParameter,
+        SBMLRule,
+        SBMLEvent,
+        SBMLEventAssignment,
+    )
+    from bionetgen.atomizer.modern.writer import (
+        _lower_bounded_event_state_delays,
+    )
+
+    model = SBMLModel(
+        id="bounded-delay",
+        parameters=OrderedDict(
+            [
+                ("Q", SBMLParameter(id="Q", value=0, constant=False)),
+                ("R", SBMLParameter(id="R", value=2, constant=False)),
+            ]
+        ),
+        rules=[
+            SBMLRule(
+                type="assignment",
+                variable="S2",
+                math="delay(Q, 1) + delay(R, 2)",
+            )
+        ],
+        events=[
+            SBMLEvent(
+                id="update",
+                trigger="geq(time, 0.5)",
+                trigger_initial_value=True,
+                assignments=[
+                    SBMLEventAssignment("Q", "1"),
+                    SBMLEventAssignment("R", "3"),
+                ],
+            )
+        ],
+    )
+
+    lowered = _lower_bounded_event_state_delays(model, 1.0)
+
+    assert lowered == 2
+    assert model.rules[0].math == "0.0 + 2.0"
+    assert any(
+        warning.get("category") == "delay" and warning.get("severity") == "info"
+        for warning in model.import_warnings
+    )
+
+    longer_run = SBMLModel(
+        id="bounded-delay-longer-run",
+        parameters=OrderedDict([("Q", SBMLParameter(id="Q", value=0, constant=False))]),
+        rules=[
+            SBMLRule(
+                type="assignment",
+                variable="S2",
+                math="delay(Q, 1)",
+            )
+        ],
+        events=[
+            SBMLEvent(
+                id="update",
+                trigger="geq(time, 0.5)",
+                trigger_initial_value=True,
+                assignments=[SBMLEventAssignment("Q", "1")],
+            )
+        ],
+    )
+    assert _lower_bounded_event_state_delays(longer_run, 1.01) == 0
+    assert longer_run.rules[0].math == "delay(Q, 1)"
+
+    zero_time_edge = SBMLModel(
+        id="bounded-delay-zero-edge",
+        parameters=OrderedDict([("Q", SBMLParameter(id="Q", value=0, constant=False))]),
+        rules=[SBMLRule(type="assignment", variable="S2", math="delay(Q, 1)")],
+        events=[
+            SBMLEvent(
+                id="update-at-zero",
+                trigger="geq(time, 0)",
+                trigger_initial_value=False,
+                assignments=[SBMLEventAssignment("Q", "1")],
+            )
+        ],
+    )
+    assert _lower_bounded_event_state_delays(zero_time_edge, 1.0) == 0
+    assert zero_time_edge.rules[0].math == "delay(Q, 1)"
+
+
+def test_bounded_delay_of_rate_rule_species_uses_initial_history():
+    from bionetgen.atomizer.modern.types import (
+        SBMLModel,
+        SBMLSpecies,
+        SBMLRule,
+    )
+    from bionetgen.atomizer.modern.writer import (
+        _lower_bounded_event_state_delays,
+    )
+
+    model = SBMLModel(
+        id="bounded-species-delay",
+        species=OrderedDict(
+            [
+                (
+                    "S",
+                    SBMLSpecies(
+                        id="S",
+                        initial_concentration=2.5,
+                        initial_concentration_set=True,
+                    ),
+                )
+            ]
+        ),
+        rules=[
+            SBMLRule(type="rate", variable="S", math="1"),
+            SBMLRule(type="assignment", variable="delayed", math="delay(S, 1)"),
+        ],
+    )
+
+    assert _lower_bounded_event_state_delays(model, 1.0) == 1
+    assert model.rules[1].math == "2.5"
+
+
+def test_bounded_delay_does_not_fold_a_dynamic_delay_length():
+    from bionetgen.atomizer.modern.types import (
+        SBMLModel,
+        SBMLParameter,
+        SBMLSpecies,
+        SBMLRule,
+    )
+    from bionetgen.atomizer.modern.writer import (
+        _lower_bounded_event_state_delays,
+    )
+
+    model = SBMLModel(
+        id="dynamic-delay-length",
+        species=OrderedDict(
+            [
+                (
+                    "S",
+                    SBMLSpecies(
+                        id="S",
+                        initial_concentration=2.5,
+                        initial_concentration_set=True,
+                    ),
+                )
+            ]
+        ),
+        parameters=OrderedDict(
+            [("tau", SBMLParameter(id="tau", value=2, constant=False))]
+        ),
+        rules=[
+            SBMLRule(type="rate", variable="tau", math="0"),
+            SBMLRule(type="assignment", variable="delayed", math="delay(S, tau)"),
+        ],
+    )
+
+    assert _lower_bounded_event_state_delays(model, 1.0) == 0
+    assert model.rules[1].math == "delay(S, tau)"
+
+
 def test_playground_writer_emits_simple_assignment_rules_as_observables():
     from bionetgen.atomizer.modern import (
         SBMLKineticLaw,
@@ -2487,6 +2647,58 @@ def test_playground_event_actions_fold_constants_and_retain_unsupported_events()
     assert "not a simple time threshold" in result.untranslated[0][1]
 
 
+def test_playground_event_actions_schedule_time_equality_trigger():
+    from bionetgen.atomizer.modern import SBMLEvent
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+
+    context = EventTranslationContext(
+        resolve_species_pattern=lambda _variable: None,
+        resolve_param=lambda _variable: None,
+        is_param=lambda variable: variable == "k",
+        base_t_end=10,
+        base_steps=20,
+    )
+    result = synthesize_event_actions(
+        [SBMLEvent(id="at_time", trigger="time == 2.5", assignments=[("k", "3")])],
+        context,
+    )
+
+    assert result.converted == 1
+    assert not result.untranslated
+    assert result.actions_block is not None
+    assert 'setParameter("k", "3")' in result.actions_block
+    assert "t_end=>2.5" in result.actions_block
+
+
+def test_playground_event_actions_set_compartment_volume():
+    from bionetgen.atomizer.modern import SBMLEvent
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+
+    context = EventTranslationContext(
+        resolve_species_pattern=lambda _variable: None,
+        resolve_param=lambda _variable: 2,
+        is_param=lambda _variable: False,
+        is_compartment=lambda variable: variable == "cell",
+        base_t_end=10,
+        base_steps=20,
+    )
+    result = synthesize_event_actions(
+        [SBMLEvent(id="resize", trigger="time >= 5", assignments=[("cell", "2")])],
+        context,
+    )
+
+    assert result.converted == 1
+    assert result.actions_block is not None
+    assert 'setVolume({target=>"cell", value=>2})' in result.actions_block
+    assert "setParameter(" not in result.actions_block
+
+
 def test_playground_event_actions_use_source_half_up_step_rounding():
     from bionetgen.atomizer.modern import SBMLEvent
     from bionetgen.atomizer.modern.events import (
@@ -2656,7 +2868,7 @@ def test_playground_event_actions_solve_positive_scaled_time_triggers():
 
     assert result.converted == 1
     assert result.actions_block is not None
-    assert 't_end=>200' in result.actions_block
+    assert "t_end=>200" in result.actions_block
     assert 'setParameter("t5", "3")' in result.actions_block
 
 
@@ -2668,7 +2880,13 @@ def test_playground_event_actions_reject_nonpositive_scaled_time_triggers():
     )
 
     result = synthesize_event_actions(
-        [SBMLEvent(id="negative_scale", trigger="gt((time / scale), 3)", assignments=[("k", "1")])],
+        [
+            SBMLEvent(
+                id="negative_scale",
+                trigger="gt((time / scale), 3)",
+                assignments=[("k", "1")],
+            )
+        ],
         EventTranslationContext(
             resolve_species_pattern=lambda _variable: None,
             resolve_param=lambda variable: {"scale": -2}.get(variable),
@@ -2759,6 +2977,107 @@ def test_playground_fixed_time_events_are_not_marked_as_dropped():
     assert event_warnings[0].severity == "info"
     assert "lowered to scheduled BNGL actions" in event_warnings[0].message
     assert "Events NOT simulated" not in bngl
+
+
+def test_playground_fixed_event_folds_uncontrolled_mutable_parameter():
+    from bionetgen.atomizer.modern import (
+        SBMLEvent,
+        SBMLParameter,
+        SBMLParser,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    model = SBMLParser().parse(SBML_FIXTURE)
+    model.parameters["event_time"] = SBMLParameter(
+        id="event_time", value=5, constant=False
+    )
+    model.parameters["control_time"] = SBMLParameter(
+        id="control_time", value=7, constant=False
+    )
+    model.events = [
+        SBMLEvent(
+            id="mutable_but_uncontrolled",
+            trigger="geq(time, event_time)",
+            assignments=[("A", "3")],
+        ),
+        SBMLEvent(
+            id="parameter_controlled_by_event",
+            trigger="geq(time, 1)",
+            assignments=[("control_time", "2")],
+        ),
+        SBMLEvent(
+            id="controlled_threshold",
+            trigger="geq(time, control_time)",
+            assignments=[("A", "4")],
+        ),
+    ]
+    sct = build_species_composition_table(model)
+    bngl, _ = generate_bngl(
+        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+    )
+
+    assert 'setConcentration("@cell:M_A()", "3")' in bngl
+    assert "t_end=>5" in bngl
+    assert 'setParameter("control_time", "2")' in bngl
+    assert "controlled_threshold" in bngl
+
+
+def test_playground_algebraic_species_participant_becomes_function_not_reaction_state():
+    from bionetgen.atomizer.modern import (
+        SBMLParser,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    source = SBML_FIXTURE.replace(
+        "    <listOfReactions>",
+        """    <listOfRules>
+      <assignmentRule variable="A"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><times/><ci>B</ci><cn>2</cn></apply></math></assignmentRule>
+    </listOfRules>
+    <listOfReactions>""",
+    )
+    model = SBMLParser().parse(source)
+    sct = build_species_composition_table(model)
+    bngl, _ = generate_bngl(
+        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+    )
+
+    assert "A() =" in bngl
+    assert "M_A() ->" not in bngl
+    assert "M_A() +" not in bngl
+    assert not any(
+        warning.category == "speciesAssignmentRule" and warning.severity == "dropped"
+        for warning in model.import_warnings
+    )
+    assert any(
+        warning.category == "speciesAssignmentRule"
+        and warning.severity == "info"
+        and "Deterministic SBML ODE semantics are preserved" in warning.message
+        for warning in model.import_warnings
+    )
+
+
+def test_playground_assignment_function_reads_rate_rule_state_as_amount_observable():
+    from bionetgen.atomizer.modern.writer import (
+        _rewrite_assignment_rule_references,
+        bngl_function,
+    )
+
+    assert (
+        _rewrite_assignment_rule_references(
+            "q + p()", {"q", "p"}, rate_rule_variables={"p"}
+        )
+        == "q() + p_amt"
+    )
+    assert (
+        bngl_function("p()", assignment_rule_variables={"p"}, rate_rule_variables={"p"})
+        == "p_amt"
+    )
 
 
 def test_playground_name_standardization_handles_sbml_symbols_and_keywords():
@@ -3347,6 +3666,9 @@ def test_playground_atomizer_preserves_zero_stoichiometry_and_rejects_unsupporte
           <species id="A" name="A" initialAmount="1"/>
           <species id="B" name="B"/>
         </listOfSpecies>
+        <listOfRules>
+          <rateRule variable="largeRef"><math><cn>1</cn></math></rateRule>
+        </listOfRules>
         <listOfReactions>
           <reaction id="fractional" name="fractional">
             <listOfReactants><speciesReference species="A" stoichiometry="0.5"/></listOfReactants>
@@ -3364,6 +3686,16 @@ def test_playground_atomizer_preserves_zero_stoichiometry_and_rejects_unsupporte
                 <stoichiometryMath><math><cn>2</cn></math></stoichiometryMath>
               </speciesReference>
             </listOfReactants>
+            <listOfProducts><speciesReference species="B"/></listOfProducts>
+            <kineticLaw formula="k"/>
+          </reaction>
+          <reaction id="large" name="large">
+            <listOfReactants><speciesReference species="A" stoichiometry="101"/></listOfReactants>
+            <listOfProducts><speciesReference species="B"/></listOfProducts>
+            <kineticLaw formula="k"/>
+          </reaction>
+          <reaction id="dynamic_large" name="dynamic_large">
+            <listOfReactants><speciesReference id="largeRef" species="A" stoichiometry="101" constant="false"/></listOfReactants>
             <listOfProducts><speciesReference species="B"/></listOfProducts>
             <kineticLaw formula="k"/>
           </reaction>
@@ -3389,6 +3721,17 @@ def test_playground_atomizer_preserves_zero_stoichiometry_and_rejects_unsupporte
     assert "fractional:" not in bngl
     assert "zero: 0 -> M_B()" in bngl
     assert "math: M_A() + M_A() -> M_B()" in bngl
+    assert "large: M_A()" not in bngl
+    assert "large" in bngl and "TotalRate" in bngl
+    assert "dynamic_large:" not in bngl
+    assert "dynamic_large_consume_A" in bngl
+    assert "largeRef_amt" in bngl
+    assert any(
+        warning["category"] == "stoichiometry"
+        and warning["severity"] == "info"
+        and "time-varying coefficient" in warning["message"]
+        for warning in model.import_warnings
+    )
 
 
 def test_playground_parser_folds_static_species_reference_assignment():

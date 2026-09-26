@@ -22,7 +22,12 @@ from typing import (
     Tuple,
 )
 
-from .events import EventTranslationContext, synthesize_event_actions
+from .events import (
+    EventTranslationContext,
+    _event_assignment,
+    fold_numeric,
+    synthesize_event_actions,
+)
 from .rate_rule_constants import (
     ASSIGN_RULE_META_PREFIX,
     RATE_RULE_META_PREFIX,
@@ -36,6 +41,7 @@ from .metadata import metadata_payload
 from .types import (
     BNGL_LEXER_KEYWORDS,
     SBMLModel,
+    SBMLKineticLaw,
     SBMLReaction,
     SBMLRule,
     SCTEntry,
@@ -47,6 +53,8 @@ from .types import (
 )
 
 _PROTECTED_BUILTIN_OPERANDS = frozenset({"time", "_pi", "_e", "true", "false"})
+# SBML Level 3's built-in avogadro symbol has an exact SI-defined value.
+_SBML_AVOGADRO = 6.02214076e23
 _MULTI_SUM_TOKEN = re.compile(r"__SBML_MULTI_SUM__([A-Za-z_][A-Za-z0-9_]*)__")
 _MULTI_NUMERIC_TOKEN = re.compile(r"__SBML_MULTI_NUMERIC__([A-Za-z_][A-Za-z0-9_]*)__")
 
@@ -470,7 +478,7 @@ def convert_math_expression(expression: str) -> str:
     for function, replacement in {
         "sec": lambda args: f"(1/cos({args[0]}))" if args else "sec()",
         "csc": lambda args: f"(1/sin({args[0]}))" if args else "csc()",
-        "cot": lambda args: (f"(cos({args[0]})/sin({args[0]}))" if args else "cot()"),
+        "cot": lambda args: f"(cos({args[0]})/sin({args[0]}))" if args else "cot()",
         "arcsec": lambda args: f"acos(1/({args[0]}))" if args else "arcsec()",
         "arccsc": lambda args: f"asin(1/({args[0]}))" if args else "arccsc()",
         "arccot": lambda args: f"atan(1/({args[0]}))" if args else "arccot()",
@@ -530,7 +538,9 @@ def convert_math_expression(expression: str) -> str:
         lambda args: (
             f"(ln({args[1]})/ln({args[0]}))"
             if len(args) >= 2
-            else f"ln({args[0]})" if args else "log()"
+            else f"ln({args[0]})"
+            if args
+            else "log()"
         ),
     )
     result = _replace_nested_function(
@@ -544,23 +554,25 @@ def convert_math_expression(expression: str) -> str:
         lambda args: (
             f"(({args[1]})^(1/({args[0]})))"
             if len(args) >= 2
-            else f"(({args[0]})^(1/2))" if args else "root()"
+            else f"(({args[0]})^(1/2))"
+            if args
+            else "root()"
         ),
     )
     result = _replace_nested_function(
         result,
         "floor",
-        lambda args: (f"floor({args[0]})" if args else "floor()"),
+        lambda args: f"floor({args[0]})" if args else "floor()",
     )
     result = _replace_nested_function(
         result,
         "ceiling",
-        lambda args: (f"ceil({args[0]})" if args else "ceiling()"),
+        lambda args: f"ceil({args[0]})" if args else "ceiling()",
     )
     result = _replace_nested_function(
         result,
         "ceil",
-        lambda args: (f"ceil({args[0]})" if args else "ceil()"),
+        lambda args: f"ceil({args[0]})" if args else "ceil()",
     )
     for function, operator in {
         "gt": ">",
@@ -939,7 +951,13 @@ def bngl_function(
             replacement = "_c_" + standard + "()"
         else:
             replacement = standard + "()"
-        result = re.sub(rf"\b{re.escape(variable)}\b(?!\s*\()", replacement, result)
+        if variable in rate_rule_variables or standard in rate_rule_variables:
+            result = re.sub(
+                rf"\b{re.escape(variable)}\b\s*\(\s*\)", replacement, result
+            )
+            result = re.sub(rf"\b{re.escape(variable)}\b(?!\s*\()", replacement, result)
+        else:
+            result = re.sub(rf"\b{re.escape(variable)}\b(?!\s*\()", replacement, result)
 
     # Sat/MM/Hill are factor-style laws in BNGL.  The Playground writer adds
     # the first reactant as substrate when the SBML expression omits it.
@@ -1761,13 +1779,23 @@ def _prepared_kinetic_math(
         if stoichiometry is None and isinstance(reference, Mapping):
             stoichiometry = reference.get("stoichiometry", 1)
         if getattr(reference, "variable_stoichiometry", False):
-            _record_import_warning(
-                model,
-                f'Reaction "{reaction_id or reaction.id}" references variable '
-                f'stoichiometry symbol "{reference_id}"; it cannot be used as '
-                "a fixed BNGL rate operand.",
-                category="stoichiometry",
-                severity="dropped",
+            dynamic_expression = _dynamic_species_reference_expression(
+                reference, model, reaction_id or reaction.id
+            )
+            if dynamic_expression is None:
+                _record_import_warning(
+                    model,
+                    f'Reaction "{reaction_id or reaction.id}" references variable '
+                    f'stoichiometry symbol "{reference_id}" without a lowerable '
+                    "expression.",
+                    category="stoichiometry",
+                    severity="dropped",
+                )
+                continue
+            math_expression = re.sub(
+                rf"\b{re.escape(str(reference_id))}\b",
+                f"({dynamic_expression})",
+                math_expression,
             )
             continue
         value = _numeric_value(stoichiometry)
@@ -1811,6 +1839,37 @@ def _prepared_kinetic_math(
         exclude_reaction_id=reaction_id or reaction.id,
     )
     return math_expression
+
+
+def _dynamic_species_reference_expression(
+    reference: object, model: SBMLModel, reaction_id: str
+) -> Optional[str]:
+    """Map a dynamic species-reference value into executable BNGL math."""
+
+    expression = str(getattr(reference, "stoichiometry_math", "") or "").strip()
+    reference_id = str(getattr(reference, "id", "") or "").strip()
+    if not expression and reference_id:
+        targets = {
+            standardize_name(str(rule.variable))
+            for rule in model.rules
+            if rule.variable and rule.type in {"assignment", "rate"}
+        }
+        if standardize_name(reference_id) in targets:
+            expression = reference_id
+    if not expression:
+        return None
+    synthetic = SBMLReaction(
+        id=f"{reaction_id}_stoichiometry",
+        kinetic_law=SBMLKineticLaw(math=expression),
+    )
+    prepared = _prepared_kinetic_math(synthetic, model, replace_loc_params=False)
+    return _rate_for_reaction(
+        synthetic,
+        model,
+        reactant_ids=[],
+        prepared_math=prepared,
+        replace_loc_params=False,
+    )
 
 
 def _strip_compartment_rate_factors(
@@ -2447,6 +2506,284 @@ def _record_import_warning(
     )
 
 
+def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
+    """Fold delayed history that stays at or before simulation start.
+
+    This is exact only for delay calls whose duration is at least the requested
+    nonnegative simulation horizon. Their entire queried history is the SBML
+    initial state, even if the delayed state changes during the run.
+    """
+    if not math.isfinite(t_end) or t_end < 0:
+        return 0
+    event_targets = {
+        str(variable)
+        for event in model.events
+        for assignment in event.assignments
+        for variable, _expression in [_event_assignment(assignment)]
+        if variable
+    }
+    initial_assignment_targets = {
+        str(assignment.symbol)
+        for assignment in model.initial_assignments
+        if assignment.symbol
+    }
+    delay_call = re.compile(r"\bdelay\s*\(", re.IGNORECASE)
+
+    def initial_value(target: str) -> Optional[float]:
+        target_rules = [rule for rule in model.rules if rule.variable == target]
+        if target in initial_assignment_targets or any(
+            rule.type == "assignment" for rule in target_rules
+        ):
+            return None
+        parameter = model.parameters.get(target)
+        if parameter is not None:
+            return float(parameter.value)
+        species = model.species.get(target)
+        if species is not None:
+            species_compartment = model.compartments.get(species.compartment or "")
+            if species.compartment and (
+                species_compartment is None
+                or any(
+                    rule.type == "assignment" and rule.variable == species.compartment
+                    for rule in model.rules
+                )
+                or species.compartment in initial_assignment_targets
+            ):
+                return None
+            volume = (
+                float(species_compartment.size)
+                if species_compartment is not None
+                else 1.0
+            )
+            amount = float(species.initial_amount)
+            concentration = float(species.initial_concentration)
+            if species.has_only_substance_units:
+                return amount if species.initial_amount_set else concentration * volume
+            if species.initial_concentration_set:
+                return concentration
+            return amount / volume if volume != 0 else None
+        compartment = model.compartments.get(target)
+        if compartment is not None:
+            return float(compartment.size)
+        reference_values = [
+            float(reference.stoichiometry)
+            for reaction in model.reactions.values()
+            for reference in (*reaction.reactants, *reaction.products)
+            if reference.id == target and not reference.stoichiometry_math
+        ]
+        if reference_values and all(
+            value == reference_values[0] for value in reference_values
+        ):
+            return reference_values[0]
+        return None
+
+    def initial_expression(
+        expression: str, *, require_immutable_symbols: bool = False
+    ) -> Optional[float]:
+        expanded = inline_sbml_functions(expression, model.function_definitions)
+
+        def resolve(identifier: str) -> Optional[float]:
+            if identifier.lower() == "pi":
+                return math.pi
+            if identifier.lower() == "exponentiale":
+                return math.e
+            if require_immutable_symbols:
+                if (
+                    identifier in initial_assignment_targets
+                    or identifier in event_targets
+                ):
+                    return None
+                if any(rule.variable == identifier for rule in model.rules):
+                    return None
+                parameter = model.parameters.get(identifier)
+                if parameter is not None:
+                    return float(parameter.value) if parameter.constant else None
+                compartment = model.compartments.get(identifier)
+                if compartment is not None:
+                    return float(compartment.size) if compartment.constant else None
+                species = model.species.get(identifier)
+                if species is not None:
+                    return initial_value(identifier) if species.constant else None
+                return None
+            return initial_value(identifier)
+
+        return fold_numeric(expanded, resolve)
+
+    def fold_bounded_delays(expression: str) -> Tuple[str, int]:
+        replacements: List[Tuple[int, int, str]] = []
+        position = 0
+        while (match := delay_call.search(expression, position)) is not None:
+            opening = match.end() - 1
+            depth = 1
+            closing = opening + 1
+            while closing < len(expression) and depth:
+                if expression[closing] == "(":
+                    depth += 1
+                elif expression[closing] == ")":
+                    depth -= 1
+                closing += 1
+            if depth:
+                return expression, 0
+            call_end = closing
+            arguments = _split_arguments(expression[opening + 1 : closing - 1])
+            if arguments is None or len(arguments) != 2:
+                return expression, 0
+            try:
+                duration = initial_expression(
+                    arguments[1], require_immutable_symbols=True
+                )
+                value = initial_expression(arguments[0])
+            except (TypeError, ValueError):
+                return expression, 0
+            if (
+                duration is None
+                or not math.isfinite(duration)
+                or duration < t_end
+                or value is None
+                or not math.isfinite(value)
+            ):
+                return expression, 0
+            delayed_symbols = set(
+                re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", arguments[0])
+            )
+            if duration == t_end and any(
+                symbol in event_targets
+                and event.trigger_initial_value is False
+                and any(
+                    other_assignment.variable == symbol
+                    for other_assignment in event.assignments
+                )
+                for event in model.events
+                for symbol in delayed_symbols
+            ):
+                # At the single t=0 history boundary, an explicit false
+                # trigger initialization may cause an immediate assignment.
+                return expression, 0
+            replacements.append((match.start(), call_end, repr(value)))
+            position = call_end
+        if not replacements:
+            return expression, 0
+        for start, end, value in reversed(replacements):
+            expression = expression[:start] + value + expression[end:]
+        return expression, len(replacements)
+
+    lowered = 0
+    for rule in model.rules:
+        if not rule.math:
+            continue
+        rule.math, count = fold_bounded_delays(rule.math)
+        lowered += count
+    for function in model.function_definitions.values():
+        expression = str(getattr(function, "math", "") or "")
+        if expression:
+            function.math, count = fold_bounded_delays(expression)
+            lowered += count
+    for assignment in model.initial_assignments:
+        expression = str(getattr(assignment, "math", "") or "")
+        if expression:
+            assignment.math, count = fold_bounded_delays(expression)
+            lowered += count
+    for event in model.events:
+        if event.trigger:
+            event.trigger, count = fold_bounded_delays(event.trigger)
+            lowered += count
+        for assignment in event.assignments:
+            variable, expression = _event_assignment(assignment)
+            if not expression:
+                continue
+            folded, count = fold_bounded_delays(expression)
+            if not count:
+                continue
+            if isinstance(assignment, dict):
+                assignment["math"] = folded
+            elif hasattr(assignment, "math"):
+                assignment.math = folded
+            lowered += count
+    for reaction in model.reactions.values():
+        law = reaction.kinetic_law
+        expression = str(
+            law.get("math", "")
+            if isinstance(law, Mapping)
+            else getattr(law, "math", "") or ""
+        )
+        if expression:
+            folded, count = fold_bounded_delays(expression)
+            if count:
+                if isinstance(law, dict):
+                    law["math"] = folded
+                else:
+                    law.math = folded
+                lowered += count
+        for reference in (*reaction.reactants, *reaction.products):
+            expression = str(reference.stoichiometry_math or "")
+            if not expression:
+                continue
+            folded, count = fold_bounded_delays(expression)
+            if count:
+                try:
+                    value = float(folded)
+                except ValueError:
+                    continue
+                if not math.isfinite(value):
+                    continue
+                reference.stoichiometry = value
+                reference.stoichiometry_math = ""
+                reference.stoichiometry_set = True
+                reference.variable_stoichiometry = False
+                lowered += count
+
+    if not lowered:
+        return 0
+    _record_import_warning(
+        model,
+        "Delayed history that stays at or before t=0 was replaced by initial "
+        "values "
+        f"values for the bounded simulation horizon t <= {t_end:g}.",
+        category="delay",
+        severity="info",
+    )
+
+    reaction_expressions = []
+    for reaction in model.reactions.values():
+        law = reaction.kinetic_law
+        reaction_expressions.append(
+            str(
+                law.get("math", "")
+                if isinstance(law, Mapping)
+                else getattr(law, "math", "") or ""
+            )
+        )
+    expressions = [
+        *(str(rule.math or "") for rule in model.rules),
+        *(str(function.math or "") for function in model.function_definitions.values()),
+        *(str(assignment.math or "") for assignment in model.initial_assignments),
+        *reaction_expressions,
+        *(
+            str(expression or "")
+            for event in model.events
+            for expression in (
+                event.trigger,
+                event.delay,
+                event.priority,
+                *(assignment.math for assignment in event.assignments),
+            )
+        ),
+    ]
+    if not any(
+        re.search(r"\bdelay\s*\(", expression, re.IGNORECASE)
+        for expression in expressions
+    ):
+        model.import_warnings = [
+            warning
+            for warning in model.import_warnings
+            if not (
+                warning.get("category") == "mathml"
+                and "delay" in str(warning.get("message", "")).lower()
+            )
+        ]
+    return lowered
+
+
 def _lowerable_species_assignment_rules(
     model: SBMLModel,
 ) -> "OrderedDict[str, SBMLRule]":
@@ -2454,19 +2791,13 @@ def _lowerable_species_assignment_rules(
 
     A species assignment rule is algebraic rather than a population state.  A
     zero-argument BNGL function is an exact representation when the target is
-    not also a reaction participant, event target, or part of an ambiguous or
-    cyclic assignment-rule set.  The latter cases remain explicit warnings so
-    the writer never silently changes a state equation into an algebraic one.
+    not an event target or part of an ambiguous or cyclic assignment-rule set.
+    Reaction stoichiometry for algebraic targets is removed below: assignment
+    rules, rather than reaction populations, own those species values.
     """
 
     candidates: "OrderedDict[str, SBMLRule]" = OrderedDict()
     duplicate_targets: Set[str] = set()
-    participants = {
-        str(reference.species)
-        for reaction in model.reactions.values()
-        for reference in [*reaction.reactants, *reaction.products]
-        if reference.species != "EmptySet"
-    }
     event_targets = {
         str(getattr(assignment, "variable", "") or "")
         for event in model.events
@@ -2497,7 +2828,7 @@ def _lowerable_species_assignment_rules(
             rule,
         )
         for variable, rule in candidates.items()
-        if variable not in participants and variable not in event_targets
+        if variable not in event_targets
     )
     if not candidates:
         return candidates
@@ -2551,6 +2882,18 @@ def _update_event_translation_warning(model: SBMLModel, event_result: object) ->
     converted = int(getattr(event_result, "converted", 0) or 0)
     untranslated = list(getattr(event_result, "untranslated", []) or [])
     if not converted and not untranslated:
+        if model.events:
+            message = (
+                f"{len(model.events)} SBML event(s) were proven not to fire; "
+                "no scheduled actions are required."
+            )
+            for warning in getattr(model, "import_warnings", []) or []:
+                if warning.get("category") != "event":
+                    continue
+                warning.message = message
+                warning.severity = "info"
+                warning.count = len(model.events)
+                return
         return
     if untranslated:
         message = (
@@ -3450,14 +3793,35 @@ def _assignment_rules_for_writer(model: SBMLModel) -> List[object]:
 
 
 def _rewrite_assignment_rule_references(
-    expression: str, assignment_rule_variables: Iterable[str]
+    expression: str,
+    assignment_rule_variables: Iterable[str],
+    rate_rule_variables: Optional[Set[str]] = None,
 ) -> str:
-    """Emit assignment-rule variables as zero-argument BNGL function calls."""
+    """Emit assignment functions and rate-rule state observables correctly."""
 
     result = expression
+    rate_rule_variables = rate_rule_variables or set()
+    rate_aliases = {
+        alias
+        for variable in rate_rule_variables
+        for alias in (str(variable), standardize_name(str(variable)))
+    }
+    rate_names = sorted(rate_aliases, key=len, reverse=True)
+    for name in rate_names:
+        result = re.sub(
+            rf"\b{re.escape(name)}\b(?:\s*\(\s*\))?",
+            f"{standardize_name(name)}_amt",
+            result,
+        )
     tokens = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", result))
     names = sorted(
-        {str(name) for name in assignment_rule_variables if str(name)},
+        {
+            str(name)
+            for name in assignment_rule_variables
+            if str(name)
+            and standardize_name(str(name)) not in rate_aliases
+            and str(name) not in rate_aliases
+        },
         key=len,
         reverse=True,
     )
@@ -3598,9 +3962,7 @@ def write_functions(
         if species.has_only_substance_units or not species.compartment:
             body = name
         else:
-            body = (
-                f"{name} / __compartment_" f"{standardize_name(species.compartment)}__"
-            )
+            body = f"{name} / __compartment_{standardize_name(species.compartment)}__"
         lines.append(f"{function_name}() = {body}")
 
     for function_id, function in model.function_definitions.items():
@@ -3696,7 +4058,11 @@ def write_functions(
             model.function_definitions,
         )
         body = _map_compartment_references(convert_math_expression(body), model)
-        body = _rewrite_assignment_rule_references(body, assignment_rule_variables)
+        body = _rewrite_assignment_rule_references(
+            body,
+            assignment_rule_variables,
+            rate_rule_variables=rate_rule_variables,
+        )
         body = _rewrite_zero_argument_calls(body, zero_argument_functions)
         lines.append(f"{rule_name}() = {body}")
         lines.append(f"{ASSIGN_RULE_META_PREFIX}{rule_name}() = {body}")
@@ -4024,6 +4390,8 @@ def write_reaction_rules(
             if getattr(rule, "type", "") == "rate" and rule.variable
         )
     }
+    algebraic_assignment_species = set(_lowerable_species_assignment_rules(model))
+    non_reaction_state_species = rate_rule_species | algebraic_assignment_species
     for reaction_id, reaction in model.reactions.items():
         # SBML permits a reaction with no species references.  Preserve its
         # kinetic-law identity as a zero-effect BNGL rule; BNG3's parser and
@@ -4071,23 +4439,189 @@ def write_reaction_rules(
                         f"Transport reaction {reaction_id}: {reference.species} "
                         f"moves from {reactant_compartment} to {product_compartment}"
                     )
-        for reference in [*reaction.reactants, *reaction.products]:
+        dynamic_references = [
+            reference
+            for reference in [*reaction.reactants, *reaction.products]
+            if reference.species != "EmptySet" and reference.variable_stoichiometry
+        ]
+        fractional_stoichiometry = any(
+            reference.species != "EmptySet"
+            and not reference.variable_stoichiometry
+            and math.isfinite(reference.stoichiometry)
+            and reference.stoichiometry >= 0
+            and abs(reference.stoichiometry - round(reference.stoichiometry)) > 1e-9
+            for reference in [*reaction.reactants, *reaction.products]
+        )
+        oversized_stoichiometries = [
+            reference
+            for reference in [*reaction.reactants, *reaction.products]
+            if reference.species != "EmptySet"
+            and math.isfinite(reference.stoichiometry)
+            and reference.stoichiometry >= 0
+            and int(round(reference.stoichiometry)) > max_bngl_stoichiometry
+        ]
+        if dynamic_references:
+            dynamic_coefficients = {
+                id(reference): _dynamic_species_reference_expression(
+                    reference, model, reaction_id
+                )
+                for reference in dynamic_references
+            }
+            not_lowerable = next(
+                (
+                    reference
+                    for reference in dynamic_references
+                    if dynamic_coefficients[id(reference)] is None
+                ),
+                None,
+            )
+            has_fbc = any(
+                warning.get("category") == "fbc" for warning in model.import_warnings
+            )
             if (
-                reference.species != "EmptySet"
-                and reference.variable_stoichiometry
-                and math.isfinite(reference.stoichiometry)
-                and reference.stoichiometry >= 0
-                and abs(reference.stoichiometry - round(reference.stoichiometry))
-                <= 1e-9
+                not_lowerable is not None
+                or reaction.fast
+                or model.multi_executable
+                or reaction.multi_intra_species
+                or has_fbc
             ):
+                reason = (
+                    f'Reaction "{reaction_id}" has variable stoichiometry for '
+                    f'"{not_lowerable.species}" without a lowerable expression.'
+                    if not_lowerable is not None
+                    else f'Reaction "{reaction_id}" has variable stoichiometry, '
+                    "but fast, executable Multi, or FBC semantics prevent "
+                    "deterministic flux lowering."
+                )
                 _record_import_warning(
                     model,
-                    f'Reaction "{reaction_id}" has variable stoichiometry for '
-                    f'"{reference.species}"; BNGL uses the parsed fixed value '
-                    f"{reference.stoichiometry:g}.",
+                    reason,
                     category="stoichiometry",
-                    severity="approximated",
+                    severity="dropped",
                 )
+                continue
+
+            prepared_math = _prepared_kinetic_math(
+                reaction,
+                model,
+                replace_loc_params=replace_loc_params,
+                reaction_id=reaction_id,
+            )
+            source_flux = _rate_for_reaction(
+                reaction,
+                model,
+                conversion_factor=None,
+                observable_converted_rules=observable_converted_rules,
+                reactant_ids=[],
+                prepared_math=prepared_math,
+                replace_loc_params=replace_loc_params,
+            )
+            net_terms: "OrderedDict[str, List[str]]" = OrderedDict()
+            for sign, references in (
+                ("-", reaction.reactants),
+                ("+", reaction.products),
+            ):
+                for reference in references:
+                    if reference.species == "EmptySet":
+                        continue
+                    coefficient = dynamic_coefficients.get(id(reference))
+                    if coefficient is None:
+                        coefficient = _number(reference.stoichiometry)
+                    net_terms.setdefault(reference.species, []).append(
+                        f"{sign}({coefficient})"
+                    )
+
+            _record_import_warning(
+                model,
+                f'Reaction "{reaction_id}" has a time-varying coefficient; its '
+                "deterministic ODE flux was lowered to species-specific TotalRate "
+                "rules. Stochastic shared-event trajectories are not claimed.",
+                category="stoichiometry",
+                severity="info",
+            )
+            for species_id, terms in net_terms.items():
+                species = model.species.get(species_id)
+                if (
+                    species_id in non_reaction_state_species
+                    or species is None
+                    or getattr(species, "boundary_condition", False)
+                    or getattr(species, "constant", False)
+                ):
+                    continue
+                coefficient = " + ".join(terms)
+                factor = _conversion_factor_for_species(species_id, model)
+                derivative = f"({coefficient}) * ({source_flux})"
+                if factor is not None:
+                    derivative = f"({factor}) * ({derivative})"
+                pattern = _reaction_pattern(
+                    species_id,
+                    sct,
+                    model,
+                    getattr(species, "compartment", ""),
+                    species_compartment_prefix=species_compartment_prefix,
+                )
+                rule_specs = (
+                    ("produce", f"if(({derivative}) > 0, ({derivative}), 0)"),
+                    ("consume", f"if(({derivative}) < 0, -({derivative}), 0)"),
+                )
+                for side, rate_expression in rule_specs:
+                    if not reaction.reversible and len(terms) == 1:
+                        produces = terms[0].startswith("+")
+                        if (side == "produce") != produces:
+                            continue
+                        rate_expression = f"({terms[0][1:]}) * ({source_flux})"
+                        if factor is not None:
+                            rate_expression = f"({factor}) * ({rate_expression})"
+                    rule_label = (
+                        f"{standardize_name(reaction_id)}_{side}_"
+                        f"{standardize_name(species_id)}"
+                    )
+                    suffix = 2
+                    base_label = rule_label
+                    while rule_label in used_labels:
+                        rule_label = f"{base_label}_{suffix}"
+                        suffix += 1
+                    used_labels.add(rule_label)
+                    if (
+                        time_rate_functions is not None
+                        and re.search(r"\btime\s*\(", rate_expression)
+                        and not re.search(r"(?:_amt\b|_c_)", rate_expression)
+                    ):
+                        function_name = (
+                            f"_trate_{standardize_name(reaction_id)}_{side}_"
+                            f"{standardize_name(species_id)}"
+                        )
+                        time_rate_functions.append(
+                            f"{function_name}() = {rate_expression}"
+                        )
+                        rate_expression = f"{function_name}()"
+                    left, right = (
+                        ("0", pattern) if side == "produce" else (pattern, "0")
+                    )
+                    lines.append(
+                        f"{rule_label}: {left} -> {right} {rate_expression} TotalRate"
+                    )
+            continue
+        oversized_dynamic_stoichiometry = next(
+            (
+                reference
+                for reference in oversized_stoichiometries
+                if reference.variable_stoichiometry
+            ),
+            None,
+        )
+        if oversized_dynamic_stoichiometry is not None:
+            _record_import_warning(
+                model,
+                f'Reaction "{reaction_id}" has dynamic stoichiometry for '
+                f'"{oversized_dynamic_stoichiometry.species}" above the BNGL '
+                "expansion limit; deterministic flux lowering requires fixed "
+                "stoichiometry.",
+                category="stoichiometry",
+                severity="dropped",
+            )
+            continue
+        oversized_fixed_stoichiometry = bool(oversized_stoichiometries)
         unsupported = next(
             (
                 reference
@@ -4096,8 +4630,13 @@ def write_reaction_rules(
                 and (
                     not math.isfinite(reference.stoichiometry)
                     or reference.stoichiometry < 0
-                    or abs(reference.stoichiometry - round(reference.stoichiometry))
-                    > 1e-9
+                    or (
+                        reference.variable_stoichiometry
+                        and abs(
+                            reference.stoichiometry - round(reference.stoichiometry)
+                        )
+                        > 1e-9
+                    )
                 )
             ),
             None,
@@ -4112,34 +4651,32 @@ def write_reaction_rules(
                 severity="dropped",
             )
             continue
-        large_stoichiometry = next(
-            (
-                reference
-                for reference in [*reaction.reactants, *reaction.products]
-                if reference.species != "EmptySet"
-                and int(round(reference.stoichiometry)) > max_bngl_stoichiometry
-            ),
-            None,
-        )
-        if large_stoichiometry is not None:
+        if (fractional_stoichiometry or oversized_fixed_stoichiometry) and (
+            reaction.fast
+            or model.multi_executable
+            or reaction.multi_intra_species
+            or any(
+                warning.get("category") == "fbc" for warning in model.import_warnings
+            )
+        ):
             _record_import_warning(
                 model,
-                f'Reaction "{reaction_id}" has stoichiometry '
-                f"{large_stoichiometry.stoichiometry:g} for "
-                f'"{large_stoichiometry.species}"; BNGL would require '
-                f"repeating that pattern more than {max_bngl_stoichiometry} "
-                "times, so the reaction was omitted as not representable in "
-                "the rule-based network format.",
+                f'Reaction "{reaction_id}" has fixed fractional stoichiometry, '
+                "but fast, executable Multi, or FBC semantics prevent deterministic "
+                "flux lowering; the reaction was omitted.",
                 category="stoichiometry",
                 severity="dropped",
             )
             continue
+        deterministic_flux_lowering = (
+            fractional_stoichiometry or oversized_fixed_stoichiometry
+        )
         reactants: List[str] = []
         products: List[str] = []
         for reference in reaction.reactants:
             if (
                 reference.species == "EmptySet"
-                or reference.species in rate_rule_species
+                or reference.species in non_reaction_state_species
             ):
                 continue
             reactants.extend(
@@ -4165,7 +4702,7 @@ def write_reaction_rules(
         for reference in reaction.products:
             if (
                 reference.species == "EmptySet"
-                or reference.species in rate_rule_species
+                or reference.species in non_reaction_state_species
             ):
                 continue
             mapped = _multi_product_structure(
@@ -4208,6 +4745,124 @@ def write_reaction_rules(
             for species_id, entry in sct.entries.items()
             if entry.structure is not None
         }
+
+        # A time-only rate has no species/observable marker for BNG2's
+        # functional-rate path. Keep it live by emitting a zero-argument
+        # function, matching the bounded time-rate port used below.
+        def needs_time_wrap(value: str) -> bool:
+            return bool(re.search(r"\btime\s*\(", value)) and not re.search(
+                r"(?:_amt\b|_c_)", value
+            )
+
+        def wrap_time_rate(value: str, suffix: str = "") -> str:
+            if time_rate_functions is None or not needs_time_wrap(value):
+                return value
+            function_name = f"_trate_{candidate}{suffix}"
+            time_rate_functions.append(f"{function_name}() = {value}")
+            return f"{function_name}()"
+
+        if deterministic_flux_lowering:
+            prepared_math = _prepared_kinetic_math(
+                reaction,
+                model,
+                replace_loc_params=replace_loc_params,
+                reaction_id=reaction_id,
+            )
+            source_flux = _rate_for_reaction(
+                reaction,
+                model,
+                conversion_factor=None,
+                observable_converted_rules=observable_converted_rules,
+                reactant_structures=structures,
+                reactant_ids=[],
+                prepared_math=prepared_math,
+                replace_loc_params=replace_loc_params,
+            )
+            net_stoichiometry: "OrderedDict[str, float]" = OrderedDict()
+            for reference in reaction.reactants:
+                if reference.species != "EmptySet":
+                    net_stoichiometry[reference.species] = (
+                        net_stoichiometry.get(reference.species, 0.0)
+                        - reference.stoichiometry
+                    )
+            for reference in reaction.products:
+                if reference.species != "EmptySet":
+                    net_stoichiometry[reference.species] = (
+                        net_stoichiometry.get(reference.species, 0.0)
+                        + reference.stoichiometry
+                    )
+            if fractional_stoichiometry:
+                message = (
+                    f'Reaction "{reaction_id}" has fixed fractional stoichiometry; '
+                    "its ODE flux was lowered to species-specific TotalRate rules."
+                )
+            else:
+                message = (
+                    f'Reaction "{reaction_id}" exceeds the BNGL expansion limit '
+                    f"of {max_bngl_stoichiometry}; its fixed-stoichiometry ODE flux "
+                    "was lowered to species-specific TotalRate rules."
+                )
+            message += (
+                " Deterministic trajectories preserve SBML derivatives; stochastic "
+                "trajectories do not preserve shared reaction-event coupling."
+            )
+            _record_import_warning(
+                model,
+                message,
+                category="stoichiometry",
+                severity="info",
+            )
+            for species_id, coefficient in net_stoichiometry.items():
+                species = model.species.get(species_id)
+                if (
+                    species_id in non_reaction_state_species
+                    or abs(coefficient) <= 1e-12
+                    or species is None
+                    or getattr(species, "boundary_condition", False)
+                    or getattr(species, "constant", False)
+                ):
+                    continue
+                factor = _conversion_factor_for_species(species_id, model)
+                derivative = f"({coefficient:g}) * ({source_flux})"
+                if factor is not None:
+                    derivative = f"({factor}) * ({derivative})"
+                pattern = _reaction_pattern(
+                    species_id,
+                    sct,
+                    model,
+                    getattr(species, "compartment", ""),
+                    species_compartment_prefix=species_compartment_prefix,
+                )
+                if reaction.reversible:
+                    positive = f"if(({derivative}) > 0, ({derivative}), 0)"
+                    negative = f"if(({derivative}) < 0, -({derivative}), 0)"
+                    rule_specs = (("produce", positive), ("consume", negative))
+                else:
+                    side = "produce" if coefficient > 0 else "consume"
+                    rate_expression = f"({abs(coefficient):g}) * ({source_flux})"
+                    if factor is not None:
+                        rate_expression = f"({factor}) * ({rate_expression})"
+                    rule_specs = ((side, rate_expression),)
+                for side, rate_expression in rule_specs:
+                    produces = side == "produce"
+                    rule_label = f"{candidate}_{side}_{standardize_name(species_id)}"
+                    label_suffix = 2
+                    while rule_label in used_labels:
+                        rule_label = (
+                            f"{candidate}_{side}_{standardize_name(species_id)}"
+                            f"_{label_suffix}"
+                        )
+                        label_suffix += 1
+                    used_labels.add(rule_label)
+                    rate_expression = wrap_time_rate(
+                        rate_expression,
+                        f"_{side}_{standardize_name(species_id)}",
+                    )
+                    left, right = ("0", pattern) if produces else (pattern, "0")
+                    lines.append(
+                        f"{rule_label}: {left} -> {right} {rate_expression} TotalRate"
+                    )
+            continue
         mixed_conversion_factors = _mixed_conversion_factor_expressions(reaction, model)
         mixed_source_rate: Optional[str] = None
         if mixed_conversion_factors is not None and not atomize:
@@ -4280,21 +4935,6 @@ def write_reaction_rules(
             and not reversed_numeric_flux
             else "->"
         )
-
-        # A time-only rate has no species/observable marker for BNG2's
-        # functional-rate path.  Keep it live by emitting a zero-argument
-        # function, matching the Playground writer's bounded time-rate port.
-        def needs_time_wrap(value: str) -> bool:
-            return bool(re.search(r"\btime\s*\(", value)) and not re.search(
-                r"(?:_amt\b|_c_)", value
-            )
-
-        def wrap_time_rate(value: str, suffix: str = "") -> str:
-            if time_rate_functions is None or not needs_time_wrap(value):
-                return value
-            function_name = f"_trate_{candidate}{suffix}"
-            time_rate_functions.append(f"{function_name}() = {value}")
-            return f"{function_name}()"
 
         if mixed_source_rate is not None and mixed_conversion_factors is not None:
             net_stoichiometry: "OrderedDict[str, float]" = OrderedDict()
@@ -4550,7 +5190,24 @@ def generate_bngl(
     n_steps: int = 100,
     replace_loc_params: bool = True,
 ) -> BNGLGenerationResult:
+    _lower_bounded_event_state_delays(model, float(t_end))
     lowerable_species_assignment_rules = _lowerable_species_assignment_rules(model)
+    algebraic_reaction_species = set(lowerable_species_assignment_rules) & {
+        str(reference.species)
+        for reaction in model.reactions.values()
+        for reference in [*reaction.reactants, *reaction.products]
+        if reference.species != "EmptySet"
+    }
+    if algebraic_reaction_species:
+        _record_import_warning(
+            model,
+            "Algebraic assignment-rule species used as reaction participants "
+            "are emitted as functions and removed from reaction state patterns. "
+            "Deterministic SBML ODE semantics are preserved; stochastic reaction "
+            "event trajectories are not preserved for these species.",
+            category="speciesAssignmentRule",
+            severity="info",
+        )
     species_assignment_variables = {
         str(rule.variable)
         for rule in model.rules
@@ -4571,6 +5228,7 @@ def generate_bngl(
 
     unsupported_functions = ("gcd", "lcm", "rint", "delay")
     reaction_local_symbols = set()
+    species_reference_symbols = set()
     reaction_scopes: Dict[str, Set[str]] = {}
     for reaction_id, reaction in model.reactions.items():
         reaction_scope: Set[str] = set()
@@ -4591,7 +5249,9 @@ def generate_bngl(
             if reference_id is None and isinstance(reference, Mapping):
                 reference_id = reference.get("id")
             if reference_id:
-                reaction_scope.add(str(reference_id))
+                reference_id = str(reference_id)
+                reaction_scope.add(reference_id)
+                species_reference_symbols.add(reference_id)
         reaction_scopes[str(reaction_id)] = reaction_scope
         reaction_local_symbols.update(reaction_scope)
     globally_visible = {
@@ -4599,6 +5259,7 @@ def generate_bngl(
         *map(str, model.species),
         *map(str, model.compartments),
         *map(str, model.function_definitions),
+        *species_reference_symbols,
         *(str(rule.variable) for rule in model.rules if rule.variable),
         *(
             str(getattr(assignment, "symbol", ""))
@@ -4608,10 +5269,19 @@ def generate_bngl(
     }
     global_math_sources = [
         *(str(rule.math or "") for rule in model.rules),
-        *(str(function.math or "") for function in model.function_definitions.values()),
         *(
             str(getattr(assignment, "math", "") or "")
             for assignment in model.initial_assignments
+        ),
+        *(
+            str(expression or "")
+            for event in model.events
+            for expression in (
+                event.trigger,
+                event.delay,
+                event.priority,
+                *(assignment.math for assignment in event.assignments),
+            )
         ),
     ]
     for symbol in sorted(
@@ -4822,7 +5492,7 @@ def generate_bngl(
             for line in observable_lines
         )
     }
-    for variable in synthetic_rate_rule_variables:
+    for variable in sorted(synthetic_rate_rule_variables):
         pattern = species_to_pattern.get(variable)
         if pattern:
             observable_lines.append(
@@ -4874,11 +5544,6 @@ def generate_bngl(
     event_result = None
     if model.events:
         mutable_event_ids = {rule.variable for rule in model.rules if rule.variable}
-        mutable_event_ids.update(
-            assignment.symbol
-            for assignment in model.initial_assignments
-            if assignment.symbol
-        )
         mutable_event_ids.update(
             getattr(
                 assignment,
@@ -4934,15 +5599,69 @@ def generate_bngl(
         )
 
         def is_compile_time_constant(identifier: str) -> bool:
+            if identifier in {"__Avogadro__", "exponentiale", "pi"}:
+                return True
             parameter = model.parameters.get(identifier)
             if parameter is not None:
-                return parameter.constant and identifier not in mutable_event_ids
+                # SBML permits a parameter with constant="false" to be
+                # changed, but it remains fixed throughout this model unless
+                # a rule or event actually changes it. An initial assignment
+                # supplies a static initial value and remains foldable when
+                # the parameter has no later controller.
+                return identifier not in mutable_event_ids
             compartment = model.compartments.get(identifier)
-            return bool(
-                compartment is not None
-                and compartment.constant
-                and identifier not in mutable_event_ids
+            return bool(compartment is not None and identifier not in mutable_event_ids)
+
+        initial_assignment_values = {
+            str(assignment.symbol): str(assignment.math or "")
+            for assignment in model.initial_assignments
+            if assignment.symbol
+        }
+        duplicate_initial_assignments = {
+            str(assignment.symbol)
+            for assignment in model.initial_assignments
+            if assignment.symbol
+            and sum(
+                str(other.symbol) == str(assignment.symbol)
+                for other in model.initial_assignments
             )
+            > 1
+        }
+        initial_assignment_cache: dict[str, Optional[float]] = {}
+        initial_assignment_stack: set[str] = set()
+
+        def resolve_event_parameter(identifier: str) -> Optional[float]:
+            # In BNGL, __Avogadro__ is normalized to 1 for molecule-count
+            # conversions. SBML event times are still in source units, so fold
+            # the SBML built-in's exact numeric value here.
+            if identifier == "__Avogadro__":
+                return _SBML_AVOGADRO
+            if identifier == "exponentiale":
+                return math.e
+            if identifier == "pi":
+                return math.pi
+            if identifier in duplicate_initial_assignments:
+                return None
+            if identifier in initial_assignment_values:
+                if identifier in initial_assignment_cache:
+                    return initial_assignment_cache[identifier]
+                if identifier in initial_assignment_stack:
+                    return None
+                initial_assignment_stack.add(identifier)
+                expression = extend_function(
+                    initial_assignment_values[identifier],
+                    {},
+                    model.function_definitions,
+                )
+                value = fold_numeric(expression, resolve_event_parameter)
+                initial_assignment_stack.remove(identifier)
+                initial_assignment_cache[identifier] = value
+                return value
+            parameter = model.parameters.get(identifier)
+            if parameter is not None:
+                return parameter.value
+            compartment = model.compartments.get(identifier)
+            return compartment.size if compartment is not None else None
 
         def resolve_constant(identifier: str) -> Optional[float]:
             species = next(
@@ -4975,25 +5694,272 @@ def generate_bngl(
                 return concentration
             return amount / volume if volume != 0 else None
 
+        def resolve_initial_event_value(identifier: str) -> Optional[float]:
+            if identifier == "__Avogadro__":
+                return _SBML_AVOGADRO
+            parameter = model.parameters.get(identifier)
+            if parameter is not None:
+                if any(
+                    rule.variable == identifier for rule in model.rules if rule.variable
+                ) or any(
+                    assignment.symbol == identifier
+                    for assignment in model.initial_assignments
+                ):
+                    return None
+                return parameter.value
+            compartment = model.compartments.get(identifier)
+            if compartment is not None:
+                if any(
+                    rule.variable == identifier for rule in model.rules if rule.variable
+                ) or any(
+                    assignment.symbol == identifier
+                    for assignment in model.initial_assignments
+                ):
+                    return None
+                return compartment.size
+            species_id = next(
+                (
+                    species_id
+                    for species_id in model.species
+                    if standardize_name(species_id) == standardize_name(identifier)
+                ),
+                None,
+            )
+            if (
+                species_id is None
+                or any(
+                    rule.variable == species_id for rule in model.rules if rule.variable
+                )
+                or any(
+                    assignment.symbol == species_id
+                    for assignment in model.initial_assignments
+                )
+            ):
+                return None
+            species = model.species[species_id]
+            compartment = model.compartments.get(species.compartment or "")
+            volume = float(compartment.size) if compartment is not None else 1.0
+            amount = float(species.initial_amount)
+            concentration = float(species.initial_concentration)
+            if species.has_only_substance_units:
+                return amount if species.initial_amount_set else concentration * volume
+            if species.initial_concentration_set:
+                return concentration
+            return amount / volume if volume != 0 else None
+
+        def resolve_affine_event_rate(
+            identifier: str,
+        ) -> Optional[Tuple[float, float]]:
+            parameter = model.parameters.get(identifier)
+            if parameter is None:
+                species_id = next(
+                    (
+                        species_id
+                        for species_id in model.species
+                        if standardize_name(species_id) == standardize_name(identifier)
+                    ),
+                    None,
+                )
+                species = model.species.get(species_id) if species_id else None
+                if species is None:
+                    return None
+                if species.constant or species.boundary_condition:
+                    if any(
+                        assignment.variable == species_id
+                        for event in model.events
+                        for assignment in event.assignments
+                    ):
+                        return None
+                    compartment = model.compartments.get(
+                        species.compartment or ""
+                    )
+                    if species.compartment and (
+                        compartment is None
+                        or not compartment.constant
+                        or any(
+                            rule.variable == species.compartment
+                            for rule in model.rules
+                        )
+                        or any(
+                            assignment.variable == species.compartment
+                            for event in model.events
+                            for assignment in event.assignments
+                        )
+                    ):
+                        return None
+                    initial = resolve_initial_event_value(species_id)
+                    if initial is not None:
+                        return initial, 0.0
+                if species.constant or species.boundary_condition:
+                    initial = resolve_constant(species_id)
+                    return (initial, 0.0) if initial is not None else None
+
+                # A species whose only net production is a constant flux has
+                # an exact affine trajectory.  Lower its first threshold
+                # crossing when no rule, initial assignment, or event can
+                # change that trajectory.  State-dependent rates remain
+                # outside this proof and are left untranslated.
+                if (
+                    any(rule.variable == species_id for rule in model.rules)
+                    or any(
+                        assignment.symbol == species_id
+                        for assignment in model.initial_assignments
+                    )
+                    or any(
+                        assignment.variable == species_id
+                        for event in model.events
+                        for assignment in event.assignments
+                    )
+                ):
+                    return None
+                initial = resolve_initial_event_value(species_id)
+                if initial is None or not math.isfinite(initial):
+                    return None
+                net_amount_rate = 0.0
+                affecting_reaction = False
+                for reaction in model.reactions.values():
+                    references = [
+                        reference
+                        for reference in [*reaction.reactants, *reaction.products]
+                        if reference.species == species_id
+                    ]
+                    if not references:
+                        continue
+                    affecting_reaction = True
+                    if (
+                        reaction.fast
+                        or reaction.conversion_factor
+                        or model.conversion_factor
+                        or species.conversion_factor
+                    ):
+                        return None
+                    net_coefficient = 0.0
+                    for sign, side in (
+                        (-1.0, reaction.reactants),
+                        (1.0, reaction.products),
+                    ):
+                        for reference in side:
+                            if reference.species != species_id:
+                                continue
+                            if reference.variable_stoichiometry:
+                                return None
+                            net_coefficient += sign * float(reference.stoichiometry)
+                    if net_coefficient == 0:
+                        continue
+                    kinetic_law = reaction.kinetic_law
+                    rate_expression = str(
+                        getattr(kinetic_law, "math", "")
+                        or (kinetic_law.get("math", "") if kinetic_law else "")
+                        or ""
+                    ).strip()
+                    if not rate_expression:
+                        return None
+                    rate_expression = extend_function(
+                        rate_expression, {}, model.function_definitions
+                    )
+
+                    def resolve_immutable(identifier: str) -> Optional[float]:
+                        if is_compile_time_constant(identifier):
+                            parameter_value = resolve_event_parameter(identifier)
+                            if parameter_value is not None:
+                                return parameter_value
+                        return resolve_constant(identifier)
+
+                    flux = fold_numeric(rate_expression, resolve_immutable)
+                    if flux is None or not math.isfinite(flux):
+                        return None
+                    net_amount_rate += net_coefficient * flux
+                if not affecting_reaction:
+                    return None
+                if not species.has_only_substance_units:
+                    compartment = model.compartments.get(species.compartment or "")
+                    if (
+                        compartment is None
+                        or not compartment.constant
+                        or compartment.size == 0
+                        or any(
+                            rule.variable == species.compartment
+                            for rule in model.rules
+                        )
+                        or any(
+                            assignment.symbol == species.compartment
+                            for assignment in model.initial_assignments
+                        )
+                        or any(
+                            assignment.variable == species.compartment
+                            for event in model.events
+                            for assignment in event.assignments
+                        )
+                    ):
+                        return None
+                    net_amount_rate /= float(compartment.size)
+                if not math.isfinite(net_amount_rate):
+                    return None
+                return initial, net_amount_rate
+            if any(
+                assignment.symbol == identifier
+                for assignment in model.initial_assignments
+            ) or any(
+                event_assignment.variable == identifier
+                for event in model.events
+                for event_assignment in event.assignments
+            ):
+                return None
+            rules = [rule for rule in model.rules if rule.variable == identifier]
+            if len(rules) != 1 or rules[0].type != "rate":
+                return None
+            derivative = extend_function(rules[0].math, {}, model.function_definitions)
+
+            def resolve_immutable(identifier: str) -> Optional[float]:
+                if not is_compile_time_constant(identifier):
+                    return None
+                return resolve_event_parameter(identifier)
+
+            slope = fold_numeric(derivative, resolve_immutable)
+            initial = float(parameter.value)
+            if slope is None or not math.isfinite(initial):
+                return None
+            return initial, slope
+
+        def resolve_rate_event_reset(
+            identifier: str,
+        ) -> Optional[Tuple[float, float]]:
+            parameter = model.parameters.get(identifier)
+            if parameter is None or any(
+                assignment.symbol == identifier
+                for assignment in model.initial_assignments
+            ):
+                return None
+            rules = [rule for rule in model.rules if rule.variable == identifier]
+            if len(rules) != 1 or rules[0].type != "rate":
+                return None
+            derivative = extend_function(rules[0].math, {}, model.function_definitions)
+
+            def resolve_immutable(identifier: str) -> Optional[float]:
+                if not is_compile_time_constant(identifier):
+                    return None
+                return resolve_event_parameter(identifier)
+
+            slope = fold_numeric(derivative, resolve_immutable)
+            initial = float(parameter.value)
+            if slope is None or not math.isfinite(initial):
+                return None
+            return initial, slope
+
         event_result = synthesize_event_actions(
             model.events,
             EventTranslationContext(
                 resolve_species_pattern=lambda species_id: species_to_pattern.get(
                     species_id
                 ),
-                resolve_param=lambda identifier: (
-                    model.parameters[identifier].value
-                    if identifier in model.parameters
-                    else (
-                        model.compartments[identifier].size
-                        if identifier in model.compartments
-                        else None
-                    )
-                ),
-                is_param=lambda identifier: identifier in model.parameters
-                or identifier in model.compartments,
+                resolve_param=resolve_event_parameter,
+                is_param=lambda identifier: identifier in model.parameters,
+                is_compartment=lambda identifier: identifier in model.compartments,
                 is_compile_time_constant=is_compile_time_constant,
                 resolve_constant=resolve_constant,
+                expand_functions=lambda expression: extend_function(
+                    expression, {}, model.function_definitions
+                ),
                 method=(
                     "ssa"
                     if re.search(
@@ -5003,6 +5969,9 @@ def generate_bngl(
                 ),
                 base_t_end=float(t_end),
                 base_steps=max(1, int(n_steps)),
+                resolve_initial_value=resolve_initial_event_value,
+                resolve_affine_rate=resolve_affine_event_rate,
+                resolve_rate_reset=resolve_rate_event_reset,
             ),
         )
         _update_event_translation_warning(model, event_result)

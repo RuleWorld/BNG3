@@ -624,11 +624,13 @@ def _attribute(element: ET.Element, name: str, default: Any = None) -> Any:
 def _sbml_surface_limitations(sbml: str) -> tuple[dict[str, int], list[str]]:
     """Detect package and stoichiometry boundaries before expensive atomization.
 
-    This is deliberately structural.  It prevents large package documents
+    This is deliberately structural. It prevents large package documents
     from spending the model timeout in a kinetic network expansion while
-    retaining a reproducible, model-independent unsupported reason.  Events
-    are counted for reporting but are translated by the modern writer and
-    therefore are not a surface-level unsupported condition here.
+    retaining a reproducible, model-independent unsupported reason. Fixed
+    fixed or statically resolvable stoichiometry is left to the writer's
+    deterministic flux lowering; dynamic values are rejected from parser
+    diagnostics. Events are counted for reporting but are not a surface-level
+    unsupported condition.
     """
 
     root = ET.fromstring(sbml)
@@ -685,23 +687,12 @@ def _sbml_surface_limitations(sbml: str) -> tuple[dict[str, int], list[str]]:
             value = float(raw)
         except (TypeError, ValueError):
             continue
-        if not math.isfinite(value) or value < 0 or abs(value - round(value)) > 1e-12:
+        if not math.isfinite(value) or value < 0:
             limitations.append(
-                "SBML contains non-integer reaction stoichiometry; BNGL "
-                "reaction rules require fixed nonnegative integer stoichiometry."
+                "SBML contains negative or non-finite reaction stoichiometry; "
+                "deterministic flux lowering requires finite nonnegative values."
             )
             break
-        if value > 100:
-            limitations.append(
-                "SBML contains reaction stoichiometry above the BNGL expansion "
-                "limit of 100; this cannot be represented as a fixed BNGL rule."
-            )
-            break
-    if any(_local_name(element.tag) == "stoichiometryMath" for element in root.iter()):
-        limitations.append(
-            "SBML contains variable stoichiometryMath; BNGL reaction rules "
-            "require fixed stoichiometry."
-        )
     return {
         **counts,
         **{f"package_{key}": value for key, value in package_counts.items()},
@@ -1000,7 +991,12 @@ def _validate_mode(
         "metadata": source_metadata_summary(source_model),
     }
     source_metadata = source_metadata_payload(source_model)
-    atomizer = Atomizer(atomize=mode_atomize, quiet_mode=True)
+    atomizer = Atomizer(
+        atomize=mode_atomize,
+        quiet_mode=True,
+        t_end=simulation_t_end,
+        n_steps=simulation_n_steps,
+    )
     source_warnings = result["source"]["warnings"]
     try:
         atomized = atomizer.atomize(sbml, source_path=source_path)
@@ -1082,7 +1078,12 @@ def _validate_mode(
             and roundtrip_model.source_metadata_payload == source_metadata
         ),
     }
-    reimport = Atomizer(atomize=False, quiet_mode=True).atomize(roundtrip_sbml)
+    reimport = Atomizer(
+        atomize=False,
+        quiet_mode=True,
+        t_end=simulation_t_end,
+        n_steps=simulation_n_steps,
+    ).atomize(roundtrip_sbml)
     if not reimport.success:
         raise RuntimeError(reimport.error or "round-trip Atomizer returned failure")
     reimport_cpp = cpp.parse_string(reimport.bngl)

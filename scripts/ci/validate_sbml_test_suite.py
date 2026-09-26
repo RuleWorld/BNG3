@@ -595,7 +595,12 @@ def _validate_case(
             "metadata": source_metadata_summary(parsed),
         }
         source_metadata = source_metadata_payload(parsed)
-        atomizer = Atomizer(atomize=False, quiet_mode=True)
+        atomizer = Atomizer(
+            atomize=False,
+            quiet_mode=True,
+            t_end=simulation_t_end,
+            n_steps=simulation_n_steps,
+        )
         atomized = atomizer.atomize(sbml, source_path=source_path)
         if not atomized.success:
             raise RuntimeError(atomized.error or "modern Atomizer returned failure")
@@ -662,7 +667,12 @@ def _validate_case(
                 and reimport_model.source_metadata_payload == source_metadata
             ),
         }
-        reimport = Atomizer(atomize=False, quiet_mode=True).atomize(output_text)
+        reimport = Atomizer(
+            atomize=False,
+            quiet_mode=True,
+            t_end=simulation_t_end,
+            n_steps=simulation_n_steps,
+        ).atomize(output_text)
         if not reimport.success:
             raise RuntimeError(reimport.error or "round-trip Atomizer returned failure")
         reimport_network = cpp.generate_network(
