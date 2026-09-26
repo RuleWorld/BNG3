@@ -686,7 +686,7 @@ def test_constant_reaction_flux_state_threshold_lowers_exact_crossing():
     result = Atomizer(quiet_mode=True).atomize(xml)
 
     assert result.success, result.error
-    assert 't_end=>1' in result.bngl
+    assert "t_end=>1" in result.bngl
     assert 'setParameter("P", "7")' in result.bngl
     assert "untranslated" not in result.bngl.lower()
 
@@ -1009,6 +1009,46 @@ def test_affine_threshold_drops_constant_true_conjunction_terms():
     assert "state-dependent or non-constant event" not in result.bngl
 
 
+def test_event_assignment_delay_function_uses_affine_state_history():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="event_delay_affine_history">
+        <listOfParameters>
+          <parameter id="P" value="0" constant="false"/>
+          <parameter id="Q" value="0" constant="false"/>
+        </listOfParameters>
+        <listOfRules><rateRule variable="P">
+          <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math>
+        </rateRule></listOfRules>
+        <listOfEvents><event id="event" useValuesFromTriggerTime="{trigger_time}">
+          <trigger initialValue="true" persistent="true">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><gt/><ci>P</ci><cn>1.5</cn></apply>
+            </math>
+          </trigger>
+          <delay><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>2</cn></math></delay>
+          <listOfEventAssignments><eventAssignment variable="Q">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><csymbol encoding="text" definitionURL="http://www.sbml.org/sbml/symbols/delay">delay</csymbol>
+                <ci>P</ci><cn>1</cn>
+              </apply>
+            </math>
+          </eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    for trigger_time, expected in (("true", "0.5"), ("false", "2.5")):
+        result = Atomizer(quiet_mode=True).atomize(
+            xml.format(trigger_time=trigger_time)
+        )
+
+        assert result.success, result.error
+        assert f'setParameter("Q", "{expected}")' in result.bngl
+        assert "state-dependent or non-constant event" not in result.bngl
+
+
 def test_constant_piecewise_event_delay_and_assignment_fold_exactly():
     from bionetgen.atomizer.modern import Atomizer
 
@@ -1101,9 +1141,7 @@ def test_exponential_rate_rule_self_reset_schedules_repeated_threshold_events():
     result = Atomizer(quiet_mode=True).atomize(xml)
 
     assert result.success, result.error
-    assert result.bngl.count(
-        'setConcentration("M___rate_rule_state__A()", "1")'
-    ) == 4
+    assert result.bngl.count('setConcentration("M___rate_rule_state__A()", "1")') == 4
     assert "untranslated" not in result.bngl.lower()
 
 
@@ -1141,7 +1179,10 @@ def test_delayed_affine_rate_rule_self_reset_respects_value_time():
         )
 
         assert result.success, result.error
-        assert result.bngl.count(f'setParameter("P", "{expected_value}")') == expected_count
+        assert (
+            result.bngl.count(f'setParameter("P", "{expected_value}")')
+            == expected_count
+        )
         assert "untranslated" not in result.bngl.lower()
 
 

@@ -71,6 +71,25 @@ completion.
 - Re-audit the whole checklist on the exact release-candidate SHA. Earlier
   evidence is stale after a rebase, autofix, merge, or semantic change.
 
+## Fixed-delay affine event assignment checkpoint — 2026-09-26
+
+- [x] Event assignment folding evaluates finite fixed delays against a proven
+  affine/exponential state history at the selected trigger-time or execution-
+  time snapshot. Regression coverage is in
+  `tests/python/test_modern_atomizer_sbml_parity.py::test_event_assignment_delay_function_uses_affine_state_history`.
+- [x] Full Python suite: `566 passed, 28 skipped`; targeted modern Atomizer
+  event and SBML parity suites: `74 passed`.
+- [x] Full pinned SBML Test Suite at
+  `cf38585fac5de8e0e90112febb62851ee2181816`: `1,505 passed, 418 unsupported,
+  0 failed, 0 timed out`. Compared per-case with the prior full report, only
+  `semantic/01523` and `01524` changed from unsupported to passed.
+- [x] Report: `/private/tmp/bng3-sbml-event-delay-affine-full.json`, SHA-256
+  `b4efc6b3462a1e48103ccb406f571c938d64dab85e7273b2388c40e3a9fe9f94`.
+- [ ] Numerical libRoadRunner parity is not claimed: these two cases have no
+  observables. Delayed interval triggers `01518`–`01520` remain unsupported.
+- [ ] Curated BioModels inventory and cross-engine benchmarks have not been
+  rerun for this slice.
+
 ## Physical units / dimensional-analysis checkpoint — 2026-09-15
 
 The BNG3-native units work is documented in [`BNG3_UNITS.md`](BNG3_UNITS.md).

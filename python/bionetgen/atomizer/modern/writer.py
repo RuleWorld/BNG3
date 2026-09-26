@@ -2714,7 +2714,9 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
             net_amount_rate /= float(compartment.size)
         return (initial, net_amount_rate) if math.isfinite(net_amount_rate) else None
 
-    def fold_bounded_delays(expression: str) -> Tuple[str, int]:
+    def fold_bounded_delays(
+        expression: str, *, lower_affine_state_history: bool = True
+    ) -> Tuple[str, int]:
         replacements: List[Tuple[int, int, str]] = []
         position = 0
         while (match := delay_call.search(expression, position)) is not None:
@@ -2746,13 +2748,14 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
                 replacements.append((match.start(), call_end, delayed_expression))
                 position = call_end
                 continue
-            state_match = re.fullmatch(
-                r"[A-Za-z_][A-Za-z0-9_]*", delayed_expression
-            )
+            state_match = re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", delayed_expression)
             if 0 < duration < t_end and state_match:
                 target = state_match.group(0)
                 trajectory = affine_trajectory(target)
                 if trajectory is not None:
+                    if not lower_affine_state_history:
+                        position = call_end
+                        continue
                     initial, slope = trajectory
                     displacement = slope * duration
                     if math.isfinite(displacement):
@@ -2816,7 +2819,9 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
             variable, expression = _event_assignment(assignment)
             if not expression:
                 continue
-            folded, count = fold_bounded_delays(expression)
+            folded, count = fold_bounded_delays(
+                expression, lower_affine_state_history=False
+            )
             if not count:
                 continue
             if isinstance(assignment, dict):
@@ -5895,17 +5900,14 @@ def generate_bngl(
                     if rule.variable == species_id and rule.type == "rate"
                 ]
                 if len(rate_rules) == 1 and not species.has_only_substance_units:
-                    if (
-                        any(
-                            assignment.symbol == species_id
-                            for assignment in model.initial_assignments
-                        )
-                        or any(
-                            assignment.variable == species_id
-                            for event in model.events
-                            if event is not event_context
-                            for assignment in event.assignments
-                        )
+                    if any(
+                        assignment.symbol == species_id
+                        for assignment in model.initial_assignments
+                    ) or any(
+                        assignment.variable == species_id
+                        for event in model.events
+                        if event is not event_context
+                        for assignment in event.assignments
                     ):
                         return None
                     compartment = model.compartments.get(species.compartment or "")
@@ -5940,15 +5942,12 @@ def generate_bngl(
                         for assignment in event.assignments
                     ):
                         return None
-                    compartment = model.compartments.get(
-                        species.compartment or ""
-                    )
+                    compartment = model.compartments.get(species.compartment or "")
                     if species.compartment and (
                         compartment is None
                         or not compartment.constant
                         or any(
-                            rule.variable == species.compartment
-                            for rule in model.rules
+                            rule.variable == species.compartment for rule in model.rules
                         )
                         or any(
                             assignment.variable == species.compartment
@@ -6071,8 +6070,7 @@ def generate_bngl(
                         or not compartment.constant
                         or compartment.size == 0
                         or any(
-                            rule.variable == species.compartment
-                            for rule in model.rules
+                            rule.variable == species.compartment for rule in model.rules
                         )
                         or any(
                             assignment.symbol == species.compartment
@@ -6350,9 +6348,7 @@ def generate_bngl(
                 ).strip()
                 if not expression:
                     return None
-                expression = extend_function(
-                    expression, {}, model.function_definitions
-                )
+                expression = extend_function(expression, {}, model.function_definitions)
                 try:
                     parsed = ast.parse(expression, mode="eval")
                 except (TypeError, ValueError, SyntaxError):

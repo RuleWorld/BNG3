@@ -2081,6 +2081,8 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
         expression: str,
         extra_static: frozenset[str] = frozenset(),
         extra_symbols: Optional[Mapping[str, float]] = None,
+        *,
+        lower_affine_history: bool = True,
     ) -> str:
         extra_symbols = extra_symbols or {}
         result: List[str] = []
@@ -2110,10 +2112,16 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
                 result.append(expression[cursor:])
                 break
             first = replace(
-                expression[opening + 1 : separator].strip(), extra_static, extra_symbols
+                expression[opening + 1 : separator].strip(),
+                extra_static,
+                extra_symbols,
+                lower_affine_history=lower_affine_history,
             )
             second = replace(
-                expression[separator + 1 : closing].strip(), extra_static, extra_symbols
+                expression[separator + 1 : closing].strip(),
+                extra_static,
+                extra_symbols,
+                lower_affine_history=lower_affine_history,
             )
             try:
                 zero_delay = float(second) == 0.0
@@ -2136,7 +2144,18 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
                 )
                 and (is_static(second, extra_static) or nonnegative_time_delay)
             ):
-                expanded_first = time_expression(first, extra_static=extra_static)
+                delayed_symbols = {
+                    standardize_name(identifier)
+                    for identifier in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", first)
+                }
+                defer_affine_history = not lower_affine_history and bool(
+                    delayed_symbols & (set(rate_rules) | set(reaction_rate_rules))
+                )
+                expanded_first = (
+                    None
+                    if defer_affine_history
+                    else time_expression(first, extra_static=extra_static)
+                )
                 if expanded_first is not None and re.search(
                     r"\btime\b", expanded_first, re.IGNORECASE
                 ):
@@ -2156,7 +2175,7 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
                         if standardize_name(identifier) in rate_rules
                         or standardize_name(identifier) in reaction_rate_rules
                     ]
-                    safe = bool(dynamic)
+                    safe = bool(dynamic) and lower_affine_history
                     for identifier in identifiers:
                         if identifier in dynamic or is_static(identifier, extra_static):
                             continue
@@ -2247,7 +2266,7 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
         event.priority = replace(event.priority) if event.priority else event.priority
         for assignment in event.assignments:
             if hasattr(assignment, "math"):
-                assignment.math = replace(assignment.math)
+                assignment.math = replace(assignment.math, lower_affine_history=False)
     for assignment in model.initial_assignments:
         assignment.math = replace(assignment.math)
 

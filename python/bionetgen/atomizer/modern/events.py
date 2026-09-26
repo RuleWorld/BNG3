@@ -8,12 +8,27 @@ diagnostics because the BNGL action language has no general trigger scheduler.
 from __future__ import annotations
 
 import math
+import ast
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Callable, List, Optional, Sequence, Tuple
 
 from .types import SBMLEvent
+
+
+def _no_event_affine_rate(
+    _identifier: str, _event: SBMLEvent
+) -> Optional[Tuple[float, float]]:
+    return None
+
+
+def _no_event_exponential_rate(
+    _identifier: str, _event: SBMLEvent
+) -> Optional[Tuple[float, float]]:
+    return None
+
+
 from .types import standardize_name
 
 
@@ -48,7 +63,7 @@ class EventTranslationContext:
     # while rejecting every other controller of the state.
     resolve_affine_rate_for_event: Callable[
         [str, SBMLEvent], Optional[Tuple[float, float]]
-    ] = lambda _identifier, _event: None
+    ] = _no_event_affine_rate
     # Return (initial value, exponent) for independently exponential states
     # whose exact trajectory is initial * exp(exponent * time).
     resolve_exponential_rate: Callable[[str], Optional[Tuple[float, float]]] = (
@@ -56,7 +71,7 @@ class EventTranslationContext:
     )
     resolve_exponential_rate_for_event: Callable[
         [str, SBMLEvent], Optional[Tuple[float, float]]
-    ] = lambda _identifier, _event: None
+    ] = _no_event_exponential_rate
     # Allow periodic reset lowering to inspect a constant rate-rule state even
     # when the event itself assigns that state.
     resolve_rate_reset: Callable[[str], Optional[Tuple[float, float]]] = (
@@ -321,7 +336,9 @@ class _NumericParser:
                         and len(arguments) >= 2
                         and all(value is not None for value in arguments)
                     ):
-                        return float(all(value == arguments[0] for value in arguments[1:]))
+                        return float(
+                            all(value == arguments[0] for value in arguments[1:])
+                        )
                     if (
                         function_name == "neq"
                         and len(arguments) == 2
@@ -709,9 +726,7 @@ def _parse_rate_of_state_threshold(
     if arguments is None or len(arguments) != 2:
         return None
     left, right = (_strip_outer_parens(value) for value in arguments)
-    rate_of = re.compile(
-        r"^rateof\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)$", re.I
-    )
+    rate_of = re.compile(r"^rateof\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)$", re.I)
     left_match, right_match = rate_of.fullmatch(left), rate_of.fullmatch(right)
     if left_match is not None:
         return left_match.group(1), match.group(1).lower(), right
@@ -855,10 +870,66 @@ def synthesize_event_actions(
         expression: str,
         time_value: float,
         state_values: Optional[Mapping[str, float]] = None,
+        event_context: Optional[SBMLEvent] = None,
     ) -> Optional[float]:
         """Fold an event value using only proven state trajectories."""
         values = dict(state_values or {})
         expanded = context.expand_functions(str(expression or ""))
+
+        def delayed_state_value(identifier: str, query_time: float) -> Optional[float]:
+            if query_time <= 0:
+                initial = context.resolve_initial_value(identifier)
+                return float(initial) if initial is not None else None
+            trajectory = (
+                context.resolve_affine_rate_for_event(identifier, event_context)
+                if event_context is not None
+                else context.resolve_affine_rate(identifier)
+            )
+            if trajectory is not None:
+                initial, slope = trajectory
+                value = initial + slope * query_time
+                return value if math.isfinite(value) else None
+            exponential = (
+                context.resolve_exponential_rate_for_event(identifier, event_context)
+                if event_context is not None
+                else context.resolve_exponential_rate(identifier)
+            )
+            if exponential is None:
+                return None
+            initial, exponent = exponential
+            try:
+                value = initial * math.exp(exponent * query_time)
+            except OverflowError:
+                return None
+            return value if math.isfinite(value) else None
+
+        class DelayHistoryRewriter(ast.NodeTransformer):
+            def visit_Call(self, node: ast.Call) -> ast.AST:
+                if (
+                    isinstance(node.func, ast.Name)
+                    and node.func.id.lower() == "delay"
+                    and len(node.args) == 2
+                    and isinstance(node.args[0], ast.Name)
+                ):
+                    duration = fold(ast.unparse(node.args[1]))
+                    if (
+                        duration is not None
+                        and math.isfinite(duration)
+                        and duration >= 0
+                    ):
+                        value = delayed_state_value(
+                            node.args[0].id, time_value - duration
+                        )
+                        if value is not None:
+                            return ast.copy_location(ast.Constant(value=value), node)
+                return self.generic_visit(node)
+
+        try:
+            tree = ast.parse(expanded, mode="eval")
+        except (TypeError, ValueError, SyntaxError):
+            tree = None
+        if tree is not None:
+            expanded = ast.unparse(DelayHistoryRewriter().visit(tree))
         identifiers = set(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", expanded))
         for identifier in identifiers:
             if identifier in values:
@@ -878,7 +949,86 @@ def synthesize_event_actions(
                 continue
             if math.isfinite(value):
                 values[identifier] = value
-        return fold(expression, time_value, dynamic_values=values)
+
+        def numeric_ast(node: ast.AST) -> Optional[float | bool]:
+            if isinstance(node, ast.Constant) and isinstance(
+                node.value, (int, float, bool)
+            ):
+                return node.value
+            if isinstance(node, ast.UnaryOp) and isinstance(
+                node.op, (ast.UAdd, ast.USub, ast.Not)
+            ):
+                value = numeric_ast(node.operand)
+                if value is None:
+                    return None
+                if isinstance(node.op, ast.Not):
+                    return not bool(value)
+                return value if isinstance(node.op, ast.UAdd) else -value
+            if isinstance(node, ast.BinOp) and isinstance(
+                node.op, (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Pow)
+            ):
+                left, right = numeric_ast(node.left), numeric_ast(node.right)
+                if left is None or right is None:
+                    return None
+                try:
+                    if isinstance(node.op, ast.Add):
+                        return left + right
+                    if isinstance(node.op, ast.Sub):
+                        return left - right
+                    if isinstance(node.op, ast.Mult):
+                        return left * right
+                    if isinstance(node.op, ast.Div):
+                        return left / right if right != 0 else None
+                    return left**right
+                except (OverflowError, TypeError, ValueError, ZeroDivisionError):
+                    return None
+            if isinstance(node, ast.Compare) and len(node.ops) == 1:
+                left, right = numeric_ast(node.left), numeric_ast(node.comparators[0])
+                if left is None or right is None:
+                    return None
+                operator = node.ops[0]
+                if isinstance(operator, ast.Lt):
+                    return left < right
+                if isinstance(operator, ast.LtE):
+                    return left <= right
+                if isinstance(operator, ast.Gt):
+                    return left > right
+                if isinstance(operator, ast.GtE):
+                    return left >= right
+                if isinstance(operator, ast.Eq):
+                    return left == right
+                if isinstance(operator, ast.NotEq):
+                    return left != right
+            return None
+
+        class TimeConditionalRewriter(ast.NodeTransformer):
+            def visit_Call(self, node: ast.Call) -> ast.AST:
+                node = self.generic_visit(node)
+                if (
+                    isinstance(node.func, ast.Name)
+                    and node.func.id == "_event_if"
+                    and len(node.args) == 3
+                ):
+                    condition = numeric_ast(node.args[0])
+                    if condition is not None:
+                        return self.visit(node.args[1 if bool(condition) else 2])
+                return node
+
+        timed_expression = re.sub(
+            r"\btime\b", _format_number(time_value), expanded, flags=re.IGNORECASE
+        )
+        timed_expression = re.sub(
+            r"\bif\s*\(", "_event_if(", timed_expression, flags=re.IGNORECASE
+        )
+        try:
+            timed_tree = ast.parse(timed_expression, mode="eval")
+            reduced_expression = ast.unparse(
+                TimeConditionalRewriter().visit(timed_tree)
+            )
+            reduced_expression = reduced_expression.replace("_event_if(", "if(")
+        except (TypeError, ValueError, SyntaxError):
+            reduced_expression = timed_expression.replace("_event_if(", "if(")
+        return fold(reduced_expression, dynamic_values=values)
 
     periodic_groups: dict[Tuple[str, str, float], List[SBMLEvent]] = {}
     periodic_handled: set[int] = set()
@@ -1409,7 +1559,9 @@ def synthesize_event_actions(
                     execution_time,
                     [
                         (
-                            "conc" if context.resolve_species_pattern(variable) else "param",
+                            "conc"
+                            if context.resolve_species_pattern(variable)
+                            else "param",
                             context.resolve_species_pattern(variable)
                             or standardize_name(variable),
                             float(value),
@@ -1521,7 +1673,10 @@ def synthesize_event_actions(
             trigger_state if event.use_values_from_trigger_time else execution_state
         )
         reset_value = fold_at_state(
-            assignment, value_time, {identifier: assignment_state}
+            assignment,
+            value_time,
+            {identifier: assignment_state},
+            event_context=event,
         )
         if reset_value is None or not math.isfinite(reset_value):
             continue
@@ -1585,20 +1740,14 @@ def synthesize_event_actions(
                 recurrence = []
                 break
             trigger_state = (
-                initial
-                if trigger_time == 0 and initially_true
-                else threshold
+                initial if trigger_time == 0 and initially_true else threshold
             )
             execution_state = trigger_state + slope * float(delay)
             assignment_state = (
-                trigger_state
-                if event.use_values_from_trigger_time
-                else execution_state
+                trigger_state if event.use_values_from_trigger_time else execution_state
             )
             value_time = (
-                trigger_time
-                if event.use_values_from_trigger_time
-                else execution_time
+                trigger_time if event.use_values_from_trigger_time else execution_time
             )
             value = fold(
                 assignment, value_time, dynamic_values={identifier: assignment_state}
@@ -1606,9 +1755,7 @@ def synthesize_event_actions(
             if value is None or not math.isfinite(value):
                 recurrence = []
                 break
-            recurrence.append(
-                (execution_time, assignment_actions(float(value)), 0.0)
-            )
+            recurrence.append((execution_time, assignment_actions(float(value)), 0.0))
             count += 1
             if count > 10_000:
                 recurrence = []
@@ -1652,9 +1799,7 @@ def synthesize_event_actions(
                 if not initially_true or event.trigger_initial_value:
                     static_event_no_action.add(id(event))
                 else:
-                    static_event_initial_fires[id(event)] = {
-                        identifier: initial
-                    }
+                    static_event_initial_fires[id(event)] = {identifier: initial}
 
     for event in events:
         parsed_interval = _parse_affine_state_interval(event.trigger)
@@ -1947,11 +2092,23 @@ def synthesize_event_actions(
                             state_threshold_scale = _format_number(scale_value)
             if state_threshold is not None:
                 identifier, operator, threshold_expression = state_threshold
+                event_changes_trigger_state = any(
+                    variable == identifier
+                    for assignment in event.assignments
+                    for variable, _value in [_event_assignment(assignment)]
+                )
                 trajectory = (
                     None
-                    if rate_of_threshold
-                    else context.resolve_affine_rate(identifier)
+                    if rate_of_threshold or event_changes_trigger_state
+                    else context.resolve_affine_rate_for_event(identifier, event)
                 )
+                if (
+                    trajectory is None
+                    and not rate_of_threshold
+                    and not event_changes_trigger_state
+                    and context.resolve_affine_rate_for_event is _no_event_affine_rate
+                ):
+                    trajectory = context.resolve_affine_rate(identifier)
                 crossing_value = fold(threshold_expression)
                 if crossing_value is not None:
                     scale_value = float(state_threshold_scale)
@@ -1999,7 +2156,20 @@ def synthesize_event_actions(
                             threshold = _format_number(crossing_time)
                             trigger_state_values = {identifier: crossing_value}
                 elif crossing_value is not None:
-                    exponential = context.resolve_exponential_rate(identifier)
+                    exponential = (
+                        None
+                        if event_changes_trigger_state
+                        else context.resolve_exponential_rate_for_event(
+                            identifier, event
+                        )
+                    )
+                    if (
+                        exponential is None
+                        and not event_changes_trigger_state
+                        and context.resolve_exponential_rate_for_event
+                        is _no_event_exponential_rate
+                    ):
+                        exponential = context.resolve_exponential_rate(identifier)
                     if exponential is not None:
                         initial_value, exponent = exponential
                         trigger_state_trajectory = (
@@ -2030,7 +2200,10 @@ def synthesize_event_actions(
                         if (
                             exponent == 0
                             or initial_trigger_value == 0
-                            or (rate_of_threshold and not math.isfinite(crossing_state_value))
+                            or (
+                                rate_of_threshold
+                                and not math.isfinite(crossing_state_value)
+                            )
                         ):
                             if initially_true and not event.trigger_initial_value:
                                 threshold = "0"
@@ -2049,9 +2222,7 @@ def synthesize_event_actions(
                             derivative_sign = initial_trigger_value * exponent
                             rising = (
                                 operator in {"gt", "geq"} and derivative_sign > 0
-                            ) or (
-                                operator in {"lt", "leq"} and derivative_sign < 0
-                            )
+                            ) or (operator in {"lt", "leq"} and derivative_sign < 0)
                             ratio = crossing_value / initial_trigger_value
                             if not rising or ratio <= 0:
                                 normal_converted += 1
@@ -2207,6 +2378,7 @@ def synthesize_event_actions(
                 expression,
                 evaluation_time,
                 state_values=assignment_state_values,
+                event_context=event,
             )
             if value is None and execution_time == 0:
                 value = fold_initial(expression)
@@ -2232,8 +2404,12 @@ def synthesize_event_actions(
                 ) = affine_interval
 
                 def in_interval(state: float) -> bool:
-                    lower_ok = state > lower if lower_operator == "gt" else state >= lower
-                    upper_ok = state < upper if upper_operator == "lt" else state <= upper
+                    lower_ok = (
+                        state > lower if lower_operator == "gt" else state >= lower
+                    )
+                    upper_ok = (
+                        state < upper if upper_operator == "lt" else state <= upper
+                    )
                     return lower_ok and upper_ok
 
                 state_before = initial + slope * execution_time
