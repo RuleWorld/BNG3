@@ -2813,7 +2813,9 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
             lowered += count
     for event in model.events:
         if event.trigger:
-            event.trigger, count = fold_bounded_delays(event.trigger)
+            event.trigger, count = fold_bounded_delays(
+                event.trigger, lower_affine_state_history=False
+            )
             lowered += count
         for assignment in event.assignments:
             variable, expression = _event_assignment(assignment)

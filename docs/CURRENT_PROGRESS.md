@@ -12,6 +12,21 @@ execution instruction.
 
 ## Delayed affine event follow-up — 2026-09-26
 
+Atomizer now schedules an isolated conjunction of lower and upper bounds over
+the same fixed-delay affine state history. The exact entry and exit times shift
+by the delay; nonpersistent events whose execution time reaches/passes the
+interval end are omitted. Full pinned SBML Test Suite status moved from
+`1,505 passed / 418 unsupported` to `1,508 / 415`, with zero failures,
+timeouts, or per-case regressions (`01518`–`01520`). Each new case matches
+libRoadRunner 2.10.0 on its one observable with maximum absolute error `0`.
+Full Python passes `567` tests with `28` skipped. Report:
+`/private/tmp/bng3-sbml-delayed-interval-full.json`, SHA-256
+`aacfee4d80f33e83cb1a7664bc9e11f7ba31dec8b9534674c53f1cb52fdc8851`.
+Scope is restricted to one event, two comparisons, same state and delay, and a
+proven affine trajectory. Other delayed trigger forms remain unsupported.
+
+## Fixed-delay assignment history checkpoint — 2026-09-26
+
 Atomizer now evaluates fixed-delay event-assignment values against proven
 affine/exponential state histories at the correct trigger or execution time.
 This supports affine rate-rule state thresholds whose event assigns a separate

@@ -282,6 +282,43 @@ def test_nonpersistent_delayed_window_event_is_omitted_after_window_closes():
     assert result.untranslated == []
 
 
+def test_affine_interval_of_delayed_state_obeys_event_persistence():
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLEventAssignment
+
+    cases = ((2, True, True), (2, False, False), (2.6, False, True))
+    for upper, persistent, should_schedule in cases:
+        event = SBMLEvent(
+            id="delayed-affine-window",
+            trigger=f"and(gt(delay(P1, 1), 1.5), lt(delay(P1, 1), {upper}))",
+            delay="1",
+            trigger_persistent=persistent,
+            assignments=[SBMLEventAssignment("P2", "3")],
+        )
+        trajectory = lambda identifier: (0, 1) if identifier == "P1" else None
+        result = synthesize_event_actions(
+            [event],
+            EventTranslationContext(
+                resolve_species_pattern=lambda _identifier: None,
+                resolve_param=lambda _identifier: 0,
+                is_param=lambda _identifier: True,
+                resolve_affine_rate=trajectory,
+                resolve_affine_rate_for_event=lambda identifier, _event: trajectory(
+                    identifier
+                ),
+            ),
+        )
+
+        assert result.converted == 1
+        assert result.untranslated == []
+        assert (result.actions_block is not None) is should_schedule
+        if should_schedule:
+            assert 'setParameter("P2", "3")' in result.actions_block
+
+
 def test_constant_false_mathml_conjunction_folds_with_unknown_time_term():
     from bionetgen.atomizer.modern.events import fold_numeric
 

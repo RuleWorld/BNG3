@@ -714,6 +714,55 @@ def _parse_affine_state_interval(
     return next(iter(identifiers)), [(op, value) for _identifier, op, value in concrete]
 
 
+def _parse_delayed_affine_state_interval(
+    trigger: str,
+) -> Optional[Tuple[str, str, List[Tuple[str, str]]]]:
+    """Parse a two-bound interval over one fixed-delay state history."""
+    terms = _split_call_arguments(str(trigger or "").strip())
+    if terms is None or len(terms) != 2:
+        return None
+    parsed: List[Tuple[str, str, str, str]] = []
+    for term in terms:
+        comparison = re.match(r"^(gt|geq|lt|leq)\s*\((.*)\)$", term, re.I)
+        if comparison is None:
+            return None
+        arguments = _split_arguments(comparison.group(2))
+        if arguments is None or len(arguments) != 2:
+            return None
+        left, right = (_strip_outer_parens(value) for value in arguments)
+        reverse = {"gt": "lt", "geq": "leq", "lt": "gt", "leq": "geq"}
+        state = re.fullmatch(r"delay\s*\((.*)\)", left, re.I)
+        operator, bound = comparison.group(1).lower(), right
+        if state is None:
+            state = re.fullmatch(r"delay\s*\((.*)\)", right, re.I)
+            if state is None:
+                return None
+            operator, bound = reverse[operator], left
+        delay_arguments = _split_arguments(state.group(1))
+        if delay_arguments is None or len(delay_arguments) != 2:
+            return None
+        identifier = _strip_outer_parens(delay_arguments[0])
+        delay = _strip_outer_parens(delay_arguments[1])
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", identifier):
+            return None
+        parsed.append((identifier, delay, operator, bound))
+    identifiers = {item[0] for item in parsed}
+    delays = {item[1] for item in parsed}
+    operators = [item[2] for item in parsed]
+    if (
+        len(identifiers) != 1
+        or len(delays) != 1
+        or not any(operator in {"gt", "geq"} for operator in operators)
+        or not any(operator in {"lt", "leq"} for operator in operators)
+    ):
+        return None
+    return (
+        next(iter(identifiers)),
+        next(iter(delays)),
+        [(operator, bound) for _identifier, _delay, operator, bound in parsed],
+    )
+
+
 def _parse_rate_of_state_threshold(
     trigger: str,
 ) -> Optional[Tuple[str, str, str]]:
@@ -1802,7 +1851,20 @@ def synthesize_event_actions(
                     static_event_initial_fires[id(event)] = {identifier: initial}
 
     for event in events:
+        parsed_delayed_interval = _parse_delayed_affine_state_interval(event.trigger)
         parsed_interval = _parse_affine_state_interval(event.trigger)
+        interval_shift = 0.0
+        if parsed_delayed_interval is not None:
+            identifier, delay_expression, comparisons = parsed_delayed_interval
+            interval_shift_value = fold(delay_expression)
+            if (
+                interval_shift_value is None
+                or not math.isfinite(interval_shift_value)
+                or interval_shift_value < 0
+            ):
+                continue
+            parsed_interval = (identifier, comparisons)
+            interval_shift = float(interval_shift_value)
         if parsed_interval is None or len(events) != 1:
             continue
         identifier, comparisons = parsed_interval
@@ -1846,11 +1908,15 @@ def synthesize_event_actions(
             affine_interval_no_action.add(id(event))
             continue
         if slope > 0:
-            entry = 0.0 if initially_inside else (lower - initial) / slope
-            exit_time = (upper - initial) / slope
+            entry = (
+                0.0 if initially_inside else interval_shift + (lower - initial) / slope
+            )
+            exit_time = interval_shift + (upper - initial) / slope
         else:
-            entry = 0.0 if initially_inside else (upper - initial) / slope
-            exit_time = (lower - initial) / slope
+            entry = (
+                0.0 if initially_inside else interval_shift + (upper - initial) / slope
+            )
+            exit_time = interval_shift + (lower - initial) / slope
         if (
             not math.isfinite(entry)
             or not math.isfinite(exit_time)

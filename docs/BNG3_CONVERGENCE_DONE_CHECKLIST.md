@@ -71,6 +71,26 @@ completion.
 - Re-audit the whole checklist on the exact release-candidate SHA. Earlier
   evidence is stale after a rebase, autofix, merge, or semantic change.
 
+## Fixed-delay affine event trigger interval checkpoint — 2026-09-26
+
+- [x] The isolated two-bound trigger `and(gt(delay(S, d), lower),
+  lt(delay(S, d), upper))` now lowers when both bounds use the same state and
+  nonnegative constant delay and that state has a proven affine trajectory.
+  The delay shifts interval entry/exit; nonpersistent scheduled events are
+  omitted when canceled at interval end.
+- [x] Full Python suite: `567 passed, 28 skipped`; targeted modern Atomizer
+  event and SBML parity suites: `75 passed`.
+- [x] Full pinned SBML Test Suite at
+  `cf38585fac5de8e0e90112febb62851ee2181816`: `1,508 passed, 415 unsupported,
+  0 failed, 0 timed out`. Compared per-case with the prior full report, only
+  `semantic/01518`, `01519`, and `01520` changed from unsupported to passed.
+- [x] All three new cases match libRoadRunner 2.10.0 on their one observable;
+  maximum absolute difference is `0` for each.
+- [x] Report: `/private/tmp/bng3-sbml-delayed-interval-full.json`, SHA-256
+  `aacfee4d80f33e83cb1a7664bc9e11f7ba31dec8b9534674c53f1cb52fdc8851`.
+- [ ] Curated BioModels inventory and BNG2/PyBioNetGen/NFsim cross-engine
+  benchmarks have not been rerun for this slice.
+
 ## Fixed-delay affine event assignment checkpoint — 2026-09-26
 
 - [x] Event assignment folding evaluates finite fixed delays against a proven

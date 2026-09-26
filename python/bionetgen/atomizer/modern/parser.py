@@ -2195,7 +2195,9 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
                             )
                         if safe:
                             shifted = shifted_expression
-                    elif re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", first):
+                    elif lower_affine_history and re.fullmatch(
+                        r"[A-Za-z_][A-Za-z0-9_]*", first
+                    ):
                         shifted = delayed_constant_rate(first, second)
             result.append(expression[cursor:start])
             result.append(
@@ -2261,7 +2263,7 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
     for function in model.function_definitions.values():
         function.math = replace(function.math)
     for event in model.events:
-        event.trigger = replace(event.trigger)
+        event.trigger = replace(event.trigger, lower_affine_history=False)
         event.delay = replace(event.delay) if event.delay else event.delay
         event.priority = replace(event.priority) if event.priority else event.priority
         for assignment in event.assignments:
