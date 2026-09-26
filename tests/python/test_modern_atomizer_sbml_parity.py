@@ -1245,6 +1245,41 @@ def test_event_math_folds_constant_reaction_identifier_rate():
     assert "Events NOT simulated" not in result.bngl
 
 
+def test_delayed_event_assignment_uses_the_selected_sbml_value_snapshot():
+    from bionetgen.atomizer.modern import Atomizer
+
+    for use_trigger_time, expected in (("true", "1"), ("false", "7")):
+        xml = f"""<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+          <model id="delayed_event_snapshot">
+            <listOfParameters>
+              <parameter id="x" value="1" constant="false"/>
+              <parameter id="y" value="0" constant="false"/>
+            </listOfParameters>
+            <listOfEvents>
+              <event id="set_y" useValuesFromTriggerTime="{use_trigger_time}">
+                <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML">
+                  <apply><gt/><csymbol definitionURL="http://www.sbml.org/sbml/symbols/time">time</csymbol><cn>2.5</cn></apply>
+                </math></trigger>
+                <delay><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>2</cn></math></delay>
+                <listOfEventAssignments><eventAssignment variable="y"><math xmlns="http://www.w3.org/1998/Math/MathML"><ci>x</ci></math></eventAssignment></listOfEventAssignments>
+              </event>
+              <event id="set_x" useValuesFromTriggerTime="true">
+                <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML">
+                  <apply><gt/><csymbol definitionURL="http://www.sbml.org/sbml/symbols/time">time</csymbol><cn>3.5</cn></apply>
+                </math></trigger>
+                <listOfEventAssignments><eventAssignment variable="x"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>7</cn></math></eventAssignment></listOfEventAssignments>
+              </event>
+            </listOfEvents>
+          </model>
+        </sbml>"""
+
+        result = Atomizer(quiet_mode=True).atomize(xml)
+
+        assert result.success, result.error
+        assert f'setParameter("y", "{expected}")' in result.bngl
+        assert "Events NOT simulated" not in result.bngl
+
+
 def test_simultaneous_events_resolve_dynamic_priority_before_assignments():
     from bionetgen.atomizer.modern import Atomizer
 

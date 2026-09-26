@@ -914,6 +914,7 @@ def synthesize_event_actions(
 
     untranslated: List[Tuple[SBMLEvent, str]] = []
     scheduled: List[Tuple[float, List[Tuple[str, str, float]], float]] = []
+    scheduled_values: List[Tuple[float, str, float]] = []
     horizon_limited = 0
 
     def fold(
@@ -1079,6 +1080,20 @@ def synthesize_event_actions(
         for identifier in identifiers:
             if identifier in values:
                 continue
+            if event_context is not None and context.static_event_state:
+                prior_values = [
+                    value
+                    for execution_time, symbol, value in scheduled_values
+                    if symbol == standardize_name(identifier)
+                    and execution_time < time_value
+                ]
+                if prior_values:
+                    values[identifier] = prior_values[-1]
+                    continue
+                initial = context.resolve_initial_value(identifier)
+                if initial is not None and math.isfinite(initial):
+                    values[identifier] = float(initial)
+                    continue
             trajectory = (
                 context.resolve_affine_priority_rate(identifier, event_context)
                 if priority_evaluation and event_context is not None
@@ -2232,8 +2247,30 @@ def synthesize_event_actions(
                 )
                 periodic_converted += 1
 
+    def fixed_execution_time(event: SBMLEvent) -> float:
+        threshold = parse_time_threshold(event.trigger)
+        if threshold is None:
+            return math.inf
+        trigger_time = fold(threshold, event_context=event)
+        if trigger_time is None or not math.isfinite(trigger_time):
+            return math.inf
+        delay = (
+            fold(event.delay, trigger_time, event_context=event) if event.delay else 0.0
+        )
+        if delay is None or not math.isfinite(delay) or delay < 0:
+            return math.inf
+        return trigger_time + delay
+
+    ordered_events = (
+        sorted(
+            enumerate(events),
+            key=lambda item: (fixed_execution_time(item[1]), item[0]),
+        )
+        if context.static_event_state
+        else list(enumerate(events))
+    )
     normal_converted = 0
-    for event in events:
+    for _source_index, event in ordered_events:
         if id(event) in periodic_handled:
             continue
         if id(event) in static_event_no_action:
@@ -2643,6 +2680,7 @@ def synthesize_event_actions(
             continue
 
         sets: List[Tuple[str, str, float]] = []
+        event_values: List[Tuple[str, float]] = []
         failure: Optional[str] = None
         for assignment in event.assignments:
             variable, expression = _event_assignment(assignment)
@@ -2684,6 +2722,7 @@ def synthesize_event_actions(
                     "(depends on species/time or a function)"
                 )
                 break
+            event_values.append((standardize_name(variable), value))
             if affine_interval is not None and standardize_name(
                 variable
             ) == standardize_name(affine_interval[0]):
@@ -2804,6 +2843,9 @@ def synthesize_event_actions(
                 continue
             priority = folded_priority
         scheduled.append((execution_time, sets, priority))
+        scheduled_values.extend(
+            (execution_time, symbol, value) for symbol, value in event_values
+        )
         normal_converted += 1
 
     if not scheduled:

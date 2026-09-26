@@ -4,7 +4,7 @@
 **Last targeted audit:** 2026-09-26 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
 **Working branch:** `main`
-**Current base:** `main` at `ecd449caf4d79111da2666005d79e2d3689d4e50`; reaction-ID event folding is the current feature slice
+**Current base:** `main` at `da36c91218e84a52faaaee9424f88604adc8faf7`; static event-history folding is the current feature slice
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -31,6 +31,25 @@ completion charter and Section 11 of BNG3_INTEGRATION_PLAN.md into auditable
 work items. The unification work orders in docs/BNG3_unification_spec.md remain the
 detailed dependency map; provenance/capability-matrix.yml remains the
 capability inventory.
+
+## Static event assignment histories — 2026-09-26
+
+- [x] For models with no reactions, rules, or initial assignments, fixed-time
+  events are evaluated in execution-time order. Assignment expressions can
+  read a prior parameter, species, or compartment value at the selected SBML
+  snapshot: trigger time when `useValuesFromTriggerTime=true`, execution time
+  otherwise. Dynamic ordering remains unsupported.
+- [x] Full Python suite: `577 passed, 28 skipped`; Black, Ruff, and
+  `git diff --check` pass.
+- [x] Full pinned SBML Test Suite `cf38585fac5de8e0e90112febb62851ee2181816`:
+  `1,558 passed, 365 unsupported, 0 failed, 0 timed out`. Compared per case
+  with the prior full report, seven cases gained and none regressed:
+  `00979`, `00980`, `01152`, and `01328`-`01331`. All seven have no comparable
+  simulation observables; this is structural round-trip evidence only. Report
+  `/private/tmp/bng3-sbml-prior-event-history-full.json`, SHA-256
+  `3988764e9238e693307955b88c8b01658fa678b5446e3f49bc399543493ac2ba`.
+- [ ] Hosted CI for `da36c91` remains in progress; checks for this slice start
+  after its push.
 
 ## Constant reaction IDs in event math — 2026-09-26
 

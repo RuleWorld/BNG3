@@ -10,6 +10,20 @@ IR migration reports and formalization reports retained in the repository are
 historical inputs and provenance records; their embedded prose is not a new
 execution instruction.
 
+## Static event assignment histories — 2026-09-26
+
+For static SBML models with no reactions, rules, or initial assignments,
+Atomizer now orders fixed-time events by execution time and evaluates delayed
+assignment values at the SBML-selected trigger or execution snapshot. This
+gains seven official SBML Test Suite cases: `00979`, `00980`, `01152`, and
+`01328`-`01331`, with no regressions (`1,558 passed / 365 unsupported`, zero
+failures or timeouts). All seven lack comparable simulation observables, so
+the evidence is structural round-trip only. Full Python passes `577` tests
+with `28` skipped; cached BioModels was not scanned for this feature.
+
+SBML report: `/private/tmp/bng3-sbml-prior-event-history-full.json`, SHA-256
+`3988764e9238e693307955b88c8b01658fa678b5446e3f49bc399543493ac2ba`.
+
 ## Constant reaction IDs in event math — 2026-09-26
 
 Atomizer now resolves reaction identifiers in event triggers, delays, priorities,
