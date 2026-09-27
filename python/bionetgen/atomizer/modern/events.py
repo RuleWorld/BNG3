@@ -35,6 +35,12 @@ def _no_event_square_linear_rate(
     return None
 
 
+def _no_event_species_volume_change(
+    _identifier: str, _event: SBMLEvent
+) -> Optional[Tuple[float, float]]:
+    return None
+
+
 def _no_event_reaction_rate(_identifier: str, _event: SBMLEvent) -> Optional[float]:
     return None
 
@@ -122,6 +128,11 @@ class EventTranslationContext:
     resolve_square_linear_rate_for_event: Callable[
         [str, SBMLEvent], Optional[Tuple[float, float]]
     ] = _no_event_square_linear_rate
+    # Return the old and assigned volumes when a concentration state has one
+    # statically resolved event-driven compartment change.
+    resolve_species_volume_change_for_event: Callable[
+        [str, SBMLEvent], Optional[Tuple[float, float]]
+    ] = _no_event_species_volume_change
     # Return (initial, quadratic, linear, constant) for a proven scalar ODE
     # dx/dt = quadratic*x^2 + linear*x + constant.
     resolve_quadratic_rate_for_event: Callable[
@@ -1990,6 +2001,21 @@ def _render_set(kind: str, target: str, value: float) -> str:
     if command is None:
         raise ValueError(f"unsupported event assignment kind: {kind}")
     return f'{command}("{target}", "{_format_number(value)}")'
+
+
+def _render_sets(sets: Sequence[Tuple[str, str, float]]) -> List[str]:
+    lines: List[str] = []
+    for kind, target, value in sets:
+        lines.append(_render_set(kind, target, value))
+        if kind == "volume":
+            # The importer uses this parameter for concentration conversion
+            # and volume-scaled reaction laws. Keep it in sync with the
+            # simulator's compartment size after a scheduled volume change.
+            lines.append(
+                f'setParameter("__compartment_{target}__", '
+                f'"{_format_number(value)}")'
+            )
+    return lines
 
 
 def synthesize_event_actions(
@@ -3934,6 +3960,49 @@ def synthesize_event_actions(
                                     and math.isfinite(crossing_time)
                                     and crossing_time >= 0
                                 ):
+                                    volume_change = (
+                                        context.resolve_species_volume_change_for_event(
+                                            identifier, event
+                                        )
+                                    )
+                                    if volume_change is not None:
+                                        old_volume, new_volume = volume_change
+                                        post_event_value = (
+                                            crossing_value * old_volume / new_volume
+                                        )
+                                        post_event_true = (
+                                            post_event_value > crossing_value
+                                            if operator == "gt"
+                                            else (
+                                                post_event_value >= crossing_value
+                                                if operator == "geq"
+                                                else (
+                                                    post_event_value < crossing_value
+                                                    if operator == "lt"
+                                                    else post_event_value
+                                                    <= crossing_value
+                                                )
+                                            )
+                                        )
+                                        if not post_event_true and squared_slope != 0:
+                                            reentry_delay = (
+                                                crossing_value * crossing_value
+                                                - post_event_value * post_event_value
+                                            ) / squared_slope
+                                            reentry_time = crossing_time + reentry_delay
+                                            if (
+                                                math.isfinite(reentry_time)
+                                                and reentry_delay >= 0
+                                                and reentry_time
+                                                <= context.base_t_end + 1e-12
+                                            ):
+                                                untranslated.append(
+                                                    (
+                                                        event,
+                                                        "volume change can cause the state trigger to re-enter within the simulation horizon",
+                                                    )
+                                                )
+                                                continue
                                     threshold = _format_number(crossing_time)
                                     trigger_state_trajectory = (
                                         identifier,
@@ -4466,9 +4535,7 @@ def synthesize_event_actions(
     ]
     for time, sets in merged:
         if time <= 0:
-            lines.extend(
-                _render_set(kind, target, value) for kind, target, value in sets
-            )
+            lines.extend(_render_sets(sets))
 
     phase_start = 0.0
     first = True
@@ -4483,19 +4550,17 @@ def synthesize_event_actions(
         else:
             lines.append(
                 f'simulate({{continue=>1, method=>"{method}", '
-                f"t_end=>{_format_number(end)}, n_steps=>{steps}}})"
+                f"t_end=>{_format_number(end - phase_start)}, n_steps=>{steps}}})"
             )
         for time, sets in merged:
             if time > 0 and abs(time - end) < 1e-12:
-                lines.extend(
-                    _render_set(kind, target, value) for kind, target, value in sets
-                )
+                lines.extend(_render_sets(sets))
         phase_start = end
 
     if abs(phase_start - t_final) > 1e-12:
         lines.append(
             f'simulate({{continue=>1, method=>"{method}", '
-            f"t_end=>{_format_number(t_final)}, "
+            f"t_end=>{_format_number(t_final - phase_start)}, "
             f"n_steps=>{steps_for(phase_start, t_final)}}})"
         )
 

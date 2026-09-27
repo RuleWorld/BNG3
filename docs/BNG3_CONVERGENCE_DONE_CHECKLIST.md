@@ -4,7 +4,7 @@
 **Last targeted audit:** 2026-09-27 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
 **Working branch:** `main`
-**Current base:** `546897b568a94e6895e0baacf5dcc9c7e7f09a7b`; full curated BioModels refresh is running against this source
+**Current base:** `c39f4230c5bf27a05f2593359cd26a9a9da747e9`; the full curated BioModels refresh completed on pre-change source `546897b`; post-change refresh remains pending
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -6683,6 +6683,42 @@ the other groups remain implementation targets.
   Report `/private/tmp/bng3-mutable-priority-full-final.json`, SHA-256
   `3b11d9f1943fbaf2965d45c82731cbe50e34da5ffc7f508f7108a6e566d8bcf8`.
 - [ ] Rerun full curated BioModels flat/atomized inventory against final source.
+
+## Compartment-volume event thresholds and action horizons — 2026-09-27
+
+- [x] Lower a reciprocal-flux trigger for one positive concentration species
+  with exact `dS/dt = k/S` dynamics only when all participating reaction
+  numerators scale linearly with the species compartment volume and one event
+  assigns a statically resolved, positive volume. Keep models with additional
+  controllers, delays, nonlinear volume scaling, or unresolved assignments
+  unsupported.
+- [x] Prove the post-volume concentration jump cannot produce a second trigger
+  edge within the requested horizon before lowering. Case with horizon 3 fires
+  once at `t=1.705`; horizon 5 remains untranslated because a second edge can
+  occur at about `t=3.888`.
+- [x] Keep generated volume state consistent by emitting `setVolume` and the
+  corresponding `__compartment_<name>__` parameter update. Fix continuation
+  phases to pass elapsed duration rather than absolute end time, so scheduled
+  event runs end at the requested simulation horizon.
+- [x] Synthetic BNG3/libRoadRunner amount parity passes over the 3-unit run
+  (maximum absolute difference `2.7631467560240708e-5`); the exact event
+  boundary is excluded. Official cases `semantic/00945` and `semantic/00947`
+  pass import/write/reimport and native-reader validation.
+- [x] Full Python suite: `620 passed, 28 skipped`; Ruff, Black (`py39`), and
+  `git diff --check` pass.
+- [x] Full pinned SBML Test Suite: `1,650 passed, 273 unsupported, 0 failed,
+  0 timeouts`. Gains are `semantic/00945` and `semantic/00947`; no previously
+  passing case regressed. Report `/private/tmp/bng3-volume-event-full-sbml.json`,
+  SHA-256 `f42c161579b696f9f00b28fed8fdd2a88e6b70c516aa6116f493cc249b2d790b`.
+  Aggregate core gate remains open.
+- [x] Full curated BioModels flat/atomized inventory completed as the pre-change
+  baseline on source `546897b`: `793/1,083` SBML passed, `110` unsupported,
+  `7` failed, `173` timed out. Relative to the previous full report, 18
+  unsupported cases and one timeout moved to pass; 6 unsupported cases timed
+  out and 2 prior timeouts failed. Report
+  `/private/tmp/bng3-curated-546897b-both.json`, SHA-256
+  `6186337abdf6968e3e196c84f0949b8496e853e38ee781635d4edecdcc2b16b0`.
+- [ ] Rerun all curated BioModels against the compartment-event changes.
 
 ## Current-source Atomizer cross-engine refresh — 2026-09-27
 

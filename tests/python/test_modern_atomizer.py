@@ -2696,7 +2696,7 @@ def test_playground_event_actions_set_compartment_volume():
     assert result.converted == 1
     assert result.actions_block is not None
     assert 'setVolume({target=>"cell", value=>2})' in result.actions_block
-    assert "setParameter(" not in result.actions_block
+    assert 'setParameter("__compartment_cell__", "2")' in result.actions_block
 
 
 def test_playground_event_actions_use_source_half_up_step_rounding():
@@ -2725,8 +2725,7 @@ def test_playground_event_actions_use_source_half_up_step_rounding():
     )
 
     assert result.actions_block is not None
-    assert "t_end=>1, n_steps=>3" in result.actions_block
-    assert "t_end=>2, n_steps=>3" in result.actions_block
+    assert result.actions_block.count("t_end=>1, n_steps=>3") == 2
 
 
 def test_playground_event_actions_fold_time_at_trigger_or_execution_time():

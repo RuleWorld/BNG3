@@ -6548,6 +6548,62 @@ def generate_bngl(
                 exponent /= float(compartment.size)
             return (initial, exponent) if math.isfinite(exponent) else None
 
+        def resolve_species_volume_change_for_event(
+            identifier: str, event_context: SBMLEvent
+        ) -> Optional[Tuple[float, float]]:
+            species_id = next(
+                (
+                    sid
+                    for sid in model.species
+                    if standardize_name(sid) == standardize_name(identifier)
+                ),
+                None,
+            )
+            species = model.species.get(species_id) if species_id else None
+            if (
+                species is None
+                or species.has_only_substance_units
+                or not species.compartment
+                or len(model.events) != 1
+                or getattr(event_context, "delay", None)
+            ):
+                return None
+            compartment_id = species.compartment
+            compartment = model.compartments.get(compartment_id)
+            if compartment is None or compartment.size <= 0:
+                return None
+            assignments = [
+                assignment
+                for assignment in event_context.assignments
+                if standardize_name(assignment.variable)
+                == standardize_name(compartment_id)
+            ]
+            if len(assignments) != 1 or len(event_context.assignments) != 1:
+                return None
+            if any(rule.variable == compartment_id for rule in model.rules) or any(
+                assignment.symbol == compartment_id
+                for assignment in model.initial_assignments
+            ):
+                return None
+            try:
+                assigned_size = fold_numeric(
+                    str(assignments[0].math or ""),
+                    lambda symbol: (
+                        resolve_event_parameter(symbol)
+                        if is_compile_time_constant(symbol)
+                        else None
+                    ),
+                )
+            except (TypeError, ValueError, SyntaxError):
+                return None
+            if (
+                assigned_size is None
+                or not math.isfinite(assigned_size)
+                or assigned_size <= 0
+            ):
+                return None
+            return float(compartment.size), float(assigned_size)
+
         def resolve_square_linear_event_rate(
             identifier: str, event_context: SBMLEvent
         ) -> Optional[Tuple[float, float]]:
@@ -6582,19 +6638,29 @@ def generate_bngl(
                 return None
 
             compartment = model.compartments.get(species.compartment or "")
+            volume_change = resolve_species_volume_change_for_event(
+                species_id, event_context
+            )
             if not species.has_only_substance_units and (
                 compartment is None
-                or not compartment.constant
                 or compartment.size <= 0
-                or any(rule.variable == species.compartment for rule in model.rules)
-                or any(
-                    assignment.symbol == species.compartment
-                    for assignment in model.initial_assignments
-                )
-                or any(
-                    assignment.variable == species.compartment
-                    for event in model.events
-                    for assignment in event.assignments
+                or (not compartment.constant and volume_change is None)
+                or (
+                    compartment.constant
+                    and (
+                        any(
+                            rule.variable == species.compartment for rule in model.rules
+                        )
+                        or any(
+                            assignment.symbol == species.compartment
+                            for assignment in model.initial_assignments
+                        )
+                        or any(
+                            assignment.variable == species.compartment
+                            for event in model.events
+                            for assignment in event.assignments
+                        )
+                    )
                 )
             ):
                 return None
@@ -6644,6 +6710,57 @@ def generate_bngl(
                 if compartment_value is not None:
                     return float(compartment_value.size)
                 return None
+
+            def compartment_polynomial(
+                node: ast.AST,
+            ) -> Optional[Tuple[float, float]]:
+                if isinstance(node, ast.Name) and standardize_name(
+                    node.id
+                ) == standardize_name(species.compartment or ""):
+                    return (0.0, 1.0)
+                if isinstance(node, ast.UnaryOp) and isinstance(
+                    node.op, (ast.UAdd, ast.USub)
+                ):
+                    value = compartment_polynomial(node.operand)
+                    if value is None:
+                        return None
+                    sign = -1.0 if isinstance(node.op, ast.USub) else 1.0
+                    return sign * value[0], sign * value[1]
+                if isinstance(node, ast.BinOp):
+                    left = compartment_polynomial(node.left)
+                    right = compartment_polynomial(node.right)
+                    if left is None or right is None:
+                        return None
+                    if isinstance(node.op, ast.Add):
+                        return left[0] + right[0], left[1] + right[1]
+                    if isinstance(node.op, ast.Sub):
+                        return left[0] - right[0], left[1] - right[1]
+                    if isinstance(node.op, ast.Mult):
+                        if left[1] != 0 and right[1] != 0:
+                            return None
+                        return (
+                            left[0] * right[0],
+                            left[0] * right[1] + left[1] * right[0],
+                        )
+                    if isinstance(node.op, ast.Div) and right[1] == 0:
+                        if right[0] == 0:
+                            return None
+                        return left[0] / right[0], left[1] / right[0]
+                    if isinstance(node.op, ast.Pow) and right[1] == 0:
+                        if right[0] == 0:
+                            return 1.0, 0.0
+                        if right[0] == 1:
+                            return left
+                    return None
+                if any(
+                    isinstance(child, ast.Name)
+                    and standardize_name(child.id)
+                    == standardize_name(species.compartment or "")
+                    for child in ast.walk(node)
+                ):
+                    return None
+                folded = fold_numeric(ast.unparse(node), resolve_flux_constant)
+                return (float(folded), 0.0) if folded is not None else None
 
             amount_rate_coefficient = 0.0
             found = False
@@ -6696,16 +6813,24 @@ def generate_bngl(
                     == standardize_name(species_id)
                 ):
                     return None
-                numerator = fold_numeric(
-                    ast.unparse(parsed.left), resolve_flux_constant
-                )
-                if numerator is None or not math.isfinite(numerator):
+                if volume_change is not None:
+                    volume_coefficients = compartment_polynomial(parsed.left)
+                    if volume_coefficients is None or volume_coefficients[0] != 0:
+                        return None
+                    numerator = volume_coefficients[1]
+                else:
+                    numerator = fold_numeric(
+                        ast.unparse(parsed.left), resolve_flux_constant
+                    )
+                    if numerator is None:
+                        return None
+                if not math.isfinite(numerator):
                     return None
                 amount_rate_coefficient += net_coefficient * numerator
                 found = True
             if not found:
                 return None
-            if not species.has_only_substance_units:
+            if not species.has_only_substance_units and volume_change is None:
                 amount_rate_coefficient /= float(compartment.size)
             squared_slope = 2.0 * amount_rate_coefficient
             return (initial, squared_slope) if math.isfinite(squared_slope) else None
@@ -7394,6 +7519,9 @@ def generate_bngl(
                     resolve_exponential_event_rate(identifier, event)
                 ),
                 resolve_square_linear_rate_for_event=(resolve_square_linear_event_rate),
+                resolve_species_volume_change_for_event=(
+                    resolve_species_volume_change_for_event
+                ),
                 resolve_quadratic_rate_for_event=resolve_quadratic_event_rate,
                 resolve_quadratic_state_values_for_event=(
                     resolve_quadratic_event_state_values

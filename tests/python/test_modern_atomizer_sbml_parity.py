@@ -1483,6 +1483,72 @@ def test_reciprocal_species_flux_schedules_exact_threshold_event():
     assert "state-dependent or non-constant event" not in result.bngl
 
 
+def test_reciprocal_species_flux_schedules_volume_event_without_reentry(tmp_path):
+    import numpy as np
+    import pytest
+
+    roadrunner = pytest.importorskip("roadrunner")
+    from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.model import load
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="reciprocal_species_flux_volume_event">
+        <listOfCompartments><compartment id="C" size="1" constant="false"/></listOfCompartments>
+        <listOfSpecies><species id="S" compartment="C" initialAmount="1"
+          hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/></listOfSpecies>
+        <listOfParameters><parameter id="k" value="1" constant="true"/></listOfParameters>
+        <listOfReactions><reaction id="source" reversible="false">
+          <listOfProducts><speciesReference species="S" stoichiometry="1" constant="true"/></listOfProducts>
+          <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><divide/>
+            <apply><times/><ci>C</ci><ci>k</ci></apply><ci>S</ci>
+          </apply></math></kineticLaw>
+        </reaction></listOfReactions>
+        <listOfEvents><event id="threshold" useValuesFromTriggerTime="true">
+          <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><gt/><ci>S</ci><cn>2.1</cn></apply>
+          </math></trigger>
+          <listOfEventAssignments><eventAssignment variable="C"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>10</cn></math></eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True, t_end=3, n_steps=300).atomize(xml)
+
+    assert result.success, result.error
+    assert "t_end=>1.705" in result.bngl
+    assert 'setVolume({target=>"C", value=>10})' in result.bngl
+    assert 'setParameter("__compartment_C__", "10")' in result.bngl
+    assert "state-dependent or non-constant event" not in result.bngl
+
+    model_path = tmp_path / "reciprocal_volume_event.bngl"
+    model_path.write_text(result.bngl, encoding="utf-8")
+    load(model_path).execute()
+    lines = model_path.with_suffix(".gdat").read_text().splitlines()
+    columns = lines[0].lstrip("# ").split()
+    bng_data = np.loadtxt(lines[1:])
+    times = bng_data[:, columns.index("time")]
+    assert np.isclose(times[-1], 3.0, rtol=0, atol=1e-10)
+
+    rr = roadrunner.RoadRunner(xml)
+    rr.integrator.setValue("relative_tolerance", 1e-7)
+    rr.integrator.setValue("absolute_tolerance", 1e-12)
+    rr.timeCourseSelections = ["time", "[S]", "C"]
+    reference = rr.simulate(times=times)
+    away_from_event = np.abs(times - 1.705) > 1e-9
+    bng_values = bng_data[away_from_event, columns.index("S_amt")]
+    rr_values = (
+        reference[away_from_event, reference.colnames.index("[S]")]
+        * reference[away_from_event, reference.colnames.index("C")]
+    )
+    scale = max(float(np.max(np.abs(bng_values))), float(np.max(np.abs(rr_values))))
+    assert float(np.max(np.abs(bng_values - rr_values))) <= max(5e-12, 1e-5 * scale)
+
+    longer = Atomizer(quiet_mode=True, t_end=5, n_steps=500).atomize(xml)
+    assert longer.success, longer.error
+    assert 'setVolume({target=>"C", value=>10})' not in longer.bngl
+    assert "volume change can cause the state trigger to re-enter" in longer.bngl
+
+
 def test_event_math_folds_constant_reaction_identifier_rate():
     from bionetgen.atomizer.modern import Atomizer
 

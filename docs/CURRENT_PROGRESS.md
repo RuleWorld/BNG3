@@ -5,6 +5,37 @@
 **Branch:** `main`
 **Status:** merged convergence, nonequilibrium energy, and SBML material-gap work; release validation remains incomplete
 
+## Exact compartment-volume event edges and run horizons — 2026-09-27
+
+Atomizer now lowers a narrow reciprocal-flux event when one positive species
+obeys `dS/dt = k/S`, the event assigns its only compartment a fixed positive
+volume, every contributing reaction rate scales linearly with that volume, and
+the post-jump trajectory cannot cross the trigger again before the requested
+horizon. It emits both `setVolume` and the matching generated compartment
+parameter update. Reentry within the horizon stays explicitly unsupported.
+Scheduled continuation actions now use interval durations, preserving the
+requested final simulation time instead of extending it after each event.
+
+The synthetic 3-unit BNG3/libRoadRunner parity case crosses at `t=1.705` and
+has maximum amount difference `2.7631467560240708e-5`; a 5-unit run is rejected
+because the trigger can re-enter at `t≈3.888`. Official semantic cases `00945`
+and `00947` pass import/write/reimport and native-reader checks; a dedicated
+simulation comparison validates generated event behavior. Full pinned SBML
+Test Suite: `1,650 passed, 273 unsupported, 0 failed, 0 timeouts`; gains are
+`semantic/00945` and `semantic/00947`, with no regressions. The aggregate core
+gate remains open. Report `/private/tmp/bng3-volume-event-full-sbml.json`,
+SHA-256 `f42c161579b696f9f00b28fed8fdd2a88e6b70c516aa6116f493cc249b2d790b`.
+Full Python suite: `620 passed, 28 skipped`.
+
+The completed 1,096-record curated BioModels/libRoadRunner run is a pre-change
+baseline on source `546897b`: 793/1,083 SBML models passed, 110 were
+unsupported, 7 failed, and 173 timed out. Compared with the prior full report,
+18 formerly unsupported records and one timeout now pass; 6 records timed out
+and two timeouts failed. Report
+`/private/tmp/bng3-curated-546897b-both.json`, SHA-256
+`6186337abdf6968e3e196c84f0949b8496e853e38ee781635d4edecdcc2b16b0`. A full
+curated rerun against the volume-event changes remains pending.
+
 ## Current-source Atomizer cross-engine refresh — 2026-09-27
 
 Current pushed source (`22e5f3e`) also refreshed the 10-model, three-repeat
@@ -23,7 +54,8 @@ in both modes; legacy PyBioNetGen passes flat mode but its atomized output has
 unresolved `fRate0`. Curated `BIOMD0000000414` passes 200/200 seeds in both
 modes for BNG3 direct NFsim versus standalone NFsim, with matching ensemble
 means over 24 points (`worst_z=0`). The full 1,096-record flat/atomized curated
-BioModels versus libRoadRunner refresh is running on source commit `546897b`.
+BioModels versus libRoadRunner refresh on source commit `546897b` is complete;
+its pre-change results are recorded above.
 Reports: `/private/tmp/bng3-cross-engine-01293-current.json` (SHA-256
 `e991eb4f2802d1c82046c96ec48a13c2e2bbe4dff1c74d66b8f9295c986d8002`) and
 `/private/tmp/bng3-atomizer-nfsim-0414-546897b-200runs.json` (SHA-256

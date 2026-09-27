@@ -937,7 +937,7 @@ def test_delayed_affine_reset_event_repeats_until_the_horizon():
     assert result.untranslated == []
     assert result.actions_block is not None
     first_execution = result.actions_block.index("t_end=>3.1")
-    second_execution = result.actions_block.index("t_end=>8.1")
+    second_execution = result.actions_block.index("t_end=>5")
     assert first_execution < second_execution
 
 
@@ -1659,7 +1659,7 @@ def test_periodic_reset_event_is_expanded_to_repeated_parameter_updates():
     assert 'setParameter("Q", "1")' in result.actions_block
     assert 'setParameter("reset", "1")' in result.actions_block
     assert 'setParameter("reset", "2")' in result.actions_block
-    assert "t_end=>2.5" in result.actions_block
+    assert "t_end=>0.5" in result.actions_block
 
 
 def test_periodic_event_at_requested_end_does_not_extend_past_scheduled_horizon():
