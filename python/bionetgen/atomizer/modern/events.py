@@ -3577,6 +3577,62 @@ def synthesize_event_actions(
         else list(enumerate(events))
     )
     normal_converted = 0
+
+    def conjunction_stays_false_through_horizon(event: SBMLEvent) -> bool:
+        """Prove one monotone conjunct stays false for this run's horizon."""
+        terms = _split_call_arguments(event.trigger)
+        if terms is None:
+            return False
+        horizon = float(context.base_t_end)
+        if not math.isfinite(horizon) or horizon < 0:
+            return False
+        for term in terms:
+            parsed = _parse_affine_state_threshold(term)
+            if parsed is None:
+                continue
+            identifier, operator, threshold_expression = parsed
+            threshold = fold(threshold_expression, event_context=event)
+            initial = context.resolve_initial_value(identifier)
+            if (
+                threshold is None
+                or initial is None
+                or not math.isfinite(threshold)
+                or not math.isfinite(initial)
+            ):
+                continue
+            trajectory = context.resolve_affine_rate_for_event(identifier, event)
+            exponential = None
+            if trajectory is None:
+                exponential = context.resolve_exponential_rate_for_event(
+                    identifier, event
+                )
+            if trajectory is not None:
+                value_at_end = trajectory[0] + trajectory[1] * horizon
+            elif exponential is not None:
+                try:
+                    value_at_end = exponential[0] * math.exp(exponential[1] * horizon)
+                except OverflowError:
+                    continue
+            else:
+                continue
+            if not math.isfinite(value_at_end):
+                continue
+
+            def satisfies(value: float) -> bool:
+                if operator == "gt":
+                    return value > threshold
+                if operator == "geq":
+                    return value >= threshold
+                if operator == "lt":
+                    return value < threshold
+                return value <= threshold
+
+            # Each accepted trajectory is monotone, so a one-sided comparison
+            # that is false at both endpoints is false throughout the run.
+            if not satisfies(initial) and not satisfies(value_at_end):
+                return True
+        return False
+
     for _source_index, event in ordered_events:
         if id(event) in periodic_handled or id(event) in event_proven_inactive:
             continue
@@ -3585,6 +3641,10 @@ def synthesize_event_actions(
             continue
         if id(event) in affine_interval_no_action:
             normal_converted += 1
+            continue
+        if conjunction_stays_false_through_horizon(event):
+            normal_converted += 1
+            horizon_limited += 1
             continue
         event_trigger = event.trigger
         gated_time_bounds: Optional[Tuple[float, float]] = None

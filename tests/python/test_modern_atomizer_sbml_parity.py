@@ -937,6 +937,51 @@ def test_static_assignment_rule_parameter_resolves_exponential_event_rate():
     assert "not a simple time threshold" in dynamic_result.bngl
 
 
+def test_conjunctive_event_outside_horizon_is_safely_omitted():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="conjunctive_event_after_horizon">
+        <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies>
+          <species id="S1" compartment="C" initialAmount="1" hasOnlySubstanceUnits="true"/>
+          <species id="S2" compartment="C" initialAmount="0" hasOnlySubstanceUnits="true"/>
+        </listOfSpecies>
+        <listOfParameters><parameter id="k" value="1" constant="true"/></listOfParameters>
+        <listOfReactions><reaction id="decay" reversible="false">
+          <listOfReactants><speciesReference species="S1"/></listOfReactants>
+          <listOfProducts><speciesReference species="S2"/></listOfProducts>
+          <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><times/><ci>k</ci><ci>S1</ci></apply>
+          </math></kineticLaw>
+        </reaction></listOfReactions>
+        <listOfEvents><event id="threshold" useValuesFromTriggerTime="true">
+          <trigger initialValue="true" persistent="true">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><and/>
+                <apply><lt/><ci>S1</ci><cn>0.1</cn></apply>
+                <apply><lt/><ci>S2</ci><cn>0.95</cn></apply>
+              </apply>
+            </math>
+          </trigger>
+          <listOfEventAssignments><eventAssignment variable="S1">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math>
+          </eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True, t_end=1).atomize(xml)
+
+    assert result.success, result.error
+    assert "state-dependent or non-constant event" not in result.bngl
+    assert "begin actions" not in result.bngl
+
+    longer_result = Atomizer(quiet_mode=True, t_end=3).atomize(xml)
+    assert longer_result.success, longer_result.error
+    assert "state-dependent or non-constant event" in longer_result.bngl
+
+
 def test_exponential_self_reset_after_requested_horizon_is_informational():
     from bionetgen.atomizer.modern import Atomizer
 
