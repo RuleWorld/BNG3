@@ -7071,8 +7071,10 @@ def generate_bngl(
             event_context: SBMLEvent,
             state_values: Mapping[str, float],
             resolving: Optional[set[str]] = None,
+            *,
+            allow_simultaneous: bool = True,
         ) -> Optional[float]:
-            """Evaluate assignment rules from proven event-priority state."""
+            """Evaluate assignment rules from proven event-time state."""
             rules = [
                 rule
                 for rule in model.rules
@@ -7108,9 +7110,12 @@ def generate_bngl(
                         event_context,
                         state_values,
                         active,
+                        allow_simultaneous=allow_simultaneous,
                     )
                 affine = resolve_affine_event_rate(
-                    symbol, event_context, ignore_simultaneous=True
+                    symbol,
+                    event_context,
+                    ignore_simultaneous=allow_simultaneous,
                 )
                 if affine is not None:
                     return affine[0] + affine[1] * time_value
@@ -7367,6 +7372,15 @@ def generate_bngl(
                     )
                 ),
                 resolve_priority_assignment_value=resolve_priority_assignment_value,
+                resolve_assignment_rule_value_for_event=lambda identifier, time, event, state: (
+                    resolve_priority_assignment_value(
+                        identifier,
+                        time,
+                        event,
+                        state,
+                        allow_simultaneous=False,
+                    )
+                ),
                 resolve_priority_initial_parameter_value=(
                     resolve_priority_initial_parameter_value
                 ),

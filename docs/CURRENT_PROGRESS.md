@@ -5,6 +5,21 @@
 **Branch:** `main`
 **Status:** merged convergence, nonequilibrium energy, and SBML material-gap work; release validation remains incomplete
 
+## Delayed event assignment-rule values — 2026-09-27
+
+Delayed event assignments can now evaluate assignment rules from proven state
+trajectories at execution time. Other event controllers and unproven
+dependencies stay unsupported. Official case `semantic/01579` now passes. Its
+three observables match libRoadRunner 2.10.0 over 101 samples through the delayed
+assignment at t=6.5 (10-unit horizon), with maximum absolute difference
+`1.7763568394002505e-15`. Full Python suite: `617 passed, 28 skipped`. Full
+SBML suite: `1,638 passed, 285 unsupported, 0 failed, 0 timeouts`; one gain and
+no regressions. Supported-surface gate passes; aggregate core gate remains
+open. Full curated BioModels rerun remains pending; a baseline run was
+interrupted at ~112/1,096 models to avoid mixing revisions. Report
+`/private/tmp/bng3-assignment-rule-events-full.json` (SHA-256
+`74a9e48ff491f3b7161f68bab7d8fd0c9fc78136eb4e294dab2f8b8eb22ad940`).
+
 ## Delayed affine state-reset events — 2026-09-27
 
 Atomizer now recognizes repeatable event resets over affine state trajectories,

@@ -6684,6 +6684,33 @@ the other groups remain implementation targets.
   `3b11d9f1943fbaf2965d45c82731cbe50e34da5ffc7f508f7108a6e566d8bcf8`.
 - [ ] Rerun full curated BioModels flat/atomized inventory against final source.
 
+## Delayed event assignment-rule values — 2026-09-27
+
+- [x] Evaluate a supported assignment rule from proven event-time trajectories
+  when folding delayed event assignment values. Reject dependencies controlled
+  by another event or otherwise lacking an exact trajectory; preserve the
+  existing stricter behavior for simultaneous-priority evaluation.
+- [x] Official `semantic/01579` passes conversion, write/reimport, and native
+  reader checks. At the suite's one-unit horizon, all three observables match
+  libRoadRunner 2.10.0 exactly over 11 samples. With a 10-unit, 100-step
+  comparison that includes the delayed assignment at t=6.5, the same observables
+  match over 101 samples with maximum absolute difference
+  `1.7763568394002505e-15`. Reports:
+  `/private/tmp/bng3-semantic-01579-assignment-rule.json`, SHA-256
+  `ca8bf8edbc0741bd52a4d0944f9c4d2baa797e6f6c962085e06be004c0b68e03`; and
+  `/private/tmp/bng3-semantic-01579-assignment-rule-t10.json`, SHA-256
+  `d73b317ed5e5c8abbdfd2a99172057216be3f2975e776b766f1df5efc83b07df`.
+- [x] Full Python suite: `617 passed, 28 skipped`; Ruff, Black (`py39`), and
+  `git diff --check` pass.
+- [x] Full pinned SBML Test Suite: `1,638 passed, 285 unsupported, 0 failed,
+  0 timeouts`; `semantic/01579` gained status, with no prior pass regressed.
+  Report `/private/tmp/bng3-assignment-rule-events-full.json`, SHA-256
+  `74a9e48ff491f3b7161f68bab7d8fd0c9fc78136eb4e294dab2f8b8eb22ad940`.
+  Supported-surface gate passes; aggregate core gate remains open.
+- [ ] Full curated BioModels rerun is still required. An earlier run on commit
+  `a8479a9` was interrupted after roughly 112 of 1,096 models to keep its
+  results from mixing source revisions; it produced no complete report.
+
 ## Delayed affine state-reset events — 2026-09-27
 
 - [x] Schedule a self-reset event over a proven affine state trajectory, including

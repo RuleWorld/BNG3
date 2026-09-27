@@ -146,6 +146,12 @@ class EventTranslationContext:
     resolve_priority_assignment_value: Callable[
         [str, float, SBMLEvent, Mapping[str, float]], Optional[float]
     ] = _no_priority_assignment_value
+    # Resolve assignment-rule values from event-local state trajectories when
+    # folding delayed event assignments. This uses stricter, non-simultaneous
+    # controller checks than priority evaluation.
+    resolve_assignment_rule_value_for_event: Callable[
+        [str, float, SBMLEvent, Mapping[str, float]], Optional[float]
+    ] = _no_priority_assignment_value
     # Initial value for a parameter that has no rule controller. Priority
     # evaluation may use it before the current simultaneous event group runs.
     resolve_priority_initial_parameter_value: Callable[[str], Optional[float]] = (
@@ -2141,15 +2147,10 @@ def synthesize_event_actions(
                             value = math.sqrt(radicand)
                         elif event_context is not None:
                             assignment_value = (
-                                context.resolve_priority_assignment_value(
-                                    identifier,
-                                    time_value,
-                                    event_context,
-                                    values,
-                                )
+                                context.resolve_priority_assignment_value
                                 if priority_evaluation
-                                else None
-                            )
+                                else context.resolve_assignment_rule_value_for_event
+                            )(identifier, time_value, event_context, values)
                             if assignment_value is not None:
                                 value = assignment_value
                             else:

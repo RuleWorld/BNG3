@@ -769,6 +769,43 @@ def test_rate_of_exponential_parameter_lowers_exact_event_crossing():
     assert "untranslated" not in result.bngl.lower()
 
 
+def test_delayed_event_evaluates_assignment_rule_at_execution_time():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="delayed_event_assignment_rule_execution_value">
+        <listOfParameters>
+          <parameter id="p" value="0" constant="false"/>
+          <parameter id="k2" constant="false"/>
+          <parameter id="out" value="1" constant="false"/>
+        </listOfParameters>
+        <listOfRules><rateRule variable="p">
+          <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math>
+        </rateRule><assignmentRule variable="k2">
+          <math xmlns="http://www.w3.org/1998/Math/MathML"><ci>p</ci></math>
+        </assignmentRule></listOfRules>
+        <listOfEvents><event id="threshold" useValuesFromTriggerTime="false">
+          <trigger initialValue="true" persistent="true">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><gt/><ci>p</ci><cn>4.5</cn></apply>
+            </math>
+          </trigger>
+          <delay><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>2</cn></math></delay>
+          <listOfEventAssignments><eventAssignment variable="out">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><ci>k2</ci></math>
+          </eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True, t_end=10).atomize(xml)
+
+    assert result.success, result.error
+    assert "t_end=>6.5" in result.bngl
+    assert 'setParameter("out", "6.5")' in result.bngl
+    assert "state-dependent or non-constant event" not in result.bngl
+
+
 def test_exponential_self_reset_after_requested_horizon_is_informational():
     from bionetgen.atomizer.modern import Atomizer
 
