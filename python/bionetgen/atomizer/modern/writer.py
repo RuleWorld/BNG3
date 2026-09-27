@@ -7,9 +7,9 @@ import json
 import math
 import os
 import re
-from urllib.parse import quote
 from collections import OrderedDict
 from dataclasses import dataclass, field
+from fractions import Fraction
 from typing import (
     Dict,
     Iterable,
@@ -21,6 +21,7 @@ from typing import (
     Set,
     Tuple,
 )
+from urllib.parse import quote
 
 from .events import (
     EventTranslationContext,
@@ -2620,6 +2621,147 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
 
         return fold_numeric(expanded, resolve)
 
+    def bounded_constant_expression(
+        expression: str, resolving: Optional[Set[str]] = None
+    ) -> Optional[float]:
+        """Resolve a constant value over the full simulation time interval."""
+        direct = initial_expression(expression, require_immutable_symbols=True)
+        if direct is not None:
+            return direct
+
+        resolving = set(resolving or ())
+        value = expression.strip()
+        while value.startswith("(") and value.endswith(")"):
+            depth = 0
+            balanced = True
+            for index, character in enumerate(value):
+                if character == "(":
+                    depth += 1
+                elif character == ")":
+                    depth -= 1
+                    if depth == 0 and index != len(value) - 1:
+                        balanced = False
+                        break
+            if not balanced or depth != 0:
+                break
+            value = value[1:-1].strip()
+
+        if (match := re.fullmatch(r"if\s*\((.*)\)", value, re.IGNORECASE)) is not None:
+            arguments = _split_arguments(match.group(1))
+            if len(arguments) == 3:
+                condition = time_condition_over_horizon(arguments[0])
+                if condition is True:
+                    return bounded_constant_expression(arguments[1], resolving)
+                if condition is False:
+                    return bounded_constant_expression(arguments[2], resolving)
+                then_value = bounded_constant_expression(arguments[1], resolving)
+                else_value = bounded_constant_expression(arguments[2], resolving)
+                if (
+                    then_value is not None
+                    and else_value is not None
+                    and then_value == else_value
+                ):
+                    return then_value
+                return None
+
+        identifier = re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value)
+        if identifier is None:
+            return None
+        symbol = identifier.group(0)
+        if (
+            symbol in resolving
+            or symbol in event_targets
+            or symbol in initial_assignment_targets
+        ):
+            return None
+        target_rules = [rule for rule in model.rules if rule.variable == symbol]
+        if len(target_rules) != 1 or target_rules[0].type != "assignment":
+            return None
+        return bounded_constant_expression(
+            str(target_rules[0].math or ""), resolving | {symbol}
+        )
+
+    def time_condition_over_horizon(expression: str) -> Optional[bool]:
+        """Prove a simple affine-in-time comparison has one truth value."""
+        try:
+            condition = ast.parse(expression, mode="eval").body
+        except (SyntaxError, ValueError):
+            return None
+        if not isinstance(condition, ast.Compare) or len(condition.ops) != 1:
+            return None
+
+        def affine_time(node: ast.AST) -> Optional[Tuple[Fraction, Fraction]]:
+            if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+                value = int(node.value) if isinstance(node.value, bool) else node.value
+                return Fraction(0), Fraction(str(value))
+            if isinstance(node, ast.Name):
+                if node.id.lower() == "time":
+                    return Fraction(1), Fraction(0)
+                constant = initial_expression(node.id, require_immutable_symbols=True)
+                return (
+                    (Fraction(0), Fraction(str(constant)))
+                    if constant is not None
+                    else None
+                )
+            if isinstance(node, ast.UnaryOp) and isinstance(
+                node.op, (ast.UAdd, ast.USub)
+            ):
+                operand = affine_time(node.operand)
+                if operand is None:
+                    return None
+                sign = Fraction(-1) if isinstance(node.op, ast.USub) else Fraction(1)
+                return sign * operand[0], sign * operand[1]
+            if not isinstance(node, ast.BinOp):
+                return None
+            left = affine_time(node.left)
+            right = affine_time(node.right)
+            if left is None or right is None:
+                return None
+            if isinstance(node.op, ast.Add):
+                return left[0] + right[0], left[1] + right[1]
+            if isinstance(node.op, ast.Sub):
+                return left[0] - right[0], left[1] - right[1]
+            if isinstance(node.op, ast.Mult):
+                if left[0] != 0 and right[0] != 0:
+                    return None
+                if left[0] != 0:
+                    return left[0] * right[1], left[1] * right[1]
+                if right[0] != 0:
+                    return right[0] * left[1], right[1] * left[1]
+                return Fraction(0), left[1] * right[1]
+            if isinstance(node.op, ast.Div):
+                if right[0] != 0 or right[1] == 0:
+                    return None
+                return left[0] / right[1], left[1] / right[1]
+            return None
+
+        left = affine_time(condition.left)
+        right = affine_time(condition.comparators[0])
+        if left is None or right is None:
+            return None
+        slope = left[0] - right[0]
+        intercept = left[1] - right[1]
+        endpoints = (intercept, slope * Fraction(str(t_end)) + intercept)
+        low, high = min(endpoints), max(endpoints)
+        operator = condition.ops[0]
+        if isinstance(operator, ast.Lt):
+            return True if high < 0 else False if low >= 0 else None
+        if isinstance(operator, ast.LtE):
+            return True if high <= 0 else False if low > 0 else None
+        if isinstance(operator, ast.Gt):
+            return True if low > 0 else False if high <= 0 else None
+        if isinstance(operator, ast.GtE):
+            return True if low >= 0 else False if high < 0 else None
+        if isinstance(operator, ast.Eq):
+            if slope == 0:
+                return intercept == 0
+            return False if high < 0 or low > 0 else None
+        if isinstance(operator, ast.NotEq):
+            if slope == 0:
+                return intercept != 0
+            return True if high < 0 or low > 0 else None
+        return None
+
     def affine_trajectory(target: str) -> Optional[Tuple[float, float]]:
         """Prove a target has an independent constant-rate trajectory."""
         initial = initial_value(target)
@@ -2739,6 +2881,8 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
                 duration = initial_expression(
                     arguments[1], require_immutable_symbols=True
                 )
+                if duration is None:
+                    duration = bounded_constant_expression(arguments[1])
             except (TypeError, ValueError):
                 return expression, 0
             if duration is None or not math.isfinite(duration) or duration < 0:

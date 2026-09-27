@@ -2412,6 +2412,49 @@ def test_delay_of_affine_species_uses_initial_history_before_delay_boundary():
     assert "time() - (0.2)" in result.bngl
 
 
+def test_nested_delay_uses_zero_lag_from_bounded_assignment_rule():
+    from bionetgen.atomizer.modern import Atomizer
+
+    # SBML Test Suite semantic/00985: with x(0)=0 and dx/dt=1, z=delay(x, 1)
+    # is zero throughout [0, 1]. The second delay therefore has zero lag and
+    # must reduce to x over the requested one-unit simulation horizon.
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="nested_bounded_delay">
+        <listOfParameters>
+          <parameter id="z" constant="false"/>
+          <parameter id="x" value="0" constant="false"/>
+          <parameter id="y" constant="false"/>
+        </listOfParameters>
+        <listOfRules>
+          <assignmentRule variable="z"><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><csymbol definitionURL="http://www.sbml.org/sbml/symbols/delay">delay</csymbol>
+              <ci>x</ci><cn type="integer">1</cn>
+            </apply>
+          </math></assignmentRule>
+          <rateRule variable="x"><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <cn type="integer">1</cn>
+          </math></rateRule>
+          <assignmentRule variable="y"><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><csymbol definitionURL="http://www.sbml.org/sbml/symbols/delay">delay</csymbol>
+              <ci>x</ci><ci>z</ci>
+            </apply>
+          </math></assignmentRule>
+        </listOfRules>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True, t_end=1, n_steps=10).atomize(xml)
+
+    assert result.success, result.error
+    assert "delay(" not in result.bngl.lower()
+    assert 'math function "delay"' not in result.bngl
+
+    longer_horizon = Atomizer(quiet_mode=True, t_end=2, n_steps=20).atomize(xml)
+
+    assert longer_horizon.success, longer_horizon.error
+    assert "delay(" in longer_horizon.bngl.lower()
+
+
 def test_sbml_delay_of_unchanging_parameter_lowers_to_value():
     xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
       <model id="delay_of_static_parameter">

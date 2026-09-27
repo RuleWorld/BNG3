@@ -5,6 +5,29 @@
 **Branch:** `main`
 **Status:** merged convergence, nonequilibrium energy, and SBML material-gap work; release validation remains incomplete
 
+## Bounded assignment-rule delay aliases — 2026-09-27
+
+Delay lowering now follows a single acyclic assignment-rule alias when its
+value is constant over the requested simulation horizon. Time comparisons
+are checked with exact rational affine bounds. Event-controlled lags,
+initial-assignment targets, cycles, and lags that change during the horizon
+remain unsupported.
+
+The regression grounded in `semantic/00985` confirms that the nested delay
+reduces at `t_end=1` and remains explicit at `t_end=2`. The official one-case
+run passes conversion, round-trip, native-reader, and BNG3/libRoadRunner
+comparison: four observables, 11 samples, zero maximum absolute difference.
+The report is partial and does not test SBML reference-result conformance:
+`/private/tmp/bng3-delay-alias-00985-final2.json`, SHA-256
+`e868fed657b220957f0a48131007a183d7ec835a95aacb2228373d27d7731be5`.
+
+Full Python suite: `637 passed, 28 skipped`; Ruff, Black (`py39`), and
+`git diff --check` pass. The full suite and curated BioModels aggregates were
+not rerun. A cached BioModels screen found no direct assignment-rule-symbol
+lags among 16 delay calls in 1,084 primary XML files, so no curated gain is
+claimed. The full SBML Test Suite and curated BioModels aggregates were not
+rerun; the latest full aggregate reports remain based on source `a0ff898`.
+
 ## Quadratic event trajectories in independent components — 2026-09-27
 
 The quadratic event resolver now analyzes only the stoichiometric component

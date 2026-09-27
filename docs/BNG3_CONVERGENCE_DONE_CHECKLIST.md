@@ -4,7 +4,7 @@
 **Last targeted audit:** 2026-09-27 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
 **Working branch:** `main`
-**Current implementation base:** `a0ff898` (`feat(atomizer): scope quadratic event resolution`); latest full pinned SBML Test Suite and curated BioModels reports are recorded below
+**Latest full aggregate report source:** `a0ff898` (`feat(atomizer): scope quadratic event resolution`); later scoped changes have targeted evidence below, while full pinned SBML Test Suite and curated BioModels reports remain tied to this source
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -31,6 +31,31 @@ completion charter and Section 11 of BNG3_INTEGRATION_PLAN.md into auditable
 work items. The unification work orders in docs/BNG3_unification_spec.md remain the
 detailed dependency map; provenance/capability-matrix.yml remains the
 capability inventory.
+
+## Bounded assignment-rule delay aliases — 2026-09-27
+
+- [x] Delay lowering now follows a single acyclic assignment-rule alias when
+  its value is provably constant for the complete requested simulation
+  horizon. Affine-in-time conditions use exact rational endpoint checks;
+  event-controlled values, initial-assignment targets, cycles, and changing
+  lag values remain unsupported.
+- [x] A focused regression grounded in `semantic/00985` confirms the nested
+  delay reduces at `t_end=1` when the lag is zero throughout the interval, and
+  remains a delay at `t_end=2` when the lag changes. The full Python suite
+  passes: `637 passed, 28 skipped`; Ruff, Black (`py39`), and
+  `git diff --check` pass.
+- [x] The official one-case run passes `semantic/00985` conversion,
+  round-trip, native-reader, and BNG3/libRoadRunner comparison. Four
+  observables match across 11 samples with zero maximum absolute difference.
+  This is a partial report, not a full-suite result; SBML Test Suite reference
+  conformance was not run. Report
+  `/private/tmp/bng3-delay-alias-00985-final2.json`, SHA-256
+  `e868fed657b220957f0a48131007a183d7ec835a95aacb2228373d27d7731be5`.
+- [ ] Full SBML Test Suite and curated BioModels aggregates were not rerun for
+  this one-case change. The cached BioModels screen found 16 delay calls and
+  no direct assignment-rule-symbol lag among 1,084 primary XML files; no
+  curated BioModels gain is claimed. Aggregate reports below remain based on
+  source `a0ff898`.
 
 ## Event-controlled deterministic species-reference stoichiometry — 2026-09-27
 
