@@ -5749,6 +5749,13 @@ def generate_bngl(
                 return True
             parameter = model.parameters.get(identifier)
             if parameter is not None:
+                rules = [rule for rule in model.rules if rule.variable == identifier]
+                if rules:
+                    return (
+                        len(rules) == 1
+                        and rules[0].type == "assignment"
+                        and resolve_event_parameter(identifier) is not None
+                    )
                 # SBML permits a parameter with constant="false" to be
                 # changed, but it remains fixed throughout this model unless
                 # a rule or event actually changes it. An initial assignment
@@ -5775,6 +5782,8 @@ def generate_bngl(
         }
         initial_assignment_cache: dict[str, Optional[float]] = {}
         initial_assignment_stack: set[str] = set()
+        assignment_rule_cache: dict[str, Optional[float]] = {}
+        assignment_rule_stack: set[str] = set()
 
         def resolve_event_parameter(identifier: str) -> Optional[float]:
             # In BNGL, __Avogadro__ is normalized to 1 for molecule-count
@@ -5802,6 +5811,30 @@ def generate_bngl(
                 value = fold_numeric(expression, resolve_event_parameter)
                 initial_assignment_stack.remove(identifier)
                 initial_assignment_cache[identifier] = value
+                return value
+            assignment_rules = [
+                rule
+                for rule in model.rules
+                if rule.variable == identifier and rule.type == "assignment"
+            ]
+            if assignment_rules:
+                if len(assignment_rules) != 1 or any(
+                    assignment.variable == identifier
+                    for event in model.events
+                    for assignment in event.assignments
+                ):
+                    return None
+                if identifier in assignment_rule_cache:
+                    return assignment_rule_cache[identifier]
+                if identifier in assignment_rule_stack:
+                    return None
+                assignment_rule_stack.add(identifier)
+                expression = extend_function(
+                    assignment_rules[0].math, {}, model.function_definitions
+                )
+                value = fold_numeric(expression, resolve_event_parameter)
+                assignment_rule_stack.remove(identifier)
+                assignment_rule_cache[identifier] = value
                 return value
             parameter = model.parameters.get(identifier)
             if parameter is not None:
@@ -6318,8 +6351,14 @@ def generate_bngl(
                 )
 
                 def resolve_immutable(symbol: str) -> Optional[float]:
-                    if not is_compile_time_constant(symbol) or any(
-                        rule.variable == symbol for rule in model.rules
+                    rules = [rule for rule in model.rules if rule.variable == symbol]
+                    if not is_compile_time_constant(symbol) or (
+                        rules
+                        and not (
+                            len(rules) == 1
+                            and rules[0].type == "assignment"
+                            and resolve_event_parameter(symbol) is not None
+                        )
                     ):
                         return None
                     return resolve_event_parameter(symbol)
@@ -6423,6 +6462,13 @@ def generate_bngl(
 
             def resolve_immutable(symbol: str) -> Optional[float]:
                 if is_compile_time_constant(symbol):
+                    rules = [rule for rule in model.rules if rule.variable == symbol]
+                    if rules and not (
+                        len(rules) == 1
+                        and rules[0].type == "assignment"
+                        and resolve_event_parameter(symbol) is not None
+                    ):
+                        return None
                     value = resolve_event_parameter(symbol)
                     if value is not None:
                         return value

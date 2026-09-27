@@ -878,6 +878,65 @@ def test_single_variable_algebraic_rule_lowers_for_initial_event_trigger():
     assert "state-dependent or non-constant event" not in result.bngl
 
 
+def test_static_assignment_rule_parameter_resolves_exponential_event_rate():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="algebraic_rate_event">
+        <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies>
+          <species id="S1" compartment="C" initialAmount="1" hasOnlySubstanceUnits="true"/>
+          <species id="S2" compartment="C" initialAmount="0" hasOnlySubstanceUnits="true"/>
+        </listOfSpecies>
+        <listOfParameters>
+          <parameter id="k2" value="0" constant="false"/>
+        </listOfParameters>
+        <listOfRules><algebraicRule>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><plus/><ci>k2</ci><cn>-2.5</cn></apply>
+          </math>
+        </algebraicRule></listOfRules>
+        <listOfReactions><reaction id="decay" reversible="false">
+          <listOfReactants><speciesReference species="S1"/></listOfReactants>
+          <listOfProducts><speciesReference species="S2"/></listOfProducts>
+          <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><times/><ci>k2</ci><ci>S1</ci></apply>
+          </math></kineticLaw>
+        </reaction></listOfReactions>
+        <listOfEvents><event id="threshold" useValuesFromTriggerTime="true">
+          <trigger initialValue="true" persistent="true">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><lt/><ci>S1</ci><cn>0.25</cn></apply>
+            </math>
+          </trigger>
+          <delay><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></delay>
+          <listOfEventAssignments><eventAssignment variable="S2">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0.75</cn></math>
+          </eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True, t_end=3).atomize(xml)
+
+    assert result.success, result.error
+    assert "not a simple time threshold" not in result.bngl
+    assert "t_end=>1.554" in result.bngl
+    assert 'setConcentration("@C:M_S2()", "0.75")' in result.bngl
+
+    dynamic_rule_xml = (
+        xml.replace("<algebraicRule>", '<assignmentRule variable="k2">')
+        .replace("</algebraicRule>", "</assignmentRule>")
+        .replace(
+            "<apply><plus/><ci>k2</ci><cn>-2.5</cn></apply>",
+            "<ci>time</ci>",
+        )
+    )
+    dynamic_result = Atomizer(quiet_mode=True, t_end=3).atomize(dynamic_rule_xml)
+    assert dynamic_result.success, dynamic_result.error
+    assert "not a simple time threshold" in dynamic_result.bngl
+
+
 def test_exponential_self_reset_after_requested_horizon_is_informational():
     from bionetgen.atomizer.modern import Atomizer
 
