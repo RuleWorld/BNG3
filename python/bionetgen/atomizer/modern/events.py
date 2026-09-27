@@ -2326,6 +2326,7 @@ def synthesize_event_actions(
     periodic_rate_state_ids: set[str] = set()
     periodic_changes: List[Tuple[float, Mapping[str, float]]] = []
     periodic_initial_values: dict[str, float] = {}
+    event_proven_inactive: set[int] = set()
     for event in events:
         parsed = _parse_periodic_reset_trigger(event.trigger)
         if parsed is None:
@@ -3117,6 +3118,50 @@ def synthesize_event_actions(
                     static_event_initial_fires[id(event)] = {identifier: initial}
 
     for event in events:
+        if event.trigger_initial_value is not False:
+            continue
+        expression = context.expand_functions(event.trigger)
+        identifiers = set(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", expression))
+        function_names = {
+            name.lower()
+            for name in re.findall(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*\(", expression)
+        }
+        identifiers = {
+            identifier
+            for identifier in identifiers
+            if identifier.lower() not in function_names
+        }
+        if not identifiers or "time" in {item.lower() for item in identifiers}:
+            continue
+        initial_values: dict[str, float] = {}
+        statically_resolved = True
+        for identifier in identifiers:
+            if not context.is_param(identifier):
+                statically_resolved = False
+                break
+            value = context.resolve_initial_value(identifier)
+            if value is None or not math.isfinite(float(value)):
+                statically_resolved = False
+                break
+            initial_values[identifier] = float(value)
+        if not statically_resolved or any(
+            other is not event
+            and any(
+                standardize_name(variable)
+                in {standardize_name(identifier) for identifier in identifiers}
+                for assignment in other.assignments
+                for variable, _expression in [_event_assignment(assignment)]
+            )
+            for other in events
+        ):
+            continue
+        initial_truth = fold(
+            expression, dynamic_values=initial_values, event_context=event
+        )
+        if initial_truth == 1:
+            static_event_initial_fires[id(event)] = initial_values
+
+    for event in events:
         parsed_delayed_interval = _parse_delayed_affine_state_interval(event.trigger)
         parsed_interval = _parse_affine_state_interval(event.trigger)
         interval_shift = 0.0
@@ -3299,79 +3344,80 @@ def synthesize_event_actions(
         value = fold(normalized, dynamic_values=dynamic_values)
         return value == 0
 
-    if periodic_target_ids:
-        periodic_changes.sort(key=lambda item: item[0])
-        initial_state = {
-            identifier: periodic_initial_values.get(
-                identifier, context.resolve_initial_value(identifier)
-            )
-            for identifier in periodic_target_ids
+    periodic_changes.sort(key=lambda item: item[0])
+    initial_state = {
+        identifier: periodic_initial_values.get(
+            identifier, context.resolve_initial_value(identifier)
+        )
+        for identifier in periodic_target_ids
+    }
+    for event in events:
+        if id(event) in periodic_handled:
+            continue
+        identifiers = set(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", event.trigger))
+        symbol_ids = {
+            identifier for identifier in identifiers if context.is_param(identifier)
         }
-        for event in events:
-            if id(event) in periodic_handled:
-                continue
-            identifiers = set(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", event.trigger))
-            symbol_ids = {
-                identifier for identifier in identifiers if context.is_param(identifier)
-            }
-            self_targets = {
-                variable
-                for assignment in event.assignments
-                for variable, _expression in [_event_assignment(assignment)]
-                if context.is_param(variable)
-            }
-            if (
-                not symbol_ids
-                or symbol_ids & periodic_rate_state_ids
-                or not symbol_ids.issubset(
-                    periodic_target_ids
-                    | self_targets
-                    | {
-                        identifier
-                        for identifier in symbol_ids
-                        if context.is_compile_time_constant(identifier)
-                    }
-                )
-                or any(
-                    id(other) not in periodic_handled
-                    and other is not event
-                    and any(
-                        variable in symbol_ids
-                        for assignment in other.assignments
-                        for variable, _expression in [_event_assignment(assignment)]
-                    )
-                    for other in events
-                )
-            ):
-                continue
-            dynamic_state = dict(initial_state)
-            self_initial_values = {
-                identifier: context.resolve_initial_value(identifier)
-                for identifier in self_targets
-            }
-            if any(value is None for value in self_initial_values.values()):
-                continue
-            dynamic_state.update(
-                {
-                    identifier: float(value)
-                    for identifier, value in self_initial_values.items()
+        self_targets = {
+            variable
+            for assignment in event.assignments
+            for variable, _expression in [_event_assignment(assignment)]
+            if context.is_param(variable)
+        }
+        if (
+            not symbol_ids
+            or symbol_ids & periodic_rate_state_ids
+            or not symbol_ids.issubset(
+                periodic_target_ids
+                | self_targets
+                | {
+                    identifier
+                    for identifier in symbol_ids
+                    if context.is_compile_time_constant(identifier)
                 }
             )
-            initial_truth = fold(event.trigger, dynamic_values=dynamic_state)
-            if initial_truth != 0 and not provably_false_in_horizon(
+            or any(
+                id(other) not in periodic_handled
+                and other is not event
+                and any(
+                    variable in symbol_ids
+                    for assignment in other.assignments
+                    for variable, _expression in [_event_assignment(assignment)]
+                )
+                for other in events
+            )
+        ):
+            continue
+        dynamic_state = dict(initial_state)
+        self_initial_values = {
+            identifier: context.resolve_initial_value(identifier)
+            for identifier in self_targets
+        }
+        if any(value is None for value in self_initial_values.values()):
+            continue
+        dynamic_state.update(
+            {
+                identifier: float(value)
+                for identifier, value in self_initial_values.items()
+            }
+        )
+        initial_truth = fold(event.trigger, dynamic_values=dynamic_state)
+        if initial_truth != 0 and not provably_false_in_horizon(
+            event.trigger, dynamic_state
+        ):
+            continue
+        always_false = True
+        for _time, changes in periodic_changes:
+            dynamic_state.update(changes)
+            trigger_value = fold(event.trigger, dynamic_values=dynamic_state)
+            if trigger_value != 0 and not provably_false_in_horizon(
                 event.trigger, dynamic_state
             ):
-                continue
-            always_false = True
-            for _time, changes in periodic_changes:
-                dynamic_state.update(changes)
-                trigger_value = fold(event.trigger, dynamic_values=dynamic_state)
-                if trigger_value != 0 and not provably_false_in_horizon(
-                    event.trigger, dynamic_state
-                ):
-                    always_false = False
-                    break
-            if always_false:
+                always_false = False
+                break
+        if always_false:
+            event_proven_inactive.add(id(event))
+            if periodic_target_ids:
                 periodic_handled.add(id(event))
                 periodic_target_ids.update(self_targets)
                 periodic_initial_values.update(
@@ -3412,7 +3458,7 @@ def synthesize_event_actions(
     )
     normal_converted = 0
     for _source_index, event in ordered_events:
-        if id(event) in periodic_handled:
+        if id(event) in periodic_handled or id(event) in event_proven_inactive:
             continue
         if id(event) in static_event_no_action:
             normal_converted += 1

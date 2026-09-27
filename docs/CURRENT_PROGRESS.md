@@ -2140,3 +2140,13 @@ maximum absolute difference `3.55e-15`). The full pinned suite is `1,631
 passed, 292 unsupported, 0 failed, 0 timeouts`, one gain and no regressions;
 Python is `610 passed, 28 skipped`. The curated BioModels run was interrupted
 after this code changed and must be rerun on the final source.
+
+Parameter-only event proofs now omit a self-triggering event when its initial
+predicate is false and no rule or other event can change the trigger state.
+They also schedule the t=0 rising edge when SBML sets `initialValue=false` but
+the constant parameter predicate is true. Cases `01712` and `01713` now pass
+round-trip and two-observable BNG3/libRoadRunner comparisons (11 samples each;
+maximum absolute difference `3.55e-15`). Full Python is `613 passed, 28
+skipped`; the full SBML suite is `1,633 passed, 290 unsupported, 0 failed, 0
+timeouts`, two gains and no regressions. Curated BioModels must be rerun on
+this source.

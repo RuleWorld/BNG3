@@ -737,6 +737,103 @@ def test_simultaneous_event_priorities_fold_untouched_mutable_parameters():
     assert higher_initial_priority < recalculated_priority
 
 
+def test_self_triggering_parameter_event_is_omitted_when_initially_false():
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLEventAssignment
+
+    event = SBMLEvent(
+        id="self-trigger",
+        trigger="geq(k1, 2.25)",
+        trigger_initial_value=False,
+        assignments=[SBMLEventAssignment("k1", "3")],
+    )
+    result = synthesize_event_actions(
+        [event],
+        EventTranslationContext(
+            resolve_species_pattern=lambda _identifier: None,
+            resolve_param=lambda _identifier: None,
+            is_param=lambda identifier: identifier == "k1",
+            is_compile_time_constant=lambda _identifier: False,
+            resolve_initial_value=lambda identifier: 0 if identifier == "k1" else None,
+        ),
+    )
+
+    assert result.converted == 0
+    assert result.untranslated == []
+    assert result.actions_block is None
+
+
+def test_parameter_event_is_not_omitted_when_another_event_can_arm_it():
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLEventAssignment
+
+    events = [
+        SBMLEvent(
+            id="self-trigger",
+            trigger="geq(k1, 2.25)",
+            trigger_initial_value=False,
+            assignments=[SBMLEventAssignment("k1", "3")],
+        ),
+        SBMLEvent(
+            id="arm-trigger",
+            trigger="gt(time, 1)",
+            trigger_initial_value=False,
+            assignments=[SBMLEventAssignment("k1", "3")],
+        ),
+    ]
+    result = synthesize_event_actions(
+        events,
+        EventTranslationContext(
+            resolve_species_pattern=lambda _identifier: None,
+            resolve_param=lambda _identifier: None,
+            is_param=lambda identifier: identifier == "k1",
+            is_compile_time_constant=lambda _identifier: False,
+            resolve_initial_value=lambda identifier: 0 if identifier == "k1" else None,
+        ),
+    )
+
+    assert any(event.id == "self-trigger" for event, _reason in result.untranslated)
+
+
+def test_initially_true_parameter_trigger_fires_when_initial_value_is_false():
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLEventAssignment
+
+    event = SBMLEvent(
+        id="initial-edge",
+        trigger="leq(k1, 2.25)",
+        delay="2.3",
+        trigger_initial_value=False,
+        assignments=[SBMLEventAssignment("k1", "3")],
+    )
+    result = synthesize_event_actions(
+        [event],
+        EventTranslationContext(
+            resolve_species_pattern=lambda _identifier: None,
+            resolve_param=lambda _identifier: None,
+            is_param=lambda identifier: identifier == "k1",
+            is_compile_time_constant=lambda _identifier: False,
+            resolve_initial_value=lambda identifier: 0 if identifier == "k1" else None,
+        ),
+    )
+
+    assert result.converted == 1
+    assert result.untranslated == []
+    assert result.actions_block is not None
+    assert result.actions_block.index(
+        'setParameter("k1", "3")'
+    ) > result.actions_block.index("t_end=>2.3")
+
+
 def test_simultaneous_event_priorities_recompute_after_each_assignment():
     from bionetgen.atomizer.modern.events import (
         EventTranslationContext,

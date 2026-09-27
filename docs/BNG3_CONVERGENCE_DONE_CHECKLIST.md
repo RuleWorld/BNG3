@@ -6683,3 +6683,28 @@ the other groups remain implementation targets.
   Report `/private/tmp/bng3-mutable-priority-full-final.json`, SHA-256
   `3b11d9f1943fbaf2965d45c82731cbe50e34da5ffc7f508f7108a6e566d8bcf8`.
 - [ ] Rerun full curated BioModels flat/atomized inventory against final source.
+
+## Static parameter event edges — 2026-09-27
+
+- [x] Omit a parameter-only event proven unable to fire: its initial predicate
+  is false, the trigger contains only parameters with resolved initial values,
+  and no rule or other event can change those values. Keep events with another
+  potential writer unsupported.
+- [x] Lower the time-zero rising edge when `triggerInitialValue=false` and a
+  constant parameter predicate is already true. Preserve the trigger snapshot
+  and delay; do not treat time-dependent triggers as static.
+- [x] Official `semantic/01712` and `semantic/01713` pass conversion, SBML
+  write/reimport, native-reader checks, and BNG3/libRoadRunner 2.10.0 comparison
+  for two observables each (11 samples; max absolute difference
+  `3.552713678800501e-15`). Reports:
+  `/private/tmp/bng3-semantic-01712-inactive-events.json`, SHA-256
+  `7241ad52ae8beb553495f0255f126bf1650d8f349d6ce93ca77f24b2753332b0`; and
+  `/private/tmp/bng3-semantic-01713-initial-trigger.json`, SHA-256
+  `ac3884f260842545ed303af2a6b8dd85afb82dfdb5cec767ce04cdcd5d4339a5`.
+- [x] Full Python suite: `613 passed, 28 skipped`; Ruff, Black (`py39`), and
+  `git diff --check` pass.
+- [x] Full pinned SBML Test Suite: `1,633 passed, 290 unsupported, 0 failed,
+  0 timeouts`; only `semantic/01712` and `01713` gained status and no prior
+  pass regressed. Report `/private/tmp/bng3-inactive-event-full.json`, SHA-256
+  `d073c2068e2c416098cc42875bc5176f2445bc2c55826d615b32d5de603571a6`.
+- [ ] Rerun full curated BioModels flat/atomized inventory against final source.
