@@ -7206,3 +7206,31 @@ the other groups remain implementation targets.
   pass regressed. Report `/private/tmp/bng3-inactive-event-full.json`, SHA-256
   `d073c2068e2c416098cc42875bc5176f2445bc2c55826d615b32d5de603571a6`.
 - [ ] Rerun full curated BioModels flat/atomized inventory against final source.
+
+## Independent state-trigger events in separate reaction components — 2026-09-27
+
+- [x] Scope quadratic event trajectory proofs to the symbols read by the
+  active trigger, reaction component, and compartment. Ignore another event's
+  assignments only when they cannot change those values; retain the
+  unsupported path for kinetic coupling or shared active state.
+- [x] Add a regression with two reversible first-order components and delayed
+  events in each. Both scheduled assignments execute, and all four species
+  match libRoadRunner away from the action boundaries.
+- [x] Pinned SBML Test Suite cases `semantic/00847`, `00850`, `01047`, and
+  `01050` pass their full per-record gates. All observables pass BNG3/
+  libRoadRunner comparison (maximum absolute difference `4.84e-12`).
+- [x] Focused quadratic-event regressions: `8 passed`; full Python suite:
+  `641 passed, 28 skipped`. Ruff, Black (`py39`), and `git diff --check` pass.
+- [x] Full pinned SBML Test Suite: `1,641 passed, 282 unsupported, 0 failed,
+  0 timeouts`, four gains (`00847`, `00850`, `01047`, `01050`) and no
+  regressions versus `1,637/286/0/0`. Report
+  `/private/tmp/bng3-independent-events-full-sbml.json`, SHA-256
+  `7a707af67afce91b4bc9808b9738cad41ee32dbf9065df48c11dfdae81cc2b93`.
+  Aggregate core support remains incomplete.
+- [x] Full offline flat/atomized curated BioModels inventory: `792/1,083` SBML
+  records passed, `109` unsupported, `5` failed, and `177` timed out across
+  `1,096` inventory records. Every record retained its prior status; this
+  change produced no confirmed curated-model gains or regressions. Report
+  `/private/tmp/bng3-independent-events-biomodels-both.json`, SHA-256
+  `e34738f57db500da19fe2f28618c0772c729c4ae36fda5452f8a68dd8747d9c5`.
+  The aggregate curated-model gates remain incomplete.

@@ -2491,3 +2491,14 @@ maximum absolute difference `3.55e-15`). Full Python is `613 passed, 28
 skipped`; the full SBML suite is `1,633 passed, 290 unsupported, 0 failed, 0
 timeouts`, two gains and no regressions. Curated BioModels must be rerun on
 this source.
+
+Quadratic event trajectory proofs now ignore assignments from another event
+only when its targets cannot affect the active trigger, reaction rates, or
+compartment. Two delayed event assignments in separate reversible first-order
+components match libRoadRunner across all four species. Official cases `00847`,
+`00850`, `01047`, and `01050` pass with maximum observable error `4.84e-12`.
+Full Python is `641 passed, 28 skipped`; the pinned SBML suite is `1,641 passed,
+282 unsupported, 0 failed, 0 timed out` (four gains, no regressions). The full
+offline curated inventory retains its prior status for all 1,096 records:
+`792/1,083` SBML pass, `109` unsupported, `5` fail, and `177` time out. Report
+hashes and scope are recorded in the convergence checklist.

@@ -1201,6 +1201,133 @@ def test_quadratic_state_event_rejects_kinetic_coupling_to_an_independent_compon
     assert "Events NOT simulated" in result.bngl
 
 
+def _independent_quadratic_event_pair_model(
+    delay_first: float = 0, delay_second: float = 0
+) -> str:
+    def delay_element(value: float) -> str:
+        if value == 0:
+            return ""
+        return f"""<delay><math xmlns="http://www.w3.org/1998/Math/MathML">
+          <cn>{value}</cn></math></delay>"""
+
+    return f"""<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="independent_quadratic_event_pair">
+        <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies>
+          <species id="S1" compartment="C" initialAmount="1" hasOnlySubstanceUnits="false"/>
+          <species id="S2" compartment="C" initialAmount="2" hasOnlySubstanceUnits="false"/>
+          <species id="S3" compartment="C" initialAmount="1" hasOnlySubstanceUnits="false"/>
+          <species id="S4" compartment="C" initialAmount="1.5" hasOnlySubstanceUnits="false"/>
+        </listOfSpecies>
+        <listOfParameters>
+          <parameter id="kf" value="0.9" constant="true"/>
+          <parameter id="kr" value="0.075" constant="true"/>
+          <parameter id="k1" value="0.75" constant="true"/>
+          <parameter id="k2" value="0.15" constant="true"/>
+        </listOfParameters>
+        <listOfReactions>
+          <reaction id="first_pair" reversible="true">
+            <listOfReactants><speciesReference species="S1"/></listOfReactants>
+            <listOfProducts><speciesReference species="S2"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><times/>
+              <ci>C</ci><apply><plus/><apply><times/><ci>kf</ci><ci>S1</ci></apply>
+                <apply><times/><cn>-1</cn><ci>kr</ci><ci>S2</ci></apply></apply>
+            </apply></math></kineticLaw>
+          </reaction>
+          <reaction id="second_pair" reversible="true">
+            <listOfReactants><speciesReference species="S3"/></listOfReactants>
+            <listOfProducts><speciesReference species="S4"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><times/>
+              <ci>C</ci><apply><plus/><apply><times/><ci>k1</ci><ci>S3</ci></apply>
+                <apply><times/><cn>-1</cn><ci>k2</ci><ci>S4</ci></apply></apply>
+            </apply></math></kineticLaw>
+          </reaction>
+        </listOfReactions>
+        <listOfEvents>
+          <event id="first_threshold" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><lt/><ci>S1</ci><cn>0.5</cn></apply>
+            </math></trigger>
+            {delay_element(delay_first)}
+            <listOfEventAssignments><eventAssignment variable="S2">
+              <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1.5</cn></math>
+            </eventAssignment></listOfEventAssignments>
+          </event>
+          <event id="second_threshold" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><lt/><ci>S3</ci><cn>0.75</cn></apply>
+            </math></trigger>
+            {delay_element(delay_second)}
+            <listOfEventAssignments><eventAssignment variable="S4">
+              <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0.5</cn></math>
+            </eventAssignment></listOfEventAssignments>
+          </event>
+        </listOfEvents>
+      </model>
+    </sbml>"""
+
+
+def test_quadratic_state_events_ignore_unrelated_event_assignments(tmp_path):
+    import numpy as np
+    import pytest
+
+    roadrunner = pytest.importorskip("roadrunner")
+    from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.model import load
+
+    xml = _independent_quadratic_event_pair_model(delay_first=2, delay_second=2.5)
+    result = Atomizer(quiet_mode=True, t_end=5, n_steps=500).atomize(xml)
+
+    assert result.success, result.error
+    assert "state-dependent or non-constant event" not in result.bngl
+    assert "Events NOT simulated" not in result.bngl
+    assert 'setConcentration("@C:M_S2()", "1.5")' in result.bngl
+    assert 'setConcentration("@C:M_S4()", "0.5")' in result.bngl
+
+    model_path = tmp_path / "independent_event_pair.bngl"
+    model_path.write_text(result.bngl, encoding="utf-8")
+    load(model_path).execute()
+    lines = model_path.with_suffix(".gdat").read_text().splitlines()
+    columns = lines[0].lstrip("# ").split()
+    bng_data = np.loadtxt(lines[1:])
+    times = bng_data[:, columns.index("time")]
+
+    rr = roadrunner.RoadRunner(xml)
+    rr.integrator.setValue("relative_tolerance", 1e-7)
+    rr.integrator.setValue("absolute_tolerance", 1e-12)
+    rr.timeCourseSelections = ["time", "[S1]", "[S2]", "[S3]", "[S4]"]
+    reference = rr.simulate(times=times)
+    first_equilibrium = 3 * 0.075 / (0.9 + 0.075)
+    second_equilibrium = 2.5 * 0.15 / (0.75 + 0.15)
+    first_trigger = np.log((1 - first_equilibrium) / (0.5 - first_equilibrium)) / 0.975
+    second_trigger = (
+        np.log((1 - second_equilibrium) / (0.75 - second_equilibrium)) / 0.9
+    )
+    action_times = (first_trigger + 2, second_trigger + 2.5)
+    compare = np.logical_and.reduce(
+        [np.abs(times - action_time) > 1e-8 for action_time in action_times]
+    )
+    for species in ("S1", "S2", "S3", "S4"):
+        bng_values = bng_data[compare, columns.index(species)]
+        rr_values = reference[compare, reference.colnames.index(f"[{species}]")]
+        scale = max(float(np.max(np.abs(bng_values))), float(np.max(np.abs(rr_values))))
+        assert float(np.max(np.abs(bng_values - rr_values))) <= max(5e-12, 1e-5 * scale)
+
+
+def test_quadratic_state_events_keep_cross_component_controls_unsupported():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = _independent_quadratic_event_pair_model().replace(
+        "<apply><times/><ci>kf</ci><ci>S1</ci></apply>",
+        "<apply><times/><ci>kf</ci><ci>S1</ci><ci>S3</ci></apply>",
+    )
+    result = Atomizer(quiet_mode=True, t_end=5, n_steps=500).atomize(xml)
+
+    assert result.success, result.error
+    assert "state-dependent or non-constant event" in result.bngl
+    assert "Events NOT simulated" in result.bngl
+
+
 def test_quadratic_event_ignores_rules_outside_trigger_component():
     from bionetgen.atomizer.modern import Atomizer
 

@@ -7246,13 +7246,8 @@ def generate_bngl(
             state_values: Optional[Mapping[str, float]] = None,
         ) -> Optional[Tuple[float, float, float, float]]:
             """Resolve a scalar quadratic ODE in a rank-one reaction network."""
-            if (
-                model.initial_assignments
-                or any(rule.type == "algebraic" for rule in model.rules)
-                or any(
-                    event is not event_context and event.assignments
-                    for event in model.events
-                )
+            if model.initial_assignments or any(
+                rule.type == "algebraic" for rule in model.rules
             ):
                 return None
             compartment_names = {
@@ -7417,7 +7412,8 @@ def generate_bngl(
             }
             if rule_targets & (active_species_names | active_compartment_names):
                 return None
-            if rule_targets & referenced_symbols(event_context.trigger):
+            active_expression_symbols = referenced_symbols(event_context.trigger)
+            if rule_targets & active_expression_symbols:
                 return None
             for reaction, _vector, _variable_stoichiometry in reaction_vectors:
                 kinetic_law = reaction.kinetic_law
@@ -7426,8 +7422,23 @@ def generate_bngl(
                     or (kinetic_law.get("math", "") if kinetic_law else "")
                     or ""
                 )
-                if rule_targets & referenced_symbols(rate_expression):
+                rate_symbols = referenced_symbols(rate_expression)
+                if rule_targets & rate_symbols:
                     return None
+                active_expression_symbols.update(rate_symbols)
+            active_expression_symbols.update(active_species_names)
+            active_expression_symbols.update(active_compartment_names)
+            # Ignore another event only when it writes no symbol read by this
+            # trigger or its active reaction component. Cross-component control
+            # stays on the conservative path.
+            other_event_targets = {
+                standardize_name(assignment.variable)
+                for other_event in model.events
+                if other_event is not event_context
+                for assignment in other_event.assignments
+            }
+            if active_expression_symbols & other_event_targets:
+                return None
             if any(
                 reaction.fast or reaction.conversion_factor or variable_stoichiometry
                 for reaction, _vector, variable_stoichiometry in reaction_vectors
