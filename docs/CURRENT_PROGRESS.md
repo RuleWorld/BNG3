@@ -26,7 +26,8 @@ Full Python suite: `637 passed, 28 skipped`; Ruff, Black (`py39`), and
 assignment-rule-symbol lags among 16 delay calls in 1,084 primary XML files,
 so no curated gain is claimed. No aggregate was rerun for this delay-alias
 change. The full SBML Test Suite has since been refreshed at `be5bdcf`; the
-latest full curated BioModels report remains based on `a0ff898`.
+later full BioModels rerun had no status changes against the prior report, as
+recorded below.
 
 ## Single fixed-time event-controlled delay lag — 2026-09-27
 
@@ -52,7 +53,8 @@ Full Python suite: `638 passed, 28 skipped`; Ruff, Black (`py39`), and
 event-assigned lag among 16 delay calls in 1,084 primary XML files (9 parse
 errors), so no curated gain is claimed. No aggregate was rerun for this
 fixed-time-lag change. The full SBML Test Suite has since been refreshed at
-`be5bdcf`; the latest full curated BioModels report remains based on `a0ff898`.
+`be5bdcf`; a later full BioModels rerun had no status changes against its
+prior report, as recorded below.
 
 ## Quadratic event trajectories in independent components — 2026-09-27
 
@@ -119,8 +121,13 @@ passing and the aggregate gate still open. This is a cumulative refresh since
 are not attributed only to rule isolation. The report is
 `/private/tmp/bng3-rules-outside-trigger-component-full-sbml.json`, SHA-256
 `9cab759cdb6f1cd62e71423a51bb81775e4fbe5029e7c9fb98abcd00b39f0875`. Curated
-BioModels was not rerun and its latest full aggregate remains based on
-`a0ff898`. Per-case and benchmark hashes are in
+BioModels was rerun offline in both Atomizer modes across the complete
+1,096-record inventory: 792/1,083 SBML-path records passed, 109 were
+unsupported, 5 failed, and 177 timed out. All per-record statuses matched the
+previous full aggregate; `core_passed=false` and `supported_surface_passed=false`.
+Report `/private/tmp/bng3-rules-outside-trigger-component-biomodels-both.json`,
+SHA-256 `c1ed08fb093b77aacda341fd17a5b457d1bbc90617d7f716ae1cbc14a5ba6678`.
+Per-case and benchmark hashes are in
 [`BNG3_CONVERGENCE_DONE_CHECKLIST.md`](BNG3_CONVERGENCE_DONE_CHECKLIST.md).
 
 The full offline curated BioModels both-mode run on `a0ff898` completed with
@@ -292,7 +299,8 @@ skipped`. Full SBML Test Suite: `1,648 passed, 275 unsupported, 0 failed, 0
 timeouts`; one gain, no regressions. Aggregate core gate remains open. Report
 `/private/tmp/bng3-scaled-trigger-full.json` (SHA-256
 `eca4a83b3bf7da176b9002a75e7d31dd6dbb9206f76749668ad1f874b3165bfc`). Curated
-BioModels rerun remains pending.
+BioModels validation was not run for this feature at the time; the later full
+rerun above had no per-record status changes against its prior aggregate.
 
 ## Algebraic rules in initial event triggers — 2026-09-27
 
@@ -305,7 +313,8 @@ Suite case `semantic/01578` passes round-trip and exact libRoadRunner parity
 regressions. The aggregate core gate remains open. Report
 `/private/tmp/bng3-algebraic-initial-full.json` (SHA-256
 `4c008f381b48d4a171427bae13eee26a4a562dd4e28ce39dca62355c056aaba3`). Curated
-BioModels rerun remains pending.
+BioModels validation was not run for this feature at the time; the later full
+rerun above had no per-record status changes against its prior aggregate.
 
 ## Delayed event assignment-rule values — 2026-09-27
 
@@ -317,8 +326,9 @@ assignment at t=6.5 (10-unit horizon), with maximum absolute difference
 `1.7763568394002505e-15`. Full Python suite: `617 passed, 28 skipped`. Full
 SBML suite: `1,638 passed, 285 unsupported, 0 failed, 0 timeouts`; one gain and
 no regressions. Supported-surface gate passes; aggregate core gate remains
-open. Full curated BioModels rerun remains pending; a baseline run was
-interrupted at ~112/1,096 models to avoid mixing revisions. Report
+open. The first BioModels attempt for this earlier change was interrupted at
+about 112/1,096 models to avoid mixing revisions; the later full rerun is
+recorded above. Report
 `/private/tmp/bng3-assignment-rule-events-full.json` (SHA-256
 `74a9e48ff491f3b7161f68bab7d8fd0c9fc78136eb4e294dab2f8b8eb22ad940`).
 

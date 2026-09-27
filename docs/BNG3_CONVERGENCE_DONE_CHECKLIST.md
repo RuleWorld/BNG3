@@ -5,7 +5,7 @@
 **Repository:** RuleWorld/BNG3
 **Working branch:** `main`
 **Latest full pinned SBML Test Suite report:** `be5bdcf` (`feat(atomizer): isolate event trajectories from unrelated rules`), `1,637 passed / 286 unsupported / 0 failed / 0 timed out`.
-**Latest full curated BioModels report source:** `a0ff898`; this event batch has not been rerun on the curated inventory.
+**Latest full curated BioModels report:** `be5bdcf` code source (repository head `0da6020` after a docs-only commit); `792/1,083` SBML-path records passed, with no status changes against the previous full report.
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -54,8 +54,9 @@ capability inventory.
   `/private/tmp/bng3-delay-alias-00985-final2.json`, SHA-256
   `e868fed657b220957f0a48131007a183d7ec835a95aacb2228373d27d7731be5`.
 - [ ] No full SBML Test Suite or curated BioModels aggregate was rerun for
-  this one-case change. A later full SBML Suite refresh is recorded below; the
-  latest full BioModels report remains based on `a0ff898`. The cached BioModels
+  this one-case change. Later full SBML Suite and BioModels refreshes are
+  recorded below; the BioModels rerun had no status changes against its prior
+  full report. The cached BioModels
   screen found 16 delay calls and
   no direct assignment-rule-symbol lag among 1,084 primary XML files; no
   curated BioModels gain is claimed. Aggregate reports below remain based on
@@ -86,8 +87,8 @@ capability inventory.
   `git diff --check` pass. The cached BioModels screen parsed 1,084 primary
   XML files (9 parse errors), found 16 delay calls and no direct lag symbol
   controlled by an event. No curated BioModels gain is claimed. The full SBML
-  Suite was refreshed later at `be5bdcf`; the latest full BioModels aggregate
-  remains based on `a0ff898`.
+  Suite was refreshed later at `be5bdcf`; a later full BioModels rerun showed
+  no per-record status changes against its prior aggregate.
 
 ## Event-controlled deterministic species-reference stoichiometry — 2026-09-27
 
@@ -193,8 +194,16 @@ capability inventory.
   to rule isolation. Report
   `/private/tmp/bng3-rules-outside-trigger-component-full-sbml.json`,
   SHA-256 `9cab759cdb6f1cd62e71423a51bb81775e4fbe5029e7c9fb98abcd00b39f0875`.
-- [ ] Curated BioModels was not rerun for this batch; its latest full aggregate
-  remains based on `a0ff898`.
+- [x] Full offline curated BioModels run at the same `t_end=1`, 10-step,
+  60-second-per-model settings, with both Atomizer modes and all 1,096 curated
+  records: `792/1,083` SBML-path records passed, 109 were unsupported, 5
+  failed, and 177 timed out. The inventory matches the manifest. Exact status
+  comparison with the prior full report
+  `/private/tmp/bng3-independent-components-biomodels-both.json` found no
+  changed records among all 1,096 models. The report has
+  `core_passed=false` and `supported_surface_passed=false`. Report
+  `/private/tmp/bng3-rules-outside-trigger-component-biomodels-both.json`,
+  SHA-256 `c1ed08fb093b77aacda341fd17a5b457d1bbc90617d7f716ae1cbc14a5ba6678`.
 
 Targeted report SHA-256 values: `00652` at `t_end=1`,
 `6de1084d7b716f2669c650b5b5e8e86fb978f85a84f38dfcb0df32b241282a9b`;
