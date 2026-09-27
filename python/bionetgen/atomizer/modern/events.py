@@ -2072,6 +2072,22 @@ def synthesize_event_actions(
     ] = []
     scheduled_values: List[Tuple[float, str, float]] = []
     horizon_limited = 0
+    # Deterministic crossings cannot stand in for state changes caused by
+    # stochastic reaction jumps.
+    if context.method.lower() == "ssa" and not context.static_event_state:
+        stochastic_events: List[SBMLEvent] = []
+        for event in events:
+            if parse_time_threshold(event.trigger) is None:
+                untranslated.append(
+                    (
+                        event,
+                        "state-triggered SBML events require stochastic jump "
+                        "scheduling",
+                    )
+                )
+            else:
+                stochastic_events.append(event)
+        events = stochastic_events
 
     def fold(
         expression: str,

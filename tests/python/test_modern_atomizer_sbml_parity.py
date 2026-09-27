@@ -1068,6 +1068,139 @@ def test_quadratic_state_event_repeats_after_trigger_species_reset():
     assert result.bngl.count("setConcentration(") == 14
 
 
+def _independent_component_quadratic_event_model(
+    *, coupled_rate: bool = False, reverse_reaction: bool = False, delay: float = 0
+) -> str:
+    rate = """<apply><times/><ci>C</ci><apply><plus/>
+              <apply><times/><ci>kf</ci><ci>S1</ci></apply>
+              <apply><times/><cn>-1</cn><ci>kr</ci><ci>S2</ci></apply>
+            </apply></apply>"""
+    if coupled_rate:
+        rate = rate.replace(
+            "<ci>kf</ci><ci>S1</ci>", "<ci>kf</ci><ci>S1</ci><ci>S3</ci>"
+        )
+    reactant, product = "S1", "S2"
+    if reverse_reaction:
+        rate = f"<apply><minus/>{rate}</apply>"
+        reactant, product = product, reactant
+    delay_xml = (
+        f'<delay><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>{delay}</cn></math></delay>'
+        if delay
+        else ""
+    )
+    return f"""<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="independent_component_quadratic_event">
+        <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies>
+          <species id="S1" compartment="C" initialAmount="1" hasOnlySubstanceUnits="false"/>
+          <species id="S2" compartment="C" initialAmount="2" hasOnlySubstanceUnits="false"/>
+          <species id="S3" compartment="C" initialAmount="1" hasOnlySubstanceUnits="false"/>
+          <species id="S4" compartment="C" initialAmount="1.5" hasOnlySubstanceUnits="false"/>
+        </listOfSpecies>
+        <listOfParameters>
+          <parameter id="kf" value="0.9" constant="true"/>
+          <parameter id="kr" value="0.075" constant="true"/>
+          <parameter id="k1" value="0.75" constant="true"/>
+          <parameter id="k2" value="0.15" constant="true"/>
+        </listOfParameters>
+        <listOfReactions>
+          <reaction id="trigger_component" reversible="true">
+            <listOfReactants><speciesReference species="{reactant}"/></listOfReactants>
+            <listOfProducts><speciesReference species="{product}"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">{rate}</math></kineticLaw>
+          </reaction>
+          <reaction id="independent_component" reversible="true">
+            <listOfReactants><speciesReference species="S3"/></listOfReactants>
+            <listOfProducts><speciesReference species="S4"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><times/><ci>C</ci><apply><plus/>
+                <apply><times/><ci>k1</ci><ci>S3</ci></apply>
+                <apply><times/><cn>-1</cn><ci>k2</ci><ci>S4</ci></apply>
+              </apply></apply>
+            </math></kineticLaw>
+          </reaction>
+        </listOfReactions>
+        <listOfEvents><event id="threshold" useValuesFromTriggerTime="true">
+          <trigger initialValue="true" persistent="true">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><lt/><ci>S1</ci><cn>0.5</cn></apply>
+            </math>
+          </trigger>
+          {delay_xml}
+          <listOfEventAssignments>
+            <eventAssignment variable="S2">
+              <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1.5</cn></math>
+            </eventAssignment>
+            <eventAssignment variable="S4">
+              <math xmlns="http://www.w3.org/1998/Math/MathML"><ci>S2</ci></math>
+            </eventAssignment>
+          </listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+
+def test_quadratic_state_event_ignores_an_independent_dynamic_component():
+    from bionetgen.atomizer.modern import Atomizer
+
+    result = Atomizer(quiet_mode=True, t_end=5, n_steps=50).atomize(
+        _independent_component_quadratic_event_model()
+    )
+
+    assert result.success, result.error
+    assert "state-dependent or non-constant event" not in result.bngl
+    assert "# 1 time-triggered SBML event(s) translated" in result.bngl
+    assert result.bngl.count("setConcentration(") == 2
+    assert 'setConcentration("@C:M_S4()", "2.5")' in result.bngl
+
+
+def test_quadratic_independent_component_supports_delayed_reversed_reaction():
+    from bionetgen.atomizer.modern import Atomizer
+
+    result = Atomizer(quiet_mode=True, t_end=5, n_steps=50).atomize(
+        _independent_component_quadratic_event_model(reverse_reaction=True, delay=1.89)
+    )
+
+    assert result.success, result.error
+    assert "state-dependent or non-constant event" not in result.bngl
+    assert "# 1 time-triggered SBML event(s) translated" in result.bngl
+    assert result.bngl.count("setConcentration(") == 2
+    assert 'setConcentration("@C:M_S4()", "2.5")' in result.bngl
+
+
+def test_quadratic_state_event_is_not_horizon_proven_for_ssa_actions():
+    from bionetgen.atomizer.modern import Atomizer
+
+    result = Atomizer(
+        quiet_mode=True,
+        t_end=1,
+        n_steps=10,
+        actions='simulate({method=>"ssa", t_end=>1, n_steps=>10})',
+    ).atomize(_independent_component_quadratic_event_model())
+
+    assert result.success, result.error
+    assert (
+        "proven to make no state changes through the configured simulation horizon"
+        not in result.bngl
+    )
+    assert (
+        "state-triggered SBML events require stochastic jump scheduling" in result.bngl
+    )
+    assert "Events NOT simulated" in result.bngl
+
+
+def test_quadratic_state_event_rejects_kinetic_coupling_to_an_independent_component():
+    from bionetgen.atomizer.modern import Atomizer
+
+    result = Atomizer(quiet_mode=True, t_end=5, n_steps=50).atomize(
+        _independent_component_quadratic_event_model(coupled_rate=True)
+    )
+
+    assert result.success, result.error
+    assert "state-dependent or non-constant event" in result.bngl
+    assert "Events NOT simulated" in result.bngl
+
+
 def test_quadratic_event_staying_true_after_reset_does_not_refire():
     from bionetgen.atomizer.modern import Atomizer
 

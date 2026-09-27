@@ -7095,28 +7095,75 @@ def generate_bngl(
                 for sid, species in model.species.items()
                 if not species.constant and not species.boundary_condition
             }
-            reaction_vectors: List[Tuple[object, Dict[str, float]]] = []
+            reaction_vectors: List[Tuple[object, Dict[str, float], set[str]]] = []
             for reaction in model.reactions.values():
-                if reaction.fast or reaction.conversion_factor:
-                    return None
                 vector = {sid: 0.0 for sid in dynamic_species}
+                variable_stoichiometry_species: set[str] = set()
                 for sign, side in (
                     (-1.0, reaction.reactants),
                     (1.0, reaction.products),
                 ):
                     for reference in side:
                         if reference.variable_stoichiometry:
-                            return None
+                            if reference.species in dynamic_species:
+                                variable_stoichiometry_species.add(reference.species)
+                            continue
                         if reference.species in vector:
                             vector[reference.species] += sign * float(
                                 reference.stoichiometry
                             )
-                if any(abs(value) > 1e-14 for value in vector.values()):
-                    reaction_vectors.append((reaction, vector))
+                if any(abs(value) > 1e-14 for value in vector.values()) or (
+                    variable_stoichiometry_species
+                ):
+                    reaction_vectors.append(
+                        (reaction, vector, variable_stoichiometry_species)
+                    )
+
+            # Scope rank-one trajectory analysis to the stoichiometric
+            # component that contains the trigger coordinate. Reactions in a
+            # disjoint component cannot change its autonomous trajectory.
+            active_dynamic_species = {target_id}
+            if state_expression is not None:
+                active_dynamic_species.update(
+                    species_id
+                    for species_id, _multiplier in state_expression
+                    if species_id in dynamic_species
+                )
+            changed = True
+            while changed:
+                changed = False
+                for (
+                    _reaction,
+                    vector,
+                    variable_stoichiometry_species,
+                ) in reaction_vectors:
+                    changed_species = {
+                        sid for sid, value in vector.items() if abs(value) > 1e-14
+                    }
+                    changed_species.update(variable_stoichiometry_species)
+                    if active_dynamic_species & changed_species:
+                        new_species = changed_species - active_dynamic_species
+                        if new_species:
+                            active_dynamic_species.update(new_species)
+                            changed = True
+            reaction_vectors = [
+                item
+                for item in reaction_vectors
+                if active_dynamic_species
+                & (
+                    {sid for sid, value in item[1].items() if abs(value) > 1e-14}
+                    | item[2]
+                )
+            ]
+            if any(
+                reaction.fast or reaction.conversion_factor or variable_stoichiometry
+                for reaction, _vector, variable_stoichiometry in reaction_vectors
+            ):
+                return None
             base_vector = next(
                 (
                     vector
-                    for _reaction, vector in reaction_vectors
+                    for _reaction, vector, _variable_stoichiometry in reaction_vectors
                     if abs(vector.get(target_id, 0.0)) > 1e-14
                 ),
                 None,
@@ -7124,17 +7171,24 @@ def generate_bngl(
             if base_vector is None:
                 return None
             target_stoich = base_vector[target_id]
-            for _reaction, vector in reaction_vectors:
+            for _reaction, vector, _variable_stoichiometry in reaction_vectors:
                 ratio = vector[target_id] / target_stoich
                 if any(
-                    abs(vector[sid] - ratio * base_vector[sid])
-                    > 1e-12 * max(1.0, abs(vector[sid]), abs(ratio * base_vector[sid]))
-                    for sid in dynamic_species
+                    abs(vector.get(sid, 0.0) - ratio * base_vector[sid])
+                    > 1e-12
+                    * max(
+                        1.0,
+                        abs(vector.get(sid, 0.0)),
+                        abs(ratio * base_vector[sid]),
+                    )
+                    for sid in active_dynamic_species
                 ):
                     return None
 
             species_polynomials: Dict[str, Tuple[float, float]] = {}
             for sid, species in model.species.items():
+                if sid in dynamic_species and sid not in active_dynamic_species:
+                    continue
                 state_initial = initial_value(sid)
                 if state_initial is None or not math.isfinite(state_initial):
                     return None
@@ -7152,7 +7206,11 @@ def generate_bngl(
                         if species.has_only_substance_units
                         else 1.0 / float(compartment.size)
                     )
-                    slope = base_vector[sid] * units / (target_stoich * target_units)
+                    slope = (
+                        base_vector.get(sid, 0.0)
+                        * units
+                        / (target_stoich * target_units)
+                    )
                 species_polynomials[standardize_name(sid)] = (
                     float(state_initial) - slope * float(coordinate_initial),
                     slope,
@@ -7239,7 +7297,7 @@ def generate_bngl(
                 return None
 
             flux_coefficients = (0.0, 0.0, 0.0)
-            for reaction, vector in reaction_vectors:
+            for reaction, vector, _variable_stoichiometry in reaction_vectors:
                 net_target = vector.get(target_id, 0.0)
                 if abs(net_target) <= 1e-14:
                     continue
@@ -7347,6 +7405,8 @@ def generate_bngl(
             coordinate = (value - offset) / state_slope
             values: Dict[str, float] = {}
             for species_id in model.species:
+                if standardize_name(species_id) not in species_polynomials:
+                    continue
                 species_offset, species_slope = species_polynomials[
                     standardize_name(species_id)
                 ]

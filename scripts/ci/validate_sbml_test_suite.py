@@ -589,6 +589,19 @@ def _unsupported_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _atomizer_actions_for_category(
+    category: str, simulation_t_end: float, simulation_n_steps: int
+) -> str:
+    """Use jump-based trigger semantics for stochastic suite cases."""
+    if category != "stochastic":
+        return ""
+    end = format(float(simulation_t_end), ".15g")
+    return (
+        'simulate({method=>"ssa", t_start=>0, '
+        f"t_end=>{end}, n_steps=>{int(simulation_n_steps)}}})"
+    )
+
+
 def _validate_case(
     case: dict[str, Any],
     cpp: Any,
@@ -627,6 +640,9 @@ def _validate_case(
         atomizer = Atomizer(
             atomize=False,
             quiet_mode=True,
+            actions=_atomizer_actions_for_category(
+                case["category"], simulation_t_end, simulation_n_steps
+            ),
             t_end=simulation_t_end,
             n_steps=simulation_n_steps,
         )

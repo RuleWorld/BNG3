@@ -5,6 +5,37 @@
 **Branch:** `main`
 **Status:** merged convergence, nonequilibrium energy, and SBML material-gap work; release validation remains incomplete
 
+## Quadratic event trajectories in independent components — 2026-09-27
+
+The quadratic event resolver now analyzes only the stoichiometric component
+containing the trigger coordinate. An unrelated dynamic component no longer
+blocks exact lowering; a rate in the trigger component that depends on an
+external dynamic species still remains unsupported. Trigger-time assignment
+snapshots include solved component state, not guessed values for unrelated
+species.
+
+State-triggered events are not lowered from deterministic trajectories when
+the requested actions use SSA. The SBML Test Suite runner now selects SSA for
+stochastic-category cases, so a deterministic no-fire proof cannot make
+`stochastic/00033` appear supported. Jump-trigger execution is still open.
+
+Official semantic cases `00846`, `00849`, `01046`, and `01049` pass conversion,
+round-trip, native-reader, and BNG3/libRoadRunner checks at `t_end=5` with 50
+steps. Each case compares 8 observables; the maximum absolute difference is
+`4.84e-12`. The full pinned suite at `t_end=1`, 10 steps reports `1,623 passed,
+300 unsupported, 0 failed, 0 timed out`. Five cases gained: `semantic/00367`,
+`00846`, `00849`, `01046`, and `01049`. Fifty-five previous stochastic-category
+passes are now unsupported under SSA because state-triggered event timing
+requires jump semantics. This changes the validation method, so the suite total
+is not directly comparable with the prior ODE-selected report. SBML Suite
+reference-result conformance remains untested. Report:
+`/private/tmp/bng3-independent-components-full-sbml.json`, SHA-256
+`29076a828262a0f1aff0cd8c05bc621321f120cc4b06bbe046a04981d4728bce`.
+
+Full Python suite: `636 passed, 28 skipped`; Ruff, Black (`py39`), and
+`git diff --check` pass. Curated BioModels both-mode validation using the
+retained cache is the next benchmark.
+
 ## Horizon proof for conjunctive event triggers — 2026-09-27
 
 For an AND trigger, Atomizer now omits the event for the current run only when

@@ -33,6 +33,15 @@ def test_sbml_test_suite_blocks_approximated_semantics_but_not_unit_notes():
     ]
 
 
+def test_stochastic_sbml_cases_select_ssa_for_event_translation():
+    validator = _load_validator("validate_sbml_test_suite")
+
+    assert validator._atomizer_actions_for_category("stochastic", 1.0, 10) == (
+        'simulate({method=>"ssa", t_start=>0, t_end=>1, n_steps=>10})'
+    )
+    assert validator._atomizer_actions_for_category("semantic", 1.0, 10) == ""
+
+
 def test_curated_biomodel_gate_blocks_approximated_semantics():
     validator = _load_validator("validate_published_biomodels")
     warnings = [

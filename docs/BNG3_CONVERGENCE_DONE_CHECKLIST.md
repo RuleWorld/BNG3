@@ -4,7 +4,7 @@
 **Last targeted audit:** 2026-09-27 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
 **Working branch:** `main`
-**Current implementation base:** `d27e043` (`docs(atomizer): record conjunction event benchmark`) plus uncommitted Atomizer event-recurrence and horizon-proof work; latest full pinned SBML Test Suite includes the recurrence batch but predates the final horizon-proof change; curated BioModels rerun was interrupted before a report was produced
+**Current implementation base:** `51d318b` (`feat(atomizer): schedule re-entrant quadratic state events`) plus uncommitted component-scoped event analysis and SSA trigger safeguards; latest full pinned SBML Test Suite report is recorded below; curated BioModels rerun remains pending
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -51,27 +51,64 @@ capability inventory.
   hours benchmarking a one-case stoichiometry change; cache retained at
   `/private/tmp/bng3-biomodel-cache-8726b30`. Do not treat it as a pass or fail.
 
-## Remaining unsupported SBML Test Suite triage — 2026-09-27
+## Quadratic state events in independent reaction components — 2026-09-27
 
-- [x] Latest full pinned SBML Test Suite after the quadratic recurrence batch:
+- [x] Rank-one trajectory analysis now closes the stoichiometric component
+  containing the trigger coordinate. Unrelated dynamic components no longer
+  block an exact trigger trajectory; kinetic dependence on an external dynamic
+  species still fails closed. State snapshots contain only the solved
+  component and non-dynamic species.
+- [x] Focused tests cover independent reversible components, delayed events,
+  reversed reaction orientation, trigger-time snapshots, kinetic coupling that
+  must stay unsupported, and SSA actions that must not use deterministic
+  no-fire proofs. Stochastic SBML Test Suite cases now request SSA during event
+  translation; `stochastic/00033` remains unsupported because jump-trigger
+  scheduling is not implemented.
+- [x] Official semantic cases `00846`, `00849`, `01046`, and `01049` pass
+  conversion, round-trip, native-reader, and BNG3/libRoadRunner comparison at
+  `t_end=5` with 50 steps. Each compares 8 observables; maximum absolute
+  difference is `4.84e-12`. SBML Test Suite reference-result conformance was
+  not run.
+- [x] Full pinned SBML Test Suite at `t_end=1`, 10 steps: `1,623 passed, 300
+  unsupported, 0 failed, 0 timed out`. Five cases gained against the prior
+  report: `semantic/00367`, `00846`, `00849`, `01046`, and `01049`; the
+  `00367` gain reflects the earlier horizon-proof change. Fifty-five cases
+  previously counted as passed are now unsupported because stochastic
+  categories use SSA and state-triggered events need jump-time semantics:
+  `stochastic/00040`-`00068`, `00073`-`00076`, and `00079`-`00100`. This is a
+  validation-method change, so the total is not directly comparable with the
+  previous ODE-selected report. There are no failures or timeouts; the report's
+  supported surface passes. Report
+  `/private/tmp/bng3-independent-components-full-sbml.json`, SHA-256
+  `29076a828262a0f1aff0cd8c05bc621321f120cc4b06bbe046a04981d4728bce`.
+- [x] Full Python suite: `636 passed, 28 skipped`; Ruff, Black (`py39`), and
+  `git diff --check` pass.
+- [ ] Re-run curated BioModels in both flat and atomized modes using the
+  retained cache `/private/tmp/bng3-biomodel-cache-8726b30`, matching the
+  prior `t_end=1`, 10-step configuration and timeouts.
+
+## Remaining unsupported SBML Test Suite triage — prior ODE-selected baseline
+
+- [x] Prior full pinned SBML Test Suite after the quadratic recurrence batch,
+  before correcting stochastic-category validation to request SSA:
   `1,673 passed, 250 unsupported, 0 failed, 0 timed out` (`t_end=1`, 10
   samples). Fourteen cases changed from unsupported to passed, with no status
   regressions: `00350`, `00353`, `00358`, `00359`, `00366`, `00368`, `00371`,
   `00381`-`00383`, `00395`, `00399`, `00745`, and `00748`. Report
   `/private/tmp/bng3-quadratic-reentrant-full-sbml.json`, SHA-256
   `401164dfb6f6696e2d46f3e9378bba315abc60fc33521ef3585507e345beff28`.
-- [x] Latest full-report triage: events affect 147 unsupported models (136
+- [x] Triage of that prior full report: events affect 147 unsupported models (136
   event-only); fast reactions 35 (33 fast-only); FBC 34 (30 FBC-only); MathML
   22 (18 MathML-only); stoichiometry 16 (5 stoichiometry-only); other edge
   cases 11; algebraic rules 2. Feature counts overlap. Per-model diagnostics,
   conversion/round-trip status, and source paths are in
   `/private/tmp/outputs/01a0d6e3-6845-7d61-9e25-0e70f3884b4d/bng3-unsupported-sbml-triage-2026-09-27.xlsx`.
 - [x] After adding exact no-fire horizon proofs, targeted
-  `semantic/00367` passes the official validator at `t_end=1`; targeted
-  `semantic/00374` remains unsupported by current recurrence lowering. These
-  targeted results do not update the
-  full-report count. Focused event/parity tests: `135 passed`; full Python
-  suite: `631 passed, 28 skipped`; Black, Ruff, and `git diff --check` pass.
+  `semantic/00367` passes the official validator at `t_end=1`; the current
+  full SSA-selected report above includes that pass. Targeted
+  `semantic/00374` remains unsupported by current recurrence lowering.
+  Historical focused event/parity tests: `135 passed`; full Python suite:
+  `631 passed, 28 skipped`; Black, Ruff, and `git diff --check` passed then.
 - [x] Conversion-only triage of the original 161 event-affected cases found 151 with
   the same root diagnostic: a state-dependent trigger cannot be lowered to a
   scheduled action. Common test-suite shapes are reversible mass-action
@@ -81,11 +118,11 @@ capability inventory.
   deriving one first-crossing time is insufficient.
 - [x] A tightly scoped recurrence cohort had 41 event-only cases with one
   relational state trigger, no delay, and no priority. The full-suite gains
-  above establish 14 official passes at the suite's `t_end=1`. Follow-up
-  horizon proof made `semantic/00367` pass at `t_end=1`; full inventory has not
-  been rerun after that final change. `00374` remains unsupported in current
-  targeted conversion; earlier `t_end=10` reports are stale and not support
-  evidence. `stochastic/00033` still requires stochastic jump-trigger
+  in the prior ODE-selected report establish 14 official passes at the suite's
+  `t_end=1`. The later horizon proof made `semantic/00367` pass; the current
+  SSA-selected report above also records that pass. `00374` remains unsupported
+  in current targeted conversion; earlier `t_end=10` reports are stale and not
+  support evidence. `stochastic/00033` still requires stochastic jump-trigger
   semantics. Eight similar cases also have unsupported variable stoichiometry
   or fast reactions.
 - [x] FBC accounts for 34 models, all overlapping constraint blockers; these
@@ -93,10 +130,9 @@ capability inventory.
   Fast-equilibrium semantics affect 35 models (33 fast-only). MathML gaps
   affect 22, stoichiometry gaps 16, and other edge cases 11; cause totals
   overlap and are not additive.
-- [ ] After another meaningful event feature batch, run one full pinned SBML
-  Test Suite and compare exact case IDs against the 1,673/250 report above.
-  The final no-fire horizon proof only has targeted evidence for `00367`; do
-  not report a changed corpus count yet. Do not rerun the full corpus for
+- [x] After the independent-component event batch, run one full pinned SBML
+  Test Suite and compare exact case IDs. Current counts and status changes are
+  recorded in the preceding section. Do not rerun the full corpus for
   one- or two-model patches.
 - [ ] Next high-yield event work: support more trajectory families and event
   semantics (delayed triggers, priority, trigger-time snapshots, and events
@@ -108,8 +144,8 @@ capability inventory.
   reactions. MathML/stoichiometry edge cases should be batched by executable,
   valid semantics; source cases with absent MathML or non-BNGL coefficients
   need explicit compatibility policy.
-- [ ] Re-run curated BioModels only after another meaningful event/MathML
-  feature batch; use retained cache and matched timeouts, then compare against
+- [ ] Curated BioModels rerun is now eligible after the independent-component
+  event batch; use retained cache and matched timeouts, then compare against
   `/private/tmp/bng3-conjunction-biomodels-both.json`.
 
 ## Affine species-difference event thresholds — 2026-09-26
