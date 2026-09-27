@@ -2131,3 +2131,12 @@ round-trip, native-reader, and BNG3/libRoadRunner checks for two observables.
 The full pinned suite is `1,630 passed, 293 unsupported, 0 failed, 0 timeouts`
 (one gain, no regressions); full Python is `609 passed, 28 skipped`. Full
 curated BioModels validation must still be rerun against this exact source.
+
+Simultaneous fixed-time priorities can now read a mutable parameter's initial
+value when no rule controls it and no earlier event has changed it. This adds
+`semantic/01714`; priority is reevaluated after each event assignment. It passes
+round-trip and BNG3/libRoadRunner comparison for two observables (11 samples,
+maximum absolute difference `3.55e-15`). The full pinned suite is `1,631
+passed, 292 unsupported, 0 failed, 0 timeouts`, one gain and no regressions;
+Python is `610 passed, 28 skipped`. The curated BioModels run was interrupted
+after this code changed and must be rerun on the final source.

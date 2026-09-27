@@ -7128,6 +7128,17 @@ def generate_bngl(
             value = fold_numeric(expression, resolve_symbol)
             return value if value is not None and math.isfinite(value) else None
 
+        def resolve_priority_initial_parameter_value(
+            identifier: str,
+        ) -> Optional[float]:
+            if identifier not in model.parameters or any(
+                rule.variable
+                and standardize_name(rule.variable) == standardize_name(identifier)
+                for rule in model.rules
+            ):
+                return None
+            return resolve_event_parameter(identifier)
+
         def resolve_event_reaction_rate(
             identifier: str,
             event_context: SBMLEvent,
@@ -7356,6 +7367,9 @@ def generate_bngl(
                     )
                 ),
                 resolve_priority_assignment_value=resolve_priority_assignment_value,
+                resolve_priority_initial_parameter_value=(
+                    resolve_priority_initial_parameter_value
+                ),
                 resolve_rate_reset=resolve_rate_event_reset,
                 static_event_state=static_event_state,
             ),

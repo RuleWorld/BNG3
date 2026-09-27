@@ -6663,3 +6663,23 @@ the other groups remain implementation targets.
   SHA-256 `6c538b4f75e5e0bf3e517e83ca183283723fe5280973b89cb76092c7518c2320`.
 - [ ] Rerun the full curated BioModels inventory in flat and atomized modes
   against this exact source; the earlier run predates this parser change.
+
+## Mutable parameter event priorities — 2026-09-27
+
+- [x] Evaluate a same-time event priority from a parameter's initial value only
+  when it has no assignment/rate rule and no earlier scheduled event changed
+  it. Existing priority recomputation applies subsequent same-time changes.
+- [x] Add a regression for mutable `k1` priority 2 versus fixed priority 2.5;
+  the fixed-priority assignment executes first, then `k1` is reevaluated.
+- [x] Official `semantic/01714` passes conversion, SBML write/reimport,
+  native-reader checks, and BNG3/libRoadRunner 2.10.0 comparison for two
+  observables (11 samples; max absolute difference `3.552713678800501e-15`).
+  Report `/private/tmp/bng3-semantic-01714-parameter-priority.json`, SHA-256
+  `8eb1bd98390162368f0e1f6191a135a9469c39d6a8c1ed5cd44ca1ad15211c97`.
+- [x] Full Python suite: `610 passed, 28 skipped`; Ruff, Black (`py39`), and
+  `git diff --check` pass.
+- [x] Full pinned SBML Test Suite: `1,631 passed, 292 unsupported, 0 failed,
+  0 timeouts`; only `semantic/01714` gained status and no prior pass regressed.
+  Report `/private/tmp/bng3-mutable-priority-full-final.json`, SHA-256
+  `3b11d9f1943fbaf2965d45c82731cbe50e34da5ffc7f508f7108a6e566d8bcf8`.
+- [ ] Rerun full curated BioModels flat/atomized inventory against final source.

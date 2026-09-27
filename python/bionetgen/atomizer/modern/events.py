@@ -146,6 +146,11 @@ class EventTranslationContext:
     resolve_priority_assignment_value: Callable[
         [str, float, SBMLEvent, Mapping[str, float]], Optional[float]
     ] = _no_priority_assignment_value
+    # Initial value for a parameter that has no rule controller. Priority
+    # evaluation may use it before the current simultaneous event group runs.
+    resolve_priority_initial_parameter_value: Callable[[str], Optional[float]] = (
+        lambda _identifier: None
+    )
     # Allow periodic reset lowering to inspect a constant rate-rule state even
     # when the event itself assigns that state.
     resolve_rate_reset: Callable[[str], Optional[Tuple[float, float]]] = (
@@ -2148,6 +2153,26 @@ def synthesize_event_actions(
                             if assignment_value is not None:
                                 value = assignment_value
                             else:
+                                initial_parameter = (
+                                    context.resolve_priority_initial_parameter_value(
+                                        identifier
+                                    )
+                                    if priority_evaluation
+                                    else None
+                                )
+                                earlier_parameter_write = any(
+                                    standardize_name(symbol)
+                                    == standardize_name(identifier)
+                                    and execution_time < time_value
+                                    for execution_time, symbol, _value in scheduled_values
+                                )
+                                if (
+                                    initial_parameter is not None
+                                    and math.isfinite(initial_parameter)
+                                    and not earlier_parameter_write
+                                ):
+                                    values[identifier] = float(initial_parameter)
+                                    continue
                                 reaction_rate = (
                                     context.resolve_priority_reaction_rate_for_event(
                                         identifier, event_context, values

@@ -692,6 +692,51 @@ def test_simultaneous_fixed_time_events_fold_mutable_reaction_rate_priorities():
     assert first < second
 
 
+def test_simultaneous_event_priorities_fold_untouched_mutable_parameters():
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLEventAssignment
+
+    events = [
+        SBMLEvent(
+            id="mutable-priority",
+            trigger="gt(time, 2.5)",
+            trigger_initial_value=True,
+            priority="k1",
+            assignments=[SBMLEventAssignment("k1", "5")],
+        ),
+        SBMLEvent(
+            id="constant-priority",
+            trigger="gt(time, 2.5)",
+            trigger_initial_value=True,
+            priority="2.5",
+            assignments=[SBMLEventAssignment("k1", "10")],
+        ),
+    ]
+    result = synthesize_event_actions(
+        events,
+        EventTranslationContext(
+            resolve_species_pattern=lambda _identifier: None,
+            resolve_param=lambda _identifier: None,
+            is_param=lambda identifier: identifier == "k1",
+            is_compile_time_constant=lambda _identifier: False,
+            resolve_initial_value=lambda identifier: 2 if identifier == "k1" else None,
+            resolve_priority_initial_parameter_value=lambda identifier: (
+                2 if identifier == "k1" else None
+            ),
+        ),
+    )
+
+    assert result.converted == 2
+    assert result.untranslated == []
+    assert result.actions_block is not None
+    higher_initial_priority = result.actions_block.index('setParameter("k1", "10")')
+    recalculated_priority = result.actions_block.index('setParameter("k1", "5")')
+    assert higher_initial_priority < recalculated_priority
+
+
 def test_simultaneous_event_priorities_recompute_after_each_assignment():
     from bionetgen.atomizer.modern.events import (
         EventTranslationContext,
