@@ -5,6 +5,30 @@
 **Branch:** `main`
 **Status:** merged convergence, nonequilibrium energy, and SBML material-gap work; release validation remains incomplete
 
+## Horizon proof for conjunctive event triggers — 2026-09-27
+
+For an AND trigger, Atomizer now omits the event for the current run only when
+one simple affine or exponential state comparison is false at both the initial
+time and the run endpoint. The trajectory is monotone, so that necessary
+condition stays false throughout the horizon. If the horizon reaches the
+threshold, the event remains unsupported. This proves `semantic/00933` cannot
+fire during the suite's one-unit run.
+
+The case now passes round trip and BNG3/libRoadRunner comparison: four
+observables, 11 samples, zero difference. Full pinned SBML suite:
+`1,658/1,923` passed, 265 unsupported, no failures or timeouts. `00933` is the
+only newly passing case; no previous pass regressed. Report
+`/private/tmp/bng3-conjunction-full-sbml.json`, SHA-256
+`d7f4691a7950ea2377738e1679bdd265622274f072121ea23dabebf8c68c1a3d`.
+
+Full curated BioModels: 794/1,083 SBML passed, 109 unsupported, 6 failed, and
+174 timed out. This change produced no curated pass gain or pass regression;
+`BIOMD0000000081` varied timeout-to-failure versus the prior run. Report
+`/private/tmp/bng3-conjunction-biomodels-both.json`, SHA-256
+`217601693a6611da8819a797fd16290bad7c10705447bcb55fb4450d34c71440`.
+Full Python suite: `625 passed, 28 skipped`; Ruff, Black (`py39`), and
+`git diff --check` pass.
+
 ## Static assignment-rule parameters in event trajectories — 2026-09-27
 
 Event trajectory analysis now folds assignment-rule parameters only when one

@@ -4,7 +4,7 @@
 **Last targeted audit:** 2026-09-27 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
 **Working branch:** `main`
-**Current implementation base:** `8960b11` (`feat(atomizer): resolve static assignment-rule event rates`); full pinned SBML Test Suite and curated BioModels rerun completed for this implementation
+**Current implementation base:** `9469c28` (`feat(atomizer): omit unreachable conjunctive events`); full pinned SBML Test Suite and curated BioModels rerun completed for this implementation
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -6753,6 +6753,26 @@ the other groups remain implementation targets.
   curated-model coverage. Report
   `/private/tmp/bng3-curated-eb528bd-both.json`, SHA-256
   `2e44194e3276cf901498a16537ab88f908f6d0143b8734b035c70e93f9580e05`.
+
+## Horizon proof for conjunctive event triggers — 2026-09-27
+
+- [x] For an AND trigger, omit only when a necessary affine or exponential
+  state comparison is false at both endpoints of the requested horizon. A
+  monotone trajectory then keeps that condition false throughout the run; a
+  longer horizon reaching the threshold leaves the event unsupported.
+- [x] Official `semantic/00933` passes round trip and BNG3/libRoadRunner
+  comparison (4 observables, 11 samples, zero difference). Full pinned suite:
+  `1,658 passed, 265 unsupported, 0 failed, 0 timeouts`; `00933` is the only
+  gain and no prior pass regressed. Report
+  `/private/tmp/bng3-conjunction-full-sbml.json`, SHA-256
+  `d7f4691a7950ea2377738e1679bdd265622274f072121ea23dabebf8c68c1a3d`.
+- [x] Full curated BioModels run: `794/1,083` SBML passed, 109 unsupported,
+  6 failed, 174 timed out. No pass gain or regression; `BIOMD0000000081`
+  varied timeout-to-failure. Report
+  `/private/tmp/bng3-conjunction-biomodels-both.json`, SHA-256
+  `217601693a6611da8819a797fd16290bad7c10705447bcb55fb4450d34c71440`.
+- [x] Full Python suite: `625 passed, 28 skipped`; Ruff, Black (`py39`), and
+  `git diff --check` pass.
 
 ## Static assignment-rule parameters in event trajectories — 2026-09-27
 
