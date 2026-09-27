@@ -3,8 +3,8 @@
 **Status:** Active; not complete
 **Last targeted audit:** 2026-09-27 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
-**Working branch:** `main`
-**Latest full pinned SBML Test Suite report:** `be5bdcf` (`feat(atomizer): isolate event trajectories from unrelated rules`), `1,637 passed / 286 unsupported / 0 failed / 0 timed out`.
+**Working branch:** `plan/nfsim-gpu-perf`
+**Latest full pinned SBML Test Suite report:** local Atomizer source after delayed quadratic event support; suite commit `cf38585fac5de8e0e90112febb62851ee2181816`, `1,661 passed / 262 unsupported / 0 failed / 0 timed out`. Report `/private/tmp/bng3-delayed-quadratic-full-current.json`, SHA-256 `2192db808c6c01f0bb6549a2726cf151b0d997783ddb163abbe112cfc509cddc`.
 **Latest full curated BioModels report:** `be5bdcf` code source (repository head `0da6020` after a docs-only commit); `792/1,083` SBML-path records passed, with no status changes against the previous full report.
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
@@ -7280,3 +7280,38 @@ the other groups remain implementation targets.
   was not run. Report `/private/tmp/bng3-first-order-cycle-full-verified.json`,
   SHA-256 `4440ab3e496b8f6027d156ab176f16067d49e241c2e1224889d9bdd0b8c8c7cd`.
 - [ ] Rerun the complete curated BioModels inventory against this source.
+
+## Delayed quadratic state events with trigger-time snapshots — 2026-09-27
+
+- [x] Schedule a constant nonnegative delay for re-entrant events whose
+  trigger has a proven scalar quadratic trajectory. Support only persistent
+  triggers with trigger-time assignment snapshots; recompute the trajectory
+  after each action. Other delay expressions and state-triggered SSA remain
+  unsupported.
+- [x] Add a libRoadRunner parity regression for repeated delayed crossings.
+  The focused Atomizer suite passes `406` tests with `1` skipped; Ruff, Black
+  (`py39`), and `git diff --check` pass.
+- [x] Full pinned SBML Test Suite at suite commit
+  `cf38585fac5de8e0e90112febb62851ee2181816`, `t_end=1`, and 10 samples:
+  `1,661 passed, 262 unsupported, 0 failed, 0 timed out`. Sixteen semantic
+  cases gained status and no previous pass regressed:
+  `00407`, `00410`, `00415`, `00416`, `00423`, `00424`, `00425`, `00428`,
+  `00431`, `00438`, `00439`, `00440`, `00452`, `00456`, `00765`, and `00768`.
+  The supported-surface gate passes; the aggregate core gate remains open.
+  Reference-result conformance was not run. Report
+  `/private/tmp/bng3-delayed-quadratic-full-current.json`, SHA-256
+  `2192db808c6c01f0bb6549a2726cf151b0d997783ddb163abbe112cfc509cddc`.
+- [x] All 16 gained records pass individual conversion, XML roundtrip,
+  native-reader, and BNG3/libRoadRunner checks through `t=20` with 1,200
+  samples. The maximum absolute errors range from
+  `1.2040992016665048e-11` to `9.517548000825826e-07`. Cohort summary:
+  `/private/tmp/bng3-delayed-quadratic-t20-cohort-summary.json`, SHA-256
+  `41735803f4cde719fc84979f343fa3459c8307ba2311112c019c16c2bf72e328`.
+- [x] Keep `semantic/00451` and `01076` unsupported: their
+  `stoichiometryMath` is carried through generated initial-assignment metadata
+  and is outside this resolver's proof.
+- [ ] The full Python suite did not complete after concurrent NFsim changes
+  were present; it remained CPU-bound in `tests/python/test_cpp_backend.py`
+  until stopped. The 406-test Atomizer result above is the completed Python
+  validation for this slice.
+- [ ] Rerun the full curated BioModels inventory against the finalized source.

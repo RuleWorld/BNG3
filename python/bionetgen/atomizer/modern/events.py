@@ -4209,9 +4209,23 @@ def synthesize_event_actions(
             parsed_threshold = parsed_difference
         else:
             parsed_threshold = _parse_affine_state_threshold(event.trigger)
+        delay_symbols = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", event.delay or "")
+        delay_value = fold(event.delay, event_context=event) if event.delay else 0.0
+        quadratic_delay_is_supported = (
+            delay_value is not None
+            and math.isfinite(delay_value)
+            and delay_value >= 0
+            and all(
+                context.is_compile_time_constant(symbol) for symbol in delay_symbols
+            )
+            and (
+                delay_value == 0
+                or (event.trigger_persistent and event.use_values_from_trigger_time)
+            )
+        )
         if (
             parsed_threshold is not None
-            and not event.delay
+            and quadratic_delay_is_supported
             and not event.priority
             and float(context.base_t_end) > 0
             and math.isfinite(float(context.base_t_end))
@@ -4267,7 +4281,90 @@ def synthesize_event_actions(
                 ] = []
                 recurrence_is_proven = True
                 no_firing_within_horizon = False
+                pending_action: Optional[
+                    Tuple[
+                        float,
+                        List[Tuple[str, str, float]],
+                        List[Tuple[str, float]],
+                    ]
+                ] = None
                 for _ in range(10_000):
+                    if pending_action is not None:
+                        due_time, scheduled_sets, event_values = pending_action
+                        if due_time > float(context.base_t_end) + 1e-12:
+                            no_firing_within_horizon = not recurrence
+                            break
+                        trajectory = context.resolve_quadratic_rate_from_state(
+                            identifier, event, state_values
+                        )
+                        if trajectory is None:
+                            recurrence_is_proven = False
+                            break
+                        initial, quadratic, linear, constant = trajectory
+                        due_delta = due_time - time_value
+                        if due_delta < -1e-12:
+                            recurrence_is_proven = False
+                            break
+                        due_coordinate = _quadratic_state_at_time(
+                            initial,
+                            quadratic,
+                            linear,
+                            constant,
+                            max(0.0, due_delta),
+                        )
+                        if due_coordinate is None or not comparison_true(
+                            due_coordinate
+                        ):
+                            recurrence_is_proven = False
+                            break
+                        due_state = context.resolve_quadratic_state_values_from_state(
+                            identifier, due_coordinate, event, state_values
+                        )
+                        if due_state is None:
+                            recurrence_is_proven = False
+                            break
+                        next_state = dict(due_state)
+                        for normalized_variable, value in event_values:
+                            target = next(
+                                (
+                                    variable
+                                    for variable, _pattern, _expression in assignment_targets
+                                    if standardize_name(variable) == normalized_variable
+                                ),
+                                None,
+                            )
+                            if target is None:
+                                recurrence_is_proven = False
+                                break
+                            next_state[target] = value
+                        if not recurrence_is_proven:
+                            break
+                        post_trigger = fold_at_state(
+                            event.trigger,
+                            due_time,
+                            state_values=next_state,
+                            event_context=event,
+                        )
+                        if post_trigger is None or not math.isfinite(post_trigger):
+                            recurrence_is_proven = False
+                            break
+                        recurrence.append(
+                            (
+                                due_time,
+                                scheduled_sets,
+                                0.0,
+                                event,
+                                False,
+                                event_values,
+                            )
+                        )
+                        pending_action = None
+                        if post_trigger != 0:
+                            break
+                        state_values = next_state
+                        time_value = due_time
+                        continue
+
                     trajectory = context.resolve_quadratic_rate_from_state(
                         identifier, event, state_values
                     )
@@ -4350,6 +4447,19 @@ def synthesize_event_actions(
                         next_state[variable] = value
                     if not recurrence_is_proven:
                         break
+                    if delay_value > 0:
+                        execution_time = crossing_time + float(delay_value)
+                        if execution_time > float(context.base_t_end) + 1e-12:
+                            no_firing_within_horizon = not recurrence
+                            break
+                        pending_action = (
+                            min(execution_time, float(context.base_t_end)),
+                            scheduled_sets,
+                            event_values,
+                        )
+                        state_values = crossing_state
+                        time_value = crossing_time
+                        continue
                     post_trigger = fold_at_state(
                         event.trigger,
                         crossing_time,

@@ -3,7 +3,38 @@
 **Last targeted audit:** 2026-09-27 (full convergence checklist not re-audited)
 **Repository:** `RuleWorld/BNG3`
 **Branch:** `plan/nfsim-gpu-perf`
-**Status:** Atomizer first-order cycle events validated; overall convergence and release validation remain incomplete
+**Status:** Atomizer first-order cycle and delayed quadratic events validated; overall convergence and release validation remain incomplete
+
+## Delayed quadratic state events with trigger-time snapshots — 2026-09-27
+
+Atomizer now schedules re-entrant events with a constant nonnegative delay for
+the proven scalar quadratic state trajectories. It admits only persistent
+triggers that use trigger-time assignment snapshots; after each delayed action,
+it recomputes the trajectory before finding the next crossing. Other delay
+expressions, unsupported assignment shapes, and state-triggered SSA remain
+unsupported.
+
+The focused Atomizer suite passes `406` tests with `1` skipped. Ruff, Black
+(`py39`), and `git diff --check` pass. The broader Python run did not complete:
+it stalled in `tests/python/test_cpp_backend.py` after concurrent NFsim changes
+were present, so no full-suite result is claimed for this source.
+
+The full pinned SBML Test Suite (`cf38585fac5de8e0e90112febb62851ee2181816`,
+`t_end=1`, 10 samples) reports `1,661 passed, 262 unsupported, 0 failed, 0
+timed out`. Sixteen semantic cases gained status and no previously passed
+cases regressed. The supported-surface gate passes; the aggregate core gate
+remains open, and SBML reference-result conformance was not run. Report
+`/private/tmp/bng3-delayed-quadratic-full-current.json`, SHA-256
+`2192db808c6c01f0bb6549a2726cf151b0d997783ddb163abbe112cfc509cddc`.
+
+All 16 gained cases also pass individual BNG3/libRoadRunner checks through
+`t=20` with 1,200 samples. The largest absolute difference ranges from
+`1.2040992016665048e-11` to `9.517548000825826e-07` across records. Summary:
+`/private/tmp/bng3-delayed-quadratic-t20-cohort-summary.json`, SHA-256
+`41735803f4cde719fc84979f343fa3459c8307ba2311112c019c16c2bf72e328`.
+`semantic/00451` and `01076` remain unsupported because their
+`stoichiometryMath` values are represented through generated initial-assignment
+metadata that this resolver does not accept.
 
 ## Re-entrant events in closed first-order cycles — 2026-09-27
 

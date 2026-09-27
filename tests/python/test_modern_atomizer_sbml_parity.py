@@ -1021,10 +1021,14 @@ def test_event_controls_deterministic_species_reference_flux():
     assert 'setParameter("p1", "2")' in result.bngl
 
 
-def test_quadratic_state_event_repeats_after_trigger_species_reset():
-    from bionetgen.atomizer.modern import Atomizer
-
-    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+def _quadratic_reentrant_event_model(delay=None):
+    delay_element = (
+        ""
+        if delay is None
+        else f"""<delay><math xmlns="http://www.w3.org/1998/Math/MathML">
+          <cn>{delay}</cn></math></delay>"""
+    )
+    return f"""<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
       <model id="quadratic_reentrant_event">
         <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
         <listOfSpecies>
@@ -1052,6 +1056,7 @@ def test_quadratic_state_event_repeats_after_trigger_species_reset():
           <trigger initialValue="true" persistent="true">
             <math xmlns="http://www.w3.org/1998/Math/MathML"><apply><lt/><ci>A</ci><cn>0.75</cn></apply></math>
           </trigger>
+          {delay_element}
           <listOfEventAssignments>
             <eventAssignment variable="B"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1.5</cn></math></eventAssignment>
             <eventAssignment variable="A"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></eventAssignment>
@@ -1060,12 +1065,59 @@ def test_quadratic_state_event_repeats_after_trigger_species_reset():
       </model>
     </sbml>"""
 
+
+def test_quadratic_state_event_repeats_after_trigger_species_reset():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = _quadratic_reentrant_event_model()
     result = Atomizer(quiet_mode=True, t_end=10, n_steps=100).atomize(xml)
 
     assert result.success, result.error
     assert "state-dependent or non-constant event" not in result.bngl
     assert "# 7 time-triggered SBML event(s) translated" in result.bngl
     assert result.bngl.count("setConcentration(") == 14
+
+
+def test_delayed_quadratic_state_events_recur_and_match_libroadrunner(tmp_path):
+    import numpy as np
+    import pytest
+
+    roadrunner = pytest.importorskip("roadrunner")
+    from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.model import load
+
+    xml = _quadratic_reentrant_event_model(delay=1.5)
+    result = Atomizer(quiet_mode=True, t_end=20, n_steps=1200).atomize(xml)
+
+    assert result.success, result.error
+    assert "Events NOT simulated" not in result.bngl
+
+    model_path = tmp_path / "delayed_quadratic_reentrant.bngl"
+    model_path.write_text(result.bngl, encoding="utf-8")
+    load(model_path).execute()
+    lines = model_path.with_suffix(".gdat").read_text().splitlines()
+    columns = lines[0].lstrip("# ").split()
+    bng_data = np.loadtxt(lines[1:])
+    times = bng_data[:, columns.index("time")]
+
+    rr = roadrunner.RoadRunner(xml)
+    rr.integrator.setValue("relative_tolerance", 1e-9)
+    rr.integrator.setValue("absolute_tolerance", 1e-12)
+    rr.timeCourseSelections = ["time", "[A]", "[B]", "[D]"]
+    reference = rr.simulate(times=times)
+
+    state_columns = [columns.index(species) for species in ("A", "B", "D")]
+    changes = np.abs(np.diff(bng_data[:, state_columns], axis=0))
+    jump_indices = np.flatnonzero(np.max(changes, axis=1) > 0.2)
+    assert len(jump_indices) >= 1
+    compare = np.ones(len(times), dtype=bool)
+    compare[jump_indices] = False
+    compare[jump_indices + 1] = False
+    for species in ("A", "B", "D"):
+        bng_values = bng_data[compare, columns.index(species)]
+        rr_values = reference[compare, reference.colnames.index(f"[{species}]")]
+        scale = max(float(np.max(np.abs(bng_values))), float(np.max(np.abs(rr_values))))
+        assert float(np.max(np.abs(bng_values - rr_values))) <= max(5e-12, 1e-6 * scale)
 
 
 def _independent_component_quadratic_event_model(
