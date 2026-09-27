@@ -5,6 +5,18 @@
 **Branch:** `main`
 **Status:** merged convergence, nonequilibrium energy, and SBML material-gap work; release validation remains incomplete
 
+## Scaled exponential reaction-state triggers — 2026-09-27
+
+Event trigger lowering now accepts a single state multiplied by a folded
+constant expression, while rejecting offsets, nonlinear state terms, and
+unresolved scales. Official SBML Test Suite case `semantic/01293` passes the
+round-trip and libRoadRunner comparison. Full Python suite: `619 passed, 28
+skipped`. Full SBML Test Suite: `1,648 passed, 275 unsupported, 0 failed, 0
+timeouts`; one gain, no regressions. Aggregate core gate remains open. Report
+`/private/tmp/bng3-scaled-trigger-full.json` (SHA-256
+`eca4a83b3bf7da176b9002a75e7d31dd6dbb9206f76749668ad1f874b3165bfc`). Curated
+BioModels rerun remains pending.
+
 ## Algebraic rules in initial event triggers — 2026-09-27
 
 Initial event trigger evaluation now resolves values from supported assignment

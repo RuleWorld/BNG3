@@ -769,6 +769,43 @@ def test_rate_of_exponential_parameter_lowers_exact_event_crossing():
     assert "untranslated" not in result.bngl.lower()
 
 
+def test_compound_constant_scale_of_exponential_reaction_state_lowers_event():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="scaled_exponential_reaction_event">
+        <listOfCompartments><compartment id="c" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies><species id="S" compartment="c" initialAmount="1"/>
+          <species id="outSpecies" compartment="c" initialAmount="0"/></listOfSpecies>
+        <listOfParameters><parameter id="k" value="0.1" constant="true"/>
+          <parameter id="out" value="0" constant="false"/></listOfParameters>
+        <listOfReactions><reaction id="growth" reversible="false">
+          <listOfProducts><speciesReference species="S" stoichiometry="1"/></listOfProducts>
+          <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><times/><ci>k</ci><ci>S</ci></apply>
+          </math></kineticLaw>
+        </reaction></listOfReactions>
+        <listOfEvents><event id="threshold">
+          <trigger initialValue="true" persistent="true">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><geq/><apply><divide/><apply><times/><cn>10</cn><ci>k</ci><ci>S</ci></apply><cn>2</cn></apply><cn>0.525</cn></apply>
+            </math>
+          </trigger>
+          <listOfEventAssignments><eventAssignment variable="out">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>7</cn></math>
+          </eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True).atomize(xml)
+
+    assert result.success, result.error
+    assert "t_end=>0.487901641694" in result.bngl
+    assert 'setParameter("out", "7")' in result.bngl
+    assert "untranslated" not in result.bngl.lower()
+
+
 def test_delayed_event_evaluates_assignment_rule_at_execution_time():
     from bionetgen.atomizer.modern import Atomizer
 

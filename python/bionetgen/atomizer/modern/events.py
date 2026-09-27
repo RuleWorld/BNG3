@@ -1709,8 +1709,9 @@ def _parse_rate_of_state_threshold(
 
 def _parse_scaled_state_threshold(
     trigger: str,
+    resolve_scale: Optional[Callable[[str], Optional[float]]] = None,
 ) -> Optional[Tuple[str, str, str, str]]:
-    """Parse a comparison of a constant multiple of one state to a value."""
+    """Parse a comparison of one state times a constant expression."""
 
     match = re.match(r"^(gt|geq|lt|leq)\s*\((.*)\)$", str(trigger or "").strip(), re.I)
     if match is None:
@@ -1719,30 +1720,111 @@ def _parse_scaled_state_threshold(
     if arguments is None or len(arguments) != 2:
         return None
     left, right = (_strip_outer_parens(value) for value in arguments)
-    identifier = r"[A-Za-z_][A-Za-z0-9_]*"
 
-    def parse_scaled(value: str) -> Optional[Tuple[str, str]]:
+    def parse_scaled(value: str) -> List[Tuple[str, str]]:
         expression = _strip_outer_parens(value)
-        product = re.fullmatch(rf"(.+?)\s*\*\s*({identifier})", expression)
-        if product is not None:
-            return product.group(2), product.group(1)
-        product = re.fullmatch(rf"({identifier})\s*\*\s*(.+)", expression)
-        if product is not None:
-            return product.group(1), product.group(2)
-        return None
+        try:
+            parsed = ast.parse(expression, mode="eval").body
+        except (TypeError, ValueError, SyntaxError):
+            return []
+        names = sorted(
+            {
+                node.id
+                for node in ast.walk(parsed)
+                if isinstance(node, ast.Name)
+                and not any(
+                    isinstance(parent, ast.Call) and parent.func is node
+                    for parent in ast.walk(parsed)
+                )
+            }
+        )
+
+        def decompose(
+            node: ast.AST, identifier: str
+        ) -> Optional[Tuple[Optional[str], Optional[str]]]:
+            """Return constant and linear terms; reject offsets/nonlinear forms."""
+            if not any(
+                isinstance(child, ast.Name) and child.id == identifier
+                for child in ast.walk(node)
+            ):
+                return ast.unparse(node), None
+            if isinstance(node, ast.Name) and node.id == identifier:
+                return None, "1"
+            if isinstance(node, ast.UnaryOp) and isinstance(
+                node.op, (ast.UAdd, ast.USub)
+            ):
+                value = decompose(node.operand, identifier)
+                if value is None:
+                    return None
+                sign = "-" if isinstance(node.op, ast.USub) else "+"
+                return (
+                    f"({sign}{value[0]})" if value[0] is not None else None,
+                    f"({sign}{value[1]})" if value[1] is not None else None,
+                )
+            if isinstance(node, ast.BinOp):
+                left_term = decompose(node.left, identifier)
+                right_term = decompose(node.right, identifier)
+                if left_term is None or right_term is None:
+                    return None
+                left_constant, left_linear = left_term
+                right_constant, right_linear = right_term
+                if isinstance(node.op, (ast.Add, ast.Sub)):
+                    if left_linear is not None or right_linear is not None:
+                        if left_constant is not None or right_constant is not None:
+                            return None
+                        operator = "+" if isinstance(node.op, ast.Add) else "-"
+                        return None, f"({left_linear}) {operator} ({right_linear})"
+                    return ast.unparse(node), None
+                if isinstance(node.op, ast.Mult):
+                    if left_linear is not None and right_linear is not None:
+                        return None
+                    if left_linear is not None:
+                        return None, f"({left_linear}) * ({right_constant})"
+                    if right_linear is not None:
+                        return None, f"({left_constant}) * ({right_linear})"
+                    return ast.unparse(node), None
+                if isinstance(node.op, ast.Div):
+                    if right_linear is not None:
+                        return None
+                    if left_linear is not None:
+                        return None, f"({left_linear}) / ({right_constant})"
+                    return ast.unparse(node), None
+                if isinstance(node.op, ast.Pow) and right_linear is None:
+                    try:
+                        power = float(right_constant or "nan")
+                    except ValueError:
+                        return None
+                    if power == 1 and left_linear is not None:
+                        return None, left_linear
+                    if left_linear is None:
+                        return ast.unparse(node), None
+            return None
+
+        candidates = []
+        for identifier in names:
+            result = decompose(parsed, identifier)
+            if result is None or result[0] is not None or result[1] is None:
+                continue
+            candidates.append((identifier, result[1]))
+        if resolve_scale is not None:
+            candidates = [
+                candidate
+                for candidate in candidates
+                if (value := resolve_scale(candidate[1])) is not None
+                and math.isfinite(value)
+                and value != 0
+            ]
+        return candidates
 
     left_scaled = parse_scaled(left)
-    if left_scaled is not None:
-        return left_scaled[0], match.group(1).lower(), right, left_scaled[1]
+    if left_scaled:
+        identifier, scale = left_scaled[0]
+        return identifier, match.group(1).lower(), right, scale
     right_scaled = parse_scaled(right)
-    if right_scaled is not None:
+    if right_scaled:
+        identifier, scale = right_scaled[0]
         reverse = {"gt": "lt", "geq": "leq", "lt": "gt", "leq": "geq"}
-        return (
-            right_scaled[0],
-            reverse[match.group(1).lower()],
-            left,
-            right_scaled[1],
-        )
+        return identifier, reverse[match.group(1).lower()], left, scale
     return None
 
 
@@ -3560,7 +3642,12 @@ def synthesize_event_actions(
                 state_threshold = _parse_rate_of_state_threshold(event_trigger)
                 rate_of_threshold = state_threshold is not None
             if state_threshold is None:
-                scaled_threshold = _parse_scaled_state_threshold(event_trigger)
+                scaled_threshold = _parse_scaled_state_threshold(
+                    event_trigger,
+                    resolve_scale=lambda expression: fold(
+                        expression, event_context=event
+                    ),
+                )
                 if scaled_threshold is not None:
                     (
                         scaled_identifier,

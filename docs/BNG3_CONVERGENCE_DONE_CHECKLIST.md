@@ -6684,6 +6684,22 @@ the other groups remain implementation targets.
   `3b11d9f1943fbaf2965d45c82731cbe50e34da5ffc7f508f7108a6e566d8bcf8`.
 - [ ] Rerun full curated BioModels flat/atomized inventory against final source.
 
+## Scaled exponential reaction-state triggers — 2026-09-27
+
+- [x] Lower event thresholds for a single state multiplied by a folded
+  constant expression. The parser isolates a homogeneous linear state term;
+  nonconstant scales, offsets, and nonlinear state terms remain unsupported.
+- [x] Official SBML Test Suite case `semantic/01293` passes conversion,
+  round-trip, native-reader, and libRoadRunner comparison.
+- [x] Full Python suite: `619 passed, 28 skipped`; Black (`py39`), Ruff, and
+  `git diff --check` pass.
+- [x] Full pinned SBML Test Suite: `1,648 passed, 275 unsupported, 0 failed,
+  0 timeouts`. Gain: `semantic/01293`; no previous pass regressed. Report
+  `/private/tmp/bng3-scaled-trigger-full.json`, SHA-256
+  `eca4a83b3bf7da176b9002a75e7d31dd6dbb9206f76749668ad1f874b3165bfc`.
+  The aggregate core gate remains open on 275 unsupported cases.
+- [ ] Rerun the full curated BioModels inventory against final source.
+
 ## Algebraic rules in initial event triggers — 2026-09-27
 
 - [x] Resolve supported assignment-rule values when evaluating an event's
