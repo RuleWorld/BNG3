@@ -6461,3 +6461,30 @@ the other groups remain implementation targets.
   event-only models within this feature's scope; no curated-model gain claimed.
 - [x] Full Python suite: `596 passed, 28 skipped`; focused event tests:
   `38 passed`. Ruff, Black (`py39` target), and `git diff --check` pass.
+
+## Parameter-only event priorities and clock resets — 2026-09-26
+
+- [x] Extend parameter-only event lowering for same-time event priorities,
+  recalculating priority after each firing and rechecking nonpersistent
+  cancellations. Simultaneous ties are lowered only when their assignments,
+  triggers, and priorities are independent; unsupported interactions remain
+  untranslated.
+- [x] Recompute the next clock crossing for the restricted rising trigger
+  `time - parameter >= constant` after parameter resets. Continue to reject
+  unsupported time-dependent trigger forms. Drop events with missing triggers
+  and coerce numeric nonzero trigger values to true.
+- [x] Official cases `semantic/00967`, `00978`, `00997`, `01238`, `01239`, and
+  `01284` pass the conversion, write/reimport, native-reader, and
+  supported-surface checks. The full pinned one-unit suite reports `1,624
+  passed, 299 unsupported, 0 failed, 0 timeouts`, six net gains and no
+  regressions versus `1,618/305/0/0`. Report
+  `/private/tmp/bng3-static-events-priority-final.json`, SHA-256
+  `dd4129d633683c888c842a88d021f7663e7abbdbeffb4dd6eecc39e61b51fe5f`.
+  All six new cases report zero observables; their numerical comparison is
+  therefore vacuous, and SBML Test Suite reference-result conformance was not
+  run. The aggregate SBML support gate remains open with 299 unsupported
+  cases.
+- [x] Focused event tests: `41 passed`; the full Python suite on this code was
+  `599 passed, 28 skipped`. Ruff, Black (`py39` target), and
+  `git diff --check` pass. The previous cached BioModels screen found no
+  parameter-only event-only candidates; no curated-model gain is claimed.

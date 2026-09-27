@@ -7163,8 +7163,11 @@ def generate_bngl(
                 return None
             return resolve_event_parameter(identifier)
 
+        event_translation_events = [
+            event for event in model.events if str(event.trigger or "").strip()
+        ]
         event_translation_events = expand_cosh_assignment_rule_events(
-            model.events,
+            event_translation_events,
             model.rules,
             resolve_constant=resolve_sinusoidal_constant,
             expand_functions=lambda expression: extend_function(

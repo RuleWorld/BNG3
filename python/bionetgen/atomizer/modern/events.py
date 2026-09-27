@@ -1144,8 +1144,11 @@ def expand_static_parameter_event_system(
     handles no continuous state and at most one fixed rising comparison
     against time in each event trigger.
     """
-    if not events or not math.isfinite(float(t_end)) or t_end < 0:
+    if not math.isfinite(float(t_end)) or t_end < 0:
         return None
+    events = [event for event in events if str(event.trigger or "").strip()]
+    if not events:
+        return []
 
     parameter_names = {standardize_name(name): name for name in parameter_ids}
     if len(parameter_names) != len(parameter_ids):
@@ -1176,20 +1179,43 @@ def expand_static_parameter_event_system(
         value = fold_numeric(expanded, lambda name: resolve_state(name, state))
         return value if value is not None and math.isfinite(value) else None
 
-    def parse_time_edge(trigger: str) -> Optional[float]:
-        match = re.fullmatch(r"(gt|geq)\s*\(\s*time\s*,\s*(.+)\)", trigger, re.I)
-        if match is None:
-            match = re.fullmatch(r"(lt|leq)\s*\(\s*(.+)\s*,\s*time\s*\)", trigger, re.I)
-        if match is None:
+    def parse_time_edge(trigger: str) -> Optional[Tuple[Optional[str], float]]:
+        comparison = re.fullmatch(r"(gt|geq|lt|leq)\s*\((.*)\)", trigger, re.I)
+        arguments = (
+            _split_arguments(comparison.group(2)) if comparison is not None else None
+        )
+        if comparison is None or arguments is None or len(arguments) != 2:
             return None
-        threshold_expression = match.group(2)
-        if re.search(r"[A-Za-z_]", threshold_expression):
+        operator = comparison.group(1).lower()
+        left, right = (_strip_outer_parens(value) for value in arguments)
+        if operator in {"gt", "geq"}:
+            time_expression, threshold_expression = left, right
+        else:
+            threshold_expression, time_expression = left, right
+        offset: Optional[str] = None
+        if time_expression.lower() != "time":
+            offset_match = re.fullmatch(
+                r"time\s*-\s*([A-Za-z_][A-Za-z0-9_]*)", time_expression, re.I
+            )
+            if offset_match is None:
+                return None
+            offset = standardize_name(offset_match.group(1))
+            if offset not in parameter_names:
+                return None
+        if any(
+            identifier.lower() not in {"pi", "exponentiale"}
+            for identifier in re.findall(
+                r"\b[A-Za-z_][A-Za-z0-9_]*\b", threshold_expression
+            )
+        ):
             return None
         threshold = evaluate(threshold_expression, values, 0.0)
-        return threshold if threshold is not None and threshold >= 0 else None
+        if threshold is None or threshold < 0:
+            return None
+        return offset, threshold
 
     triggers: List[str] = []
-    time_edges: List[Optional[float]] = []
+    time_edges: List[Optional[Tuple[Optional[str], float]]] = []
     delay_expressions: List[Optional[str]] = []
     targets: List[List[Tuple[str, str]]] = []
     for event in events:
@@ -1199,9 +1225,7 @@ def expand_static_parameter_event_system(
             if re.search(r"\btime\b", trigger, re.IGNORECASE)
             else None
         )
-        if (
-            re.search(r"\btime\b", trigger, re.IGNORECASE) and time_edge is None
-        ) or event.priority:
+        if re.search(r"\btime\b", trigger, re.IGNORECASE) and time_edge is None:
             return None
         identifiers = list(re.finditer(r"\b[A-Za-z_][A-Za-z0-9_]*\b", trigger))
         if not trigger or any(
@@ -1212,7 +1236,7 @@ def expand_static_parameter_event_system(
         ):
             return None
         trigger_value = evaluate(trigger, values, 0.0)
-        if trigger_value not in {0, 1}:
+        if trigger_value is None:
             return None
         delay_expression = (
             None if not event.delay else expand_functions(str(event.delay))
@@ -1249,10 +1273,15 @@ def expand_static_parameter_event_system(
             actual = (
                 1.0
                 if time_edges[index] is not None
-                and abs(time_edges[index] - time_value) <= 1e-12
+                and abs(
+                    (values[time_edges[index][0]] if time_edges[index][0] else 0.0)
+                    + time_edges[index][1]
+                    - time_value
+                )
+                <= 1e-12
                 else evaluate(expression, values, time_value)
             )
-            if actual not in {0, 1}:
+            if actual is None:
                 raise ValueError("trigger evaluation failed")
             current = bool(actual)
             if not previous[index] and current:
@@ -1288,48 +1317,134 @@ def expand_static_parameter_event_system(
         schedule_edges(0.0, trigger_truth)
         executions: List[Tuple[float, SBMLEvent]] = []
         count = 0
-        clock_edges_pending = {
-            index: edge
-            for index, edge in enumerate(time_edges)
-            if edge is not None and edge > 0
-        }
-        while pending or clock_edges_pending:
+        current_time = 0.0
+        while True:
             pending = [record for record in pending if record["active"]]
             next_due = min((record["due"] for record in pending), default=math.inf)
-            next_clock = min(clock_edges_pending.values(), default=math.inf)
+            clock_edges = {
+                index: (values[offset] if offset else 0.0) + threshold
+                for index, time_edge in enumerate(time_edges)
+                if time_edge is not None and not trigger_truth[index]
+                for offset, threshold in [time_edge]
+                if (values[offset] if offset else 0.0) + threshold
+                > current_time + 1e-12
+            }
+            next_clock = min(clock_edges.values(), default=math.inf)
             next_time = min(next_due, next_clock)
-            if next_time > float(t_end) + 1e-12:
+            if not math.isfinite(next_time) or next_time > float(t_end) + 1e-12:
                 break
             if abs(next_clock - next_time) <= 1e-12:
-                clock_edges_pending = {
-                    index: edge
-                    for index, edge in clock_edges_pending.items()
-                    if abs(edge - next_time) > 1e-12
-                }
                 previous = list(trigger_truth)
                 schedule_edges(next_time, previous)
             batch = [
                 record for record in pending if abs(record["due"] - next_time) <= 1e-12
             ]
             pending = [record for record in pending if record not in batch]
-            batch = [
+            candidates = [
                 record
                 for record in batch
                 if events[record["index"]].trigger_persistent is not False
                 or bool(evaluate(triggers[record["index"]], values, next_time))
             ]
-            if not batch:
-                continue
-            count += len(batch)
-            if count > 10000:
-                return None
+            while candidates:
+                priority_values: List[Optional[float]] = []
+                for record in candidates:
+                    priority = events[record["index"]].priority
+                    priority_value = (
+                        None if not priority else evaluate(priority, values, next_time)
+                    )
+                    if priority and priority_value is None:
+                        return None
+                    priority_values.append(priority_value)
 
-            pre_execution = dict(values)
-            updates: dict[str, float] = {}
-            batch_targets: set[str] = set()
-            for record in batch:
+                def independent(records: Sequence[dict]) -> bool:
+                    for left_record in records:
+                        left_index = left_record["index"]
+                        left_event = events[left_index]
+                        left_targets = {target for target, _ in targets[left_index]}
+                        left_assignment_reads = {
+                            standardize_name(identifier)
+                            for _target, expression in targets[left_index]
+                            for identifier in re.findall(
+                                r"\b[A-Za-z_][A-Za-z0-9_]*\b", expression
+                            )
+                        }
+                        for right_record in records:
+                            if (
+                                right_record is left_record
+                                or right_record["index"] == left_index
+                            ):
+                                continue
+                            right_index = right_record["index"]
+                            right_event = events[right_index]
+                            right_targets = {
+                                target for target, _ in targets[right_index]
+                            }
+                            if left_targets & right_targets:
+                                return False
+                            right_trigger_reads = {
+                                standardize_name(identifier)
+                                for identifier in re.findall(
+                                    r"\b[A-Za-z_][A-Za-z0-9_]*\b",
+                                    triggers[right_index],
+                                )
+                            }
+                            right_priority_reads = {
+                                standardize_name(identifier)
+                                for identifier in re.findall(
+                                    r"\b[A-Za-z_][A-Za-z0-9_]*\b",
+                                    right_event.priority or "",
+                                )
+                            }
+                            if left_targets & right_trigger_reads:
+                                return False
+                            if (
+                                right_event.priority
+                                and left_targets & right_priority_reads
+                            ):
+                                return False
+                            if not left_event.use_values_from_trigger_time and (
+                                left_assignment_reads & right_targets
+                            ):
+                                return False
+                    return True
+
+                has_priority = any(value is not None for value in priority_values)
+                has_unprioritized = any(value is None for value in priority_values)
+                if has_priority and has_unprioritized and not independent(candidates):
+                    return None
+                if has_priority:
+                    order = sorted(
+                        range(len(candidates)),
+                        key=lambda index: (
+                            priority_values[index] is not None,
+                            (
+                                priority_values[index]
+                                if priority_values[index] is not None
+                                else 0.0
+                            ),
+                        ),
+                        reverse=True,
+                    )
+                else:
+                    order = list(range(len(candidates)))
+                selected = order[0]
+                selected_priority = priority_values[selected]
+                tied = [
+                    candidates[index]
+                    for index, value in enumerate(priority_values)
+                    if value == selected_priority
+                ]
+                if len(tied) > 1 and not independent(tied):
+                    return None
+
+                record = candidates.pop(selected)
                 event_index = record["index"]
                 event = events[event_index]
+                count += 1
+                if count > 10000:
+                    return None
+                pre_execution = dict(values)
                 assignment_state = (
                     record["snapshot"]
                     if event.use_values_from_trigger_time
@@ -1340,21 +1455,19 @@ def expand_static_parameter_event_system(
                     if event.use_values_from_trigger_time
                     else next_time
                 )
-                for normalized, expression in targets[event_index]:
-                    if normalized in batch_targets:
+                updates: dict[str, float] = {}
+                for target, expression in targets[event_index]:
+                    if target in updates:
                         return None
                     value = evaluate(expression, assignment_state, assignment_time)
                     if value is None:
                         return None
-                    batch_targets.add(normalized)
-                    updates[normalized] = value
-            values.update(updates)
+                    updates[target] = value
+                values.update(updates)
 
-            for record in batch:
-                source = events[record["index"]]
                 materialized = replace(
-                    source,
-                    id=f"{source.id or 'event'}__static_{record['sequence'] + 1}",
+                    event,
+                    id=f"{event.id or 'event'}__static_{record['sequence'] + 1}",
                     trigger=f"geq(time, {_format_number(next_time)})",
                     delay=None,
                     trigger_initial_value=False,
@@ -1367,8 +1480,34 @@ def expand_static_parameter_event_system(
                 )
                 executions.append((next_time, materialized))
 
-            previous = list(trigger_truth)
-            schedule_edges(next_time, previous)
+                previous = list(trigger_truth)
+                schedule_edges(next_time, previous)
+                candidates = [
+                    candidate
+                    for candidate in candidates
+                    if events[candidate["index"]].trigger_persistent is not False
+                    or bool(evaluate(triggers[candidate["index"]], values, next_time))
+                ]
+                same_time = [
+                    pending_record
+                    for pending_record in pending
+                    if pending_record["active"]
+                    and abs(pending_record["due"] - next_time) <= 1e-12
+                ]
+                pending = [
+                    pending_record
+                    for pending_record in pending
+                    if pending_record not in same_time
+                ]
+                candidates.extend(
+                    pending_record
+                    for pending_record in same_time
+                    if events[pending_record["index"]].trigger_persistent is not False
+                    or bool(
+                        evaluate(triggers[pending_record["index"]], values, next_time)
+                    )
+                )
+            current_time = next_time
         return [event for _time, event in executions]
     except (ArithmeticError, OverflowError, TypeError, ValueError):
         return None

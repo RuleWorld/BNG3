@@ -583,6 +583,95 @@ def test_static_parameter_events_accept_one_fixed_time_trigger():
     ]
 
 
+def test_static_parameter_events_apply_simultaneous_priorities_in_order():
+    from bionetgen.atomizer.modern.events import expand_static_parameter_event_system
+    from bionetgen.atomizer.modern.types import SBMLEvent
+
+    events = [
+        SBMLEvent(
+            id="low",
+            trigger="geq(time, 1)",
+            trigger_initial_value=False,
+            priority="1",
+            assignments=[("P1", "0")],
+        ),
+        SBMLEvent(
+            id="high",
+            trigger="geq(time, 1)",
+            trigger_initial_value=False,
+            priority="10",
+            assignments=[("P1", "2")],
+        ),
+    ]
+    lowered = expand_static_parameter_event_system(
+        events,
+        t_end=2,
+        parameter_ids=["P1"],
+        resolve_initial=lambda _identifier: 0,
+    )
+
+    assert lowered is not None
+    assert [event.id.split("__static_")[0] for event in lowered] == ["high", "low"]
+    assert [event.assignments[0].math for event in lowered] == ["2", "0"]
+
+
+def test_static_parameter_events_recompute_time_offset_after_reset():
+    from bionetgen.atomizer.modern.events import expand_static_parameter_event_system
+    from bionetgen.atomizer.modern.types import SBMLEvent
+
+    event = SBMLEvent(
+        id="periodic-reset",
+        trigger="geq((time - reset), 1)",
+        trigger_initial_value=True,
+        priority="time",
+        assignments=[("reset", "time"), ("count", "count + 1")],
+    )
+    lowered = expand_static_parameter_event_system(
+        [event],
+        t_end=3,
+        parameter_ids=["reset", "count"],
+        resolve_initial=lambda identifier: {"reset": 0, "count": 0}.get(identifier),
+    )
+
+    assert lowered is not None
+    assert [event.trigger for event in lowered] == [
+        "geq(time, 1)",
+        "geq(time, 2)",
+        "geq(time, 3)",
+    ]
+    assert [event.assignments[1].math for event in lowered] == ["1", "2", "3"]
+
+
+def test_static_parameter_events_ignore_missing_triggers_and_coerce_numeric_truth():
+    from bionetgen.atomizer.modern.events import expand_static_parameter_event_system
+    from bionetgen.atomizer.modern.types import SBMLEvent
+
+    lowered = expand_static_parameter_event_system(
+        [
+            SBMLEvent(
+                id="missing-trigger",
+                trigger="",
+                assignments=[("P1", "3")],
+            ),
+            SBMLEvent(
+                id="numeric-true",
+                trigger="3",
+                trigger_initial_value=False,
+                assignments=[("P1", "2")],
+            ),
+        ],
+        t_end=1,
+        parameter_ids=["P1"],
+        resolve_initial=lambda _identifier: 5,
+    )
+
+    assert lowered is not None
+    assert len(lowered) == 1
+    assert lowered[0].id.startswith("numeric-true__static_")
+    assert lowered[0].trigger == "geq(time, 0)"
+    assert lowered[0].assignments[0].math == "2"
+
+
 def test_affine_interval_of_delayed_state_obeys_event_persistence():
     from bionetgen.atomizer.modern.events import (
         EventTranslationContext,

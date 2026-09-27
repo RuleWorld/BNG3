@@ -2041,3 +2041,16 @@ points; event-assigned `P2` is not part of those observable comparisons. Four
 cached BioModels contain `cosh`; none has events, so this feature has no
 curated-model effect. See the checklist for report hashes and validation
 limits.
+
+The parameter-only event lowering now handles same-time priorities when their
+ordering is provable, recomputes restricted `time - parameter` clock edges as
+reset parameters change, ignores SBML events with no trigger, and treats
+nonzero numeric triggers as true. Official cases `00967`, `00978`, `00997`,
+`01238`, `01239`, and `01284` pass the full conversion and supported-surface
+gate. The one-unit suite is `1,624 passed, 299 unsupported, 0 failed, 0 timed
+out`, six net gains over `1,618/305/0/0`. These six cases have zero reported
+observables, so their numerical comparison is vacuous. Focused event tests:
+`41 passed`; Ruff, Black (`py39`), and `git diff --check` pass. Aggregate
+SBML-suite support remains incomplete; no new curated BioModels gain is
+claimed. Exact report digest and semantics are recorded in the convergence
+checklist.
