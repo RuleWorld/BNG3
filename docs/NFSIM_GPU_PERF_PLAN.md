@@ -1,269 +1,144 @@
-# NFsim performance plan: general optimization + GPU path
+# PR 27 comprehensive plan: faster NFsim (CPU + GPU)
 
 Branch: `plan/nfsim-gpu-perf` (from PR 26 head `22ded21`).
-Scope: (A) review of PR 26 with must-fix items, (B) general (CPU) NFsim
-optimizations, (C) a GPU plan for NFsim. Evidence from two read-only scouts
-plus direct inspection of `cpp/engine/MetalBatchSsa.mm`,
-`cpp/engine/OdeIntegrator.cpp`, `cpp/actions/ActionDispatch.cpp`,
-`cpp/nfsim/NFcore2/`.
+Goal: make network-free simulation meaningfully faster — CPU event-loop
+wins first (they ship regardless), ensemble parallelism second (reliable N×),
+device offload third (where it provably wins). This plan is designed from the
+NFsim architecture, not from PR 26's structure; PR 26 (network batch-SSA GPU)
+is a dependency and a source of reusable patterns only.
 
-Key framing: **PR 26 is network SSA, not NFsim.** It accelerates batched
-Gillespie trajectories over an already-generated fixed reaction network (one
-GPU thread per trajectory over flat CSR arrays). NFsim is network-free SSA:
-the per-event cost is dynamic graph matching + incremental membership
-maintenance over a pointer-linked particle graph. The two share only the outer
-SSA skeleton. Nothing in the PR 26 kernel transfers directly to the NFsim
-event loop; what transfers is trajectory-level batch parallelism, flat
-buffers, cheap per-trajectory RNG, and the fail-closed dispatch pattern.
+## 0. Where things stand (facts, not proposals)
 
-A second fact shapes the plan: `cpp/nfsim/NFcore2/` already contains a flat,
-compiled network-free engine (`bng_nfcore2` target) — `SimulationState` SoA,
-`MatcherProgram`/`TransformProgram` bytecode, Fenwick `HierarchicalScheduler`,
-and an `Engine` whose copy shares immutable executable metadata while owning
-independent trajectory state (`engine.hh`). That is the GPU on-ramp, not the
-`NFcore` pointer graph.
+- Production NFsim path: `ActionDispatch` → in-process `NFcore::System`
+  via `NFinput_fromAst` (`cpp/actions/ActionDispatch.cpp:51-54`, `:1746+`).
+  Single-trajectory, single-threaded, pointer-graph state
+  (`Molecule** bond`, `MappingSet`, reactant trees). Per-event path:
+  `System::sim → getNextRxn → ReactionClass::fire → transform →
+  updateRxnMembership → TemplateMolecule::compare → update_a`.
+- `NFcore2/` (flat SoA state, matcher/transform bytecode, Fenwick
+  scheduler, replica-copyable `Engine`) is a standalone `bng_nfcore2` lib
+  with contract tests only — **not wired to actions/engine/bindings**.
+  Qualifying it is its own project (see §4 decision point).
+- PR 26 gives us: a statistical parity harness (Z/KS/analytical), a
+  fail-closed dispatch pattern (capability probe → GPU → CPU fallback +
+  remeasured thresholds), and per-trajectory RNG discipline. Its kernel does
+  not run NFsim events and never will.
+- PR 26 dependency: the GPU batch path `.cdat` OOB (§6) must be fixed
+  before PR 27 rebases — either in PR 26 pre-merge or cherry-picked. PR 27
+  does not own that fix but cannot ship on a broken base.
 
-Per AGENTS.md: measure before optimizing (benchmark first, one change at a
-time, correctness tests + parity evidence each step); unsupported stays
-explicit, never approximated.
+## 1. Success criteria
 
-## A. PR 26 review
+- Primary metric: **events/sec per model class** (particle-heavy,
+  rule-heavy, large-complex, stiff), measured by the §2 harness.
+- Every claimed win: profile before, one change, harness delta +
+  `ctest` green + parity vs **native NFsim at a pinned commit**
+  (RuleWorld/nfsim; BNG3-vs-BNG3 is not evidence). Stochastic comparison
+  with deterministic seeds; reuse PR 26's Z/KS harness shape.
+- Unsupported stays explicit: new paths carry reject sets that fail closed
+  to the proven path. No silent approximation (AGENTS.md).
+- PR 27 exit: harness merged + profiled baseline published in-repo +
+  CPU wins with measured deltas + ensemble API + GPU spike verdict
+  (go/no-go per model class with numbers). Device kernels beyond the spike
+  are explicitly PR 28+.
 
-Verdict: correct scope and honest evaluation. Fail-closed flattening,
-untouched NFsim/Atomizer/semantics, Apple-only guards with CPU-pool fallback,
-and real statistical validation (trajectory Z-tests, KS, analytical
-chi-square) are all the right calls. The `kGpuMinReactions=50` /
-`kGpuMinBatch=1000` dispatch thresholds are grounded in measured data.
-Not yet merge-safe — one live bug and several smaller items below.
+## 2. Track 0 — measurement harness (first, blocks everything else)
 
-### A1. Must fix: GPU path `.cdat` OOB read (live bug)
+Build `benchmark_nfsim.py` + C++ event counters over representative models:
+events/sec, matcher evaluations/event (NFcore2 `Engine` already counts
+these; add equivalent counters to `NFcore::System`), allocations/event,
+selection vs match vs transform time split. Timing-split style follows
+`BatchSsaMetrics` (prep/sim/transfer) but the quantities are NFsim's.
+Without this, all priorities below are guesses — the harness may reorder
+§3. Gate: harness merged, baseline numbers recorded, profile flame per
+model class attached to the PR.
 
-`MetalBatchSsa.mm::fillDoubleFields` builds `meanSpecies`/`stdSpecies` with
-**one row** (final-state mean only), while `timePointsDouble` has `T` rows.
-`OdeIntegrator::integrateBatchSSA` assigns that to
-`OdeResult::concentrations`, and `ActionDispatch.cpp:1441` calls
-`writeOutputFiles(..., opts.printCDAT=true, ...)` for batch results.
-Both the text `.cdat` loop (`OdeIntegrator.cpp:~1695`) and
-`writeBinaryOutputFiles` (`~1785`) index `result.concentrations[step]` for
-`step` in `[0, T)` — heap OOB read for every GPU batch run with default
-`print_CDAT`, and in binary mode too. The CPU-pool fallback returns a full
-`T×S` grid, so this is also a backend-observable shape inconsistency:
-`result.concentrations.size()` is `1` vs `T` depending on which backend won
-the dispatch.
+## 3. Track 1 — NFcore CPU event-loop wins (ships first, no GPU needed)
 
-Options (pick one before merge):
-1. Skip `.cdat` for batch runs (document: batch mode emits mean `.gdat` +
-   `.bdat` only), and guard both writers against `concentrations.size() !=
-   timePoints.size()`. Cheapest; matches the PR's stated contract.
-2. Record the full species mean grid on device (`B×T×S` floats — 726 MB for
-   EGFR at B=10k; only viable with on-device Welford accumulation into a
-   `T×S` mean/M2 buffer, which is the right fix if `.cdat` output is
-   required).
+In expected rank order (confirm with §2 profile; do in profile order, not
+list order). Each is an independently reviewable commit.
 
-Either way add a regression test: BNGL `simulate_ssa({batch_size=>...})`
-with default flags on a model that takes the GPU path, plus a shape
-assertion (`concentrations.size() == timePoints.size()` or explicit
-documented exemption) in `tests/test_batch_ssa_statistical_parity.py`.
+1. **Scope membership re-match to affected rules.** `updateRxnMembership` /
+   `updateConnectedRxnMembership` (`moleculeType.cpp:729/1138`) re-match
+   each product via recursive `TemplateMolecule::compare` (`:1042`) at
+   products × rules-per-type cost. Drive with connected-reaction sets +
+   `canSkipIndirectMembership` + the deferred batching already in
+   `reactionClass.cpp`. Expected largest win on rule-heavy models.
+2. **Zero per-event allocation.** `Molecule` ctor `new[]`s arrays,
+   `MappingSet` churn, per-fire vectors, `unordered_set` dedupe. Pool
+   molecule arrays/mappings (high-water free lists), reuse fire scratch,
+   versioned generation marks instead of per-fire sets. Drive harness
+   allocs/event to ~0 on the hot path.
+3. **Skip BFS + observable relabel on state-only firings.**
+   `traverseBondedNeighborhood` BFS + remove/add observables run every
+   event; topology-unchanged firings need neither. Branch on
+   transformation type, cache canonical labels per unmodified complex.
+4. **Faster selection.** `DirectSelector` linear scan (`directSelector.cpp:
+   486`) → hierarchical/Fenwick reduction (design exists in
+   `NFcore2/scheduler.hh`; port the data structure, not the engine).
+5. **Faster RNG, same streams.** MT19937 → PCG32/xoshiro, keeping `rng_` /
+   `mapping_rng_` separation (two streams is a parity requirement, not a
+   preference).
+6. **TDF path.** Time-dependent-function branch recomputes all `update_a`
+   per event → dependency-track which rules read which functions.
 
-### A2. Should fix: double propensity evaluation per event
+## 4. Track 2 — ensemble parallelism (reliable N×, CPU)
 
-The MSL kernel evaluates `compute_prop(r)` over all `R` reactions twice per
-event — once for `totalPropensity`, once for selection. For EGFR (3749
-reactions) that is ~7.5k propensity evals per event. Cache pass 1 into a
-thread-local buffer (registers for small R, threadgroup/shared memory above)
-and reuse for selection; expected ~1.5–2× kernel speedup on large networks.
-Same applies to `integrateSSA`'s full `recomputePropensities()` on CPU, but
-that is out of PR scope — note it as network-SSA CPU work (dependency-graph
-propensity update instead of O(R) recompute).
+Independent trajectories are embarrassingly parallel and NFsim's most
+common expensive workload (sweeps, UQ, dose-response). Add `batch_size` to
+the NFsim action path: clone `System` per worker over a thread pool, Welford
+mean/M2 accumulation, `.gdat` mean + `.bdat` std-dev — same output contract
+as PR 26 (including its shape-conformance lesson: identical result shapes
+on every backend). This ships standalone value, needs no GPU, and pins the
+API + validation harness the device backend must later honor. Decision
+point: implement against `NFcore::System` clones now; if the §5 spike
+chooses NFcore2 as the device vehicle, the pool backend is re-targeted,
+API unchanged.
 
-### A3. Minor
+## 5. Track 3 — device offload (spike in PR 27, kernels in PR 28+)
 
-- MSL pipeline compiled per `MetalBatchSsaSimulator` construction
-  (`Impl` ctor: `newLibraryWithSource` + pipeline state). Cache the pipeline
-  per `MTLDevice` (process-wide, keyed by shader string hash); model buffers
-  stay per-instance.
-- RNG doc mismatch: `MetalBatchSsa.hpp` documents
-  `state_0 = base_seed + batch_size`, code does
-  `rng.init(123456789 + baseSeed, trajId)`. Fix the comment; the code's
-  per-trajectory stream separation is the property that matters.
-- `float32` time/rates: `SimParams.tStart/tEnd` and `rateConstants` are
-  float. Fine for the evaluated models, but add a fail-closed guard for
-  `tEnd > 1e6` or rate dynamic range beyond float32 (or promote to double
-  and remeasure — unified memory makes the bandwidth cost small).
-- Host-side mean/std reduction is single-threaded `O(B·T·G)`. Negligible at
-  current sizes; parallelize if species-grid accumulation (A1-option-2)
-  lands.
-- `memoryUsageBytes` uses `sizeof(OdeIntegrator)` — meaningless; either
-  compute real buffer sizes or drop the field.
-- Metal-only is correctly documented as intentional; the portable-backend
-  abstraction belongs to phase 4 of part C, not this PR.
+Rejected up front: parallelizing *within* one trajectory (cross-rule match
+in parallel) — fine-grained, sync-heavy, poor SIMT fit. The device plays
+only **replica parallelism**: one trajectory per device thread, same as
+PR 26's valid half. What must exist for that:
 
-## B. General NFsim optimizations (CPU, backend-agnostic)
+- Flat SoA particle pools (type/state/bond-partner/alive + free lists),
+  flat rule-template store, iterative (explicit-stack) matcher, device
+  dependency tracking, pool allocator with overflow-to-CPU fallback,
+  dual-stream device RNG, sample-time-only D2H.
+- Hardest, in order: race-free incremental re-match (§3.1 must win on CPU
+  first or the device has no chance), allocation-free graph mutation
+  (merge/split), divergence + two-stream parity.
 
-Ranked by scout evidence from the per-event path
-`System::sim → getNextRxn → ReactionClass::fire → transform →
-updateRxnMembership → TemplateMolecule::compare → update_a`
-(`cpp/nfsim/NFcore/system.cpp`, `reactionClass.cpp`, `moleculeType.cpp`,
-`templateMolecule.cpp`, `NFreactions/`). Do these before any NFsim GPU work:
-each is independently shippable and each de-risks the GPU path by simplifying
-the event loop.
+**Vehicle decision (spike, not commitment):** NFcore2 is the natural base
+but is production-unproven. PR 27 spikes: (a) NFcore2-vs-NFcore parity and
+coverage gap on the §2 models; (b) one restricted-class device kernel
+(mass-action, no compartments/energy/DOR/symmetry) proving the
+bytecode→device path with parity numbers. Spike verdict picks (i) NFcore2
+qualification then device, (ii) in-place NFcore device port, or (iii)
+no-go per model class. Full kernels are PR 28+ regardless. Backend
+portability (Metal/CUDA/HIP/SYCL abstraction) waits until a kernel wins
+somewhere — one winning backend before N portable ones; SYCL/OpenCL-style
+leads for match kernels (branch-heavy, Linux CI).
 
-### B0. Benchmark harness first (prerequisite, not optional)
+## 6. PR 26 review (dependency, summarized)
 
-No optimization without a profile. Add an NFsim event-rate benchmark over
-representative models (small particle-heavy, rule-heavy, large-complex,
-stiff) recording events/sec, matcher evaluations/event (`NFcore2::Engine`
-already counts `matcher_evaluations`), and allocation counts. Reuse the
-`BatchSsaMetrics` timing-split style (prep/sim/transfer). Gate every B-item
-on measured improvement against this harness plus full `ctest` and native
-NFsim parity (RuleWorld/nfsim pinned commit as oracle, never BNG3-vs-BNG3).
+Correct scope, honest eval, not merge-safe. Must-fix: live `.cdat` heap OOB
+on the GPU batch path (1-row `meanSpecies` vs T-row writers,
+`OdeIntegrator.cpp:~1695,~1785` via `ActionDispatch.cpp:1441`) + backend
+shape inconsistency; fix in PR 26 or cherry-pick. Should-fix: 2×
+propensity eval per event, per-instance MSL pipeline compile, RNG doc
+mismatch, float32 range guards. Full detail was in the superseded draft;
+per the re-scope it lives here only as the base-hygiene dependency.
 
-### B1. Scope membership re-match to affected rules
+## 7. Sequencing and PR boundaries
 
-`MoleculeType::updateRxnMembership` / `updateConnectedRxnMembership`
-(`moleculeType.cpp:729/1138`) re-match products against candidate reactions
-via recursive `TemplateMolecule::compare` (`templateMolecule.cpp:1042`).
-Cost scales as products × rules-per-type. Exploit the existing dependency
-signals — connected-reaction sets and `canSkipIndirectMembership`
-(`energyPattern.hh`) — plus deferred/batched membership updates already
-present in `reactionClass.cpp`, so each product re-matches `O(affected)`
-rather than `O(all)`. Expected largest single win on rule-heavy models.
+1. §2 harness + baseline (lands first, unblocks ranking).
+2. §3 items in profile order, each with measured delta.
+3. §4 ensemble API on the faster baseline.
+4. §5 spike → vehicle verdict → PR 28+ kernels.
+5. Portability only after a kernel wins.
 
-### B2. Fast selection: replace linear scan
-
-`DirectSelector::getNextReactionClass` (`directSelector.cpp:486`) scans
-`O(R)` per event (block-sparse/active-bit helps only when many rules are
-inactive). `NFcore2/scheduler.hh` already implements a Fenwick
-`HierarchicalScheduler` with `O(log)` sample/update. Either backport it to
-`NFcore` selectors or route performance-sensitive NFsim runs through
-`NFcore2`. Measure both; keep the `NFcore` path bit-compatible.
-
-### B3. Skip BFS + observable relabel when topology is unchanged
-
-`ReactionClass::fire` (`reactionClass.cpp:446`) pays
-`traverseBondedNeighborhood` BFS (`molecule.cpp:843`) plus observable
-remove/add (`observable.cpp`) on every event. State-change-only firings
-(bind/unbind-free) need neither complex dedupe nor canonical relabeling:
-branch on transformation type, cache canonical (nauty) labels per
-unmodified complex, and skip species-observable loops when no species
-observable depends on the touched types.
-
-### B4. Kill per-event allocation
-
-`Molecule` ctor `new[]`s 4+ arrays, `MappingSet` churn, per-fire product
-vectors, `unordered_set` complex dedupe. Pool molecule arrays and mapping
-sets (free lists sized by high-water mark), reuse fire scratch vectors, and
-replace per-fire `unordered_set` with versioned generation marks. Count
-allocations/event in the B0 harness; drive to zero on the hot path.
-
-### B5. RNG: faster generator, same stream discipline
-
-Per-`System` MT19937 (`NFutil/nfsim_rng.h`) with two streams (`rng_` for
-reaction choice, `mapping_rng_` for molecule/mapping choice). MT19937 is
-slow to seed and heavy per draw; move to PCG32/xoshiro with one instance
-per stream, preserving the two-stream separation (PR 26's single-PCG32
-design must NOT be copied blindly — collapsing the streams changes the
-sampled distribution vs the CPU oracle and breaks parity).
-
-### B6. Time-dependent-function path
-
-The TDF branch recomputes all `update_a` per event. Attach dependency
-tracking (which rules read which functions/observables) so only dependent
-rules update. Fail closed where functions defeat static analysis.
-
-## C. NFsim GPU plan
-
-### C1. Why PR 26 does not transfer (established, do not relitigate)
-
-| PR 26 technique | NFsim applicability |
-|---|---|
-| Fixed CSR network flatten | None — no species/reaction enumeration exists (`System` holds `MoleculeType*`/`ReactionClass*` rules + particle lists) |
-| One-thread-per-trajectory kernel | Partial — valid for ensemble/sweep batching (see C3-phase-1) |
-| Two-pass dense propensity | Does not transfer — propensities live in reactant-list trees, maintained incrementally |
-| `local_y[64]` register cache | Does not transfer — state is a dynamic pointer graph, uncoalesced and unbounded |
-| Single PCG32 per thread | Adapt, don't copy — NFsim needs two streams (C-B5) |
-| Dispatch thresholds (50 rxns, 1000 batch) | Concept transfers, constants don't — crossover lives in (rules × particles × degree × match-cost) space, must be remeasured |
-| Static + per-run buffers | Pattern transfers with a device pool allocator — firing creates/deletes molecules/mappings/complexes, so fixed `B×S` buffers are impossible; needs capped pools + overflow-to-CPU fallback |
-
-Fundamental blockers for a direct port: recursive pointer-chasing match
-(`TemplateMolecule::compare`, BFS, nauty labels) is maximally SIMT-divergent;
-MSL has no `new`/exceptions/unbounded recursion; and the mapping tables ARE
-the propensity array, so device-side incremental coherence is the whole
-problem PR 26 never faces.
-
-### C2. The on-ramp is NFcore2, not NFcore
-
-`NFcore2` already did the CPU-side flattening a GPU needs: SoA
-`SimulationState`, bytecode `MatcherProgram`/`TransformProgram`
-(iterative-interpretable, unlike recursive `compare`), Fenwick scheduler
-(parallel-reduction-friendly), and `Engine` copy semantics = replica
- parallelism with shared immutable metadata. Concretely, this means the GPU
-work starts from `NFcore2`, and B1–B4 (affected-rule scoping, Fenwick
-selection, topology-change branching, pooling) are shared prerequisites that
-pay off on CPU regardless.
-
-### C3. Phases
-
-**Phase 1 — NFsim ensemble batching on CPU (API + validation without GPU).**
-Mirror PR 26's contract for network-free runs: `batch_size` on the NFsim
-action path, per-replica `Engine` copies (or `System` clones) over a thread
-pool, Welford mean/M2 accumulation, `.gdat` mean + `.bdat` std-dev. Reuses
-the PR 26 statistical harness (Z/KS/analytical) with native NFsim as oracle.
-Ships standalone value (sweeps, UQ) and pins the API the GPU backend must
-honor, including the A1 shape contract (`concentrations` rows ==
-`timePoints` rows on every backend).
-
-**Phase 2 — Targeted device kernels with fail-closed fallback.**
-Profile Phase 1 to find the dominant kernel-shaped work per model class
-(candidates: iterative matcher evaluation over candidate lists, propensity
-reduction, observable accumulation). Ship one kernel at a time behind the
-PR-26-style dispatcher (capability probe + remeasured crossover thresholds +
-`try/catch` CPU fallback). Reject list starts large (local functions, DOR,
-energy patterns, compartments, symmetry, traversal limits — cf. §C1) and
-shrinks per kernel with parity evidence.
-
-**Phase 3 — Full-device replica.**
-Flat SoA particle pools (type id, component states, bond-partner ids, alive
-bit + free lists), flat rule-template store uploaded once, device match
-bitsets + dependency tracking (`affectedMatchers`/`affectedFamilies` already
-exist on `Engine`), fire/transform kernel with pool alloc/free, dual-stream
-device RNG. Hardest parts in order: race-free incremental re-match (naive
-re-match-all per event loses to CPU — this is where B1 must already have
-won on CPU first), allocation-free graph mutation (complex merge/split),
-divergence control + two-stream RNG parity. Success criterion: crossover
-thresholds where device beats the Phase-1 pool, measured per model class,
-not a single headline number.
-
-**Phase 4 — Portable backend.**
-PR 26 is Metal-only at three levels (`CMakeLists.txt` APPLE gate,
-`__APPLE__` guards, runtime MSL string). Introduce a backend interface
-(`isAvailable`/`simulate`) with per-target kernels (Metal/CUDA/HIP/SYCL/
-OpenCL) behind a buffer/queue abstraction, unguarded bindings
-(`backend='auto'` + `is_*_available` probes), per-backend thresholds.
-Prefer SYCL/OpenCL-style portable compute for the match kernels
-(integer/branch-heavy, Linux CI matters); keep the CPU pool the default
-until crossover is proven with `BatchSsaMetrics`-style timing splits.
-
-### C4. Validation rules (non-negotiable, from AGENTS.md)
-
-- Native NFsim (pinned RuleWorld/nfsim commit; akutava21/nfsim fork only
-  where its energy/perf work is explicitly identified by commit) is the
-  parity oracle. BNG3-vs-BNG3 is not evidence.
-- Deterministic seeds for stochastic comparison; Z/KS/analytical checks per
-  PR 26's harness, extended with mapping-pick-order sensitivity (two-stream
-  RNG audit).
-- Unsupported stays unsupported: every new kernel carries an explicit
-  reject set that fails closed to CPU, never a silent approximation.
-- Each phase reports per-model-class crossover numbers, not aggregates
-  alone; regressions in `unsupported→fail` transitions block the phase.
-
-## Sequencing
-
-1. A1 (+ A2 if cheap) as PR 26 merge conditions.
-2. B0 harness, then B1 → B4 in rank order, B5/B6 opportunistically.
-3. Phase 1 ensemble API on the faster CPU baseline.
-4. Phases 2–4 only against the Phase-1 baseline with per-class crossovers.
-
-Definition of done per item: semantics understood, simplest implementation,
-focused regression + existing suite green, independent parity evidence where
-applicable, unsupported still explicit, no unrelated changes damaged.
+Definition of done per item: semantics understood, simplest change,
+focused regression + suite green, independent parity evidence where
+applicable, unsupported still explicit, unrelated code undamaged.
