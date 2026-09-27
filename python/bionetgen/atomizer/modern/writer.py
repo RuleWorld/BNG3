@@ -7066,7 +7066,10 @@ def generate_bngl(
             return initial, slope
 
         def resolve_event_reaction_rate(
-            identifier: str, event_context: SBMLEvent
+            identifier: str,
+            event_context: SBMLEvent,
+            *,
+            priority_state: bool = False,
         ) -> Optional[float]:
             reaction = next(
                 (
@@ -7122,6 +7125,17 @@ def generate_bngl(
 
             def resolve_rate_symbol(symbol: str) -> Optional[float]:
                 normalized = standardize_name(symbol)
+                simultaneous_priority_group = priority_state and all(
+                    other_event.trigger.strip() == event_context.trigger.strip()
+                    and str(other_event.delay or "").strip()
+                    == str(event_context.delay or "").strip()
+                    for other_event in model.events
+                    if other_event is not event_context
+                    and any(
+                        standardize_name(assignment.variable) == normalized
+                        for assignment in other_event.assignments
+                    )
+                )
                 if normalized in local_values:
                     return local_values[normalized]
                 if is_compile_time_constant(symbol):
@@ -7149,6 +7163,7 @@ def generate_bngl(
                         standardize_name(assignment.variable) == normalized
                         for other_event in model.events
                         if other_event is not event_context
+                        and not simultaneous_priority_group
                         for assignment in other_event.assignments
                     )
                 ):
@@ -7262,6 +7277,9 @@ def generate_bngl(
                     resolve_quadratic_event_state_values
                 ),
                 resolve_reaction_rate_for_event=resolve_event_reaction_rate,
+                resolve_priority_reaction_rate_for_event=lambda identifier, event: (
+                    resolve_event_reaction_rate(identifier, event, priority_state=True)
+                ),
                 resolve_rate_reset=resolve_rate_event_reset,
                 static_event_state=static_event_state,
             ),

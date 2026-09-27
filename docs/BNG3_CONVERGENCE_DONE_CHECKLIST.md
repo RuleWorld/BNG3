@@ -6566,3 +6566,30 @@ the other groups remain implementation targets.
   `9492f3ea454fbef18e0361eb50ef0ce79597ad10a5b630a81b25e0f8b2c77db0`.
   This benchmark covers network structure and rates, not simulation parity;
   libRoadRunner trajectory parity is recorded separately above.
+
+## Simultaneous fixed-time reaction-rate priorities — 2026-09-27
+
+- [x] Lower dynamic reaction-rate priorities for exactly two events sharing
+  one positive fixed-time trigger and delay, the same `triggerInitialValue`,
+  and trigger-time assignment snapshots. Evaluate both priorities against
+  the common pre-event state before emitting their deterministic execution
+  order. Reaction rates depending on species, rules, initial assignments, or
+  parameters changed by earlier or differently triggered events remain
+  untranslated.
+- [x] Add a regression covering simultaneous events that both assign `k1`
+  and have priorities `J0` and `J0 - 1`; prove the emitted action order.
+  Focused event/parity tests: `109 passed`; full Python suite: `605 passed,
+  28 skipped`. Ruff, Black (`py39`), and `git diff --check` pass.
+- [x] Official `semantic/01229` now passes conversion, SBML write/reimport,
+  native-reader checks, and BNG3/libRoadRunner 2.10.0 comparison through
+  `t=7`: 2 observables, 71 samples each, maximum absolute error
+  `1.7763568394002505e-15`. Report
+  `/private/tmp/bng3-semantic-01229-priority-t7-final.json`, SHA-256
+  `1dc5d0474b588a77baf7583950f642a678b4c655863d00dd9a8ad220bbf53e45`.
+- [x] Full pinned suite: `1,627 passed, 296 unsupported, 0 failed, 0
+  timeouts`; exactly one gain (`semantic/01229`) and no regressions from
+  `1,626/297/0/0`. Report `/private/tmp/bng3-priority-rates-final.json`,
+  SHA-256 `588377bf138d2c5afdada4a04d5b318046c03d754791e389cca646987c259ef3`.
+  Overall core gate remains open; reference-result conformance was not run.
+- [ ] Re-run the full curated BioModels inventory in flat and atomized modes
+  against the final source; the exact-source run is active.

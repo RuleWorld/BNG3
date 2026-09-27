@@ -120,6 +120,12 @@ class EventTranslationContext:
     resolve_reaction_rate_for_event: Callable[[str, SBMLEvent], Optional[float]] = (
         _no_event_reaction_rate
     )
+    # Resolve a reaction rate from the state immediately before a group of
+    # simultaneous, same-trigger events. This is stricter than general event
+    # rate folding and is used only to order that group's priorities.
+    resolve_priority_reaction_rate_for_event: Callable[
+        [str, SBMLEvent], Optional[float]
+    ] = _no_event_reaction_rate
     # Allow periodic reset lowering to inspect a constant rate-rule state even
     # when the event itself assigns that state.
     resolve_rate_reset: Callable[[str], Optional[Tuple[float, float]]] = (
@@ -2100,8 +2106,14 @@ def synthesize_event_actions(
                                 continue
                             value = math.sqrt(radicand)
                         elif event_context is not None:
-                            reaction_rate = context.resolve_reaction_rate_for_event(
-                                identifier, event_context
+                            reaction_rate = (
+                                context.resolve_priority_reaction_rate_for_event(
+                                    identifier, event_context
+                                )
+                                if priority_evaluation
+                                else context.resolve_reaction_rate_for_event(
+                                    identifier, event_context
+                                )
                             )
                             if reaction_rate is None:
                                 continue
@@ -4003,6 +4015,11 @@ def synthesize_event_actions(
                 )
                 event_time = parse_time_threshold(event.trigger)
                 other_time = parse_time_threshold(other_event.trigger)
+                event_time_value = (
+                    fold(event_time, event_context=event)
+                    if event_time is not None
+                    else None
+                )
                 other_delay = (
                     fold_at_state(
                         other_event.delay,
@@ -4015,16 +4032,22 @@ def synthesize_event_actions(
                 if (
                     event.trigger.strip() == other_event.trigger.strip()
                     and event_time is not None
+                    and event_time_value is not None
+                    and event_time_value > 0
                     and other_time is not None
+                    and event.trigger_initial_value == other_event.trigger_initial_value
                     and other_delay is not None
                     and math.isfinite(other_delay)
                     and other_delay >= 0
                     and abs(float(other_delay) - delay) <= 1e-12
+                    and event.use_values_from_trigger_time
+                    and other_event.use_values_from_trigger_time
                 ):
-                    other_priority = fold(
+                    other_priority = fold_at_state(
                         other_event.priority or "0",
                         execution_time,
                         event_context=other_event,
+                        priority_evaluation=True,
                     )
                     state_priority = fold_at_state(
                         event.priority or "",
@@ -4032,11 +4055,7 @@ def synthesize_event_actions(
                         event_context=event,
                         priority_evaluation=True,
                     )
-                    if (
-                        other_priority is not None
-                        and state_priority is not None
-                        and state_priority > other_priority
-                    ):
+                    if other_priority is not None and state_priority is not None:
                         folded_priority = state_priority
             if folded_priority is None:
                 untranslated.append(

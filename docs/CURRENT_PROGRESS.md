@@ -1,9 +1,28 @@
 # BNG3 current progress
 
-**Last targeted audit:** 2026-09-26 (full convergence checklist not re-audited)
+**Last targeted audit:** 2026-09-27 (full convergence checklist not re-audited)
 **Repository:** `RuleWorld/BNG3`
 **Branch:** `main`
 **Status:** merged convergence, nonequilibrium energy, and SBML material-gap work; release validation remains incomplete
+
+## Simultaneous fixed-time event priorities from reaction rates — 2026-09-27
+
+Atomizer now folds dynamic reaction-rate priorities for exactly two events
+with the same positive fixed-time trigger and delay, equal initial trigger
+state, and trigger-time assignment snapshots. It evaluates both priorities
+against the shared pre-event state, then emits the statically proven order.
+Reaction rates that depend on species, ruled or initially assigned parameters,
+or parameters changed by earlier/differently triggered events remain
+unsupported. `semantic/01229` passes round-trip and BNG3/libRoadRunner 2.10.0
+trajectory comparison through t=7: 2 observables, maximum absolute error
+`1.78e-15`. The pinned SBML suite reports `1,627 passed, 296 unsupported,
+0 failed, 0 timeouts`; exactly `semantic/01229` changed unsupported→passed,
+with no regressions. Report `/private/tmp/bng3-priority-rates-final.json`,
+SHA-256 `588377bf138d2c5afdada4a04d5b318046c03d754791e389cca646987c259ef3`.
+The overall SBML core gate remains open. Full Python suite: `605 passed, 28
+skipped`; focused event/parity tests: `109 passed`; Ruff, Black (`py39`), and
+`git diff --check` pass. The exact-source full curated BioModels run is active;
+its report is pending.
 
 ## Parameter-only SBML event scheduling — 2026-09-26
 

@@ -615,6 +615,50 @@ def test_static_parameter_events_apply_simultaneous_priorities_in_order():
     assert [event.assignments[0].math for event in lowered] == ["2", "0"]
 
 
+def test_simultaneous_fixed_time_events_fold_mutable_reaction_rate_priorities():
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLEventAssignment
+
+    events = [
+        SBMLEvent(
+            id="first",
+            trigger="gt(time, 5.5)",
+            trigger_initial_value=False,
+            priority="J0",
+            assignments=[SBMLEventAssignment("k1", "10")],
+        ),
+        SBMLEvent(
+            id="second",
+            trigger="gt(time, 5.5)",
+            trigger_initial_value=False,
+            priority="J0 - 1",
+            assignments=[SBMLEventAssignment("k1", "2")],
+        ),
+    ]
+    result = synthesize_event_actions(
+        events,
+        EventTranslationContext(
+            resolve_species_pattern=lambda _identifier: None,
+            resolve_param=lambda _identifier: None,
+            is_param=lambda identifier: identifier == "k1",
+            is_compile_time_constant=lambda _identifier: False,
+            resolve_priority_reaction_rate_for_event=lambda identifier, _event: (
+                1.0 if identifier == "J0" else None
+            ),
+        ),
+    )
+
+    assert result.converted == 2
+    assert result.untranslated == []
+    assert result.actions_block is not None
+    first = result.actions_block.index('setParameter("k1", "10")')
+    second = result.actions_block.index('setParameter("k1", "2")')
+    assert first < second
+
+
 def test_static_parameter_events_recompute_time_offset_after_reset():
     from bionetgen.atomizer.modern.events import expand_static_parameter_event_system
     from bionetgen.atomizer.modern.types import SBMLEvent
