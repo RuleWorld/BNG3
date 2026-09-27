@@ -906,6 +906,59 @@ def _simulate_and_compare(
     }
 
 
+def _retry_numerical_comparison(
+    comparison: dict[str, Any],
+    *,
+    compare: Any,
+    t_end: float,
+    n_steps: int,
+    rtol: float,
+    atol: float,
+    max_step: float,
+) -> dict[str, Any]:
+    """Refine both CVODE solves once after a numerical observable mismatch.
+
+    This retry does not relax the comparison predicate. It tightens solver
+    tolerances on both engines; unsupported records and solver failures retain
+    their original classification.
+    """
+
+    if comparison.get("passed") or not comparison.get("failed_observables"):
+        return comparison
+    refined_rtol = max(float(rtol) * 1e-4, 1e-12)
+    refined_atol = max(float(atol) * 1e-8, 1e-24)
+    if refined_rtol >= rtol and refined_atol >= atol:
+        return comparison
+
+    attempt = {
+        "rtol": refined_rtol,
+        "atol": refined_atol,
+        "max_step": max_step,
+    }
+    try:
+        refined = compare(
+            t_end=t_end,
+            n_steps=n_steps,
+            rtol=refined_rtol,
+            atol=refined_atol,
+            max_step=max_step,
+        )
+    except RuntimeError as exc:
+        attempt["error"] = str(exc)
+        result = dict(comparison)
+        result["refinement_attempt"] = attempt
+        return result
+
+    attempt["passed"] = bool(refined.get("passed", False))
+    if attempt["passed"]:
+        refined = dict(refined)
+        refined["refinement_attempt"] = attempt
+        return refined
+    result = dict(comparison)
+    result["refinement_attempt"] = attempt
+    return result
+
+
 def _validate_mode(
     sbml: str,
     model_id: str,
@@ -1166,6 +1219,31 @@ def _validate_mode(
         comparison = last_comparison
         if comparison is None:
             raise initial_runtime_error
+    if comparison is not None and comparison.get("failed_observables"):
+        function_names = {
+            standardize_name(str(rule.variable))
+            for rule in source_model.rules
+            if rule.type == "assignment" and rule.variable
+        } | {
+            standardize_name(str(assignment.symbol))
+            for assignment in source_model.initial_assignments
+            if assignment.symbol
+        }
+        comparison = _retry_numerical_comparison(
+            comparison,
+            compare=lambda **settings: _simulate_and_compare(
+                cpp_model,
+                model_type,
+                output_path,
+                function_names=function_names,
+                **settings,
+            ),
+            t_end=simulation_t_end,
+            n_steps=simulation_n_steps,
+            rtol=simulation_rtol,
+            atol=simulation_atol,
+            max_step=float(comparison.get("max_step") or 0.0),
+        )
     result["simulation_comparison"] = comparison
     if not comparison.get("passed", False):
         result["status"] = "failed"

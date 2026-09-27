@@ -4,7 +4,7 @@
 **Last targeted audit:** 2026-09-26 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
 **Working branch:** `main`
-**Current base:** `main` at `0fbf50981b4bd5ffbe75bc6840a62d1f3d13ce9b`; curated BioModels inventory and exact-head CI are in progress
+**Current base:** `main` at `f392751c151f76ac8f6e061685c7410ce73f1b6a`; latest full curated BioModels and exact-head CI evidence are recorded below
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -6358,3 +6358,17 @@ the other groups remain implementation targets.
   refresh was canceled because it predated this code and the compartment
   source screen had no matching models; the prior inventory report remains the
   last full BioModels benchmark.
+
+## Curated BioModels CVODE refinement — 2026-09-26
+
+- [x] On an existing numerical observable mismatch, retry both BNG3 and
+  libRoadRunner with stricter relative/absolute tolerances. Keep the original
+  mismatch as the result unless the refined comparison passes the same
+  numerical predicate; record the refined settings and attempt result.
+- [x] Targeted `BIOMD0000000702` flat/atomized roundtrip passes both modes.
+  Flat mode passes with `rtol=1e-11`, `atol=1e-20`, `max_step=1e-4`; atomized
+  mode passes at original tolerances. This is a targeted benchmark recovery
+  only; the full inventory has not been rerun, so no aggregate BioModels gain
+  is claimed. Report `/private/tmp/bng3-0702-refined.json`.
+- [ ] Rerun the full curated inventory with the refinement retry and compare
+  every model/mode against `/private/tmp/bng3-curated-after-events-nonfinite.json`.

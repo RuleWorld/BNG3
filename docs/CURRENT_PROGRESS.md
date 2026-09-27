@@ -5,6 +5,17 @@
 **Branch:** `main`
 **Status:** merged convergence, nonequilibrium energy, and SBML material-gap work; release validation remains incomplete
 
+## Curated BioModels CVODE refinement — 2026-09-26
+
+The curated-model gate now retries numerical observable mismatches once with
+stricter relative and absolute tolerances on both BNG3 and libRoadRunner. It
+retains the original failure unless the same comparison predicate passes and
+records the attempted settings. Targeted `BIOMD0000000702` flat mode now passes
+at `rtol=1e-11`, `atol=1e-20`; atomized mode passes at original tolerances.
+This recovers one targeted model/mode result, not a full-inventory gain. The
+full curated inventory still needs rerunning. Report:
+`/private/tmp/bng3-0702-refined.json`.
+
 ## Affine species-difference event thresholds — 2026-09-26
 
 Atomizer can now schedule a difference threshold between two species when

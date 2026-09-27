@@ -53,6 +53,73 @@ def test_curated_biomodel_gate_blocks_approximated_semantics():
     ]
 
 
+def test_curated_numerical_mismatch_retries_at_stricter_solver_tolerances(monkeypatch):
+    validator = _load_validator("validate_published_biomodels")
+    initial = {
+        "passed": False,
+        "failed_observables": ["low_abundance_total"],
+        "rtol": 1e-7,
+        "atol": 1e-12,
+    }
+    calls = []
+
+    def compare(**kwargs):
+        calls.append(kwargs)
+        return {
+            "passed": True,
+            "rtol": kwargs["rtol"],
+            "atol": kwargs["atol"],
+            "max_step": kwargs["max_step"],
+        }
+
+    refined = validator._retry_numerical_comparison(
+        initial,
+        compare=compare,
+        t_end=10.0,
+        n_steps=100,
+        rtol=1e-7,
+        atol=1e-12,
+        max_step=1e-4,
+    )
+
+    assert refined["passed"] is True
+    assert refined["rtol"] == 1e-11
+    assert refined["atol"] == 1e-20
+    assert calls == [
+        {
+            "t_end": 10.0,
+            "n_steps": 100,
+            "rtol": 1e-11,
+            "atol": 1e-20,
+            "max_step": 1e-4,
+        }
+    ]
+
+
+def test_curated_solver_refinement_keeps_original_on_failure_or_solver_error():
+    validator = _load_validator("validate_published_biomodels")
+    initial = {"passed": False, "failed_observables": ["x"]}
+
+    def mismatch(**_kwargs):
+        return {"passed": False, "failed_observables": ["x"]}
+
+    def solver_error(**_kwargs):
+        raise RuntimeError("CVODE failed")
+
+    for compare in (mismatch, solver_error):
+        result = validator._retry_numerical_comparison(
+            initial,
+            compare=compare,
+            t_end=10.0,
+            n_steps=100,
+            rtol=1e-7,
+            atol=1e-12,
+            max_step=1e-4,
+        )
+        assert result["passed"] is False
+        assert result["failed_observables"] == ["x"]
+
+
 def test_event_lowering_replaces_parser_only_event_warning():
     generated = {
         "category": "event",
