@@ -2502,3 +2502,19 @@ Full Python is `641 passed, 28 skipped`; the pinned SBML suite is `1,641 passed,
 offline curated inventory retains its prior status for all 1,096 records:
 `792/1,083` SBML pass, `109` unsupported, `5` fail, and `177` time out. Report
 hashes and scope are recorded in the convergence checklist.
+
+Coupled state-reset events now schedule for a strictly constrained isolated
+first-order transfer `A -> B`, with constant thresholds/resets and optional
+nonnegative delays. The two official cases `semantic/00041` and `00072` pass
+full per-record gates and four-observable BNG3/libRoadRunner comparisons at
+`t_end=20` (maximum absolute difference `1.88e-14` each); synthetic delayed and
+undelayed parity tests also pass. Full pinned SBML suite: `1,643 passed, 280
+unsupported, 0 failed, 0 timeouts`; exactly those two prior unsupported cases
+gained pass, and the supported-surface gate passes. Aggregate core support
+remains incomplete. Full Python is `643 passed, 28 skipped` on the current
+branch.
+The full offline flat/atomized BioModels inventory completed all 1,096 records:
+`792/1,083` SBML-path passed, `109` SBML unsupported, `5` failed, and `177`
+timed out. Every record retained its prior status, so no curated-model gain or
+regression is claimed. See `/private/tmp/bng3-first-order-transfer-biomodels-both.json`
+in the convergence checklist for its SHA-256.

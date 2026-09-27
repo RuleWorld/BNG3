@@ -7234,3 +7234,43 @@ the other groups remain implementation targets.
   `/private/tmp/bng3-independent-events-biomodels-both.json`, SHA-256
   `e34738f57db500da19fe2f28618c0772c729c4ae36fda5452f8a68dd8747d9c5`.
   The aggregate curated-model gates remain incomplete.
+
+## Coupled first-order transfer event pair — 2026-09-27
+
+- [x] Schedule two persistent state-reset events on a narrowly proven,
+  isolated first-order `A -> B` transfer. The source event resets
+  `A` after a lower-threshold crossing; the product event resets `B` after an
+  upper-threshold crossing. Constant trigger/reset expressions and
+  nonnegative delays are supported. Event priorities, SSA, model rules,
+  conversion factors, additional active species/reactions, and other reaction
+  structures remain unsupported by this path.
+- [x] Evaluate both trajectories exactly between triggers and delayed
+  assignments, including simultaneous due events with distinct assignment
+  targets. A regression with an added parallel reaction verifies fail-closed
+  behavior. Synthetic no-delay and delayed cases match libRoadRunner over a
+  20-unit horizon away from action boundaries.
+- [x] Official `semantic/00041` and `semantic/00072` pass per-record
+  conversion, SBML roundtrip, native-reader, and BNG3/libRoadRunner 2.10.0
+  checks at `t_end=20`, 200 steps, and four observables. Maximum absolute
+  difference is `1.8762769116165146e-14` for each. Reports:
+  `/private/tmp/bng3-first-order-events-00041-final.json` (SHA-256
+  `3e8b7d2f874ec556e0ad542fe57766a9aa3038ccc24c0d0747be63e4174a1ec7`) and
+  `/private/tmp/bng3-first-order-events-00072-final.json` (SHA-256
+  `0019f4cdeafe9b7b57dff33c8b414ef15024c1e4a1ee3c652deba3a61b1f5b70`).
+- [x] Atomizer parity module: `86 passed`. Full pinned SBML Test Suite at
+  commit `cf38585fac5de8e0e90112febb62851ee2181816`:
+  `1,643 passed, 280 unsupported, 0 failed, 0 timeouts`; only `00041` and
+  `00072` changed status, both unsupported-to-passed, with no previous pass
+  regressed. The supported-surface gate passes; the aggregate core gate remains
+  open due to the 280 unsupported records. Report
+  `/private/tmp/bng3-first-order-transfer-full-suite-retry.json`, SHA-256
+  `6a731459c293717ad0a908f3d6cdb0b8abd704706fe5daad4e336d7293224245`.
+- [x] Full Python suite on the current branch: `643 passed, 28 skipped`.
+  Ruff, Black (`py39`), and `git diff --check` pass.
+- [x] Full offline curated BioModels flat/atomized inventory against this
+  source: all `1,096` records accounted for (`792/1,083` SBML-path records
+  passed, `109` SBML unsupported, `5` failed, `177` timed out). Every record
+  retained its prior status; this change produced no confirmed BioModels gain
+  or regression. Supported-surface and aggregate gates remain incomplete.
+  Report `/private/tmp/bng3-first-order-transfer-biomodels-both.json`, SHA-256
+  `563b020c1adce5128be98fb020864061b1c3f82d02432ebeb601277f0111d0c5`.

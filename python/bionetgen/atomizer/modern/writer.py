@@ -6893,6 +6893,174 @@ def generate_bngl(
                 exponent /= float(compartment.size)
             return (initial, exponent) if math.isfinite(exponent) else None
 
+        def resolve_first_order_transfer_event_system() -> (
+            Optional[Tuple[str, str, float]]
+        ):
+            """Resolve an isolated A -> B first-order transfer system."""
+            if (
+                len(model.events) != 2
+                or len(model.reactions) != 1
+                or model.rules
+                or model.initial_assignments
+                or model.conversion_factor
+                or any(species.conversion_factor for species in model.species.values())
+            ):
+                return None
+            reaction = next(iter(model.reactions.values()))
+            if (
+                reaction.fast
+                or reaction.conversion_factor
+                or getattr(reaction, "modifiers", ())
+                or len(reaction.reactants) != 1
+                or len(reaction.products) != 1
+            ):
+                return None
+            reactant = reaction.reactants[0]
+            product = reaction.products[0]
+            if (
+                reactant.variable_stoichiometry
+                or product.variable_stoichiometry
+                or float(reactant.stoichiometry) != 1.0
+                or float(product.stoichiometry) != 1.0
+            ):
+                return None
+            source_id = reactant.species
+            product_id = product.species
+            source = model.species.get(source_id)
+            destination = model.species.get(product_id)
+            if (
+                standardize_name(source_id) == standardize_name(product_id)
+                or source is None
+                or destination is None
+                or source.constant
+                or destination.constant
+                or source.boundary_condition
+                or destination.boundary_condition
+                or source.has_only_substance_units
+                or destination.has_only_substance_units
+                or source.compartment != destination.compartment
+                or not source.compartment
+                or {
+                    sid
+                    for sid, species in model.species.items()
+                    if not species.constant and not species.boundary_condition
+                }
+                != {source_id, product_id}
+            ):
+                return None
+            compartment = model.compartments.get(source.compartment)
+            if (
+                compartment is None
+                or not compartment.constant
+                or not math.isfinite(float(compartment.size))
+                or compartment.size <= 0
+            ):
+                return None
+
+            kinetic_law = reaction.kinetic_law
+            expression = str(
+                getattr(kinetic_law, "math", "")
+                or (
+                    kinetic_law.get("math", "")
+                    if isinstance(kinetic_law, Mapping)
+                    else ""
+                )
+                or ""
+            ).strip()
+            if not expression:
+                return None
+            expression = extend_function(expression, {}, model.function_definitions)
+            try:
+                parsed = ast.parse(expression, mode="eval").body
+            except (TypeError, ValueError, SyntaxError):
+                return None
+
+            raw_local_parameters = (
+                kinetic_law.get("localParameters", [])
+                if isinstance(kinetic_law, Mapping)
+                else getattr(kinetic_law, "local_parameters", [])
+            )
+            local_values: Dict[str, float] = {}
+            for parameter in raw_local_parameters or []:
+                local_id = str(
+                    parameter.get("id", "")
+                    if isinstance(parameter, Mapping)
+                    else getattr(parameter, "id", "")
+                )
+                raw_value = (
+                    parameter.get("value")
+                    if isinstance(parameter, Mapping)
+                    else getattr(parameter, "value", None)
+                )
+                try:
+                    local_values[standardize_name(local_id)] = float(raw_value)
+                except (TypeError, ValueError):
+                    return None
+
+            def affine_rate(
+                node: ast.AST,
+            ) -> Optional[Tuple[float, float]]:
+                if isinstance(node, ast.Constant) and isinstance(
+                    node.value, (int, float)
+                ):
+                    return 0.0, float(node.value)
+                if isinstance(node, ast.Name):
+                    symbol = standardize_name(node.id)
+                    if symbol == standardize_name(source_id):
+                        return 1.0, 0.0
+                    if symbol in local_values:
+                        return 0.0, local_values[symbol]
+                    if not is_compile_time_constant(node.id):
+                        return None
+                    value = resolve_event_parameter(node.id)
+                    return (0.0, float(value)) if value is not None else None
+                if isinstance(node, ast.UnaryOp) and isinstance(
+                    node.op, (ast.UAdd, ast.USub)
+                ):
+                    value = affine_rate(node.operand)
+                    if value is None:
+                        return None
+                    sign = -1.0 if isinstance(node.op, ast.USub) else 1.0
+                    return sign * value[0], sign * value[1]
+                if not isinstance(node, ast.BinOp):
+                    return None
+                left = affine_rate(node.left)
+                right = affine_rate(node.right)
+                if left is None or right is None:
+                    return None
+                if isinstance(node.op, ast.Add):
+                    return left[0] + right[0], left[1] + right[1]
+                if isinstance(node.op, ast.Sub):
+                    return left[0] - right[0], left[1] - right[1]
+                if isinstance(node.op, ast.Mult):
+                    if left[0] != 0 and right[0] != 0:
+                        return None
+                    return (
+                        left[0] * right[1] + left[1] * right[0],
+                        left[1] * right[1],
+                    )
+                if isinstance(node.op, ast.Div) and right[0] == 0 and right[1] != 0:
+                    return left[0] / right[1], left[1] / right[1]
+                if isinstance(node.op, ast.Pow) and right[0] == 0:
+                    if right[1] == 0:
+                        return 0.0, 1.0
+                    if right[1] == 1:
+                        return left
+                return None
+
+            coefficients = affine_rate(parsed)
+            if (
+                coefficients is None
+                or abs(coefficients[1]) > 1e-14
+                or not math.isfinite(coefficients[0])
+                or coefficients[0] <= 0
+            ):
+                return None
+            decay_rate = coefficients[0] / float(compartment.size)
+            if not math.isfinite(decay_rate) or decay_rate <= 0:
+                return None
+            return source_id, product_id, decay_rate
+
         def resolve_event_volume_assignment_targets(
             identifier: str, event_context: SBMLEvent
         ) -> Tuple[str, ...]:
@@ -8016,6 +8184,9 @@ def generate_bngl(
                 resolve_exponential_rate=resolve_exponential_event_rate,
                 resolve_exponential_rate_for_event=lambda identifier, event: (
                     resolve_exponential_event_rate(identifier, event)
+                ),
+                resolve_first_order_transfer_event_system=(
+                    resolve_first_order_transfer_event_system
                 ),
                 resolve_square_linear_rate_for_event=(resolve_square_linear_event_rate),
                 resolve_species_volume_change_for_event=(

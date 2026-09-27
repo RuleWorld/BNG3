@@ -16,6 +16,26 @@ from typing import Callable, List, Optional, Sequence, Tuple
 
 from .types import SBMLEvent, SBMLRule, standardize_name
 
+_ScheduledEventAction = Tuple[
+    float,
+    List[Tuple[str, str, float]],
+    float,
+    Optional[SBMLEvent],
+    bool,
+    List[Tuple[str, float]],
+]
+
+
+@dataclass
+class _FirstOrderTransferEventSpec:
+    role: str
+    event: SBMLEvent
+    threshold: float
+    reset: float
+    delay: float
+    pattern: str
+    armed: bool = True
+
 
 def _no_event_affine_rate(
     _identifier: str, _event: SBMLEvent
@@ -94,6 +114,10 @@ def _no_event_quadratic_state_values_from_state(
     _event: SBMLEvent,
     _state_values: Mapping[str, float],
 ) -> Optional[Mapping[str, float]]:
+    return None
+
+
+def _no_first_order_transfer_event_system() -> Optional[Tuple[str, str, float]]:
     return None
 
 
@@ -213,6 +237,12 @@ class EventTranslationContext:
     # event-local mutable symbols then remain at their initial values unless
     # an event fires.
     static_event_state: bool = False
+    # Return source species, product species, and decay rate for an isolated
+    # first-order transfer reaction that can drive a coordinated event pair.
+    # Kept last to preserve the positional initializer contract.
+    resolve_first_order_transfer_event_system: Callable[
+        [], Optional[Tuple[str, str, float]]
+    ] = _no_first_order_transfer_event_system
 
     @property
     def resolveSpeciesPattern(self):
@@ -2060,16 +2090,7 @@ def synthesize_event_actions(
     """Translate safe fixed-time events and report all rejected events."""
 
     untranslated: List[Tuple[SBMLEvent, str]] = []
-    scheduled: List[
-        Tuple[
-            float,
-            List[Tuple[str, str, float]],
-            float,
-            Optional[SBMLEvent],
-            bool,
-            List[Tuple[str, float]],
-        ]
-    ] = []
+    scheduled: List[_ScheduledEventAction] = []
     scheduled_values: List[Tuple[float, str, float]] = []
     horizon_limited = 0
     # Deterministic crossings cannot stand in for state changes caused by
@@ -3619,6 +3640,244 @@ def synthesize_event_actions(
     )
     normal_converted = 0
     recurrent_handled: set[int] = set()
+
+    def schedule_first_order_transfer_event_pair() -> (
+        Optional[List[_ScheduledEventAction]]
+    ):
+        """Schedule two reset events around an isolated first-order transfer."""
+        if len(events) != 2 or context.method.lower() == "ssa":
+            return None
+        system = context.resolve_first_order_transfer_event_system()
+        if system is None:
+            return None
+        source_id, product_id, decay_rate = system
+        horizon = float(context.base_t_end)
+        source_initial = context.resolve_initial_value(source_id)
+        product_initial = context.resolve_initial_value(product_id)
+        if (
+            not all(
+                math.isfinite(value)
+                for value in (
+                    horizon,
+                    decay_rate,
+                    source_initial if source_initial is not None else math.nan,
+                    product_initial if product_initial is not None else math.nan,
+                )
+            )
+            or horizon <= 0
+            or decay_rate <= 0
+            or source_initial is None
+            or product_initial is None
+            or source_initial <= 0
+            or product_initial < 0
+        ):
+            return None
+
+        def fold_static(expression: str, event: SBMLEvent) -> Optional[float]:
+            expanded = context.expand_functions(str(expression or ""))
+            symbols = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", expanded)
+            if any(not context.is_compile_time_constant(symbol) for symbol in symbols):
+                return None
+            return fold(expanded, event_context=event)
+
+        specifications: List[_FirstOrderTransferEventSpec] = []
+        source_spec: Optional[_FirstOrderTransferEventSpec] = None
+        product_spec: Optional[_FirstOrderTransferEventSpec] = None
+        for event in events:
+            parsed = _parse_affine_state_threshold(event.trigger)
+            if (
+                parsed is None
+                or event.priority
+                or not event.trigger_persistent
+                or not event.use_values_from_trigger_time
+                or len(event.assignments) != 1
+            ):
+                return None
+            identifier, operator, threshold_expression = parsed
+            threshold = fold_static(threshold_expression, event)
+            if threshold is None or not math.isfinite(threshold):
+                return None
+            variable, assignment_expression = _event_assignment(event.assignments[0])
+            pattern = context.resolve_species_pattern(variable)
+            reset_value = fold_static(assignment_expression, event)
+            delay = fold_static(event.delay, event) if event.delay else 0.0
+            if (
+                pattern is None
+                or reset_value is None
+                or delay is None
+                or not math.isfinite(reset_value)
+                or not math.isfinite(delay)
+                or delay < 0
+                or fold_initial(event.trigger) != 0
+            ):
+                return None
+            if standardize_name(identifier) == standardize_name(source_id):
+                if (
+                    operator != "lt"
+                    or standardize_name(variable) != standardize_name(source_id)
+                    or threshold <= 0
+                    or source_initial <= threshold
+                    or reset_value <= threshold
+                    or reset_value < 0
+                    or source_spec is not None
+                ):
+                    return None
+                spec = _FirstOrderTransferEventSpec(
+                    "source",
+                    event,
+                    float(threshold),
+                    float(reset_value),
+                    float(delay),
+                    pattern,
+                )
+                source_spec = spec
+            elif standardize_name(identifier) == standardize_name(product_id):
+                if (
+                    operator != "gt"
+                    or standardize_name(variable) != standardize_name(product_id)
+                    or product_initial >= threshold
+                    or reset_value >= threshold
+                    or reset_value < 0
+                    or product_spec is not None
+                ):
+                    return None
+                spec = _FirstOrderTransferEventSpec(
+                    "product",
+                    event,
+                    float(threshold),
+                    float(reset_value),
+                    float(delay),
+                    pattern,
+                )
+                product_spec = spec
+            else:
+                return None
+            specifications.append(spec)
+        if source_spec is None or product_spec is None:
+            return None
+
+        def crossing_delta(
+            spec: _FirstOrderTransferEventSpec,
+            source_value: float,
+            product_value: float,
+        ) -> float:
+            threshold = spec.threshold
+            if spec.role == "source":
+                if source_value <= threshold:
+                    return math.inf
+                return math.log(source_value / threshold) / decay_rate
+            if product_value >= threshold or source_value <= 0:
+                return math.inf
+            fraction = (threshold - product_value) / source_value
+            if fraction <= 0 or fraction >= 1:
+                return math.inf
+            return -math.log1p(-fraction) / decay_rate
+
+        def schedule_assignment(
+            spec: _FirstOrderTransferEventSpec,
+            execution_time: float,
+            output: List[_ScheduledEventAction],
+        ) -> None:
+            event = spec.event
+            variable = _event_assignment(event.assignments[0])[0]
+            value = spec.reset
+            output.append(
+                (
+                    execution_time,
+                    [("conc", spec.pattern, value)],
+                    0.0,
+                    event,
+                    False,
+                    [(standardize_name(variable), value)],
+                )
+            )
+
+        current_time = 0.0
+        source_value = float(source_initial)
+        product_value = float(product_initial)
+        pending: List[Tuple[float, _FirstOrderTransferEventSpec]] = []
+        local_schedule: List[_ScheduledEventAction] = []
+        for _ in range(10_000):
+            candidates: List[Tuple[float, str, _FirstOrderTransferEventSpec]] = []
+            for spec in specifications:
+                if not spec.armed:
+                    continue
+                delta = crossing_delta(spec, source_value, product_value)
+                crossing_time = current_time + delta
+                if (
+                    math.isfinite(delta)
+                    and delta > 1e-12
+                    and crossing_time <= horizon + 1e-12
+                ):
+                    candidates.append((crossing_time, "trigger", spec))
+            candidates.extend(
+                (execution_time, "execute", spec)
+                for execution_time, spec in pending
+                if execution_time <= horizon + 1e-12
+            )
+            if not candidates:
+                break
+            next_time = min(item[0] for item in candidates)
+            at_next_time = [
+                item for item in candidates if abs(item[0] - next_time) <= 1e-12
+            ]
+            if next_time <= current_time + 1e-12:
+                return None
+            next_time = min(next_time, horizon)
+            event_ids = {id(item[2].event) for item in at_next_time}
+            assignment_targets = {
+                standardize_name(_event_assignment(item[2].event.assignments[0])[0])
+                for item in at_next_time
+            }
+            if len(event_ids) != len(at_next_time) or len(assignment_targets) != len(
+                at_next_time
+            ):
+                return None
+            decay = math.exp(-decay_rate * (next_time - current_time))
+            product_value += source_value * (1.0 - decay)
+            source_value *= decay
+            if not math.isfinite(source_value) or not math.isfinite(product_value):
+                return None
+            current_time = next_time
+            immediate_assignments = []
+            for _, action, spec in at_next_time:
+                if action == "trigger":
+                    spec.armed = False
+                    execution_time = min(current_time + spec.delay, horizon)
+                    if spec.delay <= 1e-12:
+                        immediate_assignments.append((spec, execution_time))
+                    else:
+                        pending.append((execution_time, spec))
+                else:
+                    pending = [item for item in pending if item[1] is not spec]
+                    immediate_assignments.append((spec, current_time))
+            for spec, execution_time in immediate_assignments:
+                if spec.role == "source":
+                    source_value = spec.reset
+                else:
+                    product_value = spec.reset
+                schedule_assignment(spec, execution_time, local_schedule)
+                spec.armed = True
+            if not math.isfinite(source_value) or not math.isfinite(product_value):
+                return None
+        else:
+            return None
+
+        # Delayed assignments beyond the configured horizon cannot change this
+        # run. If no action can change state within this run, report a bounded
+        # proof instead of retaining an untranslated state event.
+        if not local_schedule:
+            return []
+        return local_schedule
+
+    transfer_event_schedule = schedule_first_order_transfer_event_pair()
+    if transfer_event_schedule is not None:
+        scheduled.extend(transfer_event_schedule)
+        recurrent_handled.update(id(event) for event in events)
+        if transfer_event_schedule:
+            normal_converted += len(events)
+        else:
+            horizon_limited += len(events)
     if len(events) == 1:
         event = events[0]
         parsed_difference = _parse_state_difference_threshold(event.trigger)
@@ -3680,16 +3939,7 @@ def synthesize_event_actions(
 
                 state_values: Mapping[str, float] = {}
                 time_value = 0.0
-                recurrence: List[
-                    Tuple[
-                        float,
-                        List[Tuple[str, str, float]],
-                        float,
-                        Optional[SBMLEvent],
-                        bool,
-                        List[Tuple[str, float]],
-                    ]
-                ] = []
+                recurrence: List[_ScheduledEventAction] = []
                 recurrence_is_proven = True
                 no_firing_within_horizon = False
                 for _ in range(10_000):
@@ -4748,16 +4998,7 @@ def synthesize_event_actions(
         item if len(item) == 6 else (item[0], item[1], item[2], None, False, [])
         for item in scheduled
     ]
-    ordered_scheduled: List[
-        Tuple[
-            float,
-            List[Tuple[str, str, float]],
-            float,
-            Optional[SBMLEvent],
-            bool,
-            List[Tuple[str, float]],
-        ]
-    ] = []
+    ordered_scheduled: List[_ScheduledEventAction] = []
     index = 0
     while index < len(normalized_scheduled):
         end = index + 1

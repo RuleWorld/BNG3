@@ -1328,6 +1328,127 @@ def test_quadratic_state_events_keep_cross_component_controls_unsupported():
     assert "Events NOT simulated" in result.bngl
 
 
+def _first_order_transfer_event_model(source_delay=None, product_delay=None):
+    def delay_element(value):
+        if value is None:
+            return ""
+        return f"""<delay><math xmlns="http://www.w3.org/1998/Math/MathML">
+          <cn>{value}</cn></math></delay>"""
+
+    return f"""<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="first_order_transfer_event_pair">
+        <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies>
+          <species id="S1" compartment="C" initialAmount="1" hasOnlySubstanceUnits="false"/>
+          <species id="S2" compartment="C" initialAmount="0" hasOnlySubstanceUnits="false"/>
+        </listOfSpecies>
+        <listOfParameters><parameter id="k1" value="1" constant="true"/></listOfParameters>
+        <listOfReactions><reaction id="transfer" reversible="false">
+          <listOfReactants><speciesReference species="S1"/></listOfReactants>
+          <listOfProducts><speciesReference species="S2"/></listOfProducts>
+          <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><times/><ci>C</ci><ci>k1</ci><ci>S1</ci></apply>
+          </math></kineticLaw>
+        </reaction></listOfReactions>
+        <listOfEvents>
+          <event id="source_reset" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true">
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><lt/><ci>S1</ci><cn>0.1</cn></apply>
+              </math>
+            </trigger>
+            {delay_element(source_delay)}
+            <listOfEventAssignments><eventAssignment variable="S1">
+              <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math>
+            </eventAssignment></listOfEventAssignments>
+          </event>
+          <event id="product_reset" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true">
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><gt/><ci>S2</ci><cn>0.5</cn></apply>
+              </math>
+            </trigger>
+            {delay_element(product_delay)}
+            <listOfEventAssignments><eventAssignment variable="S2">
+              <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0</cn></math>
+            </eventAssignment></listOfEventAssignments>
+          </event>
+        </listOfEvents>
+      </model>
+    </sbml>"""
+
+
+def test_coupled_first_order_transfer_events_match_libroadrunner(tmp_path):
+    import numpy as np
+    import pytest
+
+    roadrunner = pytest.importorskip("roadrunner")
+    from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.model import load
+
+    for source_delay, product_delay in ((None, None), (1, 0.5)):
+        xml = _first_order_transfer_event_model(source_delay, product_delay)
+        result = Atomizer(quiet_mode=True, t_end=20, n_steps=1200).atomize(xml)
+
+        assert result.success, result.error
+        assert "state-dependent or non-constant event" not in result.bngl
+        assert "Events NOT simulated" not in result.bngl
+        assert 'setConcentration("@C:M_S1()", "1")' in result.bngl
+        assert 'setConcentration("@C:M_S2()", "0")' in result.bngl
+
+        model_path = tmp_path / f"transfer_{source_delay}_{product_delay}.bngl"
+        model_path.write_text(result.bngl, encoding="utf-8")
+        load(model_path).execute()
+        lines = model_path.with_suffix(".gdat").read_text().splitlines()
+        columns = lines[0].lstrip("# ").split()
+        bng_data = np.loadtxt(lines[1:])
+        times = bng_data[:, columns.index("time")]
+
+        rr = roadrunner.RoadRunner(xml)
+        rr.integrator.setValue("relative_tolerance", 1e-9)
+        rr.integrator.setValue("absolute_tolerance", 1e-12)
+        rr.timeCourseSelections = ["time", "[S1]", "[S2]"]
+        reference = rr.simulate(times=times)
+
+        state_columns = [columns.index("S1"), columns.index("S2")]
+        changes = np.abs(np.diff(bng_data[:, state_columns], axis=0))
+        jump_indices = np.flatnonzero(np.max(changes, axis=1) > 0.2)
+        compare = np.ones(len(times), dtype=bool)
+        compare[jump_indices] = False
+        compare[jump_indices + 1] = False
+        for species in ("S1", "S2"):
+            bng_values = bng_data[compare, columns.index(species)]
+            rr_values = reference[compare, reference.colnames.index(f"[{species}]")]
+            scale = max(
+                float(np.max(np.abs(bng_values))), float(np.max(np.abs(rr_values)))
+            )
+            assert float(np.max(np.abs(bng_values - rr_values))) <= max(
+                5e-12, 1e-6 * scale
+            )
+
+
+def test_first_order_transfer_events_reject_additional_reactions():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = _first_order_transfer_event_model().replace(
+        "</reaction></listOfReactions>",
+        """</reaction>
+          <reaction id="parallel_transfer" reversible="false">
+            <listOfReactants><speciesReference species="S1"/></listOfReactants>
+            <listOfProducts><speciesReference species="S2"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><times/><cn>0.1</cn><ci>S1</ci></apply>
+            </math></kineticLaw>
+          </reaction></listOfReactions>""",
+    )
+
+    result = Atomizer(quiet_mode=True, t_end=20, n_steps=1200).atomize(xml)
+
+    assert result.success, result.error
+    assert "state-dependent or non-constant event" in result.bngl
+    assert "Events NOT simulated" in result.bngl
+
+
 def test_quadratic_event_ignores_rules_outside_trigger_component():
     from bionetgen.atomizer.modern import Atomizer
 
