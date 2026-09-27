@@ -3159,7 +3159,9 @@ def test_sbml_comp_models_are_flattened_before_atomizer_import(monkeypatch):
     assert "child__synthesis" in bngl
 
 
-def test_sbml_comp_external_models_stay_explicit_without_source_path():
+def test_sbml_comp_external_models_stay_explicit_without_source_path(monkeypatch):
+    import builtins
+
     from bionetgen.atomizer.modern import SBMLParser
 
     source = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
@@ -3176,6 +3178,15 @@ def test_sbml_comp_external_models_stay_explicit_without_source_path():
       </comp:listOfExternalModelDefinitions>
     </sbml>"""
 
+    original_import = builtins.__import__
+
+    def import_without_libsbml(name, *args, **kwargs):
+        if name == "libsbml":
+            raise AssertionError("source-path diagnostics must not need libSBML")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", import_without_libsbml)
+
     model = SBMLParser().parse(source)
 
     assert not model.species
@@ -3187,7 +3198,7 @@ def test_sbml_comp_external_models_stay_explicit_without_source_path():
 
 
 def test_sbml_comp_external_models_flatten_with_source_path(tmp_path, monkeypatch):
-    import libsbml
+    import builtins
 
     from bionetgen.atomizer.modern import Atomizer, SBMLParser
 
@@ -3229,12 +3240,14 @@ def test_sbml_comp_external_models_flatten_with_source_path(tmp_path, monkeypatc
     </sbml>"""
     parent_path.write_text(parent)
 
-    def reject_native_child_file_parse(*_args, **_kwargs):
-        raise AssertionError(
-            "simple external comp flattening must not parse child via libSBML"
-        )
+    original_import = builtins.__import__
 
-    monkeypatch.setattr(libsbml, "readSBMLFromFile", reject_native_child_file_parse)
+    def import_without_libsbml(name, *args, **kwargs):
+        if name == "libsbml":
+            raise AssertionError("simple external comp flattening must not use libSBML")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", import_without_libsbml)
 
     model = SBMLParser().parse(parent, source_path=parent_path)
 
@@ -3247,7 +3260,11 @@ def test_sbml_comp_external_models_flatten_with_source_path(tmp_path, monkeypatc
     assert "child__A()" in atomized.bngl
 
 
-def test_sbml_comp_external_source_cannot_escape_source_directory(tmp_path):
+def test_sbml_comp_external_source_cannot_escape_source_directory(
+    tmp_path, monkeypatch
+):
+    import builtins
+
     from bionetgen.atomizer.modern import SBMLParser
 
     model_dir = tmp_path / "models"
@@ -3271,6 +3288,15 @@ def test_sbml_comp_external_source_cannot_escape_source_directory(tmp_path):
       </comp:listOfExternalModelDefinitions>
     </sbml>"""
     parent_path.write_text(parent)
+
+    original_import = builtins.__import__
+
+    def import_without_libsbml(name, *args, **kwargs):
+        if name == "libsbml":
+            raise AssertionError("path escape checks must not need libSBML")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", import_without_libsbml)
 
     model = SBMLParser().parse(parent, source_path=parent_path)
 

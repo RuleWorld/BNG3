@@ -488,6 +488,60 @@ def _resolve_comp_external_sources(
     return resolve_document(document, source_path)
 
 
+def _preflight_comp_external_sources(
+    sbml_string: str, source_path: Optional[Path]
+) -> Optional[str]:
+    """Report source-resolution failures that do not require libSBML."""
+    try:
+        root = ET.fromstring(sbml_string)
+    except ET.ParseError:
+        return None
+    comp_namespace = _declared_package_uris(sbml_string).get("comp")
+    if not comp_namespace:
+        return None
+    prefix = f"{{{comp_namespace}}}"
+    definitions = [
+        element
+        for element in root.iter()
+        if element.tag == prefix + "externalModelDefinition"
+    ]
+    if not definitions:
+        return None
+    if source_path is None:
+        return (
+            "comp externalModelDefinitions need a source-relative resolver; "
+            "hierarchy was not flattened"
+        )
+
+    source_path = source_path.expanduser().resolve()
+    root_dir = source_path.parent
+    for external in definitions:
+        source = str(external.get(prefix + "source", "")).strip()
+        parsed = urlsplit(source)
+        if parsed.scheme not in {"", "file"} or parsed.netloc not in {
+            "",
+            "localhost",
+        }:
+            return f'comp external source "{source}" is not a local file URI'
+        reference = unquote(parsed.path)
+        if not reference:
+            return f'comp external source "{source}" has no file path'
+        referenced_path = Path(reference)
+        if not referenced_path.is_absolute():
+            referenced_path = root_dir / referenced_path
+        referenced_path = referenced_path.resolve()
+        try:
+            referenced_path.relative_to(root_dir)
+        except ValueError:
+            return (
+                f'comp external source "{source}" resolves outside the '
+                "source directory"
+            )
+        if not referenced_path.is_file():
+            return f'comp external source file "{referenced_path}" does not exist'
+    return None
+
+
 def _flatten_comp_package(
     sbml_string: str, source_path: Optional[Path] = None
 ) -> tuple[str, Optional[str]]:
@@ -503,6 +557,9 @@ def _flatten_comp_package(
     simple_external = _flatten_simple_external_comp(sbml_string, source_path)
     if simple_external is not None:
         return simple_external, None
+    external_failure = _preflight_comp_external_sources(sbml_string, source_path)
+    if external_failure is not None:
+        return sbml_string, external_failure
     try:
         import libsbml
     except ImportError:
