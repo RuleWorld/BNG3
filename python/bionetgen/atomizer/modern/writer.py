@@ -5920,7 +5920,13 @@ def generate_bngl(
                 return None
             species = model.species[species_id]
             compartment = model.compartments.get(species.compartment or "")
-            volume = float(compartment.size) if compartment is not None else 1.0
+            volume = (
+                resolve_initial_event_value(species.compartment)
+                if compartment is not None
+                else 1.0
+            )
+            if volume is None or not math.isfinite(volume):
+                return None
             amount = float(species.initial_amount)
             concentration = float(species.initial_concentration)
             if species.has_only_substance_units:
@@ -6548,6 +6554,35 @@ def generate_bngl(
                 exponent /= float(compartment.size)
             return (initial, exponent) if math.isfinite(exponent) else None
 
+        def resolve_event_volume_assignment_targets(
+            identifier: str, event_context: SBMLEvent
+        ) -> Tuple[str, ...]:
+            """Resolve assignment-rule compartments controlled by one parameter."""
+            if identifier not in model.parameters:
+                return ()
+            targets = []
+            for rule in model.rules:
+                if rule.type != "assignment" or rule.variable not in model.compartments:
+                    continue
+                try:
+                    expression = extend_function(
+                        str(rule.math or ""), {}, model.function_definitions
+                    )
+                    node = ast.parse(expression, mode="eval").body
+                except (TypeError, ValueError, SyntaxError):
+                    continue
+                if isinstance(node, ast.Name) and standardize_name(
+                    node.id
+                ) == standardize_name(identifier):
+                    targets.append(rule.variable)
+            assigned_parameters = {
+                standardize_name(assignment.variable)
+                for assignment in event_context.assignments
+            }
+            if standardize_name(identifier) not in assigned_parameters:
+                return ()
+            return tuple(targets)
+
         def resolve_species_volume_change_for_event(
             identifier: str, event_context: SBMLEvent
         ) -> Optional[Tuple[float, float]]:
@@ -6570,24 +6605,36 @@ def generate_bngl(
                 return None
             compartment_id = species.compartment
             compartment = model.compartments.get(compartment_id)
-            if compartment is None or compartment.size <= 0:
+            if compartment is None:
                 return None
-            assignments = [
-                assignment
-                for assignment in event_context.assignments
-                if standardize_name(assignment.variable)
-                == standardize_name(compartment_id)
-            ]
-            if len(assignments) != 1 or len(event_context.assignments) != 1:
+            initial_size = resolve_initial_event_value(compartment_id)
+            if (
+                initial_size is None
+                or not math.isfinite(initial_size)
+                or initial_size <= 0
+                or len(event_context.assignments) != 1
+            ):
                 return None
-            if any(rule.variable == compartment_id for rule in model.rules) or any(
+            assignment = event_context.assignments[0]
+            direct_assignment = standardize_name(
+                assignment.variable
+            ) == standardize_name(compartment_id)
+            aliased_assignment = (
+                compartment_id
+                in resolve_event_volume_assignment_targets(
+                    assignment.variable, event_context
+                )
+            )
+            if not (direct_assignment or aliased_assignment):
+                return None
+            if any(
                 assignment.symbol == compartment_id
                 for assignment in model.initial_assignments
             ):
                 return None
             try:
                 assigned_size = fold_numeric(
-                    str(assignments[0].math or ""),
+                    str(assignment.math or ""),
                     lambda symbol: (
                         resolve_event_parameter(symbol)
                         if is_compile_time_constant(symbol)
@@ -6602,7 +6649,7 @@ def generate_bngl(
                 or assigned_size <= 0
             ):
                 return None
-            return float(compartment.size), float(assigned_size)
+            return float(initial_size), float(assigned_size)
 
         def resolve_square_linear_event_rate(
             identifier: str, event_context: SBMLEvent
@@ -7521,6 +7568,9 @@ def generate_bngl(
                 resolve_square_linear_rate_for_event=(resolve_square_linear_event_rate),
                 resolve_species_volume_change_for_event=(
                     resolve_species_volume_change_for_event
+                ),
+                resolve_event_volume_assignment_targets=(
+                    resolve_event_volume_assignment_targets
                 ),
                 resolve_quadratic_rate_for_event=resolve_quadratic_event_rate,
                 resolve_quadratic_state_values_for_event=(

@@ -41,6 +41,12 @@ def _no_event_species_volume_change(
     return None
 
 
+def _no_event_volume_assignment_targets(
+    _identifier: str, _event: SBMLEvent
+) -> Sequence[str]:
+    return ()
+
+
 def _no_event_reaction_rate(_identifier: str, _event: SBMLEvent) -> Optional[float]:
     return None
 
@@ -133,6 +139,11 @@ class EventTranslationContext:
     resolve_species_volume_change_for_event: Callable[
         [str, SBMLEvent], Optional[Tuple[float, float]]
     ] = _no_event_species_volume_change
+    # Compartment assignment rules may alias a mutable parameter that an event
+    # updates. Those volume targets must receive matching executable actions.
+    resolve_event_volume_assignment_targets: Callable[
+        [str, SBMLEvent], Sequence[str]
+    ] = _no_event_volume_assignment_targets
     # Return (initial, quadratic, linear, constant) for a proven scalar ODE
     # dx/dt = quadratic*x^2 + linear*x + constant.
     resolve_quadratic_rate_for_event: Callable[
@@ -3614,6 +3625,8 @@ def synthesize_event_actions(
                     gated_time_bounds = (lower_bound, upper_bound)
         trigger_state_values: Optional[dict[str, float]] = None
         trigger_state_trajectory: Optional[Tuple[str, str, float, float]] = None
+        trigger_threshold_value: Optional[float] = None
+        event_changes_trigger_state = False
         affine_interval = affine_interval_schedules.get(id(event))
         static_initial_values = static_event_initial_fires.get(id(event))
         if static_initial_values is not None:
@@ -3748,6 +3761,7 @@ def synthesize_event_actions(
                 if crossing_value is not None:
                     scale_value = float(state_threshold_scale)
                     crossing_value /= scale_value
+                    trigger_threshold_value = crossing_value
                 if trajectory is not None and crossing_value is not None:
                     initial_value, slope = trajectory
                     trigger_state_trajectory = (
@@ -3833,16 +3847,11 @@ def synthesize_event_actions(
                                 else {identifier: crossing_value}
                             )
                 elif crossing_value is not None:
-                    exponential = (
-                        None
-                        if event_changes_trigger_state
-                        else context.resolve_exponential_rate_for_event(
-                            identifier, event
-                        )
+                    exponential = context.resolve_exponential_rate_for_event(
+                        identifier, event
                     )
                     if (
                         exponential is None
-                        and not event_changes_trigger_state
                         and context.resolve_exponential_rate_for_event
                         is _no_event_exponential_rate
                     ):
@@ -4314,6 +4323,12 @@ def synthesize_event_actions(
                 sets.append(("volume", standardize_name(variable), value))
             elif context.is_param(variable):
                 sets.append(("param", standardize_name(variable), value))
+                sets.extend(
+                    ("volume", standardize_name(compartment), value)
+                    for compartment in context.resolve_event_volume_assignment_targets(
+                        variable, event
+                    )
+                )
             else:
                 failure = (
                     f' assignment target "{variable}" is neither a known species '
@@ -4323,6 +4338,68 @@ def synthesize_event_actions(
         if failure is not None:
             untranslated.append((event, failure))
             continue
+
+        if (
+            event_changes_trigger_state
+            and trigger_state_trajectory is not None
+            and trigger_state_trajectory[1] == "exponential"
+        ):
+            if len(events) != 1 or event.delay:
+                failure = (
+                    "exponential self-reset requires one undelayed event to prove "
+                    "that the trigger cannot re-enter"
+                )
+            elif trigger_threshold_value is None:
+                failure = "exponential self-reset has no proven trigger threshold"
+            else:
+                identifier, _kind, _initial, exponent = trigger_state_trajectory
+                assigned_state = next(
+                    (
+                        value
+                        for symbol, value in event_values
+                        if standardize_name(symbol) == standardize_name(identifier)
+                    ),
+                    None,
+                )
+                if assigned_state is None:
+                    failure = "exponential self-reset does not assign its trigger state"
+                else:
+                    threshold_value = trigger_threshold_value
+                    reset_trigger_true = (
+                        assigned_state > threshold_value
+                        if operator == "gt"
+                        else (
+                            assigned_state >= threshold_value
+                            if operator == "geq"
+                            else (
+                                assigned_state < threshold_value
+                                if operator == "lt"
+                                else assigned_state <= threshold_value
+                            )
+                        )
+                    )
+                    if not reset_trigger_true and exponent != 0:
+                        rising = (
+                            operator in {"gt", "geq"} and threshold_value * exponent > 0
+                        ) or (
+                            operator in {"lt", "leq"} and threshold_value * exponent < 0
+                        )
+                        ratio = (
+                            threshold_value / assigned_state if assigned_state else -1
+                        )
+                        if rising and ratio > 0:
+                            reentry_time = execution_time + math.log(ratio) / exponent
+                            if (
+                                math.isfinite(reentry_time)
+                                and reentry_time <= context.base_t_end + 1e-12
+                            ):
+                                failure = (
+                                    "exponential self-reset can make the state trigger "
+                                    "re-enter within the simulation horizon"
+                                )
+            if failure is not None:
+                untranslated.append((event, failure))
+                continue
 
         priority = 0.0
         dynamic_priority = False

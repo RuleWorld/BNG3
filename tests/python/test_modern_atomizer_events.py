@@ -158,6 +158,85 @@ def test_time_window_with_mutable_gate_stays_untranslated():
     assert "state-dependent triggers" in result.untranslated[0][1]
 
 
+def test_exponential_self_reset_is_scheduled_when_no_reentry_before_horizon():
+    import math
+
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLEventAssignment
+
+    event = SBMLEvent(
+        id="exponential-reset",
+        trigger="lt(S1, 0.75)",
+        assignments=[
+            SBMLEventAssignment("S2", "1.5"),
+            SBMLEventAssignment("S1", "S2"),
+        ],
+        trigger_initial_value=True,
+        use_values_from_trigger_time=True,
+    )
+    result = synthesize_event_actions(
+        [event],
+        EventTranslationContext(
+            resolve_species_pattern=lambda identifier: f"{identifier}()",
+            resolve_param=lambda _identifier: None,
+            is_param=lambda _identifier: False,
+            resolve_exponential_rate_for_event=lambda identifier, _event: {
+                "S1": (1.0, -0.75),
+                "S2": (2.0, -0.55),
+            }.get(identifier),
+            base_t_end=1.0,
+            base_steps=10,
+        ),
+    )
+
+    first_crossing = math.log(0.75) / -0.75
+    assert result.untranslated == []
+    assert result.converted == 1
+    assert result.actions_block is not None
+    assert f"t_end=>{first_crossing:.6f}" in result.actions_block
+    assert "S1()" in result.actions_block
+
+
+def test_exponential_self_reset_stays_untranslated_when_it_reenters_in_horizon():
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLEventAssignment
+
+    event = SBMLEvent(
+        id="exponential-reset",
+        trigger="lt(S1, 0.75)",
+        assignments=[
+            SBMLEventAssignment("S2", "1.5"),
+            SBMLEventAssignment("S1", "S2"),
+        ],
+        trigger_initial_value=True,
+        use_values_from_trigger_time=True,
+    )
+    result = synthesize_event_actions(
+        [event],
+        EventTranslationContext(
+            resolve_species_pattern=lambda identifier: f"{identifier}()",
+            resolve_param=lambda _identifier: None,
+            is_param=lambda _identifier: False,
+            resolve_exponential_rate_for_event=lambda identifier, _event: {
+                "S1": (1.0, -0.75),
+                "S2": (2.0, -0.55),
+            }.get(identifier),
+            base_t_end=2.0,
+            base_steps=10,
+        ),
+    )
+
+    assert result.converted == 0
+    assert result.actions_block is None
+    assert "re-enter" in result.untranslated[0][1]
+
+
 def test_static_state_trigger_is_proven_never_firing():
     from bionetgen.atomizer.modern.events import (
         EventTranslationContext,
