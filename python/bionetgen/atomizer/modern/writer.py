@@ -26,6 +26,7 @@ from .events import (
     EventTranslationContext,
     _event_assignment,
     fold_numeric,
+    expand_cosh_assignment_rule_events,
     expand_sinusoidal_assignment_rule_events,
     parse_time_threshold,
     synthesize_event_actions,
@@ -7161,8 +7162,16 @@ def generate_bngl(
                 return None
             return resolve_event_parameter(identifier)
 
-        event_translation_events = expand_sinusoidal_assignment_rule_events(
+        event_translation_events = expand_cosh_assignment_rule_events(
             model.events,
+            model.rules,
+            resolve_constant=resolve_sinusoidal_constant,
+            expand_functions=lambda expression: extend_function(
+                expression, {}, model.function_definitions
+            ),
+        )
+        event_translation_events = expand_sinusoidal_assignment_rule_events(
+            event_translation_events,
             model.rules,
             t_end=float(t_end),
             resolve_constant=resolve_sinusoidal_constant,

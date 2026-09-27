@@ -2004,6 +2004,17 @@ pass. The full pinned SBML Test Suite now reports 1,600 passed, 323
 unsupported, zero failed/timeouts: 76 additional passes and no regressions
 versus the prior full report. All 1,522 passing cases with observables pass
 the configured BNG3/libRoadRunner comparison; 78 cases have no observables.
-The full curated BioModels inventory is still
-running; no curated gain is claimed. Exact report and scope are in the
-convergence checklist.
+The full curated BioModels baseline is `775/1,083` SBML passes, `128`
+unsupported, `8` failed, and `172` timed out. The exact report and scope are
+recorded in the convergence checklist.
+
+Time-only `cosh(time)` assignment-rule event windows now lower to exact
+`acosh` time bounds for conjunctions of lower and upper constant thresholds
+above one. Event delays and persistence are preserved; other trigger shapes
+remain untranslated. Official cases `semantic/01594` and `01595` now pass,
+raising the full one-unit SBML suite from 1,600 to 1,602 passes with no
+regressions, failures, or timeouts. Their single reported observables match
+libRoadRunner 2.10.0 exactly over 101 points; event-assigned `P2` is not part
+of that observable comparison. Four cached BioModels contain `cosh`; none has
+events, so this feature has no curated-model effect. See the checklist for
+report hashes and validation limits.

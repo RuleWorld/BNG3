@@ -262,6 +262,67 @@ def test_time_only_sinusoidal_assignment_rule_expands_delayed_event_edges():
     )
 
 
+def test_time_only_cosh_assignment_rule_window_becomes_exact_time_bounds():
+    import math
+
+    from bionetgen.atomizer.modern.events import expand_cosh_assignment_rule_events
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLRule
+
+    event = SBMLEvent(
+        id="cosh-window",
+        trigger="and(gt(cosh(time), 9), lt(cosh(time), 11))",
+        delay="1",
+        trigger_initial_value=True,
+        trigger_persistent=True,
+    )
+    rewritten = expand_cosh_assignment_rule_events(
+        [event],
+        [SBMLRule("assignment", "P1", "cosh(time)")],
+        resolve_constant=lambda _identifier: None,
+    )
+
+    assert len(rewritten) == 1
+    lower, upper = math.acosh(9), math.acosh(11)
+    trigger = rewritten[0].trigger
+    assert trigger.startswith("and(gt(time, ")
+    assert ", lt(time, " in trigger
+    encoded_lower, encoded_upper = trigger[len("and(gt(time, ") : -2].split(
+        "), lt(time, "
+    )
+    assert math.isclose(float(encoded_lower), lower, rel_tol=1e-11)
+    assert math.isclose(float(encoded_upper), upper, rel_tol=1e-11)
+    assert rewritten[0].delay == "1"
+    assert rewritten[0].trigger_persistent is True
+
+    reversed_comparisons = SBMLEvent(
+        id="cosh-window-reversed",
+        trigger="and(lt(9, cosh(time)), gt(11, cosh(time)))",
+    )
+    reversed_result = expand_cosh_assignment_rule_events(
+        [reversed_comparisons],
+        [SBMLRule("assignment", "P1", "cosh(time)")],
+        resolve_constant=lambda _identifier: None,
+    )
+    assert reversed_result[0].trigger == rewritten[0].trigger
+
+
+def test_cosh_window_without_matching_assignment_rule_stays_unchanged():
+    from bionetgen.atomizer.modern.events import expand_cosh_assignment_rule_events
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLRule
+
+    event = SBMLEvent(
+        id="cosh-window",
+        trigger="and(gt(cosh(time), 9), lt(cosh(time), 11))",
+    )
+    result = expand_cosh_assignment_rule_events(
+        [event],
+        [SBMLRule("assignment", "P1", "time")],
+        resolve_constant=lambda _identifier: None,
+    )
+
+    assert result == [event]
+
+
 def test_static_state_threshold_can_use_another_static_species():
     from bionetgen.atomizer.modern.events import (
         EventTranslationContext,

@@ -983,6 +983,136 @@ def expand_sinusoidal_assignment_rule_events(
     return output
 
 
+def expand_cosh_assignment_rule_events(
+    events: Sequence[SBMLEvent],
+    rules: Sequence[SBMLRule],
+    *,
+    resolve_constant: Callable[[str], Optional[float]],
+    expand_functions: Callable[[str], str] = lambda expression: expression,
+) -> List[SBMLEvent]:
+    """Rewrite monotone ``cosh(time)`` assignment-rule windows as time bounds.
+
+    This handles conjunctions of a lower and upper threshold on the same
+    time-only ``cosh(time)`` assignment rule. On SBML's nonnegative time axis,
+    thresholds above one map exactly to an interval bounded by ``acosh``.
+    Other trajectories and predicate shapes are left for the normal event
+    translator to reject explicitly.
+    """
+
+    rules_by_variable = {
+        standardize_name(str(rule.variable)): rule
+        for rule in rules
+        if rule.type == "assignment" and rule.variable
+    }
+    output: List[SBMLEvent] = []
+    comparison = re.compile(r"^(gt|geq|lt|leq)\s*\((.*)\)$", re.IGNORECASE)
+
+    for event in events:
+        terms = _split_call_arguments(str(event.trigger or "").strip())
+        if terms is None or len(terms) != 2:
+            output.append(event)
+            continue
+
+        parsed: List[Tuple[str, float]] = []
+        unsupported = False
+        for term in terms:
+            match = comparison.match(term)
+            arguments = _split_arguments(match.group(2)) if match else None
+            if match is None or arguments is None or len(arguments) != 2:
+                unsupported = True
+                break
+            left, right = (_strip_outer_parens(value) for value in arguments)
+            operator = match.group(1).lower()
+            cosh_time = lambda expression: (
+                isinstance(expression, ast.Call)
+                and isinstance(expression.func, ast.Name)
+                and expression.func.id.lower() == "cosh"
+                and len(expression.args) == 1
+                and isinstance(expression.args[0], ast.Name)
+                and expression.args[0].id.lower() == "time"
+            )
+            try:
+                left_node = ast.parse(expand_functions(left), mode="eval").body
+            except (TypeError, ValueError, SyntaxError):
+                left_node = None
+            if cosh_time(left_node):
+                function_node = left_node
+                threshold_expression = right
+            else:
+                try:
+                    right_node = ast.parse(expand_functions(right), mode="eval").body
+                except (TypeError, ValueError, SyntaxError):
+                    right_node = None
+                if not cosh_time(right_node):
+                    unsupported = True
+                    break
+                function_node = right_node
+                threshold_expression = left
+                operator = {
+                    "gt": "lt",
+                    "geq": "leq",
+                    "lt": "gt",
+                    "leq": "geq",
+                }[operator]
+            if not cosh_time(function_node):
+                unsupported = True
+                break
+            threshold = fold_numeric(
+                expand_functions(threshold_expression), resolve_constant
+            )
+            if threshold is None or not math.isfinite(threshold):
+                unsupported = True
+                break
+            parsed.append((operator, float(threshold)))
+
+        if unsupported or len(parsed) != 2:
+            output.append(event)
+            continue
+        matching_rule = None
+        for candidate in rules_by_variable.values():
+            try:
+                rule_expression = ast.parse(
+                    re.sub(
+                        r"\bif\s*\(",
+                        "sbml_if(",
+                        expand_functions(str(candidate.math or "")),
+                        flags=re.I,
+                    ),
+                    mode="eval",
+                ).body
+            except (TypeError, ValueError, SyntaxError):
+                continue
+            if (
+                isinstance(rule_expression, ast.Call)
+                and isinstance(rule_expression.func, ast.Name)
+                and rule_expression.func.id.lower() == "cosh"
+                and len(rule_expression.args) == 1
+                and isinstance(rule_expression.args[0], ast.Name)
+                and rule_expression.args[0].id.lower() == "time"
+            ):
+                matching_rule = candidate
+                break
+        if matching_rule is None:
+            output.append(event)
+            continue
+
+        lower = next((item for item in parsed if item[0] in {"gt", "geq"}), None)
+        upper = next((item for item in parsed if item[0] in {"lt", "leq"}), None)
+        if lower is None or upper is None or lower[1] <= 1 or upper[1] <= lower[1]:
+            output.append(event)
+            continue
+        lower_time = math.acosh(lower[1])
+        upper_time = math.acosh(upper[1])
+        lower_operator = "geq" if lower[0] == "geq" else "gt"
+        upper_operator = "leq" if upper[0] == "leq" else "lt"
+        rewritten = (
+            f"and({lower_operator}(time, {_format_number(lower_time)}), "
+            f"{upper_operator}(time, {_format_number(upper_time)}))"
+        )
+        output.append(replace(event, trigger=rewritten))
+    return output
+
+
 def _parse_state_difference_threshold(
     trigger: str,
 ) -> Optional[Tuple[str, str, str]]:

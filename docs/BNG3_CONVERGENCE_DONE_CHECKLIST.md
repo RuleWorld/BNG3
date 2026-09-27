@@ -6367,11 +6367,16 @@ the other groups remain implementation targets.
   numerical predicate; record the refined settings and attempt result.
 - [x] Targeted `BIOMD0000000702` flat/atomized roundtrip passes both modes.
   Flat mode passes with `rtol=1e-11`, `atol=1e-20`, `max_step=1e-4`; atomized
-  mode passes at original tolerances. This is a targeted benchmark recovery
-  only; the full inventory has not been rerun, so no aggregate BioModels gain
-  is claimed. Report `/private/tmp/bng3-0702-refined.json`.
-- [ ] Rerun the full curated inventory with the refinement retry and compare
-  every model/mode against `/private/tmp/bng3-curated-after-events-nonfinite.json`.
+  mode passes at original tolerances. This targeted benchmark recovery is
+  included in the aggregate comparison below. Report
+  `/private/tmp/bng3-0702-refined.json`.
+- [x] Full curated inventory with the refinement retry completed in both flat
+  and atomized modes: 775/1,083 SBML records passed, 128 were unsupported,
+  8 failed, and 172 timed out. Compared with
+  `/private/tmp/bng3-curated-after-events-nonfinite.json`, two model statuses
+  improved (`BIOMD0000000183` timeout→pass and `BIOMD0000000702` fail→pass),
+  with no regressions. Report `/private/tmp/bng3-curated-e9797d0-refined.json`,
+  SHA-256 `6260059bfa282a6f82818891613448b0761a3144b094f674a8ab5692a6c82542`.
 
 ## Time-only sinusoidal assignment-rule event crossings — 2026-09-26
 
@@ -6395,7 +6400,35 @@ the other groups remain implementation targets.
   vacuous.
   Report `/private/tmp/bng3-sbml-sinusoidal-full.json`, SHA-256
   `955514a936b551cfc7bf8958f5c0647c98ec20575c4bfa0b277978f2b84addf2`.
-- [ ] Full curated BioModels inventory is running against this commit; do not
-  claim a curated-model gain until that report completes and is compared.
+- [x] Full curated BioModels report completed at source commit `e9797d0` and
+  is recorded above. The subsequent `cosh(time)` slice was screened against
+  the cached corpus: only four SBML models contain `cosh`, and all four have
+  zero SBML events, so no curated result can change.
 - [x] Full Python suite: `588 passed, 28 skipped`; changed-file Ruff, Black,
   and `git diff --check` pass.
+
+## Time-only cosh assignment-rule event windows — 2026-09-26
+
+- [x] Lower a conjunction of constant lower/upper thresholds on a time-only
+  `cosh(time)` assignment-rule trajectory to exact `acosh` time bounds when
+  both thresholds exceed one. Preserve event delay, values-from-trigger-time,
+  initial trigger value, and persistence; leave nonmatching trigger shapes
+  untranslated.
+- [x] Official cases `semantic/01594` and `01595` now pass. The full pinned
+  one-unit suite reports `1,602 passed, 321 unsupported, 0 failed, 0 timeouts`,
+  two gains and no regressions against `1,600/323/0/0`. Report
+  `/private/tmp/bng3-sbml-cosh-full-horizon1.json`, SHA-256
+  `36fbed18cba00fe4f52c5822408a850cb46441600a1a933947978f2b84addf2`. Each
+  case's one reported observable matches libRoadRunner 2.10.0 on all 101
+  samples with maximum absolute error `0`; event-assigned `P2` is not included
+  in the report's observable comparison.
+- [x] The full curated baseline at source commit `e9797d0` covers all 1,096
+  records: 775/1,083 SBML records passed, 128 were unsupported, 8 failed, and
+  172 timed out. A cached-corpus screen found four XML files with `cosh`
+  (`BIOMD0000000280`, `0324`, `0693`, `0844`); all have zero SBML events. The
+  full replay was stopped because this slice cannot affect any model or mode;
+  no curated gain is claimed.
+- [x] Focused event tests: `32 passed`. Ruff, Black (`py39` target), and
+  `git diff --check` pass. Local tests used a temporary `telnetlib` import
+  shim because Python 3.14 removed the module imported by the legacy Atomizer
+  package initializer; the shim does not change BNG3 code.
