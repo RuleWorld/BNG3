@@ -5,6 +5,19 @@
 **Branch:** `main`
 **Status:** merged convergence, nonequilibrium energy, and SBML material-gap work; release validation remains incomplete
 
+## Algebraic rules in initial event triggers — 2026-09-27
+
+Initial event trigger evaluation now resolves values from supported assignment
+rules, including algebraic rules lowered to a single assignment. Recursive
+cycles and multiply controlled variables remain fail-closed. Official SBML Test
+Suite case `semantic/01578` passes round-trip and exact libRoadRunner parity
+(11 samples). Full Python suite: `618 passed, 28 skipped`. Full SBML Test Suite:
+`1,647 passed, 276 unsupported, 0 failed, 0 timeouts`; nine gains and no
+regressions. The aggregate core gate remains open. Report
+`/private/tmp/bng3-algebraic-initial-full.json` (SHA-256
+`4c008f381b48d4a171427bae13eee26a4a562dd4e28ce39dca62355c056aaba3`). Curated
+BioModels rerun remains pending.
+
 ## Delayed event assignment-rule values — 2026-09-27
 
 Delayed event assignments can now evaluate assignment rules from proven state

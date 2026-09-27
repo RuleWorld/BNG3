@@ -806,6 +806,41 @@ def test_delayed_event_evaluates_assignment_rule_at_execution_time():
     assert "state-dependent or non-constant event" not in result.bngl
 
 
+def test_single_variable_algebraic_rule_lowers_for_initial_event_trigger():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="single_variable_algebraic_event">
+        <listOfParameters>
+          <parameter id="k" value="0" constant="false"/>
+          <parameter id="out" value="1" constant="false"/>
+        </listOfParameters>
+        <listOfRules><algebraicRule>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><minus/><cn>10</cn><ci>k</ci></apply>
+          </math>
+        </algebraicRule></listOfRules>
+        <listOfEvents><event id="initial" useValuesFromTriggerTime="true">
+          <trigger initialValue="false" persistent="true">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><gt/><ci>k</ci><cn>4.5</cn></apply>
+            </math>
+          </trigger>
+          <listOfEventAssignments><eventAssignment variable="out">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>3</cn></math>
+          </eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True).atomize(xml)
+
+    assert result.success, result.error
+    assert 'setParameter("out", "3")' in result.bngl
+    assert "algebraic rule(s) present" not in result.bngl
+    assert "state-dependent or non-constant event" not in result.bngl
+
+
 def test_exponential_self_reset_after_requested_horizon_is_informational():
     from bionetgen.atomizer.modern import Atomizer
 

@@ -5840,28 +5840,64 @@ def generate_bngl(
                 return concentration
             return amount / volume if volume != 0 else None
 
+        initial_event_rule_stack: set[str] = set()
+
         def resolve_initial_event_value(identifier: str) -> Optional[float]:
             if identifier == "__Avogadro__":
                 return _SBML_AVOGADRO
             parameter = model.parameters.get(identifier)
             if parameter is not None:
                 if any(
-                    rule.variable == identifier for rule in model.rules if rule.variable
-                ) or any(
-                    assignment.symbol == identifier
+                    standardize_name(assignment.symbol) == standardize_name(identifier)
                     for assignment in model.initial_assignments
                 ):
+                    return resolve_event_parameter(identifier)
+                rules = [
+                    rule
+                    for rule in model.rules
+                    if rule.variable
+                    and standardize_name(rule.variable) == standardize_name(identifier)
+                ]
+                if len(rules) > 1:
                     return None
+                if rules and rules[0].type == "assignment":
+                    key = standardize_name(identifier)
+                    if key in initial_event_rule_stack:
+                        return None
+                    initial_event_rule_stack.add(key)
+                    expression = extend_function(
+                        rules[0].math, {}, model.function_definitions
+                    )
+                    value = fold_numeric(expression, resolve_initial_event_value)
+                    initial_event_rule_stack.remove(key)
+                    return value
                 return parameter.value
             compartment = model.compartments.get(identifier)
             if compartment is not None:
                 if any(
-                    rule.variable == identifier for rule in model.rules if rule.variable
-                ) or any(
-                    assignment.symbol == identifier
+                    standardize_name(assignment.symbol) == standardize_name(identifier)
                     for assignment in model.initial_assignments
                 ):
+                    return resolve_event_parameter(identifier)
+                rules = [
+                    rule
+                    for rule in model.rules
+                    if rule.variable
+                    and standardize_name(rule.variable) == standardize_name(identifier)
+                ]
+                if len(rules) > 1:
                     return None
+                if rules and rules[0].type == "assignment":
+                    key = standardize_name(identifier)
+                    if key in initial_event_rule_stack:
+                        return None
+                    initial_event_rule_stack.add(key)
+                    expression = extend_function(
+                        rules[0].math, {}, model.function_definitions
+                    )
+                    value = fold_numeric(expression, resolve_initial_event_value)
+                    initial_event_rule_stack.remove(key)
+                    return value
                 return compartment.size
             species_id = next(
                 (

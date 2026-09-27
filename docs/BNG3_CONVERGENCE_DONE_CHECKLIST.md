@@ -6684,6 +6684,28 @@ the other groups remain implementation targets.
   `3b11d9f1943fbaf2965d45c82731cbe50e34da5ffc7f508f7108a6e566d8bcf8`.
 - [ ] Rerun full curated BioModels flat/atomized inventory against final source.
 
+## Algebraic rules in initial event triggers — 2026-09-27
+
+- [x] Resolve supported assignment-rule values when evaluating an event's
+  initial trigger. This covers algebraic rules that safely lower to one
+  assignment rule; recursive cycles and multiply controlled variables fail
+  closed.
+- [x] Official SBML Test Suite case `semantic/01578` passes import,
+  write/reimport, native-reader, and libRoadRunner parity checks. Its observable
+  matches exactly over 11 samples. Report
+  `/private/tmp/bng3-semantic-01578-algebraic-initial.json`, SHA-256
+  `0aaeb10984277d36333239e2e3a08a95ee5e80bd88d95f553816b6fa2c688e44`.
+- [x] Full Python suite: `618 passed, 28 skipped`; Black (`py39`), Ruff, and
+  `git diff --check` pass.
+- [x] Full pinned SBML Test Suite: `1,647 passed, 276 unsupported, 0 failed,
+  0 timeouts`. Nine gains: `semantic/00398`, `00402`-`00404`, `00455`,
+  `00459`-`00461`, and `01578`; no previous passes regressed. Every gained
+  case passed BNG3/libRoadRunner comparison. Report
+  `/private/tmp/bng3-algebraic-initial-full.json`, SHA-256
+  `4c008f381b48d4a171427bae13eee26a4a562dd4e28ce39dca62355c056aaba3`.
+  The aggregate core gate remains open on 276 unsupported cases.
+- [ ] Rerun the full curated BioModels inventory against final source.
+
 ## Delayed event assignment-rule values — 2026-09-27
 
 - [x] Evaluate a supported assignment rule from proven event-time trajectories
