@@ -4,7 +4,7 @@
 **Last targeted audit:** 2026-09-27 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
 **Working branch:** `main`
-**Current implementation base:** `51d318b` (`feat(atomizer): schedule re-entrant quadratic state events`) plus uncommitted component-scoped event analysis and SSA trigger safeguards; latest full pinned SBML Test Suite report is recorded below; curated BioModels rerun remains pending
+**Current implementation base:** `a0ff898` (`feat(atomizer): scope quadratic event resolution`); latest full pinned SBML Test Suite and curated BioModels reports are recorded below
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -46,10 +46,10 @@ capability inventory.
   0 timed out`; only `semantic/01106` gained against the preceding full report,
   with no regressions. Report `/private/tmp/bng3-variable-stoich-full-sbml.json`,
   SHA-256 `68e3ad3008dc7ce765257e29b580a87c3751c906d65821cacc5d1f7233984d0e`.
-- [ ] Full curated BioModels validation for this change remains pending. The
-  attempted run was interrupted before a terminal report to avoid spending
-  hours benchmarking a one-case stoichiometry change; cache retained at
-  `/private/tmp/bng3-biomodel-cache-8726b30`. Do not treat it as a pass or fail.
+- [x] The later full curated BioModels rerun includes this stoichiometry
+  change; its counts, status comparison, and report digest are recorded in the
+  following event-batch section. No pass gain is attributed specifically to
+  this one-case change.
 
 ## Quadratic state events in independent reaction components — 2026-09-27
 
@@ -83,9 +83,20 @@ capability inventory.
   `29076a828262a0f1aff0cd8c05bc621321f120cc4b06bbe046a04981d4728bce`.
 - [x] Full Python suite: `636 passed, 28 skipped`; Ruff, Black (`py39`), and
   `git diff --check` pass.
-- [ ] Re-run curated BioModels in both flat and atomized modes using the
-  retained cache `/private/tmp/bng3-biomodel-cache-8726b30`, matching the
-  prior `t_end=1`, 10-step configuration and timeouts.
+- [x] Full offline curated BioModels both-mode run on source `a0ff898`, using
+  the retained cache and matched `t_end=1`, 10-step, 60-second timeout
+  configuration: `792/1,083` SBML passed, 109 unsupported, 5 failed, and 177
+  timed out. The prior report had 794 passes, 109 unsupported, 6 failed, and
+  174 timeouts. No record changed between pass and unsupported; the three
+  status changes were `BIOMD0000000579` and `BIOMD0000000637` (pass to
+  timeout), and `BIOMD0000000081` (failure to timeout). Isolated retries passed
+  `BIOMD0000000637`, reproduced the worker crash for `BIOMD0000000081`, and
+  passed `BIOMD0000000579` with a 120-second timeout after its 60-second
+  timeout. `BIOMD0000000579` has no SBML events. This supports timeout
+  variance, not a measured BioModels feature gain. The report remains
+  incomplete: `core_passed=false` and `supported_surface_passed=false`. Report
+  `/private/tmp/bng3-independent-components-biomodels-both.json`, SHA-256
+  `d2b88728d842b3d443783b11d8f546013d91ca94421865c1b40ee6d477487d03`.
 
 ## Remaining unsupported SBML Test Suite triage — prior ODE-selected baseline
 
@@ -144,9 +155,11 @@ capability inventory.
   reactions. MathML/stoichiometry edge cases should be batched by executable,
   valid semantics; source cases with absent MathML or non-BNGL coefficients
   need explicit compatibility policy.
-- [ ] Curated BioModels rerun is now eligible after the independent-component
-  event batch; use retained cache and matched timeouts, then compare against
-  `/private/tmp/bng3-conjunction-biomodels-both.json`.
+- [x] Curated BioModels rerun completed after the independent-component event
+  batch and was compared against
+  `/private/tmp/bng3-conjunction-biomodels-both.json`; counts, changed IDs, and
+  isolated timeout retries are recorded above. No BioModels pass gain is
+  claimed.
 
 ## Affine species-difference event thresholds — 2026-09-26
 

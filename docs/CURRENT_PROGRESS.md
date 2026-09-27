@@ -33,8 +33,19 @@ reference-result conformance remains untested. Report:
 `29076a828262a0f1aff0cd8c05bc621321f120cc4b06bbe046a04981d4728bce`.
 
 Full Python suite: `636 passed, 28 skipped`; Ruff, Black (`py39`), and
-`git diff --check` pass. Curated BioModels both-mode validation using the
-retained cache is the next benchmark.
+`git diff --check` pass.
+
+The full offline curated BioModels both-mode run on `a0ff898` completed with
+`792/1,083` SBML passed, 109 unsupported, 5 failed, and 177 timed out. The
+previous report had 794 passed, 109 unsupported, 6 failed, and 174 timeouts.
+No model changed between pass and unsupported. `BIOMD0000000637` passed an
+isolated retry; `BIOMD0000000081` reproduced its prior worker crash; and
+`BIOMD0000000579` passed with a 120-second timeout after timing out at 60
+seconds. That model has no events, so the timeout difference is not evidence of
+an Atomizer event regression. No BioModels feature gain is claimed. The report
+has `core_passed=false` and `supported_surface_passed=false`:
+`/private/tmp/bng3-independent-components-biomodels-both.json`, SHA-256
+`d2b88728d842b3d443783b11d8f546013d91ca94421865c1b40ee6d477487d03`.
 
 ## Horizon proof for conjunctive event triggers — 2026-09-27
 
