@@ -289,6 +289,7 @@ add_library(bng_nfcore2 STATIC
     nfsim/NFcore2/engine.cpp
     nfsim/NFcore2/executable_model.cpp
     nfsim/NFcore2/legacy_bridge.cpp
+    nfsim/NFcore2/driver.cpp
     nfsim/NFcore2/matcher.cpp
     nfsim/NFcore2/model_image.cpp
     nfsim/NFcore2/nfsim_adapter_contract.cpp
