@@ -2011,10 +2011,12 @@ recorded in the convergence checklist.
 Time-only `cosh(time)` assignment-rule event windows now lower to exact
 `acosh` time bounds for conjunctions of lower and upper constant thresholds
 above one. Event delays and persistence are preserved; other trigger shapes
-remain untranslated. Official cases `semantic/01594` and `01595` now pass,
-raising the full one-unit SBML suite from 1,600 to 1,602 passes with no
-regressions, failures, or timeouts. Their single reported observables match
-libRoadRunner 2.10.0 exactly over 101 points; event-assigned `P2` is not part
-of that observable comparison. Four cached BioModels contain `cosh`; none has
-events, so this feature has no curated-model effect. See the checklist for
-report hashes and validation limits.
+remain untranslated. Single rising thresholds also lower correctly when they
+are already true at time zero and `triggerInitialValue=false`. Official cases
+`semantic/01594`-`01596` now pass, raising the full one-unit SBML suite from
+1,600 to 1,603 passes with no regressions, failures, or timeouts. Each case's
+single reported observable matches libRoadRunner 2.10.0 exactly over 101
+points; event-assigned `P2` is not part of those observable comparisons. Four
+cached BioModels contain `cosh`; none has events, so this feature has no
+curated-model effect. See the checklist for report hashes and validation
+limits.

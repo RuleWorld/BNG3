@@ -323,6 +323,25 @@ def test_cosh_window_without_matching_assignment_rule_stays_unchanged():
     assert result == [event]
 
 
+def test_already_true_cosh_threshold_preserves_a_zero_time_rising_edge():
+    from bionetgen.atomizer.modern.events import expand_cosh_assignment_rule_events
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLRule
+
+    event = SBMLEvent(
+        id="cosh-already-true",
+        trigger="gt(cosh(time), 0.5)",
+        trigger_initial_value=False,
+    )
+    result = expand_cosh_assignment_rule_events(
+        [event],
+        [SBMLRule("assignment", "P1", "cosh(time)")],
+        resolve_constant=lambda _identifier: None,
+    )
+
+    assert result[0].trigger == "geq(time, 0)"
+    assert result[0].trigger_initial_value is False
+
+
 def test_static_state_threshold_can_use_another_static_species():
     from bionetgen.atomizer.modern.events import (
         EventTranslationContext,

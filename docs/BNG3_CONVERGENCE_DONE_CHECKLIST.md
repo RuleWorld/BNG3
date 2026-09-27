@@ -6412,13 +6412,14 @@ the other groups remain implementation targets.
 - [x] Lower a conjunction of constant lower/upper thresholds on a time-only
   `cosh(time)` assignment-rule trajectory to exact `acosh` time bounds when
   both thresholds exceed one. Preserve event delay, values-from-trigger-time,
-  initial trigger value, and persistence; leave nonmatching trigger shapes
-  untranslated.
-- [x] Official cases `semantic/01594` and `01595` now pass. The full pinned
-  one-unit suite reports `1,602 passed, 321 unsupported, 0 failed, 0 timeouts`,
-  two gains and no regressions against `1,600/323/0/0`. Report
-  `/private/tmp/bng3-sbml-cosh-full-horizon1.json`, SHA-256
-  `36fbed18cba00fe4f52c5822408a850cb46441600a1a933947978f2b84addf2`. Each
+  initial trigger value, and persistence. A single rising threshold already
+  true at t=0 lowers to a zero-time edge when `triggerInitialValue=false`.
+  Leave nonmatching trigger shapes untranslated.
+- [x] Official cases `semantic/01594`, `01595`, and `01596` now pass. The full
+  pinned one-unit suite reports `1,603 passed, 320 unsupported, 0 failed,
+  0 timeouts`, three gains and no regressions against `1,600/323/0/0`. Report
+  `/private/tmp/bng3-cosh-full-horizon1-01596.json`, SHA-256
+  `2614f3137f7ae32822f30323127b0f8f58767d3c58d8fd66a16f167cc1a15fd8`. Each
   case's one reported observable matches libRoadRunner 2.10.0 on all 101
   samples with maximum absolute error `0`; event-assigned `P2` is not included
   in the report's observable comparison.
@@ -6428,7 +6429,8 @@ the other groups remain implementation targets.
   (`BIOMD0000000280`, `0324`, `0693`, `0844`); all have zero SBML events. The
   full replay was stopped because this slice cannot affect any model or mode;
   no curated gain is claimed.
-- [x] Focused event tests: `32 passed`. Ruff, Black (`py39` target), and
+- [x] Full Python suite: `589 passed, 28 skipped`; focused event tests:
+  `33 passed`. Ruff, Black (`py39` target), and
   `git diff --check` pass. Local tests used a temporary `telnetlib` import
   shim because Python 3.14 removed the module imported by the legacy Atomizer
   package initializer; the shim does not change BNG3 code.

@@ -990,13 +990,13 @@ def expand_cosh_assignment_rule_events(
     resolve_constant: Callable[[str], Optional[float]],
     expand_functions: Callable[[str], str] = lambda expression: expression,
 ) -> List[SBMLEvent]:
-    """Rewrite monotone ``cosh(time)`` assignment-rule windows as time bounds.
+    """Rewrite monotone ``cosh(time)`` assignment-rule triggers as time bounds.
 
-    This handles conjunctions of a lower and upper threshold on the same
-    time-only ``cosh(time)`` assignment rule. On SBML's nonnegative time axis,
-    thresholds above one map exactly to an interval bounded by ``acosh``.
-    Other trajectories and predicate shapes are left for the normal event
-    translator to reject explicitly.
+    This handles one rising threshold or a conjunction of lower and upper
+    thresholds on the same time-only ``cosh(time)`` assignment rule. On
+    SBML's nonnegative time axis, thresholds above one map exactly through
+    ``acosh``. Other trajectories and predicate shapes are left for the normal
+    event translator to reject explicitly.
     """
 
     rules_by_variable = {
@@ -1009,7 +1009,9 @@ def expand_cosh_assignment_rule_events(
 
     for event in events:
         terms = _split_call_arguments(str(event.trigger or "").strip())
-        if terms is None or len(terms) != 2:
+        if terms is None:
+            terms = [str(event.trigger or "").strip()]
+        if len(terms) not in {1, 2}:
             output.append(event)
             continue
 
@@ -1065,7 +1067,7 @@ def expand_cosh_assignment_rule_events(
                 break
             parsed.append((operator, float(threshold)))
 
-        if unsupported or len(parsed) != 2:
+        if unsupported or len(parsed) != len(terms):
             output.append(event)
             continue
         matching_rule = None
@@ -1094,6 +1096,20 @@ def expand_cosh_assignment_rule_events(
                 break
         if matching_rule is None:
             output.append(event)
+            continue
+
+        if len(parsed) == 1:
+            operator, threshold = parsed[0]
+            if operator not in {"gt", "geq"}:
+                output.append(event)
+                continue
+            trigger_time = 0.0 if threshold < 1 else math.acosh(threshold)
+            output.append(
+                replace(
+                    event,
+                    trigger=f"geq(time, {_format_number(trigger_time)})",
+                )
+            )
             continue
 
         lower = next((item for item in parsed if item[0] in {"gt", "geq"}), None)
