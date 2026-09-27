@@ -47,6 +47,27 @@ def test_playground_event_actions_exposes_reference_names_and_result_fields():
     assert result.actions_block == "simulate({})"
 
 
+def test_inclusive_cycle_threshold_tangent_is_not_proven_inactive():
+    from bionetgen.atomizer.modern.events import (
+        _first_order_cycle_next_trigger_crossing,
+        _first_order_cycle_trajectory,
+    )
+
+    initial_state = (3.0, 0.5, 0.5)
+    rates = (1.0, 1.0, 1.0)
+    trajectory = _first_order_cycle_trajectory(initial_state, rates)
+    assert trajectory is not None
+    first_extremum = trajectory.extrema_times(10.0)[0]
+    threshold_state = trajectory.state_at(first_extremum)
+    assert threshold_state is not None
+
+    crossing = _first_order_cycle_next_trigger_crossing(
+        initial_state, rates, threshold_state[0], "leq", 10.0
+    )
+
+    assert crossing is None
+
+
 def test_fixed_time_window_event_is_scheduled_at_its_rising_edge():
     from bionetgen.atomizer.modern.events import (
         EventTranslationContext,

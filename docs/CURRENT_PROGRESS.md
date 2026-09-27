@@ -2,8 +2,40 @@
 
 **Last targeted audit:** 2026-09-27 (full convergence checklist not re-audited)
 **Repository:** `RuleWorld/BNG3`
-**Branch:** `main`
-**Status:** merged convergence, nonequilibrium energy, and SBML material-gap work; release validation remains incomplete
+**Branch:** `plan/nfsim-gpu-perf`
+**Status:** Atomizer first-order cycle events validated; overall convergence and release validation remain incomplete
+
+## Re-entrant events in closed first-order cycles — 2026-09-27
+
+Atomizer now schedules repeated persistent threshold events for a narrowly
+proven, closed three-species first-order transfer cycle. The proof requires
+three unit-stoichiometry reactions, positive constant rates, one fixed positive
+compartment, one event, no rules or initial assignments, no priority, and
+trigger-time species snapshots. Constant nonnegative delays and simultaneous
+species assignments are supported. Unsupported event or model shapes fail
+closed; inclusive threshold tangencies are not reported as inactive, and SSA
+event timing remains unsupported.
+
+Four official cases (`semantic/00400`, `00401`, `00457`, `00458`) pass their
+per-record conversion, XML roundtrip, native-reader, and BNG3/libRoadRunner
+checks through `t=20` with 1,200 steps. Across six observables per case, the
+maximum absolute difference is `3.0815350271495845e-12`. These isolated runs
+do not test SBML reference-result conformance. The focused event suite passes
+61 tests, the SBML parity module 86 tests, and the full Python suite passes
+`644` tests with `28` skipped; Ruff, Black (`py39`), and `git diff --check`
+pass.
+
+The full pinned suite (`cf38585`, 1,923 records; `t_end=1`, 10 samples) reports
+`1,645 passed, 278 unsupported, 0 failed, 0 timed out`. The supported-surface
+gate passes; the aggregate core gate remains open. Compared with the saved
+`1,673/250` baseline, 27 semantic records gained status, including the four
+cycle cases, while 55 prior stochastic passes are now unsupported because the
+runner selects SSA for stochastic-category records. That validation-method
+change makes the aggregate counts non-comparable as a direct regression total.
+SBML reference-result conformance was not run. Report
+`/private/tmp/bng3-first-order-cycle-full-verified.json`, SHA-256
+`4440ab3e496b8f6027d156ab176f16067d49e241c2e1224889d9bdd0b8c8c7cd`.
+The full curated BioModels inventory has not been rerun against this source.
 
 ## Bounded assignment-rule delay aliases — 2026-09-27
 

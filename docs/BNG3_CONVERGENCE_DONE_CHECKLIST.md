@@ -7234,3 +7234,49 @@ the other groups remain implementation targets.
   `/private/tmp/bng3-independent-events-biomodels-both.json`, SHA-256
   `e34738f57db500da19fe2f28618c0772c729c4ae36fda5452f8a68dd8747d9c5`.
   The aggregate curated-model gates remain incomplete.
+
+## Re-entrant events in closed first-order cycles — 2026-09-27
+
+- [x] Add an exact trajectory resolver for a closed three-species,
+  three-reaction first-order transfer cycle. Admit only positive constant
+  rates, unit stoichiometry, one fixed positive compartment, and models with
+  no rules, initial assignments, or conversion factors; reject unsupported
+  topologies and kinetic laws.
+- [x] Schedule one persistent, unprioritized state-threshold event across
+  repeated rising and falling crossings, with constant nonnegative delay and
+  trigger-time species snapshots. Recompute the trajectory after event
+  assignments. SSA, non-snapshot events, and inclusive threshold tangencies
+  remain unsupported.
+- [x] Add parity coverage for immediate and delayed events, two and three
+  simultaneous species assignments, and both real and complex cycle spectra.
+  The inclusive-tangency regression verifies that the event is left
+  untranslated instead of being incorrectly proved inactive.
+- [x] Refresh official SBML Test Suite cases `semantic/00400`, `00401`,
+  `00457`, and `00458` individually at `t_end=20` with 1,200 steps. Every
+  record passes conversion, XML roundtrip, native-reader, and direct
+  BNG3/libRoadRunner CVODE comparison for six observables; the maximum
+  absolute difference is `3.0815350271495845e-12`. Isolated reports do not
+  establish the aggregate suite gates or SBML reference-result conformance:
+  `00400` `/private/tmp/bng3-first-order-cycle-00400-verified.json`, SHA-256
+  `28bdfadb54c58595eb499aa9fb0d9cbd7d6f1dadc93b5e36a4ad768b5a70b051`;
+  `00401` `/private/tmp/bng3-first-order-cycle-00401-verified.json`, SHA-256
+  `f9c5799a5ffdd5fc3e4463223ad968803a076c925f6d66e5ea98eed37c33e114`;
+  `00457` `/private/tmp/bng3-first-order-cycle-00457-verified.json`, SHA-256
+  `acff7790d1ba842b5e3877fefac963376d92ef268ee22ec27e14f779435a0170`;
+  and `00458` `/private/tmp/bng3-first-order-cycle-00458-verified.json`,
+  SHA-256 `f8abb23225d81017a38710cd873a1fb54259a21fe21941d76a5281a3273a55a1`.
+- [x] Focused event suite: `61 passed`; SBML parity module: `86 passed`; full
+  Python suite: `644 passed, 28 skipped`. Ruff, Black (`py39`), and
+  `git diff --check` pass.
+- [x] Full pinned SBML Test Suite at suite commit
+  `cf38585fac5de8e0e90112febb62851ee2181816`, `t_end=1`, and 10 samples:
+  `1,645 passed, 278 unsupported, 0 failed, 0 timed out`. The supported-surface
+  gate passes; the aggregate core gate remains open. Against the saved
+  `1,673 passed, 250 unsupported` report, 27 semantic cases gained status,
+  including these four cycle cases. Fifty-five prior stochastic passes became
+  unsupported when the runner began selecting SSA for stochastic-category
+  records; the validation-method change makes the aggregate counts
+  non-comparable as a direct regression total. Reference-result conformance
+  was not run. Report `/private/tmp/bng3-first-order-cycle-full-verified.json`,
+  SHA-256 `4440ab3e496b8f6027d156ab176f16067d49e241c2e1224889d9bdd0b8c8c7cd`.
+- [ ] Rerun the complete curated BioModels inventory against this source.

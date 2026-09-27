@@ -1328,6 +1328,172 @@ def test_quadratic_state_events_keep_cross_component_controls_unsupported():
     assert "Events NOT simulated" in result.bngl
 
 
+def _first_order_cycle_reentrant_event_model(
+    delay=None,
+    simultaneous_assignments=False,
+    rates=(0.75, 0.55, 0.25),
+):
+    delay_element = (
+        ""
+        if delay is None
+        else f"""<delay><math xmlns="http://www.w3.org/1998/Math/MathML">
+          <cn>{delay}</cn></math></delay>"""
+    )
+    assignments = (
+        """<eventAssignment variable="S2"><math xmlns="http://www.w3.org/1998/Math/MathML">
+          <ci>S3</ci></math></eventAssignment>
+          <eventAssignment variable="S1"><math xmlns="http://www.w3.org/1998/Math/MathML">
+          <ci>S2</ci></math></eventAssignment>
+          <eventAssignment variable="S3"><math xmlns="http://www.w3.org/1998/Math/MathML">
+          <ci>S1</ci></math></eventAssignment>"""
+        if simultaneous_assignments
+        else """<eventAssignment variable="S2"><math xmlns="http://www.w3.org/1998/Math/MathML">
+          <cn>1.5</cn></math></eventAssignment>
+          <eventAssignment variable="S1"><math xmlns="http://www.w3.org/1998/Math/MathML">
+          <ci>S2</ci></math></eventAssignment>"""
+    )
+    return f"""<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="first_order_cycle_reentrant_event">
+        <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies>
+          <species id="S1" compartment="C" initialAmount="1" hasOnlySubstanceUnits="false"/>
+          <species id="S2" compartment="C" initialAmount="2" hasOnlySubstanceUnits="false"/>
+          <species id="S3" compartment="C" initialAmount="1" hasOnlySubstanceUnits="false"/>
+        </listOfSpecies>
+        <listOfParameters>
+          <parameter id="k1" value="{rates[0]}" constant="true"/>
+          <parameter id="k2" value="{rates[1]}" constant="true"/>
+          <parameter id="k3" value="{rates[2]}" constant="true"/>
+        </listOfParameters>
+        <listOfReactions>
+          <reaction id="r1" reversible="false">
+            <listOfReactants><speciesReference species="S1"/></listOfReactants>
+            <listOfProducts><speciesReference species="S2"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><times/><ci>C</ci><ci>k1</ci><ci>S1</ci></apply>
+            </math></kineticLaw>
+          </reaction>
+          <reaction id="r2" reversible="false">
+            <listOfReactants><speciesReference species="S2"/></listOfReactants>
+            <listOfProducts><speciesReference species="S3"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><times/><ci>C</ci><ci>k2</ci><ci>S2</ci></apply>
+            </math></kineticLaw>
+          </reaction>
+          <reaction id="r3" reversible="false">
+            <listOfReactants><speciesReference species="S3"/></listOfReactants>
+            <listOfProducts><speciesReference species="S1"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><times/><ci>C</ci><ci>k3</ci><ci>S3</ci></apply>
+            </math></kineticLaw>
+          </reaction>
+        </listOfReactions>
+        <listOfEvents><event id="reset_cycle" useValuesFromTriggerTime="true">
+          <trigger initialValue="true" persistent="true">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><lt/><ci>S1</ci><cn>0.75</cn></apply>
+            </math>
+          </trigger>
+          {delay_element}
+          <listOfEventAssignments>{assignments}</listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+
+def test_first_order_cycle_events_match_libroadrunner(tmp_path):
+    import numpy as np
+    import pytest
+
+    roadrunner = pytest.importorskip("roadrunner")
+    from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.model import load
+
+    for delay, simultaneous_assignments, rates in (
+        (None, False, (0.75, 0.55, 0.25)),
+        (None, True, (0.75, 0.55, 0.25)),
+        (1.5, False, (0.75, 0.55, 0.25)),
+        (1.5, True, (0.75, 0.55, 0.25)),
+        (None, False, (3.0, 0.1, 0.2)),
+    ):
+        xml = _first_order_cycle_reentrant_event_model(
+            delay, simultaneous_assignments, rates
+        )
+        result = Atomizer(quiet_mode=True, t_end=20, n_steps=1200).atomize(xml)
+
+        assert result.success, result.error
+        assert "Events NOT simulated" not in result.bngl
+
+        model_path = tmp_path / (
+            f"first_order_cycle_{delay}_{simultaneous_assignments}_{rates[0]}.bngl"
+        )
+        model_path.write_text(result.bngl, encoding="utf-8")
+        load(model_path).execute()
+        lines = model_path.with_suffix(".gdat").read_text().splitlines()
+        columns = lines[0].lstrip("# ").split()
+        bng_data = np.loadtxt(lines[1:])
+        times = bng_data[:, columns.index("time")]
+
+        rr = roadrunner.RoadRunner(xml)
+        rr.integrator.setValue("relative_tolerance", 1e-9)
+        rr.integrator.setValue("absolute_tolerance", 1e-12)
+        rr.timeCourseSelections = ["time", "[S1]", "[S2]", "[S3]"]
+        reference = rr.simulate(times=times)
+
+        state_columns = [columns.index(species) for species in ("S1", "S2", "S3")]
+        changes = np.abs(np.diff(bng_data[:, state_columns], axis=0))
+        jump_indices = np.flatnonzero(np.max(changes, axis=1) > 0.2)
+        assert len(jump_indices) >= 1
+        compare = np.ones(len(times), dtype=bool)
+        compare[jump_indices] = False
+        compare[jump_indices + 1] = False
+        for species in ("S1", "S2", "S3"):
+            bng_values = bng_data[compare, columns.index(species)]
+            rr_values = reference[compare, reference.colnames.index(f"[{species}]")]
+            scale = max(
+                float(np.max(np.abs(bng_values))), float(np.max(np.abs(rr_values)))
+            )
+            assert float(np.max(np.abs(bng_values - rr_values))) <= max(
+                5e-12, 1e-6 * scale
+            )
+
+
+def test_first_order_cycle_inclusive_tangent_event_remains_unsupported():
+    from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.atomizer.modern.events import _first_order_cycle_trajectory
+
+    initial_state = (3.0, 0.5, 0.5)
+    rates = (1.0, 1.0, 1.0)
+    trajectory = _first_order_cycle_trajectory(initial_state, rates)
+    assert trajectory is not None
+    first_extremum = trajectory.extrema_times(10.0)[0]
+    threshold_state = trajectory.state_at(first_extremum)
+    assert threshold_state is not None
+
+    xml = _first_order_cycle_reentrant_event_model(rates=rates)
+    xml = xml.replace(
+        'id="S1" compartment="C" initialAmount="1"',
+        'id="S1" compartment="C" initialAmount="3"',
+    )
+    xml = xml.replace(
+        'id="S2" compartment="C" initialAmount="2"',
+        'id="S2" compartment="C" initialAmount="0.5"',
+    )
+    xml = xml.replace(
+        'id="S3" compartment="C" initialAmount="1"',
+        'id="S3" compartment="C" initialAmount="0.5"',
+    )
+    xml = xml.replace(
+        "<apply><lt/><ci>S1</ci><cn>0.75</cn></apply>",
+        f"<apply><leq/><ci>S1</ci><cn>{threshold_state[0]:.17g}</cn></apply>",
+    )
+
+    result = Atomizer(quiet_mode=True, t_end=10, n_steps=100).atomize(xml)
+
+    assert result.success, result.error
+    assert "Events NOT simulated" in result.bngl
+
+
 def test_quadratic_event_ignores_rules_outside_trigger_component():
     from bionetgen.atomizer.modern import Atomizer
 

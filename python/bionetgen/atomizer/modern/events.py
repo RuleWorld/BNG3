@@ -97,6 +97,265 @@ def _no_event_quadratic_state_values_from_state(
     return None
 
 
+def _no_first_order_cycle_event_system() -> (
+    Optional[Tuple[Tuple[str, str, str], Tuple[float, float, float]]]
+):
+    return None
+
+
+@dataclass(frozen=True)
+class _FirstOrderCycleTrajectory:
+    total: float
+    rates: Tuple[float, float, float]
+    equilibrium: Tuple[float, float, float]
+    mu: float
+    discriminant: float
+    u: float
+    w: float
+    v: float
+    z: float
+    a11: float
+    a12: float
+    a21: float
+    a22: float
+
+    @property
+    def discriminant_tolerance(self) -> float:
+        scale = max(
+            (self.rates[0] + self.rates[2]) ** 2,
+            self.rates[1] ** 2,
+            abs(self.rates[0] * self.rates[2]),
+            1e-300,
+        )
+        return 1e-14 * scale
+
+    def state_at(self, elapsed: float) -> Optional[Tuple[float, float, float]]:
+        if not math.isfinite(elapsed) or elapsed < 0:
+            return None
+        q = self.discriminant
+        tolerance = self.discriminant_tolerance
+        if q > tolerance:
+            delta = math.sqrt(q)
+            try:
+                plus = math.exp((self.mu + delta) * elapsed)
+                minus = math.exp((self.mu - delta) * elapsed)
+            except OverflowError:
+                return None
+            first = (
+                0.5 * (self.u + self.v / delta) * plus
+                + 0.5 * (self.u - self.v / delta) * minus
+            )
+            second = (
+                0.5 * (self.w + self.z / delta) * plus
+                + 0.5 * (self.w - self.z / delta) * minus
+            )
+        elif q < -tolerance:
+            omega = math.sqrt(-q)
+            try:
+                decay = math.exp(self.mu * elapsed)
+            except OverflowError:
+                return None
+            cosine = math.cos(omega * elapsed)
+            sine = math.sin(omega * elapsed)
+            first = decay * (self.u * cosine + self.v * sine / omega)
+            second = decay * (self.w * cosine + self.z * sine / omega)
+        else:
+            try:
+                decay = math.exp(self.mu * elapsed)
+            except OverflowError:
+                return None
+            first = decay * (self.u + self.v * elapsed)
+            second = decay * (self.w + self.z * elapsed)
+
+        first += self.equilibrium[0]
+        second += self.equilibrium[1]
+        third = self.total - first - second
+        values = [first, second, third]
+        if not all(math.isfinite(value) for value in values):
+            return None
+        scale = max(1e-300, abs(self.total), *(abs(value) for value in values))
+        for index, value in enumerate(values):
+            if value < -1e-12 * scale:
+                return None
+            if value < 0:
+                values[index] = 0.0
+        correction = self.total - math.fsum(values)
+        values[2] += correction
+        if values[2] < -1e-12 * scale:
+            return None
+        return values[0], values[1], max(0.0, values[2])
+
+    def first_derivative(self, elapsed: float) -> Optional[float]:
+        values = self.state_at(elapsed)
+        if values is None:
+            return None
+        first, _second, third = values
+        derivative = -self.rates[0] * first + self.rates[2] * third
+        return derivative if math.isfinite(derivative) else None
+
+    def extrema_times(self, horizon: float) -> Optional[List[float]]:
+        if not math.isfinite(horizon) or horizon < 0:
+            return None
+        q = self.discriminant
+        tolerance = self.discriminant_tolerance
+        roots: List[float] = []
+        if q < -tolerance:
+            omega = math.sqrt(-q)
+            cosine_coefficient = self.mu * self.u + self.v
+            sine_coefficient = self.mu * self.v / omega - omega * self.u
+            if cosine_coefficient == 0 and sine_coefficient == 0:
+                return roots
+            phase = math.atan2(-cosine_coefficient, sine_coefficient)
+            first_n = math.floor(-phase / math.pi) - 1
+            count = math.ceil(omega * horizon / math.pi) + 4
+            if count > 10_000:
+                return None
+            for n in range(first_n, first_n + count):
+                value = (phase + n * math.pi) / omega
+                if 1e-12 < value < horizon - 1e-12:
+                    roots.append(value)
+        elif q > tolerance:
+            delta = math.sqrt(q)
+            positive_mode = 0.5 * (self.u + self.v / delta)
+            negative_mode = 0.5 * (self.u - self.v / delta)
+            numerator = -(self.mu - delta) * negative_mode
+            denominator = (self.mu + delta) * positive_mode
+            if denominator != 0 and numerator / denominator > 0:
+                value = math.log(numerator / denominator) / (2.0 * delta)
+                if 1e-12 < value < horizon - 1e-12:
+                    roots.append(value)
+        elif self.mu * self.v != 0:
+            value = -(self.mu * self.u + self.v) / (self.mu * self.v)
+            if 1e-12 < value < horizon - 1e-12:
+                roots.append(value)
+        return sorted(set(roots))
+
+
+def _first_order_cycle_trajectory(
+    state: Sequence[float], rates: Sequence[float]
+) -> Optional[_FirstOrderCycleTrajectory]:
+    if len(state) != 3 or len(rates) != 3:
+        return None
+    values = tuple(float(value) for value in state)
+    cycle_rates = tuple(float(rate) for rate in rates)
+    if not all(math.isfinite(value) and value >= 0 for value in values) or not all(
+        math.isfinite(rate) and rate > 0 for rate in cycle_rates
+    ):
+        return None
+    total = math.fsum(values)
+    inverse_rate_sum = math.fsum(1.0 / rate for rate in cycle_rates)
+    if not math.isfinite(total) or not math.isfinite(inverse_rate_sum):
+        return None
+    flux = total / inverse_rate_sum
+    equilibrium = tuple(flux / rate for rate in cycle_rates)
+    m00 = -(cycle_rates[0] + cycle_rates[2])
+    m01 = -cycle_rates[2]
+    m10 = cycle_rates[0]
+    m11 = -cycle_rates[1]
+    mu = 0.5 * (m00 + m11)
+    a11, a12, a21, a22 = m00 - mu, m01, m10, m11 - mu
+    discriminant = a11 * a11 + a12 * a21
+    u = values[0] - equilibrium[0]
+    w = values[1] - equilibrium[1]
+    v = a11 * u + a12 * w
+    z = a21 * u + a22 * w
+    components = (*equilibrium, total, mu, discriminant, u, w, v, z)
+    if not all(math.isfinite(value) for value in components):
+        return None
+    return _FirstOrderCycleTrajectory(
+        total,
+        cycle_rates,
+        equilibrium,
+        mu,
+        discriminant,
+        u,
+        w,
+        v,
+        z,
+        a11,
+        a12,
+        a21,
+        a22,
+    )
+
+
+def _first_order_cycle_next_trigger_crossing(
+    state: Sequence[float],
+    rates: Sequence[float],
+    threshold: float,
+    operator: str,
+    horizon: float,
+) -> Optional[Tuple[float, bool]]:
+    trajectory = _first_order_cycle_trajectory(state, rates)
+    if trajectory is None:
+        return None
+    extrema = trajectory.extrema_times(horizon)
+    if extrema is None:
+        return None
+    partitions = [0.0, *extrema, horizon]
+
+    for left, right in zip(partitions, partitions[1:]):
+        if right <= 1e-12:
+            continue
+        left_state = trajectory.state_at(left)
+        right_state = trajectory.state_at(right)
+        if left_state is None or right_state is None:
+            return None
+        left_delta = left_state[0] - threshold
+        right_delta = right_state[0] - threshold
+        same_sign = (left_delta > 0 and right_delta > 0) or (
+            left_delta < 0 and right_delta < 0
+        )
+        zero_tolerance = 1e-13 * max(
+            1e-300,
+            abs(threshold),
+            abs(left_state[0]),
+            abs(right_state[0]),
+        )
+        if same_sign or (abs(left_delta) <= zero_tolerance and left <= 1e-12):
+            continue
+        if abs(left_delta) <= zero_tolerance:
+            root = left
+        elif abs(right_delta) <= zero_tolerance:
+            root = right
+        else:
+            low, high = left, right
+            low_value = left_delta
+            for _ in range(80):
+                middle = 0.5 * (low + high)
+                middle_state = trajectory.state_at(middle)
+                if middle_state is None:
+                    return None
+                middle_value = middle_state[0] - threshold
+                if (middle_value < 0) == (low_value < 0):
+                    low, low_value = middle, middle_value
+                else:
+                    high = middle
+            root = 0.5 * (low + high)
+        if root <= 1e-12 or root > horizon + 1e-12:
+            continue
+        root_state = trajectory.state_at(root)
+        if root_state is None:
+            return None
+        derivative = trajectory.first_derivative(root)
+        derivative_scale = max(
+            1e-300,
+            trajectory.rates[0] * root_state[0],
+            trajectory.rates[2] * root_state[2],
+        )
+        if derivative is None:
+            return None
+        if abs(derivative) <= 1e-14 * derivative_scale:
+            if operator in {"leq", "geq"}:
+                return None
+            continue
+        enters_true = (operator in {"lt", "leq"} and derivative < 0) or (
+            operator in {"gt", "geq"} and derivative > 0
+        )
+        return min(root, horizon), enters_true
+    return math.inf, False
+
+
 from .types import standardize_name
 
 
@@ -213,6 +472,12 @@ class EventTranslationContext:
     # event-local mutable symbols then remain at their initial values unless
     # an event fires.
     static_event_state: bool = False
+    # Return the three species and outgoing concentration rates for a proven
+    # isolated first-order cycle used by recurrent threshold-event scheduling.
+    # This callback stays last to preserve positional initializer compatibility.
+    resolve_first_order_cycle_event_system: Callable[
+        [], Optional[Tuple[Tuple[str, str, str], Tuple[float, float, float]]]
+    ] = _no_first_order_cycle_event_system
 
     @property
     def resolveSpeciesPattern(self):
@@ -3619,7 +3884,317 @@ def synthesize_event_actions(
     )
     normal_converted = 0
     recurrent_handled: set[int] = set()
-    if len(events) == 1:
+    if len(events) == 1 and context.method.lower() != "ssa":
+        event = events[0]
+        cycle_system = context.resolve_first_order_cycle_event_system()
+        parsed_cycle_trigger = _parse_affine_state_threshold(event.trigger)
+        if cycle_system is not None and parsed_cycle_trigger is not None:
+            cycle_ids, cycle_rates = cycle_system
+            identifier, operator, threshold_expression = parsed_cycle_trigger
+            normalized_cycle_ids = [standardize_name(sid) for sid in cycle_ids]
+            trigger_index = next(
+                (
+                    index
+                    for index, sid in enumerate(normalized_cycle_ids)
+                    if sid == standardize_name(identifier)
+                ),
+                None,
+            )
+            if trigger_index is not None:
+                cycle_ids = cycle_ids[trigger_index:] + cycle_ids[:trigger_index]
+                cycle_rates = cycle_rates[trigger_index:] + cycle_rates[:trigger_index]
+
+            threshold_symbols = re.findall(
+                r"[A-Za-z_][A-Za-z0-9_]*", threshold_expression
+            )
+            delay_symbols = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", event.delay or "")
+            threshold = fold(threshold_expression, event_context=event)
+            delay_value = fold(event.delay, event_context=event) if event.delay else 0.0
+            state_values = {
+                sid: context.resolve_initial_value(sid) for sid in cycle_ids
+            }
+            cycle_event_is_supported = (
+                trigger_index is not None
+                and operator in {"lt", "leq", "gt", "geq"}
+                and not event.priority
+                and event.trigger_persistent
+                and event.use_values_from_trigger_time
+                and fold_initial(event.trigger) == 0
+                and threshold is not None
+                and math.isfinite(threshold)
+                and delay_value is not None
+                and math.isfinite(delay_value)
+                and delay_value >= 0
+                and all(
+                    context.is_compile_time_constant(symbol)
+                    for symbol in (*threshold_symbols, *delay_symbols)
+                )
+                and all(
+                    value is not None and math.isfinite(value) and value >= 0
+                    for value in state_values.values()
+                )
+                and abs(float(state_values[cycle_ids[0]]) - float(threshold))
+                > 1e-13
+                * max(
+                    1e-300,
+                    abs(float(threshold)),
+                    abs(float(state_values[cycle_ids[0]])),
+                )
+            )
+            assignment_targets: List[Tuple[str, str, str]] = []
+            seen_targets: set[str] = set()
+            if cycle_event_is_supported:
+                for assignment in event.assignments:
+                    variable, expression = _event_assignment(assignment)
+                    normalized_variable = standardize_name(variable)
+                    pattern = context.resolve_species_pattern(variable)
+                    if (
+                        normalized_variable not in normalized_cycle_ids
+                        or pattern is None
+                        or normalized_variable in seen_targets
+                        or not str(expression or "").strip()
+                    ):
+                        cycle_event_is_supported = False
+                        break
+                    seen_targets.add(normalized_variable)
+                    assignment_targets.append((variable, pattern, expression))
+                if not assignment_targets:
+                    cycle_event_is_supported = False
+
+            if cycle_event_is_supported:
+                current_values = tuple(float(state_values[sid]) for sid in cycle_ids)
+                current_time = 0.0
+                cycle_schedule = []
+                pending_actions: List[
+                    Tuple[
+                        float,
+                        List[Tuple[str, str, float]],
+                        List[Tuple[str, float]],
+                    ]
+                ] = []
+                trigger_active = False
+                event_armed = True
+                for _ in range(10_000):
+                    remaining = float(context.base_t_end) - current_time
+                    if remaining <= 1e-12:
+                        break
+                    crossing = _first_order_cycle_next_trigger_crossing(
+                        current_values,
+                        cycle_rates,
+                        float(threshold),
+                        operator,
+                        remaining,
+                    )
+                    if crossing is None:
+                        cycle_event_is_supported = False
+                        break
+                    crossing_delta, enters_true = crossing
+                    crossing_time = (
+                        current_time + crossing_delta
+                        if math.isfinite(crossing_delta)
+                        else math.inf
+                    )
+                    due_time = min(
+                        (item[0] for item in pending_actions), default=math.inf
+                    )
+                    if not math.isfinite(crossing_time) and not math.isfinite(due_time):
+                        break
+                    if (
+                        math.isfinite(crossing_time)
+                        and math.isfinite(due_time)
+                        and abs(crossing_time - due_time) <= 1e-12
+                    ):
+                        cycle_event_is_supported = False
+                        break
+                    if crossing_time < due_time:
+                        trajectory = _first_order_cycle_trajectory(
+                            current_values, cycle_rates
+                        )
+                        crossing_values = (
+                            trajectory.state_at(crossing_delta)
+                            if trajectory is not None
+                            else None
+                        )
+                        if crossing_values is None:
+                            cycle_event_is_supported = False
+                            break
+                        if enters_true == trigger_active:
+                            cycle_event_is_supported = False
+                            break
+                        current_values = crossing_values
+                        current_time = crossing_time
+                        trigger_active = enters_true
+                        if not enters_true:
+                            event_armed = True
+                        elif event_armed:
+                            trigger_snapshot = dict(zip(cycle_ids, crossing_values))
+                            next_values = dict(trigger_snapshot)
+                            scheduled_sets = []
+                            event_values = []
+                            for variable, pattern, expression in assignment_targets:
+                                value = fold_at_state(
+                                    expression,
+                                    crossing_time,
+                                    state_values=trigger_snapshot,
+                                    event_context=event,
+                                )
+                                if (
+                                    value is None
+                                    or not math.isfinite(value)
+                                    or value < 0
+                                ):
+                                    cycle_event_is_supported = False
+                                    break
+                                scheduled_sets.append(("conc", pattern, float(value)))
+                                normalized_variable = standardize_name(variable)
+                                event_values.append((normalized_variable, float(value)))
+                                target_id = next(
+                                    sid
+                                    for sid in cycle_ids
+                                    if standardize_name(sid) == normalized_variable
+                                )
+                                next_values[target_id] = float(value)
+                            if not cycle_event_is_supported:
+                                break
+                            event_armed = False
+                            if delay_value > 0:
+                                execution_time = crossing_time + float(delay_value)
+                                if execution_time <= float(context.base_t_end) + 1e-12:
+                                    pending_actions.append(
+                                        (
+                                            min(
+                                                execution_time,
+                                                float(context.base_t_end),
+                                            ),
+                                            scheduled_sets,
+                                            event_values,
+                                        )
+                                    )
+                            else:
+                                trigger_target = next_values[cycle_ids[0]]
+                                trigger_scale = max(
+                                    1e-300,
+                                    abs(float(threshold)),
+                                    abs(trigger_target),
+                                )
+                                if (
+                                    abs(trigger_target - float(threshold))
+                                    <= 1e-13 * trigger_scale
+                                ):
+                                    cycle_event_is_supported = False
+                                    break
+                                cycle_schedule.append(
+                                    (
+                                        crossing_time,
+                                        scheduled_sets,
+                                        0.0,
+                                        event,
+                                        False,
+                                        event_values,
+                                    )
+                                )
+                                post_trigger = fold_at_state(
+                                    event.trigger,
+                                    crossing_time,
+                                    state_values=next_values,
+                                    event_context=event,
+                                )
+                                if post_trigger is None or not math.isfinite(
+                                    post_trigger
+                                ):
+                                    cycle_event_is_supported = False
+                                    break
+                                trigger_active = post_trigger != 0
+                                if not trigger_active:
+                                    event_armed = True
+                                current_values = tuple(
+                                    next_values[sid] for sid in cycle_ids
+                                )
+                    else:
+                        trajectory = _first_order_cycle_trajectory(
+                            current_values, cycle_rates
+                        )
+                        due_delta = due_time - current_time
+                        due_values = (
+                            trajectory.state_at(due_delta)
+                            if trajectory is not None
+                            else None
+                        )
+                        if due_values is None:
+                            cycle_event_is_supported = False
+                            break
+                        current_values = due_values
+                        current_time = due_time
+                        due = [
+                            item
+                            for item in pending_actions
+                            if abs(item[0] - due_time) <= 1e-12
+                        ]
+                        if len(due) != 1:
+                            cycle_event_is_supported = False
+                            break
+                        pending_actions = [
+                            item for item in pending_actions if item is not due[0]
+                        ]
+                        next_values = dict(zip(cycle_ids, current_values))
+                        for normalized_variable, value in due[0][2]:
+                            target_id = next(
+                                sid
+                                for sid in cycle_ids
+                                if standardize_name(sid) == normalized_variable
+                            )
+                            next_values[target_id] = value
+                        post_trigger = fold_at_state(
+                            event.trigger,
+                            current_time,
+                            state_values=next_values,
+                            event_context=event,
+                        )
+                        if post_trigger is None or not math.isfinite(post_trigger):
+                            cycle_event_is_supported = False
+                            break
+                        trigger_target = next_values[cycle_ids[0]]
+                        trigger_scale = max(
+                            1e-300,
+                            abs(float(threshold)),
+                            abs(trigger_target),
+                        )
+                        if (
+                            abs(trigger_target - float(threshold))
+                            <= 1e-13 * trigger_scale
+                        ):
+                            cycle_event_is_supported = False
+                            break
+                        trigger_after_action = post_trigger != 0
+                        if not trigger_active and trigger_after_action:
+                            cycle_event_is_supported = False
+                            break
+                        if trigger_active and not trigger_after_action:
+                            event_armed = True
+                        trigger_active = trigger_after_action
+                        current_values = tuple(next_values[sid] for sid in cycle_ids)
+                        cycle_schedule.append(
+                            (
+                                current_time,
+                                due[0][1],
+                                0.0,
+                                event,
+                                False,
+                                due[0][2],
+                            )
+                        )
+                else:
+                    cycle_event_is_supported = False
+
+                if cycle_event_is_supported:
+                    scheduled.extend(cycle_schedule)
+                    recurrent_handled.add(id(event))
+                    normal_converted += 1
+                    if not cycle_schedule:
+                        event_proven_inactive.add(id(event))
+                        horizon_limited += 1
+
+    if len(events) == 1 and id(events[0]) not in recurrent_handled:
         event = events[0]
         parsed_difference = _parse_state_difference_threshold(event.trigger)
         difference_components = (
