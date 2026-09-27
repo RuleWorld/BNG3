@@ -7,6 +7,16 @@
 
 ## Current-source Atomizer cross-engine refresh — 2026-09-27
 
+Current pushed source (`22e5f3e`) also refreshed the 10-model, three-repeat
+BNG3/BNG2/PyBioNetGen benchmark in both modes. Modern BNG3 passes BNG2
+structural comparisons in 60/60 runs and normalized rate comparisons in 48/60.
+Legacy PyBioNetGen passes flat structural comparison in 21/30 and strict rate
+comparison in 3/30; its atomized output yields no BNG2-parseable networks for
+this cohort. Tracked BNG3 source was clean; only preserved offline artifacts
+made the worktree dirty. Report
+`/private/tmp/bng3-atomizer-cross-engine-curated-10-22e5f3e.json`, SHA-256
+`29c739acf82eb259df6157637b369738e67b067fef6c77aadc8cde2aa228de42`.
+
 Current-head cross-engine checks add three repetitions per mode for official
 case `semantic/01293`: modern BNG3 passes BNG2 network structure and rate checks
 in both modes; legacy PyBioNetGen passes flat mode but its atomized output has

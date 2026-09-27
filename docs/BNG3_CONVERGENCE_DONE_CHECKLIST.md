@@ -6686,6 +6686,15 @@ the other groups remain implementation targets.
 
 ## Current-source Atomizer cross-engine refresh — 2026-09-27
 
+- [x] Refreshed the 10-model, three-repeat benchmark on current BNG3 source
+  (`22e5f3e`), using both flat and atomized modes. Modern BNG3 produced 60/60
+  structurally matching BNG2 networks and 48/60 exact normalized rate matches.
+  Legacy PyBioNetGen produced 21/60 flat structural matches and 3/60 strict
+  rate matches; its atomized path produced no BNG2-parseable network in this
+  cohort. BNG3 tracked source was clean; preserved offline bundle artifacts
+  account for the dirty worktree marker. Report
+  `/private/tmp/bng3-atomizer-cross-engine-curated-10-22e5f3e.json`, SHA-256
+  `29c739acf82eb259df6157637b369738e67b067fef6c77aadc8cde2aa228de42`.
 - [x] Official SBML Test Suite case `semantic/01293` runs through the modern
   BNG3 Atomizer and independent PyBioNetGen Atomizer, with both outputs checked
   by BNG3 and Perl BNG2. Modern BNG3 passes structure and rate checks in flat
