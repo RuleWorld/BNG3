@@ -1,10 +1,10 @@
 # BNG3 Convergence: Definition of Done and Remaining Checklist
 
 **Status:** Active; not complete
-**Last targeted audit:** 2026-09-26 (full convergence checklist remains open)
+**Last targeted audit:** 2026-09-27 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
 **Working branch:** `main`
-**Current base:** `main` at `f392751c151f76ac8f6e061685c7410ce73f1b6a`; latest full curated BioModels and exact-head CI evidence are recorded below
+**Current base:** Atomizer source at `9e3013f7622ee07660574f0f3d3909104ad71a8d`; full curated BioModels refresh is running against this source
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
