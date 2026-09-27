@@ -5,6 +5,20 @@
 **Branch:** `main`
 **Status:** merged convergence, nonequilibrium energy, and SBML material-gap work; release validation remains incomplete
 
+## Delayed affine state-reset events — 2026-09-27
+
+Atomizer now recognizes repeatable event resets over affine state trajectories,
+including delayed assignments and trigger-time snapshots. It avoids emitting a
+state change when the first delayed firing is beyond the requested horizon.
+Official SBML Test Suite cases `semantic/01701` and `01702` pass individually
+with BNG3/libRoadRunner parity. Seven focused regressions and the full Python
+suite pass (`616 passed, 28 skipped`). Full pinned SBML suite improved from
+`1,633/290/0/0` to `1,637/286/0/0`; gains are cases `01689`, `01692`, `01701`,
+and `01702`, with no regressions. The supported-surface gate passes; the core
+gate remains open on 286 unsupported cases. Curated BioModels rerun remains
+pending. Report `/private/tmp/bng3-affine-state-reset-final.json` (SHA-256
+`95ab59783cef4bb63bc640d514b3c198cd44a80566e0591cc6b61126637bfcfc`).
+
 ## Simultaneous fixed-time event priorities — 2026-09-27
 
 Atomizer now recalculates dynamic priorities between simultaneous events when

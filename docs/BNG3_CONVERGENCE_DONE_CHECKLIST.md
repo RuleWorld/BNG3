@@ -6684,6 +6684,33 @@ the other groups remain implementation targets.
   `3b11d9f1943fbaf2965d45c82731cbe50e34da5ffc7f508f7108a6e566d8bcf8`.
 - [ ] Rerun full curated BioModels flat/atomized inventory against final source.
 
+## Delayed affine state-reset events — 2026-09-27
+
+- [x] Schedule a self-reset event over a proven affine state trajectory, including
+  delayed execution, trigger-time versus execution-time assignment values, and
+  repeated crossings. If the first delayed state change is beyond the requested
+  horizon, omit the event from that run; retain recurrence scheduling when it
+  falls within the horizon.
+- [x] Official `semantic/01701` and `semantic/01702` convert, roundtrip, and
+  match libRoadRunner 2.10.0 at the one-unit horizon. Both have no observable
+  state change before the delayed reset at t=3.1 (11 samples, one observable,
+  max absolute difference `1.7763568394002505e-15` each). Reports:
+  `/private/tmp/bng3-semantic-01701-final.json`, SHA-256
+  `740610e5f19c64b2c85bc0ae9859a201141e56ac395e4924be5bc261010942ef`; and
+  `/private/tmp/bng3-semantic-01702-final.json`, SHA-256
+  `24120587b3a86d0178e7b0f393b4fe04dd729d16781629094807925dab5b44d7`.
+- [x] Seven focused event/parity regressions pass; full Python suite:
+  `616 passed, 28 skipped`. Black (`py39`), Ruff, and `git diff --check` pass.
+- [x] Full pinned SBML Test Suite: `1,637 passed, 286 unsupported, 0 failed,
+  0 timeouts`; gains are `semantic/01689`, `01692`, `01701`, and `01702`, with
+  no prior pass regressed. Report
+  `/private/tmp/bng3-affine-state-reset-final.json`, SHA-256
+  `95ab59783cef4bb63bc640d514b3c198cd44a80566e0591cc6b61126637bfcfc`.
+  The supported-surface gate passes; aggregate core gate remains open due to
+  the 286 remaining unsupported cases.
+- [ ] Rerun the full curated BioModels flat/atomized inventory against the
+  finalized implementation.
+
 ## Static parameter event edges — 2026-09-27
 
 - [x] Omit a parameter-only event proven unable to fire: its initial predicate

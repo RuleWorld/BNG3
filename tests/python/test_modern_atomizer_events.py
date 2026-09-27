@@ -834,6 +834,113 @@ def test_initially_true_parameter_trigger_fires_when_initial_value_is_false():
     ) > result.actions_block.index("t_end=>2.3")
 
 
+def test_state_reset_event_with_no_execution_before_horizon_is_deferred():
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLEventAssignment
+
+    event = SBMLEvent(
+        id="delayed-reset",
+        trigger="leq(P1, 8.9)",
+        delay="2",
+        trigger_initial_value=True,
+        assignments=[SBMLEventAssignment("P1", "P1 + 3")],
+    )
+    result = synthesize_event_actions(
+        [event],
+        EventTranslationContext(
+            resolve_species_pattern=lambda _identifier: None,
+            resolve_param=lambda _identifier: None,
+            is_param=lambda identifier: identifier == "P1",
+            is_compile_time_constant=lambda _identifier: False,
+            resolve_initial_value=lambda identifier: 10 if identifier == "P1" else None,
+            resolve_affine_rate_for_event=lambda identifier, _event: (
+                (10, -1) if identifier == "P1" else None
+            ),
+            base_t_end=1,
+        ),
+    )
+
+    assert result.converted == 0
+    assert result.untranslated == []
+    assert result.actions_block is None
+
+
+def test_state_reset_event_executes_inside_horizon():
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLEventAssignment
+
+    event = SBMLEvent(
+        id="delayed-reset",
+        trigger="leq(P1, 8.9)",
+        delay="2",
+        trigger_initial_value=True,
+        assignments=[SBMLEventAssignment("P1", "P1 + 3")],
+    )
+    result = synthesize_event_actions(
+        [event],
+        EventTranslationContext(
+            resolve_species_pattern=lambda _identifier: None,
+            resolve_param=lambda _identifier: None,
+            is_param=lambda identifier: identifier == "P1",
+            is_compile_time_constant=lambda _identifier: False,
+            resolve_initial_value=lambda identifier: 10 if identifier == "P1" else None,
+            resolve_affine_rate_for_event=lambda identifier, _event: (
+                (10, -1) if identifier == "P1" else None
+            ),
+            base_t_end=4,
+        ),
+    )
+
+    assert result.converted == 1
+    assert result.horizon_limited == 0
+    assert result.untranslated == []
+    assert result.actions_block is not None
+    assert 'setParameter("P1", "11.9")' in result.actions_block
+
+
+def test_delayed_affine_reset_event_repeats_until_the_horizon():
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLEventAssignment
+
+    event = SBMLEvent(
+        id="delayed-reset",
+        trigger="leq(P1, 8.9)",
+        delay="2",
+        trigger_initial_value=True,
+        assignments=[SBMLEventAssignment("P1", "P1 + 3")],
+    )
+    result = synthesize_event_actions(
+        [event],
+        EventTranslationContext(
+            resolve_species_pattern=lambda _identifier: None,
+            resolve_param=lambda _identifier: None,
+            is_param=lambda identifier: identifier == "P1",
+            is_compile_time_constant=lambda _identifier: False,
+            resolve_initial_value=lambda identifier: 10 if identifier == "P1" else None,
+            resolve_affine_rate_for_event=lambda identifier, _event: (
+                (10, -1) if identifier == "P1" else None
+            ),
+            base_t_end=10,
+        ),
+    )
+
+    assert result.converted == 1
+    assert result.untranslated == []
+    assert result.actions_block is not None
+    first_execution = result.actions_block.index("t_end=>3.1")
+    second_execution = result.actions_block.index("t_end=>8.1")
+    assert first_execution < second_execution
+
+
 def test_simultaneous_event_priorities_recompute_after_each_assignment():
     from bionetgen.atomizer.modern.events import (
         EventTranslationContext,

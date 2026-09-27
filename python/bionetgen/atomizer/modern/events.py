@@ -3613,7 +3613,7 @@ def synthesize_event_actions(
                     else None
                 )
                 trajectory = None
-                if not rate_of_threshold and not event_changes_trigger_state:
+                if not rate_of_threshold:
                     if difference_trajectories and all(difference_trajectories):
                         left, right = difference_trajectories
                         assert left is not None and right is not None
