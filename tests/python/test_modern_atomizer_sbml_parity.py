@@ -1120,6 +1120,61 @@ def test_delayed_quadratic_state_events_recur_and_match_libroadrunner(tmp_path):
         assert float(np.max(np.abs(bng_values - rr_values))) <= max(5e-12, 1e-6 * scale)
 
 
+def test_quadratic_state_event_resolves_species_initial_assignments(tmp_path):
+    import numpy as np
+    import pytest
+
+    roadrunner = pytest.importorskip("roadrunner")
+    from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.model import load
+
+    xml = _quadratic_reentrant_event_model()
+    xml = xml.replace('initialAmount="2"', 'initialAmount="5"')
+    xml = xml.replace(
+        "</listOfParameters>",
+        '<parameter id="p1" value="0.5" constant="true"/></listOfParameters>',
+    )
+    xml = xml.replace(
+        "<listOfReactions>",
+        """<listOfInitialAssignments>
+          <initialAssignment symbol="B"><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><divide/><ci>A</ci><ci>p1</ci></apply>
+          </math></initialAssignment>
+        </listOfInitialAssignments><listOfReactions>""",
+    )
+    result = Atomizer(quiet_mode=True, t_end=10, n_steps=600).atomize(xml)
+
+    assert result.success, result.error
+    assert "Events NOT simulated" not in result.bngl
+
+    model_path = tmp_path / "quadratic_event_with_species_initial_assignment.bngl"
+    model_path.write_text(result.bngl, encoding="utf-8")
+    load(model_path).execute()
+    lines = model_path.with_suffix(".gdat").read_text().splitlines()
+    columns = lines[0].lstrip("# ").split()
+    bng_data = np.loadtxt(lines[1:])
+    times = bng_data[:, columns.index("time")]
+
+    rr = roadrunner.RoadRunner(xml)
+    rr.integrator.setValue("relative_tolerance", 1e-9)
+    rr.integrator.setValue("absolute_tolerance", 1e-12)
+    rr.timeCourseSelections = ["time", "[A]", "[B]", "[D]"]
+    reference = rr.simulate(times=times)
+
+    state_columns = [columns.index(species) for species in ("A", "B", "D")]
+    changes = np.abs(np.diff(bng_data[:, state_columns], axis=0))
+    jump_indices = np.flatnonzero(np.max(changes, axis=1) > 0.2)
+    assert len(jump_indices) >= 1
+    compare = np.ones(len(times), dtype=bool)
+    compare[jump_indices] = False
+    compare[jump_indices + 1] = False
+    for species in ("A", "B", "D"):
+        bng_values = bng_data[compare, columns.index(species)]
+        rr_values = reference[compare, reference.colnames.index(f"[{species}]")]
+        scale = max(float(np.max(np.abs(bng_values))), float(np.max(np.abs(rr_values))))
+        assert float(np.max(np.abs(bng_values - rr_values))) <= max(5e-12, 1e-6 * scale)
+
+
 def _independent_component_quadratic_event_model(
     *, coupled_rate: bool = False, reverse_reaction: bool = False, delay: float = 0
 ) -> str:

@@ -6113,6 +6113,7 @@ def generate_bngl(
             return amount / volume if volume != 0 else None
 
         initial_event_rule_stack: set[str] = set()
+        initial_event_assignment_stack: set[str] = set()
 
         def resolve_initial_event_value(identifier: str) -> Optional[float]:
             if identifier == "__Avogadro__":
@@ -6179,17 +6180,25 @@ def generate_bngl(
                 ),
                 None,
             )
-            if (
-                species_id is None
-                or any(
-                    rule.variable == species_id for rule in model.rules if rule.variable
-                )
-                or any(
-                    assignment.symbol == species_id
-                    for assignment in model.initial_assignments
-                )
+            if species_id is None or any(
+                rule.variable == species_id for rule in model.rules if rule.variable
             ):
                 return None
+            if species_id in initial_assignment_values:
+                if (
+                    species_id in duplicate_initial_assignments
+                    or species_id in initial_event_assignment_stack
+                ):
+                    return None
+                initial_event_assignment_stack.add(species_id)
+                expression = extend_function(
+                    initial_assignment_values[species_id],
+                    {},
+                    model.function_definitions,
+                )
+                value = fold_numeric(expression, resolve_initial_event_value)
+                initial_event_assignment_stack.remove(species_id)
+                return value if value is not None and math.isfinite(value) else None
             species = model.species[species_id]
             compartment = model.compartments.get(species.compartment or "")
             volume = (
@@ -7426,13 +7435,29 @@ def generate_bngl(
             )
             return (id(event_context), "", normalized_values)
 
+        def quadratic_species_initial_assignments_are_supported() -> bool:
+            seen: set[str] = set()
+            for assignment in model.initial_assignments:
+                symbol = str(assignment.symbol or "")
+                if (
+                    symbol not in model.species
+                    or symbol in seen
+                    or symbol in duplicate_initial_assignments
+                ):
+                    return False
+                value = resolve_initial_event_value(symbol)
+                if value is None or not math.isfinite(value):
+                    return False
+                seen.add(symbol)
+            return True
+
         def resolve_quadratic_event_rate(
             identifier: str,
             event_context: SBMLEvent,
             state_values: Optional[Mapping[str, float]] = None,
         ) -> Optional[Tuple[float, float, float, float]]:
             """Resolve a scalar quadratic ODE in a rank-one reaction network."""
-            if model.initial_assignments or any(
+            if not quadratic_species_initial_assignments_are_supported() or any(
                 rule.type == "algebraic" for rule in model.rules
             ):
                 return None

@@ -4,7 +4,7 @@
 **Last targeted audit:** 2026-09-27 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
 **Working branch:** `plan/nfsim-gpu-perf`
-**Latest full pinned SBML Test Suite report:** local Atomizer source after delayed quadratic event support; suite commit `cf38585fac5de8e0e90112febb62851ee2181816`, `1,661 passed / 262 unsupported / 0 failed / 0 timed out`. Report `/private/tmp/bng3-delayed-quadratic-full-current.json`, SHA-256 `2192db808c6c01f0bb6549a2726cf151b0d997783ddb163abbe112cfc509cddc`.
+**Latest full pinned SBML Test Suite report:** local Atomizer source after species initial-assignment support; suite commit `cf38585fac5de8e0e90112febb62851ee2181816`, `1,670 passed / 253 unsupported / 0 failed / 0 timed out`. Report `/private/tmp/bng3-initial-assignment-full-verified.json`, SHA-256 `f284d39ad69146fb4eac0900c17a5fd8ace7ff1e3804124efba89646238b4079`.
 **Latest full curated BioModels report:** `be5bdcf` code source (repository head `0da6020` after a docs-only commit); `792/1,083` SBML-path records passed, with no status changes against the previous full report.
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
@@ -7314,4 +7314,36 @@ the other groups remain implementation targets.
   were present; it remained CPU-bound in `tests/python/test_cpp_backend.py`
   until stopped. The 406-test Atomizer result above is the completed Python
   validation for this slice.
+- [ ] Rerun the full curated BioModels inventory against the finalized source.
+
+## Quadratic state events with species initial assignments — 2026-09-27
+
+- [x] Resolve finite, acyclic species initial assignments when constructing
+  the event trajectory at simulation start. Reject duplicate, cyclic,
+  unresolved, and non-species targets. In particular, species-reference
+  stoichiometry and other non-species initial assignments remain unsupported.
+  This follows SBML's definition that initial assignments set values through
+  `t=0` ([SBML Level 3 Version 2 Core, §4.8](https://sbml.org/specifications/sbml-level-3/version-2/core/release-2/sbml-level-3-version-2-release-2-core.pdf)).
+- [x] Add a libRoadRunner parity regression where the declared initial amount
+  differs from the value produced by an initial assignment. Focused Atomizer
+  suite: `407 passed, 1 skipped`; Ruff, Black (`py39`), and `git diff --check`
+  pass.
+- [x] Full pinned SBML Test Suite at suite commit
+  `cf38585fac5de8e0e90112febb62851ee2181816`, `t_end=1`, and 10 samples:
+  `1,670 passed, 253 unsupported, 0 failed, 0 timed out`. Nine cases gained
+  status and no previous pass regressed: `semantic/00754`, `00755`, `00756`,
+  `00771`, `00772`, `00773`, `00789`, `00790`, and `00791`. The supported
+  surface passes; the aggregate core gate remains open. Reference-result
+  conformance was not run. Report
+  `/private/tmp/bng3-initial-assignment-full-verified.json`, SHA-256
+  `f284d39ad69146fb4eac0900c17a5fd8ace7ff1e3804124efba89646238b4079`.
+- [x] All nine gained cases pass individual conversion, XML roundtrip,
+  native-reader, and BNG3/libRoadRunner CVODE checks at `t=20` with 1,200
+  steps and six observables per case. Maximum absolute difference across all
+  observables is `5.771522149089492e-11`. Cohort summary:
+  `/private/tmp/bng3-initial-assignment-t20-cohort-summary.json`, SHA-256
+  `0bb7125da7e15d31603d6be74ff54dca53f49375c03e9db3066a6c419c458c56`.
+- [ ] The full Python suite remains incomplete: its earlier run stalled in
+  `tests/python/test_cpp_backend.py` while concurrent NFsim changes were
+  present. Focused Atomizer tests above completed for this slice.
 - [ ] Rerun the full curated BioModels inventory against the finalized source.

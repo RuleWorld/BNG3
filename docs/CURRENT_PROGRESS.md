@@ -3,7 +3,37 @@
 **Last targeted audit:** 2026-09-27 (full convergence checklist not re-audited)
 **Repository:** `RuleWorld/BNG3`
 **Branch:** `plan/nfsim-gpu-perf`
-**Status:** Atomizer first-order cycle and delayed quadratic events validated; overall convergence and release validation remain incomplete
+**Status:** Atomizer cycle, delayed quadratic, and static species-initial-assignment events validated; overall convergence and release validation remain incomplete
+
+## Quadratic state events with species initial assignments — 2026-09-27
+
+The quadratic event resolver now evaluates finite, acyclic initial assignments
+whose targets are species before constructing the t=0 trajectory. It rejects
+duplicate, cyclic, unresolved, or non-species targets, including species
+reference stoichiometry. This matches SBML's rule that initial assignments set
+values through simulation start; the resolver supports only the species-target
+subset ([SBML Level 3 Version 2 Core, §4.8](https://sbml.org/specifications/sbml-level-3/version-2/core/release-2/sbml-level-3-version-2-release-2-core.pdf)).
+
+The focused Atomizer suite passes `407` tests with `1` skipped. Ruff, Black
+(`py39`), and `git diff --check` pass. The full Python suite remains
+incomplete: its earlier run stalled in `tests/python/test_cpp_backend.py` while
+concurrent NFsim changes were present.
+
+The full pinned SBML Test Suite (`cf38585fac5de8e0e90112febb62851ee2181816`,
+`t_end=1`, 10 samples) reports `1,670 passed, 253 unsupported, 0 failed, 0
+timed out`. Nine semantic cases gained status and no previous pass regressed:
+`00754`, `00755`, `00756`, `00771`, `00772`, `00773`, `00789`, `00790`, and
+`00791`. The supported-surface gate passes; the aggregate core gate remains
+open. SBML reference-result conformance was not run. Report
+`/private/tmp/bng3-initial-assignment-full-verified.json`, SHA-256
+`f284d39ad69146fb4eac0900c17a5fd8ace7ff1e3804124efba89646238b4079`.
+
+All nine gained cases pass individual conversion, XML roundtrip, native-reader,
+and BNG3/libRoadRunner CVODE checks at `t=20` with 1,200 steps and six
+observables per case. Maximum absolute difference across all observables is
+`5.771522149089492e-11`. Cohort summary:
+`/private/tmp/bng3-initial-assignment-t20-cohort-summary.json`, SHA-256
+`0bb7125da7e15d31603d6be74ff54dca53f49375c03e9db3066a6c419c458c56`.
 
 ## Delayed quadratic state events with trigger-time snapshots — 2026-09-27
 
