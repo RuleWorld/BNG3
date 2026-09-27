@@ -7247,8 +7247,8 @@ def generate_bngl(
         ) -> Optional[Tuple[float, float, float, float]]:
             """Resolve a scalar quadratic ODE in a rank-one reaction network."""
             if (
-                model.rules
-                or model.initial_assignments
+                model.initial_assignments
+                or any(rule.type == "algebraic" for rule in model.rules)
                 or any(
                     event is not event_context and event.assignments
                     for event in model.events
@@ -7394,6 +7394,40 @@ def generate_bngl(
                     | item[2]
                 )
             ]
+            rule_targets = {
+                standardize_name(rule.variable) for rule in model.rules if rule.variable
+            }
+
+            def referenced_symbols(expression: str) -> set[str]:
+                expanded = extend_function(
+                    str(expression or ""), {}, model.function_definitions
+                )
+                return {
+                    standardize_name(symbol)
+                    for symbol in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", expanded)
+                }
+
+            active_species_names = {
+                standardize_name(species_id) for species_id in active_dynamic_species
+            }
+            active_compartment_names = {
+                standardize_name(model.species[species_id].compartment)
+                for species_id in active_dynamic_species
+                if model.species[species_id].compartment
+            }
+            if rule_targets & (active_species_names | active_compartment_names):
+                return None
+            if rule_targets & referenced_symbols(event_context.trigger):
+                return None
+            for reaction, _vector, _variable_stoichiometry in reaction_vectors:
+                kinetic_law = reaction.kinetic_law
+                rate_expression = str(
+                    getattr(kinetic_law, "math", "")
+                    or (kinetic_law.get("math", "") if kinetic_law else "")
+                    or ""
+                )
+                if rule_targets & referenced_symbols(rate_expression):
+                    return None
             if any(
                 reaction.fast or reaction.conversion_factor or variable_stoichiometry
                 for reaction, _vector, variable_stoichiometry in reaction_vectors

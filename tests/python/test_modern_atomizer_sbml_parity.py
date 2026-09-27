@@ -1201,6 +1201,102 @@ def test_quadratic_state_event_rejects_kinetic_coupling_to_an_independent_compon
     assert "Events NOT simulated" in result.bngl
 
 
+def test_quadratic_event_ignores_rules_outside_trigger_component():
+    from bionetgen.atomizer.modern import Atomizer
+
+    # SBML Test Suite semantic/00652 has one first-order reversible component
+    # plus a downstream assignment rule and an independent rate-ruled species.
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="quadratic_event_with_unrelated_rules">
+        <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies>
+          <species id="S1" compartment="C" initialAmount="0.00001" hasOnlySubstanceUnits="false"/>
+          <species id="S2" compartment="C" initialAmount="0.000015" hasOnlySubstanceUnits="false"/>
+          <species id="S3" compartment="C" initialAmount="0.00001" hasOnlySubstanceUnits="false"/>
+          <species id="S4" compartment="C" initialAmount="2.25" hasOnlySubstanceUnits="false"/>
+        </listOfSpecies>
+        <listOfParameters>
+          <parameter id="k1" value="0.015" constant="true"/>
+          <parameter id="k2" value="0.5" constant="true"/>
+          <parameter id="k3" value="1.5" constant="true"/>
+        </listOfParameters>
+        <listOfRules>
+          <assignmentRule variable="S4"><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><times/><ci>k3</ci><ci>S1</ci></apply>
+          </math></assignmentRule>
+          <rateRule variable="S2"><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><minus/><apply><times/><ci>k2</ci><ci>S3</ci></apply>
+              <apply><times/><ci>k1</ci><ci>S1</ci></apply>
+            </apply>
+          </math></rateRule>
+        </listOfRules>
+        <listOfReactions>
+          <reaction id="forward" reversible="false">
+            <listOfReactants><speciesReference species="S1"/></listOfReactants>
+            <listOfProducts><speciesReference species="S3"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><times/><ci>C</ci><ci>k1</ci><ci>S1</ci></apply>
+            </math></kineticLaw>
+          </reaction>
+          <reaction id="reverse" reversible="false">
+            <listOfReactants><speciesReference species="S3"/></listOfReactants>
+            <listOfProducts><speciesReference species="S1"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><times/><ci>C</ci><ci>k2</ci><ci>S3</ci></apply>
+            </math></kineticLaw>
+          </reaction>
+        </listOfReactions>
+        <listOfEvents><event id="reset" useValuesFromTriggerTime="true">
+          <trigger initialValue="true" persistent="true">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><gt/><ci>S1</ci><cn>0.000015</cn></apply>
+            </math>
+          </trigger>
+          <listOfEventAssignments><eventAssignment variable="S3">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0.00001</cn></math>
+          </eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True, t_end=1, n_steps=10).atomize(xml)
+
+    assert result.success, result.error
+    assert "state-dependent or non-constant event" not in result.bngl
+    assert "Events NOT simulated" not in result.bngl
+
+    active_rule_xml = xml.replace(
+        '<rateRule variable="S2">', '<rateRule variable="S1">'
+    )
+    active_rule_result = Atomizer(quiet_mode=True, t_end=1, n_steps=10).atomize(
+        active_rule_xml
+    )
+
+    assert active_rule_result.success, active_rule_result.error
+    assert "Events NOT simulated" in active_rule_result.bngl
+
+    trigger_rule_xml = (
+        xml.replace(
+            "</listOfParameters>",
+            '<parameter id="k4" value="0.000014" constant="false"/>'
+            "</listOfParameters>",
+        )
+        .replace(
+            "</listOfRules>",
+            '<rateRule variable="k4"><math '
+            'xmlns="http://www.w3.org/1998/Math/MathML"><cn>0.00001</cn>'
+            "</math></rateRule></listOfRules>",
+        )
+        .replace("<cn>0.000015</cn>", "<ci>k4</ci>")
+    )
+    trigger_rule_result = Atomizer(quiet_mode=True, t_end=1, n_steps=10).atomize(
+        trigger_rule_xml
+    )
+
+    assert trigger_rule_result.success, trigger_rule_result.error
+    assert "Events NOT simulated" in trigger_rule_result.bngl
+
+
 def test_quadratic_event_staying_true_after_reset_does_not_refire():
     from bionetgen.atomizer.modern import Atomizer
 

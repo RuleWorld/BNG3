@@ -83,6 +83,32 @@ reference-result conformance remains untested. Report:
 Full Python suite: `636 passed, 28 skipped`; Ruff, Black (`py39`), and
 `git diff --check` pass.
 
+## Quadratic event proofs with rules outside the trigger component — 2026-09-27
+
+The event resolver now admits assignment and rate rules that do not target the
+active trigger species or compartment and do not feed the event trigger or an
+active reaction rate. Active-component rule targets, rule-controlled trigger
+thresholds, initial assignments, algebraic rules, and other assigned events
+still fail closed. Regressions cover the active-species and trigger-threshold
+guards.
+
+Official SBML Test Suite cases `semantic/00652`-`00654` pass individually at
+`t_end=1` with seven observable comparisons each (maximum absolute difference
+`1.67e-11`). `00652` also passes at `t_end=2` and `5`, where the state-triggered
+event is scheduled, with maximum differences `1.67e-11` and `1.77e-11`. These
+are partial reports and do not test SBML reference-result conformance. Full
+Python suite: `639 passed, 28 skipped`; Ruff, Black (`py39`), and diff checks
+pass.
+
+The three-repeat BNG2 benchmark is deterministic in flat and atomized modes.
+Modern BNG3 network structure matches in 3/3 repeats per mode; the rate
+comparator flags the S2 formula because BNG2 includes an explicit leading
+factor of `1`. Legacy PyBioNetGen matches structure and rates in 3/3 repeats
+per mode. This benchmark checks network structure and rate expressions, not
+trajectory parity. The full SBML Test Suite and curated BioModels aggregates
+were not rerun and remain tied to source `a0ff898`. Reports and hashes are in
+[`BNG3_CONVERGENCE_DONE_CHECKLIST.md`](BNG3_CONVERGENCE_DONE_CHECKLIST.md).
+
 The full offline curated BioModels both-mode run on `a0ff898` completed with
 `792/1,083` SBML passed, 109 unsupported, 5 failed, and 177 timed out. The
 previous report had 794 passed, 109 unsupported, 6 failed, and 174 timeouts.

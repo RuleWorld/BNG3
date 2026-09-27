@@ -151,6 +151,44 @@ capability inventory.
   `/private/tmp/bng3-independent-components-biomodels-both.json`, SHA-256
   `d2b88728d842b3d443783b11d8f546013d91ca94421865c1b40ee6d477487d03`.
 
+## Quadratic event proofs with rules outside the trigger component — 2026-09-27
+
+- [x] The rank-one event resolver now allows assignment and rate rules when
+  they do not target the active trigger species or its compartment, and are
+  not referenced by the event trigger or an active reaction rate. Initial
+  assignments, algebraic rules, active-component rule targets, and competing
+  assigned events remain fail-closed. Focused regressions confirm that a rule
+  on the trigger species or a rule-controlled trigger threshold keeps the
+  event untranslated.
+- [x] Official `semantic/00652`-`00654` records pass individually at
+  `t_end=1`, 10 steps. Each passes conversion, round-trip, native-reader, and
+  BNG3/libRoadRunner comparison for seven observables; maximum absolute
+  difference is `1.67e-11`. The horizon proof establishes no event action is
+  needed in this interval. `semantic/00652` also passes when its event is
+  scheduled at `t_end=2` and `5` (21 and 51 samples, respectively; maxima
+  `1.67e-11` and `1.77e-11`). All are partial one-case reports; reference-result
+  conformance was not run.
+- [x] Full Python suite: `639 passed, 28 skipped`; Ruff, Black (`py39`), and
+  `git diff --check` pass.
+- [x] Three-repeat cross-engine benchmark on `semantic/00652` is deterministic
+  in flat and atomized modes. Modern BNG3 has BNG2 structural parity in 3/3
+  repeats per mode; the rate comparator reports 0/3 because the `S2` rate
+  expressions differ by an explicit multiplicative `1` (`1*(...)` versus
+  `(...)`). This is recorded as a comparator failure, not a rate-parity pass.
+  Legacy PyBioNetGen has structure and rate parity in 3/3 repeats per mode.
+  This is network-level evidence, not trajectory parity.
+- [ ] The full SBML Test Suite and curated BioModels aggregates were not rerun;
+  aggregate results remain tied to source `a0ff898`.
+
+Targeted report SHA-256 values: `00652` at `t_end=1`,
+`6de1084d7b716f2669c650b5b5e8e86fb978f85a84f38dfcb0df32b241282a9b`;
+`00653`, `7ee907a4e8ea5e6ac2333a8cba4f334ac2e1a995ab3dae944c1bb76b52d89563`;
+`00654`, `fa3ee36161ba65dcc09f7729e70bcdfb7854f6c2e5e300017b50e1b4fadd4430`;
+`00652` at `t_end=2`, `135a9f71b83df0dc12a39011b533e8b0e5a8ac85cbe4f2cb75f5a5f8a7d55d15`;
+at `t_end=5`, `536a2d80a85df33498b175f5f87b138a62ca6b24ccd102b89f20386386172c95`.
+Cross-engine report `/private/tmp/bng3-atomizer-cross-engine-event-rules-00652-20260927.json`,
+SHA-256 `517057f7cd8f9cb40a22177787d21f2663ce32efa75922e49472f7fa0a4aedad`.
+
 ## Remaining unsupported SBML Test Suite triage — prior ODE-selected baseline
 
 - [x] Prior full pinned SBML Test Suite after the quadratic recurrence batch,
