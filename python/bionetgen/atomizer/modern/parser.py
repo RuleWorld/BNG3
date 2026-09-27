@@ -2843,18 +2843,28 @@ class SBMLParser:
         functions = SBMLParser._parse_xml_functions(
             model, parameter_aliases, math_warnings
         )
-        events = SBMLParser._parse_xml_events(model, parameter_aliases)
+        level = _attribute(root, "level")
+        try:
+            level_value = int(level) if level is not None else None
+        except (TypeError, ValueError):
+            level_value = None
+        version = _attribute(root, "version")
+        try:
+            version_value = int(version) if version is not None else None
+        except (TypeError, ValueError):
+            version_value = None
+        events = SBMLParser._parse_xml_events(
+            model,
+            parameter_aliases,
+            level=level_value,
+            version=version_value,
+        )
         initial_assignments = SBMLParser._parse_xml_initial_assignments(
             model, parameter_aliases, math_warnings
         )
         species_by_compartment: Dict[str, List[str]] = OrderedDict()
         for species_id, item in species.items():
             species_by_compartment.setdefault(item.compartment, []).append(species_id)
-        level = _attribute(root, "level")
-        try:
-            level_value = int(level) if level is not None else None
-        except (TypeError, ValueError):
-            level_value = None
         model_id = str(_attribute(model, "id", "model") or "model")
         declared_package_uris = (
             dict(declared_packages)
@@ -2899,11 +2909,7 @@ class SBMLParser:
             species_by_compartment=species_by_compartment,
             unit_definitions=SBMLParser._parse_xml_units(model),
             level=level_value,
-            version=(
-                int(_attribute(root, "version"))
-                if str(_attribute(root, "version", "")).isdigit()
-                else None
-            ),
+            version=version_value,
             substance_units=str(_attribute(model, "substanceUnits", "") or ""),
             time_units=str(_attribute(model, "timeUnits", "") or ""),
             volume_units=str(_attribute(model, "volumeUnits", "") or ""),
@@ -3929,7 +3935,11 @@ class SBMLParser:
 
     @staticmethod
     def _parse_xml_events(
-        model: Any, parameter_aliases: Optional[Dict[str, str]] = None
+        model: Any,
+        parameter_aliases: Optional[Dict[str, str]] = None,
+        *,
+        level: Optional[int] = None,
+        version: Optional[int] = None,
     ) -> List[SBMLEvent]:
         result: List[SBMLEvent] = []
         for index, item in enumerate(
@@ -3940,11 +3950,22 @@ class SBMLParser:
             assignments = []
             if assignments_parent is not None:
                 for assignment in _children(assignments_parent, "eventAssignment"):
+                    assignment_math = SBMLParser._xml_math(assignment)
+                    if (
+                        not assignment_math
+                        and level == 3
+                        and version is not None
+                        and version >= 2
+                    ):
+                        # In SBML Level 3 Version 2, EventAssignment.math is
+                        # optional; omitting it is equivalent to omitting the
+                        # EventAssignment itself.
+                        continue
                     assignments.append(
                         (
                             str(_attribute(assignment, "variable", "") or ""),
                             SBMLParser._normalize_formula_identifiers(
-                                SBMLParser._xml_math(assignment), parameter_aliases
+                                assignment_math, parameter_aliases
                             ),
                         )
                     )

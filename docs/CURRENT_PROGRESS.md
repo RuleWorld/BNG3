@@ -2124,3 +2124,10 @@ modern BNG3 Atomizer and legacy PyBioNetGen Atomizer, using BNG3 and Perl BNG2
 network generation. This is network-level evidence, not trajectory parity.
 Report `/private/tmp/bng3-atomizer-cross-engine-00932.json`, SHA-256
 `9492f3ea454fbef18e0361eb50ef0ce79597ad10a5b630a81b25e0f8b2c77db0`.
+
+SBML Level 3 Version 2 EventAssignments without MathML are now omitted during
+Atomizer parsing, as specified. `semantic/01605` now passes conversion,
+round-trip, native-reader, and BNG3/libRoadRunner checks for two observables.
+The full pinned suite is `1,630 passed, 293 unsupported, 0 failed, 0 timeouts`
+(one gain, no regressions); full Python is `609 passed, 28 skipped`. Full
+curated BioModels validation must still be rerun against this exact source.

@@ -6644,3 +6644,22 @@ the other groups remain implementation targets.
   SHA-256 `cb2a68ed2c27c6fd6b23221645e5e0f2c8a8d65e1fdc0af3b3cbb59407c44c95`.
 - [ ] Rerun the full curated BioModels inventory in flat and atomized modes
   against this source; the interrupted run is not final-source evidence.
+
+## SBML L3V2 EventAssignments without MathML — 2026-09-27
+
+- [x] Pass SBML Level 3 Version 2 to event parsing. Omit an EventAssignment
+  whose optional `math` is absent; preserve assignments with valid MathML.
+- [x] Add parser regression for one missing-math assignment alongside a valid
+  assignment in the same event.
+- [x] Official `semantic/01605` passes conversion, SBML write/reimport,
+  native-reader checks, and BNG3/libRoadRunner comparison for two observables.
+  Report `/private/tmp/bng3-semantic-01605-empty-assignment.json`, SHA-256
+  `722d2a22a923b3d8f5f5ce721ac79986b92eda32554614c19ce94ac5ae3e6b78`.
+- [x] Full Python suite: `609 passed, 28 skipped`; Ruff, Black (`py39`), and
+  `git diff --check` pass.
+- [x] Full pinned SBML Test Suite: `1,630 passed, 293 unsupported, 0 failed,
+  0 timeouts`; +1 (`semantic/01605`) with no regressions from
+  `1,629/294/0/0`. Report `/private/tmp/bng3-l3v2-empty-event-assignment-full.json`,
+  SHA-256 `6c538b4f75e5e0bf3e517e83ca183283723fe5280973b89cb76092c7518c2320`.
+- [ ] Rerun the full curated BioModels inventory in flat and atomized modes
+  against this exact source; the earlier run predates this parser change.

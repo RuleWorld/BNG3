@@ -262,6 +262,39 @@ def test_time_only_sinusoidal_assignment_rule_expands_delayed_event_edges():
     )
 
 
+def test_sbml_l3v2_event_assignment_without_math_is_omitted():
+    from bionetgen.atomizer.modern import SBMLParser
+
+    source = """<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
+  <model id="event_without_assignment_math">
+    <listOfParameters>
+      <parameter id="P1" value="0" constant="false"/>
+      <parameter id="P2" value="0" constant="false"/>
+    </listOfParameters>
+    <listOfEvents>
+      <event id="no_math">
+        <trigger initialValue="false" persistent="true">
+          <math xmlns="http://www.w3.org/1998/Math/MathML"><true/></math>
+        </trigger>
+        <listOfEventAssignments>
+          <eventAssignment variable="P1"/>
+          <eventAssignment variable="P2">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>2</cn></math>
+          </eventAssignment>
+        </listOfEventAssignments>
+      </event>
+    </listOfEvents>
+  </model>
+</sbml>"""
+
+    event = SBMLParser().parse(source).events[0]
+
+    assert [
+        (assignment.variable, assignment.math) for assignment in event.assignments
+    ] == [("P2", "2")]
+
+
 def test_time_only_cosh_assignment_rule_window_becomes_exact_time_bounds():
     import math
 
