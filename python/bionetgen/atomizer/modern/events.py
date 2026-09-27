@@ -3029,7 +3029,7 @@ def synthesize_event_actions(
             continue
         trajectory = context.resolve_affine_rate_for_event(identifier, event)
         trajectory_kind = "affine"
-        if trajectory is None and parsed_delayed_interval is None:
+        if trajectory is None:
             exponential = context.resolve_exponential_rate_for_event(identifier, event)
             if exponential is not None:
                 trajectory = exponential
@@ -3090,6 +3090,11 @@ def synthesize_event_actions(
                 )
                 exit_time = interval_shift + math.log(lower / initial) / slope
                 entry_state = initial if initially_inside else upper
+        if trajectory_kind == "exponential" and parsed_delayed_interval is not None:
+            try:
+                entry_state = initial * math.exp(slope * entry)
+            except OverflowError:
+                continue
         if (
             not math.isfinite(entry)
             or not math.isfinite(exit_time)

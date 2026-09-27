@@ -6520,3 +6520,20 @@ the other groups remain implementation targets.
   (`py39`), and `git diff --check` pass. Cached source scan of 7,733 BioModels
   XML files found zero matching single-event exponential interval candidates;
   no curated-model gain is claimed.
+
+## Delayed exponential state interval crossings — 2026-09-27
+
+- [x] Lower a delayed-history interval over an exactly exponential state by
+  shifting its analytic entry and exit times by the fixed history delay. For
+  trigger-time assignments, use the current state at the shifted trigger time,
+  not the historical bound value. Unsupported or overflowing trajectories
+  remain untranslated.
+- [x] Added a regression for `delay(P1, 1)` crossing `[0.4, 0.5]` on
+  `P1(t)=exp(-t)`: event time is `1 + ln(2)`, and the trigger-time snapshot is
+  `exp(-(1 + ln(2))) = 0.183939720586`. Delayed affine persistence and interval
+  tests remain green; focused event and Atomizer parity tests: `106 passed`.
+  Full Python suite: `602 passed, 28 skipped`. Official targeted suite cases
+  `01518`-`01520` remain passed; `01522` remains unsupported because its
+  delayed trigger is a time-history predicate, outside this state-trajectory
+  slice. No status changes in those four cases. Full suite and curated
+  inventory not rerun; no corpus gain is claimed.

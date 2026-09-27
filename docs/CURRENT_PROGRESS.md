@@ -2067,3 +2067,14 @@ skipped`; Ruff, Black (`py39`), and diff checks pass. Cached source scan
 covered 7,733 BioModels XML files and found no matching candidate. Full-suite
 reference-result conformance remains unrun. See the checklist for report hash
 and scope.
+
+Delayed-history intervals over exactly exponential states now schedule at the
+closed-form crossing time plus the fixed history delay. Trigger-time
+assignments snapshot the live exponential state at the shifted trigger time;
+overflowing snapshots fail closed. New regression checks `delay(P1, 1)` over
+`[0.4, 0.5]` for `P1(t)=exp(-t)`, including event time `1 + ln(2)` and value
+`0.183939720586`. Focused event and parity tests pass (`106 passed`); full
+Python suite passes (`602 passed, 28 skipped`). Official cases `01518`-`01520`
+remain passed and `01522` remains unsupported for its time-history predicate;
+these four statuses did not change. Full pinned SBML suite and curated
+inventory were not rerun, and no corpus gain is claimed.

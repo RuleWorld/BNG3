@@ -709,6 +709,39 @@ def test_affine_interval_of_delayed_state_obeys_event_persistence():
             assert 'setParameter("P2", "3")' in result.actions_block
 
 
+def test_exponential_interval_of_delayed_state_uses_shifted_crossings():
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLEventAssignment
+
+    event = SBMLEvent(
+        id="delayed-exponential-window",
+        trigger="and(gt(delay(P1, 1), 0.4), lt(delay(P1, 1), 0.5))",
+        trigger_initial_value=False,
+        trigger_persistent=True,
+        assignments=[SBMLEventAssignment("P2", "P1")],
+    )
+    result = synthesize_event_actions(
+        [event],
+        EventTranslationContext(
+            resolve_species_pattern=lambda _identifier: None,
+            resolve_param=lambda _identifier: 0,
+            is_param=lambda _identifier: True,
+            resolve_exponential_rate_for_event=lambda identifier, _event: (
+                (1, -1) if identifier == "P1" else None
+            ),
+        ),
+    )
+
+    assert result.converted == 1
+    assert result.untranslated == []
+    assert result.actions_block is not None
+    assert 'setParameter("P2", "0.183939720586")' in result.actions_block
+    assert "t_end=>1.69314718056" in result.actions_block
+
+
 def test_constant_false_mathml_conjunction_folds_with_unknown_time_term():
     from bionetgen.atomizer.modern.events import fold_numeric
 
