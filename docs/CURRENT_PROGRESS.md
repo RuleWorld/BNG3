@@ -24,8 +24,9 @@ The report is partial and does not test SBML reference-result conformance:
 Full Python suite: `637 passed, 28 skipped`; Ruff, Black (`py39`), and
 `git diff --check` pass. A cached BioModels screen found no direct
 assignment-rule-symbol lags among 16 delay calls in 1,084 primary XML files,
-so no curated gain is claimed. The full SBML Test Suite and curated BioModels
-aggregates were not rerun; the latest full reports remain based on `a0ff898`.
+so no curated gain is claimed. No aggregate was rerun for this delay-alias
+change. The full SBML Test Suite has since been refreshed at `be5bdcf`; the
+latest full curated BioModels report remains based on `a0ff898`.
 
 ## Single fixed-time event-controlled delay lag — 2026-09-27
 
@@ -49,9 +50,9 @@ conformance: `/private/tmp/bng3-delay-event-lag-00984-t1-final.json` (SHA-256
 Full Python suite: `638 passed, 28 skipped`; Ruff, Black (`py39`), and
 `git diff --check` pass. The cached BioModels inventory found no direct
 event-assigned lag among 16 delay calls in 1,084 primary XML files (9 parse
-errors), so no curated gain is claimed. The full SBML Test Suite and curated
-BioModels aggregates were not rerun; their latest reports remain based on
-`a0ff898`.
+errors), so no curated gain is claimed. No aggregate was rerun for this
+fixed-time-lag change. The full SBML Test Suite has since been refreshed at
+`be5bdcf`; the latest full curated BioModels report remains based on `a0ff898`.
 
 ## Quadratic event trajectories in independent components — 2026-09-27
 
@@ -100,13 +101,26 @@ are partial reports and do not test SBML reference-result conformance. Full
 Python suite: `639 passed, 28 skipped`; Ruff, Black (`py39`), and diff checks
 pass.
 
+Four related cases, `semantic/00731`, `00751`, `00753`, and `01095`, also pass
+at `t_end=5`, each with eight observables over 51 samples; maximum differences
+range from `9.52e-12` to `1.32e-10`. These are partial reports; exact hashes are
+recorded in the convergence checklist.
+
 The three-repeat BNG2 benchmark is deterministic in flat and atomized modes.
 Modern BNG3 network structure matches in 3/3 repeats per mode; the rate
 comparator flags the S2 formula because BNG2 includes an explicit leading
 factor of `1`. Legacy PyBioNetGen matches structure and rates in 3/3 repeats
 per mode. This benchmark checks network structure and rate expressions, not
-trajectory parity. The full SBML Test Suite and curated BioModels aggregates
-were not rerun and remain tied to source `a0ff898`. Reports and hashes are in
+trajectory parity. The full pinned SBML Test Suite at `t_end=1` now reports
+`1,637 passed, 286 unsupported, 0 failed, 0 timed out`: 14 gains and no
+regressions against the preceding full report, with the supported-surface gate
+passing and the aggregate gate still open. This is a cumulative refresh since
+`a0ff898`, including the earlier two delay-lowering changes, so the 14 gains
+are not attributed only to rule isolation. The report is
+`/private/tmp/bng3-rules-outside-trigger-component-full-sbml.json`, SHA-256
+`9cab759cdb6f1cd62e71423a51bb81775e4fbe5029e7c9fb98abcd00b39f0875`. Curated
+BioModels was not rerun and its latest full aggregate remains based on
+`a0ff898`. Per-case and benchmark hashes are in
 [`BNG3_CONVERGENCE_DONE_CHECKLIST.md`](BNG3_CONVERGENCE_DONE_CHECKLIST.md).
 
 The full offline curated BioModels both-mode run on `a0ff898` completed with

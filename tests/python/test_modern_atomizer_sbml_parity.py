@@ -1204,8 +1204,9 @@ def test_quadratic_state_event_rejects_kinetic_coupling_to_an_independent_compon
 def test_quadratic_event_ignores_rules_outside_trigger_component():
     from bionetgen.atomizer.modern import Atomizer
 
-    # SBML Test Suite semantic/00652 has one first-order reversible component
-    # plus a downstream assignment rule and an independent rate-ruled species.
+    # SBML Test Suite semantic/00652 has one first-order reversible component,
+    # a downstream assignment rule, and a rate-ruled species that does not feed
+    # back into that component.
     xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
       <model id="quadratic_event_with_unrelated_rules">
         <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>

@@ -4,7 +4,8 @@
 **Last targeted audit:** 2026-09-27 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
 **Working branch:** `main`
-**Latest full aggregate report source:** `a0ff898` (`feat(atomizer): scope quadratic event resolution`); later scoped changes have targeted evidence below, while full pinned SBML Test Suite and curated BioModels reports remain tied to this source
+**Latest full pinned SBML Test Suite report:** `be5bdcf` (`feat(atomizer): isolate event trajectories from unrelated rules`), `1,637 passed / 286 unsupported / 0 failed / 0 timed out`.
+**Latest full curated BioModels report source:** `a0ff898`; this event batch has not been rerun on the curated inventory.
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -52,8 +53,10 @@ capability inventory.
   conformance was not run. Report
   `/private/tmp/bng3-delay-alias-00985-final2.json`, SHA-256
   `e868fed657b220957f0a48131007a183d7ec835a95aacb2228373d27d7731be5`.
-- [ ] Full SBML Test Suite and curated BioModels aggregates were not rerun for
-  this one-case change. The cached BioModels screen found 16 delay calls and
+- [ ] No full SBML Test Suite or curated BioModels aggregate was rerun for
+  this one-case change. A later full SBML Suite refresh is recorded below; the
+  latest full BioModels report remains based on `a0ff898`. The cached BioModels
+  screen found 16 delay calls and
   no direct assignment-rule-symbol lag among 1,084 primary XML files; no
   curated BioModels gain is claimed. Aggregate reports below remain based on
   source `a0ff898`.
@@ -82,8 +85,9 @@ capability inventory.
 - [x] Full Python suite: `638 passed, 28 skipped`; Ruff, Black (`py39`), and
   `git diff --check` pass. The cached BioModels screen parsed 1,084 primary
   XML files (9 parse errors), found 16 delay calls and no direct lag symbol
-  controlled by an event. No curated BioModels gain is claimed; the full SBML
-  Test Suite and BioModels aggregates remain based on `a0ff898`.
+  controlled by an event. No curated BioModels gain is claimed. The full SBML
+  Suite was refreshed later at `be5bdcf`; the latest full BioModels aggregate
+  remains based on `a0ff898`.
 
 ## Event-controlled deterministic species-reference stoichiometry — 2026-09-27
 
@@ -177,8 +181,20 @@ capability inventory.
   `(...)`). This is recorded as a comparator failure, not a rate-parity pass.
   Legacy PyBioNetGen has structure and rate parity in 3/3 repeats per mode.
   This is network-level evidence, not trajectory parity.
-- [ ] The full SBML Test Suite and curated BioModels aggregates were not rerun;
-  aggregate results remain tied to source `a0ff898`.
+- [x] Full pinned SBML Test Suite `cf38585fac5de8e0e90112febb62851ee2181816`
+  at `t_end=1`, 10 steps: `1,637 passed, 286 unsupported, 0 failed, 0 timed
+  out`. Comparing exact status IDs with the prior full report
+  `/private/tmp/bng3-independent-components-full-sbml.json` (`1,623/300/0/0`)
+  gives 14 gains and no regressions: `semantic/00647`, `00650`, `00652`-`00657`,
+  `00731`, `00751`, `00753`, `00984`, `00985`, and `01095`. The supported
+  surface passes; the aggregate gate remains open because unsupported models
+  remain. This refresh covers cumulative changes since `a0ff898`, including
+  the two earlier delay-lowering changes; the 14 gains are not attributed only
+  to rule isolation. Report
+  `/private/tmp/bng3-rules-outside-trigger-component-full-sbml.json`,
+  SHA-256 `9cab759cdb6f1cd62e71423a51bb81775e4fbe5029e7c9fb98abcd00b39f0875`.
+- [ ] Curated BioModels was not rerun for this batch; its latest full aggregate
+  remains based on `a0ff898`.
 
 Targeted report SHA-256 values: `00652` at `t_end=1`,
 `6de1084d7b716f2669c650b5b5e8e86fb978f85a84f38dfcb0df32b241282a9b`;
@@ -186,8 +202,24 @@ Targeted report SHA-256 values: `00652` at `t_end=1`,
 `00654`, `fa3ee36161ba65dcc09f7729e70bcdfb7854f6c2e5e300017b50e1b4fadd4430`;
 `00652` at `t_end=2`, `135a9f71b83df0dc12a39011b533e8b0e5a8ac85cbe4f2cb75f5a5f8a7d55d15`;
 at `t_end=5`, `536a2d80a85df33498b175f5f87b138a62ca6b24ccd102b89f20386386172c95`.
+The longer-horizon event reports at `t_end=5` are `00647`,
+`a208ffcc900ca1e9a924604cfad7f29c45cb36335405f18245cbfc466a5cdde5`;
+`00650`, `a511c0b3341fe2144f26d13a23026355af09aecebd8938604b571c9d800db517`;
+`00655`, `0563896da530e6ca7bb6ef252334294d00617a1e8657566c2a18326bb131fc2e`;
+`00656`, `01294d5b2559617d8919989b161b50332b31d5d604f9ebae9fecee589b016092`;
+and `00657`, `bf22b5d41c61fc7f10063fb462104b1ff2a2b8b957f98724bd7227e6cb81d775`.
+Cases `00731`, `00751`, `00753`, and `01095` also pass at `t_end=5`, each
+with eight observables across 51 samples; maximum differences range from
+`9.52e-12` to `1.32e-10`. Their report hashes are `00731`,
+`e6b1e3b83e2d5a43f7c72e492d50c157aea793f70f0e958a144629aa88d03c34`;
+`00751`, `7f0dac1ca23c94c1cb91416b60f595bf8e1f15ae98a45569d33286fb9fead4e7`;
+`00753`, `08cfec126e9fbe0074244094165b6ce56235378733c323a58183ae256f81c985`;
+and `01095`, `e70a8e1a25f23c3919cb706da3b2556ac47c18acf39c0be28b4b85cdb0b5c28c`.
 Cross-engine report `/private/tmp/bng3-atomizer-cross-engine-event-rules-00652-20260927.json`,
 SHA-256 `517057f7cd8f9cb40a22177787d21f2663ce32efa75922e49472f7fa0a4aedad`.
+Its recorded BNG3 writer hash `fcee307ad3cc452fd41493c93742daacdbdb67d1139a4d67cf1a1f8a4f4f7d28`
+matches the writer in `be5bdcf`; the benchmark metadata records the prior base
+HEAD `a9a5bc3` with the implementation as a dirty tracked diff.
 
 ## Remaining unsupported SBML Test Suite triage — prior ODE-selected baseline
 
