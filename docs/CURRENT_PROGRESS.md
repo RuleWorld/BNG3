@@ -27,18 +27,22 @@ gate remains open. Report `/private/tmp/bng3-volume-event-full-sbml.json`,
 SHA-256 `f42c161579b696f9f00b28fed8fdd2a88e6b70c516aa6116f493cc249b2d790b`.
 Full Python suite: `620 passed, 28 skipped`.
 
-The completed 1,096-record curated BioModels/libRoadRunner run is a pre-change
-baseline on source `546897b`: 793/1,083 SBML models passed, 110 were
-unsupported, 7 failed, and 173 timed out. Compared with the prior full report,
-18 formerly unsupported records and one timeout now pass; 6 records timed out
-and two timeouts failed. Report
-`/private/tmp/bng3-curated-546897b-both.json`, SHA-256
-`6186337abdf6968e3e196c84f0949b8496e853e38ee781635d4edecdcc2b16b0`. A full
-curated rerun against the volume-event changes remains pending.
+The post-change 1,096-record curated BioModels/libRoadRunner run on source
+`e53ad42` also passed 793/1,083 SBML models, with 110 unsupported, 5 failed,
+and 175 timed out. No model moved to `passed`; `BIOMD0000001098` and
+`BIOMD0000000081` moved from `failed` to `timeout`, so neither is a confirmed
+fix. Report `/private/tmp/bng3-curated-e53ad42-both.json`, SHA-256
+`3a40ef03e1104a4b4248148fba9cfd7ba556b072204600236c42065f6e9b071a`.
+The volume-event feature has no measured curated BioModels gain.
+
+BNG2 2.9.3 accepts the generated reciprocal-volume-event model and builds its
+network, but aborts when executing `setVolume` because its `CompartmentList`
+has no such method. This event behavior is validated in BNG3 with
+libRoadRunner; BNG2 runtime parity is unavailable for this action.
 
 ## Current-source Atomizer cross-engine refresh — 2026-09-27
 
-Current pushed source (`22e5f3e`) also refreshed the 10-model, three-repeat
+Current pushed source (`e53ad42`) also refreshed the 10-model, three-repeat
 BNG3/BNG2/PyBioNetGen benchmark in both modes. Modern BNG3 passes BNG2
 structural comparisons in 60/60 runs and normalized rate comparisons in 48/60.
 Legacy PyBioNetGen passes flat structural comparison in 21/30 and strict rate
@@ -54,8 +58,8 @@ in both modes; legacy PyBioNetGen passes flat mode but its atomized output has
 unresolved `fRate0`. Curated `BIOMD0000000414` passes 200/200 seeds in both
 modes for BNG3 direct NFsim versus standalone NFsim, with matching ensemble
 means over 24 points (`worst_z=0`). The full 1,096-record flat/atomized curated
-BioModels versus libRoadRunner refresh on source commit `546897b` is complete;
-its pre-change results are recorded above.
+BioModels versus libRoadRunner refresh on source commit `e53ad42` is complete;
+its results are recorded above.
 Reports: `/private/tmp/bng3-cross-engine-01293-current.json` (SHA-256
 `e991eb4f2802d1c82046c96ec48a13c2e2bbe4dff1c74d66b8f9295c986d8002`) and
 `/private/tmp/bng3-atomizer-nfsim-0414-546897b-200runs.json` (SHA-256

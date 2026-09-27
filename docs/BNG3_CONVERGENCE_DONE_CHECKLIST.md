@@ -6718,7 +6718,17 @@ the other groups remain implementation targets.
   out and 2 prior timeouts failed. Report
   `/private/tmp/bng3-curated-546897b-both.json`, SHA-256
   `6186337abdf6968e3e196c84f0949b8496e853e38ee781635d4edecdcc2b16b0`.
-- [ ] Rerun all curated BioModels against the compartment-event changes.
+- [x] Full 1,096-record flat/atomized curated BioModels rerun on exact source
+  `e53ad4244707ef071b65879204954e39da2d1e09`: `793/1,083` SBML passed, `110`
+  unsupported, `5` failed, `175` timed out. No record moved to `passed`; the
+  only status changes were `BIOMD0000001098` and `BIOMD0000000081`, both from
+  `failed` to `timeout`, so these are not confirmed fixes. Report
+  `/private/tmp/bng3-curated-e53ad42-both.json`, SHA-256
+  `3a40ef03e1104a4b4248148fba9cfd7ba556b072204600236c42065f6e9b071a`.
+- [x] Probe generated volume-event BNGL with BNG2 2.9.3. Parsing and network
+  generation succeed; runtime aborts at `setVolume` because BNG2's
+  `CompartmentList` has no `setVolume` method. Cross-engine runtime parity for
+  this action is not available; BNG3/libRoadRunner parity remains the evidence.
 
 ## Current-source Atomizer cross-engine refresh — 2026-09-27
 
@@ -6743,10 +6753,9 @@ the other groups remain implementation targets.
   ensemble means over 24 points (`worst_z=0`). Report
   `/private/tmp/bng3-atomizer-nfsim-0414-546897b-200runs.json`, SHA-256
   `0703e1999a419831085901ef2369ad739860a5cb9665e0e0dfa5c3d44bb8d443`.
-- [ ] The full curated 1,096-model flat/atomized BNG3/libRoadRunner run is still
-  in progress at source commit `546897b568a94e6895e0baacf5dcc9c7e7f09a7b`.
-  The existing terminal report covers older source and is not current-head
-  evidence.
+- [x] Full curated 1,096-model flat/atomized BNG3/libRoadRunner run completed
+  on source commit `e53ad4244707ef071b65879204954e39da2d1e09`; see the report and
+  status transition analysis above.
 
 ## Scaled exponential reaction-state triggers — 2026-09-27
 
