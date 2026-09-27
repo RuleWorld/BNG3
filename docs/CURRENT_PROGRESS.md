@@ -2078,3 +2078,24 @@ Python suite passes (`602 passed, 28 skipped`). Official cases `01518`-`01520`
 remain passed and `01522` remains unsupported for its time-history predicate;
 these four statuses did not change. Full pinned SBML suite and curated
 inventory were not rerun, and no corpus gain is claimed.
+
+Initial event-trigger evaluation now substitutes `time=0` after pure function
+expansion. This preserves SBML's initial-value edge for time-shifted predicates:
+`semantic/01522` normalizes to `(time - 1) < -0.5` with
+`triggerInitialValue=false`, so its `P2=3` action executes at t=0. Its `P1`
+observable matches libRoadRunner 2.10.0 exactly (11 samples, max absolute
+difference 0); `P2` is not a declared observable, so the numeric comparison
+does not cover the event target. The full pinned suite advances one case with
+no regressions (`1,626 passed, 297 unsupported, 0 failed, 0 timeouts`); the
+supported-surface gate passes, aggregate gate remains open. Report
+`/private/tmp/bng3-time-shifted-trigger-full.json`, SHA-256
+`3e1a791e95231f690243f30789f14bd137cd3c32bbc00875420095be1aba1b1c`. Full
+Python suite passes (`604 passed, 28 skipped`); lint/format pass. Full curated
+BioModels flat/Atomized validation is running.
+
+Cross-engine benchmark on reaction-bearing `semantic/00932` passes 3/3
+network structure and rate comparisons in both flat and atomized modes for
+modern BNG3 Atomizer and legacy PyBioNetGen Atomizer, using BNG3 and Perl BNG2
+network generation. This is network-level evidence, not trajectory parity.
+Report `/private/tmp/bng3-atomizer-cross-engine-00932.json`, SHA-256
+`9492f3ea454fbef18e0361eb50ef0ce79597ad10a5b630a81b25e0f8b2c77db0`.

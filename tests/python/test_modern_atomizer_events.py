@@ -742,6 +742,34 @@ def test_exponential_interval_of_delayed_state_uses_shifted_crossings():
     assert "t_end=>1.69314718056" in result.actions_block
 
 
+def test_time_shifted_trigger_uses_zero_for_its_initial_time_value():
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLEventAssignment
+
+    event = SBMLEvent(
+        id="time-shifted-initial-trigger",
+        trigger="lt((time - 1), -0.5)",
+        trigger_initial_value=False,
+        assignments=[SBMLEventAssignment("P2", "3")],
+    )
+    result = synthesize_event_actions(
+        [event],
+        EventTranslationContext(
+            resolve_species_pattern=lambda _identifier: None,
+            resolve_param=lambda _identifier: 0,
+            is_param=lambda _identifier: True,
+        ),
+    )
+
+    assert result.converted == 1
+    assert result.untranslated == []
+    assert result.actions_block is not None
+    assert 'setParameter("P2", "3")' in result.actions_block
+
+
 def test_constant_false_mathml_conjunction_folds_with_unknown_time_term():
     from bionetgen.atomizer.modern.events import fold_numeric
 

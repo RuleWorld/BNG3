@@ -6537,3 +6537,32 @@ the other groups remain implementation targets.
   delayed trigger is a time-history predicate, outside this state-trajectory
   slice. No status changes in those four cases. Full suite and curated
   inventory not rerun; no corpus gain is claimed.
+
+## Initial-time evaluation of shifted time triggers — 2026-09-27
+
+- [x] Evaluate `time` as `0` in the initial trigger-state check, after
+  expanding pure SBML functions. This preserves the declared
+  `triggerInitialValue` edge when an event trigger contains a shifted time
+  expression such as `delay(time-valued-parameter, fixed-delay)` after SBML
+  normalization.
+- [x] Official case `semantic/01522` now passes. Its normalized trigger is
+  `(time - 1) < -0.5`, true at t=0 with `triggerInitialValue=false`; generated
+  BNGL schedules `P2=3` at t=0. Its `P1` observable matches libRoadRunner 2.10.0
+  exactly at 11 samples (max absolute difference 0); the event target is not
+  an observable, so that comparison alone does not validate `P2` numerically.
+  Full pinned suite: `1,626 passed, 297 unsupported, 0 failed, 0 timeouts`;
+  exactly one gain (`01522`), no regressions from `1,625/298/0/0`. Report
+  `/private/tmp/bng3-time-shifted-trigger-full.json`, SHA-256
+  `3e1a791e95231f690243f30789f14bd137cd3c32bbc00875420095be1aba1b1c`.
+  Supported-surface gate passes; aggregate core gate remains open. Reference-
+  result conformance was not run. Full Python suite: `604 passed, 28 skipped`;
+  Ruff, Black (`py39`), and `git diff --check` pass. Full curated BioModels
+  refresh is running; record its terminal report separately.
+- [x] The reaction-bearing `semantic/00932` cohort also passes the
+  BNG3-modern and PyBioNetGen-legacy Atomizer cross-engine benchmark against
+  both BNG3 and Perl BNG2 network generation: 3/3 structural and rate-parity
+  repetitions in flat and atomized modes. Report
+  `/private/tmp/bng3-atomizer-cross-engine-00932.json`, SHA-256
+  `9492f3ea454fbef18e0361eb50ef0ce79597ad10a5b630a81b25e0f8b2c77db0`.
+  This benchmark covers network structure and rates, not simulation parity;
+  libRoadRunner trajectory parity is recorded separately above.

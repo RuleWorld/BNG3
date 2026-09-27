@@ -1914,6 +1914,7 @@ def synthesize_event_actions(
 
     def fold_initial(expression: str) -> Optional[float]:
         expression = context.expand_functions(str(expression or ""))
+        expression = re.sub(r"\btime\b", "0", expression, flags=re.IGNORECASE)
         return fold_numeric(expression, context.resolve_initial_value)
 
     def fold_at_state(

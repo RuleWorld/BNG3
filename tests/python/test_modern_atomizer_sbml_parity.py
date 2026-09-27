@@ -1071,6 +1071,57 @@ def test_exponential_interval_action_trajectory_matches_libroadrunner(tmp_path):
         assert float(np.max(np.abs(bng_values - rr_values))) <= tolerance
 
 
+def test_time_shifted_initial_event_action_matches_libroadrunner(tmp_path):
+    import numpy as np
+    import pytest
+
+    roadrunner = pytest.importorskip("roadrunner")
+    from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.model import load
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="time_shifted_initial_event_parity">
+        <listOfCompartments><compartment id="c" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies><species id="S" compartment="c" initialAmount="0" hasOnlySubstanceUnits="false"/></listOfSpecies>
+        <listOfEvents><event id="at_initial_time">
+          <trigger initialValue="false" persistent="true">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><lt/>
+                <apply><minus/>
+                  <csymbol encoding="text" definitionURL="http://www.sbml.org/sbml/symbols/time">time</csymbol>
+                  <cn>1</cn>
+                </apply>
+                <cn>-0.5</cn>
+              </apply>
+            </math>
+          </trigger>
+          <listOfEventAssignments><eventAssignment variable="S">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>3</cn></math>
+          </eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True, t_end=1, n_steps=10).atomize(xml)
+    assert result.success, result.error
+    assert 'setConcentration("@c:M_S()", "3")' in result.bngl
+    model_path = tmp_path / "time_shifted_event.bngl"
+    model_path.write_text(result.bngl, encoding="utf-8")
+    load(model_path).execute()
+
+    lines = model_path.with_suffix(".gdat").read_text().splitlines()
+    columns = lines[0].lstrip("# ").split()
+    bng_data = np.loadtxt(lines[1:])
+    times = bng_data[:, columns.index("time")]
+    rr = roadrunner.RoadRunner(xml)
+    rr.integrator.setValue("relative_tolerance", 1e-7)
+    rr.integrator.setValue("absolute_tolerance", 1e-12)
+    reference = rr.simulate(times=times)
+    assert np.all(bng_data[times > 0, columns.index("S")] == 3)
+    rr_values = reference[times > 0, reference.colnames.index("[S]")]
+    assert np.allclose(rr_values, 3, rtol=0, atol=5e-12)
+
+
 def test_constant_false_state_event_is_removed_without_model_dynamics():
     from bionetgen.atomizer.modern import Atomizer
 
