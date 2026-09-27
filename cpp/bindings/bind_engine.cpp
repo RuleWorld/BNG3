@@ -14,6 +14,9 @@
 #include "engine/FiniteBackend.hpp"
 #include "engine/BngsimBackend.hpp"
 #include "actions/ActionDispatch.hpp"
+#if defined(__APPLE__)
+#include "engine/MetalBatchSsa.hpp"
+#endif
 
 namespace py = pybind11;
 using namespace bng::engine;
@@ -102,8 +105,100 @@ py::dict result_to_dict(const OdeResult& result, const Model& model) {
         }
     }
 
+    // Batch SSA fields (populated only when opts.batchSize > 0)
+    d["batch_size"] = result.batchSize;
+    if (result.batchSize > 0 && !result.batchObsStdDevs.empty()) {
+        py::dict std_dict;
+        const auto& obs_defs = model.getObservables();
+        size_t n_steps = result.batchObsStdDevs.size();
+        size_t n_obs   = result.batchObsStdDevs.empty() ? 0 : result.batchObsStdDevs[0].size();
+        for (size_t j = 0; j < n_obs && j < obs_defs.size(); ++j) {
+            py::array_t<double> sd_arr(n_steps);
+            auto sd_buf = sd_arr.mutable_unchecked<1>();
+            for (size_t i = 0; i < n_steps; ++i)
+                sd_buf(i) = result.batchObsStdDevs[i][j];
+            std_dict[py::cast(obs_defs[j].getName())] = sd_arr;
+        }
+        d["batch_std_devs"] = std_dict;
+    }
+
     return d;
 }
+#if defined(__APPLE__)
+py::dict metrics_to_dict(const BatchSsaMetrics& m) {
+    py::dict d;
+    d["batch_size"] = m.batchSize;
+    d["total_events"] = m.totalEvents;
+    d["model_prep_time_ms"] = m.modelPrepTimeMs;
+    d["h2d_transfer_ms"] = m.hostToDeviceTransferMs;
+    d["sim_time_ms"] = m.simulationTimeMs;
+    d["d2h_transfer_ms"] = m.deviceToHostTransferMs;
+    d["total_wall_time_ms"] = m.totalWallTimeMs;
+    d["trajectories_per_sec_sim"] = m.trajectoriesPerSecSim;
+    d["trajectories_per_sec_total"] = m.trajectoriesPerSecTotal;
+    d["events_per_sec_sim"] = m.eventsPerSecSim;
+    d["events_per_sec_total"] = m.eventsPerSecTotal;
+    d["memory_usage_bytes"] = m.memoryUsageBytes;
+
+    py::array_t<float> times(m.timePoints.size());
+    auto tb = times.mutable_unchecked<1>();
+    for (size_t i = 0; i < m.timePoints.size(); ++i) tb(i) = m.timePoints[i];
+    d["time"] = times;
+
+    py::dict obs_means;
+    py::dict obs_stds;
+    for (size_t g = 0; g < m.observableNames.size(); ++g) {
+        py::array_t<float> m_arr(m.timePoints.size());
+        py::array_t<float> s_arr(m.timePoints.size());
+        auto mb = m_arr.mutable_unchecked<1>();
+        auto sb = s_arr.mutable_unchecked<1>();
+        for (size_t step = 0; step < m.timePoints.size(); ++step) {
+            mb(step) = m.observableMeans[step][g];
+            sb(step) = m.observableStdDevs[step][g];
+        }
+        obs_means[py::cast(m.observableNames[g])] = m_arr;
+        obs_stds[py::cast(m.observableNames[g])] = s_arr;
+    }
+    d["observable_means"] = obs_means;
+    d["observable_stds"] = obs_stds;
+
+    if (!m.finalObservables.empty() && !m.observableNames.empty()) {
+        size_t B = m.batchSize;
+        size_t G = m.observableNames.size();
+        py::array_t<float> f_obs({B, G});
+        auto fb = f_obs.mutable_unchecked<2>();
+        for (size_t b = 0; b < B; ++b) {
+            for (size_t g = 0; g < G; ++g) {
+                fb(b, g) = m.finalObservables[b * G + g];
+            }
+        }
+        d["final_observables"] = f_obs;
+        py::list names;
+        for (const auto& name : m.observableNames) names.append(name);
+        d["observable_names"] = names;
+    }
+
+    if (!m.finalSpecies.empty() && m.batchSize > 0) {
+        size_t B = m.batchSize;
+        size_t S = m.finalSpecies.size() / B;
+        py::array_t<int32_t> f_spec({B, S});
+        auto sb = f_spec.mutable_unchecked<2>();
+        for (size_t b = 0; b < B; ++b) {
+            for (size_t s = 0; s < S; ++s) {
+                sb(b, s) = m.finalSpecies[b * S + s];
+            }
+        }
+        d["final_species"] = f_spec;
+    }
+
+    py::array_t<uint32_t> ev_counts(m.trajectoryEventCounts.size());
+    auto eb = ev_counts.mutable_unchecked<1>();
+    for (size_t i = 0; i < m.trajectoryEventCounts.size(); ++i) eb(i) = m.trajectoryEventCounts[i];
+    d["event_counts"] = ev_counts;
+
+    return d;
+}
+#endif
 
 } // namespace
 
@@ -152,7 +247,11 @@ void bind_engine(py::module_& m) {
         .def_readwrite("output_step_interval", &OdeOptions::outputStepInterval)
         .def_readwrite("sparse", &OdeOptions::sparse)
         .def_readwrite("check_product_scale", &OdeOptions::checkProductScale)
-        .def_readwrite("enforce_nonnegative", &OdeOptions::enforceNonnegative);
+        .def_readwrite("enforce_nonnegative", &OdeOptions::enforceNonnegative)
+        .def_readwrite("batch_size", &OdeOptions::batchSize,
+            "Number of independent SSA trajectories to run in batch mode (0 = single trajectory)")
+        .def_readwrite("batch_gpu_preferred", &OdeOptions::batchGpuPreferred,
+            "Try GPU first when running batch SSA; silently fall back to CPU thread pool on failure");
 
     m.def("generate_network", [](Model& model, size_t max_iter) {
         py::gil_scoped_release release;
@@ -224,7 +323,9 @@ void bind_engine(py::module_& m) {
                              const std::string& stop_if,
                              const std::vector<double>& sample_times,
                              std::size_t max_sim_steps,
-                             std::size_t output_step_interval) {
+                             std::size_t output_step_interval,
+                             std::size_t batch_size,
+                             bool batch_gpu_preferred) {
         py::gil_scoped_release release;
 
         OdeOptions opts;
@@ -237,6 +338,8 @@ void bind_engine(py::module_& m) {
         opts.sampleTimes = sample_times;
         opts.maxSimSteps = max_sim_steps;
         opts.outputStepInterval = output_step_interval;
+        opts.batchSize = batch_size;
+        opts.batchGpuPreferred = batch_gpu_preferred;
 
         OdeIntegrator integrator(model, network);
         OdeResult result = integrator.integrate(opts);
@@ -254,7 +357,11 @@ void bind_engine(py::module_& m) {
         py::arg("sample_times") = std::vector<double>{},
         py::arg("max_sim_steps") = 0,
         py::arg("output_step_interval") = 0,
-        "Run SSA simulation on a generated network");
+        py::arg("batch_size") = static_cast<std::size_t>(0),
+        py::arg("batch_gpu_preferred") = true,
+        "Run SSA simulation on a generated network. "
+        "Set batch_size > 1 to run many independent trajectories and return mean + std-dev trajectories; "
+        "uses Metal GPU when available and beneficial, otherwise CPU thread pool.");
 
     m.def("simulate_pla", [](Model& model, GeneratedNetwork& network,
                              double t_end, int n_steps, const std::string& config_str,
@@ -402,6 +509,76 @@ void bind_engine(py::module_& m) {
        py::arg("max_sim_steps") = 0, py::arg("output_step_interval") = 0,
        "Run SSA via the BNGsim backend (fails closed if not lowerable or not wired)");
 
+#if defined(__APPLE__)
+    m.def("is_metal_available", &MetalBatchSsaSimulator::isMetalAvailable,
+          "Check whether Apple Metal GPU is available on this system");
+
+    m.def("simulate_batch_ssa_cpu", [](Model& model, GeneratedNetwork& network,
+                                       std::size_t batch_size, double t_end, int n_steps,
+                                       double t_start, uint64_t base_seed, unsigned int threads,
+                                       std::size_t max_sim_steps) {
+        py::gil_scoped_release release;
+
+        BatchSsaOptions opts;
+        opts.tStart = t_start;
+        opts.tEnd = t_end;
+        opts.nSteps = n_steps;
+        opts.baseSeed = base_seed;
+        opts.batchSize = batch_size;
+        opts.maxSimSteps = max_sim_steps;
+
+        CpuBatchSsaSimulator simulator(model, network);
+        BatchSsaMetrics metrics = (threads == 1)
+            ? simulator.simulateSingleWorker(opts)
+            : simulator.simulateMultiCore(opts, threads);
+
+        py::gil_scoped_acquire acquire;
+        return metrics_to_dict(metrics);
+    },
+        py::arg("model"),
+        py::arg("network"),
+        py::arg("batch_size") = 1000,
+        py::arg("t_end") = 10.0,
+        py::arg("n_steps") = 10,
+        py::arg("t_start") = 0.0,
+        py::arg("base_seed") = 42,
+        py::arg("threads") = 1,
+        py::arg("max_sim_steps") = 0,
+        "Run batched SSA simulation on CPU (single-worker or multi-core)");
+
+    m.def("simulate_batch_ssa_gpu", [](Model& model, GeneratedNetwork& network,
+                                       std::size_t batch_size, double t_end, int n_steps,
+                                       double t_start, uint64_t base_seed,
+                                       std::size_t max_sim_steps) {
+        py::gil_scoped_release release;
+
+        // Flatten and validate (fails closed on unsupported rate laws)
+        FlattenedReactionNetwork flatNet = FlattenedReactionNetwork::fromModelAndNetwork(model, network);
+
+        BatchSsaOptions opts;
+        opts.tStart = t_start;
+        opts.tEnd = t_end;
+        opts.nSteps = n_steps;
+        opts.baseSeed = base_seed;
+        opts.batchSize = batch_size;
+        opts.maxSimSteps = max_sim_steps;
+
+        MetalBatchSsaSimulator simulator(flatNet);
+        BatchSsaMetrics metrics = simulator.simulate(opts);
+
+        py::gil_scoped_acquire acquire;
+        return metrics_to_dict(metrics);
+    },
+        py::arg("model"),
+        py::arg("network"),
+        py::arg("batch_size") = 1000,
+        py::arg("t_end") = 10.0,
+        py::arg("n_steps") = 10,
+        py::arg("t_start") = 0.0,
+        py::arg("base_seed") = 42,
+        py::arg("max_sim_steps") = 0,
+        "Run batched SSA simulation on Apple Metal GPU prototype");
+#endif
     m.def("execute", [](Model& model, const std::string& source_path, bool verbose) {
         py::gil_scoped_release release;
         ActionDispatch::execute(model, source_path, verbose);

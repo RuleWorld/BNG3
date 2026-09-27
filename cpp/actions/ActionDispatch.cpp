@@ -1206,6 +1206,23 @@ void runSimulation(
         }
     }
 
+    // Parse batch_size for batched SSA (GPU/CPU pool).
+    // Only honoured when method == "ssa"; silently ignored otherwise.
+    if (opts.method == "ssa") {
+        const auto batchText = stripQuotes(readArgument(action, "batch_size", "0"));
+        if (!batchText.empty() && batchText != "0") {
+            const auto batchVal = static_cast<std::size_t>(
+                parseScalarValue(batchText, model));
+            if (batchVal < 2) {
+                throw std::runtime_error(
+                    "batch_size must be >= 2 when specified (use 0 or omit for single-trajectory SSA)");
+            }
+            opts.batchSize = batchVal;
+        }
+        const auto batchGpuText = lowercase(stripQuotes(readArgument(action, "batch_gpu", "1")));
+        opts.batchGpuPreferred = (batchGpuText != "0" && batchGpuText != "false");
+    }
+
     // Parse tolerances if provided
     const auto atolText = readArgument(action, "atol", "");
     if (!atolText.empty()) {
@@ -1423,9 +1440,18 @@ void runSimulation(
     } else {
         integrator.writeOutputFiles(outputPrefix.string(), result, opts.printCDAT, opts.printFunctions, continueSimulation);
     }
+    // Write std-dev file (.bdat) when running in batch SSA mode
+    if (result.batchSize > 0 && !opts.binaryOutput) {
+        integrator.writeBatchStdDevsFile(outputPrefix.string(), result);
+    }
 
     if (verbose) {
-        if (opts.printCDAT) {
+        if (result.batchSize > 0) {
+            std::cerr << "[bng_cpp] Batch SSA (" << result.batchSize << " trajectories"
+                      << ", " << result.eventCount << " total events): wrote "
+                      << outputPrefix.string() << ".gdat (mean) and "
+                      << outputPrefix.string() << ".bdat (std dev)\n";
+        } else if (opts.printCDAT) {
             std::cerr << "[bng_cpp] Wrote " << outputPrefix.string() << ".cdat and "
                       << outputPrefix.string() << ".gdat\n";
         } else {

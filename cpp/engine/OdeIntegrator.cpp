@@ -10,6 +10,12 @@
 #include <stdexcept>
 #include <string_view>
 #include <unordered_set>
+#include <future>
+#include <mutex>
+#include <thread>
+#if defined(__APPLE__)
+#include "engine/MetalBatchSsa.hpp"
+#endif
 
 #include "BNGLexer.h"
 #include "BNGParser.h"
@@ -1512,6 +1518,9 @@ OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
             }
         }
     } else if (options.method == "ssa") {
+        if (options.batchSize > 0) {
+            return integrateBatchSSA(options);
+        }
         return integrateSSA(options);
     } else {
         throw std::runtime_error("Unknown ODE method: " + options.method);
@@ -1790,6 +1799,175 @@ void OdeIntegrator::writeBinaryOutputFiles(const std::string& prefix, const OdeR
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Batch SSA: run N independent trajectories, aggregate mean + std dev.
+// Routes to Metal GPU when available and beneficial; falls back to CPU pool.
+// ---------------------------------------------------------------------------
+OdeResult OdeIntegrator::integrateBatchSSA(const OdeOptions& opts) {
+#if defined(__APPLE__)
+    // Thresholds derived from benchmark data (see docs/GPU_BATCH_SSA_EVALUATION.md).
+    // GPU parallelism becomes beneficial above these values.
+    static constexpr std::size_t kGpuMinReactions = 50;
+    static constexpr std::size_t kGpuMinBatch     = 1000;
+
+    if (opts.batchGpuPreferred &&
+        MetalBatchSsaSimulator::isMetalAvailable() &&
+        compiledRxns_.size() >= kGpuMinReactions &&
+        opts.batchSize >= kGpuMinBatch) {
+        try {
+            auto flat = FlattenedReactionNetwork::fromModelAndNetwork(model_, network_);
+            MetalBatchSsaSimulator sim(flat);
+            BatchSsaOptions batchOpts;
+            batchOpts.batchSize     = opts.batchSize;
+            batchOpts.tEnd          = opts.tEnd;
+            batchOpts.nSteps        = static_cast<int>(opts.nSteps);
+            batchOpts.baseSeed      = opts.seed;
+            auto metrics = sim.simulate(batchOpts);
+
+            // Convert BatchSsaMetrics → OdeResult (mean trajectory + std devs)
+            OdeResult result;
+            result.batchSize       = opts.batchSize;
+            result.timePoints      = metrics.timePointsDouble;
+            result.concentrations  = metrics.meanSpecies;
+            result.observables     = metrics.meanObservables;
+            result.batchStdDevs    = metrics.stdSpecies;
+            result.batchObsStdDevs = metrics.stdObservables;
+            result.eventCount      = static_cast<std::size_t>(metrics.totalEvents);
+            return result;
+        } catch (const std::exception& ex) {
+            std::cerr << "[bng_cpp] batch_ssa: GPU path unavailable (" << ex.what()
+                      << "), falling back to CPU thread pool.\n";
+        }
+    }
+#endif
+
+    // CPU thread-pool fallback (or non-Apple platforms).
+    // Each thread runs integrateSSA independently; results are aggregated.
+    const std::size_t B = opts.batchSize;
+    const std::size_t nWorkers = std::min(B,
+        static_cast<std::size_t>(std::max(1u, std::thread::hardware_concurrency())));
+
+    // Pre-compute output time grid from a single reference run's time points.
+    OdeOptions singleOpts = opts;
+    singleOpts.batchSize = 0;
+    singleOpts.seed = (opts.seed == 0) ? 1u : opts.seed;
+    const auto refTimes = outputTimes(singleOpts);
+    const std::size_t T = refTimes.size();
+    const std::size_t S = nSpecies_;
+    const std::size_t G = compiledGroups_.size();
+
+    // Accumulators (mean, M2 for Welford online variance)
+    std::vector<std::vector<double>> sumSpec(T, std::vector<double>(S, 0.0));
+    std::vector<std::vector<double>> sumSqSpec(T, std::vector<double>(S, 0.0));
+    std::vector<std::vector<double>> sumObs(T, std::vector<double>(G, 0.0));
+    std::vector<std::vector<double>> sumSqObs(T, std::vector<double>(G, 0.0));
+    std::size_t totalEvents = 0;
+    std::mutex mu;
+
+    // Chunk trajectories across workers.
+    std::vector<std::future<void>> futures;
+    futures.reserve(nWorkers);
+    const std::size_t chunk = (B + nWorkers - 1) / nWorkers;
+    for (std::size_t w = 0; w < nWorkers; ++w) {
+        const std::size_t lo = w * chunk;
+        const std::size_t hi = std::min(lo + chunk, B);
+        if (lo >= hi) break;
+        futures.push_back(std::async(std::launch::async, [&, lo, hi]() {
+            // Local accumulators avoid lock contention inside the hot loop.
+            std::vector<std::vector<double>> locSumSpec(T, std::vector<double>(S, 0.0));
+            std::vector<std::vector<double>> locSumSqSpec(T, std::vector<double>(S, 0.0));
+            std::vector<std::vector<double>> locSumObs(T, std::vector<double>(G, 0.0));
+            std::vector<std::vector<double>> locSumSqObs(T, std::vector<double>(G, 0.0));
+            std::size_t locEvents = 0;
+
+            OdeIntegrator localInt(model_, network_);
+            OdeOptions trajOpts = opts;
+            trajOpts.batchSize = 0;
+            for (std::size_t traj = lo; traj < hi; ++traj) {
+                // Each trajectory gets a unique seed derived from base seed + traj index.
+                const unsigned int base = (opts.seed == 0) ? 1u : opts.seed;
+                trajOpts.seed = static_cast<unsigned int>(base + traj);
+                OdeResult r = localInt.integrate(trajOpts);
+                locEvents += r.eventCount;
+                for (std::size_t t = 0; t < std::min(T, r.timePoints.size()); ++t) {
+                    for (std::size_t s = 0; s < std::min(S, r.concentrations[t].size()); ++s) {
+                        locSumSpec[t][s]   += r.concentrations[t][s];
+                        locSumSqSpec[t][s] += r.concentrations[t][s] * r.concentrations[t][s];
+                    }
+                    for (std::size_t g = 0; g < std::min(G, r.observables[t].size()); ++g) {
+                        locSumObs[t][g]   += r.observables[t][g];
+                        locSumSqObs[t][g] += r.observables[t][g] * r.observables[t][g];
+                    }
+                }
+            }
+            std::lock_guard<std::mutex> lk(mu);
+            totalEvents += locEvents;
+            for (std::size_t t = 0; t < T; ++t) {
+                for (std::size_t s = 0; s < S; ++s) {
+                    sumSpec[t][s]   += locSumSpec[t][s];
+                    sumSqSpec[t][s] += locSumSqSpec[t][s];
+                }
+                for (std::size_t g = 0; g < G; ++g) {
+                    sumObs[t][g]   += locSumObs[t][g];
+                    sumSqObs[t][g] += locSumSqObs[t][g];
+                }
+            }
+        }));
+    }
+    for (auto& f : futures) f.get();
+
+    // Build mean + std-dev result.
+    OdeResult result;
+    result.batchSize  = B;
+    result.eventCount = totalEvents;
+    result.timePoints = refTimes;
+    result.concentrations.resize(T, std::vector<double>(S));
+    result.batchStdDevs.resize(T, std::vector<double>(S));
+    result.observables.resize(T, std::vector<double>(G));
+    result.batchObsStdDevs.resize(T, std::vector<double>(G));
+    const double invB = 1.0 / static_cast<double>(B);
+    for (std::size_t t = 0; t < T; ++t) {
+        for (std::size_t s = 0; s < S; ++s) {
+            const double mean = sumSpec[t][s] * invB;
+            result.concentrations[t][s] = mean;
+            const double var = sumSqSpec[t][s] * invB - mean * mean;
+            result.batchStdDevs[t][s] = std::sqrt(std::max(0.0, var));
+        }
+        for (std::size_t g = 0; g < G; ++g) {
+            const double mean = sumObs[t][g] * invB;
+            result.observables[t][g] = mean;
+            const double var = sumSqObs[t][g] * invB - mean * mean;
+            result.batchObsStdDevs[t][g] = std::sqrt(std::max(0.0, var));
+        }
+    }
+    return result;
+}
+
+void OdeIntegrator::writeBatchStdDevsFile(const std::string& prefix, const OdeResult& result) const {
+    if (result.batchSize == 0 || result.batchObsStdDevs.empty()) return;
+    std::ofstream bdat(prefix + ".bdat", std::ios::trunc);
+    if (!bdat) {
+        throw std::runtime_error("Failed to open " + prefix + ".bdat for writing");
+    }
+    // Header: same columns as .gdat but values are std devs.
+    bdat << "# Batch SSA std dev  batch_size=" << result.batchSize << "\n";
+    bdat << "#";
+    bdat << std::setw(17) << "time";
+    for (const auto& group : compiledGroups_) {
+        bdat << " " << std::setw(18) << group.name;
+    }
+    bdat << "\n";
+    for (std::size_t step = 0; step < result.timePoints.size(); ++step) {
+        bdat << std::setw(18) << std::setprecision(12) << std::scientific
+             << result.timePoints[step];
+        for (const auto& sd : result.batchObsStdDevs[step]) {
+            bdat << " " << std::setw(18) << sd;
+        }
+        bdat << "\n";
+    }
+}
+
 
 // Static C-style callback for CVODE (v7: sunrealtype instead of realtype)
 static int cvodeCallbackWrapper(sunrealtype t, N_Vector y, N_Vector ydot, void* user_data) {
@@ -2320,6 +2498,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     for (std::size_t step = 0; step < result.timePoints.size(); ++step) {
         updateGroups(result.concentrations[step].data(), result.observables[step]);
     }
+    result.eventCount = ssaStepCount;
 
     return result;
 }

@@ -177,6 +177,10 @@ if(BUILD_BNGSIM_ADAPTER)
     target_compile_definitions(bng_engine PUBLIC BNG3_HAS_BNGSIM_ADAPTER=1)
     target_link_libraries(bng_engine PUBLIC bngsim_external)
 endif()
+if(APPLE)
+    target_sources(bng_engine PRIVATE engine/MetalBatchSsa.mm)
+    target_link_libraries(bng_engine PUBLIC "-framework Metal" "-framework Foundation")
+endif()
 
 # =============================================================================
 # nfsim_core (Network-free stochastic simulator)

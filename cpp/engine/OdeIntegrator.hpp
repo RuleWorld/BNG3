@@ -38,6 +38,8 @@ struct OdeOptions {
     double checkProductScale = 0.0;  // Warn if product concentrations exceed this (0 = disabled)
     bool binaryOutput = false;     // Write .cdat/.gdat in binary format (4-byte floats, row-major)
     bool enforceNonnegative = false; // Optional CVODE constraint retry for physical populations
+    std::size_t batchSize = 0;       // 0 = single trajectory; N>0 = batched SSA (GPU/CPU pool)
+    bool batchGpuPreferred = true;   // try GPU first when batchSize > 0; silently fall back to CPU pool
 };
 
 struct OdeResult {
@@ -45,6 +47,10 @@ struct OdeResult {
     std::vector<std::vector<double>> concentrations;   // [timeIndex][speciesIndex]
     std::vector<std::vector<double>> observables;      // [timeIndex][groupIndex]
     std::vector<std::vector<double>> functions;        // [timeIndex][zero-arg function]
+    std::size_t eventCount = 0;                              // Internal SSA event count
+    std::size_t batchSize = 0;                               // 0 = single trajectory
+    std::vector<std::vector<double>> batchStdDevs;           // [timeIndex][speciesIndex] std dev (batch mode only)
+    std::vector<std::vector<double>> batchObsStdDevs;        // [timeIndex][obsIndex] observable std dev (batch mode only)
 };
 
 class OdeIntegrator {
@@ -54,6 +60,7 @@ public:
     OdeResult integrate(const OdeOptions& options);
     void writeOutputFiles(const std::string& prefix, const OdeResult& result, bool printCDAT = true, bool printFunctions = false, bool append = false) const;
     void writeBinaryOutputFiles(const std::string& prefix, const OdeResult& result, bool printCDAT = true) const;
+    void writeBatchStdDevsFile(const std::string& prefix, const OdeResult& result) const;
     void derivs(double t, const double* y, double* dydt) const;
     // CVODE integrates a scaled state to keep very small SBML amounts and
     // very large converted rate constants numerically well-conditioned.
@@ -66,11 +73,8 @@ public:
     }
     io::TfunRegistry& getTfunRegistry() { return tfunRegistry_; }
 
-private:
-    const ast::Model& model_;
-    const GeneratedNetwork& network_;
-
-    // Compiled reaction network for fast derivative evaluation
+public:
+    // Compiled reaction network for fast derivative evaluation and simulator backends
     struct CompiledReaction {
         std::vector<std::size_t> reactantIndices;  // 0-based species indices
         std::vector<std::size_t> productIndices;
@@ -81,6 +85,20 @@ private:
         bool isTotalRate = false;     // true if rate is total (not multiplied by reactant conc)
     };
 
+    struct CompiledGroup {
+        std::string name;
+        std::vector<std::pair<std::size_t, double>> entries;  // (speciesIndex, weight)
+    };
+
+    const std::vector<CompiledReaction>& getCompiledReactions() const { return compiledRxns_; }
+    const std::vector<CompiledGroup>& getCompiledGroups() const { return compiledGroups_; }
+    const std::vector<bool>& getFixedSpecies() const { return fixedSpecies_; }
+    bool hasFunctionalRates() const { return hasFunctionalRates_; }
+
+private:
+    const ast::Model& model_;
+    const GeneratedNetwork& network_;
+
     struct CompiledConstantReaction {
         std::size_t reactantOffset = 0;
         std::size_t productOffset = 0;
@@ -88,11 +106,6 @@ private:
         std::size_t productCount = 0;
         double rateConstant = 0.0;
         bool isTotalRate = false;
-    };
-
-    struct CompiledGroup {
-        std::string name;
-        std::vector<std::pair<std::size_t, double>> entries;  // (speciesIndex, weight)
     };
 
     std::vector<CompiledReaction> compiledRxns_;
@@ -134,6 +147,7 @@ private:
     OdeResult integrateRK4(const OdeOptions& opts);
     OdeResult integrateCvode(const OdeOptions& opts);
     OdeResult integrateSSA(const OdeOptions& opts);
+    OdeResult integrateBatchSSA(const OdeOptions& opts);
 
     double computePropensity(const CompiledReaction& rxn, const std::vector<double>& y) const;
 };
