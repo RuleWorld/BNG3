@@ -4,7 +4,7 @@
 **Last targeted audit:** 2026-09-27 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
 **Working branch:** `main`
-**Current base:** Atomizer source at `9e3013f7622ee07660574f0f3d3909104ad71a8d`; full curated BioModels refresh is running against this source
+**Current base:** `546897b568a94e6895e0baacf5dcc9c7e7f09a7b`; full curated BioModels refresh is running against this source
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -6683,6 +6683,25 @@ the other groups remain implementation targets.
   Report `/private/tmp/bng3-mutable-priority-full-final.json`, SHA-256
   `3b11d9f1943fbaf2965d45c82731cbe50e34da5ffc7f508f7108a6e566d8bcf8`.
 - [ ] Rerun full curated BioModels flat/atomized inventory against final source.
+
+## Current-source Atomizer cross-engine refresh — 2026-09-27
+
+- [x] Official SBML Test Suite case `semantic/01293` runs through the modern
+  BNG3 Atomizer and independent PyBioNetGen Atomizer, with both outputs checked
+  by BNG3 and Perl BNG2. Modern BNG3 passes structure and rate checks in flat
+  and atomized modes, all three repeats. Legacy PyBioNetGen passes both checks
+  in flat mode; its atomized output fails on unresolved `fRate0`. Report
+  `/private/tmp/bng3-cross-engine-01293-current.json`, SHA-256
+  `e991eb4f2802d1c82046c96ec48a13c2e2bbe4dff1c74d66b8f9295c986d8002`.
+- [x] Curated `BIOMD0000000414` runs 200 valid seeds per engine in each mode.
+  BNG3 direct NFsim and standalone NFsim have zero run errors and matching
+  ensemble means over 24 points (`worst_z=0`). Report
+  `/private/tmp/bng3-atomizer-nfsim-0414-546897b-200runs.json`, SHA-256
+  `0703e1999a419831085901ef2369ad739860a5cb9665e0e0dfa5c3d44bb8d443`.
+- [ ] The full curated 1,096-model flat/atomized BNG3/libRoadRunner run is still
+  in progress at source commit `546897b568a94e6895e0baacf5dcc9c7e7f09a7b`.
+  The existing terminal report covers older source and is not current-head
+  evidence.
 
 ## Scaled exponential reaction-state triggers — 2026-09-27
 

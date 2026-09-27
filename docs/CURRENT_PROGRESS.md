@@ -5,6 +5,20 @@
 **Branch:** `main`
 **Status:** merged convergence, nonequilibrium energy, and SBML material-gap work; release validation remains incomplete
 
+## Current-source Atomizer cross-engine refresh — 2026-09-27
+
+Current-head cross-engine checks add three repetitions per mode for official
+case `semantic/01293`: modern BNG3 passes BNG2 network structure and rate checks
+in both modes; legacy PyBioNetGen passes flat mode but its atomized output has
+unresolved `fRate0`. Curated `BIOMD0000000414` passes 200/200 seeds in both
+modes for BNG3 direct NFsim versus standalone NFsim, with matching ensemble
+means over 24 points (`worst_z=0`). The full 1,096-record flat/atomized curated
+BioModels versus libRoadRunner refresh is running on source commit `546897b`.
+Reports: `/private/tmp/bng3-cross-engine-01293-current.json` (SHA-256
+`e991eb4f2802d1c82046c96ec48a13c2e2bbe4dff1c74d66b8f9295c986d8002`) and
+`/private/tmp/bng3-atomizer-nfsim-0414-546897b-200runs.json` (SHA-256
+`0703e1999a419831085901ef2369ad739860a5cb9665e0e0dfa5c3d44bb8d443`).
+
 ## Scaled exponential reaction-state triggers — 2026-09-27
 
 Event trigger lowering now accepts a single state multiplied by a folded
