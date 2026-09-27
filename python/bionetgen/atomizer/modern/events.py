@@ -2947,7 +2947,8 @@ def synthesize_event_actions(
             periodic_converted += 1
 
     affine_interval_schedules: dict[
-        int, Tuple[str, float, float, float, float, float, float, str, str]
+        int,
+        Tuple[str, str, float, float, float, float, float, float, str, str, float],
     ] = {}
     affine_interval_no_action: set[int] = set()
     static_event_no_action: set[int] = set()
@@ -3027,10 +3028,22 @@ def synthesize_event_actions(
         if not math.isfinite(lower) or not math.isfinite(upper) or lower >= upper:
             continue
         trajectory = context.resolve_affine_rate_for_event(identifier, event)
+        trajectory_kind = "affine"
+        if trajectory is None and parsed_delayed_interval is None:
+            exponential = context.resolve_exponential_rate_for_event(identifier, event)
+            if exponential is not None:
+                trajectory = exponential
+                trajectory_kind = "exponential"
         if trajectory is None:
             continue
         initial, slope = trajectory
         if not math.isfinite(initial) or not math.isfinite(slope) or slope == 0:
+            continue
+        if trajectory_kind == "exponential" and any(
+            standardize_name(variable) == standardize_name(identifier)
+            for assignment in event.assignments
+            for variable, _expression in [_event_assignment(assignment)]
+        ):
             continue
 
         def inside_interval(value: float) -> bool:
@@ -3042,16 +3055,41 @@ def synthesize_event_actions(
         if initially_inside and event.trigger_initial_value:
             affine_interval_no_action.add(id(event))
             continue
-        if slope > 0:
-            entry = (
-                0.0 if initially_inside else interval_shift + (lower - initial) / slope
-            )
-            exit_time = interval_shift + (upper - initial) / slope
+        if trajectory_kind == "affine":
+            if slope > 0:
+                entry = (
+                    0.0
+                    if initially_inside
+                    else interval_shift + (lower - initial) / slope
+                )
+                exit_time = interval_shift + (upper - initial) / slope
+            else:
+                entry = (
+                    0.0
+                    if initially_inside
+                    else interval_shift + (upper - initial) / slope
+                )
+                exit_time = interval_shift + (lower - initial) / slope
+            entry_state = initial + slope * entry
         else:
-            entry = (
-                0.0 if initially_inside else interval_shift + (upper - initial) / slope
-            )
-            exit_time = interval_shift + (lower - initial) / slope
+            if initial <= 0 or lower <= 0 or upper <= 0:
+                continue
+            if slope > 0:
+                entry = (
+                    0.0
+                    if initially_inside
+                    else interval_shift + math.log(lower / initial) / slope
+                )
+                exit_time = interval_shift + math.log(upper / initial) / slope
+                entry_state = initial if initially_inside else lower
+            else:
+                entry = (
+                    0.0
+                    if initially_inside
+                    else interval_shift + math.log(upper / initial) / slope
+                )
+                exit_time = interval_shift + math.log(lower / initial) / slope
+                entry_state = initial if initially_inside else upper
         if (
             not math.isfinite(entry)
             or not math.isfinite(exit_time)
@@ -3065,6 +3103,7 @@ def synthesize_event_actions(
             continue
         affine_interval_schedules[id(event)] = (
             identifier,
+            trajectory_kind,
             initial,
             slope,
             entry,
@@ -3073,6 +3112,7 @@ def synthesize_event_actions(
             exit_time,
             lower_operator,
             upper_operator,
+            entry_state,
         )
 
     def provably_false_in_horizon(
@@ -3293,6 +3333,7 @@ def synthesize_event_actions(
         elif affine_interval is not None:
             (
                 interval_identifier,
+                interval_kind,
                 interval_initial,
                 interval_slope,
                 interval_entry,
@@ -3301,15 +3342,14 @@ def synthesize_event_actions(
                 interval_exit,
                 _interval_lower_operator,
                 _interval_upper_operator,
+                interval_entry_state,
             ) = affine_interval
             threshold = _format_number(interval_entry)
             window_end: Optional[float] = interval_exit
-            trigger_state_values = {
-                interval_identifier: interval_initial + interval_slope * interval_entry
-            }
+            trigger_state_values = {interval_identifier: interval_entry_state}
             trigger_state_trajectory = (
                 interval_identifier,
-                "affine",
+                interval_kind,
                 interval_initial,
                 interval_slope,
             )
@@ -3881,6 +3921,7 @@ def synthesize_event_actions(
             ) == standardize_name(affine_interval[0]):
                 (
                     _identifier,
+                    trajectory_kind,
                     initial,
                     slope,
                     _entry,
@@ -3889,6 +3930,7 @@ def synthesize_event_actions(
                     _exit,
                     lower_operator,
                     upper_operator,
+                    _entry_state,
                 ) = affine_interval
 
                 def in_interval(state: float) -> bool:
@@ -3900,22 +3942,26 @@ def synthesize_event_actions(
                     )
                     return lower_ok and upper_ok
 
-                state_before = initial + slope * execution_time
+                state_before = (
+                    initial + slope * execution_time
+                    if trajectory_kind == "affine"
+                    else initial * math.exp(slope * execution_time)
+                )
                 no_reentry_within_run = False
-                if slope > 0 and value < lower:
+                if trajectory_kind == "affine" and slope > 0 and value < lower:
                     next_entry = execution_time + (lower - value) / slope
                     no_reentry_within_run = next_entry > max(
                         context.base_t_end, execution_time
                     )
-                elif slope < 0 and value > upper:
+                elif trajectory_kind == "affine" and slope < 0 and value > upper:
                     next_entry = execution_time + (upper - value) / slope
                     no_reentry_within_run = next_entry > max(
                         context.base_t_end, execution_time
                     )
                 if not (
                     (in_interval(state_before) and in_interval(value))
-                    or (slope > 0 and value >= upper)
-                    or (slope < 0 and value <= lower)
+                    or (trajectory_kind == "affine" and slope > 0 and value >= upper)
+                    or (trajectory_kind == "affine" and slope < 0 and value <= lower)
                     or no_reentry_within_run
                 ):
                     failure = (

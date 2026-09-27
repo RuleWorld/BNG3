@@ -962,6 +962,115 @@ def test_affine_interval_event_uses_species_conversion_factor():
     assert "untranslated" not in result.bngl.lower()
 
 
+def test_exponential_interval_event_lowers_at_first_rising_edge():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="exponential_state_interval_event">
+        <listOfCompartments><compartment id="c" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies><species id="A" compartment="c" initialAmount="1" hasOnlySubstanceUnits="false"/></listOfSpecies>
+        <listOfParameters>
+          <parameter id="k" value="1" constant="true"/>
+          <parameter id="out" value="0" constant="false"/>
+        </listOfParameters>
+        <listOfReactions><reaction id="decay" reversible="false">
+          <listOfReactants><speciesReference species="A" stoichiometry="1"/></listOfReactants>
+          <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><times/><ci>k</ci><ci>A</ci></apply>
+          </math></kineticLaw>
+        </reaction></listOfReactions>
+        <listOfEvents><event id="interval">
+          <trigger initialValue="true" persistent="true">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><and/>
+                <apply><leq/><ci>A</ci><cn>0.5</cn></apply>
+                <apply><geq/><ci>A</ci><cn>0.4</cn></apply>
+              </apply>
+            </math>
+          </trigger>
+          <listOfEventAssignments><eventAssignment variable="out">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>3</cn></math>
+          </eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True, t_end=5, n_steps=100).atomize(xml)
+
+    assert result.success, result.error
+    assert 'setParameter("out", "3")' in result.bngl
+    assert "Events NOT simulated" not in result.bngl
+    assert "t_end=>0.69314718056" in result.bngl
+
+
+def test_exponential_interval_action_trajectory_matches_libroadrunner(tmp_path):
+    import numpy as np
+    import pytest
+
+    roadrunner = pytest.importorskip("roadrunner")
+    from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.model import load
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="exponential_state_interval_action_parity">
+        <listOfCompartments><compartment id="c" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies>
+          <species id="A" compartment="c" initialAmount="1" hasOnlySubstanceUnits="false"/>
+          <species id="B" compartment="c" initialAmount="0" hasOnlySubstanceUnits="false"/>
+        </listOfSpecies>
+        <listOfParameters><parameter id="k" value="1" constant="true"/></listOfParameters>
+        <listOfReactions><reaction id="decay" reversible="false">
+          <listOfReactants><speciesReference species="A" stoichiometry="1"/></listOfReactants>
+          <listOfProducts><speciesReference species="B" stoichiometry="1"/></listOfProducts>
+          <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><times/><ci>k</ci><ci>A</ci></apply>
+          </math></kineticLaw>
+        </reaction></listOfReactions>
+        <listOfEvents><event id="interval">
+          <trigger initialValue="true" persistent="true">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><and/>
+                <apply><leq/><ci>A</ci><cn>0.5</cn></apply>
+                <apply><geq/><ci>A</ci><cn>0.4</cn></apply>
+              </apply>
+            </math>
+          </trigger>
+          <listOfEventAssignments><eventAssignment variable="B">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>2</cn></math>
+          </eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True, t_end=2, n_steps=100).atomize(xml)
+    assert result.success, result.error
+    assert 'setConcentration("@c:M_B()", "2")' in result.bngl
+    model_path = tmp_path / "event_parity.bngl"
+    model_path.write_text(result.bngl, encoding="utf-8")
+    load(model_path).execute()
+
+    lines = model_path.with_suffix(".gdat").read_text().splitlines()
+    columns = lines[0].lstrip("# ").split()
+    bng_data = np.loadtxt(lines[1:])
+    times = bng_data[:, columns.index("time")]
+    assert np.max(bng_data[times > 0.7, columns.index("B")]) > 1.5
+
+    rr = roadrunner.RoadRunner(xml)
+    rr.integrator.setValue("relative_tolerance", 1e-7)
+    rr.integrator.setValue("absolute_tolerance", 1e-12)
+    reference = rr.simulate(times=times)
+    # BNG3 records event boundaries before applying the scheduled action;
+    # libRoadRunner reports the right-continuous value at that exact time.
+    # Compare both trajectories away from the discontinuity itself.
+    compare = np.abs(times - np.log(2.0)) > 1e-9
+    for species in ("A", "B"):
+        bng_values = bng_data[compare, columns.index(species)]
+        rr_values = reference[compare, reference.colnames.index(f"[{species}]")]
+        scale = max(float(np.max(np.abs(bng_values))), float(np.max(np.abs(rr_values))))
+        tolerance = max(5e-12, 1e-5 * scale)
+        assert float(np.max(np.abs(bng_values - rr_values))) <= tolerance
+
+
 def test_constant_false_state_event_is_removed_without_model_dynamics():
     from bionetgen.atomizer.modern import Atomizer
 

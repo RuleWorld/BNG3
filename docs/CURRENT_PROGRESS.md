@@ -2054,3 +2054,16 @@ observables, so their numerical comparison is vacuous. Focused event tests:
 SBML-suite support remains incomplete; no new curated BioModels gain is
 claimed. Exact report digest and semantics are recorded in the convergence
 checklist.
+
+Single-event interval triggers over an exactly exponential species trajectory
+now lower at the first positive-bound crossing. `semantic/00932` passes the
+full round-trip gate and six-observable BNG3/libRoadRunner comparison (max
+absolute difference `2.83e-11`); its nonpersistent delayed assignment is
+proved canceled because its delay exceeds the trigger window. A synthetic
+executed-action benchmark also matches libRoadRunner after the actual state
+jump. The full one-unit suite is `1,625 passed, 298 unsupported, 0 failed,
+0 timed out`, one net gain and no regressions. Full Python: `601 passed, 28
+skipped`; Ruff, Black (`py39`), and diff checks pass. Cached source scan
+covered 7,733 BioModels XML files and found no matching candidate. Full-suite
+reference-result conformance remains unrun. See the checklist for report hash
+and scope.

@@ -6488,3 +6488,35 @@ the other groups remain implementation targets.
   `599 passed, 28 skipped`. Ruff, Black (`py39` target), and
   `git diff --check` pass. The previous cached BioModels screen found no
   parameter-only event-only candidates; no curated-model gain is claimed.
+
+## Exponential state interval event crossings — 2026-09-27
+
+- [x] Lower a single event whose trigger is a two-bound interval over one
+  exactly exponential state, with positive finite bounds and monotone rate.
+  Compute the first entry and exit times logarithmically; preserve delayed
+  assignment time and trigger-time state evaluation. Keep unsupported
+  delayed-history intervals and events that assign the trigger state
+  untranslated.
+- [x] Official SBML Test Suite case `semantic/00932` now passes conversion,
+  SBML write/reimport, native-reader checks, and BNG3/libRoadRunner comparison
+  for six observables at the one-unit/10-step horizon. Maximum absolute
+  difference: `2.8247452283063773e-11`. Its nonpersistent delayed assignment
+  is correctly canceled: the state interval lasts about `0.2231` time units,
+  shorter than its fixed delay of `3`. Full pinned suite: `1,625 passed,
+  298 unsupported, 0 failed, 0 timeouts`; one net gain and no regressions
+  against `1,624/299/0/0`. Report
+  `/private/tmp/bng3-exponential-interval-full.json`, SHA-256
+  `789fba1ab83b7bceb95b92344f08196c9c37610da163d28a0a039f344c993b58`.
+  Supported-surface gate passes; aggregate core gate remains open. SBML Test
+  Suite reference-result conformance was not run.
+- [x] Added a synthetic exponential-decay interval regression with an
+  observed failing-before/passing-after TDD cycle. Full Python suite:
+  `601 passed, 28 skipped`; focused event and parity tests: `105 passed`.
+  A second fixture executes generated BNGL actions and compares A/B output
+  trajectories with libRoadRunner; post-event samples match within the
+  configured `max(5e-12, 1e-5 * scale)` tolerance. The exact event-boundary
+  sample is excluded because BNG3 records the pre-action side while
+  libRoadRunner reports the right-continuous post-action side. Ruff, Black
+  (`py39`), and `git diff --check` pass. Cached source scan of 7,733 BioModels
+  XML files found zero matching single-event exponential interval candidates;
+  no curated-model gain is claimed.
