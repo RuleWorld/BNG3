@@ -5,6 +5,40 @@
 **Branch:** `main`
 **Status:** merged convergence, nonequilibrium energy, and SBML material-gap work; release validation remains incomplete
 
+## Assignment-rule volume aliases and bounded exponential resets — 2026-09-27
+
+An event may now change a compartment volume through one simple assignment
+rule, such as `C = fakeC`, when its sole assignment sets that alias parameter
+to a statically resolved positive value. Generated actions update both the
+parameter and executable compartment volume; concentration-to-amount
+conversion uses the assignment-rule volume. Re-entry within the requested
+horizon remains fail-closed. Separately, a single undelayed event that resets
+its own trigger state on a proven independent exponential trajectory is
+lowered only when the next rising edge is proven outside the run horizon.
+Coupled/cyclic linear systems such as cases `00400` and `00401` remain
+unsupported by the scalar trajectory proof.
+
+Official SBML Test Suite cases `semantic/00946` and `00948` now pass alongside
+`00945` and `00947`; no previously passing case regressed. Full pinned suite:
+`1,652 passed, 271 unsupported, 0 failed, 0 timeouts`. Report
+`/private/tmp/bng3-volume-alias-full-sbml.json`, SHA-256
+`3f9e1e2cf9d22c690f114d7ffa2baa8a20613f972fe4064a4e88d7826a1db9f6`.
+The four focused cases pass BNG3/libRoadRunner comparisons. A separate 3-unit
+parity regression includes the volume event firing and agrees on amount
+trajectory within the existing tolerance; a 5-unit run is rejected because
+the trigger can re-enter. Full Python suite: `623 passed, 28 skipped`; Ruff,
+Black (`py39`), and `git diff --check` pass.
+
+The full 1,096-record curated BioModels/libRoadRunner rerun against source
+`eb528bd` completed: 793/1,083 SBML records passed, 110 were unsupported,
+6 failed, and 174 timed out. Compared with the immediately preceding
+`e53ad42` run, all 793 passes remained passes, there were no unsupported-to-pass
+gains or pass regressions, and one record (`BIOMD0000001098`) changed from
+timeout to BNGL syntax failure in both modes. The change adds no measured
+curated BioModels coverage. Report
+`/private/tmp/bng3-curated-eb528bd-both.json`, SHA-256
+`2e44194e3276cf901498a16537ab88f908f6d0143b8734b035c70e93f9580e05`.
+
 ## Exact compartment-volume event edges and run horizons — 2026-09-27
 
 Atomizer now lowers a narrow reciprocal-flux event when one positive species
@@ -40,9 +74,9 @@ network, but aborts when executing `setVolume` because its `CompartmentList`
 has no such method. This event behavior is validated in BNG3 with
 libRoadRunner; BNG2 runtime parity is unavailable for this action.
 
-## Current-source Atomizer cross-engine refresh — 2026-09-27
+## Atomizer cross-engine snapshot — source `22e5f3e` — 2026-09-27
 
-Current pushed source (`e53ad42`) also refreshed the 10-model, three-repeat
+Source `22e5f3e` was used for the 10-model, three-repeat
 BNG3/BNG2/PyBioNetGen benchmark in both modes. Modern BNG3 passes BNG2
 structural comparisons in 60/60 runs and normalized rate comparisons in 48/60.
 Legacy PyBioNetGen passes flat structural comparison in 21/30 and strict rate
@@ -58,8 +92,8 @@ in both modes; legacy PyBioNetGen passes flat mode but its atomized output has
 unresolved `fRate0`. Curated `BIOMD0000000414` passes 200/200 seeds in both
 modes for BNG3 direct NFsim versus standalone NFsim, with matching ensemble
 means over 24 points (`worst_z=0`). The full 1,096-record flat/atomized curated
-BioModels versus libRoadRunner refresh on source commit `e53ad42` is complete;
-its results are recorded above.
+BioModels versus libRoadRunner refresh on source commit `eb528bd` is complete;
+results are recorded above.
 Reports: `/private/tmp/bng3-cross-engine-01293-current.json` (SHA-256
 `e991eb4f2802d1c82046c96ec48a13c2e2bbe4dff1c74d66b8f9295c986d8002`) and
 `/private/tmp/bng3-atomizer-nfsim-0414-546897b-200runs.json` (SHA-256

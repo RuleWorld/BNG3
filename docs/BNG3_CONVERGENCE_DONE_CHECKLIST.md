@@ -4,7 +4,7 @@
 **Last targeted audit:** 2026-09-27 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
 **Working branch:** `main`
-**Current base:** `c39f4230c5bf27a05f2593359cd26a9a9da747e9`; the full curated BioModels refresh completed on pre-change source `546897b`; post-change refresh remains pending
+**Current implementation base:** `eb528bd0261245b551312b8da862d89f80d5867b` (`feat(atomizer): lower assignment-rule volume events`); full pinned SBML Test Suite and curated BioModels rerun completed at this source
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -6729,11 +6729,35 @@ the other groups remain implementation targets.
   generation succeed; runtime aborts at `setVolume` because BNG2's
   `CompartmentList` has no `setVolume` method. Cross-engine runtime parity for
   this action is not available; BNG3/libRoadRunner parity remains the evidence.
+- [x] Lower a volume change through a simple compartment assignment rule such
+  as `C = fakeC`. Preserve both the alias parameter and simulator volume state;
+  require one positive static assignment and reject re-entry within the run.
+  Cases `semantic/00946` and `00948` now pass alongside `00945` and `00947`.
+- [x] Add a bounded scalar exponential self-reset path: one undelayed event,
+  proven independent exponential trajectory, trigger-state assignment, and no
+  next rising edge through the configured horizon. Coupled cyclic systems
+  `semantic/00400` and `00401` remain unsupported.
+- [x] Full pinned SBML Test Suite on `eb528bd`: `1,652 passed, 271 unsupported,
+  0 failed, 0 timeouts`. Only `semantic/00946` and `00948` moved from
+  unsupported to passed; no previous passes regressed. Report
+  `/private/tmp/bng3-volume-alias-full-sbml.json`, SHA-256
+  `3f9e1e2cf9d22c690f114d7ffa2baa8a20613f972fe4064a4e88d7826a1db9f6`.
+- [x] Full Python suite: `623 passed, 28 skipped`; Ruff, Black (`py39`), and
+  `git diff --check` pass. Focused 3-unit BNG3/libRoadRunner parity includes
+  the event firing; horizon 5 remains untranslated due to trigger re-entry.
+- [x] Complete the full curated BioModels flat/atomized/libRoadRunner rerun on
+  exact implementation source `eb528bd`: 793/1,083 SBML records passed, 110
+  unsupported, 6 failed, and 174 timed out. Against `e53ad42`, all 793 passes
+  remained passes, with no unsupported-to-pass gains or pass regressions; one
+  model changed from timeout to syntax failure. This change adds no measured
+  curated-model coverage. Report
+  `/private/tmp/bng3-curated-eb528bd-both.json`, SHA-256
+  `2e44194e3276cf901498a16537ab88f908f6d0143b8734b035c70e93f9580e05`.
 
 ## Current-source Atomizer cross-engine refresh — 2026-09-27
 
-- [x] Refreshed the 10-model, three-repeat benchmark on current BNG3 source
-  (`22e5f3e`), using both flat and atomized modes. Modern BNG3 produced 60/60
+- [x] Refreshed the 10-model, three-repeat benchmark on BNG3 source
+  `22e5f3e`, using both flat and atomized modes. Modern BNG3 produced 60/60
   structurally matching BNG2 networks and 48/60 exact normalized rate matches.
   Legacy PyBioNetGen produced 21/60 flat structural matches and 3/60 strict
   rate matches; its atomized path produced no BNG2-parseable network in this
