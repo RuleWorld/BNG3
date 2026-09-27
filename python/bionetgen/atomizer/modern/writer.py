@@ -7070,6 +7070,7 @@ def generate_bngl(
             event_context: SBMLEvent,
             *,
             priority_state: bool = False,
+            state_values: Optional[Mapping[str, float]] = None,
         ) -> Optional[float]:
             reaction = next(
                 (
@@ -7138,6 +7139,10 @@ def generate_bngl(
                 )
                 if normalized in local_values:
                     return local_values[normalized]
+                if state_values is not None:
+                    for state_name, state_value in state_values.items():
+                        if standardize_name(state_name) == normalized:
+                            return float(state_value)
                 if is_compile_time_constant(symbol):
                     return resolve_event_parameter(symbol)
                 parameter = next(
@@ -7148,7 +7153,9 @@ def generate_bngl(
                     ),
                     None,
                 )
-                if parameter is None or normalized not in assigned_here:
+                if parameter is None or (
+                    normalized not in assigned_here and not simultaneous_priority_group
+                ):
                     return None
                 if (
                     any(
@@ -7277,8 +7284,13 @@ def generate_bngl(
                     resolve_quadratic_event_state_values
                 ),
                 resolve_reaction_rate_for_event=resolve_event_reaction_rate,
-                resolve_priority_reaction_rate_for_event=lambda identifier, event: (
-                    resolve_event_reaction_rate(identifier, event, priority_state=True)
+                resolve_priority_reaction_rate_for_event=lambda identifier, event, state: (
+                    resolve_event_reaction_rate(
+                        identifier,
+                        event,
+                        priority_state=True,
+                        state_values=state,
+                    )
                 ),
                 resolve_rate_reset=resolve_rate_event_reset,
                 static_event_state=static_event_state,

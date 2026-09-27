@@ -39,6 +39,14 @@ def _no_event_reaction_rate(_identifier: str, _event: SBMLEvent) -> Optional[flo
     return None
 
 
+def _no_priority_event_reaction_rate(
+    _identifier: str,
+    _event: SBMLEvent,
+    _state_values: Optional[Mapping[str, float]] = None,
+) -> Optional[float]:
+    return None
+
+
 def _no_event_quadratic_rate(
     _identifier: str, _event: SBMLEvent
 ) -> Optional[Tuple[float, float, float, float]]:
@@ -124,8 +132,8 @@ class EventTranslationContext:
     # simultaneous, same-trigger events. This is stricter than general event
     # rate folding and is used only to order that group's priorities.
     resolve_priority_reaction_rate_for_event: Callable[
-        [str, SBMLEvent], Optional[float]
-    ] = _no_event_reaction_rate
+        [str, SBMLEvent, Optional[Mapping[str, float]]], Optional[float]
+    ] = _no_priority_event_reaction_rate
     # Allow periodic reset lowering to inspect a constant rate-rule state even
     # when the event itself assigns that state.
     resolve_rate_reset: Callable[[str], Optional[Tuple[float, float]]] = (
@@ -1885,7 +1893,16 @@ def synthesize_event_actions(
     """Translate safe fixed-time events and report all rejected events."""
 
     untranslated: List[Tuple[SBMLEvent, str]] = []
-    scheduled: List[Tuple[float, List[Tuple[str, str, float]], float]] = []
+    scheduled: List[
+        Tuple[
+            float,
+            List[Tuple[str, str, float]],
+            float,
+            Optional[SBMLEvent],
+            bool,
+            List[Tuple[str, float]],
+        ]
+    ] = []
     scheduled_values: List[Tuple[float, str, float]] = []
     horizon_limited = 0
 
@@ -2108,7 +2125,7 @@ def synthesize_event_actions(
                         elif event_context is not None:
                             reaction_rate = (
                                 context.resolve_priority_reaction_rate_for_event(
-                                    identifier, event_context
+                                    identifier, event_context, values
                                 )
                                 if priority_evaluation
                                 else context.resolve_reaction_rate_for_event(
@@ -2204,6 +2221,53 @@ def synthesize_event_actions(
         except (TypeError, ValueError, SyntaxError):
             reduced_expression = timed_expression.replace("_event_if(", "if(")
         return fold(reduced_expression, dynamic_values=values)
+
+    def simultaneous_priority_group_eligible(
+        event: SBMLEvent,
+        trigger_time: float,
+        execution_time: float,
+        delay: float,
+    ) -> bool:
+        if trigger_time <= 0 or len(events) < 2:
+            return False
+        threshold = parse_time_threshold(event.trigger)
+        if threshold is None:
+            return False
+        for other_event in events:
+            if other_event.trigger.strip() != event.trigger.strip():
+                return False
+            if (
+                other_event.trigger_initial_value != event.trigger_initial_value
+                or not other_event.use_values_from_trigger_time
+            ):
+                return False
+            other_threshold = parse_time_threshold(other_event.trigger)
+            if other_threshold is None:
+                return False
+            other_trigger_time = fold(other_threshold, event_context=other_event)
+            if (
+                other_trigger_time is None
+                or abs(other_trigger_time - trigger_time) > 1e-12
+            ):
+                return False
+            other_delay = (
+                fold_at_state(
+                    other_event.delay,
+                    other_trigger_time,
+                    event_context=other_event,
+                )
+                if other_event.delay
+                else 0.0
+            )
+            if (
+                other_delay is None
+                or not math.isfinite(other_delay)
+                or other_delay < 0
+                or abs(other_delay - delay) > 1e-12
+                or abs(other_trigger_time + other_delay - execution_time) > 1e-12
+            ):
+                return False
+        return True
 
     periodic_groups: dict[Tuple[str, str, float], List[SBMLEvent]] = {}
     periodic_handled: set[int] = set()
@@ -2906,6 +2970,9 @@ def synthesize_event_actions(
                     first_trigger + float(delay),
                     assignment_actions(float(reset_value)),
                     0.0,
+                    None,
+                    False,
+                    [],
                 )
             )
             periodic_handled.add(id(event))
@@ -4005,58 +4072,24 @@ def synthesize_event_actions(
             continue
 
         priority = 0.0
+        dynamic_priority = False
         if getattr(event, "priority", None):
             folded_priority = fold(
                 event.priority or "", execution_time, event_context=event
             )
-            if folded_priority is None and len(events) == 2:
-                other_event = next(
-                    candidate for candidate in events if candidate is not event
+            if folded_priority is None and simultaneous_priority_group_eligible(
+                event, trigger_time, execution_time, delay
+            ):
+                state_priority = fold_at_state(
+                    event.priority or "",
+                    execution_time,
+                    state_values={"time": execution_time},
+                    event_context=event,
+                    priority_evaluation=True,
                 )
-                event_time = parse_time_threshold(event.trigger)
-                other_time = parse_time_threshold(other_event.trigger)
-                event_time_value = (
-                    fold(event_time, event_context=event)
-                    if event_time is not None
-                    else None
-                )
-                other_delay = (
-                    fold_at_state(
-                        other_event.delay,
-                        trigger_time,
-                        event_context=other_event,
-                    )
-                    if other_event.delay
-                    else 0.0
-                )
-                if (
-                    event.trigger.strip() == other_event.trigger.strip()
-                    and event_time is not None
-                    and event_time_value is not None
-                    and event_time_value > 0
-                    and other_time is not None
-                    and event.trigger_initial_value == other_event.trigger_initial_value
-                    and other_delay is not None
-                    and math.isfinite(other_delay)
-                    and other_delay >= 0
-                    and abs(float(other_delay) - delay) <= 1e-12
-                    and event.use_values_from_trigger_time
-                    and other_event.use_values_from_trigger_time
-                ):
-                    other_priority = fold_at_state(
-                        other_event.priority or "0",
-                        execution_time,
-                        event_context=other_event,
-                        priority_evaluation=True,
-                    )
-                    state_priority = fold_at_state(
-                        event.priority or "",
-                        execution_time,
-                        event_context=event,
-                        priority_evaluation=True,
-                    )
-                    if other_priority is not None and state_priority is not None:
-                        folded_priority = state_priority
+                if state_priority is not None:
+                    folded_priority = state_priority
+                    dynamic_priority = True
             if folded_priority is None:
                 untranslated.append(
                     (
@@ -4066,7 +4099,9 @@ def synthesize_event_actions(
                 )
                 continue
             priority = folded_priority
-        scheduled.append((execution_time, sets, priority))
+        scheduled.append(
+            (execution_time, sets, priority, event, dynamic_priority, event_values)
+        )
         scheduled_values.extend(
             (execution_time, symbol, value) for symbol, value in event_values
         )
@@ -4080,13 +4115,144 @@ def synthesize_event_actions(
             horizon_limited,
         )
 
-    scheduled.sort(key=lambda item: (item[0], -item[2]))
+    scheduled.sort(key=lambda item: item[0])
+    normalized_scheduled = [
+        item if len(item) == 6 else (item[0], item[1], item[2], None, False, [])
+        for item in scheduled
+    ]
+    ordered_scheduled: List[
+        Tuple[
+            float,
+            List[Tuple[str, str, float]],
+            float,
+            Optional[SBMLEvent],
+            bool,
+            List[Tuple[str, float]],
+        ]
+    ] = []
+    index = 0
+    while index < len(normalized_scheduled):
+        end = index + 1
+        while (
+            end < len(normalized_scheduled)
+            and abs(normalized_scheduled[end][0] - normalized_scheduled[index][0])
+            < 1e-12
+        ):
+            end += 1
+        group = normalized_scheduled[index:end]
+        if not any(item[4] for item in group):
+            ordered_scheduled.extend(sorted(group, key=lambda item: -item[2]))
+            index = end
+            continue
+
+        group_events = [item[3] for item in group]
+        group_is_complete = (
+            len(group) == len(events)
+            and all(event is not None for event in group_events)
+            and {id(event) for event in group_events if event is not None}
+            == {id(event) for event in events}
+        )
+        if group_is_complete:
+            for event in group_events:
+                assert event is not None
+                threshold = parse_time_threshold(event.trigger)
+                trigger_time = (
+                    fold(threshold, event_context=event)
+                    if threshold is not None
+                    else None
+                )
+                delay = (
+                    fold_at_state(event.delay, trigger_time, event_context=event)
+                    if event.delay and trigger_time is not None
+                    else 0.0
+                )
+                if (
+                    trigger_time is None
+                    or delay is None
+                    or not math.isfinite(trigger_time)
+                    or not math.isfinite(delay)
+                    or not simultaneous_priority_group_eligible(
+                        event, trigger_time, trigger_time + delay, delay
+                    )
+                ):
+                    group_is_complete = False
+                    break
+        ordered_group: List[
+            Tuple[
+                float,
+                List[Tuple[str, str, float]],
+                float,
+                Optional[SBMLEvent],
+                bool,
+                List[Tuple[str, float]],
+            ]
+        ] = []
+        if group_is_complete:
+            remaining = list(group)
+            event_state: dict[str, float] = {"time": group[0][0]}
+            while remaining:
+                if len(remaining) == 1:
+                    ordered_group.extend(remaining)
+                    break
+                priorities: List[float] = []
+                for item in remaining:
+                    event = item[3]
+                    assert event is not None
+                    priority = (
+                        fold_at_state(
+                            event.priority,
+                            item[0],
+                            state_values=event_state,
+                            event_context=event,
+                            priority_evaluation=True,
+                        )
+                        if event.priority
+                        else 0.0
+                    )
+                    if priority is None or not math.isfinite(priority):
+                        group_is_complete = False
+                        break
+                    priorities.append(priority)
+                if not group_is_complete:
+                    break
+                selected_index = max(
+                    range(len(remaining)), key=lambda candidate: priorities[candidate]
+                )
+                selected = remaining.pop(selected_index)
+                ordered_group.append(selected)
+                for symbol, value in selected[5]:
+                    event_state[symbol] = value
+                    event_state[standardize_name(symbol)] = value
+        if group_is_complete:
+            ordered_scheduled.extend(ordered_group)
+        else:
+            normal_converted -= sum(item[3] is not None for item in group)
+            periodic_converted -= sum(item[3] is None for item in group)
+            for item in group:
+                if item[3] is not None:
+                    untranslated.append(
+                        (
+                            item[3],
+                            "simultaneous dynamic-priority event group could not be "
+                            "ordered soundly",
+                        )
+                    )
+        index = end
+
     merged: List[Tuple[float, List[Tuple[str, str, float]]]] = []
-    for time, sets, _priority in scheduled:
+    for time, sets, _priority, _event, _dynamic_priority, _values in ordered_scheduled:
         if merged and abs(merged[-1][0] - time) < 1e-12:
             merged[-1][1].extend(sets)
         else:
             merged.append((time, list(sets)))
+
+    if not merged:
+        return EventTranslationResult(
+            None,
+            periodic_converted + normal_converted,
+            untranslated,
+            horizon_limited,
+        )
 
     last_fire = merged[-1][0]
     t_final = (

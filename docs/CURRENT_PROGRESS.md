@@ -7,22 +7,27 @@
 
 ## Simultaneous fixed-time event priorities from reaction rates — 2026-09-27
 
-Atomizer now folds dynamic reaction-rate priorities for exactly two events
-with the same positive fixed-time trigger and delay, equal initial trigger
-state, and trigger-time assignment snapshots. It evaluates both priorities
-against the shared pre-event state, then emits the statically proven order.
-Reaction rates that depend on species, ruled or initially assigned parameters,
-or parameters changed by earlier/differently triggered events remain
-unsupported. `semantic/01229` passes round-trip and BNG3/libRoadRunner 2.10.0
-trajectory comparison through t=7: 2 observables, maximum absolute error
-`1.78e-15`. The pinned SBML suite reports `1,627 passed, 296 unsupported,
-0 failed, 0 timeouts`; exactly `semantic/01229` changed unsupported→passed,
-with no regressions. Report `/private/tmp/bng3-priority-rates-final.json`,
-SHA-256 `588377bf138d2c5afdada4a04d5b318046c03d754791e389cca646987c259ef3`.
-The overall SBML core gate remains open. Full Python suite: `605 passed, 28
-skipped`; focused event/parity tests: `109 passed`; Ruff, Black (`py39`), and
-`git diff --check` pass. The exact-source full curated BioModels run is active;
-its report is pending.
+Atomizer now recalculates dynamic priorities between simultaneous events when
+the complete event group shares a positive fixed-time trigger, delay, initial
+trigger state, and trigger-time snapshots. It updates the candidate state after
+each assignment and rejects groups if any priority cannot be proven. The
+two-event reaction-rate priority case `semantic/01229` remains supported;
+`semantic/00934` now passes with four observables matching libRoadRunner 2.10.0
+exactly through t=1.1 over 12 samples. The existing `semantic/01229` trajectory
+still matches to `1.78e-15` through t=7. The pinned SBML suite reports `1,628 passed, 295
+unsupported, 0 failed, 0 timeouts`, one net gain (`semantic/00934`) against the
+prior `1,627/296/0/0` report. `semantic/01577` remains unsupported because its
+rate-rule/algebraic-rule priorities cannot be safely ordered; this now returns
+a normal unsupported result instead of raising an empty-schedule exception.
+Full Python suite: `607 passed, 28 skipped`; Ruff, Black (`py39`), and
+`git diff --check` pass. The full pinned curated BioModels run was interrupted
+to implement this feature; it must be rerun before claiming current curated
+coverage. SBML report `/private/tmp/bng3-multi-priority-fixed-full.json`,
+SHA-256 `977050ef6443d9bbaba4835547aa6a487cf73395746e085a7bb8be3e3eef1345`.
+Targeted reports: `/private/tmp/bng3-semantic-00934-priority-t1.1.json`
+(SHA-256 `1dcb76830bdfa48c78f9d88de24e047c6d773a6b94841a1e5ae2e53fa214a7d4`)
+and `/private/tmp/bng3-semantic-01229-priority-t7-final2.json` (SHA-256
+`1dc5d0474b588a77baf7583950f642a678b4c655863d00dd9a8ad220bbf53e45`).
 
 ## Parameter-only SBML event scheduling — 2026-09-26
 

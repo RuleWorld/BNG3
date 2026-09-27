@@ -6592,4 +6592,34 @@ the other groups remain implementation targets.
   SHA-256 `588377bf138d2c5afdada4a04d5b318046c03d754791e389cca646987c259ef3`.
   Overall core gate remains open; reference-result conformance was not run.
 - [ ] Re-run the full curated BioModels inventory in flat and atomized modes
-  against the final source; the exact-source run is active.
+  against the final source; the exact-source run was interrupted to continue
+  implementation, so no current-source result is available.
+
+## Recomputed simultaneous event priorities — 2026-09-27
+
+- [x] Recalculate each pending event's priority after applying the previously
+  selected event's trigger-time assignment snapshot. Require one complete,
+  compatible simultaneous group; reject the group if any candidate priority
+  cannot be folded safely.
+- [x] Add regressions for A → C1 → B priority recalculation and for a partially
+  foldable group. The latter emptied the execution schedule and raised
+  `IndexError`; it now yields a normal unsupported translation.
+- [x] Full Python suite: `607 passed, 28 skipped`. Ruff, Black (`py39`), and
+  `git diff --check` pass.
+- [x] Full pinned SBML Test Suite: `1,628 passed, 295 unsupported, 0 failed,
+  0 timeouts`; net +1 (`semantic/00934`) and no regressions from
+  `1,627/296/0/0`. `semantic/01577` is unsupported because its rate-rule and
+  algebraic-rule priority state cannot be soundly evaluated, no longer failed.
+  Report `/private/tmp/bng3-multi-priority-fixed-full.json`, SHA-256
+  `977050ef6443d9bbaba4835547aa6a487cf73395746e085a7bb8be3e3eef1345`.
+- [x] `semantic/00934` passes round-trip plus BNG3/libRoadRunner 2.10.0
+  comparison for four observables through t=1.1 (12 samples, maximum absolute
+  difference 0). Report `/private/tmp/bng3-semantic-00934-priority-t1.1.json`,
+  SHA-256 `1dcb76830bdfa48c78f9d88de24e047c6d773a6b94841a1e5ae2e53fa214a7d4`.
+  `semantic/01229` still matches through t=7 (two observables, maximum absolute
+  difference `1.7763568394002505e-15`); report
+  `/private/tmp/bng3-semantic-01229-priority-t7-final2.json`, SHA-256
+  `1dc5d0474b588a77baf7583950f642a678b4c655863d00dd9a8ad220bbf53e45`.
+- [ ] Rerun the full curated BioModels inventory in flat and atomized modes
+  against this source. The earlier run was interrupted to continue feature
+  work, so it does not provide final-source evidence.

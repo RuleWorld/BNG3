@@ -645,7 +645,7 @@ def test_simultaneous_fixed_time_events_fold_mutable_reaction_rate_priorities():
             resolve_param=lambda _identifier: None,
             is_param=lambda identifier: identifier == "k1",
             is_compile_time_constant=lambda _identifier: False,
-            resolve_priority_reaction_rate_for_event=lambda identifier, _event: (
+            resolve_priority_reaction_rate_for_event=lambda identifier, _event, _state: (
                 1.0 if identifier == "J0" else None
             ),
         ),
@@ -657,6 +657,109 @@ def test_simultaneous_fixed_time_events_fold_mutable_reaction_rate_priorities():
     first = result.actions_block.index('setParameter("k1", "10")')
     second = result.actions_block.index('setParameter("k1", "2")')
     assert first < second
+
+
+def test_simultaneous_event_priorities_recompute_after_each_assignment():
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLEventAssignment
+
+    events = [
+        SBMLEvent(
+            id="A",
+            trigger="geq(time, 0.99)",
+            trigger_initial_value=True,
+            priority="10",
+            assignments=[
+                SBMLEventAssignment("S1", "1"),
+                SBMLEventAssignment("S2", "0"),
+            ],
+        ),
+        SBMLEvent(
+            id="B",
+            trigger="geq(time, 0.99)",
+            trigger_initial_value=True,
+            priority="2 * S2",
+            assignments=[
+                SBMLEventAssignment("S1", "2"),
+                SBMLEventAssignment("S2", "1"),
+            ],
+        ),
+        SBMLEvent(
+            id="C1",
+            trigger="geq(time, 0.99)",
+            trigger_initial_value=True,
+            priority="2 * S1",
+            assignments=[
+                SBMLEventAssignment("S1", "3"),
+                SBMLEventAssignment("S2", "2"),
+            ],
+        ),
+    ]
+    result = synthesize_event_actions(
+        events,
+        EventTranslationContext(
+            resolve_species_pattern=lambda identifier: f"{identifier}()",
+            resolve_param=lambda _identifier: None,
+            is_param=lambda _identifier: False,
+            resolve_initial_value=lambda identifier: {"S1": 0, "S2": 1}.get(identifier),
+            static_event_state=True,
+        ),
+    )
+
+    assert result.converted == 3
+    assert result.untranslated == []
+    assert result.actions_block is not None
+    priorities_in_order = [
+        result.actions_block.index(f'setConcentration("{species}()", "{value}")')
+        for species, value in (("S1", "1"), ("S1", "3"), ("S1", "2"))
+    ]
+    assert priorities_in_order == sorted(priorities_in_order)
+
+
+def test_unorderable_simultaneous_priority_group_returns_unsupported_result():
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLEventAssignment
+
+    events = [
+        SBMLEvent(
+            id="foldable",
+            trigger="geq(time, 1)",
+            trigger_initial_value=True,
+            priority="S1",
+            assignments=[SBMLEventAssignment("P1", "1")],
+        ),
+        SBMLEvent(
+            id="unfoldable",
+            trigger="geq(time, 1)",
+            trigger_initial_value=True,
+            priority="unresolved",
+            assignments=[SBMLEventAssignment("P1", "2")],
+        ),
+    ]
+    result = synthesize_event_actions(
+        events,
+        EventTranslationContext(
+            resolve_species_pattern=lambda _identifier: None,
+            resolve_param=lambda _identifier: None,
+            is_param=lambda _identifier: True,
+            is_compile_time_constant=lambda _identifier: False,
+            resolve_initial_value=lambda identifier: {"S1": 3}.get(identifier),
+            static_event_state=True,
+        ),
+    )
+
+    assert result.actions_block is None
+    assert result.converted == 0
+    assert {event.id for event, _reason in result.untranslated} == {
+        "foldable",
+        "unfoldable",
+    }
 
 
 def test_static_parameter_events_recompute_time_offset_after_reset():
