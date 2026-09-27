@@ -6434,3 +6434,30 @@ the other groups remain implementation targets.
   `git diff --check` pass. Local tests used a temporary `telnetlib` import
   shim because Python 3.14 removed the module imported by the legacy Atomizer
   package initializer; the shim does not change BNG3 code.
+
+## Parameter-only discrete SBML event systems — 2026-09-26
+
+- [x] Compile parameter-only event systems to absolute-time BNGL actions when
+  triggers and assignments can be simulated exactly. Support finite parameter
+  initial assignments, discrete parameter comparisons, time-evaluated delays,
+  `useValuesFromTriggerTime`, persistent and nonpersistent delayed events, and
+  at most one fixed rising comparison against time per trigger. Reject
+  species/reaction/rule dynamics, unsupported time predicates, priorities,
+  conflicting simultaneous assignments, invalid delays, and event loops
+  exceeding 10,000 firings.
+- [x] Official cases `semantic/01754`–`01759` pass conversion, SBML write and
+  reimport, and supported-surface checks. Cases `01754`–`01757` match
+  libRoadRunner 2.10.0 on one reported observable over 101 samples with max
+  absolute error `0`; `01758` and `01759` have no reported observables, so
+  their numerical comparison is vacuous. The full pinned one-unit suite
+  reports `1,618 passed, 305 unsupported, 0 failed, 0 timeouts`: 15 gains and
+  no regressions against `1,603/320/0/0`. Seven gained cases have observables,
+  each with max absolute error `0`; eight have none. Report
+  `/private/tmp/bng3-static-events-final-horizon1.json`, SHA-256
+  `8af5a5f64138202f454eafdb7b59ff3339e8634f86d80658ced0f93bb5f6a537`. The
+  aggregate suite gate remains incomplete because 305 cases are still
+  unsupported.
+- [x] Cached screen of 4,515 BioModels SBML files found no parameter-only
+  event-only models within this feature's scope; no curated-model gain claimed.
+- [x] Full Python suite: `596 passed, 28 skipped`; focused event tests:
+  `38 passed`. Ruff, Black (`py39` target), and `git diff --check` pass.

@@ -5,6 +5,27 @@
 **Branch:** `main`
 **Status:** merged convergence, nonequilibrium energy, and SBML material-gap work; release validation remains incomplete
 
+## Parameter-only SBML event scheduling — 2026-09-26
+
+Atomizer now compiles narrowly scoped event-only models with parameter state,
+initial assignments, delayed triggers, trigger-time snapshots, nonpersistent
+cancellation, and one fixed rising time trigger into absolute-time BNGL events.
+It rejects unsupported dynamics, priorities, target conflicts, and unbounded
+event loops. Official SBML cases `01754`–`01759` roundtrip successfully; all six
+report supported status. Cases `01754`–`01757` match libRoadRunner 2.10.0 on
+the reported observable over 101 samples with max absolute error `0`. Cases
+`01758` and `01759` have no reported observables, so their numerical comparison
+is vacuous. Focused tests pass (`38 passed`); full Python suite passes
+(`596 passed, 28 skipped`). The full pinned one-unit suite reports `1,618
+passed, 305 unsupported, 0 failed, 0 timeouts`: 15 gains and no regressions
+against `1,603/320/0/0`. Seven gained cases have observables, each with maximum
+absolute difference `0`; eight have none. Report
+`/private/tmp/bng3-static-events-final-horizon1.json`, SHA-256
+`8af5a5f64138202f454eafdb7b59ff3339e8634f86d80658ced0f93bb5f6a537`. A cached
+screen of 4,515 BioModels SBML files found no event-only, parameter-only model
+in this feature's scope, so no BioModels rerun or gain is claimed. Overall
+suite gate remains incomplete with 305 unsupported cases.
+
 ## Curated BioModels CVODE refinement — 2026-09-26
 
 The curated-model gate now retries numerical observable mismatches once with

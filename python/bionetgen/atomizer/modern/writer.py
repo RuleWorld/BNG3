@@ -28,6 +28,7 @@ from .events import (
     fold_numeric,
     expand_cosh_assignment_rule_events,
     expand_sinusoidal_assignment_rule_events,
+    expand_static_parameter_event_system,
     parse_time_threshold,
     synthesize_event_actions,
 )
@@ -7179,6 +7180,18 @@ def generate_bngl(
                 expression, {}, model.function_definitions
             ),
         )
+        if not model.species and not model.reactions and not model.rules:
+            lowered_static_events = expand_static_parameter_event_system(
+                event_translation_events,
+                t_end=float(t_end),
+                parameter_ids=list(model.parameters),
+                resolve_initial=resolve_event_parameter,
+                expand_functions=lambda expression: extend_function(
+                    expression, {}, model.function_definitions
+                ),
+            )
+            if lowered_static_events is not None:
+                event_translation_events = lowered_static_events
         event_targets = {
             standardize_name(variable)
             for event in event_translation_events

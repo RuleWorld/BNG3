@@ -403,6 +403,186 @@ def test_nonpersistent_delayed_window_event_is_omitted_after_window_closes():
     assert result.untranslated == []
 
 
+def test_static_parameter_events_schedule_state_dependent_firings():
+    from bionetgen.atomizer.modern.events import expand_static_parameter_event_system
+    from bionetgen.atomizer.modern.types import SBMLEvent
+
+    events = [
+        SBMLEvent(
+            id="set-high",
+            trigger="gt(P1, 1)",
+            trigger_initial_value=False,
+            delay="2.3",
+            assignments=[("P1", "3")],
+        ),
+        SBMLEvent(
+            id="set-low",
+            trigger="gt(P1, 1)",
+            trigger_initial_value=False,
+            delay="1.5",
+            assignments=[("P1", "0")],
+        ),
+    ]
+    lowered = expand_static_parameter_event_system(
+        events,
+        t_end=5,
+        parameter_ids=["P1"],
+        resolve_initial=lambda identifier: 1.5 if identifier == "P1" else None,
+    )
+
+    assert lowered is not None
+    assert [event.trigger for event in lowered] == [
+        "geq(time, 1.5)",
+        "geq(time, 2.3)",
+        "geq(time, 3.8)",
+        "geq(time, 4.6)",
+    ]
+    assert [event.assignments[0].math for event in lowered] == ["0", "3", "0", "3"]
+
+
+def test_static_parameter_events_respect_delay_cancellation_and_value_snapshot():
+    from bionetgen.atomizer.modern.events import expand_static_parameter_event_system
+    from bionetgen.atomizer.modern.types import SBMLEvent
+
+    def events(persistent, use_trigger_values):
+        return [
+            SBMLEvent(
+                id="copy",
+                trigger="gt(P1, 1)",
+                trigger_initial_value=False,
+                trigger_persistent=persistent,
+                delay="1",
+                use_values_from_trigger_time=use_trigger_values,
+                assignments=[("P2", "P1")],
+            ),
+            SBMLEvent(
+                id="clear",
+                trigger="gt(P1, 1)",
+                trigger_initial_value=False,
+                delay="0.5",
+                assignments=[("P1", "0")],
+            ),
+        ]
+
+    def lower(persistent, use_trigger_values):
+        return expand_static_parameter_event_system(
+            events(persistent, use_trigger_values),
+            t_end=2,
+            parameter_ids=["P1", "P2"],
+            resolve_initial=lambda identifier: {"P1": 2, "P2": 0}.get(identifier),
+        )
+
+    canceled = lower(False, True)
+    snapshot = lower(True, True)
+    execution_value = lower(True, False)
+    assert canceled is not None and len(canceled) == 1
+    assert [event.assignments[0].math for event in canceled] == ["0"]
+    assert snapshot is not None and [
+        event.assignments[0].math for event in snapshot
+    ] == [
+        "0",
+        "2",
+    ]
+    assert execution_value is not None and [
+        event.assignments[0].math for event in execution_value
+    ] == ["0", "0"]
+
+
+def test_static_parameter_event_lowering_rejects_time_triggers():
+    from bionetgen.atomizer.modern.events import expand_static_parameter_event_system
+    from bionetgen.atomizer.modern.types import SBMLEvent
+
+    lowered = expand_static_parameter_event_system(
+        [
+            SBMLEvent(
+                id="dynamic-time",
+                trigger="and(gt(P1, 1), gt(time, 1))",
+                assignments=[("P1", "0")],
+            )
+        ],
+        t_end=2,
+        parameter_ids=["P1"],
+        resolve_initial=lambda _identifier: 2,
+    )
+    assert lowered is None
+
+
+def test_static_parameter_event_delay_uses_trigger_time_state():
+    from bionetgen.atomizer.modern.events import expand_static_parameter_event_system
+    from bionetgen.atomizer.modern.types import SBMLEvent
+
+    events = [
+        SBMLEvent(
+            id="delayed-copy",
+            trigger="gt(P1, 1)",
+            trigger_initial_value=False,
+            delay="P1",
+            assignments=[("P2", "1")],
+        ),
+        SBMLEvent(
+            id="lower-P1",
+            trigger="gt(P1, 1)",
+            trigger_initial_value=False,
+            delay="0.5",
+            assignments=[("P1", "0")],
+        ),
+    ]
+    lowered = expand_static_parameter_event_system(
+        events,
+        t_end=3,
+        parameter_ids=["P1", "P2"],
+        resolve_initial=lambda identifier: {"P1": 2, "P2": 0}.get(identifier),
+    )
+
+    assert lowered is not None
+    assert [event.trigger for event in lowered] == [
+        "geq(time, 0.5)",
+        "geq(time, 2)",
+    ]
+
+
+def test_static_parameter_events_accept_one_fixed_time_trigger():
+    from bionetgen.atomizer.modern.events import expand_static_parameter_event_system
+    from bionetgen.atomizer.modern.types import SBMLEvent
+
+    events = [
+        SBMLEvent(
+            id="later-high",
+            trigger="gt(P1, 1)",
+            trigger_initial_value=True,
+            delay="2",
+            assignments=[("P1", "3")],
+        ),
+        SBMLEvent(
+            id="earlier-low",
+            trigger="gt(P1, 1)",
+            trigger_initial_value=True,
+            delay="1",
+            assignments=[("P1", "0")],
+        ),
+        SBMLEvent(
+            id="raise",
+            trigger="gt(time, 0.65)",
+            trigger_initial_value=True,
+            assignments=[("P1", "2")],
+        ),
+    ]
+    lowered = expand_static_parameter_event_system(
+        events,
+        t_end=4,
+        parameter_ids=["P1"],
+        resolve_initial=lambda identifier: 0.5 if identifier == "P1" else None,
+    )
+
+    assert lowered is not None
+    assert [event.trigger for event in lowered] == [
+        "geq(time, 0.65)",
+        "geq(time, 1.65)",
+        "geq(time, 2.65)",
+        "geq(time, 3.65)",
+    ]
+
+
 def test_affine_interval_of_delayed_state_obeys_event_persistence():
     from bionetgen.atomizer.modern.events import (
         EventTranslationContext,

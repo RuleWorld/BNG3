@@ -1129,6 +1129,251 @@ def expand_cosh_assignment_rule_events(
     return output
 
 
+def expand_static_parameter_event_system(
+    events: Sequence[SBMLEvent],
+    *,
+    t_end: float,
+    parameter_ids: Sequence[str],
+    resolve_initial: Callable[[str], Optional[float]],
+    expand_functions: Callable[[str], str] = lambda expression: expression,
+) -> Optional[List[SBMLEvent]]:
+    """Compile parameter-only discrete event systems into fixed-time events.
+
+    Returns ``None`` unless every trigger, delay, and assignment can be
+    simulated exactly over the requested horizon. This helper intentionally
+    handles no continuous state and at most one fixed rising comparison
+    against time in each event trigger.
+    """
+    if not events or not math.isfinite(float(t_end)) or t_end < 0:
+        return None
+
+    parameter_names = {standardize_name(name): name for name in parameter_ids}
+    if len(parameter_names) != len(parameter_ids):
+        return None
+    values: dict[str, float] = {}
+    for normalized, identifier in parameter_names.items():
+        initial = resolve_initial(identifier)
+        if initial is None or not math.isfinite(float(initial)):
+            return None
+        values[normalized] = float(initial)
+
+    def resolve_state(identifier: str, state: Mapping[str, float]) -> Optional[float]:
+        if identifier.lower() == "pi":
+            return math.pi
+        if identifier.lower() == "exponentiale":
+            return math.e
+        normalized = standardize_name(identifier)
+        return state.get(normalized)
+
+    def evaluate(
+        expression: str, state: Mapping[str, float], time_value: Optional[float] = None
+    ) -> Optional[float]:
+        expanded = expand_functions(str(expression or ""))
+        if time_value is not None:
+            expanded = re.sub(
+                r"\btime\b", _format_number(time_value), expanded, flags=re.IGNORECASE
+            )
+        value = fold_numeric(expanded, lambda name: resolve_state(name, state))
+        return value if value is not None and math.isfinite(value) else None
+
+    def parse_time_edge(trigger: str) -> Optional[float]:
+        match = re.fullmatch(r"(gt|geq)\s*\(\s*time\s*,\s*(.+)\)", trigger, re.I)
+        if match is None:
+            match = re.fullmatch(r"(lt|leq)\s*\(\s*(.+)\s*,\s*time\s*\)", trigger, re.I)
+        if match is None:
+            return None
+        threshold_expression = match.group(2)
+        if re.search(r"[A-Za-z_]", threshold_expression):
+            return None
+        threshold = evaluate(threshold_expression, values, 0.0)
+        return threshold if threshold is not None and threshold >= 0 else None
+
+    triggers: List[str] = []
+    time_edges: List[Optional[float]] = []
+    delay_expressions: List[Optional[str]] = []
+    targets: List[List[Tuple[str, str]]] = []
+    for event in events:
+        trigger = expand_functions(str(event.trigger or ""))
+        time_edge = (
+            parse_time_edge(trigger)
+            if re.search(r"\btime\b", trigger, re.IGNORECASE)
+            else None
+        )
+        if (
+            re.search(r"\btime\b", trigger, re.IGNORECASE) and time_edge is None
+        ) or event.priority:
+            return None
+        identifiers = list(re.finditer(r"\b[A-Za-z_][A-Za-z0-9_]*\b", trigger))
+        if not trigger or any(
+            standardize_name(match.group()) not in parameter_names
+            for match in identifiers
+            if match.group().lower() not in {"pi", "exponentiale", "time"}
+            and not trigger[match.end() :].lstrip().startswith("(")
+        ):
+            return None
+        trigger_value = evaluate(trigger, values, 0.0)
+        if trigger_value not in {0, 1}:
+            return None
+        delay_expression = (
+            None if not event.delay else expand_functions(str(event.delay))
+        )
+        event_targets: List[Tuple[str, str]] = []
+        for assignment in event.assignments:
+            variable, expression = _event_assignment(assignment)
+            normalized = standardize_name(variable)
+            if normalized not in parameter_names:
+                return None
+            event_targets.append((normalized, expand_functions(expression)))
+        if not event_targets:
+            return None
+        triggers.append(trigger)
+        time_edges.append(time_edge)
+        delay_expressions.append(delay_expression)
+        targets.append(event_targets)
+
+    # A pending record keeps trigger-time values for SBML's snapshot option.
+    pending: List[dict] = []
+    trigger_truth = [
+        (
+            True
+            if event.trigger_initial_value is None
+            else bool(event.trigger_initial_value)
+        )
+        for event in events
+    ]
+    sequence = 0
+
+    def schedule_edges(time_value: float, previous: Sequence[bool]) -> None:
+        nonlocal sequence
+        for index, (event, expression) in enumerate(zip(events, triggers)):
+            actual = (
+                1.0
+                if time_edges[index] is not None
+                and abs(time_edges[index] - time_value) <= 1e-12
+                else evaluate(expression, values, time_value)
+            )
+            if actual not in {0, 1}:
+                raise ValueError("trigger evaluation failed")
+            current = bool(actual)
+            if not previous[index] and current:
+                delay = (
+                    0.0
+                    if delay_expressions[index] is None
+                    else evaluate(delay_expressions[index], values, time_value)
+                )
+                if delay is None or delay < 0:
+                    raise ValueError("delay evaluation failed")
+                pending.append(
+                    {
+                        "index": index,
+                        "due": time_value + delay,
+                        "snapshot": dict(values),
+                        "trigger_time": time_value,
+                        "active": True,
+                        "sequence": sequence,
+                    }
+                )
+                sequence += 1
+            if (
+                previous[index]
+                and not current
+                and events[index].trigger_persistent is False
+            ):
+                for record in pending:
+                    if record["index"] == index:
+                        record["active"] = False
+            trigger_truth[index] = current
+
+    try:
+        schedule_edges(0.0, trigger_truth)
+        executions: List[Tuple[float, SBMLEvent]] = []
+        count = 0
+        clock_edges_pending = {
+            index: edge
+            for index, edge in enumerate(time_edges)
+            if edge is not None and edge > 0
+        }
+        while pending or clock_edges_pending:
+            pending = [record for record in pending if record["active"]]
+            next_due = min((record["due"] for record in pending), default=math.inf)
+            next_clock = min(clock_edges_pending.values(), default=math.inf)
+            next_time = min(next_due, next_clock)
+            if next_time > float(t_end) + 1e-12:
+                break
+            if abs(next_clock - next_time) <= 1e-12:
+                clock_edges_pending = {
+                    index: edge
+                    for index, edge in clock_edges_pending.items()
+                    if abs(edge - next_time) > 1e-12
+                }
+                previous = list(trigger_truth)
+                schedule_edges(next_time, previous)
+            batch = [
+                record for record in pending if abs(record["due"] - next_time) <= 1e-12
+            ]
+            pending = [record for record in pending if record not in batch]
+            batch = [
+                record
+                for record in batch
+                if events[record["index"]].trigger_persistent is not False
+                or bool(evaluate(triggers[record["index"]], values, next_time))
+            ]
+            if not batch:
+                continue
+            count += len(batch)
+            if count > 10000:
+                return None
+
+            pre_execution = dict(values)
+            updates: dict[str, float] = {}
+            batch_targets: set[str] = set()
+            for record in batch:
+                event_index = record["index"]
+                event = events[event_index]
+                assignment_state = (
+                    record["snapshot"]
+                    if event.use_values_from_trigger_time
+                    else pre_execution
+                )
+                assignment_time = (
+                    record["trigger_time"]
+                    if event.use_values_from_trigger_time
+                    else next_time
+                )
+                for normalized, expression in targets[event_index]:
+                    if normalized in batch_targets:
+                        return None
+                    value = evaluate(expression, assignment_state, assignment_time)
+                    if value is None:
+                        return None
+                    batch_targets.add(normalized)
+                    updates[normalized] = value
+            values.update(updates)
+
+            for record in batch:
+                source = events[record["index"]]
+                materialized = replace(
+                    source,
+                    id=f"{source.id or 'event'}__static_{record['sequence'] + 1}",
+                    trigger=f"geq(time, {_format_number(next_time)})",
+                    delay=None,
+                    trigger_initial_value=False,
+                    trigger_persistent=True,
+                    priority=None,
+                    assignments=[
+                        (parameter_names[target], _format_number(updates[target]))
+                        for target, _expression in targets[record["index"]]
+                    ],
+                )
+                executions.append((next_time, materialized))
+
+            previous = list(trigger_truth)
+            schedule_edges(next_time, previous)
+        return [event for _time, event in executions]
+    except (ArithmeticError, OverflowError, TypeError, ValueError):
+        return None
+
+
 def _parse_state_difference_threshold(
     trigger: str,
 ) -> Optional[Tuple[str, str, str]]:
