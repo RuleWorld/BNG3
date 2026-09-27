@@ -37,8 +37,9 @@ capability inventory.
 - [x] Delay lowering now follows a single acyclic assignment-rule alias when
   its value is provably constant for the complete requested simulation
   horizon. Affine-in-time conditions use exact rational endpoint checks;
-  event-controlled values, initial-assignment targets, cycles, and changing
-  lag values remain unsupported.
+  other event-controlled values, initial-assignment targets, cycles, and
+  changing lag values remain unsupported. A narrow single fixed-time
+  event-controlled lag is covered in the following section.
 - [x] A focused regression grounded in `semantic/00985` confirms the nested
   delay reduces at `t_end=1` when the lag is zero throughout the interval, and
   remains a delay at `t_end=2` when the lag changes. The full Python suite
@@ -56,6 +57,33 @@ capability inventory.
   no direct assignment-rule-symbol lag among 1,084 primary XML files; no
   curated BioModels gain is claimed. Aggregate reports below remain based on
   source `a0ff898`.
+
+## Single fixed-time event-controlled delay lag — 2026-09-27
+
+- [x] Delay lowering now handles a nonnegative lag parameter that changes
+  once through a sole `geq(time, constant)` event with one constant-valued
+  assignment, when the delayed state has a proven affine trajectory. It emits
+  a piecewise expression across the event boundary and preserves the initial
+  history before the delayed time reaches zero. Multiple events, priorities,
+  delayed events, nonconstant assignments, non-affine states, and other lag
+  controls remain unsupported. Assignment-rule references preserve dynamic
+  rate-rule values through their generated amount observables.
+- [x] The focused `semantic/00984` regression verifies both sides of the
+  event transition at `t_end=1` and the post-history branch at `t_end=2`. The
+  official one-case reports pass conversion, round-trip, native-reader, and
+  BNG3/libRoadRunner comparison. At `t_end=1`, 2 observables match across 11
+  samples with zero maximum absolute difference. At `t_end=2`, 2 observables
+  match across 21 samples with maximum difference `8.88e-16`. Reports:
+  `/private/tmp/bng3-delay-event-lag-00984-t1-final.json` (SHA-256
+  `c4ee31b428ae6b012b28af936c5ea42ef79c482dee7abdbc4b04173f1cc404b8`) and
+  `/private/tmp/bng3-delay-event-lag-00984-t2-final.json` (SHA-256
+  `dce2514cc327601c48bd9aced456965ff2bd11ce1f2d5e693cd8882b6a585a16`).
+  Both are one-case partial reports; reference-result conformance was not run.
+- [x] Full Python suite: `638 passed, 28 skipped`; Ruff, Black (`py39`), and
+  `git diff --check` pass. The cached BioModels screen parsed 1,084 primary
+  XML files (9 parse errors), found 16 delay calls and no direct lag symbol
+  controlled by an event. No curated BioModels gain is claimed; the full SBML
+  Test Suite and BioModels aggregates remain based on `a0ff898`.
 
 ## Event-controlled deterministic species-reference stoichiometry — 2026-09-27
 

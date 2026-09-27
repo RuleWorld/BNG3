@@ -2856,6 +2856,72 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
             net_amount_rate /= float(compartment.size)
         return (initial, net_amount_rate) if math.isfinite(net_amount_rate) else None
 
+    def single_fixed_event_lag(expression: str) -> Optional[Tuple[float, float, float]]:
+        """Resolve a mutable parameter changed once by a fixed-time event."""
+        identifier = re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", expression.strip())
+        if identifier is None or len(model.events) != 1:
+            return None
+        symbol = identifier.group(0)
+        parameter = model.parameters.get(symbol)
+        if (
+            parameter is None
+            or parameter.constant
+            or symbol in initial_assignment_targets
+            or any(rule.variable == symbol for rule in model.rules)
+        ):
+            return None
+
+        event = model.events[0]
+        if event.delay or event.priority is not None or len(event.assignments) != 1:
+            return None
+        if not re.match(r"^\s*geq\s*\(\s*time\s*,", event.trigger, re.IGNORECASE):
+            return None
+        assignments = [
+            _event_assignment(assignment)
+            for assignment in event.assignments
+            if _event_assignment(assignment)[0] == symbol
+        ]
+        if len(assignments) != 1:
+            return None
+        threshold = parse_time_threshold(event.trigger)
+        if threshold is None:
+            return None
+        try:
+            initial_duration = initial_value(symbol)
+            event_time = initial_expression(threshold, require_immutable_symbols=True)
+            assigned_duration = initial_expression(
+                assignments[0][1], require_immutable_symbols=True
+            )
+        except (TypeError, ValueError, OverflowError):
+            return None
+        if (
+            initial_duration is None
+            or event_time is None
+            or assigned_duration is None
+            or not all(
+                math.isfinite(value)
+                for value in (initial_duration, event_time, assigned_duration)
+            )
+            or event_time <= 0
+            or initial_duration < 0
+            or assigned_duration < 0
+        ):
+            return None
+        return event_time, initial_duration, assigned_duration
+
+    def affine_delayed_value(
+        target: str, trajectory: Tuple[float, float], duration: float
+    ) -> Optional[str]:
+        initial, slope = trajectory
+        if duration == 0:
+            return target
+        if duration >= t_end:
+            return repr(initial)
+        displacement = slope * duration
+        if not math.isfinite(displacement):
+            return None
+        return f"if(time < {duration!r}, {initial!r}, ({target} - {displacement!r}))"
+
     def fold_bounded_delays(
         expression: str, *, lower_affine_state_history: bool = True
     ) -> Tuple[str, int]:
@@ -2885,14 +2951,35 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
                     duration = bounded_constant_expression(arguments[1])
             except (TypeError, ValueError):
                 return expression, 0
+            delayed_expression = arguments[0].strip()
+            state_match = re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", delayed_expression)
+            if duration is None and state_match and lower_affine_state_history:
+                lag_schedule = single_fixed_event_lag(arguments[1])
+                if lag_schedule is not None:
+                    event_time, before_duration, after_duration = lag_schedule
+                    trajectory = affine_trajectory(state_match.group(0))
+                    if trajectory is not None:
+                        before = affine_delayed_value(
+                            state_match.group(0), trajectory, before_duration
+                        )
+                        after = affine_delayed_value(
+                            state_match.group(0), trajectory, after_duration
+                        )
+                        if before is not None and after is not None:
+                            replacement = (
+                                before
+                                if event_time > t_end
+                                else f"if(time < {event_time!r}, {before}, {after})"
+                            )
+                            replacements.append((match.start(), call_end, replacement))
+                            position = call_end
+                            continue
             if duration is None or not math.isfinite(duration) or duration < 0:
                 return expression, 0
-            delayed_expression = arguments[0].strip()
             if duration == 0:
                 replacements.append((match.start(), call_end, delayed_expression))
                 position = call_end
                 continue
-            state_match = re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", delayed_expression)
             if 0 < duration < t_end and state_match:
                 target = state_match.group(0)
                 trajectory = affine_trajectory(target)
@@ -4209,6 +4296,12 @@ def write_functions(
         for rule in assignment_rules
         if rule.variable and str(rule.variable) not in species_assignment_variables
     )
+    rate_rule_parameter_ids = {
+        alias
+        for rule in model.rules
+        if rule.variable and rule.type == "rate"
+        for alias in (str(rule.variable), standardize_name(str(rule.variable)))
+    }
     species_map = {
         alias: species_id
         for species_id in model.species
@@ -4344,6 +4437,8 @@ def write_functions(
                 if str(parameter_id) not in assignment_rule_parameter_ids
                 and standardize_name(str(parameter_id))
                 not in assignment_rule_parameter_ids
+                and str(parameter_id) not in rate_rule_parameter_ids
+                and standardize_name(str(parameter_id)) not in rate_rule_parameter_ids
             },
             model.function_definitions,
         )

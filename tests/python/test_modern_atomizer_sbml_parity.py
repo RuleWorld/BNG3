@@ -2455,6 +2455,57 @@ def test_nested_delay_uses_zero_lag_from_bounded_assignment_rule():
     assert "delay(" in longer_horizon.bngl.lower()
 
 
+def test_fixed_time_event_lag_uses_piecewise_affine_delay_history():
+    from bionetgen.atomizer.modern import Atomizer
+
+    # SBML Test Suite semantic/00984: temp changes from 0 to 1 at t=0.99,
+    # while x=t. Over a one-unit horizon, delay(x, temp) is x before the event
+    # and the zero-valued pre-simulation history afterward.
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="fixed_event_delay_lag">
+        <listOfParameters>
+          <parameter id="y" constant="false"/>
+          <parameter id="x" value="0" constant="false"/>
+          <parameter id="temp" value="0" constant="false"/>
+        </listOfParameters>
+        <listOfRules>
+          <assignmentRule variable="y"><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><csymbol definitionURL="http://www.sbml.org/sbml/symbols/delay">delay</csymbol>
+              <ci>x</ci><ci>temp</ci>
+            </apply>
+          </math></assignmentRule>
+          <rateRule variable="x"><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <cn type="integer">1</cn>
+          </math></rateRule>
+        </listOfRules>
+        <listOfEvents><event id="set_lag" useValuesFromTriggerTime="true">
+          <trigger initialValue="true" persistent="true">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><geq/><csymbol definitionURL="http://www.sbml.org/sbml/symbols/time">time</csymbol><cn>0.99</cn></apply>
+            </math>
+          </trigger>
+          <listOfEventAssignments><eventAssignment variable="temp">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn type="integer">1</cn></math>
+          </eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True, t_end=1, n_steps=10).atomize(xml)
+
+    assert result.success, result.error
+    assert "delay(" not in result.bngl.lower()
+    assert "y() = if(time() < 0.99, x_amt, 0.0)" in result.bngl
+    assert 'setParameter("temp", "1")' in result.bngl
+    assert 'math function "delay"' not in result.bngl
+
+    longer_horizon = Atomizer(quiet_mode=True, t_end=2, n_steps=20).atomize(xml)
+
+    assert longer_horizon.success, longer_horizon.error
+    assert "delay(" not in longer_horizon.bngl.lower()
+    assert "if(time() < 1.0, 0.0, (x_amt - 1.0))" in longer_horizon.bngl
+
+
 def test_sbml_delay_of_unchanging_parameter_lowers_to_value():
     xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
       <model id="delay_of_static_parameter">

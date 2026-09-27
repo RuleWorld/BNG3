@@ -9,9 +9,9 @@
 
 Delay lowering now follows a single acyclic assignment-rule alias when its
 value is constant over the requested simulation horizon. Time comparisons
-are checked with exact rational affine bounds. Event-controlled lags,
+are checked with exact rational affine bounds. Other event-controlled lags,
 initial-assignment targets, cycles, and lags that change during the horizon
-remain unsupported.
+remain unsupported outside the narrow fixed-time case below.
 
 The regression grounded in `semantic/00985` confirms that the nested delay
 reduces at `t_end=1` and remains explicit at `t_end=2`. The official one-case
@@ -22,11 +22,36 @@ The report is partial and does not test SBML reference-result conformance:
 `e868fed657b220957f0a48131007a183d7ec835a95aacb2228373d27d7731be5`.
 
 Full Python suite: `637 passed, 28 skipped`; Ruff, Black (`py39`), and
-`git diff --check` pass. The full suite and curated BioModels aggregates were
-not rerun. A cached BioModels screen found no direct assignment-rule-symbol
-lags among 16 delay calls in 1,084 primary XML files, so no curated gain is
-claimed. The full SBML Test Suite and curated BioModels aggregates were not
-rerun; the latest full aggregate reports remain based on source `a0ff898`.
+`git diff --check` pass. A cached BioModels screen found no direct
+assignment-rule-symbol lags among 16 delay calls in 1,084 primary XML files,
+so no curated gain is claimed. The full SBML Test Suite and curated BioModels
+aggregates were not rerun; the latest full reports remain based on `a0ff898`.
+
+## Single fixed-time event-controlled delay lag — 2026-09-27
+
+Delay lowering handles a mutable lag parameter assigned once by a single
+fixed-time event, when the delayed state has a proven affine trajectory. The
+generated rule branches at the event time and applies the exact pre-simulation
+history until the delayed time reaches zero. Multiple or delayed events,
+priorities, nonconstant lag assignments, and non-affine states remain
+unsupported. Rate-rule references in assignment expressions now resolve to
+their generated amount observables rather than the initial parameter value.
+
+Official `semantic/00984` passes round-trip, native-reader, and
+BNG3/libRoadRunner comparison at both `t_end=1` and `t_end=2`: 2 observables
+over 11/21 samples with maximum absolute differences 0 and `8.88e-16`.
+Reports are partial one-case runs and do not test SBML reference-result
+conformance: `/private/tmp/bng3-delay-event-lag-00984-t1-final.json` (SHA-256
+`c4ee31b428ae6b012b28af936c5ea42ef79c482dee7abdbc4b04173f1cc404b8`) and
+`/private/tmp/bng3-delay-event-lag-00984-t2-final.json` (SHA-256
+`dce2514cc327601c48bd9aced456965ff2bd11ce1f2d5e693cd8882b6a585a16`).
+
+Full Python suite: `638 passed, 28 skipped`; Ruff, Black (`py39`), and
+`git diff --check` pass. The cached BioModels inventory found no direct
+event-assigned lag among 16 delay calls in 1,084 primary XML files (9 parse
+errors), so no curated gain is claimed. The full SBML Test Suite and curated
+BioModels aggregates were not rerun; their latest reports remain based on
+`a0ff898`.
 
 ## Quadratic event trajectories in independent components — 2026-09-27
 
