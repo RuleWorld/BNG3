@@ -2000,6 +2000,10 @@ persistent fixed-delay events. SBML Test Suite `semantic/00936` passes import,
 SBML write/reimport, and BNG3 CVODE versus libRoadRunner 2.10.0 for all three
 observables (maximum absolute difference 0) at a 10-unit/100-interval horizon.
 Full Python: 588 passed, 28 skipped; changed-file Ruff, Black, and diff checks
-pass. This is targeted evidence only; aggregate SBML and BioModels benchmarks
-remain unrerun for this change. Exact report and scope are in the convergence
-checklist.
+pass. The full pinned SBML Test Suite now reports 1,600 passed, 323
+unsupported, zero failed/timeouts: 76 additional passes and no regressions
+versus the prior full report. All 1,522 passing cases with observables pass
+the configured BNG3/libRoadRunner comparison; 78 cases have no observables.
+The full curated BioModels inventory is still
+running; no curated gain is claimed. Exact report and scope are in the
+convergence checklist.

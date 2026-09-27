@@ -6387,7 +6387,15 @@ the other groups remain implementation targets.
   maximum absolute difference `0`. Report
   `/private/tmp/bng3-00936-after-sine-final.json`, SHA-256
   `d8049a30646b3344ad75412eb13522f81dd64ceae4e3cd6d89a2ef677086a2ab`.
-  This was a one-case run; the full SBML suite and curated BioModels inventory
-  have not been rerun, so no aggregate benchmark gain is claimed.
+- [x] Full pinned SBML Test Suite at commit `1db689e`: `1,600 passed, 323
+  unsupported, 0 failed, 0 timeouts`. Relative to the previous full report
+  (`1,524/399`), 76 cases changed from unsupported to passed and none regressed.
+  All 1,522 passed cases with observables pass the configured BNG3/libRoadRunner
+  comparison; 78 passed cases have no observables, so their comparison is
+  vacuous.
+  Report `/private/tmp/bng3-sbml-sinusoidal-full.json`, SHA-256
+  `955514a936b551cfc7bf8958f5c0647c98ec20575c4bfa0b277978f2b84addf2`.
+- [ ] Full curated BioModels inventory is running against this commit; do not
+  claim a curated-model gain until that report completes and is compared.
 - [x] Full Python suite: `588 passed, 28 skipped`; changed-file Ruff, Black,
   and `git diff --check` pass.
