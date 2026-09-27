@@ -5988,6 +5988,47 @@ def generate_bngl(
                     return False
                 return True
 
+            def has_prior_event_controlled_dependency(
+                symbol: str, stack: Optional[set[str]] = None
+            ) -> bool:
+                normalized = standardize_name(symbol)
+                if any(
+                    standardize_name(assignment.variable) == normalized
+                    for candidate in model.events
+                    if controls_before_event(candidate)
+                    for assignment in candidate.assignments
+                ):
+                    return True
+                path = set() if stack is None else stack
+                if normalized in path:
+                    return True
+                rules = [
+                    rule
+                    for rule in model.rules
+                    if rule.variable and standardize_name(rule.variable) == normalized
+                ]
+                if not rules:
+                    return False
+                if len(rules) != 1 or rules[0].type != "assignment":
+                    return True
+                expression = extend_function(
+                    rules[0].math, {}, model.function_definitions
+                )
+                try:
+                    parsed = ast.parse(expression, mode="eval")
+                except (TypeError, ValueError, SyntaxError):
+                    return True
+                path.add(normalized)
+                dependent_symbols = {
+                    node.id for node in ast.walk(parsed) if isinstance(node, ast.Name)
+                }
+                controlled = any(
+                    has_prior_event_controlled_dependency(dependent, path)
+                    for dependent in dependent_symbols
+                )
+                path.remove(normalized)
+                return controlled
+
             parameter = model.parameters.get(identifier)
             if parameter is None:
                 compartment_id = next(
@@ -6227,8 +6268,21 @@ def generate_bngl(
                             if reference.species != species_id:
                                 continue
                             if reference.variable_stoichiometry:
-                                return None
-                            net_coefficient += sign * float(reference.stoichiometry)
+                                if (
+                                    not reference.id
+                                    or has_prior_event_controlled_dependency(
+                                        reference.id
+                                    )
+                                ):
+                                    return None
+                                coefficient = resolve_event_parameter(reference.id)
+                                if coefficient is None or not math.isfinite(
+                                    coefficient
+                                ):
+                                    return None
+                            else:
+                                coefficient = float(reference.stoichiometry)
+                            net_coefficient += sign * float(coefficient)
                     if net_coefficient == 0:
                         continue
                     kinetic_law = reaction.kinetic_law
@@ -6929,11 +6983,28 @@ def generate_bngl(
             return (initial, squared_slope) if math.isfinite(squared_slope) else None
 
         quadratic_state_snapshots: Dict[
-            Tuple[int, str], Tuple[Dict[str, Tuple[float, float]], float, float]
+            Tuple[int, str, Tuple[Tuple[str, float], ...]],
+            Tuple[Dict[str, Tuple[float, float]], float, float],
         ] = {}
 
+        def quadratic_state_key(
+            event_context: SBMLEvent, state_values: Optional[Mapping[str, float]]
+        ) -> Tuple[int, str, Tuple[Tuple[str, float], ...]]:
+            normalized_values = tuple(
+                sorted(
+                    (
+                        standardize_name(symbol),
+                        float(value),
+                    )
+                    for symbol, value in (state_values or {}).items()
+                )
+            )
+            return (id(event_context), "", normalized_values)
+
         def resolve_quadratic_event_rate(
-            identifier: str, event_context: SBMLEvent
+            identifier: str,
+            event_context: SBMLEvent,
+            state_values: Optional[Mapping[str, float]] = None,
         ) -> Optional[Tuple[float, float, float, float]]:
             """Resolve a scalar quadratic ODE in a rank-one reaction network."""
             if (
@@ -6981,32 +7052,6 @@ def generate_bngl(
                 right_species = species_ids.get(standardize_name(right_id))
                 if left_species is None or right_species is None:
                     return None
-                if any(
-                    standardize_name(assignment.variable)
-                    in {
-                        standardize_name(left_species),
-                        standardize_name(right_species),
-                    }
-                    for assignment in event_context.assignments
-                ):
-                    return None
-                component_ids = {
-                    standardize_name(left_species),
-                    standardize_name(right_species),
-                }
-                for assignment in event_context.assignments:
-                    try:
-                        assignment_math = ast.parse(
-                            str(assignment.math or ""), mode="eval"
-                        )
-                    except (SyntaxError, TypeError, ValueError):
-                        return None
-                    if any(
-                        standardize_name(node.id) in component_ids
-                        for node in ast.walk(assignment_math)
-                        if isinstance(node, ast.Name)
-                    ):
-                        return None
                 state_expression = ((left_species, 1.0), (right_species, -1.0))
                 target_id = next(
                     (
@@ -7034,7 +7079,14 @@ def generate_bngl(
                 if target.has_only_substance_units
                 else 1.0 / float(target_compartment.size)
             )
-            coordinate_initial = resolve_initial_event_value(target_id)
+
+            def initial_value(symbol: str) -> Optional[float]:
+                for state_symbol, state_value in (state_values or {}).items():
+                    if standardize_name(state_symbol) == standardize_name(symbol):
+                        return float(state_value)
+                return resolve_initial_event_value(symbol)
+
+            coordinate_initial = initial_value(target_id)
             if coordinate_initial is None or not math.isfinite(coordinate_initial):
                 return None
 
@@ -7083,7 +7135,7 @@ def generate_bngl(
 
             species_polynomials: Dict[str, Tuple[float, float]] = {}
             for sid, species in model.species.items():
-                state_initial = resolve_initial_event_value(sid)
+                state_initial = initial_value(sid)
                 if state_initial is None or not math.isfinite(state_initial):
                     return None
                 slope = 0.0
@@ -7259,8 +7311,9 @@ def generate_bngl(
                     - linear * offset
                     + state_slope * constant,
                 )
+            key_prefix = quadratic_state_key(event_context, state_values)
             quadratic_state_snapshots[
-                (id(event_context), standardize_name(identifier))
+                (key_prefix[0], standardize_name(identifier), key_prefix[2])
             ] = (dict(species_polynomials), offset, state_slope)
             if not all(
                 math.isfinite(value) for value in (initial, quadratic, linear, constant)
@@ -7269,12 +7322,21 @@ def generate_bngl(
             return initial, quadratic, linear, constant
 
         def resolve_quadratic_event_state_values(
-            identifier: str, value: float, event_context: SBMLEvent
+            identifier: str,
+            value: float,
+            event_context: SBMLEvent,
+            state_values: Optional[Mapping[str, float]] = None,
         ) -> Optional[Mapping[str, float]]:
-            key = (id(event_context), standardize_name(identifier))
+            key_prefix = quadratic_state_key(event_context, state_values)
+            key = (key_prefix[0], standardize_name(identifier), key_prefix[2])
             snapshot = quadratic_state_snapshots.get(key)
             if snapshot is None:
-                if resolve_quadratic_event_rate(identifier, event_context) is None:
+                if (
+                    resolve_quadratic_event_rate(
+                        identifier, event_context, state_values
+                    )
+                    is None
+                ):
                     return None
                 snapshot = quadratic_state_snapshots.get(key)
             if snapshot is None:
@@ -7621,6 +7683,16 @@ def generate_bngl(
                 resolve_quadratic_rate_for_event=resolve_quadratic_event_rate,
                 resolve_quadratic_state_values_for_event=(
                     resolve_quadratic_event_state_values
+                ),
+                resolve_quadratic_rate_from_state=(
+                    lambda identifier, event, state_values: resolve_quadratic_event_rate(
+                        identifier, event, state_values
+                    )
+                ),
+                resolve_quadratic_state_values_from_state=(
+                    lambda identifier, value, event, state_values: resolve_quadratic_event_state_values(
+                        identifier, value, event, state_values
+                    )
                 ),
                 resolve_reaction_rate_for_event=resolve_event_reaction_rate,
                 resolve_priority_reaction_rate_for_event=lambda identifier, event, state: (

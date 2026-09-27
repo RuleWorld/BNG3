@@ -982,6 +982,139 @@ def test_conjunctive_event_outside_horizon_is_safely_omitted():
     assert "state-dependent or non-constant event" in longer_result.bngl
 
 
+def test_event_controls_deterministic_species_reference_flux():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="event_controlled_deterministic_stoichiometry">
+        <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies><species id="X" compartment="C" initialAmount="1" hasOnlySubstanceUnits="true"/></listOfSpecies>
+        <listOfParameters>
+          <parameter id="p1" value="1" constant="false"/>
+          <parameter id="k1" value="1" constant="true"/>
+        </listOfParameters>
+        <listOfRules><assignmentRule variable="Xref">
+          <math xmlns="http://www.w3.org/1998/Math/MathML"><ci>p1</ci></math>
+        </assignmentRule></listOfRules>
+        <listOfReactions><reaction id="source" reversible="false">
+          <listOfProducts><speciesReference id="Xref" species="X" constant="false"/></listOfProducts>
+          <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><ci>k1</ci></math></kineticLaw>
+        </reaction></listOfReactions>
+        <listOfEvents><event id="threshold" useValuesFromTriggerTime="true">
+          <trigger initialValue="true" persistent="true">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><geq/><ci>X</ci><cn>2</cn></apply>
+            </math>
+          </trigger>
+          <listOfEventAssignments><eventAssignment variable="p1">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>2</cn></math>
+          </eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True, t_end=1.5).atomize(xml)
+
+    assert result.success, result.error
+    assert "state-dependent or non-constant event" not in result.bngl
+    assert "t_end=>1" in result.bngl
+    assert 'setParameter("p1", "2")' in result.bngl
+
+
+def test_quadratic_state_event_repeats_after_trigger_species_reset():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="quadratic_reentrant_event">
+        <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies>
+          <species id="A" compartment="C" initialAmount="1" hasOnlySubstanceUnits="true"/>
+          <species id="B" compartment="C" initialAmount="2" hasOnlySubstanceUnits="true"/>
+          <species id="D" compartment="C" initialAmount="1" hasOnlySubstanceUnits="true"/>
+        </listOfSpecies>
+        <listOfParameters>
+          <parameter id="k1" value="0.75" constant="true"/>
+          <parameter id="k2" value="0.25" constant="true"/>
+        </listOfParameters>
+        <listOfReactions>
+          <reaction id="bind" reversible="false">
+            <listOfReactants><speciesReference species="A"/><speciesReference species="B"/></listOfReactants>
+            <listOfProducts><speciesReference species="D"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><times/><ci>C</ci><ci>k1</ci><ci>A</ci><ci>B</ci></apply></math></kineticLaw>
+          </reaction>
+          <reaction id="unbind" reversible="false">
+            <listOfReactants><speciesReference species="D"/></listOfReactants>
+            <listOfProducts><speciesReference species="A"/><speciesReference species="B"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><times/><ci>C</ci><ci>k2</ci><ci>D</ci></apply></math></kineticLaw>
+          </reaction>
+        </listOfReactions>
+        <listOfEvents><event id="reset" useValuesFromTriggerTime="true">
+          <trigger initialValue="true" persistent="true">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><apply><lt/><ci>A</ci><cn>0.75</cn></apply></math>
+          </trigger>
+          <listOfEventAssignments>
+            <eventAssignment variable="B"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1.5</cn></math></eventAssignment>
+            <eventAssignment variable="A"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></eventAssignment>
+          </listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True, t_end=10, n_steps=100).atomize(xml)
+
+    assert result.success, result.error
+    assert "state-dependent or non-constant event" not in result.bngl
+    assert "# 7 time-triggered SBML event(s) translated" in result.bngl
+    assert result.bngl.count("setConcentration(") == 14
+
+
+def test_quadratic_event_staying_true_after_reset_does_not_refire():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="quadratic_event_stays_true">
+        <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies>
+          <species id="A" compartment="C" initialAmount="1" hasOnlySubstanceUnits="true"/>
+          <species id="B" compartment="C" initialAmount="2" hasOnlySubstanceUnits="true"/>
+          <species id="D" compartment="C" initialAmount="1" hasOnlySubstanceUnits="true"/>
+        </listOfSpecies>
+        <listOfParameters>
+          <parameter id="k1" value="0.75" constant="true"/>
+          <parameter id="k2" value="0.25" constant="true"/>
+        </listOfParameters>
+        <listOfReactions>
+          <reaction id="bind" reversible="false">
+            <listOfReactants><speciesReference species="A"/><speciesReference species="B"/></listOfReactants>
+            <listOfProducts><speciesReference species="D"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><times/><ci>C</ci><ci>k1</ci><ci>A</ci><ci>B</ci></apply></math></kineticLaw>
+          </reaction>
+          <reaction id="unbind" reversible="false">
+            <listOfReactants><speciesReference species="D"/></listOfReactants>
+            <listOfProducts><speciesReference species="A"/><speciesReference species="B"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><times/><ci>C</ci><ci>k2</ci><ci>D</ci></apply></math></kineticLaw>
+          </reaction>
+        </listOfReactions>
+        <listOfEvents><event id="reset" useValuesFromTriggerTime="true">
+          <trigger initialValue="true" persistent="true">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><apply><lt/><ci>A</ci><cn>0.75</cn></apply></math>
+          </trigger>
+          <listOfEventAssignments>
+            <eventAssignment variable="B"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1.5</cn></math></eventAssignment>
+            <eventAssignment variable="A"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0.5</cn></math></eventAssignment>
+          </listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True, t_end=10, n_steps=100).atomize(xml)
+
+    assert result.success, result.error
+    assert "state-dependent or non-constant event" not in result.bngl
+    assert "# 1 time-triggered SBML event(s) translated" in result.bngl
+    assert result.bngl.count("setConcentration(") == 2
+
+
 def test_exponential_self_reset_after_requested_horizon_is_informational():
     from bionetgen.atomizer.modern import Atomizer
 

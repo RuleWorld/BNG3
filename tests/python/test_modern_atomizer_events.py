@@ -1578,6 +1578,128 @@ def test_quadratic_state_difference_threshold_uses_composite_trajectory():
     assert 'setParameter("P", "4")' in result.actions_block
 
 
+def test_quadratic_difference_event_reenters_after_species_reset():
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLEventAssignment
+
+    event = SBMLEvent(
+        id="difference-reset",
+        trigger="gt(A, B)",
+        assignments=[
+            SBMLEventAssignment("A", "0"),
+            SBMLEventAssignment("B", "1"),
+        ],
+    )
+
+    def difference_rate(_identifier, _event, state_values):
+        initial = state_values.get("A", 0.0) - state_values.get("B", 1.0)
+        return initial, 0.0, 0.0, 1.0
+
+    result = synthesize_event_actions(
+        [event],
+        EventTranslationContext(
+            resolve_species_pattern=lambda identifier: f"{identifier}()",
+            resolve_param=lambda _identifier: None,
+            is_param=lambda _identifier: False,
+            base_t_end=2.5,
+            resolve_initial_value=lambda identifier: {"A": 0.0, "B": 1.0}.get(
+                identifier
+            ),
+            resolve_quadratic_rate_from_state=difference_rate,
+            resolve_quadratic_state_values_from_state=lambda _identifier, _value, _event, _state_values: {
+                "A": 0.5,
+                "B": 0.5,
+            },
+        ),
+    )
+
+    assert result.converted == 1
+    assert result.untranslated == []
+    assert result.actions_block is not None
+    assert "# 2 time-triggered SBML event(s) translated" in result.actions_block
+    assert result.actions_block.count('setConcentration("A()", "0")') == 2
+    assert result.actions_block.count('setConcentration("B()", "1")') == 2
+
+
+def test_quadratic_state_event_with_first_crossing_after_horizon_is_proven_inactive():
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLEventAssignment
+
+    event = SBMLEvent(
+        id="late-quadratic-event",
+        trigger="gt(A, 2)",
+        assignments=[SBMLEventAssignment("A", "0")],
+    )
+    result = synthesize_event_actions(
+        [event],
+        EventTranslationContext(
+            resolve_species_pattern=lambda identifier: f"{identifier}()",
+            resolve_param=lambda _identifier: None,
+            is_param=lambda _identifier: False,
+            resolve_initial_value=lambda identifier: 1.0 if identifier == "A" else None,
+            resolve_quadratic_rate_from_state=lambda _identifier, _event, state_values: (
+                state_values.get("A", 1.0),
+                0.0,
+                0.1,
+                0.0,
+            ),
+            resolve_quadratic_state_values_from_state=lambda _identifier, value, _event, _state_values: {
+                "A": value,
+            },
+            base_t_end=1.0,
+        ),
+    )
+
+    assert result.converted == 0
+    assert result.horizon_limited == 1
+    assert result.untranslated == []
+    assert result.actions_block is None
+
+
+def test_quadratic_state_event_with_no_future_crossing_is_proven_inactive():
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLEventAssignment
+
+    event = SBMLEvent(
+        id="unreachable-quadratic-event",
+        trigger="gt(A, 2)",
+        assignments=[SBMLEventAssignment("A", "0")],
+    )
+    result = synthesize_event_actions(
+        [event],
+        EventTranslationContext(
+            resolve_species_pattern=lambda identifier: f"{identifier}()",
+            resolve_param=lambda _identifier: None,
+            is_param=lambda _identifier: False,
+            resolve_initial_value=lambda identifier: 1.0 if identifier == "A" else None,
+            resolve_quadratic_rate_from_state=lambda _identifier, _event, state_values: (
+                state_values.get("A", 1.0),
+                0.0,
+                0.0,
+                -0.1,
+            ),
+            resolve_quadratic_state_values_from_state=lambda _identifier, value, _event, _state_values: {
+                "A": value,
+            },
+            base_t_end=1.0,
+        ),
+    )
+
+    assert result.converted == 0
+    assert result.horizon_limited == 1
+    assert result.untranslated == []
+    assert result.actions_block is None
+
+
 def test_affine_state_difference_threshold_preserves_trigger_snapshot():
     from bionetgen.atomizer.modern.events import (
         EventTranslationContext,

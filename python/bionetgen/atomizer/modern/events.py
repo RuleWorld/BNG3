@@ -80,6 +80,23 @@ def _no_event_quadratic_state_values(
     return None
 
 
+def _no_event_quadratic_rate_from_state(
+    _identifier: str,
+    _event: SBMLEvent,
+    _state_values: Mapping[str, float],
+) -> Optional[Tuple[float, float, float, float]]:
+    return None
+
+
+def _no_event_quadratic_state_values_from_state(
+    _identifier: str,
+    _value: float,
+    _event: SBMLEvent,
+    _state_values: Mapping[str, float],
+) -> Optional[Mapping[str, float]]:
+    return None
+
+
 from .types import standardize_name
 
 
@@ -154,6 +171,14 @@ class EventTranslationContext:
     resolve_quadratic_state_values_for_event: Callable[
         [str, float, SBMLEvent], Optional[Mapping[str, float]]
     ] = _no_event_quadratic_state_values
+    # Re-resolve an exact quadratic trajectory from a post-event state snapshot.
+    resolve_quadratic_rate_from_state: Callable[
+        [str, SBMLEvent, Mapping[str, float]],
+        Optional[Tuple[float, float, float, float]],
+    ] = _no_event_quadratic_rate_from_state
+    resolve_quadratic_state_values_from_state: Callable[
+        [str, float, SBMLEvent, Mapping[str, float]], Optional[Mapping[str, float]]
+    ] = _no_event_quadratic_state_values_from_state
     # Resolve a reaction identifier as its kinetic-law rate when that rate is
     # exactly foldable before the event executes.
     resolve_reaction_rate_for_event: Callable[[str, SBMLEvent], Optional[float]] = (
@@ -3577,6 +3602,199 @@ def synthesize_event_actions(
         else list(enumerate(events))
     )
     normal_converted = 0
+    recurrent_handled: set[int] = set()
+    if len(events) == 1:
+        event = events[0]
+        parsed_difference = _parse_state_difference_threshold(event.trigger)
+        difference_components = (
+            _state_difference_components(parsed_difference[0])
+            if parsed_difference is not None
+            else None
+        )
+        if difference_components is not None and all(
+            context.resolve_species_pattern(symbol) is not None
+            for symbol in difference_components
+        ):
+            parsed_threshold = parsed_difference
+        else:
+            parsed_threshold = _parse_affine_state_threshold(event.trigger)
+        if (
+            parsed_threshold is not None
+            and not event.delay
+            and not event.priority
+            and float(context.base_t_end) > 0
+            and math.isfinite(float(context.base_t_end))
+        ):
+            identifier, operator, threshold_expression = parsed_threshold
+            threshold = fold(threshold_expression, event_context=event)
+            initial_truth = fold_initial(event.trigger)
+            assignment_targets: List[Tuple[str, str, str]] = []
+            assignments_are_species = True
+            seen_targets: set[str] = set()
+            for assignment in event.assignments:
+                variable, expression = _event_assignment(assignment)
+                pattern = context.resolve_species_pattern(variable)
+                normalized_variable = standardize_name(variable)
+                if (
+                    pattern is None
+                    or normalized_variable in seen_targets
+                    or not str(expression or "").strip()
+                ):
+                    assignments_are_species = False
+                    break
+                seen_targets.add(normalized_variable)
+                assignment_targets.append((variable, pattern, expression))
+
+            if (
+                threshold is not None
+                and math.isfinite(threshold)
+                and initial_truth == 0
+                and assignments_are_species
+                and assignments
+            ):
+
+                def comparison_true(value: float) -> bool:
+                    if operator == "gt":
+                        return value > threshold
+                    if operator == "geq":
+                        return value >= threshold
+                    if operator == "lt":
+                        return value < threshold
+                    return value <= threshold
+
+                state_values: Mapping[str, float] = {}
+                time_value = 0.0
+                recurrence: List[
+                    Tuple[
+                        float,
+                        List[Tuple[str, str, float]],
+                        float,
+                        Optional[SBMLEvent],
+                        bool,
+                        List[Tuple[str, float]],
+                    ]
+                ] = []
+                recurrence_is_proven = True
+                no_firing_within_horizon = False
+                for _ in range(10_000):
+                    trajectory = context.resolve_quadratic_rate_from_state(
+                        identifier, event, state_values
+                    )
+                    if trajectory is None:
+                        recurrence_is_proven = False
+                        break
+                    initial, quadratic, linear, constant = trajectory
+                    crossing_delta = _quadratic_crossing_time(
+                        initial, threshold, quadratic, linear, constant
+                    )
+                    if crossing_delta is None:
+                        endpoint = _quadratic_state_at_time(
+                            initial,
+                            quadratic,
+                            linear,
+                            constant,
+                            float(context.base_t_end) - time_value,
+                        )
+                        if endpoint is not None and not comparison_true(endpoint):
+                            if recurrence:
+                                break
+                            # Autonomous scalar quadratic trajectories are
+                            # monotone between equilibria; a false endpoint
+                            # plus no threshold root proves no firing here.
+                            no_firing_within_horizon = True
+                            break
+                        recurrence_is_proven = False
+                        break
+                    derivative = (
+                        quadratic * threshold * threshold
+                        + linear * threshold
+                        + constant
+                    )
+                    rising = (operator in {"gt", "geq"} and derivative > 0) or (
+                        operator in {"lt", "leq"} and derivative < 0
+                    )
+                    crossing_time = time_value + crossing_delta
+                    if (
+                        not rising
+                        or crossing_delta <= 1e-12
+                        or not math.isfinite(crossing_time)
+                    ):
+                        endpoint = _quadratic_state_at_time(
+                            initial,
+                            quadratic,
+                            linear,
+                            constant,
+                            float(context.base_t_end) - time_value,
+                        )
+                        if endpoint is not None and not comparison_true(endpoint):
+                            if not recurrence:
+                                no_firing_within_horizon = True
+                            break
+                        recurrence_is_proven = False
+                        break
+                    if crossing_time > float(context.base_t_end) + 1e-12:
+                        no_firing_within_horizon = not recurrence
+                        break
+                    crossing_state = context.resolve_quadratic_state_values_from_state(
+                        identifier, threshold, event, state_values
+                    )
+                    if crossing_state is None:
+                        recurrence_is_proven = False
+                        break
+                    next_state = dict(crossing_state)
+                    scheduled_sets: List[Tuple[str, str, float]] = []
+                    event_values: List[Tuple[str, float]] = []
+                    for variable, pattern, expression in assignment_targets:
+                        value = fold_at_state(
+                            expression,
+                            crossing_time,
+                            state_values=crossing_state,
+                            event_context=event,
+                        )
+                        if value is None or not math.isfinite(value):
+                            recurrence_is_proven = False
+                            break
+                        scheduled_sets.append(("conc", pattern, float(value)))
+                        event_values.append((standardize_name(variable), float(value)))
+                        next_state[variable] = value
+                    if not recurrence_is_proven:
+                        break
+                    post_trigger = fold_at_state(
+                        event.trigger,
+                        crossing_time,
+                        state_values=next_state,
+                        event_context=event,
+                    )
+                    if post_trigger is None:
+                        recurrence_is_proven = False
+                        break
+                    recurrence.append(
+                        (
+                            crossing_time,
+                            scheduled_sets,
+                            0.0,
+                            event,
+                            False,
+                            event_values,
+                        )
+                    )
+                    if post_trigger != 0:
+                        # A scalar autonomous quadratic trajectory is monotone
+                        # between equilibria. If the reset leaves the trigger
+                        # true, it can exit the trigger region only once and
+                        # cannot create another false-to-true edge.
+                        break
+                    state_values = next_state
+                    time_value = crossing_time
+                else:
+                    recurrence_is_proven = False
+                if recurrence and recurrence_is_proven:
+                    scheduled.extend(recurrence)
+                    recurrent_handled.add(id(event))
+                    normal_converted += 1
+                elif no_firing_within_horizon and recurrence_is_proven:
+                    event_proven_inactive.add(id(event))
+                    horizon_limited += 1
 
     def conjunction_stays_false_through_horizon(event: SBMLEvent) -> bool:
         """Prove one monotone conjunct stays false for this run's horizon."""
@@ -3634,7 +3852,11 @@ def synthesize_event_actions(
         return False
 
     for _source_index, event in ordered_events:
-        if id(event) in periodic_handled or id(event) in event_proven_inactive:
+        if (
+            id(event) in periodic_handled
+            or id(event) in event_proven_inactive
+            or id(event) in recurrent_handled
+        ):
             continue
         if id(event) in static_event_no_action:
             normal_converted += 1
