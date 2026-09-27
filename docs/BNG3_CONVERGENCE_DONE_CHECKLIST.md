@@ -4,7 +4,7 @@
 **Last targeted audit:** 2026-09-27 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
 **Working branch:** `main`
-**Current implementation base:** `eb528bd0261245b551312b8da862d89f80d5867b` (`feat(atomizer): lower assignment-rule volume events`); full pinned SBML Test Suite and curated BioModels rerun completed at this source
+**Current implementation base:** `8960b11` (`feat(atomizer): resolve static assignment-rule event rates`); full pinned SBML Test Suite and curated BioModels rerun completed for this implementation
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -6753,6 +6753,33 @@ the other groups remain implementation targets.
   curated-model coverage. Report
   `/private/tmp/bng3-curated-eb528bd-both.json`, SHA-256
   `2e44194e3276cf901498a16537ab88f908f6d0143b8734b035c70e93f9580e05`.
+
+## Static assignment-rule parameters in event trajectories — 2026-09-27
+
+- [x] Fold a parameter assignment rule into event trajectory analysis only
+  when exactly one assignment rule resolves to a finite static value. Follow
+  static chains with cycle detection; leave dynamic, multiply controlled, and
+  cyclic rules unresolved.
+- [x] Add a regression for algebraic `k2 = 2.5` in an exponential state trigger;
+  event is scheduled at `1.55451774445` with delay 1. A time-dependent rule
+  `k2 = time` remains untranslated.
+- [x] Full pinned SBML Test Suite: `1,657 passed, 266 unsupported, 0 failed,
+  0 timeouts`. Five gains: `semantic/00777`, `01169`, `01466`, `01575`, and
+  `01576`; no previous pass regressed. All five pass libRoadRunner comparison,
+  maximum absolute difference `9.78e-10`. Report
+  `/private/tmp/bng3-algebraic-rule-final-sbml.json`, SHA-256
+  `22fa93a7cb61e2d58a4cbdc34d17641c6bddaa7e73013ed1d5a00270865379cc`.
+- [x] Full 1,096-record curated BioModels run: `794/1,083` SBML passed, 109
+  unsupported, 5 failed, 175 timed out. `BIOMD0000000301` moved
+  unsupported-to-passed in flat and atomized modes; no passing record
+  regressed. `BIOMD0000001098` varied failed-to-timeout. The gained model's
+  18 observables match libRoadRunner in both modes within `1.78e-15`. Report
+  `/private/tmp/bng3-algebraic-rule-biomodels-both.json`, SHA-256
+  `3bcabe78cc673cd9bd2d7127aafa51c6fa232c15be2246e1a4b14f4122ce3364`.
+  BioModels ran before a Black-only formatting pass; implementation behavior
+  did not change afterward.
+- [x] Full Python suite: `624 passed, 28 skipped`; Ruff, Black (`py39`), and
+  `git diff --check` pass.
 
 ## Current-source Atomizer cross-engine refresh — 2026-09-27
 

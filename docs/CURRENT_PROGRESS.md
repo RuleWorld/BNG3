@@ -5,6 +5,35 @@
 **Branch:** `main`
 **Status:** merged convergence, nonequilibrium energy, and SBML material-gap work; release validation remains incomplete
 
+## Static assignment-rule parameters in event trajectories — 2026-09-27
+
+Event trajectory analysis now folds assignment-rule parameters only when one
+assignment rule resolves to a finite static value. It follows static rule
+chains with cycle detection and leaves time-dependent, multiply controlled,
+and cyclic parameters unresolved. This lets exponential event analysis use
+simple algebraic rules such as `k2 = 2.5` without treating dynamic rules as
+constants.
+
+The full pinned SBML Test Suite on the formatted implementation passed
+`1,657/1,923` cases; 266 remain unsupported, with 0 failures and 0 timeouts.
+Five cases moved unsupported to passed: `semantic/00777`, `01169`, `01466`,
+`01575`, and `01576`; none regressed. All five pass libRoadRunner comparisons,
+with a worst absolute difference of `9.78e-10`. Report
+`/private/tmp/bng3-algebraic-rule-final-sbml.json`, SHA-256
+`22fa93a7cb61e2d58a4cbdc34d17641c6bddaa7e73013ed1d5a00270865379cc`.
+
+The full 1,096-record curated BioModels run found one gain:
+`BIOMD0000000301` moved unsupported to passed in flat and atomized modes;
+18 observables in each mode match libRoadRunner within `1.78e-15`. Across the
+full SBML cohort, 794/1,083 passed, 109 were unsupported, 5 failed, and 175
+timed out. There were no pass regressions. `BIOMD0000001098` varied from failed
+to timeout between runs. This cohort ran before a Black-only formatting pass;
+no behavior changed after it. Report
+`/private/tmp/bng3-algebraic-rule-biomodels-both.json`, SHA-256
+`3bcabe78cc673cd9bd2d7127aafa51c6fa232c15be2246e1a4b14f4122ce3364`.
+Full Python suite: `624 passed, 28 skipped`; Ruff, Black (`py39`), and
+`git diff --check` pass.
+
 ## Assignment-rule volume aliases and bounded exponential resets — 2026-09-27
 
 An event may now change a compartment volume through one simple assignment
