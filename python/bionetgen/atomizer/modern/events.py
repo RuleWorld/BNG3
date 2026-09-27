@@ -11,10 +11,10 @@ import math
 import ast
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable, List, Optional, Sequence, Tuple
 
-from .types import SBMLEvent
+from .types import SBMLEvent, SBMLRule, standardize_name
 
 
 def _no_event_affine_rate(
@@ -756,6 +756,231 @@ def _parse_affine_state_threshold(
         reverse = {"gt": "lt", "geq": "leq", "lt": "gt", "leq": "geq"}
         return right, reverse[match.group(1).lower()], left
     return None
+
+
+def expand_sinusoidal_assignment_rule_events(
+    events: Sequence[SBMLEvent],
+    rules: Sequence[SBMLRule],
+    *,
+    t_end: float,
+    resolve_constant: Callable[[str], Optional[float]],
+    expand_functions: Callable[[str], str] = lambda expression: expression,
+) -> List[SBMLEvent]:
+    """Replace a narrow time-only sine trigger with its exact rising edges.
+
+    Supported rules have the form ``piecewise(sin(a*time+b), time < t, c)``
+    with finite constant coefficients. The fallback must not introduce an
+    additional rising edge at the piecewise boundary. Delayed events must be
+    persistent so each analytically scheduled firing remains valid.
+    """
+
+    def constant(node: ast.AST) -> Optional[float]:
+        try:
+            value = fold_numeric(ast.unparse(node), resolve_constant)
+        except (TypeError, ValueError, SyntaxError):
+            return None
+        return value if value is not None and math.isfinite(value) else None
+
+    def time_affine(node: ast.AST) -> Optional[Tuple[float, float]]:
+        if isinstance(node, ast.Name):
+            return (0.0, 1.0) if node.id.lower() == "time" else None
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+            return float(node.value), 0.0
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+            value = time_affine(node.operand)
+            if value is None:
+                return None
+            scale = -1.0 if isinstance(node.op, ast.USub) else 1.0
+            return value[0] * scale, value[1] * scale
+        if isinstance(node, ast.BinOp):
+            left = time_affine(node.left)
+            right = time_affine(node.right)
+            if left is None or right is None:
+                return None
+            if isinstance(node.op, ast.Add):
+                return left[0] + right[0], left[1] + right[1]
+            if isinstance(node.op, ast.Sub):
+                return left[0] - right[0], left[1] - right[1]
+            if isinstance(node.op, ast.Mult):
+                if left[1] and right[1]:
+                    return None
+                return (
+                    left[0] * right[0],
+                    left[0] * right[1] + left[1] * right[0],
+                )
+            if isinstance(node.op, ast.Div) and right[1] == 0 and right[0] != 0:
+                return left[0] / right[0], left[1] / right[0]
+        if not any(
+            isinstance(item, ast.Name) and item.id.lower() == "time"
+            for item in ast.walk(node)
+        ):
+            value = constant(node)
+            return (value, 0.0) if value is not None else None
+        return None
+
+    rule_by_variable = {
+        standardize_name(str(rule.variable)): rule
+        for rule in rules
+        if rule.type == "assignment" and rule.variable
+    }
+    output: List[SBMLEvent] = []
+    for event in events:
+        parsed_trigger = _parse_affine_state_threshold(event.trigger)
+        if parsed_trigger is None:
+            output.append(event)
+            continue
+        identifier, operator, threshold_expression = parsed_trigger
+        rule = rule_by_variable.get(standardize_name(identifier))
+        if rule is None or operator not in {"gt", "geq", "lt", "leq"}:
+            output.append(event)
+            continue
+        if event.delay and event.trigger_persistent is False:
+            output.append(event)
+            continue
+        threshold = fold_numeric(
+            expand_functions(str(threshold_expression)), resolve_constant
+        )
+        if threshold is None or not math.isfinite(threshold) or abs(threshold) > 1:
+            output.append(event)
+            continue
+        formula = re.sub(
+            r"\bif\s*\(", "sbml_if(", expand_functions(str(rule.math or "")), flags=re.I
+        )
+        try:
+            expression = ast.parse(formula, mode="eval").body
+        except (TypeError, ValueError, SyntaxError):
+            output.append(event)
+            continue
+        if not (
+            isinstance(expression, ast.Call)
+            and isinstance(expression.func, ast.Name)
+            and expression.func.id.lower() in {"piecewise", "sbml_if"}
+            and len(expression.args) == 3
+        ):
+            output.append(event)
+            continue
+        if expression.func.id.lower() == "sbml_if":
+            condition, sine, fallback = expression.args
+        else:
+            sine, condition, fallback = expression.args
+        if (
+            isinstance(condition, ast.Call)
+            and isinstance(condition.func, ast.Name)
+            and condition.func.id.lower() in {"lt", "leq"}
+            and len(condition.args) == 2
+            and isinstance(condition.args[0], ast.Name)
+            and condition.args[0].id.lower() == "time"
+        ):
+            condition_operator = condition.func.id.lower()
+            condition_variable = condition.args[0]
+            condition_cutoff = condition.args[1]
+        elif (
+            isinstance(condition, ast.Compare)
+            and len(condition.ops) == 1
+            and len(condition.comparators) == 1
+            and isinstance(condition.left, ast.Name)
+            and condition.left.id.lower() == "time"
+            and isinstance(condition.ops[0], (ast.Lt, ast.LtE))
+        ):
+            condition_operator = (
+                "leq" if isinstance(condition.ops[0], ast.LtE) else "lt"
+            )
+            condition_variable = condition.left
+            condition_cutoff = condition.comparators[0]
+        else:
+            condition_operator = ""
+            condition_variable = None
+            condition_cutoff = None
+        if not (
+            isinstance(sine, ast.Call)
+            and isinstance(sine.func, ast.Name)
+            and sine.func.id.lower() == "sin"
+            and len(sine.args) == 1
+            and condition_operator in {"lt", "leq"}
+            and condition_variable is not None
+            and condition_cutoff is not None
+        ):
+            output.append(event)
+            continue
+        coefficients = time_affine(sine.args[0])
+        cutoff = constant(condition_cutoff)
+        fallback_value = constant(fallback)
+        if (
+            coefficients is None
+            or cutoff is None
+            or fallback_value is None
+            or coefficients[1] == 0
+            or t_end <= 0
+        ):
+            output.append(event)
+            continue
+
+        phase, omega = coefficients
+        scan_end = min(float(t_end), cutoff)
+        asin_threshold = math.asin(float(threshold))
+        families = (asin_threshold, math.pi - asin_threshold)
+        y_end = phase + omega * scan_end
+        y_min, y_max = sorted((phase, y_end))
+        roots: List[float] = []
+        ambiguous_boundary = False
+        period = 2 * math.pi
+        for base in families:
+            first = math.floor((y_min - base) / period) - 1
+            last = math.ceil((y_max - base) / period) + 1
+            if last - first > 100_000:
+                roots = []
+                break
+            for cycle in range(first, last + 1):
+                time_value = (base + cycle * period - phase) / omega
+                if time_value < -1e-12 or time_value > scan_end + 1e-12:
+                    continue
+                if abs(time_value - cutoff) <= 1e-12:
+                    ambiguous_boundary = True
+                    continue
+                delta = min(1e-6 / abs(omega), 1e-5)
+
+                def trigger_true(value: float) -> bool:
+                    return {
+                        "gt": value > threshold,
+                        "geq": value >= threshold,
+                        "lt": value < threshold,
+                        "leq": value <= threshold,
+                    }[operator]
+
+                left_time = max(0.0, time_value - delta)
+                right_time = min(scan_end, time_value + delta)
+                left_truth = trigger_true(math.sin(phase + omega * left_time))
+                right_truth = trigger_true(math.sin(phase + omega * right_time))
+                if time_value <= 1e-12:
+                    left_truth = bool(event.trigger_initial_value)
+                if not left_truth and right_truth:
+                    roots.append(max(0.0, time_value))
+
+        # A jump at the piecewise boundary is a distinct possible rising edge.
+        boundary_time = cutoff
+        if boundary_time <= t_end and boundary_time > 0:
+            delta = min(1e-6 / abs(omega), 1e-5)
+            before = trigger_true(math.sin(phase + omega * (boundary_time - delta)))
+            after = trigger_true(fallback_value)
+            if not before and after:
+                roots.append(boundary_time)
+        if ambiguous_boundary or not roots:
+            # Leave no-crossing cases to the ordinary fail-closed path until
+            # their initialValue and piecewise-boundary semantics are proven.
+            output.append(event)
+            continue
+
+        roots = sorted({round(value, 14) for value in roots})
+        for index, time_value in enumerate(roots, 1):
+            output.append(
+                replace(
+                    event,
+                    id=f"{event.id}__sine_edge_{index}",
+                    trigger=f"geq(time, {_format_number(time_value)})",
+                    trigger_initial_value=False,
+                )
+            )
+    return output
 
 
 def _parse_state_difference_threshold(

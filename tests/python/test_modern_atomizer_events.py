@@ -221,6 +221,47 @@ def test_static_state_trigger_with_false_initial_value_fires_at_zero():
     assert 'setParameter("p", "4")' in result.actions_block
 
 
+def test_time_only_sinusoidal_assignment_rule_expands_delayed_event_edges():
+    from bionetgen.atomizer.modern import Atomizer
+
+    source = """<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
+  <model id="sinusoidal_event">
+    <listOfCompartments><compartment id="c" size="1" constant="true"/></listOfCompartments>
+    <listOfSpecies>
+      <species id="S1" compartment="c" initialConcentration="0" boundaryCondition="true" constant="false"/>
+      <species id="S2" compartment="c" initialConcentration="0" boundaryCondition="false" constant="false"/>
+    </listOfSpecies>
+    <listOfRules>
+      <assignmentRule variable="S1"><math xmlns="http://www.w3.org/1998/Math/MathML"><piecewise><piece><apply><sin/><apply><times/><csymbol encoding="text" definitionURL="http://www.sbml.org/sbml/symbols/time">time</csymbol><cn>10</cn></apply></apply><apply><lt/><csymbol encoding="text" definitionURL="http://www.sbml.org/sbml/symbols/time">time</csymbol><cn>2</cn></apply></piece><otherwise><cn>1</cn></otherwise></piecewise></math></assignmentRule>
+    </listOfRules>
+    <listOfEvents>
+      <event id="increment" useValuesFromTriggerTime="false">
+        <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><lt/><ci>S1</ci><cn>0</cn></apply></math></trigger>
+        <delay><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>2</cn></math></delay>
+        <listOfEventAssignments><eventAssignment variable="S2"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><plus/><ci>S2</ci><cn>1</cn></apply></math></eventAssignment></listOfEventAssignments>
+      </event>
+    </listOfEvents>
+  </model>
+</sbml>"""
+    result = Atomizer(
+        {"atomize": False, "quiet_mode": True, "t_end": 5, "n_steps": 50}
+    ).atomize(source)
+
+    assert result.success, result.error
+    assert 'setConcentration("@c:M_S2()", "1")' in result.bngl
+    assert 'setConcentration("@c:M_S2()", "2")' in result.bngl
+    assert 'setConcentration("@c:M_S2()", "3")' in result.bngl
+    event_warnings = [
+        warning
+        for warning in result.log
+        if getattr(warning, "category", None) == "event"
+    ]
+    assert not any(
+        getattr(warning, "severity", None) == "dropped" for warning in event_warnings
+    )
+
+
 def test_static_state_threshold_can_use_another_static_species():
     from bionetgen.atomizer.modern.events import (
         EventTranslationContext,

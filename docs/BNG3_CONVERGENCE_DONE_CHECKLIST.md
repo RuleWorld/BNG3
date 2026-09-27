@@ -6372,3 +6372,22 @@ the other groups remain implementation targets.
   is claimed. Report `/private/tmp/bng3-0702-refined.json`.
 - [ ] Rerun the full curated inventory with the refinement retry and compare
   every model/mode against `/private/tmp/bng3-curated-after-events-nonfinite.json`.
+
+## Time-only sinusoidal assignment-rule event crossings — 2026-09-26
+
+- [x] A narrow, exact lowering handles event thresholds on a time-only
+  `piecewise(sin(a*time+b), time < cutoff, fallback)` assignment rule when its
+  coefficients and fallback are static. It enumerates false-to-true crossings
+  through the configured horizon and schedules persistent delayed events.
+  Unsupported boundaries, dynamic coefficients, and nonpersistent delayed
+  events remain untranslated.
+- [x] Official SBML Test Suite `semantic/00936` passes the source import,
+  generated SBML validation, and reimport. BNG3 CVODE agrees with libRoadRunner
+  2.10.0 for all three observables over 10 time units / 100 intervals, with
+  maximum absolute difference `0`. Report
+  `/private/tmp/bng3-00936-after-sine-final.json`, SHA-256
+  `d8049a30646b3344ad75412eb13522f81dd64ceae4e3cd6d89a2ef677086a2ab`.
+  This was a one-case run; the full SBML suite and curated BioModels inventory
+  have not been rerun, so no aggregate benchmark gain is claimed.
+- [x] Full Python suite: `588 passed, 28 skipped`; changed-file Ruff, Black,
+  and `git diff --check` pass.

@@ -1993,3 +1993,13 @@ Python: 572 passed, 28 skipped; Black, Ruff, and diff checks pass. A scan of
 6,724 cached BioModels XML files found no matching exponential self-reset
 candidate; the previous full BioModels inventory remains the last complete
 benchmark.
+
+Time-only sinusoidal assignment-rule event crossings now lower exactly for a
+bounded static `piecewise(sin(...), time < cutoff, fallback)` shape, including
+persistent fixed-delay events. SBML Test Suite `semantic/00936` passes import,
+SBML write/reimport, and BNG3 CVODE versus libRoadRunner 2.10.0 for all three
+observables (maximum absolute difference 0) at a 10-unit/100-interval horizon.
+Full Python: 588 passed, 28 skipped; changed-file Ruff, Black, and diff checks
+pass. This is targeted evidence only; aggregate SBML and BioModels benchmarks
+remain unrerun for this change. Exact report and scope are in the convergence
+checklist.

@@ -26,6 +26,8 @@ from .events import (
     EventTranslationContext,
     _event_assignment,
     fold_numeric,
+    expand_sinusoidal_assignment_rule_events,
+    parse_time_threshold,
     synthesize_event_actions,
 )
 from .rate_rule_constants import (
@@ -7154,8 +7156,46 @@ def generate_bngl(
             value = fold_numeric(expression, resolve_rate_symbol)
             return value if value is not None and math.isfinite(value) else None
 
-        event_result = synthesize_event_actions(
+        def resolve_sinusoidal_constant(identifier: str) -> Optional[float]:
+            if not is_compile_time_constant(identifier):
+                return None
+            return resolve_event_parameter(identifier)
+
+        event_translation_events = expand_sinusoidal_assignment_rule_events(
             model.events,
+            model.rules,
+            t_end=float(t_end),
+            resolve_constant=resolve_sinusoidal_constant,
+            expand_functions=lambda expression: extend_function(
+                expression, {}, model.function_definitions
+            ),
+        )
+        event_targets = {
+            standardize_name(variable)
+            for event in event_translation_events
+            for assignment in event.assignments
+            for variable, _expression in [_event_assignment(assignment)]
+        }
+        rule_targets = {
+            standardize_name(str(rule.variable))
+            for rule in model.rules
+            if rule.variable
+        }
+        static_event_state = (
+            not model.reactions
+            and not model.initial_assignments
+            and not any(rule.type == "rate" for rule in model.rules)
+            and not (event_targets & rule_targets)
+            and (
+                not model.rules
+                or all(
+                    parse_time_threshold(event.trigger) is not None
+                    for event in event_translation_events
+                )
+            )
+        )
+        event_result = synthesize_event_actions(
+            event_translation_events,
             EventTranslationContext(
                 resolve_species_pattern=lambda species_id: species_to_pattern.get(
                     species_id
@@ -7198,11 +7238,7 @@ def generate_bngl(
                 ),
                 resolve_reaction_rate_for_event=resolve_event_reaction_rate,
                 resolve_rate_reset=resolve_rate_event_reset,
-                static_event_state=(
-                    not model.reactions
-                    and not model.rules
-                    and not model.initial_assignments
-                ),
+                static_event_state=static_event_state,
             ),
         )
         _update_event_translation_warning(model, event_result)
