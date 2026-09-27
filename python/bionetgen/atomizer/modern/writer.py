@@ -7065,6 +7065,69 @@ def generate_bngl(
                 return None
             return initial, slope
 
+        def resolve_priority_assignment_value(
+            identifier: str,
+            time_value: float,
+            event_context: SBMLEvent,
+            state_values: Mapping[str, float],
+            resolving: Optional[set[str]] = None,
+        ) -> Optional[float]:
+            """Evaluate assignment rules from proven event-priority state."""
+            rules = [
+                rule
+                for rule in model.rules
+                if rule.type == "assignment"
+                and rule.variable
+                and standardize_name(rule.variable) == standardize_name(identifier)
+            ]
+            if len(rules) != 1:
+                return None
+            active = set(resolving or ())
+            normalized = standardize_name(identifier)
+            if normalized in active:
+                return None
+            active.add(normalized)
+            expression = extend_function(rules[0].math, {}, model.function_definitions)
+
+            def resolve_symbol(symbol: str) -> Optional[float]:
+                normalized_symbol = standardize_name(symbol)
+                for state_name, state_value in state_values.items():
+                    if standardize_name(state_name) == normalized_symbol:
+                        return float(state_value)
+                assignment_rules = [
+                    rule
+                    for rule in model.rules
+                    if rule.type == "assignment"
+                    and rule.variable
+                    and standardize_name(rule.variable) == normalized_symbol
+                ]
+                if assignment_rules:
+                    return resolve_priority_assignment_value(
+                        symbol,
+                        time_value,
+                        event_context,
+                        state_values,
+                        active,
+                    )
+                affine = resolve_affine_event_rate(
+                    symbol, event_context, ignore_simultaneous=True
+                )
+                if affine is not None:
+                    return affine[0] + affine[1] * time_value
+                exponential = resolve_exponential_event_rate(symbol, event_context)
+                if exponential is not None:
+                    try:
+                        return exponential[0] * math.exp(exponential[1] * time_value)
+                    except OverflowError:
+                        return None
+                if is_compile_time_constant(symbol):
+                    return resolve_event_parameter(symbol)
+                constant = resolve_constant(symbol)
+                return constant
+
+            value = fold_numeric(expression, resolve_symbol)
+            return value if value is not None and math.isfinite(value) else None
+
         def resolve_event_reaction_rate(
             identifier: str,
             event_context: SBMLEvent,
@@ -7292,6 +7355,7 @@ def generate_bngl(
                         state_values=state,
                     )
                 ),
+                resolve_priority_assignment_value=resolve_priority_assignment_value,
                 resolve_rate_reset=resolve_rate_event_reset,
                 static_event_state=static_event_state,
             ),

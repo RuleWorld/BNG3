@@ -47,6 +47,15 @@ def _no_priority_event_reaction_rate(
     return None
 
 
+def _no_priority_assignment_value(
+    _identifier: str,
+    _time: float,
+    _event: SBMLEvent,
+    _state_values: Mapping[str, float],
+) -> Optional[float]:
+    return None
+
+
 def _no_event_quadratic_rate(
     _identifier: str, _event: SBMLEvent
 ) -> Optional[Tuple[float, float, float, float]]:
@@ -134,6 +143,9 @@ class EventTranslationContext:
     resolve_priority_reaction_rate_for_event: Callable[
         [str, SBMLEvent, Optional[Mapping[str, float]]], Optional[float]
     ] = _no_priority_event_reaction_rate
+    resolve_priority_assignment_value: Callable[
+        [str, float, SBMLEvent, Mapping[str, float]], Optional[float]
+    ] = _no_priority_assignment_value
     # Allow periodic reset lowering to inspect a constant rate-rule state even
     # when the event itself assigns that state.
     resolve_rate_reset: Callable[[str], Optional[Tuple[float, float]]] = (
@@ -2123,18 +2135,31 @@ def synthesize_event_actions(
                                 continue
                             value = math.sqrt(radicand)
                         elif event_context is not None:
-                            reaction_rate = (
-                                context.resolve_priority_reaction_rate_for_event(
-                                    identifier, event_context, values
+                            assignment_value = (
+                                context.resolve_priority_assignment_value(
+                                    identifier,
+                                    time_value,
+                                    event_context,
+                                    values,
                                 )
                                 if priority_evaluation
-                                else context.resolve_reaction_rate_for_event(
-                                    identifier, event_context
-                                )
+                                else None
                             )
-                            if reaction_rate is None:
-                                continue
-                            value = reaction_rate
+                            if assignment_value is not None:
+                                value = assignment_value
+                            else:
+                                reaction_rate = (
+                                    context.resolve_priority_reaction_rate_for_event(
+                                        identifier, event_context, values
+                                    )
+                                    if priority_evaluation
+                                    else context.resolve_reaction_rate_for_event(
+                                        identifier, event_context
+                                    )
+                                )
+                                if reaction_rate is None:
+                                    continue
+                                value = reaction_rate
                         else:
                             continue
             except OverflowError:

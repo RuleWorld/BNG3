@@ -719,6 +719,58 @@ def test_simultaneous_event_priorities_recompute_after_each_assignment():
     assert priorities_in_order == sorted(priorities_in_order)
 
 
+def test_simultaneous_event_priority_folds_assignment_rule_state():
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLEventAssignment
+
+    events = [
+        SBMLEvent(
+            id="rate-state",
+            trigger="gt(time, 4)",
+            trigger_initial_value=False,
+            priority="k1",
+            assignments=[SBMLEventAssignment("P1", "1")],
+        ),
+        SBMLEvent(
+            id="assignment-state",
+            trigger="gt(time, 4)",
+            trigger_initial_value=False,
+            priority="k2",
+            assignments=[SBMLEventAssignment("P1", "2")],
+        ),
+    ]
+
+    def resolve_assignment(identifier, time_value, _event, state_values):
+        if identifier != "k2":
+            return None
+        k1 = state_values.get("k1", time_value)
+        return 10 - k1
+
+    result = synthesize_event_actions(
+        events,
+        EventTranslationContext(
+            resolve_species_pattern=lambda _identifier: None,
+            resolve_param=lambda _identifier: None,
+            is_param=lambda _identifier: True,
+            is_compile_time_constant=lambda _identifier: False,
+            resolve_affine_priority_rate=lambda identifier, _event: (
+                (0, 1) if identifier == "k1" else None
+            ),
+            resolve_priority_assignment_value=resolve_assignment,
+        ),
+    )
+
+    assert result.converted == 2
+    assert result.untranslated == []
+    assert result.actions_block is not None
+    rule_priority = result.actions_block.index('setParameter("P1", "2")')
+    rate_priority = result.actions_block.index('setParameter("P1", "1")')
+    assert rule_priority < rate_priority
+
+
 def test_unorderable_simultaneous_priority_group_returns_unsupported_result():
     from bionetgen.atomizer.modern.events import (
         EventTranslationContext,

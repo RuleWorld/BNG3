@@ -5,25 +5,26 @@
 **Branch:** `main`
 **Status:** merged convergence, nonequilibrium energy, and SBML material-gap work; release validation remains incomplete
 
-## Simultaneous fixed-time event priorities from reaction rates — 2026-09-27
+## Simultaneous fixed-time event priorities — 2026-09-27
 
 Atomizer now recalculates dynamic priorities between simultaneous events when
 the complete event group shares a positive fixed-time trigger, delay, initial
 trigger state, and trigger-time snapshots. It updates the candidate state after
-each assignment and rejects groups if any priority cannot be proven. The
-two-event reaction-rate priority case `semantic/01229` remains supported;
-`semantic/00934` now passes with four observables matching libRoadRunner 2.10.0
-exactly through t=1.1 over 12 samples. The existing `semantic/01229` trajectory
-still matches to `1.78e-15` through t=7. The pinned SBML suite reports `1,628 passed, 295
-unsupported, 0 failed, 0 timeouts`, one net gain (`semantic/00934`) against the
-prior `1,627/296/0/0` report. `semantic/01577` remains unsupported because its
-rate-rule/algebraic-rule priorities cannot be safely ordered; this now returns
-a normal unsupported result instead of raising an empty-schedule exception.
-Full Python suite: `607 passed, 28 skipped`; Ruff, Black (`py39`), and
-`git diff --check` pass. The full pinned curated BioModels run was interrupted
-to implement this feature; it must be rerun before claiming current curated
-coverage. SBML report `/private/tmp/bng3-multi-priority-fixed-full.json`,
-SHA-256 `977050ef6443d9bbaba4835547aa6a487cf73395746e085a7bb8be3e3eef1345`.
+each assignment, and can derive assignment-rule priorities from supported
+analytic state trajectories. It rejects groups if any priority remains
+unprovable. Official cases `semantic/00934`, `01229`, and `01577` pass
+round-trip and BNG3/libRoadRunner 2.10.0 comparison; `00934` has four
+observables matching exactly through t=1.1 (12 samples), `01229` has two
+observables matching within `1.78e-15` through t=7, and `01577` has two
+observables matching exactly. Full Python suite: `608 passed, 28 skipped`.
+The latest pinned SBML suite reports `1,629 passed, 294 unsupported, 0 failed,
+0 timeouts`: one additional gain (`semantic/01577`) and no regressions against
+the previous `1,628/295/0/0` report. The overall core gate remains open.
+Ruff, Black (`py39`), and `git diff --check` pass. The full pinned curated
+BioModels run was interrupted to implement these features; it must be rerun
+before claiming current curated coverage. Report
+`/private/tmp/bng3-priority-assignment-full.json`, SHA-256
+`cb2a68ed2c27c6fd6b23221645e5e0f2c8a8d65e1fdc0af3b3cbb59407c44c95`.
 Targeted reports: `/private/tmp/bng3-semantic-00934-priority-t1.1.json`
 (SHA-256 `1dcb76830bdfa48c78f9d88de24e047c6d773a6b94841a1e5ae2e53fa214a7d4`)
 and `/private/tmp/bng3-semantic-01229-priority-t7-final2.json` (SHA-256

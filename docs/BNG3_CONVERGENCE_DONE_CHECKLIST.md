@@ -6623,3 +6623,24 @@ the other groups remain implementation targets.
 - [ ] Rerun the full curated BioModels inventory in flat and atomized modes
   against this source. The earlier run was interrupted to continue feature
   work, so it does not provide final-source evidence.
+
+## Assignment-rule priorities from analytic state — 2026-09-27
+
+- [x] Fold simple SBML assignment rules while evaluating simultaneous event
+  priorities, using only supported state values and analytic affine or
+  exponential trajectories. Cycles, duplicate rules, and unresolved inputs
+  remain unsupported.
+- [x] Add a unit regression for a priority derived from an assignment rule.
+  The official `semantic/01577` model (`k2 = 10 - k1`, with `k1' = 1`) now
+  passes conversion, round-trip, native-reader checks, and BNG3/libRoadRunner
+  comparison for two observables. Report
+  `/private/tmp/bng3-semantic-01577-assignment-priority.json`, SHA-256
+  `18ddfeb773b4ed6abdcc7692b2eabce3aa099c92ff30fbb414df21694c4f46fc`.
+- [x] Full Python suite: `608 passed, 28 skipped`. Ruff, Black (`py39`), and
+  `git diff --check` pass.
+- [x] Full pinned SBML Test Suite: `1,629 passed, 294 unsupported, 0 failed,
+  0 timeouts`; +1 (`semantic/01577`) and no regressions against
+  `1,628/295/0/0`. Report `/private/tmp/bng3-priority-assignment-full.json`,
+  SHA-256 `cb2a68ed2c27c6fd6b23221645e5e0f2c8a8d65e1fdc0af3b3cbb59407c44c95`.
+- [ ] Rerun the full curated BioModels inventory in flat and atomized modes
+  against this source; the interrupted run is not final-source evidence.
