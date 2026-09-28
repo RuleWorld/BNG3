@@ -4843,9 +4843,14 @@ completion gate.
 
 - [x] Corrected the package repository URL in `pyproject.toml` to
   `https://github.com/RuleWorld/BNG3`.
+- [x] Partial metadata audit: the package declares Python `>=3.9`; classifiers
+  now include Python 3.14. Isolated source and wheel builds, installed-package
+  checks, and the remaining cross-platform gaps are recorded in the
+  2026-09-28 artifact audit below. Dependency policy and complete package-data
+  coverage still need review.
 - [ ] Complete the pyproject metadata audit: supported Python range, dependency
-  policy, package data, and extension contents still require isolated artifact
-  builds and installed-package checks.
+  policy, full package data, and extension contents across the supported
+  platform matrix remain under audit.
 - [x] The pull-request package-smoke job builds and installs a source
   distribution on the exact head (CI run
   [33449613101](https://github.com/RuleWorld/BNG3/actions/runs/33449613101));
@@ -4867,6 +4872,25 @@ completion gate.
 - [ ] Hosted release jobs for source distribution, wheels, Docker, and
   publication are actually exercised for the release candidate; PR-only
   skipped jobs are not counted as evidence.
+
+### Isolated package artifact audit — 2026-09-28
+
+- [x] Built isolated source distribution and wheel with `scikit-build-core`
+  for CPython 3.14 on macOS arm64. Corrected source distribution contains
+  1,543 members and excludes every `bng3-offline-bundle/` member; compressed
+  size is 4,791,673 bytes. The direct wheel is 3,079,617 bytes. SHA-256:
+  sdist `09017d011be5e73418ac0c2e80009fd582f29632c0a39d14c12d2f1f609fff2d`,
+  wheel `d58765c8ff9de7aaa6fdc8a4eef8f4718c6aab213652dccfc8cc347890c81347`.
+- [x] Rebuilt a wheel from the corrected source archive in a clean virtual
+  environment. Clean wheel install passes `pip check`; `bionetgen --version`
+  reports `3.0.0a1`; Python imports the installed package and CPython 3.14
+  native extension from that environment. An installed-package ODE smoke
+  produced 11 points and `A_total` from 10.0 to 3.6787942479103934.
+  Rebuilt wheel SHA-256:
+  `6b02b55442214becc257afb6904585ae347067e406cf4179bde112bbd5a318d1`.
+- [ ] This validates one local macOS arm64 / CPython 3.14 artifact path only.
+  Linux, Windows, other Python versions and architectures, complete package
+  data, and release workflow gates remain unverified.
 
 ## 9. Legacy repositories and governance
 
