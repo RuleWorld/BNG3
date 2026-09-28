@@ -8135,6 +8135,64 @@ def generate_bngl(
                 return None
             return resolve_event_parameter(identifier)
 
+        def resolve_affine_parameter_rate_rules() -> Optional[Dict[str, float]]:
+            if not model.rules:
+                return {}
+            if model.species or model.reactions or model.initial_assignments:
+                return None
+            rate_rules: Dict[str, object] = {}
+            for rule in model.rules:
+                variable = str(rule.variable or "")
+                normalized = standardize_name(variable)
+                if (
+                    rule.type != "rate"
+                    or variable not in model.parameters
+                    or not variable
+                    or model.parameters[variable].constant
+                    or normalized in rate_rules
+                ):
+                    return None
+                rate_rules[normalized] = rule
+            rate_targets = set(rate_rules)
+            event_targets = {
+                standardize_name(assignment.variable)
+                for event in model.events
+                for assignment in event.assignments
+            }
+            if rate_targets & event_targets:
+                return None
+            slopes: Dict[str, float] = {}
+            for normalized, rule in rate_rules.items():
+                expression = extend_function(
+                    str(getattr(rule, "math", "") or ""),
+                    {},
+                    model.function_definitions,
+                )
+                try:
+                    parsed = ast.parse(expression, mode="eval")
+                except (TypeError, ValueError, SyntaxError):
+                    return None
+                dependencies = {
+                    standardize_name(node.id)
+                    for node in ast.walk(parsed)
+                    if isinstance(node, ast.Name)
+                }
+                if (
+                    dependencies & (rate_targets | event_targets)
+                    or "time" in dependencies
+                ):
+                    return None
+                slope = fold_numeric(expression, resolve_event_parameter)
+                if slope is None or not math.isfinite(slope):
+                    return None
+                variable = next(
+                    identifier
+                    for identifier in model.parameters
+                    if standardize_name(identifier) == normalized
+                )
+                slopes[variable] = float(slope)
+            return slopes
+
         event_translation_events = [
             event for event in model.events if str(event.trigger or "").strip()
         ]
@@ -8155,12 +8213,18 @@ def generate_bngl(
                 expression, {}, model.function_definitions
             ),
         )
-        if not model.species and not model.reactions and not model.rules:
+        affine_parameter_rates = resolve_affine_parameter_rate_rules()
+        if (
+            not model.species
+            and not model.reactions
+            and affine_parameter_rates is not None
+        ):
             lowered_static_events = expand_static_parameter_event_system(
                 event_translation_events,
                 t_end=float(t_end),
                 parameter_ids=list(model.parameters),
                 resolve_initial=resolve_event_parameter,
+                affine_rate_parameters=affine_parameter_rates,
                 expand_functions=lambda expression: extend_function(
                     expression, {}, model.function_definitions
                 ),

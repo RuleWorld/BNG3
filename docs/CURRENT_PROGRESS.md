@@ -3,7 +3,30 @@
 **Last targeted audit:** 2026-09-27 (full convergence checklist not re-audited)
 **Repository:** `RuleWorld/BNG3`
 **Branch:** `plan/nfsim-gpu-perf`
-**Status:** Atomizer cycle, delayed quadratic, and static species-initial-assignment events validated; overall convergence and release validation remain incomplete
+**Status:** Atomizer cycle, delayed quadratic, species-initial-assignment, and affine parameter-priority events validated; overall convergence and release validation remain incomplete
+
+## Affine parameter event priorities — 2026-09-27
+
+The Atomizer now lowers parameter-only event systems with independent
+constant-slope rate rules when triggers cross one direct state threshold.
+Simultaneous events evaluate priority at execution time, including history from
+the SBML `delay` function, and reevaluate remaining priorities after each
+action. The supported subset follows [SBML Level 3 Version 2 Core, §4.12.3](https://sbml.org/specifications/sbml-level-3/version-2/core/release-2/sbml-level-3-version-2-release-2-core.pdf).
+Events that update a rate-rule target or a parameter used by its slope remain
+unsupported.
+
+The focused Atomizer suite passes `408` tests with `1` skipped. Ruff, Black
+(`py39`), and `git diff --check` pass. Official SBML Test Suite case
+`semantic/01521` passes conversion, XML roundtrip, native-reader, and
+BNG3/libRoadRunner CVODE checks through `t=20` with 1,200 steps. Its `P1_amt`
+maximum absolute difference is `1.0658141036401503e-14`. The focused regression
+also checks that an assignment changing a remaining event's priority moves it
+ahead of an event whose history-based priority was higher before that update.
+Report
+`/private/tmp/bng3-affine-priority-semantic-01521-final.json`, SHA-256
+`99e04bf231791d5816e14c95bf64710d04faa942f433ba6eed944f951321a72e`. The
+focused regression checks the generated order for the two assignments to
+`P2`; no full SBML aggregate or BioModels run was made for this slice.
 
 ## Quadratic state events with species initial assignments — 2026-09-27
 

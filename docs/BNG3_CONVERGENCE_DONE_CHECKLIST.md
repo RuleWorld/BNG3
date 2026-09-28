@@ -7347,3 +7347,26 @@ the other groups remain implementation targets.
   `tests/python/test_cpp_backend.py` while concurrent NFsim changes were
   present. Focused Atomizer tests above completed for this slice.
 - [ ] Rerun the full curated BioModels inventory against the finalized source.
+
+## Affine parameter event priorities — 2026-09-27
+
+- [x] Lower parameter-only events whose trigger crosses a direct threshold on
+  a parameter with an independent constant-slope rate rule. Evaluate
+  simultaneous priority expressions at execution time, support affine
+  `delay(parameter, duration)` history in priorities, and reevaluate remaining
+  priorities after each event action. Events that update a rate-rule target or
+  change one of its slope dependencies remain unsupported. Priority evaluation
+  and reevaluation follow [SBML Level 3 Version 2 Core, §4.12.3](https://sbml.org/specifications/sbml-level-3/version-2/core/release-2/sbml-level-3-version-2-release-2-core.pdf).
+- [x] Add a regression for two simultaneous assignments where the history-based
+  priority is lower than a constant priority. A third event reads a parameter
+  that the first action changes, verifying that the remaining priorities are
+  reevaluated. Focused Atomizer suite: `408 passed, 1 skipped`; Ruff, Black
+  (`py39`), and `git diff --check` pass.
+- [x] Official SBML Test Suite `semantic/01521` passes conversion, XML
+  roundtrip, native-reader, and BNG3/libRoadRunner CVODE checks at `t=20` with
+  1,200 steps. `P1_amt` maximum absolute difference is
+  `1.0658141036401503e-14`. Report
+  `/private/tmp/bng3-affine-priority-semantic-01521-final.json`, SHA-256
+  `99e04bf231791d5816e14c95bf64710d04faa942f433ba6eed944f951321a72e`.
+- [ ] The full pinned SBML aggregate and curated BioModels inventory were not
+  rerun for this focused slice.

@@ -1484,14 +1484,14 @@ def expand_static_parameter_event_system(
     t_end: float,
     parameter_ids: Sequence[str],
     resolve_initial: Callable[[str], Optional[float]],
+    affine_rate_parameters: Optional[Mapping[str, float]] = None,
     expand_functions: Callable[[str], str] = lambda expression: expression,
 ) -> Optional[List[SBMLEvent]]:
-    """Compile parameter-only discrete event systems into fixed-time events.
+    """Compile parameter-only event systems into fixed-time events.
 
-    Returns ``None`` unless every trigger, delay, and assignment can be
-    simulated exactly over the requested horizon. This helper intentionally
-    handles no continuous state and at most one fixed rising comparison
-    against time in each event trigger.
+    Optional affine rate rules are limited to parameters with constant slopes.
+    Returns ``None`` unless every trigger, delay, priority, and assignment can
+    be simulated exactly over the requested horizon.
     """
     if not math.isfinite(float(t_end)) or t_end < 0:
         return None
@@ -1502,6 +1502,15 @@ def expand_static_parameter_event_system(
     parameter_names = {standardize_name(name): name for name in parameter_ids}
     if len(parameter_names) != len(parameter_ids):
         return None
+    affine_rates = {
+        standardize_name(identifier): float(slope)
+        for identifier, slope in (affine_rate_parameters or {}).items()
+    }
+    if any(
+        identifier not in parameter_names or not math.isfinite(slope)
+        for identifier, slope in affine_rates.items()
+    ):
+        return None
     values: dict[str, float] = {}
     for normalized, identifier in parameter_names.items():
         initial = resolve_initial(identifier)
@@ -1509,23 +1518,115 @@ def expand_static_parameter_event_system(
             return None
         values[normalized] = float(initial)
 
-    def resolve_state(identifier: str, state: Mapping[str, float]) -> Optional[float]:
+    initial_values = dict(values)
+
+    def resolve_state(
+        identifier: str, state: Mapping[str, float], time_value: float
+    ) -> Optional[float]:
         if identifier.lower() == "pi":
             return math.pi
         if identifier.lower() == "exponentiale":
             return math.e
         normalized = standardize_name(identifier)
+        if normalized in affine_rates:
+            value = initial_values[normalized] + affine_rates[normalized] * time_value
+            return value if math.isfinite(value) else None
         return state.get(normalized)
 
     def evaluate(
         expression: str, state: Mapping[str, float], time_value: Optional[float] = None
     ) -> Optional[float]:
         expanded = expand_functions(str(expression or ""))
-        if time_value is not None:
-            expanded = re.sub(
-                r"\btime\b", _format_number(time_value), expanded, flags=re.IGNORECASE
-            )
-        value = fold_numeric(expanded, lambda name: resolve_state(name, state))
+        current_time = 0.0 if time_value is None else float(time_value)
+        expanded = re.sub(
+            r"\btime\b", _format_number(current_time), expanded, flags=re.IGNORECASE
+        )
+        expanded = re.sub(r"\bif\s*\(", "_event_if(", expanded, flags=re.IGNORECASE)
+
+        class RateHistoryRewriter(ast.NodeTransformer):
+            def condition_value(self, node: ast.AST) -> Optional[bool]:
+                if isinstance(node, ast.Compare) and len(node.ops) == 1:
+                    left = fold_numeric(
+                        ast.unparse(self.visit(node.left)),
+                        lambda name: resolve_state(name, state, current_time),
+                    )
+                    right = fold_numeric(
+                        ast.unparse(self.visit(node.comparators[0])),
+                        lambda name: resolve_state(name, state, current_time),
+                    )
+                    if left is None or right is None:
+                        return None
+                    operator = node.ops[0]
+                    if isinstance(operator, ast.Eq):
+                        return left == right
+                    if isinstance(operator, ast.NotEq):
+                        return left != right
+                    if isinstance(operator, ast.Lt):
+                        return left < right
+                    if isinstance(operator, ast.LtE):
+                        return left <= right
+                    if isinstance(operator, ast.Gt):
+                        return left > right
+                    if isinstance(operator, ast.GtE):
+                        return left >= right
+                return None
+
+            def visit_Call(self, node: ast.Call) -> ast.AST:
+                if (
+                    isinstance(node.func, ast.Name)
+                    and node.func.id.lower() in {"if", "_event_if"}
+                    and len(node.args) == 3
+                ):
+                    condition_value = self.condition_value(node.args[0])
+                    if condition_value is not None:
+                        branch = node.args[1] if condition_value else node.args[2]
+                        return self.visit(branch)
+                if (
+                    isinstance(node.func, ast.Name)
+                    and node.func.id.lower() == "rateof"
+                    and len(node.args) == 1
+                    and isinstance(node.args[0], ast.Name)
+                ):
+                    slope = affine_rates.get(standardize_name(node.args[0].id))
+                    if slope is not None:
+                        return ast.copy_location(ast.Constant(value=slope), node)
+                if (
+                    isinstance(node.func, ast.Name)
+                    and node.func.id.lower() == "delay"
+                    and len(node.args) == 2
+                    and isinstance(node.args[0], ast.Name)
+                ):
+                    identifier = standardize_name(node.args[0].id)
+                    slope = affine_rates.get(identifier)
+                    if slope is not None:
+                        duration_expression = ast.unparse(self.visit(node.args[1]))
+                        duration = fold_numeric(
+                            duration_expression,
+                            lambda name: resolve_state(name, state, current_time),
+                        )
+                        if (
+                            duration is not None
+                            and math.isfinite(duration)
+                            and duration >= 0
+                        ):
+                            query_time = current_time - duration
+                            value = initial_values[identifier] + slope * max(
+                                0.0, query_time
+                            )
+                            if math.isfinite(value):
+                                return ast.copy_location(
+                                    ast.Constant(value=value), node
+                                )
+                return self.generic_visit(node)
+
+        try:
+            tree = ast.parse(expanded, mode="eval")
+            expanded = ast.unparse(RateHistoryRewriter().visit(tree))
+        except (TypeError, ValueError, SyntaxError):
+            return None
+        value = fold_numeric(
+            expanded, lambda name: resolve_state(name, state, current_time)
+        )
         return value if value is not None and math.isfinite(value) else None
 
     def parse_time_edge(trigger: str) -> Optional[Tuple[Optional[str], float]]:
@@ -1563,8 +1664,51 @@ def expand_static_parameter_event_system(
             return None
         return offset, threshold
 
+    def parse_affine_state_edge(
+        trigger: str,
+    ) -> Optional[Tuple[str, str, float]]:
+        comparison = re.fullmatch(r"(gt|geq|lt|leq)\s*\((.*)\)", trigger, re.I)
+        arguments = (
+            _split_arguments(comparison.group(2)) if comparison is not None else None
+        )
+        if comparison is None or arguments is None or len(arguments) != 2:
+            return None
+        operator = comparison.group(1).lower()
+        left, right = (_strip_outer_parens(value) for value in arguments)
+        identifier: Optional[str] = None
+        threshold_expression: Optional[str] = None
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", left):
+            candidate = standardize_name(left)
+            if candidate in affine_rates:
+                identifier = candidate
+                threshold_expression = right
+        if identifier is None and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", right):
+            candidate = standardize_name(right)
+            if candidate in affine_rates:
+                identifier = candidate
+                threshold_expression = left
+                operator = {"gt": "lt", "geq": "leq", "lt": "gt", "leq": "geq"}[
+                    operator
+                ]
+        if identifier is None or threshold_expression is None:
+            return None
+        if any(
+            name.lower() not in {"pi", "exponentiale"}
+            for name in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", threshold_expression)
+        ):
+            return None
+        threshold = evaluate(threshold_expression, values, 0.0)
+        slope = affine_rates[identifier]
+        rising = (operator in {"gt", "geq"} and slope > 0) or (
+            operator in {"lt", "leq"} and slope < 0
+        )
+        if threshold is None or not rising:
+            return None
+        return identifier, operator, threshold
+
     triggers: List[str] = []
     time_edges: List[Optional[Tuple[Optional[str], float]]] = []
+    state_edges: List[Optional[Tuple[str, str, float]]] = []
     delay_expressions: List[Optional[str]] = []
     targets: List[List[Tuple[str, str]]] = []
     for event in events:
@@ -1575,6 +1719,14 @@ def expand_static_parameter_event_system(
             else None
         )
         if re.search(r"\btime\b", trigger, re.IGNORECASE) and time_edge is None:
+            return None
+        rate_symbols = [
+            identifier
+            for identifier in affine_rates
+            if re.search(rf"\b{re.escape(identifier)}\b", trigger, re.IGNORECASE)
+        ]
+        state_edge = parse_affine_state_edge(trigger) if rate_symbols else None
+        if rate_symbols and state_edge is None:
             return None
         identifiers = list(re.finditer(r"\b[A-Za-z_][A-Za-z0-9_]*\b", trigger))
         if not trigger or any(
@@ -1594,13 +1746,14 @@ def expand_static_parameter_event_system(
         for assignment in event.assignments:
             variable, expression = _event_assignment(assignment)
             normalized = standardize_name(variable)
-            if normalized not in parameter_names:
+            if normalized not in parameter_names or normalized in affine_rates:
                 return None
             event_targets.append((normalized, expand_functions(expression)))
         if not event_targets:
             return None
         triggers.append(trigger)
         time_edges.append(time_edge)
+        state_edges.append(state_edge)
         delay_expressions.append(delay_expression)
         targets.append(event_targets)
 
@@ -1616,18 +1769,32 @@ def expand_static_parameter_event_system(
     ]
     sequence = 0
 
+    def state_edge_time(index: int) -> float:
+        edge = state_edges[index]
+        if edge is None:
+            return math.inf
+        identifier, _operator, threshold = edge
+        slope = affine_rates[identifier]
+        return (threshold - initial_values[identifier]) / slope
+
     def schedule_edges(time_value: float, previous: Sequence[bool]) -> None:
         nonlocal sequence
         for index, (event, expression) in enumerate(zip(events, triggers)):
             actual = (
                 1.0
-                if time_edges[index] is not None
-                and abs(
-                    (values[time_edges[index][0]] if time_edges[index][0] else 0.0)
-                    + time_edges[index][1]
-                    - time_value
+                if (
+                    time_edges[index] is not None
+                    and abs(
+                        (values[time_edges[index][0]] if time_edges[index][0] else 0.0)
+                        + time_edges[index][1]
+                        - time_value
+                    )
+                    <= 1e-12
                 )
-                <= 1e-12
+                or (
+                    state_edges[index] is not None
+                    and abs(state_edge_time(index) - time_value) <= 1e-12
+                )
                 else evaluate(expression, values, time_value)
             )
             if actual is None:
@@ -1678,7 +1845,16 @@ def expand_static_parameter_event_system(
                 if (values[offset] if offset else 0.0) + threshold
                 > current_time + 1e-12
             }
-            next_clock = min(clock_edges.values(), default=math.inf)
+            state_clock_edges = {
+                state_edge_time(index)
+                for index, edge in enumerate(state_edges)
+                if edge is not None
+                and not trigger_truth[index]
+                and state_edge_time(index) >= current_time - 1e-12
+            }
+            next_clock = min(
+                [*clock_edges.values(), *state_clock_edges], default=math.inf
+            )
             next_time = min(next_due, next_clock)
             if not math.isfinite(next_time) or next_time > float(t_end) + 1e-12:
                 break

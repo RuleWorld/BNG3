@@ -2601,6 +2601,72 @@ def test_simultaneous_events_resolve_dynamic_priority_before_assignments():
     assert first_reset < second_reset
 
 
+def test_affine_parameter_event_priorities_use_execution_time_values():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="affine_parameter_event_priority">
+        <listOfParameters>
+          <parameter id="P1" value="0" constant="false"/>
+          <parameter id="P2" value="0" constant="false"/>
+          <parameter id="P3" value="0" constant="false"/>
+        </listOfParameters>
+        <listOfRules><rateRule variable="P1">
+          <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math>
+        </rateRule></listOfRules>
+        <listOfEvents>
+          <event id="history_priority" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true">
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><gt/><ci>P1</ci><cn>1.5</cn></apply>
+              </math>
+            </trigger>
+            <priority><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply>
+                <csymbol encoding="text" definitionURL="http://www.sbml.org/sbml/symbols/delay">delay</csymbol>
+                <ci>P1</ci><cn>1</cn>
+              </apply>
+            </math></priority>
+            <listOfEventAssignments><eventAssignment variable="P3">
+              <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>3</cn></math>
+            </eventAssignment></listOfEventAssignments>
+          </event>
+          <event id="constant_priority" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true">
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><gt/><ci>P1</ci><cn>1.5</cn></apply>
+              </math>
+            </trigger>
+            <priority><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></priority>
+            <listOfEventAssignments><eventAssignment variable="P2">
+              <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>3</cn></math>
+            </eventAssignment></listOfEventAssignments>
+          </event>
+          <event id="updated_priority" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true">
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><gt/><ci>P1</ci><cn>1.5</cn></apply>
+              </math>
+            </trigger>
+            <priority><math xmlns="http://www.w3.org/1998/Math/MathML"><ci>P2</ci></math></priority>
+            <listOfEventAssignments><eventAssignment variable="P3">
+              <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>2</cn></math>
+            </eventAssignment></listOfEventAssignments>
+          </event>
+        </listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True, t_end=2, n_steps=20).atomize(xml)
+
+    assert result.success, result.error
+    assert "Events NOT simulated" not in result.bngl
+    p2_update = result.bngl.index('setParameter("P2", "3")')
+    reevaluated_priority_update = result.bngl.index('setParameter("P3", "2")')
+    history_priority_update = result.bngl.index('setParameter("P3", "3")')
+    assert p2_update < reevaluated_priority_update < history_priority_update
+
+
 def test_simultaneous_rateof_delay_and_priority_use_exponential_history():
     from bionetgen.atomizer.modern import Atomizer
 
