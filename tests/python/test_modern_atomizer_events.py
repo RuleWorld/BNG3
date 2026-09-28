@@ -258,6 +258,133 @@ def test_exponential_self_reset_stays_untranslated_when_it_reenters_in_horizon()
     assert "re-enter" in result.untranslated[0][1]
 
 
+def test_two_species_first_order_transfer_schedules_reentrant_threshold_events():
+    import math
+    import re
+
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLEventAssignment
+
+    events = [
+        SBMLEvent(
+            id="source-reset",
+            trigger="lt(S1, 0.2)",
+            assignments=[SBMLEventAssignment("S1", "1")],
+            trigger_initial_value=True,
+            trigger_persistent=True,
+            use_values_from_trigger_time=True,
+        ),
+        SBMLEvent(
+            id="sink-reset",
+            trigger="gt(S2, 0.5)",
+            assignments=[SBMLEventAssignment("S2", "0")],
+            trigger_initial_value=True,
+            trigger_persistent=True,
+            use_values_from_trigger_time=True,
+        ),
+    ]
+    result = synthesize_event_actions(
+        events,
+        EventTranslationContext(
+            resolve_species_pattern=lambda identifier: f"{identifier}()",
+            resolve_param=lambda _identifier: None,
+            is_param=lambda _identifier: False,
+            resolve_initial_value=lambda identifier: {"S1": 1, "S2": 0}.get(identifier),
+            resolve_first_order_transfer_event_system=lambda: ("S1", "S2", 1.0),
+            base_t_end=2.0,
+            base_steps=20,
+        ),
+    )
+
+    assert result.converted == 2
+    assert result.untranslated == []
+    assert result.actions_block is not None
+    phase_ends = [
+        float(value)
+        for value in re.findall(r"t_end=>([0-9.eE+-]+)", result.actions_block)
+    ]
+    assert len(phase_ends) == 4
+    for actual, expected in zip(
+        phase_ends[:3],
+        (math.log(2), math.log(5), math.log(5) + math.log(1.25)),
+    ):
+        assert math.isclose(actual, expected, rel_tol=0, abs_tol=1e-10)
+    assert result.actions_block.count('setConcentration("S2()", "0")') == 2
+    assert result.actions_block.count('setConcentration("S1()", "1")') == 1
+
+
+def test_atomizer_lowers_first_order_transfer_events_from_sbml():
+    from bionetgen.atomizer.modern import Atomizer
+
+    sbml = """\
+<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
+  <model id="first_order_transfer">
+    <listOfCompartments>
+      <compartment id="C" size="1" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="S1" compartment="C" initialAmount="1" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+      <species id="S2" compartment="C" initialAmount="0" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+    </listOfSpecies>
+    <listOfParameters>
+      <parameter id="k" value="1" constant="true"/>
+    </listOfParameters>
+    <listOfReactions>
+      <reaction id="r" reversible="false">
+        <listOfReactants>
+          <speciesReference species="S1" stoichiometry="1" constant="true"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference species="S2" stoichiometry="1" constant="true"/>
+        </listOfProducts>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><times/><ci>C</ci><ci>k</ci><ci>S1</ci></apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+    </listOfReactions>
+    <listOfEvents>
+      <event id="reset_source" useValuesFromTriggerTime="true">
+        <trigger initialValue="true" persistent="true">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><lt/><ci>S1</ci><cn>0.2</cn></apply>
+          </math>
+        </trigger>
+        <listOfEventAssignments>
+          <eventAssignment variable="S1">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math>
+          </eventAssignment>
+        </listOfEventAssignments>
+      </event>
+      <event id="reset_sink" useValuesFromTriggerTime="true">
+        <trigger initialValue="true" persistent="true">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><gt/><ci>S2</ci><cn>0.5</cn></apply>
+          </math>
+        </trigger>
+        <listOfEventAssignments>
+          <eventAssignment variable="S2">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0</cn></math>
+          </eventAssignment>
+        </listOfEventAssignments>
+      </event>
+    </listOfEvents>
+  </model>
+</sbml>
+"""
+    result = Atomizer(atomize=False, quiet_mode=True, t_end=1, n_steps=10).atomize(sbml)
+
+    assert result.success is True
+    assert "untranslated SBML event" not in result.bngl
+    assert "t_end=>0.69314718056" in result.bngl
+    assert "t_start=>0.69314718056, t_end=>1" in result.bngl
+    assert 'setConcentration("@C:M_S2()", "0")' in result.bngl
+
+
 def test_static_state_trigger_is_proven_never_firing():
     from bionetgen.atomizer.modern.events import (
         EventTranslationContext,
@@ -1037,7 +1164,7 @@ def test_delayed_affine_reset_event_repeats_until_the_horizon():
     assert result.untranslated == []
     assert result.actions_block is not None
     first_execution = result.actions_block.index("t_end=>3.1")
-    second_execution = result.actions_block.index("t_end=>5")
+    second_execution = result.actions_block.index("t_end=>8.1")
     assert first_execution < second_execution
 
 
@@ -1881,7 +2008,7 @@ def test_periodic_reset_event_is_expanded_to_repeated_parameter_updates():
     assert 'setParameter("Q", "1")' in result.actions_block
     assert 'setParameter("reset", "1")' in result.actions_block
     assert 'setParameter("reset", "2")' in result.actions_block
-    assert "t_end=>0.5" in result.actions_block
+    assert "t_start=>2, t_end=>2.5" in result.actions_block
 
 
 def test_periodic_event_at_requested_end_does_not_extend_past_scheduled_horizon():

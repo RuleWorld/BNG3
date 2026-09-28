@@ -1,8 +1,8 @@
 """SBML event translation for the Playground-derived atomizer.
 
-Fixed-time, constant-valued events are lowered to executable BNGL action
-phases.  State-dependent or otherwise dynamic events remain explicit
-diagnostics because the BNGL action language has no general trigger scheduler.
+Fixed-time events and narrowly proven analytic state-event systems are lowered
+to executable BNGL action phases. General state-dependent event scheduling
+remains explicit because the BNGL action language has no trigger scheduler.
 """
 
 from __future__ import annotations
@@ -100,6 +100,10 @@ def _no_event_quadratic_state_values_from_state(
 def _no_first_order_cycle_event_system() -> (
     Optional[Tuple[Tuple[str, str, str], Tuple[float, float, float]]]
 ):
+    return None
+
+
+def _no_first_order_transfer_event_system() -> Optional[Tuple[str, str, float]]:
     return None
 
 
@@ -277,6 +281,30 @@ def _first_order_cycle_trajectory(
         a21,
         a22,
     )
+
+
+def _first_order_transfer_state_at(
+    source: float, sink: float, rate: float, elapsed: float
+) -> Optional[Tuple[float, float]]:
+    if (
+        not all(math.isfinite(value) for value in (source, sink, rate, elapsed))
+        or source < 0
+        or sink < 0
+        or rate <= 0
+        or elapsed < 0
+    ):
+        return None
+    try:
+        remaining = math.exp(-rate * elapsed)
+    except OverflowError:
+        return None
+    next_source = source * remaining
+    next_sink = sink + source * (1.0 - remaining)
+    if not all(
+        math.isfinite(value) and value >= 0 for value in (next_source, next_sink)
+    ):
+        return None
+    return next_source, next_sink
 
 
 def _first_order_cycle_next_trigger_crossing(
@@ -472,12 +500,16 @@ class EventTranslationContext:
     # event-local mutable symbols then remain at their initial values unless
     # an event fires.
     static_event_state: bool = False
-    # Return the three species and outgoing concentration rates for a proven
-    # isolated first-order cycle used by recurrent threshold-event scheduling.
-    # This callback stays last to preserve positional initializer compatibility.
+    # Event-system callbacks stay at the end to preserve positional
+    # initializer compatibility.
     resolve_first_order_cycle_event_system: Callable[
         [], Optional[Tuple[Tuple[str, str, str], Tuple[float, float, float]]]
     ] = _no_first_order_cycle_event_system
+    # Return source species, sink species, and a positive concentration-rate
+    # constant for one isolated first-order transfer event system.
+    resolve_first_order_transfer_event_system: Callable[
+        [], Optional[Tuple[str, str, float]]
+    ] = _no_first_order_transfer_event_system
 
     @property
     def resolveSpeciesPattern(self):
@@ -4394,6 +4426,303 @@ def synthesize_event_actions(
                         event_proven_inactive.add(id(event))
                         horizon_limited += 1
 
+    if len(events) == 2 and context.method.lower() != "ssa":
+        transfer_system = context.resolve_first_order_transfer_event_system()
+        if transfer_system is not None:
+            source_id, sink_id, transfer_rate = transfer_system
+            source_key = standardize_name(source_id)
+            sink_key = standardize_name(sink_id)
+            source_initial = context.resolve_initial_value(source_id)
+            sink_initial = context.resolve_initial_value(sink_id)
+            transfer_supported = (
+                source_key != sink_key
+                and source_initial is not None
+                and sink_initial is not None
+                and math.isfinite(float(source_initial))
+                and math.isfinite(float(sink_initial))
+                and float(source_initial) >= 0
+                and float(sink_initial) >= 0
+                and math.isfinite(float(transfer_rate))
+                and float(transfer_rate) > 0
+                and math.isfinite(float(context.base_t_end))
+                and float(context.base_t_end) > 0
+            )
+            transfer_plans: List[
+                Tuple[
+                    SBMLEvent,
+                    str,
+                    str,
+                    float,
+                    List[Tuple[str, str, str]],
+                ]
+            ] = []
+            trigger_roles: set[str] = set()
+            if transfer_supported:
+                for event in events:
+                    parsed = _parse_affine_state_threshold(event.trigger)
+                    if parsed is None:
+                        transfer_supported = False
+                        break
+                    identifier, operator, threshold_expression = parsed
+                    normalized_identifier = standardize_name(identifier)
+                    threshold_symbols = re.findall(
+                        r"[A-Za-z_][A-Za-z0-9_]*",
+                        context.expand_functions(threshold_expression),
+                    )
+                    if normalized_identifier == source_key and operator == "lt":
+                        trigger_role = "source"
+                    elif normalized_identifier == sink_key and operator == "gt":
+                        trigger_role = "sink"
+                    else:
+                        transfer_supported = False
+                        break
+                    threshold = fold(threshold_expression, event_context=event)
+                    if (
+                        threshold is None
+                        or not math.isfinite(float(threshold))
+                        or float(threshold) <= 0
+                        or any(
+                            standardize_name(symbol) in {source_key, sink_key, "time"}
+                            for symbol in threshold_symbols
+                        )
+                        or event.delay
+                        or event.priority
+                        or event.trigger_initial_value is not True
+                        or event.trigger_persistent is not True
+                        or event.use_values_from_trigger_time is not True
+                        or trigger_role in trigger_roles
+                    ):
+                        transfer_supported = False
+                        break
+                    trigger_roles.add(trigger_role)
+                    assignment_targets: List[Tuple[str, str, str]] = []
+                    seen_targets: set[str] = set()
+                    for assignment in event.assignments:
+                        variable, expression = _event_assignment(assignment)
+                        target_key = standardize_name(variable)
+                        pattern = context.resolve_species_pattern(variable)
+                        if (
+                            target_key not in {source_key, sink_key}
+                            or pattern is None
+                            or target_key in seen_targets
+                            or not str(expression or "").strip()
+                        ):
+                            transfer_supported = False
+                            break
+                        seen_targets.add(target_key)
+                        assignment_targets.append((variable, pattern, expression))
+                    if not transfer_supported or not assignment_targets:
+                        transfer_supported = False
+                        break
+                    transfer_plans.append(
+                        (
+                            event,
+                            identifier,
+                            operator,
+                            float(threshold),
+                            assignment_targets,
+                        )
+                    )
+            if transfer_supported and trigger_roles == {"source", "sink"}:
+                transfer_state = {
+                    source_id: float(source_initial),
+                    sink_id: float(sink_initial),
+                }
+                transfer_active: List[bool] = []
+                for (
+                    _event,
+                    identifier,
+                    operator,
+                    threshold,
+                    _assignments,
+                ) in transfer_plans:
+                    state_value = transfer_state.get(identifier)
+                    if state_value is None:
+                        transfer_supported = False
+                        break
+                    transfer_active.append(
+                        state_value < threshold
+                        if operator == "lt"
+                        else state_value > threshold
+                    )
+
+                transfer_schedule: List[
+                    Tuple[
+                        float,
+                        List[Tuple[str, str, float]],
+                        float,
+                        Optional[SBMLEvent],
+                        bool,
+                        List[Tuple[str, float]],
+                    ]
+                ] = []
+                current_time = 0.0
+                last_fired_at: dict[int, float] = {}
+                pending: List[int] = []
+                for _ in range(10_000):
+                    if not transfer_supported:
+                        break
+                    if not pending:
+                        candidates: List[Tuple[float, int]] = []
+                        source_value = transfer_state[source_id]
+                        sink_value = transfer_state[sink_id]
+                        for index, plan in enumerate(transfer_plans):
+                            if transfer_active[index]:
+                                continue
+                            _event, identifier, operator, threshold, _assignments = plan
+                            if (
+                                standardize_name(identifier) == source_key
+                                and operator == "lt"
+                            ):
+                                if source_value < threshold:
+                                    transfer_supported = False
+                                    break
+                                delta = math.log(source_value / threshold) / float(
+                                    transfer_rate
+                                )
+                            else:
+                                available = source_value
+                                fraction = (
+                                    (threshold - sink_value) / available
+                                    if available > 0
+                                    else math.inf
+                                )
+                                if fraction < 0:
+                                    transfer_supported = False
+                                    break
+                                if fraction >= 1 or not math.isfinite(fraction):
+                                    continue
+                                delta = -math.log1p(-fraction) / float(transfer_rate)
+                            if not math.isfinite(delta) or delta < -1e-12:
+                                transfer_supported = False
+                                break
+                            candidates.append((max(0.0, delta), index))
+                        if not transfer_supported:
+                            break
+                        if not candidates:
+                            break
+                        next_delta = min(candidate[0] for candidate in candidates)
+                        next_time = current_time + next_delta
+                        if next_time > float(context.base_t_end) + 1e-12:
+                            break
+                        simultaneous_tolerance = 1e-11 * max(1.0, abs(next_delta))
+                        near_simultaneous = [
+                            delta
+                            for delta, _index in candidates
+                            if abs(delta - next_delta) <= simultaneous_tolerance
+                        ]
+                        if any(delta != next_delta for delta in near_simultaneous):
+                            transfer_supported = False
+                            break
+                        next_state = _first_order_transfer_state_at(
+                            transfer_state[source_id],
+                            transfer_state[sink_id],
+                            float(transfer_rate),
+                            next_delta,
+                        )
+                        if next_state is None:
+                            transfer_supported = False
+                            break
+                        transfer_state[source_id], transfer_state[sink_id] = next_state
+                        current_time = min(next_time, float(context.base_t_end))
+                        for index, plan in enumerate(transfer_plans):
+                            _event, identifier, operator, threshold, _assignments = plan
+                            value = transfer_state[identifier]
+                            transfer_active[index] = (
+                                value < threshold
+                                if operator == "lt"
+                                else value > threshold
+                            )
+                        pending = [
+                            index for delta, index in candidates if delta == next_delta
+                        ]
+                        for index in pending:
+                            transfer_active[index] = True
+                    if not pending:
+                        continue
+
+                    for index in pending:
+                        previous = last_fired_at.get(index)
+                        if (
+                            previous is not None
+                            and abs(previous - current_time) <= 1e-12
+                        ):
+                            transfer_supported = False
+                            break
+                    if not transfer_supported:
+                        break
+
+                    trigger_state = dict(transfer_state)
+                    updates: dict[str, Tuple[str, str, float]] = {}
+                    update_values: dict[str, float] = {}
+                    for index in pending:
+                        event, _identifier, _operator, _threshold, assignments = (
+                            transfer_plans[index]
+                        )
+                        for variable, pattern, expression in assignments:
+                            value = fold_at_state(
+                                expression,
+                                current_time,
+                                state_values=trigger_state,
+                                event_context=event,
+                            )
+                            if value is None or not math.isfinite(value) or value < 0:
+                                transfer_supported = False
+                                break
+                            target_key = standardize_name(variable)
+                            prior_value = update_values.get(target_key)
+                            if prior_value is not None and prior_value != float(value):
+                                transfer_supported = False
+                                break
+                            if prior_value is None:
+                                updates[target_key] = (variable, pattern, float(value))
+                                update_values[target_key] = float(value)
+                        if not transfer_supported:
+                            break
+                    if not transfer_supported:
+                        break
+
+                    event_sets = [
+                        ("conc", pattern, value)
+                        for _variable, pattern, value in updates.values()
+                    ]
+                    event_values = [
+                        (variable, value)
+                        for variable, _pattern, value in updates.values()
+                    ]
+                    for target_key, (variable, _pattern, value) in updates.items():
+                        actual_target = (
+                            source_id if target_key == source_key else sink_id
+                        )
+                        transfer_state[actual_target] = value
+                    transfer_schedule.append(
+                        (current_time, event_sets, 0.0, None, False, event_values)
+                    )
+                    for index in pending:
+                        last_fired_at[index] = current_time
+
+                    newly_triggered: List[int] = []
+                    for index, plan in enumerate(transfer_plans):
+                        was_active = transfer_active[index]
+                        _event, identifier, operator, threshold, _assignments = plan
+                        value = transfer_state[identifier]
+                        is_active = (
+                            value < threshold if operator == "lt" else value > threshold
+                        )
+                        if not was_active and is_active:
+                            newly_triggered.append(index)
+                        transfer_active[index] = is_active
+                    pending = newly_triggered
+                else:
+                    transfer_supported = False
+
+                if transfer_supported:
+                    scheduled.extend(transfer_schedule)
+                    recurrent_handled.update(id(event) for event in events)
+                    normal_converted += len(events)
+                    if not transfer_schedule:
+                        horizon_limited += len(events)
+
     if len(events) == 1 and id(events[0]) not in recurrent_handled:
         event = events[0]
         parsed_difference = _parse_state_difference_threshold(event.trigger)
@@ -5906,7 +6235,8 @@ def synthesize_event_actions(
         else:
             lines.append(
                 f'simulate({{continue=>1, method=>"{method}", '
-                f"t_end=>{_format_number(end - phase_start)}, n_steps=>{steps}}})"
+                f"t_start=>{_format_number(phase_start)}, "
+                f"t_end=>{_format_number(end)}, n_steps=>{steps}}})"
             )
         for time, sets in merged:
             if time > 0 and abs(time - end) < 1e-12:
@@ -5916,7 +6246,8 @@ def synthesize_event_actions(
     if abs(phase_start - t_final) > 1e-12:
         lines.append(
             f'simulate({{continue=>1, method=>"{method}", '
-            f"t_end=>{_format_number(t_final - phase_start)}, "
+            f"t_start=>{_format_number(phase_start)}, "
+            f"t_end=>{_format_number(t_final)}, "
             f"n_steps=>{steps_for(phase_start, t_final)}}})"
         )
 

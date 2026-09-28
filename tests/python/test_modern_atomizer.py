@@ -2725,7 +2725,8 @@ def test_playground_event_actions_use_source_half_up_step_rounding():
     )
 
     assert result.actions_block is not None
-    assert result.actions_block.count("t_end=>1, n_steps=>3") == 2
+    assert result.actions_block.count("t_end=>1, n_steps=>3") == 1
+    assert "t_start=>1, t_end=>2, n_steps=>3" in result.actions_block
 
 
 def test_playground_event_actions_fold_time_at_trigger_or_execution_time():
