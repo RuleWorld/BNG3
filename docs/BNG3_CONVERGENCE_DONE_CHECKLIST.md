@@ -8515,3 +8515,44 @@ the other groups remain implementation targets.
   complete SBML benchmark. BNG2/legacy Atomizer remains incomplete and has not
   been benchmarked against all SBML. Broader SSTS/BioModels intersections,
   NFsim validation, and release packaging remain open.
+
+## Refreshed selected 50-case cross-engine sample — 2026-09-28
+
+- [x] Re-ran the same 50 SBML inputs from the prior selected sample with three
+  repeats in flat and Atomized modes, using a 30-second per-network timeout.
+  Pinned SSTS checkout is `cf38585fac5de8e0e90112febb62851ee2181816`.
+- [x] Modern BNG3 completed all 300 conversions; BNG3/BNG2 network generation
+  completed 588/600 rows (6 BNG2 errors and 6 BNG2 timeouts). All 288 paired
+  networks matched structurally; rate parity passed 234/288, up from 210/288
+  in the prior report. Cases `00388`, `00393`, `00394`, and `01100` gained
+  parity in both modes after the `TotalRate` serialization fix.
+- [x] Independent PyBioNetGen completed 273/300 conversions, with 27 errors.
+  It produced 234 paired comparisons; all 234 matched structurally and 225
+  matched rates. Imported module path resolved to the requested
+  `/Users/akutuva/Documents/BioNetGen/PyBioNetGen` checkout.
+- [x] Report `/private/tmp/bng3-cross-engine-ssts-totalrate-fixed-50-20260928-30s.json`,
+  SHA-256 `f90449e9d42b6530788631b753bd025964ef22342feb51de144ea8cbed3e045e`.
+  It records BNG3 head `0146464501d2884ef55c52ecbb5c728e137f7485`, rebuilt
+  `bng_cpp` SHA-256 `6fda97e8be9dcbbc34617ab5e1e00a8253108eda5b859378c8fc922d4fe88285`,
+  BNG2 `8726b30b94c081d5f0ce8b8d38338e27be1b38fc`, and PyBioNetGen
+  `43b09a5346402986d8e25264cd2974dacf0ad430`. Benchmark script SHA-256:
+  `3aea58f172e0de4011c123f0b63975cb82b71516cead6f0c9122743a8d37f2f8`.
+- [ ] This is a selected 50-input network/rate sample; it does not establish
+  trajectory parity, full SSTS coverage, or an all-SBML benchmark of the
+  incomplete BNG2/legacy Atomizer. BioModels validation remains stopped.
+
+## Refreshed open BNG3 PR review — 2026-09-28
+
+- [x] PR #26 remains open at head `7b1d7ec57300911bbf2b8bceb7ac3c9a1ed5b6dd`
+  against old base `148a0314685c71cfeece1db7a13b17a79ec42557`. Current checks:
+  39 pass, 5 skipped. Existing review findings remain; no PR changes were made.
+- [x] PR #27 remains open at head `b105d54ae971a18eca36a061e2ac6c89abf21dc3`
+  against the same old base. Current checks: 29 pass, 5 fail, 7 skipped. The
+  failures are C++ jobs on macOS/Clang, Ubuntu/GCC, Ubuntu/Clang, Windows/MSVC,
+  and Ubuntu/ASan. Existing correctness findings remain; no PR changes were
+  made.
+- [x] Reviewed new draft PR #28 at head
+  `1a5008b4163109d85e0503af4eefe49074572152`. Its regex cache call sites use a
+  fixed built-in function-name set, so the dictionary is bounded in current
+  code. No performance benchmark was included in the inspected patch. No PR
+  was modified, approved, or commented on.
