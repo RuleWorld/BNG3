@@ -4932,6 +4932,24 @@ def synthesize_event_actions(
         quadratic_group_supported = True
         for event in events:
             parsed_threshold = _parse_affine_state_threshold(event.trigger)
+            parsed_difference = _parse_state_difference_threshold(event.trigger)
+            difference_components = (
+                _state_difference_components(parsed_difference[0])
+                if parsed_difference is not None
+                else None
+            )
+            if (
+                (
+                    parsed_threshold is None
+                    or fold(parsed_threshold[2], event_context=event) is None
+                )
+                and difference_components is not None
+                and all(
+                    context.resolve_species_pattern(symbol) is not None
+                    for symbol in difference_components
+                )
+            ):
+                parsed_threshold = parsed_difference
             delay_symbols = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", event.delay or "")
             delay = fold(event.delay, event_context=event) if event.delay else 0.0
             if (
@@ -4950,7 +4968,13 @@ def synthesize_event_actions(
             ):
                 quadratic_group_supported = False
                 break
-            identifier, operator, threshold_expression = parsed_threshold
+            trigger_expression, operator, threshold_expression = parsed_threshold
+            identifier = (
+                difference_components[0]
+                if difference_components is not None
+                and parsed_threshold is parsed_difference
+                else trigger_expression
+            )
             threshold = fold(threshold_expression, event_context=event)
             if (
                 operator not in {"lt", "gt"}
@@ -4959,8 +4983,17 @@ def synthesize_event_actions(
             ):
                 quadratic_group_supported = False
                 break
+            trigger_state_ids = (
+                difference_components
+                if parsed_threshold is parsed_difference
+                and difference_components is not None
+                else (identifier,)
+            )
+            trigger_state_names = {
+                standardize_name(symbol) for symbol in trigger_state_ids
+            }
             trigger_is_assigned = any(
-                standardize_name(variable) == standardize_name(identifier)
+                standardize_name(variable) in trigger_state_names
                 for candidate in events
                 for assignment in candidate.assignments
                 for variable, _expression in [_event_assignment(assignment)]
@@ -4970,7 +5003,8 @@ def synthesize_event_actions(
             )
             initial_trigger_state = context.resolve_initial_value(identifier)
             if (
-                not trigger_is_assigned
+                difference_components is None
+                and not trigger_is_assigned
                 and constant_trajectory is not None
                 and constant_trajectory[1] == 0
                 and initial_trigger_state is not None
@@ -5003,12 +5037,19 @@ def synthesize_event_actions(
                 quadratic_group_supported = False
                 break
             required_state_symbols.add(identifier)
+            if parsed_threshold is parsed_difference and difference_components:
+                required_state_symbols.update(difference_components)
             quadratic_plans.append(
                 {
                     "event": event,
                     "identifier": identifier,
                     "operator": operator,
                     "threshold": float(threshold),
+                    "difference_components": (
+                        difference_components
+                        if parsed_threshold is parsed_difference
+                        else None
+                    ),
                     "assignments": assignments,
                     "delay": float(delay),
                 }
@@ -5050,15 +5091,33 @@ def synthesize_event_actions(
             plan: Mapping[str, object], state_values: Mapping[str, float]
         ) -> Optional[bool]:
             identifier = str(plan["identifier"])
-            normalized_identifier = standardize_name(identifier)
-            state_value = next(
-                (
-                    float(value)
+            components = plan.get("difference_components")
+            if isinstance(components, tuple) and len(components) == 2:
+                normalized_components = tuple(
+                    standardize_name(str(symbol)) for symbol in components
+                )
+                component_values = {
+                    standardize_name(symbol): float(value)
                     for symbol, value in state_values.items()
-                    if standardize_name(symbol) == normalized_identifier
-                ),
-                None,
-            )
+                }
+                if not all(
+                    symbol in component_values for symbol in normalized_components
+                ):
+                    return None
+                state_value = (
+                    component_values[normalized_components[0]]
+                    - component_values[normalized_components[1]]
+                )
+            else:
+                normalized_identifier = standardize_name(identifier)
+                state_value = next(
+                    (
+                        float(value)
+                        for symbol, value in state_values.items()
+                        if standardize_name(symbol) == normalized_identifier
+                    ),
+                    None,
+                )
             if state_value is None or not math.isfinite(state_value):
                 return None
             threshold = float(plan["threshold"])
@@ -5070,14 +5129,119 @@ def synthesize_event_actions(
                     else state_value > threshold
                 )
             event = plan["event"]
+            if isinstance(components, tuple) and len(components) == 2:
+                derivatives = []
+                for symbol in components:
+                    trajectory = context.resolve_quadratic_rate_from_state(
+                        str(symbol), event, state_values
+                    )
+                    if trajectory is None:
+                        return None
+                    initial, quadratic, linear, constant = trajectory
+                    derivatives.append(
+                        quadratic * initial * initial + linear * initial + constant
+                    )
+                derivative = derivatives[0] - derivatives[1]
+            else:
+                trajectory = context.resolve_quadratic_rate_from_state(
+                    identifier, event, state_values
+                )
+                if trajectory is None:
+                    return None
+                initial, quadratic, linear, constant = trajectory
+                derivative = quadratic * initial * initial + linear * initial + constant
+            return derivative < 0 if operator == "lt" else derivative > 0
+
+        def quadratic_plan_crossing(
+            plan: Mapping[str, object], state_values: Mapping[str, float]
+        ) -> Optional[
+            Tuple[Optional[float], float, float, Tuple[float, float, float, float]]
+        ]:
+            identifier = str(plan["identifier"])
+            event = plan["event"]
             trajectory = context.resolve_quadratic_rate_from_state(
                 identifier, event, state_values
             )
             if trajectory is None:
                 return None
             initial, quadratic, linear, constant = trajectory
-            derivative = quadratic * initial * initial + linear * initial + constant
-            return derivative < 0 if operator == "lt" else derivative > 0
+            threshold = float(plan["threshold"])
+            components = plan.get("difference_components")
+            if not isinstance(components, tuple) or len(components) != 2:
+                derivative = (
+                    quadratic * threshold * threshold + linear * threshold + constant
+                )
+                return (
+                    _quadratic_crossing_time(
+                        initial, threshold, quadratic, linear, constant
+                    ),
+                    threshold,
+                    derivative,
+                    trajectory,
+                )
+
+            normalized_values = {
+                standardize_name(symbol): float(value)
+                for symbol, value in state_values.items()
+            }
+            left_name, right_name = (str(symbol) for symbol in components)
+            left_key, right_key = (
+                standardize_name(left_name),
+                standardize_name(right_name),
+            )
+            if left_key not in normalized_values or right_key not in normalized_values:
+                return None
+            current_difference = (
+                normalized_values[left_key] - normalized_values[right_key]
+            )
+            step = max(1.0, abs(initial))
+            projected_differences: List[float] = []
+            for coordinate in (initial + step, initial + 2.0 * step):
+                snapshot = context.resolve_quadratic_state_values_from_state(
+                    identifier, coordinate, event, state_values
+                )
+                if snapshot is None:
+                    return None
+                values = {
+                    standardize_name(symbol): float(value)
+                    for symbol, value in snapshot.items()
+                }
+                if left_key not in values or right_key not in values:
+                    return None
+                projected_differences.append(values[left_key] - values[right_key])
+            slope = (projected_differences[0] - current_difference) / step
+            predicted_second = current_difference + 2.0 * slope * step
+            if not math.isfinite(slope) or abs(
+                projected_differences[1] - predicted_second
+            ) > 1e-12 * max(
+                1.0,
+                abs(current_difference),
+                abs(projected_differences[0]),
+                abs(projected_differences[1]),
+            ):
+                return None
+            if abs(slope) <= 1e-14:
+                return None, initial, 0.0, trajectory
+            crossing_coordinate = initial - current_difference / slope
+            if not math.isfinite(crossing_coordinate):
+                return None
+            derivative = slope * (
+                quadratic * crossing_coordinate * crossing_coordinate
+                + linear * crossing_coordinate
+                + constant
+            )
+            return (
+                _quadratic_crossing_time(
+                    initial,
+                    crossing_coordinate,
+                    quadratic,
+                    linear,
+                    constant,
+                ),
+                crossing_coordinate,
+                derivative,
+                trajectory,
+            )
 
         group_schedule: List[
             Tuple[
@@ -5109,22 +5273,19 @@ def synthesize_event_actions(
                 if not quadratic_group_supported:
                     break
 
-                transitions: List[Tuple[float, Mapping[str, object], str]] = []
+                transitions: List[Tuple[float, Mapping[str, object], str, float]] = []
                 remaining = max(0.0, float(context.base_t_end) - group_time)
                 for plan in quadratic_plans:
                     event = plan["event"]
                     identifier = str(plan["identifier"])
-                    threshold = float(plan["threshold"])
-                    trajectory = context.resolve_quadratic_rate_from_state(
-                        identifier, event, group_state
-                    )
-                    if trajectory is None:
+                    crossing = quadratic_plan_crossing(plan, group_state)
+                    if crossing is None:
                         quadratic_group_supported = False
                         break
-                    initial, quadratic, linear, constant = trajectory
-                    crossing_delta = _quadratic_crossing_time(
-                        initial, threshold, quadratic, linear, constant
+                    crossing_delta, coordinate_threshold, derivative, trajectory = (
+                        crossing
                     )
+                    initial, quadratic, linear, constant = trajectory
                     current_active = active_by_event[id(event)]
                     if crossing_delta is None:
                         endpoint = _quadratic_state_at_time(
@@ -5133,11 +5294,27 @@ def synthesize_event_actions(
                         if endpoint is None:
                             quadratic_group_supported = False
                             break
-                        endpoint_active = (
-                            endpoint < threshold
-                            if plan["operator"] == "lt"
-                            else endpoint > threshold
-                        )
+                        components = plan.get("difference_components")
+                        if isinstance(components, tuple) and len(components) == 2:
+                            endpoint_state = (
+                                context.resolve_quadratic_state_values_from_state(
+                                    identifier, endpoint, event, group_state
+                                )
+                            )
+                            endpoint_active = (
+                                None
+                                if endpoint_state is None
+                                else quadratic_trigger_active(plan, endpoint_state)
+                            )
+                        else:
+                            endpoint_active = (
+                                endpoint < float(plan["threshold"])
+                                if plan["operator"] == "lt"
+                                else endpoint > float(plan["threshold"])
+                            )
+                        if endpoint_active is None:
+                            quadratic_group_supported = False
+                            break
                         if endpoint_active != current_active:
                             quadratic_group_supported = False
                             break
@@ -5145,18 +5322,20 @@ def synthesize_event_actions(
 
                     if crossing_delta <= 1e-12:
                         if initial_trigger_state_pending and not current_active:
-                            derivative = (
-                                quadratic * threshold * threshold
-                                + linear * threshold
-                                + constant
-                            )
                             enters_true = (
                                 derivative < 0
                                 if plan["operator"] == "lt"
                                 else derivative > 0
                             )
                             if enters_true:
-                                transitions.append((group_time, plan, "entry"))
+                                transitions.append(
+                                    (
+                                        group_time,
+                                        plan,
+                                        "entry",
+                                        coordinate_threshold,
+                                    )
+                                )
                         continue
                     event_time = group_time + crossing_delta
                     endpoint = _quadratic_state_at_time(
@@ -5165,22 +5344,33 @@ def synthesize_event_actions(
                     if endpoint is None:
                         quadratic_group_supported = False
                         break
-                    endpoint_active = (
-                        endpoint < threshold
-                        if plan["operator"] == "lt"
-                        else endpoint > threshold
-                    )
+                    components = plan.get("difference_components")
+                    if isinstance(components, tuple) and len(components) == 2:
+                        endpoint_state = (
+                            context.resolve_quadratic_state_values_from_state(
+                                identifier, endpoint, event, group_state
+                            )
+                        )
+                        endpoint_active = (
+                            None
+                            if endpoint_state is None
+                            else quadratic_trigger_active(plan, endpoint_state)
+                        )
+                    else:
+                        endpoint_active = (
+                            endpoint < float(plan["threshold"])
+                            if plan["operator"] == "lt"
+                            else endpoint > float(plan["threshold"])
+                        )
+                    if endpoint_active is None:
+                        quadratic_group_supported = False
+                        break
                     if event_time > float(context.base_t_end) + 1e-12:
                         if endpoint_active != current_active:
                             quadratic_group_supported = False
                             break
                         continue
 
-                    derivative = (
-                        quadratic * threshold * threshold
-                        + linear * threshold
-                        + constant
-                    )
                     enters_true = (
                         derivative < 0 if plan["operator"] == "lt" else derivative > 0
                     )
@@ -5192,7 +5382,12 @@ def synthesize_event_actions(
                             break
                         continue
                     transitions.append(
-                        (event_time, plan, "entry" if is_entry else "exit")
+                        (
+                            event_time,
+                            plan,
+                            "entry" if is_entry else "exit",
+                            coordinate_threshold,
+                        )
                     )
 
                 if not quadratic_group_supported:
@@ -5207,8 +5402,8 @@ def synthesize_event_actions(
                     quadratic_group_supported = False
                     break
 
-                event_time, plan, transition_kind = (
-                    transitions[0] if transitions else (math.inf, {}, "")
+                event_time, plan, transition_kind, coordinate_threshold = (
+                    transitions[0] if transitions else (math.inf, {}, "", 0.0)
                 )
                 next_pending_time = min(
                     (float(action["time"]) for action in pending_quadratic_actions),
@@ -5319,7 +5514,7 @@ def synthesize_event_actions(
                 initial_trigger_state_pending = False
                 event = plan["event"]
                 identifier = str(plan["identifier"])
-                threshold = float(plan["threshold"])
+                threshold = float(coordinate_threshold)
                 crossing_state = context.resolve_quadratic_state_values_from_state(
                     identifier, threshold, event, group_state
                 )

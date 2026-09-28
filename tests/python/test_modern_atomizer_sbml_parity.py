@@ -3976,6 +3976,98 @@ def test_quadratic_reaction_events_support_independent_delays(tmp_path):
         assert float(np.max(np.abs(bng_values - rr_values))) <= max(5e-10, 1e-5 * scale)
 
 
+def _quadratic_species_difference_multi_delay_model(*, rank_two: bool = False) -> str:
+    second_reaction_s3_stoichiometry = ' stoichiometry="2"' if rank_two else ""
+    return f"""<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="quadratic_species_difference_multi_delay">
+        <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies>
+          <species id="S1" compartment="C" initialAmount="0.001" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+          <species id="S2" compartment="C" initialAmount="0.0012" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+          <species id="S3" compartment="C" initialAmount="0.002" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+          <species id="S4" compartment="C" initialAmount="0.001" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+        </listOfSpecies>
+        <listOfParameters>
+          <parameter id="k1" value="750" constant="true"/>
+          <parameter id="k2" value="250" constant="true"/>
+        </listOfParameters>
+        <listOfReactions>
+          <reaction id="r1" reversible="false">
+            <listOfReactants><speciesReference species="S1"/><speciesReference species="S2"/></listOfReactants>
+            <listOfProducts><speciesReference species="S3"/><speciesReference species="S4"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><times/><ci>k1</ci><ci>S1</ci><ci>S2</ci></apply></math></kineticLaw>
+          </reaction>
+          <reaction id="r2" reversible="false">
+            <listOfReactants><speciesReference species="S3"{second_reaction_s3_stoichiometry}/><speciesReference species="S4"/></listOfReactants>
+            <listOfProducts><speciesReference species="S1"/><speciesReference species="S2"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><times/><ci>k2</ci><ci>S3</ci><ci>S4</ci></apply></math></kineticLaw>
+          </reaction>
+        </listOfReactions>
+        <listOfEvents>
+          <event id="resetS1" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><gt/><ci>S4</ci><ci>S2</ci></apply></math></trigger>
+            <delay><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0.5</cn></math></delay>
+            <listOfEventAssignments><eventAssignment variable="S1"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0.002</cn></math></eventAssignment></listOfEventAssignments>
+          </event>
+          <event id="resetS4" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><gt/><ci>S3</ci><cn>0.00225</cn></apply></math></trigger>
+            <delay><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0.75</cn></math></delay>
+            <listOfEventAssignments><eventAssignment variable="S4"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0.001</cn></math></eventAssignment></listOfEventAssignments>
+          </event>
+        </listOfEvents>
+      </model>
+    </sbml>"""
+
+
+def test_quadratic_delayed_event_group_supports_species_difference_trigger(tmp_path):
+    import numpy as np
+
+    roadrunner = pytest.importorskip("roadrunner")
+    from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.model import load
+
+    xml = _quadratic_species_difference_multi_delay_model()
+    result = Atomizer(quiet_mode=True, t_end=4, n_steps=800).atomize(xml)
+
+    assert result.success, result.error
+    assert "Events NOT simulated" not in result.bngl
+    model_path = tmp_path / "quadratic_species_difference_multi_delay.bngl"
+    model_path.write_text(result.bngl, encoding="utf-8")
+    load(model_path).execute()
+    lines = model_path.with_suffix(".gdat").read_text().splitlines()
+    columns = lines[0].lstrip("# ").split()
+    bng_data = np.loadtxt(lines[1:])
+    rr = roadrunner.RoadRunner(xml)
+    rr.integrator.setValue("relative_tolerance", 1e-9)
+    rr.integrator.setValue("absolute_tolerance", 1e-12)
+    rr.timeCourseSelections = ["time", "S1", "S2", "S3", "S4"]
+    reference = rr.simulate(times=bng_data[:, columns.index("time")])
+    state_columns = [columns.index(f"{name}_amt") for name in ("S1", "S2", "S3", "S4")]
+    jump_indices = np.flatnonzero(
+        np.max(np.abs(np.diff(bng_data[:, state_columns], axis=0)), axis=1) > 1e-4
+    )
+    assert len(jump_indices) >= 2
+    compare = np.ones(len(bng_data), dtype=bool)
+    compare[jump_indices] = False
+    compare[jump_indices + 1] = False
+    for name in ("S1", "S2", "S3", "S4"):
+        bng_values = bng_data[compare, columns.index(f"{name}_amt")]
+        rr_values = reference[compare, reference.colnames.index(name)]
+        scale = max(float(np.max(np.abs(bng_values))), float(np.max(np.abs(rr_values))))
+        assert float(np.max(np.abs(bng_values - rr_values))) <= max(5e-10, 1e-5 * scale)
+
+
+def test_quadratic_difference_group_keeps_rank_two_events_unsupported():
+    from bionetgen.atomizer.modern import Atomizer
+
+    result = Atomizer(quiet_mode=True, t_end=4, n_steps=40).atomize(
+        _quadratic_species_difference_multi_delay_model(rank_two=True)
+    )
+
+    assert result.success, result.error
+    assert "Events NOT simulated" in result.bngl
+
+
 @pytest.mark.parametrize(
     "second_event,delayed", ((False, False), (True, False), (False, True), (True, True))
 )

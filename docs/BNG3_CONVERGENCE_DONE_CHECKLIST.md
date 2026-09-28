@@ -7556,6 +7556,42 @@ the other groups remain implementation targets.
   `00776`. Supported surface passes; aggregate Core gate remains open. Report
   `/private/tmp/bng3-quadratic-multievent-delayed-full-sbml.json`, SHA-256
   `24d9e64d03ef4aa7f873783db1425964adf4ddc1f521ce7ad533ac9d3cfdf23a`.
-- [ ] The five inspected rank-one cases with species-to-species triggers remain
-  unsupported. Full repository pytest and curated BioModels validation remain
-  unverified; BioModels run stays stopped per user request.
+- [x] The next slice below adds species-to-species triggers to the same proven
+  quadratic cohort. Curated BioModels validation remains unverified and stays
+  stopped per user request.
+
+## NF CLI start-time regression test cost — 2026-09-28
+
+- [x] Replace the CLI smoke test's 5,500-molecule `simple_system.bngl` input
+  with a minimal birth model and assert the emitted sample-time column is
+  `[1.0, 2.0]`. This keeps CLI forwarding coverage while avoiding the large
+  network-free workload. The isolated test passes in `0.03s`; all 16 CLI tests
+  pass (3 existing Cement deprecation warnings).
+- [x] The preceding full Python run ended after `19:20` with `665 passed`,
+  `30 skipped`, and one `CaughtSignal` failure in the old large-fixture CLI
+  test. After reducing the fixture, full `pytest -q` passes: `668 passed`,
+  `30 skipped` in `11.36s` (1,380 existing deprecation warnings).
+
+## Species-difference triggers in delayed quadratic groups — 2026-09-28
+
+- [x] Support strict comparisons between two species in delayed, persistent,
+  unprioritized multi-event groups when both species resolve on the same proven
+  quadratic reaction coordinate. The difference is checked against an affine
+  state projection before crossing times are scheduled; unsupported projections
+  and non-rank-one reaction groups remain untranslated.
+- [x] Add an SBML-derived two-delay regression for `S4 > S2`, compare all four
+  species against libRoadRunner away from jumps, and add a non-proportional
+  stoichiometry case that must remain untranslated. The combined event, parity,
+  and CLI suites pass: `185 passed`; Ruff, Black (`py39`), and
+  `git diff --check` pass.
+- [x] Pinned SSTS full run at commit `cf38585fac5de8e0e90112febb62851ee2181816`,
+  `t_end=1`, 10 samples: `1,721 passed, 202 unsupported, 0 failed, 0 timed out`.
+  Compared with `/private/tmp/bng3-quadratic-multievent-delayed-full-sbml.json`,
+  15 cases gained and none lost: `00352`, `00373`, `00390`–`00392`, `00409`,
+  `00430`, `00447`–`00449`, `00747`, `00767`, `00775`, `01072`, `01075`.
+  Supported surface passes; aggregate Core gate remains open. Report
+  `/private/tmp/bng3-quadratic-species-difference-full-sbml.json`, SHA-256
+  `0f9e748655b9e1809de03099cb2144ce5bd23ea3f5a214a9b2258444e6a07f4d`.
+- [x] Full repository `pytest -q` passes after the CLI fixture reduction:
+  `668 passed`, `30 skipped` in `11.36s` (1,380 existing deprecation
+  warnings). Curated BioModels validation remains stopped.
