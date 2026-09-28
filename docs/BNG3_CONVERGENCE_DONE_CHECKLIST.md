@@ -1,11 +1,13 @@
 # BNG3 Convergence: Definition of Done and Remaining Checklist
 
 **Status:** Active; not complete
-**Last targeted audit:** 2026-09-27 (full convergence checklist remains open)
+**Last targeted audit:** 2026-09-28 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
-**Working branch:** `plan/nfsim-gpu-perf`
-**Latest full pinned SBML Test Suite report:** local Atomizer source after shared quadratic multi-event trigger support; suite commit `cf38585fac5de8e0e90112febb62851ee2181816`, `1,687 passed / 236 unsupported / 0 failed / 0 timed out`. Relative to the preceding full report, 69 cases changed from unsupported to passed and 55 changed from passed to unsupported. The seven cases in the new feature cohort are among the gains; the full set of gains is not attributed to this change. All 55 losses are in the stochastic category and are now unsupported because their state-dependent events remain untranslated. The supported surface passes; the aggregate core gate remains open. Report `/private/tmp/bng3-quadratic-multievent-full-sbml.json`, SHA-256 `4362668167e21c2cdf941d385a831ddc63f7183a3b8dc4358b09aef22c4679d8`.
+**Working branch:** `main` at `637f5ac93c090c404c629ab73f2b59c92261161a`; latest code change affecting the full SBML result is `e36ba90` (later commits are documentation-only).
+**Latest full pinned SBML Test Suite report:** suite commit `cf38585fac5de8e0e90112febb62851ee2181816`, `1,721 passed / 202 unsupported / 0 failed / 0 timed out`. Fifteen cases gained, with no losses, against `/private/tmp/bng3-quadratic-multievent-delayed-full-sbml.json`. The supported surface passes; the aggregate Core gate remains open. Report `/private/tmp/bng3-quadratic-species-difference-full-sbml.json`, SHA-256 `0f9e748655b9e1809de03099cb2144ce5bd23ea3f5a214a9b2258444e6a07f4d`.
 **Latest full curated BioModels report:** `be5bdcf` code source (repository head `0da6020` after a docs-only commit); `792/1,083` SBML-path records passed, with no status changes against the previous full report.
+The later current-source flat and Atomized rerun was stopped at the user's
+request; it remains stopped and has no aggregate report.
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -16,6 +18,31 @@ recorded in the historical sections below; they are not current-head evidence.
 `c51c7a34128d188189485bd318aeae4d936bcb29` (observed 2026-09-01); later
 non-energy PRs #476 and #477 are deliberately not silently included in the
 BNG3 port.
+
+## Expanded SBML Test Suite Atomizer network benchmark — 2026-09-28
+
+- [x] Extended the official SSTS cross-engine sample with eight additional
+  supported semantic cases: `00002`, `00224`, `00336`, `00565`, `00801`,
+  `01038`, `01100`, and `01638`. Ran three repeats in flat and Atomized modes
+  using modern BNG3 and the independent PyBioNetGen legacy Atomizer; each
+  generated BNGL was sent to BNG3 and Perl BNG2 2.9.3 for network comparison.
+- [x] Modern BNG3 converted all 48 samples and generated all 48 BNG3 networks.
+  BNG2 generated 42/48 networks; all 42 matched structure, while 30/42 also
+  matched strict normalized rate expressions. BNG2 rejected `00224` because
+  its compartment has `spatialDimension=1`.
+- [x] The legacy Atomizer converted 36/48 samples. Both engines generated
+  networks for 30/48 samples; all 30 had structural and rate parity. Conversion
+  failures affected `00565` and `01100`; legacy Atomized output for `00801`
+  and `01638` retained unresolved `fRate0` expressions. The benchmark isolated
+  the PyBioNetGen import from the globally installed editable BNG3 package and
+  records the verified legacy module path.
+- [x] Report `/private/tmp/bng3-cross-engine-ssts-additional-8-637f5ac-isolated.json`,
+  SHA-256 `9b175ba3456af3d47b4aea334362a081dbac5184b69c97f01dd406e5c03b1541`;
+  BNG3 head `637f5ac`, BNG2 head `8726b30`, and PyBioNetGen head `43b09a5`.
+  This measures network structure and rate expressions, not trajectories.
+  Legacy BNG2/PyBioNetGen Atomizer remains incomplete and was tested on these
+  eight SSTS cases only; it was not benchmarked against all SBML or the full
+  SBML Test Suite. The larger cross-engine intersection remains open.
 
 ## Scoped source-lock refresh — 2026-09-23
 
