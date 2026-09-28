@@ -7973,3 +7973,33 @@ the other groups remain implementation targets.
   claim. BNG2 Atomizer remains incomplete and has not been benchmarked against
   all SBML. Broader SSTS intersections, NFsim trajectories, and the stopped
   curated BioModels validation remain open.
+
+## Mixed-complexity SSTS Atomizer network sample — 2026-09-28
+
+- [x] Benchmarked eight selected SSTS L3V2 models (`01164`, `01168`, `00287`,
+  `00291`, `00292`, `00023`, `00024`, and `00019`) in flat and Atomized modes
+  with three repeats. The cohort includes external `comp` model resolution.
+- [x] Fixed the benchmark's modern BNG3 worker to pass each SBML file's source
+  path to Atomizer, so relative external-model references resolve as they do
+  in the SSTS validator. Added a regression fixture asserting the flattened
+  child species and reaction rule. The test passes.
+- [x] All 96 modern and legacy Atomizer conversions completed. Modern BNG3
+  produced usable networks for all 48 mode/repeat rows; all 48 BNG3/BNG2
+  network pairs passed structural and strict rate-expression comparisons.
+- [x] The legacy PyBioNetGen Atomizer produced passing network comparisons
+  for 36 rows across six models. For `01164` and `01168`, all six flat/Atomized
+  repeats emitted BNGL with no reaction rules; BNG2 reported “Nothing to do:
+  no reaction rules defined,” so those 12 legacy comparisons did not produce
+  parseable networks. This is recorded as a legacy coverage gap, not a pass.
+- [x] Report `/private/tmp/bng3-cross-engine-ssts-mixed-complexity-8-20260928-sourcepath-6cc1ca2.json`,
+  SHA-256 `83f6a218dc6c62e9190346047691307165299bcfe82f73acf176a713f8d80189`.
+  It records BNG3 commit `6cc1ca2fee69d7f6c11f85416be589dbe8d1369f`,
+  BNG2 `8726b30`, PyBioNetGen `43b09a5`, and the `bng_cpp` SHA-256
+  `67699832444759c9166f51b14b7aaa8387b0f7b7f5a1d011b4d9043fcd972268`.
+  BNG3 tracked-diff hash is empty; the dirty status flag reflects the preserved
+  untracked offline bundle.
+- [ ] This is a selected eight-model network/rate comparison, not trajectory
+  parity, full supported-intersection coverage, or all-SBML benchmarking.
+  BNG2 Atomizer remains incomplete and has not been benchmarked against all
+  SBML. The full SSTS source-head refresh, NFsim trajectory cohort, and stopped
+  curated BioModels validation remain open.
