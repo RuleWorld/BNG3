@@ -18,6 +18,27 @@ recorded in the historical sections below; they are not current-head evidence.
 non-energy PRs #476 and #477 are deliberately not silently included in the
 BNG3 port.
 
+## Initial values for event-updated species references — 2026-09-28
+
+- [x] The modern Atomizer's periodic rate-rule event lowering now resolves an
+  initially assigned species-reference symbol from its unique fixed
+  stoichiometry. References with duplicate IDs, MathML stoichiometry, or a
+  rule-controlled value remain outside this path. Added an SBML regression
+  where a periodic reset event increments a species-reference parameter.
+- [x] Focused modern Atomizer event and SBML parity tests passed: 181 passed.
+  Ruff, Black (`--target-version py39`), and `git diff --check` passed.
+- [x] At exact BNG3 commit `011f9c907e53e21514362d15fc95b8ce751958c2`, the
+  pinned SSTS case `semantic/01626` lowered five of its six events. Its
+  state-triggered `abs(S2) >= 25` event remains untranslated, so the case is
+  still unsupported and BNG3/libRoadRunner numerical comparison was skipped.
+  This is partial event support, not a case pass. Report
+  `/private/tmp/bng3-ssts-01626-011f9c9.json`, SHA-256
+  `c2129fa7ebdb9bf8ed401243021d1d2304fa4a99b1c073c1ff05455867b3e503`;
+  source tracked tree was clean at the recorded commit.
+- [ ] This modern BNG3 regression does not benchmark the legacy BNG2 Atomizer.
+  That implementation remains incomplete and has not been benchmarked against
+  all SBML. Wider Atomizer and cross-engine coverage remain open.
+
 ## Two-step first-order state-event cohort — 2026-09-28
 
 - [x] Added exact scheduled-event lowering for a narrow deterministic system:
