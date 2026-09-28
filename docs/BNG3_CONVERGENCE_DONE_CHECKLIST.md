@@ -8335,8 +8335,9 @@ the other groups remain implementation targets.
   `/private/tmp/bng3-event-triage-{CASE_ID}-7835809.json` for those seven IDs.
 - [x] Source inspection found no safe shared lowering among the five
   unsupported records. `00663`/`00664`/`00762` trigger on `S4 > S3` and
-  rewrite `S4` multiplicatively; reaction-driven changes can make the trigger
-  false and later true again, so a single pre-event crossing is insufficient.
+  rewrite `S4` multiplicatively; reaction-driven changes can alter the trigger
+  after firing, and current analysis does not prove that it cannot re-enter.
+  A single pre-event crossing is therefore insufficient.
   `00965`/`00966` use recurring timer/reset and counter events with interacting
   assignments. General dynamic event re-entry remains unsupported.
 - [ ] This is a seven-case modern BNG3 Atomizer refresh, not trajectory parity,
@@ -8360,3 +8361,19 @@ the other groups remain implementation targets.
   of the PR base; rebase and rerun exact-head checks before approval. All 29
   checks were pending at review time. No PR review comment or approval was
   posted.
+
+## Event-only SSTS cohort refresh — 2026-09-28
+
+- [x] Re-ran all 26 semantic case IDs classified as event-only unsupported
+  by the prior full report (`ef53506c`) against BNG3
+  `fdefe2cdf21b2a31ee1e864091d79a6233607d9c`. Current per-case records show
+  2 passed (`01626`, `01627`), 24 unsupported, 0 failed, and 0 timed out. The
+  per-case reports and SHA-256 digests are indexed in
+  `/private/tmp/bng3-event-only-cohort-fdefe2c.json` (SHA-256
+  `595de65cff3a6bf91e25c7047cc2e957faec714a502aedd6fb2e8657dc0f6a7d`).
+- [ ] This is a modern BNG3 Atomizer round-trip cohort, not numerical
+  trajectory parity or full SSTS coverage. Cases span nonlinear bimolecular
+  threshold crossings, trigger-state feedback, and recurrent timer/reset
+  interactions; no single additional lowering was justified by this triage.
+  BNG2/legacy PyBioNetGen Atomizer remains incomplete and has not been
+  benchmarked against all SBML. No BNG2 source was changed.
