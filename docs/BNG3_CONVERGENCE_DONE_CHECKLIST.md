@@ -7704,3 +7704,31 @@ the other groups remain implementation targets.
   benchmark BNG2 Atomizer against all SBML. BNG2 Atomizer is incomplete; full
   SBML-wide cross-engine coverage remains open. Curated BioModels validation
   remains stopped per the user's instruction.
+
+## Direct species-reference event stoichiometry — 2026-09-28
+
+- [x] Support Level 3 event assignments that change a reaction's variable
+  species-reference stoichiometry. The reference's initial value is emitted as
+  a live BNGL parameter; a proven pre-event affine trajectory schedules the
+  crossing; the post-event `TotalRate` expression reads the updated reference.
+  Regression compares the full trajectory against libRoadRunner.
+- [x] Focused Atomizer event/parity tests pass (`171 passed`). Full Python
+  suite passes (`672 passed, 28 skipped`, 1,380 existing warnings). Ruff,
+  Black (`py39`), and `git diff --check` pass.
+- [x] Seven selected SSTS event/stoichiometry records pass at extended
+  horizons: `00972` (`t_end=10`), `00991` (`t_end=2`), and `01444`–`01448`
+  (`t_end=10`). Each BNG3 trajectory matches libRoadRunner at sampled points;
+  maximum absolute differences are at most `3.56e-15`.
+- [x] Full pinned SSTS run at commit
+  `cf38585fac5de8e0e90112febb62851ee2181816`, `t_end=1`, 10 samples:
+  `1,730 passed, 193 unsupported, 0 failed, 0 timed out`. Exact comparison
+  with `/private/tmp/bng3-quadratic-species-difference-full-sbml.json`
+  (`1,721 passed, 202 unsupported`) shows nine gains and no losses:
+  `00972`, `00991`, `01444`–`01448`, `01536`, `01583`. The supported surface
+  passes; the aggregate Core gate remains open. Report
+  `/private/tmp/bng3-atomizer-event-stoich-full-sbml.json`, SHA-256
+  `509692d123cca41f13084a005b64a73876d56750b156ed4acd3ca2de48d54dd3`.
+- [ ] This is BNG3-to-libRoadRunner SSTS evidence. It does not benchmark
+  BNG2 Atomizer, prove BNG2 Atomizer complete, or benchmark it against all
+  SBML. BNG2 Atomizer remains incomplete; full cross-engine coverage remains
+  open. Curated BioModels validation remains stopped per the user's request.

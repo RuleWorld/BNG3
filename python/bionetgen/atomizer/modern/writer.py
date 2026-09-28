@@ -1856,6 +1856,12 @@ def _dynamic_species_reference_expression(
             for rule in model.rules
             if rule.variable and rule.type in {"assignment", "rate"}
         }
+        targets.update(
+            standardize_name(str(assignment.variable))
+            for event in model.events
+            for assignment in event.assignments
+            if getattr(assignment, "variable", None)
+        )
         if standardize_name(reference_id) in targets:
             expression = reference_id
     if not expression:
@@ -3544,6 +3550,30 @@ def write_parameters(
         lines.append(
             f"{name} {_curated_parameter_value(model, parameter_id, parameter.value)}"
         )
+    event_targets = {
+        standardize_name(str(assignment.variable))
+        for event in model.events
+        for assignment in event.assignments
+        if getattr(assignment, "variable", None)
+    }
+    rule_targets = {
+        standardize_name(str(rule.variable)) for rule in model.rules if rule.variable
+    }
+    for reaction in model.reactions.values():
+        for reference in [*reaction.reactants, *reaction.products]:
+            reference_id = str(reference.id or "").strip()
+            normalized = standardize_name(reference_id)
+            if (
+                not reference_id
+                or normalized not in event_targets
+                or normalized in rule_targets
+                or reference_id in model.parameters
+                or reference.stoichiometry_math
+            ):
+                continue
+            value = _numeric_value(reference.stoichiometry)
+            if value is not None and math.isfinite(value):
+                lines.append(f"{normalized} {_number(value)}")
     if include_local_parameters:
         for name, value in _local_parameter_entries(model):
             lines.append(f"{name} {_curated_parameter_value(model, name, value)}")
@@ -6094,6 +6124,16 @@ def generate_bngl(
             parameter = model.parameters.get(identifier)
             if parameter is not None:
                 return parameter.value
+            reference_values = [
+                reference
+                for reaction in model.reactions.values()
+                for reference in [*reaction.reactants, *reaction.products]
+                if reference.id == identifier and not reference.stoichiometry_math
+            ]
+            if len(reference_values) == 1:
+                value = _numeric_value(reference_values[0].stoichiometry)
+                if value is not None and math.isfinite(value):
+                    return value
             compartment = model.compartments.get(identifier)
             return compartment.size if compartment is not None else None
 
@@ -6543,6 +6583,8 @@ def generate_bngl(
                                         and rule.type in {"assignment", "rate"}
                                     }
                                     if standardize_name(reference.id) in rule_targets:
+                                        coefficient_expression = reference.id
+                                    elif reference.id in mutable_event_ids:
                                         coefficient_expression = reference.id
                                 if not reference.id or not coefficient_expression:
                                     return None
@@ -8723,6 +8765,14 @@ def generate_bngl(
             for rule in model.rules
             if rule.variable
         }
+        event_species_reference_targets = {
+            reference.id
+            for reaction in model.reactions.values()
+            for reference in [*reaction.reactants, *reaction.products]
+            if reference.id
+            and standardize_name(reference.id) in event_targets
+            and not reference.stoichiometry_math
+        }
         static_event_state = (
             not model.reactions
             and not model.initial_assignments
@@ -8743,7 +8793,10 @@ def generate_bngl(
                     species_id
                 ),
                 resolve_param=resolve_event_parameter,
-                is_param=lambda identifier: identifier in model.parameters,
+                is_param=lambda identifier: (
+                    identifier in model.parameters
+                    or identifier in event_species_reference_targets
+                ),
                 is_compartment=lambda identifier: identifier in model.compartments,
                 is_compile_time_constant=is_compile_time_constant,
                 resolve_constant=resolve_constant,
