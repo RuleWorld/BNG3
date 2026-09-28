@@ -8377,3 +8377,33 @@ the other groups remain implementation targets.
   interactions; no single additional lowering was justified by this triage.
   BNG2/legacy PyBioNetGen Atomizer remains incomplete and has not been
   benchmarked against all SBML. No BNG2 source was changed.
+
+## NFsim ensemble seed-independence correction — 2026-09-28
+
+- [x] Audited the prior `benchmark_atomizer_nfsim.py` reports and found both
+  engines had received the same seed range, while `compare_stochastic` uses a
+  pooled standard error for independent samples. Treat those earlier pooled-SE
+  results as correlated same-seed checks, not independent ensemble evidence.
+  The exact-seed SSTS `00001` run at seed `17` remains a separate exact
+  trajectory check.
+- [x] Fixed the BNG3 benchmark to use non-overlapping seed ranges by default,
+  record both ranges, benchmark-script SHA-256, and BNG3 worktree state, and
+  reject overlap. Added regression tests. Focused benchmark tests pass (`5
+  passed`); Ruff, Black (`py39`), and Python 3.9 syntax checks pass. Commits
+  `e5342fd` and `07d7b36` are pushed.
+- [x] Re-ran four pinned SSTS stochastic cases (`00001`, `00006`, `00024`,
+  `00030`) in flat and Atomized modes, with 200 BNG3-direct runs (seeds
+  `1`–`200`) and 200 standalone-NFsim runs (seeds `201`–`400`) per mode. All
+  3,200 trajectories completed with no run errors; all eight independent
+  ensemble comparisons passed, with zero points beyond 3 pooled standard
+  errors. The current-source SSTS round-trip/libRoadRunner records pass all
+  four cases individually; each one-case invocation has aggregate `core=FAIL`
+  because it is partial, and SSTS reference-result conformance was not run.
+  Manifest `/private/tmp/bng3-ssts-nfsim-independent-4-manifest-07d7b36.json`,
+  SHA-256 `2e4699b578b1c863592da95e71e7343a926b12fefbe0cc1cf0773bfe5f26141c`.
+- [ ] This is a four-case modern BNG3 Atomizer/NFsim sample, not full SSTS or
+  all-SBML coverage. Perl BNG2 was used only to write BNG-XML for standalone
+  NFsim; this does not benchmark the incomplete BNG2/legacy PyBioNetGen
+  Atomizer. The selected curated BioModels NFsim sample still needs rerunning
+  with independent seed ranges. The user-stopped full BioModels validation
+  remains stopped.
