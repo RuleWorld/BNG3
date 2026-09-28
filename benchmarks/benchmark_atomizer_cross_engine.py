@@ -27,7 +27,7 @@ sys.path.insert(0, str(ROOT))
 DEFAULT_BNG2 = ROOT.parent / "bionetgen" / "bionetgen" / "bng2" / "BNG2.pl"
 DEFAULT_PYBIONETGEN = ROOT.parent / "PyBioNetGen"
 MODERN_WORKER = r"""
-import hashlib, json, sys, time
+import hashlib, inspect, json, sys, time
 from pathlib import Path
 from bionetgen.atomizer.modern import Atomizer
 source, mode, output, metadata = sys.argv[1:5]
@@ -44,13 +44,20 @@ Path(metadata).write_text(json.dumps({
     "elapsed_ms": elapsed,
     "output_bytes": len(data),
     "output_sha256": hashlib.sha256(data).hexdigest(),
+    "atomizer_module_path": str(Path(inspect.getfile(Atomizer)).resolve()),
 }), encoding="utf-8")
 """
 LEGACY_WORKER = r"""
-import hashlib, json, sys, time
+import hashlib, json, site, sys, time
 from pathlib import Path
-from bionetgen.atomizer.atomizeTool import AtomizeTool
-source, mode, output, metadata = sys.argv[1:5]
+source, mode, output, metadata, checkout = sys.argv[1:6]
+sys.path.insert(0, checkout)
+for site_packages in site.getsitepackages():
+    if site_packages not in sys.path:
+        sys.path.append(site_packages)
+import bionetgen.atomizer.atomizeTool as atomize_tool
+
+AtomizeTool = atomize_tool.AtomizeTool
 start = time.perf_counter()
 tool = AtomizeTool(input_file=source, options_dict={
     "output": output,
@@ -70,6 +77,7 @@ Path(metadata).write_text(json.dumps({
     "elapsed_ms": elapsed,
     "output_bytes": len(data),
     "output_sha256": hashlib.sha256(data).hexdigest(),
+    "atomizer_module_path": str(Path(atomize_tool.__file__).resolve()),
 }), encoding="utf-8")
 """
 
@@ -127,8 +135,15 @@ def run_atomizer(
         extra_paths + ([env["PYTHONPATH"]] if env.get("PYTHONPATH") else [])
     )
     start = time.perf_counter()
+    command = [sys.executable]
+    if implementation == "pybionetgen_legacy":
+        command.append("-S")
+        env["PYTHONPATH"] = str(source_root)
+    command.extend(["-c", worker, str(source), mode, str(output), str(metadata)])
+    if implementation == "pybionetgen_legacy":
+        command.append(str(pybionetgen_root.resolve()))
     result = subprocess.run(
-        [sys.executable, "-c", worker, str(source), mode, str(output), str(metadata)],
+        command,
         cwd=output.parent,
         env=env,
         capture_output=True,
@@ -144,6 +159,19 @@ def run_atomizer(
         }
     values = json.loads(metadata.read_text(encoding="utf-8"))
     values.update({"status": "ok", "wall_ms": wall_ms})
+    if implementation == "pybionetgen_legacy":
+        module_path = Path(values["atomizer_module_path"]).resolve()
+        try:
+            module_path.relative_to(pybionetgen_root.resolve())
+        except ValueError:
+            return {
+                "status": "error",
+                "wall_ms": wall_ms,
+                "error": (
+                    "legacy Atomizer resolved outside the requested PyBioNetGen "
+                    f"checkout: {module_path}"
+                ),
+            }
     return values
 
 

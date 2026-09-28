@@ -66,3 +66,43 @@ def test_modern_benchmark_worker_resolves_external_comp_source(tmp_path: Path):
     bngl = output_path.read_text(encoding="utf-8")
     assert "child__A()" in bngl
     assert "child__synthesis" in bngl
+
+
+def test_legacy_worker_imports_atomizer_from_requested_checkout(tmp_path: Path):
+    checkout = tmp_path / "pybionetgen"
+    package = checkout / "bionetgen"
+    atomizer = package / "atomizer"
+    atomizer.mkdir(parents=True)
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (atomizer / "__init__.py").write_text("", encoding="utf-8")
+    (atomizer / "atomizeTool.py").write_text(
+        """
+from pathlib import Path
+
+class AtomizeTool:
+    def __init__(self, input_file, options_dict):
+        self.options = options_dict
+
+    def run(self):
+        Path(self.options['output']).write_text('begin model\\nend model\\n')
+        return self
+""",
+        encoding="utf-8",
+    )
+    source = tmp_path / "source.xml"
+    source.write_text("<sbml/>", encoding="utf-8")
+    output = tmp_path / "output.bngl"
+
+    result = run_atomizer(
+        source=source,
+        mode="flat",
+        output=output,
+        metadata=tmp_path / "metadata.json",
+        implementation="pybionetgen_legacy",
+        pybionetgen_root=checkout,
+    )
+
+    assert result["status"] == "ok", result
+    assert result["atomizer_module_path"] == str(
+        (atomizer / "atomizeTool.py").resolve()
+    )

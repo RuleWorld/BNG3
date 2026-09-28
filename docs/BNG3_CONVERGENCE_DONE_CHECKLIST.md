@@ -8449,3 +8449,45 @@ the other groups remain implementation targets.
   SBML. No BNG2 code was changed. Full cross-engine parity, SSTS reference
   result conformance, and the user-stopped full curated BioModels validation
   remain open.
+
+## Cross-engine benchmark import isolation correction — 2026-09-28
+
+- [x] Audited `benchmark_atomizer_cross_engine.py` after a legacy worker
+  traceback resolved inside the BNG3 editable install. The old worker's
+  `PYTHONPATH` did not defeat the installed editable import hook: previous
+  selected reports labeled the BNG3-bundled legacy Atomizer as independent
+  PyBioNetGen. At the audited checkouts, the BNG3 and PyBioNetGen
+  `atomizeTool.py` SHA-256 values differ (`c862389b...` vs
+  `29f1505e...`). Treat legacy-Atomizer results in the earlier selected
+  `bng3-cross-engine-ssts-*.json` reports as non-independent; their BNG3/BNG2
+  engine runs remain evidence for the particular BNGL files they consumed.
+- [x] Fixed the BNG3 benchmark worker to disable Python site hooks for the
+  legacy subprocess, load dependencies from site-packages, record the imported
+  module path, and fail closed if that path is outside the requested
+  PyBioNetGen checkout. Added a regression test that first failed on the old
+  worker and now passes. The focused benchmark tests pass (`2 passed`). A
+  fresh three-repeat `semantic/00004` end-to-end check imported the actual
+  PyBioNetGen module and passed structural and rate comparisons in all three
+  repeats for both Atomizers.
+- [x] Re-ran the 50 unique SSTS inputs appearing in the prior selected
+  cross-engine reports (both modes, three repeats) with module-path
+  verification. Modern BNG3 Atomizer conversions passed `300/300`; independent
+  PyBioNetGen conversions passed `273/300`, with 27 errors: 15 formatting
+  `TypeError`s, 6 `no symbols given` errors, and 6 NaN-to-integer errors.
+  Among successful network comparisons, BNG3-generated BNGL passed structural
+  parity `288/288` and rate parity `210/288`; independently generated
+  PyBioNetGen BNGL passed structural parity `234/234` and rate parity
+  `225/234`. Perl BNG2 network generation errored for six BNG3 outputs from
+  `semantic/00224` and timed out at 30 seconds for six outputs from
+  `semantic/01561`.
+- [x] Source-isolated report
+  `/private/tmp/bng3-cross-engine-ssts-import-isolated-50-20260928.json`,
+  SHA-256 `5cd5c6c38a89c9e5003a2660a5faced0479208a593d46986f150511e91589ea3`,
+  records BNG3 `2b81c42`, BNG2 `8726b30`, PyBioNetGen `43b09a5`, suite commit
+  `cf38585fac5de8e0e90112febb62851ee2181816`, and verifies every successful
+  legacy module path. This replaces the independent-PyBioNetGen interpretation
+  of the earlier selected runs.
+- [ ] This remains a 50-case selected benchmark. It is not full SSTS or an
+  all-SBML benchmark of the incomplete BNG2/legacy PyBioNetGen Atomizer.
+  Broader cross-engine coverage, trajectory parity, and curated BioModels
+  validation remain open. No BNG2 or PyBioNetGen source was modified.

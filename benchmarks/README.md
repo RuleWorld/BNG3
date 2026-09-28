@@ -87,6 +87,10 @@ the BNG3-to-libRoadRunner round-trip gate, and the dedicated NFsim parity
 tests for eligible NFsim models. Rate comparison treats BNG2's
 `A/cell()` and BNG3's `(A/cell)()` compartment-observable spellings as the same
 generated expression form; it does not relax numeric rate differences.
+The legacy worker starts with Python site hooks disabled, imports from the
+requested PyBioNetGen checkout, records the resolved Atomizer module path, and
+fails closed if that path escapes the checkout. This prevents an editable BNG3
+installation from shadowing the independent legacy source during comparison.
 
 `benchmark_atomizer_nfsim.py` runs fresh-process ensembles through BNG3's
 direct NFsim path and standalone NFsim reading BNG-XML written by Perl BNG2.
