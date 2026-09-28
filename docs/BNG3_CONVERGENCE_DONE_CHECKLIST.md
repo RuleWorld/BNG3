@@ -6,7 +6,7 @@
 **Working branch:** `main`; the recorded full SSTS run used code head `23822c616c796214e0306b16f1c7f07ab13b5eee` (`23822c6`). Later targeted changes are not included in that aggregate report.
 **Latest full pinned SBML Test Suite report:** suite commit `cf38585fac5de8e0e90112febb62851ee2181816`, `1,730 passed / 193 unsupported / 0 failed / 0 timed out`. Nine cases gained, with no losses, against `/private/tmp/bng3-quadratic-species-difference-full-sbml.json`. The supported surface passes; the aggregate Core gate remains open. Report `/private/tmp/bng3-atomizer-event-stoich-full-sbml.json`, SHA-256 `509692d123cca41f13084a005b64a73876d56750b156ed4acd3ca2de48d54dd3`.
 **Latest current-source curated BioModels report:** none. The user's current-source flat and Atomized rerun was stopped at their request; it remains stopped and has no aggregate report. Earlier BioModels counts below are historical only.
-**Last queried hosted CI:** commit `d323804`; Lean semantic kernel, CodeQL, and Cross-tool parity passed. CI was still in progress when queried on 2026-09-28; these checks do not cover the uncommitted changes below.
+**Last queried hosted CI:** code commit `07c0a5e`; Formatting patch and CodeQL were in progress, with CI, Cross-tool parity, and Lean semantic kernel queued when queried on 2026-09-28. These runs are nonterminal.
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
