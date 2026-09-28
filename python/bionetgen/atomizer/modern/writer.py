@@ -6174,6 +6174,34 @@ def generate_bngl(
         def resolve_initial_event_value(identifier: str) -> Optional[float]:
             if identifier == "__Avogadro__":
                 return _SBML_AVOGADRO
+            species_references = [
+                reference
+                for reaction in model.reactions.values()
+                for reference in [*reaction.reactants, *reaction.products]
+                if reference.id
+                and standardize_name(reference.id) == standardize_name(identifier)
+            ]
+            if species_references:
+                if (
+                    len(species_references) != 1
+                    or any(
+                        rule.variable
+                        and standardize_name(rule.variable)
+                        == standardize_name(identifier)
+                        for rule in model.rules
+                    )
+                    or species_references[0].stoichiometry_math
+                ):
+                    return None
+                if any(
+                    assignment.symbol
+                    and standardize_name(assignment.symbol)
+                    == standardize_name(identifier)
+                    for assignment in model.initial_assignments
+                ):
+                    return resolve_event_parameter(identifier)
+                value = _numeric_value(species_references[0].stoichiometry)
+                return value if value is not None and math.isfinite(value) else None
             parameter = model.parameters.get(identifier)
             if parameter is not None:
                 if any(

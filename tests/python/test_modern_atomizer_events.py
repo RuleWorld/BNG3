@@ -2450,6 +2450,52 @@ def test_simultaneous_periodic_events_prove_constant_difference_never_triggers()
     assert 'setParameter("error",' not in result.actions_block
 
 
+def test_rate_rule_reset_can_increment_species_reference_symbol():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="periodic_species_reference_assignment">
+        <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies><species id="S" compartment="C" initialAmount="0"/></listOfSpecies>
+        <listOfParameters><parameter id="reset" value="0" constant="false"/></listOfParameters>
+        <listOfRules><rateRule variable="reset">
+          <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math>
+        </rateRule></listOfRules>
+        <listOfEvents><event id="increment" useValuesFromTriggerTime="true">
+          <trigger initialValue="true" persistent="false">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><geq/><ci>reset</ci><cn>0.5</cn></apply>
+            </math>
+          </trigger>
+          <listOfEventAssignments>
+            <eventAssignment variable="reset">
+              <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0</cn></math>
+            </eventAssignment>
+            <eventAssignment variable="sr">
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><plus/><ci>sr</ci><cn>1</cn></apply>
+              </math>
+            </eventAssignment>
+          </listOfEventAssignments>
+        </event></listOfEvents>
+        <listOfReactions><reaction id="r" reversible="false">
+          <listOfProducts><speciesReference id="sr" species="S" stoichiometry="1" constant="false"/></listOfProducts>
+          <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></kineticLaw>
+        </reaction></listOfReactions>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True, t_end=1.5, n_steps=3).atomize(xml)
+
+    assert result.success, result.error
+    assert 'setParameter("sr", "2")' in result.bngl
+    assert 'setParameter("sr", "3")' in result.bngl
+    assert (
+        "rate-rule reset event has dynamic or conflicting assignments"
+        not in result.bngl
+    )
+
+
 def test_rate_rule_reset_event_is_repeated_from_its_constant_slope():
     from bionetgen.atomizer.modern.events import (
         EventTranslationContext,
