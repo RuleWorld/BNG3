@@ -90,6 +90,7 @@ Repository = "https://github.com/RuleWorld/BNG3"
 [tool.scikit-build]
 wheel.packages = ["python/bionetgen"]
 sdist.exclude = ["bng3-offline-bundle/**"]
+cmake.version = ">=3.15"
 cmake.args = ["-DBUILD_TESTS=OFF", "-DBUILD_CLI=OFF"]
 cmake.build-type = "Release"
 install.components = ["python"]
