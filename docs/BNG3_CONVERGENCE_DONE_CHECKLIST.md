@@ -8151,7 +8151,7 @@ the other groups remain implementation targets.
   `00762` use state-difference triggers with self-multiplying assignments;
   `00965`/`00966` and `01626`/`01627` exercise recurring or multi-event state
   interactions.
-- [x] Re-ran `01626` and `01627` individually at exact current `main`
+- [x] Re-ran `01626` and `01627` individually at the earlier `main` head
   (`a911ccfcddeddf3e309f5184b6364eadf2c59d43`, `t_end=1`, 10 intervals).
   Both remain unsupported: `01626` lowers 0/6 events and `01627` lowers 5/6;
   the latter still has one state-dependent event. Reports:
@@ -8163,3 +8163,36 @@ the other groups remain implementation targets.
   evidence for loosening the existing exact-trajectory proof. BNG2/legacy
   PyBioNetGen Atomizer remains incomplete and has not been benchmarked against
   all SBML. Cross-engine and stopped curated BioModels gates remain open.
+
+## Periodic rate-rule event lowering — 2026-09-28
+
+- [x] The modern Atomizer can prove an absolute threshold event inactive when
+  its rate-rule state has a piecewise-constant derivative determined by
+  already-lowered periodic parameter events, and every segment stays strictly
+  inside the threshold by a floating-point margin. It fails closed when a
+  dependency has its own rate rule or is the continuously changing reset
+  state.
+- [x] The translator can schedule a positive fixed-time event behind a
+  parameter gate when the gate is proven true at the time crossing and remains
+  true after every later periodic update. This lowering is limited to
+  undelayed events with static parameter assignments.
+- [x] Added regressions for the supported piecewise-constant case, continuous
+  dependency drift, and a periodic gate that ceases to be provable. Focused
+  event tests pass (`76 passed`), SBML parity tests pass (`104 passed`), and
+  Ruff, Black (`py39`), and `git diff --check` pass.
+- [x] Pinned SSTS `semantic/01627` passes at exact clean source head
+  `722cfba8e8a22a14b4171c08b088b953cb328d5e` at both `t_end=1` / 10 intervals
+  and `t_end=100` / 100 intervals. The BNG3/libRoadRunner comparison passes
+  all 5 observables at both horizons; maximum absolute difference is 0 at
+  `t_end=1`, and `3.552713678800501e-14` at `t_end=100`. Reports:
+  `/private/tmp/bng3-ssts-01627-722cfba-t1.json` (SHA-256
+  `dc6d9d8f6b068e4076bf8d4f515afedb06ce6730a0b56ab18f20676598fd9f70`) and
+  `/private/tmp/bng3-ssts-01627-722cfba-t100.json` (SHA-256
+  `a0424e3503806ac94f8436e389d544ef411ac7aa1809c0b176053a3fd8947316`).
+- [ ] This is focused evidence for one current BNG3 SSTS case, not a refreshed
+  full-suite aggregate. `semantic/01626` remains unsupported
+  (`/private/tmp/bng3-ssts-01626-722cfba.json`, SHA-256
+  `a3ef1cd5cacd7b13704126fdadd7eafdef46e7ebd3e6118bf5b362d0a65e423f`).
+  BNG2/legacy PyBioNetGen Atomizer remains incomplete and has not been
+  benchmarked against all SBML; full cross-engine and stopped curated
+  BioModels gates remain open.
