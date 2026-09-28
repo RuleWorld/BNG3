@@ -8029,6 +8029,31 @@ the other groups remain implementation targets.
   SBML. The full SSTS source-head refresh, NFsim trajectory cohort, and stopped
   curated BioModels validation remain open.
 
+## Event and variable-stoichiometry SSTS Atomizer network sample — 2026-09-28
+
+- [x] Benchmarked selected official SSTS cases `semantic/00388` (L2V5),
+  `00389` (L3V2), `00393` (L3V2), and `00394` (L2V5) in flat and Atomized
+  modes with three repeats. Both modern BNG3 and legacy PyBioNetGen Atomizer
+  outputs were sent to BNG3 and Perl BNG2 for network comparison.
+- [x] Modern BNG3 completed all 24 conversions and produced structurally
+  matching networks in all 24 comparisons; strict rate-expression parity
+  passed 6/24 comparisons, all for `00389`. Legacy PyBioNetGen completed 21/24
+  conversions, with structural parity in all 21 resulting comparisons and
+  strict rate-expression parity in 18/21. Its Atomized conversion of `00393`
+  failed all three repeats with a `TypeError` in legacy `sbml2bngl.py:2010`.
+- [x] Report `/private/tmp/bng3-cross-engine-ssts-event-rank-4-20260928-42360e7.json`,
+  SHA-256 `044468d843549615294fb3f0330a98e1424a9f90c718ff165a829e6b5263c2a2`.
+  It records BNG3 `42360e782bc104d900780964f129bffacb1523b9`, Perl BNG2
+  `8726b30b94c081d5f0ce8b8d38338e27be1b38fc`, and PyBioNetGen
+  `43b09a5346402986d48b1defba5eaec0ae2f7802`. Tracked source diffs were empty;
+  dirty status reflects untracked artifacts in the BNG3 and PyBioNetGen
+  checkouts.
+- [ ] This is a four-case SSTS network/rate sample, not trajectory parity,
+  complete SSTS coverage, or an all-SBML benchmark. The BNG2/legacy Atomizer
+  remains incomplete and has not been benchmarked against all SBML. Broader
+  cross-engine intersections, NFsim trajectories, and the stopped curated
+  BioModels validation remain open.
+
 ## Review of open performance PRs — 2026-09-28
 
 - [x] Reviewed PR #26 at head `7b1d7ec57300911bbf2b8bceb7ac3c9a1ed5b6dd`
