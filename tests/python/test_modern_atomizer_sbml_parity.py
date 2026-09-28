@@ -3827,15 +3827,28 @@ def test_synthetic_rate_rule_observables_have_stable_order():
     assert observables.index("a_amt") < observables.index("z_amt")
 
 
-def _quadratic_rate_rule_event_model(*, second_event: bool = False) -> str:
+def _quadratic_rate_rule_event_model(
+    *, second_event: bool = False, delayed: bool = False
+) -> str:
+    delay1 = (
+        """<delay><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1.1</cn></math></delay>"""
+        if delayed
+        else ""
+    )
+    delay2 = (
+        """<delay><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1.5</cn></math></delay>"""
+        if delayed
+        else ""
+    )
     second = (
-        """
+        f"""
       <event id="event2" useValuesFromTriggerTime="true">
         <trigger initialValue="true" persistent="true">
           <math xmlns="http://www.w3.org/1998/Math/MathML">
             <apply><gt/><ci>S3</ci><cn>1.4</cn></apply>
           </math>
         </trigger>
+        {delay2}
         <listOfEventAssignments><eventAssignment variable="S1">
           <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math>
         </eventAssignment></listOfEventAssignments>
@@ -3875,6 +3888,7 @@ def _quadratic_rate_rule_event_model(*, second_event: bool = False) -> str:
               <apply><lt/><ci>S1</ci><cn>0.75</cn></apply>
             </math>
           </trigger>
+          {delay1}
           <listOfEventAssignments><eventAssignment variable="S2">
             <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math>
           </eventAssignment></listOfEventAssignments>
@@ -3883,16 +3897,21 @@ def _quadratic_rate_rule_event_model(*, second_event: bool = False) -> str:
     </sbml>"""
 
 
-@pytest.mark.parametrize("second_event", (False, True))
-def test_quadratic_rate_rule_state_events_match_libroadrunner(tmp_path, second_event):
+@pytest.mark.parametrize(
+    "second_event,delayed", ((False, False), (True, False), (False, True), (True, True))
+)
+def test_quadratic_rate_rule_state_events_match_libroadrunner(
+    tmp_path, second_event, delayed
+):
     import numpy as np
 
     roadrunner = pytest.importorskip("roadrunner")
     from bionetgen.atomizer.modern import Atomizer
     from bionetgen.model import load
 
-    xml = _quadratic_rate_rule_event_model(second_event=second_event)
-    result = Atomizer(quiet_mode=True, t_end=2, n_steps=400).atomize(xml)
+    xml = _quadratic_rate_rule_event_model(second_event=second_event, delayed=delayed)
+    t_end = 4 if delayed else 2
+    result = Atomizer(quiet_mode=True, t_end=t_end, n_steps=200 * t_end).atomize(xml)
 
     assert result.success, result.error
     assert "Events NOT simulated" not in result.bngl

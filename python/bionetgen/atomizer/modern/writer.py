@@ -7637,10 +7637,7 @@ def generate_bngl(
                 model.species
                 or model.reactions
                 or model.initial_assignments
-                or any(
-                    str(event.delay or "").strip() or str(event.priority or "").strip()
-                    for event in model.events
-                )
+                or any(str(event.priority or "").strip() for event in model.events)
             ):
                 return None
             rules: Dict[str, object] = {}
