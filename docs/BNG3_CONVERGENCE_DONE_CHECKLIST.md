@@ -5016,6 +5016,31 @@ completion gate.
   delayed `semantic/00778` event at `t=7.07917484418` pass. Cross-platform and
   release gates remain open.
 
+### Current-main local wheel and source archive audit — 2026-09-28
+
+- [x] Built the source distribution and macOS arm64 / CPython 3.14 wheel from
+  current `main` at `362c100b0b15db5cd1321200f4196bc8939b4958`, using the
+  installed `scikit-build-core 1.0.3`, `pybind11 3.1.0`, CMake 4.4.3, and
+  AppleClang 21.0.0. The isolated PEP 517 attempt could not fetch build
+  requirements because PyPI was unreachable; the `--no-isolation` build
+  completed successfully.
+- [x] The source archive has 1,544 members and excludes all
+  `bng3-offline-bundle/` and `bng3-offline-deps.tar.gz` files. Sdist size is
+  4,806,090 bytes, SHA-256
+  `513fe950c407f86d81bdf92de0279ce12b33f17927adffadffbe45c0c12cc6ed`.
+  Wheel size is 3,083,730 bytes, SHA-256
+  `393f2ccd2c602645622186dc354c4474ef21c2a250309df5ab473a0dc3316532`.
+- [x] Installed the wheel into a temporary CPython 3.14 virtual environment.
+  The installed CLI reports `3.0.0a1`; a fresh process imported the wheel's
+  Python package and native extension and ran an ODE smoke to 11 points, with
+  `A_total` changing from 10.0 to 3.6787942479103934. Runtime dependencies
+  came from the host Python installation. `pip check` on that host-visible
+  environment reported unrelated existing conflicts in `jedi`, `numpy`, and
+  `ipykernel`; this is not clean dependency-resolution evidence.
+- [ ] This is one local macOS arm64 / CPython 3.14 artifact path, not a
+  cross-platform wheel matrix, clean runtime dependency solve, complete package
+  data audit, hosted release workflow, or publication test.
+
 ## 9. Legacy repositories and governance
 
 - [ ] BioNetGen, NFsim, and PyBioNetGen source deltas through the accepted
