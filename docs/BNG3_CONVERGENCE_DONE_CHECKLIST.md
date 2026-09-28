@@ -3,10 +3,10 @@
 **Status:** Active; not complete
 **Last targeted audit:** 2026-09-28 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
-**Working branch:** `main`; the recorded full SSTS run used code head `23822c616c796214e0306b16f1c7f07ab13b5eee` (`23822c6`). Later targeted changes are not included in that aggregate report.
-**Latest full pinned SBML Test Suite report:** suite commit `cf38585fac5de8e0e90112febb62851ee2181816`, `1,738 passed / 185 unsupported / 0 failed / 0 timed out`. Eight cases gained, with no losses, against `/private/tmp/bng3-atomizer-event-stoich-full-sbml.json`. The supported surface passes; the aggregate Core gate remains open. Report `/private/tmp/bng3-delayed-chain-initial-assignment-full-sbml.json`, SHA-256 `f539a2aeb8de9353ffc2e68957829007accfd867c9c79a0ad4d0cd8022062c60`.
+**Working branch:** `main`.
+**Latest full pinned SBML Test Suite report:** suite commit `cf38585fac5de8e0e90112febb62851ee2181816`, `1,738 passed / 185 unsupported / 0 failed / 0 timed out`. Eight cases gained, with no losses, against `/private/tmp/bng3-atomizer-event-stoich-full-sbml.json`. The supported surface passes; the aggregate Core gate remains open. Report `/private/tmp/bng3-delayed-chain-initial-assignment-full-sbml.json`, SHA-256 `f539a2aeb8de9353ffc2e68957829007accfd867c9c79a0ad4d0cd8022062c60`. This schema 3 report does not record the BNG3 source revision, so it is not exact-head evidence for current `main`.
 **Latest current-source curated BioModels report:** none. The user's current-source flat and Atomized rerun was stopped at their request; it remains stopped and has no aggregate report. Earlier BioModels counts below are historical only.
-**Last queried hosted CI:** code commit `07c0a5e`; Formatting patch and CodeQL were in progress, with CI, Cross-tool parity, and Lean semantic kernel queued when queried on 2026-09-28. These runs are nonterminal.
+**Last queried hosted CI:** code commit `b47c36e`; CI, Formatting patch, CodeQL, Cross-tool parity, and Lean semantic kernel were all queued at 2026-09-28 17:53 UTC. These runs are nonterminal.
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -7925,10 +7925,11 @@ the other groups remain implementation targets.
   (`677 passed, 28 skipped`); Ruff and Black stdin formatting checks pass.
   `stochastic/00040` remains unsupported because required distribution
   sampling and recurring state-trigger event execution are not implemented in
-  the BNGL runtime. Its
-  selected official report is
-  `/private/tmp/bng3-ssts-stochastic-00040-distrib-diagnostic.json`, SHA-256
-  `b470ef6427ada19dd80612e9c589c4d821bb9a83d92ba839d0bbae5d03f5af83`.
+  the BNGL runtime. The schema 4 selected report
+  `/private/tmp/bng3-ssts-source-provenance-00040.json`, SHA-256
+  `527b49c1dcd03891cee7bd6014574f8c42bb924efdc6053b12fc7d40df1a1415`, records
+  suite commit `cf38585fac5de8e0e90112febb62851ee2181816`, BNG3 commit
+  `b47c36e1934b4f7874d8cae9b47414312acd5ac4`, and a clean tracked worktree.
 - [ ] Supporting this cohort needs an executable random-distribution event
   path plus the predeclared seeded ensemble and statistical acceptance gate.
   A deterministic scheduled assignment cannot preserve these model semantics.
