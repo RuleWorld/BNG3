@@ -4917,6 +4917,352 @@ def synthesize_event_actions(
                     if not transfer_schedule:
                         horizon_limited += len(events)
 
+    if (
+        len(events) > 1
+        and context.method.lower() != "ssa"
+        and all(
+            id(event) not in recurrent_handled
+            and id(event) not in event_proven_inactive
+            for event in events
+        )
+    ):
+        quadratic_plans: List[dict[str, object]] = []
+        statically_inactive_events: List[SBMLEvent] = []
+        required_state_symbols: set[str] = set()
+        quadratic_group_supported = True
+        for event in events:
+            parsed_threshold = _parse_affine_state_threshold(event.trigger)
+            if (
+                parsed_threshold is None
+                or event.priority
+                or event.delay
+                or not event.trigger_persistent
+                or not event.use_values_from_trigger_time
+                or fold_initial(event.trigger) != 0
+            ):
+                quadratic_group_supported = False
+                break
+            identifier, operator, threshold_expression = parsed_threshold
+            threshold = fold(threshold_expression, event_context=event)
+            if (
+                operator not in {"lt", "gt"}
+                or threshold is None
+                or not math.isfinite(threshold)
+            ):
+                quadratic_group_supported = False
+                break
+            trigger_is_assigned = any(
+                standardize_name(variable) == standardize_name(identifier)
+                for candidate in events
+                for assignment in candidate.assignments
+                for variable, _expression in [_event_assignment(assignment)]
+            )
+            constant_trajectory = context.resolve_affine_rate_for_event(
+                identifier, event
+            )
+            initial_trigger_state = context.resolve_initial_value(identifier)
+            if (
+                not trigger_is_assigned
+                and constant_trajectory is not None
+                and constant_trajectory[1] == 0
+                and initial_trigger_state is not None
+                and math.isfinite(initial_trigger_state)
+                and not (
+                    initial_trigger_state < threshold
+                    if operator == "lt"
+                    else initial_trigger_state > threshold
+                )
+            ):
+                statically_inactive_events.append(event)
+                continue
+            assignments: List[Tuple[str, str, str]] = []
+            seen_targets: set[str] = set()
+            for assignment in event.assignments:
+                variable, expression = _event_assignment(assignment)
+                pattern = context.resolve_species_pattern(variable)
+                normalized_variable = standardize_name(variable)
+                if (
+                    pattern is None
+                    or normalized_variable in seen_targets
+                    or not str(expression or "").strip()
+                ):
+                    quadratic_group_supported = False
+                    break
+                seen_targets.add(normalized_variable)
+                assignments.append((variable, pattern, expression))
+                required_state_symbols.add(variable)
+            if not quadratic_group_supported or not assignments:
+                quadratic_group_supported = False
+                break
+            required_state_symbols.add(identifier)
+            quadratic_plans.append(
+                {
+                    "event": event,
+                    "identifier": identifier,
+                    "operator": operator,
+                    "threshold": float(threshold),
+                    "assignments": assignments,
+                }
+            )
+
+        initial_state: dict[str, float] = {}
+        if quadratic_group_supported:
+            for symbol in required_state_symbols:
+                value = context.resolve_initial_value(symbol)
+                if value is None or not math.isfinite(value):
+                    quadratic_group_supported = False
+                    break
+                initial_state[symbol] = float(value)
+
+        required_state_names = {
+            standardize_name(symbol) for symbol in required_state_symbols
+        }
+        if quadratic_group_supported:
+            for plan in quadratic_plans:
+                event = plan["event"]
+                identifier = str(plan["identifier"])
+                trajectory = context.resolve_quadratic_rate_from_state(
+                    identifier, event, initial_state
+                )
+                if trajectory is None:
+                    quadratic_group_supported = False
+                    break
+                initial_value = trajectory[0]
+                initial_snapshot = context.resolve_quadratic_state_values_from_state(
+                    identifier, initial_value, event, initial_state
+                )
+                if initial_snapshot is None or not required_state_names.issubset(
+                    {standardize_name(symbol) for symbol in initial_snapshot}
+                ):
+                    quadratic_group_supported = False
+                    break
+
+        def quadratic_trigger_active(
+            plan: Mapping[str, object], state_values: Mapping[str, float]
+        ) -> Optional[bool]:
+            identifier = str(plan["identifier"])
+            normalized_identifier = standardize_name(identifier)
+            state_value = next(
+                (
+                    float(value)
+                    for symbol, value in state_values.items()
+                    if standardize_name(symbol) == normalized_identifier
+                ),
+                None,
+            )
+            if state_value is None or not math.isfinite(state_value):
+                return None
+            threshold = float(plan["threshold"])
+            operator = str(plan["operator"])
+            if state_value != threshold:
+                return (
+                    state_value < threshold
+                    if operator == "lt"
+                    else state_value > threshold
+                )
+            event = plan["event"]
+            trajectory = context.resolve_quadratic_rate_from_state(
+                identifier, event, state_values
+            )
+            if trajectory is None:
+                return None
+            initial, quadratic, linear, constant = trajectory
+            derivative = quadratic * initial * initial + linear * initial + constant
+            return derivative < 0 if operator == "lt" else derivative > 0
+
+        group_schedule: List[
+            Tuple[
+                float,
+                List[Tuple[str, str, float]],
+                float,
+                Optional[SBMLEvent],
+                bool,
+                List[Tuple[str, float]],
+            ]
+        ] = []
+        group_state = dict(initial_state)
+        group_time = 0.0
+        if quadratic_group_supported:
+            for _ in range(10_000):
+                active_by_event: dict[int, bool] = {}
+                for plan in quadratic_plans:
+                    active = quadratic_trigger_active(plan, group_state)
+                    if active is None:
+                        quadratic_group_supported = False
+                        break
+                    active_by_event[id(plan["event"])] = active
+                if not quadratic_group_supported:
+                    break
+
+                transitions: List[Tuple[float, Mapping[str, object], str]] = []
+                remaining = max(0.0, float(context.base_t_end) - group_time)
+                for plan in quadratic_plans:
+                    event = plan["event"]
+                    identifier = str(plan["identifier"])
+                    threshold = float(plan["threshold"])
+                    trajectory = context.resolve_quadratic_rate_from_state(
+                        identifier, event, group_state
+                    )
+                    if trajectory is None:
+                        quadratic_group_supported = False
+                        break
+                    initial, quadratic, linear, constant = trajectory
+                    crossing_delta = _quadratic_crossing_time(
+                        initial, threshold, quadratic, linear, constant
+                    )
+                    current_active = active_by_event[id(event)]
+                    if crossing_delta is None:
+                        endpoint = _quadratic_state_at_time(
+                            initial, quadratic, linear, constant, remaining
+                        )
+                        if endpoint is None:
+                            quadratic_group_supported = False
+                            break
+                        endpoint_active = (
+                            endpoint < threshold
+                            if plan["operator"] == "lt"
+                            else endpoint > threshold
+                        )
+                        if endpoint_active != current_active:
+                            quadratic_group_supported = False
+                            break
+                        continue
+
+                    if crossing_delta <= 1e-12:
+                        continue
+                    event_time = group_time + crossing_delta
+                    endpoint = _quadratic_state_at_time(
+                        initial, quadratic, linear, constant, remaining
+                    )
+                    if endpoint is None:
+                        quadratic_group_supported = False
+                        break
+                    endpoint_active = (
+                        endpoint < threshold
+                        if plan["operator"] == "lt"
+                        else endpoint > threshold
+                    )
+                    if event_time > float(context.base_t_end) + 1e-12:
+                        if endpoint_active != current_active:
+                            quadratic_group_supported = False
+                            break
+                        continue
+
+                    derivative = (
+                        quadratic * threshold * threshold
+                        + linear * threshold
+                        + constant
+                    )
+                    enters_true = (
+                        derivative < 0 if plan["operator"] == "lt" else derivative > 0
+                    )
+                    is_entry = not current_active and enters_true
+                    is_exit = current_active and not enters_true
+                    if not is_entry and not is_exit:
+                        if endpoint_active != current_active:
+                            quadratic_group_supported = False
+                            break
+                        continue
+                    transitions.append(
+                        (event_time, plan, "entry" if is_entry else "exit")
+                    )
+
+                if not quadratic_group_supported:
+                    break
+                if not transitions:
+                    break
+                transitions.sort(key=lambda item: item[0])
+                if (
+                    len(transitions) > 1
+                    and abs(transitions[1][0] - transitions[0][0]) < 1e-12
+                ):
+                    quadratic_group_supported = False
+                    break
+
+                event_time, plan, transition_kind = transitions[0]
+                event = plan["event"]
+                identifier = str(plan["identifier"])
+                threshold = float(plan["threshold"])
+                crossing_state = context.resolve_quadratic_state_values_from_state(
+                    identifier, threshold, event, group_state
+                )
+                if crossing_state is None or not required_state_names.issubset(
+                    {standardize_name(symbol) for symbol in crossing_state}
+                ):
+                    quadratic_group_supported = False
+                    break
+                group_state = {
+                    **group_state,
+                    **{
+                        str(symbol): float(value)
+                        for symbol, value in crossing_state.items()
+                    },
+                }
+                if transition_kind == "exit":
+                    group_time = event_time
+                    continue
+
+                scheduled_sets: List[Tuple[str, str, float]] = []
+                event_values: List[Tuple[str, float]] = []
+                next_state = dict(group_state)
+                event_value_state = {**group_state, "time": event_time}
+                for variable, pattern, expression in plan["assignments"]:
+                    value = fold_at_state(
+                        expression,
+                        event_time,
+                        state_values=event_value_state,
+                        event_context=event,
+                    )
+                    if value is None or not math.isfinite(value):
+                        quadratic_group_supported = False
+                        break
+                    numeric_value = float(value)
+                    scheduled_sets.append(("conc", pattern, numeric_value))
+                    event_values.append((standardize_name(variable), numeric_value))
+                    next_state[variable] = numeric_value
+                if not quadratic_group_supported:
+                    break
+
+                for other_plan in quadratic_plans:
+                    post_active = quadratic_trigger_active(other_plan, next_state)
+                    if post_active is None:
+                        quadratic_group_supported = False
+                        break
+                    if (
+                        other_plan["event"] is not event
+                        and not active_by_event[id(other_plan["event"])]
+                        and post_active
+                    ):
+                        # An assignment caused another trigger to become true
+                        # at this same time; ordering without priorities is
+                        # ambiguous, so keep the whole group untranslated.
+                        quadratic_group_supported = False
+                        break
+                if not quadratic_group_supported:
+                    break
+
+                group_schedule.append(
+                    (event_time, scheduled_sets, 0.0, event, False, event_values)
+                )
+                group_state = next_state
+                group_time = event_time
+            else:
+                quadratic_group_supported = False
+
+        if quadratic_group_supported:
+            inactive_event_ids = {id(event) for event in statically_inactive_events}
+            recurrent_handled.update(
+                id(event) for event in events if id(event) not in inactive_event_ids
+            )
+            event_proven_inactive.update(inactive_event_ids)
+            if group_schedule:
+                scheduled.extend(group_schedule)
+                normal_converted += len(quadratic_plans)
+                horizon_limited += len(statically_inactive_events)
+            else:
+                event_proven_inactive.update(id(event) for event in events)
+                horizon_limited += len(events)
+
     if len(events) == 1 and id(events[0]) not in recurrent_handled:
         event = events[0]
         parsed_difference = _parse_state_difference_threshold(event.trigger)

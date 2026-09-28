@@ -7788,6 +7788,13 @@ def generate_bngl(
             active_species_names = {
                 standardize_name(species_id) for species_id in active_dynamic_species
             }
+            snapshot_species_names = {
+                standardize_name(species_id)
+                for species_id, species in model.species.items()
+                if species_id in active_dynamic_species
+                or species.constant
+                or species.boundary_condition
+            }
             active_compartment_names = {
                 standardize_name(model.species[species_id].compartment)
                 for species_id in active_dynamic_species
@@ -7811,17 +7818,28 @@ def generate_bngl(
                 active_expression_symbols.update(rate_symbols)
             active_expression_symbols.update(active_species_names)
             active_expression_symbols.update(active_compartment_names)
-            # Ignore another event only when it writes no symbol read by this
-            # trigger or its active reaction component. Cross-component control
-            # stays on the conservative path.
+            # A cross-event write may be analyzed only when the caller supplies
+            # the current value of every overlapping species in the trajectory
+            # snapshot. The joint scheduler proves the shared component first.
             other_event_targets = {
                 standardize_name(assignment.variable)
                 for other_event in model.events
                 if other_event is not event_context
                 for assignment in other_event.assignments
             }
-            if active_expression_symbols & other_event_targets:
-                return None
+            relevant_other_event_targets = (
+                active_expression_symbols & other_event_targets
+            )
+            if relevant_other_event_targets:
+                supplied_state_symbols = {
+                    standardize_name(symbol) for symbol in (state_values or {})
+                }
+                if (
+                    state_values is None
+                    or not relevant_other_event_targets.issubset(snapshot_species_names)
+                    or not relevant_other_event_targets.issubset(supplied_state_symbols)
+                ):
+                    return None
             if any(
                 reaction.fast or reaction.conversion_factor or variable_stoichiometry
                 for reaction, _vector, variable_stoichiometry in reaction_vectors

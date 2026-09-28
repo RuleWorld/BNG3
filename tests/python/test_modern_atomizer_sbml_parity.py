@@ -1508,6 +1508,173 @@ def _first_order_cycle_reentrant_event_model(
     </sbml>"""
 
 
+def _shared_quadratic_event_pair_model(
+    time_assignments=False,
+    boundary_s2=False,
+    boundary_s3=False,
+    assignment_value=1.0,
+):
+    """Reproduce the coupled event core from SSTS semantic/00349 and /00884."""
+    s2_boundary = ' boundaryCondition="true"' if boundary_s2 else ""
+    s3_boundary = ' boundaryCondition="true"' if boundary_s3 else ""
+    if time_assignments:
+        parameter = '<parameter id="k3" value="4" constant="true"/>'
+        first_assignment = """<apply><times/><ci>k3</ci>
+          <csymbol definitionURL="http://www.sbml.org/sbml/symbols/time">s</csymbol>
+        </apply>"""
+        second_assignment = """<apply><times/><cn>0.25</cn>
+          <csymbol definitionURL="http://www.sbml.org/sbml/symbols/time">s</csymbol>
+        </apply>"""
+    else:
+        parameter = ""
+        first_assignment = f"<cn>{assignment_value}</cn>"
+        second_assignment = f"<cn>{assignment_value}</cn>"
+
+    return f"""<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="shared_quadratic_event_pair">
+        <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies>
+          <species id="S1" compartment="C" initialAmount="1" hasOnlySubstanceUnits="false"/>
+          <species id="S2" compartment="C" initialAmount="2" hasOnlySubstanceUnits="false"{s2_boundary}/>
+          <species id="S3" compartment="C" initialAmount="1" hasOnlySubstanceUnits="false"{s3_boundary}/>
+        </listOfSpecies>
+        <listOfParameters>
+          <parameter id="k1" value="0.75" constant="true"/>
+          <parameter id="k2" value="0.25" constant="true"/>
+          {parameter}
+        </listOfParameters>
+        <listOfReactions>
+          <reaction id="reaction1" reversible="false">
+            <listOfReactants><speciesReference species="S1"/><speciesReference species="S2"/></listOfReactants>
+            <listOfProducts><speciesReference species="S3"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><times/><ci>C</ci><ci>k1</ci><ci>S1</ci><ci>S2</ci></apply>
+            </math></kineticLaw>
+          </reaction>
+          <reaction id="reaction2" reversible="false">
+            <listOfReactants><speciesReference species="S3"/></listOfReactants>
+            <listOfProducts><speciesReference species="S1"/><speciesReference species="S2"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><times/><ci>C</ci><ci>k2</ci><ci>S3</ci></apply>
+            </math></kineticLaw>
+          </reaction>
+        </listOfReactions>
+        <listOfEvents>
+          <event id="event1" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><lt/><ci>S1</ci><cn>0.75</cn></apply>
+            </math></trigger>
+            <listOfEventAssignments><eventAssignment variable="S2"><math xmlns="http://www.w3.org/1998/Math/MathML">
+              {first_assignment}
+            </math></eventAssignment></listOfEventAssignments>
+          </event>
+          <event id="event2" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><gt/><ci>S3</ci><cn>1.4</cn></apply>
+            </math></trigger>
+            <listOfEventAssignments><eventAssignment variable="S1"><math xmlns="http://www.w3.org/1998/Math/MathML">
+              {second_assignment}
+            </math></eventAssignment></listOfEventAssignments>
+          </event>
+        </listOfEvents>
+      </model>
+    </sbml>"""
+
+
+def test_shared_quadratic_event_pair_recomputes_after_each_firing(tmp_path):
+    import numpy as np
+    import pytest
+
+    from bionetgen.atomizer.modern import Atomizer
+
+    for time_assignments in (False, True):
+        xml = _shared_quadratic_event_pair_model(time_assignments)
+        result = Atomizer(quiet_mode=True, t_end=2, n_steps=400).atomize(xml)
+
+        assert result.success, result.error
+        assert "state-dependent or non-constant event" not in result.bngl
+        assert "Events NOT simulated" not in result.bngl
+        assert "# 2 time-triggered SBML event(s) translated" in result.bngl
+
+        model_path = tmp_path / f"shared_quadratic_events_{time_assignments}.bngl"
+        model_path.write_text(result.bngl, encoding="utf-8")
+        from bionetgen.model import load
+
+        load(model_path).execute()
+        lines = model_path.with_suffix(".gdat").read_text().splitlines()
+        columns = lines[0].lstrip("# ").split()
+        bng_data = np.loadtxt(lines[1:])
+        times = bng_data[:, columns.index("time")]
+
+        roadrunner = pytest.importorskip("roadrunner")
+        rr = roadrunner.RoadRunner(xml)
+        rr.integrator.setValue("relative_tolerance", 1e-10)
+        rr.integrator.setValue("absolute_tolerance", 1e-12)
+        rr.timeCourseSelections = ["time", "[S1]", "[S2]", "[S3]"]
+        reference = rr.simulate(times=times)
+
+        state_columns = [columns.index(species) for species in ("S1", "S2", "S3")]
+        jump_indices = np.flatnonzero(
+            np.max(np.abs(np.diff(bng_data[:, state_columns], axis=0)), axis=1) > 0.1
+        )
+        assert len(jump_indices) >= 2
+        compare = np.ones(len(times), dtype=bool)
+        compare[jump_indices] = False
+        compare[jump_indices + 1] = False
+        for species in ("S1", "S2", "S3"):
+            bng_values = bng_data[compare, columns.index(species)]
+            rr_values = reference[compare, reference.colnames.index(f"[{species}]")]
+            scale = max(
+                float(np.max(np.abs(bng_values))), float(np.max(np.abs(rr_values)))
+            )
+            assert float(np.max(np.abs(bng_values - rr_values))) <= max(
+                5e-10, 1e-5 * scale
+            )
+
+
+def test_shared_quadratic_event_pair_tracks_boundary_species_assignments():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = _shared_quadratic_event_pair_model(boundary_s2=True)
+    result = Atomizer(quiet_mode=True, t_end=2, n_steps=400).atomize(xml)
+
+    assert result.success, result.error
+    assert "state-dependent or non-constant event" not in result.bngl
+    assert "# 2 time-triggered SBML event(s) translated" in result.bngl
+
+
+def test_shared_quadratic_event_pair_proves_constant_boundary_trigger_inactive():
+    from bionetgen.atomizer.modern import Atomizer
+
+    for boundary_s2, assignment_value in ((False, 1.0), (True, 1.1)):
+        xml = _shared_quadratic_event_pair_model(
+            boundary_s2=boundary_s2,
+            boundary_s3=True,
+            assignment_value=assignment_value,
+        )
+        result = Atomizer(quiet_mode=True, t_end=2, n_steps=400).atomize(xml)
+
+        assert result.success, result.error
+        assert "state-dependent or non-constant event" not in result.bngl
+        assert "Events NOT simulated" not in result.bngl
+
+
+def test_shared_quadratic_simultaneous_crossings_stay_unsupported():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = (
+        _shared_quadratic_event_pair_model(assignment_value=0.0)
+        .replace('eventAssignment variable="S2"', 'eventAssignment variable="S3"')
+        .replace('eventAssignment variable="S1"', 'eventAssignment variable="S2"')
+        .replace("<cn>1.4</cn>", "<cn>1.25</cn>")
+    )
+    result = Atomizer(quiet_mode=True, t_end=2, n_steps=400).atomize(xml)
+
+    assert result.success, result.error
+    assert "state-dependent or non-constant event" in result.bngl
+    assert "Events NOT simulated" in result.bngl
+
+
 def test_first_order_cycle_events_match_libroadrunner(tmp_path):
     import numpy as np
     import pytest

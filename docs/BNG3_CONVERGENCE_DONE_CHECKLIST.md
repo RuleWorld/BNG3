@@ -4,7 +4,7 @@
 **Last targeted audit:** 2026-09-27 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
 **Working branch:** `plan/nfsim-gpu-perf`
-**Latest full pinned SBML Test Suite report:** local Atomizer source after affine parameter event priority support; suite commit `cf38585fac5de8e0e90112febb62851ee2181816`, `1,671 passed / 252 unsupported / 0 failed / 0 timed out`. Compared with the preceding full report, `semantic/01521` gained status and no previous pass regressed. Report `/private/tmp/bng3-affine-priority-full-sbml.json`, SHA-256 `670702b064bf4d764b2c431cc571e2fb21f62ae33d913d6c83264dca997a53e6`.
+**Latest full pinned SBML Test Suite report:** local Atomizer source after shared quadratic multi-event trigger support; suite commit `cf38585fac5de8e0e90112febb62851ee2181816`, `1,687 passed / 236 unsupported / 0 failed / 0 timed out`. Relative to the preceding full report, 69 cases changed from unsupported to passed and 55 changed from passed to unsupported. The seven cases in the new feature cohort are among the gains; the full set of gains is not attributed to this change. All 55 losses are in the stochastic category and are now unsupported because their state-dependent events remain untranslated. The supported surface passes; the aggregate core gate remains open. Report `/private/tmp/bng3-quadratic-multievent-full-sbml.json`, SHA-256 `4362668167e21c2cdf941d385a831ddc63f7183a3b8dc4358b09aef22c4679d8`.
 **Latest full curated BioModels report:** `be5bdcf` code source (repository head `0da6020` after a docs-only commit); `792/1,083` SBML-path records passed, with no status changes against the previous full report.
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
@@ -7434,3 +7434,38 @@ the other groups remain implementation targets.
   not part of this slice. The last recorded native extension attempt failed on
   unresolved `NFcore2::simulateNfcore2`; that result has not been rechecked
   against the concurrent C++ worktree state.
+
+## Shared quadratic multi-event triggers — 2026-09-27
+
+- [x] Lower the bounded group of two or more deterministic, persistent,
+  initially false state triggers that each compare one species with a strict
+  threshold. Triggers and assignments must share a proven quadratic reaction
+  component; events have no delay or priority and use values from trigger
+  time. The scheduler tracks trigger entries and exits, snapshots each
+  assignment at its firing time, and recomputes the coupled trajectory after
+  every firing. Constant inactive boundary-species triggers can be proven
+  inactive. Other event shapes, delayed or prioritized actions, and ambiguous
+  simultaneous or assignment-induced transitions remain untranslated.
+- [x] Add source-derived parity regressions for official SBML Test Suite
+  `semantic/00349` and `00884`, boundary-species assignments, constant
+  inactive boundary triggers (`00379` and `00380`), and simultaneous crossings
+  that must remain unsupported. The focused event/parity suites pass:
+  `160 passed`. Ruff, Black (`py39`), and `git diff --check` pass.
+- [x] All seven official cohort records `semantic/00349`, `00363`, `00378`,
+  `00379`, `00380`, `00744`, and `00884` pass isolated SBML roundtrip and
+  BNG3/libRoadRunner CVODE comparison with six observables each. At `t_end=2`
+  with 50 samples, maximum absolute differences range from `3.55e-12` to
+  `9.51e-7`, within configured tolerances. These are cross-engine comparisons,
+  not official reference-result conformance.
+- [x] Full pinned SBML Test Suite at commit
+  `cf38585fac5de8e0e90112febb62851ee2181816`, `t_end=1`, and 10 samples:
+  `1,687 passed, 236 unsupported, 0 failed, 0 timed out`; the supported
+  surface passes, while the aggregate core gate remains open. Compared with
+  `/private/tmp/bng3-quadratic-reentrant-full-sbml.json`, 69 cases gained and
+  55 lost status. The 55 losses are stochastic-category models whose events
+  remain untranslated; this status change is outside the seven-case target
+  cohort and is not attributed to this feature. Report
+  `/private/tmp/bng3-quadratic-multievent-full-sbml.json`, SHA-256
+  `4362668167e21c2cdf941d385a831ddc63f7183a3b8dc4358b09aef22c4679d8`.
+- [ ] Full curated BioModels inventory and official SBML reference-result
+  conformance have not been rerun for this slice.
