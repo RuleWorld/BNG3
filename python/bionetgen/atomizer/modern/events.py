@@ -5082,11 +5082,16 @@ def synthesize_event_actions(
         ] = []
         group_state = dict(initial_state)
         group_time = 0.0
+        initial_trigger_state_pending = True
         if quadratic_group_supported:
             for _ in range(10_000):
                 active_by_event: dict[int, bool] = {}
                 for plan in quadratic_plans:
-                    active = quadratic_trigger_active(plan, group_state)
+                    active = (
+                        bool(fold_initial(plan["event"].trigger))
+                        if initial_trigger_state_pending
+                        else quadratic_trigger_active(plan, group_state)
+                    )
                     if active is None:
                         quadratic_group_supported = False
                         break
@@ -5129,6 +5134,19 @@ def synthesize_event_actions(
                         continue
 
                     if crossing_delta <= 1e-12:
+                        if initial_trigger_state_pending and not current_active:
+                            derivative = (
+                                quadratic * threshold * threshold
+                                + linear * threshold
+                                + constant
+                            )
+                            enters_true = (
+                                derivative < 0
+                                if plan["operator"] == "lt"
+                                else derivative > 0
+                            )
+                            if enters_true:
+                                transitions.append((group_time, plan, "entry"))
                         continue
                     event_time = group_time + crossing_delta
                     endpoint = _quadratic_state_at_time(
@@ -5180,6 +5198,7 @@ def synthesize_event_actions(
                     break
 
                 event_time, plan, transition_kind = transitions[0]
+                initial_trigger_state_pending = False
                 event = plan["event"]
                 identifier = str(plan["identifier"])
                 threshold = float(plan["threshold"])

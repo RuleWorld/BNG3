@@ -1675,6 +1675,66 @@ def test_shared_quadratic_simultaneous_crossings_stay_unsupported():
     assert "Events NOT simulated" in result.bngl
 
 
+def test_shared_quadratic_simultaneous_initial_entries_stay_unsupported():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = (
+        _shared_quadratic_event_pair_model()
+        .replace(
+            "<apply><lt/><ci>S1</ci><cn>0.75</cn></apply>",
+            "<apply><lt/><ci>S1</ci><cn>1</cn></apply>",
+        )
+        .replace("<cn>1.4</cn>", "<cn>1</cn>")
+    )
+    result = Atomizer(quiet_mode=True, t_end=0.1, n_steps=10).atomize(xml)
+
+    assert result.success, result.error
+    assert "state-dependent or non-constant event" in result.bngl
+    assert "Events NOT simulated" in result.bngl
+
+
+def test_shared_quadratic_trigger_entering_at_initial_time_matches_libroadrunner(
+    tmp_path,
+):
+    import numpy as np
+    import pytest
+
+    from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.model import load
+
+    xml = _shared_quadratic_event_pair_model().replace(
+        "<apply><lt/><ci>S1</ci><cn>0.75</cn></apply>",
+        "<apply><lt/><ci>S1</ci><cn>1</cn></apply>",
+    )
+    result = Atomizer(quiet_mode=True, t_end=0.1, n_steps=10).atomize(xml)
+
+    assert result.success, result.error
+    assert "state-dependent or non-constant event" not in result.bngl
+    assert 'setConcentration("@C:M_S2()", "1")' in result.bngl
+
+    model_path = tmp_path / "shared_quadratic_initial_event.bngl"
+    model_path.write_text(result.bngl, encoding="utf-8")
+    load(model_path).execute()
+    lines = model_path.with_suffix(".gdat").read_text().splitlines()
+    columns = lines[0].lstrip("# ").split()
+    bng_data = np.loadtxt(lines[1:])
+
+    roadrunner = pytest.importorskip("roadrunner")
+    reference_engine = roadrunner.RoadRunner(xml)
+    reference_engine.integrator.setValue("relative_tolerance", 1e-10)
+    reference_engine.integrator.setValue("absolute_tolerance", 1e-12)
+    reference_engine.timeCourseSelections = ["time", "[S1]", "[S2]", "[S3]"]
+    reference = reference_engine.simulate(times=bng_data[:, columns.index("time")])
+
+    positive_time = bng_data[:, columns.index("time")] > 0
+    assert bng_data[0, columns.index("S2")] == pytest.approx(1.0)
+    for species in ("S1", "S2", "S3"):
+        bng_values = bng_data[positive_time, columns.index(species)]
+        rr_values = reference[positive_time, reference.colnames.index(f"[{species}]")]
+        scale = max(float(np.max(np.abs(bng_values))), float(np.max(np.abs(rr_values))))
+        assert float(np.max(np.abs(bng_values - rr_values))) <= max(5e-10, 1e-5 * scale)
+
+
 def test_first_order_cycle_events_match_libroadrunner(tmp_path):
     import numpy as np
     import pytest
