@@ -7919,7 +7919,9 @@ the other groups remain implementation targets.
   Package](https://sbml.org/documents/specifications/level-3/version-1/distrib/).
 - [x] A parser regression derived from `stochastic/00040` first failed with
   severity `info` and the false empty-package diagnostic. It now passes with a
-  dropped, one-element `distrib` warning. The full Python suite passes
+  dropped, one-element `distrib` warning. A direct parser sweep of all 61
+  official L3V2 cohort files produced the expected dropped package warning for
+  all 61, with no failures. The full Python suite passes
   (`677 passed, 28 skipped`); Ruff passes. File-based Black checks could not
   start because Black's multiprocessing manager hit sandbox IPC
   `PermissionError`; stdin formatting checks pass. `stochastic/00040` remains
