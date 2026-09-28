@@ -8101,3 +8101,26 @@ the other groups remain implementation targets.
   the BNGL action engine. BNG2/legacy Atomizer remains incomplete and has not
   been benchmarked against all SBML; broader Atomizer and cross-engine gates
   remain open.
+
+## Full SBML Test Suite source-head refresh — 2026-09-28
+
+- [x] Ran the complete pinned SSTS (`cf38585fac5de8e0e90112febb62851ee2181816`)
+  with schema 4 at BNG3 `ef53506c2cc02bdbd26283e167aa429255fa6c21`, with a clean
+  tracked worktree, `t_end=1`, and 10 output intervals. The 1,923 records yield
+  `1,738 passed, 185 unsupported, 0 failed, 0 timed out`; semantic records are
+  `1,700/123` passed/unsupported, and stochastic records are `38/62`. The
+  supported-surface gate passes; the aggregate Core gate remains open.
+- [x] Exact case-ID comparison with the prior full report
+  `/private/tmp/bng3-delayed-chain-initial-assignment-full-sbml.json` finds no
+  status changes across all 1,923 cases. That earlier aggregate has no source
+  provenance; this schema-4 report provides the exact BNG3 source revision:
+  `/private/tmp/bng3-ssts-full-ef53506.json`, SHA-256
+  `85ecf0f7c8bc02b3959330de2438b72685f154016216aa02d7d2f38c2518e9af`.
+- [x] The unsupported cause counts overlap: events `90`, required `distrib`
+  package `61`, constraints `35`, fast reactions `35`, FBC `34`, MathML `20`,
+  stoichiometry `7`, and other `5`. Twenty-seven records have events as their
+  only reported cause. The complete unsupported inventory is in the report.
+- [ ] This is modern BNG3 SSTS round-trip and BNG3/libRoadRunner validation;
+  it does not benchmark BNG2 Atomizer against all SBML. BNG2/legacy Atomizer
+  remains incomplete, and full cross-engine parity and the stopped curated
+  BioModels validation remain open.
