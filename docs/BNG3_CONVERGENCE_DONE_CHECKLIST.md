@@ -8553,13 +8553,20 @@ the other groups remain implementation targets.
   independently imported PyBioNetGen checkout. All 255 successful legacy
   Atomizer imports resolved to that checkout.
 - [x] Modern BNG3 Atomizer completed `300/300` conversions. BNG3 network
-  generation completed `276/300` rows; Perl BNG2 completed `240/300`. All 240
-  paired networks matched structurally; rate-expression parity passed `180/240`.
+  generation and parsing completed `300/300` rows after the comparator began
+  accepting valid empty species/reaction blocks. Perl BNG2 completed `240/300`.
+  All 240 paired networks matched structurally; rate-expression parity passed
+  `180/240`.
   Independent PyBioNetGen completed `255/300` conversions and yielded 141
   paired networks; all 141 matched structurally and 135 matched rates.
-- [x] Report `/private/tmp/bng3-cross-engine-next50-20260928-30s.json`, SHA-256
-  `8e87720f7887cee93d9a96c04fa7b6af02aef7891a98d7da06e36a00fc7349e6`, records
-  BNG3 head `1484eaaded25aba6b22d5cfd6c9e8622ae7166b5`, BNG2
+- [x] Added regressions that accept BNG3’s valid empty `.net` files and still
+  reject parameter-only text. `tests/validation/test_compare_net.py` passes
+  (`17 passed`); Ruff and Black (`py39`) pass. BNG3 SSTS cases `01157`, `01242`,
+  `01277`, and `01311` now parse as zero-species, zero-reaction networks in
+  both modes.
+- [x] Exact-head report `/private/tmp/bng3-cross-engine-next50-empty-net-fixed-20260928-30s.json`,
+  SHA-256 `892d41e33fe2fa89d261a0bebb238b8194cdad7201da604558ed0e457a771956`,
+  records BNG3 head `a144d6757324862f3b0ce013417c7a9642c03bab`, BNG2
   `8726b30b94c081d5f0ce8b8d38338e27be1b38fc`, PyBioNetGen
   `43b09a5346402986d48b1defba5eaec0ae2f7802`.
 - [ ] This is a 50-case network/rate sample. It is not trajectory parity, full
