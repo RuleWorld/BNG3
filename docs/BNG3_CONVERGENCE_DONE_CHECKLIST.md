@@ -6,7 +6,7 @@
 **Working branch:** `main`; latest code-changing commit affecting the recorded full SSTS result is `23822c616c796214e0306b16f1c7f07ab13b5eee` (matches `origin/main`).
 **Latest full pinned SBML Test Suite report:** suite commit `cf38585fac5de8e0e90112febb62851ee2181816`, `1,730 passed / 193 unsupported / 0 failed / 0 timed out`. Nine cases gained, with no losses, against `/private/tmp/bng3-quadratic-species-difference-full-sbml.json`. The supported surface passes; the aggregate Core gate remains open. Report `/private/tmp/bng3-atomizer-event-stoich-full-sbml.json`, SHA-256 `509692d123cca41f13084a005b64a73876d56750b156ed4acd3ca2de48d54dd3`.
 **Latest current-source curated BioModels report:** none. The user's current-source flat and Atomized rerun was stopped at their request; it remains stopped and has no aggregate report. Earlier BioModels counts below are historical only.
-**Latest code-head hosted CI:** commit `23822c6`; Formatting patch, Lean semantic kernel, and CodeQL passed. CI and Cross-tool parity are in progress (queried 2026-09-28).
+**Latest code-head hosted CI:** commit `23822c6`; Formatting patch, Lean semantic kernel, CodeQL, Cross-tool parity, Docker, package smoke, and integration jobs passed. Wheel builds remain in progress for Ubuntu, macOS 14, and Windows; macOS 13 is queued (queried 2026-09-28).
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -99,9 +99,28 @@ BNG3 port.
   trajectories or establish all-SBML coverage. BNG2 Atomizer remains
   incomplete and has not been benchmarked against all SBML. The attempted
   broader batch including `01561` was interrupted during BNG2 network
-  generation and produced no aggregate report; that case remains unmeasured.
+  generation and produced no aggregate report; a separate bounded run for
+  that case is recorded below.
   NFsim trajectory comparison and curated BioModels validation remain open;
   the user's BioModels run remains stopped.
+
+## Bounded cross-engine check for large SSTS case `01561` — 2026-09-28
+
+- [x] Ran flat mode for three repeats with a 30-second timeout per network
+  generation against `semantic/01561`, a current BNG3/libRoadRunner passing
+  case with 38 species and 1 reaction.
+- [x] Modern BNG3 Atomizer converted all three times and generated BNG3
+  networks all three times. Perl BNG2 timed out on all three modern outputs
+  at the 30-second cap.
+- [x] PyBioNetGen legacy Atomizer converted all three times; BNG3 and BNG2
+  generated networks on all three outputs, with structure and strict rate
+  comparisons passing all three times.
+- [x] Report `/private/tmp/bng3-cross-engine-ssts-01561-bounded-20260928.json`,
+  SHA-256 `f58942c64a01b7f5f301049bfc2494834187f2d562f5d0bab2792d5843127775`.
+  This covers one case, flat mode, and three repeats. It does not establish
+  general runtime behavior or BNG2 Atomizer completeness; that remains
+  incomplete and unbenchmarked against all SBML. The atomized mode and a larger
+  cohort remain open.
 
 ## Scoped source-lock refresh — 2026-09-23
 
