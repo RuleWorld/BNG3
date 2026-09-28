@@ -7535,3 +7535,27 @@ the other groups remain implementation targets.
 - [ ] The earlier curated BioModels run was stopped at the user's request;
   `/private/tmp/bng3-quadratic-multievent-biomodels-both.json` has no aggregate
   report and must not be restarted without a new request.
+
+## Delayed quadratic multi-event triggers — 2026-09-28
+
+- [x] Extend shared quadratic reaction-event scheduling to support independent
+  finite compile-time delays for persistent, trigger-time-valued assignments.
+  Trigger entries enqueue assignment snapshots; the exact quadratic trajectory
+  continues until each execution time, then assignments are applied and the
+  coupled trajectory is resolved again. Simultaneous executions and ties with
+  another trigger crossing remain untranslated because priority is absent.
+- [x] Add an oracle-grounded reaction-model regression with two distinct delays
+  and a state-valued assignment. BNG3 state trajectories match libRoadRunner
+  away from event jumps. The focused event/parity suite passes: `167 passed`;
+  Ruff, Black (`py39`), and `git diff --check` pass.
+- [x] Pinned SSTS full run at commit `cf38585fac5de8e0e90112febb62851ee2181816`,
+  `t_end=1`, 10 samples: `1,706 passed, 217 unsupported, 0 failed, 0 timed out`.
+  Compared with `/private/tmp/bng3-quadratic-rate-rule-full-sbml.json`, 15 cases
+  gained and none lost: `00406`, `00413`, `00414`, `00420`, `00421`, `00422`,
+  `00427`, `00435`, `00436`, `00437`, `00442`, `00757`, `00764`, `00774`,
+  `00776`. Supported surface passes; aggregate Core gate remains open. Report
+  `/private/tmp/bng3-quadratic-multievent-delayed-full-sbml.json`, SHA-256
+  `24d9e64d03ef4aa7f873783db1425964adf4ddc1f521ce7ad533ac9d3cfdf23a`.
+- [ ] The five inspected rank-one cases with species-to-species triggers remain
+  unsupported. Full repository pytest and curated BioModels validation remain
+  unverified; BioModels run stays stopped per user request.

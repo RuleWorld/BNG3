@@ -4932,12 +4932,20 @@ def synthesize_event_actions(
         quadratic_group_supported = True
         for event in events:
             parsed_threshold = _parse_affine_state_threshold(event.trigger)
+            delay_symbols = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", event.delay or "")
+            delay = fold(event.delay, event_context=event) if event.delay else 0.0
             if (
                 parsed_threshold is None
                 or event.priority
-                or event.delay
+                or delay is None
+                or not math.isfinite(delay)
+                or delay < 0
+                or any(
+                    not context.is_compile_time_constant(symbol)
+                    for symbol in delay_symbols
+                )
                 or not event.trigger_persistent
-                or not event.use_values_from_trigger_time
+                or (delay > 0 and not event.use_values_from_trigger_time)
                 or fold_initial(event.trigger) != 0
             ):
                 quadratic_group_supported = False
@@ -5002,6 +5010,7 @@ def synthesize_event_actions(
                     "operator": operator,
                     "threshold": float(threshold),
                     "assignments": assignments,
+                    "delay": float(delay),
                 }
             )
 
@@ -5080,6 +5089,7 @@ def synthesize_event_actions(
                 List[Tuple[str, float]],
             ]
         ] = []
+        pending_quadratic_actions: List[dict[str, object]] = []
         group_state = dict(initial_state)
         group_time = 0.0
         initial_trigger_state_pending = True
@@ -5187,7 +5197,7 @@ def synthesize_event_actions(
 
                 if not quadratic_group_supported:
                     break
-                if not transitions:
+                if not transitions and not pending_quadratic_actions:
                     break
                 transitions.sort(key=lambda item: item[0])
                 if (
@@ -5197,7 +5207,115 @@ def synthesize_event_actions(
                     quadratic_group_supported = False
                     break
 
-                event_time, plan, transition_kind = transitions[0]
+                event_time, plan, transition_kind = (
+                    transitions[0] if transitions else (math.inf, {}, "")
+                )
+                next_pending_time = min(
+                    (float(action["time"]) for action in pending_quadratic_actions),
+                    default=math.inf,
+                )
+                if next_pending_time <= event_time + 1e-12:
+                    if abs(next_pending_time - event_time) < 1e-12:
+                        quadratic_group_supported = False
+                        break
+                    pending = [
+                        action
+                        for action in pending_quadratic_actions
+                        if abs(float(action["time"]) - next_pending_time) < 1e-12
+                    ]
+                    if len(pending) != 1:
+                        quadratic_group_supported = False
+                        break
+                    action = pending[0]
+                    pending_plan = action["plan"]
+                    if not isinstance(pending_plan, Mapping):
+                        quadratic_group_supported = False
+                        break
+                    pending_event = pending_plan["event"]
+                    pending_identifier = str(pending_plan["identifier"])
+                    pending_trajectory = context.resolve_quadratic_rate_from_state(
+                        pending_identifier, pending_event, group_state
+                    )
+                    if pending_trajectory is None:
+                        quadratic_group_supported = False
+                        break
+                    pending_value = _quadratic_state_at_time(
+                        *pending_trajectory, next_pending_time - group_time
+                    )
+                    if pending_value is None:
+                        quadratic_group_supported = False
+                        break
+                    pending_state = context.resolve_quadratic_state_values_from_state(
+                        pending_identifier,
+                        pending_value,
+                        pending_event,
+                        group_state,
+                    )
+                    if pending_state is None or not required_state_names.issubset(
+                        {standardize_name(symbol) for symbol in pending_state}
+                    ):
+                        quadratic_group_supported = False
+                        break
+                    active_before: dict[int, bool] = {}
+                    for other_plan in quadratic_plans:
+                        active = quadratic_trigger_active(other_plan, pending_state)
+                        if active is None:
+                            quadratic_group_supported = False
+                            break
+                        active_before[id(other_plan["event"])] = active
+                    if not quadratic_group_supported:
+                        break
+                    next_state = {
+                        **group_state,
+                        **{
+                            str(symbol): float(value)
+                            for symbol, value in pending_state.items()
+                        },
+                    }
+                    pending_values = list(action["values"])
+                    assignment_variables = {
+                        standardize_name(variable): variable
+                        for variable, _pattern, _expression in pending_plan[
+                            "assignments"
+                        ]
+                    }
+                    for normalized_target, numeric_value in pending_values:
+                        variable = assignment_variables.get(normalized_target)
+                        if variable is None:
+                            quadratic_group_supported = False
+                            break
+                        next_state[variable] = float(numeric_value)
+                    if not quadratic_group_supported:
+                        break
+                    for other_plan in quadratic_plans:
+                        post_active = quadratic_trigger_active(other_plan, next_state)
+                        if post_active is None or (
+                            other_plan["event"] is not pending_event
+                            and not active_before[id(other_plan["event"])]
+                            and post_active
+                        ):
+                            quadratic_group_supported = False
+                            break
+                    if not quadratic_group_supported:
+                        break
+                    group_schedule.append(
+                        (
+                            next_pending_time,
+                            list(action["sets"]),
+                            0.0,
+                            pending_event,
+                            False,
+                            pending_values,
+                        )
+                    )
+                    pending_quadratic_actions.remove(action)
+                    group_state = next_state
+                    group_time = next_pending_time
+                    initial_trigger_state_pending = False
+                    continue
+
+                if not transitions:
+                    break
                 initial_trigger_state_pending = False
                 event = plan["event"]
                 identifier = str(plan["identifier"])
@@ -5260,10 +5378,22 @@ def synthesize_event_actions(
                 if not quadratic_group_supported:
                     break
 
-                group_schedule.append(
-                    (event_time, scheduled_sets, 0.0, event, False, event_values)
-                )
-                group_state = next_state
+                delay = float(plan["delay"])
+                execution_time = event_time + delay
+                if delay > 0 and execution_time <= float(context.base_t_end) + 1e-12:
+                    pending_quadratic_actions.append(
+                        {
+                            "time": execution_time,
+                            "plan": plan,
+                            "sets": scheduled_sets,
+                            "values": event_values,
+                        }
+                    )
+                if delay == 0:
+                    group_schedule.append(
+                        (event_time, scheduled_sets, 0.0, event, False, event_values)
+                    )
+                    group_state = next_state
                 group_time = event_time
             else:
                 quadratic_group_supported = False
