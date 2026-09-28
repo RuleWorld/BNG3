@@ -4453,6 +4453,7 @@ def synthesize_event_actions(
                     str,
                     str,
                     float,
+                    float,
                     List[Tuple[str, str, str]],
                 ]
             ] = []
@@ -4468,6 +4469,15 @@ def synthesize_event_actions(
                     threshold_symbols = re.findall(
                         r"[A-Za-z_][A-Za-z0-9_]*",
                         context.expand_functions(threshold_expression),
+                    )
+                    delay_symbols = re.findall(
+                        r"[A-Za-z_][A-Za-z0-9_]*",
+                        context.expand_functions(event.delay or ""),
+                    )
+                    delay = (
+                        0.0
+                        if not event.delay
+                        else fold(event.delay, event_context=event)
                     )
                     if normalized_identifier == source_key and operator == "lt":
                         trigger_role = "source"
@@ -4485,7 +4495,13 @@ def synthesize_event_actions(
                             standardize_name(symbol) in {source_key, sink_key, "time"}
                             for symbol in threshold_symbols
                         )
-                        or event.delay
+                        or delay is None
+                        or not math.isfinite(float(delay))
+                        or float(delay) < 0
+                        or any(
+                            standardize_name(symbol) in {source_key, sink_key, "time"}
+                            for symbol in delay_symbols
+                        )
                         or event.priority
                         or event.trigger_initial_value is not True
                         or event.trigger_persistent is not True
@@ -4520,6 +4536,7 @@ def synthesize_event_actions(
                             identifier,
                             operator,
                             float(threshold),
+                            float(delay),
                             assignment_targets,
                         )
                     )
@@ -4534,6 +4551,7 @@ def synthesize_event_actions(
                     identifier,
                     operator,
                     threshold,
+                    _delay,
                     _assignments,
                 ) in transfer_plans:
                     state_value = transfer_state.get(identifier)
@@ -4559,6 +4577,9 @@ def synthesize_event_actions(
                 current_time = 0.0
                 last_fired_at: dict[int, float] = {}
                 pending: List[int] = []
+                pending_actions: List[
+                    Tuple[float, dict[str, Tuple[str, str, float]]]
+                ] = []
                 for _ in range(10_000):
                     if not transfer_supported:
                         break
@@ -4569,7 +4590,14 @@ def synthesize_event_actions(
                         for index, plan in enumerate(transfer_plans):
                             if transfer_active[index]:
                                 continue
-                            _event, identifier, operator, threshold, _assignments = plan
+                            (
+                                _event,
+                                identifier,
+                                operator,
+                                threshold,
+                                _delay,
+                                _assignments,
+                            ) = plan
                             if (
                                 standardize_name(identifier) == source_key
                                 and operator == "lt"
@@ -4599,10 +4627,137 @@ def synthesize_event_actions(
                             candidates.append((max(0.0, delta), index))
                         if not transfer_supported:
                             break
+                        next_delta = (
+                            min(candidate[0] for candidate in candidates)
+                            if candidates
+                            else math.inf
+                        )
+                        crossing_time = current_time + next_delta
+                        due_time = min(
+                            (action[0] for action in pending_actions),
+                            default=math.inf,
+                        )
+                        simultaneous_tolerance = 1e-11 * max(
+                            1.0,
+                            abs(next_delta) if math.isfinite(next_delta) else 0.0,
+                            (
+                                abs(due_time - current_time)
+                                if math.isfinite(due_time)
+                                else 0.0
+                            ),
+                        )
+                        if (
+                            math.isfinite(crossing_time)
+                            and due_time <= float(context.base_t_end) + 1e-12
+                            and abs(crossing_time - due_time) <= simultaneous_tolerance
+                        ):
+                            transfer_supported = False
+                            break
+
+                        if (
+                            due_time <= float(context.base_t_end) + 1e-12
+                            and due_time < crossing_time
+                        ):
+                            due_delta = due_time - current_time
+                            if due_delta < -1e-12:
+                                transfer_supported = False
+                                break
+                            due_state = _first_order_transfer_state_at(
+                                transfer_state[source_id],
+                                transfer_state[sink_id],
+                                float(transfer_rate),
+                                max(0.0, due_delta),
+                            )
+                            if due_state is None:
+                                transfer_supported = False
+                                break
+                            transfer_state[source_id], transfer_state[sink_id] = (
+                                due_state
+                            )
+                            current_time = due_time
+                            due_records = [
+                                action
+                                for action in pending_actions
+                                if action[0] == due_time
+                            ]
+                            near_due_records = [
+                                action[0]
+                                for action in pending_actions
+                                if abs(action[0] - due_time) <= simultaneous_tolerance
+                            ]
+                            if any(time != due_time for time in near_due_records):
+                                transfer_supported = False
+                                break
+                            pending_actions = [
+                                action
+                                for action in pending_actions
+                                if action[0] != due_time
+                            ]
+                            due_updates: dict[str, Tuple[str, str, float]] = {}
+                            for _action_time, action_updates in due_records:
+                                for target_key, update in action_updates.items():
+                                    prior = due_updates.get(target_key)
+                                    if prior is not None and prior[2] != update[2]:
+                                        transfer_supported = False
+                                        break
+                                    due_updates[target_key] = update
+                                if not transfer_supported:
+                                    break
+                            if not transfer_supported:
+                                break
+                            previous_active = list(transfer_active)
+                            for target_key, (
+                                variable,
+                                _pattern,
+                                value,
+                            ) in due_updates.items():
+                                actual_target = (
+                                    source_id if target_key == source_key else sink_id
+                                )
+                                transfer_state[actual_target] = value
+                            event_sets = [
+                                ("conc", pattern, value)
+                                for _variable, pattern, value in due_updates.values()
+                            ]
+                            event_values = [
+                                (variable, value)
+                                for variable, _pattern, value in due_updates.values()
+                            ]
+                            transfer_schedule.append(
+                                (
+                                    current_time,
+                                    event_sets,
+                                    0.0,
+                                    None,
+                                    False,
+                                    event_values,
+                                )
+                            )
+                            newly_triggered: List[int] = []
+                            for index, plan in enumerate(transfer_plans):
+                                (
+                                    _event,
+                                    identifier,
+                                    operator,
+                                    threshold,
+                                    _delay,
+                                    _assignments,
+                                ) = plan
+                                value = transfer_state[identifier]
+                                is_active = (
+                                    value < threshold
+                                    if operator == "lt"
+                                    else value > threshold
+                                )
+                                if not previous_active[index] and is_active:
+                                    newly_triggered.append(index)
+                                transfer_active[index] = is_active
+                            pending = newly_triggered
+                            continue
+
                         if not candidates:
                             break
-                        next_delta = min(candidate[0] for candidate in candidates)
-                        next_time = current_time + next_delta
+                        next_time = crossing_time
                         if next_time > float(context.base_t_end) + 1e-12:
                             break
                         simultaneous_tolerance = 1e-11 * max(1.0, abs(next_delta))
@@ -4626,7 +4781,14 @@ def synthesize_event_actions(
                         transfer_state[source_id], transfer_state[sink_id] = next_state
                         current_time = min(next_time, float(context.base_t_end))
                         for index, plan in enumerate(transfer_plans):
-                            _event, identifier, operator, threshold, _assignments = plan
+                            (
+                                _event,
+                                identifier,
+                                operator,
+                                threshold,
+                                _delay,
+                                _assignments,
+                            ) = plan
                             value = transfer_state[identifier]
                             transfer_active[index] = (
                                 value < threshold
@@ -4656,9 +4818,14 @@ def synthesize_event_actions(
                     updates: dict[str, Tuple[str, str, float]] = {}
                     update_values: dict[str, float] = {}
                     for index in pending:
-                        event, _identifier, _operator, _threshold, assignments = (
-                            transfer_plans[index]
-                        )
+                        (
+                            event,
+                            _identifier,
+                            _operator,
+                            _threshold,
+                            _delay,
+                            assignments,
+                        ) = transfer_plans[index]
                         for variable, pattern, expression in assignments:
                             value = fold_at_state(
                                 expression,
@@ -4690,6 +4857,28 @@ def synthesize_event_actions(
                         (variable, value)
                         for variable, _pattern, value in updates.values()
                     ]
+                    event_delays = {transfer_plans[index][4] for index in pending}
+                    if len(event_delays) != 1:
+                        transfer_supported = False
+                        break
+                    delay = next(iter(event_delays))
+                    for index in pending:
+                        last_fired_at[index] = current_time
+                    if delay > 0:
+                        execution_time = current_time + delay
+                        if not math.isfinite(execution_time):
+                            transfer_supported = False
+                            break
+                        if execution_time <= float(context.base_t_end) + 1e-12:
+                            pending_actions.append(
+                                (
+                                    min(execution_time, float(context.base_t_end)),
+                                    updates,
+                                )
+                            )
+                        pending = []
+                        continue
+
                     for target_key, (variable, _pattern, value) in updates.items():
                         actual_target = (
                             source_id if target_key == source_key else sink_id
@@ -4698,13 +4887,18 @@ def synthesize_event_actions(
                     transfer_schedule.append(
                         (current_time, event_sets, 0.0, None, False, event_values)
                     )
-                    for index in pending:
-                        last_fired_at[index] = current_time
 
                     newly_triggered: List[int] = []
                     for index, plan in enumerate(transfer_plans):
                         was_active = transfer_active[index]
-                        _event, identifier, operator, threshold, _assignments = plan
+                        (
+                            _event,
+                            identifier,
+                            operator,
+                            threshold,
+                            _delay,
+                            _assignments,
+                        ) = plan
                         value = transfer_state[identifier]
                         is_active = (
                             value < threshold if operator == "lt" else value > threshold
