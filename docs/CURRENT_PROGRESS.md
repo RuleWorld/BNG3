@@ -3,28 +3,39 @@
 **Last targeted audit:** 2026-09-27 (full convergence checklist not re-audited)
 **Repository:** `RuleWorld/BNG3`
 **Branch:** `plan/nfsim-gpu-perf`
-**Status:** Atomizer cycle, delayed quadratic, species-initial-assignment, and affine parameter-priority events validated; first-order transfer event lowering is cross-checked on official SSTS input through BNG2; static-gated nonpersistent priorities reproduce the pinned SSTS event order; overall convergence and release validation remain incomplete
+**Status:** Atomizer cycle, delayed quadratic, species-initial-assignment, affine parameter-priority, and bounded first-order transfer events validated; transfer events are cross-checked on official SSTS inputs through BNG2; static-gated nonpersistent priorities reproduce the pinned SSTS event order; overall convergence and release validation remain incomplete
 
 ## Re-entrant first-order transfer events — 2026-09-27
 
 The event translator now handles a narrow analytic system with two species,
 one irreversible unit-stoichiometry first-order transfer, one fixed
-compartment, and two persistent immediate state triggers: the source falls
-below a threshold and the sink rises above a threshold. It evaluates
-assignments from trigger-time state, groups compatible simultaneous sets, and
-recomputes the transfer trajectory after state changes. SSA, delays, priorities,
-rules, initial assignments, and other trigger shapes remain outside this proof.
+compartment, and two persistent state triggers: the source falls below a
+threshold and the sink rises above a threshold. It supports zero or
+compile-time constant nonnegative delays, evaluates assignments from
+trigger-time state, advances the transfer analytically to each execution time,
+and recomputes future crossings after state changes. Dynamic delays,
+priorities, SSA, rules, initial assignments, and other trigger shapes remain
+outside this proof; ambiguous simultaneous crossings and due actions fail
+closed.
 
 Continued simulation phases now include explicit absolute `t_start` and
 `t_end` values. Perl BNG2 2.9.3 ran the exact official SBML Test Suite
-`semantic/00041` model through `t=5`, including six event actions, without
-continuation-time warnings. Its final `S1` and `S2` values differ from the
-official reference row by at most `1.652592283019061e-7`.
+`semantic/00041` model through `t=5`, including six immediate event actions,
+without continuation-time warnings. Its final `S1` and `S2` values differ from
+the official reference row by at most `1.652592283019061e-7`. The delayed
+`semantic/00072` model also ran through `t=5` with three event assignments and
+51 output rows; its final species values differ from the official reference
+row by at most `9.394649663763133e-8`. The BNG2 run exited successfully; its
+sandboxed process discovery printed a `ps` permission warning, but no
+continuation-time warning. The reported comparison is final-row only: phase
+splitting changes the output timestamps, so full time-course parity against
+the official sampling grid remains unverified.
 
-The Atomizer Python modules pass `428` tests with `3` skipped. Ruff, Black
-(`py39`), and `git diff --check` pass. The native BNG3 case run and refreshed
-full SSTS/BioModels aggregates remain pending while the local C++ extension
-fails to load due to the unresolved `NFcore2::simulateNfcore2` symbol.
+The targeted Atomizer Python suite passes `434` tests with `3` skipped. Ruff,
+Black (`py39`), and `git diff --check` pass. Native BNG3 execution and refreshed
+full SSTS/BioModels aggregates were not part of this slice. The last recorded
+native extension attempt failed on unresolved `NFcore2::simulateNfcore2`; that
+result was not rechecked against the concurrent C++ worktree state.
 
 ## Simultaneous state-gated event priorities — 2026-09-27
 
