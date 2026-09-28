@@ -41,12 +41,16 @@ BNG3 port.
   The scheduled threshold crossing was `t=2.77917484418`. Direct
   libRoadRunner execution was unavailable for this model because it rejects its
   algebraic rule; this comparison uses the pinned SSTS result file instead.
+- [x] Perl BNG2 2.9.3 also executed the modern BNG3-generated `00661` BNGL,
+  including its scheduled `setConcentration` action. At `t=10`, BNG2 and BNG3
+  differed by `6.99e-8` for `X0`, `2.93e-8` for `X1`, and `1.94e-8` for `T`.
+  This checks BNG2 engine execution on one BNG3 conversion; it does not test the
+  legacy BNG2 Atomizer.
 - [ ] This is two selected modern-BNG3 cases, not complete SSTS or
-  cross-engine coverage. It does not benchmark BNG2 Atomizer. BNG2 Atomizer
-  remains incomplete and has not been benchmarked against all SBML. The full
-  suite, broader trajectory comparisons, BNG2 execution comparison, NFsim, and
-  curated BioModels validation remain open; the user's BioModels run remains
-  stopped.
+  cross-engine coverage. BNG2 Atomizer remains incomplete and has not been
+  benchmarked against all SBML. The full suite, broader trajectory comparisons,
+  NFsim, and curated BioModels validation remain open; the user's BioModels run
+  remains stopped.
 
 ## Expanded SBML Test Suite Atomizer network benchmark — 2026-09-28
 
