@@ -7615,12 +7615,17 @@ the other groups remain implementation targets.
   Supported surface passes; aggregate Core gate remains open. Report
   `/private/tmp/bng3-quadratic-species-difference-full-sbml.json`, SHA-256
   `0f9e748655b9e1809de03099cb2144ce5bd23ea3f5a214a9b2258444e6a07f4d`.
-- [ ] An independent BNG2 trajectory comparison for the delayed species-
-  difference fixture remains unverified. Bundled Perl BNG2 parsed the emitted
-  BNGL and generated its `.net`, but could not start simulation because the
-  platform `run_network` executable is absent from `legacy/perl/bin`; process
-  discovery also reports that `ps` is denied in this sandbox. This does not
-  change the passing BNG3/libRoadRunner comparison or claim BNG2 parity.
+- [x] Independent legacy BNG2 2.9.3 executed the BNG3 Atomizer-generated BNGL
+  for the delayed species-difference fixture. The BNG3 and BNG2 `.gdat` files
+  each contain 801 rows with matching output columns, event rows, and time grid
+  (maximum time difference `1.0e-12`). With both engines set to `rtol=1e-8` and
+  `atol=1e-8`, the largest species difference away from event jumps is
+  `5.1e-15`. At BNG3's default `atol=1e-12`, the maximum difference was
+  `4.6e-8`, consistent with the looser absolute tolerance used by BNG2.
+  This is a single-model execution comparison of BNG3-generated BNGL. It does
+  not benchmark BNG2 Atomizer, establish BNG2 Atomizer completeness, or measure
+  BNG2 Atomizer against all SBML or the full SBML Test Suite. BNG2 Atomizer is
+  incomplete; full SBML-wide cross-engine benchmark coverage remains open.
 - [x] Full repository `pytest -q` passes after the CLI fixture reduction:
   `668 passed`, `30 skipped` in `11.36s` (1,380 existing deprecation
   warnings). Curated BioModels validation remains stopped.
