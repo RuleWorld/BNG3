@@ -2788,6 +2788,17 @@ completion gate.
   `419bb2bd29f319bfc638c50b9c29cec0934b6d87eb7ce8fcdefed70a01f618c2`
   (CPython 3.14 arm64 wheel); the installed-target Python suite is recorded
   above.
+- [x] Rebuilt the alpha wheel from code commit `e36ba90` and installed it in a
+  temporary Python 3.14 environment. The installed package and compiled
+  extension imported from that environment, `bionetgen --version` reported
+  `3.0.0a1`, and its CLI ran an ODE birth model and wrote the expected samples
+  at `t=0`, `0.5`, and `1`. Wheel metadata identifies
+  `bionetgen-3.0.0a1-cp314-cp314-macosx_26_0_arm64.whl`, requires Python `>=3.9`,
+  and includes the native extension. SHA-256:
+  `16c2eb1f549d3d8dae0f5b0272f8bb2a987fc7c27ff01de1b3c15c8259134185`.
+  Artifact: `/private/tmp/bng3-pip-current/dist/bionetgen-3.0.0a1-cp314-cp314-macosx_26_0_arm64.whl`.
+  This verifies one local platform artifact; cross-platform installed-wheel
+  coverage and publication remain open.
 - [ ] Superseded hosted checks for semantic head `c754544` were not terminal
   as one set: [CI run
   33531304777](https://github.com/RuleWorld/BNG3/actions/runs/33531304777) was
