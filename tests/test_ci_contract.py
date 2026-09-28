@@ -3,9 +3,11 @@
 import json
 from pathlib import Path
 import re
+import subprocess
 
 import pytest
 
+from scripts.ci import validate_sbml_test_suite
 from scripts.validate import (
     load_skip_models,
     load_validation_manifest,
@@ -30,6 +32,55 @@ VALIDATION_MANIFEST = REPO / "tests" / "validation" / "validation_manifest.json"
 VALIDATE_DIR = REPO / "tests" / "validation" / "Validate"
 PARITY_WORKFLOW = REPO / ".github" / "workflows" / "parity.yml"
 FORMAL_WORKFLOW = REPO / ".github" / "workflows" / "formal.yml"
+
+
+def test_ssts_report_source_provenance_records_revision_and_tracked_changes(
+    tmp_path: Path,
+):
+    repo = tmp_path / "source"
+    repo.mkdir()
+    subprocess.run(["git", "-C", str(repo), "init"], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "user.name", "SSTS provenance test"],
+        check=True,
+    )
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "config",
+            "user.email",
+            "ssts-provenance@example.invalid",
+        ],
+        check=True,
+    )
+    source = repo / "model.py"
+    source.write_text("model = True\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", "model.py"], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "commit", "-m", "initial"],
+        check=True,
+        capture_output=True,
+    )
+    revision = subprocess.check_output(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"], text=True
+    ).strip()
+
+    clean = validate_sbml_test_suite._repository_provenance(repo)
+
+    assert clean == {
+        "bng3_commit": revision,
+        "bng3_tracked_worktree_clean": True,
+    }
+
+    source.write_text("model = False\n", encoding="utf-8")
+    dirty = validate_sbml_test_suite._repository_provenance(repo)
+
+    assert dirty == {
+        "bng3_commit": revision,
+        "bng3_tracked_worktree_clean": False,
+    }
 
 
 def test_pull_request_runs_keep_exact_head_evidence_available():
