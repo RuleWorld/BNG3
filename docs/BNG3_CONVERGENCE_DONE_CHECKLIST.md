@@ -5041,6 +5041,23 @@ completion gate.
   cross-platform wheel matrix, clean runtime dependency solve, complete package
   data audit, hosted release workflow, or publication test.
 
+### Current-main package refresh — 2026-09-28
+
+- [x] Built sdist and wheel with `python -m build --no-isolation --sdist
+  --wheel` from `main` at `15ea1b56f36b89c12fee6347913024d6cb04c311` on macOS
+  arm64 / CPython 3.14.6 using scikit-build-core 1.0.3, CMake 4.4.3, and
+  AppleClang 21.0.0. The sdist has 1,544 members and contains no offline-bundle
+  files. Sdist SHA-256 `5bd96fdf8431d203312a4a95123c2048840ac7cf2ca512169eeb601c1da02710`;
+  wheel SHA-256 `861a1eaa6123bf2d4c28baf58386f3f1ac01ff3a678934d22c35185796c87ff1`.
+- [x] Installed the wheel into a temporary CPython 3.14 environment and loaded
+  its native extension. The installed package's stationary-event regression
+  passed, and the CLI ODE smoke wrote 11 points with `A_total` changing from
+  `10` to `3.6787942479103934` at `t=2`.
+- [ ] The environment exposed host runtime packages. `pip check` reports
+  existing host conflicts involving Jedi, NumPy, and ipykernel; clean dependency
+  resolution, other operating systems/Python versions, hosted release jobs, and
+  publication remain unverified.
+
 ## 9. Legacy repositories and governance
 
 - [ ] BioNetGen, NFsim, and PyBioNetGen source deltas through the accepted
