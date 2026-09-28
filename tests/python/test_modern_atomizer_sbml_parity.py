@@ -1023,6 +1023,95 @@ def test_event_controls_deterministic_species_reference_flux():
     assert 'setParameter("p1", "2")' in result.bngl
 
 
+def test_periodic_species_reference_events_prove_reaction_species_threshold_inactive():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="periodic_stoichiometry_keeps_species_static">
+        <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies><species id="S" compartment="C" initialAmount="0"/></listOfSpecies>
+        <listOfParameters>
+          <parameter id="reset" value="0" constant="false"/>
+          <parameter id="Q" value="1" constant="false"/>
+          <parameter id="R" value="1" constant="false"/>
+          <parameter id="error" value="0" constant="false"/>
+        </listOfParameters>
+        <listOfRules><rateRule variable="reset">
+          <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math>
+        </rateRule></listOfRules>
+        <listOfEvents>
+          <event id="increment_Q" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="false">
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><geq/><ci>reset</ci><cn>0.01</cn></apply>
+              </math>
+            </trigger>
+            <listOfEventAssignments>
+              <eventAssignment variable="reset"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0</cn></math></eventAssignment>
+              <eventAssignment variable="Q"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><plus/><ci>Q</ci><cn>0.01</cn></apply></math></eventAssignment>
+            </listOfEventAssignments>
+          </event>
+          <event id="increment_R" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="false">
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><geq/><ci>reset</ci><cn>0.01</cn></apply>
+              </math>
+            </trigger>
+            <listOfEventAssignments>
+              <eventAssignment variable="reset"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0</cn></math></eventAssignment>
+              <eventAssignment variable="R"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><plus/><ci>R</ci><cn>0.01</cn></apply></math></eventAssignment>
+            </listOfEventAssignments>
+          </event>
+          <event id="threshold">
+            <trigger initialValue="true" persistent="true">
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><geq/><apply><abs/><ci>S</ci></apply><cn>0.001</cn></apply>
+              </math>
+            </trigger>
+            <listOfEventAssignments>
+              <eventAssignment variable="error"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></eventAssignment>
+            </listOfEventAssignments>
+          </event>
+        </listOfEvents>
+        <listOfReactions><reaction id="r" reversible="false">
+          <listOfReactants><speciesReference id="Q" species="S" constant="false"/></listOfReactants>
+          <listOfProducts><speciesReference id="R" species="S" constant="false"/></listOfProducts>
+          <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0.1</cn></math></kineticLaw>
+        </reaction></listOfReactions>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True, t_end=0.025, n_steps=10).atomize(xml)
+
+    assert result.success, result.error
+    assert (
+        "state-dependent or non-constant event(s) remain untranslated"
+        not in result.bngl
+    )
+    assert 'setParameter("error", "1")' not in result.bngl
+
+    changing_species_xml = xml.replace(
+        "</listOfEvents>",
+        """<event id="change_S">
+          <trigger><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><geq/><csymbol definitionURL="http://www.sbml.org/sbml/symbols/time">time</csymbol><cn>0.015</cn></apply>
+          </math></trigger>
+          <listOfEventAssignments><eventAssignment variable="S">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0.002</cn></math>
+          </eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>""",
+    )
+    changing_species = Atomizer(quiet_mode=True, t_end=0.025, n_steps=10).atomize(
+        changing_species_xml
+    )
+
+    assert changing_species.success, changing_species.error
+    assert (
+        "state-dependent or non-constant event(s) remain untranslated"
+        in changing_species.bngl
+    )
+
+
 def _quadratic_reentrant_event_model(delay=None):
     delay_element = (
         ""

@@ -9116,10 +9116,157 @@ def generate_bngl(
                 and standardize_name(rule.variable) == standardize_name(identifier)
             ]
             if len(matching_rules) != 1 or matching_rules[0].type != "rate":
-                return None
-            return extend_function(
-                matching_rules[0].math or "", {}, model.function_definitions
+                if matching_rules:
+                    return None
+            else:
+                return extend_function(
+                    matching_rules[0].math or "", {}, model.function_definitions
+                )
+
+            species_id = next(
+                (
+                    species_id
+                    for species_id in model.species
+                    if standardize_name(species_id) == standardize_name(identifier)
+                ),
+                None,
             )
+            species = model.species.get(species_id) if species_id else None
+            if (
+                species is None
+                or species.constant
+                or species.boundary_condition
+                or any(rule.type == "algebraic" for rule in model.rules)
+                or any(
+                    warning.get("category") == "fbc"
+                    for warning in model.import_warnings
+                )
+                or any(
+                    standardize_name(str(assignment.symbol))
+                    == standardize_name(species_id)
+                    for assignment in model.initial_assignments
+                )
+                or any(
+                    standardize_name(str(assignment.variable))
+                    == standardize_name(species_id)
+                    for event in model.events
+                    for assignment in event.assignments
+                )
+            ):
+                return None
+
+            rate_terms = []
+            affects_species = False
+            for reaction in model.reactions.values():
+                if reaction.fast or reaction.conversion_factor:
+                    if any(
+                        reference.species == species_id
+                        for reference in [*reaction.reactants, *reaction.products]
+                    ):
+                        return None
+                net_terms = []
+                for sign, references in (
+                    (-1.0, reaction.reactants),
+                    (1.0, reaction.products),
+                ):
+                    for reference in references:
+                        if reference.species != species_id:
+                            continue
+                        affects_species = True
+                        if reference.variable_stoichiometry:
+                            coefficient = (
+                                str(reference.stoichiometry_math or "").strip()
+                                or str(reference.id or "").strip()
+                            )
+                            if not coefficient:
+                                return None
+                        else:
+                            numeric_coefficient = _numeric_value(
+                                reference.stoichiometry
+                            )
+                            if numeric_coefficient is None or not math.isfinite(
+                                numeric_coefficient
+                            ):
+                                return None
+                            coefficient = repr(float(numeric_coefficient))
+                        net_terms.append(f"({sign!r} * ({coefficient}))")
+
+                if not net_terms:
+                    continue
+                kinetic_law = reaction.kinetic_law
+                kinetic_expression = str(
+                    getattr(kinetic_law, "math", "")
+                    or (
+                        kinetic_law.get("math", "")
+                        if isinstance(kinetic_law, Mapping)
+                        else ""
+                    )
+                    or ""
+                ).strip()
+                if not kinetic_expression:
+                    return None
+                kinetic_expression = extend_function(
+                    kinetic_expression, {}, model.function_definitions
+                )
+                local_parameters = (
+                    kinetic_law.get("localParameters", [])
+                    if isinstance(kinetic_law, Mapping)
+                    else getattr(kinetic_law, "local_parameters", [])
+                )
+                for parameter in local_parameters or []:
+                    parameter_id = getattr(parameter, "id", None)
+                    parameter_value = getattr(parameter, "value", None)
+                    if isinstance(parameter, Mapping):
+                        parameter_id = parameter.get("id", parameter_id)
+                        parameter_value = parameter.get("value", parameter_value)
+                    if parameter_id and parameter_value is not None:
+                        numeric_parameter_value = _numeric_value(parameter_value)
+                        if numeric_parameter_value is None or not math.isfinite(
+                            numeric_parameter_value
+                        ):
+                            return None
+                        kinetic_expression = re.sub(
+                            rf"(?<![A-Za-z0-9_]){re.escape(str(parameter_id))}(?![A-Za-z0-9_])",
+                            repr(float(numeric_parameter_value)),
+                            kinetic_expression,
+                        )
+                net_coefficient = " + ".join(net_terms)
+                rate_terms.append(f"(({net_coefficient}) * ({kinetic_expression}))")
+
+            if not affects_species:
+                return None
+            expression = " + ".join(rate_terms) or "0"
+            if species.conversion_factor or model.conversion_factor:
+                return None
+            if not species.has_only_substance_units:
+                compartment = model.compartments.get(species.compartment or "")
+                compartment_size = (
+                    _numeric_value(compartment.size)
+                    if compartment is not None
+                    else None
+                )
+                if (
+                    compartment is None
+                    or not compartment.constant
+                    or compartment_size is None
+                    or not math.isfinite(compartment_size)
+                    or compartment_size == 0
+                    or any(
+                        rule.variable
+                        and standardize_name(rule.variable)
+                        == standardize_name(species.compartment or "")
+                        for rule in model.rules
+                    )
+                    or any(
+                        standardize_name(assignment.variable)
+                        == standardize_name(species.compartment or "")
+                        for event in model.events
+                        for assignment in event.assignments
+                    )
+                ):
+                    return None
+                expression = f"({expression}) / ({float(compartment_size)!r})"
+            return expression
 
         event_result = synthesize_event_actions(
             event_translation_events,
