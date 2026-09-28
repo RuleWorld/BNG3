@@ -7402,3 +7402,25 @@ the other groups remain implementation targets.
   report above.
 - [ ] Re-run the full curated BioModels inventory after the extension issue is
   resolved. The latest attempted run did not produce usable aggregate results.
+
+## Re-entrant first-order transfer event systems — 2026-09-27
+
+- [x] Lower the bounded two-species, one-reaction source-to-sink case with a
+  constant positive rate, fixed positive volume, and two persistent,
+  no-delay/no-priority triggers (`source < threshold`, `sink > threshold`).
+  Assignments use trigger-time state; compatible simultaneous sets are grouped,
+  then the analytic transfer trajectory and future crossings are recomputed.
+  SSA, delayed events, rules, initial assignments, and other trigger/assignment
+  shapes remain unsupported.
+- [x] Continued action phases now carry explicit absolute `t_start` and
+  `t_end`, retaining phase times in Perl BNG2 as well as the current BNG3
+  action path. Perl BNG2 2.9.3 ran the exact official SSTS
+  `semantic/00041` model to `t=5` with six event actions and no continuation
+  time warnings. Against its official final reference row, the maximum
+  absolute difference for `S1` and `S2` is `1.652592283019061e-7`.
+- [x] Atomizer Python modules: `428 passed, 3 skipped`; Ruff, Black (`py39`),
+  and `git diff --check` pass.
+- [ ] Native BNG3 validation and a refreshed full SSTS aggregate remain
+  pending: the local C++ extension fails to load with unresolved
+  `NFcore2::simulateNfcore2`. The full curated BioModels inventory also needs
+  a fresh run after that extension issue is resolved.

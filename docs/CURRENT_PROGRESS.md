@@ -3,7 +3,28 @@
 **Last targeted audit:** 2026-09-27 (full convergence checklist not re-audited)
 **Repository:** `RuleWorld/BNG3`
 **Branch:** `plan/nfsim-gpu-perf`
-**Status:** Atomizer cycle, delayed quadratic, species-initial-assignment, and affine parameter-priority events validated; static-gated nonpersistent priorities now reproduce the pinned SSTS event order; overall convergence and release validation remain incomplete
+**Status:** Atomizer cycle, delayed quadratic, species-initial-assignment, and affine parameter-priority events validated; first-order transfer event lowering is cross-checked on official SSTS input through BNG2; static-gated nonpersistent priorities reproduce the pinned SSTS event order; overall convergence and release validation remain incomplete
+
+## Re-entrant first-order transfer events — 2026-09-27
+
+The event translator now handles a narrow analytic system with two species,
+one irreversible unit-stoichiometry first-order transfer, one fixed
+compartment, and two persistent immediate state triggers: the source falls
+below a threshold and the sink rises above a threshold. It evaluates
+assignments from trigger-time state, groups compatible simultaneous sets, and
+recomputes the transfer trajectory after state changes. SSA, delays, priorities,
+rules, initial assignments, and other trigger shapes remain outside this proof.
+
+Continued simulation phases now include explicit absolute `t_start` and
+`t_end` values. Perl BNG2 2.9.3 ran the exact official SBML Test Suite
+`semantic/00041` model through `t=5`, including six event actions, without
+continuation-time warnings. Its final `S1` and `S2` values differ from the
+official reference row by at most `1.652592283019061e-7`.
+
+The Atomizer Python modules pass `428` tests with `3` skipped. Ruff, Black
+(`py39`), and `git diff --check` pass. The native BNG3 case run and refreshed
+full SSTS/BioModels aggregates remain pending while the local C++ extension
+fails to load due to the unresolved `NFcore2::simulateNfcore2` symbol.
 
 ## Simultaneous state-gated event priorities — 2026-09-27
 
