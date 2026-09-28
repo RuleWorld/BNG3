@@ -8426,3 +8426,26 @@ the other groups remain implementation targets.
   validation, broader supported-intersection coverage, and all-SBML coverage
   remain open. Perl BNG2 only emitted XML for standalone NFsim. No BNG2 source
   or legacy Atomizer was changed or benchmarked.
+
+## Full SBML Test Suite refresh — 2026-09-28
+
+- [x] Ran the complete pinned SSTS (`cf38585fac5de8e0e90112febb62851ee2181816`)
+  against clean tracked BNG3 source head `2deea2dc6f397acdd390504c4f720861d6553d96`,
+  at `t_end=1` with 10 output intervals. All 1,923 records completed:
+  `1,740 passed, 183 unsupported, 0 failed, 0 timed out`. The supported-surface
+  gate passes; aggregate Core remains open. Semantic records are `1,702/121`
+  passed/unsupported and stochastic records are `38/62`.
+- [x] Compared all case statuses with the prior full report at `ef53506`:
+  `semantic/01626` and `semantic/01627` changed from unsupported to passed;
+  the other 1,921 statuses are unchanged. Overlapping unsupported causes are
+  events `88`, `distrib` package `61`, constraints `35`, fast reactions `35`,
+  FBC `34`, MathML `20`, stoichiometry `7`, algebraic rules `2`, and other `5`.
+  Report `/private/tmp/bng3-ssts-full-current-2deea2d.json`, SHA-256
+  `a6fe6b581e718ded580bfbe049b12877c17a6de97619589fba54696b261a4fff`.
+- [ ] This is modern BNG3 Atomizer/C++ round-trip and BNG3/libRoadRunner
+  all-observable comparison over the pinned SSTS, not a complete all-SBML
+  benchmark. It does not establish BNG2/legacy PyBioNetGen Atomizer coverage:
+  that Atomizer remains incomplete and has not been benchmarked against all
+  SBML. No BNG2 code was changed. Full cross-engine parity, SSTS reference
+  result conformance, and the user-stopped full curated BioModels validation
+  remain open.
