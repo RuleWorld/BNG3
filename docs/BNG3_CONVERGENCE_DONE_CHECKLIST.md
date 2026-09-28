@@ -7450,7 +7450,7 @@ the other groups remain implementation targets.
   `semantic/00349` and `00884`, boundary-species assignments, constant
   inactive boundary triggers (`00379` and `00380`), and simultaneous crossings
   that must remain unsupported. The focused event/parity suites pass:
-  `160 passed`. Ruff, Black (`py39`), and `git diff --check` pass.
+  `162 passed`. Ruff, Black (`py39`), and `git diff --check` pass.
 - [x] All seven official cohort records `semantic/00349`, `00363`, `00378`,
   `00379`, `00380`, `00744`, and `00884` pass isolated SBML roundtrip and
   BNG3/libRoadRunner CVODE comparison with six observables each. At `t_end=2`
@@ -7465,7 +7465,41 @@ the other groups remain implementation targets.
   55 lost status. The 55 losses are stochastic-category models whose events
   remain untranslated; this status change is outside the seven-case target
   cohort and is not attributed to this feature. Report
-  `/private/tmp/bng3-quadratic-multievent-full-sbml.json`, SHA-256
+  `/private/tmp/bng3-quadratic-multievent-full-sbml-after-zero-entry.json`, SHA-256
   `4362668167e21c2cdf941d385a831ddc63f7183a3b8dc4358b09aef22c4679d8`.
 - [ ] Full curated BioModels inventory and official SBML reference-result
   conformance have not been rerun for this slice.
+
+## Initial-time event entries and legacy copy regressions — 2026-09-27
+
+- [x] A supported quadratic trigger whose initial value equals its strict
+  threshold now schedules its false-to-true entry at time zero. A regression
+  compares positive-time BNG3 and libRoadRunner trajectories; a simultaneous
+  initial entry remains explicitly unsupported. This follows the
+  [SBML event trigger semantics](https://sbml.org/specifications/sbml-level-3/version-2/core/release-2/sbml-level-3-version-2-release-2-core.pdf).
+  BNG3 records the event-updated state at time zero, so the parity assertion
+  compares subsequent sample times.
+- [x] Reviewed merged Atomizer PRs #22, #23, and #24. The modern structure copy
+  path from #22 preserves its fields. In the legacy `utils/structures.py` and
+  `utils/smallStructures.py` paths, `Component.copy()` passed states and bonds
+  to constructors that discarded both lists. The copies now assign independent
+  lists explicitly. Molecule copies use shallow object copies before replacing
+  the nested component list, avoiding throwaway random hash-array and identifier
+  generation while preserving metadata.
+- [x] Added four focused copy regressions covering both legacy Component
+  implementations, nested molecule copies, metadata, and constructor side
+  effects. The full Atomizer-focused Python suite (`test_*atomizer*.py` and
+  `test_smallStructures.py`) passes: `436 passed, 3 skipped`. Ruff, Black
+  (`py39`), and `git diff --check` pass.
+- [x] The complete pinned SSTS run after the time-zero event fix remains at
+  `1,687 passed, 236 unsupported, 0 failed, 0 timed out`; supported surface
+  passes and the core gate remains open. Report hash is unchanged at
+  `4362668167e21c2cdf941d385a831ddc63f7183a3b8dc4358b09aef22c4679d8`.
+- [ ] Full Python suite was last run after the event fix and before the legacy
+  copy repair: `654 passed, 30 skipped, 1 failed`. The failure was
+  `tests/python/test_cli.py::test_cli_nf_honors_nonzero_start_time` (`CaughtSignal`)
+  in the concurrent NFsim area. The repaired copy paths have targeted coverage;
+  the full suite has not been rerun on this exact worktree state.
+- [ ] Current-source curated BioModels flat/atomized rerun is in progress at
+  `/private/tmp/bng3-quadratic-multievent-biomodels-both.json`. Official
+  reference-result conformance is still separate and unverified.
