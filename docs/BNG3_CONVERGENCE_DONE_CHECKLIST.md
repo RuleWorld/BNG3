@@ -8491,3 +8491,27 @@ the other groups remain implementation targets.
   all-SBML benchmark of the incomplete BNG2/legacy PyBioNetGen Atomizer.
   Broader cross-engine coverage, trajectory parity, and curated BioModels
   validation remain open. No BNG2 or PyBioNetGen source was modified.
+
+## TotalRate network serialization parity — 2026-09-28
+
+- [x] Fixed BNG3 `NetWriter` to preserve complete `TotalRate` fluxes by omitting
+  reaction-pattern symmetry and compartment unit-conversion factors, including
+  generated reverse-rule origins. Added a C++ regression for a repeated
+  reactant pattern. It failed before the fix and passed after it.
+- [x] Updated the BNG3 network comparator to remove neutral multiplication by
+  one from supported rate expressions. Added a regression for the exact
+  redundant-prefix form produced by the BNG2 network writer.
+- [x] C++ `test_ode_options`: 16 cases and 61 assertions passed. Python network
+  comparator tests: 15 passed. Ruff, Black (`py39`), and `git diff --check`
+  passed. `clang-format` is not installed in this environment.
+- [x] Refreshed the three-repeat `semantic/00388` (L2V5) cross-engine sample in
+  flat and Atomized modes. Modern BNG3 and independent PyBioNetGen each passed
+  structural and rate comparisons against Perl BNG2 in all six comparisons.
+  Report `/private/tmp/bng3-cross-engine-00388-totalrate-fixed-final.json`,
+  SHA-256 `324b48cd62b1ce1feebf45a1d5be8c21d5643b02e2ba203040220f7745ebc035`;
+  source head `667f783ecde838f6d8e25264cd2974dacf0ad430`, rebuilt `bng_cpp`
+  SHA-256 `6fda97e8be9dcbbc34617ab5e1e00a8253108eda5b859378c8fc922d4fe88285`.
+- [ ] This is one SSTS interoperability case, not trajectory parity or a
+  complete SBML benchmark. BNG2/legacy Atomizer remains incomplete and has not
+  been benchmarked against all SBML. Broader SSTS/BioModels intersections,
+  NFsim validation, and release packaging remain open.

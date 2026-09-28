@@ -28,6 +28,13 @@ def test_canonical_rate_expression_normalizes_compartment_observable_call():
     assert _canon_expr(legacy) != _canon_expr(changed)
 
 
+def test_canonical_rate_expression_drops_leading_unit_flux_factor():
+    legacy = "1*(0.75*S1/1())*S2/1()"
+    modern = "0.75*S1/1()*S2/1()"
+
+    assert _canon_expr(legacy) == _canon_expr(modern)
+
+
 def _net(path: Path, rate: str) -> Path:
     path.write_text(
         "\n".join(
