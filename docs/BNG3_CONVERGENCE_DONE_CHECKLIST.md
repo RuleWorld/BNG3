@@ -4,7 +4,7 @@
 **Last targeted audit:** 2026-09-28 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
 **Working branch:** `main`; the recorded full SSTS run used code head `23822c616c796214e0306b16f1c7f07ab13b5eee` (`23822c6`). Later targeted changes are not included in that aggregate report.
-**Latest full pinned SBML Test Suite report:** suite commit `cf38585fac5de8e0e90112febb62851ee2181816`, `1,730 passed / 193 unsupported / 0 failed / 0 timed out`. Nine cases gained, with no losses, against `/private/tmp/bng3-quadratic-species-difference-full-sbml.json`. The supported surface passes; the aggregate Core gate remains open. Report `/private/tmp/bng3-atomizer-event-stoich-full-sbml.json`, SHA-256 `509692d123cca41f13084a005b64a73876d56750b156ed4acd3ca2de48d54dd3`.
+**Latest full pinned SBML Test Suite report:** suite commit `cf38585fac5de8e0e90112febb62851ee2181816`, `1,738 passed / 185 unsupported / 0 failed / 0 timed out`. Eight cases gained, with no losses, against `/private/tmp/bng3-atomizer-event-stoich-full-sbml.json`. The supported surface passes; the aggregate Core gate remains open. Report `/private/tmp/bng3-delayed-chain-initial-assignment-full-sbml.json`, SHA-256 `f539a2aeb8de9353ffc2e68957829007accfd867c9c79a0ad4d0cd8022062c60`.
 **Latest current-source curated BioModels report:** none. The user's current-source flat and Atomized rerun was stopped at their request; it remains stopped and has no aggregate report. Earlier BioModels counts below are historical only.
 **Last queried hosted CI:** code commit `07c0a5e`; Formatting patch and CodeQL were in progress, with CI, Cross-tool parity, and Lean semantic kernel queued when queried on 2026-09-28. These runs are nonterminal.
 **Historical audited heads:** Earlier local-only and hosted heads remain
@@ -7901,3 +7901,35 @@ the other groups remain implementation targets.
   establish BNG2 Atomizer completeness. BNG2 Atomizer remains incomplete and
   has not been benchmarked against all SBML. Full cross-engine coverage remains
   open; curated BioModels validation remains stopped per the user's request.
+
+## Required SBML Distrib symbols in recurring stochastic events — 2026-09-28
+
+- [x] The parser now counts package `csymbol` definition URLs such as
+  `http://www.sbml.org/sbml/symbols/distrib/normal` when diagnosing declared
+  SBML packages. This fixes a false `distrib` “contains no package elements;
+  core kinetic model is unaffected” message: distribution functions are
+  MathML symbols, not elements in the package namespace.
+- [x] The official stochastic SSTS cohort `00040`–`00100` contains 61 models
+  with `distrib:required="true"`. All share trigger `t >= 0.5` and assign a
+  fresh distribution draw to `X` while resetting `t`; 47 reset it to `0.5` and
+  14 to `-0.5`. Across the cohort, draws use 12 distribution functions. The
+  reference for `00040` reports mean `0` and standard deviation `1.5` after
+  the first firing. The package specification describes `distrib` as encoding
+  sampling from statistical distributions: [SBML Level 3 Distributions
+  Package](https://sbml.org/documents/specifications/level-3/version-1/distrib/).
+- [x] A parser regression derived from `stochastic/00040` first failed with
+  severity `info` and the false empty-package diagnostic. It now passes with a
+  dropped, one-element `distrib` warning. The full Python suite passes
+  (`677 passed, 28 skipped`); Ruff passes. File-based Black checks could not
+  start because Black's multiprocessing manager hit sandbox IPC
+  `PermissionError`; stdin formatting checks pass. `stochastic/00040` remains
+  unsupported because required distribution sampling and recurring
+  state-trigger event execution are not implemented in the BNGL runtime. Its
+  selected official report is
+  `/private/tmp/bng3-ssts-stochastic-00040-distrib-diagnostic.json`, SHA-256
+  `b470ef6427ada19dd80612e9c589c4d821bb9a83d92ba839d0bbae5d03f5af83`.
+- [ ] Supporting this cohort needs an executable random-distribution event
+  path plus the predeclared seeded ensemble and statistical acceptance gate.
+  A deterministic scheduled assignment cannot preserve these model semantics.
+  This work does not benchmark BNG2 Atomizer; BNG2 Atomizer remains incomplete
+  and has not been benchmarked against all SBML.

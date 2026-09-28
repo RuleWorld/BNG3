@@ -2884,15 +2884,24 @@ class SBMLParser:
             r"([a-z][a-z0-9_]*)/version\d+$",
             re.IGNORECASE,
         )
+        package_symbol_uri = re.compile(
+            r"^https?://www\.sbml\.org/sbml/symbols/" r"([a-z][a-z0-9_]*)/[^/]+$",
+            re.IGNORECASE,
+        )
         for element in root.iter():
             tag = str(getattr(element, "tag", ""))
-            if not tag.startswith("{") or "}" not in tag:
-                continue
-            uri = tag[1:].split("}", 1)[0]
-            match = package_uri.match(uri)
+            if tag.startswith("{") and "}" in tag:
+                uri = tag[1:].split("}", 1)[0]
+                match = package_uri.match(uri)
+                if match:
+                    package = match.group(1).lower()
+                    package_counts[package] = package_counts.get(package, 0) + 1
+            definition_url = getattr(element, "attrib", {}).get("definitionURL", "")
+            match = package_symbol_uri.match(definition_url)
             if match:
                 package = match.group(1).lower()
-                package_counts[package] = package_counts.get(package, 0) + 1
+                if package in package_counts:
+                    package_counts[package] += 1
 
         model_metadata = _source_metadata(model)
         result = SBMLModel(

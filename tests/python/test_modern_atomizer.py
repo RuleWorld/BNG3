@@ -891,6 +891,52 @@ def test_playground_parser_reports_unsupported_packages_events_and_constraints()
     )
 
 
+def test_playground_parser_detects_distrib_math_symbols_as_package_elements():
+    from bionetgen.atomizer.modern import SBMLParser
+
+    sbml = """<?xml version="1.0"?>
+    <sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
+          xmlns:distrib="http://www.sbml.org/sbml/level3/version1/distrib/version1"
+          level="3" version="2" distrib:required="true">
+      <model id="required_distribution">
+        <listOfSpecies>
+          <species id="X" initialAmount="0" hasOnlySubstanceUnits="true"/>
+        </listOfSpecies>
+        <listOfEvents>
+          <event id="draw">
+            <trigger initialValue="true" persistent="true">
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><geq/><ci>time</ci><cn>0.5</cn></apply>
+              </math>
+            </trigger>
+            <listOfEventAssignments>
+              <eventAssignment variable="X">
+                <math xmlns="http://www.w3.org/1998/Math/MathML">
+                  <apply>
+                    <csymbol definitionURL="http://www.sbml.org/sbml/symbols/distrib/normal">normal</csymbol>
+                    <cn>0</cn><cn>1.5</cn>
+                  </apply>
+                </math>
+              </eventAssignment>
+            </listOfEventAssignments>
+          </event>
+        </listOfEvents>
+      </model>
+    </sbml>
+    """
+
+    model = SBMLParser().parse(sbml)
+
+    warning = next(
+        warning
+        for warning in model.import_warnings
+        if warning["category"] == "package:distrib"
+    )
+    assert warning["severity"] == "dropped"
+    assert "detected (1 element(s))" in warning["message"]
+    assert "distributions and uncertainty" in warning["message"]
+
+
 def test_playground_parser_preserves_mathml_numeric_and_function_semantics():
     from bionetgen.atomizer.modern import SBMLParser
 
