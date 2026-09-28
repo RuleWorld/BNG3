@@ -3,7 +3,7 @@
 **Status:** Active; not complete
 **Last targeted audit:** 2026-09-28 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
-**Working branch:** `main` at `23822c616c796214e0306b16f1c7f07ab13b5eee` (matches `origin/main`).
+**Working branch:** `main`; latest code-changing commit affecting the recorded full SSTS result is `23822c616c796214e0306b16f1c7f07ab13b5eee` (matches `origin/main`).
 **Latest full pinned SBML Test Suite report:** suite commit `cf38585fac5de8e0e90112febb62851ee2181816`, `1,730 passed / 193 unsupported / 0 failed / 0 timed out`. Nine cases gained, with no losses, against `/private/tmp/bng3-quadratic-species-difference-full-sbml.json`. The supported surface passes; the aggregate Core gate remains open. Report `/private/tmp/bng3-atomizer-event-stoich-full-sbml.json`, SHA-256 `509692d123cca41f13084a005b64a73876d56750b156ed4acd3ca2de48d54dd3`.
 **Latest current-source curated BioModels report:** none. The user's current-source flat and Atomized rerun was stopped at their request; it remains stopped and has no aggregate report. Earlier BioModels counts below are historical only.
 **Latest code-head hosted CI:** commit `23822c6`; Formatting patch, Lean semantic kernel, and CodeQL passed. CI and Cross-tool parity are in progress (queried 2026-09-28).
@@ -73,6 +73,35 @@ BNG3 port.
   not been benchmarked against all SBML. NFsim trajectory comparison and
   curated BioModels validation remain open; the user's BioModels run remains
   stopped.
+
+## SSTS event and variable-stoichiometry cross-engine sample — 2026-09-28
+
+- [x] Compared eight more current BNG3/libRoadRunner-supported records:
+  `00350`, `00353`, `00366`, `00368`, `00972`, `00991`, `01444`, and `01445`.
+  The benchmark used three repeats in flat and Atomized modes with modern BNG3
+  and the independent PyBioNetGen legacy Atomizer, then compared BNG3 and BNG2
+  generated networks.
+- [x] Modern BNG3 converted all 48 samples and generated all 48 BNG3 networks.
+  BNG2 generated 36/48 networks; every generated network matched structure,
+  and 30/36 passed strict rate comparison. BNG2 rejected the 12 `01444` and
+  `01445` samples because generated function `A1_sr` collides with a parameter.
+  All six `00972` strict-rate differences preserve structure and differ only
+  in formatting of equivalent `if` expressions.
+- [x] PyBioNetGen legacy Atomizer converted 42/48 samples. Both network engines
+  generated networks for 36/48; all 36 matched both structure and strict
+  rates. Six `00368` legacy outputs contain undefined `nan` and fail in both
+  engines; six Atomized conversions for `01444` and `01445` failed in the
+  legacy Atomizer.
+- [x] Report `/private/tmp/bng3-cross-engine-ssts-event-stoich-8-20260928.json`,
+  SHA-256 `e4f9b93068335896c0d7fe8dc24371e0d833e4d0de39073350d022c890ec11df`.
+  It records BNG3 `ffa1112`, BNG2 `8726b30`, and PyBioNetGen `43b09a5`.
+  This sample adds network and rate evidence only. It does not measure
+  trajectories or establish all-SBML coverage. BNG2 Atomizer remains
+  incomplete and has not been benchmarked against all SBML. The attempted
+  broader batch including `01561` was interrupted during BNG2 network
+  generation and produced no aggregate report; that case remains unmeasured.
+  NFsim trajectory comparison and curated BioModels validation remain open;
+  the user's BioModels run remains stopped.
 
 ## Scoped source-lock refresh — 2026-09-23
 
