@@ -7348,7 +7348,6 @@ def generate_bngl(
             if (
                 len(model.reactions) != 2
                 or len(model.events) != 1
-                or model.initial_assignments
                 or model.conversion_factor
                 or len(model.compartments) != 1
                 or any(
@@ -7444,6 +7443,11 @@ def generate_bngl(
                 return None
             dynamic_ids = {source_id, intermediate_id, product_id}
             if dynamic_ids - set(model.species):
+                return None
+            if any(
+                assignment.symbol not in dynamic_ids
+                for assignment in model.initial_assignments
+            ):
                 return None
             assignment_alias: Optional[Tuple[str, float]] = None
             if model.rules:

@@ -7848,21 +7848,32 @@ the other groups remain implementation targets.
 ## Persistent delayed first-order chain state event — 2026-09-28
 
 - [x] Extend the proven irreversible first-order three-species chain scheduler
-  to one constant terminal-species assignment after a folded nonnegative delay.
-  Delayed events must be persistent; priorities remain unsupported. The chain
+  to one constant terminal-species assignment after a folded nonnegative delay,
+  including static initial assignments whose targets are chain species and
+  whose values resolve to finite numbers. Other initial-assignment targets,
+  nonpersistent delayed events, and priorities remain unsupported. The chain
   trajectory advances analytically from threshold crossing to execution time.
-  Events due beyond the simulation horizon remain untranslated.
 - [x] Add a regression asserting the event fires at the analytic crossing plus
-  its 4.3 time-unit delay. Focused event and SBML parity suites pass (`175
-  passed`).
-- [x] Pinned SSTS cases `semantic/00665` (`t_end=10`) and `semantic/00666`
-  (`t_end=40`), each with 50 intervals, pass against libRoadRunner 2.10.0.
-  All seven observables pass all 51 samples; maximum absolute differences are
-  `2.36e-12` and `0`, respectively. Partial reports:
-  `/private/tmp/bng3-ssts-00665-delay-chain.json` and
-  `/private/tmp/bng3-ssts-00666-delay-chain.json`. Each runner exit code is 1
-  because aggregate Core status is incomplete for a one-case selection; both
-  selected case statuses are `passed`.
+  its 4.3 time-unit delay with a static source initial assignment. Focused event
+  and SBML parity suites pass (`175 passed`); full Python suite passes (`676
+  passed, 28 skipped`, 1,380 existing warnings). Ruff, Black (`py39`), and
+  `git diff --check` pass.
+- [x] Pinned SSTS cases `semantic/00665` (`t_end=10`), `00666` (`t_end=40`),
+  `00778` (`t_end=10`), `00779` (`t_end=20`), and `00780` (`t_end=15`), each
+  with 50 intervals, pass against libRoadRunner 2.10.0. All seven observables
+  pass all 51 samples; maximum absolute differences are respectively
+  `2.36e-12`, `0`, `2.36e-12`, `2.68e-12`, and `2.72e-12`. Each is a selected
+  one-case report, so its runner exit code is 1 due to incomplete aggregate
+  Core status; every selected case status is `passed`.
+- [x] Full pinned SSTS run at suite commit
+  `cf38585fac5de8e0e90112febb62851ee2181816`, `t_end=1`, 10 samples:
+  `1,738 passed, 185 unsupported, 0 failed, 0 timed out`. Exact comparison
+  with `/private/tmp/bng3-atomizer-event-stoich-full-sbml.json`
+  (`1,730 passed, 193 unsupported`) shows eight gains and no losses:
+  `00661`, `00662`, `00665`, `00666`, `00760`, and `00778`–`00780`. Report
+  `/private/tmp/bng3-delayed-chain-initial-assignment-full-sbml.json`, SHA-256
+  `f539a2aeb8de9353ffc2e68957829007accfd867c9c79a0ad4d0cd8022062c60`.
+  Supported surface passes; aggregate Core gate remains open.
 - [ ] This selected BNG3 SSTS comparison does not benchmark BNG2 Atomizer or
   establish BNG2 Atomizer completeness. BNG2 Atomizer remains incomplete and
   has not been benchmarked against all SBML. Full cross-engine coverage remains

@@ -499,7 +499,7 @@ def test_first_order_chain_schedules_persistent_delayed_terminal_event():
     assert phase_ends[1] == 10
 
 
-def test_atomizer_lowers_first_order_chain_event_with_derived_pool():
+def test_atomizer_lowers_delayed_first_order_chain_event_with_initial_assignment():
     import re
 
     from bionetgen.atomizer.modern import Atomizer
@@ -518,6 +518,11 @@ def test_atomizer_lowers_first_order_chain_event_with_derived_pool():
       <parameter id="k1" value="0.1" constant="true"/>
       <parameter id="k2" value="0.2" constant="true"/>
     </listOfParameters>
+    <listOfInitialAssignments>
+      <initialAssignment symbol="Source">
+        <math xmlns="http://www.w3.org/1998/Math/MathML"><apply><minus/><ci>Product</ci><cn>0.25</cn></apply></math>
+      </initialAssignment>
+    </listOfInitialAssignments>
     <listOfRules>
       <assignmentRule variable="Pool">
         <math xmlns="http://www.w3.org/1998/Math/MathML"><apply><plus/><ci>Source</ci><ci>Intermediate</ci><ci>Product</ci></apply></math>
@@ -538,6 +543,7 @@ def test_atomizer_lowers_first_order_chain_event_with_derived_pool():
     <listOfEvents>
       <event id="reset_product" useValuesFromTriggerTime="true">
         <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><gt/><ci>Product</ci><cn>2</cn></apply></math></trigger>
+        <delay><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>4.3</cn></math></delay>
         <listOfEventAssignments><eventAssignment variable="Product"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></eventAssignment></listOfEventAssignments>
       </event>
     </listOfEvents>
@@ -557,7 +563,7 @@ def test_atomizer_lowers_first_order_chain_event_with_derived_pool():
         float(value) for value in re.findall(r"t_end=>([0-9.eE+-]+)", result.bngl)
     ]
     assert len(phase_ends) == 2
-    assert abs(phase_ends[0] - 2.7791748441775583) < 1e-10
+    assert abs(phase_ends[0] - 7.079174844177558) < 1e-10
     assert phase_ends[1] == 10
 
 
