@@ -81,6 +81,26 @@ def git_head(path: Path) -> str | None:
     return result.stdout.strip() if result.returncode == 0 else None
 
 
+def git_state(path: Path) -> dict:
+    status = subprocess.run(
+        ["git", "status", "--porcelain"], cwd=path, capture_output=True, check=False
+    )
+    diff = subprocess.run(
+        ["git", "diff", "--binary", "HEAD"],
+        cwd=path,
+        capture_output=True,
+        check=False,
+    )
+    status_bytes = status.stdout if status.returncode == 0 else b"unavailable"
+    diff_bytes = diff.stdout if diff.returncode == 0 else b"unavailable"
+    return {
+        "status_available": status.returncode == 0,
+        "dirty": bool(status_bytes.strip()) if status.returncode == 0 else None,
+        "status_sha256": hashlib.sha256(status_bytes).hexdigest(),
+        "tracked_diff_sha256": hashlib.sha256(diff_bytes).hexdigest(),
+    }
+
+
 def build_bng2_xml(bngl: Path, bng2_perl: Path, out_dir: Path, timeout: int) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     source = bngl.read_text(encoding="utf-8").rstrip()

@@ -1,6 +1,7 @@
 """Contracts for independent seed streams in the Atomizer NFsim benchmark."""
 
 from pathlib import Path
+import subprocess
 
 import numpy as np
 import pytest
@@ -63,3 +64,33 @@ def test_native_seed_range_rejects_overlap():
         benchmark.resolve_native_seed_start(
             seed_start=11, runs=200, native_seed_start=200
         )
+
+
+def test_git_state_records_tracked_changes(tmp_path: Path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+    config = [
+        "git",
+        "-C",
+        str(repo),
+        "-c",
+        "user.name=Benchmark Test",
+        "-c",
+        "user.email=benchmark@example.invalid",
+    ]
+    source = repo / "source.txt"
+    source.write_text("baseline\n", encoding="utf-8")
+    subprocess.run([*config, "add", "source.txt"], check=True, capture_output=True)
+    subprocess.run(
+        [*config, "commit", "-m", "baseline"], check=True, capture_output=True
+    )
+
+    clean = benchmark.git_state(repo)
+    source.write_text("changed\n", encoding="utf-8")
+    dirty = benchmark.git_state(repo)
+
+    assert clean["status_available"] is True
+    assert clean["dirty"] is False
+    assert dirty["dirty"] is True
+    assert dirty["tracked_diff_sha256"] != clean["tracked_diff_sha256"]
