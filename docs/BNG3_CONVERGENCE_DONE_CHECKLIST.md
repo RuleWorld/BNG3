@@ -8404,6 +8404,25 @@ the other groups remain implementation targets.
 - [ ] This is a four-case modern BNG3 Atomizer/NFsim sample, not full SSTS or
   all-SBML coverage. Perl BNG2 was used only to write BNG-XML for standalone
   NFsim; this does not benchmark the incomplete BNG2/legacy PyBioNetGen
-  Atomizer. The selected curated BioModels NFsim sample still needs rerunning
-  with independent seed ranges. The user-stopped full BioModels validation
-  remains stopped.
+  Atomizer. At this checkpoint the selected curated BioModels NFsim reports
+  still used correlated same-seed ensembles; their independent-seed refresh is
+  recorded below. The user-stopped full BioModels validation remains stopped.
+
+## Curated NFsim independent-seed refresh — 2026-09-28
+
+- [x] Re-ran six previously selected cached curated models (`0414`, `0425`,
+  `0485`, `0850`, `0906`, `1038`) in flat and Atomized modes with 200 direct
+  BNG3 runs (seeds `1`–`200`) and 200 standalone NFsim runs (seeds `201`–`400`)
+  per mode. All 12 mode comparisons passed; all 4,800 trajectories completed
+  without run errors, with zero points outside 3 pooled standard errors. Worst
+  observed `|z|` was `2.4791` for `BIOMD0000001038`.
+- [x] Aggregate manifest
+  `/private/tmp/bng3-nfsim-curated-6-independent-manifest-2bd9813.json`,
+  SHA-256 `63ac58be0732de64ffcb3a765a078cec3d9d6c91943fb3534e99ccb4412c7be4`,
+  records all six source hashes, report hashes, seed ranges, BNG3 and BNG2
+  revisions, and standalone NFsim binary hash. This is a selected stochastic
+  simulator benchmark, not a restart of the stopped full BioModels validator.
+- [ ] This remains a six-model NFsim sample; full curated flat/Atomized
+  validation, broader supported-intersection coverage, and all-SBML coverage
+  remain open. Perl BNG2 only emitted XML for standalone NFsim. No BNG2 source
+  or legacy Atomizer was changed or benchmarked.
