@@ -7500,6 +7500,29 @@ the other groups remain implementation targets.
   `tests/python/test_cli.py::test_cli_nf_honors_nonzero_start_time` (`CaughtSignal`)
   in the concurrent NFsim area. The repaired copy paths have targeted coverage;
   the full suite has not been rerun on this exact worktree state.
-- [ ] Current-source curated BioModels flat/atomized rerun is in progress at
-  `/private/tmp/bng3-quadratic-multievent-biomodels-both.json`. Official
-  reference-result conformance is still separate and unverified.
+- [ ] Current-source curated BioModels flat/atomized rerun was stopped at the
+  user's request. `/private/tmp/bng3-quadratic-multievent-biomodels-both.json`
+  has no aggregate report. Official reference-result conformance is separate
+  and unverified; do not restart the run without a new request.
+
+## Quadratic state events in parameter rate-rule systems — 2026-09-28
+
+- [x] Extend the exact quadratic state-event path to models with no species or
+  reactions when every mutable parameter has a rate rule and all rate-rule
+  vector fields are proportional quadratic polynomials. The proportionality
+  check proves one shared state coordinate; unsupported rule shapes, delayed
+  events, and priorities remain untranslated.
+- [x] Add source-derived parity coverage for the undelayed one- and two-event
+  forms in official SSTS `semantic/00396` and `00397`. BNG3 rate-rule state
+  trajectories match libRoadRunner between event jumps, and the tests verify
+  the expected reset count.
+- [x] Isolated current-source SSTS round-trip: `semantic/00396` and `00397`
+  both passed, with no unsupported cases. Their report records are
+  `/private/tmp/bng3-quadratic-rate-rule-00396.json` and
+  `/private/tmp/bng3-quadratic-rate-rule-00397.json`. This targeted run does not
+  close the aggregate Core gate.
+- [ ] Delayed siblings `semantic/00453` and `00454` remain unsupported. No full
+  SSTS or curated BioModels rerun was done for this two-case slice.
+- [ ] The earlier curated BioModels run was stopped at the user's request;
+  `/private/tmp/bng3-quadratic-multievent-biomodels-both.json` has no aggregate
+  report and must not be restarted without a new request.

@@ -7592,6 +7592,10 @@ def generate_bngl(
             Tuple[int, str, Tuple[Tuple[str, float], ...]],
             Tuple[Dict[str, Tuple[float, float]], float, float],
         ] = {}
+        quadratic_rate_rule_snapshots: Dict[
+            Tuple[int, str, Tuple[Tuple[str, float], ...]],
+            Dict[str, Tuple[str, float, float]],
+        ] = {}
 
         def quadratic_state_key(
             event_context: SBMLEvent, state_values: Optional[Mapping[str, float]]
@@ -7622,6 +7626,221 @@ def generate_bngl(
                     return False
                 seen.add(symbol)
             return True
+
+        def resolve_quadratic_rate_rule_event_rate(
+            identifier: str,
+            event_context: SBMLEvent,
+            state_values: Optional[Mapping[str, float]],
+        ) -> Optional[Tuple[float, float, float, float]]:
+            """Resolve a rank-one quadratic system expressed as parameter rate rules."""
+            if (
+                model.species
+                or model.reactions
+                or model.initial_assignments
+                or any(
+                    str(event.delay or "").strip() or str(event.priority or "").strip()
+                    for event in model.events
+                )
+            ):
+                return None
+            rules: Dict[str, object] = {}
+            names: Dict[str, str] = {}
+            for rule in model.rules:
+                variable = str(rule.variable or "")
+                normalized = standardize_name(variable)
+                parameter = model.parameters.get(variable)
+                if (
+                    rule.type != "rate"
+                    or parameter is None
+                    or parameter.constant
+                    or not variable
+                    or normalized in rules
+                ):
+                    return None
+                rules[normalized] = rule
+                names[normalized] = variable
+            if not rules or any(
+                standardize_name(assignment.variable) not in rules
+                for event in model.events
+                for assignment in event.assignments
+            ):
+                return None
+            target = standardize_name(identifier)
+            if target not in rules:
+                return None
+            state_names = set(rules)
+            Polynomial = Dict[Tuple[str, ...], float]
+
+            def clean(poly: Polynomial) -> Polynomial:
+                return {key: value for key, value in poly.items() if abs(value) > 1e-14}
+
+            def add(
+                left: Polynomial, right: Polynomial, sign: float = 1.0
+            ) -> Polynomial:
+                result = dict(left)
+                for key, value in right.items():
+                    result[key] = result.get(key, 0.0) + sign * value
+                return clean(result)
+
+            def multiply(left: Polynomial, right: Polynomial) -> Optional[Polynomial]:
+                result: Polynomial = {}
+                for left_key, left_value in left.items():
+                    for right_key, right_value in right.items():
+                        key = tuple(sorted(left_key + right_key))
+                        if len(key) > 2:
+                            return None
+                        result[key] = result.get(key, 0.0) + left_value * right_value
+                return clean(result)
+
+            def parse(node: ast.AST) -> Optional[Polynomial]:
+                if isinstance(node, ast.Constant) and isinstance(
+                    node.value, (int, float)
+                ):
+                    return {(): float(node.value)}
+                if isinstance(node, ast.Name):
+                    symbol = standardize_name(node.id)
+                    if symbol in state_names:
+                        return {(symbol,): 1.0}
+                    if symbol == "time" or not is_compile_time_constant(node.id):
+                        return None
+                    value = resolve_event_parameter(node.id)
+                    return {(): float(value)} if value is not None else None
+                if isinstance(node, ast.UnaryOp) and isinstance(
+                    node.op, (ast.UAdd, ast.USub)
+                ):
+                    value = parse(node.operand)
+                    if value is None:
+                        return None
+                    return (
+                        value
+                        if isinstance(node.op, ast.UAdd)
+                        else {key: -part for key, part in value.items()}
+                    )
+                if not isinstance(node, ast.BinOp):
+                    return None
+                left = parse(node.left)
+                right = parse(node.right)
+                if left is None or right is None:
+                    return None
+                if isinstance(node.op, ast.Add):
+                    return add(left, right)
+                if isinstance(node.op, ast.Sub):
+                    return add(left, right, -1.0)
+                if isinstance(node.op, ast.Mult):
+                    return multiply(left, right)
+                if isinstance(node.op, ast.Div):
+                    if set(right) - {()} or not right.get((), 0.0):
+                        return None
+                    return {key: value / right[()] for key, value in left.items()}
+                if isinstance(node.op, ast.Pow):
+                    if set(right) - {()} or right.get(()) not in (0.0, 1.0, 2.0):
+                        return None
+                    power = int(right[()])
+                    if power == 0:
+                        return {(): 1.0}
+                    if power == 1:
+                        return left
+                    return multiply(left, left)
+                return None
+
+            vector_field: Dict[str, Polynomial] = {}
+            for variable, rule in rules.items():
+                expression = extend_function(
+                    str(getattr(rule, "math", "") or ""),
+                    {},
+                    model.function_definitions,
+                )
+                try:
+                    parsed = ast.parse(expression, mode="eval").body
+                except (TypeError, ValueError, SyntaxError):
+                    return None
+                polynomial = parse(parsed)
+                if polynomial is None:
+                    return None
+                vector_field[variable] = polynomial
+            if not any(
+                len(monomial) == 2 and abs(value) > 1e-14
+                for polynomial in vector_field.values()
+                for monomial, value in polynomial.items()
+            ):
+                return None
+            target_field = vector_field[target]
+            pivot = next(iter(target_field), None)
+            if pivot is None or abs(target_field[pivot]) <= 1e-14:
+                return None
+            ratios: Dict[str, float] = {}
+            for variable, polynomial in vector_field.items():
+                ratio = polynomial.get(pivot, 0.0) / target_field[pivot]
+                if any(
+                    abs(polynomial.get(key, 0.0) - ratio * target_field.get(key, 0.0))
+                    > 1e-12
+                    * max(
+                        1.0,
+                        abs(polynomial.get(key, 0.0)),
+                        abs(ratio * target_field.get(key, 0.0)),
+                    )
+                    for key in set(polynomial) | set(target_field)
+                ):
+                    return None
+                ratios[variable] = ratio
+            initial: Dict[str, float] = {}
+            for variable, original in names.items():
+                supplied = next(
+                    (
+                        value
+                        for symbol, value in (state_values or {}).items()
+                        if standardize_name(symbol) == variable
+                    ),
+                    None,
+                )
+                value = (
+                    float(supplied)
+                    if supplied is not None
+                    else resolve_initial_event_value(original)
+                )
+                if value is None or not math.isfinite(float(value)):
+                    return None
+                initial[variable] = float(value)
+            q0 = initial[target]
+            affine = {
+                variable: (initial[variable] - slope * q0, slope)
+                for variable, slope in ratios.items()
+            }
+
+            def univariate_multiply(
+                left: Tuple[float, float, float], right: Tuple[float, float, float]
+            ) -> Optional[Tuple[float, float, float]]:
+                if abs(left[2] * right[1] + left[1] * right[2]) > 1e-14:
+                    return None
+                if abs(left[2] * right[2]) > 1e-14:
+                    return None
+                return (
+                    left[0] * right[0],
+                    left[0] * right[1] + left[1] * right[0],
+                    left[1] * right[1],
+                )
+
+            quadratic = linear = constant = 0.0
+            for monomial, coefficient in target_field.items():
+                term = (1.0, 0.0, 0.0)
+                for variable in monomial:
+                    factor = (affine[variable][0], affine[variable][1], 0.0)
+                    term = univariate_multiply(term, factor)
+                    if term is None:
+                        return None
+                constant += coefficient * term[0]
+                linear += coefficient * term[1]
+                quadratic += coefficient * term[2]
+            key_prefix = quadratic_state_key(event_context, state_values)
+            quadratic_rate_rule_snapshots[key_prefix] = {
+                names[variable]: (names[variable], *affine[variable])
+                for variable in affine
+            }
+            if not all(
+                math.isfinite(value) for value in (q0, quadratic, linear, constant)
+            ):
+                return None
+            return q0, quadratic, linear, constant
 
         def resolve_quadratic_event_rate(
             identifier: str,
@@ -7656,6 +7875,11 @@ def generate_bngl(
                 None,
             )
             if target_id is None:
+                parameter_state = resolve_quadratic_rate_rule_event_rate(
+                    identifier, event_context, state_values
+                )
+                if parameter_state is not None:
+                    return parameter_state
                 difference = re.fullmatch(
                     r"\(?\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)?\s*-\s*"
                     r"\(?\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)?",
@@ -8071,6 +8295,37 @@ def generate_bngl(
             state_values: Optional[Mapping[str, float]] = None,
         ) -> Optional[Mapping[str, float]]:
             key_prefix = quadratic_state_key(event_context, state_values)
+            rate_rule_snapshot = quadratic_rate_rule_snapshots.get(key_prefix)
+            if rate_rule_snapshot is not None:
+                normalized = standardize_name(identifier)
+                target = next(
+                    (
+                        (name, offset, slope)
+                        for name, (
+                            original,
+                            offset,
+                            slope,
+                        ) in rate_rule_snapshot.items()
+                        if standardize_name(original) == normalized
+                    ),
+                    None,
+                )
+                if (
+                    target is None
+                    or abs(target[2]) <= 1e-14
+                    or not math.isfinite(value)
+                ):
+                    return None
+                coordinate = (value - target[1]) / target[2]
+                resolved = {
+                    original: offset + slope * coordinate
+                    for original, offset, slope in rate_rule_snapshot.values()
+                }
+                return (
+                    resolved
+                    if all(math.isfinite(x) for x in resolved.values())
+                    else None
+                )
             key = (key_prefix[0], standardize_name(identifier), key_prefix[2])
             snapshot = quadratic_state_snapshots.get(key)
             if snapshot is None:
