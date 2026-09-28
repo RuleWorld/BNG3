@@ -1002,6 +1002,18 @@ bounded output tails.
   The benchmark's all-model memory/latency budgets remain open; round-trip
   pass counts are correctness evidence, not performance evidence.
 
+## Historical PR #25 final-head audit — 2026-09-28
+
+- [x] Rechecked merged PR #25 at tip `f935272` / merge commit `1ccf76d`. Its
+  selected historical issue ports, finite-network `FunctionProduct` handling,
+  reverse local-rate binding, and portable MSVC math constants are recorded in
+  [`HISTORICAL_ISSUE_PORT.md`](HISTORICAL_ISSUE_PORT.md). Hosted C++ Linux,
+  macOS, Windows, ASan, Python 3.9–3.14 platform matrix, CodeQL, full-corpus
+  validation, PyBioNetGen API, independent BNG2 network, and independent
+  NFsim parity checks all pass. Scheduled NFsim history validation and
+  event-guarded wheel, sdist, Docker, and PyPI publication jobs were skipped;
+  no release qualification is implied.
+
 ## Published BioModels validation checkpoint — 2026-09-15
 
 - [x] The manifest `provenance/published-biomodels.json` is query-backed and
