@@ -7680,3 +7680,27 @@ the other groups remain implementation targets.
 - [x] Full repository `pytest -q` passes after the CLI fixture reduction:
   `668 passed`, `30 skipped` in `11.36s` (1,380 existing deprecation
   warnings). Curated BioModels validation remains stopped.
+
+## State-event updates to parameter-backed stoichiometry — 2026-09-28
+
+- [x] Support the pinned SBML Test Suite `semantic/00991` form: a rising
+  species threshold changes a parameter used by a variable reaction
+  stoichiometry. The event crossing time is derived from the proven
+  pre-event constant flux; generated `TotalRate` math keeps the event-updated
+  parameter live so the post-event trajectory uses the new coefficient.
+- [x] Add a regression copied from the official model and compare BNG3 ODE
+  output against libRoadRunner. The focused Atomizer event/parity tests pass
+  (`170 passed`); the full Python suite passes (`671 passed, 28 skipped`,
+  1,380 existing warnings). A prior test run caught an existing
+  event-controlled species-reference case that this change initially
+  regressed; the assignment-rule stoichiometry path is preserved and the
+  complete focused suite now passes.
+- [x] Current-source isolated SSTS record `semantic/00991` passes at
+  `t_end=2`, 20 intervals, with BNG3 and libRoadRunner trajectories matching
+  exactly at all 21 samples. Report `/private/tmp/bng3-ssts-00991-after.json`,
+  SHA-256 `6dea1f18e08b66541da6c75d837aed8af879e3110fa9ce6d1be22a6c53ac42e8`.
+  This is one targeted record; aggregate full-SBML counts were not rerun.
+- [ ] This does not benchmark BNG2 Atomizer, establish its completeness, or
+  benchmark BNG2 Atomizer against all SBML. BNG2 Atomizer is incomplete; full
+  SBML-wide cross-engine coverage remains open. Curated BioModels validation
+  remains stopped per the user's instruction.

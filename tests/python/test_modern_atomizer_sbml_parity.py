@@ -3795,6 +3795,64 @@ def test_rate_rule_driven_stoichiometry_lowers_to_ode_flux_rules():
     )
 
 
+def test_state_event_updates_parameter_driven_stoichiometry_matches_libroadrunner(
+    tmp_path,
+):
+    import numpy as np
+
+    roadrunner = pytest.importorskip("roadrunner")
+    from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.model import load
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level2/version5" level="2" version="5">
+      <model id="state_event_parameter_stoichiometry">
+        <listOfCompartments><compartment id="c" size="1"/></listOfCompartments>
+        <listOfSpecies><species id="X" compartment="c" initialConcentration="1"/></listOfSpecies>
+        <listOfParameters>
+          <parameter id="p1" value="1" constant="false"/>
+          <parameter id="k1" value="1"/>
+        </listOfParameters>
+        <listOfReactions><reaction id="production">
+          <listOfProducts><speciesReference id="Xref" species="X">
+            <stoichiometryMath><math xmlns="http://www.w3.org/1998/Math/MathML"><ci>p1</ci></math></stoichiometryMath>
+          </speciesReference></listOfProducts>
+          <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><ci>k1</ci></math></kineticLaw>
+        </reaction></listOfReactions>
+        <listOfEvents><event id="double_stoichiometry">
+          <trigger><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><geq/><ci>X</ci><cn>2</cn></apply></math></trigger>
+          <listOfEventAssignments><eventAssignment variable="p1">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>2</cn></math>
+          </eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True, t_end=2, n_steps=200).atomize(xml)
+
+    assert result.success, result.error
+    assert "Events NOT simulated" not in result.bngl
+    model_path = tmp_path / "state_event_parameter_stoichiometry.bngl"
+    model_path.write_text(result.bngl, encoding="utf-8")
+    load(model_path).execute()
+    lines = model_path.with_suffix(".gdat").read_text().splitlines()
+    columns = lines[0].lstrip("# ").split()
+    bng_data = np.loadtxt(lines[1:])
+
+    rr = roadrunner.RoadRunner(xml)
+    rr.integrator.setValue("relative_tolerance", 1e-9)
+    rr.integrator.setValue("absolute_tolerance", 1e-12)
+    rr.timeCourseSelections = ["time", "X"]
+    reference = rr.simulate(times=bng_data[:, columns.index("time")])
+
+    jump = int(np.argmin(np.abs(bng_data[:, columns.index("time")] - 1.0)))
+    compare = np.ones(len(bng_data), dtype=bool)
+    compare[max(0, jump - 1) : min(len(bng_data), jump + 2)] = False
+    bng_values = bng_data[compare, columns.index("X_amt")]
+    rr_values = reference[compare, reference.colnames.index("X")]
+    assert np.max(np.abs(bng_values - rr_values)) <= 5e-10
+    assert abs(float(bng_data[-1, columns.index("X_amt")]) - 4.0) <= 1e-8
+
+
 def test_synthetic_rate_rule_observables_have_stable_order():
     from bionetgen.atomizer.modern import (
         build_species_composition_table,

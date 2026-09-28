@@ -2000,6 +2000,20 @@ def _rate_for_reaction(
         for rule in model.rules
         if rule.variable and rule.type == "rate"
     }
+    event_parameter_targets = {
+        standardize_name(str(assignment.variable))
+        for event in model.events
+        for assignment in event.assignments
+        if getattr(assignment, "variable", None)
+        and str(assignment.variable) in model.parameters
+    }
+
+    def references_event_parameter(expression: str) -> bool:
+        return any(
+            re.search(rf"\b{re.escape(identifier)}\b", expression)
+            for identifier in event_parameter_targets
+        )
+
     concentration_names = {
         standardize_name(species_id)
         for species_id, species in model.species.items()
@@ -2111,6 +2125,7 @@ def _rate_for_reaction(
         and len(model.reactions) < _MASS_ACTION_SKIP_MIN_REACTIONS
         and len(converted_for_check) < _MASS_ACTION_SKIP_EXPR_LEN
         and not re.search(r"\btime\s*\(", converted_for_check)
+        and not references_event_parameter(converted_for_check)
     ):
         check_counts: "OrderedDict[str, float]" = OrderedDict()
         for species_id in reactants:
@@ -2234,6 +2249,7 @@ def _rate_for_reaction(
         and len(model.reactions) < _MASS_ACTION_SKIP_MIN_REACTIONS
         and len(converted_rate) < _MASS_ACTION_SKIP_EXPR_LEN
         and not re.search(r"\btime\s*\(", converted_rate)
+        and not references_event_parameter(converted_rate)
     ):
         mass_action_constant = check_mass_action(
             converted_rate,
@@ -6516,14 +6532,37 @@ def generate_bngl(
                             if reference.species != species_id:
                                 continue
                             if reference.variable_stoichiometry:
-                                if (
-                                    not reference.id
-                                    or has_prior_event_controlled_dependency(
-                                        reference.id
-                                    )
-                                ):
+                                coefficient_expression = str(
+                                    reference.stoichiometry_math or ""
+                                ).strip()
+                                if not coefficient_expression and reference.id:
+                                    rule_targets = {
+                                        standardize_name(str(rule.variable))
+                                        for rule in model.rules
+                                        if rule.variable
+                                        and rule.type in {"assignment", "rate"}
+                                    }
+                                    if standardize_name(reference.id) in rule_targets:
+                                        coefficient_expression = reference.id
+                                if not reference.id or not coefficient_expression:
                                     return None
-                                coefficient = resolve_event_parameter(reference.id)
+
+                                def resolve_stoichiometry_value(
+                                    symbol: str,
+                                ) -> Optional[float]:
+                                    if has_prior_event_controlled_dependency(symbol):
+                                        return None
+                                    return resolve_event_parameter(symbol)
+
+                                coefficient_expression = extend_function(
+                                    coefficient_expression,
+                                    {},
+                                    model.function_definitions,
+                                )
+                                coefficient = fold_numeric(
+                                    coefficient_expression,
+                                    resolve_stoichiometry_value,
+                                )
                                 if coefficient is None or not math.isfinite(
                                     coefficient
                                 ):
