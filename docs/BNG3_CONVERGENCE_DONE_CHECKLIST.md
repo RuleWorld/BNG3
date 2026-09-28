@@ -6,7 +6,7 @@
 **Working branch:** `main`.
 **Latest full pinned SBML Test Suite report:** suite commit `cf38585fac5de8e0e90112febb62851ee2181816`, `1,738 passed / 185 unsupported / 0 failed / 0 timed out`. Eight cases gained, with no losses, against `/private/tmp/bng3-atomizer-event-stoich-full-sbml.json`. The supported surface passes; the aggregate Core gate remains open. Report `/private/tmp/bng3-delayed-chain-initial-assignment-full-sbml.json`, SHA-256 `f539a2aeb8de9353ffc2e68957829007accfd867c9c79a0ad4d0cd8022062c60`. This schema 3 report does not record the BNG3 source revision, so it is not exact-head evidence for current `main`.
 **Latest current-source curated BioModels report:** none. The user's current-source flat and Atomized rerun was stopped at their request; it remains stopped and has no aggregate report. Earlier BioModels counts below are historical only.
-**Last queried hosted CI:** code commit `b47c36e`; CI, Formatting patch, CodeQL, Cross-tool parity, and Lean semantic kernel were all queued at 2026-09-28 17:53 UTC. These runs are nonterminal.
+**Last queried hosted CI:** code commit `b47c36e`; CI, Formatting patch, CodeQL, Cross-tool parity, and Lean semantic kernel were still queued at 2026-09-28 17:59 UTC. These runs are nonterminal.
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -7935,3 +7935,41 @@ the other groups remain implementation targets.
   A deterministic scheduled assignment cannot preserve these model semantics.
   This work does not benchmark BNG2 Atomizer; BNG2 Atomizer remains incomplete
   and has not been benchmarked against all SBML.
+
+## Exact BNG3 source provenance in SSTS reports — 2026-09-28
+
+- [x] SBML Test Suite report schema 4 records the BNG3 Git commit and whether
+  the tracked worktree is clean, alongside the pinned suite commit. Existing
+  schema 3 full-suite reports do not record BNG3 source revision and cannot be
+  treated as exact-head evidence.
+- [x] A regression uses a temporary Git repository to verify clean and dirty
+  tracked-worktree reporting. The CI-contract and Python suites pass together:
+  `706 passed, 28 skipped`; Ruff and Black stdin checks pass.
+- [x] The schema 4 selected report for `stochastic/00040` records BNG3 commit
+  `b47c36e1934b4f7874d8cae9b47414312acd5ac4`, a clean tracked worktree, and
+  suite commit `cf38585fac5de8e0e90112febb62851ee2181816`. The selected case
+  remains unsupported for required `distrib` sampling and state-triggered
+  event execution. See the hashed report recorded above.
+- [ ] Refresh the complete SSTS report with schema 4 before using it as exact
+  source-head evidence; the latest aggregate count remains an older report.
+
+## Additional supported SSTS Atomizer network and rate sample — 2026-09-28
+
+- [x] Benchmarked eight more cases already marked passed by the pinned BNG3
+  SSTS report: `00004`–`00009`, `00011`, and `00012`. Ran three repeats in
+  flat and Atomized modes with modern BNG3 and the independent PyBioNetGen
+  legacy Atomizer, then generated each BNGL network with BNG3 and Perl BNG2.
+- [x] All 96 Atomizer conversions succeeded. All 192 network generations
+  succeeded, and all 96 paired BNG3/BNG2 comparisons passed structural and
+  strict rate-expression checks.
+- [x] Report `/private/tmp/bng3-cross-engine-ssts-basic-next-8-20260928.json`,
+  SHA-256 `37c1c8f4cf997bdfd6230dc1540197aed5a02fc4320cde2b92113e11c9782985`.
+  It records BNG3 source head `17cca65`, BNG2 `8726b30`, PyBioNetGen
+  `43b09a5`, and the `bng_cpp` SHA-256
+  `67699832444759c9166f51b14b7aaa8387b0f7b7f5a1d011b4d9043fcd972268`.
+  Tracked-diff hashes are empty; dirty status flags come from preserved
+  untracked artifacts in the BNG3 and PyBioNetGen checkouts.
+- [ ] This is selected network/rate evidence and makes no trajectory parity
+  claim. BNG2 Atomizer remains incomplete and has not been benchmarked against
+  all SBML. Broader SSTS intersections, NFsim trajectories, and the stopped
+  curated BioModels validation remain open.
