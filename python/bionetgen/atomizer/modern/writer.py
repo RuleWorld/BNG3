@@ -7341,6 +7341,286 @@ def generate_bngl(
                 else None
             )
 
+        def resolve_first_order_chain_event_system() -> (
+            Optional[Tuple[str, str, str, float, float]]
+        ):
+            """Resolve an isolated irreversible source-to-product chain."""
+            if (
+                len(model.reactions) != 2
+                or len(model.events) != 1
+                or model.initial_assignments
+                or model.conversion_factor
+                or len(model.compartments) != 1
+                or any(
+                    species.constant
+                    or species.boundary_condition
+                    or species.has_only_substance_units
+                    or species.conversion_factor
+                    for species in model.species.values()
+                )
+            ):
+                return None
+            compartment_id = next(iter(model.compartments))
+            compartment = model.compartments[compartment_id]
+            if (
+                not compartment.constant
+                or not math.isfinite(float(compartment.size))
+                or compartment.size <= 0
+                or any(
+                    species.compartment != compartment_id
+                    for species in model.species.values()
+                )
+            ):
+                return None
+
+            edges: List[Tuple[str, str, object]] = []
+            assignment_rule_variable = (
+                model.rules[0].variable
+                if len(model.rules) == 1 and model.rules[0].type == "assignment"
+                else None
+            )
+            for reaction in model.reactions.values():
+                if (
+                    reaction.fast
+                    or reaction.conversion_factor
+                    or getattr(reaction, "reversible", False)
+                    or any(
+                        modifier.species != assignment_rule_variable
+                        for modifier in getattr(reaction, "modifiers", ())
+                    )
+                    or len(reaction.reactants) != 1
+                    or len(reaction.products) != 1
+                ):
+                    return None
+                reactant = reaction.reactants[0]
+                product = reaction.products[0]
+                if (
+                    reactant.variable_stoichiometry
+                    or product.variable_stoichiometry
+                    or float(reactant.stoichiometry) != 1.0
+                    or float(product.stoichiometry) != 1.0
+                    or reactant.species == product.species
+                    or reactant.species not in model.species
+                    or product.species not in model.species
+                ):
+                    return None
+                edges.append((reactant.species, product.species, reaction))
+
+            source_candidates = {source for source, _target, _rxn in edges} - {
+                target for _source, target, _rxn in edges
+            }
+            product_candidates = {target for _source, target, _rxn in edges} - {
+                source for source, _target, _rxn in edges
+            }
+            if len(source_candidates) != 1 or len(product_candidates) != 1:
+                return None
+            source_id = next(iter(source_candidates))
+            product_id = next(iter(product_candidates))
+            first_edges = [edge for edge in edges if edge[0] == source_id]
+            if len(first_edges) != 1:
+                return None
+            intermediate_id = first_edges[0][1]
+            if intermediate_id == product_id or any(
+                source != source_id
+                and source != intermediate_id
+                or target != intermediate_id
+                and target != product_id
+                for source, target, _reaction in edges
+            ):
+                return None
+            if (
+                sum(source == source_id for source, _target, _reaction in edges) != 1
+                or sum(
+                    source == intermediate_id for source, _target, _reaction in edges
+                )
+                != 1
+                or sum(
+                    target == intermediate_id for _source, target, _reaction in edges
+                )
+                != 1
+                or sum(target == product_id for _source, target, _reaction in edges)
+                != 1
+            ):
+                return None
+            dynamic_ids = {source_id, intermediate_id, product_id}
+            if dynamic_ids - set(model.species):
+                return None
+            assignment_alias: Optional[Tuple[str, float]] = None
+            if model.rules:
+                if len(model.rules) != 1 or model.rules[0].type != "assignment":
+                    return None
+                try:
+                    rule_expression = extend_function(
+                        str(model.rules[0].math or ""),
+                        {},
+                        model.function_definitions,
+                    )
+                    rule_node = ast.parse(rule_expression, mode="eval").body
+                except (TypeError, ValueError, SyntaxError):
+                    return None
+
+                def linear_terms(
+                    node: ast.AST,
+                ) -> Optional[Tuple[Dict[str, float], float]]:
+                    if isinstance(node, ast.Name):
+                        return {standardize_name(node.id): 1.0}, 0.0
+                    if isinstance(node, ast.Constant) and isinstance(
+                        node.value, (int, float)
+                    ):
+                        return {}, float(node.value)
+                    if isinstance(node, ast.UnaryOp) and isinstance(
+                        node.op, (ast.UAdd, ast.USub)
+                    ):
+                        value = linear_terms(node.operand)
+                        if value is None:
+                            return None
+                        sign = -1.0 if isinstance(node.op, ast.USub) else 1.0
+                        return (
+                            {
+                                name: sign * coefficient
+                                for name, coefficient in value[0].items()
+                            },
+                            sign * value[1],
+                        )
+                    if not isinstance(node, ast.BinOp):
+                        return None
+                    left = linear_terms(node.left)
+                    right = linear_terms(node.right)
+                    if left is None or right is None:
+                        return None
+                    if isinstance(node.op, (ast.Add, ast.Sub)):
+                        sign = -1.0 if isinstance(node.op, ast.Sub) else 1.0
+                        coefficients = dict(left[0])
+                        for name, coefficient in right[0].items():
+                            coefficients[name] = (
+                                coefficients.get(name, 0.0) + sign * coefficient
+                            )
+                        return coefficients, left[1] + sign * right[1]
+                    if isinstance(node.op, ast.Mult):
+                        if left[0] and right[0]:
+                            return None
+                        if left[0]:
+                            scale = right[1]
+                            return (
+                                {
+                                    name: coefficient * scale
+                                    for name, coefficient in left[0].items()
+                                },
+                                left[1] * scale,
+                            )
+                        if right[0]:
+                            scale = left[1]
+                            return (
+                                {
+                                    name: coefficient * scale
+                                    for name, coefficient in right[0].items()
+                                },
+                                right[1] * scale,
+                            )
+                        return {}, left[1] * right[1]
+                    if isinstance(node.op, ast.Div) and not right[0]:
+                        if right[1] == 0:
+                            return None
+                        return (
+                            {
+                                name: coefficient / right[1]
+                                for name, coefficient in left[0].items()
+                            },
+                            left[1] / right[1],
+                        )
+                    return None
+
+                terms = linear_terms(rule_node)
+                if terms is None or abs(terms[1]) > 1e-14:
+                    return None
+                normalized_dynamic = {standardize_name(value) for value in dynamic_ids}
+                assignment_rule_variable = model.rules[0].variable
+                if (
+                    assignment_rule_variable not in model.species
+                    or standardize_name(assignment_rule_variable) in normalized_dynamic
+                    or set(model.species) != dynamic_ids | {assignment_rule_variable}
+                ):
+                    return None
+                if set(terms[0]) == normalized_dynamic and all(
+                    terms[0].get(standardize_name(value)) == 1.0
+                    for value in dynamic_ids
+                ):
+                    pass
+                elif (
+                    len(terms[0]) == 1
+                    and next(iter(terms[0])) in normalized_dynamic
+                    and math.isfinite(next(iter(terms[0].values())))
+                    and next(iter(terms[0].values())) > 0
+                ):
+                    assignment_alias = (
+                        next(iter(terms[0])),
+                        next(iter(terms[0].values())),
+                    )
+                else:
+                    return None
+            elif set(model.species) != dynamic_ids:
+                return None
+            if any(
+                assignment.variable != product_id
+                for assignment in model.events[0].assignments
+            ):
+                return None
+
+            species_compartments = {
+                sid: getattr(species, "compartment", "")
+                for sid, species in model.species.items()
+            }
+            parameter_values = {
+                parameter_id: getattr(parameter, "value", parameter)
+                for parameter_id, parameter in model.parameters.items()
+            }
+            rates: Dict[Tuple[str, str], float] = {}
+            for source, target, reaction in edges:
+                kinetic_law = reaction.kinetic_law
+                expression = str(
+                    getattr(kinetic_law, "math", "")
+                    or (
+                        kinetic_law.get("math", "")
+                        if isinstance(kinetic_law, Mapping)
+                        else ""
+                    )
+                    or ""
+                ).strip()
+                if not expression:
+                    return None
+                expression = extend_function(expression, {}, model.function_definitions)
+                if assignment_alias is not None:
+                    alias_state, alias_scale = assignment_alias
+                    expression = re.sub(
+                        rf"\b{re.escape(standardize_name(assignment_rule_variable))}\b",
+                        f"({alias_scale!r} * {alias_state})",
+                        expression,
+                        flags=re.IGNORECASE,
+                    )
+                rate = check_mass_action(
+                    expression,
+                    standardize_name(source),
+                    f"__compartment_{standardize_name(compartment_id)}__",
+                    parameter_values,
+                    model.compartments,
+                    species_compartments,
+                    reaction_order=1,
+                )
+                if rate is None or not math.isfinite(rate) or rate <= 0:
+                    return None
+                rates[(source, target)] = rate
+            first_rate = rates.get((source_id, intermediate_id))
+            second_rate = rates.get((intermediate_id, product_id))
+            if first_rate is None or second_rate is None:
+                return None
+            return (
+                source_id,
+                intermediate_id,
+                product_id,
+                first_rate,
+                second_rate,
+            )
+
         def resolve_event_volume_assignment_targets(
             identifier: str, event_context: SBMLEvent
         ) -> Tuple[str, ...]:
@@ -8818,6 +9098,9 @@ def generate_bngl(
                 ),
                 resolve_first_order_transfer_event_system=(
                     resolve_first_order_transfer_event_system
+                ),
+                resolve_first_order_chain_event_system=(
+                    resolve_first_order_chain_event_system
                 ),
                 resolve_affine_rate=resolve_affine_event_rate,
                 resolve_affine_rate_for_event=lambda identifier, event: (

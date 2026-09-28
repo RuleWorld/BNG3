@@ -107,6 +107,12 @@ def _no_first_order_transfer_event_system() -> Optional[Tuple[str, str, float]]:
     return None
 
 
+def _no_first_order_chain_event_system() -> (
+    Optional[Tuple[str, str, str, float, float]]
+):
+    return None
+
+
 @dataclass(frozen=True)
 class _FirstOrderCycleTrajectory:
     total: float
@@ -305,6 +311,52 @@ def _first_order_transfer_state_at(
     ):
         return None
     return next_source, next_sink
+
+
+def _first_order_chain_state_at(
+    source: float,
+    intermediate: float,
+    first_rate: float,
+    second_rate: float,
+    elapsed: float,
+) -> Optional[Tuple[float, float]]:
+    """Return source and intermediate states in a two-step first-order chain."""
+    if (
+        not all(
+            math.isfinite(value)
+            for value in (source, intermediate, first_rate, second_rate, elapsed)
+        )
+        or source < 0
+        or intermediate < 0
+        or first_rate <= 0
+        or second_rate <= 0
+        or elapsed < 0
+    ):
+        return None
+    try:
+        first_decay = math.exp(-first_rate * elapsed)
+        second_decay = math.exp(-second_rate * elapsed)
+    except OverflowError:
+        return None
+    next_source = source * first_decay
+    rate_scale = max(first_rate, second_rate, 1e-300)
+    if abs(first_rate - second_rate) <= 1e-14 * rate_scale:
+        next_intermediate = second_decay * (
+            intermediate + first_rate * source * elapsed
+        )
+    else:
+        next_intermediate = second_decay * intermediate + (
+            first_rate
+            * source
+            * (first_decay - second_decay)
+            / (second_rate - first_rate)
+        )
+    if not all(
+        math.isfinite(value) and value >= 0
+        for value in (next_source, next_intermediate)
+    ):
+        return None
+    return next_source, next_intermediate
 
 
 def _first_order_cycle_next_trigger_crossing(
@@ -510,6 +562,11 @@ class EventTranslationContext:
     resolve_first_order_transfer_event_system: Callable[
         [], Optional[Tuple[str, str, float]]
     ] = _no_first_order_transfer_event_system
+    # Return source, intermediate, product and both first-order rate constants
+    # for an isolated irreversible two-step chain.
+    resolve_first_order_chain_event_system: Callable[
+        [], Optional[Tuple[str, str, str, float, float]]
+    ] = _no_first_order_chain_event_system
 
     @property
     def resolveSpeciesPattern(self):
@@ -4916,6 +4973,190 @@ def synthesize_event_actions(
                     normal_converted += len(events)
                     if not transfer_schedule:
                         horizon_limited += len(events)
+
+    if (
+        len(events) == 1
+        and context.method.lower() != "ssa"
+        and id(events[0]) not in recurrent_handled
+    ):
+        event = events[0]
+        chain = context.resolve_first_order_chain_event_system()
+        parsed = _parse_affine_state_threshold(event.trigger)
+        chain_supported = chain is not None and parsed is not None
+        if chain_supported:
+            assert chain is not None and parsed is not None
+            (
+                source_id,
+                intermediate_id,
+                product_id,
+                first_rate,
+                second_rate,
+            ) = chain
+            identifier, operator, threshold_expression = parsed
+            threshold = fold(threshold_expression, event_context=event)
+            initial_values = {
+                name: context.resolve_initial_value(name)
+                for name in (source_id, intermediate_id, product_id)
+            }
+            chain_supported = (
+                standardize_name(identifier) == standardize_name(product_id)
+                and operator in {"gt", "geq"}
+                and threshold is not None
+                and math.isfinite(float(threshold))
+                and math.isfinite(float(first_rate))
+                and math.isfinite(float(second_rate))
+                and float(first_rate) > 0
+                and float(second_rate) > 0
+                and all(
+                    value is not None
+                    and math.isfinite(float(value))
+                    and float(value) >= 0
+                    for value in initial_values.values()
+                )
+                and not event.delay
+                and not event.priority
+                and len(event.assignments) == 1
+            )
+            if chain_supported:
+                variable, assignment_expression = _event_assignment(
+                    event.assignments[0]
+                )
+                assignment_value = fold(assignment_expression, event_context=event)
+                chain_supported = (
+                    standardize_name(variable) == standardize_name(product_id)
+                    and assignment_value is not None
+                    and math.isfinite(float(assignment_value))
+                    and (
+                        operator != "gt" or float(assignment_value) != float(threshold)
+                    )
+                )
+            if chain_supported:
+                assert threshold is not None and assignment_value is not None
+                source = float(initial_values[source_id])
+                intermediate = float(initial_values[intermediate_id])
+                product = float(initial_values[product_id])
+                threshold_value = float(threshold)
+                assignment_number = float(assignment_value)
+                horizon = float(context.base_t_end)
+                current_time = 0.0
+                initially_active = (
+                    product > threshold_value
+                    if operator == "gt"
+                    else product >= threshold_value
+                )
+                pending_initial = initially_active and not event.trigger_initial_value
+                active = initially_active
+                chain_schedule: List[
+                    Tuple[
+                        float,
+                        List[Tuple[str, str, float]],
+                        float,
+                        Optional[SBMLEvent],
+                        bool,
+                        List[Tuple[str, float]],
+                    ]
+                ] = []
+
+                def terminal_after(
+                    elapsed: float,
+                ) -> Optional[Tuple[float, float, float]]:
+                    states = _first_order_chain_state_at(
+                        source,
+                        intermediate,
+                        float(first_rate),
+                        float(second_rate),
+                        elapsed,
+                    )
+                    if states is None:
+                        return None
+                    next_source, next_intermediate = states
+                    next_product = (
+                        product
+                        + source
+                        + intermediate
+                        - next_source
+                        - next_intermediate
+                    )
+                    if not math.isfinite(next_product) or next_product < -1e-12:
+                        return None
+                    return max(0.0, next_product), next_source, next_intermediate
+
+                chain_valid = True
+                for _ in range(10_000):
+                    crossing_delta: Optional[float] = 0.0 if pending_initial else None
+                    pending_initial = False
+                    if crossing_delta is None:
+                        if active or current_time >= horizon:
+                            break
+                        remaining = horizon - current_time
+                        endpoint = terminal_after(remaining)
+                        if endpoint is None:
+                            chain_valid = False
+                            break
+                        endpoint_true = (
+                            endpoint[0] > threshold_value
+                            if operator == "gt"
+                            else endpoint[0] >= threshold_value
+                        )
+                        if not endpoint_true:
+                            break
+                        low, high = 0.0, remaining
+                        for _ in range(80):
+                            middle = 0.5 * (low + high)
+                            candidate = terminal_after(middle)
+                            if candidate is None:
+                                chain_valid = False
+                                break
+                            candidate_true = (
+                                candidate[0] > threshold_value
+                                if operator == "gt"
+                                else candidate[0] >= threshold_value
+                            )
+                            if candidate_true:
+                                high = middle
+                            else:
+                                low = middle
+                        if not chain_valid:
+                            break
+                        crossing_delta = high
+
+                    crossing_state = terminal_after(crossing_delta)
+                    if crossing_state is None:
+                        chain_valid = False
+                        break
+                    current_time += crossing_delta
+                    product, source, intermediate = crossing_state
+                    pattern = context.resolve_species_pattern(variable)
+                    if pattern is None or not chain_supported:
+                        chain_valid = False
+                        break
+                    chain_schedule.append(
+                        (
+                            current_time,
+                            [("conc", pattern, assignment_number)],
+                            0.0,
+                            event,
+                            False,
+                            [(standardize_name(variable), assignment_number)],
+                        )
+                    )
+                    product = assignment_number
+                    active = (
+                        product > threshold_value
+                        if operator == "gt"
+                        else product >= threshold_value
+                    )
+                    if current_time >= horizon or active:
+                        break
+                else:
+                    chain_valid = False
+
+                if chain_valid:
+                    scheduled.extend(chain_schedule)
+                    recurrent_handled.add(id(event))
+                    normal_converted += 1
+                    if not chain_schedule:
+                        horizon_limited += 1
 
     if (
         len(events) > 1

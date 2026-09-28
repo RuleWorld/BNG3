@@ -3,10 +3,10 @@
 **Status:** Active; not complete
 **Last targeted audit:** 2026-09-28 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
-**Working branch:** `main`; latest code-changing commit affecting the recorded full SSTS result is `23822c616c796214e0306b16f1c7f07ab13b5eee` (matches `origin/main`).
+**Working branch:** `main`; the recorded full SSTS run used code head `23822c616c796214e0306b16f1c7f07ab13b5eee` (`23822c6`). Later targeted changes are not included in that aggregate report.
 **Latest full pinned SBML Test Suite report:** suite commit `cf38585fac5de8e0e90112febb62851ee2181816`, `1,730 passed / 193 unsupported / 0 failed / 0 timed out`. Nine cases gained, with no losses, against `/private/tmp/bng3-quadratic-species-difference-full-sbml.json`. The supported surface passes; the aggregate Core gate remains open. Report `/private/tmp/bng3-atomizer-event-stoich-full-sbml.json`, SHA-256 `509692d123cca41f13084a005b64a73876d56750b156ed4acd3ca2de48d54dd3`.
 **Latest current-source curated BioModels report:** none. The user's current-source flat and Atomized rerun was stopped at their request; it remains stopped and has no aggregate report. Earlier BioModels counts below are historical only.
-**Latest code-head hosted CI:** commit `23822c6`; Formatting patch, Lean semantic kernel, CodeQL, Cross-tool parity, Docker, package smoke, and integration jobs passed. Wheel builds remain in progress for Ubuntu, macOS 14, and Windows; macOS 13 is queued (queried 2026-09-28).
+**Last queried hosted CI:** commit `d323804`; Lean semantic kernel, CodeQL, and Cross-tool parity passed. CI was still in progress when queried on 2026-09-28; these checks do not cover the uncommitted changes below.
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
@@ -17,6 +17,36 @@ recorded in the historical sections below; they are not current-head evidence.
 `c51c7a34128d188189485bd318aeae4d936bcb29` (observed 2026-09-01); later
 non-energy PRs #476 and #477 are deliberately not silently included in the
 BNG3 port.
+
+## Two-step first-order state-event cohort — 2026-09-28
+
+- [x] Added exact scheduled-event lowering for a narrow deterministic system:
+  an irreversible two-step first-order chain, with one event that triggers on
+  the terminal species and assigns that species a constant. The matcher accepts
+  a single derived assignment rule when it is either the chain's conserved pool
+  or a positive scalar alias used as the second reaction's modifier. Delayed,
+  prioritized, stochastic, and other chain/event forms remain unsupported.
+- [x] The focused Atomizer event and SBML parity tests passed: 174 passed.
+  Black, Ruff, and `git diff --check` passed.
+- [x] Pinned SBML Test Suite cases `semantic/00661` and `semantic/00662` each
+  passed the isolated round-trip gate (one selected case per run). These partial
+  reports intentionally do not pass the aggregate Core gate:
+  `/private/tmp/bng3-ssts-00661-after-chain.json` (SHA-256
+  `14179dde95662aad97735a498d525f101676a795c8ba37f75da062cb746f4338`) and
+  `/private/tmp/bng3-ssts-00662-after-chain.json` (SHA-256
+  `d22973ba26b603a8c02e29bdad0c201612ab677927dab3893420816c4e7c0cf4`).
+- [x] For `00661`, BNG3 execution after Atomization matched the pinned SSTS
+  reference CSV at `t=10`: absolute errors were `1.68e-8` for `X0`, `1.82e-8`
+  for `X1`, `2.07e-8` for `T`, and `2.21e-8` for the derived pool `S1`.
+  The scheduled threshold crossing was `t=2.77917484418`. Direct
+  libRoadRunner execution was unavailable for this model because it rejects its
+  algebraic rule; this comparison uses the pinned SSTS result file instead.
+- [ ] This is two selected modern-BNG3 cases, not complete SSTS or
+  cross-engine coverage. It does not benchmark BNG2 Atomizer. BNG2 Atomizer
+  remains incomplete and has not been benchmarked against all SBML. The full
+  suite, broader trajectory comparisons, BNG2 execution comparison, NFsim, and
+  curated BioModels validation remain open; the user's BioModels run remains
+  stopped.
 
 ## Expanded SBML Test Suite Atomizer network benchmark — 2026-09-28
 

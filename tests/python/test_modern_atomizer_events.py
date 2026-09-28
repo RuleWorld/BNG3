@@ -391,6 +391,168 @@ def test_atomizer_lowers_first_order_transfer_events_from_sbml():
     assert 'setConcentration("@C:M_S2()", "0")' in result.bngl
 
 
+def test_first_order_chain_schedules_reentrant_terminal_threshold_events():
+    import math
+    import re
+
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLEventAssignment
+
+    event = SBMLEvent(
+        id="reset-product",
+        trigger="gt(Product, 2)",
+        assignments=[SBMLEventAssignment("Product", "1")],
+        trigger_initial_value=True,
+        trigger_persistent=True,
+        use_values_from_trigger_time=True,
+    )
+    result = synthesize_event_actions(
+        [event],
+        EventTranslationContext(
+            resolve_species_pattern=lambda identifier: f"{identifier}()",
+            resolve_param=lambda _identifier: None,
+            is_param=lambda _identifier: False,
+            resolve_initial_value=lambda identifier: {
+                "Source": 1.25,
+                "Intermediate": 1.0,
+                "Product": 1.5,
+            }.get(identifier),
+            resolve_first_order_chain_event_system=lambda: (
+                "Source",
+                "Intermediate",
+                "Product",
+                0.1,
+                0.2,
+            ),
+            base_t_end=40,
+            base_steps=50,
+        ),
+    )
+
+    assert result.converted == 1
+    assert result.untranslated == []
+    assert result.actions_block is not None
+    phase_ends = [
+        float(value)
+        for value in re.findall(r"t_end=>([0-9.eE+-]+)", result.actions_block)
+    ]
+    assert len(phase_ends) == 3
+    assert 0 < phase_ends[0] < phase_ends[1] < 40
+    assert phase_ends[2] == 40
+    assert not math.isclose(phase_ends[0], phase_ends[1], abs_tol=1e-10)
+    assert result.actions_block.count('setConcentration("Product()", "1")') == 2
+
+
+def test_atomizer_lowers_first_order_chain_event_with_derived_pool():
+    import re
+
+    from bionetgen.atomizer.modern import Atomizer
+
+    sbml = """\
+<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
+  <model id="first_order_chain_event">
+    <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
+    <listOfSpecies>
+      <species id="Source" compartment="C" initialAmount="1.25" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+      <species id="Intermediate" compartment="C" initialAmount="1" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+      <species id="Product" compartment="C" initialAmount="1.5" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+      <species id="Pool" compartment="C" initialAmount="3.75" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+    </listOfSpecies>
+    <listOfParameters>
+      <parameter id="k1" value="0.1" constant="true"/>
+      <parameter id="k2" value="0.2" constant="true"/>
+    </listOfParameters>
+    <listOfRules>
+      <assignmentRule variable="Pool">
+        <math xmlns="http://www.w3.org/1998/Math/MathML"><apply><plus/><ci>Source</ci><ci>Intermediate</ci><ci>Product</ci></apply></math>
+      </assignmentRule>
+    </listOfRules>
+    <listOfReactions>
+      <reaction id="first" reversible="false">
+        <listOfReactants><speciesReference species="Source" stoichiometry="1" constant="true"/></listOfReactants>
+        <listOfProducts><speciesReference species="Intermediate" stoichiometry="1" constant="true"/></listOfProducts>
+        <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><times/><ci>C</ci><ci>k1</ci><ci>Source</ci></apply></math></kineticLaw>
+      </reaction>
+      <reaction id="second" reversible="false">
+        <listOfReactants><speciesReference species="Intermediate" stoichiometry="1" constant="true"/></listOfReactants>
+        <listOfProducts><speciesReference species="Product" stoichiometry="1" constant="true"/></listOfProducts>
+        <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><times/><ci>C</ci><ci>k2</ci><ci>Intermediate</ci></apply></math></kineticLaw>
+      </reaction>
+    </listOfReactions>
+    <listOfEvents>
+      <event id="reset_product" useValuesFromTriggerTime="true">
+        <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><gt/><ci>Product</ci><cn>2</cn></apply></math></trigger>
+        <listOfEventAssignments><eventAssignment variable="Product"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></eventAssignment></listOfEventAssignments>
+      </event>
+    </listOfEvents>
+  </model>
+</sbml>
+"""
+
+    result = Atomizer(atomize=False, quiet_mode=True, t_end=10, n_steps=50).atomize(
+        sbml
+    )
+
+    assert result.success is True
+    assert "Events NOT simulated" not in result.bngl
+    assert "Pool() =" in result.bngl
+    assert 'setConcentration("@C:M_Product()", "1")' in result.bngl
+    phase_ends = [
+        float(value) for value in re.findall(r"t_end=>([0-9.eE+-]+)", result.bngl)
+    ]
+    assert len(phase_ends) == 2
+    assert abs(phase_ends[0] - 2.7791748441775583) < 1e-10
+    assert phase_ends[1] == 10
+
+
+def test_atomizer_lowers_first_order_chain_with_scaled_assignment_modifier():
+    from bionetgen.atomizer.modern import Atomizer
+
+    sbml = """\
+<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
+  <model id="first_order_chain_alias">
+    <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
+    <listOfSpecies>
+      <species id="X0" compartment="C" initialAmount="1" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+      <species id="T" compartment="C" initialAmount="0" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+      <species id="X1" compartment="C" initialAmount="0" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+      <species id="S1" compartment="C" initialAmount="0" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+    </listOfSpecies>
+    <listOfParameters><parameter id="k1" value="0.1" constant="true"/><parameter id="k2" value="0.2" constant="true"/></listOfParameters>
+    <listOfRules><assignmentRule variable="S1"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><divide/><ci>T</ci><cn>3.5</cn></apply></math></assignmentRule></listOfRules>
+    <listOfReactions>
+      <reaction id="first" reversible="false">
+        <listOfReactants><speciesReference species="X0" stoichiometry="1" constant="true"/></listOfReactants>
+        <listOfProducts><speciesReference species="T" stoichiometry="1" constant="true"/></listOfProducts>
+        <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><times/><ci>C</ci><ci>k1</ci><ci>X0</ci></apply></math></kineticLaw>
+      </reaction>
+      <reaction id="second" reversible="false">
+        <listOfReactants><speciesReference species="T" stoichiometry="1" constant="true"/></listOfReactants>
+        <listOfProducts><speciesReference species="X1" stoichiometry="1" constant="true"/></listOfProducts>
+        <listOfModifiers><modifierSpeciesReference species="S1"/></listOfModifiers>
+        <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><times/><ci>C</ci><ci>k2</ci><ci>S1</ci></apply></math></kineticLaw>
+      </reaction>
+    </listOfReactions>
+    <listOfEvents><event id="reset" useValuesFromTriggerTime="true">
+      <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><gt/><ci>X1</ci><cn>0.1</cn></apply></math></trigger>
+      <listOfEventAssignments><eventAssignment variable="X1"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></eventAssignment></listOfEventAssignments>
+    </event></listOfEvents>
+  </model>
+</sbml>
+"""
+
+    result = Atomizer(atomize=False, quiet_mode=True, t_end=10, n_steps=50).atomize(
+        sbml
+    )
+
+    assert result.success is True
+    assert "Events NOT simulated" not in result.bngl
+    assert 'setConcentration("@C:M_X1()", "1")' in result.bngl
+
+
 def test_first_order_transfer_delays_preserve_trigger_time_assignments():
     import math
     import re
