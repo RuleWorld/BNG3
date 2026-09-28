@@ -8324,3 +8324,39 @@ the other groups remain implementation targets.
   BNG2/legacy PyBioNetGen Atomizer remains incomplete and has not been
   benchmarked against all SBML; full cross-engine and stopped curated
   BioModels gates remain open.
+
+## Exact-head event-cohort refresh — 2026-09-28
+
+- [x] Re-ran seven pinned SSTS semantic cases against clean tracked BNG3
+  source head `783580905f3726a7e5a4467073a49f373edf8ec4`: `00663`, `00664`,
+  `00762`, `00965`, `00966`, `01626`, and `01627`. Per-case status records
+  show `01626` and `01627` passing; the other five remain unsupported due to
+  untranslated state-dependent events. Reports follow
+  `/private/tmp/bng3-event-triage-{CASE_ID}-7835809.json` for those seven IDs.
+- [x] Source inspection found no safe shared lowering among the five
+  unsupported records. `00663`/`00664`/`00762` trigger on `S4 > S3` and
+  rewrite `S4` multiplicatively; reaction-driven changes can make the trigger
+  false and later true again, so a single pre-event crossing is insufficient.
+  `00965`/`00966` use recurring timer/reset and counter events with interacting
+  assignments. General dynamic event re-entry remains unsupported.
+- [ ] This is a seven-case modern BNG3 Atomizer refresh, not trajectory parity,
+  full SSTS coverage, or an all-SBML benchmark. The BNG2/legacy PyBioNetGen
+  Atomizer remains incomplete and has not been benchmarked against all SBML;
+  no BNG2 source was changed. Full cross-engine and stopped curated BioModels
+  gates remain open.
+
+## PR #28 regex-precompile source review — 2026-09-28
+
+- [x] Reviewed draft PR #28 at head
+  `1a5008b4163109d85e0503af4eefe49074572152`, based on
+  `d6eef9b035ebdfd61e1fc80f95f119aef645a25e`. The change precompiles static
+  patterns in `helpers.py` and caches `_replace_calls` patterns by name. All
+  current `_replace_calls` call sites use fixed names, and existing helper
+  tests cover representative conversion behavior; no source-level correctness
+  defect was identified in this review.
+- [ ] The PR body reports roughly 30% improvement from tight-loop microbenchmarks,
+  but benchmark scripts/results are not included in the diff, so the claimed
+  gain is not independently reproducible from the PR. Current `main` is ahead
+  of the PR base; rebase and rerun exact-head checks before approval. All 29
+  checks were pending at review time. No PR review comment or approval was
+  posted.
