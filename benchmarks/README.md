@@ -90,8 +90,12 @@ generated expression form; it does not relax numeric rate differences.
 
 `benchmark_atomizer_nfsim.py` runs fresh-process ensembles through BNG3's
 direct NFsim path and standalone NFsim reading BNG-XML written by Perl BNG2.
-It requires an explicit standalone binary and withholds ensemble means if any
-seed fails, since dropping failed trajectories would bias the comparison:
+It requires an explicit standalone binary, uses disjoint seed ranges for the
+two ensembles, and withholds ensemble means if any seed fails, since dropping
+failed trajectories would bias the comparison. With `--seed-start 1` and
+`--runs 200`, BNG3 direct uses seeds 1–200 and standalone NFsim uses 201–400.
+Set `--native-seed-start` to choose a different non-overlapping native range.
+The report records both ranges:
 
 ```bash
 PYTHONPATH=python:build/cpp python benchmarks/benchmark_atomizer_nfsim.py \

@@ -22,6 +22,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 
@@ -53,6 +54,24 @@ def error_signature(message: str) -> str:
     if "seed amount must resolve to a nonnegative integer" in message:
         return "seed amount must resolve to a nonnegative integer"
     return message.strip()
+
+
+def resolve_native_seed_start(
+    *, seed_start: int, runs: int, native_seed_start: Optional[int] = None
+) -> int:
+    """Choose standalone-NFsim seeds disjoint from the BNG3 direct ensemble."""
+    if runs < 1:
+        raise ValueError("runs must be positive")
+    if seed_start < 0:
+        raise ValueError("seed starts must be nonnegative")
+    native_start = seed_start + runs if native_seed_start is None else native_seed_start
+    if native_start < 0:
+        raise ValueError("seed starts must be nonnegative")
+    direct_end = seed_start + runs - 1
+    native_end = native_start + runs - 1
+    if seed_start <= native_end and native_start <= direct_end:
+        raise ValueError("direct and standalone NFsim seed ranges must not overlap")
+    return native_start
 
 
 def git_head(path: Path) -> str | None:
@@ -182,6 +201,7 @@ def benchmark_mode(
     nfsim_binary: Path,
     runs: int,
     seed_start: int,
+    native_seed_start: int,
     t_end: float,
     n_steps: int,
     timeout: int,
@@ -197,20 +217,25 @@ def benchmark_mode(
     native_event_count = 0
     errors = []
     for index in range(runs):
-        seed = seed_start + index
-        direct_path = work_dir / f"direct-{seed}.json"
+        direct_seed = seed_start + index
+        native_seed = native_seed_start + index
+        direct_path = work_dir / f"direct-{direct_seed}.json"
         try:
             payload, elapsed = run_direct(
                 bngl=bngl,
                 output=direct_path,
-                seed=seed,
+                seed=direct_seed,
                 t_end=t_end,
                 n_steps=n_steps,
                 timeout=timeout,
             )
         except Exception as exc:
             errors.append(
-                {"seed": seed, "engine": "bng3_direct", "error": str(exc)[-3000:]}
+                {
+                    "seed": direct_seed,
+                    "engine": "bng3_direct",
+                    "error": str(exc)[-3000:],
+                }
             )
             payload = None
         if payload is not None and payload.get("construction_path") != "direct":
@@ -224,13 +249,13 @@ def benchmark_mode(
             )
             direct_ms.append(elapsed)
 
-        native_path = work_dir / f"native-{seed}.gdat"
+        native_path = work_dir / f"native-{native_seed}.gdat"
         try:
             data, columns, elapsed, native_stdout = run_native(
                 binary=nfsim_binary,
                 xml=native_xml,
                 output=native_path,
-                seed=seed,
+                seed=native_seed,
                 t_end=t_end,
                 n_steps=n_steps,
                 timeout=timeout,
@@ -238,7 +263,7 @@ def benchmark_mode(
         except Exception as exc:
             errors.append(
                 {
-                    "seed": seed,
+                    "seed": native_seed,
                     "engine": "standalone_nfsim",
                     "error": str(exc)[-3000:],
                 }
@@ -295,6 +320,13 @@ def benchmark_mode(
         "run_error_count": len(errors),
         "run_errors": grouped_errors,
         "seed_start": seed_start,
+        "seed_ranges": {
+            "bng3_direct": [seed_start, seed_start + runs - 1],
+            "standalone_nfsim": [
+                native_seed_start,
+                native_seed_start + runs - 1,
+            ],
+        },
         "direct_construction": "direct",
         "native_total_reaction_events": native_event_count,
         "mean_comparison": (
@@ -332,6 +364,14 @@ def main() -> int:
     )
     parser.add_argument("--runs", type=int, default=200)
     parser.add_argument("--seed-start", type=int, default=1)
+    parser.add_argument(
+        "--native-seed-start",
+        type=int,
+        help=(
+            "standalone NFsim ensemble's first seed; defaults to the first seed "
+            "after the BNG3 direct ensemble"
+        ),
+    )
     parser.add_argument("--t-end", type=float, default=0.1)
     parser.add_argument("--n-steps", type=int, default=10)
     parser.add_argument("--timeout", type=int, default=60)
@@ -353,17 +393,27 @@ def main() -> int:
         parser.error(f"BNG2.pl not found: {bng2_perl}")
     if args.runs < 2 or args.n_steps < 1 or args.t_end <= 0:
         parser.error("runs, n-steps, and t-end must be positive (runs >= 2)")
+    try:
+        native_seed_start = resolve_native_seed_start(
+            seed_start=args.seed_start,
+            runs=args.runs,
+            native_seed_start=args.native_seed_start,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
 
     from bionetgen.atomizer.modern import Atomizer
 
     report = {
-        "schema_version": 1,
+        "schema_version": 2,
         "benchmark": "Atomizer-generated BNG3 direct vs standalone NFsim ensemble",
         "source": {"path": str(source), "sha256": sha256(source)},
         "environment": {
             "platform": platform.platform(),
             "python": sys.version,
             "bng3_head": git_head(ROOT),
+            "bng3_git_state": git_state(ROOT),
+            "benchmark_script_sha256": sha256(Path(__file__).resolve()),
             "bng2_head": git_head(bng2_perl.parent),
             "nfsim_binary": str(binary),
             "nfsim_sha256": sha256(binary),
@@ -371,6 +421,7 @@ def main() -> int:
             "bng2_perl": str(bng2_perl),
             "runs": args.runs,
             "seed_start": args.seed_start,
+            "native_seed_start": native_seed_start,
             "t_end": args.t_end,
             "n_steps": args.n_steps,
         },
@@ -417,6 +468,7 @@ def main() -> int:
                 nfsim_binary=binary,
                 runs=args.runs,
                 seed_start=args.seed_start,
+                native_seed_start=native_seed_start,
                 t_end=args.t_end,
                 n_steps=args.n_steps,
                 timeout=args.timeout,
