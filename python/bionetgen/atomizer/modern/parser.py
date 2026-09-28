@@ -3293,7 +3293,7 @@ class SBMLParser:
         # Event-controlled species references still need their SBML initial
         # assignment as the parameter's value at time zero. Keep the reference
         # dynamic, but carry that resolved value for BNGL parameter emission.
-        event_reference_initial_values: Dict[str, float] = {}
+        event_target_initial_values: Dict[str, float] = {}
         event_initial_symbols = dict(static_symbols)
         normalized_event_targets = {
             standardize_name(target) for target in event_targets
@@ -3319,7 +3319,7 @@ class SBMLParser:
                     if event_initial_symbols.get(name) != value:
                         event_initial_symbols[name] = value
                         changed = True
-                event_reference_initial_values[normalized] = value
+                event_target_initial_values[normalized] = value
             if not changed:
                 break
 
@@ -3342,7 +3342,7 @@ class SBMLParser:
         for normalized, reference_count in matching_reference_counts.items():
             if reference_count != 1 or initial_assignment_counts.get(normalized) != 1:
                 continue
-            if normalized in event_reference_initial_values:
+            if normalized in event_target_initial_values:
                 continue
             model.import_warnings.append(
                 {
@@ -3359,7 +3359,7 @@ class SBMLParser:
             for reference in [*reaction.reactants, *reaction.products]:
                 reference_id = str(reference.id or "")
                 normalized = standardize_name(reference_id)
-                initial_value = event_reference_initial_values.get(normalized)
+                initial_value = event_target_initial_values.get(normalized)
                 if (
                     reference_id
                     and matching_reference_counts.get(normalized) == 1
@@ -3367,6 +3367,33 @@ class SBMLParser:
                     and initial_value is not None
                 ):
                     reference.stoichiometry = initial_value
+
+        matching_parameters: Dict[str, List[str]] = {}
+        for parameter_id in model.parameters:
+            normalized = standardize_name(str(parameter_id))
+            if normalized in normalized_event_targets:
+                matching_parameters.setdefault(normalized, []).append(str(parameter_id))
+        for normalized, parameter_ids in matching_parameters.items():
+            if (
+                len(parameter_ids) != 1
+                or initial_assignment_counts.get(normalized) != 1
+            ):
+                continue
+            initial_value = event_target_initial_values.get(normalized)
+            if initial_value is None:
+                model.import_warnings.append(
+                    {
+                        "category": "parameter",
+                        "message": (
+                            "An event-controlled parameter initial assignment "
+                            "could not be resolved to a numeric time-zero value."
+                        ),
+                        "count": 1,
+                        "severity": "dropped",
+                    }
+                )
+                continue
+            model.parameters[parameter_ids[0]].value = initial_value
 
         for reaction in model.reactions.values():
             for reference in [*reaction.reactants, *reaction.products]:

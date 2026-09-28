@@ -4197,6 +4197,17 @@ def _assignment_rules_for_writer(model: SBMLModel) -> List[object]:
     ]
     existing = {standardize_name(str(rule.variable)) for rule in rules}
     species_names = {standardize_name(str(species_id)) for species_id in model.species}
+    event_parameter_targets = {
+        standardize_name(str(assignment.variable))
+        for event in model.events
+        for assignment in event.assignments
+        if getattr(assignment, "variable", None)
+        and any(
+            standardize_name(str(parameter_id))
+            == standardize_name(str(assignment.variable))
+            for parameter_id in model.parameters
+        )
+    }
     event_species_reference_targets = {
         standardize_name(str(assignment.variable))
         for event in model.events
@@ -4218,6 +4229,7 @@ def _assignment_rules_for_writer(model: SBMLModel) -> List[object]:
         if (
             standardized in species_names
             or standardized in existing
+            or standardized in event_parameter_targets
             or standardized in event_species_reference_targets
         ):
             continue

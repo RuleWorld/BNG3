@@ -59,6 +59,33 @@ BNG3 port.
   coverage, or clear the BNG2 trajectory mismatches above. BNG2 Atomizer
   remains incomplete and has not been benchmarked against all SBML.
 
+## Event-target parameter initial assignments — 2026-09-28
+
+- [x] Extended modern BNG3 parsing and writing for a model parameter with an
+  SBML initial assignment that is later changed by an event. The parser stores
+  the resolved time-zero value on the parameter; the writer keeps it mutable
+  and emits no fixed assignment function with the same name. Unresolved values
+  receive a dropped-semantics diagnostic.
+- [x] Regression starts with declared `p=4`, initial assignment `p=2`, and an
+  event changing `p` to `3`. It asserts BNGL emits the correct initial value
+  and scheduled update, then compares BNG3 and libRoadRunner trajectories at
+  `t_end=2`. Maximum absolute error was `5.72e-8` away from the event boundary;
+  acceptance bound is `1e-7` for the default BNG3 solver tolerance.
+- [x] After this change, the full Python suite passed: 686 passed, 28 skipped,
+  with 1,380 existing deprecation warnings. Ruff, Black (`--target-version
+  py39`), and `git diff --check` passed.
+- [x] Seven selected SSTS cases (`01698`–`01700`, `01754`–`01757`) passed
+  individual conversion, round-trip, native-reader, and case status gates at
+  `t_end=10`. Each contains event-assigned initially assigned parameter `P1`,
+  but each has zero observables; these reports therefore provide no numerical
+  trajectory comparison. The one-case partial-run aggregate Core flag remains
+  false. Manifest `/private/tmp/bng3-event-parameter-cohort.json`, SHA-256
+  `171fa16b41f7595d4887fc628ab2a625c69595815cdb5f2c60b6749e65383236`.
+- [ ] This is a synthetic trajectory regression plus seven selected import
+  cases. It is not full SSTS or all-SBML coverage. No BNG2 code was changed;
+  the legacy BNG2 Atomizer remains incomplete and has not been benchmarked
+  against all SBML.
+
 ## Periodic variable-stoichiometry event thresholds — 2026-09-28
 
 - [x] The modern Atomizer resolves an event-updated species-reference symbol's

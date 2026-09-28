@@ -633,6 +633,92 @@ def test_event_target_species_reference_initial_assignment_stays_dynamic():
     assert 'setParameter("sr", "3")' in result.bngl
 
 
+def test_event_target_parameter_initial_assignment_stays_dynamic(tmp_path):
+    from bionetgen.atomizer.modern import (
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="event_target_parameter_initial_assignment">
+        <listOfCompartments><compartment id="c" size="1"/></listOfCompartments>
+        <listOfSpecies>
+          <species id="A" compartment="c" initialAmount="2"/>
+          <species id="B" compartment="c" initialAmount="0"/>
+        </listOfSpecies>
+        <listOfParameters><parameter id="p" value="4" constant="false"/></listOfParameters>
+        <listOfInitialAssignments><initialAssignment symbol="p">
+          <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>2</cn></math>
+        </initialAssignment></listOfInitialAssignments>
+        <listOfReactions><reaction id="r" reversible="false">
+          <listOfReactants><speciesReference species="A"/></listOfReactants>
+          <listOfProducts><speciesReference species="B"/></listOfProducts>
+          <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><times/><ci>p</ci><ci>A</ci></apply>
+          </math></kineticLaw>
+        </reaction></listOfReactions>
+        <listOfEvents><event id="change_parameter">
+          <trigger initialValue="true" persistent="true">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><geq/><csymbol definitionURL="http://www.sbml.org/sbml/symbols/time">time</csymbol><cn>1</cn></apply>
+            </math>
+          </trigger>
+          <listOfEventAssignments><eventAssignment variable="p">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>3</cn></math>
+          </eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    model = _model(xml)
+    sct = build_species_composition_table(model)
+    result = generate_bngl(
+        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+    )
+
+    parameters = result.bngl.split("begin parameters\n", 1)[1].split(
+        "\nend parameters", 1
+    )[0]
+    functions = result.bngl.split("begin functions\n", 1)[1].split(
+        "\nend functions", 1
+    )[0]
+    assert model.parameters["p"].value == 2
+    assert "p 2" in {line.strip() for line in parameters.splitlines()}
+    assert "p 4" not in {line.strip() for line in parameters.splitlines()}
+    assert "p() =" not in functions
+    assert 'setParameter("p", "3")' in result.bngl
+
+    import numpy as np
+
+    roadrunner = pytest.importorskip("roadrunner")
+    from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.model import load
+
+    atomized = Atomizer(quiet_mode=True, t_end=2, n_steps=200).atomize(xml)
+    assert atomized.success, atomized.error
+    assert "Events NOT simulated" not in atomized.bngl
+    model_path = tmp_path / "event_target_parameter_initial_assignment.bngl"
+    model_path.write_text(atomized.bngl, encoding="utf-8")
+    load(model_path).execute()
+    lines = model_path.with_suffix(".gdat").read_text().splitlines()
+    columns = lines[0].lstrip("# ").split()
+    bng_data = np.loadtxt(lines[1:])
+
+    rr = roadrunner.RoadRunner(xml)
+    rr.integrator.setValue("relative_tolerance", 1e-9)
+    rr.integrator.setValue("absolute_tolerance", 1e-12)
+    rr.timeCourseSelections = ["time", "A"]
+    reference = rr.simulate(times=bng_data[:, columns.index("time")])
+    jump = int(np.argmin(np.abs(bng_data[:, columns.index("time")] - 1.0)))
+    compare = np.ones(len(bng_data), dtype=bool)
+    compare[max(0, jump - 1) : min(len(bng_data), jump + 2)] = False
+    bng_values = bng_data[compare, columns.index("A_amt")]
+    rr_values = reference[compare, reference.colnames.index("A")]
+    assert np.max(np.abs(bng_values - rr_values)) <= 1e-7
+
+
 def test_sbml_nonlinear_algebraic_rule_stays_explicitly_unsupported():
     xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
       <model id="nonlinear_algebraic_parameter">
