@@ -583,6 +583,56 @@ def test_sbml_static_species_reference_assignment_becomes_numeric_parameter():
     assert not model.initial_assignments
 
 
+def test_event_target_species_reference_initial_assignment_stays_dynamic():
+    from bionetgen.atomizer.modern import (
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="event_target_species_reference_initial_assignment">
+        <listOfCompartments><compartment id="c" size="1"/></listOfCompartments>
+        <listOfSpecies><species id="A" compartment="c" initialAmount="1"/></listOfSpecies>
+        <listOfInitialAssignments><initialAssignment symbol="sr">
+          <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>2</cn></math>
+        </initialAssignment></listOfInitialAssignments>
+        <listOfReactions><reaction id="r" reversible="false">
+          <listOfProducts><speciesReference id="sr" species="A" stoichiometry="4" constant="false"/></listOfProducts>
+          <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></kineticLaw>
+        </reaction></listOfReactions>
+        <listOfEvents><event id="change_stoichiometry">
+          <trigger initialValue="true" persistent="true">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><geq/><csymbol definitionURL="http://www.sbml.org/sbml/symbols/time">time</csymbol><cn>1</cn></apply>
+            </math>
+          </trigger>
+          <listOfEventAssignments><eventAssignment variable="sr">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>3</cn></math>
+          </eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    model = _model(xml)
+    sct = build_species_composition_table(model)
+    result = generate_bngl(
+        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+    )
+
+    parameters = result.bngl.split("begin parameters\n", 1)[1].split(
+        "\nend parameters", 1
+    )[0]
+    functions = result.bngl.split("begin functions\n", 1)[1].split(
+        "\nend functions", 1
+    )[0]
+    assert "sr 2" in {line.strip() for line in parameters.splitlines()}
+    assert "sr 4" not in {line.strip() for line in parameters.splitlines()}
+    assert "sr() =" not in functions
+    assert 'setParameter("sr", "3")' in result.bngl
+
+
 def test_sbml_nonlinear_algebraic_rule_stays_explicitly_unsupported():
     xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
       <model id="nonlinear_algebraic_parameter">

@@ -3290,6 +3290,84 @@ class SBMLParser:
             if not changed:
                 break
 
+        # Event-controlled species references still need their SBML initial
+        # assignment as the parameter's value at time zero. Keep the reference
+        # dynamic, but carry that resolved value for BNGL parameter emission.
+        event_reference_initial_values: Dict[str, float] = {}
+        event_initial_symbols = dict(static_symbols)
+        normalized_event_targets = {
+            standardize_name(target) for target in event_targets
+        }
+        for _ in range(len(model.initial_assignments) + 1):
+            changed = False
+            for assignment in model.initial_assignments:
+                symbol = str(assignment.symbol or "")
+                normalized = standardize_name(symbol)
+                if not symbol or normalized not in normalized_event_targets:
+                    continue
+                if any(
+                    rule.variable and standardize_name(str(rule.variable)) == normalized
+                    for rule in model.rules
+                ):
+                    continue
+                value = _evaluate_static_arithmetic(
+                    assignment.math, event_initial_symbols, model.function_definitions
+                )
+                if value is None:
+                    continue
+                for name in (symbol, standardize_name(symbol)):
+                    if event_initial_symbols.get(name) != value:
+                        event_initial_symbols[name] = value
+                        changed = True
+                event_reference_initial_values[normalized] = value
+            if not changed:
+                break
+
+        matching_reference_counts: Dict[str, int] = {}
+        for reaction in model.reactions.values():
+            for reference in [*reaction.reactants, *reaction.products]:
+                reference_id = str(reference.id or "")
+                normalized = standardize_name(reference_id)
+                if reference_id and normalized in normalized_event_targets:
+                    matching_reference_counts[normalized] = (
+                        matching_reference_counts.get(normalized, 0) + 1
+                    )
+        initial_assignment_counts: Dict[str, int] = {}
+        for assignment in model.initial_assignments:
+            normalized = standardize_name(str(assignment.symbol or ""))
+            if normalized in normalized_event_targets:
+                initial_assignment_counts[normalized] = (
+                    initial_assignment_counts.get(normalized, 0) + 1
+                )
+        for normalized, reference_count in matching_reference_counts.items():
+            if reference_count != 1 or initial_assignment_counts.get(normalized) != 1:
+                continue
+            if normalized in event_reference_initial_values:
+                continue
+            model.import_warnings.append(
+                {
+                    "category": "stoichiometry",
+                    "message": (
+                        "An event-controlled species-reference initial assignment "
+                        "could not be resolved to a numeric time-zero value."
+                    ),
+                    "count": 1,
+                    "severity": "dropped",
+                }
+            )
+        for reaction in model.reactions.values():
+            for reference in [*reaction.reactants, *reaction.products]:
+                reference_id = str(reference.id or "")
+                normalized = standardize_name(reference_id)
+                initial_value = event_reference_initial_values.get(normalized)
+                if (
+                    reference_id
+                    and matching_reference_counts.get(normalized) == 1
+                    and initial_assignment_counts.get(normalized) == 1
+                    and initial_value is not None
+                ):
+                    reference.stoichiometry = initial_value
+
         for reaction in model.reactions.values():
             for reference in [*reaction.reactants, *reaction.products]:
                 expression = reference.stoichiometry_math or reference.id or ""

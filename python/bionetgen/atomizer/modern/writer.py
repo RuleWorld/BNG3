@@ -4197,12 +4197,29 @@ def _assignment_rules_for_writer(model: SBMLModel) -> List[object]:
     ]
     existing = {standardize_name(str(rule.variable)) for rule in rules}
     species_names = {standardize_name(str(species_id)) for species_id in model.species}
+    event_species_reference_targets = {
+        standardize_name(str(assignment.variable))
+        for event in model.events
+        for assignment in event.assignments
+        if getattr(assignment, "variable", None)
+        and any(
+            reference.id
+            and standardize_name(str(reference.id))
+            == standardize_name(str(assignment.variable))
+            for reaction in model.reactions.values()
+            for reference in [*reaction.reactants, *reaction.products]
+        )
+    }
     for initial_assignment in getattr(model, "initial_assignments", []) or []:
         symbol = str(getattr(initial_assignment, "symbol", "") or "")
         if not symbol:
             continue
         standardized = standardize_name(symbol)
-        if standardized in species_names or standardized in existing:
+        if (
+            standardized in species_names
+            or standardized in existing
+            or standardized in event_species_reference_targets
+        ):
             continue
         rules.append(
             SBMLRule(

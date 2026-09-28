@@ -18,6 +18,47 @@ recorded in the historical sections below; they are not current-head evidence.
 non-energy PRs #476 and #477 are deliberately not silently included in the
 BNG3 port.
 
+## Event-target species-reference initial assignments — 2026-09-28
+
+- [x] Fixed modern Atomizer output for a species-reference ID that has both
+  an SBML initial assignment and a later event assignment. The parser resolves
+  its numeric time-zero coefficient while retaining the reference as dynamic;
+  the writer emits a parameter instead of a same-named fixed assignment
+  function. Unresolvable initial values receive a dropped-semantics diagnostic.
+- [x] Added regression `test_event_target_species_reference_initial_assignment_stays_dynamic`.
+  It failed first because BNGL declared the SBML coefficient `4` instead of
+  initial-assignment value `2`; it now verifies the initial value, no colliding
+  function, and scheduled event update to `3`.
+- [x] The Python suite passed: 685 passed, 28 skipped. Ruff, Black targeting
+  Python 3.9, and `git diff --check` passed. The suite emitted 1,380 existing
+  deprecation warnings.
+- [x] At modified BNG3 source based on commit `f885c9a`, selected SSTS cases
+  `semantic/01446`, `01447`, and `01448` passed conversion, round-trip, native
+  reader, and BNG3 CVODE/libRoadRunner comparisons at `t_end=10` with 100
+  intervals. Each individual record passed; each report is a one-case partial
+  invocation, so the aggregate Core flag is false. Maximum BNG3/libRoadRunner
+  absolute errors were `2.14e-14`, `2.14e-14`, and `5.33e-15`, respectively.
+- [x] Perl BNG2 2.9.3 parsed the generated modern-BNG3 BNGL, generated
+  networks, and ran scheduled ODE actions through `t=10` for all three cases.
+  Comparing BNG2 observables with libRoadRunner on the same 101-point grids
+  matched `01446` (`A`: `1.42e-14`). It did not match `01447` (`A`:
+  `45.0879`; `B`: `1.42e-14`) or `01448` (`A` and `B`: `3.20821`). These
+  are open cross-engine trajectory discrepancies, despite successful parsing
+  and network generation.
+- [x] Reports:
+  - `01446`: `/private/tmp/bng3-ssts-01446-t10-after-initial-fix.json`, SHA-256
+    `9de47254b34f3ff2ef45bd95d1d319e189bc8c5866ce187386e3fa1bbfee93b8`.
+  - `01447`: `/private/tmp/bng3-ssts-01447-t10-after-initial-fix.json`, SHA-256
+    `41a5fa80448f12f5cecaade290c0622d878e145a3579fd13bd1ea3a737f8ad4a`.
+  - `01448`: `/private/tmp/bng3-ssts-01448-t10-after-initial-fix.json`, SHA-256
+    `2a3554cb4c3b78579b5097432769cbd5b2adee9c89709f4fab51bfdcb182abfc`.
+  - Cross-engine summary `/private/tmp/bng3-event-target-initial/cross-engine-summary.json`,
+    SHA-256 `f3b7cc8c87cdbe2daffc193c2c995ed75d62c6f59f73a3a4543f7444e3b3c369`.
+- [ ] This is a three-case modern-BNG3 Atomizer comparison. It does not test
+  the legacy BNG2/PyBioNetGen Atomizer, establish all-SSTS or all-SBML
+  coverage, or clear the BNG2 trajectory mismatches above. BNG2 Atomizer
+  remains incomplete and has not been benchmarked against all SBML.
+
 ## Periodic variable-stoichiometry event thresholds — 2026-09-28
 
 - [x] The modern Atomizer resolves an event-updated species-reference symbol's
