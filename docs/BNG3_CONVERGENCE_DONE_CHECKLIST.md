@@ -4,7 +4,7 @@
 **Last targeted audit:** 2026-09-27 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
 **Working branch:** `plan/nfsim-gpu-perf`
-**Latest full pinned SBML Test Suite report:** local Atomizer source after species initial-assignment support; suite commit `cf38585fac5de8e0e90112febb62851ee2181816`, `1,670 passed / 253 unsupported / 0 failed / 0 timed out`. Report `/private/tmp/bng3-initial-assignment-full-verified.json`, SHA-256 `f284d39ad69146fb4eac0900c17a5fd8ace7ff1e3804124efba89646238b4079`.
+**Latest full pinned SBML Test Suite report:** local Atomizer source after affine parameter event priority support; suite commit `cf38585fac5de8e0e90112febb62851ee2181816`, `1,671 passed / 252 unsupported / 0 failed / 0 timed out`. Compared with the preceding full report, `semantic/01521` gained status and no previous pass regressed. Report `/private/tmp/bng3-affine-priority-full-sbml.json`, SHA-256 `670702b064bf4d764b2c431cc571e2fb21f62ae33d913d6c83264dca997a53e6`.
 **Latest full curated BioModels report:** `be5bdcf` code source (repository head `0da6020` after a docs-only commit); `792/1,083` SBML-path records passed, with no status changes against the previous full report.
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
@@ -7368,5 +7368,37 @@ the other groups remain implementation targets.
   `1.0658141036401503e-14`. Report
   `/private/tmp/bng3-affine-priority-semantic-01521-final.json`, SHA-256
   `99e04bf231791d5816e14c95bf64710d04faa942f433ba6eed944f951321a72e`.
-- [ ] The full pinned SBML aggregate and curated BioModels inventory were not
-  rerun for this focused slice.
+- [x] Full pinned SBML Test Suite at suite commit
+  `cf38585fac5de8e0e90112febb62851ee2181816`, `t_end=1`, and 10 samples:
+  `1,671 passed, 252 unsupported, 0 failed, 0 timed out`. Only
+  `semantic/01521` gained status versus the preceding full report; no prior
+  pass regressed. The supported surface passes; the aggregate core gate remains
+  open. Reference-result conformance was not run. Report
+  `/private/tmp/bng3-affine-priority-full-sbml.json`, SHA-256
+  `670702b064bf4d764b2c431cc571e2fb21f62ae33d913d6c83264dca997a53e6`.
+- [ ] Full curated BioModels inventory rerun against this source is pending.
+
+## Simultaneous state-gated event priorities — 2026-09-27
+
+- [x] Lower a same-trigger, zero-delay event group whose state gate is proven
+  static, with constant priorities. After each assignment, cancel pending
+  nonpersistent events whose trigger has become false; keep persistent events
+  scheduled. The narrow proof excludes reactions, rules, and initial
+  assignments through `static_event_state`.
+- [x] Add a regression reduced from official SBML Test Suite
+  `semantic/00935`. Priority-10 event A clears the gate, nonpersistent
+  priority-8 event B is canceled, and persistent priority-9 event C1 executes.
+  The emitted assignments leave `S1=3`, `S2=2` at `t=1`, matching the official
+  51-row reference output. Direct libRoadRunner comparison to that reference
+  has maximum absolute difference `2.220446049250313e-16`.
+- [x] Focused event/parity tests: `153 passed`; Ruff, Black (`py39`), and
+  `git diff --check` pass. The exact SSTS source translates to the expected
+  A-then-C1 action sequence. Regressions also drop a false static gate and
+  keep the initial-state shortcut closed across distinct event edges.
+- [ ] Refresh the full pinned SBML Test Suite aggregate and run the native
+  BNG3 case check after the local C++ extension loads successfully. The
+  existing extension currently fails to load because `NFcore2::simulateNfcore2`
+  is unresolved; the latest complete aggregate remains the affine-priority
+  report above.
+- [ ] Re-run the full curated BioModels inventory after the extension issue is
+  resolved. The latest attempted run did not produce usable aggregate results.

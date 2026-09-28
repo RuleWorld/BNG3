@@ -3,7 +3,28 @@
 **Last targeted audit:** 2026-09-27 (full convergence checklist not re-audited)
 **Repository:** `RuleWorld/BNG3`
 **Branch:** `plan/nfsim-gpu-perf`
-**Status:** Atomizer cycle, delayed quadratic, species-initial-assignment, and affine parameter-priority events validated; overall convergence and release validation remain incomplete
+**Status:** Atomizer cycle, delayed quadratic, species-initial-assignment, and affine parameter-priority events validated; static-gated nonpersistent priorities now reproduce the pinned SSTS event order; overall convergence and release validation remain incomplete
+
+## Simultaneous state-gated event priorities — 2026-09-27
+
+The event translator now folds initial species gates only for a proven static
+same-trigger, no-delay event group with constant priorities. It applies events
+by priority and cancels a pending nonpersistent event when an earlier
+assignment makes its trigger false; persistent events in the group still run.
+This covers the exact event shape in SBML Test Suite `semantic/00935`.
+
+The emitted actions run event A (priority 10), cancel nonpersistent B
+(priority 8) after A clears `S1 < 0.5`, then run persistent C1 (priority 9).
+They set `S1=3`, `S2=2`, matching the official 51-row SSTS result at `t=1`.
+libRoadRunner matches that reference with maximum absolute difference
+`2.220446049250313e-16`. The targeted action translation and
+focused event/parity tests pass (`153` tests); Ruff, Black (`py39`), and
+`git diff --check` pass.
+
+The latest full SSTS aggregate predates this change. The current local C++
+extension cannot load because it references an unresolved
+`NFcore2::simulateNfcore2` symbol, so the native BNG3 case check and refreshed
+full SSTS/BioModels aggregates remain pending.
 
 ## Affine parameter event priorities — 2026-09-27
 
@@ -20,13 +41,18 @@ The focused Atomizer suite passes `408` tests with `1` skipped. Ruff, Black
 `semantic/01521` passes conversion, XML roundtrip, native-reader, and
 BNG3/libRoadRunner CVODE checks through `t=20` with 1,200 steps. Its `P1_amt`
 maximum absolute difference is `1.0658141036401503e-14`. The focused regression
-also checks that an assignment changing a remaining event's priority moves it
-ahead of an event whose history-based priority was higher before that update.
-Report
-`/private/tmp/bng3-affine-priority-semantic-01521-final.json`, SHA-256
+Report `/private/tmp/bng3-affine-priority-semantic-01521-final.json`, SHA-256
 `99e04bf231791d5816e14c95bf64710d04faa942f433ba6eed944f951321a72e`. The
-focused regression checks the generated order for the two assignments to
-`P2`; no full SBML aggregate or BioModels run was made for this slice.
+focused regression checks priority reevaluation after an assignment changes a
+parameter read by another simultaneous event.
+
+The refreshed full pinned SBML Test Suite (`cf38585fac5de8e0e90112febb62851ee2181816`,
+`t_end=1`, 10 samples) reports `1,671 passed, 252 unsupported, 0 failed, 0
+timed out`. `semantic/01521` gained status and no prior pass regressed. The
+supported surface passes; the aggregate core gate remains open, and reference
+result conformance was not run. Report
+`/private/tmp/bng3-affine-priority-full-sbml.json`, SHA-256
+`670702b064bf4d764b2c431cc571e2fb21f62ae33d913d6c83264dca997a53e6`.
 
 ## Quadratic state events with species initial assignments — 2026-09-27
 
