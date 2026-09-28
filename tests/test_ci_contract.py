@@ -66,6 +66,19 @@ def test_wheel_workflows_use_supported_platform_targets_and_test_dependencies():
     assert "github.event_name == 'workflow_dispatch'" in wheels
 
 
+def test_wheel_tests_smoke_the_installed_console_script():
+    """The built wheel must expose a working user-facing CLI entry point."""
+
+    for workflow_path, job_name in (
+        (CI_WORKFLOW, "wheels"),
+        (RELEASE_WORKFLOW, "build-wheels"),
+    ):
+        job = _workflow_job_from(workflow_path, job_name)
+        assert "CIBW_TEST_COMMAND:" in job
+        assert "bionetgen --version" in job
+        assert "bionetgen --help" in job
+
+
 def _workflow_job(name: str) -> str:
     workflow = CI_WORKFLOW.read_text(encoding="utf-8")
     match = re.search(

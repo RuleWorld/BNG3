@@ -122,7 +122,10 @@ jobs:
           CIBW_BUILD: "cp39-* cp310-* cp311-* cp312-* cp313-* cp314-*"
           CIBW_SKIP: "*-musllinux_* *-manylinux_i686 *-win32"
           CIBW_TEST_REQUIRES: pytest numpy click
-          CIBW_TEST_COMMAND: pytest {project}/tests/python/test_cpp_backend.py -v --tb=short
+          CIBW_TEST_COMMAND: >-
+            pytest {project}/tests/python/test_cpp_backend.py -v --tb=short &&
+            bionetgen --version &&
+            bionetgen --help
           CIBW_ENVIRONMENT: CMAKE_ARGS="-DBUILD_TESTS=OFF -DBUILD_CLI=OFF"
           CIBW_ARCHS_MACOS: ${{ matrix.macos_arch }}
           CIBW_ENVIRONMENT_MACOS: >-
