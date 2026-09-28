@@ -2156,3 +2156,159 @@ def test_quadratic_trajectory_crossings_match_exact_state_solution():
             rel_tol=1e-12,
             abs_tol=1e-12,
         )
+
+
+def test_simultaneous_nonpersistent_event_is_cancelled_after_priority_assignment(
+    tmp_path,
+):
+    from bionetgen.sbml import sbml_to_bngl
+
+    # Reduced from SBML Test Suite semantic/00935: all three triggers become
+    # true together at t=1 while S1 is still at its initial value. Event A
+    # clears the gate, cancelling nonpersistent B while persistent C1 remains.
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
+        level="3" version="2">
+      <model id="simultaneous_static_species_gate">
+        <listOfCompartments>
+          <compartment id="c" size="1" constant="true"/>
+        </listOfCompartments>
+        <listOfSpecies>
+          <species id="S1" compartment="c" initialAmount="0"
+            boundaryCondition="false" constant="false"/>
+          <species id="S2" compartment="c" initialAmount="1"
+            boundaryCondition="false" constant="false"/>
+        </listOfSpecies>
+        <listOfEvents>
+          <event id="A" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true">
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><and/>
+                  <apply><geq/><csymbol definitionURL="http://www.sbml.org/sbml/symbols/time">time</csymbol><cn>1</cn></apply>
+                  <apply><lt/><ci>S1</ci><cn>0.5</cn></apply>
+                </apply>
+              </math>
+            </trigger>
+            <priority><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>10</cn></math></priority>
+            <listOfEventAssignments>
+              <eventAssignment variable="S1"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></eventAssignment>
+              <eventAssignment variable="S2"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0</cn></math></eventAssignment>
+            </listOfEventAssignments>
+          </event>
+          <event id="B" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="false">
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><and/>
+                  <apply><geq/><csymbol definitionURL="http://www.sbml.org/sbml/symbols/time">time</csymbol><cn>1</cn></apply>
+                  <apply><lt/><ci>S1</ci><cn>0.5</cn></apply>
+                </apply>
+              </math>
+            </trigger>
+            <priority><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>8</cn></math></priority>
+            <listOfEventAssignments>
+              <eventAssignment variable="S1"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>2</cn></math></eventAssignment>
+              <eventAssignment variable="S2"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></eventAssignment>
+            </listOfEventAssignments>
+          </event>
+          <event id="C1" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true">
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><and/>
+                  <apply><geq/><csymbol definitionURL="http://www.sbml.org/sbml/symbols/time">time</csymbol><cn>1</cn></apply>
+                  <apply><lt/><ci>S1</ci><cn>0.5</cn></apply>
+                </apply>
+              </math>
+            </trigger>
+            <priority><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>9</cn></math></priority>
+            <listOfEventAssignments>
+              <eventAssignment variable="S1"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>3</cn></math></eventAssignment>
+              <eventAssignment variable="S2"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>2</cn></math></eventAssignment>
+            </listOfEventAssignments>
+          </event>
+        </listOfEvents>
+      </model>
+    </sbml>"""
+    sbml_path = tmp_path / "simultaneous_static_species_gate.xml"
+    sbml_path.write_text(xml, encoding="utf-8")
+
+    bngl = sbml_to_bngl(str(sbml_path))
+
+    assert "Events NOT simulated" not in bngl
+    assert "begin actions" in bngl
+    assignments = (
+        'setConcentration("@c:M_S1()", "1")',
+        'setConcentration("@c:M_S2()", "0")',
+        'setConcentration("@c:M_S1()", "3")',
+        'setConcentration("@c:M_S2()", "2")',
+    )
+    positions = [bngl.index(assignment) for assignment in assignments]
+    assert positions == sorted(positions)
+    assert 'setConcentration("@c:M_S1()", "2")' not in bngl
+    assert 'setConcentration("@c:M_S2()", "1")' not in bngl
+
+
+def test_static_species_gate_that_is_false_at_trigger_is_dropped():
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLEventAssignment
+
+    event = SBMLEvent(
+        id="inactive-static-gate",
+        trigger="and(geq(time, 1), lt(S1, 0.5))",
+        assignments=[SBMLEventAssignment("p", "3")],
+    )
+    result = synthesize_event_actions(
+        [event],
+        EventTranslationContext(
+            resolve_species_pattern=lambda _identifier: None,
+            resolve_param=lambda _identifier: None,
+            is_param=lambda identifier: identifier == "p",
+            is_compile_time_constant=lambda _identifier: False,
+            resolve_initial_value=lambda identifier: {"S1": 1}.get(identifier),
+            static_event_state=True,
+        ),
+    )
+
+    assert result.converted == 1
+    assert result.untranslated == []
+    assert result.actions_block is None
+
+
+def test_static_initial_gate_is_not_reused_across_distinct_event_edges():
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLEventAssignment
+
+    events = [
+        SBMLEvent(
+            id="early-reset",
+            trigger="geq(time, 1)",
+            assignments=[SBMLEventAssignment("S1", "1")],
+        ),
+        SBMLEvent(
+            id="later-gate",
+            trigger="and(geq(time, 2), lt(S1, 0.5))",
+            assignments=[SBMLEventAssignment("p", "3")],
+        ),
+    ]
+    result = synthesize_event_actions(
+        events,
+        EventTranslationContext(
+            resolve_species_pattern=lambda identifier: (
+                f"{identifier}()" if identifier == "S1" else None
+            ),
+            resolve_param=lambda _identifier: None,
+            is_param=lambda identifier: identifier == "p",
+            is_compile_time_constant=lambda _identifier: False,
+            resolve_initial_value=lambda identifier: {"S1": 0}.get(identifier),
+            static_event_state=True,
+        ),
+    )
+
+    assert result.actions_block is not None
+    assert 'setConcentration("S1()", "1")' in result.actions_block
+    assert len(result.untranslated) == 1
+    assert result.untranslated[0][0].id == "later-gate"

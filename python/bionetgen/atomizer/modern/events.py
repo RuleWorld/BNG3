@@ -2564,6 +2564,30 @@ def synthesize_event_actions(
         expression = re.sub(r"\btime\b", "0", expression, flags=re.IGNORECASE)
         return fold_numeric(expression, context.resolve_initial_value)
 
+    # Freeze an initial-state gate only when no distinct or delayed event can
+    # change it before the shared trigger edge is queued.
+    static_initial_gates_are_safe = (
+        context.static_event_state
+        and bool(events)
+        and all(
+            not str(event.delay or "").strip()
+            and str(event.trigger or "").strip() == str(events[0].trigger or "").strip()
+            and (
+                not event.priority
+                or fold(event.priority, event_context=event) is not None
+            )
+            for event in events
+        )
+    )
+
+    def fold_static_event_gate(
+        expression: str, event_context: SBMLEvent
+    ) -> Optional[float]:
+        value = fold(expression, event_context=event_context)
+        if value is not None or not static_initial_gates_are_safe:
+            return value
+        return fold_initial(expression)
+
     def fold_at_state(
         expression: str,
         time_value: float,
@@ -4764,6 +4788,9 @@ def synthesize_event_actions(
                 fold(value, event_context=event) for value in upper_expressions
             ]
             initial_state_truth = fold_initial(state_expression)
+            if static_initial_gates_are_safe and initial_state_truth == 0:
+                normal_converted += 1
+                continue
             if (
                 all(
                     value is not None and math.isfinite(value) for value in lower_values
@@ -5245,7 +5272,7 @@ def synthesize_event_actions(
         if threshold is None:
             window = _parse_gated_time_window(
                 event_trigger,
-                lambda expression: fold(expression, event_context=event),
+                lambda expression: fold_static_event_gate(expression, event),
             )
             if window is not None:
                 lower_expressions, upper_expressions, gate_is_true = window
@@ -5630,7 +5657,100 @@ def synthesize_event_actions(
             end += 1
         group = normalized_scheduled[index:end]
         if not any(item[4] for item in group):
-            ordered_scheduled.extend(sorted(group, key=lambda item: -item[2]))
+            priority_order = sorted(group, key=lambda item: -item[2])
+            group_events = [item[3] for item in group]
+            group_is_complete = (
+                len(group) == len(events)
+                and all(event is not None for event in group_events)
+                and {id(event) for event in group_events if event is not None}
+                == {id(event) for event in events}
+            )
+            if (
+                static_initial_gates_are_safe
+                and group_is_complete
+                and any(
+                    event is not None and event.trigger_persistent is False
+                    for event in group_events
+                )
+            ):
+                # SBML cancels a pending nonpersistent event as soon as an
+                # earlier same-time assignment makes its trigger false.
+                event_state: dict[str, float] = {"time": group[0][0]}
+                for event in group_events:
+                    assert event is not None
+                    for symbol in re.findall(
+                        r"[A-Za-z_][A-Za-z0-9_]*", event.trigger or ""
+                    ):
+                        if standardize_name(symbol) == "time":
+                            continue
+                        initial_value = context.resolve_initial_value(symbol)
+                        if initial_value is None or not math.isfinite(initial_value):
+                            continue
+                        event_state[symbol] = float(initial_value)
+                        event_state[standardize_name(symbol)] = float(initial_value)
+
+                remaining = list(priority_order)
+                ordered_group = []
+                while remaining:
+                    selected = remaining.pop(0)
+                    selected_event = selected[3]
+                    if selected_event is not None and (
+                        selected_event.trigger_persistent is False
+                    ):
+                        trigger_value = fold(
+                            selected_event.trigger,
+                            selected[0],
+                            dynamic_values=event_state,
+                            event_context=selected_event,
+                        )
+                        if trigger_value is None or not math.isfinite(trigger_value):
+                            group_is_complete = False
+                            break
+                        if trigger_value == 0:
+                            continue
+
+                    ordered_group.append(selected)
+                    for symbol, value in selected[5]:
+                        event_state[symbol] = value
+                        event_state[standardize_name(symbol)] = value
+
+                    pending = []
+                    for item in remaining:
+                        event = item[3]
+                        if event is not None and event.trigger_persistent is False:
+                            trigger_value = fold(
+                                event.trigger,
+                                item[0],
+                                dynamic_values=event_state,
+                                event_context=event,
+                            )
+                            if trigger_value is None or not math.isfinite(
+                                trigger_value
+                            ):
+                                group_is_complete = False
+                                break
+                            if trigger_value == 0:
+                                continue
+                        pending.append(item)
+                    if not group_is_complete:
+                        break
+                    remaining = pending
+
+                if group_is_complete:
+                    ordered_scheduled.extend(ordered_group)
+                else:
+                    normal_converted -= sum(item[3] is not None for item in group)
+                    for item in group:
+                        if item[3] is not None:
+                            untranslated.append(
+                                (
+                                    item[3],
+                                    "simultaneous nonpersistent event cancellation "
+                                    "could not be resolved",
+                                )
+                            )
+            else:
+                ordered_scheduled.extend(priority_order)
             index = end
             continue
 
