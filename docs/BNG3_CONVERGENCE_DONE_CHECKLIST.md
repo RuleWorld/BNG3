@@ -8141,3 +8141,25 @@ the other groups remain implementation targets.
   it does not benchmark BNG2 Atomizer against all SBML. BNG2/legacy Atomizer
   remains incomplete, and full cross-engine parity and the stopped curated
   BioModels validation remain open.
+
+## Remaining event-only SSTS cohort triage — 2026-09-28
+
+- [x] Inspected all 27 event-only records in the schema-4 full report against
+  their pinned SBML source. They do not form one safe scheduling cohort:
+  `00387`/`00388` and related threshold cases include rank-two reaction
+  trajectories; `00374` has coupled quadratic dynamics; `00663`/`00664` and
+  `00762` use state-difference triggers with self-multiplying assignments;
+  `00965`/`00966` and `01626`/`01627` exercise recurring or multi-event state
+  interactions.
+- [x] Re-ran `01626` and `01627` individually at exact current `main`
+  (`a911ccfcddeddf3e309f5184b6364eadf2c59d43`, `t_end=1`, 10 intervals).
+  Both remain unsupported: `01626` lowers 0/6 events and `01627` lowers 5/6;
+  the latter still has one state-dependent event. Reports:
+  `/private/tmp/bng3-ssts-reset-01626-a911ccf.json` and
+  `/private/tmp/bng3-ssts-reset-pair-a911ccf.json`.
+- [ ] No new event behavior or SSTS gain is claimed by this triage. The
+  remaining event gap needs a semantic implementation that handles dynamic
+  trigger crossings and recurring/reset interactions; rank-two cases are not
+  evidence for loosening the existing exact-trajectory proof. BNG2/legacy
+  PyBioNetGen Atomizer remains incomplete and has not been benchmarked against
+  all SBML. Cross-engine and stopped curated BioModels gates remain open.
