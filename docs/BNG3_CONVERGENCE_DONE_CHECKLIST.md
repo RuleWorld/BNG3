@@ -7615,6 +7615,12 @@ the other groups remain implementation targets.
   Supported surface passes; aggregate Core gate remains open. Report
   `/private/tmp/bng3-quadratic-species-difference-full-sbml.json`, SHA-256
   `0f9e748655b9e1809de03099cb2144ce5bd23ea3f5a214a9b2258444e6a07f4d`.
+- [ ] An independent BNG2 trajectory comparison for the delayed species-
+  difference fixture remains unverified. Bundled Perl BNG2 parsed the emitted
+  BNGL and generated its `.net`, but could not start simulation because the
+  platform `run_network` executable is absent from `legacy/perl/bin`; process
+  discovery also reports that `ps` is denied in this sandbox. This does not
+  change the passing BNG3/libRoadRunner comparison or claim BNG2 parity.
 - [x] Full repository `pytest -q` passes after the CLI fixture reduction:
   `668 passed`, `30 skipped` in `11.36s` (1,380 existing deprecation
   warnings). Curated BioModels validation remains stopped.
