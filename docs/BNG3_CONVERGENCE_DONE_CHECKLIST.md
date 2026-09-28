@@ -8081,3 +8081,20 @@ the other groups remain implementation targets.
 - [ ] This is source review only. PRs were not modified or approved; resolve
   the correctness findings, rebase on current `main`, and rerun exact-head
   checks before treating either PR as merge-ready.
+
+## Proven inactive stationary state-triggered events — 2026-09-28
+
+- [x] The modern Atomizer now omits a state-threshold event when its exact
+  quadratic trajectory is stationary and starts outside the trigger region.
+  This also handles pairwise state comparisons when their difference is
+  proven stationary. Event assignments cannot change the proof because the
+  event never has a rising edge.
+- [x] Added focused regressions for a stationary scalar state and a stationary
+  species difference whose event assignments include a trigger species. The
+  complete event test module passes (`73 passed`); Ruff, Black (`py39`), and
+  `git diff --check` pass.
+- [ ] This slice adds no verified official SSTS pass or trajectory-parity
+  result. `semantic/00374` remains unsupported for its re-entrant quadratic
+  state event. BNG2/legacy Atomizer remains incomplete and has not been
+  benchmarked against all SBML; broader Atomizer and cross-engine gates remain
+  open.

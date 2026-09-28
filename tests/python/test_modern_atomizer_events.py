@@ -2130,6 +2130,76 @@ def test_quadratic_state_event_with_no_future_crossing_is_proven_inactive():
     assert result.actions_block is None
 
 
+def test_constant_state_difference_event_with_no_crossing_is_proven_inactive():
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLEventAssignment
+
+    event = SBMLEvent(
+        id="constant-difference-event",
+        trigger="gt(S4, S2)",
+        assignments=[
+            SBMLEventAssignment("S1", "0.0002"),
+            SBMLEventAssignment("S4", "0.0002"),
+        ],
+    )
+    result = synthesize_event_actions(
+        [event],
+        EventTranslationContext(
+            resolve_species_pattern=lambda identifier: f"{identifier}()",
+            resolve_param=lambda _identifier: None,
+            is_param=lambda _identifier: False,
+            is_compile_time_constant=lambda _identifier: False,
+            resolve_initial_value=lambda identifier: {
+                "S4": 0.0004,
+                "S2": 0.00048,
+            }.get(identifier),
+            resolve_quadratic_rate_for_event=lambda identifier, _event: (
+                (-0.00008, 0.0, 0.0, 0.0) if identifier == "(S4) - (S2)" else None
+            ),
+            base_t_end=1.0,
+        ),
+    )
+
+    assert result.converted == 1
+    assert result.untranslated == []
+    assert result.actions_block is None
+
+
+def test_stationary_quadratic_state_event_with_no_crossing_is_proven_inactive():
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLEventAssignment
+
+    event = SBMLEvent(
+        id="stationary-quadratic-event",
+        trigger="gt(A, 2)",
+        assignments=[SBMLEventAssignment("P", "1")],
+    )
+    result = synthesize_event_actions(
+        [event],
+        EventTranslationContext(
+            resolve_species_pattern=lambda _identifier: None,
+            resolve_param=lambda _identifier: None,
+            is_param=lambda identifier: identifier == "P",
+            is_compile_time_constant=lambda _identifier: False,
+            resolve_initial_value=lambda identifier: 1.0 if identifier == "A" else None,
+            resolve_quadratic_rate_for_event=lambda identifier, _event: (
+                (1.0, 0.0, 0.0, 0.0) if identifier == "A" else None
+            ),
+            base_t_end=1.0,
+        ),
+    )
+
+    assert result.converted == 1
+    assert result.untranslated == []
+    assert result.actions_block is None
+
+
 def test_affine_state_difference_threshold_preserves_trigger_snapshot():
     from bionetgen.atomizer.modern.events import (
         EventTranslationContext,

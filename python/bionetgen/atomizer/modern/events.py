@@ -6449,6 +6449,35 @@ def synthesize_event_actions(
                     scale_value = float(state_threshold_scale)
                     crossing_value /= scale_value
                     trigger_threshold_value = crossing_value
+                if (
+                    difference_components is not None
+                    and not rate_of_threshold
+                    and crossing_value is not None
+                    and state_threshold_scale == "1"
+                ):
+                    stationary_difference = context.resolve_quadratic_rate_for_event(
+                        identifier, event
+                    )
+                    if stationary_difference is not None and stationary_difference[
+                        1:
+                    ] == (0.0, 0.0, 0.0):
+                        initial_difference = stationary_difference[0]
+                        initially_true = (
+                            initial_difference > crossing_value
+                            if operator == "gt"
+                            else (
+                                initial_difference >= crossing_value
+                                if operator == "geq"
+                                else (
+                                    initial_difference < crossing_value
+                                    if operator == "lt"
+                                    else initial_difference <= crossing_value
+                                )
+                            )
+                        )
+                        if not initially_true:
+                            normal_converted += 1
+                            continue
                 if trajectory is not None and crossing_value is not None:
                     initial_value, slope = trajectory
                     trigger_state_trajectory = (
@@ -6756,6 +6785,17 @@ def synthesize_event_actions(
                                     + linear * crossing_value
                                     + constant
                                 )
+                                if (
+                                    crossing_time is None
+                                    and quadratic == 0
+                                    and linear == 0
+                                    and constant == 0
+                                ):
+                                    # An exactly stationary proven trajectory
+                                    # that starts outside the trigger cannot
+                                    # produce a rising edge at any later time.
+                                    normal_converted += 1
+                                    continue
                                 rising = (
                                     operator in {"gt", "geq"} and derivative > 0
                                 ) or (operator in {"lt", "leq"} and derivative < 0)
