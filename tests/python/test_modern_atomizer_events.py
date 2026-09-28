@@ -446,6 +446,59 @@ def test_first_order_chain_schedules_reentrant_terminal_threshold_events():
     assert result.actions_block.count('setConcentration("Product()", "1")') == 2
 
 
+def test_first_order_chain_schedules_persistent_delayed_terminal_event():
+    import re
+
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLEventAssignment
+
+    event = SBMLEvent(
+        id="delayed-product-reset",
+        trigger="gt(Product, 2)",
+        delay="4.3",
+        assignments=[SBMLEventAssignment("Product", "1")],
+        trigger_initial_value=True,
+        trigger_persistent=True,
+        use_values_from_trigger_time=True,
+    )
+    result = synthesize_event_actions(
+        [event],
+        EventTranslationContext(
+            resolve_species_pattern=lambda identifier: f"{identifier}()",
+            resolve_param=lambda _identifier: None,
+            is_param=lambda _identifier: False,
+            resolve_initial_value=lambda identifier: {
+                "Source": 1.25,
+                "Intermediate": 1.0,
+                "Product": 1.5,
+            }.get(identifier),
+            resolve_first_order_chain_event_system=lambda: (
+                "Source",
+                "Intermediate",
+                "Product",
+                0.1,
+                0.2,
+            ),
+            base_t_end=10,
+            base_steps=50,
+        ),
+    )
+
+    assert result.converted == 1
+    assert result.untranslated == []
+    assert result.actions_block is not None
+    phase_ends = [
+        float(value)
+        for value in re.findall(r"t_end=>([0-9.eE+-]+)", result.actions_block)
+    ]
+    assert len(phase_ends) == 2
+    assert abs(phase_ends[0] - 7.079174844177558) < 1e-10
+    assert phase_ends[1] == 10
+
+
 def test_atomizer_lowers_first_order_chain_event_with_derived_pool():
     import re
 

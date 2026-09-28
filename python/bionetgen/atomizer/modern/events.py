@@ -4994,6 +4994,7 @@ def synthesize_event_actions(
             ) = chain
             identifier, operator, threshold_expression = parsed
             threshold = fold(threshold_expression, event_context=event)
+            delay = fold(event.delay, event_context=event) if event.delay else 0.0
             initial_values = {
                 name: context.resolve_initial_value(name)
                 for name in (source_id, intermediate_id, product_id)
@@ -5003,6 +5004,10 @@ def synthesize_event_actions(
                 and operator in {"gt", "geq"}
                 and threshold is not None
                 and math.isfinite(float(threshold))
+                and delay is not None
+                and math.isfinite(float(delay))
+                and float(delay) >= 0
+                and (float(delay) == 0 or event.trigger_persistent is not False)
                 and math.isfinite(float(first_rate))
                 and math.isfinite(float(second_rate))
                 and float(first_rate) > 0
@@ -5013,7 +5018,6 @@ def synthesize_event_actions(
                     and float(value) >= 0
                     for value in initial_values.values()
                 )
-                and not event.delay
                 and not event.priority
                 and len(event.assignments) == 1
             )
@@ -5038,6 +5042,7 @@ def synthesize_event_actions(
                 threshold_value = float(threshold)
                 assignment_number = float(assignment_value)
                 horizon = float(context.base_t_end)
+                delay_value = float(delay)
                 current_time = 0.0
                 initially_active = (
                     product > threshold_value
@@ -5056,6 +5061,7 @@ def synthesize_event_actions(
                         List[Tuple[str, float]],
                     ]
                 ] = []
+                pending_due: Optional[float] = None
 
                 def terminal_after(
                     elapsed: float,
@@ -5083,6 +5089,41 @@ def synthesize_event_actions(
 
                 chain_valid = True
                 for _ in range(10_000):
+                    if pending_due is not None:
+                        if pending_due > horizon:
+                            chain_valid = False
+                            break
+                        due_state = terminal_after(pending_due - current_time)
+                        if due_state is None:
+                            chain_valid = False
+                            break
+                        current_time = pending_due
+                        product, source, intermediate = due_state
+                        pending_due = None
+                        pattern = context.resolve_species_pattern(variable)
+                        if pattern is None:
+                            chain_valid = False
+                            break
+                        chain_schedule.append(
+                            (
+                                current_time,
+                                [("conc", pattern, assignment_number)],
+                                0.0,
+                                event,
+                                False,
+                                [(standardize_name(variable), assignment_number)],
+                            )
+                        )
+                        product = assignment_number
+                        active = (
+                            product > threshold_value
+                            if operator == "gt"
+                            else product >= threshold_value
+                        )
+                        if current_time >= horizon or active:
+                            break
+                        continue
+
                     crossing_delta: Optional[float] = 0.0 if pending_initial else None
                     pending_initial = False
                     if crossing_delta is None:
@@ -5126,6 +5167,12 @@ def synthesize_event_actions(
                         break
                     current_time += crossing_delta
                     product, source, intermediate = crossing_state
+                    if delay_value > 0:
+                        pending_due = current_time + delay_value
+                        if pending_due > horizon:
+                            chain_valid = False
+                            break
+                        continue
                     pattern = context.resolve_species_pattern(variable)
                     if pattern is None or not chain_supported:
                         chain_valid = False

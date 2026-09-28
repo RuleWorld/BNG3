@@ -7844,3 +7844,24 @@ the other groups remain implementation targets.
   BNG2 Atomizer, prove BNG2 Atomizer complete, or benchmark it against all
   SBML. BNG2 Atomizer remains incomplete; full cross-engine coverage remains
   open. Curated BioModels validation remains stopped per the user's request.
+
+## Persistent delayed first-order chain state event — 2026-09-28
+
+- [x] Extend the proven irreversible first-order three-species chain scheduler
+  to one constant terminal-species assignment after a folded nonnegative delay.
+  Delayed events must be persistent; priorities remain unsupported. The chain
+  trajectory advances analytically from threshold crossing to execution time.
+  Events due beyond the simulation horizon remain untranslated.
+- [x] Add a regression asserting the event fires at the analytic crossing plus
+  its 4.3 time-unit delay. Focused event and SBML parity suites pass (`175
+  passed`).
+- [x] Pinned SSTS case `semantic/00665` passes at `t_end=10`, 50 intervals,
+  against libRoadRunner 2.10.0. All seven observables pass all 51 samples;
+  maximum absolute difference is `2.36e-12`. Partial one-case report:
+  `/private/tmp/bng3-ssts-00665-delay-chain.json`. Its runner exit code is 1
+  because the aggregate Core result is incomplete for a one-case selection;
+  the selected case status is `passed`.
+- [ ] This selected BNG3 SSTS comparison does not benchmark BNG2 Atomizer or
+  establish BNG2 Atomizer completeness. BNG2 Atomizer remains incomplete and
+  has not been benchmarked against all SBML. Full cross-engine coverage remains
+  open; curated BioModels validation remains stopped per the user's request.
