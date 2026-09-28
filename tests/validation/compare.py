@@ -908,6 +908,8 @@ def parse_net(path: str | Path, *, rate_mode: str = "value") -> Network | None:
     rate_defs: dict[str, str] = {}
     groups: dict[str, dict[int, float]] = {}
     section = None
+    has_species_block = False
+    has_reactions_block = False
 
     for line in path.read_text().splitlines():
         if "#" in line:
@@ -917,6 +919,8 @@ def parse_net(path: str | Path, *, rate_mode: str = "value") -> Network | None:
             continue
         if stripped.startswith("begin "):
             section = stripped[len("begin ") :].strip()
+            has_species_block |= section == "species"
+            has_reactions_block |= section == "reactions"
             continue
         if stripped.startswith("end "):
             section = None
@@ -991,7 +995,11 @@ def parse_net(path: str | Path, *, rate_mode: str = "value") -> Network | None:
                 entries[index] = entries.get(index, 0.0) + weight
             groups[group_index] = (name, entries)
 
-    if not species and not raw_reactions:
+    if (
+        not species
+        and not raw_reactions
+        and not (has_species_block and has_reactions_block)
+    ):
         return None
 
     net = Network(

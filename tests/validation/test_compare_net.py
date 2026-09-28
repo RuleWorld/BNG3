@@ -57,6 +57,41 @@ def _net(path: Path, rate: str) -> Path:
     return path
 
 
+def test_parse_net_accepts_valid_empty_network_blocks(tmp_path):
+    path = tmp_path / "empty.net"
+    path.write_text(
+        "\n".join(
+            [
+                "# Created by bng_cpp",
+                "begin parameters",
+                "    1 __Avogadro__ 1",
+                "end parameters",
+                "begin species",
+                "end species",
+                "begin reactions",
+                "end reactions",
+                "begin groups",
+                "end groups",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    network = parse_net(path)
+
+    assert network is not None
+    assert network.n_species == 0
+    assert network.n_reactions == 0
+
+
+def test_parse_net_rejects_parameter_only_document(tmp_path):
+    path = tmp_path / "not-a-network.net"
+    path.write_text("begin parameters\n    1 k 1\nend parameters\n", encoding="utf-8")
+
+    assert parse_net(path) is None
+
+
 def test_equivalent_built_in_rate_expressions_compare_equal(tmp_path):
     reference = parse_net(_net(tmp_path / "reference.net", "2*asin(1)"))
     generated = parse_net(_net(tmp_path / "generated.net", "3.14159265359"))
