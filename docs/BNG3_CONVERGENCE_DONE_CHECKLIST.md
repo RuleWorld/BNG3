@@ -5003,18 +5003,18 @@ completion gate.
 - [ ] This validates one local macOS arm64 / CPython 3.14 artifact path only.
   Linux, Windows, other Python versions and architectures, complete package
   data, and release workflow gates remain unverified.
-- [x] Refreshed the wheel from Atomizer source head
-  `e2bfb4d76ea9605af58a1ec269dab97029a50513`: macOS arm64 / CPython 3.14 wheel
-  is 3,083,636 bytes, SHA-256
-  `3d5f04ea3a892d2012d9950046d59463382f0c891aa98d882c63746b6b8924e5`.
-  Installed it with its declared runtime dependencies in a clean temporary
+- [x] Declared scikit-build-core's wheel-build CMake floor explicitly as
+  `>=3.15`, while preserving the standalone CMake project minimum of 3.14.
+  This removes the backend's minimum-version warning without changing the
+  project's direct CMake requirement.
+- [x] Rebuilt the macOS arm64 / CPython 3.14 wheel from source commit `3283779`.
+  It is 3,083,636 bytes, SHA-256
+  `cedbb2e723b83adebe8f2da6f1cb8760cff487cb208fcbaf4becaf5a8d715ac4`.
+  Installed it with declared runtime dependencies in a clean temporary
   environment (`numpy 2.5.3`, `click 8.5.0`, `packaging 26.3`). `pip check`,
   CLI version, native extension import, and modern Atomizer scheduling of the
-  delayed `semantic/00778` event at `t=7.07917484418` pass.
-- [ ] The refreshed build emits scikit-build-core's warning that project
-  `cmake_minimum_required(VERSION 3.14)` is below its supported 3.15 minimum.
-  The wheel builds successfully with CMake 4.4.3; reconcile the declared CMake
-  compatibility before release. Cross-platform and release gates remain open.
+  delayed `semantic/00778` event at `t=7.07917484418` pass. Cross-platform and
+  release gates remain open.
 
 ## 9. Legacy repositories and governance
 
