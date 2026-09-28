@@ -8094,7 +8094,10 @@ the other groups remain implementation targets.
   complete event test module passes (`73 passed`); Ruff, Black (`py39`), and
   `git diff --check` pass.
 - [ ] This slice adds no verified official SSTS pass or trajectory-parity
-  result. `semantic/00374` remains unsupported for its re-entrant quadratic
-  state event. BNG2/legacy Atomizer remains incomplete and has not been
-  benchmarked against all SBML; broader Atomizer and cross-engine gates remain
-  open.
+  result. Exact-head report
+  `/private/tmp/bng3-stationary-event-00374-82e3f52.json`, SHA-256
+  `fc757b293eed41f3526f0eb3b3965bca4f4b2f6f085ac7533100bf1700230517`, records
+  `semantic/00374` as unsupported because dynamic event scheduling is outside
+  the BNGL action engine. BNG2/legacy Atomizer remains incomplete and has not
+  been benchmarked against all SBML; broader Atomizer and cross-engine gates
+  remain open.
