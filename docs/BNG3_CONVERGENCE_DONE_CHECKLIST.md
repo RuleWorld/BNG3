@@ -7922,11 +7922,10 @@ the other groups remain implementation targets.
   dropped, one-element `distrib` warning. A direct parser sweep of all 61
   official L3V2 cohort files produced the expected dropped package warning for
   all 61, with no failures. The full Python suite passes
-  (`677 passed, 28 skipped`); Ruff passes. File-based Black checks could not
-  start because Black's multiprocessing manager hit sandbox IPC
-  `PermissionError`; stdin formatting checks pass. `stochastic/00040` remains
-  unsupported because required distribution sampling and recurring
-  state-trigger event execution are not implemented in the BNGL runtime. Its
+  (`677 passed, 28 skipped`); Ruff and Black stdin formatting checks pass.
+  `stochastic/00040` remains unsupported because required distribution
+  sampling and recurring state-trigger event execution are not implemented in
+  the BNGL runtime. Its
   selected official report is
   `/private/tmp/bng3-ssts-stochastic-00040-distrib-diagnostic.json`, SHA-256
   `b470ef6427ada19dd80612e9c589c4d821bb9a83d92ba839d0bbae5d03f5af83`.
