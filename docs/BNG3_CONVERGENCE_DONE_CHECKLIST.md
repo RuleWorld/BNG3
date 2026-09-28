@@ -52,6 +52,32 @@ BNG3 port.
   incomplete and has not been benchmarked against all SBML. Wider cross-engine
   coverage remains open.
 
+## Cross-engine network check for periodic stoichiometry cases — 2026-09-28
+
+- [x] Ran the existing cross-engine benchmark on `semantic/01626` and
+  `semantic/01627`, with three repeats in flat and Atomized modes. Modern BNG3
+  converted all 12 attempts and generated networks in both BNG3 and Perl BNG2
+  for all 12. Network structure matched 12/12; strict normalized rate
+  expressions matched 6/12. All six `01626` BNG2 comparisons were structurally
+  equal but failed strict rates because BNG2 retained the symbolic zero-flux
+  expression while BNG3's network simplified it to zero. `01627` matched
+  structure and rates in all six comparisons.
+- [x] PyBioNetGen legacy Atomizer produced BNGL for all 12 attempts. For
+  `01627`, BNG3 and BNG2 generated networks and matched structure and rates in
+  all six comparisons. For `01626`, neither engine generated networks from the
+  six legacy outputs: flat output referenced undefined `Q` and `R`, and
+  Atomized output also contained unresolved `fRate0` expressions.
+- [x] Report `/private/tmp/bng3-cross-engine-ssts-stoich-events-9ae7323.json`,
+  SHA-256 `3540386e106d904269e708aaa30c89590d3181f406c085cd73f70f47dd7e6c48`.
+  It records BNG3 `9ae7323`, BNG2 `8726b30`, and PyBioNetGen `43b09a5`.
+  Tracked source trees were clean; the report's dirty flags reflect the
+  preserved untracked BNG3 offline bundle and PyBioNetGen `examples/` directory.
+- [ ] This is a two-case selected interoperability benchmark. It does not
+  measure trajectory parity across engines or establish all-SBML coverage.
+  The legacy Atomizer remains incomplete and has not been benchmarked against
+  all SBML. Broader BNG2, NFsim, PyBioNetGen, and BioModels comparisons remain
+  open.
+
 ## Two-step first-order state-event cohort — 2026-09-28
 
 - [x] Added exact scheduled-event lowering for a narrow deterministic system:
