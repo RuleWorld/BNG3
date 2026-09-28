@@ -7886,6 +7886,17 @@ the other groups remain implementation targets.
   `/private/tmp/bng3-delayed-chain-initial-assignment-full-sbml.json`, SHA-256
   `f539a2aeb8de9353ffc2e68957829007accfd867c9c79a0ad4d0cd8022062c60`.
   Supported surface passes; aggregate Core gate remains open.
+- [x] Perl BNG2 2.9.3 and native BNG3 both execute the same tolerance-annotated
+  BNGL emitted by the BNG3 modern Atomizer for `semantic/00778`. Their networks
+  match at 3 species and 2 reactions. On the identical 51-point time grid, all
+  six species observables match with `atol=rtol=1e-8`; maximum absolute
+  difference is `1.01e-13`. BNG2 returned zero and wrote `.cdat`/`.gdat`; two
+  stderr notices report sandbox-blocked `ps` discovery. Report and hashed
+  `.bngl`, `.net`, `.gdat`, `.cdat`, and logs:
+  `/private/tmp/bng3-bng2-00778-parity-ov_fig51/report.json`, SHA-256
+  `59e2ee8dc7a84b15fee537291b4f19a7611c7fc4346c79b024ca23ade7f37873`.
+  This is BNG2 engine execution of BNG3-generated BNGL; it does not benchmark
+  BNG2 Atomizer or establish its completeness or all-SBML coverage.
 - [ ] This selected BNG3 SSTS comparison does not benchmark BNG2 Atomizer or
   establish BNG2 Atomizer completeness. BNG2 Atomizer remains incomplete and
   has not been benchmarked against all SBML. Full cross-engine coverage remains
