@@ -33,7 +33,7 @@ from bionetgen.atomizer.modern import Atomizer
 source, mode, output, metadata = sys.argv[1:5]
 start = time.perf_counter()
 result = Atomizer(atomize=(mode == "atomized"), quiet_mode=True).atomize(
-    Path(source).read_text(encoding="utf-8")
+    Path(source).read_text(encoding="utf-8"), source_path=Path(source)
 )
 elapsed = (time.perf_counter() - start) * 1000.0
 if not result.success or not result.bngl:
