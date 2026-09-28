@@ -8003,3 +8003,31 @@ the other groups remain implementation targets.
   BNG2 Atomizer remains incomplete and has not been benchmarked against all
   SBML. The full SSTS source-head refresh, NFsim trajectory cohort, and stopped
   curated BioModels validation remain open.
+
+## Review of open performance PRs — 2026-09-28
+
+- [x] Reviewed PR #26 at head `7b1d7ec57300911bbf2b8bceb7ac3c9a1ed5b6dd`
+  and PR #27 at head `b105d54ae971a18eca36a061e2ac6c89abf21dc3`. Both target
+  base `148a031`; current `main` is `7fd5dd6b5303e8f018b8ff7744f696cfd1babe06`.
+- [ ] Both PRs contain Metal batch SSA code whose GPU path builds
+  `meanSpecies` with one row while retaining a multi-row time grid. The default
+  `.cdat` writer indexes concentrations for every time row, so GPU batch runs
+  can read out of bounds. PR #26's checks pass but do not cover this shape;
+  PR #27 contains the same path.
+- [ ] PR #27's NFcore2 `SsaDriver::canonicalPair` orders same-type reactant
+  roots solely by molecule handle. Matcher root roles can differ, so
+  asymmetric same-type bimolecular patterns may lose valid matches. Add a
+  role-asymmetric homotypic test and preserve all valid orientations.
+- [ ] PR #26 and #27 cast parsed `batch_size` values to `size_t` before
+  checking range or integrality. Reject negative, non-finite, fractional, and
+  out-of-range values before conversion.
+- [x] PR #26 hosted checks passed on its head, while wheel, source-distribution,
+  Docker, and publish jobs were skipped. GitHub reported merge state `DIRTY`.
+  PR #27's C++ matrix and ASan checks failed at its exact head; Python matrix,
+  parity jobs, lint, and CodeQL passed. C++ failures include a missing
+  architecture disposition for `tests/architecture_contracts/nfcore2/test_ssa_driver.cpp`;
+  Windows also reported a segfault in `tests/cpp/test_ode_options.cpp:529`.
+  GitHub reported merge state `UNSTABLE`.
+- [ ] This is source review only. PRs were not modified or approved; resolve
+  the correctness findings, rebase on current `main`, and rerun exact-head
+  checks before treating either PR as merge-ready.
