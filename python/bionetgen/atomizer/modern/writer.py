@@ -6236,8 +6236,17 @@ def generate_bngl(
                 ),
                 None,
             )
-            if species_id is None or any(
-                rule.variable == species_id for rule in model.rules if rule.variable
+            species_rules = [
+                rule
+                for rule in model.rules
+                if rule.variable
+                and standardize_name(rule.variable)
+                == standardize_name(species_id or "")
+            ]
+            if (
+                species_id is None
+                or len(species_rules) > 1
+                or any(rule.type != "rate" for rule in species_rules)
             ):
                 return None
             if species_id in initial_assignment_values:
@@ -9070,6 +9079,20 @@ def generate_bngl(
                 )
             )
         )
+
+        def resolve_periodic_rate_rule_expression(identifier: str) -> Optional[str]:
+            matching_rules = [
+                rule
+                for rule in model.rules
+                if rule.variable
+                and standardize_name(rule.variable) == standardize_name(identifier)
+            ]
+            if len(matching_rules) != 1 or matching_rules[0].type != "rate":
+                return None
+            return extend_function(
+                matching_rules[0].math or "", {}, model.function_definitions
+            )
+
         event_result = synthesize_event_actions(
             event_translation_events,
             EventTranslationContext(
@@ -9097,6 +9120,11 @@ def generate_bngl(
                 base_t_end=float(t_end),
                 base_steps=max(1, int(n_steps)),
                 resolve_initial_value=resolve_initial_event_value,
+                resolve_rate_rule_expression_for_event=(
+                    lambda identifier, _event: resolve_periodic_rate_rule_expression(
+                        identifier
+                    )
+                ),
                 resolve_first_order_cycle_event_system=(
                     resolve_first_order_cycle_event_system
                 ),

@@ -461,6 +461,11 @@ class EventTranslationContext:
     # referenced symbol changes later. This callback is used only for that
     # edge and immediate assignment values, never for later schedule times.
     resolve_initial_value: Callable[[str], Optional[float]] = lambda _identifier: None
+    # Return the SBML rate-rule expression for a state whose derivative may
+    # depend on parameters updated by an already-proven periodic event group.
+    resolve_rate_rule_expression_for_event: Callable[
+        [str, SBMLEvent], Optional[str]
+    ] = lambda _identifier, _event: None
     # Return (initial value, constant derivative) only for independently
     # affine states. Used to solve simple one-variable threshold crossings.
     resolve_affine_rate: Callable[[str], Optional[Tuple[float, float]]] = (
@@ -4148,6 +4153,309 @@ def synthesize_event_actions(
                     }
                 )
                 periodic_converted += 1
+
+    # A rate-rule state can remain below an absolute threshold while periodic
+    # events update the parameters in its derivative. Integrate its exact
+    # piecewise-constant slope across the already-proven event schedule.
+    for event in events:
+        if id(event) in periodic_handled or not periodic_changes:
+            continue
+        absolute_threshold = re.match(
+            r"^(gt|geq)\s*\(\s*abs\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)\s*,\s*(.+)\)\s*$",
+            str(event.trigger or "").strip(),
+            re.IGNORECASE,
+        )
+        if absolute_threshold is None:
+            continue
+        operator, identifier, threshold_expression = absolute_threshold.groups()
+        threshold = fold(threshold_expression, event_context=event)
+        initial_value = context.resolve_initial_value(identifier)
+        rate_expression = context.resolve_rate_rule_expression_for_event(
+            identifier, event
+        )
+        if (
+            threshold is None
+            or not math.isfinite(threshold)
+            or threshold <= 0
+            or initial_value is None
+            or not math.isfinite(initial_value)
+            or rate_expression is None
+            or any(
+                standardize_name(variable) == standardize_name(identifier)
+                for assignment in event.assignments
+                for variable, _expression in [_event_assignment(assignment)]
+            )
+            or any(
+                standardize_name(variable) == standardize_name(identifier)
+                for other in events
+                if other is not event
+                for assignment in other.assignments
+                for variable, _expression in [_event_assignment(assignment)]
+            )
+        ):
+            continue
+        rate_symbols = {
+            symbol
+            for symbol in re.findall(
+                r"[A-Za-z_][A-Za-z0-9_]*", context.expand_functions(rate_expression)
+            )
+            if symbol.lower() not in {"pi", "exponentiale"}
+        }
+        if (
+            not rate_symbols
+            or rate_symbols & periodic_rate_state_ids
+            or any(
+                context.resolve_rate_rule_expression_for_event(symbol, event)
+                is not None
+                for symbol in rate_symbols
+            )
+            or not rate_symbols.issubset(
+                periodic_target_ids
+                | {
+                    symbol
+                    for symbol in rate_symbols
+                    if context.is_compile_time_constant(symbol)
+                }
+            )
+            or any(
+                id(other) not in periodic_handled
+                and other is not event
+                and any(
+                    standardize_name(variable) == standardize_name(symbol)
+                    for assignment in other.assignments
+                    for variable, _expression in [_event_assignment(assignment)]
+                    for symbol in rate_symbols
+                )
+                for other in events
+            )
+        ):
+            continue
+
+        dynamic_values = dict(initial_state)
+        state_value = float(initial_value)
+        current_time = 0.0
+
+        def safely_below_threshold(value: float) -> bool:
+            tolerance = 1e-12 * max(1.0, threshold, abs(value))
+            return abs(value) < threshold - tolerance
+
+        stays_below = safely_below_threshold(state_value)
+        for change_time, changes in periodic_changes:
+            if change_time < current_time or change_time > context.base_t_end:
+                continue
+            slope = fold(
+                rate_expression,
+                current_time,
+                dynamic_values=dynamic_values,
+                event_context=event,
+            )
+            if slope is None or not math.isfinite(slope):
+                stays_below = False
+                break
+            state_value += float(slope) * (change_time - current_time)
+            stays_below = stays_below and safely_below_threshold(state_value)
+            dynamic_values.update(changes)
+            current_time = change_time
+        if stays_below:
+            slope = fold(
+                rate_expression,
+                current_time,
+                dynamic_values=dynamic_values,
+                event_context=event,
+            )
+            if slope is None or not math.isfinite(slope):
+                stays_below = False
+            else:
+                state_value += float(slope) * (context.base_t_end - current_time)
+                stays_below = safely_below_threshold(state_value)
+        if stays_below:
+            event_proven_inactive.add(id(event))
+            periodic_handled.add(id(event))
+            self_targets = {
+                variable
+                for assignment in event.assignments
+                for variable, _expression in [_event_assignment(assignment)]
+                if context.is_param(variable)
+            }
+            self_initial_values = {
+                target: context.resolve_initial_value(target) for target in self_targets
+            }
+            if any(value is None for value in self_initial_values.values()):
+                periodic_handled.remove(id(event))
+                event_proven_inactive.remove(id(event))
+                continue
+            periodic_target_ids.update(self_targets)
+            periodic_initial_values.update(
+                {target: float(value) for target, value in self_initial_values.items()}
+            )
+            initial_state.update(
+                {target: float(value) for target, value in self_initial_values.items()}
+            )
+            periodic_converted += 1
+
+    # A fixed-time trigger can use a mutable gate when prior periodic events
+    # prove that gate true at the crossing and keep it true afterward.
+    for event in events:
+        if id(event) in periodic_handled or event.delay or event.priority:
+            continue
+        terms = _split_call_arguments(str(event.trigger or ""))
+        if terms is None:
+            continue
+        time_terms = [
+            term
+            for term in terms
+            if re.match(r"^geq\s*\(\s*time\s*,", term, re.IGNORECASE)
+        ]
+        if len(time_terms) != 1:
+            continue
+        threshold_expression = parse_time_threshold(time_terms[0])
+        trigger_time = (
+            fold(threshold_expression, event_context=event)
+            if threshold_expression is not None
+            else None
+        )
+        if (
+            trigger_time is None
+            or not math.isfinite(trigger_time)
+            or trigger_time <= 0
+            or trigger_time > context.base_t_end
+        ):
+            continue
+        gate_terms = [term for term in terms if term != time_terms[0]]
+        if not gate_terms:
+            continue
+        gate_symbols = {
+            symbol
+            for term in gate_terms
+            for symbol in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", term)
+            if symbol.lower()
+            not in {
+                "abs",
+                "and",
+                "eq",
+                "exponentiale",
+                "geq",
+                "gt",
+                "if",
+                "leq",
+                "lt",
+                "neq",
+                "not",
+                "or",
+                "pi",
+                "plus",
+                "times",
+            }
+        }
+        if (
+            any(
+                symbol not in periodic_target_ids
+                and not context.is_compile_time_constant(symbol)
+                for symbol in gate_symbols
+            )
+            or any(
+                context.resolve_rate_rule_expression_for_event(symbol, event)
+                is not None
+                for symbol in gate_symbols
+            )
+            or any(
+                id(other) not in periodic_handled
+                and other is not event
+                and any(
+                    standardize_name(variable) == standardize_name(symbol)
+                    for assignment in other.assignments
+                    for variable, _expression in [_event_assignment(assignment)]
+                    for symbol in gate_symbols
+                )
+                for other in events
+            )
+        ):
+            continue
+
+        def gate_is_true(values: Mapping[str, float]) -> bool:
+            return all(
+                (
+                    value := fold(
+                        term,
+                        trigger_time,
+                        dynamic_values=values,
+                        event_context=event,
+                    )
+                )
+                is not None
+                and value != 0
+                for term in gate_terms
+            )
+
+        values_before = dict(initial_state)
+        values_after = dict(initial_state)
+        for change_time, changes in periodic_changes:
+            time_tolerance = 1e-12 * max(1.0, abs(trigger_time))
+            same_time = abs(change_time - trigger_time) <= time_tolerance
+            if change_time < trigger_time and not same_time:
+                values_before.update(changes)
+                values_after.update(changes)
+            elif same_time:
+                values_after.update(changes)
+        if not gate_is_true(values_before) or not gate_is_true(values_after):
+            continue
+        gate_stays_true = True
+        for change_time, changes in periodic_changes:
+            if change_time <= trigger_time:
+                continue
+            values_after.update(changes)
+            if not gate_is_true(values_after):
+                gate_stays_true = False
+                break
+        if not gate_stays_true:
+            continue
+
+        assignments: List[Tuple[str, str, float]] = []
+        event_targets: set[str] = set()
+        for assignment in event.assignments:
+            variable, expression = _event_assignment(assignment)
+            if (
+                not context.is_param(variable)
+                or standardize_name(variable) in event_targets
+                or standardize_name(variable) in gate_symbols
+                or standardize_name(variable)
+                in {standardize_name(target) for target in periodic_target_ids}
+                or any(
+                    other is not event
+                    and any(
+                        standardize_name(other_variable) == standardize_name(variable)
+                        for other_assignment in other.assignments
+                        for other_variable, _other_expression in [
+                            _event_assignment(other_assignment)
+                        ]
+                    )
+                    for other in events
+                )
+            ):
+                assignments = []
+                break
+            value = fold(expression, trigger_time, event_context=event)
+            if value is None or not math.isfinite(value):
+                assignments = []
+                break
+            event_targets.add(standardize_name(variable))
+            assignments.append(("param", standardize_name(variable), float(value)))
+        if not assignments:
+            continue
+        scheduled.append((trigger_time, assignments, 0.0, event, False, []))
+        scheduled_values.extend(
+            (trigger_time, target, value) for _kind, target, value in assignments
+        )
+        periodic_handled.add(id(event))
+        periodic_target_ids.update(event_targets)
+        periodic_initial_values.update(
+            {
+                variable: float(value)
+                for variable in event_targets
+                if (value := context.resolve_initial_value(variable)) is not None
+            }
+        )
+        periodic_converted += 1
 
     def fixed_execution_time(event: SBMLEvent) -> float:
         threshold = parse_time_threshold(event.trigger)

@@ -2608,6 +2608,226 @@ def test_rate_reset_event_folds_delayed_history_at_each_trigger():
     assert 'setParameter("Q", "0.02")' in result.actions_block
 
 
+def test_periodic_rate_reset_proves_rate_rule_threshold_inactive():
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLEventAssignment
+
+    increment_q = SBMLEvent(
+        id="increment-q",
+        trigger="geq(reset, 0.01)",
+        trigger_initial_value=True,
+        trigger_persistent=False,
+        priority="1",
+        assignments=[
+            SBMLEventAssignment("reset", "0"),
+            SBMLEventAssignment("Q", "Q + 0.01"),
+        ],
+    )
+    increment_r = SBMLEvent(
+        id="increment-r",
+        trigger="geq(reset, 0.01)",
+        trigger_initial_value=True,
+        trigger_persistent=False,
+        priority="1",
+        assignments=[
+            SBMLEventAssignment("reset", "0"),
+            SBMLEventAssignment("R", "R + 0.01"),
+        ],
+    )
+    unreachable_state_threshold = SBMLEvent(
+        id="state-threshold",
+        trigger="geq(abs(S2), 0.1)",
+        assignments=[SBMLEventAssignment("error", "1")],
+    )
+    initial = {"reset": 0, "Q": 1, "R": 1, "S2": 0, "error": 0}
+    context = EventTranslationContext(
+        resolve_species_pattern=lambda identifier: (
+            "S2()" if identifier == "S2" else None
+        ),
+        resolve_param=lambda _identifier: None,
+        is_param=lambda identifier: identifier in {"reset", "Q", "R", "error"},
+        is_compile_time_constant=lambda _identifier: False,
+        resolve_initial_value=initial.get,
+        resolve_rate_reset=lambda identifier: (
+            (0.0, 1.0) if identifier == "reset" else None
+        ),
+        resolve_rate_rule_expression_for_event=lambda identifier, _event: (
+            "Q - R" if identifier == "S2" else None
+        ),
+        base_t_end=0.025,
+        base_steps=10,
+    )
+
+    result = synthesize_event_actions(
+        [increment_q, increment_r, unreachable_state_threshold], context
+    )
+
+    assert result.converted == 3
+    assert result.untranslated == []
+    assert result.actions_block is not None
+    assert 'setParameter("Q", "1.01")' in result.actions_block
+    assert 'setParameter("R", "1.01")' in result.actions_block
+    assert 'setParameter("error", "1")' not in result.actions_block
+
+    context.resolve_rate_rule_expression_for_event = lambda identifier, _event: {
+        "S2": "Q - R",
+        "Q": "1",
+    }.get(identifier)
+    result = synthesize_event_actions(
+        [increment_q, increment_r, unreachable_state_threshold], context
+    )
+
+    assert "state-threshold" in [event.id for event, _reason in result.untranslated]
+
+    context.resolve_rate_rule_expression_for_event = lambda identifier, _event: (
+        "Q - R" if identifier == "S2" else None
+    )
+    increment_q.assignments[1] = SBMLEventAssignment("Q", "Q + 0.02")
+    unreachable_state_threshold.trigger = "geq(abs(S2), 0.0001)"
+    result = synthesize_event_actions(
+        [increment_q, increment_r, unreachable_state_threshold], context
+    )
+
+    assert result.converted == 2
+    assert [event.id for event, _reason in result.untranslated] == ["state-threshold"]
+
+
+def test_periodic_rate_reset_does_not_freeze_a_continuously_changing_rate():
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLEventAssignment
+
+    reset = SBMLEvent(
+        id="reset-clock",
+        trigger="geq(reset, 0.01)",
+        assignments=[
+            SBMLEventAssignment("reset", "0"),
+            SBMLEventAssignment("Q", "Q + 1"),
+        ],
+    )
+    state_threshold = SBMLEvent(
+        id="state-threshold",
+        trigger="geq(abs(S2), 0.0001)",
+        assignments=[SBMLEventAssignment("error", "1")],
+    )
+    initial = {"reset": 0, "Q": 0, "S2": 0, "error": 0}
+    result = synthesize_event_actions(
+        [reset, state_threshold],
+        EventTranslationContext(
+            resolve_species_pattern=lambda identifier: (
+                "S2()" if identifier == "S2" else None
+            ),
+            resolve_param=lambda _identifier: None,
+            is_param=lambda identifier: identifier in {"reset", "Q", "error"},
+            is_compile_time_constant=lambda _identifier: False,
+            resolve_initial_value=initial.get,
+            resolve_rate_reset=lambda identifier: (
+                (0.0, 1.0) if identifier == "reset" else None
+            ),
+            resolve_rate_rule_expression_for_event=lambda identifier, _event: (
+                "reset" if identifier == "S2" else None
+            ),
+            base_t_end=0.025,
+            base_steps=10,
+        ),
+    )
+
+    assert result.converted == 1
+    assert [event.id for event, _reason in result.untranslated] == ["state-threshold"]
+
+
+def test_periodic_parameter_gate_schedules_fixed_time_event():
+    from bionetgen.atomizer.modern.events import (
+        EventTranslationContext,
+        synthesize_event_actions,
+    )
+    from bionetgen.atomizer.modern.types import SBMLEvent, SBMLEventAssignment
+
+    increment_q = SBMLEvent(
+        id="increment-q",
+        trigger="geq(reset, 0.01)",
+        trigger_initial_value=True,
+        trigger_persistent=False,
+        priority="1",
+        assignments=[
+            SBMLEventAssignment("reset", "0"),
+            SBMLEventAssignment("Q", "Q + 0.01"),
+        ],
+    )
+    increment_r = SBMLEvent(
+        id="increment-r",
+        trigger="geq(reset, 0.01)",
+        trigger_initial_value=True,
+        trigger_persistent=False,
+        priority="1",
+        assignments=[
+            SBMLEventAssignment("reset", "0"),
+            SBMLEventAssignment("R", "R + 0.01"),
+        ],
+    )
+    update_maxdiff = SBMLEvent(
+        id="update-maxdiff",
+        trigger="gt(abs(Q - R), maxdiff)",
+        assignments=[SBMLEventAssignment("maxdiff", "abs(Q - R)")],
+    )
+    time_gated_error = SBMLEvent(
+        id="time-gated-error",
+        trigger="and(geq(time, 0.02), lt(maxdiff, 0.2))",
+        assignments=[SBMLEventAssignment("error", "1")],
+    )
+    initial = {"reset": 0, "Q": 1, "R": 1, "maxdiff": 0, "error": 0}
+
+    result = synthesize_event_actions(
+        [increment_q, increment_r, update_maxdiff, time_gated_error],
+        EventTranslationContext(
+            resolve_species_pattern=lambda _identifier: None,
+            resolve_param=lambda _identifier: None,
+            is_param=lambda identifier: identifier in initial,
+            is_compile_time_constant=lambda _identifier: False,
+            resolve_initial_value=initial.get,
+            resolve_rate_reset=lambda identifier: (
+                (0.0, 1.0) if identifier == "reset" else None
+            ),
+            base_t_end=0.025,
+            base_steps=10,
+        ),
+    )
+
+    assert result.converted == 4
+    assert result.untranslated == []
+    assert result.actions_block is not None
+    assert 'setParameter("error", "1")' in result.actions_block
+    assert "t_end=>0.02" in result.actions_block
+
+    increment_r.assignments[1] = SBMLEventAssignment("R", "R + 0.02")
+    result = synthesize_event_actions(
+        [increment_q, increment_r, update_maxdiff, time_gated_error],
+        EventTranslationContext(
+            resolve_species_pattern=lambda _identifier: None,
+            resolve_param=lambda _identifier: None,
+            is_param=lambda identifier: identifier in initial,
+            is_compile_time_constant=lambda _identifier: False,
+            resolve_initial_value=initial.get,
+            resolve_rate_reset=lambda identifier: (
+                (0.0, 1.0) if identifier == "reset" else None
+            ),
+            base_t_end=0.025,
+            base_steps=10,
+        ),
+    )
+
+    assert "time-gated-error" in [event.id for event, _reason in result.untranslated]
+    assert (
+        result.actions_block is None
+        or 'setParameter("error", "1")' not in result.actions_block
+    )
+
+
 def test_quadratic_trajectory_crossings_match_exact_state_solution():
     import math
 
