@@ -18,26 +18,39 @@ recorded in the historical sections below; they are not current-head evidence.
 non-energy PRs #476 and #477 are deliberately not silently included in the
 BNG3 port.
 
-## Initial values for event-updated species references — 2026-09-28
+## Periodic variable-stoichiometry event thresholds — 2026-09-28
 
-- [x] The modern Atomizer's periodic rate-rule event lowering now resolves an
-  initially assigned species-reference symbol from its unique fixed
-  stoichiometry. References with duplicate IDs, MathML stoichiometry, or a
-  rule-controlled value remain outside this path. Added an SBML regression
-  where a periodic reset event increments a species-reference parameter.
-- [x] Focused modern Atomizer event and SBML parity tests passed: 181 passed.
-  Ruff, Black (`--target-version py39`), and `git diff --check` passed.
-- [x] At exact BNG3 commit `011f9c907e53e21514362d15fc95b8ce751958c2`, the
-  pinned SSTS case `semantic/01626` lowered five of its six events. Its
-  state-triggered `abs(S2) >= 25` event remains untranslated, so the case is
-  still unsupported and BNG3/libRoadRunner numerical comparison was skipped.
-  This is partial event support, not a case pass. Report
-  `/private/tmp/bng3-ssts-01626-011f9c9.json`, SHA-256
-  `c2129fa7ebdb9bf8ed401243021d1d2304fa4a99b1c073c1ff05455867b3e503`;
-  source tracked tree was clean at the recorded commit.
-- [ ] This modern BNG3 regression does not benchmark the legacy BNG2 Atomizer.
-  That implementation remains incomplete and has not been benchmarked against
-  all SBML. Wider Atomizer and cross-engine coverage remain open.
+- [x] The modern Atomizer resolves an event-updated species-reference symbol's
+  initial value from its uniquely identified numeric coefficient, then proves
+  an absolute species threshold inactive across exact periodic parameter
+  updates when its reaction-derived derivative stays piecewise constant. The
+  proof rejects duplicate or rule-controlled reference IDs, MathML
+  stoichiometry, algebraic rules, FBC, changing target species, fast or
+  conversion-factor reactions, and changing compartment volumes.
+- [x] Regression covers the positive zero-net-flux case and a negative case
+  where another event changes the species. Focused modern Atomizer event and
+  SBML parity tests passed: 182 passed. Ruff, Black (`--target-version py39`),
+  and `git diff --check` passed.
+- [x] At exact BNG3 commit `dc05e81cf93db94cc02c2a12ce58d902796b040f`, pinned
+  SSTS cases `semantic/01626` and `semantic/01627` passed isolated conversion,
+  round-trip, native-reader, and BNG3/libRoadRunner simulation comparisons at
+  `t_end=1` and `t_end=100`. All four selected reports have clean tracked-tree
+  provenance. `01626` compared four observables with maximum absolute error
+  `3.55e-14` at `t_end=100`; `01627` compared five with the same maximum.
+  Each invocation selected one case, so its aggregate Core-gate flag remains
+  false. Reports and SHA-256 digests:
+  - `01626`, `t_end=1`: `/private/tmp/bng3-ssts-01626-dc05e81-t1.json`,
+    `cd7b0712dc4e9a8b55b63e63788c0b3224cb28f9f70ee592c3f336dd08c87409`.
+  - `01626`, `t_end=100`: `/private/tmp/bng3-ssts-01626-dc05e81-t100.json`,
+    `90a9ed64fba1c1afd8e4dc7078a91646fb6c287b683debbf83f018f95e5bc748`.
+  - `01627`, `t_end=1`: `/private/tmp/bng3-ssts-01627-dc05e81-t1.json`,
+    `436e542a6d0a7a93d942e1abe1d7f19484bfa95a6767d055e135a724c28a0e52`.
+  - `01627`, `t_end=100`: `/private/tmp/bng3-ssts-01627-dc05e81-t100.json`,
+    `3b178eea01c42978842a1fd5cf9b769a6ba8a76a5d11088c4281d993408c263c`.
+- [ ] This selected modern-BNG3 cohort is not a full SSTS or all-SBML
+  benchmark. It does not benchmark the legacy BNG2 Atomizer, which remains
+  incomplete and has not been benchmarked against all SBML. Wider cross-engine
+  coverage remains open.
 
 ## Two-step first-order state-event cohort — 2026-09-28
 
