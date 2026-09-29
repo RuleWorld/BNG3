@@ -9090,3 +9090,34 @@ the other groups remain implementation targets.
   all-SBML benchmark of the incomplete BNG2/legacy PyBioNetGen Atomizer. Perl
   BNG2 only generated the XML input used by standalone NFsim for the four
   completed cases. Full curated BioModels validation remains stopped.
+
+## BNG3 NFsim benchmark initial-network export correction — 2026-09-29
+
+- [x] Fixed `benchmarks/benchmark_atomizer_nfsim.py` to remove pre-existing
+  executable BNGL action blocks before appending network-generation and XML
+  export actions. `stochastic/00028` exposed the bug: its scheduled event
+  changed `X` to about `20.3696` before Perl BNG2 wrote XML, while BNG3 direct
+  started at `X=0`. The BNG3 harness now exports the initial network and keeps
+  the external standalone-NFsim leg aligned with BNG3's initial state. No BNG2
+  or PyBioNetGen source was changed.
+- [x] Regression test verifies embedded `simulate` and `setConcentration`
+  actions do not reach the export invocation, while generated network and XML
+  actions do. Focused benchmark tests passed (`5 passed`); full BNG3 Python
+  suite passed (`692 passed, 28 skipped`); Ruff, Black (`py39`), and
+  `git diff --check` passed.
+- [x] Re-ran `stochastic/00028`, `00029`, `00031`, and `00032` with 200
+  independent BNG3-direct runs (seeds `1`–`200`) and 200 standalone-NFsim runs
+  (seeds `201`–`400`) per mode. Both flat and Atomized comparisons passed for
+  all four cases: 3,200 trajectories, 264 observable-time points, zero run
+  errors, and worst `|z|` of `2.25284`. Case `00028` now passes both modes.
+- [x] Manifest
+  `/private/tmp/bng3-ssts-nfsim-action-export-fix-cohort-20260929.json`,
+  SHA-256 `de11ade936077fc0256be40827ffa9ee12161bc0e87368d5675851f562db1218`,
+  records each source/report digest, benchmark-script digest, seed range, and
+  BNG2/NFsim provenance. The corrected per-case `00028` report is
+  `/private/tmp/bng3-atomizer-nfsim-ssts-00028-independent-200runs-20260929-action-strip-fix.json`.
+- [ ] This is a selected four-case BNG3 benchmark/export validation sample,
+  not full SSTS coverage, full cross-engine parity, or an all-SBML benchmark.
+  BNG2/legacy PyBioNetGen Atomizer remains incomplete and has not been
+  benchmarked against all SBML. Perl BNG2 only generated the XML consumed by
+  standalone NFsim. Curated BioModels validation remains stopped.

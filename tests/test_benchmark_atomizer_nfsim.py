@@ -94,3 +94,42 @@ def test_git_state_records_tracked_changes(tmp_path: Path):
     assert clean["dirty"] is False
     assert dirty["dirty"] is True
     assert dirty["tracked_diff_sha256"] != clean["tracked_diff_sha256"]
+
+
+def test_bng2_export_does_not_execute_atomizer_simulation_actions(
+    monkeypatch, tmp_path: Path
+):
+    bngl = tmp_path / "model.bngl"
+    bngl.write_text(
+        "begin model\nend model\n\n"
+        "begin actions\n"
+        'simulate({method=>"ode", t_end=>25})\n'
+        'setConcentration("X()", "50")\n'
+        "end actions\n",
+        encoding="utf-8",
+    )
+    observed_inputs = []
+
+    def fake_bng2(command, **_kwargs):
+        input_path = Path(command[-1])
+        observed_inputs.append(input_path.read_text(encoding="utf-8"))
+        out_dir = Path(command[command.index("--outdir") + 1])
+        (out_dir / "model.xml").write_text("<model />", encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(benchmark.subprocess, "run", fake_bng2)
+
+    result = benchmark.build_bng2_xml(
+        bngl=bngl,
+        bng2_perl=tmp_path / "BNG2.pl",
+        out_dir=tmp_path / "bng2",
+        timeout=1,
+    )
+
+    exported_input = observed_inputs[0]
+    assert result == tmp_path / "bng2" / "model.xml"
+    assert exported_input.count("begin actions") == 1
+    assert "simulate(" not in exported_input
+    assert "setConcentration(" not in exported_input
+    assert "generate_network({overwrite=>1})" in exported_input
+    assert "writeXML({overwrite=>1})" in exported_input

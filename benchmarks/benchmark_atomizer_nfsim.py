@@ -101,9 +101,30 @@ def git_state(path: Path) -> dict:
     }
 
 
+def strip_bngl_action_blocks(source: str) -> str:
+    """Remove executable actions before exporting the model's initial network."""
+    output = []
+    in_actions = False
+    for line in source.splitlines(keepends=True):
+        stripped = line.strip()
+        if not in_actions and re.fullmatch(r"begin\s+actions", stripped, re.I):
+            in_actions = True
+            continue
+        if in_actions:
+            if re.fullmatch(r"end\s+actions", stripped, re.I):
+                in_actions = False
+            continue
+        if re.fullmatch(r"end\s+actions", stripped, re.I):
+            raise ValueError("BNGL has an end actions without a matching begin")
+        output.append(line)
+    if in_actions:
+        raise ValueError("BNGL has an unterminated actions block")
+    return "".join(output)
+
+
 def build_bng2_xml(bngl: Path, bng2_perl: Path, out_dir: Path, timeout: int) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
-    source = bngl.read_text(encoding="utf-8").rstrip()
+    source = strip_bngl_action_blocks(bngl.read_text(encoding="utf-8")).rstrip()
     source += (
         "\n\nbegin actions\n"
         "generate_network({overwrite=>1});\n"
