@@ -3,7 +3,7 @@
 **Current checkpoint:** 2026-09-29. The detailed, append-only verification ledger is
 [`BNG3_CONVERGENCE_DONE_CHECKLIST.md`](BNG3_CONVERGENCE_DONE_CHECKLIST.md).
 **Repository:** `RuleWorld/BNG3`
-**Working branch:** `main` at `558c70e1a39c1d85b89932740f2dd865de932b2c`; verified equal to `origin/main`.
+**Working branch:** `main`; local and remote branches were aligned at this checkpoint. See the checklist for report-specific source SHAs.
 **Status:** Overall convergence and release qualification remain incomplete. Modern BNG3 Atomizer supports verified analytic/event subsets; general dynamic event scheduling and other SBML features remain unsupported. Keep the full objective open.
 
 ## Current exact-state boundaries — 2026-09-29
@@ -23,8 +23,9 @@
   restart that run. Existing local macOS wheel/sdist smoke results are from
   earlier heads. Current-head cross-platform release artifacts, Windows
   executables, release qualification, and publication remain unverified.
-- Exact-head CI for `558c70e` is queued, with no terminal results observed yet.
-  The pre-existing `bng3-offline-bundle/` remains untracked and preserved.
+- Exact-head hosted status must be read for each pushed SHA; an earlier queued
+  result does not establish a later commit's CI outcome. The pre-existing
+  `bng3-offline-bundle/` remains untracked and preserved.
 
 The dated entries below are retained as historical evidence; their branch,
 head, counts, and running-job statements are snapshots, not current state.

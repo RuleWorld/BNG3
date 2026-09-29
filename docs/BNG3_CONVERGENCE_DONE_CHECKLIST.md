@@ -9205,3 +9205,29 @@ the other groups remain implementation targets.
   benchmark. BNG2/legacy PyBioNetGen Atomizer remains incomplete and has not
   been benchmarked against all SBML. Curated BioModels validation remains
   stopped.
+
+## Current-source audit of strict rate mismatches — 2026-09-29
+
+- [x] Re-ran the seven cases with strict BNG2/PyBioNetGen rate mismatches in
+  the fourth selected sample (`00372`, `00562`, `00630`, `00817`, `01395`,
+  `01516`, and `01718`) at BNG3 source head `dc6fe0410849efa3b42ae0ca3f996c2a9b385237`.
+  All seven per-case records passed, and their BNG3 CVODE / libRoadRunner
+  comparisons passed for all observables at `t_end=1` with 10 intervals.
+  Across the cohort, maximum absolute difference was `2.009e-7`; maximum
+  scaled error was `0.02707` against the case-specific comparison tolerances.
+- [x] The strict network mismatches include piecewise-expression simplification,
+  function/parenthesis serialization, and numeric precision differences.
+  Current BNG3/libRoadRunner trajectories do not show a BNG3 behavior failure
+  for these cases, so no BNG3 implementation or comparator threshold was
+  changed. This does not prove BNG2 or PyBioNetGen trajectory parity.
+- [x] Summary
+  `/private/tmp/bng3-crossengine-rate-mismatches-current-verification-dc6fe04.json`,
+  SHA-256 `565f279db626a7c2b1e458804a9b3aecf423c53f78743817c6852a44a1d06c2f`.
+  It links each individual report and digest. The isolated validator prints
+  `core=FAIL` and exits 1 for these seven-case invocations because a partial
+  selection cannot pass the full-core gate; each selected case record itself
+  passed. No BNG2 or PyBioNetGen source was changed.
+- [ ] This is a seven-case, `t_end=1` current-source cross-check, not full
+  SSTS numerical conformance, trajectory parity against BNG2/PyBioNetGen, or
+  all-SBML cross-engine coverage. BNG2/legacy PyBioNetGen Atomizer remains
+  incomplete and unbenchmarked against all SBML.
