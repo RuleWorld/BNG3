@@ -94,11 +94,24 @@ BNGsimAdapter.cpp:305 population maps are not a generated-network feature
 BNGsimAdapter.cpp:309 simulation protocol requires a protocol bridge
 BNGsimAdapter.cpp:314 action execution requires a protocol bridge
 BNGsimAdapter.cpp:325 value is not finite (parameter)
-BNGsimAdapter.cpp:351 function arguments require a local-function bridge
-BNGsimAdapter.cpp:381 is not a direct parameter or function reference
+BNGsimAdapter.cpp:350 function arguments require a local-function bridge
+BNGsimAdapter.cpp:405 is not a direct parameter or function reference
 ```
 
-Count: **21 distinct rejection strings** + observable index checks.
+Count: **22 rejection sites, resolving to 19 distinct message texts** + observable
+index checks. Two texts occur twice: the generic `BNGsim adapter rejected ` prefix
+and the `BNGsim adapter rejected observable '` prefix.
+
+Known gap: `cpp/engine/FiniteBackend.cpp` re-implements this list in
+`collectSemanticBlockers` so diagnostics survive a build without
+`BUILD_BNGSIM_ADAPTER`. That copy has drifted and does not mirror the observable
+type, observable parse failure, TFUN counter-name, TFUN counter-argument,
+non-finite parameter, species index range, malformed expression, and unknown
+expression-kind rejections. The `supported=false` outcome is unaffected (the
+adapter is still consulted when present), but in a default build the reported
+reason can be the wrong one. Fixing it properly means deleting the duplicate and
+always compiling the single lowering boundary, which needs `cpp/CMakeLists.txt`
+and a build with the adapter enabled.
 
 ## Migration phases (per ADR 0003)
 

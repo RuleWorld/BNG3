@@ -8,31 +8,41 @@
 
 ## Current exact-state boundaries — 2026-09-29
 
+- Code head for this block is `c2babc5`, on `main` and equal to `origin/main` at
+  the time of writing. Commit distances below are relative to that head.
 - The latest complete pinned SBML Test Suite report remains tied to source
   commit `bf210ab73950646db655559ba2dd7aa56aeb2c15`: 1,744 passed, 179
-  unsupported, 0 failed, and 0 timed out. BNG3 later added the equilibrium-root
-  crossing guard at `86a385e`; the full suite was not rerun after that code
-  change, so the report is not exact-head evidence.
+  unsupported, 0 failed, and 0 timed out. That head is 54 commits behind
+  `c2babc5` and the suite has not been rerun since, so the report is a
+  historical result, not exact-head evidence. The pinned report is not
+  committed as a machine-readable artifact, so these counts cannot be
+  re-verified from the tree alone.
 - The latest selected cross-engine report covers 50 additional SSTS inputs at
-  BNG3 head `38b2b8c` (the later `558c70e` change updates documentation only).
-  It is network structure/rate evidence, not
-  trajectory parity, full SSTS cross-engine coverage, or an all-SBML result.
+  BNG3 head `38b2b8c` (the later `558c70e` change updates documentation only);
+  `38b2b8c` is 37 commits behind `c2babc5`. It is network structure/rate
+  evidence, not trajectory parity, full SSTS cross-engine coverage, or an
+  all-SBML result.
 - Legacy BNG2 and PyBioNetGen Atomizers remain incomplete and have not been
   benchmarked against all SBML. No BNG2 or PyBioNetGen source was changed.
 - The user's curated BioModels validation stop remains in effect; do not
-  restart that run. Existing local macOS wheel/sdist smoke results are from
-  earlier heads, but a CPython 3.14 macOS ARM64 sdist-to-wheel install and
-  finite ODE CLI smoke now pass at current head `a4f92c8`. That offline run
-  used cached native sources and host dependency symlinks. Current-head
-  cross-platform release artifacts, Windows executables, release
-  qualification, and publication remain unverified.
+  restart that run. A CPython 3.14 macOS ARM64 sdist-to-wheel install and
+  finite ODE CLI smoke were last recorded at `a4f92c8`, 34 commits behind
+  `c2babc5`. That offline run used cached native sources and host dependency
+  symlinks. Current-head cross-platform release artifacts, Windows executables,
+  release qualification, and publication remain unverified.
 - Exact-head hosted status must be read for each pushed SHA; an earlier queued
   result does not establish a later commit's CI outcome. The pre-existing
-  `bng3-offline-bundle/` remains untracked and preserved.
-- Historical PR refresh: #26 and #28 each have 39 passing / 5 skipped checks;
-  both use stale base commits. PR #27 has 29 passing / 5 failing / 7 skipped
-  checks and needs source-level review before any merge decision. Details and
-  caveats are in the checklist.
+  ~549 MB `bng3-offline-bundle/` remains untracked and is not covered by
+  `.gitignore`. `scikit-build-core` builds the sdist from a filesystem walk,
+  not from the git index, so untracked files are sdist candidates; the
+  `sdist.exclude = ["bng3-offline-bundle/**"]` rule in `pyproject.toml` is the
+  only thing keeping them out. Verified at `c2babc5`: a local `build_sdist`
+  produces a 4.8 MB archive with zero bundle members, versus ~360 MB and 8,947
+  extra files without the rule. GitHub Actions checkouts never contain the
+  directory, so CI and PyPI artifacts are unaffected.
+- Pull requests #26, #27, and #28 are all merged into `main`. The per-PR check
+  tallies recorded earlier in the checklist are snapshots of runs that predate
+  the merge and do not describe current status.
 
 The dated entries below are retained as historical evidence; their branch,
 head, counts, and running-job statements are snapshots, not current state.
@@ -85,10 +95,12 @@ libRoadRunner matches that reference with maximum absolute difference
 focused event/parity tests pass (`153` tests); Ruff, Black (`py39`), and
 `git diff --check` pass.
 
-The latest full SSTS aggregate predates this change. The current local C++
-extension cannot load because it references an unresolved
-`NFcore2::simulateNfcore2` symbol, so the native BNG3 case check and refreshed
-full SSTS/BioModels aggregates remain pending.
+The latest full SSTS aggregate predates this change. The stated cause of the
+native BNG3 case check being blocked is stale as of `c2babc5`: no
+`simulateNfcore2` symbol exists anywhere in `cpp/` or `python/` sources at that
+head, so the recorded extension-load failure needs to be re-run before it can
+be treated as current. Until that re-run happens, the native BNG3 case check
+and refreshed full SSTS/BioModels aggregates remain pending.
 
 ## Affine parameter event priorities — 2026-09-27
 

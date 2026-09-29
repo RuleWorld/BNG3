@@ -21,6 +21,23 @@ try:
 except ImportError:  # installed as part of the bionetgen package
     from bionetgen import _bionetgen_cpp as cpp
 
+# Observables whose sampling error is too small to support a Z-score are
+# conserved totals (or the deterministic t=0 snapshot). They are exact integer
+# molecule counts fixed by the reaction stoichiometry, so CPU and GPU must
+# agree to well under one molecule. A zero-variance point has no statistical
+# scale, so these are compared ABSOLUTELY against this tolerance instead of
+# having their Z-score zeroed out.
+# 1e-3 molecules is ~1e-8 relative at the largest total in the suite and stays
+# far below float32 accumulation error over a 10,000-trajectory batch, so it
+# catches any real stoichiometry bug while tolerating summation noise.
+CONSERVATION_ATOL = 1e-3
+CONSERVATION_RTOL = 1e-6
+
+# Two independent samples are compared at the same p > 0.001 significance the
+# mean-trajectory section already documents.
+KS_ALPHA = 1e-3
+Z_THRESHOLD = 3.5
+
 def validate_model(name, bngl_path, t_end, n_steps, batch_size=2000):
     print(f"\n{'='*70}")
     print(f"Statistical Validation: {name} (batch_size={batch_size})")
@@ -72,27 +89,55 @@ def validate_model(name, bngl_path, t_end, n_steps, batch_size=2000):
         sem_cpu = cpu_std / math.sqrt(batch_size)
         sem_gpu = gpu_std / math.sqrt(batch_size)
         pooled_sem = np.sqrt(sem_cpu**2 + sem_gpu**2)
-        # Avoid division by zero when variance is 0 (e.g. constant conserved totals)
-        valid = pooled_sem > 1e-6
-        z_scores = np.zeros_like(cpu_mean)
-        z_scores[valid] = (gpu_mean[valid] - cpu_mean[valid]) / pooled_sem[valid]
+        abs_diff = np.abs(gpu_mean - cpu_mean)
 
-        max_z = np.max(np.abs(z_scores))
-        mean_z = np.mean(np.abs(z_scores))
+        # A point with no sampling error carries no statistical scale, so a
+        # Z-score there is undefined. Zeroing it (as this test previously did)
+        # silently reported any CPU/GPU divergence at those points as a pass --
+        # and those are exactly the conserved quantities that would expose a
+        # stoichiometry bug. Compare them absolutely against a conservation
+        # tolerance instead.
+        testable = pooled_sem > 1e-6
+        z_scores = np.full_like(cpu_mean, np.nan)
+        z_scores[testable] = abs_diff[testable] / pooled_sem[testable]
+
+        finite_z = z_scores[np.isfinite(z_scores)]
+        n_testable = int(np.count_nonzero(testable))
+        max_z = float(np.max(finite_z)) if finite_z.size else 0.0
+        mean_z = float(np.mean(finite_z)) if finite_z.size else 0.0
+
+        # Conservation check for the degenerate (zero-sampling-error) points.
+        conserved = ~testable
+        cons_tol = CONSERVATION_ATOL + CONSERVATION_RTOL * np.abs(cpu_mean)
+        cons_violations = conserved & (abs_diff > cons_tol)
+        n_conserved = int(np.count_nonzero(conserved))
+        n_cons_violations = int(np.count_nonzero(cons_violations))
 
         print(f"\nObservable '{obs}':")
         print(f"  CPU Mean: start={cpu_mean[0]:.3f}, mid={cpu_mean[len(cpu_mean)//2]:.3f}, end={cpu_mean[-1]:.3f}")
         print(f"  GPU Mean: start={gpu_mean[0]:.3f}, mid={gpu_mean[len(gpu_mean)//2]:.3f}, end={gpu_mean[-1]:.3f}")
         print(f"  CPU Std : start={cpu_std[0]:.3f}, mid={cpu_std[len(cpu_std)//2]:.3f}, end={cpu_std[-1]:.3f}")
         print(f"  GPU Std : start={gpu_std[0]:.3f}, mid={gpu_std[len(gpu_std)//2]:.3f}, end={gpu_std[-1]:.3f}")
-        print(f"  Max |Z|-score across trajectory: {max_z:.2f} (mean |Z|={mean_z:.2f})")
+        print(f"  Max |Z| across {n_testable}/{cpu_mean.size} testable points: {max_z:.2f} (mean |Z|={mean_z:.2f})")
+        if n_conserved:
+            worst_c = float(np.max(abs_diff[conserved]))
+            print(f"  {n_conserved} conserved point(s) compared absolutely: max |CPU-GPU| = {worst_c:.3e} (atol {CONSERVATION_ATOL:g})")
 
-        # Threshold: |Z| < 3.29 (corresponds to p > 0.001)
-        if max_z > 3.5:
-            print(f"  [FAIL] Max |Z| {max_z:.2f} exceeded threshold 3.5")
-            all_passed = False
-        else:
-            print(f"  [PASS] Mean trajectory matches CPU within sampling error (max |Z| < 3.5)")
+        failed = False
+        if n_testable and max_z > Z_THRESHOLD:
+            print(f"  [FAIL] Max |Z| {max_z:.2f} exceeded threshold {Z_THRESHOLD}")
+            failed = True
+        if n_cons_violations:
+            worst_idx = int(np.argmax(np.where(cons_violations, abs_diff, -1.0)))
+            print(f"  [FAIL] Conserved observable '{obs}' diverges by {abs_diff[worst_idx]:.3e} at "
+                  f"t={time_points[worst_idx]:.6g} (CPU={cpu_mean[worst_idx]:.6f}, "
+                  f"GPU={gpu_mean[worst_idx]:.6f}, tol {cons_tol[worst_idx]:.3e}) across "
+                  f"{n_cons_violations} point(s) -- conservation/stoichiometry mismatch")
+            failed = True
+        if not failed:
+            print(f"  [PASS] Mean trajectory matches CPU within sampling error "
+                  f"(max |Z| {max_z:.2f} < {Z_THRESHOLD}) and conserved points agree")
+        all_passed = all_passed and not failed
 
     # 2. Compare final distributions using Two-Sample Kolmogorov-Smirnov Test
     if "final_observables" in cpu_res and "final_observables" in gpu_res:
@@ -104,10 +149,41 @@ def validate_model(name, bngl_path, t_end, n_steps, batch_size=2000):
             c_samp = cpu_finals[:, idx]
             g_samp = gpu_finals[:, idx]
 
-            # If constant observable (e.g. Total molecules), KS test is trivial
-            if np.std(c_samp) < 1e-6 and np.std(g_samp) < 1e-6:
-                print(f"  '{obs}': Conserved constant value {c_samp[0]:.1f} on both CPU and GPU. [PASS]")
+            c_const = float(np.std(c_samp)) < 1e-6
+            g_const = float(np.std(g_samp)) < 1e-6
+
+            if c_const and g_const:
+                # Both samples are a single repeated value, so KS carries no
+                # information. The meaningful check is that the conserved value
+                # itself agrees between CPU and GPU.
+                diff = abs(float(c_samp[0]) - float(g_samp[0]))
+                if diff > CONSERVATION_ATOL:
+                    print(f"  '{obs}': [FAIL] conserved value differs on CPU/GPU: "
+                          f"{float(c_samp[0]):.6f} vs {float(g_samp[0]):.6f} "
+                          f"(|diff|={diff:.3e} > {CONSERVATION_ATOL:g})")
+                    all_passed = False
+                else:
+                    print(f"  '{obs}': Conserved constant value {float(c_samp[0]):.1f} on both "
+                          f"CPU and GPU (|diff|={diff:.1e}). [PASS]")
                 continue
+
+            # At least one sample varies, so run the real two-sample KS test.
+            # A degenerate sample on one side is a genuine distributional
+            # difference and must be allowed to fail here.
+            # Molecule counts are discrete and heavily tied, so the exact KS
+            # method does not apply; the asymptotic method is valid and
+            # conservative for discrete samples.
+            ks = stats.ks_2samp(c_samp, g_samp, method="asymp")
+            c_sd = float(np.std(c_samp))
+            g_sd = float(np.std(g_samp))
+            if ks.pvalue < KS_ALPHA:
+                print(f"  '{obs}': [FAIL] KS D={ks.statistic:.4f}, p={ks.pvalue:.3e} "
+                      f"< {KS_ALPHA:g} (CPU std={c_sd:.4f}, GPU std={g_sd:.4f}) "
+                      f"-- CPU and GPU final-state distributions differ")
+                all_passed = False
+            else:
+                print(f"  '{obs}': KS D={ks.statistic:.4f}, p={ks.pvalue:.4f} "
+                      f">= {KS_ALPHA:g} (CPU std={c_sd:.4f}, GPU std={g_sd:.4f}). [PASS]")
     # 3. If isomerization, also test against analytical Binomial(N=20, p=1/6) using Chi-Square test
     if name == "isomerization":
         print("\nExact Analytical Parity Check for Isomerization (Binomial(20, 1/6)):")

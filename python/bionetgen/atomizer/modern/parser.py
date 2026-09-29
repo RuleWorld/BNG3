@@ -614,6 +614,30 @@ def _flatten_comp_package(
     return flattened, None
 
 
+# MathML operators that ``_mathml_to_formula`` passes through as a call of the
+# same name and that BNGL's built-in function table does not define.  The
+# relation operators are deliberately absent: the event lowering consumes
+# their comparisons, so they are not unrepresentable.  These trigonometric
+# reciprocals have no built-in and no exact built-in spelling, so a model that
+# uses one cannot be evaluated and has to be reported.
+_MATHML_OPERATORS_WITHOUT_BNGL_FUNCTION = frozenset(
+    {
+        "sec",
+        "csc",
+        "cot",
+        "arcsec",
+        "arcsech",
+        "arccsc",
+        "arccsch",
+        "arccot",
+    }
+)
+
+# ``log`` with a base of ten is already lowered to ``log10``.  Any other base
+# becomes a ``log(base, x)`` call, which the engine does not define.
+_DECIMAL_LOG_BASES = frozenset({"10", "10.0", "1e1", "10.00"})
+
+
 def _mathml_to_formula(element: Optional[Any], parenthesize: bool = False) -> str:
     """Translate the MathML subset used by SBML into stable infix/function text."""
 
@@ -828,7 +852,13 @@ def _mathml_to_formula(element: Optional[Any], parenthesize: bool = False) -> st
             return f"sqrt({args[0] if args else ''})"
         if operator == "log":
             if logbase is not None:
-                return f"log({_mathml_to_formula(logbase, True)}, {args[0] if args else ''})"
+                base = _mathml_to_formula(logbase, True)
+                # A base of ten is the default MathML base, and BNGL spells it
+                # ``log10``.  Every other base would need a call BNGL does not
+                # define, which the MathML diagnostics report.
+                if base in _DECIMAL_LOG_BASES:
+                    return f"log10({args[0] if args else ''})"
+                return f"log({base}, {args[0] if args else ''})"
             return f"log10({args[0] if args else ''})"
         if operator == "quotient":
             return f"floor(({args[0]}) / ({args[1]}))" if len(args) >= 2 else ""
@@ -850,6 +880,12 @@ def _mathml_to_formula(element: Optional[Any], parenthesize: bool = False) -> st
             "arcsin": "asin",
             "arccos": "acos",
             "arctan": "atan",
+            # MathML spells the inverse hyperbolic functions with an "arc"
+            # prefix; BNGL names them asinh/acosh/atanh.  Same functions, so
+            # translate the name rather than report the model unsupported.
+            "arcsinh": "asinh",
+            "arccosh": "acosh",
+            "arctanh": "atanh",
         }
         return f"{direct.get(operator, operator)}({', '.join(args)})"
     return (
@@ -2732,6 +2768,17 @@ class SBMLParser:
                     add(
                         "<notanumber> constant encountered in math; cannot be represented."
                     )
+                elif tag in _MATHML_OPERATORS_WITHOUT_BNGL_FUNCTION:
+                    add(
+                        f"<{tag}> in math; BNGL has no built-in function of that "
+                        f"name, so {tag}(...) cannot be evaluated."
+                    )
+                elif tag == "logbase":
+                    if _mathml_to_formula(element).strip() not in _DECIMAL_LOG_BASES:
+                        add(
+                            "<log> with a non-decimal <logbase> in math; it is "
+                            "emitted as log(base, x), a call BNGL does not define."
+                        )
                 elif tag in {"gcd", "lcm"}:
                     add(
                         f"<{tag}> used in math; the engine does not provide it. Emitted as {tag}(...)."
@@ -2837,8 +2884,10 @@ class SBMLParser:
             for alias in {str(symbol_id), standardize_name(str(symbol_id))}:
                 if alias not in parameter_ids:
                     parameter_aliases.pop(alias, None)
-        reactions = SBMLParser._parse_xml_reactions(model, parameter_aliases)
         math_warnings: List[Dict[str, Any]] = []
+        reactions = SBMLParser._parse_xml_reactions(
+            model, parameter_aliases, math_warnings
+        )
         rules = SBMLParser._parse_xml_rules(model, parameter_aliases, math_warnings)
         functions = SBMLParser._parse_xml_functions(
             model, parameter_aliases, math_warnings
@@ -3096,6 +3145,37 @@ class SBMLParser:
                         f"{package_reasons.get(package, '')}"
                     ),
                     "count": count or 1,
+                    "severity": "dropped",
+                }
+            )
+        # A declared Level 3 package that is outside the vocabulary this
+        # importer knows is dropped wholesale.  Report it instead of
+        # importing a model that is silently missing package structure, and
+        # say so explicitly when the document requires the package, because a
+        # consumer that ignores a required package is reading a model it is
+        # not entitled to read.
+        described_packages = (
+            set(dynamic_packages) | set(benign_packages) | {"core", "multi"}
+        )
+        for package, count in package_counts.items():
+            if package in described_packages or not count:
+                continue
+            requirement_note = (
+                f' The document declares {package}:required="true", so it is not '
+                "a valid core-only model."
+                if package_required.get(package)
+                else ""
+            )
+            result.import_warnings.append(
+                {
+                    "category": f"package:{package}",
+                    "message": (
+                        f'SBML "{package}" package detected ({count} element(s)): '
+                        "the package is not imported, so its structure is missing "
+                        "from the atomized model."
+                        f"{requirement_note}"
+                    ),
+                    "count": count,
                     "severity": "dropped",
                 }
             )
@@ -3858,7 +3938,9 @@ class SBMLParser:
 
     @staticmethod
     def _parse_xml_reactions(
-        model: Any, parameter_aliases: Optional[Dict[str, str]] = None
+        model: Any,
+        parameter_aliases: Optional[Dict[str, str]] = None,
+        warnings: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, SBMLReaction]:
         result: Dict[str, SBMLReaction] = OrderedDict()
         reaction_parent = _first_child(model, "listOfReactions")
@@ -3871,6 +3953,7 @@ class SBMLParser:
             if reaction_parent is not None
             else []
         )
+        missing_kinetic_law: List[str] = []
         for item in reaction_items:
             item_id = str(_attribute(item, "id", "") or "")
             if not item_id:
@@ -3878,6 +3961,14 @@ class SBMLParser:
             reactant_parent = _first_child(item, "listOfReactants")
             product_parent = _first_child(item, "listOfProducts")
             modifier_parent = _first_child(item, "listOfModifiers")
+            kinetic_law = SBMLParser._parse_xml_kinetic_law(
+                _first_child(item, "kineticLaw"), parameter_aliases
+            )
+            # A reaction whose kinetic law carries no MathML has no rate in the
+            # source model.  Record it so the substituted fallback rate is
+            # reported rather than passed off as the source dynamics.
+            if kinetic_law is None or not str(kinetic_law.math or "").strip():
+                missing_kinetic_law.append(item_id)
             result[item_id] = SBMLReaction(
                 id=item_id,
                 name=str(_attribute(item, "name", item_id) or item_id),
@@ -3911,9 +4002,7 @@ class SBMLParser:
                     if modifier_parent is not None
                     else []
                 ),
-                kinetic_law=SBMLParser._parse_xml_kinetic_law(
-                    _first_child(item, "kineticLaw"), parameter_aliases
-                ),
+                kinetic_law=kinetic_law,
                 compartment=(
                     str(_attribute(item, "compartment"))
                     if _attribute(item, "compartment")
@@ -3922,6 +4011,22 @@ class SBMLParser:
                 conversion_factor=_attribute(item, "conversionFactor"),
                 multi_intra_species=(_local_name(item.tag) == "intraSpeciesReaction"),
                 **_source_metadata(item),
+            )
+        if missing_kinetic_law and warnings is not None:
+            listed = ", ".join(missing_kinetic_law[:5])
+            if len(missing_kinetic_law) > 5:
+                listed += ", ..."
+            warnings.append(
+                {
+                    "category": "missingMath",
+                    "message": (
+                        f"{len(missing_kinetic_law)} reaction(s) have no MathML "
+                        f"kinetic law ({listed}); each is emitted with a fallback "
+                        "rate that is not derived from the source model."
+                    ),
+                    "count": len(missing_kinetic_law),
+                    "severity": "dropped",
+                }
             )
         return result
 

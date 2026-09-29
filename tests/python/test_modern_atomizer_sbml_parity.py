@@ -4903,3 +4903,80 @@ def test_quadratic_rate_rule_state_events_match_libroadrunner(
         rr_values = reference[compare, reference.colnames.index(name)]
         scale = max(float(np.max(np.abs(bng_values))), float(np.max(np.abs(rr_values))))
         assert float(np.max(np.abs(bng_values - rr_values))) <= max(5e-10, 1e-5 * scale)
+
+
+def test_sbml_ids_that_share_one_bngl_spelling_are_reported():
+    """Distinct SBML SIds must never collapse into one generated definition.
+
+    ``standardize_name`` maps every non-alphanumeric character to ``_``, so
+    ``A-B`` and ``A_B`` generate the same molecule type.  The writer has no
+    second spelling to fall back on, so without a governed diagnostic it emits
+    one merged species (and, for compartments, a duplicate declaration that
+    the BNG compiler rejects).
+    """
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core">
+      <model id="colliding_ids">
+        <listOfCompartments>
+          <compartment id="c-1" size="1" constant="true"/>
+          <compartment id="c_1" size="2" constant="true"/>
+        </listOfCompartments>
+        <listOfSpecies>
+          <species id="A-B" name="Same Display Name" compartment="c-1" initialAmount="5"/>
+          <species id="A_B" name="Same Display Name" compartment="c_1" initialAmount="7"/>
+          <species id="P" compartment="c-1" initialAmount="0"/>
+        </listOfSpecies>
+        <listOfReactions>
+          <reaction id="r">
+            <listOfReactants>
+              <speciesReference species="A-B"/>
+              <speciesReference species="A_B"/>
+            </listOfReactants>
+            <listOfProducts><speciesReference species="P"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><times/><ci>k</ci><ci>A_B</ci></apply>
+            </math></kineticLaw>
+          </reaction>
+        </listOfReactions>
+        <listOfParameters>
+          <parameter id="k" value="0.1" constant="true"/>
+        </listOfParameters>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True, t_end=1, n_steps=10).atomize(xml)
+
+    assert result.success, result.error
+    notes = [line for line in result.bngl.splitlines() if "identifier:" in line]
+    assert len(notes) == 2, result.bngl
+    assert all(line.startswith("# [dropped]") for line in notes), notes
+    reported = " ".join(notes)
+    assert "SBML species ids 'A-B', 'A_B'" in reported
+    assert "SBML compartment ids 'c-1', 'c_1'" in reported
+
+    # One governed record per colliding namespace, no silent merge.
+    assert "normalize to the single BNGL identifier" in reported
+
+
+def test_sbml_ids_with_distinct_display_names_do_not_collide():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core">
+      <model id="shared_display_names">
+        <listOfCompartments><compartment id="c" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies>
+          <species id="A" name="Same Display Name" compartment="c" initialAmount="5"/>
+          <species id="B" name="Same Display Name" compartment="c" initialAmount="7"/>
+        </listOfSpecies>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True, t_end=1, n_steps=10).atomize(xml)
+
+    assert result.success, result.error
+    assert "@c:M_A() 5" in result.bngl
+    assert "@c:M_B() 7" in result.bngl
+    assert "Species A @c:M_A()" in result.bngl
+    assert "Species B @c:M_B()" in result.bngl
+    assert "identifier:" not in result.bngl

@@ -55,3 +55,9 @@ legacy/perl/Perl2/Boolean2BNGL/*.txt
 
 .venv-1/
 legacy/perl/bin/
+
+# Local offline dependency cache. Never tracked, and never packaged: the sdist
+# builder walks the filesystem rather than the git index, so an untracked
+# directory is still an archive candidate (pyproject.toml sdist.exclude is the
+# other guard; .gitignore closes it at the source for every backend).
+bng3-offline-bundle/

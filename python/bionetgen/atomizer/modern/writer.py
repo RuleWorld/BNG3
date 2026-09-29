@@ -2530,6 +2530,55 @@ def _record_import_warning(
     )
 
 
+# Every generated BNGL name in this module comes from ``standardize_name`` over
+# an SBML SId, so each SBML namespace is emitted under one spelling.  These
+# are the namespaces whose generated names become BNGL declarations.
+_DECLARED_IDENTIFIER_NAMESPACES = (
+    ("compartment", "compartments"),
+    ("parameter", "parameters"),
+    ("species", "species"),
+    ("reaction", "reactions"),
+    ("function", "function_definitions"),
+)
+
+
+def _report_identifier_collisions(model: SBMLModel) -> None:
+    """Record SBML ids that normalize onto a single generated BNGL identifier.
+
+    ``standardize_name`` replaces every non-alphanumeric character with ``_``,
+    so distinct SBML SIds such as ``A-B`` and ``A_B`` generate the same name.
+    Compartment, parameter, species, reaction, and function names all pass
+    through that one spelling, and no generated name is derived from an SBML
+    ``name`` attribute, so display-name similarity is irrelevant here.  The
+    writer has no second spelling to fall back on: colliding species merge into
+    one molecule type (silently dropping one seed amount and rewriting the
+    reaction stoichiometry), and colliding compartments declare the same BNGL
+    compartment twice, which the BNG compiler rejects.  Fail closed with a
+    governed diagnostic instead of emitting a different model.
+    """
+
+    for label, attribute in _DECLARED_IDENTIFIER_NAMESPACES:
+        declared = getattr(model, attribute, None) or {}
+        by_generated: Dict[str, List[str]] = OrderedDict()
+        for sbml_id in declared:
+            by_generated.setdefault(standardize_name(str(sbml_id)), []).append(
+                str(sbml_id)
+            )
+        for generated, sbml_ids in by_generated.items():
+            if len(sbml_ids) < 2:
+                continue
+            message = (
+                f"SBML {label} ids {', '.join(repr(value) for value in sbml_ids)} "
+                f'normalize to the single BNGL identifier "{generated}"; the writer has '
+                "no distinct spelling for them, so they share one generated "
+                "definition."
+            )
+            _record_import_warning(
+                model, message, category="identifier", severity="dropped"
+            )
+            logger.warning("BNW013", message)
+
+
 def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
     """Fold delayed history that stays at or before simulation start.
 
@@ -5804,6 +5853,8 @@ def generate_bngl(
                 category="mathml",
                 severity="dropped",
             )
+
+    _report_identifier_collisions(model)
 
     for rule in model.rules:
         if rule.type != "algebraic":

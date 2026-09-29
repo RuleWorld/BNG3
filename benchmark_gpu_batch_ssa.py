@@ -218,4 +218,10 @@ def run_benchmark():
     return results
 
 if __name__ == "__main__":
-    run_benchmark()
+    results = run_benchmark()
+    if not results:
+        # No GPU backend was usable, so no benchmark data was produced.
+        # Exit non-zero rather than reporting success for an empty run.
+        print("\nBenchmark produced no results (no usable GPU backend).")
+        sys.exit(1)
+    sys.exit(0)
