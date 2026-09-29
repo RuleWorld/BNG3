@@ -64,6 +64,77 @@ _SBML_AVOGADRO = 6.02214076e23
 _MULTI_SUM_TOKEN = re.compile(r"__SBML_MULTI_SUM__([A-Za-z_][A-Za-z0-9_]*)__")
 _MULTI_NUMERIC_TOKEN = re.compile(r"__SBML_MULTI_NUMERIC__([A-Za-z_][A-Za-z0-9_]*)__")
 
+# ``standardize_name`` runs on a raw SBML id only at emission, so a species,
+# reaction, rule-variable or function id such as ``A-B`` reaches the writer in
+# its source spelling and is invisible to the ``[A-Za-z_][A-Za-z0-9_]*`` tokens
+# a formula tokenizer produces.  The parser's MathML reader accepts ``-``
+# inside a single ``<ci>`` and serializes a real difference with surrounding
+# spaces (``A - B``), so a maximal id run is exactly the span a source id
+# occupies -- and a fragment of one never is.
+_SBML_ID_RUN = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
+
+
+def _declared_id_spans(
+    expression: str, names: Iterable[str]
+) -> List[Tuple["re.Match[str]", str]]:
+    """Pair each id run of ``expression`` that names a declared symbol.
+
+    ``names`` holds the ids the caller declared.  A run matches when it spells
+    one of them exactly, either raw or in its BNGL-safe form, because the body
+    being scanned may already have been standardized elsewhere.  Matching whole
+    runs -- rather than tokenizer tokens -- is what keeps a fragment of a
+    hyphenated id from being read as a symbol of its own.
+    """
+
+    declared = {str(name) for name in names if str(name)}
+    if not declared:
+        return []
+    by_standard = {standardize_name(name): name for name in declared}
+    matched: List[Tuple["re.Match[str]", str]] = []
+    for span in _SBML_ID_RUN.finditer(expression):
+        run = span.group(0)
+        source = run if run in declared else by_standard.get(run)
+        if source is not None:
+            matched.append((span, source))
+    return matched
+
+
+def _id_runs(expression: str) -> Set[str]:
+    """Return the maximal id runs of ``expression`` as whole-id spellings."""
+
+    return {span.group(0) for span in _SBML_ID_RUN.finditer(expression)}
+
+
+def _rewrite_declared_id_runs(
+    expression: str,
+    names: Iterable[str],
+    replacement,
+    *,
+    skip_callees: bool = True,
+) -> str:
+    """Rewrite every whole-id run of ``expression`` that names a declared symbol.
+
+    ``skip_callees`` leaves a run that is already applied to an argument list
+    alone, so a declared function is not turned into a call of itself.
+    """
+
+    matched = _declared_id_spans(expression, names)
+    if not matched:
+        return expression
+    pieces: List[str] = []
+    position = 0
+    for span, source in matched:
+        if skip_callees and re.match(r"\s*\(", expression[span.end() :]):
+            continue
+        pieces.append(expression[position : span.start()])
+        pieces.append(replacement(source))
+        position = span.end()
+    if not pieces:
+        return expression
+    pieces.append(expression[position:])
+    return "".join(pieces)
+
+
 # Function identifiers and formal arguments have a narrower reserved-word
 # contract than general SBML/BNGL names.  Keep this aligned with the
 # Playground writer: these names are legal SBML identifiers but collide with
@@ -433,10 +504,6 @@ def _numeric_value(value: object) -> Optional[float]:
     except (TypeError, ValueError):
         return None
     return number if math.isfinite(number) else None
-
-
-def _expression_identifiers(expression: str) -> List[str]:
-    return re.findall(r"[A-Za-z_][A-Za-z0-9_]*", expression or "")
 
 
 def convert_math_expression(expression: str) -> str:
@@ -932,6 +999,15 @@ def bngl_function(
             return standardize_name(token)
         return token
 
+    # ``sbml_to_bngl_id`` is keyed by the raw species id as well as by its
+    # BNGL-safe form, so a raw ``A-B`` is a legitimate key -- but the token
+    # substitution below can only ever see ``A`` and ``B``.  Standardize the
+    # raw spellings first; ``map_token`` then classifies them exactly as it
+    # classifies the standardized spelling, which is what the species id means
+    # in the source model.
+    result = _rewrite_declared_id_runs(
+        result, sbml_to_bngl_id, standardize_name, skip_callees=False
+    )
     result = re.sub(r"\b([A-Za-z_][A-Za-z0-9_]*)\b", map_token, result)
     result = convert_math_expression(result)
 
@@ -2576,6 +2652,16 @@ _FUNCTION_COLLIDING_LABEL = (
     "the function block declares that name twice with its two different bodies",
 )
 
+# ``assignmentRule``: a rule target is emitted as a BNGL function, so two
+# targets that normalize to one name are two declarations of it -- the one
+# collision that cannot be resolved by rewriting, because the source model
+# says which value each target holds and BNGL has one name for both.
+_ASSIGNMENT_RULE_COLLIDING_LABEL = (
+    "assignment rule target",
+    "the function block declares that name twice, so only one of the two rule "
+    "bodies is reachable",
+)
+
 
 def _colliding_identifier_groups(
     candidates: Iterable[object],
@@ -2609,6 +2695,36 @@ def _declared_function_ids(model: SBMLModel) -> List[object]:
     ]
 
 
+def _declared_assignment_rule_ids(model: SBMLModel) -> List[object]:
+    """Return the ids whose assignment rule reaches the functions block.
+
+    ``write_functions`` emits a rule targeting a species as a BNGL function
+    when that rule is lowerable, and every other assignment rule as a BNGL
+    function, so both groups declare a name that a colliding second id would
+    declare again.  Rule variables never reach that block any other way.
+    """
+
+    lowered_species = set(_lowerable_species_assignment_rules(model))
+    species_rule_variables = {
+        str(rule.variable)
+        for rule in model.rules
+        if rule.type == "assignment"
+        and rule.variable
+        and str(rule.variable) in model.species
+    }
+    declared: List[object] = []
+    for rule in _assignment_rules_for_writer(model):
+        variable = str(rule.variable or "")
+        if (
+            not variable
+            or variable in declared
+            or (variable in species_rule_variables and variable not in lowered_species)
+        ):
+            continue
+        declared.append(variable)
+    return declared
+
+
 def _record_identifier_collision(
     model: SBMLModel, label: str, generated: str, sbml_ids: List[str], consequence: str
 ) -> None:
@@ -2636,6 +2752,12 @@ def _report_identifier_collisions(model: SBMLModel) -> None:
     label, consequence = _FUNCTION_COLLIDING_LABEL
     for generated, sbml_ids in _colliding_identifier_groups(
         _declared_function_ids(model)
+    ):
+        _record_identifier_collision(model, label, generated, sbml_ids, consequence)
+
+    label, consequence = _ASSIGNMENT_RULE_COLLIDING_LABEL
+    for generated, sbml_ids in _colliding_identifier_groups(
+        _declared_assignment_rule_ids(model)
     ):
         _record_identifier_collision(model, label, generated, sbml_ids, consequence)
 
@@ -3134,9 +3256,10 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
             value = initial_expression(delayed_expression)
             if value is None or not math.isfinite(value):
                 return expression, 0
-            delayed_symbols = set(
-                re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", arguments[0])
-            )
+            # The delayed state is read as a whole id: a raw ``A-B`` is one
+            # symbol, not the two tokens a formula tokenizer produces, and the
+            # event target that writes it is carried raw.
+            delayed_symbols = _id_runs(delayed_expression)
             if duration == t_end and any(
                 symbol in event_targets
                 and event.trigger_initial_value is False
@@ -3537,7 +3660,10 @@ def _inline_reaction_fluxes(
 
     result = expression
     for _ in range(4):
-        tokens = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", result))
+        # A reaction id such as ``R-1`` is one whole id run, not the two tokens
+        # a formula tokenizer produces, so the flux has to be selected and
+        # replaced by matching whole runs.
+        present = _id_runs(result)
         candidates = [
             (reaction_id, reaction)
             for reaction_id, reaction in model.reactions.items()
@@ -3548,7 +3674,7 @@ def _inline_reaction_fluxes(
                 str(reaction_id) in defined
                 or standardize_name(str(reaction_id)) in defined
             )
-            and any(alias in tokens for alias in reaction_aliases[str(reaction_id)])
+            and present.intersection(reaction_aliases[str(reaction_id)])
         ]
         if not candidates:
             break
@@ -3558,12 +3684,14 @@ def _inline_reaction_fluxes(
             flux = reaction_flux(reaction_id, reaction)
             if flux is None:
                 continue
-            for candidate in (reaction_id, standardize_name(reaction_id)):
-                pattern = rf"\b{re.escape(candidate)}\b(?!\s*\()"
-                result, count = re.subn(pattern, lambda _: f"({flux})", result)
-                if count:
-                    changed = True
-                    break
+            rewritten = _rewrite_declared_id_runs(
+                result, reaction_aliases[reaction_id], lambda _source: f"({flux})"
+            )
+            if rewritten == result:
+                continue
+            result = rewritten
+            changed = True
+            break
         if not changed:
             break
     return result
@@ -4110,13 +4238,15 @@ def write_observables(
 
 
 def _rewrite_zero_argument_calls(expression: str, names: Iterable[str]) -> str:
-    result = expression
-    tokens = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", result))
-    for name in names:
-        if str(name) not in tokens:
-            continue
-        result = re.sub(rf"\b{re.escape(name)}\b(?!\s*\()", f"{name}()", result)
-    return result
+    """Apply a bare reference to a declared zero-argument function as a call.
+
+    Only the declared names are rewritten.  The body still carries raw species
+    ids, and a fragment of a hyphenated id such as ``B`` in ``A-B`` is a
+    tokenizer token, so gating on tokens both rewrote the fragment and made
+    the real id ``A-B`` a candidate.  Matching whole id runs leaves it alone.
+    """
+
+    return _rewrite_declared_id_runs(expression, names, lambda name: f"{name}()")
 
 
 def _inline_constant_function_calls(
@@ -4375,7 +4505,10 @@ def _rewrite_assignment_rule_references(
             f"{standardize_name(name)}_amt",
             result,
         )
-    tokens = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", result))
+    # ``assignment_rule_variables`` holds raw rule variables, straight from the
+    # XML ``variable`` attribute, so a reference to ``A-B`` reaches this body
+    # in its source spelling.  Match whole id runs: a tokenizer token cannot
+    # spell a hyphenated id, which left the raw reference in the emitted body.
     names = sorted(
         {
             str(name)
@@ -4387,15 +4520,9 @@ def _rewrite_assignment_rule_references(
         key=len,
         reverse=True,
     )
-    for name in names:
-        if name not in tokens and standardize_name(name) not in tokens:
-            continue
-        result = re.sub(
-            rf"\b{re.escape(name)}\b(?!\s*\()",
-            f"{standardize_name(name)}()",
-            result,
-        )
-    return result
+    return _rewrite_declared_id_runs(
+        result, names, lambda name: f"{standardize_name(name)}()"
+    )
 
 
 def write_functions(
