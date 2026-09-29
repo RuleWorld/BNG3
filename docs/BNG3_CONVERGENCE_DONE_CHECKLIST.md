@@ -6,7 +6,7 @@
 **Working branch:** `main`.
 **Latest full pinned SBML Test Suite report:** exact BNG3 commit `bf210ab73950646db655559ba2dd7aa56aeb2c15`, suite commit `cf38585fac5de8e0e90112febb62851ee2181816`, `1,744 passed / 179 unsupported / 0 failed / 0 timed out` (`t_end=1`, 10 samples). Six cases gained and none regressed against the preceding full report. Aggregate Core remains open. Report `/private/tmp/bng3-time-dependent-quadratic-delay-full-sbml.json`, SHA-256 `46951ae3ece7f02b45d932ac946a394df021d375811d9daaa00a8419abf7e02c`.
 **Latest current-source curated BioModels report:** none. The user's current-source flat and Atomized rerun was stopped at their request; it remains stopped and has no aggregate report. Earlier BioModels counts below are historical only.
-**Last queried hosted CI:** exact head `bf210ab` was queried at 2026-09-29 01:38 UTC. CI `36508634126`, Formatting patch `36508633968`, CodeQL `36508633961`, Cross-tool parity `36508634022`, and Lean semantic kernel `36508634002` were queued. These runs predate the checklist-only update below and are nonterminal.
+**Last queried hosted CI:** exact head `86a385e782dc3babdbd24208cd9ab5c2017ea4b8` was queried at 2026-09-29 03:24 UTC. CI `36516211687`, Formatting patch `36516211746`, CodeQL `36516211698`, Cross-tool parity `36516211693`, and Lean semantic kernel `36516211764` were queued; all remain nonterminal.
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 
@@ -26,10 +26,31 @@ recorded in the historical sections below; they are not current-head evidence.
   `/private/tmp/bng3-current-00374-after-crossing-guard.json`, SHA-256
   `e5130e47626e5bc36a318fe6e940f5d4fde763c7b61e0def94b451c70e3e65ba`.
   The full SSTS suite was not rerun for this isolated numerical guard.
+- [x] A libRoadRunner diagnostic run of `00374` at 200,001 samples resolved
+  14 event resets from `t=0.45753` through `t=0.87893`; consecutive intervals
+  shrink by approximately one half. This is evidence of Zeno-like recurrence,
+  not proof of an infinite event sequence or a finite BNGL action schedule.
 - [ ] This does not add an SSTS pass or establish full Atomizer coverage.
   Legacy BNG2 Atomizer remains incomplete and has not been benchmarked against
   all SBML; no BNG2 source was changed. Curated BioModels validation remains
   stopped at the user's request.
+
+## Read-only review of open BNG3 Batch SSA PR #26 — 2026-09-28
+
+- [x] Reviewed PR head `7b1d7ec57300911bbf2b8bceb7ac3c9a1ed5b6dd` and its
+  `tests/test_batch_ssa_statistical_parity.py`. The mean-trajectory check
+  assigns zero Z-scores whenever pooled SEM is at most `1e-6`, so deterministic
+  CPU/GPU mismatches at those points are ignored. The advertised
+  Kolmogorov-Smirnov section checks only whether both samples are constant; it
+  does not call `ks_2samp` or otherwise compare nonconstant distributions.
+  Therefore the PR's distributional-parity claim is not established by this
+  test script.
+- [x] PR checks passed for its C++/Python matrix, full-corpus validation,
+  BNG3/BNG2/NFsim and PyBioNetGen parity, CodeQL, formatting, and integration.
+  Docker, source-distribution, wheel, PyPI, and scheduled historical-NFsim
+  checks were skipped. No PR comment or source change was made.
+- [ ] PR #26 remains open; its statistical assertions and skipped release/NFsim
+  checks remain review and qualification gaps.
 
 ## Quadratic event groups with unrelated rate-rule targets — 2026-09-28
 
