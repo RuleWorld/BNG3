@@ -9285,3 +9285,27 @@ the other groups remain implementation targets.
   BNG3 work remains on `main`; legacy BNG2 code was not modified. The
   incomplete BNG2/legacy PyBioNetGen Atomizer has not been benchmarked against
   all SBML, and curated BioModels validation remains stopped.
+
+## Current-head refresh of prior event-only SSTS cohort — 2026-09-29
+
+- [x] Rechecked the 24 semantic cases previously unsupported for events at
+  BNG3 `d9a349a82f28be78d4b7d0005d9a327a7f77d936`, using pinned SSTS commit
+  `cf38585fac5de8e0e90112febb62851ee2181816`, `t_end=1`, and 10 intervals.
+  Four selected case records pass (`00752`, `00758`, `00759`, `00887`); 20
+  remain unsupported; none fail or time out. This is a selected cohort, not a
+  full-suite rerun. Per-case reports and summary are under
+  `/private/tmp/bng3-event-only-cohort-d9a349a`; summary SHA-256
+  `63586ee1b25476c54156282d3c906a62e6b9e53ec81213eb9f8645a567df95f4`.
+- [x] Traced `semantic/00374`'s exact quadratic event recurrence without
+  changing source. Forty crossings are scheduled from `t=0.0327571` through
+  `t=0.8789998988097419`; the final interval shrinks geometrically to
+  `1.77e-12` (recent interval ratios are approximately `0.5`), after which
+  the next crossing is below the scheduler's `1e-12` minimum. The finite-time
+  event accumulation cannot be represented by a finite BNGL action list, so
+  this case remains unsupported. Rank-two trajectory cases also remain
+  outside the exact scalar proof; no proof guard was relaxed.
+- [ ] Partial validator invocations report aggregate `core=FAIL` by design;
+  case statuses above are per-record outcomes. This evidence does not establish
+  full SSTS conformance, BNG2 parity, or broad SBML coverage. BNG2/legacy
+  PyBioNetGen Atomizer remains incomplete and has not been benchmarked against
+  all SBML. Curated BioModels validation remains stopped.
