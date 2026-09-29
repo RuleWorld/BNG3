@@ -1275,6 +1275,14 @@ def _match_comparison_call(expression: str) -> Optional[Tuple[str, str]]:
     return _COMPARISON_ALIASES[match.group(1).lower()], match.group(2)
 
 
+# The SBML ``SId`` class, spelled once.  It is narrower than the writer's
+# whole-id run (``_SBML_ID_TOKEN``), so a raw id that carries a hyphen cannot
+# be a threshold state: parsing needs a name it can look up, not one it has to
+# echo.  ``_unspellable_state_id`` reads the same class so the two agree on
+# exactly which spellings a state threshold can accept.
+_SBML_SID_TOKEN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
 def _parse_affine_state_threshold(
     trigger: str,
 ) -> Optional[Tuple[str, str, str]]:
@@ -1299,11 +1307,48 @@ def _parse_affine_state_threshold(
     if arguments is None or len(arguments) != 2:
         return None
     left, right = (_strip_outer_parens(argument) for argument in arguments)
-    identifier = r"[A-Za-z_][A-Za-z0-9_]*"
-    if re.fullmatch(identifier, left):
+    if _SBML_SID_TOKEN.fullmatch(left):
         return left, operator, right
-    if re.fullmatch(identifier, right):
+    if _SBML_SID_TOKEN.fullmatch(right):
         return right, _REVERSED_COMPARISON_OPERATOR[operator], left
+    return None
+
+
+def _unspellable_state_id(
+    trigger: str, fold_threshold: Callable[[str], Optional[float]]
+) -> Optional[str]:
+    """Return the state id that alone keeps a plain threshold from lowering.
+
+    A raw SBML id is stored verbatim and standardized only at emission, so a
+    species such as ``A-B`` reaches trigger analysis in a spelling the SId
+    class cannot carry.  ``_parse_affine_state_threshold`` rejects the whole
+    comparison for that spelling alone, which is a naming problem, not a
+    scheduling one: given a spellable id the same text is a state threshold
+    and takes the ordinary lowering path.
+
+    Returning an id is therefore a claim that the id is the *sole* cause, so
+    this accepts only what ``_parse_affine_state_threshold`` would accept once
+    the id is repaired: one comparison, exactly one operand that is a whole id
+    run, that run carrying a character outside the SId class, and a threshold
+    side that folds to a constant.  Anything else -- an expression operand, a
+    state on both sides, several dynamic conjuncts -- is refused for its own
+    shape and keeps the state-dependent reason.
+    """
+    comparison = _match_comparison_call(str(trigger or "").strip())
+    if comparison is None:
+        return None
+    _operator, arguments_text = comparison
+    arguments = _split_arguments(arguments_text)
+    if arguments is None or len(arguments) != 2:
+        return None
+    left, right = (_strip_outer_parens(argument) for argument in arguments)
+    for state_side, threshold_side in ((left, right), (right, left)):
+        if _SBML_SID_TOKEN.fullmatch(state_side) or not _SBML_ID_TOKEN.fullmatch(
+            state_side
+        ):
+            continue
+        if fold_threshold(threshold_side) is not None:
+            return state_side
     return None
 
 
@@ -7388,13 +7433,22 @@ def synthesize_event_actions(
                 ):
                     threshold = "0"
                 else:
-                    untranslated.append(
-                        (
-                            event,
-                            "trigger is not a simple time threshold (state-dependent "
-                            "triggers cannot be scheduled)",
-                        )
+                    unspellable_id = _unspellable_state_id(
+                        event_trigger,
+                        lambda expression: fold(expression, event_context=event),
                     )
+                    if unspellable_id is None:
+                        reason = (
+                            "trigger is not a simple time threshold "
+                            "(state-dependent triggers cannot be scheduled)"
+                        )
+                    else:
+                        reason = (
+                            f'trigger references id "{unspellable_id}", which '
+                            "contains a character outside the SBML SId class and "
+                            "cannot be matched; rename the id to a legal SBML SId"
+                        )
+                    untranslated.append((event, reason))
                     continue
         trigger_time = fold(threshold, event_context=event)
         if trigger_time is None:
