@@ -21,6 +21,9 @@
 namespace bng {
 namespace ast {
 
+inline constexpr char kUnsupportedEventExecutionMessage[] =
+    "BNG3 event execution is not implemented; bng3_events models cannot be simulated";
+
 struct Action {
     std::string name;
     std::map<std::string, std::string> arguments;

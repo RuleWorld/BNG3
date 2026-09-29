@@ -1568,6 +1568,9 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
     };
 
     const auto runNfSimulation = [&](const ast::Action& action) {
+        if (model.getEventFormatVersion().has_value()) {
+            throw std::runtime_error(ast::kUnsupportedEventExecutionMessage);
+        }
         const auto prefix = simulationPrefix(action, sourcePath);
         const auto xmlPath = sourcePath.parent_path() / (prefix + ".xml");
 

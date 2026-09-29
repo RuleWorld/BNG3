@@ -191,6 +191,9 @@ bool expressionReferencesObservable(
 
 OdeIntegrator::OdeIntegrator(const ast::Model& model, const GeneratedNetwork& network)
     : model_(model), network_(network) {
+    if (model_.getEventFormatVersion().has_value()) {
+        throw std::runtime_error(ast::kUnsupportedEventExecutionMessage);
+    }
     compile();
 }
 

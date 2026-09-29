@@ -93,6 +93,27 @@ TEST_CASE("OdeIntegrator rejects malformed stop conditions", "[OdeOptions]") {
         Catch::Matchers::ContainsSubstring("stop_if"));
 }
 
+TEST_CASE("OdeIntegrator rejects BNG3 events until event execution is implemented",
+          "[OdeOptions][Events]") {
+    auto model = parser::parseModel(R"(
+begin bng3_events version 1
+  event "later"
+    trigger: time >= 1
+    initial_value: false
+    persistent: true
+    use_values_from_trigger_time: true
+    assignment: A = 0
+  end event
+end bng3_events
+)");
+    REQUIRE(model != nullptr);
+    engine::GeneratedNetwork network;
+
+    REQUIRE_THROWS_WITH(
+        engine::OdeIntegrator(*model, network),
+        Catch::Matchers::ContainsSubstring("BNG3 event execution is not implemented"));
+}
+
 TEST_CASE("OdeIntegrator evaluates user-defined function rates", "[OdeOptions]") {
     // Source-derived from akutuva21/bionetgen PR #508 head e67850cf and
     // PR #509 head 5cf5cd47: function-name matching is an allocation-sensitive

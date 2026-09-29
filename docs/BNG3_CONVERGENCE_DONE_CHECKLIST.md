@@ -9473,3 +9473,21 @@ the other groups remain implementation targets.
   incomplete and have not been benchmarked
   against all SBML; no BNG2 code was changed. Curated BioModels validation
   remains stopped.
+
+## BNG3 event AST execution gates — 2026-09-29
+
+- [x] Reproduced that direct construction of BNG3's ODE, PLA, and PSA
+  simulators accepted a model containing `bng3_events` even though those
+  backends do not execute event semantics. Added fail-closed checks to all
+  three constructors, the NFsim AST adapter, the action-dispatch NFsim route,
+  and the Python NFsim binding before its optional XML fallback. NFsim's
+  direct adapter now returns the specific event capability reason.
+- [x] Added regressions for all four direct construction APIs. Each regression
+  failed before the change and passes afterward. Full configured C++ build
+  passed; CTest passed all 452/452 tests. The Python binding containing the
+  NFsim guard compiled as part of the full build. `git diff --check` passed.
+- [ ] This is a BNG3 execution-safety correction only. No Atomizer behavior or
+  SSTS status changed, and no SBML cohort was rerun. It establishes neither
+  BNG2 parity nor all-SBML coverage. BNG2 code was not modified; its legacy
+  Atomizer remains incomplete and unbenchmarked against all SBML. Curated
+  BioModels validation remains stopped.

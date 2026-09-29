@@ -49,6 +49,9 @@ void bind_nfsim(py::module_& m) {
                             const std::string& source_path,
                             const std::vector<double>& sample_times,
                             int traversal_limit, double t_start) -> py::dict {
+        if (model.getEventFormatVersion().has_value()) {
+            throw std::runtime_error(bng::ast::kUnsupportedEventExecutionMessage);
+        }
         if (!std::isfinite(t_start) || !std::isfinite(t_end)) {
             throw std::invalid_argument("t_start and t_end must be finite");
         }
