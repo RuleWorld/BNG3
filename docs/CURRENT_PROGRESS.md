@@ -1,9 +1,33 @@
 # BNG3 current progress
 
-**Last targeted audit:** 2026-09-27 (full convergence checklist not re-audited)
+**Current checkpoint:** 2026-09-29. The detailed, append-only verification ledger is
+[`BNG3_CONVERGENCE_DONE_CHECKLIST.md`](BNG3_CONVERGENCE_DONE_CHECKLIST.md).
 **Repository:** `RuleWorld/BNG3`
-**Branch:** `plan/nfsim-gpu-perf`
-**Status:** Atomizer cycle, delayed quadratic, species-initial-assignment, affine parameter-priority, and bounded first-order transfer events validated; transfer events are cross-checked on official SSTS inputs through BNG2; static-gated nonpersistent priorities reproduce the pinned SSTS event order; overall convergence and release validation remain incomplete
+**Working branch:** `main` at `558c70e1a39c1d85b89932740f2dd865de932b2c`; verified equal to `origin/main`.
+**Status:** Overall convergence and release qualification remain incomplete. Modern BNG3 Atomizer supports verified analytic/event subsets; general dynamic event scheduling and other SBML features remain unsupported. Keep the full objective open.
+
+## Current exact-state boundaries — 2026-09-29
+
+- The latest complete pinned SBML Test Suite report remains tied to source
+  commit `bf210ab73950646db655559ba2dd7aa56aeb2c15`: 1,744 passed, 179
+  unsupported, 0 failed, and 0 timed out. BNG3 later added the equilibrium-root
+  crossing guard at `86a385e`; the full suite was not rerun after that code
+  change, so the report is not exact-head evidence.
+- The latest selected cross-engine report covers 50 additional SSTS inputs at
+  BNG3 head `38b2b8c` (the later `558c70e` change updates documentation only).
+  It is network structure/rate evidence, not
+  trajectory parity, full SSTS cross-engine coverage, or an all-SBML result.
+- Legacy BNG2 and PyBioNetGen Atomizers remain incomplete and have not been
+  benchmarked against all SBML. No BNG2 or PyBioNetGen source was changed.
+- The user's curated BioModels validation stop remains in effect; do not
+  restart that run. Existing local macOS wheel/sdist smoke results are from
+  earlier heads. Current-head cross-platform release artifacts, Windows
+  executables, release qualification, and publication remain unverified.
+- Exact-head CI for `558c70e` is queued, with no terminal results observed yet.
+  The pre-existing `bng3-offline-bundle/` remains untracked and preserved.
+
+The dated entries below are retained as historical evidence; their branch,
+head, counts, and running-job statements are snapshots, not current state.
 
 ## Re-entrant first-order transfer events — 2026-09-27
 
