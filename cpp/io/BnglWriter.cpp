@@ -114,6 +114,9 @@ std::string BnglWriter::write(const ast::Model& model, const engine::GeneratedNe
     if (!model.getReactionRules().empty()) {
         bngl << writeReactionRules(model);
     }
+    if (model.getEventFormatVersion().has_value()) {
+        bngl << writeEvents(model);
+    }
 
     bngl << "end model\n";
 
@@ -382,6 +385,32 @@ std::string BnglWriter::writeActions(const ast::Model& model) {
     }
 
     bngl << "end actions\n";
+    return bngl.str();
+}
+
+std::string BnglWriter::writeEvents(const ast::Model& model) {
+    std::ostringstream bngl;
+    bngl << "begin bng3_events version " << *model.getEventFormatVersion() << "\n";
+    for (const auto& event : model.getEvents()) {
+        bngl << "  event \"" << event.id << "\"\n"
+             << "    trigger: " << event.trigger.toString() << "\n"
+             << "    initial_value: " << (event.initialValue ? "true" : "false") << "\n"
+             << "    persistent: " << (event.persistent ? "true" : "false") << "\n"
+             << "    use_values_from_trigger_time: "
+             << (event.useValuesFromTriggerTime ? "true" : "false") << "\n";
+        if (event.delay.has_value()) {
+            bngl << "    delay: " << event.delay->toString() << "\n";
+        }
+        if (event.priority.has_value()) {
+            bngl << "    priority: " << event.priority->toString() << "\n";
+        }
+        for (const auto& assignment : event.assignments) {
+            bngl << "    assignment: " << assignment.target << " = "
+                 << assignment.value.toString() << "\n";
+        }
+        bngl << "  end event\n";
+    }
+    bngl << "end bng3_events\n\n";
     return bngl.str();
 }
 

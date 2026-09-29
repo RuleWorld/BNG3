@@ -1,10 +1,12 @@
 #pragma once
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 #include "Compartment.hpp"
 #include "BarrierPattern.hpp"
 #include "EnergyPattern.hpp"
+#include "Expression.hpp"
 #include "Function.hpp"
 #include "GraphTypeRegistry.hpp"
 #include "Molecule.hpp"
@@ -19,9 +21,28 @@
 namespace bng {
 namespace ast {
 
+inline constexpr char kUnsupportedEventExecutionMessage[] =
+    "BNG3 event execution is not implemented; bng3_events models cannot be simulated";
+
 struct Action {
     std::string name;
     std::map<std::string, std::string> arguments;
+};
+
+struct EventAssignment {
+    std::string target;
+    Expression value;
+};
+
+struct Event {
+    std::string id;
+    Expression trigger;
+    bool initialValue = false;
+    bool persistent = true;
+    bool useValuesFromTriggerTime = true;
+    std::optional<Expression> delay;
+    std::optional<Expression> priority;
+    std::vector<EventAssignment> assignments;
 };
 
 class Model {
@@ -42,6 +63,8 @@ public:
     void addSeedSpecies(SeedSpecies seedSpecies);
     void addReactionRule(ReactionRule reactionRule);
     void addPopulationMap(PopulationMap populationMap);
+    void addEvent(Event event);
+    void setEventFormatVersion(unsigned version);
     void addProtocolAction(Action action);
     void setVersion(std::string version);
     void setSubstanceUnits(std::string units);
@@ -79,6 +102,8 @@ public:
     const std::vector<ReactionRule>& getReactionRules() const;
     std::vector<ReactionRule>& getReactionRules();
     const std::vector<PopulationMap>& getPopulationMaps() const;
+    const std::vector<Event>& getEvents() const;
+    const std::optional<unsigned>& getEventFormatVersion() const;
     const std::vector<Action>& getSimulationProtocol() const;
     const std::string& getVersion() const;
     const std::string& getSubstanceUnits() const;
@@ -105,6 +130,8 @@ private:
     std::vector<SeedSpecies> seedSpecies_;
     std::vector<ReactionRule> reactionRules_;
     std::vector<PopulationMap> populationMaps_;
+    std::vector<Event> events_;
+    std::optional<unsigned> eventFormatVersion_;
     std::vector<Action> simulationProtocol_;
     GraphTypeRegistry graphTypeRegistry_;
     std::string version_;

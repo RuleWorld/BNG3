@@ -5,11 +5,11 @@ Created on Wed May 30 11:44:17 2012
 @author: proto
 """
 
-from lxml import etree
+from collections import Counter
+from copy import copy as shallow_copy
 import re
 from random import randint
 from pyparsing import Word, Suppress, Optional, alphanums, Group, ZeroOrMore
-from collections import Counter
 
 
 def parseReactions(reaction):
@@ -488,12 +488,8 @@ class Molecule:
         self.uniqueIdentifier = randint(0, 100000)
 
     def copy(self):
-        molecule = Molecule(self.name, self.idx)
+        molecule = shallow_copy(self)
         molecule.components = [element.copy() for element in self.components]
-        molecule.compartment = self.compartment
-        molecule.uniqueIdentifier = self.uniqueIdentifier
-        if hasattr(self, "trueName"):
-            molecule.trueName = self.trueName
         return molecule
 
     def addChunk(self, chunk):
@@ -674,7 +670,9 @@ class Component:
         self.activeState = ""
 
     def copy(self):
-        component = Component(self.name, self.idx, list(self.bonds), list(self.states))
+        component = Component(self.name, self.idx)
+        component.bonds = list(self.bonds)
+        component.states = list(self.states)
         component.activeState = self.activeState
         return component
 

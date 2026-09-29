@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -56,4 +57,25 @@ end reaction rules
     REQUIRE(fired > 450);
     CHECK(toB > 0.42 * static_cast<double>(fired));
     CHECK(toB < 0.58 * static_cast<double>(fired));
+}
+
+TEST_CASE("PsaSimulator rejects BNG3 events until event execution is implemented",
+          "[PsaSimulator][Events]") {
+    const auto model = bng::parser::parseModel(R"(
+begin bng3_events version 1
+  event "later"
+    trigger: time >= 1
+    initial_value: false
+    persistent: true
+    use_values_from_trigger_time: true
+    assignment: A = 0
+  end event
+end bng3_events
+)");
+    REQUIRE(model != nullptr);
+    bng::engine::GeneratedNetwork network;
+
+    REQUIRE_THROWS_WITH(
+        bng::engine::PsaSimulator(*model, network),
+        Catch::Matchers::ContainsSubstring("BNG3 event execution is not implemented"));
 }

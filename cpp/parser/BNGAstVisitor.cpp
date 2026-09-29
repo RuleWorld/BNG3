@@ -1487,6 +1487,70 @@ std::any BNGAstVisitor::visitProg(BNGParser::ProgContext* ctx) {
     return {};
 }
 
+std::any BNGAstVisitor::visitBng3_events_block(BNGParser::Bng3_events_blockContext* ctx) {
+    const auto blockNames = ctx->STRING();
+    if (blockNames.size() != 2 || blockNames.front()->getText() != "bng3_events" ||
+        blockNames.back()->getText() != "bng3_events") {
+        throw std::runtime_error("Malformed BNG3 event block delimiters");
+    }
+    const auto version = std::stoul(ctx->INT()->getText());
+    if (version != 1) {
+        throw std::runtime_error("Unsupported BNG3 event format version: " + std::to_string(version));
+    }
+    if (currentModel_->getEventFormatVersion().has_value()) {
+        throw std::runtime_error("A model may contain only one bng3_events block");
+    }
+    currentModel_->setEventFormatVersion(static_cast<unsigned>(version));
+    return visitChildren(ctx);
+}
+
+std::any BNGAstVisitor::visitEvent_def(BNGParser::Event_defContext* ctx) {
+    const auto keys = ctx->STRING();
+    const auto assignments = ctx->event_assignment();
+    const bool hasDelay = ctx->event_delay() != nullptr;
+    const bool hasPriority = ctx->event_priority() != nullptr;
+    const std::vector<std::string> expectedKeys{
+        "event", "trigger", "initial_value", "persistent", "use_values_from_trigger_time", "event"};
+    if (keys.size() != expectedKeys.size()) {
+        throw std::runtime_error("Malformed BNG3 event fields");
+    }
+    for (std::size_t index = 0; index < keys.size(); ++index) {
+        if (keys[index]->getText() != expectedKeys[index]) {
+            throw std::runtime_error("Unexpected BNG3 event field '" + keys[index]->getText() + "'");
+        }
+    }
+    if (hasDelay && ctx->event_delay()->STRING()->getText() != "delay") {
+        throw std::runtime_error("Unexpected BNG3 event delay field");
+    }
+    for (auto* assignment : assignments) {
+        if (assignment->STRING()->getText() != "assignment") {
+            throw std::runtime_error("Unexpected BNG3 event assignment field");
+        }
+    }
+    ast::Event event;
+    event.id = stripQuotes(ctx->quoted_string()->getText());
+    event.trigger = parseExpression(ctx->expression()->getText());
+
+    const auto bools = ctx->boolean_literal();
+    event.initialValue = bools.at(0)->TRUE() != nullptr;
+    event.persistent = bools.at(1)->TRUE() != nullptr;
+    event.useValuesFromTriggerTime = bools.at(2)->TRUE() != nullptr;
+
+    if (hasDelay) {
+        event.delay = parseExpression(ctx->event_delay()->expression()->getText());
+    }
+    if (hasPriority) {
+        event.priority = parseExpression(ctx->event_priority()->expression()->getText());
+    }
+    for (auto* assignment : assignments) {
+        event.assignments.push_back(
+            {assignment->param_name()->getText(),
+             parseExpression(assignment->expression()->getText())});
+    }
+    currentModel_->addEvent(std::move(event));
+    return {};
+}
+
 void BNGAstVisitor::predeclareMoleculeTypes(BNGParser::ProgContext* ctx) {
     std::vector<BNGParser::Molecule_type_defContext*> explicitDefinitions;
     collectParseContexts(ctx, explicitDefinitions);

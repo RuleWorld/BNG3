@@ -545,7 +545,10 @@ jobs:
           CIBW_SKIP: "*-musllinux_* *-manylinux_i686 *-win32"
           CIBW_BUILD_VERBOSITY: 1
           CIBW_TEST_REQUIRES: pytest numpy click
-          CIBW_TEST_COMMAND: pytest {project}/tests/python/test_cpp_backend.py -v --tb=short
+          CIBW_TEST_COMMAND: >-
+            pytest {project}/tests/python/test_cpp_backend.py -v --tb=short &&
+            bionetgen --version &&
+            bionetgen --help
           CIBW_ENVIRONMENT: CMAKE_ARGS="-DBUILD_TESTS=OFF -DBUILD_CLI=OFF"
           # Build one native architecture per macOS runner; macos-13 supplies
           # x86_64 and macos-14 supplies arm64 without cross-target duplication.

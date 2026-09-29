@@ -1,8 +1,8 @@
 """SBML event translation for the Playground-derived atomizer.
 
-Fixed-time, constant-valued events are lowered to executable BNGL action
-phases.  State-dependent or otherwise dynamic events remain explicit
-diagnostics because the BNGL action language has no general trigger scheduler.
+Fixed-time events and narrowly proven analytic state-event systems are lowered
+to executable BNGL action phases. General state-dependent event scheduling
+remains explicit because the BNGL action language has no trigger scheduler.
 """
 
 from __future__ import annotations
@@ -97,6 +97,345 @@ def _no_event_quadratic_state_values_from_state(
     return None
 
 
+def _no_first_order_cycle_event_system() -> (
+    Optional[Tuple[Tuple[str, str, str], Tuple[float, float, float]]]
+):
+    return None
+
+
+def _no_first_order_transfer_event_system() -> Optional[Tuple[str, str, float]]:
+    return None
+
+
+def _no_first_order_chain_event_system() -> (
+    Optional[Tuple[str, str, str, float, float]]
+):
+    return None
+
+
+@dataclass(frozen=True)
+class _FirstOrderCycleTrajectory:
+    total: float
+    rates: Tuple[float, float, float]
+    equilibrium: Tuple[float, float, float]
+    mu: float
+    discriminant: float
+    u: float
+    w: float
+    v: float
+    z: float
+    a11: float
+    a12: float
+    a21: float
+    a22: float
+
+    @property
+    def discriminant_tolerance(self) -> float:
+        scale = max(
+            (self.rates[0] + self.rates[2]) ** 2,
+            self.rates[1] ** 2,
+            abs(self.rates[0] * self.rates[2]),
+            1e-300,
+        )
+        return 1e-14 * scale
+
+    def state_at(self, elapsed: float) -> Optional[Tuple[float, float, float]]:
+        if not math.isfinite(elapsed) or elapsed < 0:
+            return None
+        q = self.discriminant
+        tolerance = self.discriminant_tolerance
+        if q > tolerance:
+            delta = math.sqrt(q)
+            try:
+                plus = math.exp((self.mu + delta) * elapsed)
+                minus = math.exp((self.mu - delta) * elapsed)
+            except OverflowError:
+                return None
+            first = (
+                0.5 * (self.u + self.v / delta) * plus
+                + 0.5 * (self.u - self.v / delta) * minus
+            )
+            second = (
+                0.5 * (self.w + self.z / delta) * plus
+                + 0.5 * (self.w - self.z / delta) * minus
+            )
+        elif q < -tolerance:
+            omega = math.sqrt(-q)
+            try:
+                decay = math.exp(self.mu * elapsed)
+            except OverflowError:
+                return None
+            cosine = math.cos(omega * elapsed)
+            sine = math.sin(omega * elapsed)
+            first = decay * (self.u * cosine + self.v * sine / omega)
+            second = decay * (self.w * cosine + self.z * sine / omega)
+        else:
+            try:
+                decay = math.exp(self.mu * elapsed)
+            except OverflowError:
+                return None
+            first = decay * (self.u + self.v * elapsed)
+            second = decay * (self.w + self.z * elapsed)
+
+        first += self.equilibrium[0]
+        second += self.equilibrium[1]
+        third = self.total - first - second
+        values = [first, second, third]
+        if not all(math.isfinite(value) for value in values):
+            return None
+        scale = max(1e-300, abs(self.total), *(abs(value) for value in values))
+        for index, value in enumerate(values):
+            if value < -1e-12 * scale:
+                return None
+            if value < 0:
+                values[index] = 0.0
+        correction = self.total - math.fsum(values)
+        values[2] += correction
+        if values[2] < -1e-12 * scale:
+            return None
+        return values[0], values[1], max(0.0, values[2])
+
+    def first_derivative(self, elapsed: float) -> Optional[float]:
+        values = self.state_at(elapsed)
+        if values is None:
+            return None
+        first, _second, third = values
+        derivative = -self.rates[0] * first + self.rates[2] * third
+        return derivative if math.isfinite(derivative) else None
+
+    def extrema_times(self, horizon: float) -> Optional[List[float]]:
+        if not math.isfinite(horizon) or horizon < 0:
+            return None
+        q = self.discriminant
+        tolerance = self.discriminant_tolerance
+        roots: List[float] = []
+        if q < -tolerance:
+            omega = math.sqrt(-q)
+            cosine_coefficient = self.mu * self.u + self.v
+            sine_coefficient = self.mu * self.v / omega - omega * self.u
+            if cosine_coefficient == 0 and sine_coefficient == 0:
+                return roots
+            phase = math.atan2(-cosine_coefficient, sine_coefficient)
+            first_n = math.floor(-phase / math.pi) - 1
+            count = math.ceil(omega * horizon / math.pi) + 4
+            if count > 10_000:
+                return None
+            for n in range(first_n, first_n + count):
+                value = (phase + n * math.pi) / omega
+                if 1e-12 < value < horizon - 1e-12:
+                    roots.append(value)
+        elif q > tolerance:
+            delta = math.sqrt(q)
+            positive_mode = 0.5 * (self.u + self.v / delta)
+            negative_mode = 0.5 * (self.u - self.v / delta)
+            numerator = -(self.mu - delta) * negative_mode
+            denominator = (self.mu + delta) * positive_mode
+            if denominator != 0 and numerator / denominator > 0:
+                value = math.log(numerator / denominator) / (2.0 * delta)
+                if 1e-12 < value < horizon - 1e-12:
+                    roots.append(value)
+        elif self.mu * self.v != 0:
+            value = -(self.mu * self.u + self.v) / (self.mu * self.v)
+            if 1e-12 < value < horizon - 1e-12:
+                roots.append(value)
+        return sorted(set(roots))
+
+
+def _first_order_cycle_trajectory(
+    state: Sequence[float], rates: Sequence[float]
+) -> Optional[_FirstOrderCycleTrajectory]:
+    if len(state) != 3 or len(rates) != 3:
+        return None
+    values = tuple(float(value) for value in state)
+    cycle_rates = tuple(float(rate) for rate in rates)
+    if not all(math.isfinite(value) and value >= 0 for value in values) or not all(
+        math.isfinite(rate) and rate > 0 for rate in cycle_rates
+    ):
+        return None
+    total = math.fsum(values)
+    inverse_rate_sum = math.fsum(1.0 / rate for rate in cycle_rates)
+    if not math.isfinite(total) or not math.isfinite(inverse_rate_sum):
+        return None
+    flux = total / inverse_rate_sum
+    equilibrium = tuple(flux / rate for rate in cycle_rates)
+    m00 = -(cycle_rates[0] + cycle_rates[2])
+    m01 = -cycle_rates[2]
+    m10 = cycle_rates[0]
+    m11 = -cycle_rates[1]
+    mu = 0.5 * (m00 + m11)
+    a11, a12, a21, a22 = m00 - mu, m01, m10, m11 - mu
+    discriminant = a11 * a11 + a12 * a21
+    u = values[0] - equilibrium[0]
+    w = values[1] - equilibrium[1]
+    v = a11 * u + a12 * w
+    z = a21 * u + a22 * w
+    components = (*equilibrium, total, mu, discriminant, u, w, v, z)
+    if not all(math.isfinite(value) for value in components):
+        return None
+    return _FirstOrderCycleTrajectory(
+        total,
+        cycle_rates,
+        equilibrium,
+        mu,
+        discriminant,
+        u,
+        w,
+        v,
+        z,
+        a11,
+        a12,
+        a21,
+        a22,
+    )
+
+
+def _first_order_transfer_state_at(
+    source: float, sink: float, rate: float, elapsed: float
+) -> Optional[Tuple[float, float]]:
+    if (
+        not all(math.isfinite(value) for value in (source, sink, rate, elapsed))
+        or source < 0
+        or sink < 0
+        or rate <= 0
+        or elapsed < 0
+    ):
+        return None
+    try:
+        remaining = math.exp(-rate * elapsed)
+    except OverflowError:
+        return None
+    next_source = source * remaining
+    next_sink = sink + source * (1.0 - remaining)
+    if not all(
+        math.isfinite(value) and value >= 0 for value in (next_source, next_sink)
+    ):
+        return None
+    return next_source, next_sink
+
+
+def _first_order_chain_state_at(
+    source: float,
+    intermediate: float,
+    first_rate: float,
+    second_rate: float,
+    elapsed: float,
+) -> Optional[Tuple[float, float]]:
+    """Return source and intermediate states in a two-step first-order chain."""
+    if (
+        not all(
+            math.isfinite(value)
+            for value in (source, intermediate, first_rate, second_rate, elapsed)
+        )
+        or source < 0
+        or intermediate < 0
+        or first_rate <= 0
+        or second_rate <= 0
+        or elapsed < 0
+    ):
+        return None
+    try:
+        first_decay = math.exp(-first_rate * elapsed)
+        second_decay = math.exp(-second_rate * elapsed)
+    except OverflowError:
+        return None
+    next_source = source * first_decay
+    rate_scale = max(first_rate, second_rate, 1e-300)
+    if abs(first_rate - second_rate) <= 1e-14 * rate_scale:
+        next_intermediate = second_decay * (
+            intermediate + first_rate * source * elapsed
+        )
+    else:
+        next_intermediate = second_decay * intermediate + (
+            first_rate
+            * source
+            * (first_decay - second_decay)
+            / (second_rate - first_rate)
+        )
+    if not all(
+        math.isfinite(value) and value >= 0
+        for value in (next_source, next_intermediate)
+    ):
+        return None
+    return next_source, next_intermediate
+
+
+def _first_order_cycle_next_trigger_crossing(
+    state: Sequence[float],
+    rates: Sequence[float],
+    threshold: float,
+    operator: str,
+    horizon: float,
+) -> Optional[Tuple[float, bool]]:
+    trajectory = _first_order_cycle_trajectory(state, rates)
+    if trajectory is None:
+        return None
+    extrema = trajectory.extrema_times(horizon)
+    if extrema is None:
+        return None
+    partitions = [0.0, *extrema, horizon]
+
+    for left, right in zip(partitions, partitions[1:]):
+        if right <= 1e-12:
+            continue
+        left_state = trajectory.state_at(left)
+        right_state = trajectory.state_at(right)
+        if left_state is None or right_state is None:
+            return None
+        left_delta = left_state[0] - threshold
+        right_delta = right_state[0] - threshold
+        same_sign = (left_delta > 0 and right_delta > 0) or (
+            left_delta < 0 and right_delta < 0
+        )
+        zero_tolerance = 1e-13 * max(
+            1e-300,
+            abs(threshold),
+            abs(left_state[0]),
+            abs(right_state[0]),
+        )
+        if same_sign or (abs(left_delta) <= zero_tolerance and left <= 1e-12):
+            continue
+        if abs(left_delta) <= zero_tolerance:
+            root = left
+        elif abs(right_delta) <= zero_tolerance:
+            root = right
+        else:
+            low, high = left, right
+            low_value = left_delta
+            for _ in range(80):
+                middle = 0.5 * (low + high)
+                middle_state = trajectory.state_at(middle)
+                if middle_state is None:
+                    return None
+                middle_value = middle_state[0] - threshold
+                if (middle_value < 0) == (low_value < 0):
+                    low, low_value = middle, middle_value
+                else:
+                    high = middle
+            root = 0.5 * (low + high)
+        if root <= 1e-12 or root > horizon + 1e-12:
+            continue
+        root_state = trajectory.state_at(root)
+        if root_state is None:
+            return None
+        derivative = trajectory.first_derivative(root)
+        derivative_scale = max(
+            1e-300,
+            trajectory.rates[0] * root_state[0],
+            trajectory.rates[2] * root_state[2],
+        )
+        if derivative is None:
+            return None
+        if abs(derivative) <= 1e-14 * derivative_scale:
+            if operator in {"leq", "geq"}:
+                return None
+            continue
+        enters_true = (operator in {"lt", "leq"} and derivative < 0) or (
+            operator in {"gt", "geq"} and derivative > 0
+        )
+        return min(root, horizon), enters_true
+    return math.inf, False
+
+
 from .types import standardize_name
 
 
@@ -122,6 +461,11 @@ class EventTranslationContext:
     # referenced symbol changes later. This callback is used only for that
     # edge and immediate assignment values, never for later schedule times.
     resolve_initial_value: Callable[[str], Optional[float]] = lambda _identifier: None
+    # Return the SBML rate-rule expression for a state whose derivative may
+    # depend on parameters updated by an already-proven periodic event group.
+    resolve_rate_rule_expression_for_event: Callable[
+        [str, SBMLEvent], Optional[str]
+    ] = lambda _identifier, _event: None
     # Return (initial value, constant derivative) only for independently
     # affine states. Used to solve simple one-variable threshold crossings.
     resolve_affine_rate: Callable[[str], Optional[Tuple[float, float]]] = (
@@ -213,6 +557,21 @@ class EventTranslationContext:
     # event-local mutable symbols then remain at their initial values unless
     # an event fires.
     static_event_state: bool = False
+    # Event-system callbacks stay at the end to preserve positional
+    # initializer compatibility.
+    resolve_first_order_cycle_event_system: Callable[
+        [], Optional[Tuple[Tuple[str, str, str], Tuple[float, float, float]]]
+    ] = _no_first_order_cycle_event_system
+    # Return source species, sink species, and a positive concentration-rate
+    # constant for one isolated first-order transfer event system.
+    resolve_first_order_transfer_event_system: Callable[
+        [], Optional[Tuple[str, str, float]]
+    ] = _no_first_order_transfer_event_system
+    # Return source, intermediate, product and both first-order rate constants
+    # for an isolated irreversible two-step chain.
+    resolve_first_order_chain_event_system: Callable[
+        [], Optional[Tuple[str, str, str, float, float]]
+    ] = _no_first_order_chain_event_system
 
     @property
     def resolveSpeciesPattern(self):
@@ -1219,14 +1578,14 @@ def expand_static_parameter_event_system(
     t_end: float,
     parameter_ids: Sequence[str],
     resolve_initial: Callable[[str], Optional[float]],
+    affine_rate_parameters: Optional[Mapping[str, float]] = None,
     expand_functions: Callable[[str], str] = lambda expression: expression,
 ) -> Optional[List[SBMLEvent]]:
-    """Compile parameter-only discrete event systems into fixed-time events.
+    """Compile parameter-only event systems into fixed-time events.
 
-    Returns ``None`` unless every trigger, delay, and assignment can be
-    simulated exactly over the requested horizon. This helper intentionally
-    handles no continuous state and at most one fixed rising comparison
-    against time in each event trigger.
+    Optional affine rate rules are limited to parameters with constant slopes.
+    Returns ``None`` unless every trigger, delay, priority, and assignment can
+    be simulated exactly over the requested horizon.
     """
     if not math.isfinite(float(t_end)) or t_end < 0:
         return None
@@ -1237,6 +1596,15 @@ def expand_static_parameter_event_system(
     parameter_names = {standardize_name(name): name for name in parameter_ids}
     if len(parameter_names) != len(parameter_ids):
         return None
+    affine_rates = {
+        standardize_name(identifier): float(slope)
+        for identifier, slope in (affine_rate_parameters or {}).items()
+    }
+    if any(
+        identifier not in parameter_names or not math.isfinite(slope)
+        for identifier, slope in affine_rates.items()
+    ):
+        return None
     values: dict[str, float] = {}
     for normalized, identifier in parameter_names.items():
         initial = resolve_initial(identifier)
@@ -1244,23 +1612,115 @@ def expand_static_parameter_event_system(
             return None
         values[normalized] = float(initial)
 
-    def resolve_state(identifier: str, state: Mapping[str, float]) -> Optional[float]:
+    initial_values = dict(values)
+
+    def resolve_state(
+        identifier: str, state: Mapping[str, float], time_value: float
+    ) -> Optional[float]:
         if identifier.lower() == "pi":
             return math.pi
         if identifier.lower() == "exponentiale":
             return math.e
         normalized = standardize_name(identifier)
+        if normalized in affine_rates:
+            value = initial_values[normalized] + affine_rates[normalized] * time_value
+            return value if math.isfinite(value) else None
         return state.get(normalized)
 
     def evaluate(
         expression: str, state: Mapping[str, float], time_value: Optional[float] = None
     ) -> Optional[float]:
         expanded = expand_functions(str(expression or ""))
-        if time_value is not None:
-            expanded = re.sub(
-                r"\btime\b", _format_number(time_value), expanded, flags=re.IGNORECASE
-            )
-        value = fold_numeric(expanded, lambda name: resolve_state(name, state))
+        current_time = 0.0 if time_value is None else float(time_value)
+        expanded = re.sub(
+            r"\btime\b", _format_number(current_time), expanded, flags=re.IGNORECASE
+        )
+        expanded = re.sub(r"\bif\s*\(", "_event_if(", expanded, flags=re.IGNORECASE)
+
+        class RateHistoryRewriter(ast.NodeTransformer):
+            def condition_value(self, node: ast.AST) -> Optional[bool]:
+                if isinstance(node, ast.Compare) and len(node.ops) == 1:
+                    left = fold_numeric(
+                        ast.unparse(self.visit(node.left)),
+                        lambda name: resolve_state(name, state, current_time),
+                    )
+                    right = fold_numeric(
+                        ast.unparse(self.visit(node.comparators[0])),
+                        lambda name: resolve_state(name, state, current_time),
+                    )
+                    if left is None or right is None:
+                        return None
+                    operator = node.ops[0]
+                    if isinstance(operator, ast.Eq):
+                        return left == right
+                    if isinstance(operator, ast.NotEq):
+                        return left != right
+                    if isinstance(operator, ast.Lt):
+                        return left < right
+                    if isinstance(operator, ast.LtE):
+                        return left <= right
+                    if isinstance(operator, ast.Gt):
+                        return left > right
+                    if isinstance(operator, ast.GtE):
+                        return left >= right
+                return None
+
+            def visit_Call(self, node: ast.Call) -> ast.AST:
+                if (
+                    isinstance(node.func, ast.Name)
+                    and node.func.id.lower() in {"if", "_event_if"}
+                    and len(node.args) == 3
+                ):
+                    condition_value = self.condition_value(node.args[0])
+                    if condition_value is not None:
+                        branch = node.args[1] if condition_value else node.args[2]
+                        return self.visit(branch)
+                if (
+                    isinstance(node.func, ast.Name)
+                    and node.func.id.lower() == "rateof"
+                    and len(node.args) == 1
+                    and isinstance(node.args[0], ast.Name)
+                ):
+                    slope = affine_rates.get(standardize_name(node.args[0].id))
+                    if slope is not None:
+                        return ast.copy_location(ast.Constant(value=slope), node)
+                if (
+                    isinstance(node.func, ast.Name)
+                    and node.func.id.lower() == "delay"
+                    and len(node.args) == 2
+                    and isinstance(node.args[0], ast.Name)
+                ):
+                    identifier = standardize_name(node.args[0].id)
+                    slope = affine_rates.get(identifier)
+                    if slope is not None:
+                        duration_expression = ast.unparse(self.visit(node.args[1]))
+                        duration = fold_numeric(
+                            duration_expression,
+                            lambda name: resolve_state(name, state, current_time),
+                        )
+                        if (
+                            duration is not None
+                            and math.isfinite(duration)
+                            and duration >= 0
+                        ):
+                            query_time = current_time - duration
+                            value = initial_values[identifier] + slope * max(
+                                0.0, query_time
+                            )
+                            if math.isfinite(value):
+                                return ast.copy_location(
+                                    ast.Constant(value=value), node
+                                )
+                return self.generic_visit(node)
+
+        try:
+            tree = ast.parse(expanded, mode="eval")
+            expanded = ast.unparse(RateHistoryRewriter().visit(tree))
+        except (TypeError, ValueError, SyntaxError):
+            return None
+        value = fold_numeric(
+            expanded, lambda name: resolve_state(name, state, current_time)
+        )
         return value if value is not None and math.isfinite(value) else None
 
     def parse_time_edge(trigger: str) -> Optional[Tuple[Optional[str], float]]:
@@ -1298,8 +1758,51 @@ def expand_static_parameter_event_system(
             return None
         return offset, threshold
 
+    def parse_affine_state_edge(
+        trigger: str,
+    ) -> Optional[Tuple[str, str, float]]:
+        comparison = re.fullmatch(r"(gt|geq|lt|leq)\s*\((.*)\)", trigger, re.I)
+        arguments = (
+            _split_arguments(comparison.group(2)) if comparison is not None else None
+        )
+        if comparison is None or arguments is None or len(arguments) != 2:
+            return None
+        operator = comparison.group(1).lower()
+        left, right = (_strip_outer_parens(value) for value in arguments)
+        identifier: Optional[str] = None
+        threshold_expression: Optional[str] = None
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", left):
+            candidate = standardize_name(left)
+            if candidate in affine_rates:
+                identifier = candidate
+                threshold_expression = right
+        if identifier is None and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", right):
+            candidate = standardize_name(right)
+            if candidate in affine_rates:
+                identifier = candidate
+                threshold_expression = left
+                operator = {"gt": "lt", "geq": "leq", "lt": "gt", "leq": "geq"}[
+                    operator
+                ]
+        if identifier is None or threshold_expression is None:
+            return None
+        if any(
+            name.lower() not in {"pi", "exponentiale"}
+            for name in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", threshold_expression)
+        ):
+            return None
+        threshold = evaluate(threshold_expression, values, 0.0)
+        slope = affine_rates[identifier]
+        rising = (operator in {"gt", "geq"} and slope > 0) or (
+            operator in {"lt", "leq"} and slope < 0
+        )
+        if threshold is None or not rising:
+            return None
+        return identifier, operator, threshold
+
     triggers: List[str] = []
     time_edges: List[Optional[Tuple[Optional[str], float]]] = []
+    state_edges: List[Optional[Tuple[str, str, float]]] = []
     delay_expressions: List[Optional[str]] = []
     targets: List[List[Tuple[str, str]]] = []
     for event in events:
@@ -1310,6 +1813,14 @@ def expand_static_parameter_event_system(
             else None
         )
         if re.search(r"\btime\b", trigger, re.IGNORECASE) and time_edge is None:
+            return None
+        rate_symbols = [
+            identifier
+            for identifier in affine_rates
+            if re.search(rf"\b{re.escape(identifier)}\b", trigger, re.IGNORECASE)
+        ]
+        state_edge = parse_affine_state_edge(trigger) if rate_symbols else None
+        if rate_symbols and state_edge is None:
             return None
         identifiers = list(re.finditer(r"\b[A-Za-z_][A-Za-z0-9_]*\b", trigger))
         if not trigger or any(
@@ -1329,13 +1840,14 @@ def expand_static_parameter_event_system(
         for assignment in event.assignments:
             variable, expression = _event_assignment(assignment)
             normalized = standardize_name(variable)
-            if normalized not in parameter_names:
+            if normalized not in parameter_names or normalized in affine_rates:
                 return None
             event_targets.append((normalized, expand_functions(expression)))
         if not event_targets:
             return None
         triggers.append(trigger)
         time_edges.append(time_edge)
+        state_edges.append(state_edge)
         delay_expressions.append(delay_expression)
         targets.append(event_targets)
 
@@ -1351,18 +1863,32 @@ def expand_static_parameter_event_system(
     ]
     sequence = 0
 
+    def state_edge_time(index: int) -> float:
+        edge = state_edges[index]
+        if edge is None:
+            return math.inf
+        identifier, _operator, threshold = edge
+        slope = affine_rates[identifier]
+        return (threshold - initial_values[identifier]) / slope
+
     def schedule_edges(time_value: float, previous: Sequence[bool]) -> None:
         nonlocal sequence
         for index, (event, expression) in enumerate(zip(events, triggers)):
             actual = (
                 1.0
-                if time_edges[index] is not None
-                and abs(
-                    (values[time_edges[index][0]] if time_edges[index][0] else 0.0)
-                    + time_edges[index][1]
-                    - time_value
+                if (
+                    time_edges[index] is not None
+                    and abs(
+                        (values[time_edges[index][0]] if time_edges[index][0] else 0.0)
+                        + time_edges[index][1]
+                        - time_value
+                    )
+                    <= 1e-12
                 )
-                <= 1e-12
+                or (
+                    state_edges[index] is not None
+                    and abs(state_edge_time(index) - time_value) <= 1e-12
+                )
                 else evaluate(expression, values, time_value)
             )
             if actual is None:
@@ -1413,7 +1939,16 @@ def expand_static_parameter_event_system(
                 if (values[offset] if offset else 0.0) + threshold
                 > current_time + 1e-12
             }
-            next_clock = min(clock_edges.values(), default=math.inf)
+            state_clock_edges = {
+                state_edge_time(index)
+                for index, edge in enumerate(state_edges)
+                if edge is not None
+                and not trigger_truth[index]
+                and state_edge_time(index) >= current_time - 1e-12
+            }
+            next_clock = min(
+                [*clock_edges.values(), *state_clock_edges], default=math.inf
+            )
             next_time = min(next_due, next_clock)
             if not math.isfinite(next_time) or next_time > float(t_end) + 1e-12:
                 break
@@ -1464,8 +1999,51 @@ def expand_static_parameter_event_system(
                             right_targets = {
                                 target for target, _ in targets[right_index]
                             }
-                            if left_targets & right_targets:
-                                return False
+                            for shared_target in left_targets & right_targets:
+                                left_expression = dict(targets[left_index])[
+                                    shared_target
+                                ]
+                                right_expression = dict(targets[right_index])[
+                                    shared_target
+                                ]
+                                left_uses_trigger_values = (
+                                    left_event.use_values_from_trigger_time
+                                )
+                                right_uses_trigger_values = (
+                                    right_event.use_values_from_trigger_time
+                                )
+                                left_value = evaluate(
+                                    left_expression,
+                                    (
+                                        left_record["snapshot"]
+                                        if left_uses_trigger_values
+                                        else values
+                                    ),
+                                    (
+                                        left_record["trigger_time"]
+                                        if left_uses_trigger_values
+                                        else next_time
+                                    ),
+                                )
+                                right_value = evaluate(
+                                    right_expression,
+                                    (
+                                        right_record["snapshot"]
+                                        if right_uses_trigger_values
+                                        else values
+                                    ),
+                                    (
+                                        right_record["trigger_time"]
+                                        if right_uses_trigger_values
+                                        else next_time
+                                    ),
+                                )
+                                if (
+                                    left_value is None
+                                    or right_value is None
+                                    or left_value != right_value
+                                ):
+                                    return False
                             right_trigger_reads = {
                                 standardize_name(identifier)
                                 for identifier in re.findall(
@@ -1480,7 +2058,10 @@ def expand_static_parameter_event_system(
                                     right_event.priority or "",
                                 )
                             }
-                            if left_targets & right_trigger_reads:
+                            if (
+                                right_event.trigger_persistent is False
+                                and left_targets & right_trigger_reads
+                            ):
                                 return False
                             if (
                                 right_event.priority
@@ -2006,6 +2587,8 @@ def _quadratic_crossing_time(
             root = math.sqrt(discriminant)
             first = (-linear + root) / (2.0 * quadratic)
             second = (-linear - root) / (2.0 * quadratic)
+            if target == first or target == second:
+                return None
             initial_ratio = (initial - first) / (initial - second)
             target_ratio = (target - first) / (target - second)
             ratio = target_ratio / initial_ratio if initial_ratio else -1.0
@@ -2122,6 +2705,30 @@ def synthesize_event_actions(
         expression = context.expand_functions(str(expression or ""))
         expression = re.sub(r"\btime\b", "0", expression, flags=re.IGNORECASE)
         return fold_numeric(expression, context.resolve_initial_value)
+
+    # Freeze an initial-state gate only when no distinct or delayed event can
+    # change it before the shared trigger edge is queued.
+    static_initial_gates_are_safe = (
+        context.static_event_state
+        and bool(events)
+        and all(
+            not str(event.delay or "").strip()
+            and str(event.trigger or "").strip() == str(events[0].trigger or "").strip()
+            and (
+                not event.priority
+                or fold(event.priority, event_context=event) is not None
+            )
+            for event in events
+        )
+    )
+
+    def fold_static_event_gate(
+        expression: str, event_context: SBMLEvent
+    ) -> Optional[float]:
+        value = fold(expression, event_context=event_context)
+        if value is not None or not static_initial_gates_are_safe:
+            return value
+        return fold_initial(expression)
 
     def fold_at_state(
         expression: str,
@@ -3595,6 +4202,309 @@ def synthesize_event_actions(
                 )
                 periodic_converted += 1
 
+    # A rate-rule state can remain below an absolute threshold while periodic
+    # events update the parameters in its derivative. Integrate its exact
+    # piecewise-constant slope across the already-proven event schedule.
+    for event in events:
+        if id(event) in periodic_handled or not periodic_changes:
+            continue
+        absolute_threshold = re.match(
+            r"^(gt|geq)\s*\(\s*abs\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)\s*,\s*(.+)\)\s*$",
+            str(event.trigger or "").strip(),
+            re.IGNORECASE,
+        )
+        if absolute_threshold is None:
+            continue
+        operator, identifier, threshold_expression = absolute_threshold.groups()
+        threshold = fold(threshold_expression, event_context=event)
+        initial_value = context.resolve_initial_value(identifier)
+        rate_expression = context.resolve_rate_rule_expression_for_event(
+            identifier, event
+        )
+        if (
+            threshold is None
+            or not math.isfinite(threshold)
+            or threshold <= 0
+            or initial_value is None
+            or not math.isfinite(initial_value)
+            or rate_expression is None
+            or any(
+                standardize_name(variable) == standardize_name(identifier)
+                for assignment in event.assignments
+                for variable, _expression in [_event_assignment(assignment)]
+            )
+            or any(
+                standardize_name(variable) == standardize_name(identifier)
+                for other in events
+                if other is not event
+                for assignment in other.assignments
+                for variable, _expression in [_event_assignment(assignment)]
+            )
+        ):
+            continue
+        rate_symbols = {
+            symbol
+            for symbol in re.findall(
+                r"[A-Za-z_][A-Za-z0-9_]*", context.expand_functions(rate_expression)
+            )
+            if symbol.lower() not in {"pi", "exponentiale"}
+        }
+        if (
+            not rate_symbols
+            or rate_symbols & periodic_rate_state_ids
+            or any(
+                context.resolve_rate_rule_expression_for_event(symbol, event)
+                is not None
+                for symbol in rate_symbols
+            )
+            or not rate_symbols.issubset(
+                periodic_target_ids
+                | {
+                    symbol
+                    for symbol in rate_symbols
+                    if context.is_compile_time_constant(symbol)
+                }
+            )
+            or any(
+                id(other) not in periodic_handled
+                and other is not event
+                and any(
+                    standardize_name(variable) == standardize_name(symbol)
+                    for assignment in other.assignments
+                    for variable, _expression in [_event_assignment(assignment)]
+                    for symbol in rate_symbols
+                )
+                for other in events
+            )
+        ):
+            continue
+
+        dynamic_values = dict(initial_state)
+        state_value = float(initial_value)
+        current_time = 0.0
+
+        def safely_below_threshold(value: float) -> bool:
+            tolerance = 1e-12 * max(1.0, threshold, abs(value))
+            return abs(value) < threshold - tolerance
+
+        stays_below = safely_below_threshold(state_value)
+        for change_time, changes in periodic_changes:
+            if change_time < current_time or change_time > context.base_t_end:
+                continue
+            slope = fold(
+                rate_expression,
+                current_time,
+                dynamic_values=dynamic_values,
+                event_context=event,
+            )
+            if slope is None or not math.isfinite(slope):
+                stays_below = False
+                break
+            state_value += float(slope) * (change_time - current_time)
+            stays_below = stays_below and safely_below_threshold(state_value)
+            dynamic_values.update(changes)
+            current_time = change_time
+        if stays_below:
+            slope = fold(
+                rate_expression,
+                current_time,
+                dynamic_values=dynamic_values,
+                event_context=event,
+            )
+            if slope is None or not math.isfinite(slope):
+                stays_below = False
+            else:
+                state_value += float(slope) * (context.base_t_end - current_time)
+                stays_below = safely_below_threshold(state_value)
+        if stays_below:
+            event_proven_inactive.add(id(event))
+            periodic_handled.add(id(event))
+            self_targets = {
+                variable
+                for assignment in event.assignments
+                for variable, _expression in [_event_assignment(assignment)]
+                if context.is_param(variable)
+            }
+            self_initial_values = {
+                target: context.resolve_initial_value(target) for target in self_targets
+            }
+            if any(value is None for value in self_initial_values.values()):
+                periodic_handled.remove(id(event))
+                event_proven_inactive.remove(id(event))
+                continue
+            periodic_target_ids.update(self_targets)
+            periodic_initial_values.update(
+                {target: float(value) for target, value in self_initial_values.items()}
+            )
+            initial_state.update(
+                {target: float(value) for target, value in self_initial_values.items()}
+            )
+            periodic_converted += 1
+
+    # A fixed-time trigger can use a mutable gate when prior periodic events
+    # prove that gate true at the crossing and keep it true afterward.
+    for event in events:
+        if id(event) in periodic_handled or event.delay or event.priority:
+            continue
+        terms = _split_call_arguments(str(event.trigger or ""))
+        if terms is None:
+            continue
+        time_terms = [
+            term
+            for term in terms
+            if re.match(r"^geq\s*\(\s*time\s*,", term, re.IGNORECASE)
+        ]
+        if len(time_terms) != 1:
+            continue
+        threshold_expression = parse_time_threshold(time_terms[0])
+        trigger_time = (
+            fold(threshold_expression, event_context=event)
+            if threshold_expression is not None
+            else None
+        )
+        if (
+            trigger_time is None
+            or not math.isfinite(trigger_time)
+            or trigger_time <= 0
+            or trigger_time > context.base_t_end
+        ):
+            continue
+        gate_terms = [term for term in terms if term != time_terms[0]]
+        if not gate_terms:
+            continue
+        gate_symbols = {
+            symbol
+            for term in gate_terms
+            for symbol in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", term)
+            if symbol.lower()
+            not in {
+                "abs",
+                "and",
+                "eq",
+                "exponentiale",
+                "geq",
+                "gt",
+                "if",
+                "leq",
+                "lt",
+                "neq",
+                "not",
+                "or",
+                "pi",
+                "plus",
+                "times",
+            }
+        }
+        if (
+            any(
+                symbol not in periodic_target_ids
+                and not context.is_compile_time_constant(symbol)
+                for symbol in gate_symbols
+            )
+            or any(
+                context.resolve_rate_rule_expression_for_event(symbol, event)
+                is not None
+                for symbol in gate_symbols
+            )
+            or any(
+                id(other) not in periodic_handled
+                and other is not event
+                and any(
+                    standardize_name(variable) == standardize_name(symbol)
+                    for assignment in other.assignments
+                    for variable, _expression in [_event_assignment(assignment)]
+                    for symbol in gate_symbols
+                )
+                for other in events
+            )
+        ):
+            continue
+
+        def gate_is_true(values: Mapping[str, float]) -> bool:
+            return all(
+                (
+                    value := fold(
+                        term,
+                        trigger_time,
+                        dynamic_values=values,
+                        event_context=event,
+                    )
+                )
+                is not None
+                and value != 0
+                for term in gate_terms
+            )
+
+        values_before = dict(initial_state)
+        values_after = dict(initial_state)
+        for change_time, changes in periodic_changes:
+            time_tolerance = 1e-12 * max(1.0, abs(trigger_time))
+            same_time = abs(change_time - trigger_time) <= time_tolerance
+            if change_time < trigger_time and not same_time:
+                values_before.update(changes)
+                values_after.update(changes)
+            elif same_time:
+                values_after.update(changes)
+        if not gate_is_true(values_before) or not gate_is_true(values_after):
+            continue
+        gate_stays_true = True
+        for change_time, changes in periodic_changes:
+            if change_time <= trigger_time:
+                continue
+            values_after.update(changes)
+            if not gate_is_true(values_after):
+                gate_stays_true = False
+                break
+        if not gate_stays_true:
+            continue
+
+        assignments: List[Tuple[str, str, float]] = []
+        event_targets: set[str] = set()
+        for assignment in event.assignments:
+            variable, expression = _event_assignment(assignment)
+            if (
+                not context.is_param(variable)
+                or standardize_name(variable) in event_targets
+                or standardize_name(variable) in gate_symbols
+                or standardize_name(variable)
+                in {standardize_name(target) for target in periodic_target_ids}
+                or any(
+                    other is not event
+                    and any(
+                        standardize_name(other_variable) == standardize_name(variable)
+                        for other_assignment in other.assignments
+                        for other_variable, _other_expression in [
+                            _event_assignment(other_assignment)
+                        ]
+                    )
+                    for other in events
+                )
+            ):
+                assignments = []
+                break
+            value = fold(expression, trigger_time, event_context=event)
+            if value is None or not math.isfinite(value):
+                assignments = []
+                break
+            event_targets.add(standardize_name(variable))
+            assignments.append(("param", standardize_name(variable), float(value)))
+        if not assignments:
+            continue
+        scheduled.append((trigger_time, assignments, 0.0, event, False, []))
+        scheduled_values.extend(
+            (trigger_time, target, value) for _kind, target, value in assignments
+        )
+        periodic_handled.add(id(event))
+        periodic_target_ids.update(event_targets)
+        periodic_initial_values.update(
+            {
+                variable: float(value)
+                for variable in event_targets
+                if (value := context.resolve_initial_value(variable)) is not None
+            }
+        )
+        periodic_converted += 1
+
     def fixed_execution_time(event: SBMLEvent) -> float:
         threshold = parse_time_threshold(event.trigger)
         if threshold is None:
@@ -3619,7 +4529,1772 @@ def synthesize_event_actions(
     )
     normal_converted = 0
     recurrent_handled: set[int] = set()
-    if len(events) == 1:
+    if len(events) == 1 and context.method.lower() != "ssa":
+        event = events[0]
+        cycle_system = context.resolve_first_order_cycle_event_system()
+        parsed_cycle_trigger = _parse_affine_state_threshold(event.trigger)
+        if cycle_system is not None and parsed_cycle_trigger is not None:
+            cycle_ids, cycle_rates = cycle_system
+            identifier, operator, threshold_expression = parsed_cycle_trigger
+            normalized_cycle_ids = [standardize_name(sid) for sid in cycle_ids]
+            trigger_index = next(
+                (
+                    index
+                    for index, sid in enumerate(normalized_cycle_ids)
+                    if sid == standardize_name(identifier)
+                ),
+                None,
+            )
+            if trigger_index is not None:
+                cycle_ids = cycle_ids[trigger_index:] + cycle_ids[:trigger_index]
+                cycle_rates = cycle_rates[trigger_index:] + cycle_rates[:trigger_index]
+
+            threshold_symbols = re.findall(
+                r"[A-Za-z_][A-Za-z0-9_]*", threshold_expression
+            )
+            delay_symbols = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", event.delay or "")
+            threshold = fold(threshold_expression, event_context=event)
+            delay_value = fold(event.delay, event_context=event) if event.delay else 0.0
+            state_values = {
+                sid: context.resolve_initial_value(sid) for sid in cycle_ids
+            }
+            cycle_event_is_supported = (
+                trigger_index is not None
+                and operator in {"lt", "leq", "gt", "geq"}
+                and not event.priority
+                and event.trigger_persistent
+                and event.use_values_from_trigger_time
+                and fold_initial(event.trigger) == 0
+                and threshold is not None
+                and math.isfinite(threshold)
+                and delay_value is not None
+                and math.isfinite(delay_value)
+                and delay_value >= 0
+                and all(
+                    context.is_compile_time_constant(symbol)
+                    for symbol in (*threshold_symbols, *delay_symbols)
+                )
+                and all(
+                    value is not None and math.isfinite(value) and value >= 0
+                    for value in state_values.values()
+                )
+                and abs(float(state_values[cycle_ids[0]]) - float(threshold))
+                > 1e-13
+                * max(
+                    1e-300,
+                    abs(float(threshold)),
+                    abs(float(state_values[cycle_ids[0]])),
+                )
+            )
+            assignment_targets: List[Tuple[str, str, str]] = []
+            seen_targets: set[str] = set()
+            if cycle_event_is_supported:
+                for assignment in event.assignments:
+                    variable, expression = _event_assignment(assignment)
+                    normalized_variable = standardize_name(variable)
+                    pattern = context.resolve_species_pattern(variable)
+                    if (
+                        normalized_variable not in normalized_cycle_ids
+                        or pattern is None
+                        or normalized_variable in seen_targets
+                        or not str(expression or "").strip()
+                    ):
+                        cycle_event_is_supported = False
+                        break
+                    seen_targets.add(normalized_variable)
+                    assignment_targets.append((variable, pattern, expression))
+                if not assignment_targets:
+                    cycle_event_is_supported = False
+
+            if cycle_event_is_supported:
+                current_values = tuple(float(state_values[sid]) for sid in cycle_ids)
+                current_time = 0.0
+                cycle_schedule = []
+                pending_actions: List[
+                    Tuple[
+                        float,
+                        List[Tuple[str, str, float]],
+                        List[Tuple[str, float]],
+                    ]
+                ] = []
+                trigger_active = False
+                event_armed = True
+                for _ in range(10_000):
+                    remaining = float(context.base_t_end) - current_time
+                    if remaining <= 1e-12:
+                        break
+                    crossing = _first_order_cycle_next_trigger_crossing(
+                        current_values,
+                        cycle_rates,
+                        float(threshold),
+                        operator,
+                        remaining,
+                    )
+                    if crossing is None:
+                        cycle_event_is_supported = False
+                        break
+                    crossing_delta, enters_true = crossing
+                    crossing_time = (
+                        current_time + crossing_delta
+                        if math.isfinite(crossing_delta)
+                        else math.inf
+                    )
+                    due_time = min(
+                        (item[0] for item in pending_actions), default=math.inf
+                    )
+                    if not math.isfinite(crossing_time) and not math.isfinite(due_time):
+                        break
+                    if (
+                        math.isfinite(crossing_time)
+                        and math.isfinite(due_time)
+                        and abs(crossing_time - due_time) <= 1e-12
+                    ):
+                        cycle_event_is_supported = False
+                        break
+                    if crossing_time < due_time:
+                        trajectory = _first_order_cycle_trajectory(
+                            current_values, cycle_rates
+                        )
+                        crossing_values = (
+                            trajectory.state_at(crossing_delta)
+                            if trajectory is not None
+                            else None
+                        )
+                        if crossing_values is None:
+                            cycle_event_is_supported = False
+                            break
+                        if enters_true == trigger_active:
+                            cycle_event_is_supported = False
+                            break
+                        current_values = crossing_values
+                        current_time = crossing_time
+                        trigger_active = enters_true
+                        if not enters_true:
+                            event_armed = True
+                        elif event_armed:
+                            trigger_snapshot = dict(zip(cycle_ids, crossing_values))
+                            next_values = dict(trigger_snapshot)
+                            scheduled_sets = []
+                            event_values = []
+                            for variable, pattern, expression in assignment_targets:
+                                value = fold_at_state(
+                                    expression,
+                                    crossing_time,
+                                    state_values=trigger_snapshot,
+                                    event_context=event,
+                                )
+                                if (
+                                    value is None
+                                    or not math.isfinite(value)
+                                    or value < 0
+                                ):
+                                    cycle_event_is_supported = False
+                                    break
+                                scheduled_sets.append(("conc", pattern, float(value)))
+                                normalized_variable = standardize_name(variable)
+                                event_values.append((normalized_variable, float(value)))
+                                target_id = next(
+                                    sid
+                                    for sid in cycle_ids
+                                    if standardize_name(sid) == normalized_variable
+                                )
+                                next_values[target_id] = float(value)
+                            if not cycle_event_is_supported:
+                                break
+                            event_armed = False
+                            if delay_value > 0:
+                                execution_time = crossing_time + float(delay_value)
+                                if execution_time <= float(context.base_t_end) + 1e-12:
+                                    pending_actions.append(
+                                        (
+                                            min(
+                                                execution_time,
+                                                float(context.base_t_end),
+                                            ),
+                                            scheduled_sets,
+                                            event_values,
+                                        )
+                                    )
+                            else:
+                                trigger_target = next_values[cycle_ids[0]]
+                                trigger_scale = max(
+                                    1e-300,
+                                    abs(float(threshold)),
+                                    abs(trigger_target),
+                                )
+                                if (
+                                    abs(trigger_target - float(threshold))
+                                    <= 1e-13 * trigger_scale
+                                ):
+                                    cycle_event_is_supported = False
+                                    break
+                                cycle_schedule.append(
+                                    (
+                                        crossing_time,
+                                        scheduled_sets,
+                                        0.0,
+                                        event,
+                                        False,
+                                        event_values,
+                                    )
+                                )
+                                post_trigger = fold_at_state(
+                                    event.trigger,
+                                    crossing_time,
+                                    state_values=next_values,
+                                    event_context=event,
+                                )
+                                if post_trigger is None or not math.isfinite(
+                                    post_trigger
+                                ):
+                                    cycle_event_is_supported = False
+                                    break
+                                trigger_active = post_trigger != 0
+                                if not trigger_active:
+                                    event_armed = True
+                                current_values = tuple(
+                                    next_values[sid] for sid in cycle_ids
+                                )
+                    else:
+                        trajectory = _first_order_cycle_trajectory(
+                            current_values, cycle_rates
+                        )
+                        due_delta = due_time - current_time
+                        due_values = (
+                            trajectory.state_at(due_delta)
+                            if trajectory is not None
+                            else None
+                        )
+                        if due_values is None:
+                            cycle_event_is_supported = False
+                            break
+                        current_values = due_values
+                        current_time = due_time
+                        due = [
+                            item
+                            for item in pending_actions
+                            if abs(item[0] - due_time) <= 1e-12
+                        ]
+                        if len(due) != 1:
+                            cycle_event_is_supported = False
+                            break
+                        pending_actions = [
+                            item for item in pending_actions if item is not due[0]
+                        ]
+                        next_values = dict(zip(cycle_ids, current_values))
+                        for normalized_variable, value in due[0][2]:
+                            target_id = next(
+                                sid
+                                for sid in cycle_ids
+                                if standardize_name(sid) == normalized_variable
+                            )
+                            next_values[target_id] = value
+                        post_trigger = fold_at_state(
+                            event.trigger,
+                            current_time,
+                            state_values=next_values,
+                            event_context=event,
+                        )
+                        if post_trigger is None or not math.isfinite(post_trigger):
+                            cycle_event_is_supported = False
+                            break
+                        trigger_target = next_values[cycle_ids[0]]
+                        trigger_scale = max(
+                            1e-300,
+                            abs(float(threshold)),
+                            abs(trigger_target),
+                        )
+                        if (
+                            abs(trigger_target - float(threshold))
+                            <= 1e-13 * trigger_scale
+                        ):
+                            cycle_event_is_supported = False
+                            break
+                        trigger_after_action = post_trigger != 0
+                        if not trigger_active and trigger_after_action:
+                            cycle_event_is_supported = False
+                            break
+                        if trigger_active and not trigger_after_action:
+                            event_armed = True
+                        trigger_active = trigger_after_action
+                        current_values = tuple(next_values[sid] for sid in cycle_ids)
+                        cycle_schedule.append(
+                            (
+                                current_time,
+                                due[0][1],
+                                0.0,
+                                event,
+                                False,
+                                due[0][2],
+                            )
+                        )
+                else:
+                    cycle_event_is_supported = False
+
+                if cycle_event_is_supported:
+                    scheduled.extend(cycle_schedule)
+                    recurrent_handled.add(id(event))
+                    normal_converted += 1
+                    if not cycle_schedule:
+                        event_proven_inactive.add(id(event))
+                        horizon_limited += 1
+
+    if len(events) == 2 and context.method.lower() != "ssa":
+        transfer_system = context.resolve_first_order_transfer_event_system()
+        if transfer_system is not None:
+            source_id, sink_id, transfer_rate = transfer_system
+            source_key = standardize_name(source_id)
+            sink_key = standardize_name(sink_id)
+            source_initial = context.resolve_initial_value(source_id)
+            sink_initial = context.resolve_initial_value(sink_id)
+            transfer_supported = (
+                source_key != sink_key
+                and source_initial is not None
+                and sink_initial is not None
+                and math.isfinite(float(source_initial))
+                and math.isfinite(float(sink_initial))
+                and float(source_initial) >= 0
+                and float(sink_initial) >= 0
+                and math.isfinite(float(transfer_rate))
+                and float(transfer_rate) > 0
+                and math.isfinite(float(context.base_t_end))
+                and float(context.base_t_end) > 0
+            )
+            transfer_plans: List[
+                Tuple[
+                    SBMLEvent,
+                    str,
+                    str,
+                    float,
+                    float,
+                    List[Tuple[str, str, str]],
+                ]
+            ] = []
+            trigger_roles: set[str] = set()
+            if transfer_supported:
+                for event in events:
+                    parsed = _parse_affine_state_threshold(event.trigger)
+                    if parsed is None:
+                        transfer_supported = False
+                        break
+                    identifier, operator, threshold_expression = parsed
+                    normalized_identifier = standardize_name(identifier)
+                    threshold_symbols = re.findall(
+                        r"[A-Za-z_][A-Za-z0-9_]*",
+                        context.expand_functions(threshold_expression),
+                    )
+                    delay_symbols = re.findall(
+                        r"[A-Za-z_][A-Za-z0-9_]*",
+                        context.expand_functions(event.delay or ""),
+                    )
+                    delay = (
+                        0.0
+                        if not event.delay
+                        else fold(event.delay, event_context=event)
+                    )
+                    if normalized_identifier == source_key and operator == "lt":
+                        trigger_role = "source"
+                    elif normalized_identifier == sink_key and operator == "gt":
+                        trigger_role = "sink"
+                    else:
+                        transfer_supported = False
+                        break
+                    threshold = fold(threshold_expression, event_context=event)
+                    if (
+                        threshold is None
+                        or not math.isfinite(float(threshold))
+                        or float(threshold) <= 0
+                        or any(
+                            standardize_name(symbol) in {source_key, sink_key, "time"}
+                            for symbol in threshold_symbols
+                        )
+                        or delay is None
+                        or not math.isfinite(float(delay))
+                        or float(delay) < 0
+                        or any(
+                            standardize_name(symbol) in {source_key, sink_key, "time"}
+                            for symbol in delay_symbols
+                        )
+                        or event.priority
+                        or event.trigger_initial_value is not True
+                        or event.trigger_persistent is not True
+                        or event.use_values_from_trigger_time is not True
+                        or trigger_role in trigger_roles
+                    ):
+                        transfer_supported = False
+                        break
+                    trigger_roles.add(trigger_role)
+                    assignment_targets: List[Tuple[str, str, str]] = []
+                    seen_targets: set[str] = set()
+                    for assignment in event.assignments:
+                        variable, expression = _event_assignment(assignment)
+                        target_key = standardize_name(variable)
+                        pattern = context.resolve_species_pattern(variable)
+                        if (
+                            target_key not in {source_key, sink_key}
+                            or pattern is None
+                            or target_key in seen_targets
+                            or not str(expression or "").strip()
+                        ):
+                            transfer_supported = False
+                            break
+                        seen_targets.add(target_key)
+                        assignment_targets.append((variable, pattern, expression))
+                    if not transfer_supported or not assignment_targets:
+                        transfer_supported = False
+                        break
+                    transfer_plans.append(
+                        (
+                            event,
+                            identifier,
+                            operator,
+                            float(threshold),
+                            float(delay),
+                            assignment_targets,
+                        )
+                    )
+            if transfer_supported and trigger_roles == {"source", "sink"}:
+                transfer_state = {
+                    source_id: float(source_initial),
+                    sink_id: float(sink_initial),
+                }
+                transfer_active: List[bool] = []
+                for (
+                    _event,
+                    identifier,
+                    operator,
+                    threshold,
+                    _delay,
+                    _assignments,
+                ) in transfer_plans:
+                    state_value = transfer_state.get(identifier)
+                    if state_value is None:
+                        transfer_supported = False
+                        break
+                    transfer_active.append(
+                        state_value < threshold
+                        if operator == "lt"
+                        else state_value > threshold
+                    )
+
+                transfer_schedule: List[
+                    Tuple[
+                        float,
+                        List[Tuple[str, str, float]],
+                        float,
+                        Optional[SBMLEvent],
+                        bool,
+                        List[Tuple[str, float]],
+                    ]
+                ] = []
+                current_time = 0.0
+                last_fired_at: dict[int, float] = {}
+                pending: List[int] = []
+                pending_actions: List[
+                    Tuple[float, dict[str, Tuple[str, str, float]]]
+                ] = []
+                for _ in range(10_000):
+                    if not transfer_supported:
+                        break
+                    if not pending:
+                        candidates: List[Tuple[float, int]] = []
+                        source_value = transfer_state[source_id]
+                        sink_value = transfer_state[sink_id]
+                        for index, plan in enumerate(transfer_plans):
+                            if transfer_active[index]:
+                                continue
+                            (
+                                _event,
+                                identifier,
+                                operator,
+                                threshold,
+                                _delay,
+                                _assignments,
+                            ) = plan
+                            if (
+                                standardize_name(identifier) == source_key
+                                and operator == "lt"
+                            ):
+                                if source_value < threshold:
+                                    transfer_supported = False
+                                    break
+                                delta = math.log(source_value / threshold) / float(
+                                    transfer_rate
+                                )
+                            else:
+                                available = source_value
+                                fraction = (
+                                    (threshold - sink_value) / available
+                                    if available > 0
+                                    else math.inf
+                                )
+                                if fraction < 0:
+                                    transfer_supported = False
+                                    break
+                                if fraction >= 1 or not math.isfinite(fraction):
+                                    continue
+                                delta = -math.log1p(-fraction) / float(transfer_rate)
+                            if not math.isfinite(delta) or delta < -1e-12:
+                                transfer_supported = False
+                                break
+                            candidates.append((max(0.0, delta), index))
+                        if not transfer_supported:
+                            break
+                        next_delta = (
+                            min(candidate[0] for candidate in candidates)
+                            if candidates
+                            else math.inf
+                        )
+                        crossing_time = current_time + next_delta
+                        due_time = min(
+                            (action[0] for action in pending_actions),
+                            default=math.inf,
+                        )
+                        simultaneous_tolerance = 1e-11 * max(
+                            1.0,
+                            abs(next_delta) if math.isfinite(next_delta) else 0.0,
+                            (
+                                abs(due_time - current_time)
+                                if math.isfinite(due_time)
+                                else 0.0
+                            ),
+                        )
+                        if (
+                            math.isfinite(crossing_time)
+                            and due_time <= float(context.base_t_end) + 1e-12
+                            and abs(crossing_time - due_time) <= simultaneous_tolerance
+                        ):
+                            transfer_supported = False
+                            break
+
+                        if (
+                            due_time <= float(context.base_t_end) + 1e-12
+                            and due_time < crossing_time
+                        ):
+                            due_delta = due_time - current_time
+                            if due_delta < -1e-12:
+                                transfer_supported = False
+                                break
+                            due_state = _first_order_transfer_state_at(
+                                transfer_state[source_id],
+                                transfer_state[sink_id],
+                                float(transfer_rate),
+                                max(0.0, due_delta),
+                            )
+                            if due_state is None:
+                                transfer_supported = False
+                                break
+                            transfer_state[source_id], transfer_state[sink_id] = (
+                                due_state
+                            )
+                            current_time = due_time
+                            due_records = [
+                                action
+                                for action in pending_actions
+                                if action[0] == due_time
+                            ]
+                            near_due_records = [
+                                action[0]
+                                for action in pending_actions
+                                if abs(action[0] - due_time) <= simultaneous_tolerance
+                            ]
+                            if any(time != due_time for time in near_due_records):
+                                transfer_supported = False
+                                break
+                            pending_actions = [
+                                action
+                                for action in pending_actions
+                                if action[0] != due_time
+                            ]
+                            due_updates: dict[str, Tuple[str, str, float]] = {}
+                            for _action_time, action_updates in due_records:
+                                for target_key, update in action_updates.items():
+                                    prior = due_updates.get(target_key)
+                                    if prior is not None and prior[2] != update[2]:
+                                        transfer_supported = False
+                                        break
+                                    due_updates[target_key] = update
+                                if not transfer_supported:
+                                    break
+                            if not transfer_supported:
+                                break
+                            previous_active = list(transfer_active)
+                            for target_key, (
+                                variable,
+                                _pattern,
+                                value,
+                            ) in due_updates.items():
+                                actual_target = (
+                                    source_id if target_key == source_key else sink_id
+                                )
+                                transfer_state[actual_target] = value
+                            event_sets = [
+                                ("conc", pattern, value)
+                                for _variable, pattern, value in due_updates.values()
+                            ]
+                            event_values = [
+                                (variable, value)
+                                for variable, _pattern, value in due_updates.values()
+                            ]
+                            transfer_schedule.append(
+                                (
+                                    current_time,
+                                    event_sets,
+                                    0.0,
+                                    None,
+                                    False,
+                                    event_values,
+                                )
+                            )
+                            newly_triggered: List[int] = []
+                            for index, plan in enumerate(transfer_plans):
+                                (
+                                    _event,
+                                    identifier,
+                                    operator,
+                                    threshold,
+                                    _delay,
+                                    _assignments,
+                                ) = plan
+                                value = transfer_state[identifier]
+                                is_active = (
+                                    value < threshold
+                                    if operator == "lt"
+                                    else value > threshold
+                                )
+                                if not previous_active[index] and is_active:
+                                    newly_triggered.append(index)
+                                transfer_active[index] = is_active
+                            pending = newly_triggered
+                            continue
+
+                        if not candidates:
+                            break
+                        next_time = crossing_time
+                        if next_time > float(context.base_t_end) + 1e-12:
+                            break
+                        simultaneous_tolerance = 1e-11 * max(1.0, abs(next_delta))
+                        near_simultaneous = [
+                            delta
+                            for delta, _index in candidates
+                            if abs(delta - next_delta) <= simultaneous_tolerance
+                        ]
+                        if any(delta != next_delta for delta in near_simultaneous):
+                            transfer_supported = False
+                            break
+                        next_state = _first_order_transfer_state_at(
+                            transfer_state[source_id],
+                            transfer_state[sink_id],
+                            float(transfer_rate),
+                            next_delta,
+                        )
+                        if next_state is None:
+                            transfer_supported = False
+                            break
+                        transfer_state[source_id], transfer_state[sink_id] = next_state
+                        current_time = min(next_time, float(context.base_t_end))
+                        for index, plan in enumerate(transfer_plans):
+                            (
+                                _event,
+                                identifier,
+                                operator,
+                                threshold,
+                                _delay,
+                                _assignments,
+                            ) = plan
+                            value = transfer_state[identifier]
+                            transfer_active[index] = (
+                                value < threshold
+                                if operator == "lt"
+                                else value > threshold
+                            )
+                        pending = [
+                            index for delta, index in candidates if delta == next_delta
+                        ]
+                        for index in pending:
+                            transfer_active[index] = True
+                    if not pending:
+                        continue
+
+                    for index in pending:
+                        previous = last_fired_at.get(index)
+                        if (
+                            previous is not None
+                            and abs(previous - current_time) <= 1e-12
+                        ):
+                            transfer_supported = False
+                            break
+                    if not transfer_supported:
+                        break
+
+                    trigger_state = dict(transfer_state)
+                    updates: dict[str, Tuple[str, str, float]] = {}
+                    update_values: dict[str, float] = {}
+                    for index in pending:
+                        (
+                            event,
+                            _identifier,
+                            _operator,
+                            _threshold,
+                            _delay,
+                            assignments,
+                        ) = transfer_plans[index]
+                        for variable, pattern, expression in assignments:
+                            value = fold_at_state(
+                                expression,
+                                current_time,
+                                state_values=trigger_state,
+                                event_context=event,
+                            )
+                            if value is None or not math.isfinite(value) or value < 0:
+                                transfer_supported = False
+                                break
+                            target_key = standardize_name(variable)
+                            prior_value = update_values.get(target_key)
+                            if prior_value is not None and prior_value != float(value):
+                                transfer_supported = False
+                                break
+                            if prior_value is None:
+                                updates[target_key] = (variable, pattern, float(value))
+                                update_values[target_key] = float(value)
+                        if not transfer_supported:
+                            break
+                    if not transfer_supported:
+                        break
+
+                    event_sets = [
+                        ("conc", pattern, value)
+                        for _variable, pattern, value in updates.values()
+                    ]
+                    event_values = [
+                        (variable, value)
+                        for variable, _pattern, value in updates.values()
+                    ]
+                    event_delays = {transfer_plans[index][4] for index in pending}
+                    if len(event_delays) != 1:
+                        transfer_supported = False
+                        break
+                    delay = next(iter(event_delays))
+                    for index in pending:
+                        last_fired_at[index] = current_time
+                    if delay > 0:
+                        execution_time = current_time + delay
+                        if not math.isfinite(execution_time):
+                            transfer_supported = False
+                            break
+                        if execution_time <= float(context.base_t_end) + 1e-12:
+                            pending_actions.append(
+                                (
+                                    min(execution_time, float(context.base_t_end)),
+                                    updates,
+                                )
+                            )
+                        pending = []
+                        continue
+
+                    for target_key, (variable, _pattern, value) in updates.items():
+                        actual_target = (
+                            source_id if target_key == source_key else sink_id
+                        )
+                        transfer_state[actual_target] = value
+                    transfer_schedule.append(
+                        (current_time, event_sets, 0.0, None, False, event_values)
+                    )
+
+                    newly_triggered: List[int] = []
+                    for index, plan in enumerate(transfer_plans):
+                        was_active = transfer_active[index]
+                        (
+                            _event,
+                            identifier,
+                            operator,
+                            threshold,
+                            _delay,
+                            _assignments,
+                        ) = plan
+                        value = transfer_state[identifier]
+                        is_active = (
+                            value < threshold if operator == "lt" else value > threshold
+                        )
+                        if not was_active and is_active:
+                            newly_triggered.append(index)
+                        transfer_active[index] = is_active
+                    pending = newly_triggered
+                else:
+                    transfer_supported = False
+
+                if transfer_supported:
+                    scheduled.extend(transfer_schedule)
+                    recurrent_handled.update(id(event) for event in events)
+                    normal_converted += len(events)
+                    if not transfer_schedule:
+                        horizon_limited += len(events)
+
+    if (
+        len(events) == 1
+        and context.method.lower() != "ssa"
+        and id(events[0]) not in recurrent_handled
+    ):
+        event = events[0]
+        chain = context.resolve_first_order_chain_event_system()
+        parsed = _parse_affine_state_threshold(event.trigger)
+        chain_supported = chain is not None and parsed is not None
+        if chain_supported:
+            assert chain is not None and parsed is not None
+            (
+                source_id,
+                intermediate_id,
+                product_id,
+                first_rate,
+                second_rate,
+            ) = chain
+            identifier, operator, threshold_expression = parsed
+            threshold = fold(threshold_expression, event_context=event)
+            delay = fold(event.delay, event_context=event) if event.delay else 0.0
+            initial_values = {
+                name: context.resolve_initial_value(name)
+                for name in (source_id, intermediate_id, product_id)
+            }
+            chain_supported = (
+                standardize_name(identifier) == standardize_name(product_id)
+                and operator in {"gt", "geq"}
+                and threshold is not None
+                and math.isfinite(float(threshold))
+                and delay is not None
+                and math.isfinite(float(delay))
+                and float(delay) >= 0
+                and (float(delay) == 0 or event.trigger_persistent is not False)
+                and math.isfinite(float(first_rate))
+                and math.isfinite(float(second_rate))
+                and float(first_rate) > 0
+                and float(second_rate) > 0
+                and all(
+                    value is not None
+                    and math.isfinite(float(value))
+                    and float(value) >= 0
+                    for value in initial_values.values()
+                )
+                and not event.priority
+                and len(event.assignments) == 1
+            )
+            if chain_supported:
+                variable, assignment_expression = _event_assignment(
+                    event.assignments[0]
+                )
+                assignment_value = fold(assignment_expression, event_context=event)
+                chain_supported = (
+                    standardize_name(variable) == standardize_name(product_id)
+                    and assignment_value is not None
+                    and math.isfinite(float(assignment_value))
+                    and (
+                        operator != "gt" or float(assignment_value) != float(threshold)
+                    )
+                )
+            if chain_supported:
+                assert threshold is not None and assignment_value is not None
+                source = float(initial_values[source_id])
+                intermediate = float(initial_values[intermediate_id])
+                product = float(initial_values[product_id])
+                threshold_value = float(threshold)
+                assignment_number = float(assignment_value)
+                horizon = float(context.base_t_end)
+                delay_value = float(delay)
+                current_time = 0.0
+                initially_active = (
+                    product > threshold_value
+                    if operator == "gt"
+                    else product >= threshold_value
+                )
+                pending_initial = initially_active and not event.trigger_initial_value
+                active = initially_active
+                chain_schedule: List[
+                    Tuple[
+                        float,
+                        List[Tuple[str, str, float]],
+                        float,
+                        Optional[SBMLEvent],
+                        bool,
+                        List[Tuple[str, float]],
+                    ]
+                ] = []
+                pending_due: Optional[float] = None
+
+                def terminal_after(
+                    elapsed: float,
+                ) -> Optional[Tuple[float, float, float]]:
+                    states = _first_order_chain_state_at(
+                        source,
+                        intermediate,
+                        float(first_rate),
+                        float(second_rate),
+                        elapsed,
+                    )
+                    if states is None:
+                        return None
+                    next_source, next_intermediate = states
+                    next_product = (
+                        product
+                        + source
+                        + intermediate
+                        - next_source
+                        - next_intermediate
+                    )
+                    if not math.isfinite(next_product) or next_product < -1e-12:
+                        return None
+                    return max(0.0, next_product), next_source, next_intermediate
+
+                chain_valid = True
+                for _ in range(10_000):
+                    if pending_due is not None:
+                        if pending_due > horizon:
+                            chain_valid = False
+                            break
+                        due_state = terminal_after(pending_due - current_time)
+                        if due_state is None:
+                            chain_valid = False
+                            break
+                        current_time = pending_due
+                        product, source, intermediate = due_state
+                        pending_due = None
+                        pattern = context.resolve_species_pattern(variable)
+                        if pattern is None:
+                            chain_valid = False
+                            break
+                        chain_schedule.append(
+                            (
+                                current_time,
+                                [("conc", pattern, assignment_number)],
+                                0.0,
+                                event,
+                                False,
+                                [(standardize_name(variable), assignment_number)],
+                            )
+                        )
+                        product = assignment_number
+                        active = (
+                            product > threshold_value
+                            if operator == "gt"
+                            else product >= threshold_value
+                        )
+                        if current_time >= horizon or active:
+                            break
+                        continue
+
+                    crossing_delta: Optional[float] = 0.0 if pending_initial else None
+                    pending_initial = False
+                    if crossing_delta is None:
+                        if active or current_time >= horizon:
+                            break
+                        remaining = horizon - current_time
+                        endpoint = terminal_after(remaining)
+                        if endpoint is None:
+                            chain_valid = False
+                            break
+                        endpoint_true = (
+                            endpoint[0] > threshold_value
+                            if operator == "gt"
+                            else endpoint[0] >= threshold_value
+                        )
+                        if not endpoint_true:
+                            break
+                        low, high = 0.0, remaining
+                        for _ in range(80):
+                            middle = 0.5 * (low + high)
+                            candidate = terminal_after(middle)
+                            if candidate is None:
+                                chain_valid = False
+                                break
+                            candidate_true = (
+                                candidate[0] > threshold_value
+                                if operator == "gt"
+                                else candidate[0] >= threshold_value
+                            )
+                            if candidate_true:
+                                high = middle
+                            else:
+                                low = middle
+                        if not chain_valid:
+                            break
+                        crossing_delta = high
+
+                    crossing_state = terminal_after(crossing_delta)
+                    if crossing_state is None:
+                        chain_valid = False
+                        break
+                    current_time += crossing_delta
+                    product, source, intermediate = crossing_state
+                    if delay_value > 0:
+                        pending_due = current_time + delay_value
+                        if pending_due > horizon:
+                            chain_valid = False
+                            break
+                        continue
+                    pattern = context.resolve_species_pattern(variable)
+                    if pattern is None or not chain_supported:
+                        chain_valid = False
+                        break
+                    chain_schedule.append(
+                        (
+                            current_time,
+                            [("conc", pattern, assignment_number)],
+                            0.0,
+                            event,
+                            False,
+                            [(standardize_name(variable), assignment_number)],
+                        )
+                    )
+                    product = assignment_number
+                    active = (
+                        product > threshold_value
+                        if operator == "gt"
+                        else product >= threshold_value
+                    )
+                    if current_time >= horizon or active:
+                        break
+                else:
+                    chain_valid = False
+
+                if chain_valid:
+                    scheduled.extend(chain_schedule)
+                    recurrent_handled.add(id(event))
+                    normal_converted += 1
+                    if not chain_schedule:
+                        horizon_limited += 1
+
+    if (
+        len(events) > 1
+        and context.method.lower() != "ssa"
+        and all(
+            id(event) not in recurrent_handled
+            and id(event) not in event_proven_inactive
+            for event in events
+        )
+    ):
+        quadratic_plans: List[dict[str, object]] = []
+        statically_inactive_events: List[SBMLEvent] = []
+        required_state_symbols: set[str] = set()
+        event_target_seed_symbols: set[str] = set()
+        quadratic_group_supported = True
+        for event in events:
+            parsed_threshold = _parse_affine_state_threshold(event.trigger)
+            parsed_difference = _parse_state_difference_threshold(event.trigger)
+            difference_components = (
+                _state_difference_components(parsed_difference[0])
+                if parsed_difference is not None
+                else None
+            )
+            if (
+                (
+                    parsed_threshold is None
+                    or fold(parsed_threshold[2], event_context=event) is None
+                )
+                and difference_components is not None
+                and all(
+                    context.resolve_species_pattern(symbol) is not None
+                    for symbol in difference_components
+                )
+            ):
+                parsed_threshold = parsed_difference
+            expanded_delay = context.expand_functions(event.delay or "")
+            delay_symbols = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", expanded_delay)
+            delay = fold(event.delay, event_context=event) if event.delay else 0.0
+            delay_uses_time = any(symbol.lower() == "time" for symbol in delay_symbols)
+            if (
+                parsed_threshold is None
+                or event.priority
+                or (delay is None and not delay_uses_time)
+                or (delay is not None and (not math.isfinite(delay) or delay < 0))
+                or any(
+                    symbol.lower() != "time"
+                    and not context.is_compile_time_constant(symbol)
+                    for symbol in delay_symbols
+                )
+                or not event.trigger_persistent
+                or (
+                    (delay is None or delay > 0)
+                    and not event.use_values_from_trigger_time
+                )
+                or fold_initial(event.trigger) != 0
+            ):
+                quadratic_group_supported = False
+                break
+            trigger_expression, operator, threshold_expression = parsed_threshold
+            identifier = (
+                difference_components[0]
+                if difference_components is not None
+                and parsed_threshold is parsed_difference
+                else trigger_expression
+            )
+            threshold = fold(threshold_expression, event_context=event)
+            if (
+                operator not in {"lt", "gt"}
+                or threshold is None
+                or not math.isfinite(threshold)
+            ):
+                quadratic_group_supported = False
+                break
+            trigger_state_ids = (
+                difference_components
+                if parsed_threshold is parsed_difference
+                and difference_components is not None
+                else (identifier,)
+            )
+            trigger_state_names = {
+                standardize_name(symbol) for symbol in trigger_state_ids
+            }
+            trigger_is_assigned = any(
+                standardize_name(variable) in trigger_state_names
+                for candidate in events
+                for assignment in candidate.assignments
+                for variable, _expression in [_event_assignment(assignment)]
+            )
+            constant_trajectory = context.resolve_affine_rate_for_event(
+                identifier, event
+            )
+            initial_trigger_state = context.resolve_initial_value(identifier)
+            if (
+                difference_components is None
+                and not trigger_is_assigned
+                and constant_trajectory is not None
+                and constant_trajectory[1] == 0
+                and initial_trigger_state is not None
+                and math.isfinite(initial_trigger_state)
+                and not (
+                    initial_trigger_state < threshold
+                    if operator == "lt"
+                    else initial_trigger_state > threshold
+                )
+            ):
+                statically_inactive_events.append(event)
+                continue
+            assignments: List[Tuple[str, str, str]] = []
+            seen_targets: set[str] = set()
+            for assignment in event.assignments:
+                variable, expression = _event_assignment(assignment)
+                pattern = context.resolve_species_pattern(variable)
+                normalized_variable = standardize_name(variable)
+                if (
+                    pattern is None
+                    or normalized_variable in seen_targets
+                    or not str(expression or "").strip()
+                ):
+                    quadratic_group_supported = False
+                    break
+                seen_targets.add(normalized_variable)
+                assignments.append((variable, pattern, expression))
+                # Supply every event target's initial value to trajectory
+                # resolvers. Another event may assign a species used by this
+                # event's rate law, even when that species is not a trigger
+                # coordinate. Do not require unrelated targets in snapshots:
+                # the trajectory may not determine their later values.
+                event_target_seed_symbols.add(variable)
+                for symbol in re.findall(
+                    r"[A-Za-z_][A-Za-z0-9_]*", str(expression or "")
+                ):
+                    if standardize_name(symbol) == "time":
+                        continue
+                    if context.is_compile_time_constant(symbol):
+                        continue
+                    if (
+                        context.resolve_species_pattern(symbol) is not None
+                        or context.is_param(symbol)
+                        or context.is_compartment(symbol)
+                    ):
+                        required_state_symbols.add(symbol)
+            if not quadratic_group_supported or not assignments:
+                quadratic_group_supported = False
+                break
+            required_state_symbols.add(identifier)
+            if parsed_threshold is parsed_difference and difference_components:
+                required_state_symbols.update(difference_components)
+            quadratic_plans.append(
+                {
+                    "event": event,
+                    "identifier": identifier,
+                    "operator": operator,
+                    "threshold": float(threshold),
+                    "difference_components": (
+                        difference_components
+                        if parsed_threshold is parsed_difference
+                        else None
+                    ),
+                    "assignments": assignments,
+                    "delay": None if delay is None else float(delay),
+                    "delay_expression": event.delay or "",
+                }
+            )
+
+        initial_state: dict[str, float] = {}
+        if quadratic_group_supported:
+            for symbol in required_state_symbols | event_target_seed_symbols:
+                value = context.resolve_initial_value(symbol)
+                if value is None or not math.isfinite(value):
+                    quadratic_group_supported = False
+                    break
+                initial_state[symbol] = float(value)
+
+        required_state_names = {
+            standardize_name(symbol) for symbol in required_state_symbols
+        }
+        if quadratic_group_supported:
+            for plan in quadratic_plans:
+                event = plan["event"]
+                identifier = str(plan["identifier"])
+                trajectory = context.resolve_quadratic_rate_from_state(
+                    identifier, event, initial_state
+                )
+                if trajectory is None:
+                    quadratic_group_supported = False
+                    break
+                initial_value = trajectory[0]
+                initial_snapshot = context.resolve_quadratic_state_values_from_state(
+                    identifier, initial_value, event, initial_state
+                )
+                if initial_snapshot is None or not required_state_names.issubset(
+                    {standardize_name(symbol) for symbol in initial_snapshot}
+                ):
+                    quadratic_group_supported = False
+                    break
+
+        def quadratic_trigger_active(
+            plan: Mapping[str, object], state_values: Mapping[str, float]
+        ) -> Optional[bool]:
+            identifier = str(plan["identifier"])
+            components = plan.get("difference_components")
+            if isinstance(components, tuple) and len(components) == 2:
+                normalized_components = tuple(
+                    standardize_name(str(symbol)) for symbol in components
+                )
+                component_values = {
+                    standardize_name(symbol): float(value)
+                    for symbol, value in state_values.items()
+                }
+                if not all(
+                    symbol in component_values for symbol in normalized_components
+                ):
+                    return None
+                state_value = (
+                    component_values[normalized_components[0]]
+                    - component_values[normalized_components[1]]
+                )
+            else:
+                normalized_identifier = standardize_name(identifier)
+                state_value = next(
+                    (
+                        float(value)
+                        for symbol, value in state_values.items()
+                        if standardize_name(symbol) == normalized_identifier
+                    ),
+                    None,
+                )
+            if state_value is None or not math.isfinite(state_value):
+                return None
+            threshold = float(plan["threshold"])
+            operator = str(plan["operator"])
+            if state_value != threshold:
+                return (
+                    state_value < threshold
+                    if operator == "lt"
+                    else state_value > threshold
+                )
+            event = plan["event"]
+            if isinstance(components, tuple) and len(components) == 2:
+                derivatives = []
+                for symbol in components:
+                    trajectory = context.resolve_quadratic_rate_from_state(
+                        str(symbol), event, state_values
+                    )
+                    if trajectory is None:
+                        return None
+                    initial, quadratic, linear, constant = trajectory
+                    derivatives.append(
+                        quadratic * initial * initial + linear * initial + constant
+                    )
+                derivative = derivatives[0] - derivatives[1]
+            else:
+                trajectory = context.resolve_quadratic_rate_from_state(
+                    identifier, event, state_values
+                )
+                if trajectory is None:
+                    return None
+                initial, quadratic, linear, constant = trajectory
+                derivative = quadratic * initial * initial + linear * initial + constant
+            return derivative < 0 if operator == "lt" else derivative > 0
+
+        def quadratic_plan_crossing(
+            plan: Mapping[str, object], state_values: Mapping[str, float]
+        ) -> Optional[
+            Tuple[Optional[float], float, float, Tuple[float, float, float, float]]
+        ]:
+            identifier = str(plan["identifier"])
+            event = plan["event"]
+            trajectory = context.resolve_quadratic_rate_from_state(
+                identifier, event, state_values
+            )
+            if trajectory is None:
+                return None
+            initial, quadratic, linear, constant = trajectory
+            threshold = float(plan["threshold"])
+            components = plan.get("difference_components")
+            if not isinstance(components, tuple) or len(components) != 2:
+                derivative = (
+                    quadratic * threshold * threshold + linear * threshold + constant
+                )
+                return (
+                    _quadratic_crossing_time(
+                        initial, threshold, quadratic, linear, constant
+                    ),
+                    threshold,
+                    derivative,
+                    trajectory,
+                )
+
+            normalized_values = {
+                standardize_name(symbol): float(value)
+                for symbol, value in state_values.items()
+            }
+            left_name, right_name = (str(symbol) for symbol in components)
+            left_key, right_key = (
+                standardize_name(left_name),
+                standardize_name(right_name),
+            )
+            if left_key not in normalized_values or right_key not in normalized_values:
+                return None
+            current_difference = (
+                normalized_values[left_key] - normalized_values[right_key]
+            )
+            step = max(1.0, abs(initial))
+            projected_differences: List[float] = []
+            for coordinate in (initial + step, initial + 2.0 * step):
+                snapshot = context.resolve_quadratic_state_values_from_state(
+                    identifier, coordinate, event, state_values
+                )
+                if snapshot is None:
+                    return None
+                values = {
+                    standardize_name(symbol): float(value)
+                    for symbol, value in snapshot.items()
+                }
+                if left_key not in values or right_key not in values:
+                    return None
+                projected_differences.append(values[left_key] - values[right_key])
+            slope = (projected_differences[0] - current_difference) / step
+            predicted_second = current_difference + 2.0 * slope * step
+            if not math.isfinite(slope) or abs(
+                projected_differences[1] - predicted_second
+            ) > 1e-12 * max(
+                1.0,
+                abs(current_difference),
+                abs(projected_differences[0]),
+                abs(projected_differences[1]),
+            ):
+                return None
+            if abs(slope) <= 1e-14:
+                return None, initial, 0.0, trajectory
+            crossing_coordinate = initial - current_difference / slope
+            if not math.isfinite(crossing_coordinate):
+                return None
+            derivative = slope * (
+                quadratic * crossing_coordinate * crossing_coordinate
+                + linear * crossing_coordinate
+                + constant
+            )
+            return (
+                _quadratic_crossing_time(
+                    initial,
+                    crossing_coordinate,
+                    quadratic,
+                    linear,
+                    constant,
+                ),
+                crossing_coordinate,
+                derivative,
+                trajectory,
+            )
+
+        group_schedule: List[
+            Tuple[
+                float,
+                List[Tuple[str, str, float]],
+                float,
+                Optional[SBMLEvent],
+                bool,
+                List[Tuple[str, float]],
+            ]
+        ] = []
+        pending_quadratic_actions: List[dict[str, object]] = []
+        group_state = dict(initial_state)
+        group_time = 0.0
+        initial_trigger_state_pending = True
+        if quadratic_group_supported:
+            for _ in range(10_000):
+                active_by_event: dict[int, bool] = {}
+                for plan in quadratic_plans:
+                    active = (
+                        bool(fold_initial(plan["event"].trigger))
+                        if initial_trigger_state_pending
+                        else quadratic_trigger_active(plan, group_state)
+                    )
+                    if active is None:
+                        quadratic_group_supported = False
+                        break
+                    active_by_event[id(plan["event"])] = active
+                if not quadratic_group_supported:
+                    break
+
+                transitions: List[Tuple[float, Mapping[str, object], str, float]] = []
+                remaining = max(0.0, float(context.base_t_end) - group_time)
+                for plan in quadratic_plans:
+                    event = plan["event"]
+                    identifier = str(plan["identifier"])
+                    crossing = quadratic_plan_crossing(plan, group_state)
+                    if crossing is None:
+                        quadratic_group_supported = False
+                        break
+                    crossing_delta, coordinate_threshold, derivative, trajectory = (
+                        crossing
+                    )
+                    initial, quadratic, linear, constant = trajectory
+                    current_active = active_by_event[id(event)]
+                    if crossing_delta is None:
+                        endpoint = _quadratic_state_at_time(
+                            initial, quadratic, linear, constant, remaining
+                        )
+                        if endpoint is None:
+                            quadratic_group_supported = False
+                            break
+                        components = plan.get("difference_components")
+                        if isinstance(components, tuple) and len(components) == 2:
+                            endpoint_state = (
+                                context.resolve_quadratic_state_values_from_state(
+                                    identifier, endpoint, event, group_state
+                                )
+                            )
+                            endpoint_active = (
+                                None
+                                if endpoint_state is None
+                                else quadratic_trigger_active(plan, endpoint_state)
+                            )
+                        else:
+                            endpoint_active = (
+                                endpoint < float(plan["threshold"])
+                                if plan["operator"] == "lt"
+                                else endpoint > float(plan["threshold"])
+                            )
+                        if endpoint_active is None:
+                            quadratic_group_supported = False
+                            break
+                        if endpoint_active != current_active:
+                            quadratic_group_supported = False
+                            break
+                        continue
+
+                    if crossing_delta <= 1e-12:
+                        if initial_trigger_state_pending and not current_active:
+                            enters_true = (
+                                derivative < 0
+                                if plan["operator"] == "lt"
+                                else derivative > 0
+                            )
+                            if enters_true:
+                                transitions.append(
+                                    (
+                                        group_time,
+                                        plan,
+                                        "entry",
+                                        coordinate_threshold,
+                                    )
+                                )
+                        continue
+                    event_time = group_time + crossing_delta
+                    endpoint = _quadratic_state_at_time(
+                        initial, quadratic, linear, constant, remaining
+                    )
+                    if endpoint is None:
+                        quadratic_group_supported = False
+                        break
+                    components = plan.get("difference_components")
+                    if isinstance(components, tuple) and len(components) == 2:
+                        endpoint_state = (
+                            context.resolve_quadratic_state_values_from_state(
+                                identifier, endpoint, event, group_state
+                            )
+                        )
+                        endpoint_active = (
+                            None
+                            if endpoint_state is None
+                            else quadratic_trigger_active(plan, endpoint_state)
+                        )
+                    else:
+                        endpoint_active = (
+                            endpoint < float(plan["threshold"])
+                            if plan["operator"] == "lt"
+                            else endpoint > float(plan["threshold"])
+                        )
+                    if endpoint_active is None:
+                        quadratic_group_supported = False
+                        break
+                    if event_time > float(context.base_t_end) + 1e-12:
+                        if endpoint_active != current_active:
+                            quadratic_group_supported = False
+                            break
+                        continue
+
+                    enters_true = (
+                        derivative < 0 if plan["operator"] == "lt" else derivative > 0
+                    )
+                    is_entry = not current_active and enters_true
+                    is_exit = current_active and not enters_true
+                    if not is_entry and not is_exit:
+                        if endpoint_active != current_active:
+                            quadratic_group_supported = False
+                            break
+                        continue
+                    transitions.append(
+                        (
+                            event_time,
+                            plan,
+                            "entry" if is_entry else "exit",
+                            coordinate_threshold,
+                        )
+                    )
+
+                if not quadratic_group_supported:
+                    break
+                if not transitions and not pending_quadratic_actions:
+                    break
+                transitions.sort(key=lambda item: item[0])
+                if (
+                    len(transitions) > 1
+                    and abs(transitions[1][0] - transitions[0][0]) < 1e-12
+                ):
+                    quadratic_group_supported = False
+                    break
+
+                event_time, plan, transition_kind, coordinate_threshold = (
+                    transitions[0] if transitions else (math.inf, {}, "", 0.0)
+                )
+                next_pending_time = min(
+                    (float(action["time"]) for action in pending_quadratic_actions),
+                    default=math.inf,
+                )
+                if next_pending_time <= event_time + 1e-12:
+                    if abs(next_pending_time - event_time) < 1e-12:
+                        quadratic_group_supported = False
+                        break
+                    pending = [
+                        action
+                        for action in pending_quadratic_actions
+                        if abs(float(action["time"]) - next_pending_time) < 1e-12
+                    ]
+                    if len(pending) != 1:
+                        quadratic_group_supported = False
+                        break
+                    action = pending[0]
+                    pending_plan = action["plan"]
+                    if not isinstance(pending_plan, Mapping):
+                        quadratic_group_supported = False
+                        break
+                    pending_event = pending_plan["event"]
+                    pending_identifier = str(pending_plan["identifier"])
+                    pending_trajectory = context.resolve_quadratic_rate_from_state(
+                        pending_identifier, pending_event, group_state
+                    )
+                    if pending_trajectory is None:
+                        quadratic_group_supported = False
+                        break
+                    pending_value = _quadratic_state_at_time(
+                        *pending_trajectory, next_pending_time - group_time
+                    )
+                    if pending_value is None:
+                        quadratic_group_supported = False
+                        break
+                    pending_state = context.resolve_quadratic_state_values_from_state(
+                        pending_identifier,
+                        pending_value,
+                        pending_event,
+                        group_state,
+                    )
+                    if pending_state is None or not required_state_names.issubset(
+                        {standardize_name(symbol) for symbol in pending_state}
+                    ):
+                        quadratic_group_supported = False
+                        break
+                    active_before: dict[int, bool] = {}
+                    for other_plan in quadratic_plans:
+                        active = quadratic_trigger_active(other_plan, pending_state)
+                        if active is None:
+                            quadratic_group_supported = False
+                            break
+                        active_before[id(other_plan["event"])] = active
+                    if not quadratic_group_supported:
+                        break
+                    next_state = {
+                        **group_state,
+                        **{
+                            str(symbol): float(value)
+                            for symbol, value in pending_state.items()
+                        },
+                    }
+                    pending_values = list(action["values"])
+                    assignment_variables = {
+                        standardize_name(variable): variable
+                        for variable, _pattern, _expression in pending_plan[
+                            "assignments"
+                        ]
+                    }
+                    for normalized_target, numeric_value in pending_values:
+                        variable = assignment_variables.get(normalized_target)
+                        if variable is None:
+                            quadratic_group_supported = False
+                            break
+                        next_state[variable] = float(numeric_value)
+                    if not quadratic_group_supported:
+                        break
+                    for other_plan in quadratic_plans:
+                        post_active = quadratic_trigger_active(other_plan, next_state)
+                        if post_active is None or (
+                            other_plan["event"] is not pending_event
+                            and not active_before[id(other_plan["event"])]
+                            and post_active
+                        ):
+                            quadratic_group_supported = False
+                            break
+                    if not quadratic_group_supported:
+                        break
+                    group_schedule.append(
+                        (
+                            next_pending_time,
+                            list(action["sets"]),
+                            0.0,
+                            pending_event,
+                            False,
+                            pending_values,
+                        )
+                    )
+                    pending_quadratic_actions.remove(action)
+                    group_state = next_state
+                    group_time = next_pending_time
+                    initial_trigger_state_pending = False
+                    continue
+
+                if not transitions:
+                    break
+                initial_trigger_state_pending = False
+                event = plan["event"]
+                identifier = str(plan["identifier"])
+                threshold = float(coordinate_threshold)
+                crossing_state = context.resolve_quadratic_state_values_from_state(
+                    identifier, threshold, event, group_state
+                )
+                if crossing_state is None or not required_state_names.issubset(
+                    {standardize_name(symbol) for symbol in crossing_state}
+                ):
+                    quadratic_group_supported = False
+                    break
+                group_state = {
+                    **group_state,
+                    **{
+                        str(symbol): float(value)
+                        for symbol, value in crossing_state.items()
+                    },
+                }
+                if transition_kind == "exit":
+                    group_time = event_time
+                    continue
+
+                scheduled_sets: List[Tuple[str, str, float]] = []
+                event_values: List[Tuple[str, float]] = []
+                next_state = dict(group_state)
+                event_value_state = {**group_state, "time": event_time}
+                for variable, pattern, expression in plan["assignments"]:
+                    value = fold_at_state(
+                        expression,
+                        event_time,
+                        state_values=event_value_state,
+                        event_context=event,
+                    )
+                    if value is None or not math.isfinite(value):
+                        quadratic_group_supported = False
+                        break
+                    numeric_value = float(value)
+                    scheduled_sets.append(("conc", pattern, numeric_value))
+                    event_values.append((standardize_name(variable), numeric_value))
+                    next_state[variable] = numeric_value
+                if not quadratic_group_supported:
+                    break
+
+                planned_delay = plan["delay"]
+                delay_value = (
+                    fold(
+                        str(plan["delay_expression"]),
+                        time_value=event_time,
+                        event_context=event,
+                    )
+                    if planned_delay is None
+                    else float(planned_delay)
+                )
+                if (
+                    delay_value is None
+                    or not math.isfinite(delay_value)
+                    or delay_value < 0
+                ):
+                    quadratic_group_supported = False
+                    break
+                delay = float(delay_value)
+                if delay == 0:
+                    for other_plan in quadratic_plans:
+                        post_active = quadratic_trigger_active(other_plan, next_state)
+                        if post_active is None:
+                            quadratic_group_supported = False
+                            break
+                        if (
+                            other_plan["event"] is not event
+                            and not active_by_event[id(other_plan["event"])]
+                            and post_active
+                        ):
+                            # An immediate assignment caused another trigger
+                            # to become true at this same time; ordering
+                            # without priorities is ambiguous.
+                            quadratic_group_supported = False
+                            break
+                if not quadratic_group_supported:
+                    break
+
+                execution_time = event_time + delay
+                if delay > 0 and execution_time <= float(context.base_t_end) + 1e-12:
+                    pending_quadratic_actions.append(
+                        {
+                            "time": execution_time,
+                            "plan": plan,
+                            "sets": scheduled_sets,
+                            "values": event_values,
+                        }
+                    )
+                if delay == 0:
+                    group_schedule.append(
+                        (event_time, scheduled_sets, 0.0, event, False, event_values)
+                    )
+                    group_state = next_state
+                group_time = event_time
+            else:
+                quadratic_group_supported = False
+
+        if quadratic_group_supported:
+            inactive_event_ids = {id(event) for event in statically_inactive_events}
+            recurrent_handled.update(
+                id(event) for event in events if id(event) not in inactive_event_ids
+            )
+            event_proven_inactive.update(inactive_event_ids)
+            if group_schedule:
+                scheduled.extend(group_schedule)
+                normal_converted += len(quadratic_plans)
+                horizon_limited += len(statically_inactive_events)
+            else:
+                event_proven_inactive.update(id(event) for event in events)
+                horizon_limited += len(events)
+
+    if len(events) == 1 and id(events[0]) not in recurrent_handled:
         event = events[0]
         parsed_difference = _parse_state_difference_threshold(event.trigger)
         difference_components = (
@@ -3634,9 +6309,23 @@ def synthesize_event_actions(
             parsed_threshold = parsed_difference
         else:
             parsed_threshold = _parse_affine_state_threshold(event.trigger)
+        delay_symbols = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", event.delay or "")
+        delay_value = fold(event.delay, event_context=event) if event.delay else 0.0
+        quadratic_delay_is_supported = (
+            delay_value is not None
+            and math.isfinite(delay_value)
+            and delay_value >= 0
+            and all(
+                context.is_compile_time_constant(symbol) for symbol in delay_symbols
+            )
+            and (
+                delay_value == 0
+                or (event.trigger_persistent and event.use_values_from_trigger_time)
+            )
+        )
         if (
             parsed_threshold is not None
-            and not event.delay
+            and quadratic_delay_is_supported
             and not event.priority
             and float(context.base_t_end) > 0
             and math.isfinite(float(context.base_t_end))
@@ -3692,7 +6381,90 @@ def synthesize_event_actions(
                 ] = []
                 recurrence_is_proven = True
                 no_firing_within_horizon = False
+                pending_action: Optional[
+                    Tuple[
+                        float,
+                        List[Tuple[str, str, float]],
+                        List[Tuple[str, float]],
+                    ]
+                ] = None
                 for _ in range(10_000):
+                    if pending_action is not None:
+                        due_time, scheduled_sets, event_values = pending_action
+                        if due_time > float(context.base_t_end) + 1e-12:
+                            no_firing_within_horizon = not recurrence
+                            break
+                        trajectory = context.resolve_quadratic_rate_from_state(
+                            identifier, event, state_values
+                        )
+                        if trajectory is None:
+                            recurrence_is_proven = False
+                            break
+                        initial, quadratic, linear, constant = trajectory
+                        due_delta = due_time - time_value
+                        if due_delta < -1e-12:
+                            recurrence_is_proven = False
+                            break
+                        due_coordinate = _quadratic_state_at_time(
+                            initial,
+                            quadratic,
+                            linear,
+                            constant,
+                            max(0.0, due_delta),
+                        )
+                        if due_coordinate is None or not comparison_true(
+                            due_coordinate
+                        ):
+                            recurrence_is_proven = False
+                            break
+                        due_state = context.resolve_quadratic_state_values_from_state(
+                            identifier, due_coordinate, event, state_values
+                        )
+                        if due_state is None:
+                            recurrence_is_proven = False
+                            break
+                        next_state = dict(due_state)
+                        for normalized_variable, value in event_values:
+                            target = next(
+                                (
+                                    variable
+                                    for variable, _pattern, _expression in assignment_targets
+                                    if standardize_name(variable) == normalized_variable
+                                ),
+                                None,
+                            )
+                            if target is None:
+                                recurrence_is_proven = False
+                                break
+                            next_state[target] = value
+                        if not recurrence_is_proven:
+                            break
+                        post_trigger = fold_at_state(
+                            event.trigger,
+                            due_time,
+                            state_values=next_state,
+                            event_context=event,
+                        )
+                        if post_trigger is None or not math.isfinite(post_trigger):
+                            recurrence_is_proven = False
+                            break
+                        recurrence.append(
+                            (
+                                due_time,
+                                scheduled_sets,
+                                0.0,
+                                event,
+                                False,
+                                event_values,
+                            )
+                        )
+                        pending_action = None
+                        if post_trigger != 0:
+                            break
+                        state_values = next_state
+                        time_value = due_time
+                        continue
+
                     trajectory = context.resolve_quadratic_rate_from_state(
                         identifier, event, state_values
                     )
@@ -3775,6 +6547,19 @@ def synthesize_event_actions(
                         next_state[variable] = value
                     if not recurrence_is_proven:
                         break
+                    if delay_value > 0:
+                        execution_time = crossing_time + float(delay_value)
+                        if execution_time > float(context.base_t_end) + 1e-12:
+                            no_firing_within_horizon = not recurrence
+                            break
+                        pending_action = (
+                            min(execution_time, float(context.base_t_end)),
+                            scheduled_sets,
+                            event_values,
+                        )
+                        state_values = crossing_state
+                        time_value = crossing_time
+                        continue
                     post_trigger = fold_at_state(
                         event.trigger,
                         crossing_time,
@@ -3903,6 +6688,9 @@ def synthesize_event_actions(
                 fold(value, event_context=event) for value in upper_expressions
             ]
             initial_state_truth = fold_initial(state_expression)
+            if static_initial_gates_are_safe and initial_state_truth == 0:
+                normal_converted += 1
+                continue
             if (
                 all(
                     value is not None and math.isfinite(value) for value in lower_values
@@ -4060,6 +6848,35 @@ def synthesize_event_actions(
                     scale_value = float(state_threshold_scale)
                     crossing_value /= scale_value
                     trigger_threshold_value = crossing_value
+                if (
+                    difference_components is not None
+                    and not rate_of_threshold
+                    and crossing_value is not None
+                    and state_threshold_scale == "1"
+                ):
+                    stationary_difference = context.resolve_quadratic_rate_for_event(
+                        identifier, event
+                    )
+                    if stationary_difference is not None and stationary_difference[
+                        1:
+                    ] == (0.0, 0.0, 0.0):
+                        initial_difference = stationary_difference[0]
+                        initially_true = (
+                            initial_difference > crossing_value
+                            if operator == "gt"
+                            else (
+                                initial_difference >= crossing_value
+                                if operator == "geq"
+                                else (
+                                    initial_difference < crossing_value
+                                    if operator == "lt"
+                                    else initial_difference <= crossing_value
+                                )
+                            )
+                        )
+                        if not initially_true:
+                            normal_converted += 1
+                            continue
                 if trajectory is not None and crossing_value is not None:
                     initial_value, slope = trajectory
                     trigger_state_trajectory = (
@@ -4367,6 +7184,17 @@ def synthesize_event_actions(
                                     + linear * crossing_value
                                     + constant
                                 )
+                                if (
+                                    crossing_time is None
+                                    and quadratic == 0
+                                    and linear == 0
+                                    and constant == 0
+                                ):
+                                    # An exactly stationary proven trajectory
+                                    # that starts outside the trigger cannot
+                                    # produce a rising edge at any later time.
+                                    normal_converted += 1
+                                    continue
                                 rising = (
                                     operator in {"gt", "geq"} and derivative > 0
                                 ) or (operator in {"lt", "leq"} and derivative < 0)
@@ -4384,7 +7212,7 @@ def synthesize_event_actions(
         if threshold is None:
             window = _parse_gated_time_window(
                 event_trigger,
-                lambda expression: fold(expression, event_context=event),
+                lambda expression: fold_static_event_gate(expression, event),
             )
             if window is not None:
                 lower_expressions, upper_expressions, gate_is_true = window
@@ -4769,7 +7597,100 @@ def synthesize_event_actions(
             end += 1
         group = normalized_scheduled[index:end]
         if not any(item[4] for item in group):
-            ordered_scheduled.extend(sorted(group, key=lambda item: -item[2]))
+            priority_order = sorted(group, key=lambda item: -item[2])
+            group_events = [item[3] for item in group]
+            group_is_complete = (
+                len(group) == len(events)
+                and all(event is not None for event in group_events)
+                and {id(event) for event in group_events if event is not None}
+                == {id(event) for event in events}
+            )
+            if (
+                static_initial_gates_are_safe
+                and group_is_complete
+                and any(
+                    event is not None and event.trigger_persistent is False
+                    for event in group_events
+                )
+            ):
+                # SBML cancels a pending nonpersistent event as soon as an
+                # earlier same-time assignment makes its trigger false.
+                event_state: dict[str, float] = {"time": group[0][0]}
+                for event in group_events:
+                    assert event is not None
+                    for symbol in re.findall(
+                        r"[A-Za-z_][A-Za-z0-9_]*", event.trigger or ""
+                    ):
+                        if standardize_name(symbol) == "time":
+                            continue
+                        initial_value = context.resolve_initial_value(symbol)
+                        if initial_value is None or not math.isfinite(initial_value):
+                            continue
+                        event_state[symbol] = float(initial_value)
+                        event_state[standardize_name(symbol)] = float(initial_value)
+
+                remaining = list(priority_order)
+                ordered_group = []
+                while remaining:
+                    selected = remaining.pop(0)
+                    selected_event = selected[3]
+                    if selected_event is not None and (
+                        selected_event.trigger_persistent is False
+                    ):
+                        trigger_value = fold(
+                            selected_event.trigger,
+                            selected[0],
+                            dynamic_values=event_state,
+                            event_context=selected_event,
+                        )
+                        if trigger_value is None or not math.isfinite(trigger_value):
+                            group_is_complete = False
+                            break
+                        if trigger_value == 0:
+                            continue
+
+                    ordered_group.append(selected)
+                    for symbol, value in selected[5]:
+                        event_state[symbol] = value
+                        event_state[standardize_name(symbol)] = value
+
+                    pending = []
+                    for item in remaining:
+                        event = item[3]
+                        if event is not None and event.trigger_persistent is False:
+                            trigger_value = fold(
+                                event.trigger,
+                                item[0],
+                                dynamic_values=event_state,
+                                event_context=event,
+                            )
+                            if trigger_value is None or not math.isfinite(
+                                trigger_value
+                            ):
+                                group_is_complete = False
+                                break
+                            if trigger_value == 0:
+                                continue
+                        pending.append(item)
+                    if not group_is_complete:
+                        break
+                    remaining = pending
+
+                if group_is_complete:
+                    ordered_scheduled.extend(ordered_group)
+                else:
+                    normal_converted -= sum(item[3] is not None for item in group)
+                    for item in group:
+                        if item[3] is not None:
+                            untranslated.append(
+                                (
+                                    item[3],
+                                    "simultaneous nonpersistent event cancellation "
+                                    "could not be resolved",
+                                )
+                            )
+            else:
+                ordered_scheduled.extend(priority_order)
             index = end
             continue
 
@@ -4925,7 +7846,8 @@ def synthesize_event_actions(
         else:
             lines.append(
                 f'simulate({{continue=>1, method=>"{method}", '
-                f"t_end=>{_format_number(end - phase_start)}, n_steps=>{steps}}})"
+                f"t_start=>{_format_number(phase_start)}, "
+                f"t_end=>{_format_number(end)}, n_steps=>{steps}}})"
             )
         for time, sets in merged:
             if time > 0 and abs(time - end) < 1e-12:
@@ -4935,7 +7857,8 @@ def synthesize_event_actions(
     if abs(phase_start - t_final) > 1e-12:
         lines.append(
             f'simulate({{continue=>1, method=>"{method}", '
-            f"t_end=>{_format_number(t_final - phase_start)}, "
+            f"t_start=>{_format_number(phase_start)}, "
+            f"t_end=>{_format_number(t_final)}, "
             f"n_steps=>{steps_for(phase_start, t_final)}}})"
         )
 

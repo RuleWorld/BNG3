@@ -2,6 +2,7 @@
 
 #include "ModelOptions.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <utility>
@@ -59,6 +60,28 @@ void Model::addReactionRule(ReactionRule reactionRule) {
 
 void Model::addPopulationMap(PopulationMap populationMap) {
     populationMaps_.push_back(std::move(populationMap));
+}
+
+void Model::addEvent(Event event) {
+    if (!eventFormatVersion_.has_value()) {
+        throw std::runtime_error("cannot add a BNG3 event before setting its format version");
+    }
+    if (event.id.empty()) {
+        throw std::runtime_error("BNG3 event ids must not be empty");
+    }
+    if (std::any_of(events_.begin(), events_.end(), [&](const auto& existing) {
+            return existing.id == event.id;
+        })) {
+        throw std::runtime_error("duplicate BNG3 event id '" + event.id + "'");
+    }
+    events_.push_back(std::move(event));
+}
+
+void Model::setEventFormatVersion(unsigned version) {
+    if (version != 1) {
+        throw std::runtime_error("Unsupported BNG3 event format version: " + std::to_string(version));
+    }
+    eventFormatVersion_ = version;
 }
 
 void Model::addProtocolAction(Action action) {
@@ -156,6 +179,10 @@ void Model::setSeedUnit(std::size_t index, std::string unit) {
 }
 
 void Model::merge(Model& other) {
+    if (eventFormatVersion_.has_value() && other.getEventFormatVersion().has_value() &&
+        eventFormatVersion_ != other.getEventFormatVersion()) {
+        throw std::runtime_error("cannot merge incompatible BNG3 event format versions");
+    }
     // Transfer GraphTypeRegistry entries first so PatternGraph node pointers
     // remain valid after the source model is destroyed.
     graphTypeRegistry_.mergeFrom(other.getGraphTypeRegistry());
@@ -231,6 +258,13 @@ void Model::merge(Model& other) {
     // Merge molecules
     for (const auto& mol : other.getMolecules()) {
         molecules.push_back(mol);
+    }
+
+    if (other.getEventFormatVersion().has_value()) {
+        eventFormatVersion_ = other.getEventFormatVersion();
+    }
+    for (const auto& event : other.getEvents()) {
+        events_.push_back(event);
     }
 
     // Merge options (other's options override if keys conflict)
@@ -323,6 +357,14 @@ std::vector<ReactionRule>& Model::getReactionRules() {
 
 const std::vector<PopulationMap>& Model::getPopulationMaps() const {
     return populationMaps_;
+}
+
+const std::vector<Event>& Model::getEvents() const {
+    return events_;
+}
+
+const std::optional<unsigned>& Model::getEventFormatVersion() const {
+    return eventFormatVersion_;
 }
 
 const std::vector<Action>& Model::getSimulationProtocol() const {

@@ -48,6 +48,36 @@ UNSUPPORTED_MARKERS = (
 )
 
 
+def _repository_provenance(repo_root: Path) -> dict[str, Any]:
+    """Return the BNG3 source revision and tracked-worktree state."""
+
+    commit = None
+    tracked_worktree_clean = None
+    try:
+        commit = subprocess.check_output(
+            ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
+            text=True,
+        ).strip()
+    except Exception:
+        pass
+    if commit is not None:
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(repo_root), "diff", "--quiet", "HEAD"],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            if result.returncode in (0, 1):
+                tracked_worktree_clean = result.returncode == 0
+        except Exception:
+            pass
+    return {
+        "bng3_commit": commit,
+        "bng3_tracked_worktree_clean": tracked_worktree_clean,
+    }
+
+
 def _validate_xml(text: str, label: str) -> dict[str, Any]:
     try:
         import libsbml
@@ -961,9 +991,12 @@ def main() -> int:
         for category in args.categories
     }
     report = {
-        "schema_version": 3,
+        "schema_version": 4,
         "suite_dir": str(args.suite_dir.resolve()),
         "suite_commit": commit,
+        "source_provenance": _repository_provenance(
+            Path(__file__).resolve().parents[2]
+        ),
         "writer_sbml_version": "L3V2",
         "categories": args.categories,
         "canonical_version_priority": list(VERSION_PRIORITY),

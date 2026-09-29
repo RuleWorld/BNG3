@@ -152,6 +152,17 @@ CompiledModel::CompiledModel(const ast::Model& model)
       symbols_(SymbolTable::fromModel(model)),
       diagnostics_(symbols_.diagnostics()) {
 
+    if (model.getEventFormatVersion().has_value()) {
+        Diagnostic diagnostic;
+        diagnostic.code = DiagnosticCode::UnsupportedFeature;
+        diagnostic.severity = Severity::Error;
+        diagnostic.category = ValidationCategory::BackendCapability;
+        diagnostic.entity = "bng3_events";
+        diagnostic.message =
+            "BNG3 event execution is not implemented; bng3_events models cannot be compiled";
+        diagnostics_.push_back(std::move(diagnostic));
+    }
+
     const auto unitAnalysis = analyzeUnits(model);
     diagnostics_.insert(diagnostics_.end(), unitAnalysis.diagnostics.begin(),
                         unitAnalysis.diagnostics.end());

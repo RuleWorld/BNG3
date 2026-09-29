@@ -197,6 +197,9 @@ bool expressionReferencesObservable(
 
 OdeIntegrator::OdeIntegrator(const ast::Model& model, const GeneratedNetwork& network)
     : model_(model), network_(network) {
+    if (model_.getEventFormatVersion().has_value()) {
+        throw std::runtime_error(ast::kUnsupportedEventExecutionMessage);
+    }
     compile();
 }
 
@@ -791,7 +794,12 @@ void OdeIntegrator::compile() {
                     // k*S_amt would otherwise be misclassified as constant,
                     // then fail closed to a zero rate when its derived
                     // _rateLaw function is evaluated.
-                    if (expressionReferencesObservable(*rateExpr, model_)) {
+                    //
+                    // The reaction carries no parsed expression when the
+                    // network was built directly rather than lowered from a
+                    // model; there is nothing to inspect then, and the
+                    // dependency scan below covers the parsed rate string.
+                    if (rateExpr.has_value() && expressionReferencesObservable(*rateExpr, model_)) {
                         needsRuntime = true;
                     }
 

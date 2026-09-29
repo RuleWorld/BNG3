@@ -5,14 +5,46 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: write
-  packages: write
-  id-token: write
+  contents: read
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  qualify:
+    name: Qualify exact main commit
+    runs-on: ubuntu-22.04
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Confirm tagged commit is on main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD || {
+            echo "Release tag commit is not reachable from origin/main." >&2
+            exit 1
+          }
+
+      - name: Read exact-SHA main push workflow results
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${GITHUB_SHA}&branch=main&event=push&per_page=100" \
+            > "$RUNNER_TEMP/workflow-runs.json"
+          python scripts/ci/qualify_release_candidate.py \
+            --runs-json "$RUNNER_TEMP/workflow-runs.json" \
+            --sha "$GITHUB_SHA"
+
   # ═══════════════════════════════════════════════════════════════════════════
   # Build platform-specific CLI binaries
   # ═══════════════════════════════════════════════════════════════════════════
@@ -20,6 +52,9 @@ jobs:
   build-binaries:
     name: Build CLI (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    needs: [qualify]
+    permissions:
+      contents: read
     strategy:
       matrix:
         include:
@@ -64,6 +99,15 @@ jobs:
       - name: Build
         run: cmake --build build --config Release
 
+      - name: Smoke test release executables
+        shell: bash
+        run: |
+          set -euo pipefail
+          build/cpp/bng_cpp${{ matrix.binary_ext }} --version
+          build/cpp/NFsim${{ matrix.binary_ext }} -help \
+            > "$RUNNER_TEMP/nfsim-help.txt" 2>&1
+          grep -q "To run NFsim" "$RUNNER_TEMP/nfsim-help.txt"
+
       - name: Package binaries
         shell: bash
         run: |
@@ -86,6 +130,9 @@ jobs:
   build-wheels:
     name: Wheels (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    needs: [qualify]
+    permissions:
+      contents: read
     strategy:
       matrix:
         include:
@@ -122,7 +169,10 @@ jobs:
           CIBW_BUILD: "cp39-* cp310-* cp311-* cp312-* cp313-* cp314-*"
           CIBW_SKIP: "*-musllinux_* *-manylinux_i686 *-win32"
           CIBW_TEST_REQUIRES: pytest numpy click
-          CIBW_TEST_COMMAND: pytest {project}/tests/python/test_cpp_backend.py -v --tb=short
+          CIBW_TEST_COMMAND: >-
+            pytest {project}/tests/python/test_cpp_backend.py -v --tb=short &&
+            bionetgen --version &&
+            bionetgen --help
           CIBW_ENVIRONMENT: CMAKE_ARGS="-DBUILD_TESTS=OFF -DBUILD_CLI=OFF"
           CIBW_ARCHS_MACOS: ${{ matrix.macos_arch }}
           CIBW_ENVIRONMENT_MACOS: >-
@@ -144,6 +194,9 @@ jobs:
   build-sdist:
     name: Source Distribution
     runs-on: ubuntu-22.04
+    needs: [qualify]
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -165,8 +218,10 @@ jobs:
 
   release:
     name: Create Release
-    needs: [build-binaries, build-wheels, build-sdist]
+    needs: [qualify, build-binaries, build-wheels, build-sdist]
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 

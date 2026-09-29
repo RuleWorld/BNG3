@@ -93,6 +93,27 @@ TEST_CASE("OdeIntegrator rejects malformed stop conditions", "[OdeOptions]") {
         Catch::Matchers::ContainsSubstring("stop_if"));
 }
 
+TEST_CASE("OdeIntegrator rejects BNG3 events until event execution is implemented",
+          "[OdeOptions][Events]") {
+    auto model = parser::parseModel(R"(
+begin bng3_events version 1
+  event "later"
+    trigger: time >= 1
+    initial_value: false
+    persistent: true
+    use_values_from_trigger_time: true
+    assignment: A = 0
+  end event
+end bng3_events
+)");
+    REQUIRE(model != nullptr);
+    engine::GeneratedNetwork network;
+
+    REQUIRE_THROWS_WITH(
+        engine::OdeIntegrator(*model, network),
+        Catch::Matchers::ContainsSubstring("BNG3 event execution is not implemented"));
+}
+
 TEST_CASE("OdeIntegrator evaluates user-defined function rates", "[OdeOptions]") {
     // Source-derived from akutuva21/bionetgen PR #508 head e67850cf and
     // PR #509 head 5cf5cd47: function-name matching is an allocation-sensitive
@@ -278,6 +299,45 @@ end reaction rules
     REQUIRE(output.find("begin groups\n") != std::string::npos);
     REQUIRE(output.find("    1 total 1,2\n") != std::string::npos);
     REQUIRE(output.find("    2 present 1\n") != std::string::npos);
+}
+
+TEST_CASE("NetWriter does not apply pattern symmetry factor to TotalRate", "[NetWriter]") {
+    auto model = parser::parseModel(R"(
+begin parameters
+    k 0.75
+end parameters
+begin molecule types
+    A()
+    B()
+    C()
+end molecule types
+begin seed species
+    A() 1
+    B() 2
+end seed species
+begin reaction rules
+    A() + B() + B() -> C() k TotalRate
+end reaction rules
+)");
+
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    const auto suffix = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto outputPath = std::filesystem::temp_directory_path() /
+        ("bng3-net-writer-total-rate-" + std::to_string(suffix) + ".net");
+    io::NetWriter::write(outputPath, *model, network);
+
+    std::string output;
+    {
+        std::ifstream input(outputPath);
+        REQUIRE(input.good());
+        output.assign(std::istreambuf_iterator<char>(input),
+                      std::istreambuf_iterator<char>());
+    }
+    std::filesystem::remove(outputPath);
+
+    CHECK(output.find("0.5*k") == std::string::npos);
+    CHECK(output.find(" k #") != std::string::npos);
 }
 
 TEST_CASE("NetWriter preserves inline parameter comments from BNGL", "[NetWriter][issue-216]") {

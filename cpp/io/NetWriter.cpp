@@ -1,6 +1,7 @@
 #include "io/NetWriter.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <fstream>
 #include <functional>
@@ -11,6 +12,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -55,6 +57,34 @@ const std::unordered_map<std::string, std::string> builtinCanonicalName = {
     {"arrhenius", "Arrhenius"}, {"Arrhenius", "Arrhenius"},
     {"hybrid", "Hybrid"}, {"Hybrid", "Hybrid"},
 };
+
+bool hasTotalRateModifier(const ast::Model& model, const std::string& origin) {
+    std::string ruleName = origin;
+    if (ruleName.rfind("_reverse__", 0) == 0) {
+        ruleName.erase(0, std::string("_reverse__").size());
+    } else if (!ruleName.empty() && ruleName.front() == '_') {
+        ruleName.erase(0, 1);
+    }
+    constexpr std::string_view reverseSuffix = "_reverse";
+    if (ruleName.size() > reverseSuffix.size() &&
+        ruleName.compare(ruleName.size() - reverseSuffix.size(),
+                         reverseSuffix.size(), reverseSuffix) == 0) {
+        ruleName.erase(ruleName.size() - reverseSuffix.size());
+    }
+    for (const auto& rule : model.getReactionRules()) {
+        if (rule.getRuleName() != ruleName) continue;
+        for (const auto& modifier : rule.getModifiers()) {
+            std::string lowered = modifier;
+            std::transform(lowered.begin(), lowered.end(), lowered.begin(),
+                           [](unsigned char c) {
+                               return static_cast<char>(std::tolower(c));
+                           });
+            if (lowered == "totalrate") return true;
+        }
+        break;
+    }
+    return false;
+}
 
 // Simple recursive evaluator for mathematical expressions
 // Handles: numbers, parameters, +, -, *, /, (), exp(), and nested expressions
@@ -2006,6 +2036,8 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
     out << "begin reactions\n";
     std::size_t reactionIndex = 1;
     for (const auto& reaction : network.reactions.all()) {
+        const bool totalRate =
+            hasTotalRateModifier(model, reaction.getOriginRuleName());
         // Perl BNG2 sorts reactant/product indices for elementary rate laws (simple
         // parameter names), but preserves original order for MM/Sat/Hill/Function rates.
         const bool isElementary = [&]() {
@@ -2069,8 +2101,8 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
               : derivedFound->second.paramName;
       const auto unitFactor = unitConversionFactor(reaction, model, network);
       const auto unitExpr = unitConversionExpression(reaction, model, network);
-      double combinedFactor = reaction.getFactor();
-      if (unitFactor.has_value())
+      double combinedFactor = totalRate ? 1.0 : reaction.getFactor();
+      if (!totalRate && unitFactor.has_value())
         combinedFactor *= *unitFactor;
       if (std::abs(combinedFactor - 1.0) >= 1e-9) {
         out << formatDoubleScientific(combinedFactor) << "*";
@@ -2084,7 +2116,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
                           "r"
                     : reaction.getOriginRuleName();
       out << " #" << ruleComment;
-      if (unitExpr.has_value()) {
+      if (!totalRate && unitExpr.has_value()) {
         out << " unit_conversion=" << *unitExpr;
       }
     } else if (derivedFound != derivedRateParams.end() && derivedFound->second.isPerReactionArrhenius) {
@@ -2096,8 +2128,8 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
             // Perl convention: combine stat factor with unit conversion into one coefficient
             const auto unitFactor = unitConversionFactor(reaction, model, network);
             const auto unitExpr = unitConversionExpression(reaction, model, network);
-            double combinedFactor = reaction.getFactor();
-            if (unitFactor.has_value()) combinedFactor *= *unitFactor;
+            double combinedFactor = totalRate ? 1.0 : reaction.getFactor();
+            if (!totalRate && unitFactor.has_value()) combinedFactor *= *unitFactor;
             if (std::abs(combinedFactor - 1.0) >= 1e-9) {
                 out << formatDoubleScientific(combinedFactor) << "*";
             }
@@ -2108,7 +2140,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
                 ? reaction.getOriginRuleName().substr(std::string("_reverse__").size()) + "r"
                 : reaction.getOriginRuleName();
             out << " #" << ruleComment;
-            if (unitExpr.has_value()) {
+            if (!totalRate && unitExpr.has_value()) {
                 out << " unit_conversion=" << *unitExpr;
             }
         } else if (derivedFound != derivedRateParams.end() && derivedFound->second.isLocalFunction) {
@@ -2120,7 +2152,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
                     rateParamName = specIt->second.first;
                 }
             }
-            if (std::abs(reaction.getFactor() - 1.0) >= 1e-9) {
+            if (!totalRate && std::abs(reaction.getFactor() - 1.0) >= 1e-9) {
                 out << formatFactor(reaction.getFactor()) << "*";
             }
             out << rateParamName;
@@ -2130,17 +2162,17 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
             const auto unitFactor = unitConversionFactor(reaction, model, network);
             const auto unitExpr = unitConversionExpression(reaction, model, network);
             bool wrotePrefix = false;
-            if (unitFactor.has_value()) {
+            if (!totalRate && unitFactor.has_value()) {
                 out << formatDoubleScientific(*unitFactor) << "*";
                 wrotePrefix = true;
             }
-            if (std::abs(reaction.getFactor() - 1.0) >= 1e-9) {
+            if (!totalRate && std::abs(reaction.getFactor() - 1.0) >= 1e-9) {
                 out << formatFactor(reaction.getFactor()) << "*";
                 wrotePrefix = true;
             }
             out << derivedFound->second.paramName;
             out << " #" << (reaction.getOriginRuleName().rfind("_", 0) == 0 ? reaction.getOriginRuleName() : "_" + reaction.getOriginRuleName());
-            if (unitExpr.has_value()) {
+            if (!totalRate && unitExpr.has_value()) {
                 out << " unit_conversion=" << *unitExpr;
             }
         } else {
@@ -2149,8 +2181,8 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
             // Zero-order synthesis: multiply by product compartment size
             // Pre-multiply with stat factor for cleaner output (Perl convention)
             const auto convFactor = unitConversionFactor(reaction, model, network);
-            double combinedFactor = reaction.getFactor();
-            if (convFactor.has_value()) combinedFactor *= *convFactor;
+            double combinedFactor = totalRate ? 1.0 : reaction.getFactor();
+            if (!totalRate && convFactor.has_value()) combinedFactor *= *convFactor;
             if (std::abs(combinedFactor - 1.0) >= 1e-9) {
                 out << formatFactor(combinedFactor) << "*";
             }

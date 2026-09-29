@@ -128,12 +128,30 @@ def test_cli_approximate_simulation_start_time(runner, simple_model, method):
     assert result.exit_code == 0, result.output
 
 
-def test_cli_nf_honors_nonzero_start_time(runner, simple_model):
+def test_cli_nf_honors_nonzero_start_time(runner, tmp_path):
+    model = tmp_path / "tiny_nf.bngl"
+    model.write_text("""
+begin model
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 0
+end seed species
+begin observables
+    Molecules Xtot X()
+end observables
+begin reaction rules
+    R: 0 -> X() 1
+end reaction rules
+end model
+""")
+    output = tmp_path / "nf.tsv"
     result = runner.invoke(
         main,
         [
             "run",
-            simple_model,
+            str(model),
             "--method",
             "nf",
             "--t-start",
@@ -144,9 +162,17 @@ def test_cli_nf_honors_nonzero_start_time(runner, simple_model):
             "1",
             "--seed",
             "1",
+            "--output",
+            str(output),
         ],
     )
     assert result.exit_code == 0, result.output
+    times = [
+        float(line.split()[0])
+        for line in output.read_text().splitlines()
+        if line and not line.startswith("#")
+    ]
+    assert times == [1.0, 2.0]
 
 
 def test_cli_scan_and_sensitivity_forward_simulation_options(runner, tmp_path):
