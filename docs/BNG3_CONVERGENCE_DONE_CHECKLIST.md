@@ -73,6 +73,38 @@ the corpus at all — those two are covered by fragment-level tests only.
 this repository, so the 1,744/179/0 result remains unmeasured against these
 changes and must be re-run before any of them are claimed as suite-validated.
 
+#### The 1,744/179/0 result cannot be re-derived from this repository
+
+The headline number is quoted throughout this log and in `CURRENT_PROGRESS.md`.
+An audit of its provenance found it has no owner here:
+
+- **The suite is not in the source lock.** `provenance/upstreams.lock.yml` pins
+  eight sources; the SBML Test Suite is not one of them, and there is no
+  `suite` key at all.
+- **It is not an oracle.** `scripts/ci/oracle_sources.py:19` lists exactly
+  `("bionetgen", "nfsim", "pybionetgen")`, and its `--validate-only` path — the
+  mechanism that makes the other external evidence checkable — does not cover
+  the suite.
+- **The runner does not verify what it is given.** `validate_sbml_test_suite.py`
+  requires a caller-supplied `--suite-dir` and records
+  `git -C <suite-dir> rev-parse HEAD` into the report without ever checking it
+  against a lock.
+- **No CI job runs it**, and no report is committed. The cited artifact lives
+  under `/private/tmp`; `provenance/golden/` contains only a README, and states
+  that no approved golden bundle exists until the lock decisions are made.
+
+Two further points about what the number means. The runner is an import and
+round-trip gate plus a BNG3-versus-libRoadRunner CVODE comparison, **not** a
+conformance check against the suite's own expected numeric outputs. And
+libRoadRunner is installed by no workflow, so even the comparison half cannot be
+reproduced without a local setup.
+
+Treat every suite-derived count in this document as a historical observation
+from one machine, not as a gate that can currently be re-checked. Closing this
+means adding the suite to the source lock, giving the runner a
+`--validate-only` path like the other oracles have, committing the report
+artifact, and installing libRoadRunner in CI.
+
 ### Ready to apply, blocked on the ANTLR generator — `priority` as a model identifier
 
 `priority` is a lexer keyword, so a molecule, observable, or parameter literally
