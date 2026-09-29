@@ -12,7 +12,7 @@ import ast
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
-from typing import Callable, List, Optional, Sequence, Tuple
+from typing import Callable, List, Optional, Sequence, Set, Tuple
 
 from .types import SBMLEvent, SBMLRule, standardize_name
 
@@ -667,6 +667,25 @@ def _tokenize(expression: str) -> Optional[List[str]]:
         tokens.append(match.group(1))
         position = match.end()
     return tokens
+
+
+def _expression_id_runs(expression: str) -> Set[str]:
+    """Return the maximal id runs of ``expression`` as whole-id spellings.
+
+    ``standardize_name`` runs on a raw SBML id only at emission, so a species,
+    parameter or compartment id such as ``A-B`` reaches event analysis in its
+    source spelling and is invisible to the ``[A-Za-z_][A-Za-z0-9_]*`` tokens a
+    formula tokenizer produces.  Scanning maximal id runs keeps such an id
+    whole, so a membership test sees the declared symbol rather than two
+    fragments of it that happen to look like other symbols; the MathML reader
+    serializes a real difference with surrounding spaces (``A - B``), which
+    stays two runs.  The pattern is the writer's single definition, imported
+    lazily because the writer imports this module.
+    """
+
+    from .writer import _id_runs
+
+    return _id_runs(expression)
 
 
 class _NumericParser:
@@ -4590,10 +4609,8 @@ def synthesize_event_actions(
                 cycle_ids = cycle_ids[trigger_index:] + cycle_ids[:trigger_index]
                 cycle_rates = cycle_rates[trigger_index:] + cycle_rates[:trigger_index]
 
-            threshold_symbols = re.findall(
-                r"[A-Za-z_][A-Za-z0-9_]*", threshold_expression
-            )
-            delay_symbols = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", event.delay or "")
+            threshold_symbols = _expression_id_runs(threshold_expression)
+            delay_symbols = _expression_id_runs(event.delay or "")
             threshold = fold(threshold_expression, event_context=event)
             delay_value = fold(event.delay, event_context=event) if event.delay else 0.0
             state_values = {
@@ -5637,7 +5654,7 @@ def synthesize_event_actions(
             ):
                 parsed_threshold = parsed_difference
             expanded_delay = context.expand_functions(event.delay or "")
-            delay_symbols = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", expanded_delay)
+            delay_symbols = _expression_id_runs(expanded_delay)
             delay = fold(event.delay, event_context=event) if event.delay else 0.0
             delay_uses_time = any(symbol.lower() == "time" for symbol in delay_symbols)
             if (
@@ -6350,7 +6367,7 @@ def synthesize_event_actions(
             parsed_threshold = parsed_difference
         else:
             parsed_threshold = _parse_affine_state_threshold(event.trigger)
-        delay_symbols = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", event.delay or "")
+        delay_symbols = _expression_id_runs(event.delay or "")
         delay_value = fold(event.delay, event_context=event) if event.delay else 0.0
         quadratic_delay_is_supported = (
             delay_value is not None
