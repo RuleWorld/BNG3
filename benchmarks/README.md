@@ -70,6 +70,9 @@ and reports Atomizer time, network-generation wall time, output hashes,
 structural network parity, and rate-expression parity as separate results.
 The JSON also records the `bng_cpp` executable hash and parser source hash so
 reports distinguish a rebuilt CLI from a stale executable.
+Before network generation, the harness removes pre-existing executable action
+blocks and adds a single `generate_network` action. This compares initial
+network structure and rates; it does not execute or validate event schedules.
 Use the same fixed SBML inputs and source checkouts when comparing runs:
 
 ```bash

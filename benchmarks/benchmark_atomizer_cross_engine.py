@@ -24,6 +24,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+
+from benchmarks.bngl_utils import strip_bngl_action_blocks
+
 DEFAULT_BNG2 = ROOT.parent / "bionetgen" / "bionetgen" / "bng2" / "BNG2.pl"
 DEFAULT_PYBIONETGEN = ROOT.parent / "PyBioNetGen"
 MODERN_WORKER = r"""
@@ -182,9 +185,8 @@ def run_network(
 
     out_dir.mkdir(parents=True, exist_ok=True)
     executable_input = out_dir / bngl.name
-    source = bngl.read_text(encoding="utf-8").rstrip()
-    if "begin actions" not in source.lower():
-        source += "\n\nbegin actions\ngenerate_network({overwrite=>1});\nend actions\n"
+    source = strip_bngl_action_blocks(bngl.read_text(encoding="utf-8")).rstrip()
+    source += "\n\nbegin actions\ngenerate_network({overwrite=>1});\nend actions\n"
     executable_input.write_text(source + "\n", encoding="utf-8")
     if engine == "bng3":
         command = [str(ROOT / "build" / "cpp" / "bng_cpp"), str(executable_input)]

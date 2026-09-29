@@ -28,6 +28,9 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+
+from benchmarks.bngl_utils import strip_bngl_action_blocks
+
 DEFAULT_BNG2 = ROOT.parent / "bionetgen" / "bionetgen" / "bng2" / "BNG2.pl"
 DIRECT_WORKER = r"""
 import json, sys
@@ -99,27 +102,6 @@ def git_state(path: Path) -> dict:
         "status_sha256": hashlib.sha256(status_bytes).hexdigest(),
         "tracked_diff_sha256": hashlib.sha256(diff_bytes).hexdigest(),
     }
-
-
-def strip_bngl_action_blocks(source: str) -> str:
-    """Remove executable actions before exporting the model's initial network."""
-    output = []
-    in_actions = False
-    for line in source.splitlines(keepends=True):
-        stripped = line.strip()
-        if not in_actions and re.fullmatch(r"begin\s+actions", stripped, re.I):
-            in_actions = True
-            continue
-        if in_actions:
-            if re.fullmatch(r"end\s+actions", stripped, re.I):
-                in_actions = False
-            continue
-        if re.fullmatch(r"end\s+actions", stripped, re.I):
-            raise ValueError("BNGL has an end actions without a matching begin")
-        output.append(line)
-    if in_actions:
-        raise ValueError("BNGL has an unterminated actions block")
-    return "".join(output)
 
 
 def build_bng2_xml(bngl: Path, bng2_perl: Path, out_dir: Path, timeout: int) -> Path:

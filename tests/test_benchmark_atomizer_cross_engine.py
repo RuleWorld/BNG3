@@ -1,7 +1,9 @@
 """Regression tests for the cross-engine Atomizer benchmark workers."""
 
 from pathlib import Path
+import subprocess
 
+import benchmarks.benchmark_atomizer_cross_engine as benchmark
 from benchmarks.benchmark_atomizer_cross_engine import run_atomizer
 
 
@@ -106,3 +108,40 @@ class AtomizeTool:
     assert result["atomizer_module_path"] == str(
         (atomizer / "atomizeTool.py").resolve()
     )
+
+
+def test_network_benchmark_does_not_execute_atomizer_actions(
+    monkeypatch, tmp_path: Path
+):
+    bngl = tmp_path / "model.bngl"
+    bngl.write_text(
+        "begin model\nend model\n\n"
+        "begin actions\n"
+        'simulate({method=>"ode", t_end=>25})\n'
+        'setConcentration("X()", "50")\n'
+        "end actions\n",
+        encoding="utf-8",
+    )
+    observed_inputs = []
+
+    def fake_bng2(command, **_kwargs):
+        input_path = Path(command[-1])
+        observed_inputs.append(input_path.read_text(encoding="utf-8"))
+        return subprocess.CompletedProcess(command, 1, stdout="", stderr="stop")
+
+    monkeypatch.setattr(benchmark.subprocess, "run", fake_bng2)
+
+    result = benchmark.run_network(
+        bngl=bngl,
+        out_dir=tmp_path / "bng2",
+        engine="bng2",
+        bng2_perl=tmp_path / "BNG2.pl",
+        timeout=1,
+    )
+
+    exported_input = observed_inputs[0]
+    assert result["status"] == "error"
+    assert exported_input.count("begin actions") == 1
+    assert "simulate(" not in exported_input
+    assert "setConcentration(" not in exported_input
+    assert "generate_network({overwrite=>1})" in exported_input

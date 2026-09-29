@@ -9121,3 +9121,36 @@ the other groups remain implementation targets.
   BNG2/legacy PyBioNetGen Atomizer remains incomplete and has not been
   benchmarked against all SBML. Perl BNG2 only generated the XML consumed by
   standalone NFsim. Curated BioModels validation remains stopped.
+
+## BNG3 cross-engine initial-network export correction — 2026-09-29
+
+- [x] Fixed `benchmarks/benchmark_atomizer_cross_engine.py` to strip existing
+  executable action blocks before generating an initial network. Previously,
+  an Atomizer action block suppressed the benchmark's `generate_network`
+  action, allowing event or simulation actions to run while the report still
+  described the result as an initial-network comparison. The shared stripping
+  helper is in `benchmarks/bngl_utils.py`; the NFsim export harness uses it too.
+  No BNG2 or PyBioNetGen source was changed.
+- [x] Added a regression proving that embedded `simulate` and
+  `setConcentration` actions are removed and one network-generation action is
+  passed to the external engine. Red run failed on the embedded `simulate`;
+  focused benchmark tests passed (`6 passed`). Full BNG3 Python suite passed
+  (`692 passed, 28 skipped`); Ruff and Black (`py39`) passed.
+- [x] Ran three repeats in flat and Atomized modes for SSTS stochastic cases
+  `00028`, `00029`, `00031`, and `00032`. Modern BNG3 Atomizer produced 24/24
+  valid network comparisons against Perl BNG2; all 24 structural and all 24
+  rate-expression comparisons passed. These are initial-network comparisons,
+  not event-execution or trajectory parity.
+- [x] Manifest
+  `/private/tmp/bng3-ssts-action-stripping-crossengine-manifest-20260929.json`,
+  SHA-256 `2c775329c67cbb71e7abb548723b4bc47019ec5e0e1178f84732efac834dc5ee`,
+  records source and report hashes plus BNG3, BNG2, and PyBioNetGen revisions.
+  The bounded raw report is
+  `/private/tmp/bng3-atomizer-cross-engine-ssts-action-export-4-20260929.json`,
+  SHA-256 `5455479bc7e884c7b77d4e7b1e6a702fa493b91b83cd879aad7c55b06375e755`.
+- [ ] The selected legacy PyBioNetGen outputs did not produce valid networks
+  in this sample: flat outputs referenced undefined `nan` parameters, and
+  Atomized conversion for `00031` and `00032` raised a legacy `TypeError`.
+  This does not characterize all legacy inputs. BNG2/legacy Atomizer remains
+  incomplete and has not been benchmarked against all SBML; no legacy source
+  was changed. Curated BioModels validation remains stopped.
