@@ -1899,6 +1899,99 @@ def test_quadratic_event_group_accepts_constant_delay_function(tmp_path):
         assert float(np.max(np.abs(bng_values - rr_values))) <= max(1e-9, 2e-5 * scale)
 
 
+def test_quadratic_event_group_evaluates_time_dependent_delay_at_trigger(tmp_path):
+    import numpy as np
+    import pytest
+
+    roadrunner = pytest.importorskip("roadrunner")
+    from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.model import load
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="quadratic_event_group_time_dependent_delay">
+        <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies>
+          <species id="A" compartment="C" initialAmount="1" hasOnlySubstanceUnits="true"/>
+          <species id="B" compartment="C" initialAmount="2" hasOnlySubstanceUnits="true"/>
+          <species id="P" compartment="C" initialAmount="0" hasOnlySubstanceUnits="true"/>
+        </listOfSpecies>
+        <listOfParameters>
+          <parameter id="kf" value="0.5" constant="true"/>
+          <parameter id="kr" value="0.1" constant="true"/>
+          <parameter id="delayScale" value="4" constant="true"/>
+        </listOfParameters>
+        <listOfReactions>
+          <reaction id="forward" reversible="false">
+            <listOfReactants><speciesReference species="A"/><speciesReference species="B"/></listOfReactants>
+            <listOfProducts><speciesReference species="P"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><times/>
+              <ci>kf</ci><ci>A</ci><ci>B</ci>
+            </apply></math></kineticLaw>
+          </reaction>
+          <reaction id="reverse" reversible="false">
+            <listOfReactants><speciesReference species="P"/></listOfReactants>
+            <listOfProducts><speciesReference species="A"/><speciesReference species="B"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><times/>
+              <ci>kr</ci><ci>P</ci>
+            </apply></math></kineticLaw>
+          </reaction>
+        </listOfReactions>
+        <listOfEvents>
+          <event id="reset_B" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><lt/><ci>A</ci><cn>0.8</cn></apply>
+            </math></trigger>
+            <listOfEventAssignments><eventAssignment variable="B"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></eventAssignment></listOfEventAssignments>
+          </event>
+          <event id="reset_A" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><gt/><ci>P</ci><cn>0.1</cn></apply>
+            </math></trigger>
+            <delay><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><times/><ci>delayScale</ci><csymbol definitionURL="http://www.sbml.org/sbml/symbols/time">time</csymbol></apply>
+            </math></delay>
+            <listOfEventAssignments><eventAssignment variable="A"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0.5</cn></math></eventAssignment></listOfEventAssignments>
+          </event>
+        </listOfEvents>
+      </model>
+    </sbml>"""
+    result = Atomizer(quiet_mode=True, t_end=4, n_steps=400).atomize(xml)
+
+    assert result.success, result.error
+    assert "state-dependent or non-constant event" not in result.bngl
+    assert "Events NOT simulated" not in result.bngl
+    assert 'setConcentration("@C:M_B()", "1")' in result.bngl
+    assert 'setConcentration("@C:M_A()", "0.5")' in result.bngl
+
+    model_path = tmp_path / "quadratic_event_group_time_dependent_delay.bngl"
+    model_path.write_text(result.bngl, encoding="utf-8")
+    load(model_path).execute()
+    lines = model_path.with_suffix(".gdat").read_text().splitlines()
+    columns = lines[0].lstrip("# ").split()
+    bng_data = np.loadtxt(lines[1:])
+    times = bng_data[:, columns.index("time")]
+
+    rr = roadrunner.RoadRunner(xml)
+    rr.integrator.setValue("relative_tolerance", 1e-9)
+    rr.integrator.setValue("absolute_tolerance", 1e-12)
+    rr.timeCourseSelections = ["time", "A", "B", "P"]
+    reference = rr.simulate(times=times)
+    event_indices = set()
+    for species in ("A", "B"):
+        values = reference[:, reference.colnames.index(species)]
+        event_indices.update(np.flatnonzero(np.abs(np.diff(values)) > 0.05).tolist())
+    event_times = [float(times[index + 1]) for index in sorted(event_indices)]
+    assert len(event_times) == 2
+    away_from_events = np.logical_and.reduce(
+        [np.abs(times - event_time) > 0.05 for event_time in event_times]
+    )
+    for species in ("A", "B", "P"):
+        bng_values = bng_data[away_from_events, columns.index(species)]
+        rr_values = reference[away_from_events, reference.colnames.index(species)]
+        scale = max(float(np.max(np.abs(bng_values))), float(np.max(np.abs(rr_values))))
+        assert float(np.max(np.abs(bng_values - rr_values))) <= max(1e-9, 2e-5 * scale)
+
+
 def test_quadratic_state_events_ignore_unrelated_event_assignments(tmp_path):
     import numpy as np
     import pytest

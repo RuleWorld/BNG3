@@ -5550,18 +5550,22 @@ def synthesize_event_actions(
             expanded_delay = context.expand_functions(event.delay or "")
             delay_symbols = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", expanded_delay)
             delay = fold(event.delay, event_context=event) if event.delay else 0.0
+            delay_uses_time = any(symbol.lower() == "time" for symbol in delay_symbols)
             if (
                 parsed_threshold is None
                 or event.priority
-                or delay is None
-                or not math.isfinite(delay)
-                or delay < 0
+                or (delay is None and not delay_uses_time)
+                or (delay is not None and (not math.isfinite(delay) or delay < 0))
                 or any(
-                    not context.is_compile_time_constant(symbol)
+                    symbol.lower() != "time"
+                    and not context.is_compile_time_constant(symbol)
                     for symbol in delay_symbols
                 )
                 or not event.trigger_persistent
-                or (delay > 0 and not event.use_values_from_trigger_time)
+                or (
+                    (delay is None or delay > 0)
+                    and not event.use_values_from_trigger_time
+                )
                 or fold_initial(event.trigger) != 0
             ):
                 quadratic_group_supported = False
@@ -5667,7 +5671,8 @@ def synthesize_event_actions(
                         else None
                     ),
                     "assignments": assignments,
-                    "delay": float(delay),
+                    "delay": None if delay is None else float(delay),
+                    "delay_expression": event.delay or "",
                 }
             )
 
@@ -6171,7 +6176,24 @@ def synthesize_event_actions(
                 if not quadratic_group_supported:
                     break
 
-                delay = float(plan["delay"])
+                planned_delay = plan["delay"]
+                delay_value = (
+                    fold(
+                        str(plan["delay_expression"]),
+                        time_value=event_time,
+                        event_context=event,
+                    )
+                    if planned_delay is None
+                    else float(planned_delay)
+                )
+                if (
+                    delay_value is None
+                    or not math.isfinite(delay_value)
+                    or delay_value < 0
+                ):
+                    quadratic_group_supported = False
+                    break
+                delay = float(delay_value)
                 if delay == 0:
                     for other_plan in quadratic_plans:
                         post_active = quadratic_trigger_active(other_plan, next_state)

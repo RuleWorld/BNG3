@@ -6,7 +6,7 @@
 **Working branch:** `main`.
 **Latest full pinned SBML Test Suite report:** suite commit `cf38585fac5de8e0e90112febb62851ee2181816`, `1,738 passed / 185 unsupported / 0 failed / 0 timed out`. Eight cases gained, with no losses, against `/private/tmp/bng3-atomizer-event-stoich-full-sbml.json`. The supported surface passes; the aggregate Core gate remains open. Report `/private/tmp/bng3-delayed-chain-initial-assignment-full-sbml.json`, SHA-256 `f539a2aeb8de9353ffc2e68957829007accfd867c9c79a0ad4d0cd8022062c60`. This schema 3 report does not record the BNG3 source revision, so it is not exact-head evidence for current `main`.
 **Latest current-source curated BioModels report:** none. The user's current-source flat and Atomized rerun was stopped at their request; it remains stopped and has no aggregate report. Earlier BioModels counts below are historical only.
-**Last queried hosted CI:** exact head `4b89d95` was queried at 2026-09-29 01:21 UTC. CI `36507481622`, Formatting patch `36507481629`, CodeQL `36507481607`, Cross-tool parity `36507481747`, and Lean semantic kernel `36507481610` were queued. These runs predate the changes recorded below and are nonterminal.
+**Last queried hosted CI:** exact head `25faefb` was queried at 2026-09-29 01:27 UTC. CI `36507960385`, CodeQL `36507960617`, Cross-tool parity `36507960368`, and Lean semantic kernel `36507960414` were queued. These runs predate the changes recorded below and are nonterminal.
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 
@@ -78,6 +78,44 @@ recorded in the historical sections below; they are not current-head evidence.
 - [ ] This is a three-case interoperability sample; the benchmark checks
   network structure and rates, not trajectories or all-SBML coverage. It does
   not make an all-SBML claim for the incomplete legacy BNG2 Atomizer.
+
+## Trigger-time-dependent quadratic event delay — 2026-09-28
+
+- [x] Quadratic event groups now accept delay expressions that depend only on
+  trigger time and compile-time constants. The delay is evaluated at the
+  crossing time; dynamic model-state dependencies, negative or nonfinite
+  delays, nonpersistent triggers, and unsupported delayed-value semantics
+  remain fail-closed.
+- [x] Added `test_quadratic_event_group_evaluates_time_dependent_delay_at_trigger`.
+  It compares BNG3 and libRoadRunner trajectories for three species after a
+  `delayScale * time` event. Focused event and parity tests passed (`189
+  passed`); Ruff, Black targeting Python 3.9, and `git diff --check` passed.
+- [x] Pinned SSTS `semantic/00887` passed one-case import/round-trip,
+  native-reader, and BNG3 CVODE/libRoadRunner simulation checks at `t_end=4`
+  with 400 intervals. Six observables passed; maximum absolute difference was
+  `3.77e-12`. Report `/private/tmp/bng3-ssts-00887-time-dependent-quadratic-delay.json`,
+  SHA-256 `3b2c61b0ae8f6943069b1668401026750978c2d2d8da60599ac4f80fee802a34`.
+  This one-case report has aggregate Core false and records base commit
+  `25faefb` with a dirty tracked tree.
+- [ ] This adds one selected SSTS case, not all-SSTS or all-SBML coverage.
+  Legacy BNG2 Atomizer remains incomplete and has not been benchmarked against
+  all SBML; no BNG2 source was changed.
+
+## Expanded cross-engine quadratic-delay cohort — 2026-09-28
+
+- [x] Repeated the flat/Atomized, modern BNG3/PyBioNetGen, BNG3/Perl BNG2
+  interoperability benchmark on four SSTS cases: `00752`, `00758`, `00759`,
+  and `00887`. All 48 Atomizer attempts and all 96 network generations
+  succeeded. BNG2/BNG3 network structure and strict rate comparisons passed
+  48/48; raw outputs were deterministic in all 16 model/mode/Atomizer groups.
+- [x] Report
+  `/private/tmp/bng3-atomizer-cross-engine-quadratic-delay-cohort-4.json`,
+  SHA-256 `8ad378e79eb8cb1b18f1395d3f58e4238d73cdabd208460f0081b217048c92ae`.
+  It records BNG3 `25faefb`, BNG2 `8726b30`, and PyBioNetGen `43b09a5`.
+  BNG2's tracked tree was clean; PyBioNetGen had no tracked diff.
+- [ ] This is a four-case network interoperability cohort; it does not
+  establish trajectory parity with BNG2/NFsim or all-SBML coverage. The legacy
+  BNG2 Atomizer remains incomplete and unbenchmarked against all SBML.
 
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
