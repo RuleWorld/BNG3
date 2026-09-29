@@ -812,14 +812,17 @@ class _NumericParser:
                         "eq": lambda a, b: a == b,
                         "neq": lambda a, b: a != b,
                     }
+                    # ``token`` is already lower-cased, so the spelled-out
+                    # names reach here exactly as the alias table spells them.
+                    order = _COMPARISON_ALIASES.get(function_name)
                     if (
-                        function_name in {"lt", "leq", "gt", "geq"}
+                        order is not None
                         and len(arguments) >= 2
                         and all(value is not None for value in arguments)
                     ):
                         return float(
                             all(
-                                comparisons[function_name](left, right)
+                                comparisons[order](left, right)
                                 for left, right in zip(arguments, arguments[1:])
                             )
                         )
@@ -978,19 +981,19 @@ def parse_time_threshold(trigger: str) -> Optional[str]:
     if not trigger:
         return None
     value = trigger.strip()
-    match = re.match(r"^(?:geq|gt)\s*\(\s*time\s*,\s*(.+)\)\s*$", value, re.IGNORECASE)
-    if match:
-        return _strip_outer_parens(_balanced_inner(match.group(1)))
+    comparison = _match_comparison_call(value)
+    if comparison is not None:
+        operator, arguments_text = comparison
+        arguments = _split_arguments(arguments_text)
+        if arguments is not None and len(arguments) == 2:
+            left, right = arguments
+            if operator in {"gt", "geq"} and left.strip().lower() == "time":
+                return _strip_outer_parens(right)
+            if operator in {"lt", "leq"} and right.strip().lower() == "time":
+                return _strip_outer_parens(left)
     match = re.match(r"^eq\s*\(\s*time\s*,\s*(.+)\)\s*$", value, re.IGNORECASE)
     if match:
         return _strip_outer_parens(_balanced_inner(match.group(1)))
-    match = re.match(
-        r"^(?:leq|lt)\s*\(\s*(.+?)\s*,\s*time\s*\)\s*$",
-        value,
-        re.IGNORECASE,
-    )
-    if match:
-        return _strip_outer_parens(match.group(1))
     match = re.match(
         r"^\(?\s*time\s*(?:>=|>)\s*(.+?)\s*\)?$",
         value,
@@ -1057,16 +1060,15 @@ def _parse_time_window(trigger: str) -> Optional[Tuple[List[str], List[str]]]:
         return None
     lower: List[str] = []
     upper: List[str] = []
-    comparison = re.compile(r"^(geq|gt|leq|lt)\s*\((.*)\)$", re.IGNORECASE)
     for term in terms:
-        match = comparison.match(term.strip())
-        if match is None:
+        comparison = _match_comparison_call(term)
+        if comparison is None:
             return None
-        parts = _split_arguments(match.group(2))
+        operator, arguments_text = comparison
+        parts = _split_arguments(arguments_text)
         if parts is None or len(parts) != 2:
             return None
         left, right = (_strip_outer_parens(part) for part in parts)
-        operator = match.group(1).lower()
         if left.lower() == "time" and "time" not in right.lower():
             (lower if operator in {"geq", "gt"} else upper).append(right)
         elif right.lower() == "time" and "time" not in left.lower():
@@ -1086,21 +1088,20 @@ def _parse_gated_time_window(
         return None
     lower: List[str] = []
     upper: List[str] = []
-    comparison = re.compile(r"^(geq|gt|leq|lt)\s*\((.*)\)$", re.IGNORECASE)
     for term in terms:
-        match = comparison.match(term.strip())
-        if match is None:
+        comparison = _match_comparison_call(term)
+        if comparison is None:
             value = fold_static(term)
             if value is None:
                 return None
             if value == 0:
                 return ([], [], False)
             continue
-        parts = _split_arguments(match.group(2))
+        operator, arguments_text = comparison
+        parts = _split_arguments(arguments_text)
         if parts is None or len(parts) != 2:
             return None
         left, right = (_strip_outer_parens(part) for part in parts)
-        operator = match.group(1).lower()
         if left.lower() == "time" and "time" not in right.lower():
             (lower if operator in {"geq", "gt"} else upper).append(right)
         elif right.lower() == "time" and "time" not in left.lower():
@@ -1140,16 +1141,21 @@ def _split_arguments(expression: str) -> Optional[List[str]]:
 def _parse_scaled_time_threshold(trigger: str) -> Optional[Tuple[str, str]]:
     """Solve ``time / positive_constant > threshold`` for ``time``."""
 
-    match = re.match(
-        r"^(?:geq|gt)\s*\(\s*\(?\s*time\s*/\s*"
-        r"([A-Za-z_][A-Za-z0-9_]*)\s*\)?\s*,\s*(.+)\)\s*$",
-        str(trigger or "").strip(),
+    comparison = _match_comparison_call(trigger)
+    if comparison is None or comparison[0] not in {"gt", "geq"}:
+        return None
+    arguments = _split_arguments(comparison[1])
+    if arguments is None or len(arguments) != 2:
+        return None
+    scaled_time = re.fullmatch(
+        r"\(?\s*time\s*/\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)?",
+        arguments[0].strip(),
         re.IGNORECASE,
     )
-    if match is None:
+    if scaled_time is None:
         return None
-    scale_identifier = match.group(1)
-    threshold = _strip_outer_parens(_balanced_inner(match.group(2)))
+    scale_identifier = scaled_time.group(1)
+    threshold = _strip_outer_parens(arguments[1])
     return f"({threshold}) * ({scale_identifier})", scale_identifier
 
 
@@ -1177,6 +1183,27 @@ _COMPARISON_ALIASES = {
 }
 _COMPARISON_ALIAS_PATTERN = "|".join(sorted(_COMPARISON_ALIASES, key=len, reverse=True))
 _REVERSED_COMPARISON_OPERATOR = {"gt": "lt", "geq": "leq", "lt": "gt", "leq": "geq"}
+
+
+# Names a trigger expression uses for built-in functions rather than model
+# symbols.  The comparison entries come from the alias table so that a
+# spelled-out relation is not mistaken for a species or parameter.
+_RESERVED_TRIGGER_SYMBOLS = frozenset(
+    {
+        "abs",
+        "and",
+        "eq",
+        "exponentiale",
+        *_COMPARISON_ALIASES,
+        "if",
+        "neq",
+        "not",
+        "or",
+        "pi",
+        "plus",
+        "times",
+    }
+)
 
 
 def _match_comparison_call(expression: str) -> Optional[Tuple[str, str]]:
@@ -1470,8 +1497,6 @@ def expand_cosh_assignment_rule_events(
         if rule.type == "assignment" and rule.variable
     }
     output: List[SBMLEvent] = []
-    comparison = re.compile(r"^(gt|geq|lt|leq)\s*\((.*)\)$", re.IGNORECASE)
-
     for event in events:
         terms = _split_call_arguments(str(event.trigger or "").strip())
         if terms is None:
@@ -1483,13 +1508,15 @@ def expand_cosh_assignment_rule_events(
         parsed: List[Tuple[str, float]] = []
         unsupported = False
         for term in terms:
-            match = comparison.match(term)
-            arguments = _split_arguments(match.group(2)) if match else None
-            if match is None or arguments is None or len(arguments) != 2:
+            comparison = _match_comparison_call(term)
+            arguments = (
+                _split_arguments(comparison[1]) if comparison is not None else None
+            )
+            if comparison is None or arguments is None or len(arguments) != 2:
                 unsupported = True
                 break
             left, right = (_strip_outer_parens(value) for value in arguments)
-            operator = match.group(1).lower()
+            operator = comparison[0]
             cosh_time = lambda expression: (
                 isinstance(expression, ast.Call)
                 and isinstance(expression.func, ast.Name)
@@ -1515,12 +1542,12 @@ def expand_cosh_assignment_rule_events(
                     break
                 function_node = right_node
                 threshold_expression = left
-                operator = {
-                    "gt": "lt",
-                    "geq": "leq",
-                    "lt": "gt",
-                    "leq": "geq",
-                }[operator]
+                # ``X <op> cosh(time)`` is ``cosh(time) <rev op> X``.  ``acosh``
+                # is strictly increasing on ``[0, inf)``, so mapping the
+                # threshold through it keeps this direction rather than
+                # inverting the trigger: ``2 lt cosh(time)`` holds exactly
+                # for ``t > acosh(2)``, and reversing gives ``gt``.
+                operator = _REVERSED_COMPARISON_OPERATOR[operator]
             if not cosh_time(function_node):
                 unsupported = True
                 break
@@ -1746,13 +1773,11 @@ def expand_static_parameter_event_system(
         return value if value is not None and math.isfinite(value) else None
 
     def parse_time_edge(trigger: str) -> Optional[Tuple[Optional[str], float]]:
-        comparison = re.fullmatch(r"(gt|geq|lt|leq)\s*\((.*)\)", trigger, re.I)
-        arguments = (
-            _split_arguments(comparison.group(2)) if comparison is not None else None
-        )
+        comparison = _match_comparison_call(trigger)
+        arguments = _split_arguments(comparison[1]) if comparison is not None else None
         if comparison is None or arguments is None or len(arguments) != 2:
             return None
-        operator = comparison.group(1).lower()
+        operator = comparison[0]
         left, right = (_strip_outer_parens(value) for value in arguments)
         if operator in {"gt", "geq"}:
             time_expression, threshold_expression = left, right
@@ -1783,13 +1808,11 @@ def expand_static_parameter_event_system(
     def parse_affine_state_edge(
         trigger: str,
     ) -> Optional[Tuple[str, str, float]]:
-        comparison = re.fullmatch(r"(gt|geq|lt|leq)\s*\((.*)\)", trigger, re.I)
-        arguments = (
-            _split_arguments(comparison.group(2)) if comparison is not None else None
-        )
+        comparison = _match_comparison_call(trigger)
+        arguments = _split_arguments(comparison[1]) if comparison is not None else None
         if comparison is None or arguments is None or len(arguments) != 2:
             return None
-        operator = comparison.group(1).lower()
+        operator = comparison[0]
         left, right = (_strip_outer_parens(value) for value in arguments)
         identifier: Optional[str] = None
         threshold_expression: Optional[str] = None
@@ -1803,9 +1826,10 @@ def expand_static_parameter_event_system(
             if candidate in affine_rates:
                 identifier = candidate
                 threshold_expression = left
-                operator = {"gt": "lt", "geq": "leq", "lt": "gt", "leq": "geq"}[
-                    operator
-                ]
+                # The state sits on the right, so the comparison reads
+                # ``threshold <op> state``; rewrite it around the state
+                # without flipping which way it points.
+                operator = _REVERSED_COMPARISON_OPERATOR[operator]
         if identifier is None or threshold_expression is None:
             return None
         if any(
@@ -2238,15 +2262,14 @@ def _parse_gated_affine_state_threshold(
     lower: List[str] = []
     upper: List[str] = []
     dynamic: List[str] = []
-    comparison = re.compile(r"^(geq|gt|leq|lt)\s*\((.*)\)$", re.IGNORECASE)
     for term in terms:
-        match = comparison.match(term)
-        if match is not None:
-            arguments = _split_arguments(match.group(2))
+        comparison = _match_comparison_call(term)
+        if comparison is not None:
+            operator, arguments_text = comparison
+            arguments = _split_arguments(arguments_text)
             if arguments is None or len(arguments) != 2:
                 return None
             left, right = (_strip_outer_parens(value) for value in arguments)
-            operator = match.group(1).lower()
             if left.lower() == "time" and "time" not in right.lower():
                 (lower if operator in {"geq", "gt"} else upper).append(right)
                 continue
@@ -2296,21 +2319,23 @@ def _parse_delayed_affine_state_interval(
         return None
     parsed: List[Tuple[str, str, str, str]] = []
     for term in terms:
-        comparison = re.match(r"^(gt|geq|lt|leq)\s*\((.*)\)$", term, re.I)
+        comparison = _match_comparison_call(term)
         if comparison is None:
             return None
-        arguments = _split_arguments(comparison.group(2))
+        operator, arguments_text = comparison
+        arguments = _split_arguments(arguments_text)
         if arguments is None or len(arguments) != 2:
             return None
         left, right = (_strip_outer_parens(value) for value in arguments)
-        reverse = {"gt": "lt", "geq": "leq", "lt": "gt", "leq": "geq"}
         state = re.fullmatch(r"delay\s*\((.*)\)", left, re.I)
-        operator, bound = comparison.group(1).lower(), right
+        bound = right
         if state is None:
             state = re.fullmatch(r"delay\s*\((.*)\)", right, re.I)
             if state is None:
                 return None
-            operator, bound = reverse[operator], left
+            # The state is on the right, so the bound is on the left; keep the
+            # comparison pointing the same way by reversing the relation.
+            operator, bound = _REVERSED_COMPARISON_OPERATOR[operator], left
         delay_arguments = _split_arguments(state.group(1))
         if delay_arguments is None or len(delay_arguments) != 2:
             return None
@@ -2341,20 +2366,22 @@ def _parse_rate_of_state_threshold(
 ) -> Optional[Tuple[str, str, str]]:
     """Parse one comparison between ``rateOf(state)`` and a constant."""
 
-    match = re.match(r"^(gt|geq|lt|leq)\s*\((.*)\)$", str(trigger or "").strip(), re.I)
-    if match is None:
+    comparison = _match_comparison_call(trigger)
+    if comparison is None:
         return None
-    arguments = _split_arguments(match.group(2))
+    operator, arguments_text = comparison
+    arguments = _split_arguments(arguments_text)
     if arguments is None or len(arguments) != 2:
         return None
     left, right = (_strip_outer_parens(value) for value in arguments)
     rate_of = re.compile(r"^rateof\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)$", re.I)
     left_match, right_match = rate_of.fullmatch(left), rate_of.fullmatch(right)
     if left_match is not None:
-        return left_match.group(1), match.group(1).lower(), right
+        return left_match.group(1), operator, right
     if right_match is not None:
-        reverse = {"gt": "lt", "geq": "leq", "lt": "gt", "leq": "geq"}
-        return right_match.group(1), reverse[match.group(1).lower()], left
+        # ``constant <op> rateOf(state)`` reads around the state without
+        # changing which way the comparison points.
+        return right_match.group(1), _REVERSED_COMPARISON_OPERATOR[operator], left
     return None
 
 
@@ -2364,10 +2391,11 @@ def _parse_scaled_state_threshold(
 ) -> Optional[Tuple[str, str, str, str]]:
     """Parse a comparison of one state times a constant expression."""
 
-    match = re.match(r"^(gt|geq|lt|leq)\s*\((.*)\)$", str(trigger or "").strip(), re.I)
-    if match is None:
+    comparison = _match_comparison_call(trigger)
+    if comparison is None:
         return None
-    arguments = _split_arguments(match.group(2))
+    operator, arguments_text = comparison
+    arguments = _split_arguments(arguments_text)
     if arguments is None or len(arguments) != 2:
         return None
     left, right = (_strip_outer_parens(value) for value in arguments)
@@ -2470,12 +2498,11 @@ def _parse_scaled_state_threshold(
     left_scaled = parse_scaled(left)
     if left_scaled:
         identifier, scale = left_scaled[0]
-        return identifier, match.group(1).lower(), right, scale
+        return identifier, operator, right, scale
     right_scaled = parse_scaled(right)
     if right_scaled:
         identifier, scale = right_scaled[0]
-        reverse = {"gt": "lt", "geq": "leq", "lt": "gt", "leq": "geq"}
-        return identifier, reverse[match.group(1).lower()], left, scale
+        return identifier, _REVERSED_COMPARISON_OPERATOR[operator], left, scale
     return None
 
 
@@ -2484,12 +2511,11 @@ def _parse_periodic_reset_trigger(
 ) -> Optional[Tuple[str, str, str]]:
     """Parse ``time - reset >= interval`` with one reset symbol."""
 
-    match = re.match(
-        r"^(geq|gt)\s*\((.*)\)$", str(trigger or "").strip(), re.IGNORECASE
-    )
-    if match is None:
+    comparison = _match_comparison_call(trigger)
+    if comparison is None or comparison[0] not in {"gt", "geq"}:
         return None
-    arguments = _split_arguments(match.group(2))
+    operator, arguments_text = comparison
+    arguments = _split_arguments(arguments_text)
     if arguments is None or len(arguments) != 2:
         return None
     elapsed, interval = (_strip_outer_parens(value) for value in arguments)
@@ -2502,11 +2528,7 @@ def _parse_periodic_reset_trigger(
         elapsed_match = re.fullmatch(
             r"time\s*-\s*([A-Za-z_][A-Za-z0-9_]*)", elapsed, re.IGNORECASE
         )
-    return (
-        (elapsed_match.group(1), match.group(1).lower(), interval)
-        if elapsed_match
-        else None
-    )
+    return (elapsed_match.group(1), operator, interval) if elapsed_match else None
 
 
 def _event_assignment(assignment: object) -> Tuple[str, str]:
@@ -4104,12 +4126,12 @@ def synthesize_event_actions(
                 return any(proofs)
             return all(proofs)
 
-        comparison = re.match(r"^(gt|geq|lt|leq)\s*\((.*)\)$", normalized, re.I)
+        comparison = _match_comparison_call(normalized)
         if comparison is not None:
-            arguments = _split_arguments(comparison.group(2))
+            operation, arguments_text = comparison
+            arguments = _split_arguments(arguments_text)
             if arguments is not None and len(arguments) == 2:
                 left, right = (_strip_outer_parens(value) for value in arguments)
-                operation = comparison.group(1).lower()
                 if left.lower() == "time":
                     if operation not in {"gt", "geq"}:
                         return False
@@ -4231,14 +4253,21 @@ def synthesize_event_actions(
     for event in events:
         if id(event) in periodic_handled or not periodic_changes:
             continue
-        absolute_threshold = re.match(
-            r"^(gt|geq)\s*\(\s*abs\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)\s*,\s*(.+)\)\s*$",
-            str(event.trigger or "").strip(),
+        absolute_threshold = _match_comparison_call(event.trigger)
+        if absolute_threshold is None or absolute_threshold[0] not in {"gt", "geq"}:
+            continue
+        arguments = _split_arguments(absolute_threshold[1])
+        if arguments is None or len(arguments) != 2:
+            continue
+        absolute = re.fullmatch(
+            r"abs\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)",
+            arguments[0].strip(),
             re.IGNORECASE,
         )
-        if absolute_threshold is None:
+        if absolute is None:
             continue
-        operator, identifier, threshold_expression = absolute_threshold.groups()
+        identifier = absolute.group(1)
+        threshold_expression = arguments[1]
         threshold = fold(threshold_expression, event_context=event)
         initial_value = context.resolve_initial_value(identifier)
         rate_expression = context.resolve_rate_rule_expression_for_event(
@@ -4399,24 +4428,7 @@ def synthesize_event_actions(
             symbol
             for term in gate_terms
             for symbol in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", term)
-            if symbol.lower()
-            not in {
-                "abs",
-                "and",
-                "eq",
-                "exponentiale",
-                "geq",
-                "gt",
-                "if",
-                "leq",
-                "lt",
-                "neq",
-                "not",
-                "or",
-                "pi",
-                "plus",
-                "times",
-            }
+            if symbol.lower() not in _RESERVED_TRIGGER_SYMBOLS
         }
         if (
             any(
@@ -6806,12 +6818,12 @@ def synthesize_event_actions(
                     scale_value = fold(scale_expression)
                     if scale_value is not None and math.isfinite(scale_value):
                         if scale_value < 0:
-                            scaled_operator = {
-                                "gt": "lt",
-                                "geq": "leq",
-                                "lt": "gt",
-                                "leq": "geq",
-                            }[scaled_operator]
+                            # A negative scale flips the comparison's
+                            # direction; the resolver already returns a
+                            # canonical operator, so this cannot ``KeyError``.
+                            scaled_operator = _REVERSED_COMPARISON_OPERATOR[
+                                scaled_operator
+                            ]
                             scale_value = -scale_value
                         if scale_value > 0:
                             state_threshold = (
