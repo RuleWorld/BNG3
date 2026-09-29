@@ -1153,29 +1153,51 @@ def _parse_scaled_time_threshold(trigger: str) -> Optional[Tuple[str, str]]:
     return f"({threshold}) * ({scale_identifier})", scale_identifier
 
 
+# An event trigger reaches these resolvers spelled in more than one way.
+# MathML content markup lowers to the short relation names ``gt``, ``geq``,
+# ``lt`` and ``leq`` (see ``_mathml_to_formula`` in ``parser.py``), while
+# triggers that arrive from a ``formula`` attribute or a non-MathML producer
+# keep the spelled-out name (``greaterThan``, ``lessOrEqual``, ...).  Both
+# name the same comparison, so one table and one recognition helper serve
+# every resolver; a second copy is how a spelling ends up accepted by one
+# lowering path and silently refused by another.  ``eq`` and ``neq`` are
+# deliberately absent: they are not order comparisons, and these resolvers
+# only lower a threshold the trigger crosses monotonically.
+_COMPARISON_ALIASES = {
+    "gt": "gt",
+    "greaterthan": "gt",
+    "geq": "geq",
+    "greaterorequal": "geq",
+    "greaterthanorequal": "geq",
+    "lt": "lt",
+    "lessthan": "lt",
+    "leq": "leq",
+    "lessorequal": "leq",
+    "lessthanorequal": "leq",
+}
+_COMPARISON_ALIAS_PATTERN = "|".join(sorted(_COMPARISON_ALIASES, key=len, reverse=True))
+_REVERSED_COMPARISON_OPERATOR = {"gt": "lt", "geq": "leq", "lt": "gt", "leq": "geq"}
+
+
+def _match_comparison_call(expression: str) -> Optional[Tuple[str, str]]:
+    """Return the canonical operator and argument text of a comparison call."""
+    match = re.match(
+        rf"^({_COMPARISON_ALIAS_PATTERN})\s*\((.*)\)$",
+        str(expression or "").strip(),
+        re.IGNORECASE,
+    )
+    if match is None:
+        return None
+    return _COMPARISON_ALIASES[match.group(1).lower()], match.group(2)
+
+
 def _parse_affine_state_threshold(
     trigger: str,
 ) -> Optional[Tuple[str, str, str]]:
     """Parse one state comparison, dropping statically true ``and`` terms."""
     value = str(trigger or "").strip()
-    aliases = {
-        "greaterthan": "gt",
-        "greaterorequal": "geq",
-        "greaterthanorequal": "geq",
-        "lessthan": "lt",
-        "lessorequal": "leq",
-        "lessthanorequal": "leq",
-    }
-    alias_pattern = "|".join(sorted(aliases, key=len, reverse=True))
-    value = re.sub(
-        rf"^({alias_pattern})\s*(?=\()",
-        lambda match: aliases[match.group(1).lower()],
-        value,
-        count=1,
-        flags=re.IGNORECASE,
-    )
-    match = re.match(r"^(gt|geq|lt|leq)\s*\((.*)\)$", value, re.I)
-    if match is None:
+    comparison = _match_comparison_call(value)
+    if comparison is None:
         conjunction = _split_call_arguments(value)
         if conjunction is not None:
             dynamic_terms = []
@@ -1188,16 +1210,16 @@ def _parse_affine_state_threshold(
             if len(dynamic_terms) == 1:
                 return _parse_affine_state_threshold(dynamic_terms[0])
         return None
-    arguments = _split_arguments(match.group(2))
+    operator, arguments_text = comparison
+    arguments = _split_arguments(arguments_text)
     if arguments is None or len(arguments) != 2:
         return None
-    left, right = (_strip_outer_parens(value) for value in arguments)
+    left, right = (_strip_outer_parens(argument) for argument in arguments)
     identifier = r"[A-Za-z_][A-Za-z0-9_]*"
     if re.fullmatch(identifier, left):
-        return left, match.group(1).lower(), right
+        return left, operator, right
     if re.fullmatch(identifier, right):
-        reverse = {"gt": "lt", "geq": "leq", "lt": "gt", "leq": "geq"}
-        return right, reverse[match.group(1).lower()], left
+        return right, _REVERSED_COMPARISON_OPERATOR[operator], left
     return None
 
 
@@ -2182,16 +2204,17 @@ def _parse_state_difference_threshold(
     trigger: str,
 ) -> Optional[Tuple[str, str, str]]:
     """Parse a comparison between two state symbols as a zero threshold."""
-    match = re.match(r"^(gt|geq|lt|leq)\s*\((.*)\)$", str(trigger or "").strip(), re.I)
-    if match is None:
+    comparison = _match_comparison_call(trigger)
+    if comparison is None:
         return None
-    arguments = _split_arguments(match.group(2))
+    operator, arguments_text = comparison
+    arguments = _split_arguments(arguments_text)
     if arguments is None or len(arguments) != 2:
         return None
-    left, right = (_strip_outer_parens(value) for value in arguments)
+    left, right = (_strip_outer_parens(argument) for argument in arguments)
     identifier = r"[A-Za-z_][A-Za-z0-9_]*"
     if re.fullmatch(identifier, left) and re.fullmatch(identifier, right):
-        return f"({left}) - ({right})", match.group(1).lower(), "0"
+        return f"({left}) - ({right})", operator, "0"
     return None
 
 

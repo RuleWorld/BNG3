@@ -108,9 +108,15 @@ ODE solver, event queue, stochastic engine, and conformance tests.
 3. [ ] Add trigger transition, delayed execution, persistence, snapshot, and
    priority tests grounded in official SBML cases.
 4. [ ] Add stochastic event-queue semantics and seeded random ordering.
-5. [x] Round-trip the event block through the BNGL parser/writer. [ ] Verify
+5. [x] Round-trip the event block through the BNGL parser/writer. [x] Verify
    through the installed CLI and retain explicit rejection diagnostics
-   outside the supported semantic surface.
+   outside the supported semantic surface. Covered by
+   `tests/python/test_event_block_cli_contract.py`: a model carrying a
+   `bng3_events` block round-trips through `BnglWriter` unchanged, and every
+   execution path (`execute`, the `simulate` action, the ODE/SSA/PLA/PSA
+   bindings, and the `bionetgen run` / `bionetgen execute` CLI commands)
+   fails with `ast::kUnsupportedEventExecutionMessage` before producing any
+   output.
 6. [ ] Re-run full SSTS only after a meaningful implementation batch; keep
    BioModels validation stopped until requested.
 

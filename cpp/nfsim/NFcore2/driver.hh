@@ -33,6 +33,29 @@ struct SsaDriverResult {
     std::uint64_t nullEvents = 0;
 };
 
+// STATUS: not wired.  SsaDriver has no production call site.  Every
+// user-facing entry point for the network-free path — the pybind
+// `simulate_nf` binding, `ActionDispatch::runNfSimulation`, and the
+// CLI action loop — constructs and steps `NFcore::System`; none of
+// them constructs an ExecutableModel or instantiates this class.
+// The only callers are `tests/architecture_contracts/nfcore2/
+// test_ssa_driver.cpp` and `tests/cpp/test_nfcore2_parity.cpp`.  The
+// linker agrees: no SsaDriver symbol survives into the shipped
+// extension.  Treat this as a qualification prototype under
+// `bng_nfcore2`, not a delivered execution path, and do not route
+// `method="nf"` traffic here without first proving seeded stochastic
+// equivalence against NFcore beyond the single reversible-
+// isomerization case in test_nfcore2_parity.cpp.
+//
+// KNOWN DEFECT (do not wire in without fixing): canonicalPair()
+// below orders equal-typed reactant roots by molecule handle alone,
+// but the two matcher root positions carry independent constraints
+// (matcher.cpp evaluates MATCH_* instructions per `x.target` root
+// index).  For an asymmetric homotypic rule, the single surviving
+// orientation can be the one that fails to match while the
+// discarded orientation would have matched, silently losing valid
+// reactant tuples and under-counting that family's activity.
+//
 // Direct-method SSA over an ExecutableModel.
 //
 // v1 scope (fail-closed, anything else throws):

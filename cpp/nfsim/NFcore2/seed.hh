@@ -12,6 +12,9 @@ namespace NFcore2 {
 // Seeds an empty SimulationState from a live NFcore System (built from BNGL,
 // prepared or not — only molecules, states, bonds, and compartments are
 // read; propensities are recomputed by SsaDriver::initialize).
+// Like SsaDriver, this seeder has no production call site: it exists to
+// support the NFcore-vs-NFcore2 parity harness in tests/cpp/
+// test_nfcore2_parity.cpp, not the shipped `method="nf"` path.
 //
 // Contract with the lowering (must hold for matcher semantics to agree):
 // - NFcore2 type index == snapshot order == NFcore type_id (verified by
