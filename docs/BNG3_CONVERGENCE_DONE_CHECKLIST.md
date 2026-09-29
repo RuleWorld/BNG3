@@ -8862,3 +8862,38 @@ the other groups remain implementation targets.
 - [ ] This is local macOS ARM64 evidence. Cross-platform wheel builds, Windows
   executable artifacts, release qualification, GitHub release, and PyPI
   publication remain open.
+
+## Third selected 50-case cross-engine Atomizer sample — 2026-09-29
+
+- [x] Benchmarked 50 unique pinned SSTS semantic inputs absent from the prior
+  two selected 50-case sets. The selection was stratified across the remaining
+  supported inputs. Each input ran three repeats in flat and atomized modes
+  through modern BNG3 Atomizer, independent PyBioNetGen Atomizer, BNG3 network
+  generation, and Perl BNG2 network generation. Network timeout was 30 seconds.
+- [x] Modern BNG3 converted all 300 mode/repeat inputs and generated all 300
+  BNG3 networks. Perl BNG2 generated 228/300 networks. All 228 paired networks
+  had matching structure; strict normalized rate parity passed 180/228.
+  Independent PyBioNetGen converted 261/300 mode/repeat inputs (135/150 flat,
+  126/150 atomized); conversion and network-generation errors are retained in
+  the report. Its paired BNG3/BNG2 network structures matched for 153/153
+  comparisons; normalized rates matched for 141/153.
+- [x] The eight BNG3/BNG2 rate mismatches repeated in both modes and all three
+  repeats: `00330`, `00481`, `00687`, `00859`, `01084`, `01309`, `01719`, and
+  `01822`. They include BNG2 compartment-size scaling differences, rounded
+  numeric literals, and expression serialization differences. Each case is
+  marked passed in the pinned full SSTS report, which compares BNG3 against
+  libRoadRunner. No BNG3 semantics or strict comparator rules were changed to
+  force network-rate parity.
+- [x] Report:
+  `/private/tmp/bng3-cross-engine-third50-20260929-30s.json`, SHA-256
+  `aa75410c1be02c4d9ccd1fac408a55c8c6e3c3343877c00cdcc25547002375e9`.
+  It records BNG3 `5c33a0811a725ecc7ec4ffcdb904e0c107ab40f9`, BNG2
+  `8726b30b94c081d5f0ce8b8d38338e27be1b38fc`, PyBioNetGen
+  `43b09a5346402986d48b1defba5eaec0ae2f7802`, and suite
+  `cf38585fac5de8e0e90112febb62851ee2181816`. Tracked source diffs were empty;
+  the benchmark also records pre-existing untracked files in those checkouts.
+- [ ] This is a selected 50-input network interoperability sample, not
+  trajectory parity, full SSTS cross-engine coverage, or an all-SBML benchmark.
+  BNG2/legacy PyBioNetGen Atomizer remains incomplete and has not been
+  benchmarked against all SBML. No BNG2 or PyBioNetGen source was changed.
+  Curated BioModels validation remains stopped.
