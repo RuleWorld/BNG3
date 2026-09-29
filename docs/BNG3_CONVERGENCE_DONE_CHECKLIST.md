@@ -8816,6 +8816,29 @@ the other groups remain implementation targets.
   clean-venv check resolves BNG3 and its extension from the installed wheel.
 - [ ] This is local macOS CPython 3.14 evidence only. It does not qualify the
   release matrix, normal online dependency resolution, publication flow, or
-  Windows executable. Hosted CI and PR queries failed with `error connecting
-  to api.github.com`; their current states are unknown. User-stopped curated
-  BioModels validation remains stopped.
+  Windows executable. The initial hosted CI and PR query failed with
+  `error connecting to api.github.com`; the successful retry and current state
+  are recorded below. User-stopped curated BioModels validation remains stopped.
+
+## Exact-head CI and open PR refresh — 2026-09-29
+
+- [x] Verified `origin/main` at `8ba19e2f8d9bfb338e792e39ebf20c39fff8cb7b`.
+  Exact-head CI (`36509479334`), CodeQL (`36509479386`), Cross-tool parity
+  (`36509479428`), and Lean semantic kernel (`36509479449`) were queued at the
+  last query; none is reported as passing yet.
+- [x] Refreshed open PRs. PR #26 remains based on stale `148a031`; it has 39
+  successful and 5 skipped checks and GitHub reports `DIRTY`. PR #27 remains
+  based on that stale base; it has 29 successful, 5 failed, and 7 skipped
+  checks, including the previously recorded architecture-contract failure and
+  a separate Windows `OdeIntegrator` segfault. PR #28 remains a draft on stale
+  base `d6eef9b`; it has 37 successful, 5 skipped, and 2 running checks. No PR
+  was changed, approved, or commented on.
+- [x] Reviewed `.github/workflows/release.yml`: a `v*` tag must point to a
+  commit reachable from `main` and have successful exact-SHA main push runs
+  for CI, Cross-tool parity, Lean semantic kernel, and CodeQL. The workflow
+  defines Linux, macOS Intel/ARM, and Windows executable artifacts, CPython
+  wheels, an sdist, a GitHub release, and PyPI publication. The release matrix
+  and publication have not run.
+- [ ] The exact-head checks are nonterminal; the PRs remain stale, dirty, or
+  failing as listed. Keep BNG3 convergence active and keep the stopped curated
+  BioModels validation stopped.
