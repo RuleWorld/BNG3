@@ -20,10 +20,14 @@ Metrics:
 import sys
 import json
 import time
+import platform
 
 sys.path.insert(0, 'build/cpp')
 sys.path.insert(0, 'python')
-import _bionetgen_cpp as cpp
+try:
+    import _bionetgen_cpp as cpp
+except ImportError:  # installed as part of the bionetgen package
+    from bionetgen import _bionetgen_cpp as cpp
 
 BENCHMARK_MODELS = [
     {
@@ -65,7 +69,17 @@ BATCH_SIZES = [100, 1000, 10000]
 def run_benchmark():
     print("=" * 88)
     print("BNG3 BATCHED STOCHASTIC SIMULATION (DIRECT-SSA) BENCHMARK")
-    print(f"Platform: macOS Darwin arm64 | Metal Available: {cpp.is_metal_available()}")
+    backends = {entry["name"]: entry for entry in cpp.gpu_backends()}
+    active = cpp.default_gpu_backend()
+    described = ", ".join(
+        f"{name}: {'available' if entry['available'] else entry['detail']}"
+        for name, entry in backends.items()
+    )
+    print(f"Platform: {platform.system()} | GPU backends -> {described}")
+    print(f"Active GPU backend: {active}")
+    if active == "none":
+        print("No GPU backend is usable; GPU timings below are unavailable.")
+        return []
     print(f"Batch sizes: {BATCH_SIZES}")
     print("=" * 88)
 
@@ -123,14 +137,15 @@ def run_benchmark():
             )
             print(f" done ({cpu_mc['sim_time_ms']:.2f} ms sim, {cpu_mc['total_wall_time_ms']:.2f} ms wall)")
 
-            # 3. Metal GPU Prototype
-            print("  Running Metal GPU prototype...", end="", flush=True)
+            # 3. GPU backend
+            print(f"  Running {active} GPU backend...", end="", flush=True)
             gpu = cpp.simulate_batch_ssa_gpu(
                 model, net,
                 batch_size=B,
                 t_end=t_end,
                 n_steps=n_steps,
-                base_seed=300
+                base_seed=300,
+                backend=active
             )
             print(f" done ({gpu['sim_time_ms']:.2f} ms sim, {gpu['total_wall_time_ms']:.2f} ms wall)")
 

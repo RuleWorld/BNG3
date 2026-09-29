@@ -40,6 +40,7 @@ struct OdeOptions {
     bool enforceNonnegative = false; // Optional CVODE constraint retry for physical populations
     std::size_t batchSize = 0;       // 0 = single trajectory; N>0 = batched SSA (GPU/CPU pool)
     bool batchGpuPreferred = true;   // try GPU first when batchSize > 0; silently fall back to CPU pool
+    std::string batchGpuBackend;     // "auto" (default), "cuda", "metal", or "none" (force CPU pool)
 };
 
 struct OdeResult {

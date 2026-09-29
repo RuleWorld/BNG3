@@ -1,5 +1,13 @@
 #pragma once
 
+// Backend-agnostic batched direct-SSA support.
+//
+// This header owns the pieces every execution backend needs: the batch options,
+// the aggregated metrics, the flattened reaction network, and the CPU pool
+// simulator. Accelerator-specific code lives under engine/gpu/ and is reached
+// through the GpuSsaBackend interface, so a new backend never has to touch this
+// file.
+
 #include "NetworkGenerator.hpp"
 #include "OdeIntegrator.hpp"
 
@@ -91,28 +99,15 @@ struct FlattenedReactionNetwork {
     std::vector<uint32_t> obsSpecies;
     std::vector<float> obsWeights;
 
+    // Fails closed on any model the direct method cannot reproduce exactly
+    // (functional rates, TotalRate rules, non-finite rate constants).
     static FlattenedReactionNetwork fromModelAndNetwork(
         const ast::Model& model,
         const GeneratedNetwork& network
     );
 };
 
-// Metal GPU Batch SSA Simulator
-class MetalBatchSsaSimulator {
-public:
-    static bool isMetalAvailable();
-
-    explicit MetalBatchSsaSimulator(const FlattenedReactionNetwork& flatNet);
-    ~MetalBatchSsaSimulator();
-
-    BatchSsaMetrics simulate(const BatchSsaOptions& options);
-
-private:
-    struct Impl;
-    std::unique_ptr<Impl> impl_;
-};
-
-// Existing CPU Batch SSA Simulator (baseline for benchmarking and statistical validation)
+// CPU Batch SSA Simulator: reference implementation and fallback backend.
 class CpuBatchSsaSimulator {
 public:
     CpuBatchSsaSimulator(const ast::Model& model, const GeneratedNetwork& network);
@@ -127,5 +122,19 @@ private:
     const ast::Model& model_;
     const GeneratedNetwork& network_;
 };
+
+namespace detail {
+
+// Populate the double-precision mean/std fields in BatchSsaMetrics from the
+// float observableMeans/StdDevs already computed, so OdeIntegrator can consume
+// them directly without a redundant conversion loop at the call site. Shared by
+// every backend, hence declared here rather than kept in a translation unit.
+void fillDoubleFields(BatchSsaMetrics& m);
+
+// Uniform output grid a batch of trajectories samples at, shared by all
+// backends so GPU and CPU results line up on the same time points.
+std::vector<float> batchOutputTimes(const BatchSsaOptions& options);
+
+} // namespace detail
 
 } // namespace bng::engine

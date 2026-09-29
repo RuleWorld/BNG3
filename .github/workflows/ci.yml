@@ -206,6 +206,88 @@ jobs:
           ASAN_OPTIONS: detect_leaks=0
         run: ctest --test-dir build --output-on-failure
 
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # CUDA batch-SSA backend
+  #
+  # Hosted runners have no NVIDIA device, so this job proves the CUDA kernel
+  # compiles and that a CUDA-enabled build still runs correctly (and falls back
+  # to the CPU pool) when no device is present. Timed kernel behaviour on real
+  # hardware is covered by tests/test_batch_ssa_statistical_parity.py.
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  cpp-cuda:
+    name: C++ batch SSA (CUDA backend, Ubuntu)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
+          python -m pip install pytest numpy
+
+      - name: Detect the CUDA toolkit
+        id: cuda
+        run: |
+          if command -v nvcc >/dev/null 2>&1; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            nvcc --version
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No nvcc on this runner; the CUDA batch-SSA backend is not compiled here."
+          fi
+
+      - name: Configure with the CUDA backend
+        if: steps.cuda.outputs.available == 'true'
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+            -DPython3_EXECUTABLE="$(python -c 'import sys; print(sys.executable)')" \
+            -DBNG3_ENABLE_CUDA=ON \
+            -DBUILD_PYTHON_BINDINGS=OFF \
+            -DBUILD_CLI=ON \
+            -DBUILD_TESTS=ON 2>&1 | tee configure.log
+
+      - name: Assert the CUDA backend was compiled in
+        if: steps.cuda.outputs.available == 'true'
+        run: |
+          grep -q "BNG3 batch SSA GPU backends: .*cuda" configure.log
+
+      - name: Build
+        if: steps.cuda.outputs.available == 'true'
+        run: cmake --build build
+
+      - name: Run tests with the CUDA backend compiled in
+        if: steps.cuda.outputs.available == 'true'
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Batch SSA still runs without a CUDA device
+        if: steps.cuda.outputs.available == 'true'
+        run: |
+          cat > /tmp/cuda_batch.bngl <<'BNGL'
+          begin parameters
+            k 0.5
+          end parameters
+          begin species
+            S1() 20
+          end species
+          begin reactions
+            S1() -> S1() k
+          end reactions
+          begin observables
+            Species S1Total S1() #S1Total
+          end observables
+          simulate_ssa({t_end=>5, n_steps=>10, batch_size=>64})
+          BNGL
+          ./build/cpp/bng_cpp /tmp/cuda_batch.bngl
+          test -f /tmp/cuda_batch.gdat
+
   # ═══════════════════════════════════════════════════════════════════════════
   # Network Generation Validation (C++ vs Perl reference .net files)
   # ═══════════════════════════════════════════════════════════════════════════

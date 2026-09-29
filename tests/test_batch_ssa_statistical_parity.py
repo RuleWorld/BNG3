@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Statistical validation of Metal GPU Batch SSA vs existing BNG3 CPU SSA.
+"""Statistical validation of the GPU Batch SSA backends vs the BNG3 CPU pool.
 
 Tests:
 1. Mean trajectory equivalence (Z-test across time points for all observables)
@@ -16,7 +16,10 @@ from scipy import stats
 
 sys.path.insert(0, 'build/cpp')
 sys.path.insert(0, 'python')
-import _bionetgen_cpp as cpp
+try:
+    import _bionetgen_cpp as cpp
+except ImportError:  # installed as part of the bionetgen package
+    from bionetgen import _bionetgen_cpp as cpp
 
 def validate_model(name, bngl_path, t_end, n_steps, batch_size=2000):
     print(f"\n{'='*70}")
@@ -37,13 +40,19 @@ def validate_model(name, bngl_path, t_end, n_steps, batch_size=2000):
         base_seed=1000
     )
 
-    # Run GPU batch
+    # Run GPU batch on the backend that would be selected automatically.
+    backend = cpp.default_gpu_backend()
+    if backend == "none":
+        print(f"  [SKIP] no GPU backend available: {cpp.gpu_backends()}")
+        return True
+    print(f"  GPU backend: {backend}")
     gpu_res = cpp.simulate_batch_ssa_gpu(
         model, net,
         batch_size=batch_size,
         t_end=t_end,
         n_steps=n_steps,
-        base_seed=5000
+        base_seed=5000,
+        backend=backend
     )
 
     time_points = cpu_res["time"]

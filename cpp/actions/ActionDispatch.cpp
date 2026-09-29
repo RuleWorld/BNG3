@@ -1221,6 +1221,9 @@ void runSimulation(
         }
         const auto batchGpuText = lowercase(stripQuotes(readArgument(action, "batch_gpu", "1")));
         opts.batchGpuPreferred = (batchGpuText != "0" && batchGpuText != "false");
+        // "auto" (default) picks the best compiled-in backend that has a device;
+        // "cuda"/"metal" force one, "none" forces the CPU pool.
+        opts.batchGpuBackend = stripQuotes(readArgument(action, "batch_gpu_backend", "auto"));
     }
 
     // Parse tolerances if provided
