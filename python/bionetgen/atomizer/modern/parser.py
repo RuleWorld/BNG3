@@ -2928,6 +2928,31 @@ class SBMLParser:
         package_counts: Dict[str, int] = {
             str(package).lower(): 0 for package in declared_package_uris
         }
+        # Elements of an unrecognised package are only dropped *structure*
+        # when they sit outside a core opaque metadata container.  The
+        # annotation packages (fbam, sbo, bpmn) are used that way: they
+        # annotate core objects and contribute no kinetics, so an
+        # annotation-only namespace leaves the mathematical model intact.
+        package_structure_counts: Dict[str, int] = {}
+        element_parents = {child: parent for parent in root.iter() for child in parent}
+        core_namespace_uri = re.compile(
+            r"^https?://www\.sbml\.org/sbml/level3/version\d+/core$",
+            re.IGNORECASE,
+        )
+
+        def _inside_opaque_core_container(element: Any) -> bool:
+            parent = element_parents.get(element)
+            while parent is not None:
+                parent_tag = str(getattr(parent, "tag", ""))
+                if parent_tag.startswith("{") and "}" in parent_tag:
+                    parent_uri, _, parent_local = parent_tag[1:].partition("}")
+                    if parent_local in ("annotation", "notes") and (
+                        core_namespace_uri.match(parent_uri)
+                    ):
+                        return True
+                parent = element_parents.get(parent)
+            return False
+
         package_uri = re.compile(
             r"^https?://www\.sbml\.org/sbml/level3/version\d+/"
             r"([a-z][a-z0-9_]*)/version\d+$",
@@ -2945,6 +2970,10 @@ class SBMLParser:
                 if match:
                     package = match.group(1).lower()
                     package_counts[package] = package_counts.get(package, 0) + 1
+                    if not _inside_opaque_core_container(element):
+                        package_structure_counts[package] = (
+                            package_structure_counts.get(package, 0) + 1
+                        )
             definition_url = getattr(element, "attrib", {}).get("definitionURL", "")
             match = package_symbol_uri.match(definition_url)
             if match:
@@ -3149,16 +3178,34 @@ class SBMLParser:
                 }
             )
         # A declared Level 3 package that is outside the vocabulary this
-        # importer knows is dropped wholesale.  Report it instead of
-        # importing a model that is silently missing package structure, and
-        # say so explicitly when the document requires the package, because a
-        # consumer that ignores a required package is reading a model it is
-        # not entitled to read.
+        # importer knows is dropped wholesale -- but only when it actually
+        # carries structure outside a core ``<annotation>``/``<notes>``
+        # container.  The annotation packages (fbam, sbo, bpmn) carry no
+        # kinetics, so an annotation-only namespace costs nothing and must
+        # not be reported as missing structure.  ``:required`` is advisory
+        # author metadata and is routinely left false on genuine semantic
+        # packages, so it never makes that call.
         described_packages = (
             set(dynamic_packages) | set(benign_packages) | {"core", "multi"}
         )
         for package, count in package_counts.items():
             if package in described_packages or not count:
+                continue
+            if not package_structure_counts.get(package):
+                result.import_warnings.append(
+                    {
+                        "category": f"package:{package}",
+                        "message": (
+                            f'SBML "{package}" package detected ({count} '
+                            "element(s)); every element is inside a core "
+                            "annotation container. The package is metadata "
+                            "only, so this does not affect the mathematical "
+                            "model."
+                        ),
+                        "count": count,
+                        "severity": "info",
+                    }
+                )
                 continue
             requirement_note = (
                 f' The document declares {package}:required="true", so it is not '
