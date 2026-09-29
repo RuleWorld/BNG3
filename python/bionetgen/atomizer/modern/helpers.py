@@ -216,10 +216,15 @@ def _split_arguments(value: str) -> List[str]:
     return arguments
 
 
+_REPLACE_CALLS_CACHE: Dict[str, re.Pattern] = {}
+
+
 def _replace_calls(
     expression: str, name: str, render: Callable[[List[str]], str]
 ) -> str:
-    pattern = re.compile(rf"\b{re.escape(name)}\s*\(")
+    if name not in _REPLACE_CALLS_CACHE:
+        _REPLACE_CALLS_CACHE[name] = re.compile(rf"\b{re.escape(name)}\s*\(")
+    pattern = _REPLACE_CALLS_CACHE[name]
     result = expression
     cursor = 0
     while True:
@@ -344,19 +349,28 @@ def convertMathFunction(math_string: str) -> str:
         ),
     )
 
-    result = re.sub(r"\binf\b", "1e20", result, flags=re.IGNORECASE)
-    result = re.sub(r"\bpi\b", "3.14159265358979", result)
-    result = re.sub(r"\be\b(?!\s*\^)", "2.71828182845905", result)
-    result = re.sub(r"\btrue\b", "1", result, flags=re.IGNORECASE)
-    result = re.sub(r"\bfalse\b", "0", result, flags=re.IGNORECASE)
+    result = _RE_INF_SHORT.sub("1e20", result)
+    result = _RE_PI.sub("3.14159265358979", result)
+    result = _RE_E.sub("2.71828182845905", result)
+    result = _RE_TRUE.sub("1", result)
+    result = _RE_FALSE.sub("0", result)
     return result
 
 
+_RE_INF_LONG = re.compile(r"\b(?:infinity|inf)\b", flags=re.IGNORECASE)
+_RE_NAN = re.compile(r"\bnan\b", flags=re.IGNORECASE)
+_RE_EXP = re.compile(r"(?<![A-Za-z_])(\d+)[eE]([+-]?\d+)(?![A-Za-z_])")
+_RE_INF_SHORT = re.compile(r"\binf\b", flags=re.IGNORECASE)
+_RE_PI = re.compile(r"\bpi\b")
+_RE_E = re.compile(r"\be\b(?!\s*\^)")
+_RE_TRUE = re.compile(r"\btrue\b", flags=re.IGNORECASE)
+_RE_FALSE = re.compile(r"\bfalse\b", flags=re.IGNORECASE)
+
+
 def cleanParameterValue(value: str) -> str:
-    result = re.sub(r"\b(?:infinity|inf)\b", "1e20", str(value), flags=re.IGNORECASE)
-    result = re.sub(r"\bnan\b", "0", result, flags=re.IGNORECASE)
-    return re.sub(
-        r"(?<![A-Za-z_])(\d+)[eE]([+-]?\d+)(?![A-Za-z_])",
+    result = _RE_INF_LONG.sub("1e20", str(value))
+    result = _RE_NAN.sub("0", result)
+    return _RE_EXP.sub(
         r"\1e\2",
         result,
     )
