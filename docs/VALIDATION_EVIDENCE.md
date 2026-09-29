@@ -159,7 +159,7 @@ These are open. None of them is covered by anything in §1.
      `_SBML_ID_RUN` would reintroduce the `6dc41b6` defect.
 
 8. **A narrow identifier scan survives inside the guarded delay folder.**
-   `events.py:2968` still uses `re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", …)`
+   `events.py:3013` still uses `re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", …)`
    to build its value-resolution set — the very scan that `_expression_id_runs`
    is documented to reject because it yields fragments of an id. It runs
    *after* the hyphen guard, so it cannot corrupt a rewritten expression, but a
