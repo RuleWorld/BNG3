@@ -8617,3 +8617,23 @@ the other groups remain implementation targets.
   warnings from pybind11 and SUNDIALS. The exact-head hosted CI workflows for
   `a144d6757324862f3b0ce013417c7a9642c03bab` remain queued; no release was
   published and Windows packaging remains unverified.
+
+## Exact-head event cohort refresh — 2026-09-28
+
+- [x] Re-ran the same 26 pinned SSTS semantic event cases against clean tracked
+  BNG3 source head `bd302d17094ab1cdfc118b7e4f59c406c795cf10` and suite commit
+  `cf38585fac5de8e0e90112febb62851ee2181816`: 2 passed, 24 unsupported, 0
+  failed, 0 timed out. Aggregate index:
+  `/private/tmp/bng3-event-only-cohort-bd302d1.json` (SHA-256
+  `b7293ef3ab0aa2fdd96e4c263c4709e46d6862913d8d44ed25a9cb808208c7c8`);
+  it records per-case report paths and digests.
+- [x] Separately revalidated `semantic/00991` on the same BNG3 and suite heads:
+  1 passed, core passed, 0 unsupported/failed/timeouts. Report
+  `/private/tmp/bng3-ssts-00991-bd302d1.json` (SHA-256
+  `bece8c4d59372cf0670b3229eab18b60529975cc9507736216a2e3fe58bc298d`).
+- [x] Source inspection confirmed rank-one stoichiometry alone does not prove
+  an affine event trajectory: `00388` and related cases include bimolecular
+  `S1*S2` kinetics. No shared lowering was justified by this refresh.
+- [ ] This remains a selected BNG3 event cohort, not full SSTS coverage or an
+  all-SBML BNG2/legacy Atomizer benchmark. BNG2 Atomizer remains incomplete;
+  no BNG2 code changed. Curated BioModels validation remains stopped.
