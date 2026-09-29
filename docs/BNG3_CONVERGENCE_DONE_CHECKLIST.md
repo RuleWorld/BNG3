@@ -9,6 +9,34 @@
 **Last queried hosted CI:** code commit `b47c36e`; CI, Formatting patch, CodeQL, Cross-tool parity, and Lean semantic kernel were still queued at 2026-09-28 17:59 UTC. These runs are nonterminal.
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
+
+## Quadratic event groups with unrelated rate-rule targets — 2026-09-28
+
+- [x] Modern Atomizer now supplies initial values for all event-assignment
+  targets to quadratic trajectory resolvers, while requiring only trigger and
+  assignment-expression dependencies to appear in reconstructed snapshots.
+  This lets one event's rate law use a species assigned by another event
+  without requiring unrelated targets governed by independent rate rules to
+  have a trajectory in that reaction subsystem.
+- [x] Added `test_quadratic_event_group_allows_unrelated_rate_rule_targets`.
+  The synthetic model has coupled quadratic reaction dynamics, one event that
+  resets a rate-law species, a second event assigning a separate rate-rule
+  target, and a rate rule depending on the reaction subsystem. BNG3 execution
+  matched libRoadRunner for all four species at 401 samples; focused event and
+  parity tests passed (`187 passed`). Ruff, Black targeting Python 3.9, and
+  `git diff --check` passed.
+- [x] Pinned SSTS `semantic/00752` passed its one-case import/round-trip,
+  native-reader, and BNG3 CVODE/libRoadRunner simulation checks at `t_end=4`
+  with 400 intervals. Eight observables passed; maximum absolute difference
+  was `1.56e-10`. Report `/private/tmp/bng3-ssts-00752-quadratic-group.json`,
+  SHA-256 `1aabeab8335e5df1097223558d0ad2224620c5a43114e83d54e7c1d0de691820`.
+  The partial invocation's aggregate Core flag is false by design; it is not a
+  full-suite run. Report records base commit `886efb4` and a dirty tracked tree.
+- [ ] This is one official SSTS case plus a synthetic parity test. It does not
+  establish all-SSTS or all-SBML Atomizer coverage. Legacy BNG2 Atomizer
+  remains incomplete and has not been benchmarked against all SBML; no BNG2
+  source was changed.
+
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
 6690fda5d9e053df822d0248ebae185f5caca82a; accepted energy-source cutoff

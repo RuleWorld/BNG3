@@ -5525,6 +5525,7 @@ def synthesize_event_actions(
         quadratic_plans: List[dict[str, object]] = []
         statically_inactive_events: List[SBMLEvent] = []
         required_state_symbols: set[str] = set()
+        event_target_seed_symbols: set[str] = set()
         quadratic_group_supported = True
         for event in events:
             parsed_threshold = _parse_affine_state_threshold(event.trigger)
@@ -5628,7 +5629,25 @@ def synthesize_event_actions(
                     break
                 seen_targets.add(normalized_variable)
                 assignments.append((variable, pattern, expression))
-                required_state_symbols.add(variable)
+                # Supply every event target's initial value to trajectory
+                # resolvers. Another event may assign a species used by this
+                # event's rate law, even when that species is not a trigger
+                # coordinate. Do not require unrelated targets in snapshots:
+                # the trajectory may not determine their later values.
+                event_target_seed_symbols.add(variable)
+                for symbol in re.findall(
+                    r"[A-Za-z_][A-Za-z0-9_]*", str(expression or "")
+                ):
+                    if standardize_name(symbol) == "time":
+                        continue
+                    if context.is_compile_time_constant(symbol):
+                        continue
+                    if (
+                        context.resolve_species_pattern(symbol) is not None
+                        or context.is_param(symbol)
+                        or context.is_compartment(symbol)
+                    ):
+                        required_state_symbols.add(symbol)
             if not quadratic_group_supported or not assignments:
                 quadratic_group_supported = False
                 break
@@ -5653,7 +5672,7 @@ def synthesize_event_actions(
 
         initial_state: dict[str, float] = {}
         if quadratic_group_supported:
-            for symbol in required_state_symbols:
+            for symbol in required_state_symbols | event_target_seed_symbols:
                 value = context.resolve_initial_value(symbol)
                 if value is None or not math.isfinite(value):
                     quadratic_group_supported = False
