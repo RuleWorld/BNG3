@@ -6,7 +6,7 @@
 **Working branch:** `main`.
 **Latest full pinned SBML Test Suite report:** suite commit `cf38585fac5de8e0e90112febb62851ee2181816`, `1,738 passed / 185 unsupported / 0 failed / 0 timed out`. Eight cases gained, with no losses, against `/private/tmp/bng3-atomizer-event-stoich-full-sbml.json`. The supported surface passes; the aggregate Core gate remains open. Report `/private/tmp/bng3-delayed-chain-initial-assignment-full-sbml.json`, SHA-256 `f539a2aeb8de9353ffc2e68957829007accfd867c9c79a0ad4d0cd8022062c60`. This schema 3 report does not record the BNG3 source revision, so it is not exact-head evidence for current `main`.
 **Latest current-source curated BioModels report:** none. The user's current-source flat and Atomized rerun was stopped at their request; it remains stopped and has no aggregate report. Earlier BioModels counts below are historical only.
-**Last queried hosted CI:** code commit `b47c36e`; CI, Formatting patch, CodeQL, Cross-tool parity, and Lean semantic kernel were still queued at 2026-09-28 17:59 UTC. These runs are nonterminal.
+**Last queried hosted CI:** exact head `fd9a065` was queried at 2026-09-29 01:11 UTC. CI `36506653527`, Formatting patch `36506653483`, CodeQL `36506653486`, Cross-tool parity `36506653528`, and Lean semantic kernel `36506653503` were queued. These runs predate the changes recorded below and are nonterminal.
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 
@@ -36,6 +36,30 @@ recorded in the historical sections below; they are not current-head evidence.
   establish all-SSTS or all-SBML Atomizer coverage. Legacy BNG2 Atomizer
   remains incomplete and has not been benchmarked against all SBML; no BNG2
   source was changed.
+
+## Delayed multi-event quadratic trajectories — 2026-09-28
+
+- [x] Modern Atomizer now expands SBML function definitions before checking
+  whether a quadratic event-group delay depends only on compile-time constants.
+  A delayed event's assignments no longer count as immediate trigger changes;
+  the scheduler evaluates other triggers again when the pending assignment
+  executes.
+- [x] Added `test_quadratic_event_group_accepts_constant_delay_function` with
+  coupled quadratic reaction dynamics, a cross-event rate-law reset, and a
+  constant delay represented through an SBML function. BNG3 trajectories
+  matched libRoadRunner for all three species away from event times. Focused
+  event and parity tests passed (`188 passed`); Ruff, Black targeting Python
+  3.9, and `git diff --check` passed.
+- [x] Pinned SSTS `semantic/00759` passed its one-case import/round-trip,
+  native-reader, and BNG3 CVODE/libRoadRunner simulation checks at `t_end=4`
+  with 400 intervals. Six observables passed; maximum absolute difference was
+  `3.77e-12`. Report `/private/tmp/bng3-ssts-00759-delayed-quadratic-group.json`,
+  SHA-256 `ca628aa91873fcfb4c8dcb6b8c84098e238ff4ff2a8b528c21583a14b9f2eeef`.
+  The partial invocation's aggregate Core flag is false; report records base
+  commit `fd9a065` and a dirty tracked tree.
+- [ ] This adds one selected SSTS case, not full-suite or all-SBML Atomizer
+  coverage. Legacy BNG2 Atomizer remains incomplete and has not been benchmarked
+  against all SBML; no BNG2 source was changed.
 
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at

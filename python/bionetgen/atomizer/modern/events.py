@@ -5547,7 +5547,8 @@ def synthesize_event_actions(
                 )
             ):
                 parsed_threshold = parsed_difference
-            delay_symbols = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", event.delay or "")
+            expanded_delay = context.expand_functions(event.delay or "")
+            delay_symbols = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", expanded_delay)
             delay = fold(event.delay, event_context=event) if event.delay else 0.0
             if (
                 parsed_threshold is None
@@ -6170,25 +6171,26 @@ def synthesize_event_actions(
                 if not quadratic_group_supported:
                     break
 
-                for other_plan in quadratic_plans:
-                    post_active = quadratic_trigger_active(other_plan, next_state)
-                    if post_active is None:
-                        quadratic_group_supported = False
-                        break
-                    if (
-                        other_plan["event"] is not event
-                        and not active_by_event[id(other_plan["event"])]
-                        and post_active
-                    ):
-                        # An assignment caused another trigger to become true
-                        # at this same time; ordering without priorities is
-                        # ambiguous, so keep the whole group untranslated.
-                        quadratic_group_supported = False
-                        break
+                delay = float(plan["delay"])
+                if delay == 0:
+                    for other_plan in quadratic_plans:
+                        post_active = quadratic_trigger_active(other_plan, next_state)
+                        if post_active is None:
+                            quadratic_group_supported = False
+                            break
+                        if (
+                            other_plan["event"] is not event
+                            and not active_by_event[id(other_plan["event"])]
+                            and post_active
+                        ):
+                            # An immediate assignment caused another trigger
+                            # to become true at this same time; ordering
+                            # without priorities is ambiguous.
+                            quadratic_group_supported = False
+                            break
                 if not quadratic_group_supported:
                     break
 
-                delay = float(plan["delay"])
                 execution_time = event_time + delay
                 if delay > 0 and execution_time <= float(context.base_t_end) + 1e-12:
                     pending_quadratic_actions.append(
