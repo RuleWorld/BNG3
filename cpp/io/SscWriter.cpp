@@ -11,6 +11,18 @@
 #include <set>
 
 namespace bng::io {
+std::string SscWriter::writeConfig(const ast::Model& model) {
+    requireNoEnergySemantics(model, "SSC");
+    std::ostringstream out;
+    out << "# SSC cfg file for model " << model.getModelName()
+        << " created by BioNetGen\n";
+    for (const auto& param : model.getParameters().all()) {
+        out << "const " << param.getName() << " = "
+            << std::setprecision(15) << param.getValue() << ";\n";
+    }
+    return out.str();
+}
+
 
 std::string SscWriter::write(const ast::Model& model, const engine::GeneratedNetwork& network) {
     requireNoEnergySemantics(model, "SSC");

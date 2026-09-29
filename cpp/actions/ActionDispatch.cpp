@@ -3866,17 +3866,27 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         if (actionName == "writessc" || actionName == "writessccfg") {
             ensureNetwork();
             const auto suffix = stripQuotes(readArgument(action, "suffix", ""));
-            const auto sscContent = io::SscWriter::write(model, *network);
+            // BNG2 writes two different artifacts here: `writeSSC` emits a
+            // complete .rxn program, while `writeSSCcfg` emits a .cfg holding
+            // the parameter block alone (BNGOutput.pm:1288-1369 vs 1371-1397).
+            // Emitting the full program under the config name produced the
+            // wrong file at the wrong path.
+            const bool configOnly = (actionName == "writessccfg");
+            const auto sscContent = configOnly
+                ? io::SscWriter::writeConfig(model)
+                : io::SscWriter::write(model, *network);
             std::string outName = sourcePath.stem().string();
             if (!suffix.empty()) outName += "_" + suffix;
-            const auto outputPath = sourcePath.parent_path() / (outName + ".rxn");
+            const auto outputPath =
+                sourcePath.parent_path() / (outName + (configOnly ? ".cfg" : ".rxn"));
             std::ofstream outFile(outputPath);
             if (!outFile) {
                 throw std::runtime_error("Failed to open " + outputPath.string() + " for writing");
             }
             outFile << sscContent;
             if (verbose) {
-                std::cerr << "[bng_cpp] Wrote SSC to " << outputPath << "\n";
+                std::cerr << "[bng_cpp] Wrote " << (configOnly ? "SSC cfg" : "SSC")
+                          << " to " << outputPath << "\n";
             }
             continue;
         }
