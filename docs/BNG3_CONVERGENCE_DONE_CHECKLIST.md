@@ -9177,3 +9177,31 @@ the other groups remain implementation targets.
   parity, full SSTS cross-engine coverage, or an all-SBML benchmark.
   BNG2/legacy PyBioNetGen Atomizer remains incomplete and has not been
   benchmarked against all SBML. Curated BioModels validation remains stopped.
+
+## Fourth selected 50-case cross-engine Atomizer sample — 2026-09-29
+
+- [x] Selected 50 additional pinned SSTS semantic inputs, excluding the prior
+  150 sampled inputs. Selection drew from the prior full-report passed surface
+  and round-robined across available species/reaction-count bands. Ran three
+  repeats in flat and Atomized modes. Modern BNG3 converted all 300 inputs and
+  generated all 300 networks. Perl BNG2 generated 282/300 networks; all 282
+  paired structures matched, and strict rate parity passed 246/282.
+- [x] BNG2 network generation timed out for `01562` and errored for `01563`
+  and `00255`. Six rate mismatches repeated across both modes and all three
+  repeats: `01516`, `01395`, `00372`, `00562`, `01718`, and `00630`.
+  Independent PyBioNetGen converted 252/300 inputs; eight model/mode groups
+  errored (`01395`, `01101`, `00538`, `01091`, `00780`, `01102`, `00562`,
+  and `00630`). Its paired networks matched structurally in 195/195
+  comparisons and passed rate parity in 183/195; rate mismatches were
+  `00372` and `00817`. Reference checkouts were not modified.
+- [x] Selection manifest
+  `/private/tmp/bng3-cross-engine-fourth50-manifest-20260929.json`, SHA-256
+  `273aec56510a6a31179531525ce5890a2bd444fddb6c80848fa170adcdba10d4`;
+  raw report `/private/tmp/bng3-cross-engine-fourth50-20260929.json`, SHA-256
+  `1f1a0578053d30c1d2907642a2adb7450d3641f31d52c03876763ef9a42a1367`.
+  Report records BNG3 `38b2b8c`, BNG2 `8726b30`, and PyBioNetGen `43b09a5`.
+- [ ] This extends selected SSTS interoperability evidence; it is not
+  trajectory parity, full SSTS cross-engine coverage, or an all-SBML
+  benchmark. BNG2/legacy PyBioNetGen Atomizer remains incomplete and has not
+  been benchmarked against all SBML. Curated BioModels validation remains
+  stopped.
