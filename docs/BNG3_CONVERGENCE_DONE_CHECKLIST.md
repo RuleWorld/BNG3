@@ -6,7 +6,7 @@
 **Working branch:** `main`.
 **Latest full pinned SBML Test Suite report:** exact BNG3 commit `bf210ab73950646db655559ba2dd7aa56aeb2c15`, suite commit `cf38585fac5de8e0e90112febb62851ee2181816`, `1,744 passed / 179 unsupported / 0 failed / 0 timed out` (`t_end=1`, 10 samples). Six cases gained and none regressed against the preceding full report. Aggregate Core remains open. Report `/private/tmp/bng3-time-dependent-quadratic-delay-full-sbml.json`, SHA-256 `46951ae3ece7f02b45d932ac946a394df021d375811d9daaa00a8419abf7e02c`.
 **Latest current-source curated BioModels report:** none. The user's current-source flat and Atomized rerun was stopped at their request; it remains stopped and has no aggregate report. Earlier BioModels counts below are historical only.
-**Last queried hosted CI:** exact head `86a385e782dc3babdbd24208cd9ab5c2017ea4b8` was queried at 2026-09-29 03:24 UTC. CI `36516211687`, Formatting patch `36516211746`, CodeQL `36516211698`, Cross-tool parity `36516211693`, and Lean semantic kernel `36516211764` were queued; all remain nonterminal.
+**Last queried hosted CI before this checklist update:** exact head `88e560b3bbe9cbed7e0f113f55913d27ac94208b` was queried at 2026-09-29 03:52 UTC. CI `36517648525`, CodeQL `36517648572`, Cross-tool parity `36517648546`, and Lean semantic kernel `36517648522` were queued; all remain nonterminal.
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 
@@ -9064,3 +9064,29 @@ the other groups remain implementation targets.
   or an all-SBML benchmark of the incomplete BNG2/legacy PyBioNetGen Atomizer.
   Perl BNG2 only emitted BNG-XML for standalone NFsim. Full curated BioModels
   validation remains stopped.
+
+## Five-case SSTS NFsim cohort extension — 2026-09-29
+
+- [x] Revalidated `stochastic/00035`–`00039` against the pinned suite at
+  current BNG3 head `88e560b3bbe9cbed7e0f113f55913d27ac94208b`; all five
+  individual records passed. For `00035`–`00038`, compared 200 independent
+  BNG3-direct and 200 standalone-NFsim runs in each of flat and Atomized modes.
+  All eight 22-point ensemble comparisons passed the 3 pooled-standard-error
+  criterion, with zero run errors; the worst `|z|` was `2.26328`. This adds
+  3,200 completed trajectories across dimerization and zero-order production
+  structures.
+- [x] `00039` passed the BNG3/libRoadRunner SSTS case check, but BNG2 timed out
+  while generating NFsim XML from BNG3 Atomizer output in both modes at the
+  benchmark's 60-second conversion limit. NFsim did not run for this case. A
+  longer retry remained blocked in the same Perl conversion subprocess and
+  was interrupted without producing a retry report. No BNG2 source was
+  changed.
+- [x] Manifest
+  `/private/tmp/bng3-ssts-nfsim-independent-5-manifest-20260929.json`,
+  SHA-256 `f5ed95a5547a51688f07a4fb48076f4cdf90c4b18357846ba9c4e97d2323dd1c`,
+  records each SBML and per-case report digest plus the benchmark and engine
+  provenance: BNG3 `88e560b`, BNG2 `8726b30`, standalone NFsim `c51c7a3`.
+- [ ] This is a five-case stochastic sample, not full-suite NFsim parity or an
+  all-SBML benchmark of the incomplete BNG2/legacy PyBioNetGen Atomizer. Perl
+  BNG2 only generated the XML input used by standalone NFsim for the four
+  completed cases. Full curated BioModels validation remains stopped.
