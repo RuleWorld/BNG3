@@ -8918,3 +8918,25 @@ the other groups remain implementation targets.
   parity or an all-SBML benchmark. It does not benchmark the incomplete
   BNG2/legacy PyBioNetGen Atomizer against all SBML. The user-stopped full
   curated BioModels validation remains stopped.
+
+## SSTS NFsim sample addition: stochastic/00003 — 2026-09-29
+
+- [x] Pinned `stochastic/00003` passed the independent NFsim ensemble in both
+  flat and atomized modes. Each mode completed 200 BNG3-direct runs (seeds
+  `1`–`200`) and 200 standalone-NFsim runs (seeds `201`–`400`), with zero run
+  errors. Each 22-point mean comparison passed the 3 pooled-standard-error
+  criterion; worst `|z|` was `0.7642`. The source case also passes in the
+  pinned full BNG3/libRoadRunner SSTS report.
+- [x] Report
+  `/private/tmp/bng3-atomizer-nfsim-ssts-00003-independent-200runs-20260929.json`,
+  SHA-256 `b92c43a2549e62562b43e14895b04edd77e7faa05734597d722ef4dfe7ff120a`.
+  It records BNG3 `f71c2593f0835cda276225feddb3b3267c073cc5`, source XML SHA-256
+  `c58a50dd86f981150b533dd9af25c38f9ef3aeeedad2f679400e022add77f50e`, BNG2
+  `8726b30b94c081d5f0ce8b8d38338e27be1b38fc`, standalone NFsim source
+  `c51c7a34128d188189485bd318aeae4d936bcb29`, and binary SHA-256
+  `093707031f70e0c376179e1d8bf89ab1373b3132b6211d7d9759f1d646c4ce9e`.
+  BNG2 Perl only emitted the XML consumed by standalone NFsim.
+- [ ] This expands the selected sample by one model only. Full-suite NFsim and
+  all-SBML cross-engine coverage remain open; the BNG2/legacy PyBioNetGen
+  Atomizer is incomplete and has not been benchmarked against all SBML. The
+  stopped full curated BioModels validation remains stopped.
