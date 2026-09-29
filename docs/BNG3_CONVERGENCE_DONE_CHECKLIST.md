@@ -9309,3 +9309,23 @@ the other groups remain implementation targets.
   full SSTS conformance, BNG2 parity, or broad SBML coverage. BNG2/legacy
   PyBioNetGen Atomizer remains incomplete and has not been benchmarked against
   all SBML. Curated BioModels validation remains stopped.
+
+## Full pinned SSTS verification at current main — 2026-09-29
+
+- [x] Re-ran all 1,923 canonical cases from pinned SSTS commit
+  `cf38585fac5de8e0e90112febb62851ee2181816` against tracked-clean BNG3
+  `1bfe6d3a1a238cc731328effc6c2fbd67f2026af`, isolated per case with a 120 s
+  timeout, `t_end=1`, and 10 intervals. Results: `1,744 passed, 179
+  unsupported, 0 failed, 0 timed out`; semantic `1,706/117` and stochastic
+  `38/62` passed/unsupported. The supported-surface gate passes; aggregate
+  Core remains open because unsupported cases remain.
+- [x] Exact case-ID status comparison with the prior complete report from
+  BNG3 `bf210ab73950646db655559ba2dd7aa56aeb2c15` found no changes among all
+  1,923 cases. Current report:
+  `/private/tmp/bng3-current-main-1bfe6d3-ssts.json`, SHA-256
+  `b123d6fbe18e38de839aa2f32762f3c0910664c703a110899f2cd96767636736`.
+- [ ] This validates BNG3 SSTS import/round-trip and BNG3/libRoadRunner checks;
+  it is not full numerical SBML Test Suite conformance, full BNG2/PyBioNetGen
+  parity, or an all-SBML benchmark of their Atomizers. BNG2/legacy
+  PyBioNetGen Atomizer remains incomplete and unbenchmarked against all SBML.
+  Curated BioModels validation remains stopped.
