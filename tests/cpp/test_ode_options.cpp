@@ -619,3 +619,65 @@ TEST_CASE("OdeIntegrator preserves multi-species derivative updates", "[OdeOptio
     REQUIRE_THAT(derivatives[2], Catch::Matchers::WithinAbs(expectedRate, 1e-12));
     REQUIRE_THAT(derivatives[3], Catch::Matchers::WithinAbs(expectedRate, 1e-12));
 }
+
+TEST_CASE("Batch SSA returns one species row per output time on every backend",
+          "[OdeOptions][BatchSSA]") {
+    // OdeResult::concentrations and batchStdDevs are documented as
+    // [timeIndex][speciesIndex] and are walked in lockstep with timePoints by
+    // every consumer: writeOutputFiles indexes concentrations[step] for step up
+    // to timePoints.size() (the .cdat row count), save_progress does the same,
+    // and the Python binding shapes them as an (n_steps, n_species) array.
+    // integrateBatchSSA's GPU branch used to fill them from
+    // BatchSsaMetrics::meanSpecies, which detail::fillDoubleFields collapses to
+    // a single final-state row, so crossing the GPU threshold silently changed
+    // the result's shape and overran the .cdat writer.  A GPU backend can only
+    // be selected on a machine with a compiled-in device, so this pins the
+    // contract for both selections: "none" must reach the CPU pool directly,
+    // and "auto" must produce the same grid whether it takes the GPU branch or
+    // rejects it -- never a one-row grid.
+    auto model = parseDecayModel();
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+
+    constexpr std::size_t kBatch = 8;
+    constexpr std::size_t kSteps = 4;
+
+    auto runBatch = [&](const std::string& gpuBackend) {
+        engine::OdeOptions options;
+        options.method = "ssa";
+        options.tStart = 0.0;
+        options.tEnd = 4.0;
+        options.nSteps = kSteps;
+        options.seed = 7;
+        options.batchSize = kBatch;
+        options.batchGpuPreferred = true;
+        options.batchGpuBackend = gpuBackend;
+        return engine::OdeIntegrator(*model, network).integrate(options);
+    };
+
+    const engine::OdeResult cpuResult = runBatch("none");
+    const engine::OdeResult autoResult = runBatch("auto");
+
+    REQUIRE(cpuResult.batchSize == kBatch);
+    REQUIRE(autoResult.batchSize == kBatch);
+
+    // Both backend selections must agree on shape with each other.
+    REQUIRE(autoResult.concentrations.size() == cpuResult.concentrations.size());
+    REQUIRE(autoResult.batchStdDevs.size() == cpuResult.batchStdDevs.size());
+    REQUIRE(autoResult.observables.size() == cpuResult.observables.size());
+    REQUIRE(autoResult.batchObsStdDevs.size() == cpuResult.batchObsStdDevs.size());
+
+    const std::size_t nSpecies = network.species.size();
+    for (const engine::OdeResult* result : {&cpuResult, &autoResult}) {
+        const std::size_t expectedRows = kSteps + 1;
+        REQUIRE(result->timePoints.size() == expectedRows);
+        REQUIRE(result->concentrations.size() == expectedRows);
+        REQUIRE(result->batchStdDevs.size() == expectedRows);
+        REQUIRE(result->observables.size() == expectedRows);
+        REQUIRE(result->batchObsStdDevs.size() == expectedRows);
+        for (std::size_t t = 0; t < expectedRows; ++t) {
+            REQUIRE(result->concentrations[t].size() == nSpecies);
+            REQUIRE(result->batchStdDevs[t].size() == nSpecies);
+        }
+    }
+}

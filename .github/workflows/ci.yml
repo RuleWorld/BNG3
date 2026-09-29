@@ -289,6 +289,70 @@ jobs:
           test -f /tmp/cuda_batch.gdat
 
   # ═══════════════════════════════════════════════════════════════════════════
+  # Batch SSA CPU reference parity
+  #
+  # The GPU comparison in tests/test_batch_ssa_statistical_parity.py needs an
+  # accelerator and therefore only runs on a maintainer's machine. Its
+  # CPU-mode counterpart needs nothing but a CPU and is the part CI can gate
+  # on: exact conservation identities and the closed-form Binomial(20, 1/6)
+  # equilibrium of models/isomerization.bngl, with a fixed seed so the run is
+  # reproducible on any libc or CPU.
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  batch-ssa-cpu-reference:
+    name: Batch SSA CPU reference parity (Ubuntu)
+    runs-on: ubuntu-22.04
+    env:
+      CC: gcc-12
+      CXX: g++-12
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
+          python -m pip install pytest numpy scipy
+
+      - name: Configure with the Python bindings
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+            -DPython3_EXECUTABLE="$(python -c 'import sys; print(sys.executable)')" \
+            -DBUILD_PYTHON_BINDINGS=ON \
+            -DBUILD_CLI=OFF \
+            -DBUILD_NFSIM_CLI=OFF \
+            -DBUILD_TESTS=OFF
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Assert the batch SSA CPU entry point was built
+        run: ls -1 build/cpp/_bionetgen_cpp*
+
+      - name: Batch SSA CPU pool matches exact analytical results
+        run: python tests/test_batch_ssa_statistical_parity.py --mode cpu
+
+      - name: Summarise the batch SSA reference result
+        if: always()
+        env:
+          BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+          BATCH_SSA_RESULT: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### Batch SSA CPU reference parity"
+            echo ""
+            echo "| Source revision | Result |"
+            echo "| --- | --- |"
+            echo "| \`$BNG3_SOURCE_REVISION\` | $BATCH_SSA_RESULT |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ═══════════════════════════════════════════════════════════════════════════
   # Network Generation Validation (C++ vs Perl reference .net files)
   # ═══════════════════════════════════════════════════════════════════════════
 

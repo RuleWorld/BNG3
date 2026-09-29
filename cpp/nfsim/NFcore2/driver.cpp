@@ -117,10 +117,31 @@ void SsaDriver::enumerateFamily(std::uint32_t familyIndex) {
                         continue;
                     if (!canonicalPair(pool[0][i], pool[1][j]))
                         continue;
+                    // canonicalPair keeps one orientation per unordered pair
+                    // of equal-typed roots, but matcher.cpp resolves every
+                    // MATCH_* instruction against a root index (`x.target`),
+                    // so the two orientations of a homotypic pair carry
+                    // independent constraints.  Try the canonical one first
+                    // and fall back to the swapped one; if neither matches the
+                    // pair contributes nothing, exactly as before.  A pair
+                    // that matches in both orientations is still counted once.
+                    MoleculeRef first = pool[0][i];
+                    MoleculeRef second = pool[1][j];
                     MatchContext ctx;
-                    ctx.setMoleculeAt(0, pool[0][i]);
-                    ctx.setMoleculeAt(1, pool[1][j]);
-                    if (!matcher.evaluate(state, engine_.scaffolds(), ctx))
+                    ctx.setMoleculeAt(0, first);
+                    ctx.setMoleculeAt(1, second);
+                    bool matched =
+                        matcher.evaluate(state, engine_.scaffolds(), ctx);
+                    if (!matched && first.type == second.type) {
+                        first = pool[1][j];
+                        second = pool[0][i];
+                        ctx = MatchContext();
+                        ctx.setMoleculeAt(0, first);
+                        ctx.setMoleculeAt(1, second);
+                        matched = matcher.evaluate(state, engine_.scaffolds(),
+                                                  ctx);
+                    }
+                    if (!matched)
                         continue;
                     const double rate = engine_.evaluateRate(
                         RuleFamilyId(familyIndex), m, ctx);
@@ -130,8 +151,8 @@ void SsaDriver::enumerateFamily(std::uint32_t familyIndex) {
                     if (rate == 0.0)
                         continue;
                     Tuple t;
-                    t.roots.push_back(pool[0][i]);
-                    t.roots.push_back(pool[1][j]);
+                    t.roots.push_back(first);
+                    t.roots.push_back(second);
                     t.rate = rate;
                     fresh.tuples.push_back(t);
                 }

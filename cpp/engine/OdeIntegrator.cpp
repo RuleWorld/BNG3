@@ -1849,6 +1849,31 @@ OdeResult OdeIntegrator::integrateBatchSSA(const OdeOptions& opts) {
                         result.batchStdDevs    = metrics.stdSpecies;
                         result.batchObsStdDevs = metrics.stdObservables;
                         result.eventCount      = static_cast<std::size_t>(metrics.totalEvents);
+
+                        // OdeResult::concentrations / batchStdDevs are
+                        // [timeIndex][speciesIndex], and every consumer walks
+                        // them in lockstep with timePoints: writeOutputFiles
+                        // indexes concentrations[step] for step up to
+                        // timePoints.size(), save_progress does the same, and
+                        // the Python binding shapes them as an (n_steps,
+                        // n_species) array.  A backend that records only the
+                        // per-trajectory final species -- which is what
+                        // detail::fillDoubleFields does, collapsing
+                        // finalSpecies into a single row -- cannot satisfy
+                        // that shape, and handing it back would both mis-shape
+                        // the result and read out of bounds in the .cdat
+                        // writer.  Reject it so the catch below routes to the
+                        // CPU thread pool, which produces the full grid.
+                        if (result.concentrations.size() != result.timePoints.size() ||
+                            result.batchStdDevs.size() != result.timePoints.size()) {
+                            throw std::runtime_error(
+                                "backend cannot produce a full species time course: "
+                                "got " + std::to_string(result.concentrations.size()) +
+                                " species row(s) for " +
+                                std::to_string(result.timePoints.size()) +
+                                " output time point(s)");
+                        }
+
                         return result;
                     }
                 } catch (const std::exception& ex) {

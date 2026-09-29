@@ -1,15 +1,41 @@
 #!/usr/bin/env python3
-"""Statistical validation of the GPU Batch SSA backends vs the BNG3 CPU pool.
+"""Statistical validation of the batch-SSA backends.
 
-Tests:
+Two independent gates share this harness.
+
+CPU reference gate (``--mode cpu``, default) -- runs on any machine, with no
+GPU and no accelerator SDK present:
+
+1. Conservation identities. Every observable whose final-state sample has zero
+   variance must be constant at EVERY recorded timepoint and on EVERY
+   trajectory, and every explicitly declared conserved total must equal the
+   value its model file declares. These are integer molecule counts, so the
+   assertions are exact (``== 0`` deviation), not statistical.
+2. Seed reproducibility. Re-running the CPU pool with the same base seed must
+   reproduce the previous batch bit-for-bit, and running it single-threaded
+   must reproduce the multi-core result bit-for-bit. Per-trajectory seeds are
+   ``base_seed + trajectory``, so this is a hard property of the pool rather
+   than a distribution.
+3. Exact analytical parity on the isomerization model, whose closed form is
+   ``Binomial(N=20, p=1/6)`` over the number of A molecules in conformation T.
+   Checked as a Chi-square goodness-of-fit plus first- and second-moment
+   tests against the theoretical mean and variance.
+
+GPU parity (``--mode gpu``) -- unchanged, and only meaningful where a backend
+exists:
+
 1. Mean trajectory equivalence (Z-test across time points for all observables)
 2. Variance trajectory equivalence (ratio of variances / F-test)
 3. Distributional equivalence (Two-sample Kolmogorov-Smirnov test on final states)
-4. Exact analytical parity test on isomerization model (Chi-square against Binomial(20, 1/6))
+4. The same exact analytical Chi-square check applied to the GPU sample.
+
+The CPU reference gate is the one wired into CI: it is hardware-independent,
+so it is a real gate, whereas the GPU comparison can only run on a maintainer's
+machine with a usable backend.
 """
 
+import argparse
 import sys
-import os
 import math
 import numpy as np
 from scipy import stats
@@ -37,6 +63,407 @@ CONSERVATION_RTOL = 1e-6
 # mean-trajectory section already documents.
 KS_ALPHA = 1e-3
 Z_THRESHOLD = 3.5
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CPU reference gate
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Per-trajectory seeds are ``base_seed + trajectory`` and each trajectory owns
+# its own std::mt19937_64 stream, so a base seed fully determines the batch.
+# The values below are pinned rather than random: the gate must fail for a
+# reason that a reader can reproduce, not because a coin came up tails.
+CPU_REFERENCE_SEED = 1000
+CPU_REFERENCE_BATCH = 20000
+
+# Moment bands for the exact Binomial(20, 1/6) comparison.
+#
+# A one-sided tail probability IS the flake probability under the null, so the
+# previous Chi-square gate at p >= 0.01 failed on ~1% of statistically perfect
+# batches. 0.01 is not a usable CI threshold. At B=20000, alpha=1e-3 is 100x
+# safer and still detects a >=2% relative error in the equilibrium
+# probability p (measured Chi-square p of 6.3e-10 at +2%, 2.9e-3 at +0.5%).
+#
+# The two moment tests carry most of the power and almost none of the risk:
+#   - |z| > 5 is a 5.7e-7 two-sided normal tail; it detects a >=1% relative
+#     error in p, an order of magnitude more sensitively than the Chi-square.
+#   - Under the null the sample variance of B i.i.d. draws follows
+#     (B-1)s^2/var ~ Chi2(B-1); the [0.90, 1.10] band has a null tail
+#     probability below 1e-11 at B=20000, and it is the only check here that
+#     notices a variance regression at all.
+# Measured over 200 independent 20,000-trajectory batches: min Chi-square
+# p = 2.3e-3, max |z| = 3.60, variance ratio in [0.970, 1.030], and zero
+# failures at any of these thresholds.
+BINOMIAL_CHI2_ALPHA = 1e-3
+MEAN_Z_LIMIT = 5.0
+VARIANCE_RATIO_MIN = 0.90
+VARIANCE_RATIO_MAX = 1.10
+
+# A Pearson Chi-square approximation is unreliable for an expected cell below
+# roughly 5 counts, so the binning pools the sparse tail until every cell
+# clears this bar. At B=20000 the Binomial(20, 1/6) tail cell carries ~57.
+MIN_EXPECTED_COUNTS = 5.0
+
+# The models exercised by the CPU reference gate, with the exact quantities
+# their .bngl files declare. `conserved` maps an observable to the constant
+# its model file fixes; `partition` is a closed sum over those observables.
+# Values are transcribed from the model files themselves, which is what makes
+# this an analytical check rather than a re-statement of the simulation.
+#
+#   models/isomerization.bngl:11,60            N = 20, seed species A(conf~R) N
+#   models/toy-jim.bngl:12-14,37,41,45         A_tot = K_tot = R_tot = 1
+#   models/performance_test_models/egfr_net.bngl:6,81  egfr_tot = 1.8e3
+#
+# models/gene_expr_simple.bngl declares no conserved quantity: mRNA() and
+# Protein() are both synthesized and degraded, so there is nothing to
+# conserve. Its only CPU-gate coverage is the zero-variance scan, which finds
+# none -- correctly, since both of its observables vary.
+CPU_REFERENCE_MODELS = [
+    {
+        "name": "isomerization",
+        "path": "models/isomerization.bngl",
+        "t_end": 20.0,
+        "n_steps": 10,
+        "conserved": {"A_total": 20.0},
+        # A_total == A_confR + A_confT: the two conformations partition the pool.
+        "partition": ("A_total", ("A_confR", "A_confT")),
+        "binomial": {"observable": "A_confT", "n": 20, "p": 0.2 / 1.2},
+    },
+    {
+        "name": "gene_expr_simple",
+        "path": "models/gene_expr_simple.bngl",
+        "t_end": 500.0,
+        "n_steps": 10,
+        "conserved": {},
+        "partition": None,
+        "binomial": None,
+    },
+    {
+        "name": "toy-jim",
+        "path": "models/toy-jim.bngl",
+        "t_end": 50.0,
+        "n_steps": 10,
+        "conserved": {"A_total": 1.0, "K_total": 1.0, "R_total": 1.0},
+        "partition": None,
+        "binomial": None,
+    },
+    {
+        "name": "egfr_net",
+        "path": "models/performance_test_models/egfr_net.bngl",
+        "t_end": 0.02,
+        "n_steps": 10,
+        "conserved": {"Efgr_tot": 1800.0},
+        "partition": None,
+        "binomial": None,
+    },
+]
+
+
+def run_cpu_batch(bngl_path, t_end, n_steps, batch_size, base_seed, threads=0):
+    """Run one CPU-pool batch and return (model, network, metrics)."""
+    model = cpp.parse_file(bngl_path)
+    net = cpp.generate_network(model)
+    res = cpp.simulate_batch_ssa_cpu(
+        model, net,
+        batch_size=batch_size,
+        t_end=t_end,
+        n_steps=n_steps,
+        threads=threads,
+        base_seed=base_seed
+    )
+    return model, net, res
+
+
+def _observable_names(res):
+    return list(res.get("observable_names", []))
+
+
+def check_conservation_identities(name, res, spec, batch_size):
+    """Exact (non-statistical) conservation checks on the CPU pool.
+
+    Every observable whose final-state sample has zero variance is a conserved
+    or permanently absent quantity: the reaction stoichiometry fixes it to an
+    integer. Requiring it to be constant across the whole trajectory and every
+    trajectory is therefore an exact assertion with no sampling error at all,
+    which is why this part of the gate is hardware-independent.
+
+    Returns True when every declared and discovered invariant holds.
+    """
+    obs_names = _observable_names(res)
+    finals = np.asarray(res["final_observables"], dtype=float)
+    all_passed = True
+
+    print(f"\nConservation identities ({name}, batch_size={batch_size}):")
+    for obs, value in spec["conserved"].items():
+        means = np.asarray(res["observable_means"][obs], dtype=float)
+        stds = np.asarray(res["observable_stds"][obs], dtype=float)
+        column = finals[:, obs_names.index(obs)]
+
+        mean_dev = float(np.max(np.abs(means - value)))
+        std_dev = float(np.max(np.abs(stds)))
+        final_dev = float(np.max(np.abs(column - value)))
+
+        print(f"  {obs}: declared {value:g}; max |mean - {value:g}| = {mean_dev:.3e}, "
+              f"max std = {std_dev:.3e}, max |final - {value:g}| = {final_dev:.3e}")
+        if mean_dev != 0.0 or std_dev != 0.0 or final_dev != 0.0:
+            print(f"  [FAIL] '{obs}' does not hold the constant {value:g} its model "
+                  f"declares -- conservation/stoichiometry mismatch")
+            all_passed = False
+
+    if spec["partition"]:
+        # spec["partition"] is (total, (parts...)): the total must equal the
+        # exact sum of its parts on every trajectory.
+        total_obs, part_obs = spec["partition"]
+        total = np.asarray(finals[:, obs_names.index(total_obs)], dtype=float)
+        parts = [np.asarray(finals[:, obs_names.index(o)], dtype=float)
+                 for o in part_obs]
+        residual = total - sum(parts)
+        worst = float(np.max(np.abs(residual)))
+        identity = f"{total_obs} - ({' + '.join(part_obs)})"
+        print(f"  {identity}: max |residual| = {worst:.3e} over "
+              f"{finals.shape[0]} trajectories")
+        if worst != 0.0:
+            print(f"  [FAIL] the declared partition does not hold exactly -- "
+                  f"a stoichiometry or observable-mapping bug")
+            all_passed = False
+
+    # Discover every other exactly-constant observable. A batch that invents
+    # variation where the stoichiometry admits none is a bug even when the
+    # model file does not name the quantity.
+    discovered = 0
+    for idx, obs in enumerate(obs_names):
+        column = finals[:, idx]
+        if float(np.std(column)) != 0.0:
+            continue
+        if obs in spec["conserved"]:
+            continue
+        discovered += 1
+        value = float(column[0])
+        means = np.asarray(res["observable_means"][obs], dtype=float)
+        stds = np.asarray(res["observable_stds"][obs], dtype=float)
+        drift = float(np.max(np.abs(means - value)))
+        std_dev = float(np.max(np.abs(stds)))
+        print(f"  {obs}: undeclared but exactly constant at {value:g} "
+              f"(max |mean - const| = {drift:.3e}, max std = {std_dev:.3e})")
+        if drift != 0.0 or std_dev != 0.0:
+            print(f"  [FAIL] '{obs}' is constant at t_end but varies over the "
+                  f"trajectory -- a conservation/stoichiometry mismatch")
+            all_passed = False
+    print(f"  {discovered} additional exactly-constant observable(s) discovered")
+
+    if not np.all(finals >= 0.0):
+        print("  [FAIL] a final-state observable is negative -- molecule counts "
+              "cannot be negative")
+        all_passed = False
+    if float(np.max(np.abs(finals - np.round(finals)))) != 0.0:
+        print("  [FAIL] a final-state observable is not an integer molecule count")
+        all_passed = False
+
+    if all_passed:
+        print("  [PASS] every conserved/constant observable is exactly conserved")
+    return all_passed
+
+
+def check_seed_reproducibility(name, bngl_path, t_end, n_steps, batch_size, base_seed):
+    """The CPU pool must be reproducible for a given seed and thread count.
+
+    Trajectory b draws from ``std::mt19937_64`` seeded with
+    ``base_seed + b``, so a base seed determines the entire batch. If the pool
+    let any cross-trajectory state leak, or accumulated into shared state
+    without synchronisation, this comparison would diverge.
+    """
+    print(f"\nSeed reproducibility ({name}, base_seed={base_seed}):")
+    all_passed = True
+
+    _, _, first = run_cpu_batch(bngl_path, t_end, n_steps, batch_size, base_seed)
+    _, _, repeat = run_cpu_batch(bngl_path, t_end, n_steps, batch_size, base_seed)
+    _, _, single = run_cpu_batch(
+        bngl_path, t_end, n_steps, batch_size, base_seed, threads=1
+    )
+
+    def _identical(a, b):
+        if a.shape != b.shape:
+            return False
+        return bool(np.array_equal(a, b))
+
+    finals_exact = _identical(
+        np.asarray(first["final_observables"]),
+        np.asarray(repeat["final_observables"]),
+    )
+    print(f"  same seed twice: final states bit-identical = {finals_exact}")
+    if not finals_exact:
+        all_passed = False
+        print("  [FAIL] the CPU pool is not reproducible for a fixed base seed")
+
+    finals_exact = _identical(
+        np.asarray(first["final_observables"]),
+        np.asarray(single["final_observables"]),
+    )
+    print(f"  threads=0 vs threads=1: final states bit-identical = {finals_exact}")
+    if not finals_exact:
+        all_passed = False
+        print("  [FAIL] the multi-core pool and the single-worker pool disagree "
+              "for a fixed base seed")
+
+    aggregate_exact = True
+    for key in ("observable_means", "observable_stds"):
+        for obs in _observable_names(first):
+            if not _identical(np.asarray(first[key][obs]),
+                              np.asarray(single[key][obs])):
+                aggregate_exact = False
+                print(f"  [FAIL] {key}['{obs}'] differs between the multi-core and "
+                      f"single-worker pools")
+    print(f"  threads=0 vs threads=1: trajectory means/stds identical = "
+          f"{aggregate_exact}")
+    if not aggregate_exact:
+        all_passed = False
+
+    if all_passed:
+        print("  [PASS] the CPU pool is reproducible for a fixed seed and "
+              "independent of the thread count")
+    return all_passed
+
+
+def check_analytical_binomial(name, res, spec, batch_size):
+    """Chi-square plus moment tests against the model's closed-form binomial.
+
+    `spec["binomial"]` names an observable whose equilibrium distribution is
+    exactly ``Binomial(n, p)``. For the isomerization model each of the N
+    molecules flips R<->T independently with rates kRT=0.20 and kTR=1.00, so
+    the stationary probability of conformation T is 0.20/1.20 = 1/6 and the
+    number of T molecules is Binomial(N, 1/6).
+    """
+    cfg = spec["binomial"]
+    obs_names = _observable_names(res)
+    finals = np.asarray(res["final_observables"], dtype=float)
+    sample = finals[:, obs_names.index(cfg["observable"])]
+
+    n_mol = cfg["n"]
+    p_t = cfg["p"]
+    expected_mean = n_mol * p_t
+    expected_var = n_mol * p_t * (1.0 - p_t)
+
+    print(f"\nExact analytical parity check ({name}): "
+          f"{cfg['observable']} ~ Binomial({n_mol}, {p_t:.6f})")
+    print(f"  Theoretical: mean = {expected_mean:.4f}, variance = {expected_var:.4f}")
+    print(f"  CPU sample : mean = {sample.mean():.4f}, "
+          f"variance = {sample.var(ddof=1):.4f}, n = {sample.size}")
+
+    all_passed = True
+
+    # Build cells that partition k = 0..n and preserve the total probability
+    # exactly: individual bins for the head, one pooled bin for the sparse
+    # tail. The pooled tail probability is the remainder rather than a summed
+    # term, so the expected counts always add up to batch_size and SciPy's
+    # sum-check cannot fail.
+    pmf = [math.comb(n_mol, k) * (p_t ** k) * ((1.0 - p_t) ** (n_mol - k))
+           for k in range(n_mol + 1)]
+
+    # Widest head whose every cell carries at least MIN_EXPECTED_COUNTS, so the
+    # pooled tail is never thinner than the head cells it replaces.
+    head = 1
+    while head < n_mol and pmf[head + 1] * batch_size >= MIN_EXPECTED_COUNTS:
+        head += 1
+    while head > 1 and pmf[head] * batch_size < MIN_EXPECTED_COUNTS:
+        head -= 1
+
+    # Cells 0..head-1 are exact bins; cell `head` pools every k >= head.
+    # Guard against a k < 0 sample value, which cannot occur for a molecule
+    # count but would otherwise be silently mis-binned.
+    cell_probabilities = pmf[:head] + [sum(pmf[head:])]
+    expected_counts = np.asarray(cell_probabilities) * batch_size
+
+    if expected_counts.min() < MIN_EXPECTED_COUNTS:
+        print(f"  [FAIL] the Chi-square binning has a cell with only "
+              f"{expected_counts.min():.2f} expected counts; raise the batch size "
+              f"so every cell reaches {MIN_EXPECTED_COUNTS:g}")
+        return False
+
+    def _counts(values):
+        cells = np.zeros(len(cell_probabilities))
+        for value in values:
+            k = int(round(value))
+            if k < 0:
+                raise ValueError(f"negative molecule count {value!r}")
+            cells[k if k < head else head] += 1
+        return cells
+
+    observed_counts = _counts(sample)
+    chi2, p_value = stats.chisquare(observed_counts, expected_counts)
+    print(f"  Chi-square ({len(cell_probabilities)} cells, "
+          f"df = {len(cell_probabilities) - 1}) = {chi2:.3f}, "
+          f"p = {p_value:.4g} (threshold {BINOMIAL_CHI2_ALPHA:g}, "
+          f"min expected cell {expected_counts.min():.1f})")
+    if p_value < BINOMIAL_CHI2_ALPHA:
+        print("  [FAIL] the CPU sample deviates significantly from the theoretical "
+              "binomial distribution")
+        all_passed = False
+
+    sem = math.sqrt(expected_var / sample.size)
+    z = (sample.mean() - expected_mean) / sem
+    print(f"  Mean Z-score = {z:+.3f} (threshold |Z| <= {MEAN_Z_LIMIT:g}, "
+          f"SEM = {sem:.4f} molecules)")
+    if abs(z) > MEAN_Z_LIMIT:
+        print("  [FAIL] the sample mean is inconsistent with the theoretical mean")
+        all_passed = False
+
+    variance_ratio = sample.var(ddof=1) / expected_var
+    print(f"  Variance ratio = {variance_ratio:.4f} (allowed "
+          f"[{VARIANCE_RATIO_MIN:g}, {VARIANCE_RATIO_MAX:g}])")
+    if not (VARIANCE_RATIO_MIN <= variance_ratio <= VARIANCE_RATIO_MAX):
+        print("  [FAIL] the sample variance is inconsistent with the theoretical "
+              "variance")
+        all_passed = False
+
+    if all_passed:
+        print(f"  [PASS] the CPU sample matches the exact analytical "
+              f"Binomial({n_mol}, {p_t:.6f}) distribution")
+    return all_passed
+
+
+def run_cpu_reference_gate():
+    """Hardware-independent evidence that the batch SSA is correct."""
+    print("=" * 70)
+    print("Batch SSA CPU reference gate (no GPU required)")
+    print("=" * 70)
+
+    all_ok = True
+    for spec in CPU_REFERENCE_MODELS:
+        name = spec["name"]
+        print(f"\n{'=' * 70}")
+        print(f"CPU reference validation: {name} "
+              f"(batch_size={CPU_REFERENCE_BATCH}, seed={CPU_REFERENCE_SEED})")
+        print(f"{'=' * 70}")
+
+        _, net, res = run_cpu_batch(
+            spec["path"], spec["t_end"], spec["n_steps"],
+            CPU_REFERENCE_BATCH, CPU_REFERENCE_SEED,
+        )
+        print(f"Model: {net.num_species} species, {net.num_reactions} reactions, "
+              f"{len(_observable_names(res))} observables")
+
+        results = [check_conservation_identities(
+            name, res, spec, CPU_REFERENCE_BATCH)]
+
+        if spec["binomial"]:
+            results.append(check_analytical_binomial(
+                name, res, spec, CPU_REFERENCE_BATCH))
+
+        results.append(check_seed_reproducibility(
+            name, spec["path"], spec["t_end"], spec["n_steps"],
+            CPU_REFERENCE_BATCH, CPU_REFERENCE_SEED,
+        ))
+
+        if not all(results):
+            all_ok = False
+
+    print("\n" + "=" * 70)
+    if all_ok:
+        print("ALL CPU REFERENCE PARITY TESTS PASSED SUCCESSFULLY!")
+    else:
+        print("SOME CPU REFERENCE TESTS FAILED.")
+    print("=" * 70)
+    return all_ok
+
 
 def validate_model(name, bngl_path, t_end, n_steps, batch_size=2000):
     print(f"\n{'='*70}")
@@ -233,7 +660,12 @@ def validate_model(name, bngl_path, t_end, n_steps, batch_size=2000):
 
     return all_passed
 
-if __name__ == "__main__":
+
+def run_gpu_parity_gate():
+    print("=" * 70)
+    print("Batch SSA GPU parity gate")
+    print("=" * 70)
+
     test_models = [
         ("isomerization", "models/isomerization.bngl", 20.0, 10),
         ("gene_expr_simple", "models/gene_expr_simple.bngl", 500.0, 10),
@@ -253,4 +685,33 @@ if __name__ == "__main__":
     else:
         print("SOME STATISTICAL TESTS FAILED.")
     print("="*70)
-    sys.exit(0 if all_ok else 1)
+    return all_ok
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--mode",
+        choices=("cpu", "gpu", "all"),
+        default="all",
+        help=(
+            "'cpu' runs the hardware-independent CPU reference gate against "
+            "exact analytical results and needs no GPU; 'gpu' runs the "
+            "CPU-vs-GPU comparison and skips when no backend is available; "
+            "'all' (the default, and what a bare invocation has always run) "
+            "runs both."
+        ),
+    )
+    args = parser.parse_args(argv)
+
+    if args.mode == "gpu":
+        return 0 if run_gpu_parity_gate() else 1
+
+    ok = run_cpu_reference_gate()
+    if args.mode == "all":
+        ok = run_gpu_parity_gate() and ok
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
