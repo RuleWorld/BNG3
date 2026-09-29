@@ -1341,8 +1341,19 @@ def _extract_statistical_factor(
 
 
 def _extract_top_level_additive_terms(expression: str) -> List[str]:
-    """Split an expression at top-level ``+``/``-`` operators."""
+    """Split an expression at top-level ``+``/``-`` operators.
 
+    A hyphen is a difference operator only when it is not part of a source id
+    and not the head of an arrow.  ``standardize_name`` maps the id ``A-B`` and
+    the id ``A_B`` to one BNGL name, so cutting ``k2 * A-B`` after the hyphen
+    would hand the caller a second "law" that is a fragment of an identifier.
+    The parser serialises a genuine MathML ``<minus>`` with surrounding spaces
+    (``parser.py``: ``expression = f" {symbol} ".join(args)``), so an unspaced
+    hyphen can only be an id character, and an arrow cannot occur in a rate law
+    at all -- it is rejected here rather than split into a meaningless law.
+    """
+
+    id_runs = [span.span() for span in _SBML_ID_RUN.finditer(expression)]
     terms: List[str] = []
     depth = 0
     current_start = 0
@@ -1356,6 +1367,7 @@ def _extract_top_level_additive_terms(expression: str) -> List[str]:
             and char in "+-"
             and index > 0
             and expression[index - 1] not in "eE*/^(["
+            and not _is_id_hyphen(expression, index, id_runs)
         ):
             term = expression[current_start:index].strip()
             if term:
@@ -1365,6 +1377,16 @@ def _extract_top_level_additive_terms(expression: str) -> List[str]:
     if last:
         terms.append(last)
     return terms
+
+
+def _is_id_hyphen(
+    expression: str, index: int, id_runs: Sequence[Tuple[int, int]]
+) -> bool:
+    """Report whether the ``-`` at ``index`` is an id character or an arrow."""
+
+    if expression[index + 1 : index + 2] == ">":
+        return True
+    return any(start < index < end for start, end in id_runs)
 
 
 def _split_reversible_rate(expression: str) -> Optional[Tuple[str, str]]:
@@ -2407,6 +2429,33 @@ def _reaction_species_ids(
     return species_ids
 
 
+def _expression_mentions_species(expression: str, species_id: str) -> bool:
+    """Report whether ``expression`` uses ``species_id`` as an operand.
+
+    A raw SBML id reaches the writer in its source spelling and is
+    standardized only at emission, so a source law reads ``k2 * A-B`` while
+    the species it names is emitted as ``A_B``.  Searching for the emitted
+    spelling alone therefore fails to see the operand, and a mass-action law
+    whose source explicitly carried the reactant factor is then classified as
+    a complete flux -- the model keeps the same text and changes the rate.  A
+    maximal id run that standardizes to the species name names the species in
+    either spelling, and the amount/compartment observables the lowering emits
+    are matched as before.
+    """
+
+    standardized = standardize_name(species_id)
+    if any(standardize_name(run) == standardized for run in _id_runs(expression)):
+        return True
+    return bool(
+        re.search(
+            rf"(?:_c_{re.escape(standardized)}\s*\(|"
+            rf"\b{re.escape(standardized)}_amt\b)",
+            expression,
+            re.IGNORECASE,
+        )
+    )
+
+
 def _rate_requires_total_rate(
     rate: str,
     reactant_ids: Optional[Sequence[str]] = None,
@@ -2443,24 +2492,11 @@ def _rate_requires_total_rate(
             source_parts[min(index, len(source_parts) - 1)] if source_parts else ""
         )
         source_has_reactant = bool(source_part) and any(
-            re.search(
-                rf"(?:\b{re.escape(standardize_name(species_id))}\b|"
-                rf"_c_{re.escape(standardize_name(species_id))}\s*\(|"
-                rf"\b{re.escape(standardize_name(species_id))}_amt\b)",
-                source_part,
-                re.IGNORECASE,
-            )
+            _expression_mentions_species(source_part, species_id)
             for species_id in reactants
         )
         lowered_has_reactant = any(
-            re.search(
-                rf"(?:\b{re.escape(standardize_name(species_id))}\b|"
-                rf"_c_{re.escape(standardize_name(species_id))}\s*\(|"
-                rf"\b{re.escape(standardize_name(species_id))}_amt\b)",
-                part,
-                re.IGNORECASE,
-            )
-            for species_id in reactants
+            _expression_mentions_species(part, species_id) for species_id in reactants
         )
         if source_parts:
             # If the source flux contains no consumed species, it is complete

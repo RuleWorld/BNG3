@@ -175,8 +175,7 @@ def test_initial_assignment_body_does_not_emit_a_raw_species_id():
     functions = _block(model, "functions")
     assert "A-B" not in functions, functions
     assert "Q() = 0.5*(A_B)" in functions, functions
- 
- 
+
 
 def test_zero_argument_function_definition_body_does_not_emit_a_raw_species_id():
     model = _model(
@@ -211,7 +210,6 @@ def test_parameterized_definition_keeps_a_formal_argument_named_like_a_species()
     functions = "\n".join(write_functions(model, keep_parameterized=True))
     assert "A-B" not in functions, functions
     assert "h(_farg0_A_B) = (_farg0_A_B)*(_farg0_A_B)" in functions, functions
-
 
 
 def test_species_targeted_assignment_rule_body_does_not_emit_a_raw_species_id():

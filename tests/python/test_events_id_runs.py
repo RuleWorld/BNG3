@@ -10,7 +10,6 @@ whole, so the event is refused instead of scheduled at a fabricated time.
 
 import pytest
 
-
 PARAMETERS = {"A": 5.0, "B": 2.0}
 
 
@@ -67,14 +66,10 @@ def test_cycle_event_refuses_delay_naming_a_hyphenated_species():
     """
     from bionetgen.atomizer.modern.events import synthesize_event_actions
 
-    result = synthesize_event_actions(
-        [_cycle_event("A-B")], _cycle_context()
-    )
+    result = synthesize_event_actions([_cycle_event("A-B")], _cycle_context())
 
     assert result.converted == 0
-    assert [event for event, _reason in result.untranslated] == [
-        _cycle_event("A-B")
-    ]
+    assert [event for event, _reason in result.untranslated] == [_cycle_event("A-B")]
 
 
 def test_cycle_event_still_lowers_a_constant_delay():
@@ -135,9 +130,7 @@ def test_quadratic_event_refuses_delay_naming_a_hyphenated_species():
     """A single-event quadratic lowering whose delay is ``A-B`` is refused."""
     from bionetgen.atomizer.modern.events import synthesize_event_actions
 
-    result = synthesize_event_actions(
-        [_quadratic_event("A-B")], _quadratic_context()
-    )
+    result = synthesize_event_actions([_quadratic_event("A-B")], _quadratic_context())
 
     assert result.converted == 0
     assert [event for event, _reason in result.untranslated] == [
@@ -174,13 +167,15 @@ def _group_context():
         }.get(identifier),
         resolve_quadratic_rate_from_state=(
             lambda identifier, _event, state: (
-                state.get(identifier, 0.0),
-                0.0,
-                0.0,
-                slopes[identifier],
+                (
+                    state.get(identifier, 0.0),
+                    0.0,
+                    0.0,
+                    slopes[identifier],
+                )
+                if identifier in slopes
+                else None
             )
-            if identifier in slopes
-            else None
         ),
         resolve_quadratic_state_values_from_state=(
             lambda identifier, value, _event, state: {
@@ -215,9 +210,7 @@ def test_quadratic_group_refuses_delay_naming_a_hyphenated_species():
     """A two-event quadratic group whose delay is ``A-B`` is refused."""
     from bionetgen.atomizer.modern.events import synthesize_event_actions
 
-    result = synthesize_event_actions(
-        _group_events("A-B"), _group_context()
-    )
+    result = synthesize_event_actions(_group_events("A-B"), _group_context())
 
     assert result.converted == 0
     assert [event for event, _reason in result.untranslated] == _group_events("A-B")
