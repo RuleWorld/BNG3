@@ -8801,3 +8801,21 @@ the other groups remain implementation targets.
 - [ ] This remains a selected BNG3 event cohort, not full SSTS coverage or an
   all-SBML BNG2/legacy Atomizer benchmark. BNG2 Atomizer remains incomplete;
   no BNG2 code changed. Curated BioModels validation remains stopped.
+
+## Current-head local wheel install smoke — 2026-09-29
+
+- [x] Built a CPython 3.14 macOS ARM64 wheel from BNG3 head `b03d833` and
+  installed it into a clean venv without dependencies. The package and compiled
+  `_bionetgen_cpp` extension both imported from that venv; `bionetgen
+  --version`, `--help`, `info`, and `check` on `simple_system.bngl` passed.
+  Wheel SHA-256:
+  `95bbb9cc39056fce4c23f35a96bdfc206c0110de1c5e67d7525f28d6c1f70117`.
+- [x] For this offline smoke, the clean venv used host-installed NumPy, Click,
+  and Packaging through symlinks. The first check with system-site-packages
+  was discarded after it resolved BNG3 from the editable checkout. The
+  clean-venv check resolves BNG3 and its extension from the installed wheel.
+- [ ] This is local macOS CPython 3.14 evidence only. It does not qualify the
+  release matrix, normal online dependency resolution, publication flow, or
+  Windows executable. Hosted CI and PR queries failed with `error connecting
+  to api.github.com`; their current states are unknown. User-stopped curated
+  BioModels validation remains stopped.
