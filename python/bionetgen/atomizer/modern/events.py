@@ -2541,6 +2541,8 @@ def _quadratic_crossing_time(
             root = math.sqrt(discriminant)
             first = (-linear + root) / (2.0 * quadratic)
             second = (-linear - root) / (2.0 * quadratic)
+            if target == first or target == second:
+                return None
             initial_ratio = (initial - first) / (initial - second)
             target_ratio = (target - first) / (target - second)
             ratio = target_ratio / initial_ratio if initial_ratio else -1.0

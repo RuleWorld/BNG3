@@ -10,6 +10,27 @@
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 
+## Quadratic crossing at an equilibrium root — 2026-09-28
+
+- [x] BNG3's quadratic event solver now returns no finite crossing when the
+  requested threshold is exactly an equilibrium root of the scalar quadratic
+  trajectory. Previously, the root-ratio formula divided by zero.
+- [x] Added `test_quadratic_crossing_to_equilibrium_root_has_no_finite_time`.
+  It failed first with `ZeroDivisionError`; after the guard, both focused
+  modern Atomizer modules passed (`190 passed`) and the full Python suite
+  passed (`692 passed, 28 skipped`). That full run emitted 1,380 existing
+  deprecation warnings. Ruff, Black targeting Python 3.9, and
+  `git diff --check` also passed.
+- [x] Rechecked pinned SSTS `semantic/00374` after the fix. It remains
+  unsupported because its state-triggered event is not lowered; one-case report
+  `/private/tmp/bng3-current-00374-after-crossing-guard.json`, SHA-256
+  `e5130e47626e5bc36a318fe6e940f5d4fde763c7b61e0def94b451c70e3e65ba`.
+  The full SSTS suite was not rerun for this isolated numerical guard.
+- [ ] This does not add an SSTS pass or establish full Atomizer coverage.
+  Legacy BNG2 Atomizer remains incomplete and has not been benchmarked against
+  all SBML; no BNG2 source was changed. Curated BioModels validation remains
+  stopped at the user's request.
+
 ## Quadratic event groups with unrelated rate-rule targets — 2026-09-28
 
 - [x] Modern Atomizer now supplies initial values for all event-assignment

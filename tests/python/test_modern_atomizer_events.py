@@ -2008,6 +2008,13 @@ def test_quadratic_state_difference_threshold_uses_composite_trajectory():
     assert 'setParameter("P", "4")' in result.actions_block
 
 
+def test_quadratic_crossing_to_equilibrium_root_has_no_finite_time():
+    from bionetgen.atomizer.modern.events import _quadratic_crossing_time
+
+    # y' = y * (y + 1); starting at -0.5 approaches -1 without reaching it.
+    assert _quadratic_crossing_time(-0.5, -1.0, 1.0, 1.0, 0.0) is None
+
+
 def test_quadratic_difference_event_reenters_after_species_reset():
     from bionetgen.atomizer.modern.events import (
         EventTranslationContext,
