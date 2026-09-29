@@ -649,13 +649,29 @@ class EventTranslationResult:
 EventActionsResult = EventTranslationResult
 
 
+# A single definition of what an identifier token is, shared by the tokenizer
+# and the parser that consumes its output.  The class is the writer's whole-id
+# run (``_SBML_ID_RUN``) rather than a narrower ``[A-Za-z_][A-Za-z0-9_]*``:
+# ``standardize_name`` runs on a raw SBML id only at emission, so a species,
+# parameter or function id such as ``A-B`` reaches expression analysis in its
+# source spelling, and a class that stops at ``-`` reads it as the difference
+# ``A - B``.  The two spellings never collide because the MathML reader
+# serialises a real ``<minus>`` with surrounding spaces (``A - B``) while a
+# ``<ci>`` body comes back verbatim, so a maximal run that contains ``-`` is a
+# declared id and never an operator.  A run that names nothing resolves to
+# nothing and the expression refuses.
+_SBML_ID_TOKEN = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
+
+_TOKEN = re.compile(
+    r"\s*("
+    r"[A-Za-z_][A-Za-z0-9_-]*|"
+    r"(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?|"
+    r"[(),+\-*/^])"
+)
+
+
 def _tokenize(expression: str) -> Optional[List[str]]:
-    token_pattern = re.compile(
-        r"\s*("
-        r"[A-Za-z_][A-Za-z0-9_]*|"
-        r"(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?|"
-        r"[(),+\-*/^])"
-    )
+    token_pattern = _TOKEN
     tokens: List[str] = []
     position = 0
     while position < len(expression):
@@ -675,17 +691,33 @@ def _expression_id_runs(expression: str) -> Set[str]:
     ``standardize_name`` runs on a raw SBML id only at emission, so a species,
     parameter or compartment id such as ``A-B`` reaches event analysis in its
     source spelling and is invisible to the ``[A-Za-z_][A-Za-z0-9_]*`` tokens a
-    formula tokenizer produces.  Scanning maximal id runs keeps such an id
-    whole, so a membership test sees the declared symbol rather than two
-    fragments of it that happen to look like other symbols; the MathML reader
-    serializes a real difference with surrounding spaces (``A - B``), which
-    stays two runs.  The pattern is the writer's single definition, imported
-    lazily because the writer imports this module.
+    plain identifier scan (``re.findall``) produces.  Scanning maximal id runs
+    keeps such an id whole, so a membership test sees the declared symbol
+    rather than two fragments of it that happen to look like other symbols;
+    the MathML reader serializes a real difference with surrounding spaces
+    (``A - B``), which stays two runs.  The pattern is the writer's single
+    definition, imported lazily because the writer imports this module.
     """
 
     from .writer import _id_runs
 
     return _id_runs(expression)
+
+
+def _preserves_hyphenated_ids(source: str, rewritten: str) -> bool:
+    """False when a Python AST round trip re-read a hyphenated id as arithmetic.
+
+    ``ast.parse`` reads ``A-B`` as the subtraction ``A - B`` and ``ast.unparse``
+    spells it back with spaces, so an expression that names a raw SBML id
+    silently changes meaning on its way through the module's AST rewriters.
+    Only a run carrying ``-`` can be lost that way -- every other id survives
+    verbatim -- so comparing those runs is enough to catch the
+    reinterpretation, and refusing leaves the expression unevaluated instead
+    of folding a difference nobody wrote.
+    """
+
+    before = {run for run in _expression_id_runs(source) if "-" in run}
+    return before <= _expression_id_runs(rewritten)
 
 
 class _NumericParser:
@@ -780,7 +812,7 @@ class _NumericParser:
             self.take()
             value = float(token)
             return value if math.isfinite(value) else None
-        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", token):
+        if _SBML_ID_TOKEN.fullmatch(token):
             if (
                 self.position + 1 < len(self.tokens)
                 and self.tokens[self.position + 1] == "("
@@ -1787,10 +1819,13 @@ def expand_static_parameter_event_system(
                                 )
                 return self.generic_visit(node)
 
+        source = expanded
         try:
             tree = ast.parse(expanded, mode="eval")
             expanded = ast.unparse(RateHistoryRewriter().visit(tree))
         except (TypeError, ValueError, SyntaxError):
+            return None
+        if not _preserves_hyphenated_ids(source, expanded):
             return None
         value = fold_numeric(
             expanded, lambda name: resolve_state(name, state, current_time)
@@ -2920,12 +2955,16 @@ def synthesize_event_actions(
                             return ast.copy_location(ast.Constant(value=value), node)
                 return self.generic_visit(node)
 
+        source = expanded
         try:
             tree = ast.parse(expanded, mode="eval")
         except (TypeError, ValueError, SyntaxError):
             tree = None
         if tree is not None:
-            expanded = ast.unparse(DelayHistoryRewriter().visit(tree))
+            rewritten = ast.unparse(DelayHistoryRewriter().visit(tree))
+            if not _preserves_hyphenated_ids(source, rewritten):
+                return None
+            expanded = rewritten
         identifiers = set(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", expanded))
         for identifier in identifiers:
             if identifier in values:
@@ -3108,6 +3147,8 @@ def synthesize_event_actions(
             reduced_expression = reduced_expression.replace("_event_if(", "if(")
         except (TypeError, ValueError, SyntaxError):
             reduced_expression = timed_expression.replace("_event_if(", "if(")
+        if not _preserves_hyphenated_ids(timed_expression, reduced_expression):
+            return None
         return fold(reduced_expression, dynamic_values=values)
 
     def simultaneous_priority_group_eligible(
