@@ -29,6 +29,10 @@
 - Exact-head hosted status must be read for each pushed SHA; an earlier queued
   result does not establish a later commit's CI outcome. The pre-existing
   `bng3-offline-bundle/` remains untracked and preserved.
+- Historical PR refresh: #26 and #28 each have 39 passing / 5 skipped checks;
+  both use stale base commits. PR #27 has 29 passing / 5 failing / 7 skipped
+  checks and needs source-level review before any merge decision. Details and
+  caveats are in the checklist.
 
 The dated entries below are retained as historical evidence; their branch,
 head, counts, and running-job statements are snapshots, not current state.

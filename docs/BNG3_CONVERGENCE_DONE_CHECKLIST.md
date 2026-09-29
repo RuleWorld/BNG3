@@ -9256,3 +9256,32 @@ the other groups remain implementation targets.
   PyPI publication remain open. BNG2/legacy PyBioNetGen Atomizer remains
   incomplete and has not been benchmarked against all SBML; curated BioModels
   validation remains stopped.
+
+## Historical open-PR review refresh — 2026-09-29
+
+- [x] Refreshed PRs #26, #27, and #28 at their current heads. PR #26
+  (`7b1d7ec`, base `148a031`) and PR #28 (`1a5008b`, base `d6eef9b`) each
+  show 39 passing and 5 skipped checks. Their bases predate current `main`;
+  PR #26 reports `DIRTY`, while #28 is still a draft. Release-only skips are
+  not release qualification.
+- [x] PR #27 (`b105d54`, base `148a031`) has 29 passing, 5 failing, and 7
+  skipped checks. Its five C++ matrix failures all include the architecture
+  inventory test rejecting the new
+  `tests/cpp/test_nfcore2_parity.cpp` contract disposition. Windows also
+  fails `OdeIntegrator preserves multi-species derivative updates` with a
+  segfault. Its BNG3-vs-BNG2-network and BNG3-vs-NFsim jobs pass, but those
+  bounded engine jobs do not establish Atomizer coverage over all SBML.
+- [x] Source review of PR #27's NFcore2 driver found a correctness risk in
+  `SsaDriver::canonicalPair`: it canonicalizes every pair with equal molecule
+  type by slot, even though the two matcher root positions can carry different
+  patterns. For asymmetric same-type reactants, the retained ordering can be
+  the one that fails matching while the discarded ordering would match. A
+  focused regression case is needed before accepting this implementation.
+- [x] PR #28's helper patch preserves the existing substitutions and its
+  current checks pass. `_REPLACE_CALLS_CACHE` is a process-global unbounded
+  dictionary keyed by function name; bound it if names can grow from
+  user-supplied or generated model symbols. PR #28 remains a draft.
+- [ ] No PR was merged, edited, or commented on during this review. Current
+  BNG3 work remains on `main`; legacy BNG2 code was not modified. The
+  incomplete BNG2/legacy PyBioNetGen Atomizer has not been benchmarked against
+  all SBML, and curated BioModels validation remains stopped.
