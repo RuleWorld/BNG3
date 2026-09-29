@@ -4,6 +4,8 @@
 
 This report evaluates whether batched stochastic simulation (Direct Gillespie SSA) of an already-generated fixed reaction network is worth accelerating on GPU using a minimal experimental Apple Metal GPU prototype on macOS Darwin arm64.
 
+The measurements below were taken on Apple Metal. The backend itself is no longer Metal-specific: `cpp/engine/gpu/` holds a small accelerator abstraction with a Metal backend and a CUDA backend behind one `GpuSsaBackend` interface, and section 7.1 describes selection and configuration. Backend selection, statistical equivalence, and the fail-closed rules are unchanged by that generalization.
+
 **Verdict: YES.** At a realistic large batch size ($B = 10,000$ trajectories), the Metal GPU prototype achieves **6.41× aggregate simulation throughput speedup** and **6.77× aggregate wall-clock speedup** over the existing production BNG3 C++ implementation running across **15 CPU cores** (and **37.3× to 40.2× speedup** over single-worker CPU). On the large-scale combinatorial network `egfr_net` (356 species, 3,749 reactions), the GPU achieves **77,680 trajectories/sec** and **5.49 million reaction events/sec**, completing 10,000 full trajectories in **128.7 ms** compared to **881.2 ms** on 15 CPU cores and **5,170.9 ms** on a single CPU core.
 
 All stochastic trajectories from the GPU prototype were validated statistically against the production CPU implementation using:
@@ -174,10 +176,36 @@ The GPU ensemble matches the exact analytical binomial distribution within sampl
 
 Because the GPU prototype achieves **6.41× aggregate simulation throughput** and **6.77× wall-clock throughput** over the 15-core CPU implementation at $B = 10,000$ (comfortably exceeding the 2× threshold required by the stopping condition), the prototype has been cleanly packaged in the experimental branch:
 
-- `cpp/engine/MetalBatchSsa.hpp`: Clean C++ interface defining `FlattenedReactionNetwork`, `MetalBatchSsaSimulator`, `CpuBatchSsaSimulator`, and timing/metrics structures.
-- `cpp/engine/MetalBatchSsa.mm`: Self-contained Objective-C++ implementation compiling the Metal Shading Language kernel at runtime via `MTLDevice`, with PCG32 RNG, CSR indexing, and register-caching optimizations.
-- `cpp/bindings/bind_engine.cpp`: Python pybind11 bindings exposing `simulate_batch_ssa_cpu`, `simulate_batch_ssa_gpu`, and `is_metal_available`.
+- `cpp/engine/BatchSsa.hpp` / `cpp/engine/BatchSsa.cpp`: Backend-agnostic core defining `FlattenedReactionNetwork` (with the fail-closed validation above), the `CpuBatchSsaSimulator` reference implementation, and the shared metrics/aggregation helpers.
+- `cpp/engine/gpu/GpuSsaBackend.hpp` / `cpp/engine/gpu/GpuSsaBackend.cpp`: The accelerator abstraction. `GpuSsaBackend` is the interface a device implements; this file owns the registry (which backends were compiled in, which has a device, which one `auto` selects) and the launch-overhead thresholds. Adding a backend means adding one translation unit, not touching the integrator.
+- `cpp/engine/gpu/MetalSsaBackend.mm`: Apple Metal backend. Compiles the Metal Shading Language kernel at runtime via `MTLDevice`, with PCG32 RNG, CSR indexing, and register-caching optimizations. Its kernel is the reference implementation of the algorithm.
+- `cpp/engine/gpu/CudaSsaBackend.cu`: NVIDIA CUDA backend. Statement-for-statement port of the Metal kernel (same PCG32 seeding and draw order, same two-pass propensity accumulation), so both backends produce identical trajectories for a given seed. It uses `cudaMalloc`/`cudaMemcpy` rather than unified memory, and keeps the working population in the per-trajectory device slice rather than a register array.
+- `cpp/bindings/bind_engine.cpp`: Python pybind11 bindings exposing `simulate_batch_ssa_cpu`, `simulate_batch_ssa_gpu(..., backend=...)`, `gpu_backends()`, and `default_gpu_backend()`. These are available on every platform, not only on Apple.
 - `tests/test_batch_ssa_statistical_parity.py`: Automated statistical validation harness testing Z-scores, two-sample KS tests, and Chi-square goodness-of-fit.
 - `benchmark_gpu_batch_ssa.py`: Parameterized benchmark runner generating JSON results across batch sizes and execution backends.
+
+### 7.1 Accelerator selection and configuration
+
+`simulate_ssa({..., batch_size=>N})` and the Python `simulate_ssa(..., batch_size=N)` route
+through the backend registry:
+
+- `auto` (default) uses the first compiled-in backend that has a usable device (CUDA before
+  Metal) and falls back to the CPU thread pool otherwise;
+- `cuda` / `metal` request one specific backend and raise if it is unavailable;
+- `none` forces the CPU pool. An unrecognised name is an error, never a silent fallback.
+
+Backends are compiled in at configure time: Metal on Apple platforms, CUDA when
+`-DBNG3_ENABLE_CUDA=ON` is given or a CUDA compiler is found (`BNG3_ENABLE_CUDA=AUTO`,
+the default). `BNG3_ENABLE_CUDA=OFF` or `BNG3_ENABLE_METAL=OFF` forces them out. Use
+`-DCMAKE_CUDA_ARCHITECTURES=...` to target specific NVIDIA devices; the default (`70;80`,
+plus PTX) is chosen for build machines that have no GPU attached. The configure step prints
+what it enabled, e.g. `BNG3 batch SSA GPU backends: metal`.
+
+Because CI runners have no NVIDIA device, `tests/test_batch_ssa_statistical_parity.py`
+selects the backend reported by `default_gpu_backend()` and skips the GPU comparison with a
+printed reason when none is usable; `tests/cpp/test_gpu_batch_ssa_backend.cpp` pins the
+registry contract (stable ordering, fail-closed name lookup, and that a compiled-but-device-less
+backend raises rather than approximating) on every platform, including CUDA-enabled builds
+with no GPU.
 
 The experimental prototype is self-contained, adheres to all architectural dependency contracts, and is ready for future integration as an optional hardware-accelerated batch simulator backend for BioNetGen.

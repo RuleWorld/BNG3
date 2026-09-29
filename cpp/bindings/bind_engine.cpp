@@ -14,9 +14,8 @@
 #include "engine/FiniteBackend.hpp"
 #include "engine/BngsimBackend.hpp"
 #include "actions/ActionDispatch.hpp"
-#if defined(__APPLE__)
-#include "engine/MetalBatchSsa.hpp"
-#endif
+#include "engine/BatchSsa.hpp"
+#include "engine/gpu/GpuSsaBackend.hpp"
 
 namespace py = pybind11;
 using namespace bng::engine;
@@ -124,7 +123,6 @@ py::dict result_to_dict(const OdeResult& result, const Model& model) {
 
     return d;
 }
-#if defined(__APPLE__)
 py::dict metrics_to_dict(const BatchSsaMetrics& m) {
     py::dict d;
     d["batch_size"] = m.batchSize;
@@ -198,7 +196,6 @@ py::dict metrics_to_dict(const BatchSsaMetrics& m) {
 
     return d;
 }
-#endif
 
 } // namespace
 
@@ -325,7 +322,8 @@ void bind_engine(py::module_& m) {
                              std::size_t max_sim_steps,
                              std::size_t output_step_interval,
                              std::size_t batch_size,
-                             bool batch_gpu_preferred) {
+                             bool batch_gpu_preferred,
+                             const std::string& batch_gpu_backend) {
         py::gil_scoped_release release;
 
         OdeOptions opts;
@@ -340,6 +338,7 @@ void bind_engine(py::module_& m) {
         opts.outputStepInterval = output_step_interval;
         opts.batchSize = batch_size;
         opts.batchGpuPreferred = batch_gpu_preferred;
+        opts.batchGpuBackend = batch_gpu_backend;
 
         OdeIntegrator integrator(model, network);
         OdeResult result = integrator.integrate(opts);
@@ -359,9 +358,12 @@ void bind_engine(py::module_& m) {
         py::arg("output_step_interval") = 0,
         py::arg("batch_size") = static_cast<std::size_t>(0),
         py::arg("batch_gpu_preferred") = true,
+        py::arg("batch_gpu_backend") = std::string("auto"),
         "Run SSA simulation on a generated network. "
         "Set batch_size > 1 to run many independent trajectories and return mean + std-dev trajectories; "
-        "uses Metal GPU when available and beneficial, otherwise CPU thread pool.");
+        "uses a GPU backend (CUDA or Metal) when one is available and beneficial, "
+        "otherwise the CPU thread pool. batch_gpu_backend selects 'auto', 'cuda', "
+        "'metal', or 'none'.");
 
     m.def("simulate_pla", [](Model& model, GeneratedNetwork& network,
                              double t_end, int n_steps, const std::string& config_str,
@@ -509,9 +511,22 @@ void bind_engine(py::module_& m) {
        py::arg("max_sim_steps") = 0, py::arg("output_step_interval") = 0,
        "Run SSA via the BNGsim backend (fails closed if not lowerable or not wired)");
 
-#if defined(__APPLE__)
-    m.def("is_metal_available", &MetalBatchSsaSimulator::isMetalAvailable,
-          "Check whether Apple Metal GPU is available on this system");
+    m.def("gpu_backends", []() {
+        py::list out;
+        for (const auto& status : gpuBackendInventory()) {
+            py::dict entry;
+            entry["name"] = status.name;
+            entry["compiled"] = status.compiled;
+            entry["available"] = status.available;
+            entry["detail"] = status.detail;
+            out.append(entry);
+        }
+        return out;
+    }, "Report every batched-SSA GPU backend: whether it was compiled in and whether a usable device is present");
+
+    m.def("default_gpu_backend", []() {
+        return std::string(gpuBackendName(defaultGpuBackend()));
+    }, "Name of the batched-SSA GPU backend that would be used by default ('none' when there is none)");
 
     m.def("simulate_batch_ssa_cpu", [](Model& model, GeneratedNetwork& network,
                                        std::size_t batch_size, double t_end, int n_steps,
@@ -549,7 +564,8 @@ void bind_engine(py::module_& m) {
     m.def("simulate_batch_ssa_gpu", [](Model& model, GeneratedNetwork& network,
                                        std::size_t batch_size, double t_end, int n_steps,
                                        double t_start, uint64_t base_seed,
-                                       std::size_t max_sim_steps) {
+                                       std::size_t max_sim_steps,
+                                       const std::string& backend) {
         py::gil_scoped_release release;
 
         // Flatten and validate (fails closed on unsupported rate laws)
@@ -563,11 +579,17 @@ void bind_engine(py::module_& m) {
         opts.batchSize = batch_size;
         opts.maxSimSteps = max_sim_steps;
 
-        MetalBatchSsaSimulator simulator(flatNet);
-        BatchSsaMetrics metrics = simulator.simulate(opts);
+        auto gpu = makeGpuSsaBackend(gpuBackendFromName(backend), flatNet);
+        if (!gpu) {
+            throw std::runtime_error(
+                "No batched-SSA GPU backend selected (backend='" + backend + "')");
+        }
+        BatchSsaMetrics metrics = gpu->simulate(flatNet, opts);
 
         py::gil_scoped_acquire acquire;
-        return metrics_to_dict(metrics);
+        py::dict out = metrics_to_dict(metrics);
+        out["backend"] = std::string(gpu->name());
+        return out;
     },
         py::arg("model"),
         py::arg("network"),
@@ -577,8 +599,9 @@ void bind_engine(py::module_& m) {
         py::arg("t_start") = 0.0,
         py::arg("base_seed") = 42,
         py::arg("max_sim_steps") = 0,
-        "Run batched SSA simulation on Apple Metal GPU prototype");
-#endif
+        py::arg("backend") = std::string("auto"),
+        "Run batched SSA on a GPU backend (auto/cuda/metal). Raises when the selected "
+        "backend is unavailable; use simulate_batch_ssa_cpu for the CPU pool");
     m.def("execute", [](Model& model, const std::string& source_path, bool verbose) {
         py::gil_scoped_release release;
         ActionDispatch::execute(model, source_path, verbose);

@@ -97,6 +97,15 @@ target_link_libraries(test_ode_options PRIVATE
 )
 catch_discover_tests(test_ode_options)
 
+# Batched-SSA GPU backend registry: selection, naming, and fail-closed lookup.
+add_executable(test_gpu_batch_ssa_backend test_gpu_batch_ssa_backend.cpp)
+target_link_libraries(test_gpu_batch_ssa_backend PRIVATE
+    Catch2::Catch2WithMain
+    Catch2::Catch2
+    bng_engine
+)
+catch_discover_tests(test_gpu_batch_ssa_backend)
+
 # test_hybrid_model_generator
 add_executable(test_hybrid_model_generator test_hybrid_model_generator.cpp)
 target_link_libraries(test_hybrid_model_generator PRIVATE

@@ -99,6 +99,8 @@ add_library(bng_engine STATIC
     engine/LegacyNetworkRuleKernel.cpp
     engine/ObservableProjection.cpp
     engine/OdeIntegrator.cpp
+    engine/BatchSsa.cpp
+    engine/gpu/GpuSsaBackend.cpp
     engine/PlaSimulator.cpp
     engine/PsaSimulator.cpp
     engine/HybridModelGenerator.cpp
@@ -177,9 +179,64 @@ if(BUILD_BNGSIM_ADAPTER)
     target_compile_definitions(bng_engine PUBLIC BNG3_HAS_BNGSIM_ADAPTER=1)
     target_link_libraries(bng_engine PUBLIC bngsim_external)
 endif()
-if(APPLE)
-    target_sources(bng_engine PRIVATE engine/MetalBatchSsa.mm)
+# =============================================================================
+# Batched SSA GPU backends
+#
+# The batched direct-SSA path is backend agnostic: engine/gpu/GpuSsaBackend.cpp
+# picks whichever backend was compiled in and has a usable device, and callers
+# fall back to the CPU pool otherwise. Metal ships on Apple platforms, CUDA is
+# compiled when a CUDA compiler is available.
+# =============================================================================
+set(BNG3_ENABLE_METAL "AUTO" CACHE STRING
+    "Build the Metal batch-SSA backend (AUTO/ON/OFF)")
+set(BNG3_ENABLE_CUDA "AUTO" CACHE STRING
+    "Build the CUDA batch-SSA backend (AUTO/ON/OFF)")
+set_property(CACHE BNG3_ENABLE_METAL PROPERTY STRINGS AUTO ON OFF)
+set_property(CACHE BNG3_ENABLE_CUDA PROPERTY STRINGS AUTO ON OFF)
+
+set(BNG3_GPU_BACKEND_SOURCES "")
+set(BNG3_GPU_BACKEND_NAMES "")
+set(BNG3_GPU_BACKEND_DEFINES "")
+if(APPLE AND NOT BNG3_ENABLE_METAL STREQUAL "OFF")
+    list(APPEND BNG3_GPU_BACKEND_SOURCES engine/gpu/MetalSsaBackend.mm)
+    list(APPEND BNG3_GPU_BACKEND_NAMES "metal")
+    list(APPEND BNG3_GPU_BACKEND_DEFINES BNG3_HAS_METAL=1)
     target_link_libraries(bng_engine PUBLIC "-framework Metal" "-framework Foundation")
+endif()
+
+if(NOT BNG3_ENABLE_CUDA STREQUAL "OFF")
+    include(CheckLanguage)
+    check_language(CUDA)
+    if(BNG3_ENABLE_CUDA STREQUAL "ON" AND NOT CMAKE_CUDA_COMPILER)
+        message(FATAL_ERROR
+            "BNG3_ENABLE_CUDA=ON but no CUDA compiler was found. Install the CUDA "
+            "toolkit or configure with -DBNG3_ENABLE_CUDA=OFF.")
+    endif()
+    if(CMAKE_CUDA_COMPILER)
+        if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+            # No GPU is visible at configure time on build machines, so probe a
+            # fixed list that covers Volta and newer and rely on PTX JIT for
+            # anything newer. Override with -DCMAKE_CUDA_ARCHITECTURES=... to
+            # target a specific device.
+            set(CMAKE_CUDA_ARCHITECTURES "70;80" CACHE STRING
+                "CUDA architectures for the batch-SSA kernel")
+        endif()
+        enable_language(CUDA)
+        set_target_properties(bng_engine PROPERTIES CUDA_ARCHITECTURES
+            "${CMAKE_CUDA_ARCHITECTURES}")
+        list(APPEND BNG3_GPU_BACKEND_SOURCES engine/gpu/CudaSsaBackend.cu)
+        list(APPEND BNG3_GPU_BACKEND_NAMES "cuda")
+        list(APPEND BNG3_GPU_BACKEND_DEFINES BNG3_HAS_CUDA=1)
+    elseif(NOT BNG3_ENABLE_CUDA STREQUAL "AUTO")
+        message(STATUS "BNG3 batch SSA: no CUDA compiler found, CUDA backend disabled")
+    endif()
+endif()
+
+if(BNG3_GPU_BACKEND_SOURCES)
+    target_sources(bng_engine PRIVATE ${BNG3_GPU_BACKEND_SOURCES})
+    target_compile_definitions(bng_engine PRIVATE ${BNG3_GPU_BACKEND_DEFINES})
+    string(REPLACE ";" ", " BNG3_GPU_BACKEND_NAMES_TEXT "${BNG3_GPU_BACKEND_NAMES}")
+    message(STATUS "BNG3 batch SSA GPU backends: ${BNG3_GPU_BACKEND_NAMES_TEXT}")
 endif()
 
 # =============================================================================

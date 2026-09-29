@@ -12,10 +12,10 @@
 #include <unordered_set>
 #include <future>
 #include <mutex>
+#include <string>
 #include <thread>
-#if defined(__APPLE__)
-#include "engine/MetalBatchSsa.hpp"
-#endif
+#include "engine/BatchSsa.hpp"
+#include "engine/gpu/GpuSsaBackend.hpp"
 
 #include "BNGLexer.h"
 #include "BNGParser.h"
@@ -1810,47 +1810,56 @@ void OdeIntegrator::writeBinaryOutputFiles(const std::string& prefix, const OdeR
 
 // ---------------------------------------------------------------------------
 // Batch SSA: run N independent trajectories, aggregate mean + std dev.
-// Routes to Metal GPU when available and beneficial; falls back to CPU pool.
+// Routes to a GPU backend when one is compiled in, has a device, and the batch
+// is large enough to pay for the launch; otherwise falls back to the CPU pool.
 // ---------------------------------------------------------------------------
 OdeResult OdeIntegrator::integrateBatchSSA(const OdeOptions& opts) {
-#if defined(__APPLE__)
-    // Thresholds derived from benchmark data (see docs/GPU_BATCH_SSA_EVALUATION.md).
-    // GPU parallelism becomes beneficial above these values.
-    static constexpr std::size_t kGpuMinReactions = 50;
-    static constexpr std::size_t kGpuMinBatch     = 1000;
+    if (opts.batchGpuPreferred) {
+        const GpuBackendKind requested = gpuBackendFromName(opts.batchGpuBackend);
+        const GpuBackendKind selected =
+            (requested == GpuBackendKind::Auto) ? defaultGpuBackend() : requested;
 
-    if (opts.batchGpuPreferred &&
-        MetalBatchSsaSimulator::isMetalAvailable() &&
-        compiledRxns_.size() >= kGpuMinReactions &&
-        opts.batchSize >= kGpuMinBatch) {
-        try {
-            auto flat = FlattenedReactionNetwork::fromModelAndNetwork(model_, network_);
-            MetalBatchSsaSimulator sim(flat);
-            BatchSsaOptions batchOpts;
-            batchOpts.batchSize     = opts.batchSize;
-            batchOpts.tEnd          = opts.tEnd;
-            batchOpts.nSteps        = static_cast<int>(opts.nSteps);
-            batchOpts.baseSeed      = opts.seed;
-            auto metrics = sim.simulate(batchOpts);
+        if (selected != GpuBackendKind::None) {
+            if (!gpuBatchSsaWorthwhile(compiledRxns_.size(), opts.batchSize)) {
+                std::cerr << "[bng_cpp] batch_ssa: " << gpuBackendName(selected)
+                          << " backend skipped, batch of " << opts.batchSize
+                          << " over " << compiledRxns_.size()
+                          << " reactions is below the launch-overhead threshold.\n";
+            } else {
+                try {
+                    const auto flat =
+                        FlattenedReactionNetwork::fromModelAndNetwork(model_, network_);
+                    auto backend = makeGpuSsaBackend(selected, flat);
+                    if (backend) {
+                        BatchSsaOptions batchOpts;
+                        batchOpts.batchSize = opts.batchSize;
+                        batchOpts.tStart    = opts.tStart;
+                        batchOpts.tEnd      = opts.tEnd;
+                        batchOpts.nSteps    = static_cast<int>(opts.nSteps);
+                        batchOpts.baseSeed  = opts.seed;
+                        batchOpts.maxSimSteps = opts.maxSimSteps;
+                        auto metrics = backend->simulate(flat, batchOpts);
 
-            // Convert BatchSsaMetrics → OdeResult (mean trajectory + std devs)
-            OdeResult result;
-            result.batchSize       = opts.batchSize;
-            result.timePoints      = metrics.timePointsDouble;
-            result.concentrations  = metrics.meanSpecies;
-            result.observables     = metrics.meanObservables;
-            result.batchStdDevs    = metrics.stdSpecies;
-            result.batchObsStdDevs = metrics.stdObservables;
-            result.eventCount      = static_cast<std::size_t>(metrics.totalEvents);
-            return result;
-        } catch (const std::exception& ex) {
-            std::cerr << "[bng_cpp] batch_ssa: GPU path unavailable (" << ex.what()
-                      << "), falling back to CPU thread pool.\n";
+                        // Convert BatchSsaMetrics -> OdeResult (mean trajectory + std devs)
+                        OdeResult result;
+                        result.batchSize       = opts.batchSize;
+                        result.timePoints      = metrics.timePointsDouble;
+                        result.concentrations  = metrics.meanSpecies;
+                        result.observables     = metrics.meanObservables;
+                        result.batchStdDevs    = metrics.stdSpecies;
+                        result.batchObsStdDevs = metrics.stdObservables;
+                        result.eventCount      = static_cast<std::size_t>(metrics.totalEvents);
+                        return result;
+                    }
+                } catch (const std::exception& ex) {
+                    std::cerr << "[bng_cpp] batch_ssa: GPU path unavailable (" << ex.what()
+                              << "), falling back to CPU thread pool.\n";
+                }
+            }
         }
     }
-#endif
 
-    // CPU thread-pool fallback (or non-Apple platforms).
+    // CPU thread-pool fallback.
     // Each thread runs integrateSSA independently; results are aggregated.
     const std::size_t B = opts.batchSize;
     const std::size_t nWorkers = std::min(B,

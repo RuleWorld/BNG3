@@ -2708,3 +2708,19 @@ Full Python is `641 passed, 28 skipped`; the pinned SBML suite is `1,641 passed,
 offline curated inventory retains its prior status for all 1,096 records:
 `792/1,083` SBML pass, `109` unsupported, `5` fail, and `177` time out. Report
 hashes and scope are recorded in the convergence checklist.
+
+The batched direct-SSA path (`simulate_ssa({batch_size=>N})`) is no longer
+Metal-specific. `cpp/engine/gpu/` now holds the accelerator abstraction: the
+`GpuSsaBackend` interface, a registry that reports which backends were compiled
+in and which has a usable device, the Apple Metal backend, and a CUDA backend
+ported statement-for-statement from the Metal kernel so both produce identical
+trajectories for a given seed. Backend choice is `auto` (default), `cuda`,
+`metal`, or `none`; an unknown name is an error, and a missing device falls back
+to the CPU thread pool rather than approximating. Metal remains the measured
+backend: `tests/test_batch_ssa_statistical_parity.py` reproduces the reported
+max |Z| of 2.62 and Chi-square p of 0.0313 through the new registry on Apple
+Silicon, and the EGFR batch of 10,000 still runs ~32x faster than one CPU core.
+The CUDA backend is compile-checked in CI (`C++ batch SSA (CUDA backend,
+Ubuntu)`) together with a run proving a CUDA-enabled build with no device still
+produces correct CPU-pool results; NVIDIA hardware timings are not yet measured
+in-repo.
