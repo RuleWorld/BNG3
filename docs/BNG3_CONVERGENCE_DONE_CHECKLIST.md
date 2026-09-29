@@ -5099,8 +5099,11 @@ completion gate.
 - [ ] Installed-wheel tests cover import, compiled extension loading, API,
   CLI, embedded assets, plotting/data helpers, and representative scientific
   smoke behavior.
-- [ ] CLI binaries and optional native NFsim artifacts are built and tested
-  where promised.
+- [x] The release workflow smoke-checks `bng_cpp --version` and `NFsim -help`
+  on each binary runner before archiving; `tests/test_ci_contract.py` guards
+  the step and its ordering.
+- [ ] CLI binaries and optional native NFsim artifacts have not yet completed
+  an exact-tag hosted release build and smoke test.
 - [ ] Docker/container artifacts build, run, and have recorded base-image
   digests where supported.
 - [ ] Release artifacts are content-addressed, reproducible, and tied to the

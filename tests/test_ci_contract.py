@@ -221,6 +221,17 @@ def test_release_workflow_requires_exact_main_sha_qualification():
         assert f'"{workflow_name}"' in qualification_script
 
 
+def test_release_binaries_smoke_before_packaging():
+    """Release archives must contain executables that start on their runner."""
+
+    job = _workflow_job_from(RELEASE_WORKFLOW, "build-binaries")
+    smoke = job.index("Smoke test release executables")
+    package = job.index("Package binaries")
+    assert smoke < package
+    assert "bng_cpp${{ matrix.binary_ext }} --version" in job
+    assert "NFsim${{ matrix.binary_ext }} -help" in job
+
+
 def test_release_run_qualification_requires_success_for_each_exact_main_push():
     from scripts.ci.qualify_release_candidate import qualify_workflow_runs
 

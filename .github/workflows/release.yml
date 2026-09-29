@@ -99,6 +99,15 @@ jobs:
       - name: Build
         run: cmake --build build --config Release
 
+      - name: Smoke test release executables
+        shell: bash
+        run: |
+          set -euo pipefail
+          build/cpp/bng_cpp${{ matrix.binary_ext }} --version
+          build/cpp/NFsim${{ matrix.binary_ext }} -help \
+            > "$RUNNER_TEMP/nfsim-help.txt" 2>&1
+          grep -q "To run NFsim" "$RUNNER_TEMP/nfsim-help.txt"
+
       - name: Package binaries
         shell: bash
         run: |
