@@ -6,6 +6,16 @@
 **Working branch:** `main`; local and remote branches were aligned at this checkpoint. See the checklist for report-specific source SHAs.
 **Status:** Overall convergence and release qualification remain incomplete. Modern BNG3 Atomizer supports verified analytic/event subsets; general dynamic event scheduling and other SBML features remain unsupported. Keep the full objective open.
 
+**Claim audit at `d04f648`:** the convergence checklist's "remaining" boxes were
+re-checked against the source tree. Most were stale; four real defects were found
+and fixed in `d04f648`. See the "Claim audit at d04f648" section at the top of
+the checklist. Two auditing conclusions worth carrying here: the strict
+provenance gate fails with 13 errors at this head and is wired into no CI job
+(only the non-strict call runs), and `bng::core::canonicalLabel` never existed —
+the real symbol is `BNGcore::SpeciesGraph::canonicalLabel()`, with NFsim complex
+identity still on a separate private nauty path. The dated checklist entries
+below remain snapshots and are not current-head evidence.
+
 ## Current exact-state boundaries — 2026-09-29
 
 - Code head for this block is `c2babc5`, on `main` and equal to `origin/main` at

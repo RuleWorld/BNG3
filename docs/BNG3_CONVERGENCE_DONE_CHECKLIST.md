@@ -9,6 +9,43 @@
 **Last queried hosted CI before this checklist update:** exact head `88e560b3bbe9cbed7e0f113f55913d27ac94208b` was queried at 2026-09-29 03:52 UTC. CI `36517648525`, CodeQL `36517648572`, Cross-tool parity `36517648546`, and Lean semantic kernel `36517648522` were queued; all remain nonterminal.
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
+## Claim audit at d04f648 — verified stale vs still real
+
+This is the only section of this checklist verified line-by-line against the
+source tree at `d04f648`. Every dated section below it is a snapshot taken at the
+head named in its own heading; those entries are retained as the evidence record
+and are **not** re-verified here. Where an entry below says `- [ ]`, that box
+describes what was true when it was written, not necessarily what is true now.
+Read the table below before treating any unchecked box as an open defect.
+
+| Claim under audit | Verdict | Evidence at `d04f648` |
+|---|---|---|
+| `NFcore2::simulateNfcore2` is an unresolved link error blocking the native extension | STALE | No such symbol exists in `cpp/` or `python/`; the entry point is `NFcore2::SsaDriver` (`cpp/nfsim/NFcore2/driver.hh:54`), exercised by `tests/cpp/test_nfcore2_parity.cpp:100`. |
+| One `bng::core::canonicalLabel` serves both engines | STALE (as named) / PARTIAL (as intent) | No `bng::core` namespace or that signature exists. The real symbol is `BNGcore::SpeciesGraph::canonicalLabel()` (`cpp/ast/SpeciesGraph.cpp:19`), used by network dedup. NFsim complex identity still has a *private* nauty path (`cpp/nfsim/NFcore/complex.cpp:315,413`), so the unification intent is genuinely still open. |
+| The strict provenance gate fails with 10 pending errors | STALE | `python scripts/validate_provenance.py --require-approved` reports **13** errors at this head: baseline, 8 sources, 2 oracles, compiler images, Python lock. |
+| The strict provenance gate is enforced somewhere | STALE | The non-strict call is the only one wired into CI (`.github/workflows/ci.yml:46`, `.github/workflows/parity.yml:45`). No workflow passes `--require-approved`, so the 13 errors cannot fail any job. |
+| SBML round trip loses compartments, units, and conversion factors | STALE | Compartments and species are tagged and emitted (`writer.py:246-256`); unit normalization and conversion-factor handling are implemented (`writer.py:5448-5476`); unit exponents are parsed and validated in C++ (`cpp/io/SbmlReader.cpp:123,395`). |
+| The eight SBML constructs (rate/assignment rules, initial assignments, events, algebraic rules, constraints, fast reactions, packages) are all unlowered | STALE | Rate rules inline to `TotalRate` rules (`writer.py:4884-4890`), variable stoichiometry is substituted (`writer.py:1768-1806`), packages carry governed diagnostics. Each either lowers or fails closed with a named diagnostic. |
+| Structured-SBML `atomize=>1` still fails | STALE (duplicate entry) | The same checklist carries both a completed `- [x]` entry at line 5020 and this stale `- [ ]` at line 5035. The `- [ ]` contradicts its own completed entry. |
+| SBML-Multi is "parsing-only" | STALE | `parse_multi_package` (`multi.py:339`) feeds executable BNGL reconstruction via `_parse_multi_package_complete` (`multi.py:2080`), and `multi_executable` gates deterministic flux lowering in `writer.py:5165`. |
+| `t4`/`t5` are blocked on missing `sum()` | STALE | `sum()` is supported and passes through the writer unchanged (`bnglFunction("sum(1,2,3)")` -> `sum(1,2,3)`). The remaining NF protocol gaps are elsewhere and are not caused by `sum()`. |
+| Non-collinear reaction stoichiometry is blocked in `events.py` | PARTIAL | The blocker is the rank-one collinearity guard in **`writer.py:8607-8612`**, which rejects any target reaction whose stoichiometric vector is not a scalar multiple of the trigger's. `events.py` consumes that lowered verdict rather than originating it. |
+| ADR 0003's rejection inventory counts and line numbers | STALE (corrected) | The inventory is `docs/bngsim-migration-status.md:101`, which states "22 rejection sites, resolving to 19 distinct message texts"; three line numbers were wrong and are corrected in `d04f648`. ADR 0003 itself (`docs/adr/0003-bngsim-canonical-finite-backend.md:144-157`) only summarizes the list and carries no counts. |
+| The Batch SSA parity gaps are real | REAL (fixed in `d04f648`) | The gaps were genuine defects, not stale entries, and were fixed in this commit. Unlike every other row, this box was accurate. |
+
+### The four real defects fixed in `d04f648`
+
+Each silently produced a *different model* rather than an error, which is why
+they are the only items in this audit that were defects at all:
+
+1. **Identifier collisions** — distinct SBML ids (e.g. `A-B` and `A_B`) collapsed to one BNGL name, merging species and rewriting a reaction. Now a governed `identifier`/`dropped` warning (`writer.py:2554-2557`).
+2. **Silent missing-`kineticLaw` rate** — a reaction with no MathML was given rate `1` by an environment-tunable fallback and still generated a network. Now a governed `missingMath` record.
+3. **`arcsinh`/`arccosh`/`arctanh` MathML names** — lowered to functions BNGL does not have (BNGL spells them `asinh`/`acosh`/`atanh`). The writer already had this map (`writer.py:490-494`); the parser did not, and now does (`parser.py:883-888`).
+4. **Undeclared SBML packages** — a document declaring an SBML L3 package outside the eleven the parser knew (e.g. `topology:required="true"`) produced no diagnostic at all. Now a catch-all records the package as dropped and surfaces the requirement (`parser.py:3152-3181`).
+
+Note the pattern: items 1, 2, and 4 were all cases where the code produced a
+plausible-looking model instead of refusing one, which is the specific failure
+mode this repository's own rule exists to prevent.
 
 ## BNG3 dynamic-event representation boundary — 2026-09-29
 
