@@ -9491,3 +9491,23 @@ the other groups remain implementation targets.
   BNG2 parity nor all-SBML coverage. BNG2 code was not modified; its legacy
   Atomizer remains incomplete and unbenchmarked against all SBML. Curated
   BioModels validation remains stopped.
+
+## Current-main threshold-event cohort refresh — 2026-09-29
+
+- [x] Revalidated the ten previously unsupported threshold-trigger cases
+  `00393`, `00394`, `00444`, `00445`, `00450`, `00451`, `01071`, `01073`,
+  `01074`, and `01076` against BNG3 `4b35e958672c6da20683257c00a2eabe6edb9245`
+  and pinned SSTS `cf38585fac5de8e0e90112febb62851ee2181816`, at `t_end=1`
+  with 10 intervals. All ten remain unsupported; there were no failed or
+  timed-out cases. Per-case reports are
+  `/private/tmp/bng3-threshold-refresh-4b35e95-<case-id>.json`.
+- [x] Source inspection with the BNG3 Atomizer parser resolves the variable
+  first-reactant stoichiometry to 2 in all ten models. Their two reaction
+  vectors are `(-1,-2,1)` and `(1,1,-1)`, so the event-driving dynamics are
+  rank two. These cases are outside the existing scalar quadratic trajectory
+  proof; no trajectory assumption was loosened.
+- [ ] This cohort refresh adds no Atomizer or SSTS capability. It is selected
+  event triage, not full SSTS or all-SBML validation. BNG2 code was not
+  modified; the legacy BNG2/PyBioNetGen Atomizer remains incomplete and has
+  not been benchmarked against all SBML. Curated BioModels validation remains
+  stopped.
