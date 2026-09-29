@@ -47,6 +47,32 @@ Note the pattern: items 1, 2, and 4 were all cases where the code produced a
 plausible-looking model instead of refusing one, which is the specific failure
 mode this repository's own rule exists to prevent.
 
+#### Measured blast radius of `d04f648`
+
+Both trees were extracted and run side by side over every SBML input reachable
+in this repository — 216 distinct documents (24 on-disk plus 192 inline
+literals recovered by an AST walk of the test and source trees) under four
+option modes, 864 runs per version:
+
+| | |
+|---|---|
+| success/failure changed | 0 / 864 |
+| raised exception changed | 0 / 864 |
+| **non-comment BNGL bytes changed** | **0 / 864** |
+| documents gaining appended `# [dropped]` comment lines | 7 / 216 |
+| lines removed anywhere | 0 |
+
+So the change is behaviour-preserving on everything it could be exercised
+against, and its whole effect is to add diagnostics. Two of the seven changed
+documents are the commit's own new tests. Of the five new code paths, only
+`missingMath` fires on pre-existing inputs; `identifier` and `package:` fire only
+on the new tests, and the `arcsinh` and `logbase` paths fire on **no** document in
+the corpus at all — those two are covered by fragment-level tests only.
+
+**This is not evidence about the pinned SBML Test Suite.** That corpus is not in
+this repository, so the 1,744/179/0 result remains unmeasured against these
+changes and must be re-run before any of them are claimed as suite-validated.
+
 ### Ready to apply, blocked on the ANTLR generator — `priority` as a model identifier
 
 `priority` is a lexer keyword, so a molecule, observable, or parameter literally
