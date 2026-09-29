@@ -8940,3 +8940,23 @@ the other groups remain implementation targets.
   all-SBML cross-engine coverage remain open; the BNG2/legacy PyBioNetGen
   Atomizer is incomplete and has not been benchmarked against all SBML. The
   stopped full curated BioModels validation remains stopped.
+
+## Aggregated current-source SSTS NFsim cohort — 2026-09-29
+
+- [x] Aggregated independent-seed results for `stochastic/00002` through
+  `stochastic/00012` (11 models) in flat and atomized modes. All 22 ensemble
+  comparisons passed; 8,800 total trajectories completed with zero run errors
+  and zero points outside the 3 pooled-standard-error threshold. Worst `|z|`
+  was `2.01191`.
+- [x] Manifest
+  `/private/tmp/bng3-ssts-nfsim-independent-11-manifest-20260929.json`,
+  SHA-256 `f63f6a0d29a737a4f21749102d163b78fb78dbfe5f07a60d42bfd9fa85d7bc9f`,
+  records each SBML source hash, individual report hash, BNG3 report head, and
+  the common BNG2/NFsim reference revisions. The reports span BNG3 documentation
+  heads `7b481e9`, `f71c259`, and `042594a`; a source-tree comparison confirms
+  changes from the full SSTS source head `bf210ab` through current `main` are
+  limited to this checklist.
+- [ ] This is an 11-model stochastic SSTS sample, not full SSTS NFsim coverage
+  or an all-SBML benchmark of the incomplete BNG2/legacy PyBioNetGen Atomizer.
+  Perl BNG2 only emitted BNG-XML for standalone NFsim. The full curated
+  BioModels validation remains stopped.
