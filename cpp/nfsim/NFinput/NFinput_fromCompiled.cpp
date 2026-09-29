@@ -870,9 +870,48 @@ bool addSpeciesFromCompiledWithOverrides(
                     }
                     if (site.stateConstraintResolved.kind == StateKind::Exact) {
                         if (!site.stateConstraintResolved.exact.has_value()) return false;
-                        concrete->setComponentState(
-                            runtimeName,
-                            static_cast<int>(site.stateConstraintResolved.exact->index));
+                        // StateId::index is an offset into the *declaration*
+                        // order of component.allowedStates, not an NFsim
+                        // state value.  The two agree only when the two
+                        // orderings agree, and they do not: an all-integer
+                        // component is renumbered to 0..max by
+                        // addMoleculeTypesFromCompiled above, exactly as the
+                        // XML loader renumbers it (NFinput.cpp:585-591), while
+                        // a component whose states are only mentioned from
+                        // patterns keeps the order the atomizer discovered
+                        // them in.  ANx declares RD(...,m~2) in its species
+                        // block before any observable mentions m~0, so '2' is
+                        // allowedStates[0] and every seed receptor was created
+                        // in NFsim state 0 -- which made `Molecules R0 RD(m~0)`
+                        // report the whole seed pool.
+                        //
+                        // Resolve the StateId back to its name and ask the
+                        // molecule type for the value, so the result depends
+                        // only on which state was named.  This mirrors the
+                        // product path (NFinput_reactions_fromCompiled.cpp:390)
+                        // and the XML loader's name-keyed allowedStates lookup
+                        // (NFinput.cpp:1001-1009).
+                        const auto* stateName =
+                            model.stateName(*site.stateConstraintResolved.exact);
+                        if (stateName == nullptr) {
+                            std::cerr << "[nfsim/compiled] seed '"
+                                          << seed.sourcePattern
+                                          << "' has an invalid state ID\n";
+                            return false;
+                        }
+                        try {
+                            const int componentIndex =
+                                types[moleculeIndex]->getCompIndexFromName(runtimeName);
+                            concrete->setComponentState(
+                                runtimeName,
+                                types[moleculeIndex]->getStateValueFromName(
+                                    componentIndex, *stateName));
+                        } catch (const std::exception& error) {
+                            std::cerr << "[nfsim/compiled] seed '"
+                                      << seed.sourcePattern << "': "
+                                      << error.what() << "\n";
+                            return false;
+                        }
                     }
                     for (const auto& bond : site.bondConstraints) {
                         if (bond.kind == bng::compile::BondConstraintKind::Any) {
