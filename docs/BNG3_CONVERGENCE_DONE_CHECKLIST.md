@@ -9391,3 +9391,36 @@ the other groups remain implementation targets.
   an all-SBML benchmark. BNG2/legacy PyBioNetGen Atomizer remains incomplete
   and has not been benchmarked against all SBML. Curated BioModels validation
   remains stopped.
+
+## Persistent simultaneous parameter-event assignments — 2026-09-29
+
+- [x] BNG3 now lowers simultaneous parameter-only events that share a target
+  only when both assignments evaluate to the same finite value under their
+  own trigger-time snapshots or common execution-time state. Shared writes with
+  different values remain unsupported. Trigger-target interference remains
+  disqualifying for nonpersistent events; persistent events already in the
+  execution queue are retained as SBML requires. Implementation and regression
+  are in `6012f776c7a834cd03ee7bf7e82fd54b46973372`.
+- [x] Regression was observed failing before the implementation, then passing
+  with the fix. It checks two repeated, simultaneous timer events sharing
+  `reset := time`, distinct counter updates through `t=0.02`, and continued
+  rejection when those triggers are nonpersistent. The full Python suite
+  passed `694`, skipped `28`, with `1,380` existing dependency/parser
+  deprecation warnings. Ruff, Black (`py39`), and `git diff --check` passed.
+- [x] Rechecked official SSTS cases `semantic/00965` and `semantic/00966` on
+  the clean source commit. Both remain unsupported, as intended: each has
+  simultaneously triggered, equal-priority, nonpersistent timer events that
+  share `reset := time`. After one event resets the trigger, SBML requires the
+  other nonpersistent queued event to be canceled; choosing an execution order
+  would change its result. This follows the
+  [SBML Level 3 Core event persistence rules](https://sbml.org/specifications/sbml-level-3/version-2/core/sbml-level-3-version-2-core.pdf).
+  Per-case reports: `/private/tmp/bng3-00965-6012f77.json`, SHA-256
+  `fec1e9af72cff014362fd26d8b74d19edf486bef231209445e4161aa8ccd4aba`; and
+  `/private/tmp/bng3-00966-6012f77.json`, SHA-256
+  `064774d27ed6fba397f85c3c1c45a50275f3cd49de7ad36b888cfa7bc7e2d48f`.
+- [ ] This exact, persistent-event capability adds no SSTS pass in the current
+  unsupported cohort; the two similar official cases are nonpersistent and
+  remain fail-closed. It does not claim full SSTS/event support, all-SBML
+  Atomizer coverage, BNG2/PyBioNetGen Atomizer completeness, or BioModels
+  validation. BNG2 code was not changed; curated BioModels validation remains
+  stopped.
