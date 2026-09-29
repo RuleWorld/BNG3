@@ -389,7 +389,10 @@ def _event_translation_limitations(bngl: str) -> list[str]:
     details = []
     in_notes = False
     for line in bngl.splitlines():
-        if line.strip() == marker:
+        # The writer appends a parenthetical to this header, so match on the
+        # prefix; an equality test never fires and silently drops every
+        # per-event refusal reason the lowering already reported.
+        if line.strip().startswith(marker):
             in_notes = True
             continue
         if in_notes and line.startswith("# ============================"):
@@ -523,6 +526,87 @@ def _stoichiometry_subcauses(reason: str) -> list[str]:
     return list(dict.fromkeys(subcauses))
 
 
+# Subcause taxonomy for the ``events`` cause.  Each marker is a distinctive
+# fragment of one refusal reason the BNGL event lowering emits from
+# python/bionetgen/atomizer/modern/events.py; the reasons are chosen so that no
+# real reason string matches more than one marker, and every reason matches one.
+_EVENT_REFUSAL_SUBCAUSES: tuple[tuple[str, str], ...] = (
+    (
+        "state_trigger_not_schedulable",
+        "state-triggered sbml events require stochastic jump scheduling",
+    ),
+    (
+        "state_trigger_not_schedulable",
+        "trigger is not a simple time threshold",
+    ),
+    ("trigger_time_not_constant", "does not reduce to a constant"),
+    (
+        "trigger_outside_time_gate",
+        "state threshold crosses outside its fixed time gate",
+    ),
+    (
+        "trigger_reentry_within_horizon",
+        "volume change can cause the state trigger to re-enter",
+    ),
+    ("exponential_self_reset", "exponential self-reset"),
+    (
+        "delayed_assignment_retrigger_edge",
+        "delayed interval assignment can create another rising trigger edge",
+    ),
+    ("delay_not_constant", 'delay "'),
+    ("time_scale_not_positive_constant", "is not a positive constant"),
+    (
+        "nonpersistent_cancellation_at_window_end",
+        "nonpersistent delayed event may be canceled at the window end",
+    ),
+    (
+        "simultaneous_cancellation_unresolved",
+        "simultaneous nonpersistent event cancellation could not be resolved",
+    ),
+    (
+        "simultaneous_dynamic_priority_unordered",
+        "simultaneous dynamic-priority event group could not be ordered soundly",
+    ),
+    ("time_window_empty", "time-window bounds do not form a nonempty interval"),
+    (
+        "time_window_starts_at_or_before_zero",
+        "time windows beginning at or before t=0 are not lowered",
+    ),
+    (
+        "assignment_target_unknown",
+        "is neither a known species nor a parameter",
+    ),
+    ("priority_not_constant", "is not compile-time constant"),
+    (
+        "assignment_not_constant",
+        '" is not constant (depends on species/time',
+    ),
+    (
+        "trigger_state_not_finite",
+        "event state at execution time is not finite",
+    ),
+)
+
+
+def _event_unsupported_subcauses(reason: str) -> list[str]:
+    """Split an event refusal into the semantic boundary that refused it.
+
+    ``scripts/ci/validate_sbml_test_suite.py`` carries the lowering's own
+    refusal text into ``unsupported_reason``, so the precise boundary is already
+    in the record; this only names it.  An event refusal whose reason text is
+    not recognised is reported as ``unclassified_events`` rather than being
+    silently absorbed into the coarse ``events`` cause.
+    """
+
+    lower = str(reason or "").lower()
+    subcauses = [
+        subcause for subcause, marker in _EVENT_REFUSAL_SUBCAUSES if marker in lower
+    ]
+    if not subcauses and "event" in lower:
+        subcauses.append("unclassified_events")
+    return list(dict.fromkeys(subcauses))
+
+
 def _unsupported_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
     """Attach cause labels and return counts, intersections, and exact IDs."""
 
@@ -531,6 +615,7 @@ def _unsupported_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
     by_intersection: dict[tuple[str, ...], list[str]] = {}
     cardinality: dict[str, int] = {}
     stoichiometry_subcauses: dict[str, list[str]] = {}
+    event_subcauses: dict[str, list[str]] = {}
     unsupported = []
     for record in records:
         if record.get("status") != "unsupported":
@@ -540,12 +625,20 @@ def _unsupported_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
             record["unsupported_reason"] = reason
         causes = _unsupported_causes(reason)
         record["unsupported_causes"] = causes
-        subcauses = _stoichiometry_subcauses(reason)
-        record["unsupported_subcauses"] = (
-            {"stoichiometry": subcauses} if "stoichiometry" in causes else {}
-        )
         reference = _record_ref(record)
         unsupported.append(record)
+        record_subcauses: dict[str, list[str]] = {}
+        if "stoichiometry" in causes:
+            subcauses = _stoichiometry_subcauses(reason)
+            record_subcauses["stoichiometry"] = subcauses
+            for subcause in subcauses:
+                stoichiometry_subcauses.setdefault(subcause, []).append(reference)
+        if "events" in causes:
+            event_labels = _event_unsupported_subcauses(reason)
+            record_subcauses["events"] = event_labels
+            for subcause in event_labels:
+                event_subcauses.setdefault(subcause, []).append(reference)
+        record["unsupported_subcauses"] = record_subcauses
         unique_causes = tuple(sorted(set(causes)))
         cardinality[str(len(unique_causes))] = (
             cardinality.get(str(len(unique_causes)), 0) + 1
@@ -554,8 +647,6 @@ def _unsupported_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
         for cause in causes:
             by_cause.setdefault(cause, []).append(str(record.get("id", "")))
             by_cause_records.setdefault(cause, []).append(reference)
-        for subcause in subcauses:
-            stoichiometry_subcauses.setdefault(subcause, []).append(reference)
     return {
         "record_count": len(unsupported),
         "by_cause": {
@@ -577,6 +668,19 @@ def _unsupported_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
                     "records": references,
                 }
                 for subcause, references in sorted(stoichiometry_subcauses.items())
+            },
+        },
+        "events_subsummary": {
+            "record_count": sum(
+                "events" in record.get("unsupported_causes", [])
+                for record in unsupported
+            ),
+            "by_subcause": {
+                subcause: {
+                    "count": len(references),
+                    "records": references,
+                }
+                for subcause, references in sorted(event_subcauses.items())
             },
         },
         "intersection_summary": {
