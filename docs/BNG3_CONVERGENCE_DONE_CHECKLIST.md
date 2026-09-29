@@ -18,6 +18,27 @@ recorded in the historical sections below; they are not current-head evidence.
 non-energy PRs #476 and #477 are deliberately not silently included in the
 BNG3 port.
 
+## Quadratic events with downstream-only reactions — 2026-09-28
+
+- [x] Modern Atomizer quadratic event analysis now projects the trigger
+  trajectory onto reactions that change the trigger coordinate. It ignores a
+  connected downstream reaction only when that reaction does not change a
+  dynamic species read by the trigger or trigger-affecting kinetic laws.
+  Species without a proven trajectory are excluded from trigger-time
+  snapshots. A negative regression keeps lowering unsupported when another
+  reaction changes a rate-law species.
+- [x] Added an SBML model with `A + B -> P`, downstream `P -> Q`, and an event
+  triggered by `A < 0.5`. BNG3 schedules the event and its generated trajectory
+  matches libRoadRunner for `A`, `B`, `P`, and `Q` away from the event time.
+  The focused event and SBML parity files pass (`186 passed`); Ruff, Black
+  targeting Python 3.9, and `git diff --check` pass.
+- [ ] This synthetic case adds no official SSTS pass. `semantic/00387` remains
+  unsupported: its reverse reaction also changes the trigger's rate-law
+  species, so it does not meet this lowering's proof conditions. This is not
+  full SSTS, BioModels, or cross-engine coverage. The legacy BNG2 Atomizer
+  remains incomplete and has not been benchmarked against all SBML; no BNG2
+  source was changed.
+
 ## Event-target species-reference initial assignments — 2026-09-28
 
 - [x] Fixed modern Atomizer output for a species-reference ID that has both

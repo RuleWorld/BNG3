@@ -1601,6 +1601,111 @@ def _independent_quadratic_event_pair_model(
     </sbml>"""
 
 
+def _quadratic_event_with_downstream_decay_model() -> str:
+    return """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="quadratic_event_with_downstream_decay">
+        <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies>
+          <species id="A" compartment="C" initialAmount="1" hasOnlySubstanceUnits="true"/>
+          <species id="B" compartment="C" initialAmount="2" hasOnlySubstanceUnits="true"/>
+          <species id="P" compartment="C" initialAmount="0" hasOnlySubstanceUnits="true"/>
+          <species id="Q" compartment="C" initialAmount="0" hasOnlySubstanceUnits="true"/>
+        </listOfSpecies>
+        <listOfParameters>
+          <parameter id="k" value="0.5" constant="true"/>
+          <parameter id="kd" value="0.25" constant="true"/>
+        </listOfParameters>
+        <listOfReactions>
+          <reaction id="combine" reversible="false">
+            <listOfReactants>
+              <speciesReference species="A" stoichiometry="1"/>
+              <speciesReference species="B" stoichiometry="1"/>
+            </listOfReactants>
+            <listOfProducts><speciesReference species="P" stoichiometry="1"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><times/>
+              <ci>k</ci><ci>A</ci><ci>B</ci>
+            </apply></math></kineticLaw>
+          </reaction>
+          <reaction id="decay" reversible="false">
+            <listOfReactants><speciesReference species="P" stoichiometry="1"/></listOfReactants>
+            <listOfProducts><speciesReference species="Q" stoichiometry="1"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><times/>
+              <ci>kd</ci><ci>P</ci>
+            </apply></math></kineticLaw>
+          </reaction>
+        </listOfReactions>
+        <listOfEvents>
+          <event id="reset_reactants" useValuesFromTriggerTime="false">
+            <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><lt/><ci>A</ci><cn>0.5</cn></apply>
+            </math></trigger>
+            <listOfEventAssignments>
+              <eventAssignment variable="B"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></eventAssignment>
+            </listOfEventAssignments>
+          </event>
+        </listOfEvents>
+      </model>
+    </sbml>"""
+
+
+def test_quadratic_event_ignores_downstream_decay_reactions(tmp_path):
+    import numpy as np
+    import pytest
+
+    roadrunner = pytest.importorskip("roadrunner")
+    from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.model import load
+
+    xml = _quadratic_event_with_downstream_decay_model()
+    result = Atomizer(quiet_mode=True, t_end=4, n_steps=400).atomize(xml)
+
+    assert result.success, result.error
+    assert "state-dependent or non-constant event" not in result.bngl
+    assert "Events NOT simulated" not in result.bngl
+    assert result.bngl.count('setConcentration("@C:M_B()", "1")') == 1
+
+    model_path = tmp_path / "quadratic_event_with_downstream_decay.bngl"
+    model_path.write_text(result.bngl, encoding="utf-8")
+    load(model_path).execute()
+    lines = model_path.with_suffix(".gdat").read_text().splitlines()
+    columns = lines[0].lstrip("# ").split()
+    bng_data = np.loadtxt(lines[1:])
+    times = bng_data[:, columns.index("time")]
+
+    rr = roadrunner.RoadRunner(xml)
+    rr.integrator.setValue("relative_tolerance", 1e-9)
+    rr.integrator.setValue("absolute_tolerance", 1e-12)
+    rr.timeCourseSelections = ["time", "A", "B", "P", "Q"]
+    reference = rr.simulate(times=times)
+    event_times = [np.log(1.5) / 0.5]
+    away_from_events = np.logical_and.reduce(
+        [np.abs(times - event_time) > 1e-6 for event_time in event_times]
+    )
+    for species in ("A", "B", "P", "Q"):
+        bng_values = bng_data[away_from_events, columns.index(species)]
+        rr_values = reference[away_from_events, reference.colnames.index(species)]
+        scale = max(float(np.max(np.abs(bng_values))), float(np.max(np.abs(rr_values))))
+        assert float(np.max(np.abs(bng_values - rr_values))) <= max(1e-10, 2e-5 * scale)
+
+
+def test_quadratic_event_rejects_other_reactions_changing_a_rate_species():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = (
+        _quadratic_event_with_downstream_decay_model()
+        .replace(
+            '<listOfReactants><speciesReference species="P" stoichiometry="1"/></listOfReactants>',
+            '<listOfReactants><speciesReference species="B" stoichiometry="1"/></listOfReactants>',
+        )
+        .replace("<ci>kd</ci><ci>P</ci>", "<ci>kd</ci><ci>B</ci>")
+    )
+    result = Atomizer(quiet_mode=True, t_end=4, n_steps=400).atomize(xml)
+
+    assert result.success, result.error
+    assert "state-dependent or non-constant event" in result.bngl
+    assert "Events NOT simulated" in result.bngl
+
+
 def test_quadratic_state_events_ignore_unrelated_event_assignments(tmp_path):
     import numpy as np
     import pytest

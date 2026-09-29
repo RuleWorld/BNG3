@@ -8275,7 +8275,7 @@ def generate_bngl(
             event_context: SBMLEvent,
             state_values: Optional[Mapping[str, float]] = None,
         ) -> Optional[Tuple[float, float, float, float]]:
-            """Resolve a scalar quadratic ODE in a rank-one reaction network."""
+            """Resolve a scalar quadratic ODE in its trigger-affecting network."""
             if not quadratic_species_initial_assignments_are_supported() or any(
                 rule.type == "algebraic" for rule in model.rules
             ):
@@ -8437,27 +8437,73 @@ def generate_bngl(
                     for symbol in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", expanded)
                 }
 
+            # Only reactions that change the trigger coordinate determine its
+            # scalar trajectory. Other reactions may share downstream species,
+            # but can be excluded only when they do not change any species read
+            # by the trigger or a trigger-affecting reaction rate.
+            target_reaction_vectors = [
+                item
+                for item in reaction_vectors
+                if abs(item[1].get(target_id, 0.0)) > 1e-14
+            ]
+            if not target_reaction_vectors:
+                return None
+            target_reaction_ids = {id(item[0]) for item in target_reaction_vectors}
+            target_rate_symbols = referenced_symbols(event_context.trigger)
+            for reaction, _vector, _variable_stoichiometry in target_reaction_vectors:
+                kinetic_law = reaction.kinetic_law
+                rate_expression = str(
+                    getattr(kinetic_law, "math", "")
+                    or (kinetic_law.get("math", "") if kinetic_law else "")
+                    or ""
+                )
+                target_rate_symbols.update(referenced_symbols(rate_expression))
+            dynamic_species_names = {
+                standardize_name(species_id): species_id
+                for species_id in dynamic_species
+            }
+            target_rate_species = {
+                dynamic_species_names[name]
+                for name in target_rate_symbols
+                if name in dynamic_species_names
+            }
+            independently_changed_species = {
+                species_id
+                for reaction, vector, variable_stoichiometry_species in reaction_vectors
+                if id(reaction) not in target_reaction_ids
+                for species_id in (
+                    {sid for sid, value in vector.items() if abs(value) > 1e-14}
+                    | variable_stoichiometry_species
+                )
+            }
+            if target_rate_species & independently_changed_species:
+                return None
+            # Excluded species cannot be reconstructed from the scalar
+            # coordinate, so do not expose them as event-time snapshots.
+            proven_dynamic_species = (
+                active_dynamic_species - independently_changed_species
+            )
             active_species_names = {
-                standardize_name(species_id) for species_id in active_dynamic_species
+                standardize_name(species_id) for species_id in proven_dynamic_species
             }
             snapshot_species_names = {
                 standardize_name(species_id)
                 for species_id, species in model.species.items()
-                if species_id in active_dynamic_species
+                if species_id in proven_dynamic_species
                 or species.constant
                 or species.boundary_condition
             }
             active_compartment_names = {
                 standardize_name(model.species[species_id].compartment)
-                for species_id in active_dynamic_species
+                for species_id in proven_dynamic_species
                 if model.species[species_id].compartment
             }
             if rule_targets & (active_species_names | active_compartment_names):
                 return None
-            active_expression_symbols = referenced_symbols(event_context.trigger)
+            active_expression_symbols = set(target_rate_symbols)
             if rule_targets & active_expression_symbols:
                 return None
-            for reaction, _vector, _variable_stoichiometry in reaction_vectors:
+            for reaction, _vector, _variable_stoichiometry in target_reaction_vectors:
                 kinetic_law = reaction.kinetic_law
                 rate_expression = str(
                     getattr(kinetic_law, "math", "")
@@ -8494,13 +8540,13 @@ def generate_bngl(
                     return None
             if any(
                 reaction.fast or reaction.conversion_factor or variable_stoichiometry
-                for reaction, _vector, variable_stoichiometry in reaction_vectors
+                for reaction, _vector, variable_stoichiometry in target_reaction_vectors
             ):
                 return None
             base_vector = next(
                 (
                     vector
-                    for _reaction, vector, _variable_stoichiometry in reaction_vectors
+                    for _reaction, vector, _variable_stoichiometry in target_reaction_vectors
                     if abs(vector.get(target_id, 0.0)) > 1e-14
                 ),
                 None,
@@ -8508,7 +8554,7 @@ def generate_bngl(
             if base_vector is None:
                 return None
             target_stoich = base_vector[target_id]
-            for _reaction, vector, _variable_stoichiometry in reaction_vectors:
+            for _reaction, vector, _variable_stoichiometry in target_reaction_vectors:
                 ratio = vector[target_id] / target_stoich
                 if any(
                     abs(vector.get(sid, 0.0) - ratio * base_vector[sid])
@@ -8524,7 +8570,7 @@ def generate_bngl(
 
             species_polynomials: Dict[str, Tuple[float, float]] = {}
             for sid, species in model.species.items():
-                if sid in dynamic_species and sid not in active_dynamic_species:
+                if sid in dynamic_species and sid not in proven_dynamic_species:
                     continue
                 state_initial = initial_value(sid)
                 if state_initial is None or not math.isfinite(state_initial):
@@ -8634,7 +8680,7 @@ def generate_bngl(
                 return None
 
             flux_coefficients = (0.0, 0.0, 0.0)
-            for reaction, vector, _variable_stoichiometry in reaction_vectors:
+            for reaction, vector, _variable_stoichiometry in target_reaction_vectors:
                 net_target = vector.get(target_id, 0.0)
                 if abs(net_target) <= 1e-14:
                     continue
