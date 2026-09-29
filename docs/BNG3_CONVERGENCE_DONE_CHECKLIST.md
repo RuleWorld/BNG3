@@ -8842,3 +8842,23 @@ the other groups remain implementation targets.
 - [ ] The exact-head checks are nonterminal; the PRs remain stale, dirty, or
   failing as listed. Keep BNG3 convergence active and keep the stopped curated
   BioModels validation stopped.
+
+## Current sdist-to-wheel install and simulation smoke — 2026-09-29
+
+- [x] Built an sdist from exact BNG3 head `453eeb5828fc779c6eec27ec87fc294076823d5d`,
+  then built a CPython 3.14 macOS ARM64 wheel from that archive using cached
+  ANTLR, SUNDIALS, and pybind11 sources. The sdist omits the pre-existing
+  `bng3-offline-bundle/`. Sdist SHA-256:
+  `269487180aa58f286a74c4f2b6ceb062ab31343d066afeadb20d0e4b5dcc849c`.
+  Wheel SHA-256:
+  `d09e784a6618b505f647446d038d6355cdcc219128b9db7250149cdf2bea38d9`.
+- [x] Installed that wheel in a clean CPython 3.14 venv. Imports resolved to
+  the venv's BNG3 package and compiled extension; `bionetgen --version`,
+  `--help`, `info`, and `check` passed. An ODE smoke run produced 11 finite
+  rows through `t=1`.
+- [x] NumPy, Click, and Packaging were linked from host site-packages for this
+  offline check. CMake used cached native dependency sources; this does not
+  verify online dependency resolution.
+- [ ] This is local macOS ARM64 evidence. Cross-platform wheel builds, Windows
+  executable artifacts, release qualification, GitHub release, and PyPI
+  publication remain open.
