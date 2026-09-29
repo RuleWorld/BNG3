@@ -665,10 +665,14 @@ void OdeIntegrator::compile() {
                 hasWordBoundaryMatch(lowerRawRL, "t")) {
                 isFunctional = true;
             } else {
-                // Check for observable dependencies
+                // A rate is constant only if every symbol it reads is a
+                // *time-independent* parameter. Referencing `k` is not enough:
+                // `k` may itself be defined as `time*kbase`, and baking that
+                // rate at t=0 freezes the model.
                 auto deps = rateExpr->getDependencies();
                 for (const auto& dep : deps) {
-                    if (!model_.getParameters().contains(dep)) {
+                    if (!model_.getParameters().contains(dep) ||
+                        model_.getParameters().isTimeDependent(dep)) {
                         isFunctional = true;
                         break;
                     }
@@ -809,7 +813,10 @@ void OdeIntegrator::compile() {
                             needsRuntime = true;
                             break;
                         }
-                        if (!model_.getParameters().contains(dep)) {
+                        // A known parameter is constant only if it is itself
+                        // time-independent; see the note in compile().
+                        if (!model_.getParameters().contains(dep) ||
+                            model_.getParameters().isTimeDependent(dep)) {
                             needsRuntime = true;
                             break;
                         }
@@ -1274,8 +1281,10 @@ void OdeIntegrator::derivs(double t, const double* y, double* dydt) const {
                 }
             }
 
-            // Otherwise try as parameter
-            return model_.getParameters().evaluate(name);
+            // Otherwise try as parameter. `t` must be passed: a parameter whose
+            // expression reads `time` is not memoized, so dropping it here
+            // would silently evaluate it at t=0 inside a derivative.
+            return model_.getParameters().evaluate(name, t);
         };
 
         for (const auto idx : functionalRxnIndices_) {
@@ -1767,7 +1776,9 @@ void OdeIntegrator::writeOutputFiles(const std::string& prefix, const OdeResult&
                             resolver, result.timePoints[step]);
                     }
                 }
-                return model_.getParameters().evaluate(name);
+                // As in derivs(): the parameter may depend on time.
+                return model_.getParameters().evaluate(
+                    name, result.timePoints[step]);
             };
             for (auto& fexpr : funcExprs) {
                 double val = fexpr.evaluate(resolver, result.timePoints[step]);

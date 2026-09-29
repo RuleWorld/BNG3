@@ -681,3 +681,35 @@ TEST_CASE("Batch SSA returns one species row per output time on every backend",
         }
     }
 }
+
+TEST_CASE("ParameterList re-evaluates a time-dependent parameter at each t",
+          "[OdeOptions][Parameters]") {
+    // A parameter whose expression reads `time` is a function of t, so it must
+    // not be memoized.  Caching it froze the value at whatever t was evaluated
+    // first -- t=0 during model construction -- and left a time-dependent
+    // decay rate stuck at zero for the whole run.
+    auto model = parser::parseModel(R"(
+begin parameters
+    kbase 1.0
+    k time*kbase
+    kDerived k+1
+    kConst 2.0
+end parameters
+)");
+    REQUIRE(model != nullptr);
+    auto& parameters = model->getParameters();
+    parameters.evaluateAll(0.0);
+
+    CHECK_THAT(parameters.evaluate("k", 0.0), Catch::Matchers::WithinAbs(0.0, 1e-12));
+    CHECK_THAT(parameters.evaluate("k", 2.0), Catch::Matchers::WithinAbs(2.0, 1e-12));
+    CHECK_THAT(parameters.evaluate("k", 5.0), Catch::Matchers::WithinAbs(5.0, 1e-12));
+
+    // Time-dependence is transitive: kDerived reads k, so it tracks t as well.
+    CHECK_THAT(parameters.evaluate("kDerived", 2.0), Catch::Matchers::WithinAbs(3.0, 1e-12));
+    CHECK_THAT(parameters.evaluate("kDerived", 5.0), Catch::Matchers::WithinAbs(6.0, 1e-12));
+
+    // A time-independent parameter must still return the same value at any t;
+    // that is the memo the rate-evaluation hot path depends on.
+    CHECK_THAT(parameters.evaluate("kConst", 0.0), Catch::Matchers::WithinAbs(2.0, 1e-12));
+    CHECK_THAT(parameters.evaluate("kConst", 100.0), Catch::Matchers::WithinAbs(2.0, 1e-12));
+}
