@@ -8593,11 +8593,23 @@ the other groups remain implementation targets.
   failures are C++ jobs on macOS/Clang, Ubuntu/GCC, Ubuntu/Clang, Windows/MSVC,
   and Ubuntu/ASan. Existing correctness findings remain; no PR changes were
   made.
+- [x] Refreshed PR #27 failure logs in run
+  [36358966258](https://github.com/RuleWorld/BNG3/actions/runs/36358966258).
+  All five C++ failures reach `energy_validation_harness`, where
+  `test_imported_contracts_have_explicit_dispositions` rejects the new
+  `tests/architecture_contracts/nfcore2/test_ssa_driver.cpp`: the PR adds it to
+  CMake but does not add it to `provenance/architecture-contracts.json`. The
+  Windows job also reports a separate segfault in `OdeIntegrator preserves
+  multi-species derivative updates`; that failure is not diagnosed yet. The PR
+  remains unmodified and unreviewed on GitHub.
 - [x] Reviewed new draft PR #28 at head
   `1a5008b4163109d85e0503af4eefe49074572152`. Its regex cache call sites use a
   fixed built-in function-name set, so the dictionary is bounded in current
-  code. No performance benchmark was included in the inspected patch. No PR
-  was modified, approved, or commented on.
+  code. No performance benchmark was included in the inspected patch. Latest
+  exact-head checks show C++/ASan, CodeQL, Lean, lint, and Python matrix jobs
+  passed; full-corpus validation, integration, parity, and package smoke remain
+  pending. Docker, wheel/sdist publication, and scheduled NFsim jobs were
+  skipped. No PR was modified, approved, or commented on.
 
 ## Local pip artifact build and install smoke — 2026-09-28
 
