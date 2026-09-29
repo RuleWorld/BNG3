@@ -561,6 +561,70 @@ def test_sbml_fixed_fractional_stoichiometry_lowers_to_deterministic_flux_rules(
     )
 
 
+def test_static_species_reference_parameters_are_hash_seed_deterministic(tmp_path):
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    species_ids = [f"S{index}" for index in range(24, 32)]
+    species = "".join(
+        f'<species id="{species_id}" compartment="c" initialAmount="0"/>'
+        for species_id in species_ids
+    )
+    references = "".join(
+        f"""<speciesReference id="{species_id}_stoich" species="{species_id}">
+          <stoichiometryMath><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <cn>1</cn>
+          </math></stoichiometryMath>
+        </speciesReference>""" for species_id in species_ids
+    )
+    xml = f"""<sbml xmlns="http://www.sbml.org/sbml/level2/version5"
+        level="2" version="5">
+      <model id="deterministic_stoichiometry_parameters">
+        <listOfCompartments><compartment id="c" size="1"/></listOfCompartments>
+        <listOfSpecies>{species}</listOfSpecies>
+        <listOfReactions><reaction id="r">
+          <listOfProducts>{references}</listOfProducts>
+          <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></kineticLaw>
+        </reaction></listOfReactions>
+      </model>
+    </sbml>"""
+    source = tmp_path / "deterministic_stoichiometry_parameters.xml"
+    source.write_text(xml, encoding="utf-8")
+    worker = """import sys
+from pathlib import Path
+from bionetgen.atomizer.modern import Atomizer
+source = Path(sys.argv[1])
+result = Atomizer(atomize=False, quiet_mode=True).atomize(source.read_text(), source_path=source)
+if not result.success:
+    raise RuntimeError(result.error or "Atomizer failed")
+print(result.bngl)
+"""
+    outputs = []
+    for hash_seed in ("1", "2"):
+        environment = os.environ.copy()
+        environment["PYTHONHASHSEED"] = hash_seed
+        environment["PYTHONPATH"] = str(Path(__file__).resolve().parents[2] / "python")
+        completed = subprocess.run(
+            [sys.executable, "-c", worker, str(source)],
+            check=True,
+            capture_output=True,
+            cwd=Path(__file__).resolve().parents[2],
+            env=environment,
+            text=True,
+        )
+        outputs.append(completed.stdout)
+
+    assert outputs[0] == outputs[1]
+    parameter_lines = [
+        line.strip()
+        for line in outputs[0].splitlines()
+        if line.strip().endswith("_stoich 1")
+    ]
+    assert parameter_lines == [f"{species_id}_stoich 1" for species_id in species_ids]
+
+
 def test_sbml_static_species_reference_assignment_becomes_numeric_parameter():
     xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
       <model id="assigned_species_reference_symbol">

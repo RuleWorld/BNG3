@@ -3414,7 +3414,7 @@ class SBMLParser:
             for reference in [*reaction.reactants, *reaction.products]
             if reference.id and not reference.variable_stoichiometry
         }
-        for reference_id in folded_reference_ids:
+        for reference_id in sorted(folded_reference_ids):
             value = static_symbols.get(reference_id)
             if value is None:
                 value = static_symbols.get(standardize_name(reference_id))
