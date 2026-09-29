@@ -8980,3 +8980,28 @@ the other groups remain implementation targets.
   an all-SBML benchmark of the incomplete BNG2/legacy PyBioNetGen Atomizer.
   Perl BNG2 only emitted BNG-XML for standalone NFsim. Full curated BioModels
   validation remains stopped.
+
+## Stratified SSTS NFsim structures — 2026-09-29
+
+- [x] Added six distinct stochastic SSTS structures beyond the consecutive
+  birth/death variants: `00017`, `00019`, `00020`, `00027`, `00030`, and
+  `00034`. The sample covers compartment-scaled rates, zero-order production,
+  multi-species models, and nonlinear `P`/`P2` kinetics. All 12 flat/atomized
+  comparisons passed with 200 independent runs per engine and zero run errors;
+  4,800 trajectories and 308 observable-time points were checked. Standalone
+  NFsim reported 23,034 reaction events across the cohort; worst `|z|` was
+  `2.25284`.
+- [x] Excluded `00024` from dynamic parity counts despite its nominal
+  comparator pass: standalone NFsim reported zero reaction events in both
+  modes, making its 66-point result a static no-op. Its report is retained in
+  the manifest with that disposition.
+- [x] Manifest
+  `/private/tmp/bng3-ssts-nfsim-stratified-6-manifest-20260929.json`, SHA-256
+  `f496ac88e72c9e0af0258e9e94e5a5f1d38a3dc55e2ce4c1570fad669d1ddf28`, records
+  every accepted and excluded report hash, source hash, seed range, and engine
+  revision. All six accepted reports use BNG3 `57e994d`; only documentation
+  differs from the pinned full SSTS source head `bf210ab`.
+- [ ] This is a six-structure stochastic sample, not full SSTS NFsim coverage
+  or an all-SBML benchmark of the incomplete BNG2/legacy PyBioNetGen Atomizer.
+  Perl BNG2 only emitted BNG-XML for standalone NFsim. Full curated BioModels
+  validation remains stopped.
