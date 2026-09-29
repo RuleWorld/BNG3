@@ -196,3 +196,88 @@ TEST(Driver_RejectsMissingFamilyRoots) {
     }
     EXPECT_TRUE(threw);
 }
+
+TEST(Driver_AsymmetricHomotypicPairMatchesEitherOrientation) {
+    ExecutableModel e;
+    const MoleculeTypeId a = addType(e, "A");
+    const MoleculeTypeId c = addType(e, "C");
+    // A + A -> C with an *asymmetric* homotypic matcher: root 0 must carry
+    // state bit 0 and root 1 must not.  Both roots name the same molecule
+    // type, so the two root positions carry independent constraints and only
+    // one orientation of a given reactant pair can match.
+    MatcherProgram mp;
+    MatchInstruction t0(MATCH_TYPE_EXISTS);
+    t0.target = 0;
+    t0.a = a.value();
+    mp.add(t0);
+    MatchInstruction t1(MATCH_TYPE_EXISTS);
+    t1.target = 1;
+    t1.a = a.value();
+    mp.add(t1);
+    MatchInstruction s0(MATCH_STATE_MASK);
+    s0.target = 0;
+    s0.a = 0;
+    s0.mask = 1ull;
+    s0.value = 1ull;
+    mp.add(s0);
+    MatchInstruction s1(MATCH_STATE_MASK);
+    s1.target = 1;
+    s1.a = 0;
+    s1.mask = 1ull;
+    s1.value = 0ull;
+    mp.add(s1);
+    mp.add(MatchInstruction(MATCH_END));
+    const MatcherId mid = e.buildMatchers().add(mp);
+
+    TransformProgram tp;
+    TransformInstruction d0{TRANSFORM_DELETE_MOLECULE};
+    d0.target = 0;
+    tp.add(d0);
+    TransformInstruction d1{TRANSFORM_DELETE_MOLECULE};
+    d1.target = 1;
+    tp.add(d1);
+    TransformInstruction mk{TRANSFORM_CREATE_MOLECULE};
+    mk.target = 2;
+    mk.a = c.value();
+    tp.add(mk);
+    tp.add(TransformInstruction(TRANSFORM_END));
+    const TransformProgramId tid = e.buildTransforms().add(tp);
+
+    RuleFamilyDescriptor f;
+    f.name = "asym";
+    f.matcher = mid;
+    f.transform = tid;
+    RuleMember rm;
+    rm.rate = 1.0;
+    f.members.push_back(rm);
+    const RuleFamilyId fid = e.buildMetadata().addRuleFamily(f);
+
+    SsaMemberSignature s;
+    s.family = fid;
+    s.member = 0;
+    s.reactantTypes.push_back(a);
+    s.reactantTypes.push_back(a);
+    std::vector<SsaMemberSignature> sigs;
+    sigs.push_back(s);
+    SsaDriver d(e, sigs);
+
+    // The molecule carrying the state bit is created *second*, so it holds
+    // the higher handle slot and canonicalPair keeps the orientation that
+    // puts the state-less molecule at root 0 -- the orientation that fails to
+    // match.  The reactant pair itself is legal: only the swapped orientation
+    // satisfies the matcher, so the family must have activity and must fire.
+    d.state().molecules(a).create(); // slot 0: state bit clear
+    const MoleculeHandle marked =
+        d.state().molecules(a).create(); // slot 1: state bit set
+    d.state().molecules(a).setStateWord(marked, 0, 1ull);
+
+    SsaDriverOptions opts;
+    opts.tEnd = 100.0;
+    opts.seed = 5;
+    opts.maxEvents = 1;
+    const SsaDriverResult r = d.run(opts);
+    EXPECT_EQ(r.events, 1ull);
+    EXPECT_EQ(r.nullEvents, 0ull);
+    EXPECT_EQ(d.state().molecules(a).liveCount(), 0u);
+    EXPECT_EQ(d.state().molecules(c).liveCount(), 1u);
+}

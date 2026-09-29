@@ -47,14 +47,13 @@ struct SsaDriverResult {
 // equivalence against NFcore beyond the single reversible-
 // isomerization case in test_nfcore2_parity.cpp.
 //
-// KNOWN DEFECT (do not wire in without fixing): canonicalPair()
-// below orders equal-typed reactant roots by molecule handle alone,
-// but the two matcher root positions carry independent constraints
-// (matcher.cpp evaluates MATCH_* instructions per `x.target` root
-// index).  For an asymmetric homotypic rule, the single surviving
-// orientation can be the one that fails to match while the
-// discarded orientation would have matched, silently losing valid
-// reactant tuples and under-counting that family's activity.
+// Orientation of equal-typed reactant roots: canonicalPair() keeps one
+// orientation per unordered pair, but matcher.cpp resolves every MATCH_*
+// instruction against a root index (`x.target`), so the two orientations of
+// a homotypic pair carry independent constraints.  enumerateFamily()
+// therefore tries the canonical orientation first and falls back to the
+// swapped one; a pair that matches in both orientations is still counted
+// once, and a pair that matches in neither contributes nothing.
 //
 // Direct-method SSA over an ExecutableModel.
 //
