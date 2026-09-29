@@ -9154,3 +9154,26 @@ the other groups remain implementation targets.
   This does not characterize all legacy inputs. BNG2/legacy Atomizer remains
   incomplete and has not been benchmarked against all SBML; no legacy source
   was changed. Curated BioModels validation remains stopped.
+
+## Corrected-harness rerun of third 50-case cross-engine sample — 2026-09-29
+
+- [x] Re-ran the same 50 pinned SSTS semantic inputs from the third selected
+  sample with the corrected initial-network exporter at BNG3 head
+  `1e0c1fb19b502fdc73d3388f465dcfc0ae3cad91`. Three repeats ran in flat and
+  Atomized modes. Modern BNG3 converted all 300 inputs and generated all 300
+  BNG3 networks; Perl BNG2 generated 228/300. All 228 paired networks matched
+  structurally, and strict normalized rate parity passed 180/228.
+- [x] The eight repeated BNG3/BNG2 rate mismatches remain
+  `00330`, `00481`, `00687`, `00859`, `01084`, `01309`, `01719`, and `01822`.
+  Independent PyBioNetGen converted 261/300 inputs; 39 conversions failed.
+  Its paired networks matched structurally in 153/153 comparisons and passed
+  rate parity in 141/153. Warnings and failed conversions remain in the raw
+  report; neither reference checkout was modified.
+- [x] Report
+  `/private/tmp/bng3-cross-engine-third50-initial-network-fixed-20260929.json`,
+  SHA-256 `fd54fc08d6c6f3f9fef7901fc9cfdb986027a683dcca9fd107b3a0a15943046f`.
+  It records BNG3 `1e0c1fb`, BNG2 `8726b30`, and PyBioNetGen `43b09a5`.
+- [ ] This is a corrected 50-input interoperability sample, not trajectory
+  parity, full SSTS cross-engine coverage, or an all-SBML benchmark.
+  BNG2/legacy PyBioNetGen Atomizer remains incomplete and has not been
+  benchmarked against all SBML. Curated BioModels validation remains stopped.
