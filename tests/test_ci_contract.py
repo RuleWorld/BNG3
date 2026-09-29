@@ -201,6 +201,59 @@ def test_formal_workflow_runs_pinned_kernel_and_nfnext_contracts():
     assert "lake env lean tests/Smoke.lean" in workflow
 
 
+def test_release_workflow_requires_exact_main_sha_qualification():
+    """A version tag cannot publish unless all required main push gates passed."""
+
+    qualify = _workflow_job_from(RELEASE_WORKFLOW, "qualify")
+    for job_name in ("build-binaries", "build-wheels", "build-sdist"):
+        assert "qualify" in _workflow_job_from(RELEASE_WORKFLOW, job_name)
+    release = _workflow_job_from(RELEASE_WORKFLOW, "release")
+    assert "qualify" in release
+    assert "actions: read" in qualify
+    assert "fetch-depth: 0" in qualify
+    assert "git merge-base --is-ancestor" in qualify
+    assert "gh api" in qualify
+
+    qualification_script = (
+        REPO / "scripts" / "ci" / "qualify_release_candidate.py"
+    ).read_text(encoding="utf-8")
+    for workflow_name in ("CI", "Cross-tool parity", "Lean semantic kernel", "CodeQL"):
+        assert f'"{workflow_name}"' in qualification_script
+
+
+def test_release_run_qualification_requires_success_for_each_exact_main_push():
+    from scripts.ci.qualify_release_candidate import qualify_workflow_runs
+
+    sha = "a" * 40
+    names = ["CI", "Cross-tool parity", "Lean semantic kernel", "CodeQL"]
+    runs = [
+        {
+            "name": name,
+            "head_sha": sha,
+            "head_branch": "main",
+            "event": "push",
+            "status": "completed",
+            "conclusion": "success",
+        }
+        for name in names
+    ]
+
+    assert qualify_workflow_runs({"workflow_runs": runs}, sha, names) == []
+    assert qualify_workflow_runs({"workflow_runs": runs[:-1]}, sha, names) == ["CodeQL"]
+
+    wrong_sha = [dict(run, head_sha="b" * 40) for run in runs]
+    assert qualify_workflow_runs({"workflow_runs": wrong_sha}, sha, names) == names
+
+    wrong_branch = [dict(run, head_branch="feature") for run in runs]
+    assert qualify_workflow_runs({"workflow_runs": wrong_branch}, sha, names) == names
+
+    pending = [dict(run, status="in_progress", conclusion=None) for run in runs]
+    assert qualify_workflow_runs({"workflow_runs": pending}, sha, names) == names
+
+    failed = [dict(run, conclusion="failure") for run in runs]
+    assert qualify_workflow_runs({"workflow_runs": failed}, sha, names) == names
+
+
 def test_oracle_source_loader_requires_full_locked_revisions(tmp_path):
     """The checkout helper must reject floating or malformed source refs."""
 

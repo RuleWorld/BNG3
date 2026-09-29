@@ -5105,8 +5105,14 @@ completion gate.
   digests where supported.
 - [ ] Release artifacts are content-addressed, reproducible, and tied to the
   exact validated SHA.
-- [ ] The release workflow cannot publish an unqualified tag or artifacts
-  lacking the approved provenance/golden report.
+- [x] The release workflow now blocks tags whose commit is not reachable from
+  `main` and requires successful completed push runs for `CI`, `Cross-tool
+  parity`, `Lean semantic kernel`, and `CodeQL` at the exact tagged SHA before
+  building or publishing. The fail-closed workflow-run matcher and dependency
+  wiring pass `tests/test_ci_contract.py`; the hosted tag workflow has not been
+  exercised. This gate does not yet verify artifact provenance or the approved
+  golden report.
+- [ ] Release artifacts carry approved provenance and golden-report evidence.
 - [ ] PyPI/test-index publication is staged or dry-run verified before the
   first public release.
 - [ ] Hosted release jobs for source distribution, wheels, Docker, and
