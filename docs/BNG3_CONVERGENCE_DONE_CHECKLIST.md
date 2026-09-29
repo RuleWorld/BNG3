@@ -47,6 +47,23 @@ Note the pattern: items 1, 2, and 4 were all cases where the code produced a
 plausible-looking model instead of refusing one, which is the specific failure
 mode this repository's own rule exists to prevent.
 
+### Ready to apply, blocked on the ANTLR generator — `priority` as a model identifier
+
+`priority` is a lexer keyword, so a molecule, observable, or parameter literally
+named `priority` does not parse. Long-standing, not a regression. The fix touches
+`keyword_as_mol_name`, `arg_name`, and a new `observable_name` subrule in
+`BNGParser.g4`, plus `BNGAstVisitor.cpp` — the visitor change is required, not
+optional: widening the grammar alone would make the name parse and then be
+**silently dropped**, trading a parse error for data loss. The BNG2 `priority=5`
+modifier is unaffected and was verified by parse-tree inspection, not merely by
+the absence of an error.
+
+Not applied. The generated parser is committed and is what the build compiles,
+so a `.g4` change has no effect until regeneration; meanwhile the visitor
+change breaks the build. The ANTLR generator is not vendored and no JRE is
+installed. Patch and full analysis:
+`docs/known-blocked/priority-keyword-parser-fix.md`.
+
 ## BNG3 dynamic-event representation boundary — 2026-09-29
 
 - [x] Added versioned `bng3_events` syntax to the BNG3 parser and structured
