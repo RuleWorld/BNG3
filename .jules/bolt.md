@@ -1,4 +1,0 @@
-## 2024-05-24 - Pre-compiled Python Regular Expressions in Tight Loops
-
-**Learning:** Python's `re.sub()` and `re.search()` compile regex patterns on the fly. In high-throughput text processing components like `cleanParameterValue` and `convertMathFunction` within `python/bionetgen/atomizer/modern/helpers.py`, this inline compilation represents a measurable performance bottleneck. Repeated dynamic compilation via `re.compile(rf"\b{re.escape(name)}\s*\(")` inside a while loop is especially inefficient.
-**Action:** When working in tight loops or frequently called utility functions, pre-compile static regex patterns at the module level (e.g., `_RE_INF = re.compile(r"\binf\b")`). For dynamically generated patterns, implement a module-level dictionary cache (e.g., `_REPLACE_CALLS_CACHE`) to store and reuse the compiled `re.Pattern` objects.
