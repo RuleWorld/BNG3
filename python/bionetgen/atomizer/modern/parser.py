@@ -2833,32 +2833,70 @@ class SBMLParser:
                 aliases[key] = canonical_id
 
     @staticmethod
+    def _reassert_raw_id_aliases(
+        aliases: Dict[str, str], raw_ids: Mapping[str, str]
+    ) -> None:
+        """Reassert exact SBML ids as the authoritative alias keys.
+
+        Two separate collisions have to be settled here.  A display name can
+        standardize to the same spelling as a different raw id
+        (``kscig'`` -> ``kscig``), and one raw id can be another raw id's
+        standardized form (``k-1`` -> ``k_1``).  In both cases the exact id
+        wins, so every raw id is written back last and a standardized
+        spelling is only given a key when no raw id already claims it.
+        After this pass each raw id resolves to the canonical id of the very
+        parameter it was declared for.
+        """
+
+        claimed = set(raw_ids)
+        for raw_id, canonical in raw_ids.items():
+            aliases[raw_id] = canonical
+            normalized = standardize_name(raw_id)
+            if normalized not in claimed:
+                aliases[normalized] = canonical
+
+    @staticmethod
     def _normalize_formula_identifiers(
         formula: Any, *alias_maps: Optional[Dict[str, str]]
     ) -> str:
-        """Rewrite reference aliases without touching longer identifiers."""
+        """Rewrite reference aliases without touching longer identifiers.
+
+        An alias map translates *source* spellings into canonical ids; it is
+        not a chain of renames, and a canonical id is an output of the map
+        rather than an input to it.  A raw id can nevertheless also be a
+        source spelling: parameters ``k-1`` and ``k_1`` both standardize to
+        ``k_1``, so the canonical id of the first is an alias *key* of the
+        second.  Every token is therefore resolved in one pass and a
+        replacement is never re-examined against the map -- applying the
+        aliases one after another lets an earlier replacement feed a later
+        rule and silently retarget the reference.
+
+        Where several maps are supplied, the earlier one wins: a
+        reaction-local parameter shadows a global parameter of the same name.
+        """
 
         normalized = str(formula or "")
         if not normalized:
             return normalized
-        ordered_aliases = []
+        mapping: Dict[str, str] = {}
         for aliases in alias_maps:
-            if aliases is None:
+            if not aliases:
                 continue
-            ordered_aliases.extend(
-                (alias, canonical)
-                for alias, canonical in aliases.items()
-                if alias and canonical and alias != canonical
-            )
-        ordered_aliases.sort(key=lambda item: len(item[0]), reverse=True)
-        for alias, canonical in ordered_aliases:
-            pattern = re.compile(
-                rf"(^|[^A-Za-z0-9_]){re.escape(alias)}(?=$|[^A-Za-z0-9_])"
-            )
-            normalized = pattern.sub(
-                lambda match: f"{match.group(1)}{canonical}", normalized
-            )
-        return normalized
+            for alias, canonical in aliases.items():
+                alias = str(alias or "").strip()
+                canonical = str(canonical or "").strip()
+                if alias and canonical and alias != canonical:
+                    mapping.setdefault(alias, canonical)
+        if not mapping:
+            return normalized
+        # Longest alternative first. The trailing lookahead already makes
+        # the match unambiguous, but ordering by length keeps the engine from
+        # backtracking through every shorter prefix of a longer alias.
+        alternatives = "|".join(
+            re.escape(alias) for alias in sorted(mapping, key=len, reverse=True)
+        )
+        pattern = re.compile(rf"(?<![A-Za-z0-9_])(?:{alternatives})(?![A-Za-z0-9_])")
+        return pattern.sub(lambda match: mapping[match.group(0)], normalized)
 
     @staticmethod
     def _parse_xml_model(
@@ -3862,17 +3900,9 @@ class SBMLParser:
                 SBMLParser._register_alias(aliases, parameter.id, parameter.id)
                 SBMLParser._register_alias(aliases, parameter.name, parameter.id)
         if aliases is not None:
-            # Exact SBML IDs are authoritative. A human-readable name can
-            # normalize to the same spelling as a different raw ID (for
-            # example ``kscig'`` -> ``kscig``), and must not rewrite formulas
-            # that refer to the exact ID. Reassert direct and standardized
-            # raw-ID aliases after all display-name aliases are collected.
-            raw_ids = set(raw_parameter_ids)
-            for raw_id, canonical in raw_parameter_ids.items():
-                aliases[raw_id] = canonical
-                normalized = standardize_name(raw_id)
-                if normalized not in raw_ids:
-                    aliases[normalized] = canonical
+            # Exact SBML IDs are authoritative over display names and over
+            # another parameter's standardized spelling.
+            SBMLParser._reassert_raw_id_aliases(aliases, raw_parameter_ids)
         return result
 
     @staticmethod
@@ -3942,6 +3972,7 @@ class SBMLParser:
             local_parent = _first_child(item, "listOfParameters")
         if local_parent is not None:
             local_aliases: Dict[str, str] = {}
+            raw_local_ids: "OrderedDict[str, str]" = OrderedDict()
             # SBML Level 3 uses ``localParameter`` while SBML Level 2 puts
             # reaction-local declarations in ``listOfParameters`` as
             # ``parameter``.  Both spellings have identical scope here.
@@ -3969,6 +4000,11 @@ class SBMLParser:
                 SBMLParser._register_alias(local_aliases, raw_local_id, parameter.id)
                 SBMLParser._register_alias(local_aliases, parameter.id, parameter.id)
                 SBMLParser._register_alias(local_aliases, parameter.name, parameter.id)
+                raw_local_ids.setdefault(raw_local_id, parameter.id)
+            # Same exact-id-wins repair as the global parameter list: without
+            # it a local id that is another local id's standardized form
+            # (``k-1`` and ``k_1``) leaves the second parameter unreachable.
+            SBMLParser._reassert_raw_id_aliases(local_aliases, raw_local_ids)
         else:
             local_aliases = {}
         return SBMLKineticLaw(
