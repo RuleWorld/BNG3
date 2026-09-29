@@ -69,8 +69,22 @@ _MULTI_NUMERIC_TOKEN = re.compile(r"__SBML_MULTI_NUMERIC__([A-Za-z_][A-Za-z0-9_]
 # its source spelling and is invisible to the ``[A-Za-z_][A-Za-z0-9_]*`` tokens
 # a formula tokenizer produces.  The parser's MathML reader accepts ``-``
 # inside a single ``<ci>`` and serializes a real difference with surrounding
-# spaces (``A - B``), so a maximal id run is exactly the span a source id
-# occupies -- and a fragment of one never is.
+# The parser's MathML reader serializes every *binary* operator with
+# surrounding spaces (``A - B``), so a maximal id run is exactly the span a
+# source id occupies -- and a fragment of one never is.
+#
+# The qualification "binary" is load-bearing, and this comment previously
+# overstated it.  A *unary* minus is emitted unspaced (``parser.py:833``), so
+# "an unspaced hyphen can only be an id character" is false as written; what
+# holds is that a hyphen between two operands is always spaced.
+# ``_is_id_hyphen`` relies on the narrower truth, using leading-position and
+# exponent-predecessor guards rather than on spacing alone.
+#
+# This class is a scanner heuristic, not the reachable id alphabet.  The parser
+# applies no character validation to a ``<ci>`` body, so ids such as ``A.B``,
+# ``A*B`` and ``2A`` are legal input this class cannot span.  Those are recorded
+# as governed ``identifier``/``dropped`` diagnostics at emission rather than
+# rewritten; see ``_report_unspellable_identifiers``.
 _SBML_ID_RUN = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
 
 
@@ -2810,6 +2824,47 @@ def _report_identifier_collisions(model: SBMLModel) -> None:
         _declared_assignment_rule_ids(model)
     ):
         _record_identifier_collision(model, label, generated, sbml_ids, consequence)
+
+
+_UNSPELLABLE_DECLARATION_NAMESPACES = (
+    ("species", "species", "species"),
+    ("compartment", "compartments", "compartment"),
+    ("reaction", "reactions", "rate-law"),
+)
+
+
+def _report_unspellable_identifiers(model: SBMLModel) -> None:
+    """Record ids this writer cannot locate a reference to.
+
+    Every SBML id has a well-defined BNGL spelling -- ``standardize_name`` maps
+    ``A.B`` to ``A_B`` and ``A*B`` to ``AmB`` -- so none of these models is
+    inherently unlowerable.  The defect is ours: ``_SBML_ID_RUN`` cannot *span*
+    the id, so a reference to it is not rewritten and survives into the emitted
+    BNGL in its source spelling.
+
+    That is not cosmetic.  ``A*B`` is a legal BNGL operator, so a body reading
+    ``F() = k1*(A*B)`` silently denotes the *product* of two other species while
+    the model declares a single species named ``A*B``.  For a character BNGL
+    cannot lex at all, the model fails later and more loudly, at load.
+
+    Reported rather than rewritten, deliberately.  The class cannot be widened
+    to cover this alphabet: a class admitting a space also admits ``A - B``, and
+    a class admitting a leading digit also matches a bare numeric literal.
+    Widening would fix some ids and enlarge the blast radius on all of them.
+    """
+
+    for label, attribute, block in _UNSPELLABLE_DECLARATION_NAMESPACES:
+        declared = getattr(model, attribute, None) or {}
+        for sbml_id in declared:
+            if _SBML_ID_RUN.fullmatch(str(sbml_id)) is None:
+                _record_import_warning(
+                    model,
+                    f"SBML {label} id {sbml_id!r} contains a character this writer "
+                    f"cannot match in expression text, so the {block} reference "
+                    f"keeps its source spelling; rename it to a legal SBML SId",
+                    category="identifier",
+                    severity="dropped",
+                )
 
 
 def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
@@ -6101,6 +6156,7 @@ def generate_bngl(
             )
 
     _report_identifier_collisions(model)
+    _report_unspellable_identifiers(model)
 
     for rule in model.rules:
         if rule.type != "algebraic":
