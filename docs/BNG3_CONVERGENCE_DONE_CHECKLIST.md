@@ -9438,10 +9438,16 @@ the other groups remain implementation targets.
   explicitly to bypass the host's global editable BNG3 path, both the Python
   package and compiled extension imported from the installed wheel. The
   installed CLI's `--version`, `--help`, and `atomize --help` commands passed.
-- [ ] This verifies local sdist/wheel construction and installed import/CLI
-  paths only. It does not validate dependency resolution or an installed ODE
-  simulation. Cross-platform artifacts, Windows executable, release
-  qualification, GitHub release, and PyPI publication remain open. BNG2 and
-  legacy PyBioNetGen Atomizer remain incomplete and have not been benchmarked
+- [x] With the installed wheel selected and `libsbml` import explicitly
+  blocked, the installed CLI atomized official SSTS `semantic/00389`; BNG3's
+  native `check` command accepted the generated BNGL. This verifies the modern
+  parser's basic SBML path without libSBML on this sample. BNGL SHA-256:
+  `ca118fe37aa6144e17c0372abcf02fae06997efcfa6c6da2cdea893e43241bd3`.
+- [ ] This verifies local sdist/wheel construction and selected installed
+  import, CLI, and Atomizer paths only. It does not validate dependency
+  resolution or an installed ODE simulation. Cross-platform artifacts,
+  Windows executable, release qualification, GitHub release, and PyPI
+  publication remain open. BNG2 and legacy PyBioNetGen Atomizer remain
+  incomplete and have not been benchmarked
   against all SBML; no BNG2 code was changed. Curated BioModels validation
   remains stopped.
