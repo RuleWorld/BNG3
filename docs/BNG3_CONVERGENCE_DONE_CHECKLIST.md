@@ -8589,3 +8589,25 @@ the other groups remain implementation targets.
   fixed built-in function-name set, so the dictionary is bounded in current
   code. No performance benchmark was included in the inspected patch. No PR
   was modified, approved, or commented on.
+
+## Local pip artifact build and install smoke — 2026-09-28
+
+- [x] Built a CPython 3.14.6 macOS ARM64 wheel and source distribution from
+  BNG3 head `d673c31e8f46180f7e770564afbdb566f879060a`. Wheel SHA-256:
+  `bf42a75657bcd1413af9f609c70cd75e776e63c71dc3169ef61eab486c1b1859`;
+  sdist SHA-256:
+  `ca9621c53c8f79acfbc133442aebf710f2695c636f868a4baaf0cc539e60486b`.
+  The sdist excludes the pre-existing offline bundle.
+- [x] Installed the wheel in a fresh CPython 3.14 venv with declared
+  dependencies and confirmed imports resolve from that venv. `bionetgen
+  --version`, `--help`, and `check` passed; a short ODE run produced 11 finite
+  rows through `t=1`. Built a second wheel from the sdist, installed it in the
+  same clean venv, and repeated version, parse, and simulation smoke checks.
+  The sdist-built wheel SHA-256 is
+  `9fd94e123b0733975959977f34ada7bf6d8919b6642f29e3ef42be9d07cf9d16`.
+- [ ] This verifies only the local `cp314-cp314-macosx_26_0_arm64` artifact,
+  not the release platform matrix or publication flow. Building from the sdist
+  needs network access for CMake's ANTLR fetch. CMake also emitted deprecation
+  warnings from pybind11 and SUNDIALS. The exact-head hosted CI workflows for
+  `a144d6757324862f3b0ce013417c7a9642c03bab` remain queued; no release was
+  published and Windows packaging remains unverified.
