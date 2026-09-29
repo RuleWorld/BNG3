@@ -346,11 +346,13 @@ add_library(bng_nfcore2 STATIC
     nfsim/NFcore2/engine.cpp
     nfsim/NFcore2/executable_model.cpp
     nfsim/NFcore2/legacy_bridge.cpp
+    nfsim/NFcore2/driver.cpp
     nfsim/NFcore2/matcher.cpp
     nfsim/NFcore2/model_image.cpp
     nfsim/NFcore2/nfsim_adapter_contract.cpp
-    nfsim/NFcore2/nfsim_native_reader.cpp
     nfsim/NFcore2/nfsim_system_reader.cpp
+    nfsim/NFcore2/nfsim_native_reader.cpp
+    nfsim/NFcore2/seed.cpp
     nfsim/NFcore2/nfsim_transform_decoder.cpp
     nfsim/NFcore2/rule_compiler.cpp
     nfsim/NFcore2/scaffold.cpp
