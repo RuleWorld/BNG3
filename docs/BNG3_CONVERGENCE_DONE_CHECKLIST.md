@@ -4,9 +4,9 @@
 **Last targeted audit:** 2026-09-28 (full convergence checklist remains open)
 **Repository:** RuleWorld/BNG3
 **Working branch:** `main`.
-**Latest full pinned SBML Test Suite report:** suite commit `cf38585fac5de8e0e90112febb62851ee2181816`, `1,738 passed / 185 unsupported / 0 failed / 0 timed out`. Eight cases gained, with no losses, against `/private/tmp/bng3-atomizer-event-stoich-full-sbml.json`. The supported surface passes; the aggregate Core gate remains open. Report `/private/tmp/bng3-delayed-chain-initial-assignment-full-sbml.json`, SHA-256 `f539a2aeb8de9353ffc2e68957829007accfd867c9c79a0ad4d0cd8022062c60`. This schema 3 report does not record the BNG3 source revision, so it is not exact-head evidence for current `main`.
+**Latest full pinned SBML Test Suite report:** exact BNG3 commit `bf210ab73950646db655559ba2dd7aa56aeb2c15`, suite commit `cf38585fac5de8e0e90112febb62851ee2181816`, `1,744 passed / 179 unsupported / 0 failed / 0 timed out` (`t_end=1`, 10 samples). Six cases gained and none regressed against the preceding full report. Aggregate Core remains open. Report `/private/tmp/bng3-time-dependent-quadratic-delay-full-sbml.json`, SHA-256 `46951ae3ece7f02b45d932ac946a394df021d375811d9daaa00a8419abf7e02c`.
 **Latest current-source curated BioModels report:** none. The user's current-source flat and Atomized rerun was stopped at their request; it remains stopped and has no aggregate report. Earlier BioModels counts below are historical only.
-**Last queried hosted CI:** exact head `25faefb` was queried at 2026-09-29 01:27 UTC. CI `36507960385`, CodeQL `36507960617`, Cross-tool parity `36507960368`, and Lean semantic kernel `36507960414` were queued. These runs predate the changes recorded below and are nonterminal.
+**Last queried hosted CI:** exact head `bf210ab` was queried at 2026-09-29 01:38 UTC. CI `36508634126`, Formatting patch `36508633968`, CodeQL `36508633961`, Cross-tool parity `36508634022`, and Lean semantic kernel `36508634002` were queued. These runs predate the checklist-only update below and are nonterminal.
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 
@@ -116,6 +116,22 @@ recorded in the historical sections below; they are not current-head evidence.
 - [ ] This is a four-case network interoperability cohort; it does not
   establish trajectory parity with BNG2/NFsim or all-SBML coverage. The legacy
   BNG2 Atomizer remains incomplete and unbenchmarked against all SBML.
+
+## Full pinned SBML Test Suite after quadratic delayed-event support — 2026-09-28
+
+- [x] Ran all 1,923 pinned semantic and stochastic cases on exact BNG3
+  commit `bf210ab73950646db655559ba2dd7aa56aeb2c15` at `t_end=1` with 10
+  samples. Result: `1,744 passed / 179 unsupported / 0 failed / 0 timed out`.
+  The source report records a clean tracked worktree and suite commit
+  `cf38585fac5de8e0e90112febb62851ee2181816`.
+- [x] Compared case IDs with the preceding full report: six gains and no
+  regressions. Newly passing cases: `semantic/00752`, `00758`, `00759`,
+  `00887`, `01626`, and `01627`. Report
+  `/private/tmp/bng3-time-dependent-quadratic-delay-full-sbml.json`,
+  SHA-256 `46951ae3ece7f02b45d932ac946a394df021d375811d9daaa00a8419abf7e02c`.
+- [ ] The aggregate Core gate remains open with 179 unsupported cases. This
+  run does not replace the stopped curated BioModels validation or complete
+  the broader BNG2, PyBioNetGen, NFsim, packaging, and historical-PR work.
 
 **Independent implementation reference:** RuleWorld/bngplayground Atomizer
 **Energy-evaluator source reference:** akutuva21/nfsim PR #475, merged at
