@@ -9363,3 +9363,31 @@ the other groups remain implementation targets.
   incomplete and has not been benchmarked against all SBML. This result does
   not establish full SSTS, all-SBML, or curated BioModels parity; BioModels
   validation remains stopped.
+
+## Exact-cohort cross-engine rerun after Atomizer determinism fix — 2026-09-29
+
+- [x] Repeated the same 50 pinned SSTS inputs, flat and Atomized modes, and
+  three repeats at current BNG3 `0f05ed16d643d8225439f1fc6d583ce64e164f73`
+  (the Atomizer implementation is unchanged from `007fa0f`). BNG2
+  `8726b30b94c081d5f0ce8b8d38338e27be1b38fc` and PyBioNetGen
+  `43b09a5346402986d48b1defba5eaec0ae2f7802` were read-only references. The
+  tracked BNG3 worktree was clean; the preserved offline bundle remains
+  untracked.
+- [x] Modern BNG3 succeeded on all 300 conversions and generated all 300 BNG3
+  networks. BNG2 generated 282/300 networks; all 282 paired structures matched
+  and 246/282 strict rates matched. Legacy PyBioNetGen converted 252/300
+  inputs; its networks matched structurally in 195/195 paired comparisons and
+  passed strict rates in 183/195. Every aggregate count matches the
+  pre-fix-head rerun.
+- [x] Modern Atomizer outputs now repeat byte-identically for all three
+  affected cases (`01516`, `01517`, `01562`) in both modes. Their final hashes
+  match the two-hash-seed verification recorded above. The other 47 sampled
+  models' modern output hashes were unchanged; all modern network and parity
+  outcomes were unchanged across the complete cohort.
+- [x] Raw report:
+  `/private/tmp/bng3-cross-engine-fourth50-post-determinism-007fa0f.json`,
+  SHA-256 `ad6bb4d39cdbc80ec7db7801d0b03637d942d2a33f9c43bcc92f6a18154dbad7`.
+- [ ] This is a bounded 50-model rerun, not full SSTS cross-engine coverage or
+  an all-SBML benchmark. BNG2/legacy PyBioNetGen Atomizer remains incomplete
+  and has not been benchmarked against all SBML. Curated BioModels validation
+  remains stopped.
