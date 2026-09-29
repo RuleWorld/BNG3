@@ -8,7 +8,7 @@ when it was written — see its own preamble at `:12-19`) and the reasoning live
 in [`docs/adr/`](adr/). Those two disagree with the code in places. This file
 records the current truth and nothing else.
 
-**Tree state described:** `main` at `ccde363`.
+**Tree state described:** `main` at `57a0c82`.
 
 **Rule for this file.** Every claim below carries a `file:line` or a commit. A
 claim with neither does not belong here. Where a measurement is missing this
@@ -139,6 +139,34 @@ These are open. None of them is covered by anything in §1.
    *(Not re-run when this file was written. Re-run the command in §4 for
    today's number.)*
 
+7. **The hyphen is the only non-SId character that survives to emission
+   correctly.** `_SBML_ID_RUN` is `[A-Za-z_][A-Za-z0-9_-]*` (`writer.py:74`),
+   and every id-run scan in the writer, the event tokenizer, and the AST guards
+   is defined by it. A `<ci>` body may legally contain characters that are not
+   legal in an SId at all; those reach expression analysis raw, are invisible to
+   a whole-id run, and are still standardized at emission. Open cases, read
+   from code and **not measured**:
+   - `A.B` and `A/B` — the run stops at `.` and `/`; both standardize to `A_B`.
+   - `A*B` — the run stops at `*`, and `*` translates to `m`, so `A*B` and `AmB`
+     are one BNGL name reached two ways.
+   - `A B` — a space is not legal in an SId, so this is a `<ci>` body that is
+     not an id at all. It is genuinely ambiguous, but with **multiplication**,
+     not subtraction: the tokenizer's leading `\s*` makes `A B` an implicit
+     product, and an id-run scan reads it as the two runs `A` and `B`. A real
+     difference is *not* the competing reading — that arrives spaced
+     (`parser.py:848`), which is exactly the invariant the hyphen fixes rest
+     on. So no spelling test disambiguates this case, and widening
+     `_SBML_ID_RUN` would reintroduce the `6dc41b6` defect.
+
+8. **A narrow identifier scan survives inside the guarded delay folder.**
+   `events.py:2968` still uses `re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", …)`
+   to build its value-resolution set — the very scan that `_expression_id_runs`
+   is documented to reject because it yields fragments of an id. It runs
+   *after* the hyphen guard, so it cannot corrupt a rewritten expression, but a
+   surviving `A-B` is resolved there as two symbols, `A` and `B`. Whether that
+   produces a wrong value or only a refusal is **unmeasured**; it is listed
+   rather than fixed because a fix that does not reproduce must not be applied.
+
 ---
 
 ## 3. What this session found and fixed
@@ -158,7 +186,13 @@ fix would be the exact error this document exists to prevent.
 | 7 | **Parameter alias chains** | `e3af431` | **Behaviour change (Atomizer)** | The alias map was applied as a chain of renames. Because one parameter's canonical id can be another's alias *key* (`k-1` and `k_1` both standardize to `k_1`), a rate law could be rewritten to the wrong parameter's value. Resolution is now a single simultaneous rewrite. |
 | 8 | **`writeSSCcfg` wrote the wrong artifact** | `1a3091e` (tests in `c6a4132`) | **Behaviour change (export)** | BNG2's `writeSSC` emits a complete `.rxn` program while `writeSSCcfg` emits a `.cfg` holding the parameter block alone. BNG3 emitted the full program at the `.cfg` path — the wrong file at the wrong path. `SscWriter::writeConfig` now writes the parameter block and is explicitly not derived from `write()`. |
 | 9 | **Seed site state resolved by discovery index** | `75b22a7` | **Behaviour change (NFsim)** | The seed builder used an offset into the Atomizer's *discovery order* as the NFsim state value; NFsim's value is an offset into the molecule type's own state table. `ANx` declares `RD(...,m~2)` before any observable mentions `m~0`, so every seed receptor was built in state 0. The state is now bound by name, and the two construction routes must agree at `rtol=atol=0`. The strict-xfail tuple `_KNOWN_SEED_STATE_ORDER_DIVERGENCES` is **empty** because the divergence is gone, not because the check was dropped. |
-| 10 | **Raw-id tokenizer family** | `6dc41b6`, `2370586`, `ccde363` | **Two behaviour changes and one no-op refactor** | An SBML id with a character outside `[A-Za-z0-9_]` is stored **raw** and standardized only at emission, so an identifier-shaped token cannot spell it. `6dc41b6` stops raw hyphenated ids leaking into emitted rate text; `2370586` routes assignment-rule bodies through the id pre-pass, which that loop was bypassing. `ccde363` routes three pre-filter sites through the whole-id-run helper and **changes no output**. |
+| 10 | **Raw-id tokenizer family** | `6dc41b6`, `2370586`, `ccde363` | **Two behaviour changes — one of them incomplete when it was claimed — and one no-op refactor** | An SBML id with a character outside `[A-Za-z0-9_]` is stored **raw** and standardized only at emission, so an identifier-shaped token cannot spell it. `6dc41b6` stopped raw hyphenated ids leaking into emitted rate text **in the tokenizer and function paths only**; its rate-law path was still wrong when it landed and did not become correct until `57a0c82` (row 12). `2370586` closed the remaining body leaks: assignment-rule bodies, which bypass `bngl_function` and so bypassed the pre-pass, and function-definition bodies via `bngl_function`'s own pre-pass (`writer.py:152-154`). `ccde363` routes three pre-filter sites through the whole-id-run helper and **changes no output**. |
+| 11 | **`_tokenize` split a hyphenated id, and the AST rewriters split it again** | `5ca19da` | **Behaviour change (event delays and trigger/assignment lowering)** | The formula tokenizer's identifier class was `[A-Za-z_][A-Za-z0-9_]*`, which stops at `-`. A `<ci> A-B </ci>` delay therefore folded to the *difference* `5 - 2 == 3` and the event fired at `t = 1 + 3` — a fabricated time — instead of being left untranslated as a species-valued delay. The class is now the writer's `_SBML_ID_RUN`, and the two spellings cannot collide because a genuine MathML `<minus>` is serialised with surrounding spaces (`parser.py:848`). Three further guards close the same hole one layer up, because `ast.parse`/`ast.unparse` round trips re-read `A-B` as subtraction and re-spell it: `_preserves_hyphenated_ids` refuses the rewrite at all three rewriter sites. Fails closed in every case. |
+| 12 | **Hyphenated species corrupted the rate law and the trajectory** | `57a0c82` | **Behaviour change (rate-law emission and ODE trajectory)** | Two distinct causes in `_split_reversible_rate`. (a) A source id's hyphen was cut as a difference: `k2 * A-B` split to `('k2 * A', 'B')`, handing the caller a "reverse law" that is a fragment of an identifier. (b) An arrow head was cut as a difference: `A <-> B` produced a reverse rate of `'> B'`, a rate expression that means nothing. Both now fail closed (`_extract_top_level_additive_terms`, `_is_id_hyphen`, which treats a hyphen inside a whole-id run *and* a `>` head as non-operator). The raw spelling no longer picks a different classification from the standardized one, so the two spellings emit byte-identical rules and neither gains a spurious `TotalRate`. |
+
+**Rows 11 and 12 are behaviour changes, and both were claimed complete before they were.** The general rule this table now follows: **a commit's claim about the rate-law path is a claim about code, not about a trajectory, and the trajectory is the only acceptance criterion.** Row 12 exists because row 10 did not have one at the time.
+
+**Trajectory evidence for row 12** is in `tests/python/test_reversible_rate_split.py`, which simulates both spellings through `bng_cpp` and asserts the modelled amount at t=1 agrees to `abs=1e-9`, plus a closed-form check against `10*exp(-0.3)`. Those tests skip unless `bng_cpp` is present, and were run by hand rather than through the suite: both spellings give `7.408181727464`, against `9.700` for `A-B` before the fix.
 
 **On items 1–5, stated precisely.** The group fixed in `d04f648` is hardening with
 *no model change whatsoever*, and this was measured rather than asserted: both
@@ -285,6 +319,21 @@ become the next stale artifact.
    paragraph). Worth knowing before quoting a green `cpp-cuda`.
 5. **The validation exception budget is 1, not 0** (`ci.yml:68`). One exception
    is currently approved; that is a live tolerance, not a closed ledger.
+6. **A review reporting that function-definition bodies still leak raw ids was
+   measured at the wrong commit.** That measurement was taken at `6dc41b6`; it
+   does not describe `main` today. Function definitions are pre-passed by
+   `bngl_function` (`writer.py:152-154`) and assignment-rule bodies were
+   routed through the same pre-pass by `2370586`. Both paths are pinned by
+   tests. Recorded so a future reader does not re-raise it from the old report.
+7. **`docs/CI_PARITY.md:110-112` overstates strictness, and this file does
+   not.** It says the full-corpus `ci.yml` and weekly validation jobs "are
+   strict and must report zero skipped fixtures". `BNG3_CI_STRICT_ORACLES` is
+   set at `parity.yml:24` **and nowhere else** — the only other occurrences in
+   the tree are `tests/validation/strict.py`,
+   `tests/validation/test_harness_paths.py` and the contract assertion in
+   `tests/test_ci_contract.py`. A missing oracle in the `validation` job is a
+   **skip**, not a failure. §1 of this file is right and that document is
+   stale.
 
 ---
 
