@@ -46,11 +46,28 @@ recorded in the historical sections below; they are not current-head evidence.
   Therefore the PR's distributional-parity claim is not established by this
   test script.
 - [x] PR checks passed for its C++/Python matrix, full-corpus validation,
-  BNG3/BNG2/NFsim and PyBioNetGen parity, CodeQL, formatting, and integration.
+  scoped BNG3/BNG2/NFsim and PyBioNetGen parity, CodeQL, formatting, and integration.
   Docker, source-distribution, wheel, PyPI, and scheduled historical-NFsim
   checks were skipped. No PR comment or source change was made.
+- [ ] This scoped PR parity check is not an all-SBML BNG2 Atomizer benchmark.
 - [ ] PR #26 remains open; its statistical assertions and skipped release/NFsim
   checks remain review and qualification gaps.
+
+## BNG3 threshold-event cohort refresh — 2026-09-29
+
+- [x] Revalidated ten pinned semantic cases at BNG3 head
+  `ad742da46f5ecb67a9c1fd92abd45c39609b9934` against suite commit
+  `cf38585fac5de8e0e90112febb62851ee2181816`: `00387`, `00393`, `00444`,
+  `00445`, `00450`, `00451`, `01071`, `01073`, `01074`, and `01076`. All ten
+  remain unsupported due to untranslated state-dependent events; 0 passed,
+  0 failed, 0 timed out at `t_end=1` with 10 intervals. Index:
+  `/private/tmp/bng3-atomizer-threshold-cohort-ad742da.json`, SHA-256
+  `fc19684ef95d4b3dbe63c2509ee909726fc0d5b62b81da85e9e379ff3f7365e5`.
+- [ ] This refresh establishes no new event lowering or SSTS gain. Related
+  threshold cases with non-collinear reaction stoichiometry remain outside the
+  existing exact-trajectory proof; no rank-one assumptions were loosened.
+  Legacy BNG2 Atomizer remains incomplete and has not been benchmarked against
+  all SBML. No BNG2 source was changed.
 
 ## Quadratic event groups with unrelated rate-rule targets — 2026-09-28
 
