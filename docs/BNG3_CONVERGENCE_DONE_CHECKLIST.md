@@ -9329,3 +9329,37 @@ the other groups remain implementation targets.
   parity, or an all-SBML benchmark of their Atomizers. BNG2/legacy
   PyBioNetGen Atomizer remains incomplete and unbenchmarked against all SBML.
   Curated BioModels validation remains stopped.
+
+## Species-reference parameter ordering and bounded cross-engine sample — 2026-09-29
+
+- [x] Reproduced hash-seed-dependent ordering of synthetic parameters generated
+  from constant Level 2 `stoichiometryMath` species references. The unordered
+  `folded_reference_ids` set was traversed while inserting into the ordered
+  parameter collection. A subprocess regression test failed across hash seeds
+  before the fix; sorting those IDs makes it pass. BNG3 source and regression
+  test are in commit `007fa0f1612baf95a4bc3155e08666d3539dca35`.
+- [x] At that exact BNG3 head, focused Atomizer tests passed (`5 passed, 108
+  deselected`), and Ruff, Black, and `git diff --check` passed. Three SSTS
+  records (`01516`, `01517`, `01562`) passed individually in the core validator
+  under flat and Atomized paths. Partial validator invocations return exit 1
+  because the aggregate suite gate remains open; each record reported
+  `status=passed` and `core_passed=true` with tracked-clean source at
+  `007fa0f`. Summary:
+  `/private/tmp/bng3-stoichiometry-determinism-007fa0f/summary.json`, SHA-256
+  `cf943489a42e4735f54c2e4d844b9d2a8dcc636ffb1b1d75bddbefb3ece75316`.
+- [x] Repeated atomization for those three records under `PYTHONHASHSEED=1` and
+  `2`; flat and Atomized output hashes matched across seeds for every record.
+- [x] A separate three-repeat, 50-case SSTS cross-engine sample at BNG3
+  `17e0eed` produced 300 BNG3-modern Atomizer/network successes; 282/300
+  corresponding BNG2 network runs succeeded, with 282/282 structure matches
+  and 246/282 strict rate matches. Legacy PyBioNetGen Atomizer succeeded on
+  252/300 runs. These are bounded results, not full-suite parity. Reports:
+  `/private/tmp/bng3-cross-engine-fourth50-current-main.json` (SHA-256
+  `446357f83cab9b72a6fc047610f42d319ccbf53b99c92e081251162ff54ee4fac`) and
+  `/private/tmp/bng3-cross-engine-fourth50-current-main-manifest.json` (SHA-256
+  `72a1bcc6ba24f32cc028755d10a9edb4969b99033afaf81f3ea17d4f39c7e092`).
+- [ ] The cross-engine sample predates the ordering fix and is not a rerun of
+  the full sample at `007fa0f`. BNG2/legacy PyBioNetGen Atomizer remains
+  incomplete and has not been benchmarked against all SBML. This result does
+  not establish full SSTS, all-SBML, or curated BioModels parity; BioModels
+  validation remains stopped.
