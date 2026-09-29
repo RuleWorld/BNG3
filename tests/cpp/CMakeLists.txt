@@ -257,6 +257,21 @@ target_link_libraries(test_nfsim_ast_adapter PRIVATE
     bng_parser)
 catch_discover_tests(test_nfsim_ast_adapter)
 
+# test_nfcore2_parity
+add_executable(test_nfcore2_parity test_nfcore2_parity.cpp)
+target_include_directories(test_nfcore2_parity PRIVATE
+    ${CMAKE_SOURCE_DIR}/cpp
+    ${CMAKE_SOURCE_DIR}/cpp/nfsim
+    ${CMAKE_SOURCE_DIR}/cpp/nfsim/NFcore
+    ${CMAKE_SOURCE_DIR}/cpp/nfsim/NFinput
+    ${CMAKE_SOURCE_DIR}/cpp/nfsim/NFcore2
+)
+target_link_libraries(test_nfcore2_parity PRIVATE
+    Catch2::Catch2WithMain Catch2::Catch2
+    bionetgen_core
+    bng_parser)
+catch_discover_tests(test_nfcore2_parity)
+
 # test_nfsim_reactant_tree
 add_executable(test_nfsim_reactant_tree test_nfsim_reactant_tree.cpp)
 target_include_directories(test_nfsim_reactant_tree PRIVATE

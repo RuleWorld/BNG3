@@ -570,6 +570,13 @@
       "empty_bodies": 0
     },
     {
+      "path": "tests/architecture_contracts/nfcore2/test_ssa_driver.cpp",
+      "status": "reference",
+      "target": "bng3_nfcore2_reference_tests",
+      "declared_cases": 5,
+      "empty_bodies": 0
+    },
+    {
       "path": "tests/architecture_contracts/nfcore2/test_transform_engine.cpp",
       "status": "reference",
       "target": "bng3_nfcore2_reference_tests",

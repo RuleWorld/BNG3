@@ -543,7 +543,8 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
             if (has_reactant) {
                 type=reactantType(source,nr,x.reactant);
                 if (x.kind!=NATIVE_EMPTY && x.kind!=NATIVE_LOCAL_FUNCTION_REFERENCE && x.kind!=NATIVE_MOVE &&
-                    x.kind!=NATIVE_INCREMENT_POPULATION && x.kind!=NATIVE_DECREMENT_POPULATION)
+                    x.kind!=NATIVE_INCREMENT_POPULATION && x.kind!=NATIVE_DECREMENT_POPULATION &&
+                    x.kind!=NATIVE_REMOVE)
                     validateComponent(source,type,x.component);
             } else if (zero_reactant_population_transform) {
                 type = x.added_molecule_type;

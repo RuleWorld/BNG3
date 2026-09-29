@@ -24,6 +24,7 @@ add_executable(bng3_nfcore2_reference_tests
     nfcore2/test_scaffold_reference_model.cpp
     nfcore2/test_scheduler_reference_model.cpp
     nfcore2/test_shadow_semantic_matrix.cpp
+    nfcore2/test_ssa_driver.cpp
     nfcore2/test_transform_engine.cpp
     nfcore2/test_validation_dependency.cpp
 )
