@@ -1,8 +1,10 @@
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include "../../cpp/engine/PlaSimulator.hpp"
 #include "../../cpp/ast/Model.hpp"
 #include "../../cpp/engine/NetworkGenerator.hpp"
+#include "../../cpp/parser/BNGAstVisitor.hpp"
 // Include implementation to exercise evaluateRateString in anonymous namespace.
 #include "../../cpp/engine/PlaSimulator.cpp"
 
@@ -85,6 +87,27 @@ TEST_CASE("PlaSimulator initialization and simulation", "[PlaSimulator]") {
     REQUIRE_THAT(result.timePoints.back(), Catch::Matchers::WithinAbs(1.0, 1e-6));
     REQUIRE(result.concentrations.size() == result.timePoints.size());
     REQUIRE(result.observables.size() == result.timePoints.size());
+}
+
+TEST_CASE("PlaSimulator rejects BNG3 events until event execution is implemented",
+          "[PlaSimulator][Events]") {
+    const auto model = bng::parser::parseModel(R"(
+begin bng3_events version 1
+  event "later"
+    trigger: time >= 1
+    initial_value: false
+    persistent: true
+    use_values_from_trigger_time: true
+    assignment: A = 0
+  end event
+end bng3_events
+)");
+    REQUIRE(model != nullptr);
+    bng::engine::GeneratedNetwork network;
+
+    REQUIRE_THROWS_WITH(
+        bng::engine::PlaSimulator(*model, network),
+        Catch::Matchers::ContainsSubstring("BNG3 event execution is not implemented"));
 }
 
 TEST_CASE("evaluateRateString error path", "[PlaSimulator]") {

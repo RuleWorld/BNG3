@@ -49,6 +49,7 @@ program_block
     | compartments_block
     | energy_patterns_block
     | population_maps_block
+    | bng3_events_block
     | protocol_block
     | wrapped_actions_block
     | begin_actions_block  // NEW: Support "begin actions ... end actions"
@@ -373,6 +374,41 @@ population_maps_block
 
 population_map_def
     : (STRING COLON)? species_def UNI_REACTION_SIGN STRING LPAREN param_list? RPAREN
+    ;
+
+// Versioned BNG3 extension for event models that cannot be lowered to a
+// finite, proven list of ordinary BNGL actions.
+bng3_events_block
+    : BEGIN STRING VERSION INT LB+ (event_def LB*)* END STRING LB*
+    ;
+
+event_def
+    : STRING quoted_string LB+
+      STRING COLON expression LB+
+      STRING COLON boolean_literal LB+
+      STRING COLON boolean_literal LB+
+      STRING COLON boolean_literal LB+
+      (event_delay LB+)?
+      (event_priority LB+)?
+      (event_assignment LB+)*
+      END STRING
+    ;
+
+event_delay
+    : STRING COLON expression
+    ;
+
+event_priority
+    : PRIORITY COLON expression
+    ;
+
+event_assignment
+    : STRING COLON param_name BECOMES expression
+    ;
+
+boolean_literal
+    : TRUE
+    | FALSE
     ;
 
 

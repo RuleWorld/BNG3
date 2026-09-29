@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 
 def _model(xml: str):
     from bionetgen.atomizer.modern import SBMLParser
@@ -559,6 +561,70 @@ def test_sbml_fixed_fractional_stoichiometry_lowers_to_deterministic_flux_rules(
     )
 
 
+def test_static_species_reference_parameters_are_hash_seed_deterministic(tmp_path):
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    species_ids = [f"S{index}" for index in range(24, 32)]
+    species = "".join(
+        f'<species id="{species_id}" compartment="c" initialAmount="0"/>'
+        for species_id in species_ids
+    )
+    references = "".join(
+        f"""<speciesReference id="{species_id}_stoich" species="{species_id}">
+          <stoichiometryMath><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <cn>1</cn>
+          </math></stoichiometryMath>
+        </speciesReference>""" for species_id in species_ids
+    )
+    xml = f"""<sbml xmlns="http://www.sbml.org/sbml/level2/version5"
+        level="2" version="5">
+      <model id="deterministic_stoichiometry_parameters">
+        <listOfCompartments><compartment id="c" size="1"/></listOfCompartments>
+        <listOfSpecies>{species}</listOfSpecies>
+        <listOfReactions><reaction id="r">
+          <listOfProducts>{references}</listOfProducts>
+          <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></kineticLaw>
+        </reaction></listOfReactions>
+      </model>
+    </sbml>"""
+    source = tmp_path / "deterministic_stoichiometry_parameters.xml"
+    source.write_text(xml, encoding="utf-8")
+    worker = """import sys
+from pathlib import Path
+from bionetgen.atomizer.modern import Atomizer
+source = Path(sys.argv[1])
+result = Atomizer(atomize=False, quiet_mode=True).atomize(source.read_text(), source_path=source)
+if not result.success:
+    raise RuntimeError(result.error or "Atomizer failed")
+print(result.bngl)
+"""
+    outputs = []
+    for hash_seed in ("1", "2"):
+        environment = os.environ.copy()
+        environment["PYTHONHASHSEED"] = hash_seed
+        environment["PYTHONPATH"] = str(Path(__file__).resolve().parents[2] / "python")
+        completed = subprocess.run(
+            [sys.executable, "-c", worker, str(source)],
+            check=True,
+            capture_output=True,
+            cwd=Path(__file__).resolve().parents[2],
+            env=environment,
+            text=True,
+        )
+        outputs.append(completed.stdout)
+
+    assert outputs[0] == outputs[1]
+    parameter_lines = [
+        line.strip()
+        for line in outputs[0].splitlines()
+        if line.strip().endswith("_stoich 1")
+    ]
+    assert parameter_lines == [f"{species_id}_stoich 1" for species_id in species_ids]
+
+
 def test_sbml_static_species_reference_assignment_becomes_numeric_parameter():
     xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
       <model id="assigned_species_reference_symbol">
@@ -579,6 +645,142 @@ def test_sbml_static_species_reference_assignment_becomes_numeric_parameter():
     assert model.parameters["sr"].value == 4
     assert not model.reactions["r"].reactants[0].variable_stoichiometry
     assert not model.initial_assignments
+
+
+def test_event_target_species_reference_initial_assignment_stays_dynamic():
+    from bionetgen.atomizer.modern import (
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="event_target_species_reference_initial_assignment">
+        <listOfCompartments><compartment id="c" size="1"/></listOfCompartments>
+        <listOfSpecies><species id="A" compartment="c" initialAmount="1"/></listOfSpecies>
+        <listOfInitialAssignments><initialAssignment symbol="sr">
+          <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>2</cn></math>
+        </initialAssignment></listOfInitialAssignments>
+        <listOfReactions><reaction id="r" reversible="false">
+          <listOfProducts><speciesReference id="sr" species="A" stoichiometry="4" constant="false"/></listOfProducts>
+          <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></kineticLaw>
+        </reaction></listOfReactions>
+        <listOfEvents><event id="change_stoichiometry">
+          <trigger initialValue="true" persistent="true">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><geq/><csymbol definitionURL="http://www.sbml.org/sbml/symbols/time">time</csymbol><cn>1</cn></apply>
+            </math>
+          </trigger>
+          <listOfEventAssignments><eventAssignment variable="sr">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>3</cn></math>
+          </eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    model = _model(xml)
+    sct = build_species_composition_table(model)
+    result = generate_bngl(
+        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+    )
+
+    parameters = result.bngl.split("begin parameters\n", 1)[1].split(
+        "\nend parameters", 1
+    )[0]
+    functions = result.bngl.split("begin functions\n", 1)[1].split(
+        "\nend functions", 1
+    )[0]
+    assert "sr 2" in {line.strip() for line in parameters.splitlines()}
+    assert "sr 4" not in {line.strip() for line in parameters.splitlines()}
+    assert "sr() =" not in functions
+    assert 'setParameter("sr", "3")' in result.bngl
+
+
+def test_event_target_parameter_initial_assignment_stays_dynamic(tmp_path):
+    from bionetgen.atomizer.modern import (
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="event_target_parameter_initial_assignment">
+        <listOfCompartments><compartment id="c" size="1"/></listOfCompartments>
+        <listOfSpecies>
+          <species id="A" compartment="c" initialAmount="2"/>
+          <species id="B" compartment="c" initialAmount="0"/>
+        </listOfSpecies>
+        <listOfParameters><parameter id="p" value="4" constant="false"/></listOfParameters>
+        <listOfInitialAssignments><initialAssignment symbol="p">
+          <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>2</cn></math>
+        </initialAssignment></listOfInitialAssignments>
+        <listOfReactions><reaction id="r" reversible="false">
+          <listOfReactants><speciesReference species="A"/></listOfReactants>
+          <listOfProducts><speciesReference species="B"/></listOfProducts>
+          <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><times/><ci>p</ci><ci>A</ci></apply>
+          </math></kineticLaw>
+        </reaction></listOfReactions>
+        <listOfEvents><event id="change_parameter">
+          <trigger initialValue="true" persistent="true">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><geq/><csymbol definitionURL="http://www.sbml.org/sbml/symbols/time">time</csymbol><cn>1</cn></apply>
+            </math>
+          </trigger>
+          <listOfEventAssignments><eventAssignment variable="p">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>3</cn></math>
+          </eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    model = _model(xml)
+    sct = build_species_composition_table(model)
+    result = generate_bngl(
+        model, sct, get_molecule_types(sct), get_seed_species(sct, model)
+    )
+
+    parameters = result.bngl.split("begin parameters\n", 1)[1].split(
+        "\nend parameters", 1
+    )[0]
+    functions = result.bngl.split("begin functions\n", 1)[1].split(
+        "\nend functions", 1
+    )[0]
+    assert model.parameters["p"].value == 2
+    assert "p 2" in {line.strip() for line in parameters.splitlines()}
+    assert "p 4" not in {line.strip() for line in parameters.splitlines()}
+    assert "p() =" not in functions
+    assert 'setParameter("p", "3")' in result.bngl
+
+    import numpy as np
+
+    roadrunner = pytest.importorskip("roadrunner")
+    from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.model import load
+
+    atomized = Atomizer(quiet_mode=True, t_end=2, n_steps=200).atomize(xml)
+    assert atomized.success, atomized.error
+    assert "Events NOT simulated" not in atomized.bngl
+    model_path = tmp_path / "event_target_parameter_initial_assignment.bngl"
+    model_path.write_text(atomized.bngl, encoding="utf-8")
+    load(model_path).execute()
+    lines = model_path.with_suffix(".gdat").read_text().splitlines()
+    columns = lines[0].lstrip("# ").split()
+    bng_data = np.loadtxt(lines[1:])
+
+    rr = roadrunner.RoadRunner(xml)
+    rr.integrator.setValue("relative_tolerance", 1e-9)
+    rr.integrator.setValue("absolute_tolerance", 1e-12)
+    rr.timeCourseSelections = ["time", "A"]
+    reference = rr.simulate(times=bng_data[:, columns.index("time")])
+    jump = int(np.argmin(np.abs(bng_data[:, columns.index("time")] - 1.0)))
+    compare = np.ones(len(bng_data), dtype=bool)
+    compare[max(0, jump - 1) : min(len(bng_data), jump + 2)] = False
+    bng_values = bng_data[compare, columns.index("A_amt")]
+    rr_values = reference[compare, reference.colnames.index("A")]
+    assert np.max(np.abs(bng_values - rr_values)) <= 1e-7
 
 
 def test_sbml_nonlinear_algebraic_rule_stays_explicitly_unsupported():
@@ -1021,10 +1223,103 @@ def test_event_controls_deterministic_species_reference_flux():
     assert 'setParameter("p1", "2")' in result.bngl
 
 
-def test_quadratic_state_event_repeats_after_trigger_species_reset():
+def test_periodic_species_reference_events_prove_reaction_species_threshold_inactive():
     from bionetgen.atomizer.modern import Atomizer
 
     xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="periodic_stoichiometry_keeps_species_static">
+        <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies><species id="S" compartment="C" initialAmount="0"/></listOfSpecies>
+        <listOfParameters>
+          <parameter id="reset" value="0" constant="false"/>
+          <parameter id="Q" value="1" constant="false"/>
+          <parameter id="R" value="1" constant="false"/>
+          <parameter id="error" value="0" constant="false"/>
+        </listOfParameters>
+        <listOfRules><rateRule variable="reset">
+          <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math>
+        </rateRule></listOfRules>
+        <listOfEvents>
+          <event id="increment_Q" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="false">
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><geq/><ci>reset</ci><cn>0.01</cn></apply>
+              </math>
+            </trigger>
+            <listOfEventAssignments>
+              <eventAssignment variable="reset"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0</cn></math></eventAssignment>
+              <eventAssignment variable="Q"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><plus/><ci>Q</ci><cn>0.01</cn></apply></math></eventAssignment>
+            </listOfEventAssignments>
+          </event>
+          <event id="increment_R" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="false">
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><geq/><ci>reset</ci><cn>0.01</cn></apply>
+              </math>
+            </trigger>
+            <listOfEventAssignments>
+              <eventAssignment variable="reset"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0</cn></math></eventAssignment>
+              <eventAssignment variable="R"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><plus/><ci>R</ci><cn>0.01</cn></apply></math></eventAssignment>
+            </listOfEventAssignments>
+          </event>
+          <event id="threshold">
+            <trigger initialValue="true" persistent="true">
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><geq/><apply><abs/><ci>S</ci></apply><cn>0.001</cn></apply>
+              </math>
+            </trigger>
+            <listOfEventAssignments>
+              <eventAssignment variable="error"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></eventAssignment>
+            </listOfEventAssignments>
+          </event>
+        </listOfEvents>
+        <listOfReactions><reaction id="r" reversible="false">
+          <listOfReactants><speciesReference id="Q" species="S" constant="false"/></listOfReactants>
+          <listOfProducts><speciesReference id="R" species="S" constant="false"/></listOfProducts>
+          <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0.1</cn></math></kineticLaw>
+        </reaction></listOfReactions>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True, t_end=0.025, n_steps=10).atomize(xml)
+
+    assert result.success, result.error
+    assert (
+        "state-dependent or non-constant event(s) remain untranslated"
+        not in result.bngl
+    )
+    assert 'setParameter("error", "1")' not in result.bngl
+
+    changing_species_xml = xml.replace(
+        "</listOfEvents>",
+        """<event id="change_S">
+          <trigger><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><geq/><csymbol definitionURL="http://www.sbml.org/sbml/symbols/time">time</csymbol><cn>0.015</cn></apply>
+          </math></trigger>
+          <listOfEventAssignments><eventAssignment variable="S">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0.002</cn></math>
+          </eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>""",
+    )
+    changing_species = Atomizer(quiet_mode=True, t_end=0.025, n_steps=10).atomize(
+        changing_species_xml
+    )
+
+    assert changing_species.success, changing_species.error
+    assert (
+        "state-dependent or non-constant event(s) remain untranslated"
+        in changing_species.bngl
+    )
+
+
+def _quadratic_reentrant_event_model(delay=None):
+    delay_element = (
+        ""
+        if delay is None
+        else f"""<delay><math xmlns="http://www.w3.org/1998/Math/MathML">
+          <cn>{delay}</cn></math></delay>"""
+    )
+    return f"""<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
       <model id="quadratic_reentrant_event">
         <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
         <listOfSpecies>
@@ -1052,6 +1347,7 @@ def test_quadratic_state_event_repeats_after_trigger_species_reset():
           <trigger initialValue="true" persistent="true">
             <math xmlns="http://www.w3.org/1998/Math/MathML"><apply><lt/><ci>A</ci><cn>0.75</cn></apply></math>
           </trigger>
+          {delay_element}
           <listOfEventAssignments>
             <eventAssignment variable="B"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1.5</cn></math></eventAssignment>
             <eventAssignment variable="A"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></eventAssignment>
@@ -1060,12 +1356,114 @@ def test_quadratic_state_event_repeats_after_trigger_species_reset():
       </model>
     </sbml>"""
 
+
+def test_quadratic_state_event_repeats_after_trigger_species_reset():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = _quadratic_reentrant_event_model()
     result = Atomizer(quiet_mode=True, t_end=10, n_steps=100).atomize(xml)
 
     assert result.success, result.error
     assert "state-dependent or non-constant event" not in result.bngl
     assert "# 7 time-triggered SBML event(s) translated" in result.bngl
     assert result.bngl.count("setConcentration(") == 14
+
+
+def test_delayed_quadratic_state_events_recur_and_match_libroadrunner(tmp_path):
+    import numpy as np
+    import pytest
+
+    roadrunner = pytest.importorskip("roadrunner")
+    from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.model import load
+
+    xml = _quadratic_reentrant_event_model(delay=1.5)
+    result = Atomizer(quiet_mode=True, t_end=20, n_steps=1200).atomize(xml)
+
+    assert result.success, result.error
+    assert "Events NOT simulated" not in result.bngl
+
+    model_path = tmp_path / "delayed_quadratic_reentrant.bngl"
+    model_path.write_text(result.bngl, encoding="utf-8")
+    load(model_path).execute()
+    lines = model_path.with_suffix(".gdat").read_text().splitlines()
+    columns = lines[0].lstrip("# ").split()
+    bng_data = np.loadtxt(lines[1:])
+    times = bng_data[:, columns.index("time")]
+
+    rr = roadrunner.RoadRunner(xml)
+    rr.integrator.setValue("relative_tolerance", 1e-9)
+    rr.integrator.setValue("absolute_tolerance", 1e-12)
+    rr.timeCourseSelections = ["time", "[A]", "[B]", "[D]"]
+    reference = rr.simulate(times=times)
+
+    state_columns = [columns.index(species) for species in ("A", "B", "D")]
+    changes = np.abs(np.diff(bng_data[:, state_columns], axis=0))
+    jump_indices = np.flatnonzero(np.max(changes, axis=1) > 0.2)
+    assert len(jump_indices) >= 1
+    compare = np.ones(len(times), dtype=bool)
+    compare[jump_indices] = False
+    compare[jump_indices + 1] = False
+    for species in ("A", "B", "D"):
+        bng_values = bng_data[compare, columns.index(species)]
+        rr_values = reference[compare, reference.colnames.index(f"[{species}]")]
+        scale = max(float(np.max(np.abs(bng_values))), float(np.max(np.abs(rr_values))))
+        assert float(np.max(np.abs(bng_values - rr_values))) <= max(5e-12, 1e-6 * scale)
+
+
+def test_quadratic_state_event_resolves_species_initial_assignments(tmp_path):
+    import numpy as np
+    import pytest
+
+    roadrunner = pytest.importorskip("roadrunner")
+    from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.model import load
+
+    xml = _quadratic_reentrant_event_model()
+    xml = xml.replace('initialAmount="2"', 'initialAmount="5"')
+    xml = xml.replace(
+        "</listOfParameters>",
+        '<parameter id="p1" value="0.5" constant="true"/></listOfParameters>',
+    )
+    xml = xml.replace(
+        "<listOfReactions>",
+        """<listOfInitialAssignments>
+          <initialAssignment symbol="B"><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><divide/><ci>A</ci><ci>p1</ci></apply>
+          </math></initialAssignment>
+        </listOfInitialAssignments><listOfReactions>""",
+    )
+    result = Atomizer(quiet_mode=True, t_end=10, n_steps=600).atomize(xml)
+
+    assert result.success, result.error
+    assert "Events NOT simulated" not in result.bngl
+
+    model_path = tmp_path / "quadratic_event_with_species_initial_assignment.bngl"
+    model_path.write_text(result.bngl, encoding="utf-8")
+    load(model_path).execute()
+    lines = model_path.with_suffix(".gdat").read_text().splitlines()
+    columns = lines[0].lstrip("# ").split()
+    bng_data = np.loadtxt(lines[1:])
+    times = bng_data[:, columns.index("time")]
+
+    rr = roadrunner.RoadRunner(xml)
+    rr.integrator.setValue("relative_tolerance", 1e-9)
+    rr.integrator.setValue("absolute_tolerance", 1e-12)
+    rr.timeCourseSelections = ["time", "[A]", "[B]", "[D]"]
+    reference = rr.simulate(times=times)
+
+    state_columns = [columns.index(species) for species in ("A", "B", "D")]
+    changes = np.abs(np.diff(bng_data[:, state_columns], axis=0))
+    jump_indices = np.flatnonzero(np.max(changes, axis=1) > 0.2)
+    assert len(jump_indices) >= 1
+    compare = np.ones(len(times), dtype=bool)
+    compare[jump_indices] = False
+    compare[jump_indices + 1] = False
+    for species in ("A", "B", "D"):
+        bng_values = bng_data[compare, columns.index(species)]
+        rr_values = reference[compare, reference.colnames.index(f"[{species}]")]
+        scale = max(float(np.max(np.abs(bng_values))), float(np.max(np.abs(rr_values))))
+        assert float(np.max(np.abs(bng_values - rr_values))) <= max(5e-12, 1e-6 * scale)
 
 
 def _independent_component_quadratic_event_model(
@@ -1267,6 +1665,397 @@ def _independent_quadratic_event_pair_model(
     </sbml>"""
 
 
+def _quadratic_event_with_downstream_decay_model() -> str:
+    return """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="quadratic_event_with_downstream_decay">
+        <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies>
+          <species id="A" compartment="C" initialAmount="1" hasOnlySubstanceUnits="true"/>
+          <species id="B" compartment="C" initialAmount="2" hasOnlySubstanceUnits="true"/>
+          <species id="P" compartment="C" initialAmount="0" hasOnlySubstanceUnits="true"/>
+          <species id="Q" compartment="C" initialAmount="0" hasOnlySubstanceUnits="true"/>
+        </listOfSpecies>
+        <listOfParameters>
+          <parameter id="k" value="0.5" constant="true"/>
+          <parameter id="kd" value="0.25" constant="true"/>
+        </listOfParameters>
+        <listOfReactions>
+          <reaction id="combine" reversible="false">
+            <listOfReactants>
+              <speciesReference species="A" stoichiometry="1"/>
+              <speciesReference species="B" stoichiometry="1"/>
+            </listOfReactants>
+            <listOfProducts><speciesReference species="P" stoichiometry="1"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><times/>
+              <ci>k</ci><ci>A</ci><ci>B</ci>
+            </apply></math></kineticLaw>
+          </reaction>
+          <reaction id="decay" reversible="false">
+            <listOfReactants><speciesReference species="P" stoichiometry="1"/></listOfReactants>
+            <listOfProducts><speciesReference species="Q" stoichiometry="1"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><times/>
+              <ci>kd</ci><ci>P</ci>
+            </apply></math></kineticLaw>
+          </reaction>
+        </listOfReactions>
+        <listOfEvents>
+          <event id="reset_reactants" useValuesFromTriggerTime="false">
+            <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><lt/><ci>A</ci><cn>0.5</cn></apply>
+            </math></trigger>
+            <listOfEventAssignments>
+              <eventAssignment variable="B"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></eventAssignment>
+            </listOfEventAssignments>
+          </event>
+        </listOfEvents>
+      </model>
+    </sbml>"""
+
+
+def test_quadratic_event_ignores_downstream_decay_reactions(tmp_path):
+    import numpy as np
+    import pytest
+
+    roadrunner = pytest.importorskip("roadrunner")
+    from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.model import load
+
+    xml = _quadratic_event_with_downstream_decay_model()
+    result = Atomizer(quiet_mode=True, t_end=4, n_steps=400).atomize(xml)
+
+    assert result.success, result.error
+    assert "state-dependent or non-constant event" not in result.bngl
+    assert "Events NOT simulated" not in result.bngl
+    assert result.bngl.count('setConcentration("@C:M_B()", "1")') == 1
+
+    model_path = tmp_path / "quadratic_event_with_downstream_decay.bngl"
+    model_path.write_text(result.bngl, encoding="utf-8")
+    load(model_path).execute()
+    lines = model_path.with_suffix(".gdat").read_text().splitlines()
+    columns = lines[0].lstrip("# ").split()
+    bng_data = np.loadtxt(lines[1:])
+    times = bng_data[:, columns.index("time")]
+
+    rr = roadrunner.RoadRunner(xml)
+    rr.integrator.setValue("relative_tolerance", 1e-9)
+    rr.integrator.setValue("absolute_tolerance", 1e-12)
+    rr.timeCourseSelections = ["time", "A", "B", "P", "Q"]
+    reference = rr.simulate(times=times)
+    event_times = [np.log(1.5) / 0.5]
+    away_from_events = np.logical_and.reduce(
+        [np.abs(times - event_time) > 1e-6 for event_time in event_times]
+    )
+    for species in ("A", "B", "P", "Q"):
+        bng_values = bng_data[away_from_events, columns.index(species)]
+        rr_values = reference[away_from_events, reference.colnames.index(species)]
+        scale = max(float(np.max(np.abs(bng_values))), float(np.max(np.abs(rr_values))))
+        assert float(np.max(np.abs(bng_values - rr_values))) <= max(1e-10, 2e-5 * scale)
+
+
+def test_quadratic_event_rejects_other_reactions_changing_a_rate_species():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = (
+        _quadratic_event_with_downstream_decay_model()
+        .replace(
+            '<listOfReactants><speciesReference species="P" stoichiometry="1"/></listOfReactants>',
+            '<listOfReactants><speciesReference species="B" stoichiometry="1"/></listOfReactants>',
+        )
+        .replace("<ci>kd</ci><ci>P</ci>", "<ci>kd</ci><ci>B</ci>")
+    )
+    result = Atomizer(quiet_mode=True, t_end=4, n_steps=400).atomize(xml)
+
+    assert result.success, result.error
+    assert "state-dependent or non-constant event" in result.bngl
+    assert "Events NOT simulated" in result.bngl
+
+
+def test_quadratic_event_group_allows_unrelated_rate_rule_targets(tmp_path):
+    import numpy as np
+    import pytest
+
+    roadrunner = pytest.importorskip("roadrunner")
+    from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.model import load
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="quadratic_event_group_unrelated_rate_rule_target">
+        <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies>
+          <species id="A" compartment="C" initialAmount="1" hasOnlySubstanceUnits="true"/>
+          <species id="B" compartment="C" initialAmount="2" hasOnlySubstanceUnits="true"/>
+          <species id="P" compartment="C" initialAmount="0" hasOnlySubstanceUnits="true"/>
+          <species id="D" compartment="C" initialAmount="1" hasOnlySubstanceUnits="true"/>
+        </listOfSpecies>
+        <listOfParameters>
+          <parameter id="kf" value="0.5" constant="true"/>
+          <parameter id="kr" value="0.1" constant="true"/>
+        </listOfParameters>
+        <listOfReactions>
+          <reaction id="forward" reversible="false">
+            <listOfReactants><speciesReference species="A"/><speciesReference species="B"/></listOfReactants>
+            <listOfProducts><speciesReference species="P"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><times/>
+              <ci>kf</ci><ci>A</ci><ci>B</ci>
+            </apply></math></kineticLaw>
+          </reaction>
+          <reaction id="reverse" reversible="false">
+            <listOfReactants><speciesReference species="P"/></listOfReactants>
+            <listOfProducts><speciesReference species="A"/><speciesReference species="B"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><times/>
+              <ci>kr</ci><ci>P</ci>
+            </apply></math></kineticLaw>
+          </reaction>
+        </listOfReactions>
+        <listOfRules><rateRule variable="D"><math xmlns="http://www.w3.org/1998/Math/MathML">
+          <apply><divide/><apply><times/><cn>0.2</cn><ci>A</ci></apply><ci>B</ci></apply>
+        </math></rateRule></listOfRules>
+        <listOfEvents>
+          <event id="reset_B" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><lt/><ci>A</ci><cn>0.8</cn></apply>
+            </math></trigger>
+            <listOfEventAssignments><eventAssignment variable="B"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></eventAssignment></listOfEventAssignments>
+          </event>
+          <event id="set_D" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><gt/><ci>P</ci><cn>0.3</cn></apply>
+            </math></trigger>
+            <listOfEventAssignments><eventAssignment variable="D"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>2</cn></math></eventAssignment></listOfEventAssignments>
+          </event>
+        </listOfEvents>
+      </model>
+    </sbml>"""
+    result = Atomizer(quiet_mode=True, t_end=4, n_steps=400).atomize(xml)
+
+    assert result.success, result.error
+    assert "state-dependent or non-constant event" not in result.bngl
+    assert "Events NOT simulated" not in result.bngl
+    assert 'setConcentration("@C:M_B()", "1")' in result.bngl
+    assert 'setConcentration("@C:M_D()", "2")' in result.bngl
+
+    model_path = tmp_path / "quadratic_event_group_rate_rule_target.bngl"
+    model_path.write_text(result.bngl, encoding="utf-8")
+    load(model_path).execute()
+    lines = model_path.with_suffix(".gdat").read_text().splitlines()
+    columns = lines[0].lstrip("# ").split()
+    bng_data = np.loadtxt(lines[1:])
+    times = bng_data[:, columns.index("time")]
+
+    rr = roadrunner.RoadRunner(xml)
+    rr.integrator.setValue("relative_tolerance", 1e-9)
+    rr.integrator.setValue("absolute_tolerance", 1e-12)
+    rr.timeCourseSelections = ["time", "A", "B", "P", "D"]
+    reference = rr.simulate(times=times)
+    reference_B = reference[:, reference.colnames.index("B")]
+    reference_D = reference[:, reference.colnames.index("D")]
+    event_indices = sorted(
+        set(np.flatnonzero(np.abs(np.diff(reference_B)) > 0.5).tolist())
+        | set(np.flatnonzero(np.abs(np.diff(reference_D)) > 0.5).tolist())
+    )
+    assert len(event_indices) == 2
+    event_times = [float(times[index + 1]) for index in event_indices]
+    away_from_events = np.logical_and.reduce(
+        [np.abs(times - event_time) > 0.05 for event_time in event_times]
+    )
+    for species in ("A", "B", "P", "D"):
+        bng_values = bng_data[away_from_events, columns.index(species)]
+        rr_values = reference[away_from_events, reference.colnames.index(species)]
+        scale = max(float(np.max(np.abs(bng_values))), float(np.max(np.abs(rr_values))))
+        assert float(np.max(np.abs(bng_values - rr_values))) <= max(1e-9, 2e-5 * scale)
+
+
+def test_quadratic_event_group_accepts_constant_delay_function(tmp_path):
+    import numpy as np
+    import pytest
+
+    roadrunner = pytest.importorskip("roadrunner")
+    from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.model import load
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="quadratic_event_group_constant_delay_function">
+        <listOfFunctionDefinitions><functionDefinition id="divide">
+          <math xmlns="http://www.w3.org/1998/Math/MathML"><lambda>
+            <bvar><ci>x</ci></bvar><bvar><ci>y</ci></bvar>
+            <apply><divide/><ci>x</ci><ci>y</ci></apply>
+          </lambda></math>
+        </functionDefinition></listOfFunctionDefinitions>
+        <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies>
+          <species id="A" compartment="C" initialAmount="1" hasOnlySubstanceUnits="true"/>
+          <species id="B" compartment="C" initialAmount="2" hasOnlySubstanceUnits="true"/>
+          <species id="P" compartment="C" initialAmount="0" hasOnlySubstanceUnits="true"/>
+        </listOfSpecies>
+        <listOfParameters>
+          <parameter id="kf" value="0.5" constant="true"/>
+          <parameter id="kr" value="0.1" constant="true"/>
+        </listOfParameters>
+        <listOfReactions>
+          <reaction id="forward" reversible="false">
+            <listOfReactants><speciesReference species="A"/><speciesReference species="B"/></listOfReactants>
+            <listOfProducts><speciesReference species="P"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><times/>
+              <ci>kf</ci><ci>A</ci><ci>B</ci>
+            </apply></math></kineticLaw>
+          </reaction>
+          <reaction id="reverse" reversible="false">
+            <listOfReactants><speciesReference species="P"/></listOfReactants>
+            <listOfProducts><speciesReference species="A"/><speciesReference species="B"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><times/>
+              <ci>kr</ci><ci>P</ci>
+            </apply></math></kineticLaw>
+          </reaction>
+        </listOfReactions>
+        <listOfEvents>
+          <event id="reset_B" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><lt/><ci>A</ci><cn>0.8</cn></apply>
+            </math></trigger>
+            <listOfEventAssignments><eventAssignment variable="B"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></eventAssignment></listOfEventAssignments>
+          </event>
+          <event id="reset_A" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><gt/><ci>P</ci><cn>0.1</cn></apply>
+            </math></trigger>
+            <delay><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><ci>divide</ci><cn>0.1</cn><ci>kr</ci></apply>
+            </math></delay>
+            <listOfEventAssignments><eventAssignment variable="A"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0.5</cn></math></eventAssignment></listOfEventAssignments>
+          </event>
+        </listOfEvents>
+      </model>
+    </sbml>"""
+    result = Atomizer(quiet_mode=True, t_end=4, n_steps=400).atomize(xml)
+
+    assert result.success, result.error
+    assert "state-dependent or non-constant event" not in result.bngl
+    assert "Events NOT simulated" not in result.bngl
+    assert 'setConcentration("@C:M_B()", "1")' in result.bngl
+    assert 'setConcentration("@C:M_A()", "0.5")' in result.bngl
+
+    model_path = tmp_path / "quadratic_event_group_constant_delay.bngl"
+    model_path.write_text(result.bngl, encoding="utf-8")
+    load(model_path).execute()
+    lines = model_path.with_suffix(".gdat").read_text().splitlines()
+    columns = lines[0].lstrip("# ").split()
+    bng_data = np.loadtxt(lines[1:])
+    times = bng_data[:, columns.index("time")]
+
+    rr = roadrunner.RoadRunner(xml)
+    rr.integrator.setValue("relative_tolerance", 1e-9)
+    rr.integrator.setValue("absolute_tolerance", 1e-12)
+    rr.timeCourseSelections = ["time", "A", "B", "P"]
+    reference = rr.simulate(times=times)
+    event_indices = set()
+    for species in ("A", "B"):
+        values = reference[:, reference.colnames.index(species)]
+        event_indices.update(np.flatnonzero(np.abs(np.diff(values)) > 0.05).tolist())
+    event_times = [float(times[index + 1]) for index in sorted(event_indices)]
+    assert len(event_times) == 2
+    away_from_events = np.logical_and.reduce(
+        [np.abs(times - event_time) > 0.05 for event_time in event_times]
+    )
+    for species in ("A", "B", "P"):
+        bng_values = bng_data[away_from_events, columns.index(species)]
+        rr_values = reference[away_from_events, reference.colnames.index(species)]
+        scale = max(float(np.max(np.abs(bng_values))), float(np.max(np.abs(rr_values))))
+        assert float(np.max(np.abs(bng_values - rr_values))) <= max(1e-9, 2e-5 * scale)
+
+
+def test_quadratic_event_group_evaluates_time_dependent_delay_at_trigger(tmp_path):
+    import numpy as np
+    import pytest
+
+    roadrunner = pytest.importorskip("roadrunner")
+    from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.model import load
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="quadratic_event_group_time_dependent_delay">
+        <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies>
+          <species id="A" compartment="C" initialAmount="1" hasOnlySubstanceUnits="true"/>
+          <species id="B" compartment="C" initialAmount="2" hasOnlySubstanceUnits="true"/>
+          <species id="P" compartment="C" initialAmount="0" hasOnlySubstanceUnits="true"/>
+        </listOfSpecies>
+        <listOfParameters>
+          <parameter id="kf" value="0.5" constant="true"/>
+          <parameter id="kr" value="0.1" constant="true"/>
+          <parameter id="delayScale" value="4" constant="true"/>
+        </listOfParameters>
+        <listOfReactions>
+          <reaction id="forward" reversible="false">
+            <listOfReactants><speciesReference species="A"/><speciesReference species="B"/></listOfReactants>
+            <listOfProducts><speciesReference species="P"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><times/>
+              <ci>kf</ci><ci>A</ci><ci>B</ci>
+            </apply></math></kineticLaw>
+          </reaction>
+          <reaction id="reverse" reversible="false">
+            <listOfReactants><speciesReference species="P"/></listOfReactants>
+            <listOfProducts><speciesReference species="A"/><speciesReference species="B"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><times/>
+              <ci>kr</ci><ci>P</ci>
+            </apply></math></kineticLaw>
+          </reaction>
+        </listOfReactions>
+        <listOfEvents>
+          <event id="reset_B" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><lt/><ci>A</ci><cn>0.8</cn></apply>
+            </math></trigger>
+            <listOfEventAssignments><eventAssignment variable="B"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></eventAssignment></listOfEventAssignments>
+          </event>
+          <event id="reset_A" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><gt/><ci>P</ci><cn>0.1</cn></apply>
+            </math></trigger>
+            <delay><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><times/><ci>delayScale</ci><csymbol definitionURL="http://www.sbml.org/sbml/symbols/time">time</csymbol></apply>
+            </math></delay>
+            <listOfEventAssignments><eventAssignment variable="A"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0.5</cn></math></eventAssignment></listOfEventAssignments>
+          </event>
+        </listOfEvents>
+      </model>
+    </sbml>"""
+    result = Atomizer(quiet_mode=True, t_end=4, n_steps=400).atomize(xml)
+
+    assert result.success, result.error
+    assert "state-dependent or non-constant event" not in result.bngl
+    assert "Events NOT simulated" not in result.bngl
+    assert 'setConcentration("@C:M_B()", "1")' in result.bngl
+    assert 'setConcentration("@C:M_A()", "0.5")' in result.bngl
+
+    model_path = tmp_path / "quadratic_event_group_time_dependent_delay.bngl"
+    model_path.write_text(result.bngl, encoding="utf-8")
+    load(model_path).execute()
+    lines = model_path.with_suffix(".gdat").read_text().splitlines()
+    columns = lines[0].lstrip("# ").split()
+    bng_data = np.loadtxt(lines[1:])
+    times = bng_data[:, columns.index("time")]
+
+    rr = roadrunner.RoadRunner(xml)
+    rr.integrator.setValue("relative_tolerance", 1e-9)
+    rr.integrator.setValue("absolute_tolerance", 1e-12)
+    rr.timeCourseSelections = ["time", "A", "B", "P"]
+    reference = rr.simulate(times=times)
+    event_indices = set()
+    for species in ("A", "B"):
+        values = reference[:, reference.colnames.index(species)]
+        event_indices.update(np.flatnonzero(np.abs(np.diff(values)) > 0.05).tolist())
+    event_times = [float(times[index + 1]) for index in sorted(event_indices)]
+    assert len(event_times) == 2
+    away_from_events = np.logical_and.reduce(
+        [np.abs(times - event_time) > 0.05 for event_time in event_times]
+    )
+    for species in ("A", "B", "P"):
+        bng_values = bng_data[away_from_events, columns.index(species)]
+        rr_values = reference[away_from_events, reference.colnames.index(species)]
+        scale = max(float(np.max(np.abs(bng_values))), float(np.max(np.abs(rr_values))))
+        assert float(np.max(np.abs(bng_values - rr_values))) <= max(1e-9, 2e-5 * scale)
+
+
 def test_quadratic_state_events_ignore_unrelated_event_assignments(tmp_path):
     import numpy as np
     import pytest
@@ -1328,57 +2117,307 @@ def test_quadratic_state_events_keep_cross_component_controls_unsupported():
     assert "Events NOT simulated" in result.bngl
 
 
-def _first_order_transfer_event_model(source_delay=None, product_delay=None):
-    def delay_element(value):
-        if value is None:
-            return ""
-        return f"""<delay><math xmlns="http://www.w3.org/1998/Math/MathML">
-          <cn>{value}</cn></math></delay>"""
-
+def _first_order_cycle_reentrant_event_model(
+    delay=None,
+    simultaneous_assignments=False,
+    rates=(0.75, 0.55, 0.25),
+):
+    delay_element = (
+        ""
+        if delay is None
+        else f"""<delay><math xmlns="http://www.w3.org/1998/Math/MathML">
+          <cn>{delay}</cn></math></delay>"""
+    )
+    assignments = (
+        """<eventAssignment variable="S2"><math xmlns="http://www.w3.org/1998/Math/MathML">
+          <ci>S3</ci></math></eventAssignment>
+          <eventAssignment variable="S1"><math xmlns="http://www.w3.org/1998/Math/MathML">
+          <ci>S2</ci></math></eventAssignment>
+          <eventAssignment variable="S3"><math xmlns="http://www.w3.org/1998/Math/MathML">
+          <ci>S1</ci></math></eventAssignment>"""
+        if simultaneous_assignments
+        else """<eventAssignment variable="S2"><math xmlns="http://www.w3.org/1998/Math/MathML">
+          <cn>1.5</cn></math></eventAssignment>
+          <eventAssignment variable="S1"><math xmlns="http://www.w3.org/1998/Math/MathML">
+          <ci>S2</ci></math></eventAssignment>"""
+    )
     return f"""<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
-      <model id="first_order_transfer_event_pair">
+      <model id="first_order_cycle_reentrant_event">
         <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
         <listOfSpecies>
           <species id="S1" compartment="C" initialAmount="1" hasOnlySubstanceUnits="false"/>
-          <species id="S2" compartment="C" initialAmount="0" hasOnlySubstanceUnits="false"/>
+          <species id="S2" compartment="C" initialAmount="2" hasOnlySubstanceUnits="false"/>
+          <species id="S3" compartment="C" initialAmount="1" hasOnlySubstanceUnits="false"/>
         </listOfSpecies>
-        <listOfParameters><parameter id="k1" value="1" constant="true"/></listOfParameters>
-        <listOfReactions><reaction id="transfer" reversible="false">
-          <listOfReactants><speciesReference species="S1"/></listOfReactants>
-          <listOfProducts><speciesReference species="S2"/></listOfProducts>
-          <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
-            <apply><times/><ci>C</ci><ci>k1</ci><ci>S1</ci></apply>
-          </math></kineticLaw>
-        </reaction></listOfReactions>
+        <listOfParameters>
+          <parameter id="k1" value="{rates[0]}" constant="true"/>
+          <parameter id="k2" value="{rates[1]}" constant="true"/>
+          <parameter id="k3" value="{rates[2]}" constant="true"/>
+        </listOfParameters>
+        <listOfReactions>
+          <reaction id="r1" reversible="false">
+            <listOfReactants><speciesReference species="S1"/></listOfReactants>
+            <listOfProducts><speciesReference species="S2"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><times/><ci>C</ci><ci>k1</ci><ci>S1</ci></apply>
+            </math></kineticLaw>
+          </reaction>
+          <reaction id="r2" reversible="false">
+            <listOfReactants><speciesReference species="S2"/></listOfReactants>
+            <listOfProducts><speciesReference species="S3"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><times/><ci>C</ci><ci>k2</ci><ci>S2</ci></apply>
+            </math></kineticLaw>
+          </reaction>
+          <reaction id="r3" reversible="false">
+            <listOfReactants><speciesReference species="S3"/></listOfReactants>
+            <listOfProducts><speciesReference species="S1"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><times/><ci>C</ci><ci>k3</ci><ci>S3</ci></apply>
+            </math></kineticLaw>
+          </reaction>
+        </listOfReactions>
+        <listOfEvents><event id="reset_cycle" useValuesFromTriggerTime="true">
+          <trigger initialValue="true" persistent="true">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><lt/><ci>S1</ci><cn>0.75</cn></apply>
+            </math>
+          </trigger>
+          {delay_element}
+          <listOfEventAssignments>{assignments}</listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+
+def _shared_quadratic_event_pair_model(
+    time_assignments=False,
+    boundary_s2=False,
+    boundary_s3=False,
+    assignment_value=1.0,
+):
+    """Reproduce the coupled event core from SSTS semantic/00349 and /00884."""
+    s2_boundary = ' boundaryCondition="true"' if boundary_s2 else ""
+    s3_boundary = ' boundaryCondition="true"' if boundary_s3 else ""
+    if time_assignments:
+        parameter = '<parameter id="k3" value="4" constant="true"/>'
+        first_assignment = """<apply><times/><ci>k3</ci>
+          <csymbol definitionURL="http://www.sbml.org/sbml/symbols/time">s</csymbol>
+        </apply>"""
+        second_assignment = """<apply><times/><cn>0.25</cn>
+          <csymbol definitionURL="http://www.sbml.org/sbml/symbols/time">s</csymbol>
+        </apply>"""
+    else:
+        parameter = ""
+        first_assignment = f"<cn>{assignment_value}</cn>"
+        second_assignment = f"<cn>{assignment_value}</cn>"
+
+    return f"""<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="shared_quadratic_event_pair">
+        <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies>
+          <species id="S1" compartment="C" initialAmount="1" hasOnlySubstanceUnits="false"/>
+          <species id="S2" compartment="C" initialAmount="2" hasOnlySubstanceUnits="false"{s2_boundary}/>
+          <species id="S3" compartment="C" initialAmount="1" hasOnlySubstanceUnits="false"{s3_boundary}/>
+        </listOfSpecies>
+        <listOfParameters>
+          <parameter id="k1" value="0.75" constant="true"/>
+          <parameter id="k2" value="0.25" constant="true"/>
+          {parameter}
+        </listOfParameters>
+        <listOfReactions>
+          <reaction id="reaction1" reversible="false">
+            <listOfReactants><speciesReference species="S1"/><speciesReference species="S2"/></listOfReactants>
+            <listOfProducts><speciesReference species="S3"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><times/><ci>C</ci><ci>k1</ci><ci>S1</ci><ci>S2</ci></apply>
+            </math></kineticLaw>
+          </reaction>
+          <reaction id="reaction2" reversible="false">
+            <listOfReactants><speciesReference species="S3"/></listOfReactants>
+            <listOfProducts><speciesReference species="S1"/><speciesReference species="S2"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><times/><ci>C</ci><ci>k2</ci><ci>S3</ci></apply>
+            </math></kineticLaw>
+          </reaction>
+        </listOfReactions>
         <listOfEvents>
-          <event id="source_reset" useValuesFromTriggerTime="true">
-            <trigger initialValue="true" persistent="true">
-              <math xmlns="http://www.w3.org/1998/Math/MathML">
-                <apply><lt/><ci>S1</ci><cn>0.1</cn></apply>
-              </math>
-            </trigger>
-            {delay_element(source_delay)}
-            <listOfEventAssignments><eventAssignment variable="S1">
-              <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math>
-            </eventAssignment></listOfEventAssignments>
+          <event id="event1" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><lt/><ci>S1</ci><cn>0.75</cn></apply>
+            </math></trigger>
+            <listOfEventAssignments><eventAssignment variable="S2"><math xmlns="http://www.w3.org/1998/Math/MathML">
+              {first_assignment}
+            </math></eventAssignment></listOfEventAssignments>
           </event>
-          <event id="product_reset" useValuesFromTriggerTime="true">
-            <trigger initialValue="true" persistent="true">
-              <math xmlns="http://www.w3.org/1998/Math/MathML">
-                <apply><gt/><ci>S2</ci><cn>0.5</cn></apply>
-              </math>
-            </trigger>
-            {delay_element(product_delay)}
-            <listOfEventAssignments><eventAssignment variable="S2">
-              <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0</cn></math>
-            </eventAssignment></listOfEventAssignments>
+          <event id="event2" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><gt/><ci>S3</ci><cn>1.4</cn></apply>
+            </math></trigger>
+            <listOfEventAssignments><eventAssignment variable="S1"><math xmlns="http://www.w3.org/1998/Math/MathML">
+              {second_assignment}
+            </math></eventAssignment></listOfEventAssignments>
           </event>
         </listOfEvents>
       </model>
     </sbml>"""
 
 
-def test_coupled_first_order_transfer_events_match_libroadrunner(tmp_path):
+def test_shared_quadratic_event_pair_recomputes_after_each_firing(tmp_path):
+    import numpy as np
+    import pytest
+
+    from bionetgen.atomizer.modern import Atomizer
+
+    for time_assignments in (False, True):
+        xml = _shared_quadratic_event_pair_model(time_assignments)
+        result = Atomizer(quiet_mode=True, t_end=2, n_steps=400).atomize(xml)
+
+        assert result.success, result.error
+        assert "state-dependent or non-constant event" not in result.bngl
+        assert "Events NOT simulated" not in result.bngl
+        assert "# 2 time-triggered SBML event(s) translated" in result.bngl
+
+        model_path = tmp_path / f"shared_quadratic_events_{time_assignments}.bngl"
+        model_path.write_text(result.bngl, encoding="utf-8")
+        from bionetgen.model import load
+
+        load(model_path).execute()
+        lines = model_path.with_suffix(".gdat").read_text().splitlines()
+        columns = lines[0].lstrip("# ").split()
+        bng_data = np.loadtxt(lines[1:])
+        times = bng_data[:, columns.index("time")]
+
+        roadrunner = pytest.importorskip("roadrunner")
+        rr = roadrunner.RoadRunner(xml)
+        rr.integrator.setValue("relative_tolerance", 1e-10)
+        rr.integrator.setValue("absolute_tolerance", 1e-12)
+        rr.timeCourseSelections = ["time", "[S1]", "[S2]", "[S3]"]
+        reference = rr.simulate(times=times)
+
+        state_columns = [columns.index(species) for species in ("S1", "S2", "S3")]
+        jump_indices = np.flatnonzero(
+            np.max(np.abs(np.diff(bng_data[:, state_columns], axis=0)), axis=1) > 0.1
+        )
+        assert len(jump_indices) >= 2
+        compare = np.ones(len(times), dtype=bool)
+        compare[jump_indices] = False
+        compare[jump_indices + 1] = False
+        for species in ("S1", "S2", "S3"):
+            bng_values = bng_data[compare, columns.index(species)]
+            rr_values = reference[compare, reference.colnames.index(f"[{species}]")]
+            scale = max(
+                float(np.max(np.abs(bng_values))), float(np.max(np.abs(rr_values)))
+            )
+            assert float(np.max(np.abs(bng_values - rr_values))) <= max(
+                5e-10, 1e-5 * scale
+            )
+
+
+def test_shared_quadratic_event_pair_tracks_boundary_species_assignments():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = _shared_quadratic_event_pair_model(boundary_s2=True)
+    result = Atomizer(quiet_mode=True, t_end=2, n_steps=400).atomize(xml)
+
+    assert result.success, result.error
+    assert "state-dependent or non-constant event" not in result.bngl
+    assert "# 2 time-triggered SBML event(s) translated" in result.bngl
+
+
+def test_shared_quadratic_event_pair_proves_constant_boundary_trigger_inactive():
+    from bionetgen.atomizer.modern import Atomizer
+
+    for boundary_s2, assignment_value in ((False, 1.0), (True, 1.1)):
+        xml = _shared_quadratic_event_pair_model(
+            boundary_s2=boundary_s2,
+            boundary_s3=True,
+            assignment_value=assignment_value,
+        )
+        result = Atomizer(quiet_mode=True, t_end=2, n_steps=400).atomize(xml)
+
+        assert result.success, result.error
+        assert "state-dependent or non-constant event" not in result.bngl
+        assert "Events NOT simulated" not in result.bngl
+
+
+def test_shared_quadratic_simultaneous_crossings_stay_unsupported():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = (
+        _shared_quadratic_event_pair_model(assignment_value=0.0)
+        .replace('eventAssignment variable="S2"', 'eventAssignment variable="S3"')
+        .replace('eventAssignment variable="S1"', 'eventAssignment variable="S2"')
+        .replace("<cn>1.4</cn>", "<cn>1.25</cn>")
+    )
+    result = Atomizer(quiet_mode=True, t_end=2, n_steps=400).atomize(xml)
+
+    assert result.success, result.error
+    assert "state-dependent or non-constant event" in result.bngl
+    assert "Events NOT simulated" in result.bngl
+
+
+def test_shared_quadratic_simultaneous_initial_entries_stay_unsupported():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = (
+        _shared_quadratic_event_pair_model()
+        .replace(
+            "<apply><lt/><ci>S1</ci><cn>0.75</cn></apply>",
+            "<apply><lt/><ci>S1</ci><cn>1</cn></apply>",
+        )
+        .replace("<cn>1.4</cn>", "<cn>1</cn>")
+    )
+    result = Atomizer(quiet_mode=True, t_end=0.1, n_steps=10).atomize(xml)
+
+    assert result.success, result.error
+    assert "state-dependent or non-constant event" in result.bngl
+    assert "Events NOT simulated" in result.bngl
+
+
+def test_shared_quadratic_trigger_entering_at_initial_time_matches_libroadrunner(
+    tmp_path,
+):
+    import numpy as np
+    import pytest
+
+    from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.model import load
+
+    xml = _shared_quadratic_event_pair_model().replace(
+        "<apply><lt/><ci>S1</ci><cn>0.75</cn></apply>",
+        "<apply><lt/><ci>S1</ci><cn>1</cn></apply>",
+    )
+    result = Atomizer(quiet_mode=True, t_end=0.1, n_steps=10).atomize(xml)
+
+    assert result.success, result.error
+    assert "state-dependent or non-constant event" not in result.bngl
+    assert 'setConcentration("@C:M_S2()", "1")' in result.bngl
+
+    model_path = tmp_path / "shared_quadratic_initial_event.bngl"
+    model_path.write_text(result.bngl, encoding="utf-8")
+    load(model_path).execute()
+    lines = model_path.with_suffix(".gdat").read_text().splitlines()
+    columns = lines[0].lstrip("# ").split()
+    bng_data = np.loadtxt(lines[1:])
+
+    roadrunner = pytest.importorskip("roadrunner")
+    reference_engine = roadrunner.RoadRunner(xml)
+    reference_engine.integrator.setValue("relative_tolerance", 1e-10)
+    reference_engine.integrator.setValue("absolute_tolerance", 1e-12)
+    reference_engine.timeCourseSelections = ["time", "[S1]", "[S2]", "[S3]"]
+    reference = reference_engine.simulate(times=bng_data[:, columns.index("time")])
+
+    positive_time = bng_data[:, columns.index("time")] > 0
+    assert bng_data[0, columns.index("S2")] == pytest.approx(1.0)
+    for species in ("S1", "S2", "S3"):
+        bng_values = bng_data[positive_time, columns.index(species)]
+        rr_values = reference[positive_time, reference.colnames.index(f"[{species}]")]
+        scale = max(float(np.max(np.abs(bng_values))), float(np.max(np.abs(rr_values))))
+        assert float(np.max(np.abs(bng_values - rr_values))) <= max(5e-10, 1e-5 * scale)
+
+
+def test_first_order_cycle_events_match_libroadrunner(tmp_path):
     import numpy as np
     import pytest
 
@@ -1386,17 +2425,24 @@ def test_coupled_first_order_transfer_events_match_libroadrunner(tmp_path):
     from bionetgen.atomizer.modern import Atomizer
     from bionetgen.model import load
 
-    for source_delay, product_delay in ((None, None), (1, 0.5)):
-        xml = _first_order_transfer_event_model(source_delay, product_delay)
+    for delay, simultaneous_assignments, rates in (
+        (None, False, (0.75, 0.55, 0.25)),
+        (None, True, (0.75, 0.55, 0.25)),
+        (1.5, False, (0.75, 0.55, 0.25)),
+        (1.5, True, (0.75, 0.55, 0.25)),
+        (None, False, (3.0, 0.1, 0.2)),
+    ):
+        xml = _first_order_cycle_reentrant_event_model(
+            delay, simultaneous_assignments, rates
+        )
         result = Atomizer(quiet_mode=True, t_end=20, n_steps=1200).atomize(xml)
 
         assert result.success, result.error
-        assert "state-dependent or non-constant event" not in result.bngl
         assert "Events NOT simulated" not in result.bngl
-        assert 'setConcentration("@C:M_S1()", "1")' in result.bngl
-        assert 'setConcentration("@C:M_S2()", "0")' in result.bngl
 
-        model_path = tmp_path / f"transfer_{source_delay}_{product_delay}.bngl"
+        model_path = tmp_path / (
+            f"first_order_cycle_{delay}_{simultaneous_assignments}_{rates[0]}.bngl"
+        )
         model_path.write_text(result.bngl, encoding="utf-8")
         load(model_path).execute()
         lines = model_path.with_suffix(".gdat").read_text().splitlines()
@@ -1407,16 +2453,17 @@ def test_coupled_first_order_transfer_events_match_libroadrunner(tmp_path):
         rr = roadrunner.RoadRunner(xml)
         rr.integrator.setValue("relative_tolerance", 1e-9)
         rr.integrator.setValue("absolute_tolerance", 1e-12)
-        rr.timeCourseSelections = ["time", "[S1]", "[S2]"]
+        rr.timeCourseSelections = ["time", "[S1]", "[S2]", "[S3]"]
         reference = rr.simulate(times=times)
 
-        state_columns = [columns.index("S1"), columns.index("S2")]
+        state_columns = [columns.index(species) for species in ("S1", "S2", "S3")]
         changes = np.abs(np.diff(bng_data[:, state_columns], axis=0))
         jump_indices = np.flatnonzero(np.max(changes, axis=1) > 0.2)
+        assert len(jump_indices) >= 1
         compare = np.ones(len(times), dtype=bool)
         compare[jump_indices] = False
         compare[jump_indices + 1] = False
-        for species in ("S1", "S2"):
+        for species in ("S1", "S2", "S3"):
             bng_values = bng_data[compare, columns.index(species)]
             rr_values = reference[compare, reference.colnames.index(f"[{species}]")]
             scale = max(
@@ -1427,25 +2474,39 @@ def test_coupled_first_order_transfer_events_match_libroadrunner(tmp_path):
             )
 
 
-def test_first_order_transfer_events_reject_additional_reactions():
+def test_first_order_cycle_inclusive_tangent_event_remains_unsupported():
     from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.atomizer.modern.events import _first_order_cycle_trajectory
 
-    xml = _first_order_transfer_event_model().replace(
-        "</reaction></listOfReactions>",
-        """</reaction>
-          <reaction id="parallel_transfer" reversible="false">
-            <listOfReactants><speciesReference species="S1"/></listOfReactants>
-            <listOfProducts><speciesReference species="S2"/></listOfProducts>
-            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
-              <apply><times/><cn>0.1</cn><ci>S1</ci></apply>
-            </math></kineticLaw>
-          </reaction></listOfReactions>""",
+    initial_state = (3.0, 0.5, 0.5)
+    rates = (1.0, 1.0, 1.0)
+    trajectory = _first_order_cycle_trajectory(initial_state, rates)
+    assert trajectory is not None
+    first_extremum = trajectory.extrema_times(10.0)[0]
+    threshold_state = trajectory.state_at(first_extremum)
+    assert threshold_state is not None
+
+    xml = _first_order_cycle_reentrant_event_model(rates=rates)
+    xml = xml.replace(
+        'id="S1" compartment="C" initialAmount="1"',
+        'id="S1" compartment="C" initialAmount="3"',
+    )
+    xml = xml.replace(
+        'id="S2" compartment="C" initialAmount="2"',
+        'id="S2" compartment="C" initialAmount="0.5"',
+    )
+    xml = xml.replace(
+        'id="S3" compartment="C" initialAmount="1"',
+        'id="S3" compartment="C" initialAmount="0.5"',
+    )
+    xml = xml.replace(
+        "<apply><lt/><ci>S1</ci><cn>0.75</cn></apply>",
+        f"<apply><leq/><ci>S1</ci><cn>{threshold_state[0]:.17g}</cn></apply>",
     )
 
-    result = Atomizer(quiet_mode=True, t_end=20, n_steps=1200).atomize(xml)
+    result = Atomizer(quiet_mode=True, t_end=10, n_steps=100).atomize(xml)
 
     assert result.success, result.error
-    assert "state-dependent or non-constant event" in result.bngl
     assert "Events NOT simulated" in result.bngl
 
 
@@ -2449,6 +3510,72 @@ def test_simultaneous_events_resolve_dynamic_priority_before_assignments():
     assert first_reset < second_reset
 
 
+def test_affine_parameter_event_priorities_use_execution_time_values():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="affine_parameter_event_priority">
+        <listOfParameters>
+          <parameter id="P1" value="0" constant="false"/>
+          <parameter id="P2" value="0" constant="false"/>
+          <parameter id="P3" value="0" constant="false"/>
+        </listOfParameters>
+        <listOfRules><rateRule variable="P1">
+          <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math>
+        </rateRule></listOfRules>
+        <listOfEvents>
+          <event id="history_priority" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true">
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><gt/><ci>P1</ci><cn>1.5</cn></apply>
+              </math>
+            </trigger>
+            <priority><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply>
+                <csymbol encoding="text" definitionURL="http://www.sbml.org/sbml/symbols/delay">delay</csymbol>
+                <ci>P1</ci><cn>1</cn>
+              </apply>
+            </math></priority>
+            <listOfEventAssignments><eventAssignment variable="P3">
+              <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>3</cn></math>
+            </eventAssignment></listOfEventAssignments>
+          </event>
+          <event id="constant_priority" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true">
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><gt/><ci>P1</ci><cn>1.5</cn></apply>
+              </math>
+            </trigger>
+            <priority><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></priority>
+            <listOfEventAssignments><eventAssignment variable="P2">
+              <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>3</cn></math>
+            </eventAssignment></listOfEventAssignments>
+          </event>
+          <event id="updated_priority" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true">
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><gt/><ci>P1</ci><cn>1.5</cn></apply>
+              </math>
+            </trigger>
+            <priority><math xmlns="http://www.w3.org/1998/Math/MathML"><ci>P2</ci></math></priority>
+            <listOfEventAssignments><eventAssignment variable="P3">
+              <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>2</cn></math>
+            </eventAssignment></listOfEventAssignments>
+          </event>
+        </listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True, t_end=2, n_steps=20).atomize(xml)
+
+    assert result.success, result.error
+    assert "Events NOT simulated" not in result.bngl
+    p2_update = result.bngl.index('setParameter("P2", "3")')
+    reevaluated_priority_update = result.bngl.index('setParameter("P3", "2")')
+    history_priority_update = result.bngl.index('setParameter("P3", "3")')
+    assert p2_update < reevaluated_priority_update < history_priority_update
+
+
 def test_simultaneous_rateof_delay_and_priority_use_exponential_history():
     from bionetgen.atomizer.modern import Atomizer
 
@@ -3348,6 +4475,116 @@ def test_rate_rule_driven_stoichiometry_lowers_to_ode_flux_rules():
     )
 
 
+def test_state_event_updates_parameter_driven_stoichiometry_matches_libroadrunner(
+    tmp_path,
+):
+    import numpy as np
+
+    roadrunner = pytest.importorskip("roadrunner")
+    from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.model import load
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level2/version5" level="2" version="5">
+      <model id="state_event_parameter_stoichiometry">
+        <listOfCompartments><compartment id="c" size="1"/></listOfCompartments>
+        <listOfSpecies><species id="X" compartment="c" initialConcentration="1"/></listOfSpecies>
+        <listOfParameters>
+          <parameter id="p1" value="1" constant="false"/>
+          <parameter id="k1" value="1"/>
+        </listOfParameters>
+        <listOfReactions><reaction id="production">
+          <listOfProducts><speciesReference id="Xref" species="X">
+            <stoichiometryMath><math xmlns="http://www.w3.org/1998/Math/MathML"><ci>p1</ci></math></stoichiometryMath>
+          </speciesReference></listOfProducts>
+          <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><ci>k1</ci></math></kineticLaw>
+        </reaction></listOfReactions>
+        <listOfEvents><event id="double_stoichiometry">
+          <trigger><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><geq/><ci>X</ci><cn>2</cn></apply></math></trigger>
+          <listOfEventAssignments><eventAssignment variable="p1">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>2</cn></math>
+          </eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True, t_end=2, n_steps=200).atomize(xml)
+
+    assert result.success, result.error
+    assert "Events NOT simulated" not in result.bngl
+    model_path = tmp_path / "state_event_parameter_stoichiometry.bngl"
+    model_path.write_text(result.bngl, encoding="utf-8")
+    load(model_path).execute()
+    lines = model_path.with_suffix(".gdat").read_text().splitlines()
+    columns = lines[0].lstrip("# ").split()
+    bng_data = np.loadtxt(lines[1:])
+
+    rr = roadrunner.RoadRunner(xml)
+    rr.integrator.setValue("relative_tolerance", 1e-9)
+    rr.integrator.setValue("absolute_tolerance", 1e-12)
+    rr.timeCourseSelections = ["time", "X"]
+    reference = rr.simulate(times=bng_data[:, columns.index("time")])
+
+    jump = int(np.argmin(np.abs(bng_data[:, columns.index("time")] - 1.0)))
+    compare = np.ones(len(bng_data), dtype=bool)
+    compare[max(0, jump - 1) : min(len(bng_data), jump + 2)] = False
+    bng_values = bng_data[compare, columns.index("X_amt")]
+    rr_values = reference[compare, reference.colnames.index("X")]
+    assert np.max(np.abs(bng_values - rr_values)) <= 5e-10
+    assert abs(float(bng_data[-1, columns.index("X_amt")]) - 4.0) <= 1e-8
+
+
+def test_state_event_updates_species_reference_stoichiometry_matches_libroadrunner(
+    tmp_path,
+):
+    import numpy as np
+
+    roadrunner = pytest.importorskip("roadrunner")
+    from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.model import load
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
+      <model id="state_event_species_reference_stoichiometry">
+        <listOfCompartments><compartment id="c" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies><species id="X" compartment="c" initialConcentration="0" hasOnlySubstanceUnits="false" constant="false"/></listOfSpecies>
+        <listOfParameters><parameter id="k1" value="1" constant="true"/></listOfParameters>
+        <listOfReactions><reaction id="production" reversible="true">
+          <listOfProducts><speciesReference id="Xref" species="X" stoichiometry="1" constant="false"/></listOfProducts>
+          <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><ci>k1</ci></math></kineticLaw>
+        </reaction></listOfReactions>
+        <listOfEvents><event id="triple_stoichiometry" useValuesFromTriggerTime="true">
+          <trigger initialValue="true" persistent="true">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><apply><geq/><ci>X</ci><cn>5</cn></apply></math>
+          </trigger>
+          <listOfEventAssignments><eventAssignment variable="Xref">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>3</cn></math>
+          </eventAssignment></listOfEventAssignments>
+        </event></listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(quiet_mode=True, t_end=10, n_steps=100).atomize(xml)
+
+    assert result.success, result.error
+    assert "Events NOT simulated" not in result.bngl
+    model_path = tmp_path / "state_event_species_reference_stoichiometry.bngl"
+    model_path.write_text(result.bngl, encoding="utf-8")
+    load(model_path).execute()
+    lines = model_path.with_suffix(".gdat").read_text().splitlines()
+    columns = lines[0].lstrip("# ").split()
+    bng_data = np.loadtxt(lines[1:])
+
+    rr = roadrunner.RoadRunner(xml)
+    rr.integrator.setValue("relative_tolerance", 1e-9)
+    rr.integrator.setValue("absolute_tolerance", 1e-12)
+    rr.timeCourseSelections = ["time", "X"]
+    reference = rr.simulate(times=bng_data[:, columns.index("time")])
+
+    bng_values = bng_data[:, columns.index("X_amt")]
+    rr_values = reference[:, reference.colnames.index("X")]
+    assert np.max(np.abs(bng_values - rr_values)) <= 5e-10
+    assert abs(float(bng_values[-1]) - 20.0) <= 1e-8
+
+
 def test_synthetic_rate_rule_observables_have_stable_order():
     from bionetgen.atomizer.modern import (
         build_species_composition_table,
@@ -3378,3 +4615,291 @@ def test_synthetic_rate_rule_observables_have_stable_order():
     ]
 
     assert observables.index("a_amt") < observables.index("z_amt")
+
+
+def _quadratic_rate_rule_event_model(
+    *, second_event: bool = False, delayed: bool = False
+) -> str:
+    delay1 = (
+        """<delay><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1.1</cn></math></delay>"""
+        if delayed
+        else ""
+    )
+    delay2 = (
+        """<delay><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1.5</cn></math></delay>"""
+        if delayed
+        else ""
+    )
+    second = (
+        f"""
+      <event id="event2" useValuesFromTriggerTime="true">
+        <trigger initialValue="true" persistent="true">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><gt/><ci>S3</ci><cn>1.4</cn></apply>
+          </math>
+        </trigger>
+        {delay2}
+        <listOfEventAssignments><eventAssignment variable="S1">
+          <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math>
+        </eventAssignment></listOfEventAssignments>
+      </event>"""
+        if second_event
+        else ""
+    )
+    return f"""<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="quadratic_rate_rule_event">
+        <listOfParameters>
+          <parameter id="S1" value="1" constant="false"/>
+          <parameter id="S2" value="2" constant="false"/>
+          <parameter id="S3" value="1" constant="false"/>
+          <parameter id="k1" value="0.75" constant="true"/>
+          <parameter id="k2" value="0.25" constant="true"/>
+        </listOfParameters>
+        <listOfRules>
+          <rateRule variable="S1"><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><plus/><apply><times/><ci>k2</ci><ci>S3</ci></apply>
+              <apply><times/><cn>-1</cn><ci>k1</ci><ci>S1</ci><ci>S2</ci></apply>
+            </apply>
+          </math></rateRule>
+          <rateRule variable="S2"><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><plus/><apply><times/><ci>k2</ci><ci>S3</ci></apply>
+              <apply><times/><cn>-1</cn><ci>k1</ci><ci>S1</ci><ci>S2</ci></apply>
+            </apply>
+          </math></rateRule>
+          <rateRule variable="S3"><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><plus/><apply><times/><ci>k1</ci><ci>S1</ci><ci>S2</ci></apply>
+              <apply><times/><cn>-1</cn><ci>k2</ci><ci>S3</ci></apply>
+            </apply>
+          </math></rateRule>
+        </listOfRules>
+        <listOfEvents><event id="event1" useValuesFromTriggerTime="true">
+          <trigger initialValue="true" persistent="true">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><lt/><ci>S1</ci><cn>0.75</cn></apply>
+            </math>
+          </trigger>
+          {delay1}
+          <listOfEventAssignments><eventAssignment variable="S2">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math>
+          </eventAssignment></listOfEventAssignments>
+        </event>{second}</listOfEvents>
+      </model>
+    </sbml>"""
+
+
+def _quadratic_reaction_multi_delay_model() -> str:
+    return """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="quadratic_reaction_multi_delay">
+        <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies>
+          <species id="S1" compartment="C" initialAmount="1" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+          <species id="S2" compartment="C" initialAmount="2" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+          <species id="S3" compartment="C" initialAmount="1" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+        </listOfSpecies>
+        <listOfParameters>
+          <parameter id="k1" value="0.75" constant="true"/>
+          <parameter id="k2" value="0.25" constant="true"/>
+        </listOfParameters>
+        <listOfReactions>
+          <reaction id="r1" reversible="false">
+            <listOfReactants><speciesReference species="S1"/><speciesReference species="S2"/></listOfReactants>
+            <listOfProducts><speciesReference species="S3"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><times/><ci>k1</ci><ci>S1</ci><ci>S2</ci></apply></math></kineticLaw>
+          </reaction>
+          <reaction id="r2" reversible="false">
+            <listOfReactants><speciesReference species="S3"/></listOfReactants>
+            <listOfProducts><speciesReference species="S1"/><speciesReference species="S2"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><times/><ci>k2</ci><ci>S3</ci></apply></math></kineticLaw>
+          </reaction>
+        </listOfReactions>
+        <listOfEvents>
+          <event id="resetS2" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><lt/><ci>S1</ci><cn>0.75</cn></apply></math></trigger>
+            <delay><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></delay>
+            <listOfEventAssignments><eventAssignment variable="S2"><math xmlns="http://www.w3.org/1998/Math/MathML"><ci>S3</ci></math></eventAssignment></listOfEventAssignments>
+          </event>
+          <event id="resetS1" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><gt/><ci>S3</ci><cn>1.4</cn></apply></math></trigger>
+            <delay><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0.25</cn></math></delay>
+            <listOfEventAssignments><eventAssignment variable="S1"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></eventAssignment></listOfEventAssignments>
+          </event>
+        </listOfEvents>
+      </model>
+    </sbml>"""
+
+
+def test_quadratic_reaction_events_support_independent_delays(tmp_path):
+    import numpy as np
+
+    roadrunner = pytest.importorskip("roadrunner")
+    from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.model import load
+
+    xml = _quadratic_reaction_multi_delay_model()
+    result = Atomizer(quiet_mode=True, t_end=4, n_steps=800).atomize(xml)
+
+    assert result.success, result.error
+    assert "Events NOT simulated" not in result.bngl
+    model_path = tmp_path / "quadratic_reaction_multi_delay.bngl"
+    model_path.write_text(result.bngl, encoding="utf-8")
+    load(model_path).execute()
+    lines = model_path.with_suffix(".gdat").read_text().splitlines()
+    columns = lines[0].lstrip("# ").split()
+    bng_data = np.loadtxt(lines[1:])
+    rr = roadrunner.RoadRunner(xml)
+    rr.integrator.setValue("relative_tolerance", 1e-9)
+    rr.integrator.setValue("absolute_tolerance", 1e-12)
+    rr.timeCourseSelections = ["time", "S1", "S2", "S3"]
+    reference = rr.simulate(times=bng_data[:, columns.index("time")])
+    state_columns = [columns.index(f"{name}_amt") for name in ("S1", "S2", "S3")]
+    jump_indices = np.flatnonzero(
+        np.max(np.abs(np.diff(bng_data[:, state_columns], axis=0)), axis=1) > 0.1
+    )
+    assert len(jump_indices) >= 2
+    compare = np.ones(len(bng_data), dtype=bool)
+    compare[jump_indices] = False
+    compare[jump_indices + 1] = False
+    for name in ("S1", "S2", "S3"):
+        bng_values = bng_data[compare, columns.index(f"{name}_amt")]
+        rr_values = reference[compare, reference.colnames.index(name)]
+        scale = max(float(np.max(np.abs(bng_values))), float(np.max(np.abs(rr_values))))
+        assert float(np.max(np.abs(bng_values - rr_values))) <= max(5e-10, 1e-5 * scale)
+
+
+def _quadratic_species_difference_multi_delay_model(*, rank_two: bool = False) -> str:
+    second_reaction_s3_stoichiometry = ' stoichiometry="2"' if rank_two else ""
+    return f"""<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="quadratic_species_difference_multi_delay">
+        <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
+        <listOfSpecies>
+          <species id="S1" compartment="C" initialAmount="0.001" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+          <species id="S2" compartment="C" initialAmount="0.0012" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+          <species id="S3" compartment="C" initialAmount="0.002" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+          <species id="S4" compartment="C" initialAmount="0.001" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+        </listOfSpecies>
+        <listOfParameters>
+          <parameter id="k1" value="750" constant="true"/>
+          <parameter id="k2" value="250" constant="true"/>
+        </listOfParameters>
+        <listOfReactions>
+          <reaction id="r1" reversible="false">
+            <listOfReactants><speciesReference species="S1"/><speciesReference species="S2"/></listOfReactants>
+            <listOfProducts><speciesReference species="S3"/><speciesReference species="S4"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><times/><ci>k1</ci><ci>S1</ci><ci>S2</ci></apply></math></kineticLaw>
+          </reaction>
+          <reaction id="r2" reversible="false">
+            <listOfReactants><speciesReference species="S3"{second_reaction_s3_stoichiometry}/><speciesReference species="S4"/></listOfReactants>
+            <listOfProducts><speciesReference species="S1"/><speciesReference species="S2"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><times/><ci>k2</ci><ci>S3</ci><ci>S4</ci></apply></math></kineticLaw>
+          </reaction>
+        </listOfReactions>
+        <listOfEvents>
+          <event id="resetS1" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><gt/><ci>S4</ci><ci>S2</ci></apply></math></trigger>
+            <delay><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0.5</cn></math></delay>
+            <listOfEventAssignments><eventAssignment variable="S1"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0.002</cn></math></eventAssignment></listOfEventAssignments>
+          </event>
+          <event id="resetS4" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><gt/><ci>S3</ci><cn>0.00225</cn></apply></math></trigger>
+            <delay><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0.75</cn></math></delay>
+            <listOfEventAssignments><eventAssignment variable="S4"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0.001</cn></math></eventAssignment></listOfEventAssignments>
+          </event>
+        </listOfEvents>
+      </model>
+    </sbml>"""
+
+
+def test_quadratic_delayed_event_group_supports_species_difference_trigger(tmp_path):
+    import numpy as np
+
+    roadrunner = pytest.importorskip("roadrunner")
+    from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.model import load
+
+    xml = _quadratic_species_difference_multi_delay_model()
+    result = Atomizer(quiet_mode=True, t_end=4, n_steps=800).atomize(xml)
+
+    assert result.success, result.error
+    assert "Events NOT simulated" not in result.bngl
+    model_path = tmp_path / "quadratic_species_difference_multi_delay.bngl"
+    model_path.write_text(result.bngl, encoding="utf-8")
+    load(model_path).execute()
+    lines = model_path.with_suffix(".gdat").read_text().splitlines()
+    columns = lines[0].lstrip("# ").split()
+    bng_data = np.loadtxt(lines[1:])
+    rr = roadrunner.RoadRunner(xml)
+    rr.integrator.setValue("relative_tolerance", 1e-9)
+    rr.integrator.setValue("absolute_tolerance", 1e-12)
+    rr.timeCourseSelections = ["time", "S1", "S2", "S3", "S4"]
+    reference = rr.simulate(times=bng_data[:, columns.index("time")])
+    state_columns = [columns.index(f"{name}_amt") for name in ("S1", "S2", "S3", "S4")]
+    jump_indices = np.flatnonzero(
+        np.max(np.abs(np.diff(bng_data[:, state_columns], axis=0)), axis=1) > 1e-4
+    )
+    assert len(jump_indices) >= 2
+    compare = np.ones(len(bng_data), dtype=bool)
+    compare[jump_indices] = False
+    compare[jump_indices + 1] = False
+    for name in ("S1", "S2", "S3", "S4"):
+        bng_values = bng_data[compare, columns.index(f"{name}_amt")]
+        rr_values = reference[compare, reference.colnames.index(name)]
+        scale = max(float(np.max(np.abs(bng_values))), float(np.max(np.abs(rr_values))))
+        assert float(np.max(np.abs(bng_values - rr_values))) <= max(5e-10, 1e-5 * scale)
+
+
+def test_quadratic_difference_group_keeps_rank_two_events_unsupported():
+    from bionetgen.atomizer.modern import Atomizer
+
+    result = Atomizer(quiet_mode=True, t_end=4, n_steps=40).atomize(
+        _quadratic_species_difference_multi_delay_model(rank_two=True)
+    )
+
+    assert result.success, result.error
+    assert "Events NOT simulated" in result.bngl
+
+
+@pytest.mark.parametrize(
+    "second_event,delayed", ((False, False), (True, False), (False, True), (True, True))
+)
+def test_quadratic_rate_rule_state_events_match_libroadrunner(
+    tmp_path, second_event, delayed
+):
+    import numpy as np
+
+    roadrunner = pytest.importorskip("roadrunner")
+    from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.model import load
+
+    xml = _quadratic_rate_rule_event_model(second_event=second_event, delayed=delayed)
+    t_end = 4 if delayed else 2
+    result = Atomizer(quiet_mode=True, t_end=t_end, n_steps=200 * t_end).atomize(xml)
+
+    assert result.success, result.error
+    assert "Events NOT simulated" not in result.bngl
+
+    model_path = tmp_path / "quadratic_rate_rule_events.bngl"
+    model_path.write_text(result.bngl, encoding="utf-8")
+    load(model_path).execute()
+    lines = model_path.with_suffix(".gdat").read_text().splitlines()
+    columns = lines[0].lstrip("# ").split()
+    bng_data = np.loadtxt(lines[1:])
+    times = bng_data[:, columns.index("time")]
+
+    rr = roadrunner.RoadRunner(xml)
+    rr.integrator.setValue("relative_tolerance", 1e-9)
+    rr.integrator.setValue("absolute_tolerance", 1e-12)
+    rr.timeCourseSelections = ["time", "S1", "S2", "S3"]
+    reference = rr.simulate(times=times)
+    state_columns = [columns.index(f"{name}_amt") for name in ("S1", "S2", "S3")]
+    jump_indices = np.flatnonzero(
+        np.max(np.abs(np.diff(bng_data[:, state_columns], axis=0)), axis=1) > 0.1
+    )
+    assert len(jump_indices) >= (2 if second_event else 1)
+    compare = np.ones(len(times), dtype=bool)
+    compare[jump_indices] = False
+    compare[jump_indices + 1] = False
+    for name in ("S1", "S2", "S3"):
+        bng_values = bng_data[compare, columns.index(f"{name}_amt")]
+        rr_values = reference[compare, reference.colnames.index(name)]
+        scale = max(float(np.max(np.abs(bng_values))), float(np.max(np.abs(rr_values))))
+        assert float(np.max(np.abs(bng_values - rr_values))) <= max(5e-10, 1e-5 * scale)

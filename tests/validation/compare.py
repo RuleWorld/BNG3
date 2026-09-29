@@ -337,14 +337,29 @@ def _canon_expr(expr: str) -> str:
             node.op, (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Pow)
         ):
             return supported(node.left) and supported(node.right)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-            return all(supported(argument) for argument in node.args)
+        if isinstance(node, ast.Call) and isinstance(
+            node.func, (ast.Name, ast.Constant)
+        ):
+            return supported(node.func) and all(
+                supported(argument) for argument in node.args
+            )
         return False
+
+    class StripUnitMultiplications(ast.NodeTransformer):
+        def visit_BinOp(self, node: ast.BinOp) -> ast.AST:
+            node = self.generic_visit(node)
+            if isinstance(node.op, ast.Mult):
+                if isinstance(node.left, ast.Constant) and node.left.value == 1:
+                    return node.right
+                if isinstance(node.right, ast.Constant) and node.right.value == 1:
+                    return node.left
+            return node
 
     try:
         tree = ast.parse(result.replace("^", "**"), mode="eval")
         if supported(tree):
-            result = re.sub(r"\s+", "", ast.unparse(tree))
+            normalized = StripUnitMultiplications().visit(tree)
+            result = re.sub(r"\s+", "", ast.unparse(normalized))
     except (SyntaxError, ValueError):
         pass
     return result
@@ -893,6 +908,8 @@ def parse_net(path: str | Path, *, rate_mode: str = "value") -> Network | None:
     rate_defs: dict[str, str] = {}
     groups: dict[str, dict[int, float]] = {}
     section = None
+    has_species_block = False
+    has_reactions_block = False
 
     for line in path.read_text().splitlines():
         if "#" in line:
@@ -902,6 +919,8 @@ def parse_net(path: str | Path, *, rate_mode: str = "value") -> Network | None:
             continue
         if stripped.startswith("begin "):
             section = stripped[len("begin ") :].strip()
+            has_species_block |= section == "species"
+            has_reactions_block |= section == "reactions"
             continue
         if stripped.startswith("end "):
             section = None
@@ -976,7 +995,11 @@ def parse_net(path: str | Path, *, rate_mode: str = "value") -> Network | None:
                 entries[index] = entries.get(index, 0.0) + weight
             groups[group_index] = (name, entries)
 
-    if not species and not raw_reactions:
+    if (
+        not species
+        and not raw_reactions
+        and not (has_species_block and has_reactions_block)
+    ):
         return None
 
     net = Network(

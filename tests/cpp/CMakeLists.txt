@@ -176,7 +176,7 @@ target_include_directories(test_parser_units PRIVATE
     ${antlr4_runtime_SOURCE_DIR}/runtime/Cpp/runtime/src
 )
 target_link_libraries(test_parser_units PRIVATE
-    Catch2::Catch2WithMain Catch2::Catch2 bng_parser bng_compile)
+    Catch2::Catch2WithMain Catch2::Catch2 bng_parser bng_compile bng_engine)
 catch_discover_tests(test_parser_units)
 
 # SBML Core and SBML-Multi share the same unit definitions and attributes.

@@ -70,6 +70,9 @@ and reports Atomizer time, network-generation wall time, output hashes,
 structural network parity, and rate-expression parity as separate results.
 The JSON also records the `bng_cpp` executable hash and parser source hash so
 reports distinguish a rebuilt CLI from a stale executable.
+Before network generation, the harness removes pre-existing executable action
+blocks and adds a single `generate_network` action. This compares initial
+network structure and rates; it does not execute or validate event schedules.
 Use the same fixed SBML inputs and source checkouts when comparing runs:
 
 ```bash
@@ -87,11 +90,19 @@ the BNG3-to-libRoadRunner round-trip gate, and the dedicated NFsim parity
 tests for eligible NFsim models. Rate comparison treats BNG2's
 `A/cell()` and BNG3's `(A/cell)()` compartment-observable spellings as the same
 generated expression form; it does not relax numeric rate differences.
+The legacy worker starts with Python site hooks disabled, imports from the
+requested PyBioNetGen checkout, records the resolved Atomizer module path, and
+fails closed if that path escapes the checkout. This prevents an editable BNG3
+installation from shadowing the independent legacy source during comparison.
 
 `benchmark_atomizer_nfsim.py` runs fresh-process ensembles through BNG3's
 direct NFsim path and standalone NFsim reading BNG-XML written by Perl BNG2.
-It requires an explicit standalone binary and withholds ensemble means if any
-seed fails, since dropping failed trajectories would bias the comparison:
+It requires an explicit standalone binary, uses disjoint seed ranges for the
+two ensembles, and withholds ensemble means if any seed fails, since dropping
+failed trajectories would bias the comparison. With `--seed-start 1` and
+`--runs 200`, BNG3 direct uses seeds 1–200 and standalone NFsim uses 201–400.
+Set `--native-seed-start` to choose a different non-overlapping native range.
+The report records both ranges:
 
 ```bash
 PYTHONPATH=python:build/cpp python benchmarks/benchmark_atomizer_nfsim.py \

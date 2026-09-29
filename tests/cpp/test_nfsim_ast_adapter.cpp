@@ -1066,6 +1066,30 @@ TEST_CASE("NFsim AST adapter builds a direct no-rule system") {
     delete system;
 }
 
+TEST_CASE("NFsim AST adapter rejects BNG3 events until event execution is implemented") {
+    auto model = bng::parser::parseModel(R"(
+begin bng3_events version 1
+  event "later"
+    trigger: time >= 1
+    initial_value: false
+    persistent: true
+    use_values_from_trigger_time: true
+    assignment: A = 0
+  end event
+end bng3_events
+)");
+    REQUIRE(model != nullptr);
+
+    int suggestedTraversalLimit = 0;
+    std::string unavailableReason;
+    auto* system = NFinput::buildSystemFromAst(
+        *model, false, 100, false, suggestedTraversalLimit, {}, &unavailableReason);
+
+    CHECK(system == nullptr);
+    CHECK_THAT(unavailableReason,
+               Catch::Matchers::ContainsSubstring("BNG3 event execution is not implemented"));
+}
+
 TEST_CASE("NFsim AST adapter accepts legacy single-ended seed bond metadata") {
     // BNG2's XML species reader preserves a numeric seed bond's
     // numberOfBonds="1" metadata even when the source bond label has no

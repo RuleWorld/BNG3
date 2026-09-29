@@ -5917,6 +5917,10 @@ System* buildSystemFromAstWithSeedOverrides(
     };
     if (unavailableReason != nullptr) unavailableReason->clear();
 
+    if (model.getEventFormatVersion().has_value()) {
+        return fail(bng::ast::kUnsupportedEventExecutionMessage);
+    }
+
     // Migration escape hatch used by the parity gate: force the XML path.
     if (std::getenv("BNG_NFSIM_FORCE_XML")) {
         if (verbose) std::cerr << "[nfsim/ast] BNG_NFSIM_FORCE_XML set -> XML path\n";

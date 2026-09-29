@@ -5,6 +5,7 @@ Created on Wed May 30 11:44:17 2012
 @author: proto
 """
 
+from copy import copy as shallow_copy
 import difflib
 import hashlib
 import numpy
@@ -169,9 +170,6 @@ class Species:
                                 comp.addState(state, update)
 
     def updateBonds(self, bondNumbers):
-        newBondNumbers = list(bondNumbers)
-        correspondence = {}
-        intersection = [int(x) for x in newBondNumbers if x in self.getBondNumbers()]
         newBase = max(bondNumbers) + 1
         for element in self.molecules:
             for component in element.components:
@@ -246,9 +244,6 @@ class Species:
         return self.__str__()
 
 
-import pickle
-
-
 class Molecule:
     def __init__(self, name):
         """
@@ -267,12 +262,8 @@ class Molecule:
         self.hash = hashlib.sha1(a).digest()
 
     def copy(self):
-        molecule = Molecule(self.name)
+        molecule = shallow_copy(self)
         molecule.components = [element.copy() for element in self.components]
-        molecule.compartment = self.compartment
-        molecule.trueName = self.trueName
-        if hasattr(self, "idx"):
-            molecule.idx = self.idx
         return molecule
 
     def addChunk(self, chunk):
@@ -458,7 +449,9 @@ class Component:
         ['first', 'second']
         """
         # ⚡ Bolt: Use explicit list() instead of deepcopy for primitive lists to avoid O(N) deepcopy overhead
-        component = Component(self.name, list(self.bonds), list(self.states))
+        component = Component(self.name)
+        component.bonds = list(self.bonds)
+        component.states = list(self.states)
         # ⚡ Bolt: Direct assignment since activeState is a string (immutable), avoiding deepcopy overhead
         component.activeState = self.activeState
         return component

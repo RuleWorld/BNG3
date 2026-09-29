@@ -3,9 +3,11 @@
 import json
 from pathlib import Path
 import re
+import subprocess
 
 import pytest
 
+from scripts.ci import validate_sbml_test_suite
 from scripts.validate import (
     load_skip_models,
     load_validation_manifest,
@@ -30,6 +32,55 @@ VALIDATION_MANIFEST = REPO / "tests" / "validation" / "validation_manifest.json"
 VALIDATE_DIR = REPO / "tests" / "validation" / "Validate"
 PARITY_WORKFLOW = REPO / ".github" / "workflows" / "parity.yml"
 FORMAL_WORKFLOW = REPO / ".github" / "workflows" / "formal.yml"
+
+
+def test_ssts_report_source_provenance_records_revision_and_tracked_changes(
+    tmp_path: Path,
+):
+    repo = tmp_path / "source"
+    repo.mkdir()
+    subprocess.run(["git", "-C", str(repo), "init"], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "user.name", "SSTS provenance test"],
+        check=True,
+    )
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "config",
+            "user.email",
+            "ssts-provenance@example.invalid",
+        ],
+        check=True,
+    )
+    source = repo / "model.py"
+    source.write_text("model = True\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", "model.py"], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "commit", "-m", "initial"],
+        check=True,
+        capture_output=True,
+    )
+    revision = subprocess.check_output(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"], text=True
+    ).strip()
+
+    clean = validate_sbml_test_suite._repository_provenance(repo)
+
+    assert clean == {
+        "bng3_commit": revision,
+        "bng3_tracked_worktree_clean": True,
+    }
+
+    source.write_text("model = False\n", encoding="utf-8")
+    dirty = validate_sbml_test_suite._repository_provenance(repo)
+
+    assert dirty == {
+        "bng3_commit": revision,
+        "bng3_tracked_worktree_clean": False,
+    }
 
 
 def test_pull_request_runs_keep_exact_head_evidence_available():
@@ -64,6 +115,19 @@ def test_wheel_workflows_use_supported_platform_targets_and_test_dependencies():
     assert re.search(r"^\s+workflow_dispatch:\s*$", ci_workflow, re.MULTILINE)
     wheels = _workflow_job_from(CI_WORKFLOW, "wheels")
     assert "github.event_name == 'workflow_dispatch'" in wheels
+
+
+def test_wheel_tests_smoke_the_installed_console_script():
+    """The built wheel must expose a working user-facing CLI entry point."""
+
+    for workflow_path, job_name in (
+        (CI_WORKFLOW, "wheels"),
+        (RELEASE_WORKFLOW, "build-wheels"),
+    ):
+        job = _workflow_job_from(workflow_path, job_name)
+        assert "CIBW_TEST_COMMAND:" in job
+        assert "bionetgen --version" in job
+        assert "bionetgen --help" in job
 
 
 def _workflow_job(name: str) -> str:
@@ -135,6 +199,70 @@ def test_formal_workflow_runs_pinned_kernel_and_nfnext_contracts():
     assert "scripts/run_nfnext_contract.sh" in workflow
     assert "lake build" in workflow
     assert "lake env lean tests/Smoke.lean" in workflow
+
+
+def test_release_workflow_requires_exact_main_sha_qualification():
+    """A version tag cannot publish unless all required main push gates passed."""
+
+    qualify = _workflow_job_from(RELEASE_WORKFLOW, "qualify")
+    for job_name in ("build-binaries", "build-wheels", "build-sdist"):
+        assert "qualify" in _workflow_job_from(RELEASE_WORKFLOW, job_name)
+    release = _workflow_job_from(RELEASE_WORKFLOW, "release")
+    assert "qualify" in release
+    assert "actions: read" in qualify
+    assert "fetch-depth: 0" in qualify
+    assert "git merge-base --is-ancestor" in qualify
+    assert "gh api" in qualify
+
+    qualification_script = (
+        REPO / "scripts" / "ci" / "qualify_release_candidate.py"
+    ).read_text(encoding="utf-8")
+    for workflow_name in ("CI", "Cross-tool parity", "Lean semantic kernel", "CodeQL"):
+        assert f'"{workflow_name}"' in qualification_script
+
+
+def test_release_binaries_smoke_before_packaging():
+    """Release archives must contain executables that start on their runner."""
+
+    job = _workflow_job_from(RELEASE_WORKFLOW, "build-binaries")
+    smoke = job.index("Smoke test release executables")
+    package = job.index("Package binaries")
+    assert smoke < package
+    assert "bng_cpp${{ matrix.binary_ext }} --version" in job
+    assert "NFsim${{ matrix.binary_ext }} -help" in job
+
+
+def test_release_run_qualification_requires_success_for_each_exact_main_push():
+    from scripts.ci.qualify_release_candidate import qualify_workflow_runs
+
+    sha = "a" * 40
+    names = ["CI", "Cross-tool parity", "Lean semantic kernel", "CodeQL"]
+    runs = [
+        {
+            "name": name,
+            "head_sha": sha,
+            "head_branch": "main",
+            "event": "push",
+            "status": "completed",
+            "conclusion": "success",
+        }
+        for name in names
+    ]
+
+    assert qualify_workflow_runs({"workflow_runs": runs}, sha, names) == []
+    assert qualify_workflow_runs({"workflow_runs": runs[:-1]}, sha, names) == ["CodeQL"]
+
+    wrong_sha = [dict(run, head_sha="b" * 40) for run in runs]
+    assert qualify_workflow_runs({"workflow_runs": wrong_sha}, sha, names) == names
+
+    wrong_branch = [dict(run, head_branch="feature") for run in runs]
+    assert qualify_workflow_runs({"workflow_runs": wrong_branch}, sha, names) == names
+
+    pending = [dict(run, status="in_progress", conclusion=None) for run in runs]
+    assert qualify_workflow_runs({"workflow_runs": pending}, sha, names) == names
+
+    failed = [dict(run, conclusion="failure") for run in runs]
+    assert qualify_workflow_runs({"workflow_runs": failed}, sha, names) == names
 
 
 def test_oracle_source_loader_requires_full_locked_revisions(tmp_path):

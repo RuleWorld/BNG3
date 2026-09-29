@@ -1,9 +1,215 @@
 # BNG3 current progress
 
-**Last targeted audit:** 2026-09-27 (full convergence checklist not re-audited)
+**Current checkpoint:** 2026-09-29. The detailed, append-only verification ledger is
+[`BNG3_CONVERGENCE_DONE_CHECKLIST.md`](BNG3_CONVERGENCE_DONE_CHECKLIST.md).
 **Repository:** `RuleWorld/BNG3`
-**Branch:** `main`
-**Status:** merged convergence, nonequilibrium energy, and SBML material-gap work; release validation remains incomplete
+**Working branch:** `main`; local and remote branches were aligned at this checkpoint. See the checklist for report-specific source SHAs.
+**Status:** Overall convergence and release qualification remain incomplete. Modern BNG3 Atomizer supports verified analytic/event subsets; general dynamic event scheduling and other SBML features remain unsupported. Keep the full objective open.
+
+## Current exact-state boundaries — 2026-09-29
+
+- The latest complete pinned SBML Test Suite report remains tied to source
+  commit `bf210ab73950646db655559ba2dd7aa56aeb2c15`: 1,744 passed, 179
+  unsupported, 0 failed, and 0 timed out. BNG3 later added the equilibrium-root
+  crossing guard at `86a385e`; the full suite was not rerun after that code
+  change, so the report is not exact-head evidence.
+- The latest selected cross-engine report covers 50 additional SSTS inputs at
+  BNG3 head `38b2b8c` (the later `558c70e` change updates documentation only).
+  It is network structure/rate evidence, not
+  trajectory parity, full SSTS cross-engine coverage, or an all-SBML result.
+- Legacy BNG2 and PyBioNetGen Atomizers remain incomplete and have not been
+  benchmarked against all SBML. No BNG2 or PyBioNetGen source was changed.
+- The user's curated BioModels validation stop remains in effect; do not
+  restart that run. Existing local macOS wheel/sdist smoke results are from
+  earlier heads, but a CPython 3.14 macOS ARM64 sdist-to-wheel install and
+  finite ODE CLI smoke now pass at current head `a4f92c8`. That offline run
+  used cached native sources and host dependency symlinks. Current-head
+  cross-platform release artifacts, Windows executables, release
+  qualification, and publication remain unverified.
+- Exact-head hosted status must be read for each pushed SHA; an earlier queued
+  result does not establish a later commit's CI outcome. The pre-existing
+  `bng3-offline-bundle/` remains untracked and preserved.
+- Historical PR refresh: #26 and #28 each have 39 passing / 5 skipped checks;
+  both use stale base commits. PR #27 has 29 passing / 5 failing / 7 skipped
+  checks and needs source-level review before any merge decision. Details and
+  caveats are in the checklist.
+
+The dated entries below are retained as historical evidence; their branch,
+head, counts, and running-job statements are snapshots, not current state.
+
+## Re-entrant first-order transfer events — 2026-09-27
+
+The event translator now handles a narrow analytic system with two species,
+one irreversible unit-stoichiometry first-order transfer, one fixed
+compartment, and two persistent state triggers: the source falls below a
+threshold and the sink rises above a threshold. It supports zero or
+compile-time constant nonnegative delays, evaluates assignments from
+trigger-time state, advances the transfer analytically to each execution time,
+and recomputes future crossings after state changes. Dynamic delays,
+priorities, SSA, rules, initial assignments, and other trigger shapes remain
+outside this proof; ambiguous simultaneous crossings and due actions fail
+closed.
+
+Continued simulation phases now include explicit absolute `t_start` and
+`t_end` values. Perl BNG2 2.9.3 ran the exact official SBML Test Suite
+`semantic/00041` model through `t=5`, including six immediate event actions,
+without continuation-time warnings. Its final `S1` and `S2` values differ from
+the official reference row by at most `1.652592283019061e-7`. The delayed
+`semantic/00072` model also ran through `t=5` with three event assignments and
+51 output rows; its final species values differ from the official reference
+row by at most `9.394649663763133e-8`. The BNG2 run exited successfully; its
+sandboxed process discovery printed a `ps` permission warning, but no
+continuation-time warning. The reported comparison is final-row only: phase
+splitting changes the output timestamps, so full time-course parity against
+the official sampling grid remains unverified.
+
+The targeted Atomizer Python suite passes `434` tests with `3` skipped. Ruff,
+Black (`py39`), and `git diff --check` pass. Native BNG3 execution and refreshed
+full SSTS/BioModels aggregates were not part of this slice. The last recorded
+native extension attempt failed on unresolved `NFcore2::simulateNfcore2`; that
+result was not rechecked against the concurrent C++ worktree state.
+
+## Simultaneous state-gated event priorities — 2026-09-27
+
+The event translator now folds initial species gates only for a proven static
+same-trigger, no-delay event group with constant priorities. It applies events
+by priority and cancels a pending nonpersistent event when an earlier
+assignment makes its trigger false; persistent events in the group still run.
+This covers the exact event shape in SBML Test Suite `semantic/00935`.
+
+The emitted actions run event A (priority 10), cancel nonpersistent B
+(priority 8) after A clears `S1 < 0.5`, then run persistent C1 (priority 9).
+They set `S1=3`, `S2=2`, matching the official 51-row SSTS result at `t=1`.
+libRoadRunner matches that reference with maximum absolute difference
+`2.220446049250313e-16`. The targeted action translation and
+focused event/parity tests pass (`153` tests); Ruff, Black (`py39`), and
+`git diff --check` pass.
+
+The latest full SSTS aggregate predates this change. The current local C++
+extension cannot load because it references an unresolved
+`NFcore2::simulateNfcore2` symbol, so the native BNG3 case check and refreshed
+full SSTS/BioModels aggregates remain pending.
+
+## Affine parameter event priorities — 2026-09-27
+
+The Atomizer now lowers parameter-only event systems with independent
+constant-slope rate rules when triggers cross one direct state threshold.
+Simultaneous events evaluate priority at execution time, including history from
+the SBML `delay` function, and reevaluate remaining priorities after each
+action. The supported subset follows [SBML Level 3 Version 2 Core, §4.12.3](https://sbml.org/specifications/sbml-level-3/version-2/core/release-2/sbml-level-3-version-2-release-2-core.pdf).
+Events that update a rate-rule target or a parameter used by its slope remain
+unsupported.
+
+The focused Atomizer suite passes `408` tests with `1` skipped. Ruff, Black
+(`py39`), and `git diff --check` pass. Official SBML Test Suite case
+`semantic/01521` passes conversion, XML roundtrip, native-reader, and
+BNG3/libRoadRunner CVODE checks through `t=20` with 1,200 steps. Its `P1_amt`
+maximum absolute difference is `1.0658141036401503e-14`. The focused regression
+Report `/private/tmp/bng3-affine-priority-semantic-01521-final.json`, SHA-256
+`99e04bf231791d5816e14c95bf64710d04faa942f433ba6eed944f951321a72e`. The
+focused regression checks priority reevaluation after an assignment changes a
+parameter read by another simultaneous event.
+
+The refreshed full pinned SBML Test Suite (`cf38585fac5de8e0e90112febb62851ee2181816`,
+`t_end=1`, 10 samples) reports `1,671 passed, 252 unsupported, 0 failed, 0
+timed out`. `semantic/01521` gained status and no prior pass regressed. The
+supported surface passes; the aggregate core gate remains open, and reference
+result conformance was not run. Report
+`/private/tmp/bng3-affine-priority-full-sbml.json`, SHA-256
+`670702b064bf4d764b2c431cc571e2fb21f62ae33d913d6c83264dca997a53e6`.
+
+## Quadratic state events with species initial assignments — 2026-09-27
+
+The quadratic event resolver now evaluates finite, acyclic initial assignments
+whose targets are species before constructing the t=0 trajectory. It rejects
+duplicate, cyclic, unresolved, or non-species targets, including species
+reference stoichiometry. This matches SBML's rule that initial assignments set
+values through simulation start; the resolver supports only the species-target
+subset ([SBML Level 3 Version 2 Core, §4.8](https://sbml.org/specifications/sbml-level-3/version-2/core/release-2/sbml-level-3-version-2-release-2-core.pdf)).
+
+The focused Atomizer suite passes `407` tests with `1` skipped. Ruff, Black
+(`py39`), and `git diff --check` pass. The full Python suite remains
+incomplete: its earlier run stalled in `tests/python/test_cpp_backend.py` while
+concurrent NFsim changes were present.
+
+The full pinned SBML Test Suite (`cf38585fac5de8e0e90112febb62851ee2181816`,
+`t_end=1`, 10 samples) reports `1,670 passed, 253 unsupported, 0 failed, 0
+timed out`. Nine semantic cases gained status and no previous pass regressed:
+`00754`, `00755`, `00756`, `00771`, `00772`, `00773`, `00789`, `00790`, and
+`00791`. The supported-surface gate passes; the aggregate core gate remains
+open. SBML reference-result conformance was not run. Report
+`/private/tmp/bng3-initial-assignment-full-verified.json`, SHA-256
+`f284d39ad69146fb4eac0900c17a5fd8ace7ff1e3804124efba89646238b4079`.
+
+All nine gained cases pass individual conversion, XML roundtrip, native-reader,
+and BNG3/libRoadRunner CVODE checks at `t=20` with 1,200 steps and six
+observables per case. Maximum absolute difference across all observables is
+`5.771522149089492e-11`. Cohort summary:
+`/private/tmp/bng3-initial-assignment-t20-cohort-summary.json`, SHA-256
+`0bb7125da7e15d31603d6be74ff54dca53f49375c03e9db3066a6c419c458c56`.
+
+## Delayed quadratic state events with trigger-time snapshots — 2026-09-27
+
+Atomizer now schedules re-entrant events with a constant nonnegative delay for
+the proven scalar quadratic state trajectories. It admits only persistent
+triggers that use trigger-time assignment snapshots; after each delayed action,
+it recomputes the trajectory before finding the next crossing. Other delay
+expressions, unsupported assignment shapes, and state-triggered SSA remain
+unsupported.
+
+The focused Atomizer suite passes `406` tests with `1` skipped. Ruff, Black
+(`py39`), and `git diff --check` pass. The broader Python run did not complete:
+it stalled in `tests/python/test_cpp_backend.py` after concurrent NFsim changes
+were present, so no full-suite result is claimed for this source.
+
+The full pinned SBML Test Suite (`cf38585fac5de8e0e90112febb62851ee2181816`,
+`t_end=1`, 10 samples) reports `1,661 passed, 262 unsupported, 0 failed, 0
+timed out`. Sixteen semantic cases gained status and no previously passed
+cases regressed. The supported-surface gate passes; the aggregate core gate
+remains open, and SBML reference-result conformance was not run. Report
+`/private/tmp/bng3-delayed-quadratic-full-current.json`, SHA-256
+`2192db808c6c01f0bb6549a2726cf151b0d997783ddb163abbe112cfc509cddc`.
+
+All 16 gained cases also pass individual BNG3/libRoadRunner checks through
+`t=20` with 1,200 samples. The largest absolute difference ranges from
+`1.2040992016665048e-11` to `9.517548000825826e-07` across records. Summary:
+`/private/tmp/bng3-delayed-quadratic-t20-cohort-summary.json`, SHA-256
+`41735803f4cde719fc84979f343fa3459c8307ba2311112c019c16c2bf72e328`.
+`semantic/00451` and `01076` remain unsupported because their
+`stoichiometryMath` values are represented through generated initial-assignment
+metadata that this resolver does not accept.
+
+## Re-entrant events in closed first-order cycles — 2026-09-27
+
+Atomizer now schedules repeated persistent threshold events for a narrowly
+proven, closed three-species first-order transfer cycle. The proof requires
+three unit-stoichiometry reactions, positive constant rates, one fixed positive
+compartment, one event, no rules or initial assignments, no priority, and
+trigger-time species snapshots. Constant nonnegative delays and simultaneous
+species assignments are supported. Unsupported event or model shapes fail
+closed; inclusive threshold tangencies are not reported as inactive, and SSA
+event timing remains unsupported.
+
+Four official cases (`semantic/00400`, `00401`, `00457`, `00458`) pass their
+per-record conversion, XML roundtrip, native-reader, and BNG3/libRoadRunner
+checks through `t=20` with 1,200 steps. Across six observables per case, the
+maximum absolute difference is `3.0815350271495845e-12`. These isolated runs
+do not test SBML reference-result conformance. The focused event suite passes
+61 tests, the SBML parity module 86 tests, and the full Python suite passes
+`644` tests with `28` skipped; Ruff, Black (`py39`), and `git diff --check`
+pass.
+
+The full pinned suite (`cf38585`, 1,923 records; `t_end=1`, 10 samples) reports
+`1,645 passed, 278 unsupported, 0 failed, 0 timed out`. The supported-surface
+gate passes; the aggregate core gate remains open. Compared with the saved
+`1,673/250` baseline, 27 semantic records gained status, including the four
+cycle cases, while 55 prior stochastic passes are now unsupported because the
+runner selects SSA for stochastic-category records. That validation-method
+change makes the aggregate counts non-comparable as a direct regression total.
+SBML reference-result conformance was not run. Report
+`/private/tmp/bng3-first-order-cycle-full-verified.json`, SHA-256
+`4440ab3e496b8f6027d156ab176f16067d49e241c2e1224889d9bdd0b8c8c7cd`.
+The full curated BioModels inventory has not been rerun against this source.
 
 ## Bounded assignment-rule delay aliases — 2026-09-27
 
@@ -2502,22 +2708,6 @@ Full Python is `641 passed, 28 skipped`; the pinned SBML suite is `1,641 passed,
 offline curated inventory retains its prior status for all 1,096 records:
 `792/1,083` SBML pass, `109` unsupported, `5` fail, and `177` time out. Report
 hashes and scope are recorded in the convergence checklist.
-
-Coupled state-reset events now schedule for a strictly constrained isolated
-first-order transfer `A -> B`, with constant thresholds/resets and optional
-nonnegative delays. The two official cases `semantic/00041` and `00072` pass
-full per-record gates and four-observable BNG3/libRoadRunner comparisons at
-`t_end=20` (maximum absolute difference `1.88e-14` each); synthetic delayed and
-undelayed parity tests also pass. Full pinned SBML suite: `1,643 passed, 280
-unsupported, 0 failed, 0 timeouts`; exactly those two prior unsupported cases
-gained pass, and the supported-surface gate passes. Aggregate core support
-remains incomplete. Full Python is `643 passed, 28 skipped` on the current
-branch.
-The full offline flat/atomized BioModels inventory completed all 1,096 records:
-`792/1,083` SBML-path passed, `109` SBML unsupported, `5` failed, and `177`
-timed out. Every record retained its prior status, so no curated-model gain or
-regression is claimed. See `/private/tmp/bng3-first-order-transfer-biomodels-both.json`
-in the convergence checklist for its SHA-256.
 
 The batched direct-SSA path (`simulate_ssa({batch_size=>N})`) is no longer
 Metal-specific. `cpp/engine/gpu/` now holds the accelerator abstraction: the

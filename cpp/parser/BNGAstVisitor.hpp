@@ -37,6 +37,8 @@ public:
     std::any visitSimulate_protocol_cmd(BNGParser::Simulate_protocol_cmdContext* ctx) override;
     std::any visitProtocol_block(BNGParser::Protocol_blockContext* ctx) override;
     std::any visitPopulation_map_def(BNGParser::Population_map_defContext* ctx) override;
+    std::any visitBng3_events_block(BNGParser::Bng3_events_blockContext* ctx) override;
+    std::any visitEvent_def(BNGParser::Event_defContext* ctx) override;
 
     // Moves synthetic barrier rules out of the model's reaction rules and
     // attaches driving-work annotations. Must run once, after the whole tree
