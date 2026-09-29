@@ -8631,9 +8631,13 @@ the other groups remain implementation targets.
   1 passed, core passed, 0 unsupported/failed/timeouts. Report
   `/private/tmp/bng3-ssts-00991-bd302d1.json` (SHA-256
   `bece8c4d59372cf0670b3229eab18b60529975cc9507736216a2e3fe58bc298d`).
-- [x] Source inspection confirmed rank-one stoichiometry alone does not prove
-  an affine event trajectory: `00388` and related cases include bimolecular
-  `S1*S2` kinetics. No shared lowering was justified by this refresh.
+- [x] Source inspection ruled out a superficially similar trajectory cohort:
+  `00388` and related cases use Level 2 `stoichiometryMath` (`2*p1` or `4*p1`,
+  each resolving to an `S2` coefficient of 2) and have rank-two reaction vectors, plus
+  bimolecular `S1*S2` kinetics. Ignoring `stoichiometryMath` would misclassify
+  their stoichiometric rank. Passing `00389` has different rank-one reaction
+  semantics and does not justify lowering the rank-two cases. No shared
+  lowering was justified by this refresh.
 - [ ] This remains a selected BNG3 event cohort, not full SSTS coverage or an
   all-SBML BNG2/legacy Atomizer benchmark. BNG2 Atomizer remains incomplete;
   no BNG2 code changed. Curated BioModels validation remains stopped.
