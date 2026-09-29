@@ -913,6 +913,12 @@ class _NumericParser:
                         value = 1 / math.sin(arguments[0])
                     elif function_name == "cot" and len(arguments) == 1:
                         value = 1 / math.tan(arguments[0])
+                    elif function_name == "sech" and len(arguments) == 1:
+                        value = 1 / math.cosh(arguments[0])
+                    elif function_name == "csch" and len(arguments) == 1:
+                        value = 1 / math.sinh(arguments[0])
+                    elif function_name == "coth" and len(arguments) == 1:
+                        value = math.cosh(arguments[0]) / math.sinh(arguments[0])
                     else:
                         return None
                 except (ArithmeticError, OverflowError, TypeError, ValueError):

@@ -493,6 +493,13 @@ def convert_math_expression(expression: str) -> str:
         "arctanh": lambda args: f"atanh({args[0]})" if args else "arctanh()",
         "arcsech": lambda args: f"acosh(1/({args[0]}))" if args else "arcsech()",
         "arccsch": lambda args: f"asinh(1/({args[0]}))" if args else "arccsch()",
+        "sech": lambda args: f"(1/cosh({args[0]}))" if args else "sech()",
+        "csch": lambda args: f"(1/sinh({args[0]}))" if args else "csch()",
+        # The quotient is parenthesised as a whole so it cannot bind loosely
+        # against a surrounding ``*`` or ``/``.
+        "coth": lambda args: (
+            f"(cosh({args[0]})/sinh({args[0]}))" if args else "coth()"
+        ),
     }.items():
         result = _replace_nested_function(result, function, replacement)
 
