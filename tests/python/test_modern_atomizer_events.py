@@ -1157,6 +1157,69 @@ def test_static_parameter_events_apply_simultaneous_priorities_in_order():
     assert [event.assignments[0].math for event in lowered] == ["2", "0"]
 
 
+def test_static_parameter_events_allow_equal_shared_timer_reset_assignments():
+    from dataclasses import replace
+
+    from bionetgen.atomizer.modern.events import expand_static_parameter_event_system
+    from bionetgen.atomizer.modern.types import SBMLEvent
+
+    events = [
+        SBMLEvent(
+            id="q-sample",
+            trigger="geq(time - reset, 0.01)",
+            trigger_initial_value=False,
+            priority="10",
+            use_values_from_trigger_time=True,
+            assignments=[("reset", "time"), ("qrun", "qrun + 1"), ("Q", "Q + 0.01")],
+        ),
+        SBMLEvent(
+            id="r-sample",
+            trigger="geq(time - reset, 0.01)",
+            trigger_initial_value=False,
+            priority="10",
+            use_values_from_trigger_time=True,
+            assignments=[("reset", "time"), ("rrun", "rrun + 1"), ("R", "R + 0.01")],
+        ),
+    ]
+    initial = {"reset": 0, "qrun": 0, "rrun": 0, "Q": 0, "R": 0}
+    lowered = expand_static_parameter_event_system(
+        events,
+        t_end=0.025,
+        parameter_ids=list(initial),
+        resolve_initial=initial.get,
+    )
+
+    assert lowered is not None
+    assert [event.trigger for event in lowered] == [
+        "geq(time, 0.01)",
+        "geq(time, 0.01)",
+        "geq(time, 0.02)",
+        "geq(time, 0.02)",
+    ]
+    assert [
+        (
+            event.id.split("__static_")[0],
+            [(a.variable, a.math) for a in event.assignments],
+        )
+        for event in lowered
+    ] == [
+        ("q-sample", [("reset", "0.01"), ("qrun", "1"), ("Q", "0.01")]),
+        ("r-sample", [("reset", "0.01"), ("rrun", "1"), ("R", "0.01")]),
+        ("q-sample", [("reset", "0.02"), ("qrun", "2"), ("Q", "0.02")]),
+        ("r-sample", [("reset", "0.02"), ("rrun", "2"), ("R", "0.02")]),
+    ]
+    nonpersistent = [replace(event, trigger_persistent=False) for event in events]
+    assert (
+        expand_static_parameter_event_system(
+            nonpersistent,
+            t_end=0.025,
+            parameter_ids=list(initial),
+            resolve_initial=initial.get,
+        )
+        is None
+    )
+
+
 def test_simultaneous_fixed_time_events_fold_mutable_reaction_rate_priorities():
     from bionetgen.atomizer.modern.events import (
         EventTranslationContext,

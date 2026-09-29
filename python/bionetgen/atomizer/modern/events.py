@@ -1999,8 +1999,51 @@ def expand_static_parameter_event_system(
                             right_targets = {
                                 target for target, _ in targets[right_index]
                             }
-                            if left_targets & right_targets:
-                                return False
+                            for shared_target in left_targets & right_targets:
+                                left_expression = dict(targets[left_index])[
+                                    shared_target
+                                ]
+                                right_expression = dict(targets[right_index])[
+                                    shared_target
+                                ]
+                                left_uses_trigger_values = (
+                                    left_event.use_values_from_trigger_time
+                                )
+                                right_uses_trigger_values = (
+                                    right_event.use_values_from_trigger_time
+                                )
+                                left_value = evaluate(
+                                    left_expression,
+                                    (
+                                        left_record["snapshot"]
+                                        if left_uses_trigger_values
+                                        else values
+                                    ),
+                                    (
+                                        left_record["trigger_time"]
+                                        if left_uses_trigger_values
+                                        else next_time
+                                    ),
+                                )
+                                right_value = evaluate(
+                                    right_expression,
+                                    (
+                                        right_record["snapshot"]
+                                        if right_uses_trigger_values
+                                        else values
+                                    ),
+                                    (
+                                        right_record["trigger_time"]
+                                        if right_uses_trigger_values
+                                        else next_time
+                                    ),
+                                )
+                                if (
+                                    left_value is None
+                                    or right_value is None
+                                    or left_value != right_value
+                                ):
+                                    return False
                             right_trigger_reads = {
                                 standardize_name(identifier)
                                 for identifier in re.findall(
@@ -2015,7 +2058,10 @@ def expand_static_parameter_event_system(
                                     right_event.priority or "",
                                 )
                             }
-                            if left_targets & right_trigger_reads:
+                            if (
+                                right_event.trigger_persistent is False
+                                and left_targets & right_trigger_reads
+                            ):
                                 return False
                             if (
                                 right_event.priority
