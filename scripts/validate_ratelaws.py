@@ -210,8 +210,12 @@ VALIDATORS = {
 
 def main():
     parser = argparse.ArgumentParser(description="Validate rate law implementations")
+    # Resolve against the invocation directory, not the temp dir each model runs
+    # in: a relative --bng-cpp was unreachable from inside that chdir.
     parser.add_argument(
-        "--bng-cpp", default="build/bng_cpp", help="Path to bng_cpp binary"
+        "--bng-cpp",
+        default=str(Path("build/cpp/bng_cpp").resolve()),
+        help="Path to bng_cpp binary",
     )
     args = parser.parse_args()
 

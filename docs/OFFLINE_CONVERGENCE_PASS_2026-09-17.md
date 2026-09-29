@@ -311,9 +311,7 @@ python -m pytest -q tests/python/test_single_nauty_contract.py
 python -m pytest -q tests/validation
 python scripts/validate.py
 python scripts/validate_actions.py
-python scripts/validate_ratelaws.py
-python scripts/validate_trajectories.py
-python scripts/validate_io_roundtrip.py
+python scripts/validate_ratelaws.py --bng-cpp "$PWD/build/cpp/bng_cpp"
 python scripts/validate_provenance.py
 python scripts/validate_corpus_manifest.py
 python scripts/validate_golden_manifest.py
@@ -322,7 +320,11 @@ python scripts/check_localfunc_rates.py
 # Independent NFsim oracle (requires -DBUILD_NFSIM_CLI=ON)
 cmake -B build-oracle -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_NFSIM_CLI=ON
 cmake --build build-oracle -j
-python scripts/validate_nfsim.py
+# Network-free trajectory parity now lives in the `nfsim-parity` job in
+# .github/workflows/parity.yml and in tests/validation/test_parity_nfsim.py.
+# scripts/validate_nfsim.py was removed: it never handed NFsim anything but
+# the .bngl (via -xml), and measured 0 passed / 2 failed with a correct
+# binary path.
 python scripts/cross_validate.py
 
 # Architecture ratchet
