@@ -135,6 +135,25 @@ def _rewrite_declared_id_runs(
     return "".join(pieces)
 
 
+def _standardize_declared_id_runs(expression: str, names: Iterable[str]) -> str:
+    """Standardize every whole-id run of ``expression`` that names a declared symbol.
+
+    The species maps are keyed by the raw species id as well as by its BNGL-safe
+    form, so a raw ``A-B`` is a legitimate key -- but a tokenizer token can only
+    ever see ``A`` and ``B``.  Standardizing the raw spellings first lets each
+    emitter classify them exactly as it classifies the standardized spelling,
+    which is what the source id means in the model.
+
+    ``skip_callees`` is off because every caller wants the declared spelling even
+    where the run is applied to an argument list: standardization is idempotent
+    on an already-standard run, and each caller's own callee rules run after.
+    """
+
+    return _rewrite_declared_id_runs(
+        expression, names, standardize_name, skip_callees=False
+    )
+
+
 # Function identifiers and formal arguments have a narrower reserved-word
 # contract than general SBML/BNGL names.  Keep this aligned with the
 # Playground writer: these names are legal SBML identifiers but collide with
@@ -999,15 +1018,10 @@ def bngl_function(
             return standardize_name(token)
         return token
 
-    # ``sbml_to_bngl_id`` is keyed by the raw species id as well as by its
-    # BNGL-safe form, so a raw ``A-B`` is a legitimate key -- but the token
-    # substitution below can only ever see ``A`` and ``B``.  Standardize the
-    # raw spellings first; ``map_token`` then classifies them exactly as it
-    # classifies the standardized spelling, which is what the species id means
-    # in the source model.
-    result = _rewrite_declared_id_runs(
-        result, sbml_to_bngl_id, standardize_name, skip_callees=False
-    )
+    # ``map_token`` only ever sees identifier tokens, so the raw spellings have
+    # to be standardized first; it then classifies them exactly as it
+    # classifies the standardized spelling.
+    result = _standardize_declared_id_runs(result, sbml_to_bngl_id)
     result = re.sub(r"\b([A-Za-z_][A-Za-z0-9_]*)\b", map_token, result)
     result = convert_math_expression(result)
 
@@ -4686,6 +4700,10 @@ def write_functions(
             if argument and argument != safe:
                 body = re.sub(rf"\b{re.escape(argument)}\b", safe, body)
         args = ", ".join(argument_names)
+        # A definition body reaches the functions block without passing through
+        # ``bngl_function``; the same pre-pass keeps a raw species id from being
+        # emitted under a name the block never declares.
+        body = _standardize_declared_id_runs(body, species_map)
         body = _map_compartment_references(convert_math_expression(body), model)
         lines.append(f"{name}({args}) = {body}")
         if not function.arguments:
@@ -4754,6 +4772,10 @@ def write_functions(
             },
             model.function_definitions,
         )
+        # This body bypasses ``bngl_function``, so it has to reach the same
+        # pre-pass itself: a raw species id cannot survive into the functions
+        # block, where the declared symbol is its standardized spelling.
+        body = _standardize_declared_id_runs(body, species_map)
         body = _map_compartment_references(convert_math_expression(body), model)
         body = _rewrite_assignment_rule_references(
             body,
