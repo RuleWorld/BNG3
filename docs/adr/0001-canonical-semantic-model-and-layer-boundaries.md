@@ -130,8 +130,13 @@ The architecture is accepted as a staged decision, not as a completion claim.
 The current checkpoint is validated by the full local Release/Ninja CTest
 suite, energy Python contracts, architecture inventory audit, and native
 NFcore2 lowering tests. Independent BNG2/NFsim oracle locks, full direct-path
-parity, real Rasi/uORF fixtures, and BNGIR round-trip tests remain required
-before the corresponding migration phases can be closed.
+parity, and real Rasi/uORF fixtures remain required before the corresponding
+migration phases can be closed. BNGIR round-trip tests have since landed for
+both the v0.1 compatibility format and the v0.2 structural format derived from
+`bng::compile::CompiledModel`; the remaining BNGIR limits are that
+reconstruction renders and reparses BNGL rather than rebuilding the compiled
+model natively (`python/bionetgen/bngir.py:1411-1425`), that v0.1 still
+rejects population maps, and that no C++-level BNGIR contract test exists.
 
 See [architecture.md](../architecture.md),
 [BNG3_HANDOFF_PORT_STATUS.md](../BNG3_HANDOFF_PORT_STATUS.md), and the
