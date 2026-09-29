@@ -9424,3 +9424,24 @@ the other groups remain implementation targets.
   Atomizer coverage, BNG2/PyBioNetGen Atomizer completeness, or BioModels
   validation. BNG2 code was not changed; curated BioModels validation remains
   stopped.
+
+## Current-head pip artifact build — 2026-09-29
+
+- [x] At source commit `0b1ca8145d61c758ec0383b687adc098ac06595f`, built
+  both an sdist and a CPython 3.14 macOS ARM64 wheel with
+  `python -m build --no-isolation --sdist --wheel`. Sdist SHA-256:
+  `c6e4c556deb0f3908012461bb8d5aa6eaba961c963384de9b14d7a892934cca0`;
+  wheel SHA-256:
+  `766f87ebfc8ab4a22e5bdc7418906dea0aba3c26b20dfb1159484e5ac90f1bdb`.
+- [x] Installed the wheel with `pip install --no-deps` into a CPython 3.14
+  venv. With Python site hooks disabled and the venv site-packages selected
+  explicitly to bypass the host's global editable BNG3 path, both the Python
+  package and compiled extension imported from the installed wheel. The
+  installed CLI's `--version`, `--help`, and `atomize --help` commands passed.
+- [ ] This verifies local sdist/wheel construction and installed import/CLI
+  paths only. It does not validate dependency resolution or an installed ODE
+  simulation. Cross-platform artifacts, Windows executable, release
+  qualification, GitHub release, and PyPI publication remain open. BNG2 and
+  legacy PyBioNetGen Atomizer remain incomplete and have not been benchmarked
+  against all SBML; no BNG2 code was changed. Curated BioModels validation
+  remains stopped.
