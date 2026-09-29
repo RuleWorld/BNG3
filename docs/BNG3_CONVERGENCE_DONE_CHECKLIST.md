@@ -9231,3 +9231,28 @@ the other groups remain implementation targets.
   SSTS numerical conformance, trajectory parity against BNG2/PyBioNetGen, or
   all-SBML cross-engine coverage. BNG2/legacy PyBioNetGen Atomizer remains
   incomplete and unbenchmarked against all SBML.
+
+## Current-head sdist-to-wheel install and ODE smoke — 2026-09-29
+
+- [x] Built an sdist from BNG3 source head
+  `a4f92c8e65cd2b2fe9beb1a00071ecf68d50ac4f`, then built a CPython 3.14
+  macOS ARM64 wheel from that archive using cached ANTLR, SUNDIALS, and
+  pybind11 source trees. The sdist excludes the pre-existing untracked
+  `bng3-offline-bundle/`. Sdist SHA-256:
+  `90025c175fe80315dcf480f33e318e856d74277ed8b007de305ae4bf34ea1544`.
+  Wheel SHA-256:
+  `422d28087f0a092a8114366a8334e426afde17db8075e3fed389e1d054eb5b2b`.
+- [x] Installed the wheel into a clean CPython 3.14 venv. Package and compiled
+  extension imports resolved inside that venv. `bionetgen --version`,
+  `--help`, `info`, and `check` passed. The installed CLI ran
+  `tests/python/models/simple_system.bngl` with ODE through `t=1`; output had
+  11 rows, 7 columns, and all values were finite. TSV SHA-256:
+  `b78c99a401d9e4071a1c3b98db8db2a913d86478995734ea28bb33d52cc7da6b`.
+- [x] This offline build linked host NumPy, Click, and Packaging into the venv
+  and used cached native dependency sources. It verifies this local sdist,
+  wheel, installed CLI, and ODE path, not online dependency resolution.
+- [ ] This is local macOS ARM64 evidence only. Cross-platform wheel builds,
+  Windows executable artifacts, release qualification, GitHub release, and
+  PyPI publication remain open. BNG2/legacy PyBioNetGen Atomizer remains
+  incomplete and has not been benchmarked against all SBML; curated BioModels
+  validation remains stopped.

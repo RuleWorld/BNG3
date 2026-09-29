@@ -21,8 +21,11 @@
   benchmarked against all SBML. No BNG2 or PyBioNetGen source was changed.
 - The user's curated BioModels validation stop remains in effect; do not
   restart that run. Existing local macOS wheel/sdist smoke results are from
-  earlier heads. Current-head cross-platform release artifacts, Windows
-  executables, release qualification, and publication remain unverified.
+  earlier heads, but a CPython 3.14 macOS ARM64 sdist-to-wheel install and
+  finite ODE CLI smoke now pass at current head `a4f92c8`. That offline run
+  used cached native sources and host dependency symlinks. Current-head
+  cross-platform release artifacts, Windows executables, release
+  qualification, and publication remain unverified.
 - Exact-head hosted status must be read for each pushed SHA; an earlier queued
   result does not establish a later commit's CI outcome. The pre-existing
   `bng3-offline-bundle/` remains untracked and preserved.
