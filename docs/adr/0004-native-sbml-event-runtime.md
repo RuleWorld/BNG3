@@ -102,15 +102,16 @@ ODE solver, event queue, stochastic engine, and conformance tests.
 
 ## Action items
 
-1. Define the versioned event-block grammar and structured event model types.
-2. Add root-function and event-queue support to native CVODE execution.
-3. Add trigger transition, delayed execution, persistence, snapshot, and
+1. [x] Define the versioned event-block grammar and structured event model
+   types.
+2. [ ] Add root-function and event-queue support to native CVODE execution.
+3. [ ] Add trigger transition, delayed execution, persistence, snapshot, and
    priority tests grounded in official SBML cases.
-4. Add stochastic event-queue semantics and seeded random ordering.
-5. Round-trip the event block through BNG3 writers and verify it through the
-   installed CLI; retain explicit rejection diagnostics outside the supported
-   semantic surface.
-6. Re-run full SSTS only after a meaningful implementation batch; keep
+4. [ ] Add stochastic event-queue semantics and seeded random ordering.
+5. [x] Round-trip the event block through the BNGL parser/writer. [ ] Verify
+   through the installed CLI and retain explicit rejection diagnostics
+   outside the supported semantic surface.
+6. [ ] Re-run full SSTS only after a meaningful implementation batch; keep
    BioModels validation stopped until requested.
 
 ## References

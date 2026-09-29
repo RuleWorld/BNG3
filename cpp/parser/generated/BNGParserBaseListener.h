@@ -1,10 +1,9 @@
 
-// Generated from src/parser/BNGParser.g4 by ANTLR 4.13.1
+// Generated from BNGParser.g4 by ANTLR 4.13.1
 
 #pragma once
 
 
-#include "../antlr_compat.hpp"
 #include "antlr4-runtime.h"
 #include "BNGParserListener.h"
 
@@ -161,6 +160,9 @@ public:
   virtual void enterRate_law_or_expr(BNGParser::Rate_law_or_exprContext * /*ctx*/) override { }
   virtual void exitRate_law_or_expr(BNGParser::Rate_law_or_exprContext * /*ctx*/) override { }
 
+  virtual void enterRate_law_xor_expr(BNGParser::Rate_law_xor_exprContext * /*ctx*/) override { }
+  virtual void exitRate_law_xor_expr(BNGParser::Rate_law_xor_exprContext * /*ctx*/) override { }
+
   virtual void enterRate_law_and_expr(BNGParser::Rate_law_and_exprContext * /*ctx*/) override { }
   virtual void exitRate_law_and_expr(BNGParser::Rate_law_and_exprContext * /*ctx*/) override { }
 
@@ -215,6 +217,24 @@ public:
   virtual void enterPopulation_map_def(BNGParser::Population_map_defContext * /*ctx*/) override { }
   virtual void exitPopulation_map_def(BNGParser::Population_map_defContext * /*ctx*/) override { }
 
+  virtual void enterBng3_events_block(BNGParser::Bng3_events_blockContext * /*ctx*/) override { }
+  virtual void exitBng3_events_block(BNGParser::Bng3_events_blockContext * /*ctx*/) override { }
+
+  virtual void enterEvent_def(BNGParser::Event_defContext * /*ctx*/) override { }
+  virtual void exitEvent_def(BNGParser::Event_defContext * /*ctx*/) override { }
+
+  virtual void enterEvent_delay(BNGParser::Event_delayContext * /*ctx*/) override { }
+  virtual void exitEvent_delay(BNGParser::Event_delayContext * /*ctx*/) override { }
+
+  virtual void enterEvent_priority(BNGParser::Event_priorityContext * /*ctx*/) override { }
+  virtual void exitEvent_priority(BNGParser::Event_priorityContext * /*ctx*/) override { }
+
+  virtual void enterEvent_assignment(BNGParser::Event_assignmentContext * /*ctx*/) override { }
+  virtual void exitEvent_assignment(BNGParser::Event_assignmentContext * /*ctx*/) override { }
+
+  virtual void enterBoolean_literal(BNGParser::Boolean_literalContext * /*ctx*/) override { }
+  virtual void exitBoolean_literal(BNGParser::Boolean_literalContext * /*ctx*/) override { }
+
   virtual void enterActions_block(BNGParser::Actions_blockContext * /*ctx*/) override { }
   virtual void exitActions_block(BNGParser::Actions_blockContext * /*ctx*/) override { }
 
@@ -224,8 +244,14 @@ public:
   virtual void enterBegin_actions_block(BNGParser::Begin_actions_blockContext * /*ctx*/) override { }
   virtual void exitBegin_actions_block(BNGParser::Begin_actions_blockContext * /*ctx*/) override { }
 
+  virtual void enterProtocol_block(BNGParser::Protocol_blockContext * /*ctx*/) override { }
+  virtual void exitProtocol_block(BNGParser::Protocol_blockContext * /*ctx*/) override { }
+
   virtual void enterAction_command(BNGParser::Action_commandContext * /*ctx*/) override { }
   virtual void exitAction_command(BNGParser::Action_commandContext * /*ctx*/) override { }
+
+  virtual void enterSimulate_protocol_cmd(BNGParser::Simulate_protocol_cmdContext * /*ctx*/) override { }
+  virtual void exitSimulate_protocol_cmd(BNGParser::Simulate_protocol_cmdContext * /*ctx*/) override { }
 
   virtual void enterGenerate_network_cmd(BNGParser::Generate_network_cmdContext * /*ctx*/) override { }
   virtual void exitGenerate_network_cmd(BNGParser::Generate_network_cmdContext * /*ctx*/) override { }
@@ -280,6 +306,9 @@ public:
 
   virtual void enterOr_expr(BNGParser::Or_exprContext * /*ctx*/) override { }
   virtual void exitOr_expr(BNGParser::Or_exprContext * /*ctx*/) override { }
+
+  virtual void enterXor_expr(BNGParser::Xor_exprContext * /*ctx*/) override { }
+  virtual void exitXor_expr(BNGParser::Xor_exprContext * /*ctx*/) override { }
 
   virtual void enterAnd_expr(BNGParser::And_exprContext * /*ctx*/) override { }
   virtual void exitAnd_expr(BNGParser::And_exprContext * /*ctx*/) override { }

@@ -1,10 +1,9 @@
 
-// Generated from cpp/parser/BNGParser.g4 by ANTLR 4.13.1
+// Generated from BNGParser.g4 by ANTLR 4.13.1
 
 #pragma once
 
 
-#include "../antlr_compat.hpp"
 #include "antlr4-runtime.h"
 #include "BNGParserVisitor.h"
 
@@ -281,6 +280,30 @@ public:
   }
 
   virtual std::any visitPopulation_map_def(BNGParser::Population_map_defContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitBng3_events_block(BNGParser::Bng3_events_blockContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitEvent_def(BNGParser::Event_defContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitEvent_delay(BNGParser::Event_delayContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitEvent_priority(BNGParser::Event_priorityContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitEvent_assignment(BNGParser::Event_assignmentContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitBoolean_literal(BNGParser::Boolean_literalContext *ctx) override {
     return visitChildren(ctx);
   }
 

@@ -2,9 +2,11 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers.hpp>
 
 #include "ast/Model.hpp"
 #include "compile/Document.hpp"
+#include "io/BnglWriter.hpp"
 #include "parser/BNGAstVisitor.hpp"
 
 TEST_CASE("BNGL unit annotations are preserved in the canonical AST") {
@@ -67,6 +69,131 @@ end parameters
     REQUIRE(model != nullptr);
     CHECK_FALSE(model->getParameters().get("koff").hasUnit());
     CHECK(model->getParameters().get("koff").getValue() == 0.02);
+}
+
+TEST_CASE("BNG3 event extension accepts a versioned event block") {
+    const auto source = R"BNGL(
+begin bng3_events version 1
+  event "reset_a"
+    trigger: A > 1
+    initial_value: false
+    persistent: true
+    use_values_from_trigger_time: true
+    delay: 2
+    priority: 10
+    assignment: A = 0
+  end event
+  event "pulse_b"
+    trigger: time >= 4
+    initial_value: true
+    persistent: false
+    use_values_from_trigger_time: false
+    assignment: A = 3
+    assignment: B = A + 1
+  end event
+end bng3_events
+)BNGL";
+
+    const auto model = bng::parser::parseModel(source);
+    REQUIRE(model != nullptr);
+    REQUIRE(model->getEventFormatVersion().has_value());
+    CHECK(*model->getEventFormatVersion() == 1);
+    REQUIRE(model->getEvents().size() == 2);
+    const auto& event = model->getEvents().front();
+    CHECK(event.id == "reset_a");
+    CHECK(event.trigger.toString() == "(A > 1)");
+    CHECK_FALSE(event.initialValue);
+    CHECK(event.persistent);
+    CHECK(event.useValuesFromTriggerTime);
+    REQUIRE(event.delay.has_value());
+    CHECK(event.delay->toString() == "2");
+    REQUIRE(event.priority.has_value());
+    CHECK(event.priority->toString() == "10");
+    REQUIRE(event.assignments.size() == 1);
+    CHECK(event.assignments.front().target == "A");
+    CHECK(event.assignments.front().value.toString() == "0");
+
+    const auto& secondEvent = model->getEvents().at(1);
+    CHECK(secondEvent.id == "pulse_b");
+    CHECK(secondEvent.initialValue);
+    CHECK_FALSE(secondEvent.persistent);
+    CHECK_FALSE(secondEvent.useValuesFromTriggerTime);
+    CHECK_FALSE(secondEvent.delay.has_value());
+    CHECK_FALSE(secondEvent.priority.has_value());
+    REQUIRE(secondEvent.assignments.size() == 2);
+    CHECK(secondEvent.assignments.at(1).target == "B");
+    CHECK(secondEvent.assignments.at(1).value.toString() == "(A + 1)");
+
+    const bng::compile::Document document(*model);
+    CHECK_FALSE(document.valid());
+    CHECK(std::any_of(document.diagnostics().begin(), document.diagnostics().end(),
+                      [](const auto& diagnostic) {
+                          return diagnostic.code == bng::compile::DiagnosticCode::UnsupportedFeature &&
+                                 diagnostic.category == bng::compile::ValidationCategory::BackendCapability &&
+                                 diagnostic.message.find("event execution is not implemented") !=
+                                     std::string::npos;
+                      }));
+
+    const auto serialized = bng::io::BnglWriter::write(*model);
+    const auto reparsed = bng::parser::parseModel(serialized);
+    REQUIRE(reparsed != nullptr);
+    REQUIRE(reparsed->getEventFormatVersion().has_value());
+    CHECK(*reparsed->getEventFormatVersion() == *model->getEventFormatVersion());
+    REQUIRE(reparsed->getEvents().size() == model->getEvents().size());
+    CHECK(reparsed->getEvents().at(0).trigger.toString() == event.trigger.toString());
+    CHECK(reparsed->getEvents().at(1).assignments.at(1).value.toString() ==
+          secondEvent.assignments.at(1).value.toString());
+}
+
+TEST_CASE("BNG3 event extension rejects unknown format versions") {
+    const auto source = R"BNGL(
+begin bng3_events version 2
+end bng3_events
+)BNGL";
+
+    CHECK_THROWS_WITH(bng::parser::parseModel(source),
+                      "Unsupported BNG3 event format version: 2");
+}
+
+TEST_CASE("BNG3 event extension rejects duplicate event ids") {
+    const auto source = R"BNGL(
+begin bng3_events version 1
+  event "same"
+    trigger: A > 0
+    initial_value: false
+    persistent: true
+    use_values_from_trigger_time: true
+  end event
+  event "same"
+    trigger: A > 1
+    initial_value: false
+    persistent: true
+    use_values_from_trigger_time: true
+  end event
+end bng3_events
+)BNGL";
+
+    CHECK_THROWS_WITH(bng::parser::parseModel(source), "duplicate BNG3 event id 'same'");
+}
+
+TEST_CASE("BNG3 event keywords remain usable as legacy model identifiers") {
+    const auto model = bng::parser::parseModel(R"BNGL(
+begin parameters
+  event = 1
+  delay = event + 1
+  bng3_events = delay
+end parameters
+begin molecule types
+  trigger(delay)
+end molecule types
+)BNGL");
+
+    REQUIRE(model != nullptr);
+    CHECK(model->getParameters().get("event").getValue() == 1.0);
+    CHECK(model->getParameters().get("delay").getValue() == 2.0);
+    CHECK(model->getParameters().get("bng3_events").getValue() == 2.0);
+    REQUIRE(model->getMoleculeTypes().size() == 1);
+    CHECK(model->getMoleculeTypes().front().getName() == "trigger");
 }
 
 TEST_CASE("compiled unit metadata follows parameter dependencies") {

@@ -10,6 +10,28 @@
 **Historical audited heads:** Earlier local-only and hosted heads remain
 recorded in the historical sections below; they are not current-head evidence.
 
+## BNG3 dynamic-event representation boundary — 2026-09-29
+
+- [x] Added versioned `bng3_events` syntax to the BNG3 parser and structured
+  event records to the canonical AST. Trigger, delay, priority, initial value,
+  persistence, trigger-time snapshot policy, and assignment expressions
+  survive a BNGL writer/parser round trip.
+- [x] The compiled-model boundary rejects this extension with an explicit
+  unsupported-feature diagnostic. BNG3 does not execute these events yet;
+  this parser/AST slice cannot be counted as simulation support.
+- [x] Parser-unit coverage passed: 11 test cases, 86 assertions, including
+  multi-event parsing, optional delay/priority, assignments, round trip,
+  unknown format-version rejection, and ordinary identifiers matching event
+  field words. The new syntax contract failed against the old parser first.
+- [x] Full configured CMake build passed, and the full CTest suite passed
+  `448/448` tests. This is local BNG3 evidence, not hosted CI or an SSTS
+  rerun.
+- [ ] No SSTS case was rebenchmarked or gained from this slice. Full dynamic
+  event execution, solver roots, event queues, and cross-engine event parity
+  remain open. Legacy BNG2 Atomizer remains incomplete and has not been
+  benchmarked against all SBML; no BNG2 source was changed. Curated BioModels
+  validation remains stopped at the user's request.
+
 ## Quadratic crossing at an equilibrium root — 2026-09-28
 
 - [x] BNG3's quadratic event solver now returns no finite crossing when the

@@ -1,10 +1,9 @@
 
-// Generated from src/parser/BNGParser.g4 by ANTLR 4.13.1
+// Generated from BNGParser.g4 by ANTLR 4.13.1
 
 #pragma once
 
 
-#include "../antlr_compat.hpp"
 #include "antlr4-runtime.h"
 #include "BNGParser.h"
 
@@ -159,6 +158,9 @@ public:
   virtual void enterRate_law_or_expr(BNGParser::Rate_law_or_exprContext *ctx) = 0;
   virtual void exitRate_law_or_expr(BNGParser::Rate_law_or_exprContext *ctx) = 0;
 
+  virtual void enterRate_law_xor_expr(BNGParser::Rate_law_xor_exprContext *ctx) = 0;
+  virtual void exitRate_law_xor_expr(BNGParser::Rate_law_xor_exprContext *ctx) = 0;
+
   virtual void enterRate_law_and_expr(BNGParser::Rate_law_and_exprContext *ctx) = 0;
   virtual void exitRate_law_and_expr(BNGParser::Rate_law_and_exprContext *ctx) = 0;
 
@@ -213,6 +215,24 @@ public:
   virtual void enterPopulation_map_def(BNGParser::Population_map_defContext *ctx) = 0;
   virtual void exitPopulation_map_def(BNGParser::Population_map_defContext *ctx) = 0;
 
+  virtual void enterBng3_events_block(BNGParser::Bng3_events_blockContext *ctx) = 0;
+  virtual void exitBng3_events_block(BNGParser::Bng3_events_blockContext *ctx) = 0;
+
+  virtual void enterEvent_def(BNGParser::Event_defContext *ctx) = 0;
+  virtual void exitEvent_def(BNGParser::Event_defContext *ctx) = 0;
+
+  virtual void enterEvent_delay(BNGParser::Event_delayContext *ctx) = 0;
+  virtual void exitEvent_delay(BNGParser::Event_delayContext *ctx) = 0;
+
+  virtual void enterEvent_priority(BNGParser::Event_priorityContext *ctx) = 0;
+  virtual void exitEvent_priority(BNGParser::Event_priorityContext *ctx) = 0;
+
+  virtual void enterEvent_assignment(BNGParser::Event_assignmentContext *ctx) = 0;
+  virtual void exitEvent_assignment(BNGParser::Event_assignmentContext *ctx) = 0;
+
+  virtual void enterBoolean_literal(BNGParser::Boolean_literalContext *ctx) = 0;
+  virtual void exitBoolean_literal(BNGParser::Boolean_literalContext *ctx) = 0;
+
   virtual void enterActions_block(BNGParser::Actions_blockContext *ctx) = 0;
   virtual void exitActions_block(BNGParser::Actions_blockContext *ctx) = 0;
 
@@ -222,8 +242,14 @@ public:
   virtual void enterBegin_actions_block(BNGParser::Begin_actions_blockContext *ctx) = 0;
   virtual void exitBegin_actions_block(BNGParser::Begin_actions_blockContext *ctx) = 0;
 
+  virtual void enterProtocol_block(BNGParser::Protocol_blockContext *ctx) = 0;
+  virtual void exitProtocol_block(BNGParser::Protocol_blockContext *ctx) = 0;
+
   virtual void enterAction_command(BNGParser::Action_commandContext *ctx) = 0;
   virtual void exitAction_command(BNGParser::Action_commandContext *ctx) = 0;
+
+  virtual void enterSimulate_protocol_cmd(BNGParser::Simulate_protocol_cmdContext *ctx) = 0;
+  virtual void exitSimulate_protocol_cmd(BNGParser::Simulate_protocol_cmdContext *ctx) = 0;
 
   virtual void enterGenerate_network_cmd(BNGParser::Generate_network_cmdContext *ctx) = 0;
   virtual void exitGenerate_network_cmd(BNGParser::Generate_network_cmdContext *ctx) = 0;
@@ -278,6 +304,9 @@ public:
 
   virtual void enterOr_expr(BNGParser::Or_exprContext *ctx) = 0;
   virtual void exitOr_expr(BNGParser::Or_exprContext *ctx) = 0;
+
+  virtual void enterXor_expr(BNGParser::Xor_exprContext *ctx) = 0;
+  virtual void exitXor_expr(BNGParser::Xor_exprContext *ctx) = 0;
 
   virtual void enterAnd_expr(BNGParser::And_exprContext *ctx) = 0;
   virtual void exitAnd_expr(BNGParser::And_exprContext *ctx) = 0;
