@@ -82,6 +82,16 @@
   endpoint checks are required; and a bounded Lean/production-NFIR bridge
   contract checks state and bond lowering for distinct reactants. Population
   maps remain fail-closed on the direct NFsim path.
+- Sped up the Gillespie SSA engine without touching the RNG stream or any
+  trajectory byte: each fired event now refreshes only the propensities that
+  read a species whose amount changed (species-to-reaction index), and
+  reaction selection reads prefix sums stored during the existing in-order
+  total-propensity accumulation instead of re-accumulating on the fly
+  (binary search for non-negative rates, exact linear scan otherwise).
+  `benchmarks/bench_engine_ssa.py` measures simulation-only events/sec with
+  interleaved reps: 1.44x at 450 reactions and 1.22x at 150 reactions
+  (best-of interleaved reps), 1.04x at 45 reactions; seeded `.gdat`/`.cdat`
+  bytes are unchanged on the identity corpus. See `benchmarks/README.md`.
 
 ## [3.0.0a1] - 2026-05-11
 

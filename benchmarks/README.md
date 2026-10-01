@@ -43,6 +43,34 @@ For each standard model the script records:
 
 These results are intended for trend tracking, not gating.
 
+## Engine SSA throughput
+
+`bench_engine_ssa.py` measures the Gillespie engine's network-event
+throughput on a self-contained synthetic ring network that it constructs in a
+temporary directory (default: 150 seed species, 450 reactions, fixed seed,
+exactly 1,000,000 fired SSA events per rep via `max_sim_steps`). Each full
+run is paired with a same-shape `max_sim_steps=>2` probe whose child CPU time
+(parse, network generation, output) is subtracted, so the primary number is
+simulation-only: **SSA network events per second, best of >=5 interleaved
+reps**, with median, worst, and stdev printed alongside. Variants run
+round-robin (order alternating by round) so co-tenant noise on a shared host
+hits every variant equally, and child CPU time is used so preemption does not
+inflate results; the fastest rep bounds achievable throughput because
+co-tenants can only slow a run down.
+
+```bash
+python benchmarks/bench_engine_ssa.py \
+    --variant baseline=/path/to/pristine/bng_cpp \
+    --variant current=build/cpp/bng_cpp \
+    --reps 9 --json /tmp/ssa-bench.json
+```
+
+`--species` and `--events` resize the network and the event cap; `--reps 5`
+is the floor. A trajectory-identity check for engine changes is to run both
+binaries over the same seeded models and diff the `.gdat`/`.cdat` bytes —
+the seeded trajectory is a contract, so any diff is a behavior change, not a
+performance win.
+
 ## Legacy Atomizer
 
 To repeat the legacy Python Atomizer CLI on one SBML model and capture
