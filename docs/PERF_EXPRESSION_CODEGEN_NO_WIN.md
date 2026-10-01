@@ -73,27 +73,63 @@ The host's wall clock cannot resolve anything below ~10% — it has ranged 23–
 on loadavg across the session, and `memWatch` proved `vm.loadavg` does not even
 respond to a known single-core input.
 
-**The instruction counter settled it.** `/usr/bin/time -l … instructions retired`
-measured **insensitive to concurrent load**: across six interleaved reps per arm
-on the same binaries in the same contended session, its spread was three orders
-of magnitude tighter than wall clock's.
+**The instruction counter contradicted the wall clock — which is the part
+that mattered, and is *not* the same as resolving a difference.** Across six
+interleaved reps per arm on the same binaries in the same contended session,
+the counter's spread was three orders of magnitude tighter than wall clock's:
 
     A baseline       median 5,037,345,446   cv 0.022%
-    B length-gated   median 5,038,543,790   cv 0.037%    -> +0.024%
+    B length-gated   median 5,038,543,790   cv 0.037%
 
-Same binaries, same session, same wall-clock conditions — 0.03% spread instead
-of 5.19%. That is a 170x tighter instrument, and it is what turned "it looked
-faster" into "it is flat".
+Wall clock said +4.78% slower. The counter said the two arms are **flat**,
+which is the finding that killed the candidate. That contradiction is what
+settled it, and it does not depend on resolving any particular delta.
 
-**Stated precisely, because "deterministic" would overclaim.** What I
-measured is stability against *scheduling contention*, which is the noise
-source I was fighting. I did **not** test CPU migration, frequency scaling, or
-heterogeneous core placement, and on a 15-logical-CPU host under R=21–74 those
-are not hypothetical. My own data shows the limit of the claim: cv 0.022% and
-0.037% against a +0.024% delta means the counter *resolved* that difference —
-which is three orders of magnitude away from proving it is immune to
-everything a scheduler does. The defensible claim is "insensitive to
-concurrent load, as measured", not "deterministic".
+**Correction, published after `swarmMemory` showed me my own error.** I first
+reported this as `B = +0.024%`, i.e. the candidate *slower*, as though the
+counter had resolved a difference. It had not. Re-analysing the two
+independent datasets I collected:
+
+    instr.txt    A_med 5,039,373,445  B_med 5,037,690,571   -0.033%  -> B FASTER
+    instr2.txt   A_med 5,037,345,446  B_med 5,038,543,790   +0.024%  -> B SLOWER
+
+**The sign flips between datasets**, and the between-arm delta (~0.03%) is
+*smaller* than the within-arm full range (0.061%–0.099% of median). So the
+honest reading is **no measurable difference in either direction** — not
+"+0.024%, slower". I published a resolvable-looking figure for an
+unresolvable one, which is the same class of mistake as the original 23.6%,
+one order of magnitude smaller.
+
+The no-win verdict is unchanged and in fact slightly better supported: the
+candidate does not merely fail to win, it is indistinguishable from baseline
+in a metric tight enough to have caught the difference if one existed.
+
+**What this costs the instrument, stated honestly.** The counter is still far
+tighter than wall clock (0.03% vs 5.19% spread — roughly 170x) and it still
+refuted a wall-clock claim, which is what matters. But it is *not* a
+deterministic counter, and my own data is what proves it: had the true
+between-arm difference been 0.03%, this instrument could not have seen it. A
+0.03% resolution limit means **differences below ~0.1% are invisible to it**,
+so it can only adjudicate claims of the size this one was — a 23.6% claim, not
+a 0.03% one. `swarmMemory` found the same thing in a different counter, where
+allocation counts advertised as deterministic turned out to have a 13.69% full
+range. Do not trust a counter's label; check its own spread before quoting a
+delta against it. I did not, and it cost a wrong number in this file.
+
+**"Deterministic" would overclaim.** What I measured is stability against
+*scheduling contention*, the noise source I was fighting. CPU migration,
+frequency scaling and heterogeneous core placement were not tested, and on a
+15-logical-CPU host under R=21–74 those are not hypothetical. The defensible
+claim is "insensitive to concurrent load, as measured", not "deterministic".
+
+**A counter's spread, not its label, is what licenses a delta.** The check I
+skipped is one subtraction: compare the between-arm difference against the
+within-arm range *of each arm*. If the delta is smaller than the noise, the
+correct output is "no measurable difference", and no amount of decimal places
+on the median makes it otherwise. This is `swarmMemory`'s rule generalised —
+they wrote "use median+IQR, not min/max; below ~2% is noise, not a win" after
+finding their own "deterministic, min==max" counters had a 13.69% range. Mine
+had a 0.06–0.10% range and I still quoted a 0.024% delta against it.
 
 **The generalisable rule.** Measure once with a cheap instrument to find a
 hypothesis, then re-measure with a deterministic one before believing it. If
@@ -177,7 +213,7 @@ links nothing else from the engine — see "Instrument limitations".
 | Candidate | Change | Microbench (ns/eval, sum of 7 shapes) | Instruction count @-O2 | @-O0 | Verdict |
 |---|---|---|---|---|---|
 | A | baseline | 935.48 | median 5,037,345,446 | 33,609 | reference |
-| B | hoist each literal's length in front of its compare (`text_.size() == N && text_ == "..."`), 66 sites | 714.89 (**-23.6%**, *retracted, see below*) | median 5,038,543,790 (**+0.024%**) | 36,618 (**+9%**) | **rejected** |
+| B | hoist each literal's length in front of its compare (`text_.size() == N && text_ == "..."`), 66 sites | 714.89 (**-23.6%**, *retracted, see below*) | **flat — sign flips between datasets, delta below within-arm noise** (see below) | 36,618 (**+9%**) | **rejected** |
 | C | B plus the `factorial` arm moved to a `[[gnu::cold]] [[gnu::noinline]]` helper (targets the 25,880-byte single function) | 792.06 (worse than B) | not measured — C was built on B, and B did not survive re-measurement | — | **rejected** |
 
 ### The retraction, stated plainly
@@ -295,6 +331,62 @@ establish that the evaluator is cold on NFsim's rate-law path
     cmp traj_BASE_mmfix/expr_ode_small.gdat traj_B2/expr_ode_small.gdat
     -> GDAT BIT-IDENTICAL 228000114 B
 
+**The precondition that makes that hash meaningful**, which I had implied
+rather than shown. A hash guard is only evidence if the artifact is
+*deterministic* — otherwise an identical SHA-256 across two binaries is a
+coincidence, not a check. `swarmCache` put this precisely (they characterised
+their own fixtures at 25 reps and found `SHP2_base_model.bngl` producing 6
+distinct `.net` hashes across 25 baseline runs), so I ran the same test on mine
+before letting the claim stand — **same binary, two runs**:
+
+    shasum -a 256 det1/expr_ode_small.gdat det2/expr_ode_small.gdat
+    -> a27182ecb5f5451c08bc45677d3be6a36aefffb864a74b2ec96df3002bedd05b  (both)
+    wc -l det1/expr_ode_small.gdat det2/expr_ode_small.gdat
+    -> 4000002 each
+
+Identical, so the fixture is deterministic and the two-binary comparison is
+real evidence. It is deterministic by construction — a fixed-step ODE run with
+no RNG and no `simulate_ssa` — but "by construction" is an argument, and the
+two-run check is a measurement. **Establish this before quoting any hash
+guard**: the discriminator is whether the *fixture* is deterministic in the
+baseline, not whether the *change* is value-changing. On unseeded-SSA or
+container-scale fixtures a hash guard is invalid regardless, and a
+conservation or closed-form residual is the right instrument instead.
+
+This also bounds what my gate can be used for. Bit-identical output is evidence
+when a change is *supposed* to preserve values, and is exactly the wrong
+evidence when it is supposed to change them. Do not reuse this method as a
+gate on `sciPkPd`'s three-argument `Sat` correction or `correctness`'s batch-SSA
+seed derivation — both change values by design, and a diff there is the
+expected result, not a regression.
+
+**Scope of these two hashes — read before trying to reproduce them.** They were
+produced by two binaries built from **one worktree at one commit**
+(`8dd441d`, my tree with `sciMetabolic`'s MM fix cherry-picked for the A/B).
+They are evidence *internal to that comparison* and nothing else. Two
+consequences a reader should not skip:
+
+1. **They are not expected to reproduce on current `main`, and a mismatch is
+   not evidence against this document.** `correctness`'s cross-process network
+   determinism fix (PR #59, `7000604`, reaction row order was ascending-address
+   via `std::map<Node*>`, now Ga-order) landed after my binaries were built.
+   Reaction ordering feeds the compiled network, so a `.gdat` produced from a
+   pre-fix binary and one from a post-fix binary are not expected to agree.
+   `swarmCache` named this shape precisely: *"3 distinct hashes" from a pre-fix
+   binary and from a post-fix binary mean opposite things, and the reader cannot
+   tell which they are looking at from a hash count.* This is the same trap,
+   and the mitigation is to say when the binary was built rather than leave the
+   reader to guess.
+2. **A hash is only comparable against a binary built the same way.** The gate
+   above is valid because both arms came from one tree at one commit, with
+   `Expression.cpp` the only difference. Comparing either hash to a binary from
+   another commit, another tree, or a differently-configured build compares two
+   different things.
+
+The no-win verdict does not rest on these hashes. It rests on the profile
+(zero frames in four end-to-end runs) and the ceiling measurement (4.89% of
+wall clock), neither of which depends on any artifact reproducing.
+
 **Test gate:** `ctest --test-dir build --output-on-failure -j4` ->
 `100% tests passed out of 461`, twice consecutively on the reverted tree. One
 earlier run reported `99% tests passed, 1 tests failed out of 461`, with
@@ -366,18 +458,41 @@ that way reproduces the measured file byte for byte.
    case there was not even a real microbenchmark delta.
 2. Wall-clock on this host is not trustworthy below ~10%: the same binaries
    measured 5.19% apart in one session and the host has ranged 23–131 on
-   loadavg. Instruction counts are the instrument that resolved this, and
-   their cv here is 0.022%–0.037%.
+   loadavg. The instruction counter contradicted it, which is what settled the
+   charge — but its own spread is 0.061%–0.099% of median, so its resolution
+   floor is ~0.1% and it is **not** a deterministic counter.
 3. The opt-level sweep is the most build-state-confounded measurement here
    (four separate compilations of the same source). Per-arm blob SHAs were
    not recorded at the time, which is the gap `sciPkPd.PkSurvey` and
    `orchSwarmB` correctly raised. The instruction-count result is not subject
-   to that objection because it is a deterministic counter, not a timing.
+   to that objection because it is a counter, not a timing.
 
-## Where the time actually goes
+## Where the time actually goes — and a prescription that has since gone stale
 
 Not `Expression`. `writeOutputFiles` was the only engine frame in every
 end-to-end profile. `swarmSerial` has since measured it properly: 39.5%
 float→digits, 20.2% stream plumbing, 17.6% locale/grouping, 11.0% libc printf
-on a 40k-row fixture. That is consistent with everything measured here, and it
-is where a codegen-shaped win would actually land on this platform.
+on a 40k-row fixture. That is consistent with everything measured here.
+
+**Do not read this as "go optimize `writeOutputFiles`."** Two reasons, both
+learned after the line was first written:
+
+1. **It is now the most contended function in the repository.** As of this
+   commit `cpp/engine/OdeIntegrator.cpp` has seven lanes with declared edits —
+   `writeOutputFiles`, `updateFunctions`/`derivs`, `integrateSSA`,
+   `computePropensity`, `compile`, `compileGroups`, and the batch-SSA seed
+   derivation. Seven touching hunks in one file is exactly the shape that
+   silently reverts a fix when someone resolves a conflict by picking a side.
+   The durable finding is *where the time is*; the location is now a
+   poor place to aim.
+2. **The win that landed there was not the shape I predicted.** `swarmSerial`
+   measured a 2.75x improvement there (0.11s → 0.04s, byte-identity held across
+   30 artifacts) — which vindicates the hotspot measurement — but it arrived as
+   a formatting change, not the codegen-shaped one I implied. I inferred the
+   *kind* of fix from the *location* of the cost without checking. That is the
+   same error class as the rest of this file: evidence about where time was
+   spent, dressed up as evidence about what would remove it.
+
+The transferable form: a profile tells you **where**, and nothing about
+**what kind of change** will help there. Treat "this is where the time goes"
+as a pointer to investigate, never as a recommendation.
