@@ -888,6 +888,26 @@ void OdeIntegrator::compile() {
         observableIndex_[compiledGroups_[i].name] = i;
     }
 
+    // 1b. Per-model function indices. Model::getFunctions() is only reachable
+    // through a const-ref accessor (Model.hpp:93) and its two mutators
+    // (Model::addFunction at Model.cpp:33, Model::merge at Model.cpp:244) run
+    // at parse/include time, so the list cannot change while this integrator
+    // is alive. emplace is first-wins on duplicate names, matching the
+    // per-step map this replaces exactly.
+    functionIndex_.clear();
+    zeroArgumentFunctionSet_.clear();
+    resultFunctionIndices_.clear();
+    for (std::size_t i = 0; i < model_.getFunctions().size(); ++i) {
+        const auto& function = model_.getFunctions()[i];
+        functionIndex_.emplace(function.getName(), i);
+        if (function.getArgs().empty()) {
+            zeroArgumentFunctionSet_.insert(i);
+            if (isResultFunction(function.getName())) {
+                resultFunctionIndices_.push_back(i);
+            }
+        }
+    }
+
     // 2. Pre-allocate groupValues for reuse in derivs()
     groupValues_.resize(compiledGroups_.size(), 0.0);
 
@@ -1136,13 +1156,16 @@ void OdeIntegrator::updateFunctions(
     // by the modern Atomizer).  Evaluate them against the same observable
     // snapshot used by the rate-law resolver so exported assignment values
     // are on exactly the integration output grid.
-    std::unordered_map<std::string, const ast::Function*> zeroArgumentFunctions;
-    for (const auto& function : model_.getFunctions()) {
-        if (function.getArgs().empty()) {
-            zeroArgumentFunctions.emplace(function.getName(), &function);
-        }
-    }
-    std::vector<std::string> functionStack;
+    // zeroArgumentFunctionSet_ and resultFunctionIndices_ are precomputed in
+    // compile() from the immutable model function list.  They used to be
+    // rebuilt from scratch on every output step, which is
+    // (output steps x functions) redundant derivations of a per-model
+    // structure.  functionStack_ is the same cycle guard, reused across calls
+    // instead of reallocated; clear() at the top of each call means a
+    // non-std::exception escaping between push and pop cannot leave it dirty
+    // for the next call.
+    functionStack_.clear();
+    const auto& functions = model_.getFunctions();
     std::function<double(const std::string&)> resolver;
     resolver = [&](const std::string& name) -> double {
         if (name == "time") {
@@ -1153,32 +1176,31 @@ void OdeIntegrator::updateFunctions(
             observable->second < groupValues.size()) {
             return groupValues[observable->second];
         }
-        const auto function = zeroArgumentFunctions.find(name);
-        if (function != zeroArgumentFunctions.end()) {
-            if (std::find(functionStack.begin(), functionStack.end(), name) !=
-                functionStack.end()) {
+        const auto function = functionIndex_.find(name);
+        if (function != functionIndex_.end() &&
+            zeroArgumentFunctionSet_.count(function->second) != 0) {
+            if (std::find(functionStack_.begin(), functionStack_.end(), name) !=
+                functionStack_.end()) {
                 // Cyclic algebraic helpers are not a solvable BNGL function
                 // graph.  Return a finite sentinel for this optional output
                 // instead of recursing until the worker stack overflows.
                 return 0.0;
             }
-            functionStack.push_back(name);
+            functionStack_.push_back(name);
             double value = 0.0;
             try {
-                value = function->second->getExpression().evaluate(resolver, time);
+                value = functions[function->second].getExpression().evaluate(resolver, time);
             } catch (const std::exception&) {
                 value = 0.0;
             }
-            functionStack.pop_back();
+            functionStack_.pop_back();
             return value;
         }
         return model_.getParameters().evaluate(name, time);
     };
 
-    for (const auto& function : model_.getFunctions()) {
-        if (!function.getArgs().empty() || !isResultFunction(function.getName())) {
-            continue;
-        }
+    for (const auto index : resultFunctionIndices_) {
+        const auto& function = functions[index];
         try {
             functionValues.push_back(
                 function.getExpression().evaluate(resolver, time));

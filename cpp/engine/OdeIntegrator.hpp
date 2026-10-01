@@ -3,6 +3,7 @@
 #include <functional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "ast/Model.hpp"
@@ -128,6 +129,18 @@ private:
     std::vector<double> cvodeStateScale_;
     mutable std::vector<double> cvodePhysicalState_;
     mutable std::vector<double> cvodePhysicalDerivatives_;
+    // Per-model function index. `Model::getFunctions()` has a single const-ref
+    // accessor (Model.hpp:93) and its only mutators — Model::addFunction
+    // (Model.cpp:33) and Model::merge (Model.cpp:244) — run at parse/include
+    // time, so the function list cannot change while this integrator is alive.
+    // These hold INDEXES into that immutable vector, never computed values, and
+    // are built in compile() alongside observableIndex_. A model that gains or
+    // loses a function gets a new OdeIntegrator, whose constructor reruns
+    // compile(); that constructor is the invalidation point.
+    std::unordered_map<std::string, std::size_t> functionIndex_;    // name -> model_.getFunctions() index
+    std::unordered_set<std::size_t> zeroArgumentFunctionSet_;       // indexes of zero-argument functions
+    std::vector<std::size_t> resultFunctionIndices_;                // zero-argument, user-visible, declaration order
+    mutable std::vector<std::string> functionStack_;                // cycle guard reused across updateFunctions() calls
 
     void compile();
     void compileGroups();
