@@ -1,0 +1,58 @@
+begin model
+begin parameters
+    k  0.1
+    d  0.01
+end parameters
+begin molecule types
+    S1()
+    S2()
+    S3()
+    S4()
+    S5()
+    S6()
+    S7()
+    S8()
+end molecule types
+begin seed species
+    S1()  10
+    S2()  10
+    S3()  10
+    S4()  10
+    S5()  10
+    S6()  10
+    S7()  10
+    S8()  10
+end seed species
+begin observables
+    Molecules  S1_total  S1()
+    Molecules  S2_total  S2()
+    Molecules  S3_total  S3()
+    Molecules  S4_total  S4()
+    Molecules  S5_total  S5()
+    Molecules  S6_total  S6()
+    Molecules  S7_total  S7()
+    Molecules  S8_total  S8()
+end observables
+begin reaction rules
+    0 -> S1()  k
+    S1() -> 0  d
+    0 -> S2()  k
+    S2() -> 0  d
+    0 -> S3()  k
+    S3() -> 0  d
+    0 -> S4()  k
+    S4() -> 0  d
+    0 -> S5()  k
+    S5() -> 0  d
+    0 -> S6()  k
+    S6() -> 0  d
+    0 -> S7()  k
+    S7() -> 0  d
+    0 -> S8()  k
+    S8() -> 0  d
+end reaction rules
+end model
+
+## actions ##
+generate_network({overwrite=>1})
+simulate_ode({t_end=>100,n_steps=>40000,atol=>1e-12,rtol=>1e-8})

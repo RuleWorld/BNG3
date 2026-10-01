@@ -1,0 +1,159 @@
+{
+  "meta": {
+    "git": "10915aa",
+    "host": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "python": "3.14.6",
+    "cpu_count": 15,
+    "bng_cpp": "/Users/akutuva/Documents/BioNetGen/BNG3-autobench/build/cpp/bng_cpp",
+    "extension": "/Users/akutuva/Documents/BioNetGen/BNG3-autobench/build/cpp/_bionetgen_cpp.cpython-314-darwin.so",
+    "load1_start": 128.68115234375,
+    "load1_end": 129.64892578125,
+    "reps": 5,
+    "weights": {
+      "netgen": 0.27,
+      "ssa_batch": 0.33,
+      "ode": 0.15,
+      "out_write": 0.1,
+      "py_import": 0.08,
+      "py_load": 0.07
+    },
+    "v1_weights_superseded": {
+      "netgen": 0.35,
+      "ssa_batch": 0.4,
+      "py_import": 0.1,
+      "py_load": 0.15
+    },
+    "ssa_base_seed": 12345,
+    "ssa_batch": {
+      "iso": [
+        "models/isomerization.bngl",
+        20.0,
+        200000
+      ],
+      "ge": [
+        "models/gene_expr_simple.bngl",
+        500.0,
+        800000
+      ]
+    },
+    "ode_models": [
+      [
+        "models/isomerization.bngl",
+        100.0,
+        1000
+      ],
+      [
+        "models/gene_expr_simple.bngl",
+        1000.0,
+        1000
+      ],
+      [
+        "bench/fixtures/ode_many_functions.bngl",
+        100.0,
+        5000
+      ]
+    ],
+    "note": "shared machine; quote load1_start with these timings; compare min and stdev, not single runs; ~11% cross-session drift is the resolution floor"
+  },
+  "components": {
+    "netgen": {
+      "reps": [
+        2.966679207980633,
+        3.779390375013463,
+        2.0990683340933174,
+        1.7546309999888763,
+        1.8556380829541013
+      ],
+      "min": 1.7546309999888763,
+      "median": 2.0990683340933174,
+      "mean": 2.4910814000060784,
+      "stdev": 0.8639668591376377
+    },
+    "ssa_batch": {
+      "reps": [
+        1.2678038749145344,
+        0.7016209159046412,
+        0.5702230000169948,
+        0.5175192089518532,
+        0.6417826248798519
+      ],
+      "min": 0.5175192089518532,
+      "median": 0.6417826248798519,
+      "mean": 0.7397899249335751,
+      "stdev": 0.30332253819047916
+    },
+    "ode": {
+      "reps": [
+        0.6940665409201756,
+        0.2753228748915717,
+        0.2221688749268651,
+        0.18354250001721084,
+        0.2201169590698555
+      ],
+      "min": 0.18354250001721084,
+      "median": 0.2221688749268651,
+      "mean": 0.31904354996513573,
+      "stdev": 0.21218237954686223
+    },
+    "out_write": {
+      "reps": [
+        0.5738752910401672,
+        0.21803662495221943,
+        0.15733754192478955,
+        0.2789150000317022,
+        0.1871713330037892
+      ],
+      "min": 0.15733754192478955,
+      "median": 0.21803662495221943,
+      "mean": 0.2830671581905335,
+      "stdev": 0.16868574813592246
+    },
+    "py_import": {
+      "reps": [
+        0.6138234579702839,
+        0.21545854199212044,
+        0.16612145910039544,
+        0.1764144579647109,
+        0.18314112501684576
+      ],
+      "min": 0.16612145910039544,
+      "median": 0.18314112501684576,
+      "mean": 0.27099180840887127,
+      "stdev": 0.1925343421142565
+    },
+    "py_load": {
+      "reps": [
+        0.006984082981944084,
+        0.006621374981477857,
+        0.007159208063967526,
+        0.006182290962897241,
+        0.006721500074490905
+      ],
+      "min": 0.006182290962897241,
+      "median": 0.006721500074490905,
+      "mean": 0.006733691412955522,
+      "stdev": 0.0003743549198110451
+    }
+  },
+  "composite": {
+    "reps": [
+      1.4304709375649691,
+      1.3327725768391976,
+      0.8177719869348221,
+      0.7145005009614397,
+      0.7796670207753778
+    ],
+    "min": 0.7145005009614397,
+    "median": 0.8177719869348221,
+    "mean": 1.0150366046151613,
+    "stdev": 0.3384434786723808
+  },
+  "guards": {
+    "netgen_sha": "8eeb6a5f22e7e669b9761c410f11ecb33cd70efe328bd671f217ed02559ee47a",
+    "ssa_events": "{'iso': 26220439, 'ge': 7112990}",
+    "ode_digest": "{'models/isomerization.bngl': [16.666666666741378, 3.333333333258617], 'models/gene_expr_simple.bngl': [0.04966310167937632, 16.34128538482426], 'bench/fixtures/ode_many_functions.bngl': [22.564764708779347]}",
+    "out_write_hashes": "{'.cdat': 'ce4bdcf166568cfaa57834ea97c583c7d3453adcb85d1248a291ce3dcac26dff', '.gdat': 'e60440ee58b5a91efbfc24bf3838dd25aa3b58bccd6c673f7d83c595b986a35a'}",
+    "py_load_counts": "(48, 5, 6, 15, 23, 0, 0, 6)"
+  }
+}
