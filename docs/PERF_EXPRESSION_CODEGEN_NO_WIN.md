@@ -331,6 +331,35 @@ establish that the evaluator is cold on NFsim's rate-law path
     cmp traj_BASE_mmfix/expr_ode_small.gdat traj_B2/expr_ode_small.gdat
     -> GDAT BIT-IDENTICAL 228000114 B
 
+**The precondition that makes that hash meaningful**, which I had implied
+rather than shown. A hash guard is only evidence if the artifact is
+*deterministic* — otherwise an identical SHA-256 across two binaries is a
+coincidence, not a check. `swarmCache` put this precisely (they characterised
+their own fixtures at 25 reps and found `SHP2_base_model.bngl` producing 6
+distinct `.net` hashes across 25 baseline runs), so I ran the same test on mine
+before letting the claim stand — **same binary, two runs**:
+
+    shasum -a 256 det1/expr_ode_small.gdat det2/expr_ode_small.gdat
+    -> a27182ecb5f5451c08bc45677d3be6a36aefffb864a74b2ec96df3002bedd05b  (both)
+    wc -l det1/expr_ode_small.gdat det2/expr_ode_small.gdat
+    -> 4000002 each
+
+Identical, so the fixture is deterministic and the two-binary comparison is
+real evidence. It is deterministic by construction — a fixed-step ODE run with
+no RNG and no `simulate_ssa` — but "by construction" is an argument, and the
+two-run check is a measurement. **Establish this before quoting any hash
+guard**: the discriminator is whether the *fixture* is deterministic in the
+baseline, not whether the *change* is value-changing. On unseeded-SSA or
+container-scale fixtures a hash guard is invalid regardless, and a
+conservation or closed-form residual is the right instrument instead.
+
+This also bounds what my gate can be used for. Bit-identical output is evidence
+when a change is *supposed* to preserve values, and is exactly the wrong
+evidence when it is supposed to change them. Do not reuse this method as a
+gate on `sciPkPd`'s three-argument `Sat` correction or `correctness`'s batch-SSA
+seed derivation — both change values by design, and a diff there is the
+expected result, not a regression.
+
 **Test gate:** `ctest --test-dir build --output-on-failure -j4` ->
 `100% tests passed out of 461`, twice consecutively on the reverted tree. One
 earlier run reported `99% tests passed, 1 tests failed out of 461`, with
