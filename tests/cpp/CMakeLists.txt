@@ -125,6 +125,25 @@ target_link_libraries(test_ode_function_index PRIVATE
 )
 catch_discover_tests(test_ode_function_index)
 
+# test_pk_rate_laws — Sat/MM/Hill rate-law lowering against closed-form PK/PD laws.
+add_executable(test_pk_rate_laws test_pk_rate_laws.cpp)
+target_include_directories(test_pk_rate_laws PRIVATE
+    ${CMAKE_SOURCE_DIR}/cpp
+    ${CMAKE_SOURCE_DIR}/cpp/parser
+    ${CMAKE_SOURCE_DIR}/cpp/parser/generated
+    ${antlr4_runtime_SOURCE_DIR}/runtime/Cpp/runtime/src
+    ${sundials_SOURCE_DIR}/include
+    ${sundials_BINARY_DIR}/include
+)
+target_link_libraries(test_pk_rate_laws PRIVATE
+    Catch2::Catch2WithMain
+    Catch2::Catch2
+    bng_engine
+    bng_ast
+    antlr4_static
+)
+catch_discover_tests(test_pk_rate_laws)
+
 # Batched-SSA GPU backend registry: selection, naming, and fail-closed lookup.
 add_executable(test_gpu_batch_ssa_backend test_gpu_batch_ssa_backend.cpp)
 target_link_libraries(test_gpu_batch_ssa_backend PRIVATE
