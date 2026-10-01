@@ -1,32 +1,41 @@
-"""What a compartment seed MEANS under each method, stated exactly.
+"""What a compartment seed means, cross-checked against BNG2.
 
-`A()@V 100` seeds the raw simulation state with the number 100 whatever the
-compartment volume is. The number of MOLECULES that state denotes is then
-method-dependent, and the two methods do not agree unless V == 1:
+`A()@V 100` seeds the raw state with the number 100 whatever the compartment
+volume is, under BOTH methods, in BOTH engines:
 
-    under ssa the state is a MOLECULE COUNT    -> 100 molecules, any V
-    under ode the state is a CONCENTRATION      -> 100 * V molecules
+    BNG2 2.9.3  (perl bng2/BNG2.pl, method=>"ode" and method=>"ssa")
+        V=2.0   1 @V::A() 100
+        V=0.5   1 @V::A() 100
+        V=1.0   1 @V::A() 100
+    BNG3 6889fba  (binding path and CLI path)
+        state 100 for V = 2, 0.5, 1, 7, under ode and under ssa
 
-This is BNG2's convention (the ODE integrates concentrations, the SSA counts
-molecules), not a counting bug, and the repository states the seed rule itself
-at `models/Motivating_example_cBNGL.bngl:27` -- "initial species counts
-(extensive units: quantity, not concentration)".
+So neither engine applies the volume to a bare seed, and the two agree exactly.
+The volume factor that WOULD turn 100 into 100*V is a units conversion, and it
+is reachable only through a DECLARED concentration: `cpp/engine/
+NetworkGenerator.cpp:272-273` takes the `concentrationToItemAmount` branch only
+when `seed.declaredUnit` is present and `unit.dimension.length == -3` with zero
+time. A seed written `A()@V 100` with no `[M]`-style annotation never reaches
+it, and `cpp/units/Unit.hpp:122-125` and `docs/BNG3_UNITS.md:70-76` both say a
+concentration seed additionally needs a declared volume unit and a positive
+`NumberPerQuantityUnit` bridge.
 
-What is easy to get wrong, and what these tests pin, is the consequence:
-because the SSA count does NOT scale with V, switching `method=>"ode"` to
-`method=>"ssa"` on a model with a non-unit compartment describes a physically
-DIFFERENT system. At V=2, t=1, k=0.5 the ODE has 121.3 molecules and the SSA
-has 60.7 -- a factor of two, and they coincide only at V=1.
+The trap this file exists to close: a reader who sees a compartment volume and
+a state of 100 can multiply by V and conclude the SSA and the ODE disagree about
+how many molecules are present. Multiplying by V is the reader's inference, not
+something either engine does. An earlier draft of this file made exactly that
+error and asserted a divergence of z = -1755 that does not exist; the BNG2 run
+is what caught it, and the test that encoded it is deleted rather than kept.
 
-Everything asserted here is deterministic: at t=0 no reaction has fired, so
-the counts are exact integers and no Monte-Carlo error is involved. The one
-statistical check (the decay law) exists only to confirm the SSA treats the
-seed as a count rather than a concentration.
+What IS asserted here is only what the engines do: the stored state is the seed
+amount, it does not depend on V, it does not depend on the method, and the
+observable's group weight is 1. The SSA decay law confirms the seed is read as a
+count rather than a concentration, since `A(t) = Binomial(100, e^{-kT})` holds
+for every volume.
 
-NOTE ON SCOPE: these tests characterise BNG3's representation. They are not a
-claim that BNG2 agrees -- no BNG2 oracle is available in this checkout, and
-whether the convention is compatibility-preserving is an open question that a
-BNG2 run would settle.
+These are characterisation tests for BNG3's representation, matched against
+the BNG2 oracle above. They are not a claim that the two engines agree
+everywhere, only that they agree here.
 """
 
 import math
@@ -133,73 +142,23 @@ def test_ssa_counts_molecules_and_is_volume_independent(tmp_path):
             )
 
 
-def test_ode_state_is_a_concentration_so_molecules_scale_with_volume(tmp_path):
-    """Under ode the same 100 is a concentration, so the molecule count is 100*V.
+def test_a_bare_seed_is_never_treated_as_a_concentration(tmp_path):
+    """No `[M]` annotation, so the unit-aware branch cannot be taken.
 
-    This is the other half of the asymmetry, asserted on the deterministic
-    path where there is no sampling error to reason about.
+    `NetworkGenerator.cpp:264-266` returns the evaluated amount unchanged when
+    `seed.declaredUnit` has no value, and only calls
+    `concentrationToItemAmount` at `:272-278` for a declared length^-3 unit. A
+    bare seed must therefore read 100 in the ODE state too, at every volume --
+    which is what BNG2 does as well.
     """
     for vol in VOLUMES:
         model, net = _model(tmp_path, vol)
         ode = _cpp.simulate_ode(model, net, t_end=0.0, n_steps=1)
         conc = float(np.asarray(ode["concentrations"])[0][0])
-        assert (
-            conc * vol == 100 * vol
-        ), f"V={vol}: ODE concentration {conc} does not denote {100 * vol} molecules"
-        assert conc == 100.0
-
-
-def test_the_two_methods_describe_different_systems_unless_volume_is_one(tmp_path):
-    """The hazard, made explicit and quantified.
-
-    At a volume other than 1 the ODE and the SSA put different numbers of
-    molecules in the system. This is the reason the convention is worth
-    documenting rather than leaving implicit: a user who changes only the method
-    does not change only the noise.
-    """
-    q = math.exp(-K)
-    for vol in (2.0, 0.5, 7.0):
-        model, net = _model(tmp_path, vol)
-        ode = _cpp.simulate_ode(model, net, t_end=1.0, n_steps=2)
-        conc = float(np.asarray(ode["concentrations"])[-1][0])
-        ode_molecules = conc * vol
-        res = _cpp.simulate_batch_ssa_cpu(
-            model,
-            net,
-            batch_size=BATCH,
-            t_end=1.0,
-            n_steps=10,
-            threads=0,
-            base_seed=SEED,
+        assert conc == 100.0, (
+            f"V={vol}: ODE state is {conc}, expected the bare seed amount 100; "
+            "a declared-unit conversion appears to be firing without an annotation"
         )
-        nA = np.asarray(res["final_observables"], dtype=np.int64)[
-            :, list(res["observable_names"]).index("nA")
-        ]
-        var = 100 * q * (1 - q)
-        z = (nA.mean() - ode_molecules) / math.sqrt(var / BATCH)
-        assert abs(z) > Z_LIMIT, (
-            f"V={vol}: SSA {nA.mean():.1f} and ODE {ode_molecules:.1f} molecules "
-            f"agree, which should not happen for a volume other than 1 (z={z:+.2f})"
-        )
-    # ... and at V == 1 they agree, which is the whole content of the exception.
-    model, net = _model(tmp_path, 1.0)
-    ode = _cpp.simulate_ode(model, net, t_end=1.0, n_steps=2)
-    conc = float(np.asarray(ode["concentrations"])[-1][0])
-    res = _cpp.simulate_batch_ssa_cpu(
-        model,
-        net,
-        batch_size=BATCH,
-        t_end=1.0,
-        n_steps=10,
-        threads=0,
-        base_seed=SEED,
-    )
-    nA = np.asarray(res["final_observables"], dtype=np.int64)[
-        :, list(res["observable_names"]).index("nA")
-    ]
-    var = 100 * q * (1 - q)
-    z = (nA.mean() - conc) / math.sqrt(var / BATCH)
-    assert abs(z) < Z_LIMIT, f"V=1: SSA and ODE molecules should agree (z={z:+.2f})"
 
 
 def test_generated_network_stores_the_seed_amount_with_a_unit_group_weight(tmp_path):
@@ -218,3 +177,26 @@ def test_generated_network_stores_the_seed_amount_with_a_unit_group_weight(tmp_p
     # scipy is imported for the decay-law tests above; reference it so the
     # dependency is explicit rather than incidental.
     assert scipy_stats.binom.pmf(0, 1, 0.5) == pytest.approx(0.5)
+
+
+def test_bng2_stores_the_same_seed_amount_at_the_same_volumes(tmp_path):
+    """The oracle check, recorded as a test so the claim stays citable.
+
+    BNG2 2.9.3 writes `1 @V::A() 100` into its `.net` for V = 2, 0.5 and 1,
+    under `method=>"ode"` and again under `method=>"ssa"`. BNG3 writes the
+    same 100. The volumes are covered by the tests above; this records the
+    oracle result itself, because it is what disproved an earlier draft of this
+    file that asserted the two engines disagreed by a factor of V.
+
+    Not executed here: BNG2.pl is not a fixture in this repository, and
+    requiring perl plus a sibling checkout would make this test unrunnable for
+    everyone else. The command that produced it is in the PR body.
+    """
+    expected = {2.0: 100.0, 0.5: 100.0, 1.0: 100.0}
+    for vol, oracle_amount in expected.items():
+        model, net = _model(tmp_path, vol)
+        ssa = _cpp.simulate_ssa(model, net, t_end=0.0, n_steps=1, seed=SEED)
+        got = float(np.asarray(ssa["concentrations"])[0][0])
+        assert (
+            got == oracle_amount
+        ), f"V={vol}: BNG3 stores {got}, BNG2 2.9.3 stores {oracle_amount}"
