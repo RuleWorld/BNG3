@@ -1102,6 +1102,45 @@ def set_rate_mode(net: Network, rate_mode: str) -> Network:
     return net
 
 
+def _species_prefilter_key(
+    value: str,
+    molecule_name_aliases: tuple[tuple[str, str], ...],
+    apply_aliases: bool,
+) -> tuple:
+    """Necessary-condition key for :func:`species_isomorphic` on ``value``.
+
+    ``species_isomorphic`` can only return True when both graphs share the
+    ``(compartment, annotations)`` header and, after applying molecule-name
+    aliases to the reference side, the multiset of vertex labels paired with
+    vertex degrees (both are checked explicitly there, via the header equality
+    and the ``Counter((label, degree, color))`` equality).  When parsing fails
+    it falls back to normalized-string equality; because parsing is a function
+    of the normalized string, a parseable and an unparsable species can only
+    match when their normalized strings are equal — which makes both sides
+    unparsable.  The key therefore encodes exactly those necessary conditions:
+    two species with different keys are a pair ``species_isomorphic`` rejects.
+    """
+    graph = _parse_species_graph(value)
+    if graph is None:
+        return ("raw", _norm(value))
+    labels = graph.labels
+    if apply_aliases and molecule_name_aliases:
+        alias_map = dict(molecule_name_aliases)
+        labels = [
+            (
+                (label[0], alias_map[label[1]], *label[2:])
+                if label[0] == "molecule" and label[1] in alias_map
+                else label
+            )
+            for label in labels
+        ]
+    multiset = Counter(
+        (label, len(degree))
+        for label, degree in zip(labels, graph.adjacency)
+    )
+    return ("graph", graph.header, tuple(sorted(multiset.items())))
+
+
 def _species_index_mapping(
     ref: Network,
     test: Network,
@@ -1111,10 +1150,28 @@ def _species_index_mapping(
 
     reference_indices = list(ref.species_by_index)
     test_indices = list(test.species_by_index)
+
+    # Bucket test species by the prefilter key so species that cannot be
+    # isomorphic never reach species_isomorphic.  Bucket lists append in
+    # test_indices order, and the comprehension below keeps that order, so
+    # every candidates list — and therefore the Kuhn matching result — is
+    # identical to the unbucketed computation.
+    test_buckets: dict[tuple, list[int]] = {}
+    for test_index in test_indices:
+        test_buckets.setdefault(
+            _species_prefilter_key(test.species_by_index[test_index], (), False), []
+        ).append(test_index)
     candidates = {
         ref_index: [
             test_index
-            for test_index in test_indices
+            for test_index in test_buckets.get(
+                _species_prefilter_key(
+                    ref.species_by_index[ref_index],
+                    molecule_name_aliases,
+                    True,
+                ),
+                (),
+            )
             if species_isomorphic(
                 ref.species_by_index[ref_index],
                 test.species_by_index[test_index],
