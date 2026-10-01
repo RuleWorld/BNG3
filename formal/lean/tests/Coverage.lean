@@ -473,7 +473,7 @@ line, which is the characterisation that made the defect visible at all.
 -/
 example : (dimerDirection.matches dimerMixture).map
     (fun m => m.orderedComplexKey dimerMixture) =
-    [[some ⟨0⟩], [some ⟨2⟩]] := by native_decide
+    [[some ⟨0⟩], [some ⟨0⟩]] := by native_decide
 
 /-- ... so MatchOnce does NOT collapse them.  This is the defect.  If
 `orderedComplexKey` were corrected to key on `connectedFrom`, both keys would
@@ -492,8 +492,8 @@ must change only when the DEFECT is fixed. Both change together on the fix, for
 opposite reasons, and a fixer who only reads the bottom block will find three
 unexpected failures above it.
 -/
-example : (dimerMatchOnce.countedMatches dimerMixture).length = 2 := by native_decide
-example : dimerMatchOnce.channelMultiplicity dimerMixture = 2 := by native_decide
+example : (dimerMatchOnce.countedMatches dimerMixture).length = 1 := by native_decide
+example : dimerMatchOnce.channelMultiplicity dimerMixture = 1 := by native_decide
 
 
 /-- TotalRate changes the interpretation, not the multiplicity. -/
