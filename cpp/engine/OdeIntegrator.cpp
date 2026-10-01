@@ -2459,6 +2459,12 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     std::vector<std::size_t> depOffset(nSpecies_ + 1, 0);
     for (const auto& rxn : compiledRxns_) {
         for (const auto idx : rxn.reactantIndices) {
+            // Reactant indices are network species indices, so they are in
+            // [0, nSpecies_) — the same invariant the pre-existing ODE and
+            // SSA code relies on when it reads y[idx].  depOffset is sized
+            // nSpecies_ + 1 precisely so idx + 1 stays in range; assert the
+            // invariant where the index first crosses this new write.
+            assert(idx < nSpecies_);
             ++depOffset[idx + 1];
         }
     }
