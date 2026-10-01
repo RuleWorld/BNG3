@@ -448,12 +448,19 @@ if(BUILD_PYTHON_BINDINGS)
         bindings/bind_viz.cpp
     )
     target_link_libraries(_bionetgen_cpp PRIVATE bionetgen_core)
-    if(MINGW OR CMAKE_COMPILER_IS_GNUCXX)
-        # A shared Python extension cannot be linked with -static. Static
-        # compiler runtimes remain supported, but the module itself must stay
-        # dynamically loadable on Linux.
-        target_link_options(_bionetgen_cpp PRIVATE -static-libgcc -static-libstdc++)
-    endif()
+    # The extension links the C++ runtime dynamically, unlike the CLI
+    # executables (see CMAKE_EXE_LINKER_FLAGS in the top-level CMakeLists).
+    # Embedding a second copy of libstdc++ inside the module corrupts the
+    # host process whenever another loaded library also brings in
+    # libstdc++.so.6 -- SciPy's C++ extensions do exactly that. The two
+    # runtimes end up with independent locale facet tables, so an
+    # ostringstream dispatches a numeric format through the wrong facet and
+    # the process segfaults. Observed on Linux/GCC as a crash in
+    # bng::ast::Expression::toString() while inserting a double, with
+    # std::codecvt<char16_t>::do_length called from
+    # std::ostream::_M_insert<double> -- a call ostream cannot make without
+    # the facet mix-up. Reproduced by tests/test_batch_ssa_statistical_parity.py
+    # --mode cpu, which imports scipy.stats before generating a network.
     target_include_directories(_bionetgen_cpp PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/ast
