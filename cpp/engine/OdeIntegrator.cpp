@@ -2418,13 +2418,31 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
 
     // Compute initial propensities
     std::vector<double> propensities(compiledRxns_.size());
+    std::vector<double> prefixSums(compiledRxns_.size());
     double totalPropensity = 0.0;
+
+    // Reaction selection needs the first cumulative propensity that reaches
+    // the target.  Storing each running total while summing costs exactly the
+    // additions the total-propensity accumulation already performs, in the
+    // same order, so totalPropensity keeps its original bits.  If every rate
+    // constant is non-negative the prefix is non-decreasing and the first
+    // crossing can be found by binary search; a negative or non-finite rate
+    // constant falls back to a linear scan over the same prefix values, which
+    // reproduces the original cumulative scan exactly for any sign pattern.
+    bool monotonePrefix = true;
+    for (const auto& rxn : compiledRxns_) {
+        if (!(rxn.rateConstant >= 0.0)) {
+            monotonePrefix = false;
+            break;
+        }
+    }
 
     auto recomputePropensities = [&]() {
         totalPropensity = 0.0;
         for (std::size_t r = 0; r < compiledRxns_.size(); ++r) {
             propensities[r] = computePropensity(compiledRxns_[r], y);
             totalPropensity += propensities[r];
+            prefixSums[r] = totalPropensity;
         }
     };
 
@@ -2476,6 +2494,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         totalPropensity = 0.0;
         for (std::size_t r = 0; r < compiledRxns_.size(); ++r) {
             totalPropensity += propensities[r];
+            prefixSums[r] = totalPropensity;
         }
     };
 
@@ -2529,15 +2548,30 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
 
         // Select next reaction
         double r2 = uniform(rng);
-        double cumulative = 0.0;
         double target = r2 * totalPropensity;
         std::size_t selectedRxn = compiledRxns_.size();
 
-        for (std::size_t r = 0; r < compiledRxns_.size(); ++r) {
-            cumulative += propensities[r];
-            if (cumulative >= target) {
-                selectedRxn = r;
-                break;
+        if (monotonePrefix) {
+            // First index whose prefix sum reaches the target (binary search
+            // over a non-decreasing sequence: same first crossing the
+            // cumulative scan finds, including equal-value plateaus).
+            std::size_t lo = 0;
+            std::size_t hi = compiledRxns_.size();
+            while (lo < hi) {
+                const std::size_t mid = lo + (hi - lo) / 2;
+                if (prefixSums[mid] >= target) {
+                    hi = mid;
+                } else {
+                    lo = mid + 1;
+                }
+            }
+            selectedRxn = lo;
+        } else {
+            for (std::size_t r = 0; r < compiledRxns_.size(); ++r) {
+                if (prefixSums[r] >= target) {
+                    selectedRxn = r;
+                    break;
+                }
             }
         }
 
