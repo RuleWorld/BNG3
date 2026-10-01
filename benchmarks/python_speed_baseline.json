@@ -1,0 +1,28 @@
+[
+  {
+    "name": "import bionetgen (fresh subprocess)",
+    "min_ms": 270.45858406927437,
+    "median_ms": 562.8236250486225,
+    "max_ms": 1108.9412500150502,
+    "spread_ms": 838.4826659457758,
+    "n": 9
+  },
+  {
+    "name": "bionetgen --help (fresh subprocess)",
+    "min_ms": 262.09104200825095,
+    "median_ms": 303.9397499524057,
+    "max_ms": 331.5264160046354,
+    "spread_ms": 69.43537399638444,
+    "n": 9
+  },
+  {
+    "name": "atomizer sbml_to_bngl(gene_expr_sbml.xml) in-process",
+    "min_ms": 20.63525002449751,
+    "median_ms": 45.27025006245822,
+    "max_ms": 122.51000001560897,
+    "spread_ms": 101.87474999111146,
+    "n": 9,
+    "output_len": 2481,
+    "output_digest": 653932833754911164
+  }
+]
