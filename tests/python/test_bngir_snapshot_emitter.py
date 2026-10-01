@@ -342,26 +342,39 @@ def test_every_emitted_symbol_kind_is_in_the_schema_enum():
             )
 
 
-def test_symbol_kind_refusal_is_dormant_until_barriers_are_lowered():
-    """Pins WHY the barrier/population-type refusal cannot be tested today.
+def test_barrier_patterns_reach_the_snapshot_and_carry_no_illegal_symbol():
+    """Direct test, replacing the dormancy precondition this used to assert.
 
-    Neither symbol can reach `symbolKindName` on the Python parse path: a
-    barrier symbol only enters the table via barrier patterns
-    (cpp/compile/SymbolTable.cpp:52-59) and a population-type symbol only via
-    a population map (:60-66), and barrier patterns never reach the AST because
-    cpp/bindings/bind_parser.cpp:26-43 omits the
-    `finalizeThermodynamicMetadata()` call that
-    cpp/parser/BNGAstVisitor.cpp:2039 makes. thermoParse owns that fix.
+    This was a tripwire: it asserted `barrier_patterns == []` and failed with
+    "now needs a direct test" when barriers started arriving. They arrived --
+    PR #66 made `do_parse()` run the same `finalizeThermodynamicMetadata()`
+    step `parseModel` runs, so barrier patterns reach the AST on the Python
+    path for the first time. The tripwire fired and is replaced here.
 
-    Asserting the precondition rather than the refusal is the honest form: if
-    barriers start arriving, this fails and says the refusal now needs a
-    direct test, instead of the refusal being quietly untested forever.
+    What it asserts now, on the live path:
+      1. barriers really are present (so this is not vacuous), and
+      2. every symbol kind the emitter produces is inside the schema enum.
+
+    It does NOT trigger the symbolKindName refusal for
+    SymbolKind::BarrierPattern, because no expression in any fixture
+    references a barrier pattern AS A SYMBOL -- the barrier energy is a
+    parameter reference. So the refusal remains untriggerable today; what is
+    testable is that the live path does not need it. If a model ever does
+    reference one, the enum assertion below is what will fail first.
     """
+    schema = json.loads(SCHEMA_PATH.read_text())
+    allowed = set(schema["$defs"]["symbol"]["properties"]["kind"]["enum"])
+
     snapshot = _cpp._compiled_snapshot(_cpp.parse_string(BARRIER_FIXTURE))
-    assert snapshot["barrier_patterns"] == [], (
-        "barrier patterns now reach the AST: symbolKindName's refusal for "
-        "SymbolKind::BarrierPattern is reachable and needs a direct test"
+    assert snapshot["barrier_patterns"], (
+        "barrier patterns no longer reach the snapshot; PR #66 made this path "
+        "live and it should not silently stop carrying barriers"
     )
+    for symbol in collect_symbols(snapshot):
+        assert symbol["kind"] in allowed, (
+            f"live barrier path emitted symbol kind {symbol['kind']!r}, outside "
+            f"the schema enum {sorted(allowed)}"
+        )
 
 
 def test_population_map_snapshot_carries_no_illegal_symbol():
@@ -393,24 +406,33 @@ def test_population_map_snapshot_carries_no_illegal_symbol():
 
 
 def test_barrier_energy_is_a_resolved_expression_not_source_text():
-    """Whenever a barrier IS present, its energy must be an expression tree.
+    """A barrier's energy must serialize as a resolved expression TREE.
 
-    HONEST STATUS: this cannot fail against a current build, because
-    `barrier_patterns` is always empty on the Python parse path --
-    `cpp/bindings/bind_parser.cpp:26-43` omits the
+    This is now a live assertion, not a specification. It was written as a
+    dormancy note because `barrier_patterns` was always empty on the Python
+    parse path -- `cpp/bindings/bind_parser.cpp` omitted the
     `finalizeThermodynamicMetadata()` call that
-    `cpp/parser/BNGAstVisitor.cpp:2039` makes, so barrier patterns never
-    reach the AST. thermoParse owns that fix. Measured, not assumed:
-      ast.barrier_patterns       = 0   (the model declares one barrier)
-      snapshot barrier_patterns  = 0
+    `cpp/parser/BNGAstVisitor.cpp` makes. PR #66 closed that gap, so barriers
+    reach the emitter and the shape is checkable.
 
-    So this is a specification of intended behaviour that becomes meaningful
-    the moment barriers are lowered, NOT a passing gate. It is written so it
-    starts asserting something real on that day rather than sitting green over
-    an untested change.
+    It is also the regression test for a real defect: the emitter used to write
+    `CompiledBarrierFactor::energyExpression`, the printable BNGL text, while
+    `CompiledBarrierFactor::expression` -- a ResolvedExpression -- sat unused
+    beside it. A wire object required to hold resolved semantics must not carry
+    parser text, and the reader walks `expression` as a tree, so a bare string
+    was unusable there either.
+
+    The non-vacuity assertion matters as much as the shape check: a loop over
+    an empty `barrier_patterns` would pass on a build where barriers are
+    missing again, which is precisely the regression this file had.
     """
     snapshot = _cpp._compiled_snapshot(_cpp.parse_string(BARRIER_FIXTURE))
-    for barrier in snapshot["barrier_patterns"]:
+    barriers = snapshot["barrier_patterns"]
+    assert barriers, (
+        "no barriers in the snapshot: the emitter must carry barrier patterns "
+        "on the Python parse path now that PR #66 lowered them"
+    )
+    for barrier in barriers:
         assert isinstance(barrier["expression"], dict), (
             "barrier energy must serialize as a resolved expression object, "
             f"got {type(barrier['expression']).__name__}"
