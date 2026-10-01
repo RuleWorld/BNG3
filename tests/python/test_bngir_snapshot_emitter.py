@@ -22,10 +22,14 @@ import pytest
 
 import bionetgen
 
-pytest.importorskip("bionetgen._bionetgen_cpp")
-pytest.importorskip("jsonschema")
-
-from bionetgen.model import _cpp  # noqa: E402
+# These two imports must NOT be importorskip. This file's entire subject is
+# `_cpp._compiled_snapshot`, so an unimportable extension means the file tested
+# nothing while pytest exited 0. Measured on this tree after rebasing onto
+# origin/main: with the PR #48 conftest guard active, `sys.path` loses the
+# worktree's build/cpp and the extension is unimportable -- the file reported
+# "1 skipped" and passed. jsonschema is a genuinely optional validator, so that
+# one keeps importorskip.
+from bionetgen.model import _cpp  # noqa: E402  (hard dependency, see above)
 
 SCHEMA_PATH = (
     Path(__file__).parents[2] / "provenance" / "schemas" / "bngir-0.2.schema.json"
