@@ -738,7 +738,9 @@ Protocol.lean
   typed simulation/action protocol instead of string dispatch
 
 BNGIR.lean
-  structural semantic interchange envelope with no BNGL reparsing
+  structural semantic interchange envelope with no BNGL reparsing:
+  format-tag check, decode accepts exactly versions 0.1/0.2, fail-closed
+  feature gate mirroring Python `_FEATURES`, roundtrip/refusal theorems
 
 NFnextIR.lean
   checked semantic-ID -> compact NFnext packing, PatternIR-like lowering,

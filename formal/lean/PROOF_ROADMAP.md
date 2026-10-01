@@ -262,7 +262,9 @@ implementations:
 - safe whole-complex population conversion: IMPLEMENTED;
 - bounded species-pool network generation: IMPLEMENTED;
 - typed simulation protocol: IMPLEMENTED;
-- structural BNGIR v0.2 semantic envelope: IMPLEMENTED;
+- structural BNGIR v0.2 semantic envelope: IMPLEMENTED, extended to the
+  multi-version (0.1/0.2) decode contract with format check and fail-closed
+  feature gating;
 - standard Molecules/Species observable counting: IMPLEMENTED;
 - stochastic whole-rule multiplicity + MatchOnce/TotalRate distinction:
   IMPLEMENTED at the combinatorial-contract level;
