@@ -344,3 +344,22 @@ if(BUILD_BNGSIM_ADAPTER)
         Catch2::Catch2WithMain Catch2::Catch2 bng_engine)
     catch_discover_tests(test_bngsim_adapter)
 endif()
+
+# Byte format of the .gdat/.cdat numeric output loop (OdeIntegrator::writeOutputFiles)
+add_executable(test_gdat_output_format test_gdat_output_format.cpp)
+target_include_directories(test_gdat_output_format PRIVATE
+    ${CMAKE_SOURCE_DIR}/cpp
+    ${CMAKE_SOURCE_DIR}/cpp/parser
+    ${CMAKE_SOURCE_DIR}/cpp/parser/generated
+    ${antlr4_runtime_SOURCE_DIR}/runtime/Cpp/runtime/src
+    ${sundials_SOURCE_DIR}/include
+    ${sundials_BINARY_DIR}/include
+)
+target_link_libraries(test_gdat_output_format PRIVATE
+    Catch2::Catch2WithMain
+    Catch2::Catch2
+    bng_engine
+    bng_ast
+    antlr4_static
+)
+catch_discover_tests(test_gdat_output_format)
