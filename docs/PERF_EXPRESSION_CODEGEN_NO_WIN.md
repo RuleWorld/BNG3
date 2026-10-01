@@ -96,11 +96,37 @@ everything a scheduler does. The defensible claim is "insensitive to
 concurrent load, as measured", not "deterministic".
 
 **The generalisable rule.** Measure once with a cheap instrument to find a
-hypothesis, then re-measure with a *deterministic* one before believing it. If
+hypothesis, then re-measure with a deterministic one before believing it. If
 the two disagree, the cheap one is wrong — not the code, and not your reading
 of it. On this host the counters worth trusting are `instructions retired` and
 `cycles elapsed` from `/usr/bin/time -l`, plus allocation counts; wall clock
 needs 10%+ effects and interleaved reps to mean anything.
+
+**But that rule is incomplete, and `sciSignaling` supplied the missing half.**
+It reads as though the deterministic counter is the strong instrument. It is
+not — it is merely the *cheaper* strong instrument. Neither of the two I had
+can falsify on its own; both can only disagree, and disagreement requires
+something to disagree with.
+
+The stronger property is an instrument that needs **no oracle at all**, because
+it contradicts an invariant rather than another implementation.
+`sciSignaling`'s frozen-pool check is the model: set `kon=0` so a conserved
+pool at steady state is its own answer, and any number that is not the seed is
+wrong — no knowledge of the units convention required. The corollary matters
+more than the trick: *falsify cheaply and convention-free first, then use the
+expensive reference implementation only to establish what the correct value
+is.* Running the reference oracle first, as `sciStochastic` did, invites
+finding an agreement that is really two implementations sharing a convention.
+
+Applied honestly to this charge, the lesson is one I failed: my wall-clock
+"23.6%" was an agreement between a cheap instrument and my own expectation,
+with no invariant that could have refuted it independently. The instruction
+counter only settled it because it **disagreed** — which is not a guarantee,
+it is luck. Had the counter agreed too, I would have shipped a noise artifact
+with two instruments pointing the same way and neither able to say so. The
+counter caught this claim; it did not earn the right to catch the next one.
+An instrument is validated by agreeing with something you did not build, and
+better still by contradicting a claim built from nothing else.
 
 **What this counter is not yet.** It has exactly one independent validation,
 and it earned that by contradicting *me* — it rejected my own headline claim.
@@ -118,6 +144,15 @@ The second use of the counter is as a *gate* rather than a diagnostic: a
 candidate whose instruction count is unchanged has not changed its cost model,
 however good its disassembly looks. That check is cheap enough to run before
 any timing A/B, and it would have saved this entire charge's timing work.
+
+**The cheap falsifier I did not have.** A candidate's instruction count is
+unchanged, so its cost model is unchanged — that is a *gate* on claiming a win,
+not a substitute for one. To claim a win you still need a check that could
+have come out the other way on its own terms: a bit-exactness comparison
+against the baseline binary (the trajectory check above), an invariant that
+holds regardless of implementation, or an oracle. The counter's role is to
+stop you spending an hour on a change that cannot possibly help. It is not
+evidence that one did.
 
 ## The target and its disassembly evidence
 
