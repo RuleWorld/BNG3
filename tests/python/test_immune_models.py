@@ -49,22 +49,35 @@ def _bng_cpp() -> str | None:
     return candidate if Path(candidate).exists() else None
 
 
-requires_bng_cpp = pytest.mark.skipif(
-    _bng_cpp() is None, reason="bng_cpp not available (set BNG_CPP)"
-)
-
-
 def _require_bng_cpp() -> str:
+    """Return the binary, or FAIL.
+
+    These tests exist to check `bng_cpp`'s output.  If the binary is missing
+    then the subject is absent, and skipping would report success for a file
+    that never ran -- the silent-pass mechanism that has bitten several gates
+    tonight.  So an absent binary FAILS here rather than skipping, and the
+    message says which path was looked for.
+
+    `BNG2` is different and stays a genuine skip: it is an external oracle
+    that may legitimately be absent, and the non-oracle assertions below
+    already cover the same semantics.
+    """
     binary = _bng_cpp()
     if binary is None:
-        pytest.skip("bng_cpp not available (set BNG_CPP)")
+        looked_for = os.environ.get("BNG_CPP") or str(
+            REPO_ROOT / "build" / "cpp" / "bng_cpp"
+        )
+        raise AssertionError(
+            f"bng_cpp not found at {looked_for}. These tests check bng_cpp's "
+            "output, so an absent binary means nothing was exercised -- this is a "
+            "FAILURE, not a skip. Build it or set BNG_CPP."
+        )
     return binary
 
 
 def run_model(name: str, tmp_path: Path) -> Path:
     """Copy a model into ``tmp_path`` and run it; return the output directory."""
-    binary = _bng_cpp()
-    assert binary is not None
+    binary = _require_bng_cpp()
     source = MODELS / f"{name}.bngl"
     work = tmp_path / name
     work.mkdir()
@@ -95,7 +108,6 @@ def logistic(k: float, r: float, e0: float, t: float) -> float:
     return k / (1.0 + ((k - e0) / e0) * math.exp(-r * t))
 
 
-@requires_bng_cpp
 def test_clonal_expansion_follows_the_logistic_closed_form(tmp_path):
     work = run_model("clonal_expansion", tmp_path)
     rows = gdat(work / "clonal_expansion__ode.gdat")
@@ -112,7 +124,6 @@ def test_clonal_expansion_follows_the_logistic_closed_form(tmp_path):
     assert worst < 1e-6, f"max relative deviation {worst:.3e}"
 
 
-@requires_bng_cpp
 def test_the_clone_approaches_the_declared_capacity_without_exceeding_it(tmp_path):
     work = run_model("clonal_expansion", tmp_path)
     rows = gdat(work / "clonal_expansion__ode.gdat")
@@ -126,7 +137,6 @@ def test_the_clone_approaches_the_declared_capacity_without_exceeding_it(tmp_pat
     assert amounts[-1] > 0.9 * k
 
 
-@requires_bng_cpp
 def test_the_compartment_identity_total_equals_the_sum(tmp_path):
     """Total cells equal the sum of the compartments at every sampled step."""
     work = run_model("cytotoxic_killing", tmp_path)
@@ -139,7 +149,6 @@ def test_the_compartment_identity_total_equals_the_sum(tmp_path):
             assert abs((target + dead) - 1000.0) < 1e-6 * 1000.0
 
 
-@requires_bng_cpp
 def test_seeded_ssa_concentrates_near_the_deterministic_trajectory(tmp_path):
     """As counts grow the stochastic clone concentrates near the capacity."""
     work = run_model("clonal_expansion", tmp_path)
@@ -156,7 +165,6 @@ def test_seeded_ssa_concentrates_near_the_deterministic_trajectory(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@requires_bng_cpp
 def test_saturating_kill_flux_matches_its_exact_closed_form(tmp_path):
     """dT/dt = -Vmax*E/(Kh+E)*T integrates to T0*exp(-Vmax*E0*t/(Kh+E0)).
 
@@ -178,7 +186,6 @@ def test_saturating_kill_flux_matches_its_exact_closed_form(tmp_path):
         ), f"t={row[0]}: got {row[1]}, expected {expected}"
 
 
-@requires_bng_cpp
 def test_the_effector_pool_is_untouched_by_the_killing_reaction(tmp_path):
     """The closed form assumes E is constant; check it is, exactly."""
     work = run_model("cytotoxic_killing", tmp_path)
@@ -187,7 +194,6 @@ def test_the_effector_pool_is_untouched_by_the_killing_reaction(tmp_path):
         assert all(row[2] == 200.0 for row in rows)
 
 
-@requires_bng_cpp
 @pytest.mark.parametrize("effector", [20.0, 200.0, 2000.0])
 def test_kill_flux_saturates_in_the_effector_count(tmp_path, effector):
     """F(E) = Vmax*E/(Kh+E) must approach Vmax as E >> Kh.
@@ -247,7 +253,6 @@ end actions
 # ---------------------------------------------------------------------------
 
 
-@requires_bng_cpp
 def test_the_stimulus_is_exactly_linear_and_hits_the_threshold_on_time(tmp_path):
     """S(t) = S0 + a*t, so THETA is reached at t* = (THETA-S0)/a exactly."""
     work = run_model("exhaustion_switch", tmp_path)
@@ -261,7 +266,6 @@ def test_the_stimulus_is_exactly_linear_and_hits_the_threshold_on_time(tmp_path)
     assert abs(at_threshold[0] - (theta - s0) / a) < 1e-12
 
 
-@requires_bng_cpp
 def test_the_switch_fires_where_the_hill_threshold_predicts(tmp_path):
     """The conversion flux is kmem*Eff*Hill(1,THETA,n,S).
 
@@ -310,7 +314,6 @@ def test_the_switch_fires_where_the_hill_threshold_predicts(tmp_path):
     assert all(b >= a_ for a_, b in zip(memories, memories[1:]))
 
 
-@requires_bng_cpp
 def test_the_hill_rate_law_round_trips_through_the_generated_network(tmp_path):
     """The emitted rate law must name Hill with all three constants.
 
@@ -336,7 +339,6 @@ def test_the_hill_rate_law_round_trips_through_the_generated_network(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@requires_bng_cpp
 @pytest.mark.parametrize("suffix", ["ode", "ssa"])
 def test_antigen_is_conserved_at_every_sampled_step(tmp_path, suffix):
     """free + bound antigen == total, checked at every row, not only at t_end.
@@ -363,7 +365,6 @@ def test_antigen_is_conserved_at_every_sampled_step(tmp_path, suffix):
         assert worst == 0.0
 
 
-@requires_bng_cpp
 def test_the_binding_equilibrium_matches_the_quadratic_root(tmp_path):
     """Kd = koff/kon and mass balance give a closed form for the complex.
 
@@ -385,7 +386,6 @@ def test_the_binding_equilibrium_matches_the_quadratic_root(tmp_path):
     assert abs(rows[-1][3] - (r0 - x)) < 1e-6
 
 
-@requires_bng_cpp
 def test_the_generated_network_carries_both_split_rates(tmp_path):
     """The reversible rule must emit a forward and a distinct reverse reaction.
 
@@ -423,7 +423,6 @@ def test_the_generated_network_carries_both_split_rates(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@requires_bng_cpp
 def test_a_count_predicate_on_a_molecules_observable_returns_the_unfiltered_amount(
     tmp_path,
 ):
@@ -459,7 +458,6 @@ def test_a_count_predicate_on_a_molecules_observable_returns_the_unfiltered_amou
     )
 
 
-@requires_bng_cpp
 def test_species_count_predicates_still_work(tmp_path):
     """The supported counterpart must be untouched by the refusal.
 
@@ -506,7 +504,6 @@ def test_species_count_predicates_match_the_bng2_oracle(tmp_path):
 
     bng2_rows = gdat(work / "threshold_observable_species.gdat")
 
-    assert _require_bng_cpp() is not None
     mine = run_model("threshold_observable_species", tmp_path)
     bng3_rows = gdat(mine / "threshold_observable_species.gdat")
 
@@ -559,7 +556,6 @@ def test_molecules_count_predicate_matches_the_bng2_oracle(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@requires_bng_cpp
 def test_a_non_reactant_species_in_a_rate_law_carries_no_reactant_factor(tmp_path):
     """``Target() -> Dead() Vmax*E/(Kh+E)`` is per target, not per target*E.
 
