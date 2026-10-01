@@ -2464,6 +2464,12 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             // SSA code relies on when it reads y[idx].  depOffset is sized
             // nSpecies_ + 1 precisely so idx + 1 stays in range; assert the
             // invariant where the index first crosses this new write.
+            // Beyond the assertion, this bound was audited empirically over
+            // the repository's generated networks (perfOracle's audit, 2026-
+            // 09-30): 2,711 generated .net files, 792,960 reaction lines,
+            // max 1-based reactant index == nSpecies and zero references
+            // outside [1, nSpecies] in every file, so idx+1 never exceeds
+            // depOffset[nSpecies_].
             assert(idx < nSpecies_);
             ++depOffset[idx + 1];
         }
