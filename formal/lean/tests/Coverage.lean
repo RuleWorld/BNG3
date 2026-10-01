@@ -44,6 +44,25 @@ which name it explicitly.  `scripts/static_validate.py` additionally fails if
 this file is deleted or drops below its assertion floor, so it cannot rot into
 an unexecuted file the way an unrun test file otherwise would.
 
+## THIS FILE IS CURRENTLY EXPECTED TO FAIL
+
+The last block of this file asserts the INTENDED behaviour of `MatchOnce` for a
+symmetric dimer, and three of those assertions **fail today** against a known
+live defect in `formal/lean/BNG/Stochastic.lean` — `RuleMatch.orderedComplexKey`
+returns the first mapped MOLECULE ID where its docstring says the connected
+COMPLEX, so `MatchOnce` fires once per embedding instead of once per complex.
+Owner: `leanKernel`.
+
+So `lake env lean tests/Coverage.lean` exits non-zero, by design, with exactly
+3 errors. That is the correct state of the record: it makes `formal/lean` red
+while `Stochastic.lean` is wrong, rather than green and quietly wrong. The
+failing block carries its own banner naming the defect, the owning file, and
+the `grep` that locates it, so the reason is visible in the gate output and
+not only in a PR description.
+
+Every other assertion in this file passes. If the error count is not exactly 3,
+this header is stale.
+
 ## Content rules
 
 1. **No restatements.**  Re-proving a library theorem with a different variable
@@ -447,70 +466,6 @@ be `[some ⟨0⟩]` and this would be 1. -/
 example : (dimerMatchOnce.countedMatches dimerMixture).length = 2 := by native_decide
 example : dimerMatchOnce.channelMultiplicity dimerMixture = 2 := by native_decide
 
-/-! ### FAILING REGRESSION -- `RuleMatch.orderedComplexKey` keys on the wrong thing
-
-The two assertions above PIN THE BUG AS OBSERVED, so this file stays green while
-the defect exists. That is deliberate for a characterisation, but it means
-nothing FAILS on the defect, and a characterisation that nothing fails on is
-exactly what this file exists to replace.
-
-So the intended behaviour is asserted here as a separate, currently-failing
-block. It fails today and passes once `orderedComplexKey` keys on
-`Mixture.connectedFrom` instead of the first mapped molecule. It lives in
-`tests/`, not `BNG/Stochastic.lean`, because the semantics belong to
-leanKernel and this is the handoff: a red test that names the exact property,
-with the fixture and the expected value already measured.
-
-THE DEFECT, in one sentence: `orderedComplexKey` is documented (BNG/Stochastic.
-lean:30-37) as contributing "the connected complex containing its first mapped
-molecule", but returns `some first` — the molecule ID. Two embeddings of ONE
-physical species therefore get different keys whenever the species contains two
-or more molecules, `deduplicateMatchOnce` does not collapse them, and
-`MatchOnce` fires the channel hazard once per EMBEDDING instead of once per
-COMPLEX.
-
-Concretely, on `dimerMixture` above: A#0 and A#2 are bonded, so they are one
-species and one complex (`dimerMixture.sameComplex ⟨0⟩ ⟨2⟩ = true`, pinned at
-the top of this section). `A(x~u).A(x~u)` matches it two ways. Both keys should
-be the same complex, and `MatchOnce` should leave one channel.
-
-WHAT EACH ASSERTION BELOW WOULD ESTABLISH, once the fix lands:
-  * `orderedComplexKey` is invariant under which molecule the embedding picked
-    first -- the property its docstring already claims;
-  * `deduplicateMatchOnce` collapses the symmetric dimer to one match;
-  * `MatchOnce` channel multiplicity is 1, not 2, so the hazard is not doubled;
-  * and, as the regression guard against over-correction, a NON-symmetric pair
-    of matches is still NOT collapsed, so the fix cannot be "deduplicate
-    everything".
-
-The last one matters: a fix that simply makes `orderedComplexKey` a constant
-would make the first three pass and silently destroy the per-complex
-distinction that makes `MatchOnce` correct for the ordinary case.
-
-TO RUN THESE ALONE, without the rest of the file:
-    lake env lean tests/Coverage.lean
-Expect the four errors below and nothing else. They are the only failing
-assertions in this file.
--/
-
-/-- Both embeddings of the dimer must key to the SAME complex, because
-`dimerMixture.connectedFrom` is `[⟨0⟩, ⟨2⟩]` for either. Keys on molecule IDs,
-so they are `[some ⟨0⟩]` and `[some ⟨2⟩]` and this is false today. -/
-example : (dimerDirection.matches dimerMixture).map
-    (RuleMatch.orderedComplexKey dimerMixture) =
-    [[some ⟨0⟩], [some ⟨0⟩]] := by native_decide
-
-/-- `MatchOnce` must leave ONE channel for one physical species. Observed 2. -/
-example : (dimerMatchOnce.countedMatches dimerMixture).length = 1 := by native_decide
-
-/-- ...and therefore the hazard must not be doubled. Observed 2. -/
-example : dimerMatchOnce.channelMultiplicity dimerMixture = 1 := by native_decide
-
-/-- REGRESSION GUARD AGAINST OVER-CORRECTION. Two A molecules in two SEPARATE
-complexes are two genuinely distinct species, and `MatchOnce` must NOT collapse
-them -- otherwise the fix above would have made every match look identical.
-Observed 2, and 2 is correct here. -/
-example : matchOnceForward.channelMultiplicity doubledAMixture = 2 := by native_decide
 
 /-- TotalRate changes the interpretation, not the multiplicity. -/
 def totalRateForward : RuleDirection :=
@@ -1103,3 +1058,66 @@ example : provenanceA.text ≠ provenanceB.text := by native_decide
 the worked rule, not only on the product. -/
 example : reactantA.lower.nodes.length = reactantA.molecules.length := by native_decide
 example : reactantB.lower.nodes.length = reactantB.molecules.length := by native_decide
+
+/-! ###########################################################################
+# EXPECTED FAILURE -- 3 assertions below fail against a KNOWN LIVE DEFECT.
+#
+#   THIS FILE IS EXPECTED TO EXIT NON-ZERO until BNG/Stochastic.lean is fixed.
+#   That is the correct state of the record, not an authoring accident.
+#
+# THE DEFECT (owner: leanKernel; file: formal/lean/BNG/Stochastic.lean):
+#   `RuleMatch.orderedComplexKey` (BNG/Stochastic.lean:38) is documented as
+#   contributing "the connected complex containing its first mapped molecule",
+#   but returns `some first` -- the molecule ID.
+#
+# TO LOCATE IT:
+#   grep -n "orderedComplexKey" formal/lean/BNG/Stochastic.lean
+#   sed -n '38,42p' formal/lean/BNG/Stochastic.lean
+#
+# WHY IT MATTERS: two embeddings of ONE physical species get different keys
+# whenever that species has two or more molecules, so `deduplicateMatchOnce`
+# does not collapse them and `MatchOnce` fires the channel hazard once per
+# EMBEDDING rather than once per COMPLEX.
+#
+# ON THE SYMMETRIC DIMER (`dimerMixture`, defined in the Stochastic section
+# above): A#0 and A#2 are bonded, hence one complex and one species;
+# `A(x~u).A(x~u)` matches it two ways. Observed keys are `[some 0]` and
+# `[some 2]`, so `MatchOnce` multiplicity is 2 where it must be 1.
+#
+# EXPECTED OUTPUT of `lake env lean tests/Coverage.lean`:
+#   3 errors, at the three assertions marked [FAILS TODAY] below, and NO others.
+#   If the count changes, THIS comment is stale -- update it.
+#
+# TO RUN THESE ALONE:
+#   lake env lean tests/Coverage.lean 2>&1 | grep -c "FAILS TODAY\|: error:"
+#
+# WHEN THEY PASS, `grep -c "FAILS TODAY" tests/Coverage.lean` is 3 and this whole
+# banner plus the three markers should be replaced by ordinary assertions, so a
+# later reader is not told to expect a failure that no longer happens.
+#
+# This block lives at the END of the file so it cannot be mistaken for a
+# mid-file authoring accident, and it deliberately GATES CI: hiding it would
+# make formal/lean green while BNG/Stochastic.lean is wrong.
+# ########################################################################### -/
+
+/-- [FAILS TODAY] Both embeddings of the dimer must key to the SAME complex,
+because `dimerMixture.connectedFrom` is `[0, 2]` either way. Observed
+`[some 0]` and `[some 2]`, because the key is a molecule ID. -/
+example : (dimerDirection.matches dimerMixture).map
+    (RuleMatch.orderedComplexKey dimerMixture) =
+    [[some ⟨0⟩], [some ⟨0⟩]] := by native_decide
+
+/-- [FAILS TODAY] `MatchOnce` must leave ONE channel for one physical species.
+Observed 2. -/
+example : (dimerMatchOnce.countedMatches dimerMixture).length = 1 := by native_decide
+
+/-- [FAILS TODAY] ...and therefore the hazard must not be doubled. Observed 2. -/
+example : dimerMatchOnce.channelMultiplicity dimerMixture = 1 := by native_decide
+
+/-- PASSES TODAY, AND IT IS THE ONE THAT GUARDS AGAINST OVER-CORRECTION.
+Two A molecules in two SEPARATE complexes are two genuinely distinct species,
+and `MatchOnce` must NOT collapse them. Without this assertion a fix that made
+`orderedComplexKey` a constant would satisfy the three above while destroying
+the per-complex distinction that makes `MatchOnce` correct in the ordinary
+case -- a test suite that pins a bug instead of pinning behaviour. -/
+example : matchOnceForward.channelMultiplicity doubledAMixture = 2 := by native_decide
