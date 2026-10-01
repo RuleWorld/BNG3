@@ -460,23 +460,29 @@ and both are recorded here rather than left for a reader to trip over:
    from a clean tree, and the earlier failures remain unexplained.** An
    unexplained failure that stopped reproducing is not a diagnosis.
 
-   **And `main` does not compile — which is a separate and more serious fact
-   than a configure failure.** A configure that reaches green says nothing
-   about compilation, and right now the production file is broken: at
-   `f7804ac`, `cpp/engine/OdeIntegrator.cpp:2102` calls
-   `batchTrajectorySeed(base, traj)`, `engine/BatchSsa.hpp` is included at
-   line 21, and `inline uint64_t batchTrajectorySeed` is declared in **no** file
+   **`main` briefly did not compile; that is now repaired.** A configure that
+   reaches green says nothing about compilation, and at `9259a3d` the production
+   file was broken independently: `cpp/engine/OdeIntegrator.cpp:2102` called
+   `batchTrajectorySeed(base, traj)`, `engine/BatchSsa.hpp` was included at
+   line 21, and `inline uint64_t batchTrajectorySeed` was declared in **no** file
    under `cpp/` —
 
-       git show origin/main:cpp/engine/OdeIntegrator.cpp | grep -c batchTrajectorySeed   -> 2
-       git show origin/main:cpp/engine/BatchSsa.hpp      | grep -c "inline uint64_t batchTrajectorySeed" -> 0
+       git show 9259a3d:cpp/engine/OdeIntegrator.cpp | grep -c batchTrajectorySeed        -> 2
+       git show 9259a3d:cpp/engine/BatchSsa.hpp      | grep -c "inline uint64_t batchTrajectorySeed" -> 0
 
-   so every build fails with *"use of undeclared identifier
-   `batchTrajectorySeed`"*. Reported by `thermoParse` in the test file,
-   reproduced independently by `correctness` and `swarmCache` (the latter with
-   a `-fsyntax-only` compiler artifact rather than agreement on a grep), root
-   cause a cherry-pick that landed the call site without the header hunk.
-   `correctness` owns both files and is landing the repair.
+   so every build failed with *"use of undeclared identifier
+   `batchTrajectorySeed`"*. Reported by `thermoParse` in the test file and
+   reproduced independently by `correctness`, `swarmCache` and `swarmMemory`;
+   root cause a cherry-pick that landed the call site without the header hunk.
+   **`correctness` owns both files and the repair has landed** — on current
+   `main`, `git show origin/main:cpp/engine/BatchSsa.hpp | grep -c "inline uint64_t batchTrajectorySeed"`
+   returns 1. `swarmCache` supplied the `-fsyntax-only` compiler artifact for
+   the break and `sciStochastic` ran the same free instrument against the fix
+   branch (`8ce9d1f`, 0 errors, 0.9 s) — until that, only the author had
+   established that the repair works, and a fix nobody has run is an intention.
+   Note the instrument point: that command compiles nothing, costs nothing, and
+   settled in under a second what three agreeing greps, a fresh configure and a
+   slot request had left open for twenty minutes.
 
    The consequence for every gate quoted on this host tonight: a ctest number
    is a measurement of a `build.ninja`, and one produced after `9259a3d` cannot
