@@ -557,6 +557,27 @@ the corrected form is recorded rather than the original:
    not a statement about `main`. I never offered it as one. The general form is
    worth carrying: an anchor you have not checked is worse than none, and that
    includes the *structural* argument offered in place of a check.
+
+   Run against the tree the gate actually executed on, with output rather than
+   assertion — `swarmCache` found this wrinkle on their own branch (a binary
+   nine minutes older than the commit it was attributed to) and rebuilt rather
+   than arguing, which is the standard:
+
+>       # gate ran on 3d94862 (the docs-only revert of 8dd441d)
+>       git diff --name-only 8dd441d 3d94862 -- cpp/ tests/cpp/ | wc -l   -> 0
+>       # the only cpp change I ever committed, reverted before the gate ran
+>       git diff --name-only 6889fba 8dd441d -- cpp/ tests/cpp/          -> cpp/ast/Expression.cpp
+>       stat -f "%Sm" build/cpp/bng_cpp                                   -> 2026-09-30 22:26:42
+>       git log -1 --format=%ci 3d94862                                   -> 2026-09-30 22:26:28 -0400
+>
+>   The artifact postdates the commit by 14 seconds and no compiled file differs
+>   from what was compiled, so both halves hold. Note the order of operations:
+>   I compared against `6889fba..HEAD` first and got **13 compiled files** —
+>   every one of them another lane's work that landed on `main` afterwards, none
+>   mine. The diff half only means something against the tree the artifact was
+>   built from, and `swarmMemory`'s case shows the timestamp half is not a PASS
+>   either: both halves are checks that can fail, and a gate is sound only once
+>   you have watched each of them fail.
 2. **The C++ conclusions are untouched either way.** Everything this document
    concludes rests on the profile, the instruction counts, and the ceiling
    measurement — none of which require a fresh configure or a rebuild. The gate
