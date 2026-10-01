@@ -137,6 +137,81 @@ def test_sir_conserves_the_total_population_exactly(tmp_path, rate, beta):
     assert _max_population_defect(rows, N) < 1e-8
 
 
+_COMPARTMENTAL = """begin parameters
+  N     1000
+  beta  {beta}
+  gamma {gamma}
+  vol   {V}
+end parameters
+begin compartments
+  cell 3 {V}
+end compartments
+begin species
+  S()@cell 900
+  I()@cell 1
+  R()@cell 0
+end species
+begin reactions
+  S()@cell + I()@cell -> I()@cell + I()@cell {rate}
+  I()@cell -> R()@cell gamma
+end reactions
+begin observables
+  S S()@cell
+  I I()@cell
+  R R()@cell
+end observables
+begin actions
+  simulate({{method=>"{method}",t_end=>{t_end},n_steps=>{n}{extra}}})
+end actions
+"""
+
+
+@pytest.mark.parametrize("method", ["ode", "ssa"])
+@pytest.mark.parametrize("V", ["1", "100"])
+def test_a_bare_compartmental_seed_is_a_volume_independent_molecule_count(
+    tmp_path, method, V
+):
+    # A seed written without a unit annotation (`S()@cell 900`) is a MOLECULE
+    # COUNT: the same numbers seed the same population whatever the
+    # compartment's volume.  This is the fact the whole units story rests on,
+    # and it is the opposite of the volume dependence a bare seed would have
+    # if it were a concentration (which would seed 900*V).
+    #
+    # Conservation is checked too, because that is the invariant that makes the
+    # reading unambiguous: whatever the units, S+I+R is stoichiometrically
+    # conserved, and it equals the sum of the seed values.
+    #
+    # NOTE WHAT IS *NOT* PINNED HERE: the volume dependence of the bimolecular
+    # rate law.  BNG3's propensity for `A + B` in a declared compartment is
+    # k*n_A*n_B/V (measured: I(t=0.1) matches exp((beta*S0/V - gamma)*t) to 8
+    # significant figures at V = 1, 2, 10, 100), so the effective R0 of a
+    # compartmental epidemic scales as 1/V.  That is the standard mass-action
+    # units convention rather than a demonstrated defect -- BNG2 parity was NOT
+    # established, see the PR -- so pinning it here would re-pin behaviour that
+    # is still legitimately in question.
+    extra = "" if method == "ode" else ",batch_size=>4000,seed=>31"
+    t_end, n = (0.1, 200) if method == "ode" else (0.1, 1)
+    gdat, _ = _run(
+        tmp_path,
+        f"comp_{method}_{V}",
+        _COMPARTMENTAL.format(
+            beta=0.1,
+            gamma=0.1,
+            V=V,
+            rate="beta",
+            method=method,
+            t_end=t_end,
+            n=n,
+            extra=extra,
+        ),
+    )
+    # The initial state is the seed, unchanged, at every volume.
+    assert gdat[0][1:] == [900.0, 1.0, 0.0]
+    # And conservation holds to solver precision.
+    for _, s, i, r in gdat:
+        assert s + i + r == pytest.approx(901.0, abs=1e-8)
+
+
 @pytest.mark.parametrize(
     "rate,beta,expected_r0",
     [
