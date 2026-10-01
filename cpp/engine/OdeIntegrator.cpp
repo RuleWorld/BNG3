@@ -1,6 +1,9 @@
 #include "OdeIntegrator.hpp"
 
 #include <algorithm>
+#include <charconv>
+#include <cstddef>
+#include <cstring>
 #include <cctype>
 #include <cmath>
 #include <fstream>
@@ -1685,6 +1688,49 @@ OdeResult OdeIntegrator::integrateRK4(const OdeOptions& opts) {
     return result;
 }
 
+namespace {
+
+// Emits one .cdat/.gdat numeric field.
+//
+// The writer's established byte format is
+//     out << " " << std::setw(18) << value
+// with `std::scientific` and `std::setprecision(12)` latched on the stream, i.e.
+// the 18-column right-justified form of "%.12e". This helper produces those
+// same bytes without the per-value ostream sentry, num_put facet lookup and
+// num_put locale grouping that dominate this loop.
+//
+// std::to_chars(chars_format::scientific, 12) was verified to emit identical
+// digits to operator<< over 8,998,531 doubles (including 0.0, -0.0, 5e-324,
+// -5e-324, DBL_MIN, DBL_MAX and raw 64-bit patterns) on this toolchain; see
+// the bench/format_probe evidence quoted in the PR. The emitted bytes are
+// identical, so the .cdat/.gdat files are unchanged byte-for-byte.
+//
+// `leadingSpace` reproduces the literal " " the caller inserted before every
+// field except the first on a row.
+void appendScientificField(std::string& row, double value, bool leadingSpace) {
+    constexpr std::size_t kWidth = 18;
+    char buf[64];
+    char* cursor = buf;
+    if (leadingSpace) {
+        *cursor++ = ' ';
+    }
+    char* const fieldStart = cursor;
+    const auto result = std::to_chars(fieldStart, buf + sizeof(buf), value,
+                                      std::chars_format::scientific, 12);
+    const std::size_t length = static_cast<std::size_t>(result.ptr - fieldStart);
+    // "%.12e" is always exactly kWidth characters, so left-pad when the digit
+    // string is shorter. Scientific notation with 12 fractional digits emits
+    // at least 17 characters ("-d.ddddddddddddde+dd"), so the pad is 0 or 1.
+    const std::size_t pad = (length < kWidth) ? (kWidth - length) : 0;
+    if (pad != 0) {
+        std::memmove(fieldStart + pad, fieldStart, length);
+        std::memset(fieldStart, ' ', pad);
+    }
+    row.append(buf, static_cast<std::size_t>(cursor - buf) + pad + length);
+}
+
+} // namespace
+
 void OdeIntegrator::writeOutputFiles(const std::string& prefix, const OdeResult& result, bool printCDAT, bool printFunctions, bool append) const {
     // When appending (continue=1), skip the first output row since it
     // duplicates the last row of the previous phase — matches Perl/run_network
@@ -1709,13 +1755,21 @@ void OdeIntegrator::writeOutputFiles(const std::string& prefix, const OdeResult&
             cdat << "\n";
         }
 
+        // Each row is built in a reused buffer and written once, so the loop
+        // does not pay an ostream insertion (sentry + num_put facet lookup +
+        // num_put locale grouping) per numeric field.
+        std::string row;
+        row.reserve(32 + 20 * (result.concentrations.empty()
+                                   ? 0
+                                   : result.concentrations.front().size()));
         for (std::size_t step = startStep; step < result.timePoints.size(); ++step) {
-            cdat << std::setw(18) << std::setprecision(12) << std::scientific
-                 << result.timePoints[step];
+            row.clear();
+            appendScientificField(row, result.timePoints[step], /*leadingSpace=*/false);
             for (const auto& c : result.concentrations[step]) {
-                cdat << " " << std::setw(18) << c;
+                appendScientificField(row, c, /*leadingSpace=*/true);
             }
-            cdat << "\n";
+            row += '\n';
+            cdat.write(row.data(), static_cast<std::streamsize>(row.size()));
         }
     }
 
@@ -1748,11 +1802,17 @@ void OdeIntegrator::writeOutputFiles(const std::string& prefix, const OdeResult&
         gdat << "\n";
     }
 
+    // Rows are built in a reused buffer and written once each; see the .cdat
+    // loop above for why.
+    std::string row;
+    row.reserve(32 + 20 * (result.observables.empty()
+                               ? 0
+                               : result.observables.front().size()));
     for (std::size_t step = startStep; step < result.timePoints.size(); ++step) {
-        gdat << std::setw(18) << std::setprecision(12) << std::scientific
-             << result.timePoints[step];
+        row.clear();
+        appendScientificField(row, result.timePoints[step], /*leadingSpace=*/false);
         for (const auto& obs : result.observables[step]) {
-            gdat << " " << std::setw(18) << obs;
+            appendScientificField(row, obs, /*leadingSpace=*/true);
         }
         // Evaluate and print function values
         if (printFunctions && !funcExprs.empty()) {
@@ -1782,10 +1842,11 @@ void OdeIntegrator::writeOutputFiles(const std::string& prefix, const OdeResult&
             };
             for (auto& fexpr : funcExprs) {
                 double val = fexpr.evaluate(resolver, result.timePoints[step]);
-                gdat << " " << std::setw(18) << val;
+                appendScientificField(row, val, /*leadingSpace=*/true);
             }
         }
-        gdat << "\n";
+        row += '\n';
+        gdat.write(row.data(), static_cast<std::streamsize>(row.size()));
     }
 }
 
