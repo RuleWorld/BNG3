@@ -1156,8 +1156,25 @@ void OdeIntegrator::compileGroups() {
                     if (valid) ++matchCount;
                 }
 
-                // Apply quantifier filter if present
-                if (parsedPattern.hasQuantifier) {
+                // Apply quantifier filter if present.
+                //
+                // BNG2 honours a stoichiometric comparison only for `Species`
+                // observables. Perl2/Observable.pm tests `$patt->Quantifier`
+                // solely inside the `Type eq "Species"` branch (lines 278-292);
+                // the `Molecules` branch (lines 241-256) accumulates raw match
+                // counts and never inspects the quantifier at all. So in BNG2
+                // `Molecules Q A()>5` and `Molecules Q A()` are the same
+                // observable, and the threshold is inert rather than an error.
+                //
+                // Applying it to `Molecules` here is what produced the wrong
+                // zero: `matchCount` is the number of pattern EMBEDDINGS in the
+                // species graph, not a molecule count, so `A()>5` against one
+                // species `A()` holding 10 molecules compared 1 > 5 and
+                // discarded the contribution. Matching BNG2 means gating the
+                // filter on the observable type; the `Species` path below it is
+                // unchanged and already agrees with BNG2 term for term.
+                if (parsedPattern.hasQuantifier &&
+                    observable.getType() == "Species") {
                     bool passes = false;
                     const int matchCountInt = static_cast<int>(matchCount);
                     if (parsedPattern.quantifier == ">") passes = matchCountInt > parsedPattern.quantifierThreshold;
@@ -2076,9 +2093,14 @@ OdeResult OdeIntegrator::integrateBatchSSA(const OdeOptions& opts) {
             OdeOptions trajOpts = opts;
             trajOpts.batchSize = 0;
             for (std::size_t traj = lo; traj < hi; ++traj) {
-                // Each trajectory gets a unique seed derived from base seed + traj index.
+                // Each trajectory gets its own decorrelated seed. See
+                // batchTrajectorySeed in engine/BatchSsa.hpp for why this is a
+                // hash of (base, traj) rather than base + traj, and why it must
+                // match the GPU backends' derivation exactly.
                 const unsigned int base = (opts.seed == 0) ? 1u : opts.seed;
-                trajOpts.seed = static_cast<unsigned int>(base + traj);
+                trajOpts.seed = static_cast<unsigned int>(
+                    batchTrajectorySeed(base, traj) & 0xFFFFFFFFULL);
+                trajOpts.seed = trajOpts.seed == 0u ? 1u : trajOpts.seed;
                 OdeResult r = localInt.integrate(trajOpts);
                 locEvents += r.eventCount;
                 for (std::size_t t = 0; t < std::min(T, r.timePoints.size()); ++t) {
