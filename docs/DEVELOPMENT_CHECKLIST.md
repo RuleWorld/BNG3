@@ -20,7 +20,8 @@ from a prior head.
 ## Local verification that actually works
 
 ```bash
-# policy / contract gates (exactly what the `lint` job runs)
+# policy / contract gates (the subset the `lint` job runs; lint also runs
+# Black, Ruff, and the golden-manifest loop over provenance/golden/)
 python scripts/validate_provenance.py            # the call CI makes
 python scripts/validate_corpus_manifest.py
 python scripts/generate_corpus_manifest.py --check
@@ -46,8 +47,31 @@ python -m pytest tests/python -q
 ```
 
 Two caveats, recorded rather than hidden: the strict provenance call fails (13
-errors, and no job runs it), and `tests/validation/` is a CI gate for exactly
-one module — `test_parity_nfsim.py`.
+errors at `6889fba`, re-run 2026-09-30, and no job runs it), and
+`tests/validation/` is a *pytest* CI gate for exactly one of its test modules —
+`test_parity_nfsim.py`. The lint job also runs that directory's non-test CLI
+module (`python -m tests.validation.exception_ledger`, `ci.yml:68`), and the
+corpus jobs import `tests/validation/compare.py` through `validate.py`
+(`scripts/validate.py:28`).
+
+**Editable-install hazard (verified 2026-09-30 at `6889fba`).** `bionetgen`
+is installed as a scikit-build editable whose meta_path finder
+(`_editable_skbc_bionetgen`) beats `sys.path`, so from *any* worktree
+`import bionetgen` resolves to the shared main tree —
+`python -c "import bionetgen; print(bionetgen.__file__)"` printed
+`/Users/akutuva/Documents/BioNetGen/BNG3/python/bionetgen/__init__.py` while
+standing in a sibling worktree, and `PYTHONPATH` loses to the finder. Before
+quoting any Python-suite result, print the resolved path
+(`UNDER TEST: <path>`), then either strip the `_editable_skbc_*` finders and
+any `BioNetGen` entry from `sys.path` in favour of your worktree's `python/`,
+or state in the report which tree was exercised. The compiled extension has
+the same problem in snapshot form: `bionetgen._bionetgen_cpp` resolved to the
+editable install's copy at
+`site-packages/bionetgen/_bionetgen_cpp.cpython-314-darwin.so` (installed
+2026-09-29 15:10 from the shared worktree's build, and stale relative to
+`75b22a7`), not to anything this worktree built. A worktree that did not build
+and install its own extension has exercised the shared snapshot's C++, not its
+own.
 
 ---
 
@@ -59,7 +83,8 @@ regression.
 
 A reviewer's finding was half right. Function-definition bodies leaking raw
 hyphenated ids was measured at `6dc41b6` and does not describe `main`:
-`bngl_function` pre-passes at `writer.py:152-154`, and `2370586` routed
+`bngl_function` pre-passes its body through `_standardize_declared_id_runs`
+(`writer.py:152`, called at `writer.py:1038`), and `2370586` routed
 assignment-rule bodies through the same pre-pass. The finding was real for the
 commit it was measured at, and stale for the tree.
 
@@ -74,7 +99,13 @@ model.
 
 **Habit.** Before quoting a number, open the harness and confirm it ran the
 thing it claims to run. Before accepting a finding, find the commit it was
-measured at.
+measured at. A statistical gate's binning is part of the number: pooling
+well-populated cells alongside sparse ones re-weights a chi-square and can
+move a good sample's p-value by orders of magnitude, so the committed gates
+pool only cells below a five-expected-count floor
+(`tests/test_batch_ssa_statistical_parity.py:101-104`, convention recorded in
+`docs/VALIDATION_EVIDENCE.md` §1) and a p-value is quotable only together with
+its binning.
 
 ## 2. The documentation is a history, not a state
 
@@ -85,10 +116,19 @@ now." An audit of it line by line found most open boxes stale — the
 pending provenance errors" (it is 13), "the eight SBML constructs are all
 unlowered" (all are lowered or governed).
 
-`docs/CI_PARITY.md:110-112` overstates strictness today: it says the corpus jobs
-"are strict and must report zero skipped fixtures", but
-`BNG3_CI_STRICT_ORACLES` is set at `parity.yml:24` and nowhere else, so a
-missing oracle in the `ci.yml` validation job is a skip.
+The old `docs/CI_PARITY.md:110-112` said the corpus jobs "are strict and must
+report zero skipped fixtures" without naming a mechanism, and this checklist
+then "corrected" it with a false one — that a missing oracle in the `ci.yml`
+validation job is a skip. Read the code: that job passes `--strict-references`
+(`ci.yml:398-400`), so a missing reference `.net` is an ERROR
+(`scripts/validate.py:227-229`), and it passes no exclusion profile, so no skip
+path can trigger — pinned by `tests/test_ci_contract.py:613-631`.
+`BNG3_CI_STRICT_ORACLES`, set only at `parity.yml:24`, is read solely by the
+pytest gates `parity.yml` runs (`tests/validation/strict.py:10-17`);
+`validate.py` never reads it, and its exit code would pass a skip regardless
+(`scripts/validate.py:516-517`). The outcome claim was right for reasons
+nobody had written down, and the gloss that "fixed" it was wrong.
+`docs/CI_PARITY.md:109-132` now records the per-workflow mechanics.
 
 **Habit.** Read the code, not the doc. Check the SHA a claim was measured at
 before treating it as current, and check that a `file:line` still points at the
@@ -176,7 +216,7 @@ The `A B` case is the same shape: a `<ci>` body that is not an id at all,
 ambiguous only with multiplication, and no spelling test disambiguates it.
 Widening the identifier class would reintroduce the `6dc41b6` defect.
 
-**Habit.** Reproduce first, then fix (`AGENTS.md:36`). If you cannot produce the
+**Habit.** Reproduce first, then fix (`AGENTS.md:143`). If you cannot produce the
 reproducer, the item belongs in `docs/VALIDATION_EVIDENCE.md` §2 with the
 command that would settle it — not in a diff.
 

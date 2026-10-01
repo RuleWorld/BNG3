@@ -106,12 +106,29 @@ all four wheel jobs before this packaging repair is treated as validated.
 
 - Oracle revisions must be full lowercase Git SHAs from the provenance lock.
 - A checkout is detached at the locked revision and must be clean.
-- `BNG3_CI_STRICT_ORACLES=1` turns missing engines and empty oracle output into
-  failures in hosted parity jobs; broader parity jobs may retain explicit,
-  classified setup skips, while the full-corpus `ci.yml` and weekly validation
-  jobs are strict and must report zero skipped fixtures.
-- Missing engines, missing output, comparison errors, and unexpected skips fail
-  the claimed parity job; summaries include source revisions and executable
-  digests where the runner already provides them.
+- Strictness is per workflow, by two different mechanisms. `parity.yml` sets
+  `BNG3_CI_STRICT_ORACLES=1` as workflow-level environment at `parity.yml:24`,
+  the only workflow that sets it; in the pytest gates it turns
+  `tests.validation.strict.require_oracle` into a failure instead of a skip
+  (`tests/validation/strict.py:10-17`), which is what fails a missing NFsim
+  binary or missing/empty native output in `nfsim-parity`
+  (`tests/validation/test_parity_nfsim.py:276-285`). Setup skips that bypass
+  `require_oracle` remain plain skips even under that variable — an unimportable
+  compiled extension (`tests/validation/conftest.py:72`) or an empty committed
+  tier selection (`tests/validation/test_parity_nfsim.py:519`).
+- The full-corpus jobs — the `validation` job in `ci.yml` (`ci.yml:398-400`)
+  and `bng-validation` in `weekly.yml` (`weekly.yml:61-63`) — never set or read
+  that variable. Their strictness is `scripts/validate.py --strict-references`,
+  under which a missing reference `.net` is an ERROR, not a skip
+  (`scripts/validate.py:227-229`), and neither job passes an exclusion profile,
+  so the explicit-exclusion skip path (`scripts/validate.py:215-219`) cannot
+  trigger. `validate.py` exits nonzero only on fail/error
+  (`scripts/validate.py:516-517`), so "zero skipped fixtures" is enforced by
+  those flags and pinned by `tests/test_ci_contract.py:613-631` — not by the
+  exit code, which a skip would pass.
+- Missing engines, missing output, and comparison errors fail the claimed
+  parity job; skips that bypass `require_oracle` do not fail it (see the two
+  bullets above). Summaries include source revisions and executable digests
+  where the runner already provides them.
 - Changes to runtime functionality belong in the engine/API work; this CI port
   only adds orchestration, source-derived contracts, and comparison gates.
