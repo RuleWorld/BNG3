@@ -2,7 +2,7 @@
 
 ## Validation performed in this environment
 
-From `formal/lean/` at `main` = `9f840a5`, 2026-09-30, with the pinned
+From `formal/lean/` at `main` = `c345f3a`, 2026-09-30, with the pinned
 `leanprover/lean4:v4.33.1` toolchain present (`lean --version` reports
 `4.33.1`):
 
@@ -10,8 +10,7 @@ From `formal/lean/` at `main` = `9f840a5`, 2026-09-30, with the pinned
 ./scripts/validate_all.sh
 ```
 
-Result — note that this **exits 1, by design**, not because the kernel is
-unavailable any more:
+Result — **exit 0**:
 
 ```text
 == static validation ==
@@ -22,20 +21,34 @@ NFNEXT HEADER CONTRACT PASS
 NFNEXT CONTRACT PASS: 18/18 checks
 == Lean kernel build ==
 Build completed successfully (36 jobs).
-== Lean test: tests/Smoke.lean ==        (exit 0)
-== Lean test: tests/Coverage.lean ==     (exit 1: the three [FAILS TODAY] assertions)
+== Lean test: tests/Smoke.lean ==
+== Lean test: tests/Coverage.lean ==
+== axiom dependency audit ==
+AXIOM AUDIT PASS
+ALL LEAN VALIDATION PASSED
 ```
 
-Two consequences of that exit status, both load-bearing:
+`tests/Coverage.lean` was previously red on purpose: its closing block carried
+three `[FAILS TODAY]` assertions that gated CI against a real defect in
+`BNG/Stochastic.lean`, where `MatchOnce` keyed on the first molecule instead of
+the connected complex and so fired one channel hazard per embedding rather than
+once per physical species. That defect is fixed, the assertions now hold, and
+the file passes.
 
-- The three `Coverage.lean` errors are the deliberate gate described below.
-  They are the only errors present; the file's own banner states the expected
-  count as "3 errors ... and NO others", and that is what a run produces.
-- `scripts/validate_all.sh` runs under `set -euo pipefail`, so it stops at
-  `Coverage.lean` and the **axiom dependency audit never runs locally**. In CI
-  it is a separate workflow step (`.github/workflows/formal.yml`), so it does
-  run there. Do not read a local `validate_all.sh` pass/fail as evidence about
-  axiom hygiene.
+**Caveat, adjacent to that pass:** the `[FAILS TODAY]` markers and the banner
+predicting "3 errors" are still present in `Coverage.lean` at this commit, and
+the count is now 0. The banner states its own retirement rule — "If the count
+changes, THIS comment is stale -- update it" — so that rule is currently
+triggered and the leftover block is stale documentation of a closed defect. Its
+removal was part of the same change and is tracked separately; until it lands,
+read the green result as "the gate succeeded and is now redundant", not as
+"the gate was unnecessary".
+
+Note also that `scripts/validate_all.sh` runs under `set -euo pipefail`, so
+while `Coverage.lean` was failing the audit below it never ran locally. It
+reached the audit only once `Coverage.lean` went green. In CI the audit is a
+separate workflow step (`.github/workflows/formal.yml`), so it runs regardless
+of the other files' status.
 
 The current continuation adds a bounded production-boundary contract to the
 normal architecture tests. Lean and C++ independently use
@@ -121,9 +134,10 @@ Pull requests run the pinned hosted gate in
 [`../../.github/workflows/formal.yml`](../../.github/workflows/formal.yml).
 That job installs `leanprover/lean4:v4.33.1`, runs the static and NFnext
 contract checks, executes `lake build`, then runs `Smoke.lean`,
-`Coverage.lean`, and the axiom audit as separate steps — so, unlike the local
-`validate_all.sh`, the audit is not skipped when `Coverage.lean` fails. A local
-green static/contract result is not a substitute for that kernel check.
+`Coverage.lean`, and the axiom audit as separate steps. The separation matters:
+the local `validate_all.sh` chains them under `set -e`, so while `Coverage.lean`
+was failing, the audit never executed locally even though CI still ran it. A
+local green static/contract result is not a substitute for that kernel check.
 
 
 ### Latest semantic additions

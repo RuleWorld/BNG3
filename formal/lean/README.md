@@ -629,34 +629,41 @@ true    -- A.x-B.y bond exists
 
 # Verification status
 
-Measured on `main` at `9f840a5` with the pinned `leanprover/lean4:v4.33.1`
+Measured on `main` at `c345f3a` with the pinned `leanprover/lean4:v4.33.1`
 toolchain (macOS/arm64, local `lean --version` reports `4.33.1`):
 
 ```text
 lake build                        -> success, 36 jobs
 lake env lean tests/Smoke.lean    -> success (exit 0)
-lake env lean tests/Coverage.lean -> FAILURE (exit 1), by design
+lake env lean tests/Coverage.lean -> success (exit 0)
+scripts/static_validate.py        -> PASS (37 Lean files)
+scripts/check_axiom_dependencies.sh -> AXIOM AUDIT PASS
 ```
 
-The `Coverage.lean` failure is **intentional and must not be silenced**. Its
-final block is marked `[FAILS TODAY]` and exists to gate CI: it asserts what
-`BNG/Stochastic.lean` *ought* to do and currently does not, so that
-`formal/lean` cannot go green while that file is wrong. The block says so in
-its own banner ("hiding it would make formal/lean green while
-`BNG/Stochastic.lean` is wrong") and prescribes its own removal. Treat a green
-`Coverage.lean` as the signal to delete that block, not to re-add a `skip`.
+`Coverage.lean` was deliberately red for a while: its final block carried
+`[FAILS TODAY]` assertions gating CI so that `formal/lean` could not go green
+while `BNG/Stochastic.lean` keyed `MatchOnce` on the first molecule rather than
+the connected complex. That defect is fixed, and the file is green again.
+
+One caveat, adjacent to that green result: `Coverage.lean` **still contains**
+the `[FAILS TODAY]` markers and the banner predicting "3 errors". The banner's
+own rule — "If the count changes, THIS comment is stale -- update it" — is
+therefore now triggered: the count is 0, not 3. So a green `Coverage.lean` at
+this commit means the gate has done its job and been retired, **not** that the
+block was needed all along. Treat the leftover banner as stale documentation
+of a fixed defect rather than as a description of the current file.
 
 Two boundaries matter when reading any "machine-checked" claim:
 
 - `lake build` compiles `BNG/**` only. `lakefile.lean` declares
   `lean_lib BNG where roots := #[`BNG]`, so `tests/Smoke.lean` and
   `tests/Coverage.lean` are **not** built by it and must be named explicitly.
-- `native_decide` does not consult the Lean kernel. `Smoke.lean:220-233`
-  kernel-checks the smoke values via `native_decide`, which reduces through the
-  compiled evaluator; the split is measured rather than asserted by
-  `scripts/check_axiom_dependencies.sh`, which fails on any axiom that is
-  neither one of Lean's three standard ones nor a declared `native_decide`
-  extension.
+- `native_decide` does not consult the Lean kernel. The assertions in
+  `tests/` are mostly `native_decide`, which reduces through the compiled
+  evaluator, so they are regression guards rather than kernel proofs. The
+  split is measured rather than asserted: `scripts/check_axiom_dependencies.sh`
+  fails on any axiom that is neither one of Lean's three standard ones nor a
+  declared `native_decide` extension.
 
 Pull requests run the pinned kernel and smoke gate in
 [`../../.github/workflows/formal.yml`](../../.github/workflows/formal.yml):
