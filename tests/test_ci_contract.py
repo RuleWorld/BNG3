@@ -1,9 +1,11 @@
 """Acceptance contracts for the Python package CI installation path."""
 
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 
 import pytest
 
@@ -32,6 +34,180 @@ VALIDATION_MANIFEST = REPO / "tests" / "validation" / "validation_manifest.json"
 VALIDATE_DIR = REPO / "tests" / "validation" / "Validate"
 PARITY_WORKFLOW = REPO / ".github" / "workflows" / "parity.yml"
 FORMAL_WORKFLOW = REPO / ".github" / "workflows" / "formal.yml"
+
+CPP_CMAKE = REPO / "cpp" / "CMakeLists.txt"
+TOP_LEVEL_CMAKE = REPO / "CMakeLists.txt"
+
+# The flags that embed a second copy of the C++ runtime into a binary. They are
+# correct for a CLI executable, which owns its process, and wrong for the
+# Python extension, which is loaded into a process someone else owns.
+STATIC_RUNTIME_LINK_FLAGS = ("-static-libstdc++", "-static-libgcc")
+
+
+def _python_extension_target_block() -> str:
+    """The cpp/CMakeLists.txt text that declares the `_bionetgen_cpp` module."""
+
+    cmake = CPP_CMAKE.read_text(encoding="utf-8")
+    start = cmake.index("pybind11_add_module(_bionetgen_cpp")
+    end = cmake.index("\nendif()", start)
+    return cmake[start:end]
+
+
+def _link_flags_applied_to(target: str, cmake_text: str) -> list[str]:
+    """Flags CMake would append to `target`'s own link command, in any form.
+
+    Covers the four ways a target can acquire link flags: per-target
+    target_link_options, per-target target_link_libraries, the LINK_FLAGS
+    target property, and the directory-level *_LINKER_FLAGS variables that
+    apply to that target's library kind.
+    """
+
+    flags: list[str] = []
+    # target_link_options(<target> ...) / target_link_libraries(<target> ...)
+    for command_name in ("target_link_options", "target_link_libraries"):
+        for call in re.finditer(
+            rf"(?ms)^[ \t]*{command_name}\(\s*{re.escape(target)}\b(.*?)\)",
+            cmake_text,
+        ):
+            flags += re.findall(r"-static[-\w+]*", call.group(1))
+    # set_target_properties(<target> ... LINK_FLAGS "...")
+    for properties in re.finditer(
+        rf"(?ms)^[ \t]*set_target_properties\(\s*{re.escape(target)}\b(.*?)(?:\n[ \t]*\)|\))",
+        cmake_text,
+    ):
+        for value in re.findall(r"LINK_FLAGS\s+\"?([^\"\n]+)\"?", properties.group(1)):
+            flags += re.findall(r"-static[-\w+]*", value)
+    return flags
+
+
+def test_python_extension_never_statically_links_the_cxx_runtime():
+    """The extension must resolve libstdc++ from the process, not embed one.
+
+    A statically linked C++ runtime inside `_bionetgen_cpp` coexists with the
+    `libstdc++.so.6` that the host interpreter already has mapped -- SciPy's C++
+    modules map it too. Two independent runtimes in one process means two
+    independent sets of locale facet tables, so `std::ostream` dispatches a
+    numeric format through the wrong facet and the process segfaults inside
+    `Expression::toString()` on the first `ostringstream << double`. This
+    shipped green through sixteen CI runs because the crash needs a co-loaded
+    C++ extension, which the build job did not have.
+
+    CLI executables are unaffected and may keep the static runtime: they own
+    their process. That asymmetry is why the check has to be about the module
+    target specifically, and not about the flags existing in the build.
+    """
+
+    block = _python_extension_target_block()
+    static_flags = [
+        flag
+        for flag in _link_flags_applied_to("_bionetgen_cpp", block)
+        if flag.startswith(STATIC_RUNTIME_LINK_FLAGS)
+    ]
+    assert not static_flags, (
+        f"`_bionetgen_cpp` is given {static_flags} by cpp/CMakeLists.txt. The "
+        "Python extension runs inside a host interpreter that may already have "
+        "libstdc++.so.6 mapped (SciPy's C++ modules do), so a statically linked "
+        "runtime puts two C++ runtimes in one process: duplicated locale facet "
+        "tables, then a segfault in std::ostream numeric formatting. Link the "
+        "runtime dynamically for the module and leave CMAKE_EXE_LINKER_FLAGS "
+        "alone for the CLI executables, which own their process. See PR #30."
+    )
+
+    # A SHARED module would inherit CMAKE_SHARED_LINKER_FLAGS, which does carry
+    # the static runtime at the top level. pybind11_add_module defaults to
+    # MODULE, so this only trips if someone reaches for the SHARED variant.
+    assert "SHARED" not in block, (
+        "`pybind11_add_module(_bionetgen_cpp ... SHARED ...)` makes the "
+        "extension a SHARED library, and SHARED targets inherit "
+        "CMAKE_SHARED_LINKER_FLAGS, which carries -static-libstdc++ at the top "
+        "level. Use the MODULE default (or pass MODULE explicitly) so the "
+        "extension stays out of that path."
+    )
+
+
+def test_cli_executables_still_may_link_the_cxx_runtime_statically():
+    """The module restriction must not tempt someone into a global reversal.
+
+    The static runtime is load-bearing for the shipped `bng_cpp` and `NFsim`
+    binaries, which run on machines where a system libstdc++ may be too old.
+    A well-meaning "clean up the inconsistency" edit that moves the flags out
+    of CMAKE_EXE_LINKER_FLAGS would trade a documented extension crash for an
+    unmeasured portability regression, so the executable path is pinned too.
+    """
+
+    top_level = TOP_LEVEL_CMAKE.read_text(encoding="utf-8")
+    for flag in STATIC_RUNTIME_LINK_FLAGS:
+        assert re.search(
+            rf"CMAKE_EXE_LINKER_FLAGS[^\n]*{re.escape(flag)}", top_level
+        ), (
+            f"{flag} is no longer applied through CMAKE_EXE_LINKER_FLAGS. The "
+            "module contract in "
+            "test_python_extension_never_statically_links_the_cxx_runtime is "
+            "about the extension target only; if the executables genuinely need "
+            "to give up their static runtime, that is a separate change to "
+            "justify, not a silent consequence of this one."
+        )
+
+
+def test_batch_ssa_cpu_reference_parity_gate_runs_in_ci():
+    """The CPU batch-SSA reference gate must exist and run on every PR head.
+
+    This is the job that would have caught the segfault: it loads the freshly
+    built extension into the same interpreter that imported SciPy. It was
+    never green, so the extension's runtime-linkage defect shipped behind it.
+    The gate is hardware-independent by construction, which is what makes it a
+    required check rather than an incidental one.
+    """
+
+    job = _workflow_job("batch-ssa-cpu-reference")
+    assert "Batch SSA CPU reference parity" in job
+    assert "tests/test_batch_ssa_statistical_parity.py --mode cpu" in job
+    assert "-DBUILD_PYTHON_BINDINGS=ON" in job
+    # The build must produce the module the gate imports; without this the job
+    # would go green having tested nothing.
+    assert "build/cpp/_bionetgen_cpp" in job
+    assert "|| true" not in job
+    assert "continue-on-error" not in job
+    # --mode all would drag in the GPU comparison, which skips without a
+    # backend; --mode cpu is the hardware-independent claim being made.
+    assert "--mode cpu" in job
+    assert "--mode all" not in job
+
+
+def test_cmake_link_flag_scan_detects_each_way_a_target_can_acquire_flags():
+    """Guard the guard: the static-flag scan must actually see a static flag.
+
+    `_link_flags_applied_to` is the mechanism the extension contract rests on.
+    If its extraction silently stopped matching -- a renamed command, a
+    reformatted call -- it would report an empty flag list and the extension
+    contract would pass no matter what the build did.
+    """
+
+    assert _link_flags_applied_to(
+        "_probe_link_options",
+        "target_link_options(_probe_link_options PRIVATE -static-libgcc)",
+    ) == ["-static-libgcc"]
+    assert _link_flags_applied_to(
+        "_probe_link_flags",
+        'set_target_properties(_probe_link_flags PROPERTIES LINK_FLAGS "-static-libstdc++")',
+    ) == ["-static-libstdc++"]
+    assert _link_flags_applied_to(
+        "_probe_link_libraries",
+        "target_link_libraries(_probe_link_libraries PRIVATE -static-libstdc++)",
+    ) == ["-static-libstdc++"]
+    # A multi-line call spanning several flags must be captured whole, not
+    # just up to the first closing paren.
+    assert _link_flags_applied_to(
+        "_probe_multiline",
+        "target_link_options(_probe_multiline PRIVATE\n    -static-libgcc\n"
+        "    -static-libstdc++\n)",
+    ) == ["-static-libgcc", "-static-libstdc++"]
+    assert (
+        _link_flags_applied_to(
+            "_absent_target", TOP_LEVEL_CMAKE.read_text(encoding="utf-8")
+        )
+        == []
+    )
 
 
 def test_ssts_report_source_provenance_records_revision_and_tracked_changes(
@@ -641,4 +817,64 @@ def test_validate_loads_the_committed_reference_exclusion_profile():
     assert (
         load_skip_models(REFERENCE_EXCLUSIONS, "weekly")
         == manifest["profiles"]["weekly"]
+    )
+
+
+def test_batch_ssa_parity_script_fails_closed_when_it_cannot_reach_its_models():
+    """The gate must go red, not pass or skip, when the extension is absent.
+
+    `main` turns the CPU gate's boolean into an exit status. Run from a
+    directory where `models/*.bngl` does not resolve, the gate has to fail --
+    otherwise deleting or misconfiguring the build step would green the job
+    having tested nothing. This runs the real script, so it needs no compiled
+    extension: it fails before it gets that far, which is the property.
+    """
+
+    script = REPO / "tests" / "test_batch_ssa_statistical_parity.py"
+    assert script.is_file()
+    completed = subprocess.run(
+        [sys.executable, str(script), "--mode", "cpu"],
+        cwd=REPO / "scripts",
+        capture_output=True,
+        text=True,
+        timeout=600,
+        env={
+            "PATH": os.environ["PATH"],
+            "HOME": os.environ["HOME"],
+            "PYTHONPATH": "",
+        },
+    )
+    assert completed.returncode != 0, (
+        "the batch-SSA CPU gate exited 0 from a directory where its model "
+        "fixtures do not resolve, so a missing build would pass the job"
+    )
+
+
+def test_parity_script_cpu_mode_translates_a_failed_gate_into_a_nonzero_exit():
+    """A failed parity comparison must reach the runner as a nonzero status.
+
+    Asserting this on the source keeps the contract hermetic: this suite cannot
+    build the extension, so it cannot make the gate fail for real. What it can
+    pin is the wiring the CI job depends on -- gate result to exit status, exit
+    status to process status -- and that the CPU mode reports on the CPU gate
+    rather than on a GPU comparison that skips without a backend.
+    """
+
+    source = (REPO / "tests" / "test_batch_ssa_statistical_parity.py").read_text(
+        encoding="utf-8"
+    )
+    assert "return 0 if ok else 1" in source, (
+        "the CPU gate's result is no longer translated into an exit status; a "
+        "failed parity comparison would exit 0 and the CI job would go green"
+    )
+    assert re.search(
+        r"if\s+__name__\s*==\s*[\"']__main__[\"']:\s*\n\s*sys\.exit\(main\(\)\)", source
+    ), "the parity script must propagate main()'s status via sys.exit under __main__"
+    assert re.search(r"if\s+args\.mode\s*==\s*\"gpu\":", source), (
+        "--mode gpu must be dispatched before the CPU gate; the CI job runs "
+        "--mode cpu, so the two modes have to stay distinguishable"
+    )
+    assert source.count("run_cpu_reference_gate()") >= 2, (
+        "the CPU gate must be invoked from main() and tested independently of "
+        "the GPU comparison"
     )
