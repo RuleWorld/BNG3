@@ -6,6 +6,7 @@
 #include <cstring>
 #include <cctype>
 #include <cmath>
+#include <cstdlib>
 #include <fstream>
 #include <iomanip>
 #include <random>
@@ -484,6 +485,7 @@ void OdeIntegrator::compile() {
         // Format in .net: "Sat kcat Km" or "MM kcat Km" or "Hill Vmax Kh n"
         bool isSatMMHill = false;
         bool isMM = false;  // True when rate law is MM (Michaelis-Menten), not Sat
+        bool isHill = false;  // True only for the Hill law; Sat/MM must never take the Hill path
         std::size_t kwLen = 0;
         if (const auto typedKind = typedRateKindForOrigin(originRuleName)) {
             switch (*typedKind) {
@@ -498,6 +500,7 @@ void OdeIntegrator::compile() {
                 break;
             case bng::compile::RateLawKind::Hill:
                 isSatMMHill = true;
+                isHill = true;
                 kwLen = 4;
                 break;
             default:
@@ -526,6 +529,7 @@ void OdeIntegrator::compile() {
                 kwLen = 2;
             } else if (isWordPrefix(rlLower, "hill")) {
                 isSatMMHill = true;
+                isHill = true;
                 kwLen = 4;
             }
         }
@@ -582,6 +586,18 @@ void OdeIntegrator::compile() {
                 }
             }
 
+            // A rate-law argument is either a numeric literal or a symbol.
+            // Building it as a bare identifier made a literal unresolvable at
+            // evaluation time, which silently zeroed the whole rate.
+            auto rateLawArgument = [](const std::string& text) {
+                char* end = nullptr;
+                const double value = std::strtod(text.c_str(), &end);
+                if (end != text.c_str() && end != nullptr && *end == '\0') {
+                    return ast::Expression::number(value);
+                }
+                return ast::Expression::identifier(text);
+            };
+
             // Store a lambda-like expression that will be evaluated in derivs()
             // We build the expression text for the resolver
             std::size_t substrateIdx = crxn.reactantIndices[0];
@@ -597,13 +613,39 @@ void OdeIntegrator::compile() {
 
                 ast::Expression baseExpr = ast::Expression::number(0.0); // placeholder
 
-                if (paramNames.size() >= 3) {
+                // The keyword decides the shape of the argument list, NOT the
+                // argument count.  `Sat(Vmax, Km, S)` names its substrate in the
+                // third position, so routing every three-argument law to the
+                // Hill branch silently consumed that substrate as the Hill
+                // COEFFICIENT and changed the meaning of the model.  Only the
+                // Hill keyword may take the Hill branch.
+                if (isHill && paramNames.size() >= 3) {
                     // Hill(Vmax, Kh, n): substrate is first reactant
                     baseExpr = ast::Expression::function("Hill",
                         {ast::Expression::identifier(kcat), ast::Expression::identifier(Km),
-                         ast::Expression::identifier(paramNames[2]),
+                         rateLawArgument(paramNames[2]),
                          ast::Expression::identifier("__substrate_" + std::to_string(substrateIdx))});
                     // Multiply by non-substrate reactant concentrations
+                    for (std::size_t ri = 1; ri < crxn.reactantIndices.size(); ++ri) {
+                        baseExpr = ast::Expression::binary("*", std::move(baseExpr),
+                            ast::Expression::identifier("__substrate_" + std::to_string(crxn.reactantIndices[ri])));
+                    }
+                } else if (isHill) {
+                    // Hill(Vmax, Kh) with no exponent: Hill coefficient of one.
+                    baseExpr = ast::Expression::function("Hill",
+                        {ast::Expression::identifier(kcat), ast::Expression::identifier(Km),
+                         ast::Expression::number(1.0),
+                         ast::Expression::identifier("__substrate_" + std::to_string(substrateIdx))});
+                    for (std::size_t ri = 1; ri < crxn.reactantIndices.size(); ++ri) {
+                        baseExpr = ast::Expression::binary("*", std::move(baseExpr),
+                            ast::Expression::identifier("__substrate_" + std::to_string(crxn.reactantIndices[ri])));
+                    }
+                } else if (isMM && paramNames.size() >= 3) {
+                    // MM(Vmax, Km, S) with a named substrate: the simple
+                    // saturating law, matching ast::Expression's 3-argument MM.
+                    baseExpr = ast::Expression::function("Sat",
+                        {ast::Expression::identifier(kcat), ast::Expression::identifier(Km),
+                         rateLawArgument(paramNames[2])});
                     for (std::size_t ri = 1; ri < crxn.reactantIndices.size(); ++ri) {
                         baseExpr = ast::Expression::binary("*", std::move(baseExpr),
                             ast::Expression::identifier("__substrate_" + std::to_string(crxn.reactantIndices[ri])));
