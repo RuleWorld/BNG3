@@ -662,10 +662,32 @@ def test_negative_binomial_offspring_is_expressible_and_dispersion_drops_by_r(
 
 
 def _cpp():
+    # Decide shadowing BEFORE importing, because the order matters.  If this
+    # worktree has its own extension and the import then fails or resolves
+    # elsewhere, that is the silent-skip hazard, not a missing optional
+    # dependency.  Checking only after a successful import let the skip swallow
+    # the very case the check exists for, which I found by running it rather
+    # than by reading it.
+    root = Path(__file__).resolve().parents[2]
+    local = [p.resolve() for p in (root / "build" / "cpp").glob("_bionetgen_cpp*.so")]
     try:
         import bionetgen._bionetgen_cpp as module
     except ImportError:  # pragma: no cover - depends on the build
+        if local:
+            raise AssertionError(
+                f"extension shadowing: this worktree has its own build at "
+                f"{[str(p) for p in local]} but importing "
+                f"bionetgen._bionetgen_cpp failed. The two pmf tests below "
+                f"would silently skip instead of measuring that build."
+            ) from None
         pytest.skip("compiled extension bionetgen._bionetgen_cpp unavailable")
+    resolved = getattr(module, "__file__", None)
+    if local and resolved is not None and Path(resolved).resolve() not in local:
+        raise AssertionError(
+            f"extension shadowing: tests resolve to {resolved}, but this worktree "
+            f"has its own build at {[str(p) for p in local]}. The two pmf tests "
+            f"below would measure a binary that is not the one under test."
+        )
     return module
 
 
