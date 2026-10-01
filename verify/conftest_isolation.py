@@ -1,15 +1,22 @@
-"""Force this worktree's python/ and build/ to win over the editable install.
+"""PROBE / harness for confirming which tree a Python suite run exercised.
 
-`bionetgen` is installed here as a scikit-build EDITABLE install pointing at the
-shared main worktree. Editable installs install a `__editable__` meta_path
-finder, and meta_path finders run BEFORE sys.path, so PYTHONPATH does not fix
-it. Without this guard a pytest run in any worktree silently imports MAIN's
-`bionetgen` and tests that instead.
+Not needed to run the suite as of PR #53 (1c78a72), which fixed the conftest
+path filter so `PYTHONPATH=python:build/cpp python3 -m pytest tests/python`
+resolves both the package and the extension to the worktree under test. Kept
+because the check costs two seconds and its absence is invisible.
 
-This is the per-run form of the guard contractTighten added to
-tests/python/conftest.py. It lives here rather than in the repo because that
-guard strips the build-artifact directory too, which makes a missing build
-invisible rather than loud.
+THE MEASUREMENT CONTEXT MATTERS. Extension reachability is decided by
+tests/python/conftest.py, which only loads under pytest, so probing from a
+bare `python -c` gives the wrong answer in both directions. Run this under
+pytest:
+
+    PYTHONPATH=python:build/cpp python3 -m pytest tests/python/test_bngir_snapshot_emitter.py -q -s
+
+`bionetgen._cpp` is NOT a valid probe -- it is a package attribute that does
+not exist and reads None on every run, healthy or not. Use the sys.modules
+form, which works on both the direct-import route and the build/cpp fallback
+(python/bionetgen/model.py:24-25 re-registers the fallback under the
+canonical name).
 """
 
 import sys
