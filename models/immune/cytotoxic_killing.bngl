@@ -1,0 +1,59 @@
+# Cytotoxic T-cell killing of a target pool with a saturating effector function.
+#
+# Domain expectation. A CD8+ effector does not kill in proportion to how many
+# effectors are present without bound: each target presents a finite number of
+# pMHC, so the PER-TARGET killing rate constant saturates as the effector pool
+# grows. The standard saturating form is
+#
+#     k(E) = Vmax * E / (Kh + E)
+#
+# with k(Kh) = Vmax/2, i.e. half-saturation at exactly E = Kh cells.
+#
+# With the effector pool held constant (no rule consumes it), the target obeys
+#
+#     dT/dt = -k(E) * T
+#     T(t) = T0 * exp(-Vmax*E0*t/(Kh+E0))          <- EXACT closed form
+#
+# The saturation has a falsifiable signature: at E0 = Kh the flux must be half
+# of the low-effector flux, and as E0 >> Kh the exponent must tend to -Vmax*t,
+# i.e. killing becomes first-order in target with rate Vmax. Both are checked
+# by sweeping E0 in tests/python/test_immune_models.py; this file checks the
+# closed form at one E0 and the conservation identity.
+
+begin parameters
+  Vmax = 0.05      # saturated per-target killing rate constant, 1/day
+  Kh   = 200       # effector count at half-saturation, cells
+  T0   = 1000      # initial target pool, cells
+  E0   = 200       # effector count; equals Kh, so k(E0) = Vmax/2 exactly
+end parameters
+
+begin molecule types
+  Target()
+  Effector()
+  Dead()
+end molecule types
+
+begin seed species
+  Target()  T0
+  Effector() E0
+  Dead() 0
+end seed species
+
+begin observables
+  Molecules Target   Target()
+  Molecules Effector Effector()
+  Molecules Dead     Dead()
+end observables
+
+begin reaction rules
+  # The Target() reactant supplies the "per target" factor; the law supplies
+  # the saturating rate constant k(E).  Effector() is referenced but is NOT a
+  # reactant, so it cannot be consumed and E stays at E0.
+  Target() -> Dead()   Vmax*Effector()/(Kh+Effector())
+end reaction rules
+
+begin actions
+  generate_network({overwrite=>1})
+  simulate({suffix=>"_ode",method=>"ode",t_end=>10,n_steps=>10,atol=>1e-10,rtol=>1e-10})
+  simulate({suffix=>"_ssa",method=>"ssa",t_end=>10,n_steps=>10,seed=>20260930})
+end actions
