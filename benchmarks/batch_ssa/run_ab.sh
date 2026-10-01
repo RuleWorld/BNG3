@@ -31,6 +31,15 @@ summarize() {
       if (n==1 || et<minET) minET=et; if (et>maxET) maxET=et;
     }
     END {
+      if (n == 0) {
+        print "  NO DATA ROWS MATCHED /^[0-9]+,/ — the benchmark produced no CSV output." > "/dev/stderr";
+        print "  Refusing to report min/spread over an empty set." > "/dev/stderr";
+        exit 3;
+      }
+      if (minT == 0) {
+        print "  traj/s sim minimum is 0 — divide-by-zero spread is undefined; check for a failed rep." > "/dev/stderr";
+        exit 3;
+      }
       printf "  traj/s sim   min=%.1f  max=%.1f  spread=%.2f%%\n", minT, maxT, 100*(maxT-minT)/minT;
       printf "  events/s sim min=%.1f  max=%.1f  spread=%.2f%%\n", minE, maxE, 100*(maxE-minE)/minE;
       printf "  traj/s total min=%.1f  max=%.1f  spread=%.2f%%\n", minTT, maxTT, 100*(maxTT-minTT)/minTT;
