@@ -2430,6 +2430,55 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
 
     recomputePropensities();
 
+    // Species -> reactions whose propensity reads that species.  A propensity
+    // consults only reactantIndices (see computePropensity), so firing a
+    // reaction can only change propensities of reactions sharing a species
+    // with its reactants or products.  Every other stored propensity is
+    // already exact, and refreshAfterEvent rebuilds totalPropensity with the
+    // same in-order summation as recomputePropensities(), keeping each
+    // propensity value, the total, and therefore the seeded trajectory
+    // bit-identical to recomputing everything on every step.
+    std::vector<std::size_t> depOffset(nSpecies_ + 1, 0);
+    for (const auto& rxn : compiledRxns_) {
+        for (const auto idx : rxn.reactantIndices) {
+            ++depOffset[idx + 1];
+        }
+    }
+    for (std::size_t i = 0; i < nSpecies_; ++i) {
+        depOffset[i + 1] += depOffset[i];
+    }
+    std::vector<std::size_t> depReactions(depOffset[nSpecies_]);
+    {
+        std::vector<std::size_t> cursor(depOffset.begin(),
+                                        depOffset.end() - 1);
+        for (std::size_t r = 0; r < compiledRxns_.size(); ++r) {
+            for (const auto idx : compiledRxns_[r].reactantIndices) {
+                depReactions[cursor[idx]++] = r;
+            }
+        }
+    }
+
+    auto refreshAfterEvent = [&](std::size_t firedIndex) {
+        const auto& fired = compiledRxns_[firedIndex];
+        auto refreshSpecies = [&](std::size_t speciesIndex) {
+            for (std::size_t p = depOffset[speciesIndex];
+                 p < depOffset[speciesIndex + 1]; ++p) {
+                const std::size_t r = depReactions[p];
+                propensities[r] = computePropensity(compiledRxns_[r], y);
+            }
+        };
+        for (const auto idx : fired.reactantIndices) {
+            refreshSpecies(idx);
+        }
+        for (const auto idx : fired.productIndices) {
+            refreshSpecies(idx);
+        }
+        totalPropensity = 0.0;
+        for (std::size_t r = 0; r < compiledRxns_.size(); ++r) {
+            totalPropensity += propensities[r];
+        }
+    };
+
     // Record initial state
     if (opts.outputStepInterval == 0 || explicitTimes) {
         appendScheduledThrough(t);
@@ -2508,9 +2557,10 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             y[idx] += 1.0;
         }
 
-        // Recompute propensities
-        // Optimization: could track which reactions are affected by this species change
-        recomputePropensities();
+        // Recompute propensities.  Only reactions that read a species whose
+        // amount this event changed can differ from the previous step; the
+        // total is rebuilt over all reactions in the original order.
+        refreshAfterEvent(selectedRxn);
 
         if (opts.outputStepInterval == 0 || explicitTimes) {
             // Include an explicit sample that coincides with the event using
