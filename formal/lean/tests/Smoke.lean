@@ -209,3 +209,25 @@ example (doc : Document) :
       { (encodeStructural doc) with
         features := { required := ["quantum_features"], used := [] } } = none :=
   encode_refuses_feature_mutation doc
+
+/-! ## Machine-checked assertions
+
+The `#eval`s above document intent; they cannot fail a build.  These
+`example ... := by native_decide` lines kernel-check the SAME values, so a
+semantic change that flips one of them breaks `lake build` rather than merely
+changing a log line.  Existing checks above are unchanged and still run. -/
+
+example : model.wellFormed = true := by native_decide
+example : runtimeMixture.wellFormed model.signature = true := by native_decide
+example : (forward.matches runtimeMixture).length = 1 := by native_decide
+example : resultAIsPhosphorylated = true := by native_decide
+example : resultHasABBond = true := by native_decide
+
+example : (forward.compileStructuralSemantics.mutations.length) = 2 := by native_decide
+example : (NFnextPacking.fromSignature model.signature).types.length = 2 := by native_decide
+example : nfnextUnsupportedReasons forward = [] := by native_decide
+example : (forward.countedMatches runtimeMixture).length = 1 := by native_decide
+example : productComplex.instantiateSeed?.isSome = true := by native_decide
+
+example : referenceReactionNetwork.wellIndexed = true := by native_decide
+example : referenceReactionNetwork.reactions.length = 2 := by native_decide

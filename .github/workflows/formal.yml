@@ -45,3 +45,17 @@ jobs:
       - name: Run Lean semantic smoke checks
         working-directory: formal/lean
         run: lake env lean tests/Smoke.lean
+
+      - name: Run Lean coverage assertions
+        working-directory: formal/lean
+        # `lake build` does NOT compile this file: lakefile.lean declares only
+        # `@[default_target] lean_lib BNG` with root `BNG/`.  It must therefore
+        # be named explicitly, or its assertions are never executed by anything.
+        run: lake env lean tests/Coverage.lean
+
+      - name: Audit axiom dependencies
+        working-directory: formal/lean
+        # Makes the kernel-checked / native_decide split measurable rather than a
+        # claim in a docstring, and fails on any axiom that is neither one of
+        # Lean's three standard ones nor a declared native_decide extension.
+        run: ./scripts/check_axiom_dependencies.sh
