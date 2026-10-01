@@ -34,8 +34,59 @@ _EDITABLE_FINDERS = [
 ]
 if _EDITABLE_FINDERS:
     sys.meta_path = [f for f in sys.meta_path if f not in _EDITABLE_FINDERS]
-    sys.path[:] = [p for p in sys.path if "BioNetGen" not in p]
-    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "python"))
+    # Remove the editable install's own source path -- the thing this guard
+    # guards -- and nothing else. A substring filter on "BioNetGen" also
+    # strips this repository's build-artifact directory, leaving the
+    # extension unimportable in any worktree without its own build (46
+    # AttributeError failures, and every importorskip-guarded file
+    # silently skipping instead of failing). Dropping "everything not
+    # under the worktree root" is equally wrong: a legitimate PYTHONPATH
+    # pointing at a shared artifact directory is not under this worktree
+    # and must survive. Both were measured; see sciSignaling and
+    # sciStochastic.
+    _ROOT = pathlib.Path(__file__).resolve().parents[2]
+    _EDITABLE_SOURCES = {
+        pathlib.Path(p).resolve()
+        for finder in _EDITABLE_FINDERS
+        for p in getattr(finder, "search_paths", None) or ()
+    }
+    if not _EDITABLE_SOURCES:
+        _EDITABLE_SOURCES = {
+            pathlib.Path(p).resolve().parent
+            for p in sys.path
+            if "BioNetGen" in p and pathlib.Path(p or ".").resolve() != _ROOT
+        }
+    sys.path[:] = [
+        p
+        for p in sys.path
+        if not any(pathlib.Path(p or ".").resolve() == src for src in _EDITABLE_SOURCES)
+    ]
+    # This worktree's own build artifacts take precedence over any shared
+    # copy, but never displace a shared one that is all the caller has.
+    _LOCAL_BUILD = _ROOT / "build" / "cpp"
+    if _LOCAL_BUILD.is_dir():
+        sys.path.insert(0, str(_LOCAL_BUILD))
+    sys.path.insert(0, str(_ROOT / "python"))
+
+    # A missing build must be loud. Without this, `importorskip` turns a
+    # misconfigured environment into a suite that reports skips and exit 0,
+    # which is the same quiet-pass failure this guard exists to prevent --
+    # a guard that silences its own tests is passing quietly.
+    try:
+        import bionetgen._bionetgen_cpp as _cpp_probe  # noqa: F401
+    except ImportError as _exc:
+        raise RuntimeError(
+            "bionetgen._bionetgen_cpp is unimportable after resolving bionetgen "
+            f"to the tree under test ({_ROOT}).\n"
+            f"  bionetgen resolved from: {getattr(bionetgen, '__file__', '?')}\n"
+            f"  sys.path: {sys.path[:6]}\n"
+            f"  underlying error: {_exc}\n"
+            "This is a build/misconfiguration problem, not a code failure. Build "
+            "the extension in this worktree "
+            "(`cmake -B build -DBUILD_PYTHON_BINDINGS=ON && cmake --build build`) "
+            "or add its directory to PYTHONPATH. Do not relax this check to make "
+            "the suite pass."
+        ) from _exc
 
 import os
 import tempfile
