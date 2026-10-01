@@ -72,13 +72,21 @@ if _EDITABLE_FINDERS:
     # misconfigured environment into a suite that reports skips and exit 0,
     # which is the same quiet-pass failure this guard exists to prevent --
     # a guard that silences its own tests is passing quietly.
+    # Read the package out of sys.modules rather than by bare name. Line 76 is
+    # `import a.b as x`, which binds `x` ONLY -- never `a`. So on exactly the
+    # path this handler exists for, `bionetgen` is not bound and the bare
+    # getattr raised NameError instead of printing the diagnostic.
+    # Verified: exec("import bionetgen._bionetgen_cpp as _cpp_probe") against a
+    # blocked import leaves the namespace holding only __builtins__.
+    _pkg = sys.modules.get("bionetgen")
     try:
         import bionetgen._bionetgen_cpp as _cpp_probe  # noqa: F401
     except ImportError as _exc:
         raise RuntimeError(
             "bionetgen._bionetgen_cpp is unimportable after resolving bionetgen "
             f"to the tree under test ({_ROOT}).\n"
-            f"  bionetgen resolved from: {getattr(bionetgen, '__file__', '?')}\n"
+            f"  bionetgen resolved from: "
+            f"{getattr(_pkg, '__file__', None) or 'not imported'}\n"
             f"  sys.path: {sys.path[:6]}\n"
             f"  underlying error: {_exc}\n"
             "This is a build/misconfiguration problem, not a code failure. Build "
