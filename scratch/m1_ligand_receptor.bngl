@@ -1,0 +1,31 @@
+# M1a: IRREVERSIBLE second-order binding -> early-time flux == declared.
+# Domain claim: for L + R -> LR with mass-action rate kon, the very first
+# moment of the trajectory has slope d[LR]/dt(0) = kon*[L]0*[R]0 exactly,
+# and LR(t)/t -> kon*L0*R0 as t -> 0 with a relative error that falls linearly
+# in t (the next Taylor term is -kon*(L0+R0)*kon*L0*R0*t/2).
+begin model
+begin parameters
+  kon  1e-4
+  L0   100.0
+  R0   60.0
+end parameters
+begin molecule types
+  L(l)
+  R(r)
+end molecule types
+begin seed species
+  L(l) L0
+  R(r) R0
+end seed species
+begin observables
+  Molecules LR   L(l!1).R(r!1)
+  Molecules Ltot L
+  Molecules Rtot R
+end observables
+begin reaction rules
+  L(l) + R(r) -> L(l!1).R(r!1) kon
+end reaction rules
+end model
+begin actions
+  simulate_ode({t_end=>1e-3,n_steps=>1000,atol=>1e-14,rtol=>1e-14})
+end actions

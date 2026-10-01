@@ -1,0 +1,48 @@
+# M7: Goldbeter-Koshland ultrasensitivity -- the rate-splitting trap.
+#   E + S <-> ES   (konE, koffE)
+#   ES -> E + P    (kcatE)      catalytic, ZERO-ORDER in free S (ES saturated)
+#   P -> S         (km)         first-order phosphatase
+# Domain claim (exact): the catalytic rate is v = kcatE*[ES], and the enzyme
+# follows the Michaelis-Menten relation [ES] = E0*[S]/(K_M + [S]) with
+# K_M = (koffE + kcatE)/konE.  Since the phosphatase is first order,
+# steady state requires kcatE*[ES]* = km*[P].  Both identities are checked
+# against the simulated numbers.  A reverse/reversible reaction whose reverse
+# rate is wrongly taken as (forward - reverse), a catalytic step whose
+# reactant is the FREE substrate rather than the complex, or a complex that
+# leaks its partner would each break one of these by orders of magnitude.
+begin model
+begin parameters
+  konE  1.0
+  koffE 1.0
+  kcatE  20.0
+  km     0.05
+  E0     1000.0
+  S0     10000.0
+end parameters
+begin molecule types
+  E(c)
+  S(s~U~P)
+end molecule types
+begin seed species
+  E(c)    E0
+  S(s~U)  S0
+end seed species
+begin observables
+  Molecules ES    E(c!1).S(s~U!1)
+  Molecules Efree E(c)
+  Molecules Sfree S(s~U)
+  Molecules P     S(s~P)
+  Molecules Stot  S
+  Molecules Etot  E
+end observables
+begin reaction rules
+  E(c) + S(s~U) <-> E(c!1).S(s~U!1) konE, koffE
+  E(c!1).S(s~U!1) -> E(c) + S(s~P) kcatE
+  S(s~P) -> S(s~U) km
+end reaction rules
+end model
+begin actions
+  generate_network({overwrite=>1})
+  writeNetwork({overwrite=>1,file=>"m7.net"})
+  simulate_ode({t_end=>400,n_steps=>8000,atol=>1e-11,rtol=>1e-11})
+end actions

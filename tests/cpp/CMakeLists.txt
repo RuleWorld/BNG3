@@ -16,6 +16,13 @@ add_test(
 )
 
 add_test(
+    NAME signaling_action_params
+    COMMAND ${CMAKE_COMMAND}
+        -DBNG_CPP_PATH=$<TARGET_FILE:bng_cpp>
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/test_signaling_action_params.cmake
+)
+
+add_test(
     NAME psa_issue_265_reaction_order_stress
     COMMAND ${CMAKE_COMMAND}
         -DBNG_CPP_PATH=$<TARGET_FILE:bng_cpp>
@@ -172,6 +179,18 @@ target_include_directories(test_observable_counting PRIVATE
 target_link_libraries(test_observable_counting PRIVATE
     Catch2::Catch2WithMain Catch2::Catch2 bng_engine bng_parser bng_compile bng_core)
 catch_discover_tests(test_observable_counting)
+
+# test_signaling_rate_laws — rate-law spellings a phosphorylation pair hits
+add_executable(test_signaling_rate_laws test_signaling_rate_laws.cpp)
+target_include_directories(test_signaling_rate_laws PRIVATE
+    ${CMAKE_SOURCE_DIR}/cpp
+    ${CMAKE_SOURCE_DIR}/cpp/parser
+    ${CMAKE_SOURCE_DIR}/cpp/parser/generated
+    ${antlr4_runtime_SOURCE_DIR}/runtime/Cpp/runtime/src
+)
+target_link_libraries(test_signaling_rate_laws PRIVATE
+    Catch2::Catch2WithMain Catch2::Catch2 bng_parser bng_ast)
+catch_discover_tests(test_signaling_rate_laws)
 
 # test_model_options — setOption validation against the BNG2 oracle
 add_executable(test_model_options test_model_options.cpp)

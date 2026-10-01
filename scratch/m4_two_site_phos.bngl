@@ -1,0 +1,41 @@
+# M4: two-site independent reversible phosphorylation, written as ONE generic
+# rule pair per site so the network generator must do the site-state
+# combinatorics.  Domain claim: the network has exactly 2^2 = 4 substrate
+# species; with identical kp per site and km per site the steady state is the
+# INDEPENDENT-SITE binomial
+#   count(n phosphorylated) = Rtot * C(2,n) p^n (1-p)^(2-n),  p = kp/(kp+km)
+# so S10 = S01 exactly and S00:S10:S11 = (1-p)^2 : 2p(1-p) : p^2.
+# A per-site rate wrongly scaled by the number of remaining sites (a classic
+# combinatorics bug) or a missing/spurious species breaks this identity.
+# Total substrate is conserved (closed cycle, no synthesis).
+begin model
+begin parameters
+  kp  0.9
+  km  0.3
+  Rtot 4000.0
+end parameters
+begin molecule types
+  S(s1~U~P,s2~U~P)
+end molecule types
+begin seed species
+  S(s1~U,s2~U) Rtot
+end seed species
+begin observables
+  Molecules S00 S(s1~U,s2~U)
+  Molecules S10 S(s1~P,s2~U)
+  Molecules S01 S(s1~U,s2~P)
+  Molecules S11 S(s1~P,s2~P)
+  Molecules Stot S
+end observables
+begin reaction rules
+  S(s1~U) -> S(s1~P) kp
+  S(s2~U) -> S(s2~P) kp
+  S(s1~P) -> S(s1~U) km
+  S(s2~P) -> S(s2~U) km
+end reaction rules
+end model
+begin actions
+  generate_network({overwrite=>1})
+  simulate_ode({t_end=>400,n_steps=>8000,atol=>1e-12,rtol=>1e-12})
+  writeNetwork({overwrite=>1,file=>"m4.net"})
+end actions

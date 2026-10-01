@@ -1,0 +1,57 @@
+# M6: closed double-negative (adaptation) feedback loop.
+#   R + A <-> R.A          kon, koff      (receptor binds active kinase)
+#   R + S <-> R.S          kon2, koff2    (catalytic complex)
+#   R.S -> R + S0         kcat           (turnover, product is a NEW state)
+#   S0 -> S               km             (dephosphorylation)
+# Domain claim (exact, and the thing that actually catches a sign or
+# stoichiometry error): the loop creates NO molecules.  For every t,
+#     Rfree + RA + RS + RSP = R0
+#     Sunph + Phos         = S0
+#     Atot                 = A0
+# i.e. every reaction is a permutation of the pool.  A reaction that leaks a
+# species, double-counts a complex partner, or uses the wrong reactant
+# multiplicity shows up as a nonzero drift in one of these three sums.
+begin model
+begin parameters
+  kon  1e-3
+  koff 0.5
+  kon2 2e-3
+  kcat 0.4
+  koff2 0.1
+  km   0.05
+  R0   200.0
+  A0   2000.0
+  S0   1000.0
+end parameters
+begin molecule types
+  R(b)
+  A(u)
+  S(s~U~P)
+end molecule types
+begin seed species
+  R(b)   R0
+  A(u)   A0
+  S(s~U) S0
+end seed species
+begin observables
+  Molecules Rfree R(b)
+  Molecules RA    R(b!1).A(u!1)
+  Molecules RS    R(b!1).S(s~U!1)
+  Molecules Rtot  R
+  Molecules Phos  S(s~P)
+  Molecules Sunph S(s~U)
+  Molecules Stot  S
+  Molecules Atot  A
+end observables
+begin reaction rules
+  R(b) + A(u) <-> R(b!1).A(u!1) kon, koff
+  R(b) + S(s~U) <-> R(b!1).S(s~U!1) kon2, koff2
+  R(b!1).S(s~U!1) -> R(b) + S(s~P) kcat
+  S(s~P) -> S(s~U) km
+end reaction rules
+end model
+begin actions
+  generate_network({overwrite=>1})
+  writeNetwork({overwrite=>1,file=>"m6.net"})
+  simulate_ode({t_end=>400,n_steps=>8000,atol=>1e-11,rtol=>1e-11})
+end actions
