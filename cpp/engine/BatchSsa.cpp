@@ -306,8 +306,20 @@ BatchSsaMetrics CpuBatchSsaSimulator::simulateMultiCore(const BatchSsaOptions& o
     }
     if (numThreads == 0) numThreads = 1;
 
-    OdeIntegrator refIntegrator(model_, network_);
-    const auto& compiledGroups = refIntegrator.getCompiledGroups();
+    // One compiled model for the whole pool. Constructing an OdeIntegrator
+    // recompiles every reaction and observable from the AST, so the previous
+    // one-per-worker layout paid numThreads+1 model compiles per batch (15+1
+    // here) and held numThreads copies of the compiled network alive at once.
+    //
+    // Sharing is safe because the SSA path is re-entrant on this class:
+    // integrate() dispatches to integrateSSA(), which reads only the compiled
+    // reaction/group tables and writes exclusively to its own locals and the
+    // OdeResult it returns. Every helper it reaches (outputTimes, parseStopIf,
+    // updateGroups, stopConditionMet, computePropensity) is const and takes
+    // its output through an out-parameter. The one mutable member,
+    // groupValues_, is scratch for derivs(), which the SSA path never calls.
+    OdeIntegrator integrator(model_, network_);
+    const auto& compiledGroups = integrator.getCompiledGroups();
     std::size_t numObs = compiledGroups.size();
     std::size_t numPoints = options.nSteps + 1;
     std::size_t numSpecies = network_.species.size();
@@ -346,13 +358,10 @@ BatchSsaMetrics CpuBatchSsaSimulator::simulateMultiCore(const BatchSsaOptions& o
         std::size_t endIdx = std::min(startIdx + chunkSize, batchSize);
         if (startIdx >= endIdx) continue;
 
-        futures.push_back(std::async(std::launch::async, [this, &options, startIdx, endIdx, numPoints, numObs, numSpecies, &metrics]() {
+        futures.push_back(std::async(std::launch::async, [this, &options, &integrator, startIdx, endIdx, numPoints, numObs, numSpecies, &metrics]() {
             WorkerResult wRes;
             wRes.sumObs.resize(numPoints, std::vector<double>(numObs, 0.0));
             wRes.sumSqObs.resize(numPoints, std::vector<double>(numObs, 0.0));
-
-            // Independent OdeIntegrator per thread for thread safety
-            OdeIntegrator threadIntegrator(model_, network_);
 
             OdeOptions odeOpts;
             odeOpts.tStart = options.tStart;
@@ -363,7 +372,7 @@ BatchSsaMetrics CpuBatchSsaSimulator::simulateMultiCore(const BatchSsaOptions& o
 
             for (std::size_t b = startIdx; b < endIdx; ++b) {
                 odeOpts.seed = static_cast<unsigned int>(options.baseSeed + b);
-                OdeResult res = threadIntegrator.integrate(odeOpts);
+                OdeResult res = integrator.integrate(odeOpts);
 
                 if (wRes.timePoints.empty() && !res.timePoints.empty()) {
                     wRes.timePoints.resize(res.timePoints.size());
@@ -428,7 +437,8 @@ BatchSsaMetrics CpuBatchSsaSimulator::simulateMultiCore(const BatchSsaOptions& o
     metrics.trajectoriesPerSecTotal = (options.batchSize / (totalMs / 1000.0));
     metrics.eventsPerSecSim = (totalEvents / (simMs / 1000.0));
     metrics.eventsPerSecTotal = (totalEvents / (totalMs / 1000.0));
-    metrics.memoryUsageBytes = (numThreads * sizeof(OdeIntegrator)) +
+    // One compiled model backs the whole pool, not one per worker.
+    metrics.memoryUsageBytes = sizeof(OdeIntegrator) +
                               options.batchSize * (numSpecies * sizeof(int32_t) + numObs * sizeof(float));
 
     metrics.observableMeans.resize(numPoints, std::vector<float>(numObs, 0.0f));
