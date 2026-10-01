@@ -50,11 +50,16 @@ before it can be called a win, and where a lane's own benchmark is more
 sensitive for its region, that benchmark still governs — the composite is
 for cross-branch comparison, not for replacing a good local benchmark.
 
-Every harness run prints `load1=` (1-minute loadavg at start) in its header
-and in the `--json` meta (`load1_start`/`load1_end`). Quote it with any
-timing taken from this harness, together with how many other timing-sensitive
-benchmark processes were live; a bare composite without load context is
-unverified. Baseline session for the current metric is in `bench/baseline.json`.
+Every harness run prints `load1=` (raw 1-minute loadavg at start) in its header
+and in the `--json` meta (`load1_start`/`load1_end`). Quote it as a **coarse
+band, not a precise reading** — memWatch calibrated the host's loadavg against
+a known input and it does not respond within seconds, so treat e.g. 128.7 as
+"~100-130 band". Pair any timing from this harness with (a) the loadavg band,
+(b) the exact concurrent timing-sensitive process list from
+`ps -axo pid,etime,command`, (c) whether the comparison was interleaved in one
+session, and (d) peak RSS from `/usr/bin/time -l`. Per-process `%CPU` figures
+are unreliable on this host and should not be quoted. The current metric's
+baseline is `bench/baseline.json`.
 
 ## Which binary and which Python are being scored
 
@@ -83,7 +88,7 @@ mismatch (netgen `.net` sha, SSA event counts, ODE final-state digests,
 `out_write` `.cdat`/`.gdat` shas, `py_load` model-block counts).
 
 Envelope: the v2 baseline run (5 reps) measured **23.76 s wall, peak RSS
-84,475,904 B (80.6 MiB)** at load1 128.7 with two build slots active —
-inside the 60 s envelope even on this heavily contended host (the v1
-4-component run measured 5.83 s at load1 ~13.6). No network access;
-stdlib only.
+84,475,904 B (80.6 MiB)** in the loadavg ~100-130 band with two `-j4` build
+slots active — inside the 60 s envelope even on this heavily contended host
+(the v1 4-component run measured 5.83 s in a quiet ~10-20 band). No network
+access; stdlib only.
