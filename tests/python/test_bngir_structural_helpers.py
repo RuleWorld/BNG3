@@ -121,3 +121,188 @@ def test_v02_minimal_document_matches_schema():
         (ROOT / "provenance" / "schemas" / "bngir-0.2.schema.json").read_text()
     )
     jsonschema.validate(minimal_document(), schema)
+
+
+def test_v02_builtin_calls_render_bngl_keyword_spellings():
+    model = minimal_document()["model"]
+    ref = {"kind": "parameter_ref", "symbol": {"kind": "parameter", "index": 0}}
+    for builtin, spelling in (
+        ("arrhenius", "Arrhenius"),
+        ("saturation", "Sat"),
+        ("hill", "Hill"),
+        ("michaelis_menten", "MM"),
+        ("exp", "exp"),
+    ):
+        expression = {
+            "kind": "builtin_call",
+            "builtin": builtin,
+            "arguments": [ref, ref],
+        }
+        assert bngir._expression_v02(expression, model) == f"{spelling}(k,k)"
+
+
+def test_v02_refuses_unknown_builtin_calls():
+    document = minimal_document()
+    document["model"]["functions"] = [
+        {
+            "id": 0,
+            "name": "f",
+            "arguments": [],
+            "expression": {
+                "kind": "builtin_call",
+                "builtin": "future_builtin",
+                "arguments": [],
+            },
+        }
+    ]
+
+    with pytest.raises(ValueError, match="unsupported builtin"):
+        bngir._load_document_v02(document)
+
+
+def test_v02_renders_unit_defaults_definitions_and_annotations():
+    document = minimal_document()
+    metadata = document["model"]["metadata"]
+    metadata["unit_defaults"] = {"timeUnits": "second"}
+    metadata["unit_definitions"] = [
+        {
+            "id": "per_s",
+            "expression": "second^-1",
+            "builtin": False,
+            "unit": "per_s",
+            "factor": 1.0,
+        }
+    ]
+    document["model"]["parameters"][0]["unit"] = "per_s"
+
+    root = bngir._load_document_v02(document)
+    source = bngir._as_bngl_v02(root)
+
+    assert (
+        "begin units\n  timeUnits = second\n  unit per_s = second^-1\nend units"
+        in source
+    )
+    assert "  k 1.0 [per_s]" in source
+
+
+def test_v02_refuses_unsupported_unit_default_roles():
+    document = minimal_document()
+    document["model"]["metadata"]["unit_defaults"] = {"durationUnits": "second"}
+
+    with pytest.raises(ValueError, match="unsupported role"):
+        bngir._load_document_v02(document)
+
+
+def test_v02_refuses_builtin_unit_definitions():
+    document = minimal_document()
+    document["model"]["metadata"]["unit_definitions"] = [
+        {"id": "second", "expression": "s", "builtin": True, "unit": "s", "factor": 1.0}
+    ]
+
+    with pytest.raises(ValueError, match="builtin definition"):
+        bngir._load_document_v02(document)
+
+
+def test_v02_barrier_patterns_render_from_transition_text():
+    document = minimal_document()
+    # The wire transition is BarrierPattern::toString(): label, arrow, and
+    # energy expression in one string.
+    document["model"]["barrier_patterns"] = [
+        {
+            "index": 0,
+            "label": "slow",
+            "transition": "slow: A(s~U) -> A(s~P) Gbar",
+            "expression": "Gbar",
+            "reaction_center": "A|s|U->P",
+            "center_resolved": True,
+            "value": 1.0,
+        }
+    ]
+
+    root = bngir._load_document_v02(document)
+    source = bngir._as_bngl_v02(root)
+
+    assert "  slow: A(s~U) -> A(s~P) Gbar\n" in source
+    # Exactly once: the transition already carries both label and energy.
+    assert source.count("Gbar") == 1
+    assert source.count("slow:") == 1
+
+
+def test_v02_refuses_unresolved_barrier_centers():
+    document = minimal_document()
+    document["model"]["barrier_patterns"] = [
+        {
+            "index": 0,
+            "label": "slow",
+            "transition": "slow: A(s~U) -> A(s~P) Gbar",
+            "expression": "Gbar",
+            "reaction_center": "",
+            "center_resolved": False,
+            "value": None,
+        }
+    ]
+
+    with pytest.raises(ValueError, match="resolved reaction center"):
+        bngir._load_document_v02(document)
+
+
+def test_v02_observable_count_relations_render_bare_molecule_patterns():
+    document = minimal_document()
+    document["model"]["observables"] = [
+        {
+            "id": 0,
+            "name": "R2",
+            "kind": "species",
+            "terms": [
+                {
+                    "pattern": {
+                        "compartment_prefix": False,
+                        "molecules": [{"occurrence": 0, "type": "R", "sites": []}],
+                    },
+                    "quantity": 2,
+                    "relation": "==",
+                }
+            ],
+        }
+    ]
+
+    root = bngir._load_document_v02(document)
+
+    assert "  Species R2 R==2\n" in bngir._as_bngl_v02(root)
+
+
+def test_v02_refuses_sited_count_relation_patterns():
+    document = minimal_document()
+    document["model"]["observables"] = [
+        {
+            "id": 0,
+            "name": "R2",
+            "kind": "species",
+            "terms": [
+                {
+                    "pattern": {
+                        "compartment_prefix": False,
+                        "molecules": [
+                            {
+                                "occurrence": 0,
+                                "type": "A",
+                                "sites": [
+                                    {
+                                        "occurrence": 0,
+                                        "component": "x",
+                                        "state": {"kind": "any"},
+                                        "bond": {"kind": "unspecified"},
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                    "quantity": 2,
+                    "relation": "==",
+                }
+            ],
+        }
+    ]
+
+    with pytest.raises(ValueError, match="requires a bare molecule pattern"):
+        bngir._load_document_v02(document)

@@ -33,6 +33,66 @@ _FEATURES = frozenset(
     }
 )
 
+# The six unit-default roles normalizeUnitSyntax() accepts on read-back; any
+# other role cannot be re-emitted as BNGL.
+_UNIT_DEFAULT_ROLES = frozenset(
+    {
+        "areaUnits",
+        "extentUnits",
+        "lengthUnits",
+        "substanceUnits",
+        "timeUnits",
+        "volumeUnits",
+    }
+)
+
+# Builtin function names the compiler can resolve, mirroring builtinName() in
+# cpp/bindings/bind_compile_snapshot.cpp. A builtin_call outside this set can
+# not be rendered back to BNGL and must be refused rather than lowered to an
+# ordinary function call.
+_KNOWN_BUILTINS = frozenset(
+    {
+        "abs",
+        "acos",
+        "acosh",
+        "arrhenius",
+        "asin",
+        "asinh",
+        "atan",
+        "atanh",
+        "avg",
+        "ceil",
+        "cos",
+        "cosh",
+        "e",
+        "exp",
+        "factorial",
+        "floor",
+        "function_product",
+        "hill",
+        "hybrid",
+        "if",
+        "ln",
+        "log10",
+        "log2",
+        "max",
+        "michaelis_menten",
+        "min",
+        "mratio",
+        "pi",
+        "rint",
+        "saturation",
+        "sin",
+        "sinh",
+        "sqrt",
+        "sum",
+        "table_function",
+        "tan",
+        "tanh",
+        "time",
+    }
+)
+
 
 def _expression(value: Any) -> str:
     rendered = value.to_string() if hasattr(value, "to_string") else str(value)
@@ -57,6 +117,22 @@ def _model_of(model: Any) -> Any:
 
 def _payload_v01(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, Any]:
     native = _model_of(model)
+
+    # Physical-unit metadata has no place in the 0.1 wire object, and silently
+    # dropping it would turn a unit-aware model into a unit-free one on
+    # read-back. Refuse instead of approximating.
+    if native.unit_defaults or any(
+        item.unit
+        for item in (
+            *native.parameters,
+            *native.seed_species,
+            *native.compartments,
+        )
+    ):
+        raise ValueError(
+            f"BNGIR {VERSION} cannot represent physical-unit metadata; "
+            f"use version {STRUCTURAL_VERSION!r}"
+        )
 
     parameters = [
         {"name": p.name, "expression": _expression(p.expression)}
@@ -237,6 +313,15 @@ def _features_v02(snapshot: Mapping[str, Any]) -> dict[str, list[str]]:
 
 def _payload_v02(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, Any]:
     native = _model_of(model)
+    # The compiled snapshot only resolves Molecules/Species observables; any
+    # other kind would serialize as "unknown" and the reader cannot rebuild it
+    # from structured patterns alone.
+    for observable in native.observables:
+        if observable.type not in ("Molecules", "Species"):
+            raise ValueError(
+                f"BNGIR {STRUCTURAL_VERSION} cannot represent "
+                f"{observable.type!r} observable kinds; use version {VERSION!r}"
+            )
     try:
         from .model import _cpp
 
@@ -255,6 +340,10 @@ def _payload_v02(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, 
         "model": {"metadata": metadata, **snapshot},
         "protocol": {"actions": actions},
     }
+    # Writer/reader closure: every 0.2 document must pass the reader's own
+    # validation, so to_bngir refuses anything from_bngir would refuse instead
+    # of emitting a document that cannot be read back.
+    _load_document_v02(result)
     if provenance is not None:
         result["provenance"] = dict(provenance)
     return result
@@ -562,14 +651,11 @@ def _validate_expression_v02(
             raise ValueError(f"BNGIR {where} has invalid reactant_index")
         if reactant_count is not None and value >= reactant_count:
             raise ValueError(f"BNGIR {where} reactant_index is out of range: {value}")
-    elif kind in {
-        "number",
-        "time_ref",
-        "unary",
-        "binary",
-        "builtin_call",
-        "table_function",
-    }:
+    elif kind == "builtin_call":
+        builtin = expression.get("builtin")
+        if builtin not in _KNOWN_BUILTINS:
+            raise ValueError(f"BNGIR {where} has unsupported builtin: {builtin!r}")
+    elif kind in {"number", "time_ref", "unary", "binary", "table_function"}:
         pass
     elif kind == "unresolved":
         raise ValueError(f"BNGIR {where} is unresolved")
@@ -819,6 +905,65 @@ def _validate_direction_v02(
             raise ValueError(f"BNGIR {where} has unsupported mutation kind: {kind!r}")
 
 
+# Rule modifiers that render verbatim in BNGL rule lines.
+_PLAIN_RULE_MODIFIERS = frozenset(
+    {"delete_molecules", "move_connected", "match_once", "total_rate"}
+)
+# Include/exclude modifiers serialize through direction.filters; each kind maps
+# to the (include, side) pair of the filter that carries it.
+_FILTER_MODIFIER_SIDES = {
+    "include_reactants": (True, "reactant"),
+    "exclude_reactants": (False, "reactant"),
+    "include_products": (True, "product"),
+    "exclude_products": (False, "product"),
+}
+
+
+def _require_optional_unit_v02(item: Mapping[str, Any], where: str) -> None:
+    unit = item.get("unit")
+    if unit is not None and (not isinstance(unit, str) or not unit):
+        raise ValueError(f"BNGIR {where}.unit must be a non-empty string")
+
+
+def _validate_metadata_v02(metadata: Mapping[str, Any]) -> None:
+    unit_defaults = metadata.get("unit_defaults", {})
+    if not isinstance(unit_defaults, Mapping):
+        raise ValueError("BNGIR model.metadata.unit_defaults must be an object")
+    for role, unit in unit_defaults.items():
+        if (
+            not isinstance(role, str)
+            or role not in _UNIT_DEFAULT_ROLES
+            or not isinstance(unit, str)
+            or not unit
+        ):
+            raise ValueError(
+                f"BNGIR model.metadata.unit_defaults has unsupported role: {role!r}"
+            )
+    unit_definitions = metadata.get("unit_definitions", [])
+    if not isinstance(unit_definitions, list):
+        raise ValueError("BNGIR model.metadata.unit_definitions must be an array")
+    for i, raw_definition in enumerate(unit_definitions):
+        definition = _require_mapping(
+            raw_definition, f"model.metadata.unit_definitions[{i}]"
+        )
+        # A builtin definition is provided by the standard unit vocabulary on
+        # read-back; the wire form only carries authored definitions, so a
+        # builtin entry cannot be reconstructed and must be refused.
+        if definition.get("builtin"):
+            raise ValueError(
+                f"BNGIR model.metadata.unit_definitions[{i}] is a builtin definition"
+            )
+        identifier = definition.get("id")
+        expression_text = definition.get("expression")
+        if (
+            not isinstance(identifier, str)
+            or not identifier
+            or not isinstance(expression_text, str)
+            or not expression_text
+        ):
+            raise ValueError(f"BNGIR model.metadata.unit_definitions[{i}] is malformed")
+
+
 def _validate_model_v02(model: Mapping[str, Any]) -> None:
     # Construct ID maps up front to catch duplicate IDs even when unreferenced.
     for section in (
@@ -833,16 +978,24 @@ def _validate_model_v02(model: Mapping[str, Any]) -> None:
         "rules",
     ):
         _section_id_map(model, section)
+    _validate_metadata_v02(
+        _require_mapping(model.get("metadata", {}), "model.metadata")
+    )
     for i, parameter in enumerate(model.get("parameters", [])):
         parameter = _require_mapping(parameter, f"model.parameters[{i}]")
+        _require_optional_unit_v02(parameter, f"model.parameters[{i}]")
         _validate_expression_v02(
             _require_mapping(parameter.get("expression"), "parameter expression"),
             model,
             local_names=set(),
             where=f"model.parameters[{i}].expression",
         )
+    for i, compartment in enumerate(model.get("compartments", [])):
+        compartment = _require_mapping(compartment, f"model.compartments[{i}]")
+        _require_optional_unit_v02(compartment, f"model.compartments[{i}]")
     for i, seed in enumerate(model.get("seeds", [])):
         seed = _require_mapping(seed, f"model.seeds[{i}]")
+        _require_optional_unit_v02(seed, f"model.seeds[{i}]")
         _validate_pattern_v02(
             _require_mapping(seed.get("pattern"), "seed pattern"),
             model,
@@ -856,13 +1009,49 @@ def _validate_model_v02(model: Mapping[str, Any]) -> None:
         )
     for i, observable in enumerate(model.get("observables", [])):
         observable = _require_mapping(observable, f"model.observables[{i}]")
+        kind = observable.get("kind")
+        if kind not in {"molecules", "species"}:
+            raise ValueError(
+                f"BNGIR model.observables[{i}] has unsupported observable kind: {kind!r}"
+            )
         for j, term in enumerate(observable.get("terms", [])):
             term = _require_mapping(term, f"model.observables[{i}].terms[{j}]")
+            pattern = _require_mapping(term.get("pattern"), "observable pattern")
             _validate_pattern_v02(
-                _require_mapping(term.get("pattern"), "observable pattern"),
+                pattern,
                 model,
                 f"model.observables[{i}].terms[{j}].pattern",
             )
+            relation = term.get("relation")
+            if relation is None:
+                continue
+            if relation not in {"==", ">", ">=", "<", "<="}:
+                raise ValueError(
+                    f"BNGIR model.observables[{i}].terms[{j}] has unsupported "
+                    f"count relation: {relation!r}"
+                )
+            if not isinstance(term.get("quantity"), int):
+                raise ValueError(
+                    f"BNGIR model.observables[{i}].terms[{j}].quantity must be an integer"
+                )
+            if relation == ">":
+                # species_def '>' count filters accept any pattern shape.
+                continue
+            # BNGL only spells count restrictions other than '>' after a bare
+            # molecule name, so anything richer cannot round-trip.
+            molecules = pattern.get("molecules", [])
+            if (
+                len(molecules) != 1
+                or _require_mapping(molecules[0], "observable molecule").get("sites")
+                or pattern.get("compartment")
+                or molecules[0].get("compartment")
+                or not isinstance(molecules[0].get("type"), str)
+                or not molecules[0].get("type")
+            ):
+                raise ValueError(
+                    f"BNGIR model.observables[{i}].terms[{j}] count relation "
+                    f"{relation!r} requires a bare molecule pattern"
+                )
     for i, function in enumerate(model.get("functions", [])):
         function = _require_mapping(function, f"model.functions[{i}]")
         args = function.get("arguments", [])
@@ -887,6 +1076,31 @@ def _validate_model_v02(model: Mapping[str, Any]) -> None:
             local_names=set(),
             where=f"model.energy_patterns[{i}].expression",
         )
+    for i, barrier in enumerate(model.get("barrier_patterns", [])):
+        barrier = _require_mapping(barrier, f"model.barrier_patterns[{i}]")
+        label = barrier.get("label", "")
+        if not isinstance(label, str):
+            raise ValueError(
+                f"BNGIR model.barrier_patterns[{i}].label must be a string"
+            )
+        # The wire form carries the backing transition as text (its schema
+        # shape), not as reactant/product pattern lists.
+        transition = barrier.get("transition")
+        if not isinstance(transition, str) or "->" not in transition:
+            raise ValueError(
+                f"BNGIR model.barrier_patterns[{i}].transition must be a reaction transition"
+            )
+        expression_text = barrier.get("expression")
+        if not isinstance(expression_text, str) or not expression_text:
+            raise ValueError(
+                f"BNGIR model.barrier_patterns[{i}].expression must be a non-empty string"
+            )
+        if barrier.get("center_resolved") is not True:
+            raise ValueError(
+                f"BNGIR model.barrier_patterns[{i}] {label!r} does not carry "
+                "a resolved reaction center"
+            )
+
     population_types = _section_id_map(model, "population_types")
     for i, mapping in enumerate(model.get("population_maps", [])):
         mapping = _require_mapping(mapping, f"model.population_maps[{i}]")
@@ -913,16 +1127,46 @@ def _validate_model_v02(model: Mapping[str, Any]) -> None:
 
     for i, rule in enumerate(model.get("rules", [])):
         rule = _require_mapping(rule, f"model.rules[{i}]")
-        _validate_direction_v02(
-            _require_mapping(rule.get("forward"), "rule.forward"),
-            model,
-            f"model.rules[{i}].forward",
-        )
-        if rule.get("reverse") is not None:
-            _validate_direction_v02(
-                _require_mapping(rule.get("reverse"), "rule.reverse"),
-                model,
-                f"model.rules[{i}].reverse",
+        forward = _require_mapping(rule.get("forward"), "rule.forward")
+        _validate_direction_v02(forward, model, f"model.rules[{i}].forward")
+        reverse = rule.get("reverse")
+        if reverse is not None and not rule.get("bidirectional"):
+            raise ValueError(
+                f"BNGIR model.rules[{i}] carries a reverse direction on a "
+                "non-bidirectional rule"
+            )
+        if reverse is not None:
+            reverse = _require_mapping(reverse, "rule.reverse")
+            _validate_direction_v02(reverse, model, f"model.rules[{i}].reverse")
+        # Include/exclude modifiers are rendered from direction.filters; a
+        # modifier without its matching filter would be dropped silently.
+        filters = list(forward.get("filters", []))
+        if reverse is not None:
+            filters += list(reverse.get("filters", []))
+        for j, raw_modifier in enumerate(rule.get("modifiers", [])):
+            modifier = _require_mapping(
+                raw_modifier, f"model.rules[{i}].modifiers[{j}]"
+            )
+            kind = modifier.get("kind")
+            if kind in _PLAIN_RULE_MODIFIERS:
+                continue
+            if kind == "unknown":
+                raise ValueError(f"BNGIR model.rules[{i}].modifiers[{j}] is unresolved")
+            if kind in _FILTER_MODIFIER_SIDES:
+                include, side = _FILTER_MODIFIER_SIDES[kind]
+                if not any(
+                    isinstance(candidate, Mapping)
+                    and bool(candidate.get("include")) is include
+                    and candidate.get("side") == side
+                    for candidate in filters
+                ):
+                    raise ValueError(
+                        f"BNGIR model.rules[{i}].modifiers[{j}] {kind!r} has no "
+                        "matching filter"
+                    )
+                continue
+            raise ValueError(
+                f"BNGIR model.rules[{i}] has unsupported modifier kind: {kind!r}"
             )
 
 
@@ -1017,9 +1261,15 @@ _BINARY_TOKENS = {
     "or": "||",
 }
 _UNARY_TOKENS = {"plus": "+", "negate": "-", "not": "!"}
+# BNGL keyword spellings for builtins whose identifier differs from the wire
+# name. Rendering the wire name verbatim would produce an undefined function
+# call (e.g. arrhenius(...) instead of Arrhenius(...)) and fail on read-back.
 _BUILTIN_NAMES = {
-    "michaelis_menten": "MM",
+    "arrhenius": "Arrhenius",
     "function_product": "FunctionProduct",
+    "hill": "Hill",
+    "michaelis_menten": "MM",
+    "saturation": "Sat",
     "table_function": "tfun",
 }
 
@@ -1236,13 +1486,26 @@ def _as_bngl_v02(root: Mapping[str, Any]) -> str:
         lines.append(f"setOption({_quote_string(key)}, {_quote_action_value(value)})")
     lines.append("begin model")
 
+    unit_defaults = metadata.get("unit_defaults") or {}
+    unit_definitions = metadata.get("unit_definitions") or []
+    if unit_defaults or unit_definitions:
+        # Mirrors BnglWriter: authored defaults and definitions round-trip
+        # through the same block normalizeUnitSyntax() consumes on read-back.
+        lines.append("begin units")
+        for role in sorted(unit_defaults):
+            lines.append(f"  {role} = {unit_defaults[role]}")
+        for definition in unit_definitions:
+            lines.append(f"  unit {definition['id']} = {definition['expression']}")
+        lines.append("end units")
+
     parameters = model.get("parameters", [])
     if parameters:
         lines.append("begin parameters")
         for item in parameters:
-            lines.append(
-                f"  {item['name']} {_expression_v02(item['expression'], model)}"
-            )
+            line = f"  {item['name']} {_expression_v02(item['expression'], model)}"
+            if item.get("unit"):
+                line += f" [{item['unit']}]"
+            lines.append(line)
         lines.append("end parameters")
 
     compartments = model.get("compartments", [])
@@ -1250,8 +1513,10 @@ def _as_bngl_v02(root: Mapping[str, Any]) -> str:
         lines.append("begin compartments")
         for item in compartments:
             suffix = f" {item['parent']}" if item.get("parent") else ""
+            unit = f" [{item['unit']}]" if item.get("unit") else ""
             lines.append(
-                f"  {item['name']} {int(item['dimension'])} {item['volume']}{suffix}"
+                f"  {item['name']} {int(item['dimension'])} {item['volume']}"
+                f"{suffix}{unit}"
             )
         lines.append("end compartments")
 
@@ -1275,7 +1540,10 @@ def _as_bngl_v02(root: Mapping[str, Any]) -> str:
             pattern = _pattern_v02(item["pattern"])
             if item.get("constant") and not pattern.startswith("$"):
                 pattern = "$" + pattern
-            lines.append(f"  {pattern} {_expression_v02(item['amount'], model)}")
+            line = f"  {pattern} {_expression_v02(item['amount'], model)}"
+            if item.get("unit"):
+                line += f" [{item['unit']}]"
+            lines.append(line)
         lines.append("end seed species")
 
     observables = model.get("observables", [])
@@ -1288,9 +1556,16 @@ def _as_bngl_v02(root: Mapping[str, Any]) -> str:
                 pattern = _pattern_v02(term["pattern"])
                 relation = str(term.get("relation", ""))
                 quantity = int(term.get("quantity", 0))
-                rendered_terms.append(
-                    f"{pattern}{relation}{quantity}" if relation else pattern
-                )
+                if relation and relation != ">":
+                    # BNGL spells count restrictions other than '>' only after
+                    # a bare molecule name, so the structured pattern renders
+                    # as its type; validation guarantees that shape.
+                    bare = term["pattern"]["molecules"][0]["type"]
+                    rendered_terms.append(f"{bare}{relation}{quantity}")
+                else:
+                    rendered_terms.append(
+                        f"{pattern}{relation}{quantity}" if relation else pattern
+                    )
             lines.append(f"  {kind} {item['name']} {','.join(rendered_terms)}")
         lines.append("end observables")
 
@@ -1319,14 +1594,10 @@ def _as_bngl_v02(root: Mapping[str, Any]) -> str:
         # Follows energy patterns for the same reason as the v0.1 emitter.
         lines.append("begin barrier patterns")
         for item in barrier_patterns:
-            label = f"{item['label']}: " if item.get("label") else ""
-            arrow = "<->" if item.get("bidirectional") else "->"
-            reactants = " + ".join(item.get("reactants", [])) or "0"
-            products = " + ".join(item.get("products", [])) or "0"
-            lines.append(
-                f"  {label}{reactants} {arrow} {products} "
-                f"{_expression_v02(item['expression'], model)}"
-            )
+            # The wire transition is BarrierPattern::toString(): it already
+            # carries the label prefix, the arrow, and the energy expression,
+            # so it is the whole line. Validation guaranteed it is present.
+            lines.append(f"  {item['transition']}")
         lines.append("end barrier patterns")
 
     population_maps = model.get("population_maps", [])
@@ -1427,7 +1698,12 @@ def from_bngir(document: str | Mapping[str, Any]):
 
 
 def semantic_equal(left: Any, right: Any, *, version: str = VERSION) -> bool:
-    """Compare canonical BNGIR documents, ignoring JSON formatting."""
+    """Compare canonical BNGIR documents, ignoring JSON formatting.
+
+    Raises the version's serialization refusals (for example physical-unit
+    metadata under 0.1): the comparison itself needs a wire form that the
+    chosen version can represent.
+    """
     left_doc = _parse_document(to_bngir(left, version=version))
     right_doc = _parse_document(to_bngir(right, version=version))
     return left_doc == right_doc
