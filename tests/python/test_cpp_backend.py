@@ -6,7 +6,9 @@ from pathlib import Path
 
 import pytest
 
-_cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+from _extdep import require_extension
+
+_cpp = require_extension()
 import bionetgen
 
 MODELS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "models")

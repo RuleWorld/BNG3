@@ -99,7 +99,9 @@ import math
 import numpy as np
 import pytest
 
-_cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+from _extdep import require_extension
+
+_cpp = require_extension()
 scipy_stats = pytest.importorskip("scipy.stats")
 
 BATCH = 20000

@@ -11,7 +11,9 @@ the same module ``bionetgen.load(...).execute()`` and the ``bng3`` CLI use.
 
 import pytest
 
-_cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+from _extdep import require_extension
+
+_cpp = require_extension()
 
 import bionetgen
 

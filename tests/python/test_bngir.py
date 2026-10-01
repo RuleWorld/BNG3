@@ -7,7 +7,9 @@ import bionetgen
 
 jsonschema = pytest.importorskip("jsonschema")
 
-pytest.importorskip("bionetgen._bionetgen_cpp")
+from _extdep import require_extension
+
+require_extension()
 
 
 MODEL = r"""
