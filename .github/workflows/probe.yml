@@ -1,9 +1,14 @@
 name: Batch SSA segv probe
 
-# Diagnostic-only workflow (v2). v1 localized the exit-139 crash to
-# `cpp.generate_network` (test line 164) on the first model, while the same
-# call passed in an isolated process. This version gets a native backtrace
-# (gdb) and an AddressSanitizer reproduction in two parallel jobs.
+# Diagnostic-only workflow (v3). v1/v2 localized the exit-139 crash to
+# CompiledRateLaw::compile -> Expression::toString -> ostream::_M_insert<double>
+# with statically-linked libstdc++ locale code inside the extension. This
+# version proves the causal chain in one job:
+#   1. build the baseline (origin/main flags: -static-libgcc -static-libstdc++
+#      on the extension), collect link/maps evidence and crash counts,
+#   2. build with the extension linking libstdc++ dynamically, collect the
+#      same evidence, expect zero crashes,
+#   3. run the real CI test against the fixed build.
 
 on:
   push:
@@ -15,70 +20,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  gdb-trace:
-    name: Native backtrace under gdb
-    runs-on: ubuntu-22.04
-    env:
-      CC: gcc-12
-      CXX: g++-12
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build gdb
-          python -m pip install pytest numpy scipy
-
-      - name: Configure with the Python bindings
-        run: |
-          cmake -B build -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DPython3_EXECUTABLE="$(python -c 'import sys; print(sys.executable)')" \
-            -DBUILD_PYTHON_BINDINGS=ON \
-            -DBUILD_CLI=OFF \
-            -DBUILD_NFSIM_CLI=OFF \
-            -DBUILD_TESTS=OFF
-
-      - name: Build
-        run: cmake --build build
-
-      - name: Isolate - does importing numpy/scipy first break parse+generate?
-        shell: bash
-        run: |
-          set +e
-          for i in 1 2 3 4 5; do
-            python -c "
-            import numpy, scipy
-            import sys
-            sys.path.insert(0, 'build/cpp'); sys.path.insert(0, 'python')
-            import _bionetgen_cpp as cpp
-            m = cpp.parse_file('models/isomerization.bngl')
-            n = cpp.generate_network(m)
-            print('iter $i ok:', n.num_species, n.num_reactions, flush=True)"
-            echo "iter $i rc=$?"
-          done
-
-      - name: Crash under gdb for a native backtrace
-        shell: bash
-        run: |
-          set +e
-          gdb --batch --return-child-result \
-            -ex "set pagination off" \
-            -ex "set disable-randomization off" \
-            -ex run \
-            -ex "bt 50" \
-            -ex "thread apply all bt 20" \
-            -ex quit \
-            --args python -X faulthandler -u tests/test_batch_ssa_statistical_parity.py --mode cpu 2>&1 | tee /tmp/gdb.log | tail -120
-          echo "gdb rc=${PIPESTATUS[0]}"
-
-  asan-repro:
-    name: AddressSanitizer reproduction
+  verify-fix:
+    name: Baseline vs fixed build
     runs-on: ubuntu-22.04
     env:
       CC: gcc-12
@@ -96,28 +39,92 @@ jobs:
           sudo apt-get install -y cmake ninja-build
           python -m pip install pytest numpy scipy
 
-      - name: Configure with ASan and the Python bindings
+      - name: Baseline build (origin/main link flags)
         run: |
-          cmake -B build -G Ninja \
-            -DCMAKE_BUILD_TYPE=Debug \
+          git fetch origin main
+          git show origin/main:cpp/CMakeLists.txt > cpp/CMakeLists.txt
+          cmake -B build-baseline -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
             -DPython3_EXECUTABLE="$(python -c 'import sys; print(sys.executable)')" \
-            -DCMAKE_CXX_FLAGS="-fsanitize=address -fno-omit-frame-pointer" \
-            -DCMAKE_C_FLAGS="-fsanitize=address -fno-omit-frame-pointer" \
-            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address" \
-            -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address" \
             -DBUILD_PYTHON_BINDINGS=ON \
             -DBUILD_CLI=OFF \
             -DBUILD_NFSIM_CLI=OFF \
             -DBUILD_TESTS=OFF
+          cmake --build build-baseline
 
-      - name: Build
-        run: cmake --build build
-
-      - name: Run the test under ASan
+      - name: Baseline link and runtime evidence
         shell: bash
         run: |
-          set +e
-          export LD_PRELOAD="$(gcc-12 -print-file-name=libasan.so)"
-          export ASAN_OPTIONS="detect_leaks=0:abort_on_error=1:symbolize=1"
-          PYTHONUNBUFFERED=1 python -X faulthandler tests/test_batch_ssa_statistical_parity.py --mode cpu 2>&1 | tail -120
-          exit ${PIPESTATUS[0]}
+          echo "== ldd of baseline extension =="
+          ldd build-baseline/cpp/_bionetgen_cpp*.so || true
+          echo "== which SciPy modules link libstdc++.so.6 =="
+          python - <<'EOF'
+          import glob, os, scipy, subprocess
+          hits = []
+          for f in glob.glob(os.path.join(os.path.dirname(scipy.__file__), '**', '*.so'), recursive=True):
+              out = subprocess.run(['ldd', f], capture_output=True, text=True).stdout
+              if 'libstdc++' in out:
+                  hits.append(os.path.basename(f))
+          print('scipy modules linking libstdc++.so.6:', hits[:10] or 'NONE')
+          EOF
+          echo "== /proc/self/maps: C++ runtimes in a process with numpy+scipy+baseline extension =="
+          python - <<'EOF'
+          import numpy, scipy, sys
+          sys.path.insert(0, 'build-baseline/cpp')
+          import _bionetgen_cpp
+          seen = [l.strip() for l in open('/proc/self/maps') if 'libstdc++' in l or 'libc++.so' in l]
+          print('\n'.join(seen) or '(no dynamic C++ runtime mapped)')
+          EOF
+
+      - name: Fixed build (extension links libstdc++ dynamically)
+        run: |
+          git checkout HEAD -- cpp/CMakeLists.txt
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DPython3_EXECUTABLE="$(python -c 'import sys; print(sys.executable)')" \
+            -DBUILD_PYTHON_BINDINGS=ON \
+            -DBUILD_CLI=OFF \
+            -DBUILD_NFSIM_CLI=OFF \
+            -DBUILD_TESTS=OFF
+          cmake --build build
+
+      - name: Fixed link evidence
+        run: |
+          echo "== ldd of fixed extension =="
+          ldd build/cpp/_bionetgen_cpp*.so | grep -E "stdc|gcc" || echo "ERROR: still no dynamic libstdc++ dependency"
+
+      - name: "Crash counts - baseline vs fixed, with and without numpy/scipy"
+        shell: bash
+        run: |
+          python - <<'EOF'
+          import subprocess, sys
+          TPL = ("import sys\n{pre}\n"
+                 "sys.path.insert(0, {bdir!r})\n"
+                 "sys.path.insert(0, 'python')\n"
+                 "import _bionetgen_cpp as cpp\n"
+                 "m = cpp.parse_file('models/isomerization.bngl')\n"
+                 "n = cpp.generate_network(m)\n"
+                 "print('ok', n.num_species, n.num_reactions)\n")
+          cases = [
+              ("baseline, no numpy/scipy", "build-baseline/cpp", "pass"),
+              ("baseline, numpy+scipy imported", "build-baseline/cpp", "import numpy, scipy"),
+              ("fixed, no numpy/scipy", "build/cpp", "pass"),
+              ("fixed, numpy+scipy imported", "build/cpp", "import numpy, scipy"),
+          ]
+          for label, bdir, pre in cases:
+              bad = 0
+              rcs = []
+              for _ in range(10):
+                  r = subprocess.run([sys.executable, "-c",
+                                      TPL.format(bdir=bdir, pre=pre)],
+                                     capture_output=True, text=True)
+                  rcs.append(r.returncode)
+                  if r.returncode != 0:
+                      bad += 1
+              print(f"{label}: {bad}/10 failed (rcs={rcs})", flush=True)
+          EOF
+
+      - name: Real CI test against the fixed build
+        shell: bash
+        run: |
+          PYTHONUNBUFFERED=1 python -X faulthandler tests/test_batch_ssa_statistical_parity.py --mode cpu

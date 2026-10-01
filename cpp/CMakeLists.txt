@@ -448,12 +448,15 @@ if(BUILD_PYTHON_BINDINGS)
         bindings/bind_viz.cpp
     )
     target_link_libraries(_bionetgen_cpp PRIVATE bionetgen_core)
-    if(MINGW OR CMAKE_COMPILER_IS_GNUCXX)
-        # A shared Python extension cannot be linked with -static. Static
-        # compiler runtimes remain supported, but the module itself must stay
-        # dynamically loadable on Linux.
-        target_link_options(_bionetgen_cpp PRIVATE -static-libgcc -static-libstdc++)
-    endif()
+    # The extension must link the C++ runtime dynamically. A statically
+    # embedded libstdc++ gives the host Python process two runtimes whenever
+    # any other loaded package brings libstdc++.so.6 (e.g. SciPy's C++
+    # modules); the duplicated locale facet tables corrupt std::ostream
+    # dispatch and the first Expression::toString() inside the process
+    # segfaults (reproduced on Linux/GCC by
+    # tests/test_batch_ssa_statistical_parity.py --mode cpu).
+    # Static runtimes remain the default for CLI executables via
+    # CMAKE_EXE_LINKER_FLAGS in the top-level CMakeLists.txt.
     target_include_directories(_bionetgen_cpp PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/ast
