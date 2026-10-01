@@ -41,6 +41,12 @@ using namespace BNGcore;
      for (it = Gb.begin(); it != Gb.end(); ++it, ++i) {
          (*it)->set_index(i);
      }
+
+    // Row order for the M matrix, fixed to the pattern graph's own node order.
+    // See UllmannBase::rowOrder for why address order cannot be used here.
+    for (node_const_iter_t row = Ga.begin(); row != Ga.end(); ++row) {
+        rowOrder.push_back(*row);
+    }
  }
 
 
@@ -140,24 +146,6 @@ UllmannBase::copy_M ( ullmann_M_t & orig, ullmann_M_t & copy )
 
 
 
-// copy orig M onto ullmann_M_t structure reference given by copy,
-//  beginning at row_iter (row_iter should point into rows of copy!!)
-//  
-void
-UllmannBase::copy_M ( ullmann_M_t & orig, ullmann_M_t & copy, row_iter_t row_iter )
-{
-    // IMPORTANT: assumes the row keys are the same in orig and copy, so
-    // we can just iterate through both simultaneously
-
-    // Copy contents from original.
-    row_rev_iter_t  row_iter1 = orig.rbegin();
-    row_rev_iter_t  row_iter2 = copy.rbegin();
-    while (  row_iter2.base() != row_iter  )
-    {   
-        *(row_iter2->second) = *(row_iter1->second);
-        ++row_iter1;  ++row_iter2;
-    }
-}
 
 
 
@@ -191,18 +179,27 @@ UllmannSGIso::find_maps ( List <Map> & maps )
     //std::cout << "first refinement results: " << std::endl;
     //print_M();
     
+    // An empty pattern graph has no rows to walk. Guarding here also avoids
+    // dereferencing the end iterator, which the previous M.begin() seed would
+    // have done in this case.
+    if ( rowOrder.empty() )  return 0;
+
     // call recursive core of the subgraph isomorphism algorithm
-    row_iter_t row_iter = M.begin();
-    return next_node( 0, row_iter, maps );
+    return next_node( 0, maps );
 }
 
 
 
 // core recursive algorithm
 size_t
-UllmannSGIso::next_node ( size_t d, row_iter_t & row_iter, List <Map> & maps )
+UllmannSGIso::next_node ( size_t d, List <Map> & maps )
 {
     size_t num_sg_iso = 0;
+    // Row `d` in pattern-graph order, looked up by key rather than reached by
+    // stepping a std::map iterator. That lookup is the fix: it makes the order
+    // in which pattern nodes are assigned - and hence the order embeddings are
+    // emitted - independent of node addresses. See UllmannBase::rowOrder.
+    row_iter_t row_iter = M.find( rowOrder[d] );
     Node *node_a = row_iter->first;
 
     // note: first index of vectors is 0, rather than 1.
@@ -243,9 +240,10 @@ UllmannSGIso::next_node ( size_t d, row_iter_t & row_iter, List <Map> & maps )
             targets_mask[node_b->get_index()] = true;
         
             if ( d+1 < pa )
-            {   // goto next row_node      
-                num_sg_iso += next_node( d+1, ++row_iter, maps );
-                --row_iter;
+            {   // goto next row_node
+                // Each level resolves its own row from rowOrder, so there is
+                // no iterator to advance or rewind here any more.
+                num_sg_iso += next_node( d+1, maps );
             }
             else
             {   // we have a subgraph isomorphism!!
