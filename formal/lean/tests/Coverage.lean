@@ -63,6 +63,13 @@ not only in a PR description.
 Every other assertion in this file passes. If the error count is not exactly 3,
 this header is stale.
 
+DISCLOSURE, per the rule that a check which cannot be evaluated must be reported
+as unevaluated rather than counted as clean: the "3" above was MEASURED on this
+tree (`lake env lean tests/Coverage.lean` -> 3 errors at 1103, 1110, 1114), not
+inferred from the three assertions that look like they should fail. If a future
+change makes the count differ, the count is the finding and this header is
+wrong.
+
 ## Content rules
 
 1. **No restatements.**  Re-proving a library theorem with a different variable
@@ -455,14 +462,36 @@ example : dimerMixture.connectedFrom ⟨0⟩ = [⟨0⟩, ⟨2⟩] := by native_d
 example : (dimerDirection.matches dimerMixture).length = 2 := by native_decide
 
 /-- ... with DIFFERENT complex keys, because the key is a molecule ID rather
-than the complex. -/
+than the complex.
+
+!! UPDATE ME WHEN THE DEFECT IS FIXED !! This assertion PINS THE BUG and is
+expected to become FALSE the moment `RuleMatch.orderedComplexKey` keys on the
+complex instead of the molecule ID. When that happens the keys become
+`[[some ⟨0⟩], [some ⟨0⟩]]` -- which is exactly what the [FAILS TODAY] assertion
+at the end of this file demands. Change the expected value; do not delete this
+line, which is the characterisation that made the defect visible at all.
+-/
 example : (dimerDirection.matches dimerMixture).map
     (fun m => m.orderedComplexKey dimerMixture) =
     [[some ⟨0⟩], [some ⟨2⟩]] := by native_decide
 
 /-- ... so MatchOnce does NOT collapse them.  This is the defect.  If
 `orderedComplexKey` were corrected to key on `connectedFrom`, both keys would
-be `[some ⟨0⟩]` and this would be 1. -/
+be `[some ⟨0⟩]` and this would be 1.
+
+!! UPDATE ME WHEN THE DEFECT IS FIXED !! These two PIN THE BUG and become FALSE
+under the fix -- `countedMatches` drops to 1 and `channelMultiplicity` drops to
+1, matching the [FAILS TODAY] assertions at the end of the file. Change the
+expected values from 2 to 1; do not delete these lines.
+
+This is the asymmetry a characterisation-plus-regression pair has, and it is
+worth stating rather than leaving to be discovered: the characterisation at the
+TOP of the file records what the code DOES, so it must change when the code
+changes; the regression at the BOTTOM records what the code SHOULD do, so it
+must change only when the DEFECT is fixed. Both change together on the fix, for
+opposite reasons, and a fixer who only reads the bottom block will find three
+unexpected failures above it.
+-/
 example : (dimerMatchOnce.countedMatches dimerMixture).length = 2 := by native_decide
 example : dimerMatchOnce.channelMultiplicity dimerMixture = 2 := by native_decide
 
@@ -1088,12 +1117,33 @@ example : reactantB.lower.nodes.length = reactantB.molecules.length := by native
 #   3 errors, at the three assertions marked [FAILS TODAY] below, and NO others.
 #   If the count changes, THIS comment is stale -- update it.
 #
-# TO RUN THESE ALONE:
-#   lake env lean tests/Coverage.lean 2>&1 | grep -c "FAILS TODAY\|: error:"
+# TO COUNT THE MARKERS -- anchor on the doc-comment opener so this banner's own
+# prose mentions do not inflate the count:
+#   grep -cE '^/[-][-][[:space:]]+\[FAILS' tests/Coverage.lean   -> 3 while broken
+# The bracket form is not decoration. Written as three literal characters, that
+# sequence OPENS A NESTED COMMENT inside this block comment, which is how the
+# first version of this banner made Coverage.lean fail to parse with
+# "unterminated comment" -- twice, in two different spellings of the same
+# instruction. Putting each hyphen in its own bracket keeps the regex identical
+# and the Lean lexer out of it.
+# A bare `grep -c "FAILS TODAY"` returns 6, because this banner mentions the
+# marker three more times. An instruction a fixer runs and gets a wrong answer
+# from is worse than no instruction at all.
 #
-# WHEN THEY PASS, `grep -c "FAILS TODAY" tests/Coverage.lean` is 3 and this whole
-# banner plus the three markers should be replaced by ordinary assertions, so a
-# later reader is not told to expect a failure that no longer happens.
+# WHEN THEY PASS, TWO THINGS MUST CHANGE TOGETHER, and the second is the one
+# that will otherwise surprise you:
+#
+#   (a) this banner and the three markers go away, so a later reader is not told
+#       to expect a failure that no longer happens;
+#   (b) THREE ASSERTIONS FURTHER UP THE FILE, in the Stochastic section, must
+#       have their expected values changed from 2 to 1 and from
+#       `[[some 0], [some 2]]` to `[[some 0], [some 0]]`.
+#
+# Those three are the CHARACTERISATION -- they record what the code currently
+# does -- so they become false the moment the fix lands. The three at the bottom
+# are the REGRESSION -- they record what the code should do -- so they become
+# true. Both sets change on the same commit, for opposite reasons. Each is now
+# marked `!! UPDATE ME WHEN THE DEFECT IS FIXED !!` at its own site.
 #
 # This block lives at the END of the file so it cannot be mistaken for a
 # mid-file authoring accident, and it deliberately GATES CI: hiding it would
