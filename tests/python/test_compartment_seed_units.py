@@ -200,3 +200,108 @@ def test_bng2_stores_the_same_seed_amount_at_the_same_volumes(tmp_path):
         assert (
             got == oracle_amount
         ), f"V={vol}: BNG3 stores {got}, BNG2 2.9.3 stores {oracle_amount}"
+
+
+# ---------------------------------------------------------------------------
+# The unit-aware branch: the one place the volume factor SHOULD appear.
+# Syntax taken verbatim from docs/BNG3_UNITS.md:11-37.
+# ---------------------------------------------------------------------------
+
+AVOGADRO = 6.02214076e23
+UNIT_MODEL = """begin model
+  setOption("units", "strict")
+%s  begin units
+    timeUnits = second
+    substanceUnits = item
+    volumeUnits = fL
+    unit per_s = second^-1
+  end units
+  begin parameters
+    k = 0.0 [per_s]
+  end parameters
+  begin compartments
+    cell %s %s
+  end compartments
+  begin molecule types
+    A()
+  end molecule types
+  begin seed species
+    A()@cell %s [M]
+  end seed species
+  begin observables
+    Molecules  nA  A()
+  end observables
+  begin reaction rules
+    A() -> 0  k
+  end reaction rules
+end model
+"""
+BRIDGE = '  setOption("NumberPerQuantityUnit", 6.02214076e23)\n'
+
+
+def _unit_model(tmp_path, vol, conc, dim="3", vol_unit=" [fL]", bridge=BRIDGE):
+    path = tmp_path / "u.bngl"
+    path.write_text(UNIT_MODEL % (bridge, dim, "%g%s" % (vol, vol_unit), "%g" % conc))
+    model = _cpp.parse_file(str(path))
+    return model, _cpp.generate_network(model)
+
+
+def _seeded_count(model, net):
+    """The count at t=1 from a frozen pool (k=0), so it IS the seeded count."""
+    res = _cpp.simulate_ssa(model, net, t_end=1.0, n_steps=2, seed=SEED)
+    return float(np.asarray(res["observables"]["nA"])[-1])
+
+
+@pytest.mark.parametrize(
+    "vol,conc",
+    [(1.0, 1.0), (2.0, 1.0), (1.0, 2.0), (0.5, 1.0), (3.0, 7.0)],
+)
+def test_declared_M_seed_is_converted_to_a_count_exactly(tmp_path, vol, conc):
+    """A `[M]` seed IS volume-scaled, and the factor is exact.
+
+    C mol/L in a V fL compartment is C * V * 1e-15 L * N_A items. Measured
+    ratio minus 1 is 0.00e+00 in every case -- this is the branch that
+    `NetworkGenerator.cpp:272-278` guards, and it produces the right number to
+    the last bit rather than approximately.
+
+    The pool is frozen (k=0), so the reported count is the seeded count and any
+    difference is attributable to the conversion alone. That discipline is
+    borrowed from @sciSignaling: a conserved pool at steady state is its own
+    answer, so this falsifies without needing a reference implementation.
+    """
+    model, net = _unit_model(tmp_path, vol, conc)
+    expected = conc * vol * 1e-15 * AVOGADRO
+    got = _seeded_count(model, net)
+    assert got == expected, (
+        f"V={vol} fL, C={conc} M: expected {expected!r} items, got {got!r} "
+        f"(ratio-1 = {got / expected - 1.0:+.3e})"
+    )
+
+
+def test_unit_conversion_fails_closed_without_the_mole_item_bridge(tmp_path):
+    """No `NumberPerQuantityUnit` means no numerical mole-to-item mapping.
+
+    The refusal must name the bridge, per docs/BNG3_UNITS.md:78-80: dimension
+    equality alone does not establish one.
+    """
+    # The refusal happens during network generation, not at simulation time.
+    with pytest.raises(Exception) as exc:
+        _unit_model(tmp_path, 1.0, 1.0, bridge="")
+    assert "NumberPerQuantityUnit" in str(exc.value), str(exc.value)
+
+
+@pytest.mark.parametrize("dim", ["1", "2"])
+def test_unit_conversion_fails_closed_outside_three_dimensions(tmp_path, dim):
+    """A 1D or 2D compartment has no volume to scale by, so it must refuse.
+
+    Note WHERE it refuses, because it is not where the missing-bridge case
+    refuses. Removing the bridge fails during `generate_network` (the seed
+    conversion is what cannot be done); a non-3D compartment generates fine and
+    fails later, at simulation, when the RATE constant is converted. The
+    diagnostic says "concentration rates", which is accurate for that stage.
+    """
+    model, net = _unit_model(tmp_path, 1.0, 1.0, dim=dim)  # generation succeeds
+    with pytest.raises(Exception) as exc:
+        _cpp.simulate_ssa(model, net, t_end=1.0, n_steps=2, seed=SEED)
+    message = str(exc.value)
+    assert "three-dimensional" in message, message
