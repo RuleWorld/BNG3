@@ -63,6 +63,13 @@ not only in a PR description.
 Every other assertion in this file passes. If the error count is not exactly 3,
 this header is stale.
 
+DISCLOSURE, per the rule that a check which cannot be evaluated must be reported
+as unevaluated rather than counted as clean: the "3" above was MEASURED on this
+tree (`lake env lean tests/Coverage.lean` -> 3 errors at 1103, 1110, 1114), not
+inferred from the three assertions that look like they should fail. If a future
+change makes the count differ, the count is the finding and this header is
+wrong.
+
 ## Content rules
 
 1. **No restatements.**  Re-proving a library theorem with a different variable
@@ -1088,12 +1095,22 @@ example : reactantB.lower.nodes.length = reactantB.molecules.length := by native
 #   3 errors, at the three assertions marked [FAILS TODAY] below, and NO others.
 #   If the count changes, THIS comment is stale -- update it.
 #
-# TO RUN THESE ALONE:
-#   lake env lean tests/Coverage.lean 2>&1 | grep -c "FAILS TODAY\|: error:"
+# TO COUNT THE MARKERS -- anchor on the doc-comment opener so this banner's own
+# prose mentions do not inflate the count:
+#   grep -cE '^/[-][-][[:space:]]+\[FAILS' tests/Coverage.lean   -> 3 while broken
+# The bracket form is not decoration. Written as three literal characters, that
+# sequence OPENS A NESTED COMMENT inside this block comment, which is how the
+# first version of this banner made Coverage.lean fail to parse with
+# "unterminated comment" -- twice, in two different spellings of the same
+# instruction. Putting each hyphen in its own bracket keeps the regex identical
+# and the Lean lexer out of it.
+# A bare `grep -c "FAILS TODAY"` returns 6, because this banner mentions the
+# marker three more times. An instruction a fixer runs and gets a wrong answer
+# from is worse than no instruction at all.
 #
-# WHEN THEY PASS, `grep -c "FAILS TODAY" tests/Coverage.lean` is 3 and this whole
-# banner plus the three markers should be replaced by ordinary assertions, so a
-# later reader is not told to expect a failure that no longer happens.
+# WHEN THEY PASS, that count is 0 and this whole banner plus the three markers
+# should be replaced by ordinary assertions, so a later reader is not told to
+# expect a failure that no longer happens.
 #
 # This block lives at the END of the file so it cannot be mistaken for a
 # mid-file authoring accident, and it deliberately GATES CI: hiding it would
