@@ -4301,7 +4301,14 @@ def write_observables(
                 if match:
                     species_id, coefficient = match.group(1), int(match.group(2))
             if re.fullmatch(r"\d+(?:\.\d+)?", species_id):
-                continue
+                # A bare numeric term carries no species pattern, so this
+                # observable cannot represent the rule body.  Skipping the
+                # term would declare `p` to be a smaller function of the
+                # state than the rule says (`p = A + 2` came out as `A`);
+                # decline the lowering and let `write_functions` emit the
+                # whole expression.
+                pattern_counts.clear()
+                break
             pattern = species_to_pattern.get(species_id)
             species = model.species.get(species_id)
             if not pattern:
@@ -4311,7 +4318,9 @@ def write_observables(
             if not pattern:
                 pattern_counts.clear()
                 break
-            pattern_counts[pattern] = max(pattern_counts.get(pattern, 0), coefficient)
+            # Repeated terms are repeated contributions, not alternatives:
+            # `p = A + A` is two A, which the pattern spells as two copies.
+            pattern_counts[pattern] = pattern_counts.get(pattern, 0) + coefficient
             if species is not None and species.compartment and not rule_compartment:
                 rule_compartment = species.compartment
         if not pattern_counts:
