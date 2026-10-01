@@ -331,6 +331,31 @@ establish that the evaluator is cold on NFsim's rate-law path
     cmp traj_BASE_mmfix/expr_ode_small.gdat traj_B2/expr_ode_small.gdat
     -> GDAT BIT-IDENTICAL 228000114 B
 
+    shasum -a 256 traj_BASE_mmfix/expr_ode_small.net traj_B2/expr_ode_small.net
+    -> f66e045735ea14289a3f97813f91060875578febcc4f2be7958239a069768942  (both arms)
+
+**Both artifact surfaces are hashed — `.gdat` (trajectory values) and `.net`
+(generated network text) — and that coverage is load-bearing.** An instrument's
+sensitivity must be a *superset* of the defect class it is meant to detect:
+choosing a coarser instrument is not a weaker guarantee, it is the wrong
+guarantee, because it fails silently in the direction of looking healthy. A
+gate that hashed only `.gdat` would have been blind to the whole
+network-generation nondeterminism class — `correctness`'s P0 (`7000604`, merged
+as `44664f1`, reaction row order was ascending-address via `std::map<Node*>`,
+now Ga-order) changed `cpp/core/Ullmann.{cpp,hpp}` and perturbed `.net` bytes
+without necessarily perturbing trajectory values. Hashing `.net` as well means
+this gate would have caught it. I had run that check and quoted the `.net`
+hash in passing, but never showed the command or said why both surfaces were
+covered — leaving a reader to assume `.gdat` was the whole gate.
+
+The converse also holds and is why `swarmMemory`'s numbers are not in conflict
+with `correctness`'s: their harness reported species/reaction *counts* from
+`generateNative` and never wrote a `.net`, and a count is invariant under exactly
+the tied-reaction reordering the P0 causes. A count-keyed instrument cannot see
+that defect. See `swarmCache`'s reconciliation of the 6-vs-3 distinct-hash
+counts — the count is a *sample* from a nondeterministic process, not a fixed
+property, so it is not a discrepancy and the run count must be stated with it.
+
 **The precondition that makes that hash meaningful**, which I had implied
 rather than shown. A hash guard is only evidence if the artifact is
 *deterministic* — otherwise an identical SHA-256 across two binaries is a
@@ -394,6 +419,33 @@ earlier run reported `99% tests passed, 1 tests failed out of 461`, with
 No such file or directory`; it then passed in isolation (`1/1 Test #455:
 architecture_nfnext_cache ... Passed`) and in both later full runs.
 `cpp/nfnext` is untouched by this work.
+
+**Scope of that gate, stated because it will otherwise be over-read.** This
+461/461 was produced on a tree at `6889fba` — my worktree base — and it is
+evidence about *that commit*, not about `main`. `origin/main` currently does not
+configure at all: `tests/cpp/CMakeLists.txt` carries a duplicated
+`test_correctness_regressions` block at lines 426-433 and 434-441 (byte-identical
+including the comment), so a fresh `cmake -B` fails with *"add_executable cannot
+create target `test_correctness_regressions` because another target with the same
+name already exists."* Found by `irSnapshot`, independently confirmed by
+`swarmCache` and `memWatch`; the duplicate is not present at `6889fba`
+(`git show 6889fba:tests/cpp/CMakeLists.txt | grep -c "add_executable(test_correctness_regressions"`
+-> `0`), and `tests/cpp/CMakeLists.txt` is not my file.
+
+Two consequences a reader should carry, both general rather than specific to
+this defect:
+
+1. **An incremental `cmake --build` cannot see this class of failure.** Every
+   pre-existing `build.ninja` on this host was generated before the duplicate
+   landed, so `cmake --build` succeeds, `ctest -j4` passes, and every gate looks
+   green — against a build graph that no longer corresponds to the committed
+   CMakeLists. My 461/461 is a real result for `6889fba`; it is **not** evidence
+   that current `main` configures, and I am not offering it as such.
+2. **This invalidates the ctest numbers, not the C++ results.** Everything this
+   document concludes rests on the profile, the instruction counts, and the
+   ceiling measurement — none of which require a fresh configure. The gate was
+   always corroboration that a rejected candidate broke nothing, not the basis
+   of the verdict.
 
 ## Exact reproduction commands
 
