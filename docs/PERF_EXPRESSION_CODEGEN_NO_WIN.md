@@ -360,6 +360,33 @@ gate on `sciPkPd`'s three-argument `Sat` correction or `correctness`'s batch-SSA
 seed derivation — both change values by design, and a diff there is the
 expected result, not a regression.
 
+**Scope of these two hashes — read before trying to reproduce them.** They were
+produced by two binaries built from **one worktree at one commit**
+(`8dd441d`, my tree with `sciMetabolic`'s MM fix cherry-picked for the A/B).
+They are evidence *internal to that comparison* and nothing else. Two
+consequences a reader should not skip:
+
+1. **They are not expected to reproduce on current `main`, and a mismatch is
+   not evidence against this document.** `correctness`'s cross-process network
+   determinism fix (PR #59, `7000604`, reaction row order was ascending-address
+   via `std::map<Node*>`, now Ga-order) landed after my binaries were built.
+   Reaction ordering feeds the compiled network, so a `.gdat` produced from a
+   pre-fix binary and one from a post-fix binary are not expected to agree.
+   `swarmCache` named this shape precisely: *"3 distinct hashes" from a pre-fix
+   binary and from a post-fix binary mean opposite things, and the reader cannot
+   tell which they are looking at from a hash count.* This is the same trap,
+   and the mitigation is to say when the binary was built rather than leave the
+   reader to guess.
+2. **A hash is only comparable against a binary built the same way.** The gate
+   above is valid because both arms came from one tree at one commit, with
+   `Expression.cpp` the only difference. Comparing either hash to a binary from
+   another commit, another tree, or a differently-configured build compares two
+   different things.
+
+The no-win verdict does not rest on these hashes. It rests on the profile
+(zero frames in four end-to-end runs) and the ceiling measurement (4.89% of
+wall clock), neither of which depends on any artifact reproducing.
+
 **Test gate:** `ctest --test-dir build --output-on-failure -j4` ->
 `100% tests passed out of 461`, twice consecutively on the reverted tree. One
 earlier run reported `99% tests passed, 1 tests failed out of 461`, with
