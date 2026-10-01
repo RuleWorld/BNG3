@@ -562,8 +562,21 @@ def validate_model(name, bngl_path, t_end, n_steps, batch_size=2000):
                   f"{n_cons_violations} point(s) -- conservation/stoichiometry mismatch")
             failed = True
         if not failed:
-            print(f"  [PASS] Mean trajectory matches CPU within sampling error "
-                  f"(max |Z| {max_z:.2f} < {Z_THRESHOLD}) and conserved points agree")
+            # Report only the checks that actually ran. `max_z` defaults to 0.0
+            # when no point is testable, so a message that always cites it
+            # claims a mean-trajectory Z-test on a model where every observable
+            # is conserved and the Z-test examined nothing. Measured on
+            # models/toy-jim.bngl, 6 of 9 observables are exactly that case.
+            # The conserved-point comparison above still ran and is the
+            # stronger check; it is what this PASS is reporting.
+            if n_testable:
+                print(f"  [PASS] Mean trajectory matches CPU within sampling error "
+                      f"(max |Z| {max_z:.2f} < {Z_THRESHOLD}) and conserved points agree")
+            else:
+                print(f"  [PASS] Conserved points agree; the mean-trajectory Z-test "
+                      f"examined nothing because all {cpu_mean.size} points have zero "
+                      f"sampling error (max |Z| reported as 0.00 is the empty-set "
+                      f"default, not a measurement)")
         all_passed = all_passed and not failed
 
     # 2. Compare final distributions using Two-Sample Kolmogorov-Smirnov Test
