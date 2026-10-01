@@ -14,17 +14,30 @@ Prerequisites (fail-closed, checked up front):
 
 Components and weights (composite = sum(weight * seconds); LOWER is better):
 
-    netgen     0.35   C++ network generation: bng_cpp on bench/fixtures/
+    netgen     0.27   C++ network generation: bng_cpp on bench/fixtures/
                       netgen_egfr.bngl (generate_network only), full process
                       wall time; output .net sha256 must be stable across reps.
-    ssa_batch  0.40   simulation throughput: in-process batch SSA (CPU pool,
+    ssa_batch  0.33   simulation throughput: in-process batch SSA (CPU pool,
                       fixed base_seed) on models/isomerization.bngl and
                       models/gene_expr_simple.bngl; event counts must be
                       identical across reps (seed determinism guard).
-    py_import  0.10   Python-side: cold-ish `import bionetgen` timed inside a
+    ode        0.15   ODE integration: in-process simulate_ode on
+                      models/isomerization.bngl, models/gene_expr_simple.bngl
+                      and bench/fixtures/ode_many_functions.bngl (150
+                      zero-argument rate functions -> the F x output-steps
+                      regime); final concentration vectors must be identical
+                      across reps.
+    out_write  0.10   output writing: full CLI run of
+                      bench/fixtures/out_write.bngl (simulate_ode,
+                      40001 rows x 8 fields); .cdat and .gdat sha256 must be
+                      stable across reps.
+    py_import  0.08   Python-side: cold-ish `import bionetgen` timed inside a
                       fresh interpreter; must resolve inside this worktree.
-    py_load    0.15   Python-side: `bionetgen.load(...)` (real Python API op
+    py_load    0.07   Python-side: `bionetgen.load(...)` (real Python API op
                       over the C++ engine), same fresh-interpreter guard.
+
+    (v1 weights, superseded and NOT comparable to v2 composites:
+     netgen 0.35, ssa_batch 0.40, py_import 0.10, py_load 0.15 — see README.)
 
 Editable-install guard: this host has a scikit-build editable install whose
 site-packages .pth inserts a MetaPathFinder that redirects `bionetgen` to
@@ -55,11 +68,31 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 WEIGHTS = {
+    "netgen": 0.27,
+    "ssa_batch": 0.33,
+    "ode": 0.15,
+    "out_write": 0.10,
+    "py_import": 0.08,
+    "py_load": 0.07,
+}
+V1_WEIGHTS = {  # superseded metric; kept for the README's old-composite note
     "netgen": 0.35,
     "ssa_batch": 0.40,
     "py_import": 0.10,
     "py_load": 0.15,
 }
+
+# In-process ODE runs: (path, t_end, n_steps). ode_many_functions.bngl is the
+# 100+ function model that makes per-step F x steps function bookkeeping
+# visible; the other two are the standard small models.
+ODE_MODELS = [
+    ("models/isomerization.bngl", 100.0, 1000),
+    ("models/gene_expr_simple.bngl", 1000.0, 1000),
+    ("bench/fixtures/ode_many_functions.bngl", 100.0, 5000),
+]
+
+# CLI run whose actions write .cdat/.gdat at 40001 rows x 8 fields.
+OUT_WRITE_FIXTURE = "bench/fixtures/out_write.bngl"
 
 # Batch SSA sizing: calibrated on this machine so the component lands around
 # half a second while staying deterministic (fixed seed => fixed event counts).
@@ -184,6 +217,59 @@ def bench_ssa_batch() -> tuple[float, dict]:
     return iso_s + ge_s, events
 
 
+_ODE_CODE = """\
+import json, time
+import _bionetgen_cpp as cpp
+MODELS = %s
+out = {"models": {}}
+digest = {}
+for path, t_end, steps in MODELS:
+    model = cpp.parse_file(path)
+    network = cpp.generate_network(model)
+    t0 = time.perf_counter()
+    res = cpp.simulate_ode(model, network, t_end=t_end, n_steps=steps)
+    dt = time.perf_counter() - t0
+    out["models"][path] = dt
+    conc = res.get("concentrations")
+    if conc is None:
+        raise SystemExit("simulate_ode returned no concentrations for " + path)
+    digest[path] = [float(x) for x in conc[-1]]
+out["digest"] = digest
+print(json.dumps(out))
+""" % json.dumps(ODE_MODELS)
+
+
+def bench_ode() -> tuple[float, dict]:
+    """In-process ODE wall time across the three models; final-state digest."""
+    out = _run_child(_ODE_CODE + "\n", what="ode")
+    total = sum(out["models"].values())
+    return total, out["digest"]
+
+
+def bench_out_write(bng_cpp: Path) -> tuple[float, dict]:
+    """Full CLI run writing .cdat/.gdat (40001 rows x 8 fields); hashes."""
+    fixture = ROOT / OUT_WRITE_FIXTURE
+    outs = [fixture.with_suffix(".cdat"), fixture.with_suffix(".gdat")]
+    t0 = time.perf_counter()
+    proc = subprocess.run(
+        [str(bng_cpp), str(fixture)],
+        capture_output=True,
+        text=True,
+        cwd=str(ROOT),
+    )
+    wall = time.perf_counter() - t0
+    if proc.returncode != 0:
+        raise ComponentError(
+            f"out_write: bng_cpp exited {proc.returncode}\n{proc.stderr.strip()}"
+        )
+    hashes = {}
+    for out in outs:
+        if not out.is_file() or out.stat().st_size == 0:
+            raise ComponentError(f"out_write: missing output {out.name}")
+        hashes[out.suffix] = hashlib.sha256(out.read_bytes()).hexdigest()
+    return wall, hashes
+
+
 def bench_py_import() -> tuple[float, str]:
     code = """\
 import json, time
@@ -256,6 +342,24 @@ def main() -> int:
 
     print(f"BNG3 fitness harness  reps={args.reps}  git={git_rev}")
     print(f"bng_cpp={bng_cpp}")
+    try:
+        load1_start = os.getloadavg()[0]
+    except OSError:
+        load1_start = float("nan")
+    # Resolve and PRINT which compiled extension every child will load, so a
+    # reader can see whether this worktree built its own or is inheriting
+    # another tree's build/ (visibility, not a pass/fail decision).
+    ext_path = _run_child(
+        'import json\n'
+        'import _bionetgen_cpp as _c\n'
+        'print(json.dumps({"path": _c.__file__ or ""}))\n',
+        what="extension preflight",
+    )["path"]
+    ext_scope = "worktree" if str(Path(ext_path).resolve()).startswith(str(ROOT)) \
+        else "OUTSIDE WORKTREE (shared/other build)"
+    print(f"_bionetgen_cpp={ext_path}  [{ext_scope}]")
+    print(f"load1={load1_start:.1f} (1-min loadavg at start; quote this with "
+          f"any timing, plus concurrent benchmark processes)")
     print(f"weights={WEIGHTS}  composite = sum(weight*seconds); lower is better")
 
     per_rep: dict[str, list[float]] = {name: [] for name in WEIGHTS}
@@ -283,6 +387,30 @@ def main() -> int:
                     f"{guards['ssa_events']} -> {events} (seed determinism broken)"
                 )
             guards["ssa_events"] = events
+        except (ComponentError, subprocess.TimeoutExpired) as exc:
+            errors.append(str(exc))
+
+        try:
+            t, digest = bench_ode()
+            per_rep["ode"].append(t)
+            if "ode_digest" in guards and guards["ode_digest"] != digest:
+                raise ComponentError(
+                    f"ode: final concentrations changed across reps "
+                    f"(determinism broken)"
+                )
+            guards["ode_digest"] = digest
+        except (ComponentError, subprocess.TimeoutExpired) as exc:
+            errors.append(str(exc))
+
+        try:
+            t, hashes = bench_out_write(bng_cpp)
+            per_rep["out_write"].append(t)
+            if "out_write_hashes" in guards and guards["out_write_hashes"] != hashes:
+                raise ComponentError(
+                    f"out_write: emitted .cdat/.gdat bytes changed across reps "
+                    f"{guards['out_write_hashes']} -> {hashes}"
+                )
+            guards["out_write_hashes"] = hashes
         except (ComponentError, subprocess.TimeoutExpired) as exc:
             errors.append(str(exc))
 
@@ -337,9 +465,16 @@ def main() -> int:
     print(f"per-rep composites: {[round(x, 4) for x in composite_reps]}")
     print(f"determinism guards: netgen .net sha256 stable "
           f"({str(guards['netgen_sha'])[:16]}...); "
-          f"ssa events {guards['ssa_events']} stable across {args.reps} reps")
+          f"ssa events {guards['ssa_events']} stable across {args.reps} reps; "
+          f"ode final-state digests stable; "
+          f"out_write hashes { {k: v[:16] + '...' for k, v in
+                                guards['out_write_hashes'].items()} } stable")
 
     if args.json:
+        try:
+            load1_end = os.getloadavg()[0]
+        except OSError:
+            load1_end = float("nan")
         result = {
             "meta": {
                 "git": git_rev,
@@ -348,12 +483,18 @@ def main() -> int:
                 "python": sys.version.split()[0],
                 "cpu_count": os.cpu_count(),
                 "bng_cpp": str(bng_cpp),
+                "extension": ext_path,
+                "load1_start": load1_start,
+                "load1_end": load1_end,
                 "reps": args.reps,
                 "weights": WEIGHTS,
+                "v1_weights_superseded": V1_WEIGHTS,
                 "ssa_base_seed": SSA_BASE_SEED,
                 "ssa_batch": SSA_BATCH,
-                "note": "shared machine; numbers include scheduler noise; "
-                        "compare min and stdev, not single runs",
+                "ode_models": ODE_MODELS,
+                "note": "shared machine; quote load1_start with these timings; "
+                        "compare min and stdev, not single runs; ~11% "
+                        "cross-session drift is the resolution floor",
             },
             "components": stats,
             "composite": composite,
