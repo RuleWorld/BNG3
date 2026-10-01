@@ -246,9 +246,14 @@ every reaction is classified functional and its tree is evaluated once per
 derivative call): `Expression::evaluateWithFunctions` appears **0 times** in
 every one. The only engine frame present is
 `OdeIntegrator::writeOutputFiles` (196/1079 and 199/1079 self weight). The
-per-step rate path at `OdeIntegrator.cpp:1296`
-(`rxn.functionalRateExpr->evaluate(resolver, t)`) is real but is absorbed by
-LTO, and output writing dominates what remains.
+per-step rate path — `rxn.functionalRateExpr->evaluate(resolver, t)` — is real
+but is absorbed by LTO, and output writing dominates what remains. On current
+`main` that call is at `cpp/engine/OdeIntegrator.cpp:1380`
+(`git show origin/main:cpp/engine/OdeIntegrator.cpp | grep -n functionalRateExpr->evaluate`);
+it was at `:1296` on my base `6889fba` and moved as other lanes landed. Cite
+the call, not the line, when the base differs — `swarmMemory` published
+off-by-one line anchors in three broadcasts for exactly this reason, and
+`file:line` is a measurement rather than a format.
 
 **Ceiling.** Functional vs constant rate laws, 5 interleaved reps, 8-reaction
 400k-step ODE:
@@ -496,20 +501,49 @@ environmental fault. Both were true when written and both are superseded; they
 are left visible rather than edited out because superseded readings with their
 timestamps are what let this thread converge at all.
 
-Two consequences a reader should carry, both general rather than specific to
-this defect:
+Two consequences a reader should carry. Both had to be narrowed after other
+agents showed the broad version indicted gates that were never affected, so
+the corrected form is recorded rather than the original:
 
-1. **An incremental `cmake --build` cannot see this class of failure.** Every
-   pre-existing `build.ninja` on this host was generated before the duplicate
-   landed, so `cmake --build` succeeds, `ctest -j4` passes, and every gate looks
-   green — against a build graph that no longer corresponds to the committed
-   CMakeLists. My 461/461 is a real result for `6889fba`; it is **not** evidence
-   that current `main` configures, and I am not offering it as such.
-2. **This invalidates the ctest numbers, not the C++ results.** Everything this
-   document concludes rests on the profile, the instruction counts, and the
-   ceiling measurement — none of which require a fresh configure. The gate was
-   always corroboration that a rejected candidate broke nothing, not the basis
-   of the verdict.
+1. **An incremental `cmake --build` cannot see a defect that arrived after the
+   configure.** Every pre-existing `build.ninja` on this host was generated
+   before the duplicate landed, so `cmake --build` succeeded, `ctest -j4`
+   passed, and every gate looked green — against a build graph that no longer
+   corresponds to the committed CMakeLists.
+
+   The *forward-looking* form is the accurate one, and it is not a retraction:
+   **a green gate bounds what the tree contained when it was configured and is
+   silent about what has landed since.** That is a scoping statement about each
+   number's half-life. Gates measured before `9259a3d` are not *invalidated* by
+   it — they are silent about it. `swarmMemory` and `swarmCache` both made me
+   drop an earlier, broader phrasing of exactly this, and they were right: read
+   as written it discredited a set of numbers that were correctly obtained.
+
+   The boundary depends on the defect class, and collapsing the two has cost
+   agents work they did not need — so they are named separately:
+
+   - A **configure-time** defect (the duplicate target) is bounded by the last
+     *configure*.
+   - A **compile-time** defect (the missing `batchTrajectorySeed`) is bounded by
+     the last successful *build*. `swarmMemory` first collapsed these into
+     "configured at X *and fully rebuilt since*", which would have sent agents
+     re-running full builds their numbers never required; `swarmCache`'s
+     sharper form is correct and `swarmMemory` adopted it.
+
+   `perfOracle`'s distinction completes it: a gate is **invalidated** when the
+   tree it measured was itself defective, and **silent** when the defect arrived
+   afterwards. Different claims; conflating them made the broad version wrong.
+
+   Checked against my own 461/461 rather than asserted: `batchTrajectorySeed`
+   occurs zero times in `cpp/` at `6889fba`, so that commit neither contained
+   nor referenced it and the binary genuinely came from it. The number is
+   **unaffected**, not merely silent — and it is not a statement about `main`.
+   I never offered it as one.
+2. **The C++ conclusions are untouched either way.** Everything this document
+   concludes rests on the profile, the instruction counts, and the ceiling
+   measurement — none of which require a fresh configure or a rebuild. The gate
+   was always corroboration that a rejected candidate broke nothing, never the
+   basis of the verdict.
 
 ## Exact reproduction commands
 
