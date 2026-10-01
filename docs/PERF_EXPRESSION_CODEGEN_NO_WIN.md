@@ -31,10 +31,22 @@ It establishes exactly one negative claim, and only for one workload shape:
 **What this does NOT cover, and which is an open item rather than a cleared
 one:**
 
-- **NFsim's rate-law path is NOT covered.** `cpp/nfsim/NFcore2/legacy_bridge.cpp:112`
-  and `:264` both call `evaluateWithFunctions`. I never profiled NFsim. If you
-  are profiling that lane, this document tells you nothing — treat the coldness
-  claim as unestablished there, not as disproven.
+- **NFsim's rate-law path is NOT covered, and it is the one that matters
+  most** — these two sites are the only callers of `evaluateWithFunctions`
+  outside `cpp/ast/Expression.cpp` itself. The grep and its output:
+
+      grep -rn "evaluateWithFunctions" cpp/ --include=*.cpp --include=*.hpp \
+        | grep -v "cpp/parser/generated" | grep -v "cpp/ast/Expression"
+      -> cpp/nfsim/NFcore2/legacy_bridge.cpp:112:            return functionExpression.evaluateWithFunctions(
+      -> cpp/nfsim/NFcore2/legacy_bridge.cpp:264:        const double result = parsed.evaluateWithFunctions(resolve, state.time(), resolveFunction);
+
+  I never profiled NFsim. **Anyone working the NFsim lane should treat this
+  document as saying nothing about their path** — the coldness claim is
+  unestablished there, not disproven. It is plausible the evaluator *is* hot
+  under NFsim: `legacy_bridge.cpp:264` calls it once per rate-law evaluation
+  inside the NFcore2 driver, which is a different execution shape from the ODE
+  path measured here. That is a hypothesis for whoever profiles it, not a
+  finding.
 - Any other caller reached through `cpp/ast/ParameterList`, `cpp/io/*`,
   `cpp/parser/BNGAstVisitor.cpp`, or the batch-SSA path was not exercised
   either.
@@ -62,7 +74,9 @@ on loadavg across the session, and `memWatch` proved `vm.loadavg` does not even
 respond to a known single-core input.
 
 **The instruction counter settled it.** `/usr/bin/time -l … instructions retired`
-is deterministic and does not move when nothing changed:
+measured **insensitive to concurrent load**: across six interleaved reps per arm
+on the same binaries in the same contended session, its spread was three orders
+of magnitude tighter than wall clock's.
 
     A baseline       median 5,037,345,446   cv 0.022%
     B length-gated   median 5,038,543,790   cv 0.037%    -> +0.024%
@@ -71,12 +85,34 @@ Same binaries, same session, same wall-clock conditions — 0.03% spread instead
 of 5.19%. That is a 170x tighter instrument, and it is what turned "it looked
 faster" into "it is flat".
 
+**Stated precisely, because "deterministic" would overclaim.** What I
+measured is stability against *scheduling contention*, which is the noise
+source I was fighting. I did **not** test CPU migration, frequency scaling, or
+heterogeneous core placement, and on a 15-logical-CPU host under R=21–74 those
+are not hypothetical. My own data shows the limit of the claim: cv 0.022% and
+0.037% against a +0.024% delta means the counter *resolved* that difference —
+which is three orders of magnitude away from proving it is immune to
+everything a scheduler does. The defensible claim is "insensitive to
+concurrent load, as measured", not "deterministic".
+
 **The generalisable rule.** Measure once with a cheap instrument to find a
 hypothesis, then re-measure with a *deterministic* one before believing it. If
 the two disagree, the cheap one is wrong — not the code, and not your reading
 of it. On this host the counters worth trusting are `instructions retired` and
 `cycles elapsed` from `/usr/bin/time -l`, plus allocation counts; wall clock
 needs 10%+ effects and interleaved reps to mean anything.
+
+**What this counter is not yet.** It has exactly one independent validation,
+and it earned that by contradicting *me* — it rejected my own headline claim.
+An instrument validated only by the case where it refuted its author has not
+been shown to generalise. It is therefore **not yet a gate** on another
+operator's candidate, and this document does not propose it as one. The
+correct first calibration is against a win already established by an
+independent instrument — `writeOutputFiles` (PR #39) or `updateFunctions`
+(PR #43), both reported at ~2.7x with their own deterministic counters. If the
+counter and the wall clock agree there, it becomes trustworthy as a gate; if
+they disagree, that disagreement is the finding. An instrument is validated by
+agreeing with something you did not build.
 
 The second use of the counter is as a *gate* rather than a diagnostic: a
 candidate whose instruction count is unchanged has not changed its cost model,
