@@ -13,6 +13,17 @@
   implement these semantics and no independent oracle exists yet. The compact
   `EnergyRxnClass` evaluator is disabled for nonzero barrier or work in favor
   of the materialized Sekar expansion. See `docs/nonequilibrium_energy.md`.
+- Fixed a silent data-loss defect on the Python parse path: `python/bionetgen`
+  could not previously round-trip a `driven_by(W)` model, or a
+  `begin barrier patterns` block, at all. `_bionetgen_cpp.parse_file` /
+  `parse_string` drove `BNGAstVisitor` without the post-visit
+  `finalizeThermodynamicMetadata()` pass that `parseModel` runs, so the barrier
+  came back as an ordinary reaction rule, the surviving rules were renumbered,
+  `driving_work` read the neutral zero on every rule, and the synthetic
+  `__bng3_*` options were consumed with nothing put back — all with no
+  diagnostic. Both bindings now share the single parse pipeline in
+  `parseModelSource`, so the two paths can no longer diverge; source parameter
+  comments are preserved on the Python path for the same reason.
 - Closed the serialization gaps for the new energy constructs: `BnglWriter`
   now emits `begin energy patterns` (previously dropped entirely) and
   `begin barrier patterns`, and appends `driven_by()` to rule lines, so a
