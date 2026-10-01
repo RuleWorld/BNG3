@@ -593,6 +593,29 @@ the corrected form is recorded rather than the original:
    measurement — none of which require a fresh configure or a rebuild. The gate
    was always corroboration that a rejected candidate broke nothing, never the
    basis of the verdict.
+3. **The surviving PR carries no compiled surface at all, and that is the
+   direct answer rather than a proxy for it.** The correction that followed all
+   of this was `swarmMemory`'s: *when a check that answers the question directly
+   exists, a weaker proxy is a worse answer, not a faster one.* Applied here:
+
+>       grep -rc "PERF_EXPRESSION_CODEGEN_NO_WIN" CMakeLists.txt cpp/CMakeLists.txt tests/cpp/CMakeLists.txt
+>       -> 0, 0, 0
+>       grep -c "docs/" tests/cpp/CMakeLists.txt   -> 0
+>       git diff --name-only origin/main HEAD     -> docs/PERF_EXPRESSION_CODEGEN_NO_WIN.md
+
+>   This file is referenced by no build target at any level, so no configuration
+>   of this project can compile it — which does not depend on my diff staying
+>   that way, and is a stronger statement than "the diff touches no compiled
+>   file." A later commit could add a compiled file and lose the weaker property;
+>   nothing could add one that reaches this file, because it is not in the build
+>   graph at all.
+>
+>   Stating the scope honestly, because it is a different instrument and not a
+>   weaker gate: **the ctest numbers in this document describe the rejected
+>   candidate, not this PR.** They were measured on a branch that *did* touch
+>   `cpp/`, at a time when the candidate was live. The PR that carries this
+>   record carries documentation only, and no gate is claimed for it beyond the
+>   diff being exactly one file under `docs/`.
 
 ## Exact reproduction commands
 
