@@ -5,6 +5,7 @@
 #include "compile/Document.hpp"
 #include "ast/Model.hpp"
 
+#include <stdexcept>
 #include <string>
 
 namespace py = pybind11;
@@ -106,6 +107,17 @@ const char* builtinName(BuiltinFunction builtin) {
     return "unknown";
 }
 
+// BNGIR v0.2 defines a closed enum of reconstructable symbol kinds:
+// parameter, function, molecule_type, observable, compartment, reaction_rule
+// and energy_pattern. BarrierPattern and PopulationType are deliberately NOT
+// in it -- neither has a name the reader can turn back into a pattern
+// (`_name_for_symbol` would need a barrier transition or a population-map
+// argument list, neither of which a bare symbol reference carries).
+//
+// Reporting them under a made-up name would produce a document that fails
+// schema validation and is refused on read, i.e. a plausible-but-wrong model
+// rather than a diagnosed one. So a reference to one is a hard error naming
+// the construct, instead of a wire object nobody can consume.
 const char* symbolKindName(SymbolKind kind) {
     switch (kind) {
     case SymbolKind::Parameter: return "parameter";
@@ -115,11 +127,17 @@ const char* symbolKindName(SymbolKind kind) {
     case SymbolKind::Compartment: return "compartment";
     case SymbolKind::ReactionRule: return "reaction_rule";
     case SymbolKind::EnergyPattern: return "energy_pattern";
-    case SymbolKind::BarrierPattern: return "barrier_pattern";
-    case SymbolKind::PopulationType: return "population_type";
-    case SymbolKind::Count: return "invalid";
+    case SymbolKind::BarrierPattern:
+        throw std::runtime_error(
+            "cannot snapshot a barrier-pattern reference: BNGIR v0.2 has no "
+            "reconstructable symbol kind for a barrier pattern");
+    case SymbolKind::PopulationType:
+        throw std::runtime_error(
+            "cannot snapshot a population-type reference: BNGIR v0.2 has no "
+            "reconstructable symbol kind for a population type");
+    case SymbolKind::Count: break;
     }
-    return "invalid";
+    throw std::runtime_error("cannot snapshot an unresolved symbol reference");
 }
 
 py::dict expressionSnapshot(const ResolvedExpression& expression) {
@@ -501,13 +519,20 @@ py::dict compiledSnapshot(const bng::ast::Model& astModel) {
     // Barrier factors are reported separately from energy factors: they carry a
     // reaction-center key instead of a pattern, and centerResolved=false must
     // stay visible so a consumer can tell a rejected barrier from an absent one.
+    //
+    // The energy is serialized as a resolved expression tree, matching every
+    // other expression in the wire object. CompiledBarrierFactor also carries
+    // `energyExpression`, but that is the printable BNGL text of the parsed
+    // expression; emitting it would put parser text in a document that is
+    // required to hold resolved semantics, and the reader rejects a bare
+    // string here anyway (it walks `expression` as an expression tree).
     py::list barrierPatterns;
     for (const auto& barrier : model.barrierFactors()) {
         py::dict item;
         item["index"] = barrier.index;
         item["label"] = barrier.label;
         item["transition"] = barrier.sourceTransition;
-        item["expression"] = barrier.energyExpression;
+        item["expression"] = expressionSnapshot(barrier.expression);
         item["reaction_center"] = barrier.reactionCenterKey;
         item["center_resolved"] = barrier.centerResolved;
         if (barrier.evaluatedValue.has_value()) {
