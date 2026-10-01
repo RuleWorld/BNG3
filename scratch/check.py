@@ -11,7 +11,7 @@ import shutil
 import subprocess
 import tempfile
 
-BNGCPP = "/Users/akutuva/Documents/BioNetGen/BNG3/build/cpp/bng_cpp"
+BNGCPP = "/Users/akutuva/Documents/BioNetGen/BNG3-sciSignaling/build/cpp/bng_cpp"
 HERE = pathlib.Path(__file__).resolve().parent
 
 
@@ -297,8 +297,13 @@ KM = (koffE + kcatE) / konE
 s2, pp = G["Sfree"][-1], G["P"][-1]
 es, efr = G["ES"][-1], G["Efree"][-1]
 ok &= check("conservation: Efree+ES = E0", efr + es, E0, 1e-6 * E0)
-ok &= check("SS: ES* = Efree*S/(KM+S) (Michaelis-Menten)", es,
-            efr * s2 / (KM + s2), 1e-6 * efr * s2 / (KM + s2))
+# The exact steady state of the coupled 3-equation system is NOT the
+# Michaelis-Menten quasi-steady-state relation; ES* here is 24.9363 against an
+# MM prediction of 24.3145, a 2.5% gap that is the expected QSSA error, not a
+# BNG3 discrepancy. What IS exact, and is what a wrong reactant or a lost
+# reverse rate would break, is the enzyme balance below.
+ok &= check("SS: konE*Efree*Sfree = (koffE+kcatE)*ES  (enzyme balance)",
+            konE * efr * s2, (koffE + kcatE) * es, 1e-6 * konE * efr * s2)
 ok &= check("SS: kcatE*ES* = km*P  (flux balance)", kcatE * es, km * pp,
             1e-4 * kcatE * es)
 print(f"  KM = {KM}")
@@ -309,12 +314,26 @@ record("M7", ok)
 
 # =============================================== M8 reverse rate split
 print("=" * 70)
-print("M8  reverse-rate splitting: three spellings must agree exactly")
+print("M8  reverse-rate splitting: three spellings must agree or be refused")
 ka, kb, Rtot = 0.8, 0.3, 1000.0
+ok = True
+
+# R1: two rate laws on a unidirectional arrow. BNG2 refuses this spelling
+# outright, so refusing it is the correct outcome -- silently running it as
+# `-> ka` (dropping kb) is the defect.
+_td8 = pathlib.Path(tempfile.mkdtemp())
+shutil.copy(HERE / "m8_r1.bngl", _td8 / "m8_r1.bngl")
+r = subprocess.run([BNGCPP, "m8_r1.bngl"], cwd=_td8, capture_output=True, text=True)
+out = r.stdout + r.stderr
+ok &= check("R1 (two laws on '->') is REFUSED, not silently run",
+            float("only one rate law" in out), 1.0, 0.0)
+print("  R1 diagnostic:", [l for l in out.splitlines() if "rate law" in l][-1][:100])
+
+# R2 and R3 are the two supported spellings of the same pair and must agree
+# with each other and with the closed form of a closed two-state cycle.
 traj = {}
 nets = {}
-for i, tag in ((1, "R1 reversible-on-arrow"), (2, "R2 two-way arrow"),
-               (3, "R3 two separate rules")):
+for i, tag in ((2, "R2 two-way arrow"), (3, "R3 two separate rules")):
     cols, rows, td = run(f"m8_r{i}.bngl")
     P, t = col(cols, rows, "P")
     U, _ = col(cols, rows, "U")
@@ -322,26 +341,20 @@ for i, tag in ((1, "R1 reversible-on-arrow"), (2, "R2 two-way arrow"),
     net = td / f"m8_r{i}.net"
     nets[i] = net.read_text() if net.exists() else ""
     print(f"  {tag}: P(t_end) = {P[-1]:.10f}  U(t_end) = {U[-1]:.10f}")
-ok = True
-want_ratio = kb / ka
-for i in (1, 2, 3):
+want_ratio = ka / kb  # U -> P at ka, P -> U at kb, so ka*U = kb*P
+for i in (2, 3):
     P, U, t = traj[i]
     ok &= check(f"R{i} SS ratio P/U vs kb/ka", P[-1] / U[-1], want_ratio, 1e-6 * want_ratio)
     w = max(abs(P[j] + U[j] - Rtot) for j in range(len(P)))
     ok &= check(f"R{i} max |P+U-Rtot|", w, 0.0, 1e-6 * Rtot)
-    # exact transient of a closed two-state pair at rate ka forward, kb back
     w2 = max(
         abs(P[j] - Rtot * ka / (ka + kb) * (1 - math.exp(-(ka + kb) * t[j])))
         for j in range(len(t))
     )
     ok &= check(f"R{i} max |P - closed form|", w2, 0.0, 1e-6 * Rtot)
-# the three spellings must be numerically identical, not merely both plausible
+w = max(abs(traj[3][0][j] - traj[2][0][j]) for j in range(len(traj[2][0])))
+ok &= check("max |P_R3 - P_R2| (the two supported spellings agree)", w, 0.0, 1e-9 * Rtot)
 for i in (2, 3):
-    w = max(abs(traj[i][0][j] - traj[1][0][j]) for j in range(len(traj[1][0])))
-    ok &= check(f"max |P_R{i} - P_R1| (spelling invariance)", w, 0.0, 1e-9 * Rtot)
-for i in (1, 2, 3):
-    rx = [ln.strip() for ln in nets[i].splitlines()
-          if ln.strip() and ln.strip()[0].isdigit()]
     print(f"  R{i} network reaction lines:")
     for ln in nets[i].splitlines():
         s = ln.strip()
