@@ -167,7 +167,13 @@ if direct is not None:
         xml_data, xml_cols = trajectory(xml)
         direct_data, direct_cols = trajectory(direct)
         diff = compare.compare_trajectories(
-            xml_data, xml_cols, direct_data, direct_cols, rtol=0.0, atol=0.0
+            xml_data,
+            xml_cols,
+            direct_data,
+            direct_cols,
+            rtol=0.0,
+            atol=0.0,
+            columns=compare.COLUMNS_EXACT,
         )
         record["xml_construction_path"] = xml_path
         record["max_rel_err"] = float(diff.max_rel_err)
@@ -301,9 +307,25 @@ def test_nf_vs_native(model_name, api, work_dir):
     assert diff.ok, f"NF vs native mismatch [{model_name}]: {diff.summary()}"
 
 
-def test_nf_fixed_seed_direct_matches_native_at_final_endpoint(api, work_dir):
-    """Pin one seed and compare direct BNG3 construction with native NFsim."""
-    model_name = "simple_system"
+@pytest.mark.nf
+@pytest.mark.parametrize("model_name", NF_MODELS)
+def test_nf_fixed_seed_direct_matches_native_at_final_endpoint(
+    model_name, api, work_dir
+):
+    """Pin one seed and compare direct BNG3 construction with native NFsim.
+
+    Parametrized over the whole tier-NF set, not `simple_system` alone.
+    `docs/CI_PARITY.md:38` and `docs/BNG3_INTEGRATION_PLAN.md:39` describe a
+    four-model fixed-seed direct/native endpoint set; until this change that
+    was a claim about a gate which compared one model, so either the doc or
+    the test was untrue. All four were measured against native NFsim at
+    rtol=atol=0 before the parametrization was added, so the doc is the side
+    that was right and the gate now measures what it says it measures.
+
+    `columns=COLUMNS_EXACT` because this is a trajectory-identity claim: a leg
+    that dropped an observable would otherwise intersect down to the columns
+    it still had and score 0.0.
+    """
     t_end, n_steps, seed = 50.0, 50, 7
     xml_path = oracle_nfsim.write_model_xml(
         model_name, work_dir / "native" / f"{model_name}.xml"
@@ -345,10 +367,11 @@ def test_nf_fixed_seed_direct_matches_native_at_final_endpoint(api, work_dir):
         direct.columns,
         rtol=0.0,
         atol=0.0,
+        columns=compare.COLUMNS_EXACT,
     )
     assert (
         diff.ok or diff.max_rel_err == 0.0
-    ), f"fixed-seed direct/native NFsim mismatch: {diff.summary()}"
+    ), f"fixed-seed direct/native NFsim mismatch [{model_name}]: {diff.summary()}"
 
 
 @pytest.mark.nf
@@ -383,6 +406,7 @@ def test_nf_ast_direct_matches_xml(model_name, api, work_dir, monkeypatch):
         direct_traj.columns,
         rtol=0.0,
         atol=0.0,
+        columns=compare.COLUMNS_EXACT,
     )
     assert (
         diff.ok or diff.max_rel_err == 0.0
@@ -493,7 +517,13 @@ def test_nf_seed_site_state_is_resolved_by_name(block_order, api, work_dir,
     xml_data, xml_columns = _result_to_trajectory(xml_result)
     direct_data, direct_columns = _result_to_trajectory(direct_result)
     diff = compare.compare_trajectories(
-        xml_data, xml_columns, direct_data, direct_columns, rtol=0.0, atol=0.0
+        xml_data,
+        xml_columns,
+        direct_data,
+        direct_columns,
+        rtol=0.0,
+        atol=0.0,
+        columns=compare.COLUMNS_EXACT,
     )
     assert (
         diff.ok or diff.max_rel_err == 0.0

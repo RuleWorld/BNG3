@@ -46,6 +46,20 @@ hybrid population backend. Missing compiled engines or independent oracle
 artifacts remain failures for the gate that requires them, rather than being
 silently replaced by BNG3's embedded target or an XML fallback.
 
+The four-model endpoint set named above is the set
+`tests/validation/test_parity_nfsim.py::test_nf_fixed_seed_direct_matches_native_at_final_endpoint`
+and `tests/validation/test_parity_nfsim_seed.py::test_fixed_seed_reproduces_the_same_trajectory_on_both_legs`
+are parametrized over (`corpus.tier_nf()` = `simple_system`, `tlbr`, `motor`,
+`localfunc`). The first of those hard-coded `model_name = "simple_system"` for
+as long as the claim was written down, so this paragraph described a gate that
+measured one model; the gate was widened to the documented set rather than the
+documentation narrowed, because all four were measured against native NFsim at
+`rtol=atol=0` before the change. Both nodes compare with
+`compare_trajectories(..., columns=compare.COLUMNS_EXACT)`, because at
+`rtol=atol=0` an intersect-over-columns comparator reports a perfect score for
+a leg that has silently dropped an observable -- the failure a fixed-seed gate
+is most often asked about.
+
 The local continuation evidence immediately before the documentation merge is
 independent NFsim `10 passed`, CTest `308/308`, and strict full validation
 `71/71` with zero failures, errors, or skips. The final hosted check URLs and

@@ -111,20 +111,28 @@ def _trajectory(result) -> tuple:
 
 
 def _identity_report(left, right) -> str | None:
-    """None when the two legs agree exactly on observables; else why they do not.
+    """None when the two legs report the same trajectory; else why they do not.
 
-    Strictly stricter than `compare_trajectories`, which intersects the column
-    sets: a leg that silently drops an observable compares clean against the
-    leg that still reports it, and a population ceasing to be reported is
-    exactly how a seed-handling regression would present. So the observable
-    columns must match by identity, in order, and match bit-for-bit in value.
+    A leg that silently drops an observable is exactly how a seed-handling
+    regression presents: a population ceasing to be reported looks identical
+    to a population that stopped changing. The shared comparator now refuses
+    that at `columns=COLUMNS_EXACT`, and the observable *values* and the time
+    grid are delegated to it here at `rtol=atol=0`, so there is one place in
+    this tree that decides what "the same trajectory" means for values.
 
-    The time column is deliberately excluded from the bit-for-bit clause. The
-    two legs do not compute it the same way -- native NFsim formats and reparses
-    `1.00000000e-01`, BNG3 computes `t_end / n_steps` -- so the grid can differ
-    in the last bit (measured: `0.1` vs `0.09999999999999999`, a 1.4e-17
-    absolute gap) while describing the same 11 sample points. That gap is
-    formatting, not behaviour, and the grid is checked separately below at the
+    What stays here is the one thing `compare_trajectories` deliberately does
+    not check: that the columns are in the same *order*. The shared comparator
+    locates values by name and so treats a reordered observable block as
+    equal, which is right for it and wrong here -- the observable block is the
+    model's own declaration, so a reordering is a change in what was measured
+    rather than a relabelling of the same thing.
+
+    The time column is deliberately outside the bit-for-bit clause. The two
+    legs do not compute it the same way -- native NFsim formats and reparses
+    `1.00000000e-01`, BNG3 computes `t_end / n_steps` -- so the grid can
+    differ in the last bit (measured: `0.1` vs `0.09999999999999999`, a
+    1.4e-17 absolute gap) while describing the same 11 sample points. That
+    gap is formatting, not behaviour, and the grid is checked below at the
     tolerance `compare._align_times` already uses.
     """
     ldata, lcols = left
@@ -140,10 +148,19 @@ def _identity_report(left, right) -> str | None:
         return f"observable columns are the same set in a different order: {lcols} vs {rcols}"
     if ldata.shape != rdata.shape:
         return f"shape {ldata.shape} vs {rdata.shape}"
-    # Column 0 is time; every column after it is an observable population.
-    if not np.array_equal(ldata[:, 1:], rdata[:, 1:]):
+    diff = compare.compare_trajectories(
+        ldata,
+        lcols,
+        rdata,
+        rcols,
+        rtol=0.0,
+        atol=0.0,
+        columns=compare.COLUMNS_EXACT,
+    )
+    if not diff.ok:
         worst = float(np.max(np.abs(ldata[:, 1:] - rdata[:, 1:])))
-        return f"observable values differ, max absolute gap {worst:g}"
+        return f"observable values differ, max absolute gap {worst:g}; {diff.summary()}"
+    # Column 0 is time; every column after it is an observable population.
     if not np.allclose(ldata[:, 0], rdata[:, 0], rtol=0.0, atol=1e-9):
         return f"time grids differ: {ldata[:4, 0]} vs {rdata[:4, 0]}"
     return None
@@ -269,12 +286,15 @@ def test_fixed_seed_reproduces_the_same_trajectory_on_both_legs(
 ):
     """One seed, one trajectory, on BNG3's direct path and on native NFsim.
 
-    `test_nf_fixed_seed_direct_matches_native_at_final_endpoint` pins
-    `simple_system` alone. The other three tier-NF models are named as
-    fixed-seed parity targets in `docs/CI_PARITY.md:38` and
-    `docs/BNG3_INTEGRATION_PLAN.md:39`, but no test compares them against the
-    oracle at a fixed seed, so a seed-handling regression in any of them would
-    be reported by nothing. rtol=atol=0: this is a trajectory-identity claim.
+    `test_nf_fixed_seed_direct_matches_native_at_final_endpoint` in
+    `test_parity_nfsim.py` is the node `parity.yml` names, and it is now
+    parametrized over this same set -- it used to pin `simple_system` alone
+    while `docs/CI_PARITY.md:38` and `docs/BNG3_INTEGRATION_PLAN.md:39`
+    described four models. This module keeps its own copy because it is the
+    only one that gates the oracle through `require_oracle(native is not None)`
+    and reports *why* the direct path declined. `columns=COLUMNS_EXACT`
+    because rtol=atol=0 is a trajectory-identity claim, and on the default
+    intersect policy a leg that had dropped an observable compares clean.
     """
     require_oracle(
         oracle_nfsim.nfsim_available(), "native NFsim binary not found (set NFSIM_BIN)"
@@ -298,7 +318,13 @@ def test_fixed_seed_reproduces_the_same_trajectory_on_both_legs(
     require_oracle(native is not None, f"native NFsim produced no output: {error}")
 
     diff = compare.compare_trajectories(
-        native[0], native[1], direct.data, direct.columns, rtol=0.0, atol=0.0
+        native[0],
+        native[1],
+        direct.data,
+        direct.columns,
+        rtol=0.0,
+        atol=0.0,
+        columns=compare.COLUMNS_EXACT,
     )
     assert diff.ok or diff.max_rel_err == 0.0, (
         f"fixed-seed direct/native mismatch [{model_name}]: {diff.summary()}"
@@ -425,7 +451,13 @@ def test_seed_state_order_matches_native_nfsim(block_order, api, work_dir, monke
     require_oracle(native is not None, f"native NFsim produced no output: {error}")
 
     diff = compare.compare_trajectories(
-        native[0], native[1], direct[0], direct[1], rtol=0.0, atol=0.0
+        native[0],
+        native[1],
+        direct[0],
+        direct[1],
+        rtol=0.0,
+        atol=0.0,
+        columns=compare.COLUMNS_EXACT,
     )
     report = _identity_report(native, direct)
     assert report is None, (
@@ -486,7 +518,13 @@ def test_an_family_seed_state_order_matches_native_nfsim(model_name, api, work_d
     )
     require_oracle(native is not None, f"native NFsim produced no output: {error}")
     diff = compare.compare_trajectories(
-        native[0], native[1], direct.data, direct.columns, rtol=0.0, atol=0.0
+        native[0],
+        native[1],
+        direct.data,
+        direct.columns,
+        rtol=0.0,
+        atol=0.0,
+        columns=compare.COLUMNS_EXACT,
     )
 
     report = _identity_report(native, (direct.data, direct.columns))

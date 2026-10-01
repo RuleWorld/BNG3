@@ -1395,6 +1395,28 @@ class TrajDiff:
         )
         return s if not self.note else f"{s} ({self.note})"
 
+# Column-set policies for `compare_trajectories`.
+#
+# `intersect` compares only the observables both legs report. It is the right
+# policy for a *numeric* comparator asked "do the values that are present on
+# both sides agree?", and it silently accepts a leg that has lost an
+# observable: the missing column simply drops out of `common` and the
+# remaining columns compare clean at 0.0.
+#
+# `exact` additionally requires the two legs to report the *same set* of
+# observable names, so a dropped observable and a phantom extra observable are
+# both failures rather than a perfect score. Use it for every claim that the
+# two trajectories are the same trajectory; a comparison over a knowingly
+# varying column set wants `intersect` and should say so in its own name.
+COLUMNS_INTERSECT = "intersect"
+COLUMNS_EXACT = "exact"
+COLUMN_MODES = (COLUMNS_INTERSECT, COLUMNS_EXACT)
+
+
+def _observable_columns(cols: list[str]) -> list[str]:
+    """Column names excluding the time column, in the order reported."""
+    return [c for c in cols if c.lower() != "time"]
+
 
 def compare_trajectories(
     ref: np.ndarray,
@@ -1404,14 +1426,76 @@ def compare_trajectories(
     *,
     rtol: float = 1e-6,
     atol: float = 1e-12,
+    columns: str = COLUMNS_INTERSECT,
 ) -> TrajDiff:
-    """Compare two trajectories column-by-column on shared observables.
+    """Compare two trajectories column-by-column.
 
     Aligns on the common time grid (intersection of time points, exact match).
     Relative error uses max(|ref|, atol) in the denominator so near-zero
     observables don't blow up the metric.
+
+    `columns` selects what happens to a column the two legs do not share:
+
+    - `COLUMNS_INTERSECT` (default) compares only the shared observables. An
+      absent or phantom column is invisible to it -- by construction, not by
+      accident. A harness that expects varying column sets (two independent
+      .gdat writers, a probe that reports only some observables) belongs here.
+    - `COLUMNS_EXACT` first requires the two legs to report the same set of
+      observable names, and reports the names that differ. Column *order* is
+      not part of this mode: values are located by name, so a leg that reports
+      the same observables in a different order is comparing fine.
+
+    Every caller in this tree, and the mode each uses. This list is the
+    contract: a caller added without a mode gets `intersect`, so choosing the
+    default is choosing to be blind to an absent column.
+
+    | caller | mode | why |
+    | --- | --- | --- |
+    | `test_parity_nfsim.py` `_SWEEP_CHILD` direct-vs-XML record | exact | same model, same engine; a lost observable is a defect, and the sweep would otherwise record it as `compared` at 0.0 |
+    | `test_parity_nfsim.py::test_nf_fixed_seed_direct_matches_native_at_final_endpoint` | exact | trajectory-identity claim against the oracle |
+    | `test_parity_nfsim.py::test_nf_ast_direct_matches_xml` | exact | same |
+    | `test_parity_nfsim.py::test_nf_seed_site_state_is_resolved_by_name` | exact | same |
+    | `test_parity_nfsim_seed.py` fixed-seed / seed-state / AN-family | exact | same; these are the `nf and not slow` copies |
+    | `test_parity_nfsim_seed.py::_identity_report` | exact | delegates here and keeps only the ordered-column check |
+    | `test_parity_ode.py::test_ode_parity` | intersect | the one deliberate intersection; see below |
+    | `test_stochastic_comparator.py` (2 sites) | exact | fixed, known column list |
+    | `test_compare_trajectories.py` (this file's own policy tests) | both | pins each policy's behaviour, including the blind spot |
+
+    The ODE row is the one deliberate `intersect`: it compares a
+    BNG2-produced `.gdat` against a BNG3-produced one, so the column set is an
+    input rather than a claim, and the observable block of the committed
+    reference need not enumerate everything the engine emits. It is a
+    numeric comparator over a column set that is allowed to vary; it makes no
+    claim about which observables exist.
+
+    Note the asymmetry in what these numbers rest on. `parse_gdat` is the
+    shared reader for every oracle `.gdat` in this tree, so a `.gdat` value
+    compared here is read by the same code the native-NFsim and BNG2 oracles
+    feed. The column-set policy above is not backed that way: it is a
+    property of this comparator and of the assertions its callers make.
     """
-    common = [c for c in ref_cols if c in test_cols and c.lower() != "time"]
+    if columns not in COLUMN_MODES:
+        raise ValueError(
+            f"unknown column mode {columns!r}; expected one of {list(COLUMN_MODES)}"
+        )
+
+    ref_obs = _observable_columns(ref_cols)
+    test_obs = _observable_columns(test_cols)
+
+    if columns == COLUMNS_EXACT:
+        only_ref = [c for c in ref_obs if c not in test_obs]
+        only_test = [c for c in test_obs if c not in ref_obs]
+        if only_ref or only_test:
+            return TrajDiff(
+                False,
+                np.inf,
+                "",
+                np.inf,
+                f"observable column sets differ: only in ref {only_ref}, "
+                f"only in test {only_test}",
+            )
+
+    common = [c for c in ref_obs if c in test_obs]
     if not common:
         return TrajDiff(False, np.inf, "", np.inf, "no shared observable columns")
 

@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import numpy as np
 
-from tests.validation.compare import compare_stochastic, compare_trajectories
+from tests.validation.compare import (
+    COLUMNS_EXACT,
+    compare_stochastic,
+    compare_trajectories,
+)
 
 
 def _run(value: float, columns: list[str] | None = None):
@@ -55,7 +59,8 @@ def test_trajectory_comparator_handles_exact_zero_with_zero_atol():
     test = np.asarray([[0.0, 0.0], [1.0, 0.0]])
 
     diff = compare_trajectories(
-        reference, ["time", "A"], test, ["time", "A"], rtol=0.0, atol=0.0
+        reference, ["time", "A"], test, ["time", "A"], rtol=0.0, atol=0.0,
+        columns=COLUMNS_EXACT,
     )
 
     assert diff.ok
@@ -68,7 +73,8 @@ def test_trajectory_comparator_rejects_nonzero_difference_at_exact_zero():
     test = np.asarray([[0.0, 0.0], [1.0, 1.0]])
 
     diff = compare_trajectories(
-        reference, ["time", "A"], test, ["time", "A"], rtol=0.0, atol=0.0
+        reference, ["time", "A"], test, ["time", "A"], rtol=0.0, atol=0.0,
+        columns=COLUMNS_EXACT,
     )
 
     assert not diff.ok
