@@ -402,18 +402,41 @@ that way reproduces the measured file byte for byte.
    case there was not even a real microbenchmark delta.
 2. Wall-clock on this host is not trustworthy below ~10%: the same binaries
    measured 5.19% apart in one session and the host has ranged 23–131 on
-   loadavg. Instruction counts are the instrument that resolved this, and
-   their cv here is 0.022%–0.037%.
+   loadavg. The instruction counter contradicted it, which is what settled the
+   charge — but its own spread is 0.061%–0.099% of median, so its resolution
+   floor is ~0.1% and it is **not** a deterministic counter.
 3. The opt-level sweep is the most build-state-confounded measurement here
    (four separate compilations of the same source). Per-arm blob SHAs were
    not recorded at the time, which is the gap `sciPkPd.PkSurvey` and
    `orchSwarmB` correctly raised. The instruction-count result is not subject
-   to that objection because it is a deterministic counter, not a timing.
+   to that objection because it is a counter, not a timing.
 
-## Where the time actually goes
+## Where the time actually goes — and a prescription that has since gone stale
 
 Not `Expression`. `writeOutputFiles` was the only engine frame in every
 end-to-end profile. `swarmSerial` has since measured it properly: 39.5%
 float→digits, 20.2% stream plumbing, 17.6% locale/grouping, 11.0% libc printf
-on a 40k-row fixture. That is consistent with everything measured here, and it
-is where a codegen-shaped win would actually land on this platform.
+on a 40k-row fixture. That is consistent with everything measured here.
+
+**Do not read this as "go optimize `writeOutputFiles`."** Two reasons, both
+learned after the line was first written:
+
+1. **It is now the most contended function in the repository.** As of this
+   commit `cpp/engine/OdeIntegrator.cpp` has seven lanes with declared edits —
+   `writeOutputFiles`, `updateFunctions`/`derivs`, `integrateSSA`,
+   `computePropensity`, `compile`, `compileGroups`, and the batch-SSA seed
+   derivation. Seven touching hunks in one file is exactly the shape that
+   silently reverts a fix when someone resolves a conflict by picking a side.
+   The durable finding is *where the time is*; the location is now a
+   poor place to aim.
+2. **The win that landed there was not the shape I predicted.** `swarmSerial`
+   measured a 2.75x improvement there (0.11s → 0.04s, byte-identity held across
+   30 artifacts) — which vindicates the hotspot measurement — but it arrived as
+   a formatting change, not the codegen-shaped one I implied. I inferred the
+   *kind* of fix from the *location* of the cost without checking. That is the
+   same error class as the rest of this file: evidence about where time was
+   spent, dressed up as evidence about what would remove it.
+
+The transferable form: a profile tells you **where**, and nothing about
+**what kind of change** will help there. Treat "this is where the time goes"
+as a pointer to investigate, never as a recommendation.
