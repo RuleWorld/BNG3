@@ -141,6 +141,15 @@ jobs:
           CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=OFF -DBUILD_NFSIM_CLI=OFF"
 
       - name: Run direct/XML NFsim construction checks
+      - name: Run NFsim seed-state parity contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          NFSIM_BIN="$RUNNER_TEMP/oracle-nfsim/build/NFsim" \
+            PYTHONPATH="python:build/cpp" \
+            pytest -c tests/validation/pytest.ini \
+              tests/validation/test_parity_nfsim_seed.py \
+              --bng-cpp build/cpp/bng_cpp -q
         shell: bash
         run: |
           set -euo pipefail
