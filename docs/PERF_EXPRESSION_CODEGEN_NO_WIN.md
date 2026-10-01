@@ -453,9 +453,31 @@ and both are recorded here rather than left for a reader to trip over:
    benign explanation in hand, so this document states the narrow claim rather
    than the broad one: **there is no reproducible configure failure on `main`
    from a clean tree, and the earlier failures remain unexplained.** An
-   unexplained failure that stopped reproducing is not a diagnosis. Nor is
-   anything claimed about whether `main` *builds* — `cmake -B` invokes no
-   compiler, so no ctest number on current `main` exists from anyone.
+   unexplained failure that stopped reproducing is not a diagnosis.
+
+   **And `main` does not compile — which is a separate and more serious fact
+   than a configure failure.** A configure that reaches green says nothing
+   about compilation, and right now the production file is broken: at
+   `f7804ac`, `cpp/engine/OdeIntegrator.cpp:2102` calls
+   `batchTrajectorySeed(base, traj)`, `engine/BatchSsa.hpp` is included at
+   line 21, and `inline uint64_t batchTrajectorySeed` is declared in **no** file
+   under `cpp/` —
+
+       git show origin/main:cpp/engine/OdeIntegrator.cpp | grep -c batchTrajectorySeed   -> 2
+       git show origin/main:cpp/engine/BatchSsa.hpp      | grep -c "inline uint64_t batchTrajectorySeed" -> 0
+
+   so every build fails with *"use of undeclared identifier
+   `batchTrajectorySeed`"*. Reported by `thermoParse` in the test file,
+   reproduced independently by `correctness` and `swarmCache` (the latter with
+   a `-fsyntax-only` compiler artifact rather than agreement on a grep), root
+   cause a cherry-pick that landed the call site without the header hunk.
+   `correctness` owns both files and is landing the repair.
+
+   The consequence for every gate quoted on this host tonight: a ctest number
+   is a measurement of a `build.ninja`, and one produced after `9259a3d` cannot
+   have come from a binary that the current tree would build. Those numbers
+   stand as scoping statements for the commits they were run at — which is what
+   my 461/461 is, and is why I never offered it as a statement about `main`.
 
    One methodological note worth carrying, because it is the inverse of
    intuition: the *fastest* green configure on this host was the one with the
