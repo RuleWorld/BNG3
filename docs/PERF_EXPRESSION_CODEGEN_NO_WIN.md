@@ -100,13 +100,72 @@ median 3.045; B min 2.610 / median 3.080. B vs A: min **+4.40%**, median
   opt-level sweep. Stated as a band, not a decimal — `memWatch` proved
   `sysctl -n vm.loadavg` does not respond to a known single-core input on this
   host.
-- **Concurrent timing-sensitive processes:** 2–4 (`ps -axo pid,etime,command`),
-  including `bng_cpp_base model.bngl` (perfOracle), `mem_bench tlbr.bngl`
-  (swarmMemory), and two concurrent `-j4` builds.
+- **Runnable-process count R** (`ps -axo state,pid,etime,command | awk '$1 ~ /R/'`):
+  **R=21** at the time of writing, with four named timing-sensitive processes
+  live — `bng_cpp d1_tagcomp2.bngl`, `identity_check.py ... bng_cpp_base`,
+  `/private/tmp/oracle/bin/bng_cpp_base model.bngl`, and one `-j4`
+  ninja/clang++ pair. Per `memWatch`'s calibration this count responds within
+  seconds where loadavg does not, but it resolves groups, not single cores.
+- **Concurrent timing-sensitive processes:** 2–4 during the A/Bs
+  (`ps -axo pid,etime,command`), including `bng_cpp_base model.bngl`
+  (perfOracle), `mem_bench tlbr.bngl` (swarmMemory), and two concurrent `-j4`
+  builds.
 - **Interleaved in one session:** yes, all A/Bs.
 - **Peak RSS** (`/usr/bin/time -l`): microbench 1,540,096 B; 400k-step ODE
   252,264,448 B; 4M-step ODE 492,765,184 B; full `ctest -j4` 635,715,584 B.
   All well under the 4 GiB cap.
+
+### Exact commands and their outputs
+
+Every published claim, with the command that produced it and the output
+observed, so a reader can re-run and get the same thing.
+
+**Coldness — the evaluator is absent from end-to-end ODE runs.** Four
+independent profiles; the count is the number of frames naming the evaluator:
+
+    /Users/.../BNG3-compiler/build/cpp/bng_cpp expr_ode.bngl >/dev/null 2>&1 &
+    BPID=$!; sleep 1.0; sample $BPID 2 5 -file /tmp/compilerbench/ode_final.txt
+    grep -c "Expression::evaluateWithFunctions" /tmp/compilerbench/ode_final.txt
+    -> 0
+
+The same command shape against `ode_sample.txt`, `ode2.txt`, `ode_nocdat.txt`
+-> `0`, `0`, `0`. The only engine frame present in those files:
+
+    grep -oE "OdeIntegrator::[a-zA-Z]+" /tmp/compilerbench/ode_nocdat.txt | sort | uniq -c
+    -> 5 OdeIntegrator::writeOutputFiles
+
+Scope of that absence, stated because a negative claim is easy to overstate:
+these are ODE runs in which every rate law is functional. I did **not**
+establish that the evaluator is cold on NFsim's rate-law path
+(`cpp/nfsim/NFcore2/legacy_bridge.cpp:112` and `:264` both call
+`evaluateWithFunctions`), which I never profiled.
+
+**Instruction counts** (the deciding instrument):
+
+    /usr/bin/time -l ./mb_O2_A 400000 2>&1 | awk '/instructions retired/{print $1}'
+    -> 5038911614, 5036366321, 5036488374, 5040058273, 5039578164, 5038910804
+    /usr/bin/time -l ./mb_O2_B 400000 2>&1 | awk '/instructions retired/{print $1}'
+    -> 5037836195, 5038970602, 5037228617, 5039818966
+
+**Disassembly** — `otool -tvV -p <mangled>`, counting lines matching
+`^[0-9a-f]{16}` inside `evaluateWithFunctions`: A_before 7,048 / B_after
+6,517; `cmp` 423 -> 343, `b` 421 -> 356, `ldr` 618 -> 540, `bl` 636 -> 638.
+`memcmp`/`bcmp` occurrences in the function: 0 in both arms.
+
+**Trajectory identity**, both binaries built from one tree at one commit:
+
+    shasum -a 256 traj_BASE_mmfix/expr_ode_small.gdat traj_B2/expr_ode_small.gdat
+    -> 54195c4806801f1700e60021691401eb6382e75db6048ce37aa4411be8b572f1  (both arms)
+    cmp traj_BASE_mmfix/expr_ode_small.gdat traj_B2/expr_ode_small.gdat
+    -> GDAT BIT-IDENTICAL 228000114 B
+
+**Test gate:** `ctest --test-dir build --output-on-failure -j4` ->
+`100% tests passed out of 461`, twice consecutively on the reverted tree. One
+earlier run reported `99% tests passed, 1 tests failed out of 461`, with
+`architecture_nfnext_cache` failing on `cannot atomically replace NFIR cache:
+No such file or directory`; it then passed in isolation (`1/1 Test #455:
+architecture_nfnext_cache ... Passed`) and in both later full runs.
+`cpp/nfnext` is untouched by this work.
 
 ## Exact reproduction commands
 
