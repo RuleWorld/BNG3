@@ -100,4 +100,7 @@ green static/contract result is not a substitute for that kernel check.
 
 - `Propensity.lean` separates per-match kinetic constants from TotalRate channel rates.
 - `ReactionNetwork.lean` records canonical reaction edges over the graph-isomorphic species pool.
+- `BNGIR.lean` models the BNGIR envelope header: format tag, decode acceptance
+  of exactly versions 0.1/0.2, and the fail-closed feature gate; roundtrip and
+  refusal theorems are exercised by `tests/Smoke.lean`.
 - `CXX_MIGRATION_BLOCKERS.md` records why full production C++ refinement is not yet claimable.
