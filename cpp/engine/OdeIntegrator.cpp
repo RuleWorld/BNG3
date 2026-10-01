@@ -1717,10 +1717,23 @@ void appendScientificField(std::string& row, double value, bool leadingSpace) {
     char* const fieldStart = cursor;
     const auto result = std::to_chars(fieldStart, buf + sizeof(buf), value,
                                       std::chars_format::scientific, 12);
+    if (result.ec != std::errc{}) {
+        // Cannot happen with a 64-byte buffer and this format (the longest
+        // field is 20 characters), but the length below feeds a memmove, so
+        // do not trust an errored result.
+        std::ostringstream fallback;
+        fallback << std::setw(18) << std::setprecision(12) << std::scientific
+                  << value;
+        const std::string text = fallback.str();
+        row.append(text);
+        return;
+    }
     const std::size_t length = static_cast<std::size_t>(result.ptr - fieldStart);
-    // "%.12e" is always exactly kWidth characters, so left-pad when the digit
-    // string is shorter. Scientific notation with 12 fractional digits emits
-    // at least 17 characters ("-d.ddddddddddddde+dd"), so the pad is 0 or 1.
+    // "%18.12e" right-justifies into 18 columns. The digit string is shorter
+    // than that for an ordinary value (17 characters, e.g. "1.000000000000e+00")
+    // and LONGER for a three-digit exponent or a wider one with a sign
+    // (19 characters, or 20 for -DBL_MAX). Only the short case is padded; the
+    // long case is emitted in full, exactly as the stream would.
     const std::size_t pad = (length < kWidth) ? (kWidth - length) : 0;
     if (pad != 0) {
         std::memmove(fieldStart + pad, fieldStart, length);
