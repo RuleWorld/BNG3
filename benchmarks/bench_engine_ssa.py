@@ -3,8 +3,8 @@
 
 Constructs a self-contained synthetic reaction network, runs it through
 ``bng_cpp`` with a fixed seed and an exact internal-step cap, and reports one
-primary number: simulated network events per second (min over reps, with
-median and stdev).
+primary number: simulated network events per second (best rep over >=5
+interleaved reps, with median and stdev).
 
 Method notes:
 
@@ -18,8 +18,9 @@ Method notes:
   preemption by other users of this shared host does not inflate the
   measurement. Wall times are still recorded.
 - Variants are interleaved round-robin (order alternating by round), and the
-  primary number is the minimum over reps: co-tenants can only slow a run
+  primary number is the best (fastest) rep: co-tenants can only slow a run
   down, so the fastest rep bounds the machine's achievable throughput.
+  Median and stdev are reported alongside as the spread.
 
 Example (A/B against a saved baseline binary):
 
@@ -140,6 +141,7 @@ def variant_rate(
 
 def summarize(values: list[float]) -> dict:
     return {
+        "best": max(values),
         "min": min(values),
         "median": statistics.median(values),
         "max": max(values),
@@ -199,7 +201,7 @@ def main() -> int:
                 )
 
     results = {
-        "primary_metric": "ssa_network_events_per_sec_min_of_reps",
+        "primary_metric": "ssa_network_events_per_sec_best_of_reps",
         "events_per_rep": args.events,
         "species": args.species,
         "reactions": 3 * args.species,
@@ -218,19 +220,21 @@ def main() -> int:
         },
     }
 
-    print(f"\nprimary metric: SSA network events/sec (CPU-time, min of "
-          f"{args.reps} reps)")
+    print(
+        f"\nprimary metric: SSA network events/sec (child CPU time, best of "
+        f"{args.reps} interleaved reps)"
+    )
     for name, _ in variants:
         s = results["variants"][name]
         print(
-            f"  {name:>10}: min={s['min']:,.0f}  median={s['median']:,.0f}  "
-            f"max={s['max']:,.0f}  stdev={s['stdev']:,.0f}"
+            f"  {name:>10}: best={s['best']:,.0f}  median={s['median']:,.0f}  "
+            f"worst={s['min']:,.0f}  stdev={s['stdev']:,.0f}"
         )
     if len(variants) == 2:
         a, b = (results["variants"][n] for n, _ in variants)
         print(
             f"  speedup({variants[1][0]}/{variants[0][0]}) = "
-            f"{b['min'] / a['min']:.3f}x (min-based), "
+            f"{b['best'] / a['best']:.3f}x (best-based), "
             f"{b['median'] / a['median']:.3f}x (median-based)"
         )
 
